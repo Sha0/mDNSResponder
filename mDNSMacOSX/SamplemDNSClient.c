@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.44  2004/05/28 02:20:06  cheshire
+If we allow dot or empty string for domain when resolving a service,
+it should be a synonym for "local"
+
 Revision 1.43  2004/02/03 22:07:50  cheshire
 <rdar://problem/3548184>: Widen columns to display non-local domains better
 
@@ -334,7 +338,7 @@ int main(int argc, char **argv)
                     break;
 
         case 'B':	if (argc < optind+1) goto Fail;
-                    dom = (argc < optind+2) ? "" : argv[optind+1];
+                    dom = (argc < optind+2) ? "local" : argv[optind+1];
                     if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
                     printf("Browsing for %s%s\n", argv[optind+0], dom);
                     client = DNSServiceBrowserCreate(argv[optind+0], dom, browse_reply, nil);
@@ -342,7 +346,7 @@ int main(int argc, char **argv)
 
         case 'L':	if (argc < optind+2) goto Fail;
                     dom = (argc < optind+3) ? "" : argv[optind+2];
-                    if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
+					if (dom[0] == '.' && dom[1] == 0) dom = "local";   // We allow '.' on the command line as a synonym for "local"
                     printf("Lookup %s.%s%s\n", argv[optind+0], argv[optind+1], dom);
                     client = DNSServiceResolverResolve(argv[optind+0], argv[optind+1], dom, resolve_reply, nil);
                     break;

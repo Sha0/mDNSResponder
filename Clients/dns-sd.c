@@ -36,6 +36,10 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.7  2004/05/28 02:20:06  cheshire
+If we allow dot or empty string for domain when resolving a service,
+it should be a synonym for "local"
+
 Revision 1.6  2004/05/21 19:57:19  cheshire
 Add -Q option to exercise DNSServiceQueryRecord() API call
 
@@ -339,8 +343,8 @@ int main(int argc, char **argv)
 					break;
 
 		case 'L':	if (argc < optind+2) goto Fail;
-					dom = (argc < optind+3) ? "" : argv[optind+2];
-					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
+					dom = (argc < optind+3) ? "local" : argv[optind+2];
+					if (dom[0] == '.' && dom[1] == 0) dom = "local";   // We allow '.' on the command line as a synonym for "local"
 					printf("Lookup %s.%s.%s\n", argv[optind+0], argv[optind+1], dom);
 					err = DNSServiceResolve(&client, 0, 0, argv[optind+0], argv[optind+1], dom, resolve_reply, NULL);
 					break;
