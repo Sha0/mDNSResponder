@@ -88,6 +88,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.97  2003/04/02 01:48:17  cheshire
+<rdar://problem/3212360> mDNSResponder sometimes suffers false self-conflicts when it sees its own packets
+Additional fix pointed out by Josh:
+Also set ProbeFailTime when incrementing NumFailedProbes when resetting a record back to probing state
+
 Revision 1.96  2003/04/01 23:58:55  cheshire
 Minor comment changes
 
@@ -3641,9 +3646,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
 								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
 								rr->LastAPTime     = timenow - rr->LastAPTime;
+
 								// We increment NumFailedProbes here to make sure that repeated late conflicts
 								// will also cause us to back off to the slower probing rate
-								m->NumFailedProbes++;
+								m->ProbeFailTime = timenow;
+								if (m->NumFailedProbes < 10) m->NumFailedProbes++;
+								else m->SuppressProbes = (timenow + mDNSPlatformOneSecond * 5) | 1;
 								}
 							// If we're probing for this record, we just failed
 							else if (rr->RecordType == kDNSRecordTypeUnique)
