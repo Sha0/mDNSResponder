@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.25  2004/07/26 05:54:02  shersche
+DNSServiceProcessResult() returns NoError if socket read returns EWOULDBLOCK
+
 Revision 1.24  2004/07/20 06:46:21  shersche
 <rdar://problem/3730123> fix endless loop in my_read() if recv returns 0
 Bug #: 3730123
@@ -221,7 +224,9 @@ static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse
     hdr->op.request_op = op;
     if (reuse_socket) hdr->flags |= IPC_FLAGS_REUSE_SOCKET;
     *data_start = msg + sizeof(ipc_msg_hdr);
+#if !defined(_WIN32)
     if (!reuse_socket)  put_string(ctrl_path, data_start);
+#endif
     return hdr;
     }
 
@@ -352,7 +357,10 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
         return kDNSServiceErr_BadReference;
 
     if (my_read(sdRef->sockfd, (void *)&hdr, sizeof(hdr)) < 0)
-        return kDNSServiceErr_Unknown;
+		// return NoError on EWOULDBLOCK. This will handle the case
+		// where a non-blocking socket is told there is data, but
+		// it was a false positive.
+		return (dnssd_errno() == dnssd_EWOULDBLOCK) ? kDNSServiceErr_NoError : kDNSServiceErr_Unknown;
     if (hdr.version != VERSION)
         return kDNSServiceErr_Incompatible;
     data = malloc(hdr.datalen);
