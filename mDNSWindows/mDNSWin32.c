@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.42  2004/06/24 15:23:24  shersche
+Add InterfaceListChanged callback.  This callback is used in Service.c to add link local routes to the routing table
+Submitted by: herscher
+
 Revision 1.41  2004/06/18 05:22:16  rpantos
 Integrate Scott's changes
 
@@ -2164,6 +2168,11 @@ mDNSlocal void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "interface list changed\n" );
 	check( inMDNS );
+
+	if (inMDNS->p->interfaceListChangedCallback)
+	{
+		inMDNS->p->interfaceListChangedCallback(inMDNS);
+	}
 	
 	mDNSPlatformLock( inMDNS );
 	

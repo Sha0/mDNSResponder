@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.13  2004/06/24 15:23:24  shersche
+Add InterfaceListChanged callback.  This callback is used in Service.c to add link local routes to the routing table
+Submitted by: herscher
+
 Revision 1.12  2004/06/18 05:22:16  rpantos
 Integrate Scott's changes
 
@@ -111,11 +115,24 @@ struct	mDNSInterfaceData
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
-/*!	@struct		mDNSInterfaceData
+/*!	@typedef	IdleThreadCallback
 
-	@abstract	Structure containing interface-specific data.
+	@abstract	mDNSWin32 core will call out through this function pointer
+				after calling mDNS_Execute
 */
 typedef mDNSs32 (*IdleThreadCallback)(mDNS * const inMDNS, mDNSs32 interval);
+//---------------------------------------------------------------------------------------------------------------------------
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	InterfaceListChangedCallback
+
+	@abstract	mDNSWin32 core will call out through this function pointer
+				after detecting an interface list changed event
+*/
+typedef void (*InterfaceListChangedCallback)(mDNS * const inMDNS);
+//---------------------------------------------------------------------------------------------------------------------------
+
+
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@struct		mDNS_PlatformSupport_struct
 
@@ -138,6 +155,7 @@ struct	mDNS_PlatformSupport_struct
 	mDNSInterfaceData *			inactiveInterfaceList;
 	DWORD						threadID;
 	IdleThreadCallback			idleThreadCallback;
+	InterfaceListChangedCallback	interfaceListChangedCallback;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
