@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.147  2003/05/29 06:01:18  cheshire
+Change some debugf() calls to LogMsg() calls to help with debugging
+
 Revision 1.146  2003/05/28 21:00:44  cheshire
 Re-enable "immediate answer burst" debugf message
 
@@ -1473,8 +1476,8 @@ mDNSlocal mDNSs32 HashSlot(const domainname *name)
 // (TTL and rdata may differ)
 mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
-	if (!r1) { debugf("SameResourceRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
-	if (!r2) { debugf("SameResourceRecordSignature ERROR: r2 is NULL"); return(mDNSfalse); }
+	if (!r1) { LogMsg("SameResourceRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
+	if (!r2) { LogMsg("SameResourceRecordSignature ERROR: r2 is NULL"); return(mDNSfalse); }
 	if (r1->InterfaceID &&
 		r2->InterfaceID &&
 		r1->InterfaceID != r2->InterfaceID) return(mDNSfalse);
@@ -1486,8 +1489,8 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 // any type should match, even if it is not the type the client plans to use.
 mDNSlocal mDNSBool PacketRRMatchesSignature(const ResourceRecord *const pktrr, const ResourceRecord *const authrr)
         {
-	if (!pktrr) { debugf("SameResourceRecordSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
-	if (!authrr) { debugf("SameResourceRecordSignature ERROR: authrr is NULL"); return(mDNSfalse); }
+	if (!pktrr) { LogMsg("SameResourceRecordSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
+	if (!authrr) { LogMsg("SameResourceRecordSignature ERROR: authrr is NULL"); return(mDNSfalse); }
 	if (pktrr->InterfaceID &&
 		authrr->InterfaceID &&
 		pktrr->InterfaceID != authrr->InterfaceID) return(mDNSfalse);
@@ -1499,8 +1502,8 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const ResourceRecord *const pktrr, c
 // (InterfaceID, TTL and rdata may differ)
 mDNSlocal mDNSBool SameResourceRecordSignatureAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
-	if (!r1) { debugf("SameResourceRecordSignatureAnyInterface ERROR: r1 is NULL"); return(mDNSfalse); }
-	if (!r2) { debugf("SameResourceRecordSignatureAnyInterface ERROR: r2 is NULL"); return(mDNSfalse); }
+	if (!r1) { LogMsg("SameResourceRecordSignatureAnyInterface ERROR: r1 is NULL"); return(mDNSfalse); }
+	if (!r2) { LogMsg("SameResourceRecordSignatureAnyInterface ERROR: r2 is NULL"); return(mDNSfalse); }
 	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
 	}
 
@@ -1599,7 +1602,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, ResourceRecord *const rr)
 		// changing to the new rdata. However, in practice, we only do SetTargetToHostName for unique records,
 		// so when we announce them we'll set the kDNSClass_UniqueRRSet and clear any stale data that way.
 		if (rr->AnnounceCount < InitialAnnounceCount && !(rr->RecordType & kDNSRecordTypeUniqueMask))
-			debugf("Have announced shared record %##s at least once: should have sent a goodbye packet before updating", rr->name.c);
+			debugf("Have announced shared record %##s (%s) at least once: should have sent a goodbye packet before updating", rr->name.c, DNSTypeName(rr->rrtype));
 
 		if (rr->AnnounceCount < ReannounceCount)
 			rr->AnnounceCount = ReannounceCount;
@@ -1627,7 +1630,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	while (*p && *p != rr) p=&(*p)->next;
 	if (*p)
 		{
-		debugf("Error! Tried to register a ResourceRecord %p %##s that's already in the list", rr, rr->name.c);
+		LogMsg("Error! Tried to register a ResourceRecord %p %##s (%s) that's already in the list", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		return(mStatus_AlreadyRegistered);
 		}
 
@@ -1637,14 +1640,14 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 			rr->RecordType =  kDNSRecordTypeVerified;
 		else
 			{
-			debugf("mDNS_Register_internal: ERROR! %##s: rr->DependentOn && RecordType != kDNSRecordTypeUnique",
-				rr->name.c);
+			LogMsg("mDNS_Register_internal: ERROR! %##s (%s): rr->DependentOn && RecordType != kDNSRecordTypeUnique",
+				rr->name.c, DNSTypeName(rr->rrtype));
 			return(mStatus_Invalid);
 			}
 		if (rr->DependentOn->RecordType != kDNSRecordTypeUnique && rr->DependentOn->RecordType != kDNSRecordTypeVerified)
 			{
-			debugf("mDNS_Register_internal: ERROR! %##s: rr->DependentOn->RecordType bad type %X",
-				rr->name.c, rr->DependentOn->RecordType);
+			LogMsg("mDNS_Register_internal: ERROR! %##s (%s): rr->DependentOn->RecordType bad type %X",
+				rr->name.c, DNSTypeName(rr->rrtype), rr->DependentOn->RecordType);
 			return(mStatus_Invalid);
 			}
 		}
@@ -1757,7 +1760,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 	// we need to retract that announcement before we delete the record
 	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount && rr->RRInterfaceActive)
 		{
-		debugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
+		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 		rr->RecordType      = kDNSRecordTypeDeregistering;
 		rr->rroriginalttl   = 0;
 		rr->rrremainingttl  = 0;
@@ -2003,7 +2006,7 @@ mDNSlocal mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu
 
 	if (rr->RecordType == kDNSRecordTypeUnregistered)
 		{
-		debugf("PutResourceRecord ERROR! Attempt to put kDNSRecordTypeUnregistered");
+		LogMsg("PutResourceRecord ERROR! Attempt to put kDNSRecordTypeUnregistered %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 		return(ptr);
 		}
 
@@ -2018,7 +2021,7 @@ mDNSlocal mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu
 	ptr[6] = (mDNSu8)(ttl >>  8);
 	ptr[7] = (mDNSu8)(ttl      );
 	endofrdata = putRData(msg, ptr+10, limit, rr->rrtype, rr->rdata);
-	if (!endofrdata) { debugf("Ran out of space in PutResourceRecord!"); return(mDNSNULL); }
+	if (!endofrdata) { verbosedebugf("Ran out of space in PutResourceRecord for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype)); return(mDNSNULL); }
 
 	// Go back and fill in the actual number of data bytes we wrote
 	// (actualLength can be less than rdlength when domain name compression is used)
@@ -2390,7 +2393,7 @@ mDNSlocal void CompleteDeregistration(mDNS *const m, ResourceRecord *rr)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void DiscardDeregistrations(mDNS *const m)
 	{
-	if (m->CurrentRecord) debugf("DiscardDeregistrations ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord) LogMsg("DiscardDeregistrations ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
 	
 	while (m->CurrentRecord)
@@ -2479,7 +2482,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				verbosedebugf("%##s %d", rr->name.c, rr->AnnounceCount);
+				verbosedebugf("%##s (%s) %d", rr->name.c, DNSTypeName(rr->rrtype), rr->AnnounceCount);
 				}
 			}
 		else if (rr->ImmedAnswer)						// Else, just respond to a single query on single interface:
@@ -2602,7 +2605,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// *** 3. Cleanup: Now that everything is sent, call client callback functions, and reset state variables
 	// ***
 
-	if (m->CurrentRecord) debugf("SendResponses: ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord) LogMsg("SendResponses: ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
@@ -2627,7 +2630,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->v6Requester     = zerov6Addr;
 			}
 		}
-	debugf("SendResponses: Next in %d ticks", m->NextResponseTime - m->timenow);
+	verbosedebugf("SendResponses: Next in %d ticks", m->NextResponseTime - m->timenow);
 	}
 
 #define MaxQuestionInterval         (3600 * mDNSPlatformOneSecond)
@@ -2647,7 +2650,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		}
 	else if (newptr + *answerforecast >= limit)
 		{
-		debugf("BuildQuestion: Retracting question %##s new forecast total %lu", q->name.c, newptr + *answerforecast - query->data);
+		verbosedebugf("BuildQuestion: Retracting question %##s new forecast total %d", q->name.c, newptr + *answerforecast - query->data);
 		query->h.numQuestions--;
 		return(mDNSfalse);
 		}
@@ -2677,7 +2680,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 					// then undo that last question and try again next time
 					if (query->h.numQuestions > 1 && newptr + forecast >= limit)
 						{
-						debugf("BuildQuestion: Retracting question %##s new forecast total %lu", q->name.c, newptr + forecast - query->data);
+						debugf("BuildQuestion: Retracting question %##s new forecast total %d", q->name.c, newptr + forecast - query->data);
 						query->h.numQuestions--;
 						ka = *kalistptrptr;		// Go back to where we started and retract these answer records
 						while (*ka) { ResourceRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
@@ -2765,7 +2768,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		{
 		m->NextProbeTime = m->timenow + 0x78000000;
 
-		if (m->CurrentRecord) debugf("SendQueries: ERROR m->CurrentRecord already set");
+		if (m->CurrentRecord) LogMsg("SendQueries:   ERROR m->CurrentRecord already set");
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
@@ -2815,7 +2818,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		DNSMessage query;
 		mDNSu8 *queryptr = query.data;
 		InitializeDNSMessage(&query.h, mDNS_MessageID, QueryFlags);
-		if (KnownAnswerList) debugf("SendQueries: KnownAnswerList set... Will continue from previous packet");
+		if (KnownAnswerList) verbosedebugf("SendQueries:   KnownAnswerList set... Will continue from previous packet");
 		if (!KnownAnswerList)
 			{
 			// Start a new known-answer list
@@ -2851,7 +2854,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 						}
 					else
 						{
-						debugf("SendQueries: Retracting Question %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
+						verbosedebugf("SendQueries:   Retracting Question %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 						query.h.numQuestions--;
 						}
 					}
@@ -2865,7 +2868,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			mDNSu8 *newptr = PutResourceRecordTTL(&query, queryptr, &query.h.numAnswers, rr, rr->rroriginalttl - SecsSinceRcvd);
 			if (newptr)
 				{
-				verbosedebugf("SendQueries: Put %##s at %lu - %lu", rr->name.c, queryptr - query.data, newptr - query.data);
+				verbosedebugf("SendQueries:   Put %##s (%s) at %lu - %lu", rr->name.c, DNSTypeName(rr->rrtype), queryptr - query.data, newptr - query.data);
 				queryptr = newptr;
 				KnownAnswerList = rr->NextInKAList;
 				rr->NextInKAList = mDNSNULL;
@@ -2893,7 +2896,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		
 		if (queryptr > query.data)
 			{
-			verbosedebugf("SendQueries: Sending %d Question%s %d Answer%s %d Update%s on %p",
+			debugf("SendQueries:   Sending %d Question%s %d Answer%s %d Update%s on %p",
 				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
 				query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
@@ -3016,13 +3019,13 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->name.c, DNSTypeName(q->rrtype));
 
-	if (m->lock_rrcache) debugf("AnswerNewQuestion ERROR! Cache already locked!");
+	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
 	// This should be safe, because calling the client's question callback may cause the
 	// question list to be modified, but should not ever cause the rrcache list to be modified.
 	// If the client's question callback deletes the question, then m->CurrentQuestion will
 	// be advanced, and we'll exit out of the loop
 	m->lock_rrcache = 1;
-	if (m->CurrentQuestion) debugf("AnswerNewQuestion ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 	for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr && m->CurrentQuestion == q; rr=rr->next)
 		if (ResourceRecordAnswersQuestion(rr, q))
@@ -3059,7 +3062,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 	{
 	mDNSs32	slot;
 
-	if (m->lock_rrcache) { debugf("CheckCacheExpiration ERROR! Cache already locked!"); return; }
+	if (m->lock_rrcache) { LogMsg("CheckCacheExpiration ERROR! Cache already locked!"); return; }
 	m->lock_rrcache = 1;
 
 	m->NextCacheCheck = m->timenow + 0x78000000;
@@ -3131,7 +3134,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 	{
 	ResourceRecord *r = m->rrcache_free;
 
-	if (m->lock_rrcache) { debugf("GetFreeCacheRR ERROR! Cache already locked!"); return(mDNSNULL); }
+	if (m->lock_rrcache) { LogMsg("GetFreeCacheRR ERROR! Cache already locked!"); return(mDNSNULL); }
 	m->lock_rrcache = 1;
 	
 	if (r)		// If there are records in the free list, take one
@@ -3344,7 +3347,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		int i, didwork = 0;
 
 		verbosedebugf("mDNS_Execute");
-		if (m->CurrentQuestion) debugf("mDNS_Execute: ERROR! m->CurrentQuestion already set");
+		if (m->CurrentQuestion) LogMsg("mDNS_Execute: ERROR! m->CurrentQuestion already set");
 
 		// If we're past the probe suppression time, we can clear it
 		if (m->SuppressProbes && m->timenow - m->SuppressProbes >= 0)
@@ -3420,6 +3423,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				}
 			}
 	
+		// ----- This is temporary debugging code that will go away soon -----
 		if (!didwork)	// If we did no work, find out if we should have done
 			{
 			static mDNSs32 lastmsg = 0;
@@ -3450,6 +3454,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				gNextEventMsg, m->NextScheduledEvent - oldNextEvent, m->NextScheduledEvent - m->timenow);
 		gNextEventScheduledAt = mDNSPlatformTimeNow();
 		}
+		// ----- End temporary debugging code that will go away soon -----
 
 		}
 
@@ -3603,7 +3608,7 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 			}
 		}
 
-	if (reply->h.numQuestions == 0) { debugf("GenerateUnicastResponse: ERROR! Why no questions?"); return(mDNSNULL); }
+	if (reply->h.numQuestions == 0) { LogMsg("GenerateUnicastResponse: ERROR! Why no questions?"); return(mDNSNULL); }
 
 	// ***
 	// *** 2. Write Answers
@@ -3639,8 +3644,8 @@ mDNSlocal int CompareRData(ResourceRecord *our, ResourceRecord *pkt)
 	{
 	mDNSu8 ourdata[256], *ourptr = ourdata, *ourend;
 	mDNSu8 pktdata[256], *pktptr = pktdata, *pktend;
-	if (!our) { debugf("CompareRData ERROR: our is NULL"); return(+1); }
-	if (!pkt) { debugf("CompareRData ERROR: pkt is NULL"); return(+1); }
+	if (!our) { LogMsg("CompareRData ERROR: our is NULL"); return(+1); }
+	if (!pkt) { LogMsg("CompareRData ERROR: pkt is NULL"); return(+1); }
 
 	ourend = putRData(mDNSNULL, ourdata, ourdata + sizeof(ourdata), our->rrtype, our->rdata);
 	pktend = putRData(mDNSNULL, pktdata, pktdata + sizeof(pktdata), pkt->rrtype, pkt->rdata);
@@ -3793,7 +3798,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// Also note: we just mark potential answer records here, without trying to build the
 		// "ResponseRecords" list, because we don't want to risk user callbacks deleting records
 		//  from that list while we're in the middle of trying to build it.
-		if (m->CurrentRecord) debugf("ProcessQuery ERROR m->CurrentRecord already set");
+		if (m->CurrentRecord) LogMsg("ProcessQuery ERROR m->CurrentRecord already set");
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
@@ -3913,7 +3918,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					{
 					rr->ImmedAnswer = mDNSInterfaceMark;
 					m->NextResponseTime = m->timenow;
-					debugf("%##s : Will send on all interfaces", rr->name.c);
+					debugf("%##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
 					}
 				else
 					{
@@ -3930,9 +3935,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 							//     That flood of near-simultaneous queries then triggers the message below, warning that mDNSResponder
 							//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
 							//if (query->h.flags.b[0] & kDNSFlag0_TC)
-							//	LogMsg("%##s : Cannot perform multi-packet known-answer suppression from more than one"
+							//	LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one"
 							//		" client at a time %.4a %.4a (this is benign if it happens only rarely)",
-							//		rr->name.c, &rr->v4Requester, &srcaddr->ip.v4);
+							//		rr->name.c, DNSTypeName(rr->rrtype), &rr->v4Requester, &srcaddr->ip.v4);
 							rr->v4Requester = onesIPv4Addr;
 							}
 						}
@@ -3942,9 +3947,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
 							{
 							if (query->h.flags.b[0] & kDNSFlag0_TC)
-								LogMsg("%##s : Cannot perform multi-packet known-answer suppression from more than one "
+								LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
 									"client at a time %.16a %.16a (this is benign if it happens only rarely)",
-									rr->name.c, &rr->v6Requester, &srcaddr->ip.v6);
+									rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, &srcaddr->ip.v6);
 							rr->v6Requester = onesIPv6Addr;
 							}
 						}
@@ -4068,7 +4073,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		if (!ptr) return;
 
 		// 1. Check that this packet resource record does not conflict with any of ours
-		if (m->CurrentRecord) debugf("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set");
+		if (m->CurrentRecord) LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set");
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
@@ -4263,7 +4268,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
 	msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
 	
-	if (!m) { debugf("mDNSCoreReceive ERROR m is NULL"); return; }
+	if (!m) { LogMsg("mDNSCoreReceive ERROR m is NULL"); return; }
 	
 	mDNS_Lock(m);
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
@@ -4329,7 +4334,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		if (*q)
 			{
-			debugf("Error! Tried to add a question that's already in the active list");
+			LogMsg("Error! Tried to add a question %##s (%s) that's already in the active list",
+				question->name.c, DNSTypeName(question->rrtype));
 			return(mStatus_AlreadyRegistered);
 			}
 
@@ -4400,7 +4406,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 			for (q = m->Questions; q; q=q->next)		// Scan our list of questions
 				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(rr, q))
 					break;
-			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s setting CRActiveQuestion to %X", rr->name.c, q);
+			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %X", rr->name.c, DNSTypeName(rr->rrtype), q);
 			rr->CRActiveQuestion = q;
 			}
 		}
@@ -4411,14 +4417,14 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 		{
 		debugf("mDNS_StopQuery_internal: Just deleted the currently active question: %##s (%s)",
 			question->name.c, DNSTypeName(question->rrtype));
-		m->CurrentQuestion = m->CurrentQuestion->next;
+		m->CurrentQuestion = question->next;
 		}
 
 	if (m->NewQuestions    == question)
 		{
 		debugf("mDNS_StopQuery_internal: Just deleted a new question that wasn't even answered yet: %##s (%s)",
 			question->name.c, DNSTypeName(question->rrtype));
-		m->NewQuestions    = m->NewQuestions->next;
+		m->NewQuestions = question->next;
 		}
 
 	// Take care not to trash question->next until *after* we've updated m->CurrentQuestion and m->NewQuestions
@@ -4529,7 +4535,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 		}
 	else
 		{
-		debugf("FoundServiceInfo: answer type %d (%s) unexpected", answer->rrtype, DNSTypeName(answer->rrtype));
+		debugf("FoundServiceInfo: answer %##s type %d (%s) unexpected", answer->name.c, answer->rrtype, DNSTypeName(answer->rrtype));
 		return;
 		}
 
@@ -4913,7 +4919,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		{
 		if (*p == set)
 			{
-			debugf("Error! Tried to register a NetworkInterfaceInfo that's already in the list");
+			LogMsg("Error! Tried to register a NetworkInterfaceInfo that's already in the list");
 			mDNS_Unlock(m);
 			return(mStatus_AlreadyRegistered);
 			}
@@ -4929,9 +4935,9 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	*p = set;
 
 	if (set->InterfaceActive)
-		debugf("mDNS_RegisterInterface: InterfaceID %X not represented in list; marking active and retriggering queries", set->InterfaceID);
+		debugf("mDNS_RegisterInterface: InterfaceID %p not represented in list; marking active and retriggering queries", set->InterfaceID);
 	else
-		debugf("mDNS_RegisterInterface: InterfaceID %X already represented in list; marking inactive for now", set->InterfaceID);
+		debugf("mDNS_RegisterInterface: InterfaceID %p already represented in list; marking inactive for now", set->InterfaceID);
 
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
@@ -4997,7 +5003,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				break;
 		if (intf)
 			{
-			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %X exists; making it active",
+			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %p exists; making it active",
 				set->InterfaceID);
 			intf->InterfaceActive = mDNStrue;
 			}
@@ -5006,7 +5012,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			ResourceRecord *rr;
 			DNSQuestion *q;
 			mDNSs32 slot;
-			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID %X deregistered; marking questions etc. dormant",
+			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID %p deregistered; marking questions etc. dormant",
 				set->InterfaceID);
 
 			// 1. Deactivate any questions specific to this interface
@@ -5066,7 +5072,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 			if (rr == &sr->RR_SRV)
 				debugf("ServiceCallback: Service RR_SRV %##s Registered", rr->name.c);
 			else
-				debugf("ServiceCallback: %##s (%s) ERROR Should only get mStatus_NoError callback for RR_SRV",
+				LogMsg("ServiceCallback: %##s (%s) ERROR Should only get mStatus_NoError callback for RR_SRV",
 					rr->name.c, DNSTypeName(rr->rrtype));
 			break;
 
@@ -5078,7 +5084,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 			if (rr == &sr->RR_PTR)
 				debugf("ServiceCallback: Service RR_PTR %##s Memory Free", rr->name.c);
 			else
-				debugf("ServiceCallback: %##s (%s) ERROR Should only get mStatus_MemFree callback for RR_PTR",
+				LogMsg("ServiceCallback: %##s (%s) ERROR Should only get mStatus_MemFree callback for RR_PTR",
 					rr->name.c, DNSTypeName(rr->rrtype));
 			break;
 
@@ -5416,7 +5422,7 @@ extern void mDNS_Close(mDNS *const m)
 			mDNS_DeadvertiseInterface(m, intf);
 
 	// Make sure there are nothing but deregistering records remaining in the list
-	if (m->CurrentRecord) debugf("mDNS_Close ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord) LogMsg("mDNS_Close ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
