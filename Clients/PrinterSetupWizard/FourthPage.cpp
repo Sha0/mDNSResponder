@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: FourthPage.cpp,v $
+Revision 1.2  2004/06/26 23:27:12  shersche
+support for installing multiple printers of the same name
+
 Revision 1.1  2004/06/18 04:36:57  rpantos
 First checked in
 
@@ -105,7 +108,7 @@ CFourthPage::OnSetActive()
 	goodbyeText.LoadString(IDS_GOODBYE);
 	m_goodbye.SetWindowText(goodbyeText);
 
-	m_printerNameCtrl.SetWindowText( printer->displayName );
+	m_printerNameCtrl.SetWindowText( printer->actualName );
 	m_printerManufacturerCtrl.SetWindowText ( printer->manufacturer );
 	m_printerModelCtrl.SetWindowText ( printer->model );
 	m_printerPortCtrl.SetWindowText ( printer->portName );

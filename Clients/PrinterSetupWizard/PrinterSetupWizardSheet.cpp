@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.7  2004/06/26 23:27:12  shersche
+support for installing multiple printers of the same name
+
 Revision 1.6  2004/06/26 21:22:39  shersche
 handle spaces in file names
 
@@ -222,174 +225,129 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 	DWORD				dwStatus;
 	DWORD				cbInputData		=	100;
 	PBYTE				pOutputData		=	NULL;
-	PBYTE				buffer			=	NULL;
 	DWORD				cbOutputNeeded	=	0;
 	PORT_DATA_1			portData;
 	HANDLE				hXcv			=	NULL;
 	HANDLE				hPrinter		=	NULL;
-	CString				printerName;
 	BOOL				ok;
 	OSStatus			err;
 
 	check(printer != NULL);
 	check(printer->installed == false);
 
-	err = UTF8StringToStringObject(printer->name.c_str(), printerName);
-	require_noerr(err, exit);
-
-	//
-	// rdar://problem/3701926 - Printer can't be installed twice
-	//
-	// First thing we want to do is make sure the printer isn't already installed.
-	// If the printer name is found, we'll jump down out of the meat of the function
-	// which effectively results in the equivalent of a no-op when the user clicks
-	// the "Finish" button
-	//
-	DWORD dwNeeded, dwNumPrinters;
-	
-	ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, NULL, 0, &dwNeeded, &dwNumPrinters);
+	ok = OpenPrinter(L",XcvMonitor Standard TCP/IP Port", &hXcv, &printerDefaults);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
-	require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, kUnknownErr);
+	require_noerr( err, exit );
 	
+	//
+	// BUGBUG: MSDN said this is not required, but my experience shows it is required
+	//
 	try
 	{
-		buffer = new unsigned char[dwNeeded];
+		pOutputData = new BYTE[cbInputData];
 	}
 	catch (...)
 	{
+		pOutputData = NULL;
 	}
 
-	require_action( buffer, exit, kNoMemoryErr );
-    ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, buffer, dwNeeded, &dwNeeded, &dwNumPrinters);
+	require_action( pOutputData, exit, err = kNoMemoryErr );
+	
+	//
+	// setup the port
+	//
+	ZeroMemory(&portData, sizeof(PORT_DATA_1));
+	wcscpy(portData.sztPortName, printer->portName);
+    	
+	portData.dwPortNumber	=	printer->portNumber;
+	portData.dwVersion		=	1;
+    	
+	portData.dwProtocol	= PROTOCOL_RAWTCP_TYPE;
+	portData.cbSize		= sizeof PORT_DATA_1;
+	portData.dwReserved	= 0L;
+    	
+	wcscpy(portData.sztQueue, printer->hostname);
+	wcscpy(portData.sztIPAddress, printer->hostname); 
+	wcscpy(portData.sztHostAddress, printer->hostname);
+		
+	ok = XcvData(hXcv, L"AddPort", (PBYTE) &portData, sizeof(PORT_DATA_1), pOutputData, cbInputData,  &cbOutputNeeded, &dwStatus);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
-
-    for (DWORD index = 0; index < dwNumPrinters; index++)
-    {
-		PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
-    
-		if (printerName == lppi4->pPrinterName)
-		{
-			printer->installed = true;
-			break;
-		}
-	}
-
-	if (!printer->installed)
+	
+	if (printer->driverInstalled)
 	{
-		ok = OpenPrinter(L",XcvMonitor Standard TCP/IP Port", &hXcv, &printerDefaults);
-		err = translate_errno( ok, errno_compat(), kUnknownErr );
+		PRINTER_INFO_2 pInfo;
+	
+		ZeroMemory(&pInfo, sizeof(pInfo));
+			
+		pInfo.pPrinterName			=	printer->actualName.GetBuffer();
+		pInfo.pServerName			=	NULL;
+		pInfo.pShareName			=	NULL;
+		pInfo.pPortName				=	printer->portName.GetBuffer();
+		pInfo.pDriverName			=	printer->model.GetBuffer();
+		pInfo.pComment				=	printer->model.GetBuffer();
+		pInfo.pLocation				=	L"";
+		pInfo.pDevMode				=	NULL;
+		pInfo.pDevMode				=	NULL;
+		pInfo.pSepFile				=	L"";
+		pInfo.pPrintProcessor		=	L"winprint";
+		pInfo.pDatatype				=	L"RAW";
+		pInfo.pParameters			=	L"";
+		pInfo.pSecurityDescriptor	=	NULL;
+		pInfo.Attributes			=	PRINTER_ATTRIBUTE_QUEUED;
+		pInfo.Priority				=	0;
+		pInfo.DefaultPriority		=	0;
+		pInfo.StartTime				=	0;
+		pInfo.UntilTime				=	0;
+	
+		hPrinter = AddPrinter(NULL, 2, (LPBYTE) &pInfo);
+		err = translate_errno( hPrinter, errno_compat(), kUnknownErr );
 		require_noerr( err, exit );
-	
-		//
-		// BUGBUG: MSDN said this is not required, but my experience shows it is required
-		//
-		try
-		{
-			pOutputData = new BYTE[cbInputData];
-		}
-		catch (...)
-		{
-		}
-
-		require_action( pOutputData, exit, err = kNoMemoryErr );
-	
-		//
-		// setup the port
-		//
-		ZeroMemory(&portData, sizeof(PORT_DATA_1));
-		wcscpy(portData.sztPortName, printer->portName);
-    	
-		portData.dwPortNumber	=	printer->portNumber;
-		portData.dwVersion		=	1;
-    	
-		portData.dwProtocol	= PROTOCOL_RAWTCP_TYPE;
-		portData.cbSize		= sizeof PORT_DATA_1;
-		portData.dwReserved	= 0L;
-    	
-		wcscpy(portData.sztQueue, printer->hostname);
-		wcscpy(portData.sztIPAddress, printer->hostname); 
-		wcscpy(portData.sztHostAddress, printer->hostname);
-		
-		ok = XcvData(hXcv, L"AddPort", (PBYTE) &portData, sizeof(PORT_DATA_1), pOutputData, cbInputData,  &cbOutputNeeded, &dwStatus);
-		err = translate_errno( ok, errno_compat(), kUnknownErr );
-		require_noerr( err, exit );
-	
-		if (printer->driverInstalled)
-		{
-			PRINTER_INFO_2 pInfo;
-	
-			ZeroMemory(&pInfo, sizeof(pInfo));
-			
-			pInfo.pPrinterName			=	printer->displayName.GetBuffer();
-			pInfo.pServerName			=	NULL;
-			pInfo.pShareName			=	NULL;
-			pInfo.pPortName				=	printer->portName.GetBuffer();
-			pInfo.pDriverName			=	printer->model.GetBuffer();
-			pInfo.pComment				=	printer->model.GetBuffer();
-			pInfo.pLocation				=	L"";
-			pInfo.pDevMode				=	NULL;
-			pInfo.pDevMode				=	NULL;
-			pInfo.pSepFile				=	L"";
-			pInfo.pPrintProcessor		=	L"winprint";
-			pInfo.pDatatype				=	L"RAW";
-			pInfo.pParameters			=	L"";
-			pInfo.pSecurityDescriptor	=	NULL;
-			pInfo.Attributes			=	PRINTER_ATTRIBUTE_QUEUED;
-			pInfo.Priority				=	0;
-			pInfo.DefaultPriority		=	0;
-			pInfo.StartTime				=	0;
-			pInfo.UntilTime				=	0;
-	
-			hPrinter = AddPrinter(NULL, 2, (LPBYTE) &pInfo);
-			err = translate_errno( hPrinter, errno_compat(), kUnknownErr );
-			require_noerr( err, exit );
-		}
-		else
-		{
-			DWORD		dwResult;
-			HANDLE		hThread;
-			unsigned	threadID;
-			
-	
-			m_processFinished = false;
-	
-			//
-			// create the thread
-			//
-			hThread = (HANDLE) _beginthreadex_compat( NULL, 0, InstallPrinterThread, printer, 0, &threadID );
-			err = translate_errno( hThread, (OSStatus) GetLastError(), kUnknownErr );
-			require_noerr( err, exit );
-			
-			//
-			// go modal
-			//
-			while (!m_processFinished)
-			{
-				MSG msg;
-	
-				GetMessage( &msg, m_hWnd, 0, 0 );
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
-			}
-	
-			//
-			// Wait until child process exits.
-			//
-			dwResult = WaitForSingleObject( hThread, INFINITE );
-			err = translate_errno( dwResult == WAIT_OBJECT_0, errno_compat(), err = kUnknownErr );
-			require_noerr( err, exit );
-		}
-
-		printer->installed = true;
 	}
+	else
+	{
+		DWORD		dwResult;
+		HANDLE		hThread;
+		unsigned	threadID;
+			
+	
+		m_processFinished = false;
+	
+		//
+		// create the thread
+		//
+		hThread = (HANDLE) _beginthreadex_compat( NULL, 0, InstallPrinterThread, printer, 0, &threadID );
+		err = translate_errno( hThread, (OSStatus) GetLastError(), kUnknownErr );
+		require_noerr( err, exit );
+			
+		//
+		// go modal
+		//
+		while (!m_processFinished)
+		{
+			MSG msg;
+	
+			GetMessage( &msg, m_hWnd, 0, 0 );
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+	
+		//
+		// Wait until child process exits.
+		//
+		dwResult = WaitForSingleObject( hThread, INFINITE );
+		err = translate_errno( dwResult == WAIT_OBJECT_0, errno_compat(), err = kUnknownErr );
+		require_noerr( err, exit );
+	}
+
+	printer->installed = true;
 
 	//
 	// if the user specified a default printer, set it
 	//
 	if (printer->deflt)
 	{
-		ok = SetDefaultPrinter(printerName);
+		ok = SetDefaultPrinter(printer->actualName);
 		err = translate_errno( ok, errno_compat(), err = kUnknownErr );
 		require_noerr( err, exit );
 	}
@@ -409,11 +367,6 @@ exit:
 	if (pOutputData != NULL)
 	{
 		delete [] pOutputData;
-	}
-
-	if (buffer != NULL)
-	{
-		delete [] buffer;
 	}
 
 	return err;
@@ -626,6 +579,9 @@ CPrinterSetupWizardSheet::OnBrowse(
 	CPrinterSetupWizardSheet	*	self;
 	Printer						*	printer;
 	EventHandlerList::iterator		it;
+	DWORD							printerNameCount;
+	PBYTE							buffer	=	NULL;
+	bool							found;
 
 	require_noerr( inErrorCode, exit );
 	
@@ -650,6 +606,7 @@ CPrinterSetupWizardSheet::OnBrowse(
 			}
 			catch (...)
 			{
+				printer = NULL;
 			}
 
 			require_action( printer, exit, err = E_OUTOFMEMORY );
@@ -659,6 +616,74 @@ CPrinterSetupWizardSheet::OnBrowse(
 			printer->name		=	inName;
 			err = UTF8StringToStringObject(inName, printer->displayName);
 			check_noerr( err );
+			printer->actualName = printer->displayName;
+
+			//
+			// rdar://problem/3701926 - Printer can't be installed twice
+			//
+			// First thing we want to do is make sure the printer isn't already installed.
+			// If the printer name is found, we'll try and rename it until we
+			// find a unique name
+			//
+			DWORD dwNeeded, dwNumPrinters;
+	
+			BOOL ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, NULL, 0, &dwNeeded, &dwNumPrinters);
+			err = translate_errno( ok, errno_compat(), kUnknownErr );
+			require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, kUnknownErr);
+	
+			try
+			{
+				buffer = new unsigned char[dwNeeded];
+			}
+			catch (...)
+			{
+				buffer = NULL;
+			}
+
+			require_action( buffer, exit, kNoMemoryErr );
+			ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, buffer, dwNeeded, &dwNeeded, &dwNumPrinters);
+			err = translate_errno( ok, errno_compat(), kUnknownErr );
+			require_noerr( err, exit );
+
+			printerNameCount = 2;
+
+			for (;;)
+			{
+				found = false;
+
+				//
+				// look for a name match
+				//
+    			for (DWORD index = 0; index < dwNumPrinters; index++)
+    			{
+					PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
+    
+					if (printer->actualName == lppi4->pPrinterName)
+					{
+						found = true;
+						break;
+					}
+				}
+
+				//
+				// if we found a match
+				//
+				if (found == true)
+				{
+					//
+					// try a new name
+					//
+					printer->actualName.Format(L"%s (%d)", printer->displayName, printerNameCount++);
+				}
+				else
+				{
+					//
+					// else we got it
+					//
+					break;
+				}
+			}
+
 			printer->type		=	inType;
 			printer->domain		=	inDomain;
 			printer->installed	=	false;
@@ -716,6 +741,11 @@ CPrinterSetupWizardSheet::OnBrowse(
 	}
 
 exit:
+
+	if (buffer != NULL)
+	{
+		delete [] buffer;
+	}
 
 	return;
 }
@@ -924,7 +954,7 @@ CPrinterSetupWizardSheet::InstallPrinterThread( LPVOID inParam )
 	si.cb = sizeof(si);
 	ZeroMemory( &pi, sizeof(pi) );
 
-	command.Format(L"rundll32.exe printui.dll,PrintUIEntry /if /b \"%s\" /f \"%s\" /r \"%s\" /m \"%s\"", printer->displayName, printer->infFileName, printer->portName, printer->model);
+	command.Format(L"rundll32.exe printui.dll,PrintUIEntry /if /b \"%s\" /f \"%s\" /r \"%s\" /m \"%s\"", printer->actualName, printer->infFileName, printer->portName, printer->model);
 
 	ok = CreateProcess(NULL, command.GetBuffer(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );

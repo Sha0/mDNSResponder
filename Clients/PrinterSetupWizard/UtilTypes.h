@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.3  2004/06/26 23:27:12  shersche
+support for installing multiple printers of the same name
+
 Revision 1.2  2004/06/25 02:25:59  shersche
 Remove item field from manufacturer and model structures
 Submitted by: herscher
@@ -62,6 +65,7 @@ namespace PrinterSetupWizard
 		uint32_t						ifi;
 		std::string						name;
 		CString							displayName;
+		CString							actualName;
 		std::string						type;
 		std::string						domain;
 
