@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.227  2004/12/10 13:52:57  cheshire
+<rdar://problem/3909995> Turn off SIGPIPE signals
+
 Revision 1.226  2004/12/10 05:27:26  cheshire
 <rdar://problem/3909147> Guard against multiple autoname services of the same type on the same machine
 
@@ -2330,6 +2333,7 @@ mDNSexport int main(int argc, char **argv)
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Exit cleanly and let mach_init restart us (for debugging)
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
+	signal(SIGPIPE, SIG_IGN  );		// Don't want SIGPIPE signals -- we'll handle EPIPE errors directly
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
 	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
