@@ -24,17 +24,45 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.2  2004/12/01 03:30:29  cheshire
+<rdar://problem/3889346> Add Unicast DNS support to mDNSPosix
+
 Revision 1.1  2004/12/01 01:51:35  cheshire
 Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
 
  */
 
 #include <stdio.h>				// Needed for fopen() etc.
+#include <unistd.h>				// Needed for close()
 #include <string.h>				// Needed for strlen() etc.
 #include <sys/errno.h>			// Needed for errno etc.
+#include <sys/socket.h>			// Needed for socket() etc.
+#include <netinet/in.h>			// Needed for sockaddr_in
 
 #include "mDNSEmbeddedAPI.h"	// Defines the interface provided to the client layer above
 #include "PlatformCommon.h"
+
+#ifdef NOT_HAVE_SOCKLEN_T
+    typedef unsigned int socklen_t;
+#endif
+
+// Bind a UDP socket to a global destination to find the default route's interface address
+mDNSexport void FindDefaultRouteIP(mDNSAddr *a)
+	{
+	struct sockaddr_in addr;
+	socklen_t len = sizeof(addr);
+	int sock = socket(AF_INET,SOCK_DGRAM,0);
+	a->type = mDNSAddrType_None;
+	if (sock == -1) return;
+	addr.sin_family = AF_INET;
+	addr.sin_port = 1;	// Not important, any port and public address will do
+	addr.sin_addr.s_addr = 0x11111111;
+	if ((connect(sock,(const struct sockaddr*)&addr,sizeof(addr))) == -1) { close(sock); return; }
+	if ((getsockname(sock,(struct sockaddr*)&addr, &len)) == -1) { close(sock); return; }
+	close(sock);
+	a->type = mDNSAddrType_IPv4;
+	a->ip.v4.NotAnInteger = addr.sin_addr.s_addr;
+	}
 
 // dst must be at least MAX_ESCAPED_DOMAIN_NAME bytes, and option must be less than 20 bytes in length
 mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)

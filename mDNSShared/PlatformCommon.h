@@ -24,9 +24,13 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.h,v $
+Revision 1.2  2004/12/01 03:30:29  cheshire
+<rdar://problem/3889346> Add Unicast DNS support to mDNSPosix
+
 Revision 1.1  2004/12/01 01:51:35  cheshire
 Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
 
  */
 
+extern void FindDefaultRouteIP(mDNSAddr *a);
 extern void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const filename, domainname *const hostname, domainname *const domain);

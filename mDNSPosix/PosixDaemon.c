@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.19  2004/12/01 03:30:29  cheshire
+<rdar://problem/3889346> Add Unicast DNS support to mDNSPosix
+
 Revision 1.18  2004/11/30 22:45:59  cheshire
 Minor code tidying
 
@@ -103,8 +106,14 @@ Add support for mDNSResponder on Linux.
 #include "mDNSDebug.h"
 #include "mDNSPosix.h"
 #include "uds_daemon.h"
+#include "PlatformCommon.h"
 
 #define uDNS_SERVERS_FILE "/etc/resolv.conf"
+
+#define CONFIG_FILE "/etc/mdnsd.conf"
+static domainname DynDNSZone;                // Default wide-area zone for service registration
+static domainname DynDNSHostname;
+
 #define RR_CACHE_SIZE 500
 static CacheRecord gRRCache[RR_CACHE_SIZE];
 
@@ -137,9 +146,15 @@ static int ParseDNSServers(mDNS *m, const char *filePath)
 
 static void Reconfigure(mDNS *m)
 	{
+	mDNSAddr DynDNSIP;
+	mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL);
 	mDNS_DeregisterDNSList(m);
 	if (ParseDNSServers(m, uDNS_SERVERS_FILE) < 0)
 		LogMsg("Unable to parse DNS server list. Unicast DNS-SD unavailable");
+	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &DynDNSHostname, &DynDNSZone);
+	FindDefaultRouteIP(&DynDNSIP);
+	if (DynDNSHostname.c[0]) mDNS_AddDynDNSHostName(m, &DynDNSHostname, NULL, NULL);
+	if (DynDNSIP.type)       mDNS_SetPrimaryInterfaceInfo(m, &DynDNSIP, NULL);
 	}
 
 #ifdef NOT_HAVE_DAEMON
