@@ -44,7 +44,7 @@
 //
 
 static dns_service_discovery_ref client = NULL;
-static char updatetest;
+static char updatetest[2] = "\001A";
 
 //*************************************************************************************************************
 // Supporting Utility Functions
@@ -136,11 +136,11 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 	{
 	(void)timer;	// Parameter not used
 	(void)info;		// Parameter not used
-    if (updatetest == 'Z') updatetest = 'A';
-    else updatetest++;
+    if (updatetest[1] == 'Z') updatetest[1] = 'A';
+    else updatetest[1]++;
     
-    printf("Updating Test TXT record to %c\n", updatetest);
-    DNSServiceRegistrationUpdateRecord(client, 0, 0, sizeof(updatetest), &updatetest);
+    printf("Updating Test TXT record to %c\n", updatetest[1]);
+    DNSServiceRegistrationUpdateRecord(client, 0, 0, sizeof(updatetest), &updatetest[0]);
 	}
 
 static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *context)
@@ -216,7 +216,6 @@ int main(int argc, char **argv)
 
         case 'U':	{
                     Opaque16 registerPort = { { 0x12, 0x34 } };
-                    updatetest = 'A';
                     printf("Registering Service Test._testupdate._tcp.local.\n");
                     client = DNSServiceRegistrationCreate("Test", "_testupdate._tcp.", "", registerPort, "A", reg_reply, nil);
                     break;
