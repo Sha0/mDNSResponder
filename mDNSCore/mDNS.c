@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.100  2003/04/15 18:53:14  cheshire
+Bug #: <rdar://problem/3229064> Bug in ScheduleNextTask
+mDNS.c 1.94 incorrectly combined two "if" statements into one.
+
 Revision 1.99  2003/04/15 18:09:13  jgraessl
 Bug #: 3228892
 Reviewed by: Stuart Cheshire
@@ -2968,10 +2972,15 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 						nextevent = rr->LastAPTime + rr->ThisAPInterval;
 						msg = "Send Probes";
 						}
-					else if (TimeToSendThisRecord(rr, nextevent, kDNSSendPriorityAnswer))
+					else if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
 						{
 						nextevent = timenow;
-						msg = "Send Answers/Announcements";
+						msg = "Send Answers";
+						}
+					else if (TimeToAnnounceThisRecord(rr,nextevent) && ResourceRecordIsValidAnswer(rr))
+						{
+						nextevent = rr->LastAPTime + rr->ThisAPInterval;
+						msg = "Send Announcements";
 						}
 					}
 				}
