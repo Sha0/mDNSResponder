@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.190  2004/09/21 19:04:45  cheshire
+Strip trailing white space from the ends of lines
+
 Revision 1.189  2004/09/21 00:13:28  cheshire
 Fix build failure (io_connect_t and io_object_t are integers, not pointers)
 
@@ -605,7 +608,7 @@ typedef struct SearchListElem
 	{
     struct SearchListElem *next;
     domainname domain;
-    int flag;  
+    int flag;
     DNSQuestion browseQ;
     DNSQuestion registerQ;
     ARListElem *AuthRecs;
@@ -618,7 +621,7 @@ typedef struct KeychainDomain
     domainname domain;             // the zone we register hostnames in
     int flag;                      // temporary marker for list intersection computation
     AuthRecord *browse;            // _default._browse ptr record
-    AuthRecord *reg;               // _default._register record 
+    AuthRecord *reg;               // _default._register record
 	} KeychainDomain;
 
 // ***************************************************************************
@@ -718,7 +721,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS 
 			if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
 	return(mDNSNULL);
 	}
-	
+
 mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
 	{
 	NetworkInterfaceInfoOSX *i;
@@ -1008,7 +1011,7 @@ mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType Callbac
 								   const void *data, void *context)
 	{
 	#pragma unused(CallbackType, address, data)
-	mDNSBool connect = mDNSfalse;  
+	mDNSBool connect = mDNSfalse;
 	
 	tcpInfo_t *info = context;
 	if (!info->connected)
@@ -1017,7 +1020,7 @@ mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType Callbac
 		info->connected = mDNStrue;  // prevent connected flag from being set in future callbacks
 		}
 	info->callback(CFSocketGetNative(cfs), info->context, connect);
-	// NOTE: the callback may call CloseConnection here, which frees the context structure!  
+	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
 
 mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
@@ -1025,7 +1028,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 	{
 	int sd, on = 1;  // "on" for setsockopt
 	struct sockaddr_in saddr;
-	CFSocketContext cfContext = { 0, NULL, 0, 0, 0 };  
+	CFSocketContext cfContext = { 0, NULL, 0, 0, 0 };
 	tcpInfo_t *info;
 	CFSocketRef sr;
 	CFRunLoopSourceRef rls;
@@ -1078,7 +1081,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 	CFSocketSetSocketFlags(sr, srFlags & (~kCFSocketCloseOnInvalidate));
 	
 	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, sr, 0);
-	if (!rls) 
+	if (!rls)
 		{
 		LogMsg("ERROR: mDNSPlatformTCPConnect - CFSocketCreateRunLoopSource failed");
 		freeL("mDNSPlatformTCPConnect", info);
@@ -1135,9 +1138,9 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	
 	info = cfContext.info;
 	CFSocketInvalidate(sr);
-	CFRelease(sr);	
+	CFRelease(sr);
 	close(sd);
-	freeL("mDNSPlatformTCPCloseConnection", info);	
+	freeL("mDNSPlatformTCPCloseConnection", info);
 	}
 
 mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
@@ -1209,7 +1212,7 @@ mDNSlocal void GetUserSpecifiedDDNSZone(domainname *const dname)
 					if (!CFStringGetCString(name, uname, sizeof(uname), kCFStringEncodingUTF8) ||
                         !MakeDomainNameFromDNSNameString(dname, uname) || !dname->c[0])
 						LogMsg("GetUserSpecifiedDDNSName SCDynamicStore bad DDNS host name: %s", uname[0] ? uname : "(unknown)");
-					else LogMsg("GetUserSpecifiedDDNSName SCDynamicStore DDNS host name: %s", uname);						
+					else LogMsg("GetUserSpecifiedDDNSName SCDynamicStore DDNS host name: %s", uname);
 					}
 				}
 			CFRelease(dict);
@@ -1583,7 +1586,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 			if (IsPrivateV4Addr(&i->ifinfo.ip) && !LegacyNATInitialized)
 				{
 				mStatus err = LegacyNATInit();
-				if (err)  LogMsg("ERROR: LegacyNATInit\n");				
+				if (err)  LogMsg("ERROR: LegacyNATInit\n");
 				LegacyNATInitialized = mDNStrue;
 				}
 			}
@@ -1733,7 +1736,7 @@ mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
 	int i, count;
 	CFArrayRef values;
 	char            buf[256];
-	mDNSv4Addr      saddr;	
+	mDNSv4Addr      saddr;
 	CFStringRef s;
 
 
@@ -1768,11 +1771,11 @@ mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus r
 	if (result == mStatus_MemFree) freeL("FreeARElemCallback", elem);
 	}
 
-mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)	
+mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	SearchListElem *slElem = question->QuestionContext;
 	ARListElem *arElem, *ptr, *prev;
-    AuthRecord *dereg;    
+    AuthRecord *dereg;
 	char *name;
 	mStatus err;
 	
@@ -1789,7 +1792,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		if (err)
 			{
 			LogMsg("ERROR: FoundDomain - mDNS_Register returned %d", err);
-			freeL("FoundDomain - arElem", arElem);				  
+			freeL("FoundDomain - arElem", arElem);
 			return;
 			}
 		arElem->next = slElem->AuthRecs;
@@ -1808,7 +1811,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 				if (prev) prev->next = ptr->next;
 				else slElem->AuthRecs = ptr->next;
                 ptr = ptr->next;
-				err = mDNS_Deregister(m, dereg);				
+				err = mDNS_Deregister(m, dereg);
 				if (err) LogMsg("ERROR: FoundDomain - mDNS_Deregister returned %d", err);
 				}
 			else
@@ -1839,7 +1842,7 @@ mDNSlocal void MarkSearchListElem(domainname *domain)
 		new->next = SearchList;
 		SearchList = new;
 		}
-	}	
+	}
 
 mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	{
@@ -1874,7 +1877,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 				{
 				LogMsg("ERROR: RegisterNameServers - invalid search domain %s", buf);
 				continue;
-				}							
+				}
 			MarkSearchListElem(&domain);
 			}
 		}
@@ -1886,7 +1889,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		mDNSAddr addr;
 		if (!SetupAddr(&addr, ifa->ifa_addr) && addr.type == mDNSAddrType_IPv4 && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
 			{
-			mDNSAddr netmask;			
+			mDNSAddr netmask;
 			char buffer[256];
 			if (!SetupAddr(&netmask, ifa->ifa_netmask))
 				{
@@ -1895,13 +1898,13 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
                                                              addr.ip.v4.b[1] & netmask.ip.v4.b[1],
                                                              addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
 				MakeDomainNameFromDNSNameString(&domain, buffer);
-				MarkSearchListElem(&domain);			
+				MarkSearchListElem(&domain);
 				}
 			}
 		ifa = ifa->ifa_next;
 		}
 
-	// make sure we don't delete the global DynDNS Zone set in the sharing prefs	
+	// make sure we don't delete the global DynDNS Zone set in the sharing prefs
 	if (DynDNSZone.c[0]) MarkSearchListElem(&DynDNSZone);
 
 	// delete elems marked for removal, do queries for elems marked add
@@ -1910,9 +1913,9 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	while (ptr)
 		{
 		if (ptr->flag == -1)  // remove
-			{				
+			{
 			mDNS_StopQuery(m, &ptr->browseQ);
-			mDNS_StopQuery(m, &ptr->registerQ);			
+			mDNS_StopQuery(m, &ptr->registerQ);
 			// deregister records generated from answers to the query
 			arList = ptr->AuthRecs;
 			ptr->AuthRecs = NULL;
@@ -1925,7 +1928,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 				if (err) LogMsg("ERROR: RegisterSearchDomains mDNS_Deregister returned %d", err);
 				}
 			
-			// remove elem from list, delete				
+			// remove elem from list, delete
 			if (prev) prev->next = ptr->next;
 			else SearchList = ptr->next;
 			freeSLPtr = ptr;
@@ -1948,7 +1951,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		
 		prev = ptr;
 		ptr = ptr->next;
-		}		
+		}
 	
 	return mStatus_NoError;
 	}
@@ -1996,7 +1999,7 @@ mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
 		if (GetConfigOption(buf, "zone", f))
 			{
 			if (!MakeDomainNameFromDNSNameString(&DynDNSZone, buf))
-				LogMsg("ERROR: config file contains bad hostname %s", buf); 
+				LogMsg("ERROR: config file contains bad hostname %s", buf);
 			else GetConfigOption(secret, "secret-64", f);  // failure means no authentication
 			}
 		fclose(f);
@@ -2011,7 +2014,7 @@ mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
 
 	// set default (empty-string) service registration domain
 	AssignDomainName(u->ServiceRegDomain, DynDNSZone);         //!!!KRS this needs to go away for multi-users
-	if (secret[0] && u->ServiceRegDomain.c[0]) 
+	if (secret[0] && u->ServiceRegDomain.c[0])
 		{
 		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
 		slen = strlen(secret);
@@ -2021,7 +2024,7 @@ mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
 	mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
 	
 	// update _browse/_register domain list
-	RegisterSearchDomains(m, NULL); // passing NULL will only trigger query for DynDNSZone	
+	RegisterSearchDomains(m, NULL); // passing NULL will only trigger query for DynDNSZone
 	}
 
 mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
@@ -2040,7 +2043,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 
 	// get host label
 	GetUserSpecifiedRFC1034ComputerName(&hostlabel);
-	mDNS_SetDynDNSComputerName(m, &hostlabel); 
+	mDNS_SetDynDNSComputerName(m, &hostlabel);
 
 	// get zone from SCPrefs
 	GetUserSpecifiedDDNSZone(&zone);
@@ -2056,7 +2059,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 			}
 		}
 
-	if (!DynDNSZone.c[0]) ReadZoneFromConfFile(m);	
+	if (!DynDNSZone.c[0]) ReadZoneFromConfFile(m);
 
     // get DNS settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
@@ -2070,17 +2073,17 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 		RegisterSearchDomains(m, dict);
 		RegisterNameServers(m, dict);
 		CFRelease(dict);
-		}		
+		}
 
 	// get IPv4 settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
 	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
 	dict = SCDynamicStoreCopyValue(session, key);
 	CFRelease(key);
-	if (!dict) return;	
+	if (!dict) return;
 
 	// handle router changes
-	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);		
+	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
 	if (router)
 		{
 		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
@@ -2115,8 +2118,8 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 			}
 		}
 	CFRelease(dict);
-	}	
-	
+	}
+
 // change notification for events that specifically affect dynamic dns / unicast settings
 mDNSlocal mStatus WatchForDynDNSChanges(mDNS *const m)
     {
@@ -2128,7 +2131,7 @@ mDNSlocal mStatus WatchForDynDNSChanges(mDNS *const m)
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 
 	
-	session = SCDynamicStoreCreate(NULL, CFSTR("WatchForDynDNSChanges"), DynDNSConfigChanged, &context);    
+	session = SCDynamicStoreCreate(NULL, CFSTR("WatchForDynDNSChanges"), DynDNSConfigChanged, &context);
 	if (!session) {  LogMsg("ERROR: WatchForDynDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
 
     keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
@@ -2137,7 +2140,7 @@ mDNSlocal mStatus WatchForDynDNSChanges(mDNS *const m)
     // create a pattern that matches the global DNS dictionary key
     DNSkey = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	v4key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	hostkey = SCDynamicStoreKeyCreateHostNames(NULL);	
+	hostkey = SCDynamicStoreKeyCreateHostNames(NULL);
     if (!DNSkey || !v4key) { LogMsg("ERROR: WatchForDynDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr; }
     
     CFArrayAppendValue(keyList, DNSkey);
@@ -2156,7 +2159,7 @@ mDNSlocal mStatus WatchForDynDNSChanges(mDNS *const m)
     rls = SCDynamicStoreCreateRunLoopSource(NULL, session, 0);
     if (!rls) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreateRunLoopSource");  return mStatus_UnknownErr;  }
     
-    // add the run loop source to our current run loop 
+    // add the run loop source to our current run loop
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
     CFRelease(rls);
 
@@ -2271,7 +2274,7 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 mDNSlocal void DynDNSRegCallback(mDNS *m, AuthRecord *rr, mStatus result)
 	{
 	(void)m;
-	LogMsg("DynDNSRegCallback: result %d for registration of name %##s", result, rr->resrec.name.c);	
+	LogMsg("DynDNSRegCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
 	//!!!KRS this is where we deliver status to the prefs pane
 	}
 
@@ -2281,8 +2284,8 @@ mDNSlocal OSStatus GetDomainFromKeychainItem(SecKeychainItemRef item, domainname
 	OSStatus err = 0;
 	mDNSu32 infoTag = kSecAccountItemAttr;
 	mDNSu32 infoFmt = 0; // string
-    SecKeychainAttributeInfo info;		
-	SecKeychainAttributeList *authAttrList = NULL; 
+    SecKeychainAttributeInfo info;
+	SecKeychainAttributeList *authAttrList = NULL;
 	void *data;
 	mDNSu32 dataLen;
 	char accountName[MAX_ESCAPED_DOMAIN_NAME];
@@ -2296,7 +2299,7 @@ mDNSlocal OSStatus GetDomainFromKeychainItem(SecKeychainItemRef item, domainname
 
 	// copy account name
 	if (!authAttrList->count || authAttrList->attr->tag != kSecAccountItemAttr)
-	    { LogMsg("Received bad authAttrList"); goto end; }	
+	    { LogMsg("Received bad authAttrList"); goto end; }
 	if (authAttrList->attr->length + strlen(LH_SUFFIX) > MAX_ESCAPED_DOMAIN_NAME)
 		{ LogMsg("Account name too long (%d bytes)", authAttrList->attr->length); goto end; }
 	memcpy(accountName, authAttrList->attr->data, authAttrList->attr->length);
@@ -2316,7 +2319,7 @@ mDNSlocal OSStatus GetDomainFromKeychainItem(SecKeychainItemRef item, domainname
 	*secretlen = dataLen;
 
 	end:
-	if (authAttrList) SecKeychainItemFreeContent(authAttrList, data);	
+	if (authAttrList) SecKeychainItemFreeContent(authAttrList, data);
 	return err;
 	}
 
@@ -2328,7 +2331,7 @@ mDNSlocal SecKeychainSearchRef GetKeychainItems(void)
 	SecKeychainSearchRef searchRef = NULL;
 	SecKeychainRef sysKeychain = NULL;
 	SecKeychainAttribute searchAttrs[] = { { kSecDescriptionItemAttr, strlen(LH_KEYCHAIN_DESC), LH_KEYCHAIN_DESC },
-									  { kSecServiceItemAttr, strlen(LH_KEYCHAIN_SERVICE), LH_KEYCHAIN_SERVICE } };	
+									  { kSecServiceItemAttr, strlen(LH_KEYCHAIN_SERVICE), LH_KEYCHAIN_SERVICE } };
 	SecKeychainAttributeList searchList = { sizeof(searchAttrs) / sizeof(*searchAttrs), searchAttrs };
 
 	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &sysKeychain);
@@ -2349,7 +2352,7 @@ mDNSlocal void KeychainEnumRRCallback(mDNS *m, AuthRecord *rr, mStatus result)
 	{
 	(void)m;  // unused
 	if (result == mStatus_MemFree) free(rr);
-	else LogMsg("Unexpected KeychainEnumRRCallback for domain %##s with result %d", rr->resrec.rdata->u.name.c, result);	
+	else LogMsg("Unexpected KeychainEnumRRCallback for domain %##s with result %d", rr->resrec.rdata->u.name.c, result);
 	}
 
 // register hostnames and _browse/_register records for all new host domains found in keychain
@@ -2368,11 +2371,11 @@ mDNSlocal void AddKeychainHostDomains(mDNS *m)
 		void *secret = NULL;
 		mStatus regErr;
 		
-		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;			
+		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;
 
 		// check if domain is already in our list
 		for (ptr = KeychainHostDomains; ptr; ptr = ptr->next)
-			if (SameDomainName(&ptr->domain, &zone)) break; 
+			if (SameDomainName(&ptr->domain, &zone)) break;
 
 		if (!ptr)
 			{
@@ -2422,7 +2425,7 @@ mDNSlocal void AddKeychainHostDomains(mDNS *m)
 
 		if (secret) free(secret);
 		CFRelease(item);
-		}	
+		}
 	}
 
 // deregister hostnames and _browse/_register records for all zones no longer in keychain
@@ -2446,7 +2449,7 @@ mDNSlocal void RemoveKeychainDomains(mDNS *m)
 		mDNSu32 secretlen;
 		void *secret;
 		
-		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;			
+		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;
 		free(secret);
 		secret = NULL;
 		
@@ -2465,7 +2468,7 @@ mDNSlocal void RemoveKeychainDomains(mDNS *m)
 	while (ptr)
 		{
 		if (ptr->flag) 	// delete
-			{		
+			{
 			mDNS_Deregister(m, ptr->reg);
 			mDNS_Deregister(m, ptr->browse);
 			mDNS_RemoveDynDNSHostDomain(m, &ptr->domain);
@@ -2474,8 +2477,8 @@ mDNSlocal void RemoveKeychainDomains(mDNS *m)
 			else KeychainHostDomains = ptr->next;
 			tmp = ptr;
 			ptr = ptr->next;
-			free(tmp);			
-			}		
+			free(tmp);
+			}
 		}
 	}
 
@@ -2486,7 +2489,7 @@ mDNSlocal OSStatus KeychainCallback(SecKeychainEvent event, SecKeychainCallbackI
 	debugf("SecKeychainAddCallback received event %d", event);
 	if (event == kSecAddEvent) AddKeychainHostDomains((mDNS *)context);
 	else if (event == kSecDeleteEvent) RemoveKeychainDomains((mDNS *)context);
-	else LogMsg("Received unexpected event %d from keychain callback", event);	
+	else LogMsg("Received unexpected event %d from keychain callback", event);
 	return 0;
 	}
 
@@ -2584,7 +2587,7 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 			ptr = ptr->next;
 			}
 		LogMsg("FoundDefBrowseDomain: Got remove event for domain %s not in list", answer->rdata->u.name.c);
-		}    
+		}
 	}
 
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
@@ -2600,7 +2603,7 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	{
 	mStatus err;
-	AuthRecord local;	
+	AuthRecord local;
 	DNSConfigInitialized = mDNStrue;
 
 	// start query for domains to be used in default (empty string domain) browses
