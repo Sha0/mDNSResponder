@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.25  2004/07/20 23:42:37  cheshire
+Update to use only "_services._dns-sd._udp.local." meta-query for service enumeration
+
 Revision 1.24  2004/06/15 02:39:47  cheshire
 When displaying error message, only show command name, not entire path
 
@@ -411,16 +414,14 @@ mDNSexport int main(int argc, char **argv)
 	
 		if (hardware[0] || software[0])
 			{
-			DNSQuestion q1, q2;
+			DNSQuestion q1;
 			printf("HINFO Hardware: %s\n", hardware);
 			printf("HINFO Software: %s\n", software);
 			// We need to make sure the services query is targeted
 			if (target.type == 0) target = hostaddr;
-			StartQuery(&q1, "_services._mdns._udp.local.",   kDNSQType_ANY, &target, ServicesCallback);
-			StartQuery(&q2, "_services._dns-sd._udp.local.", kDNSQType_ANY, &target, ServicesCallback);
+			StartQuery(&q1, "_services._dns-sd._udp.local.", kDNSQType_ANY, &target, ServicesCallback);
 			WaitForAnswer(&mDNSStorage, 4);
 			mDNS_StopQuery(&mDNSStorage, &q1);
-			mDNS_StopQuery(&mDNSStorage, &q2);
 			if (StopNow == 2) break;
 			}
 		else if (NumAnswers)
