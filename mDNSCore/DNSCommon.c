@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.18  2004/03/30 06:45:00  cheshire
+Compiler warning fixes from Don Woodward at Roku Labs
+
 Revision 1.17  2004/03/19 22:25:20  cheshire
 <rdar://problem/3579561>: Need to limit service types to fourteen characters
 Won't actually do this for now, but keep the code around just in case
@@ -779,14 +782,14 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 	const domainname *const name = estimate ? &rr->name : mDNSNULL;
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	return(sizeof(rd->ip)); break;
+		case kDNSType_A:	return(sizeof(rd->ip));
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_NS:   // Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
 		case kDNSType_HINFO:return(mDNSu16)(2 + (int)rd->data[0] + (int)rd->data[1 + (int)rd->data[0]]);
 		case kDNSType_NULL:	// Same as TXT -- not self-describing, so have to just trust rdlength
 		case kDNSType_TXT:  return(rr->rdlength); // TXT is not self-describing, so have to just trust rdlength
-		case kDNSType_AAAA:	return(sizeof(rd->ipv6)); break;
+		case kDNSType_AAAA:	return(sizeof(rd->ipv6));
 		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
 		case kDNSType_SOA:  return (mDNSu16)(CompressedDomainNameLength(&rd->soa.mname, name) +
 											CompressedDomainNameLength(&rd->soa.rname, name) +
@@ -906,7 +909,7 @@ mDNSexport const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const 
 mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 	mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name)
 	{
-	const mDNSu8 *const base        = (const mDNSu8 *const)msg;
+	const mDNSu8 *const base        = (const mDNSu8 *)msg;
 	const mDNSu8 *      np          = name->c;
 	const mDNSu8 *const max         = name->c + MAX_DOMAIN_NAME;	// Maximum that's valid
 	const mDNSu8 *      pointer     = mDNSNULL;
