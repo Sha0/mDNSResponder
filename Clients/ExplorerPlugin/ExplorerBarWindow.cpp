@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.10  2004/09/02 02:18:58  cheshire
+Minor textual cleanup to improve readability
+
 Revision 1.9  2004/09/02 02:11:56  cheshire
 <rdar://problem/3783611> Fix incorrect testing of MoreComing flag
 
@@ -441,14 +444,8 @@ void DNSSD_API
 
 		service->refs		= 1;
 		
-		if (inFlags & kDNSServiceFlagsAdd)
-		{
-			obj->obj->OnServiceAdd(service);
-		}
-		else
-		{
-			obj->obj->OnServiceRemove(service);
-		}
+		if (inFlags & kDNSServiceFlagsAdd) obj->obj->OnServiceAdd   (service);
+		else                               obj->obj->OnServiceRemove(service);
 	
 		service = NULL;
 	}
