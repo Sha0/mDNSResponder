@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.91  2004/09/30 17:45:34  ksekar
+<rdar://problem/3821119> lots of log messages: mDNS_SetPrimaryIP: IP address unchanged
+
 Revision 1.90  2004/09/25 00:22:13  ksekar
 <rdar://problem/3815534> Crash in uDNS_RegisterService
 
@@ -1262,9 +1265,9 @@ mDNSexport void mDNS_SetPrimaryIP(mDNS *m, const mDNSAddr *ip)
 	mDNS_Lock(m);
 	
 	if (ip->ip.v4.NotAnInteger == u->PrimaryIP.ip.v4.NotAnInteger)
-		LogMsg("mDNS_SetPrimaryIP: IP address unchanged");
+		debugf("mDNS_SetPrimaryIP: IP address unchanged");
 	else if (ip->type !=mDNSAddrType_IPv4)
-		LogMsg("Unsupported (non IPv4) address type passed to mDNS_SetPrimaryIP - ignoring");
+		debugf("Unsupported (non IPv4) address type passed to mDNS_SetPrimaryIP - ignoring");
 	else
 		{
 		u->PrimaryIP = *ip;
