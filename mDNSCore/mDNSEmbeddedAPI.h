@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.71  2003/06/07 06:45:05  cheshire
+<rdar://problem/3283666> No need for multiple machines to all be sending the same queries
+
 Revision 1.70  2003/06/07 04:50:53  cheshire
 <rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
 
@@ -664,6 +667,14 @@ struct ServiceRecordSet_struct
 #pragma mark - Question structures
 #endif
 
+#define DupSuppressInfoSize 2
+
+typedef struct
+	{
+	mDNSs32               Time;
+	mDNSInterfaceID       InterfaceID;
+	} DupSuppressInfo;
+
 // Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSQuestionCallback
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
 struct DNSQuestion_struct
@@ -677,6 +688,8 @@ struct DNSQuestion_struct
 	mDNSu32               RecentAnswers;	// Number of answers since the last time we sent this query
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
 	DNSQuestion          *DuplicateOf;
+	DNSQuestion          *NextInDQList;
+	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
 	domainname            qname;

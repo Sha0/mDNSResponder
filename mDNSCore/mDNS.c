@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.181  2003/06/07 06:45:05  cheshire
+<rdar://problem/3283666> No need for multiple machines to all be sending the same queries
+
 Revision 1.180  2003/06/07 06:31:07  cheshire
 Create little four-line helper function "FindIdenticalRecordInCache()"
 
@@ -3002,6 +3005,20 @@ mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name)
 				mDNS_Reconfirm(m, rr);
 	}
 
+// Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
+mDNSlocal void UpdateDupSuppressInfo(DupSuppressInfo ds[DupSuppressInfoSize], mDNSs32 time)
+	{
+	int i;
+	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].Time - time < 0) ds[i].InterfaceID = mDNSNULL;
+	}
+
+mDNSlocal mDNSBool SuppressOnThisInterface(DupSuppressInfo ds[DupSuppressInfoSize], mDNSInterfaceID InterfaceID)
+	{
+	int i;
+	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].InterfaceID == InterfaceID) return(mDNStrue);
+	return(mDNSfalse);
+	}
+
 // How Standard Queries are generated:
 // 1. The Question Section contains the question
 // 2. The Additional Section contains answers we already know, to suppress duplicate replies
@@ -3046,6 +3063,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 				{
 				// Mark for sending
 				q->SendQNow = (q->InterfaceID) ? q->InterfaceID : intf->InterfaceID;
+
+				// If we recorded a duplicate suppression for this question less than half an interval ago,
+				// then we consider it recent enough that we don't need to do an identical query ourselves.
+				UpdateDupSuppressInfo(q->DupSuppress, q->LastQTime + q->ThisQInterval/2);
 
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, treat this as logically a repeat of the last transmission, without advancing the interval
@@ -3138,10 +3159,12 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (q = m->Questions; q; q=q->next)
 				if (q->SendQNow == intf->InterfaceID)
 					{
-					verbosedebugf("SendQueries:   Putting question for %##s at %lu forecast total %lu",
+					verbosedebugf("SendQueries: %s question for %##s at %lu forecast total %lu",
+						SuppressOnThisInterface(q->DupSuppress, intf->InterfaceID) ? "Suppressing" : "Putting    ",
 						q->qname.c, queryptr - query.data, queryptr + answerforecast - query.data);
-					// If we successfully put this question, update its SendQNow state
-					if (BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
+					// If we're suppressing this question, or we successfully put it, update its SendQNow state
+					if (SuppressOnThisInterface(q->DupSuppress, intf->InterfaceID) ||
+						BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
 						q->SendQNow = (q->InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
 
@@ -3421,6 +3444,8 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 					else
 						{
 						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
+						rr->CRActiveQuestion->DupSuppress[0].InterfaceID = mDNSNULL;
+						rr->CRActiveQuestion->DupSuppress[1].InterfaceID = mDNSNULL;
 						m->NextScheduledQuery = m->timenow;	// And adjust NextScheduledQuery so it will happen
 						// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
 						// which will correctly update m->NextCacheCheck for us
@@ -4121,6 +4146,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	ResourceRecord **nrp             = &ResponseRecords;
 	ResourceRecord  *ExpectedAnswers = mDNSNULL;
 	ResourceRecord **eap             = &ExpectedAnswers;
+	DNSQuestion     *DupQuestions    = mDNSNULL;
+	DNSQuestion    **dqp             = &DupQuestions;
 	mDNSBool         delayresponse   = mDNSfalse;
 	mDNSBool         HaveAtLeastOneAnswer = mDNSfalse;
 	const mDNSu8    *ptr             = query->data;
@@ -4137,7 +4164,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	for (i=0; i<query->h.numQuestions; i++)						// For each question...
 		{
 		int NumAnswersForThisQuestion = 0;
-		DNSQuestion pktq;
+		DNSQuestion pktq, *q;
 		ptr = getQuestion(query, ptr, end, InterfaceID, &pktq);	// get the question...
 		if (!ptr) goto exit;
 		
@@ -4171,6 +4198,17 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		for (rr = m->rrcache_hash[HashSlot(&pktq.qname)]; rr; rr=rr->next)
 			if (ResourceRecordAnswersQuestion(rr, &pktq) && !rr->NextInKAList && eap != &rr->NextInKAList)
 				{ *eap = rr; eap = &rr->NextInKAList; }
+
+		// Check if this question is the same as any of mine.
+		// We only do this for non-truncated queries. Right now it would be too complicated to try
+		// to keep track of duplicate suppression state between multiple packets, especially when we
+		// can't guarantee to receive all of the Known Answer packets that go with a particular query.
+		if (!(query->h.flags.b[0] & kDNSFlag0_TC))
+			for (q = m->Questions; q; q=q->next)
+				if (ActiveQuestion(q))
+					if (!q->InterfaceID || q->InterfaceID == InterfaceID)
+						if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && SameDomainName(&q->qname, &pktq.qname))
+							{ *dqp = q; dqp = &q->NextInDQList; }
 		}
 
 	// ***
@@ -4257,6 +4295,20 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
 					{ *eap = rr->NextInKAList; rr->NextInKAList = mDNSNULL; }
 				else eap = &rr->NextInKAList;
+				}
+			}
+		
+		// See if this Known-Answer is a surprise to us. If so, we shouldn't suppress our own query.
+		if (!(query->h.flags.b[0] & kDNSFlag0_TC))
+			{
+			dqp = &DupQuestions;
+			while (*dqp)
+				{
+				DNSQuestion *q = *dqp;
+				if (ResourceRecordAnswersQuestion(&pktrr, q) && !FindIdenticalRecordInCache(m, &pktrr))
+					{ *dqp = q->NextInDQList; q->NextInDQList = mDNSNULL; }
+				else
+					dqp = &q->NextInDQList;
 				}
 			}
 		}
@@ -4388,6 +4440,18 @@ exit:
 			debugf("ProcessQuery: mDNS_Reconfirm() for %s", GetRRDisplayString(m, rr));
 			mDNS_Reconfirm(m, rr);
 			}
+		}
+	
+	while (DupQuestions)
+		{
+		DNSQuestion *q = DupQuestions;
+		DupQuestions = q->NextInDQList;
+		q->NextInDQList = mDNSNULL;
+		if (q->DupSuppress[0].InterfaceID != InterfaceID)	// We save the last two DupSuppressInfos
+			q->DupSuppress[1] = q->DupSuppress[0];
+		q->DupSuppress[0].InterfaceID = InterfaceID;
+		q->DupSuppress[0].Time = m->timenow;
+		debugf("ProcessQuery: Expect to suppress Query %##s (%s) on %p", q->qname.c, DNSTypeName(q->qtype), InterfaceID);
 		}
 	
 	return(responseptr);
@@ -4759,6 +4823,9 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->RecentAnswers  = 0;
 		question->CurrentAnswers = 0;
 		question->DuplicateOf    = FindDuplicateQuestion(m, question);
+		question->NextInDQList   = mDNSNULL;
+		question->DupSuppress[0].InterfaceID = mDNSNULL;
+		question->DupSuppress[1].InterfaceID = mDNSNULL;
 		// question->InterfaceID must be already set by caller
 		question->SendQNow       = mDNSNULL;
 
