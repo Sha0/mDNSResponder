@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.159  2005/01/27 01:45:25  cheshire
+<rdar://problem/3976147> mDNSResponder should never call exit(1);
+
 Revision 1.158  2005/01/25 17:28:07  ksekar
 <rdar://problem/3971467> Should not return "local" twice for domain enumeration
 
@@ -796,8 +799,16 @@ static void handle_setdomain_request(request_state *rstate);
 #define PID_FILE "/var/run/mDNSResponder.pid"
 #endif
 
+static void FatalError(char *errmsg)
+	{
+	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno()));
+	// abort(); doesn't generate a crash log, but writing to zero does...
+	//abort();
+	*(long*)0 = 0;
+	}
+
 int udsserver_init(void)
-    {
+	{
 	dnssd_sockaddr_t laddr;
 	int				 ret;
 #if defined(_WIN32)
@@ -820,7 +831,7 @@ int udsserver_init(void)
 
     bzero(&laddr, sizeof(laddr));
 
-#if defined(USE_TCP_LOOPBACK)
+	#if defined(USE_TCP_LOOPBACK)
 		{
 		laddr.sin_family		=	AF_INET;
 		laddr.sin_port			=	htons(MDNS_TCP_SERVERPORT);
@@ -829,34 +840,34 @@ int udsserver_init(void)
 		if (ret < 0)
 			goto error;
 		}
-#else
+	#else
 		{
     	mode_t mask = umask(0);
     	unlink(MDNS_UDS_SERVERPATH);  //OK if this fails
     	laddr.sun_family = AF_LOCAL;
-#	ifndef NOT_HAVE_SA_LEN	
+	#ifndef NOT_HAVE_SA_LEN	
 	// According to Stevens (section 3.2), there is no portable way to 
 	// determine whether sa_len is defined on a particular platform. 
     	laddr.sun_len = sizeof(struct sockaddr_un);
-#	endif
+	#endif
     	strcpy(laddr.sun_path, MDNS_UDS_SERVERPATH);
 		ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
 		umask(mask);
 		if (ret < 0)
 			goto error;
 		}
-#endif
+	#endif
 
-#if defined(_WIN32)
+	#if defined(_WIN32)
 	//
 	// SEH: do we even need to do this on windows?  this socket
 	// will be given to WSAEventSelect which will automatically
 	// set it to non-blocking
 	//
 	if (ioctlsocket(listenfd, FIONBIO, &opt) != 0)
-#else
+	#else
     if (fcntl(listenfd, F_SETFL, O_NONBLOCK) != 0)
-#endif
+	#endif
 	{
 		my_perror("ERROR: could not set listen socket to non-blocking mode");
 		goto error;
@@ -1113,11 +1124,7 @@ static void connect_callback(void *info)
 	
 	// allocate a request_state struct that will live with the socket
     rstate = mallocL("connect_callback", sizeof(request_state));
-    if (!rstate)
-    	{
-        my_perror("ERROR: malloc");
-        exit(1);
-    	}
+    if (!rstate) FatalError("ERROR: malloc");
     bzero(rstate, sizeof(request_state));
     rstate->ts = t_morecoming;
     rstate->sd = sd;
@@ -1159,23 +1166,23 @@ static void request_callback(void *info)
     	}
 
     if (rstate->hdr.version != VERSION)
-    {
+	    {
         LogMsg("ERROR: client incompatible with daemon (client version = %d, "
                 "daemon version = %d)\n", rstate->hdr.version, VERSION);
         abort_request(rstate);
         unlink_request(rstate);
         return;
-    }
+	    }
     
     if (validate_message(rstate) < 0)
-	{
-	// note that we cannot deliver an error message if validation fails, since the path to the error socket
-	// may be contained in the (invalid) message body for some message types
-	abort_request(rstate);
-	unlink_request(rstate);
-	LogMsg("Invalid message sent by client - may indicate a malicious program running on this machine!");
-	return;
-	}    
+		{
+		// note that we cannot deliver an error message if validation fails, since the path to the error socket
+		// may be contained in the (invalid) message body for some message types
+		abort_request(rstate);
+		unlink_request(rstate);
+		LogMsg("Invalid message sent by client - may indicate a malicious program running on this machine!");
+		return;
+		}    
     
     // check if client wants silent operation
     if (rstate->hdr.flags & IPC_FLAGS_NOREPLY) rstate->no_reply = 1;
@@ -1186,29 +1193,31 @@ static void request_callback(void *info)
     else
 		{
 		if ((rstate->errfd = socket(AF_DNSSD, SOCK_STREAM, 0)) == dnssd_InvalidSocket)
-            {
-            my_perror("ERROR: socket");	
-            exit(1);
-            }
+			{
+            my_perror("ERROR: socket");
+            abort_request(rstate);
+            unlink_request(rstate);
+			return;
+			}
 
 #if defined(USE_TCP_LOOPBACK)
-		{
-		mDNSOpaque16 port;
-		port.b[0] = rstate->msgdata[0];
-		port.b[1] = rstate->msgdata[1];
-        rstate->msgdata += 2;
-		cliaddr.sin_family      = AF_INET;
-		cliaddr.sin_port        = port.NotAnInteger;
-		cliaddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
-		}
+			{
+			mDNSOpaque16 port;
+			port.b[0] = rstate->msgdata[0];
+			port.b[1] = rstate->msgdata[1];
+			rstate->msgdata += 2;
+			cliaddr.sin_family      = AF_INET;
+			cliaddr.sin_port        = port.NotAnInteger;
+			cliaddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
+			}
 #else
-		{
-    	char ctrl_path[MAX_CTLPATH];
-        get_string(&rstate->msgdata, ctrl_path, 256);	// path is first element in message buffer
-        bzero(&cliaddr, sizeof(cliaddr));
-        cliaddr.sun_family = AF_LOCAL;
-        strcpy(cliaddr.sun_path, ctrl_path);
-		}
+			{
+			char ctrl_path[MAX_CTLPATH];
+			get_string(&rstate->msgdata, ctrl_path, 256);	// path is first element in message buffer
+			bzero(&cliaddr, sizeof(cliaddr));
+			cliaddr.sun_family = AF_LOCAL;
+			strcpy(cliaddr.sun_path, ctrl_path);
+			}
 #endif
         if (connect(rstate->errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
             {
@@ -1290,11 +1299,7 @@ static void handle_query_request(request_state *rstate)
     if (ifi && !InterfaceID) goto bad_param;
 
     q = mallocL("DNSQuestion", sizeof(DNSQuestion));
-    if (!q)
-    	{
-        my_perror("ERROR: handle_query - malloc");
-        exit(1);
-    	}
+    if (!q) FatalError("ERROR: handle_query - malloc");
     bzero(q, sizeof(DNSQuestion));	
 
     q->InterfaceID      = InterfaceID;
@@ -1376,7 +1381,7 @@ static void handle_resolve_request(request_state *rstate)
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
     bzero(term, sizeof(*term));
-    if (!term) goto malloc_error;
+    if (!term) FatalError("ERROR: malloc");
 
     // format questions
     term->qsrv.InterfaceID      = InterfaceID;
@@ -1426,11 +1431,6 @@ bad_param:
     deliver_error(rstate, mStatus_BadParamErr);
     abort_request(rstate);
     unlink_request(rstate);
-    return;
-    
-malloc_error:
-    my_perror("ERROR: malloc");
-    exit(1);
     }
     
 static void resolve_termination_callback(void *context)
@@ -2015,7 +2015,7 @@ static mStatus register_service_instance(request_state *request, const domainnam
 
 	instance->subtypes = AllocateSubTypes(info->num_subtypes, info->type_as_string);
 	if (info->num_subtypes && !instance->subtypes)
-		{ free_service_instance(instance); instance = NULL; goto malloc_error; }
+		{ free_service_instance(instance); instance = NULL; FatalError("ERROR: malloc"); }
     instance->request           = request;
 	instance->sd                = request->sd;
     instance->autoname          = info->autoname;
@@ -2035,10 +2035,6 @@ static mStatus register_service_instance(request_state *request, const domainnam
 		info->instances = instance;
 		}
 	return result;
-
-malloc_error:
-    my_perror("ERROR: malloc");
-    exit(1);
 	}
 
 mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add)
@@ -2395,11 +2391,7 @@ static mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uint32
 	if (rdlen > sizeof(RDataBody)) rdsize = rdlen;
     else rdsize = sizeof(RDataBody);
     newrd = mallocL("handle_update_request", sizeof(RData) - sizeof(RDataBody) + rdsize);
-    if (!newrd)
-        {
-        my_perror("ERROR: malloc");
-        exit(1);
-        }
+    if (!newrd) FatalError("ERROR: malloc");
     newrd->MaxRDLength = (mDNSu16) rdsize;
     memcpy(&newrd->u, rdata, rdlen);
     result = mDNS_Update(gmDNS, rr, ttl, rdlen, newrd, update_callback);
@@ -2580,7 +2572,7 @@ static void handle_regrecord_request(request_state *rstate)
 
     // allocate registration entry, link into list
     re = mallocL("handle_regrecord_request", sizeof(registered_record_entry));
-    if (!re) goto malloc_error;
+    if (!re) FatalError("ERROR: malloc");
     re->key = rstate->hdr.reg_index;
     re->rr = rr;
     re->rstate = rstate;
@@ -2603,11 +2595,6 @@ static void handle_regrecord_request(request_state *rstate)
     result = mDNS_Register(gmDNS, rr);
     deliver_error(rstate, result); 
     reset_connected_rstate(rstate);
-    return;
-
-malloc_error:
-    my_perror("ERROR: malloc");
-    return;
     }
 
 static void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result)
@@ -2782,11 +2769,7 @@ static void handle_enum_request(request_state *rstate)
     def = mallocL("handle_enum_request", sizeof(domain_enum_t));
     all = mallocL("handle_enum_request", sizeof(domain_enum_t));
     term = mallocL("handle_enum_request", sizeof(enum_termination_t));
-    if (!def || !all || !term)
-    	{
-        my_perror("ERROR: malloc");
-        exit(1);
-    	}
+    if (!def || !all || !term) FatalError("ERROR: malloc");
 
     // enumeration requires multiple questions, so we must link all the context pointers so that
     // necessary context can be reached from the callbacks
@@ -2950,11 +2933,7 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validate_f
     else storage_size = sizeof(RDataBody);
     
     rr = mallocL("read_rr_from_ipc_msg", sizeof(AuthRecord) - sizeof(RDataBody) + storage_size);
-    if (!rr) 	
-        { 
-        my_perror("ERROR: malloc");  
-        exit(1);
-        }
+    if (!rr) FatalError("ERROR: malloc");
     bzero(rr, sizeof(AuthRecord));  // ok if oversized rdata not zero'd
     
     mDNS_SetupResourceRecord(rr, mDNSNULL, mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex),
@@ -3230,22 +3209,14 @@ static reply_state *create_reply(reply_op_t op, size_t datalen, request_state *r
     
     totallen = (int) (datalen + sizeof(ipc_msg_hdr));
     reply = mallocL("create_reply", sizeof(reply_state));
-    if (!reply) 
-        {
-        my_perror("ERROR: malloc");
-        exit(1);
-        }
+    if (!reply) FatalError("ERROR: malloc");
     bzero(reply, sizeof(reply_state));
     reply->ts = t_morecoming;
     reply->sd = request->sd;
     reply->request = request;
     reply->len = totallen;
     reply->msgbuf = mallocL("create_reply", totallen);
-    if (!reply->msgbuf)
-        {
-        my_perror("ERROR: malloc");
-        exit(1);
-        }
+    if (!reply->msgbuf) FatalError("ERROR: malloc");
     bzero(reply->msgbuf, totallen);
     reply->mhdr = (ipc_msg_hdr *)reply->msgbuf;
     reply->rhdr = (reply_hdr *)(reply->msgbuf + sizeof(ipc_msg_hdr));
@@ -3275,11 +3246,7 @@ static int deliver_error(request_state *rstate, mStatus err)
             }
         //client blocked - store result and come backr
         undeliv = mallocL("deliver_error", sizeof(undelivered_error_t));
-        if (!undeliv)
-            {
-            my_perror("ERROR: malloc");
-            exit(1);
-            }
+        if (!undeliv) FatalError("ERROR: malloc");
         undeliv->err = err;
         undeliv->nwritten = nwritten;
         undeliv->sd = rstate->errfd;
