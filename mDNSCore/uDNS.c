@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.11  2004/01/30 02:12:30  ksekar
+Changed uDNS_ReceiveMsg() to correctly return void.
+
 Revision 1.10  2004/01/29 02:59:17  ksekar
 Unicast DNS: Changed from a resource record oriented question/response
 matching to packet based matching.  New callback architecture allows
@@ -223,8 +226,9 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			{
 			if (qptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
-				if (msg->h.flags.b[0] & kDNSFlag0_TC) return hndlTruncatedAnswer(qptr, srcaddr, m);
-				return qptr->uDNS_info.responseCallback(m, msg, end, qptr, qptr->uDNS_info.context);
+				if (msg->h.flags.b[0] & kDNSFlag0_TC)  hndlTruncatedAnswer(qptr, srcaddr, m);
+				else qptr->uDNS_info.responseCallback(m, msg, end, qptr, qptr->uDNS_info.context);
+				return;
 				}
 			}
 		LogMsg("Received unexpected response: ID %d matches no active queries", mDNSVal16(msg->h.id));		
