@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.18  2004/07/08 21:30:21  rpantos
+
+Bug #:
+Submitted by:
+Reviewed by:
+
 Revision 1.17  2004/06/25 00:26:27  rpantos
 Changes to fix the Posix build on Solaris.
 
@@ -206,8 +212,9 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
 #ifndef NOT_HAVE_IF_NAMETOINDEX
         ifi->ifi_index = if_nametoindex(ifr->ifr_name);
 #else
-		if ( 0 >= ioctl(sockfd, SIOCGIFINDEX, ifr))
-            ifi->ifi_index = ifr->ifr_index;
+        ifrcopy = *ifr;
+		if ( 0 >= ioctl(sockfd, SIOCGIFINDEX, &ifrcopy))
+            ifi->ifi_index = ifrcopy.ifr_index;
         else
             ifi->ifi_index = index++;	/* SIOCGIFINDEX is broken on Solaris 2.5ish, so fake it */
 #endif
@@ -418,11 +425,11 @@ struct in_pktinfo
         if (cmptr->cmsg_level == IPPROTO_IP &&
             cmptr->cmsg_type == IP_RECVIF) {
             struct sockaddr_dl  *sdl = (struct sockaddr_dl *) CMSG_DATA(cmptr);
-            int nameLen = (sdl->sdl_nlen < IFI_NAME - 1) ? sdl->sdl_nlen : (IFI_NAME - 1);
-            pktp->ipi_ifindex = sdl->sdl_index;
 #ifndef HAVE_BROKEN_RECVIF_NAME
+            int nameLen = (sdl->sdl_nlen < IFI_NAME - 1) ? sdl->sdl_nlen : (IFI_NAME - 1);
             strncpy(pktp->ipi_ifname, sdl->sdl_data, nameLen);
 #endif
+            pktp->ipi_ifindex = sdl->sdl_index;
             assert(pktp->ipi_ifname[IFI_NAME - 1] == 0);
             // null terminated because of memset above
             continue;
