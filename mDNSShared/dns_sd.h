@@ -232,8 +232,13 @@ enum
     };
 
 
-/* Maximum length, in bytes, of a domain name represented as an escaped C-String */
-/* including the final trailing dot, and the C-String terminating NULL at the end */
+/* Maximum length, in bytes, of a service name represented as a */
+/* literal C-String, including the terminating NULL at the end. */
+
+#define kDNSServiceMaxServiceName 64
+
+/* Maximum length, in bytes, of a domain name represented as an *escaped* C-String */
+/* including the final trailing dot, and the C-String terminating NULL at the end. */
 
 #define kDNSServiceMaxDomainName 1005
 
@@ -257,11 +262,18 @@ enum
  * it is, by definition, just a single literal string. Any characters in that string
  * represent exactly what they are. The "regtype" portion is, technically speaking,
  * escaped, but since legal regtypes are only allowed to contain letters, digits,
- * and hyphens, the issue is moot. The "domain" portion is also escaped, though
- * most domains in use on the public Internet today, like regtypes, don't contain
- * any characters that need to be escaped. As DNS-SD becomes more popular, rich-text
- * domains for service discovery will become common, so software should be written
- * to cope with domains with escaping.
+ * and hyphens, there is nothing to escape, so the issue is moot. The "domain"
+ * portion is also escaped, though most domains in use on the public Internet
+ * today, like regtypes, don't contain any characters that need to be escaped.
+ * As DNS-SD becomes more popular, rich-text domains for service discovery will
+ * become common, so software should be written to cope with domains with escaping.
+ *
+ * The servicename may be up to 63 bytes of UTF-8 text (not counting the C-String
+ * terminating NULL at the end). The regtype is of the form _service._tcp or
+ * _service._udp, where the "service" part is 1-14 characters, which may be
+ * letters, digits, or hyphens. The domain part of the three-part name may be
+ * any legal domain, providing that the resulting servicename+regtype+domain
+ * name does not exceed 255 bytes.
  *
  * For most software, these issues are transparent. When browsing, the discovered
  * servicenames should simply be displayed as-is. When resolving, the discovered
@@ -555,13 +567,15 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *                  will pass 0).  See flag definitions above for details.
  *
  * name:            If non-NULL, specifies the service name to be registered.
- *                  Most applications will not specify a name, in which case the
- *                  computer name is used (this name is communicated to the client via
- *                  the callback).
+ *                  Most applications will not specify a name, in which case the computer
+ *                  name is used (this name is communicated to the client via the callback).
+ *                  If a name is specified, it must be 1-63 bytes of UTF-8 text.
  *
  * regtype:         The service type followed by the protocol, separated by a dot
- *                  (e.g. "_ftp._tcp").  The transport protocol must be "_tcp" or "_udp".
- *                  New service types should be registered at htp://www.dns-sd.org/ServiceTypes.html.
+ *                  (e.g. "_ftp._tcp"). The service type must be an underscore, followed
+ *                  by 1-14 characters, which may be letters, digits, or hyphens.
+ *                  The transport protocol must be "_tcp" or "_udp". New service types
+ *                  should be registered at <http://www.dns-sd.org/ServiceTypes.html>.
  *
  * domain:          If non-NULL, specifies the domain on which to advertise the service.
  *                  Most applications will not specify a domain, instead automatically
