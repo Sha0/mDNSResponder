@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.197  2004/09/24 23:39:27  cheshire
+<rdar://problem/3733705> Only IPv6 loopback address advertised on laptop w/no networking
+
 Revision 1.196  2004/09/24 20:53:04  cheshire
 Revise error message to say "Setsockopt SO_REUSEPORT failed" instead of "Flaw in Kernel"
 
@@ -1503,8 +1506,10 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	{
 	mDNSBool foundav4           = mDNSfalse;
+	mDNSBool foundav6           = mDNSfalse;
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
-	struct ifaddrs *theLoopback = NULL;
+	struct ifaddrs *v4Loopback = NULL;
+	struct ifaddrs *v6Loopback = NULL;
 	int err = (ifa != NULL) ? 0 : (errno != 0 ? errno : -1);
 	int InfoSocket              = err ? -1 : socket(AF_INET6, SOCK_DGRAM, 0);
 	if (err) return(err);
@@ -1575,22 +1580,22 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 				if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
 					{
 					if (ifa->ifa_flags & IFF_LOOPBACK)
-						theLoopback = ifa;
+						if (ifa->ifa_addr->sa_family == AF_INET) v4Loopback = ifa;
+						else                                     v6Loopback = ifa;
 					else
 						{
 						AddInterfaceToList(m, ifa);
-						if (ifa->ifa_addr->sa_family == AF_INET)
-							foundav4 = mDNStrue;
+						if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
+						else                                     foundav6 = mDNStrue;
 						}
 					}
 				}
 		ifa = ifa->ifa_next;
 		}
 
-    //  Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
-    //  In the interim, we skip loopback interface only if we found at least one v4 interface to use
-	if (!foundav4 && theLoopback)
-		AddInterfaceToList(m, theLoopback);
+    // For efficiency, we don't register a loopback interface when other interfaces of that family are available
+	if (!foundav4 && v4Loopback) AddInterfaceToList(m, v4Loopback);
+	if (!foundav6 && v6Loopback) AddInterfaceToList(m, v6Loopback);
 
 	// Now the list is complete, set the McastTxRx setting for each interface.
 	// We always send and receive using IPv4.
