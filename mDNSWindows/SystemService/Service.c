@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.2  2004/06/23 16:56:00  shersche
+<rdar://problem/3697326> locked call to udsserver_idle().
+Bug #: 3697326
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:16:41  rpantos
 Move up one level.
 
@@ -34,7 +39,6 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #include	<stdio.h>
 #include	<stdlib.h>
 
-#define	_WIN32_WINNT		0x0400
 
 #include	"CommonServices.h"
 #include	"DebugServices.h"
@@ -50,6 +54,9 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #if( !TARGET_OS_WINDOWS_CE )
 	#include	<mswsock.h>
 	#include	<process.h>
+	#include	<ipExport.h>
+	#include	<iphlpapi.h>
+	#include	<iptypes.h>
 #endif
 
 #if 0
@@ -82,6 +89,7 @@ static CacheRecord gRRCache[RR_CACHE_SIZE];
 	@constant	EventSourceFlagsNone			No flags.
 	@constant	EventSourceFlagsThreadDone		Thread is no longer active.
 	@constant	EventSourceFlagsNoClose			Do not close the session when the thread exits.
+	@constant	EventSourceFinalized			Finalize has been called for this session
 */
 
 typedef uint32_t		EventSourceFlags;
@@ -89,27 +97,24 @@ typedef uint32_t		EventSourceFlags;
 #define	EventSourceFlagsNone			0
 #define	EventSourceFlagsThreadDone		( 1 << 2 )
 #define	EventSourceFlagsNoClose			( 1 << 3 )
+#define EventSourceFinalized			( 1 << 4 )
 
 
-struct Win32EventSource
+typedef struct Win32EventSource
 {
 	EventSourceFlags			flags;
 	HANDLE						threadHandle;
 	unsigned					threadID;
 	HANDLE						socketEvent;
 	HANDLE						closeEvent;
-	BOOL						closed;
 	udsEventCallback			callback;
 	void					*	context;
 	DWORD						waitCount;
 	HANDLE						waitList[2];
 	SOCKET						sock;
 	struct Win32EventSource	*	next;
-};
+} Win32EventSource;
 
-typedef struct Win32EventSource Win32EventSource;
-CRITICAL_SECTION				gEventSourceLock;
-static GenLinkedList			gEventSources;
 
 #if 0
 #pragma mark == Prototypes ==
@@ -169,6 +174,9 @@ DEBUG_LOCAL int							gServiceCacheEntryCount	= 0;	// 0 means to use the DNS-SD 
 DEBUG_LOCAL int							gWaitCount				= 0;
 DEBUG_LOCAL HANDLE					*	gWaitList				= NULL;
 DEBUG_LOCAL HANDLE						gStopEvent				= NULL;
+DEBUG_LOCAL CRITICAL_SECTION			gEventSourceLock;
+DEBUG_LOCAL static GenLinkedList		gEventSources;
+
 
 #if 0
 #pragma mark -
@@ -934,8 +942,23 @@ udsIdle(mDNS * const inMDNS, mDNSs32 interval)
 {
 	DEBUG_UNUSED( inMDNS );
 
-	return udsserver_idle(interval);
+	//
+	// rdar://problem/3697326
+	//
+	// udsserver_idle wasn't being locked.  This resulted
+	// in multiple threads contesting for the all_requests
+	// data structure in uds_daemon.c
+	//
+	mDNSPlatformLock(&gMDNSRecord);
+
+	interval = udsserver_idle(interval);
+
+	mDNSPlatformUnlock(&gMDNSRecord);
+
+	return interval;
 }
+
+
 mDNSlocal unsigned WINAPI
 udsSocketThread(LPVOID inParam)
 {
@@ -943,7 +966,7 @@ udsSocketThread(LPVOID inParam)
 	bool					safeToClose;
 	mStatus					err    = 0;
 
-	while (source->closed == FALSE)
+	while (!(source->flags & EventSourceFinalized))
 	{
 		DWORD result;
 
@@ -966,11 +989,6 @@ udsSocketThread(LPVOID inParam)
 			mDNSPlatformLock(&gMDNSRecord);
 
 			//
-			// we're now done and we don't want to go into WaitForMultipleObjects anymore
-			//
-			source->closed = TRUE;
-
-			//
 			// this is a bit of a hack.  we want to clean up the internal data structures
 			// so we'll go in here and it will clean up for us
 			//
@@ -978,9 +996,13 @@ udsSocketThread(LPVOID inParam)
 			source->callback(source->context);
 
 			mDNSPlatformUnlock(&gMDNSRecord);
+
+			break;
 		}
 		else
 		{
+			// Unexpected wait result.
+			dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
 		}
 	}
 
@@ -1097,16 +1119,11 @@ udsSupportRemoveFDFromEventLoop( SocketRef fd)
 	//
 	if (source != NULL)
 	{
-		BOOL ok;
-
-		source->closed = TRUE;
-		ok = SetEvent( source->closeEvent );
-		check_translated_errno( ok, errno_compat(), kUnknownErr );
+		EventSourceFinalize(source);
 	}
 
 	//
-	// now unlock the event sources list...we don't need to keep it locked
-	// while we dispose of the event source now that it is out of the list
+	// done with the list
 	//
 	EventSourceUnlock();
 
@@ -1141,6 +1158,11 @@ EventSourceFinalize(Win32EventSource * source)
 		}
 	}
 	require_action( inserted, exit, err = kNotFoundErr );
+
+	//
+	// note that we've had finalize called
+	//
+	source->flags |= EventSourceFinalized;
 	
 	// If we're being called from the same thread as the session (e.g. message callback is closing the session) then 
 	// we must defer the close until the thread is done because the thread is still using the session object.
@@ -1165,7 +1187,6 @@ EventSourceFinalize(Win32EventSource * source)
 	
 	// Signal a close so the thread exits.
 	
-	source->closed = true;
 	if( source->closeEvent )
 	{
 		ok = SetEvent( source->closeEvent );
@@ -1210,7 +1231,6 @@ EventSourceFinalize(Win32EventSource * source)
 		check_translated_errno( ok, errno_compat(), kUnknownErr );
 		source->socketEvent = NULL;
 	}
-	// Close the socket.
 	
 	// Release the close event.
 	
