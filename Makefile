@@ -22,9 +22,7 @@ install:
 	cd "$(SRCROOT)/mDNSMacOSX"; pbxbuild install     OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT) MVERS=$(MVERS)
 
 installsrc:
-	ditto mDNSCore ${SRCROOT}/mDNSCore
-	ditto mDNSMacOSX ${SRCROOT}/mDNSMacOSX
-	ditto Makefile $(SRCROOT)
+	ditto . ${SRCROOT}
 
 installhdrs::
 	cd "$(SRCROOT)/mDNSMacOSX"; pbxbuild installhdrs OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT) MVERS=$(MVERS)
