@@ -13,7 +13,7 @@
 	<Configurations>
 		<Configuration
 			Name="Debug|Win32"
-			OutputDirectory=".\Debug\ExplorerPlugin.dll.Resources\en.lproj"
+			OutputDirectory=".\Debug\Resources\ExplorerPlugin.dll.Resources\en.lproj"
 			IntermediateDirectory=".\Debug"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -82,7 +82,7 @@
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Rendezvous\bin\ExplorerPlugin.dll.Resources\en.lproj"
+			OutputDirectory=".\Release\Root\Program Files\Rendezvous\Resources\ExplorerPlugin.dll.Resources\en.lproj"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
