@@ -63,8 +63,6 @@ public:
 	afx_msg void	OnBnClickedSharedSecret();
 	afx_msg void	OnBnClickedAdvertise();
 
-	void			OnAddBrowseDomain( CString & domain );
-	void			OnRemoveBrowseDomain( CString & domain );
 	void			OnAddRegistrationDomain( CString & domain );
 	void			OnRemoveRegistrationDomain( CString & domain );
 	
@@ -106,7 +104,6 @@ private:
 	OSStatus
 	RegQueryString( HKEY key, CString valueName, CString & value );
 
-	CComboBox		m_browseDomainsBox;
 	CComboBox		m_regDomainsBox;
 	CButton			m_advertiseServicesButton;
 	CButton			m_sharedSecretButton;

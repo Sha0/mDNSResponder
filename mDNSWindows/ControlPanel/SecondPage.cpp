@@ -69,7 +69,6 @@ void CSecondPage::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CHECK1, m_advertiseServicesButton);
 	DDX_Control(pDX, IDC_BUTTON1, m_sharedSecretButton);
 	DDX_Control(pDX, IDC_COMBO2, m_regDomainsBox);
-	DDX_Control(pDX, IDC_COMBO1, m_browseDomainsBox);
 }
 
 BEGIN_MESSAGE_MAP(CSecondPage, CPropertyPage)
@@ -118,18 +117,7 @@ CSecondPage::OnSetActive()
 
 	// Clear out what's there
 
-	EmptyComboBox( m_browseDomainsBox );
 	EmptyComboBox( m_regDomainsBox );
-
-	// Now populate the browse domain box
-
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\" kServiceName L"\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSBrowseDomains, &key );
-	require_noerr( err, exit );
-
-	err = Populate( m_browseDomainsBox, key, psheet->m_browseDomains );
-	check_noerr( err );
-
-	RegCloseKey( key );
 
 	// Now populate the registration domain box
 
@@ -177,15 +165,6 @@ CSecondPage::Commit()
 {
 	HKEY		key = NULL;
 	DWORD		err;
-
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\" kServiceName L"\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSBrowseDomains, &key );
-	require_noerr( err, exit );
-
-	err = Commit( m_browseDomainsBox, key, 1 );
-	check_noerr( err );
-
-	RegCloseKey( key );
-	key = NULL;
 
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\" kServiceName L"\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSRegistrationDomains, &key );
 	require_noerr( err, exit );
@@ -308,37 +287,6 @@ void CSecondPage::OnCbnEditChange()
 	SetModified( TRUE );
 }
 
-
-//---------------------------------------------------------------------------------------------------------------------------
-//	CSecondPage::OnAddBrowseDomain
-//---------------------------------------------------------------------------------------------------------------------------
-
-void
-CSecondPage::OnAddBrowseDomain( CString & domain )
-{
-	int index = m_browseDomainsBox.FindStringExact( -1, domain );
-
-	if ( index == CB_ERR )
-	{
-		m_browseDomainsBox.AddString( domain );
-	}
-}
-
-
-//---------------------------------------------------------------------------------------------------------------------------
-//	CSecondPage::OnRemoveBrowseDomain
-//---------------------------------------------------------------------------------------------------------------------------
-
-void
-CSecondPage::OnRemoveBrowseDomain( CString & domain )
-{
-	int index = m_browseDomainsBox.FindStringExact( -1, domain );
-	
-	if ( index != CB_ERR )
-	{
-		m_browseDomainsBox.DeleteString( index );
-	}
-}
 
 
 //---------------------------------------------------------------------------------------------------------------------------
