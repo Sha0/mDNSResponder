@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.27  2004/02/11 21:00:21  cheshire
+# Update URL for GNU Make manual page
+#
 # Revision 1.26  2004/02/05 21:28:30  cheshire
 # Fixes so that "sudo make install" works on *BSD
 #
@@ -102,7 +105,7 @@
 # $< means "The name of the first prerequisite"
 # $+ means "The names of all the prerequisites, with spaces between them, exactly as given"
 # For more magic automatic variables, see
-# <http://www.gnu.org/manual/make-3.80/html_chapter/make_10.html#SEC111>
+# <http://www.gnu.org/software/make/manual/html_chapter/make_10.html#SEC111>
 
 #############################################################################
 
