@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.166  2004/08/16 19:55:07  ksekar
+Change enumeration type to BrowseDefault to construct empty-string
+browse list as result of checking 1.161.
+
 Revision 1.165  2004/08/16 19:52:40  ksekar
 Pass computer name + zone for FQDN after keychain notification,
 setting global default service registration domain to the zone.
@@ -1750,7 +1754,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		
 		if (ptr->flag == 1)  // add
 			{
-			err = mDNS_GetDomains(m, &ptr->browseQ, mDNS_DomainTypeBrowse, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err = mDNS_GetDomains(m, &ptr->browseQ, mDNS_DomainTypeBrowseDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
 			if (err) LogMsg("ERROR: RegisterNameServers - mDNS_DomainTypeBrowse, %d", err);
 
 			err = mDNS_GetDomains(m, &ptr->registerQ, mDNS_DomainTypeRegistration, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
