@@ -23,6 +23,11 @@
     Change History (most recent first):
 	
 $Log: NSPTool.c,v $
+Revision 1.2  2004/06/23 16:39:14  shersche
+Fix extraneous warnings regarding implict casts
+
+Submitted by: Scott Herscher (sherscher@apple.com)
+
 Revision 1.1  2004/06/18 04:14:26  rpantos
 Move up one level.
 
@@ -466,11 +471,11 @@ DEBUG_LOCAL OSStatus	ReorderNameSpaces( void )
 	
 	// Uninstall it then re-install it to move it to the end.
 	
-	size = strlen( array[ i ].lpszIdentifier );
+	size = (DWORD) strlen( array[ i ].lpszIdentifier );
 	require_action( size < sizeof_array( name ), exit, err = kSizeErr );
 	CharToWCharString( array[ i ].lpszIdentifier, name );
 	
-	size = strlen( "%SystemRoot%\\System32\\mswsock.dll" );
+	size = (DWORD) strlen( "%SystemRoot%\\System32\\mswsock.dll" );
 	require_action( size < sizeof_array( path ), exit, err = kSizeErr );
 	CharToWCharString( "%SystemRoot%\\System32\\mswsock.dll", path );
 	
