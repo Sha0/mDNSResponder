@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.23  2004/12/01 04:25:05  cheshire
+<rdar://problem/3872803> Darwin patches for Solaris and Suse
+Provide daemon() for platforms that don't have it
+
 Revision 1.22  2004/11/30 22:37:01  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -521,3 +525,51 @@ struct in_pktinfo
     return(n);
 #endif /* CMSG_FIRSTHDR */
 }
+
+// **********************************************************************************************
+
+// daemonize the process. Adapted from "Unix Network Programming" vol 1 by Stevens, section 12.4.
+// Returns 0 on success, -1 on failure.
+
+#ifdef NOT_HAVE_DAEMON
+#include <fcntl.h>
+#include <sys/stat.h>
+int daemon(int nochdir, int noclose)
+    {
+	switch (fork())
+		{
+		case -1: return (-1);	// Fork failed
+		case 0:  break;			// Child -- continue
+		default: _exit(0);		// Parent -- exit
+		}
+
+	if (setsid() == -1) return(-1);
+
+	signal(SIGHUP, SIG_IGN);
+
+	switch (fork())				// Fork again, primarily for reasons of Unix trivia
+		{
+		case -1: return (-1);	// Fork failed
+		case 0:  break;			// Child -- continue
+		default: _exit(0);		// Parent -- exit
+		}
+
+	if (!nochdir) (void)chdir("/");
+	umask(0);
+
+	if (!noclose)
+		{
+		int fd = open("/dev/null", O_RDWR, 0);
+		if (fd != -1)
+			{
+			// Avoid unnecessarily duplicating a file descriptor to itself
+			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
+			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
+			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
+			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) 
+				(void)close (fd);
+			}
+		}
+	return (0);
+    }
+#endif /* NOT_HAVE_DAEMON */

@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.16  2004/12/01 04:25:05  cheshire
+<rdar://problem/3872803> Darwin patches for Solaris and Suse
+Provide daemon() for platforms that don't have it
+
 Revision 1.15  2004/11/30 22:37:01  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -150,6 +154,10 @@ extern struct ifi_info  *get_ifi_info(int family, int doaliases);
 /* 'The free_ifi_info function, which takes a pointer that was */
 /* returned by get_ifi_info and frees all the dynamic memory.' */
 extern void             free_ifi_info(struct ifi_info *);
+
+#ifdef NOT_HAVE_DAEMON
+extern int daemon(int nochdir, int noclose)
+#endif
 
 #ifdef  __cplusplus
     }
