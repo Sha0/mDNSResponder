@@ -1,4 +1,4 @@
-# Copyright © 2002-2004, Apple Computer, Inc. All rights reserved.
+# Copyright (c) 2002-2004, Apple Computer, Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without 
 # modification, are permitted provided that the following conditions are met:
@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.48  2004/10/06 02:22:19  cheshire
+# Changed MacRoman copyright symbol (should have been UTF-8 in any case :-) to ASCII-compatible "(c)"
+#
 # Revision 1.47  2004/10/01 22:15:54  rpantos
 # rdar://problem/3824265: Replace APSL in client lib with BSD license.
 #
