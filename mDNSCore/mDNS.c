@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.366  2004/03/20 03:12:57  cheshire
+<rdar://problem/3587619>: UpdateCredits not granted promptly enough
+
 Revision 1.365  2004/03/19 23:51:22  cheshire
 Change to use symbolic constant kUpdateCreditRefreshInterval instead of (mDNSPlatformOneSecond * 60)
 
@@ -1241,7 +1244,7 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFl
 #define kDefaultTTLforShared (2*3600)
 
 #define kMaxUpdateCredits 10
-#define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 60)
+#define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 50)
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
@@ -2175,6 +2178,12 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 		}
 	}
 
+mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
+	{
+	if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0; 
+	else rr->NextUpdateCredit = (rr->NextUpdateCredit + kUpdateCreditRefreshInterval) | 1;
+	}
+
 mDNSlocal mDNSBool HaveSentEntireRRSet(const mDNS *const m, const AuthRecord *const rr, mDNSInterfaceID InterfaceID)
 	{
 	// Try to find another member of this set that we're still planning to send on this interface
@@ -2216,11 +2225,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// Run through our list of records, and decide which ones we're going to announce on all interfaces
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0)
-			{
-			if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0; 
-			else rr->NextUpdateCredit = (m->timenow + kUpdateCreditRefreshInterval) | 1;
-			}
+		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
 		if (TimeToAnnounceThisRecord(rr, m->timenow) && ResourceRecordIsValidAnswer(rr))
 			{
 			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
@@ -5211,6 +5216,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		if (SameDomainLabel(type.c, (mDNSu8*)"\x6_ichat")) rr->AnnounceCount = 1;
 		rr->ThisAPInterval       = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 		InitializeLastAPTime(m, rr);
+		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
 		if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
 		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + kUpdateCreditRefreshInterval) | 1;
 		if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
