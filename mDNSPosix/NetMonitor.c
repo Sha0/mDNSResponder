@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.38  2003/08/20 22:41:42  cheshire
+Also display total multicast packet count
+
 Revision 1.37  2003/08/20 22:32:08  cheshire
 Error in DisplayQuery: Authorities come *after* Answers, not before
 
@@ -240,16 +243,8 @@ struct timeval tv_start, tv_end, tv_interval;
 
 static FilterList *Filters;
 
-static int NumPktQ;
-static int NumPktL;
-static int NumPktR;
-
-static int NumProbes;
-static int NumGoodbyes;
-static int NumQuestions;
-static int NumLegacy;
-static int NumAnswers;
-static int NumAdditionals;
+static int NumPktQ, NumPktL, NumPktR;
+static int NumProbes, NumGoodbyes, NumQuestions, NumLegacy, NumAnswers, NumAdditionals;
 
 static ActivityStat *stats;
 
@@ -635,7 +630,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 mDNSlocal mStatus mDNSNetMonitor(void)
 	{
 	struct tm tm;
-	int h, m, s, mul, div;
+	int h, m, s, mul, div, TotPkt;
 	
 	mStatus status = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
@@ -644,7 +639,10 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	if (status) return(status);
 
 	gettimeofday(&tv_start, NULL);
-	ExampleClientEventLoop(&mDNSStorage);
+	ExampleClientEventLoop(&mDNSStorage);	// Wait for user to hit Ctrl-C
+	
+	// Now display final summary
+	TotPkt = NumPktQ + NumPktL + NumPktR;
 	gettimeofday(&tv_end, NULL);
 	tv_interval = tv_end;
 	if (tv_start.tv_usec > tv_interval.tv_usec)
@@ -673,10 +671,11 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	mprintf("End          %3d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv_end.tv_usec);
 	mprintf("Captured for %3d:%02d:%02d.%06d\n", h, m, s, tv_interval.tv_usec);
 	mprintf("\n");
-	mprintf("Total Multicast Query Packets:    %7d   (avg%5d/min)\n", NumPktQ,        NumPktQ        * mul / div);
-	mprintf("Total Legacy Query Packets:       %7d   (avg%5d/min)\n", NumPktL,        NumPktL        * mul / div);
-	mprintf("Total Multicast Response Packets: %7d   (avg%5d/min)\n", NumPktR,        NumPktR        * mul / div);
-	mprintf("(Note: A single packet usually contains multiple Probes/Queries/Announcements etc.)\n");
+	mprintf("Modern Query        Packets:      %7d   (avg%5d/min)\n", NumPktQ,        NumPktQ        * mul / div);
+	mprintf("Legacy Query        Packets:      %7d   (avg%5d/min)\n", NumPktL,        NumPktL        * mul / div);
+	mprintf("Multicast Response  Packets:      %7d   (avg%5d/min)\n", NumPktR,        NumPktR        * mul / div);
+	mprintf("Total     Multicast Packets:      %7d   (avg%5d/min)\n", TotPkt,         TotPkt         * mul / div);
+	mprintf("\n");
 	mprintf("Total New Service Probes:         %7d   (avg%5d/min)\n", NumProbes,      NumProbes      * mul / div);
 	mprintf("Total Goodbye Announcements:      %7d   (avg%5d/min)\n", NumGoodbyes,    NumGoodbyes    * mul / div);
 	mprintf("Total Query Questions:            %7d   (avg%5d/min)\n", NumQuestions,   NumQuestions   * mul / div);
