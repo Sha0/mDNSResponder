@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.194  2005/02/15 18:38:03  ksekar
+<rdar://problem/3967876> change expected/redundant log messages to debugfs.
+
 Revision 1.193  2005/02/15 01:17:48  ksekar
 Fixed build failure.
 
@@ -2683,7 +2686,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 	
 	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
-	if (err) LogMsg("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
+	if (err) debugf("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
 	if (info->state == LLQ_Established) info->ntries = 1;
 	else info->ntries++;
@@ -2717,7 +2720,7 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	ackEnd = putQuestion(&ack, ack.data, ack.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putQuestion");  return mDNSfalse; }
 	err = mDNSSendDNSMessage(m, &ack, ackEnd, mDNSInterface_Any, srcaddr, srcport, -1, mDNSNULL);
-	if (err) LogMsg("ERROR: recvLLQEvent - mDNSSendDNSMessage returned %ld", err);
+	if (err) debugf("ERROR: recvLLQEvent - mDNSSendDNSMessage returned %ld", err);
 	return mDNStrue;
 	}
 
@@ -2781,7 +2784,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	if (!responsePtr) { LogMsg("ERROR: sendChallengeResponse - putLLQ"); goto error; }
 	
 	err = mDNSSendDNSMessage(m, &response, responsePtr, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
-	if (err) LogMsg("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
+	if (err) debugf("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
 	return;
@@ -2927,7 +2930,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	if (!defer) // if we are to defer, we simply set the retry timers so the request goes out in the future
 		{
 		err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
-		if (err) LogMsg("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err);
+		if (err) debugf("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err);
 		// on error, we procede as normal and retry after the appropriate interval
 		}
 	
@@ -3702,7 +3705,7 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 		if (err) { LogMsg("ERROR: conQueryCallback: constructQueryMsg - %ld", err);  goto error; }
 		err = mDNSSendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, mDNSNULL);
 		question->LastQTime = mDNSPlatformTimeNow(m);
-		if (err) { LogMsg("ERROR: conQueryCallback: mDNSSendDNSMessage_tcp - %ld", err);  goto error; }
+		if (err) { debugf("ERROR: conQueryCallback: mDNSSendDNSMessage_tcp - %ld", err);  goto error; }
 		}
 	else
 		{
@@ -3818,7 +3821,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &regInfo->ns, regInfo->port, -1, GetAuthInfoForName(u, rr->resrec.name));
-	if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
+	if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
 	SetRecordRetry(m, rr);
 	
@@ -3996,7 +3999,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	   
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForName(u, srs->RR_SRV.resrec.name));
-	if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
+	if (err) { debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
 	if (rInfo->state != regState_Refresh && rInfo->state != regState_DeregDeferred && srs->uDNS_info.state != regState_UpdatePending)
 		rInfo->state = regState_Pending;
@@ -4143,7 +4146,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) goto error;
 
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForName(u, rr->resrec.name));
-	if (err) LogMsg("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
+	if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
 
 	SetRecordRetry(m, rr);
 	rr->uDNS_info.state = regState_DeregPending;
@@ -4279,7 +4282,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 
 	
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForName(u, srs->RR_SRV.resrec.name));
-	if (err) { LogMsg("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
+	if (err) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
 	SetRecordRetry(m, &srs->RR_SRV);
     info->id.NotAnInteger = id.NotAnInteger;
