@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.150  2005/01/07 23:59:15  ksekar
+<rdar://problem/3942900> dnd-sd shows the wrong port numbers
+
 Revision 1.149  2004/12/20 23:20:35  cheshire
 <rdar://problem/3928361> mDNSResponder crashes repeatedly when printer sharing is enabled
 Make sure to call mDNS_SetupResourceRecord() for all newly created AuthRecords
@@ -1491,8 +1494,7 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     // write reply data to message
     put_string(fullname, &data);
     put_string(target, &data);
-    *data++ = res->port.b[0];
-    *data++ = res->port.b[1];
+	put_short(res->port.NotAnInteger, &data);
     put_short(res->txtlen, &data);
     put_rdata(res->txtlen, res->txtdata, &data);
     
@@ -2088,8 +2090,7 @@ static void handle_regservice_request(request_state *request)
         get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
     	{ LogMsg("ERROR: handle_regservice_request - Couldn't read name/regtype/domain"); goto bad_param; }
         
-    service->port.b[0] = *ptr++;
-    service->port.b[1] = *ptr++;
+	service->port.NotAnInteger = get_short(&ptr);
     service->txtlen  = get_short(&ptr);
     service->txtdata = get_rdata(&ptr, service->txtlen);
 
