@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.58  2004/06/15 03:54:08  cheshire
+Include mDNSPlatformTimeNow() in SIGINFO output
+
 Revision 1.57  2004/06/12 01:47:27  ksekar
 <rdar://problem/3690241>: BBEdit crashes when trying to check for newer version
 udsserver_idle compared time in ticks to interval in seconds.
@@ -591,6 +594,7 @@ void udsserver_info(void)
         else if (req->terminate == enum_termination_callback)
             LogMsgNoIdent("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
         }
+    LogMsgNoIdent("Timenow %10lu", mDNSPlatformTimeNow());
     }
 
 
