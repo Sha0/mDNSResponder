@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.52  2004/12/01 19:46:12  cheshire
+# Add install case for Suse 9 (rc*.d directories *inside* the init.d directory)
+#
 # Revision 1.51  2004/12/01 03:30:29  cheshire
 # <rdar://problem/3889346> Add Unicast DNS support to mDNSPosix
 #
@@ -319,7 +322,12 @@ else
 MANPATH := /usr/man
 endif
 
-# If directory /etc/rc.d/init.d/ exists, then we install into that (old Linux)
+# If directories /etc/init.d/rc*.d exist, then we install into that (Suse)
+ifeq ($(wildcard /etc/init.d/rc2.d/), /etc/init.d/rc2.d/)
+STARTUPSCRIPTDIR = /etc/init.d
+RUNLEVELSCRIPTSDIR = /etc/init.d
+else
+# else if directory /etc/rc.d/init.d/ exists, then we install into that (old Linux)
 ifeq ($(wildcard /etc/rc.d/init.d/), /etc/rc.d/init.d/)
 STARTUPSCRIPTDIR = /etc/rc.d/init.d
 RUNLEVELSCRIPTSDIR = /etc/rc.d
@@ -331,6 +339,7 @@ RUNLEVELSCRIPTSDIR = /etc
 else
 # else install into /etc/rc.d/ (*BSD)
 STARTUPSCRIPTDIR = $(INSTBASE)/etc/rc.d
+endif
 endif
 endif
 
