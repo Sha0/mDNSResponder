@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.23  2003/10/30 19:39:28  cheshire
+Fix warnings on certain compilers
+
 Revision 1.22  2003/08/14 02:19:55  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -175,7 +178,8 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	domainlabel n;
 	domainname t, d;
 	mDNSIPPort port;
-	unsigned char buffer[1024], *bptr = buffer;
+	unsigned char txtbuffer[1024], *bptr = txtbuffer;
+	char buffer[1024];
 
 	MakeDomainLabelFromLiteralString(&n, name);
 	MakeDomainNameFromDNSNameString(&t, type);
@@ -187,7 +191,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 		int len = strlen(argv[0]);
 		printf("STR: %s\n", argv[0]);
 		bptr[0] = len;
-		strcpy(bptr+1, argv[0]);
+		strcpy((char*)(bptr+1), argv[0]);
 		bptr += 1 + len;
 		argc--;
 		argv++;
@@ -196,7 +200,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	mDNS_RegisterService(m, recordset,
 		&n, &t, &d,					// Name, type, domain
 		host, port,					// Host and port
-		buffer, bptr-buffer,		// TXT data, length
+		txtbuffer, bptr-txtbuffer,	// TXT data, length
 		mDNSNULL, 0,				// Subtypes
 		mDNSInterface_Any,			// Interace ID
 		ServiceCallback, mDNSNULL);	// Callback and context
@@ -250,7 +254,7 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, AuthRecord *const rr, domainname *
 	{
 	domainlabel n;
 	domainname t, d;
-	unsigned char buffer[256];
+	char buffer[256];
 	MakeDomainLabelFromLiteralString(&n, name);
 	MakeDomainNameFromDNSNameString(&t, type);
 	MakeDomainNameFromDNSNameString(&d, domain);
