@@ -57,6 +57,7 @@
 				FFF520490671177900DA3D49,
 				8DD76F740486A8DE00D96B5E,
 				FF1B691006711383002304DD,
+				FF1E351206711B5C003DD5BC,
 			);
 		};
 		08FB7794FE84155DC02AAC07 = {
@@ -75,6 +76,8 @@
 				08FB7796FE84155DC02AAC07,
 				FF1B6914067114AF002304DD,
 				FF964DAB067115710099215A,
+				FF1E351B06711BCF003DD5BC,
+				FF1E352506711BD6003DD5BC,
 			);
 			isa = PBXGroup;
 			name = Source;
@@ -113,6 +116,7 @@
 			children = (
 				8DD76F7E0486A8DE00D96B5E,
 				FF1B691106711383002304DD,
+				FF1E351306711B5C003DD5BC,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -306,7 +310,7 @@
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
-	<string>com.MySoftwareCompany.DNS_Service_Browser</string>
+	<string>com.apple.DNS_Service_Browser</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundlePackageType</key>
@@ -318,7 +322,7 @@
 	<key>CFBundleVersion</key>
 	<string>1.0.0d1</string>
 	<key>NSMainNibFile</key>
-	<string>MainMenu</string>
+	<string>DNSServiceBrowser</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
@@ -344,6 +348,145 @@
 		};
 		FF1B6915067114AF002304DD = {
 			fileRef = FF1B6914067114AF002304DD;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF1E350E06711B5C003DD5BC = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXHeadersBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1E350F06711B5C003DD5BC = {
+			buildActionMask = 2147483647;
+			files = (
+				FF1E352606711BD6003DD5BC,
+			);
+			isa = PBXResourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1E351006711B5C003DD5BC = {
+			buildActionMask = 2147483647;
+			files = (
+				FF1E351C06711BCF003DD5BC,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1E351106711B5C003DD5BC = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1E351206711B5C003DD5BC = {
+			buildPhases = (
+				FF1E350E06711B5C003DD5BC,
+				FF1E350F06711B5C003DD5BC,
+				FF1E351006711B5C003DD5BC,
+				FF1E351106711B5C003DD5BC,
+			);
+			buildRules = (
+			);
+			buildSettings = {
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "$(SYSTEM_LIBRARY_DIR)/Frameworks/AppKit.framework/Headers/AppKit.h";
+				GCC_WARN_FOUR_CHARACTER_CONSTANTS = NO;
+				GCC_WARN_UNKNOWN_PRAGMAS = NO;
+				INFOPLIST_FILE = "DNSServiceRegistration-Info.plist";
+				INSTALL_PATH = "$(USER_APPS_DIR)";
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "-framework Foundation -framework AppKit";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = "DNS Service Registration";
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = "-Wmost";
+			};
+			dependencies = (
+			);
+			isa = PBXNativeTarget;
+			name = "DNS Service Registration";
+			productName = "DNS Service Registration";
+			productReference = FF1E351306711B5C003DD5BC;
+			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>DNS Service Registration</string>
+	<key>CFBundleGetInfoString</key>
+	<string></string>
+	<key>CFBundleIconFile</key>
+	<string></string>
+	<key>CFBundleIdentifier</key>
+	<string>com.apple.DNS_Service_Registration</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string></string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>1.0.0d1</string>
+	<key>NSMainNibFile</key>
+	<string>DNSServiceRegistration</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>
+";
+			productType = "com.apple.product-type.application";
+		};
+		FF1E351306711B5C003DD5BC = {
+			explicitFileType = wrapper.application;
+			includeInIndex = 0;
+			isa = PBXFileReference;
+			path = "DNS Service Registration.app";
+			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		FF1E351706711B6A003DD5BC = {
+			containerPortal = 08FB7793FE84155DC02AAC07;
+			isa = PBXContainerItemProxy;
+			proxyType = 1;
+			remoteGlobalIDString = FF1E351206711B5C003DD5BC;
+			remoteInfo = DNSServiceRegistration;
+		};
+		FF1E351806711B6A003DD5BC = {
+			isa = PBXTargetDependency;
+			target = FF1E351206711B5C003DD5BC;
+			targetProxy = FF1E351706711B6A003DD5BC;
+		};
+		FF1E351B06711BCF003DD5BC = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.objc;
+			path = DNSServiceRegistration.m;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		FF1E351C06711BCF003DD5BC = {
+			fileRef = FF1E351B06711BCF003DD5BC;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF1E352506711BD6003DD5BC = {
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.nib;
+			path = DNSServiceRegistration.nib;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		FF1E352606711BD6003DD5BC = {
+			fileRef = FF1E352506711BD6003DD5BC;
 			isa = PBXBuildFile;
 			settings = {
 			};
@@ -427,6 +570,7 @@
 			dependencies = (
 				FF383826067117F300FEF615,
 				FF383828067117F600FEF615,
+				FF1E351806711B6A003DD5BC,
 			);
 			isa = PBXAggregateTarget;
 			name = "Build All";
