@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.172  2005/02/18 00:58:35  cheshire
+<rdar://problem/4012162> "Could not write data to client after 60 seconds" message could be more helpful
+
 Revision 1.171  2005/02/18 00:43:12  cheshire
 <rdar://problem/4010245> mDNSResponder should auto-truncate service names that are too long
 
@@ -1008,17 +1011,17 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
                 }
             }
         if (result == t_morecoming)
-        {
-	    if (!req->time_blocked) req->time_blocked = now;
-	    debugf("udsserver_idle: client has been blocked for %ld seconds", (now - req->time_blocked) / mDNSPlatformOneSecond);
-	    if (now - req->time_blocked >= MAX_TIME_BLOCKED)
-		{
-		LogMsg("Could not write data to client after %ld seconds - aborting connection", MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
-		abort_request(req);
-		result = t_terminated;
-		}
-	    else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;  // try again in a second
-	}
+			{
+			if (!req->time_blocked) req->time_blocked = now;
+			debugf("udsserver_idle: client has been blocked for %ld seconds", (now - req->time_blocked) / mDNSPlatformOneSecond);
+			if (now - req->time_blocked >= MAX_TIME_BLOCKED)
+				{
+				LogMsg("Could not write data to client %d after %ld seconds - aborting connection", req->sd, MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
+				abort_request(req);
+				result = t_terminated;
+				}
+			else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;  // try again in a second
+			}
         if (result == t_terminated || result == t_error)
         //since we're already doing a list traversal, we unlink the request manunally instead of calling unlink_request()
             {
