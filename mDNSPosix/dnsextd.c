@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.12  2004/11/12 01:05:01  ksekar
+<rdar://problem/3876757> dnsextd: daemon registers the SRV same record
+twice at startup
+
 Revision 1.11  2004/11/12 01:03:31  ksekar
 <rdar://problem/3876776> dnsextd: KnownAnswers (CacheRecords) leaked
 
@@ -628,7 +632,6 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 
 	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-update._udp.", registration); if (!ptr) goto end;
 	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-update._tcp.", registration); if (!ptr) goto end;
-	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-llq._udp.", registration);    if (!ptr) goto end;
 	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-llq._udp.", registration);    if (!ptr) goto end;	
 	
 	nAdditHBO = pkt.msg.h.numAdditionals;
