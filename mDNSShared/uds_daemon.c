@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.147  2004/12/20 00:15:41  cheshire
+Include client file descriptor numbers in udsserver_info() output
+
 Revision 1.146  2004/12/17 05:25:47  cheshire
 <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
 
@@ -985,20 +988,20 @@ void udsserver_info(mDNS *const m)
 			{
 			service_instance *ptr;
 			for (ptr = ((service_info *)t)->instances; ptr; ptr = ptr->next)
-				LogMsgNoIdent("DNSServiceRegister         %##s %u", ptr->srs.RR_SRV.resrec.name->c, SRS_PORT(&ptr->srs));
+				LogMsgNoIdent("%3d: DNSServiceRegister         %##s %u", req->sd, ptr->srs.RR_SRV.resrec.name->c, SRS_PORT(&ptr->srs));
 			}
 		else if (req->terminate == browse_termination_callback)
 			{
 			browser_t *blist;
 			for (blist = req->browser_info->browsers; blist; blist = blist->next)
-				LogMsgNoIdent("DNSServiceBrowse           %##s", blist->q.qname.c);
+				LogMsgNoIdent("%3d: DNSServiceBrowse           %##s", req->sd, blist->q.qname.c);
 			}
         else if (req->terminate == resolve_termination_callback)
-            LogMsgNoIdent("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->qsrv.qname.c);
+            LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, ((resolve_termination_t *)t)->qsrv.qname.c);
         else if (req->terminate == question_termination_callback)
-            LogMsgNoIdent("DNSServiceQueryRecord      %##s", ((DNSQuestion *)          t)->qname.c);
+            LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, ((DNSQuestion *)          t)->qname.c);
         else if (req->terminate == enum_termination_callback)
-            LogMsgNoIdent("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
+            LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, ((enum_termination_t *)   t)->all->question.qname.c);
         }
 
     now = mDNS_TimeNow(m);
