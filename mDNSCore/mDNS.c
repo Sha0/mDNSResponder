@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.169  2003/06/06 21:35:55  cheshire
+Fix mis-named macro: GetRRHostNameTarget is really GetRRDomainNameTarget
+(the target is a domain name, but not necessarily a host name)
+
 Revision 1.168  2003/06/06 21:33:31  cheshire
 Instead of using (mDNSPlatformOneSecond/2) all over the place, define a constant "InitialQuestionInterval"
 
@@ -1651,7 +1655,7 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const ResourceRecord *con
 		}
 	}
 
-#define GetRRHostNameTarget(RR) (                                                                                    \
+#define GetRRDomainNameTarget(RR) (                                                                          \
 	((RR)->rrtype == kDNSType_CNAME || (RR)->rrtype == kDNSType_PTR) ? &(RR)->rdata->u.name       :          \
 	((RR)->rrtype == kDNSType_SRV                                  ) ? &(RR)->rdata->u.srv.target : mDNSNULL )
 
@@ -1685,7 +1689,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, ResourceRecord *const rr)
 
 mDNSlocal void SetTargetToHostName(mDNS *const m, ResourceRecord *const rr)
 	{
-	domainname *target = GetRRHostNameTarget(rr);
+	domainname *target = GetRRDomainNameTarget(rr);
 
 	if (!target) debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->rrtype);
 
@@ -1827,7 +1831,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 
 	if (rr->HostTarget)
 		{
-		domainname *target = GetRRHostNameTarget(rr);
+		domainname *target = GetRRDomainNameTarget(rr);
 		if (target) target->c[0] = 0;
 		SetTargetToHostName(m, rr);	// This also sets rdlength and rdestimate for us
 		}
