@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.120  2003/05/19 22:14:14  ksekar
+<rdar://problem/3162914> mDNS probe denials/conflicts not detected unless conflict is of the same type
+
 Revision 1.119  2003/05/16 01:34:10  cheshire
 Fix some warnings
 
@@ -1207,10 +1210,11 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 #define ActiveQuestion(Q) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf)
 #define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (time) - ((Q)->LastQTime + (Q)->ThisQInterval) >= 0)
 
-mDNSlocal mDNSBool SameRData(const mDNSu16 rrtype, const RData *const r1, const RData *const r2)
+mDNSlocal mDNSBool SameRData(const mDNSu16 r1type, const mDNSu16 r2type, const RData *const r1, const RData *const r2)
 	{
+	if (r1type != r2type) return mDNSfalse;
 	if (r1->RDLength != r2->RDLength) return(mDNSfalse);
-	switch(rrtype)
+	switch(r1type)
 		{
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(SameDomainName(&r1->u.name, &r2->u.name));
@@ -1263,6 +1267,21 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
 	}
 
+// PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if the
+// authoratative record is in the probing state.  Probes are sent with the wildcard type, so a response of 
+// any type should match, even if it is not the type the client plans to use.
+mDNSlocal mDNSBool PacketRRMatchesSignature(const ResourceRecord *const pktrr, const ResourceRecord *const authrr)
+        {
+	if (!pktrr) { debugf("SameResourceRecordSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
+	if (!authrr) { debugf("SameResourceRecordSignature ERROR: authrr is NULL"); return(mDNSfalse); }
+	if (pktrr->InterfaceID &&
+		authrr->InterfaceID &&
+		pktrr->InterfaceID != authrr->InterfaceID) return(mDNSfalse);
+	if (authrr->RecordType != kDNSRecordTypeUnique && pktrr->rrtype != authrr->rrtype) return(mDNSfalse);
+	return (pktrr->rrclass == authrr->rrclass && SameDomainName(&pktrr->name, &authrr->name));
+	}        
+
+
 // SameResourceRecordSignatureAnyInterface returns true if two resources records have the same name, type, and class.
 // (InterfaceID, TTL and rdata may differ)
 mDNSlocal mDNSBool SameResourceRecordSignatureAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
@@ -1277,7 +1296,7 @@ mDNSlocal mDNSBool SameResourceRecordSignatureAnyInterface(const ResourceRecord 
 mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!SameResourceRecordSignature(r1, r2)) return(mDNSfalse);
-	return(SameRData(r1->rrtype, r1->rdata, r2->rdata));
+	return(SameRData(r1->rrtype, r2->rrtype, r1->rdata, r2->rdata));
 	}
 
 // IdenticalResourceRecordAnyInterface returns true if two resources records have
@@ -1285,7 +1304,7 @@ mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const
 mDNSlocal mDNSBool IdenticalResourceRecordAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!SameResourceRecordSignatureAnyInterface(r1, r2)) return(mDNSfalse);
-	return(SameRData(r1->rrtype, r1->rdata, r2->rdata));
+	return(SameRData(r1->rrtype, r2->rrtype, r1->rdata, r2->rdata));
 	}
 
 // ResourceRecord *ds is the ResourceRecord from the duplicate suppression section of the query
@@ -3860,9 +3879,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			{
 			ResourceRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (SameResourceRecordSignature(&pktrr, rr))		// If interface, name, type and class match...
-				{												// ... check to see if rdata is identical
-				if (SameRData(pktrr.rrtype, pktrr.rdata, rr->rdata))
+			if (PacketRRMatchesSignature(&pktrr, rr))		// If interface, name, type (if verified) and class match...
+				{	
+				// ... check to see if rdata is identical
+				if (SameRData(pktrr.rrtype, rr->rrtype, pktrr.rdata, rr->rdata))
 					{
 					// If the RR in the packet is identical to ours, just check they're not trying to lower the TTL on us
 					if (pktrr.rroriginalttl >= rr->rroriginalttl || m->SleepState)
