@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.27  2004/12/17 00:27:32  ksekar
+Ignore SIGPIPE
+
 Revision 1.26  2004/12/17 00:21:33  ksekar
 Fixes for new CacheRecord structure with indirect name pointer
 
@@ -1971,6 +1974,7 @@ int main(int argc, char *argv[])
 	if (signal(SIGTERM,     HndlSignal) == SIG_ERR) perror("Can't catch SIGTERM");
 	if (signal(INFO_SIGNAL, HndlSignal) == SIG_ERR) perror("Can't catch SIGINFO");
 	if (signal(SIGINT,      HndlSignal) == SIG_ERR) perror("Can't catch SIGINT");
+	if (signal(SIGPIPE,     SIG_IGN  )  == SIG_ERR) perror("Can't ignore SIGPIPE");
 	
 	if (ProcessArgs(argc, argv, &d) < 0) exit(1);
 
