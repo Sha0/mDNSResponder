@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.166  2004/12/22 00:04:12  ksekar
+<rdar://problem/3930324> mDNSResponder crashing in ReceivePortMapReply
+
 Revision 1.165  2004/12/18 03:14:22  cheshire
 DblNAT -> DoubleNAT
 
@@ -617,6 +620,7 @@ typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const Async
 // foo), or when they aid in the grouping or readability of code (e.g. state machine code that is easier
 // read top-to-bottom.)
 
+mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n);
 mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, mDNS *m);
 mDNSlocal mStatus startGetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort, AsyncOpCallback callback, void *callbackInfo);
 mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID);
@@ -698,9 +702,25 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 	return mStatus_UnknownErr;
 	}
 
-mDNSlocal void unlinkSRS(uDNS_GlobalInfo *u, ServiceRecordSet *srs)
+mDNSlocal void unlinkSRS(mDNS *m, ServiceRecordSet *srs)
 	{
+	uDNS_GlobalInfo *u = &m->uDNS_info;
 	ServiceRecordSet **p;
+	NATTraversalInfo *n = u->NATTraversals;
+
+	// verify that no NAT objects reference this service
+	while (n)
+		{
+		if (n->reg.ServiceRegistration == srs)
+			{
+			NATTraversalInfo *tmp = n;
+			n = n->next;
+			LogMsg("ERROR: Unlinking service record set %##s still referenced by NAT traversal object!", srs->RR_SRV.resrec.name->c);
+			FreeNATInfo(m, tmp);
+			}
+		else n = n->next;
+		}
+			
 	for (p = &u->ServiceRegistrations; *p; p = &(*p)->next)
 		if (*p == srs) { *p = srs->next; srs->next = mDNSNULL; return; }
 	LogMsg("ERROR: unlinkSRS - SRS not found in ServiceRegistrations list");
@@ -918,6 +938,18 @@ mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, NATResponseH
 mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 	{
 	NATTraversalInfo *ptr, *prev = mDNSNULL;
+	ServiceRecordSet *s = m->uDNS_info.ServiceRegistrations;
+
+	// Verify that object is not referenced by any services
+	while (s)
+		{
+		if (s->uDNS_info.NATinfo == n)
+			{
+			LogMsg("Error: Freeing NAT info object still referenced by Service Record Set %##s!", s->RR_SRV.resrec.name->c);
+			s->uDNS_info.NATinfo = mDNSNULL;
+			}
+		s = s->next;
+		}
 	
 	if (n == m->uDNS_info.LLQNatInfo) m->uDNS_info.LLQNatInfo = mDNSNULL;
 	ptr = m->uDNS_info.NATTraversals;
@@ -2098,7 +2130,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 		else e = &(*e)->next;
 		}
 
-	if (info->state == regState_Unregistered) unlinkSRS(&m->uDNS_info, srs);
+	if (info->state == regState_Unregistered) unlinkSRS(m, srs);
 	else if (srs->RR_TXT.uDNS_info.UpdateQueued && !err)
 		{
 		if (InvokeCallback)
@@ -3838,7 +3870,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 error:
 	LogMsg("SendServiceRegistration - Error formatting message");
 	if (mapped) srv->resrec.rdata->u.srv.port = privport;
-	unlinkSRS(u, srs);
+	unlinkSRS(m, srs);
 	rInfo->state = regState_Unregistered;
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	srs->ServiceCallback(m, srs, err);
@@ -3851,7 +3883,6 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
 	const zoneData_t *zoneData = mDNSNULL;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
 	if (err) goto error;
 	if (!result) { LogMsg("ERROR: serviceRegistrationCallback invoked with NULL result and no error");  goto error; }
@@ -3867,7 +3898,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		{
 		// client cancelled registration while fetching zone data
 		srs->uDNS_info.state = regState_Unregistered;
-		unlinkSRS(u, srs);
+		unlinkSRS(m, srs);
 		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 		srs->ServiceCallback(m, srs, mStatus_MemFree);
 		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
@@ -3894,7 +3925,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	return;
 		
 error:
-	unlinkSRS(u, srs);
+	unlinkSRS(m, srs);
 	srs->uDNS_info.state = regState_Unregistered;
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	srs->ServiceCallback(m, srs, err);
@@ -4114,7 +4145,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	return;
 	
 	error:
-	unlinkSRS(u, srs);
+	unlinkSRS(m, srs);
 	info->state = regState_Unregistered;
 	}
 
@@ -4124,7 +4155,6 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
 	AuthRecord **r = &u->RecordRegistrations;
 	char *errmsg = "Unknown State";
-	mStatus err = mStatus_MemFree;
 	
 	// We "silently" unlink any Extras from our RecordRegistration list, as they are implicitly deleted from
 	// the server when we delete all RRSets for this name
@@ -4136,24 +4166,18 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 
 	// don't re-register with a new target following deregistration
 	srs->uDNS_info.LostTarget = srs->uDNS_info.SRVUpdateDeferred = mDNSfalse;
+
+	if (nat)
+		{
+		if (nat->state == NATState_Established || nat->state == NATState_Refresh || nat->state == NATState_Legacy)
+			DeleteNATPortMapping(m, nat, srs);
+		nat->reg.ServiceRegistration = mDNSNULL;
+		srs->uDNS_info.NATinfo = mDNSNULL;
+		FreeNATInfo(m, nat);
+		}
 	
 	switch (srs->uDNS_info.state)
 		{
-		case regState_NATMap:
-			// we're in the middle of nat mapping.  clear ptr from NAT info to RR, unlink and give memfree
-			if (!nat) LogMsg("uDNS_DeregisterRecord: no NAT info context");
-			else
-				{
-				if (nat->state == NATState_Error) err = mStatus_NATTraversal;
-				nat->reg.ServiceRegistration = mDNSNULL;
-				FreeNATInfo(m, nat);
-				}
-			unlinkSRS(u, srs);
-			srs->uDNS_info.state = regState_Unregistered;
-			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-			srs->ServiceCallback(m, srs, err);
-			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-			return mStatus_NoError;
 		case regState_Unregistered:
 			errmsg = "service not registered";
 			goto error;
@@ -4172,15 +4196,15 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_Cancelled:
 			debugf("Double deregistration of service %##s", srs->RR_SRV.resrec.name->c);
 			return mStatus_NoError;
+		case regState_NATMap:
 		case regState_NoTarget:
-			unlinkSRS(u, srs);
+			unlinkSRS(m, srs);
 			srs->uDNS_info.state = regState_Unregistered;
 			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return mStatus_NoError;
 		case regState_Registered:
-			if (nat) DeleteNATPortMapping(m, nat, srs);
 			srs->uDNS_info.state = regState_DeregPending;
 			SendServiceDeregistration(m, srs);
 			return mStatus_NoError;
