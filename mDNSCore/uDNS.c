@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.203  2005/03/04 03:00:03  ksekar
+<rdar://problem/4026546> Retransmissions happen too early, causing registrations to conflict with themselves
+
 Revision 1.202  2005/03/01 19:29:17  ksekar
 changed LogMsgs to debugfs
 
@@ -2095,7 +2098,7 @@ mDNSlocal mStatus checkUpdateResult(domainname *displayname, mDNSu8 rcode, mDNS 
 	if (!rcode) return mStatus_NoError;
 	else if (rcode == kDNSFlag1_RC_YXDomain)
 		{
-		LogMsg("name in use: %##s", displayname->c);
+		debugf("name in use: %##s", displayname->c);
 		return mStatus_NameConflict;
 		}
 	else if (rcode == kDNSFlag1_RC_Refused)
