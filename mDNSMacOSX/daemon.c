@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.159  2004/04/03 01:36:55  cheshire
+<rdar://problem/3605898> mDNSResponder will not launch if "nobody" user doesn't exist.
+If "nobody" user doesn't exist, log a message and continue as "root"
+
 Revision 1.158  2004/04/02 21:39:05  cheshire
 Fix errors in comments
 
@@ -300,10 +304,8 @@ Add $Log header
 #define	_UNUSED	__attribute__ ((unused))
 
 //*************************************************************************************************************
-
-
-
 // Globals
+
 #define LOCAL_DEFAULT_REG 1 // empty string means register in the local domain
 #define DEFAULT_REG_DOMAIN "apple.com." // used if the above flag is turned off
 mDNSexport mDNS mDNSStorage;
@@ -654,7 +656,7 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIn
 		AbortClient(deathMessage->not_port, NULL);
 
 		/* Deallocate the send right that came in the dead name notification */
-		mach_port_destroy( mach_task_self(), deathMessage->not_port );
+		mach_port_destroy(mach_task_self(), deathMessage->not_port);
 		}
 	}
 
@@ -1767,8 +1769,7 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGINFO, HandleSIGINFO);
 
 	// Register the server with mach_init for automatic restart only during normal (non-debug) mode
-    if (!mDNS_DebugMode)
-		registerBootstrapService();
+    if (!mDNS_DebugMode) registerBootstrapService();
 
 	if (!mDNS_DebugMode && !restarting_via_mach_init)
 		exit(0); /* mach_init will restart us immediately as a daemon */
@@ -1787,15 +1788,16 @@ mDNSexport int main(int argc, char **argv)
 			}
 		}
 
+	// First do the all the initialization we need root privilege for, before we change to user "nobody"
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 	status = mDNSDaemonInitialize();
 
 	// Now that we're finished with anything privileged, switch over to running as "nobody"
-	const struct passwd *pw = getpwnam( "nobody");
-	if ( pw != NULL)
-		setuid( pw->pw_uid);
+	const struct passwd *pw = getpwnam("nobody");
+	if (pw != NULL)
+		setuid(pw->pw_uid);
 	else
-		status = mStatus_Incompatible;		// refuse to run as root
+		LogMsg("WARNING: User \"nobody\" does not appear to exist; will run as \"root\" instead");
 
 	if (status == 0)
 		{
@@ -1840,11 +1842,10 @@ mDNSexport int main(int argc, char **argv)
 		mDNS_Close(&mDNSStorage);
 		}
 
-	destroyBootstrapService();
+	if (!mDNS_DebugMode) destroyBootstrapService();
 
 	return(status);
 	}
-
 
 //		uds_daemon.c support routines		/////////////////////////////////////////////
 
@@ -1862,12 +1863,11 @@ typedef struct CFSocketEventSource	CFSocketEventSource;
 
 static GenLinkedList	gEventSources;			// linked list of CFSocketEventSource's
 
-
 static void cf_callback(CFSocketRef s _UNUSED, CFSocketCallBackType t _UNUSED, CFDataRef dr _UNUSED, const void *c _UNUSED, void *i)
 	// Called by CFSocket when data appears on socket
 	{
 	CFSocketEventSource	*source = (CFSocketEventSource*) i;
-	source->Callback( source->Context);
+	source->Callback(source->Context);
 	}
 
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
@@ -1877,14 +1877,14 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	CFSocketContext cfContext = 	{ 0, NULL, NULL, NULL, NULL 	};
 	
 	if (gEventSources.LinkOffset == 0)
-		InitLinkedList( &gEventSources, offsetof( CFSocketEventSource, Next));
+		InitLinkedList(&gEventSources, offsetof(CFSocketEventSource, Next));
 
 	if (fd >= FD_SETSIZE || fd < 0)
 		return mStatus_UnsupportedErr;
 	if (callback == NULL)
 		return mStatus_BadParamErr;
 
-	newSource = (CFSocketEventSource*) calloc( 1, sizeof *newSource);
+	newSource = (CFSocketEventSource*) calloc(1, sizeof *newSource);
 	if (NULL == newSource)
 		return mStatus_NoMemoryErr;
 
@@ -1893,9 +1893,9 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	newSource->fd = fd;
 
 	cfContext.info = newSource;
-	if ( NULL != ( newSource->SocketRef = CFSocketCreateWithNative( kCFAllocatorDefault, fd, kCFSocketReadCallBack, 
+	if ( NULL != (newSource->SocketRef = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack, 
 																	cf_callback, &cfContext)) &&
-		 NULL != ( newSource->RLS = CFSocketCreateRunLoopSource(kCFAllocatorDefault, newSource->SocketRef, 0)))
+		 NULL != (newSource->RLS = CFSocketCreateRunLoopSource(kCFAllocatorDefault, newSource->SocketRef, 0)))
 		{
 		CFRunLoopAddSource(CFRunLoopGetCurrent(), newSource->RLS, kCFRunLoopDefaultMode);
 		AddToTail(&gEventSources, newSource);
@@ -1913,29 +1913,27 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	return mStatus_NoError;
 	}
 
-mStatus udsSupportRemoveFDFromEventLoop( int fd)
+mStatus udsSupportRemoveFDFromEventLoop(int fd)
 	// Reverse what was done in udsSupportAddFDToEventLoop().
 	{
 	CFSocketEventSource	*iSource;
 
-	for ( iSource=(CFSocketEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+	for (iSource=(CFSocketEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
 		{
-		if ( fd == iSource->fd)
+		if (fd == iSource->fd)
 			{
-			RemoveFromList( &gEventSources, iSource);
+			RemoveFromList(&gEventSources, iSource);
 			CFRunLoopRemoveSource(CFRunLoopGetCurrent(), iSource->RLS, kCFRunLoopDefaultMode);
 			CFRunLoopSourceInvalidate(iSource->RLS);
 			CFRelease(iSource->RLS);
 			CFSocketInvalidate(iSource->SocketRef);
 			CFRelease(iSource->SocketRef);
-			free( iSource);
+			free(iSource);
 			return mStatus_NoError;
 			}
 		}
 	return mStatus_NoSuchNameErr;
 	}
-
-
 
 // For convenience when using the "strings" command, this is the last thing in the file
 mDNSexport const char mDNSResponderVersionString[] = STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
