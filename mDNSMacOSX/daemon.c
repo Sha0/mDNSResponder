@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.242  2005/01/27 00:10:58  cheshire
+<rdar://problem/3967867> Name change log messages every time machine boots
+
 Revision 1.241  2005/01/25 17:28:06  ksekar
 <rdar://problem/3971467> Should not return "local" twice for domain enumeration
 
@@ -2253,8 +2256,6 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFRelease(s_rls);
 	CFRelease(i_rls);
 	if (mDNS_DebugMode) printf("Service registered with Mach Port %d\n", m_port);
-	err = udsserver_init();
-	if (err) { LogMsg("Daemon start: udsserver_init failed"); return err; }
 	return(err);
 	}
 
@@ -2426,6 +2427,11 @@ mDNSexport int main(int argc, char **argv)
 			}
 		}
 
+	// Make our PID file and Unix Domain Socket first, because launchd waits for those before it starts launching other daemons.
+	// The sooner we do this, the faster the machine will boot.
+	status = udsserver_init();
+	if (status) { LogMsg("Daemon start: udsserver_init failed"); return(status); }
+	
 	// First do the all the initialization we need root privilege for, before we change to user "nobody"
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 	status = mDNSDaemonInitialize();

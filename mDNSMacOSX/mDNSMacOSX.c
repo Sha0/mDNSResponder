@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.291  2005/01/27 00:10:58  cheshire
+<rdar://problem/3967867> Name change log messages every time machine boots
+
 Revision 1.290  2005/01/25 23:18:30  ksekar
 fix for <rdar://problem/3971467> requires that local-only ".local" registration record be created
 
@@ -2015,25 +2018,25 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		{
 #if LIST_ALL_INTERFACES
 		if (ifa->ifa_addr->sa_family == AF_APPLETALK)
-			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d is AF_APPLETALK",
+			LogMsg("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d is AF_APPLETALK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		else if (ifa->ifa_addr->sa_family == AF_LINK)
-			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d is AF_LINK",
+			LogMsg("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d is AF_LINK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		else if (ifa->ifa_addr->sa_family != AF_INET && ifa->ifa_addr->sa_family != AF_INET6)
-			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d not AF_INET (2) or AF_INET6 (30)",
+			LogMsg("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d not AF_INET (2) or AF_INET6 (30)",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (!(ifa->ifa_flags & IFF_UP))
-			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface not IFF_UP",
+			LogMsg("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface not IFF_UP",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (!(ifa->ifa_flags & IFF_MULTICAST))
-			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface not IFF_MULTICAST",
+			LogMsg("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface not IFF_MULTICAST",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (ifa->ifa_flags & IFF_POINTOPOINT)
-			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_POINTOPOINT",
+			LogMsg("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_POINTOPOINT",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (ifa->ifa_flags & IFF_LOOPBACK)
-			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
+			LogMsg("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
 
@@ -2124,13 +2127,21 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	domainlabel nicelabel;
 	nicelabel.c[0] = 0;
 	GetUserSpecifiedFriendlyComputerName(&nicelabel);
-	if (nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&nicelabel, defaultname);
+	if (nicelabel.c[0] == 0)
+		{
+		LogMsg("Couldn't read user-specified Computer Name; using default “%s” instead", defaultname);
+		MakeDomainLabelFromLiteralString(&nicelabel, defaultname);
+		}
 
 	// Set up the RFC 1034-compliant label
 	domainlabel hostlabel;
 	hostlabel.c[0] = 0;
 	GetUserSpecifiedLocalHostName(&hostlabel);
-	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, defaultname);
+	if (hostlabel.c[0] == 0)
+		{
+		LogMsg("Couldn't read user-specified local hostname; using default “%s.local” instead", defaultname);
+		MakeDomainLabelFromLiteralString(&hostlabel, defaultname);
+		}
 
 	if (SameDomainLabel(m->p->usernicelabel.c, nicelabel.c))
 		debugf("Usernicelabel (%#s) unchanged since last time; not changing m->nicelabel (%#s)", m->p->usernicelabel.c, m->nicelabel.c);
@@ -3245,6 +3256,17 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
+	int i;
+	for (i=0; i<100; i++)
+		{
+		domainlabel testlabel;
+		testlabel.c[0] = 0;
+		GetUserSpecifiedLocalHostName(&testlabel);
+		if (testlabel.c[0]) break;
+		LogMsg("GetUserSpecifiedLocalHostName() failed");
+		usleep(50000);
+		}
+
 	mStatus err;
 
    	m->hostlabel.c[0]        = 0;
