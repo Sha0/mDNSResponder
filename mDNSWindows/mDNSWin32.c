@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.61  2004/11/05 22:54:38  shersche
+Change registry key flags from KEY_ALL_ACCESS to KEY_READ to support mDNSResponder running with limited access rights
+Submitted by: Pavel Repin <prepin@gmail.com>
+
 Revision 1.60  2004/11/05 22:41:56  shersche
 Determine subnet mask when populating network interface data structures
 Submitted by: Pavel Repin <prepin@gmail.com>
@@ -1118,7 +1122,7 @@ mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 	if (inMDNS->p->regKey == NULL)
 	{
 		const char * s = "SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\parameters";
-		err = RegOpenKeyEx( HKEY_LOCAL_MACHINE, s, 0, KEY_ALL_ACCESS|KEY_NOTIFY, &inMDNS->p->regKey);
+		err = RegOpenKeyEx( HKEY_LOCAL_MACHINE, s, 0, KEY_READ, &inMDNS->p->regKey);
 		check_translated_errno( err == 0, errno_compat(), kNameErr );
 
 		if (err)
