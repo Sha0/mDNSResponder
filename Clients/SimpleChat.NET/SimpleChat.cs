@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SimpleChat.cs,v $
+Revision 1.4  2004/09/11 05:42:56  shersche
+don't reset SelectedIndex in OnRemove
+
 Revision 1.3  2004/09/11 00:38:58  shersche
 DNSService APIs now expect port in host format
 
@@ -248,7 +251,6 @@ namespace SimpleChat.NET
 				)
 		{
 			comboBox1.Items.Remove(peer);
-			comboBox1.SelectedIndex = 0;
 		}
 
 		//
