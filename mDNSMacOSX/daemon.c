@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.240  2005/01/21 02:39:18  cheshire
+Rename FoundDomain() to DomainEnumFound() to avoid order-file symbol clash with other routine called FoundDomain()
+
 Revision 1.239  2005/01/20 00:25:01  cheshire
 Improve validatelists() log message generation
 
@@ -988,7 +991,7 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void
 //*************************************************************************************************************
 // Domain Enumeration
 
-mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void DomainEnumFound(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	kern_return_t status;
 	#pragma unused(m)
@@ -996,9 +999,9 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	DNSServiceDomainEnumerationReplyResultType rt;
 	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->QuestionContext;
 
-	debugf("FoundDomain: %##s PTR %##s", answer->name->c, answer->rdata->u.name.c);
+	debugf("DomainEnumFound: %##s PTR %##s", answer->name->c, answer->rdata->u.name.c);
 	if (answer->rrtype != kDNSType_PTR) return;
-	if (!x) { debugf("FoundDomain: DNSServiceDomainEnumeration is NULL"); return; }
+	if (!x) { debugf("DomainEnumFound: DNSServiceDomainEnumeration is NULL"); return; }
 
 	if (AddRecord)
 		{
@@ -1053,8 +1056,8 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 		{ AbortBlockedClient(x->ClientMachPort, "local enumeration", x); return(mStatus_UnknownErr); }
 
 	// Do the operation
-	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, NULL, mDNSInterface_LocalOnly, FoundDomain, x);
-	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, NULL, mDNSInterface_LocalOnly, FoundDomain, x);
+	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, NULL, mDNSInterface_LocalOnly, DomainEnumFound, x);
+	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, NULL, mDNSInterface_LocalOnly, DomainEnumFound, x);
 	if (err) { AbortClient(client, x); errormsg = "mDNS_GetDomains"; goto fail; }
 
 	// Succeeded: Wrap up and return
