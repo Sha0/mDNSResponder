@@ -350,8 +350,8 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
-	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
-	{
+																  DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
+{
 	mStatus err;
 	domainlabel n;
 	domainname t, d;
@@ -376,7 +376,34 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	if (!err) EnableDeathNotificationForClient(client);
 	debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
 	return(err);
-	}
+}
+
+mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t server, mach_port_t client, int type, const char *data, mach_msg_type_number_t data_len, natural_t *reference)
+{
+	mStatus err = 0;
+
+	printf("Received a request to add the record(s) of type: %d length: %d data: %s, returned cookie 32\n", type, data_len, data);
+	*reference = 32;
+	return(err);
+}
+
+mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference, int type, const char *data, mach_msg_type_number_t data_len)
+{
+	mStatus err = 0;
+
+	printf("Received a request to update the record(s) of type: %d length: %d data: %s for reference: %d\n", type, data_len, data, reference);
+	return(err);
+}
+
+
+mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference)
+{
+	mStatus err = 0;
+
+	printf("Received a request to remove the record(s) of reference: %d\n", (int)reference);
+	return(err);
+}
+
 
 //*************************************************************************************************************
 // Support Code

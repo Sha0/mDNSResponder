@@ -77,6 +77,7 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
     Boolean                 shouldFreeInfo;
     dns_service_discovery_ref 	dns_client;
     mach_port_t port;
+    uint32_t foo;
 
     if (selectedRow < 0) {
         return;
@@ -116,6 +117,11 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
     } else {
         printf("Could not obtain client port\n");
     }
+
+    foo = DNSServiceRegistrationAddRecord(dns_client, 12, 11, "Hello world");
+    printf("Foo = %d\n", foo);
+    DNSServiceRegistrationUpdateRecord(dns_client, foo, 13, 12, "Hello again2");
+    DNSServiceRegistrationRemoveRecord(dns_client, foo);
     
 }
 
