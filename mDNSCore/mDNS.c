@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.437  2004/09/28 02:23:50  cheshire
+<rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
+Don't need to search the entire cache for nearly-expired records -- just the appropriate hash slot
+For records with the cache flush bit set, defer the decision until the end of the packet
+
 Revision 1.436  2004/09/28 01:27:04  cheshire
 Update incorrect log message
 
@@ -3306,21 +3311,19 @@ mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
 	m->CurrentQuestion = mDNSNULL;
 	}
 
-mDNSlocal void CheckForSoonToExpireRecords(mDNS *const m, CacheRecord *newrr)
+mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu32 slot)
 	{
-	mDNSu32 slot;
-	CacheRecord *rr;
-	mDNSs32 start = m->timenow - 0x10000000;
+	const mDNSs32 threshhold = m->timenow + mDNSPlatformOneSecond;	// See if there are any records expiring within one second
+	const mDNSs32 start      = m->timenow - 0x10000000;
 	mDNSs32 delay = start;
-	mDNSs32 threshhold = m->timenow + mDNSPlatformOneSecond;	// See if there are any records expiring within one second
-	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
-			if (rr->resrec.namehash == newrr->resrec.namehash && SameDomainName(&rr->resrec.name, &newrr->resrec.name))
-				if (threshhold - RRExpireTime(rr) >= 0)		// If we have records about to expire within a second
-					if (delay - RRExpireTime(rr) < 0)		// then delay until after they've been deleted
-						delay = RRExpireTime(rr);
-	if (delay - start > 0)
-		newrr->DelayDelivery = delay;
+	CacheRecord *rr;
+	for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+		if (rr->resrec.namehash == namehash && SameDomainName(&rr->resrec.name, name))
+			if (threshhold - RRExpireTime(rr) >= 0)		// If we have records about to expire within a second
+				if (delay - RRExpireTime(rr) < 0)		// then delay until after they've been deleted
+					delay = RRExpireTime(rr);
+	if (delay - start > 0) return(delay ? delay : 1);	// Make sure we return non-zero if we want to delay
+	else return(0);
 	}
 
 // CacheRecordAdd is only called from mDNSCoreReceiveResponse, *never* directly as a result of a client API call.
@@ -3421,7 +3424,7 @@ mDNSlocal void ReleaseCacheRR(mDNS *const m, CacheRecord *r)
 
 // Note: We want to be careful that we deliver all the CacheRecordRmv calls before delivering CacheRecordDeferredAdd calls
 // The in-order nature of the cache lists ensures that all callbacks for old records are delivered before callbacks for newer records
-mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
+mDNSlocal void CheckCacheExpiration(mDNS *const m, const mDNSu32 slot)
 	{
 	CacheRecord **rp = &(m->rrcache_hash[slot]);
 
@@ -3481,7 +3484,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	mDNSBool ShouldQueryImmediately = mDNStrue;
 	CacheRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
-	mDNSu32 slot = HashSlot(&q->qname);
+	const mDNSu32 slot = HashSlot(&q->qname);
 
 	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
@@ -4735,7 +4738,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// 2. See if we want to add this packet resource record to our cache
 		if (m->rrcache_size)	// Only try to cache answers if we have a cache to put them in
 			{
-			mDNSu32 slot = HashSlot(&pkt.r.resrec.name);
+			const mDNSu32 slot = HashSlot(&pkt.r.resrec.name);
 			CacheRecord *rr;
 			// 2a. Check if this packet resource record is already in our cache
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
@@ -4796,17 +4799,20 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					{
 					RData *saveptr = rr->resrec.rdata;		// Save the rr->resrec.rdata pointer
 					*rr = pkt.r;
-					rr->resrec.rdata = saveptr;			// and then restore it after the structure assignment
+					rr->resrec.rdata = saveptr;				// and then restore it after the structure assignment
 					if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)
 						{ *cfp = rr; cfp = &rr->NextInCFList; }
 					// If this is an oversized record with external storage allocated, copy rdata to external storage
 					if (pkt.r.resrec.rdlength > InlineCacheRDSize)
 						mDNSPlatformMemCopy(pkt.r.resrec.rdata, rr->resrec.rdata, sizeofRDataHeader + pkt.r.resrec.rdlength);
 					rr->next = mDNSNULL;					// Clear 'next' pointer
-					CheckForSoonToExpireRecords(m, rr);		// Do this before linking new record into cache
 					*(m->rrcache_tail[slot]) = rr;			// Append this record to tail of cache slot list
 					m->rrcache_tail[slot] = &(rr->next);	// Advance tail pointer
 					m->rrcache_used[slot]++;
+					if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)	// If marked unique, assume we may have
+						rr->DelayDelivery = m->timenow + mDNSPlatformOneSecond;	// to delay delivery of this 'add' event
+					else
+						rr->DelayDelivery = CheckForSoonToExpireRecords(m, &rr->resrec.name, rr->resrec.namehash, slot);
 					//debugf("Adding RR %##s to cache (%d)", pkt.r.name.c, m->rrcache_used);
 					CacheRecordAdd(m, rr);
 					// MUST do this AFTER CacheRecordAdd(), because that's what sets CRActiveQuestion for us
@@ -4822,8 +4828,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		{
 		CacheRecord *r1 = CacheFlushRecords, *r2;
 		CacheFlushRecords = CacheFlushRecords->NextInCFList;
+		const mDNSu32 slot = HashSlot(&r1->resrec.name);
 		r1->NextInCFList = mDNSNULL;
-		for (r2 = m->rrcache_hash[HashSlot(&r1->resrec.name)]; r2; r2=r2->next)
+		for (r2 = m->rrcache_hash[slot]; r2; r2=r2->next)
 			if (SameResourceRecordSignature(&r1->resrec, &r2->resrec) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)
 				{
 				verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->resrec.name.c, DNSTypeName(r2->resrec.rrtype));
@@ -4843,6 +4850,11 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				r2->UnansweredQueries = MaxUnansweredQueries;
 				SetNextCacheCheckTime(m, r2);
 				}
+		if (r1->DelayDelivery)	// If we were planning to delay delivery of this record, see if we still need to
+			{
+			r1->DelayDelivery = CheckForSoonToExpireRecords(m, &r1->resrec.name, r1->resrec.namehash, slot);
+			if (!r1->DelayDelivery) CacheRecordDeferredAdd(m, r1);
+			}
 		}
 	}
 
