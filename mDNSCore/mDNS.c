@@ -3329,7 +3329,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	if (txtinfo == mDNSNULL) sr->RR_TXT.rdata->RDLength = 0;
 	else if (txtinfo != sr->RR_TXT.rdata->u.txt.c)
 		{
-		sr->RR_TXT.rdata->RDLength = mDNSPlatformStrLen(txtinfo);
+		sr->RR_TXT.rdata->RDLength = txtlen;
 		if (sr->RR_TXT.rdata->RDLength > sr->RR_TXT.rdata->MaxRDLength) return(mStatus_BadParamErr);
 		mDNSPlatformStrCopy(txtinfo,(char *)(sr->RR_TXT.rdata->u.txt.c));
 		}
