@@ -427,6 +427,8 @@ exit:
 	return(err);
 	}
 
+io_connect_t PowerConnection;
+
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
 	{
 	mDNS *const m = (mDNS *const)refcon;
@@ -434,10 +436,10 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	debugf("PowerChanged got message %X", messageType);
 	switch(messageType)
 		{
-		case kIOMessageSystemWillPowerOff: debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true);  break;
+		case kIOMessageSystemWillPowerOff: debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true); break;
 		case kIOMessageSystemWillSleep:    debugf("PowerChanged got kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break;
 		case kIOMessageSystemHasPoweredOn: debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break;
-		default:                           debugf("PowerChanged got unknown message %X", messageType);                       break;
+		default:                           debugf("PowerChanged got unknown message %X", messageType);                       IOAllowPowerChange(PowerConnection, (long)messageArgument); break;
 		}
 	}
 
@@ -445,7 +447,7 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 	{
 	IONotificationPortRef thePortRef;
 	io_object_t notifier;
-	io_connect_t PowerConnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &notifier);
+	PowerConnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &notifier);
 	if (PowerConnection)
 		{
 		CFRunLoopSourceRef rls = IONotificationPortGetRunLoopSource(thePortRef);
