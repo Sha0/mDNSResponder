@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.41  2004/12/23 17:34:26  ksekar
+<rdar://problem/3931319> Calls leak sockets if mDNSResponder is not running
+
 Revision 1.40  2004/11/23 03:39:47  cheshire
 Let interface name/index mapping capability live directly in JNISupport.c,
 instead of having to call through to the daemon via IPC to get this information.
@@ -321,7 +324,13 @@ static DNSServiceRef connect_to_server(void)
 	saddr.sun_family = AF_LOCAL;
 	strcpy(saddr.sun_path, MDNS_UDS_SERVERPATH);
 #endif
-	if (connect(sdr->sockfd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0) { free(sdr); return NULL; }
+	if (connect(sdr->sockfd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
+		{
+		close(sdr->sockfd);
+		sdr->sockfd = dnssd_InvalidSocket;
+		free(sdr);
+		return NULL;
+		}
     return sdr;
 	}
 
