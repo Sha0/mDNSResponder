@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.17  2004/06/01 14:34:48  cheshire
+For compatibility with older compilers, change '//' comments to ' / * ... * / '
+
 Revision 1.16  2004/05/25 17:08:55  cheshire
 Fix compiler warning (doesn't make sense for function return type to be const)
 
@@ -84,7 +87,7 @@ Update to APSL 2.0
 #endif
 
 #if defined(__FreeBSD__) && (__FreeBSD_version < 500000)
-// stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead
+/* stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead */
 #include <sys/types.h>
 #else
 #include <stdint.h>
@@ -1481,4 +1484,4 @@ DNSServiceErrorType TXTRecordGetItemAtIndex
     }
 #endif
 
-#endif  // _DNS_SD_H
+#endif  /* _DNS_SD_H */
