@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.12  2004/01/23 21:37:08  cheshire
+For consistency, rename multicastSocket to multicastSocket4, and multicastSocketv6 to multicastSocket6
+
 Revision 1.11  2003/12/11 03:03:51  rpantos
 Clean up mDNSPosix so that it builds on OS X again.
 
@@ -88,8 +91,8 @@ struct PosixNetworkInterface
 	const char *            intfName;
 	PosixNetworkInterface * aliasIntf;
 	int                     index;
-	int                     multicastSocket;
-	int                     multicastSocketv6;
+	int                     multicastSocket4;
+	int                     multicastSocket6;
 	};
 
 // This is a global because debugf_() needs to be able to check its value

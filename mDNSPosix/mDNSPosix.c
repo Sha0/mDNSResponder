@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.35  2004/01/23 21:37:08  cheshire
+For consistency, rename multicastSocket to multicastSocket4, and multicastSocketv6 to multicastSocket6
+
 Revision 1.34  2004/01/22 03:43:09  cheshire
 Export constants like mDNSInterface_LocalOnly so that the client layers can use them
 
@@ -260,9 +263,10 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
-	int                     err;
+	int                     err = 0;
 	struct sockaddr_storage to;
-	PosixNetworkInterface * thisIntf;
+	PosixNetworkInterface * thisIntf = (PosixNetworkInterface *)(InterfaceID);
+	int sendingsocket = -1;
 
 	assert(m != NULL);
 	assert(msg != NULL);
@@ -281,6 +285,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin->sin_family         = AF_INET;
 		sin->sin_port           = dstPort.NotAnInteger;
 		sin->sin_addr.s_addr    = dst->ip.v4.NotAnInteger;
+		sendingsocket           = thisIntf->multicastSocket4;
 		}
 
 #ifdef mDNSIPv6Support
@@ -292,18 +297,12 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin6->sin6_family         = AF_INET6;
 		sin6->sin6_port           = dstPort.NotAnInteger;
 		sin6->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
+		sendingsocket             = thisIntf->multicastSocket6;
 		}
 #endif
 
-	err = 0;
-	thisIntf = (PosixNetworkInterface *)(InterfaceID);
-	if (dst->type == mDNSAddrType_IPv4)
-		err = sendto(thisIntf->multicastSocket, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, GET_SA_LEN(to));
-
-#ifdef mDNSIPv6Support
-	else if (dst->type == mDNSAddrType_IPv6)
-		err = sendto(thisIntf->multicastSocketv6, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, GET_SA_LEN(to));
-#endif
+	if (sendingsocket >= 0)
+		err = sendto(sendingsocket, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, GET_SA_LEN(to));
 
 	if (err > 0) err = 0;
 	else if (err < 0)
@@ -485,8 +484,8 @@ static void FreePosixNetworkInterface(PosixNetworkInterface *intf)
 	{
 	assert(intf != NULL);
 	if (intf->intfName != NULL)        free((void *)intf->intfName);
-	if (intf->multicastSocket   != -1) assert(close(intf->multicastSocket) == 0);
-	if (intf->multicastSocketv6 != -1) assert(close(intf->multicastSocketv6) == 0);
+	if (intf->multicastSocket4 != -1) assert(close(intf->multicastSocket4) == 0);
+	if (intf->multicastSocket6 != -1) assert(close(intf->multicastSocket6) == 0);
 	free(intf);
 	}
 
@@ -756,8 +755,8 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 		// Set up the extra fields in PosixNetworkInterface.
 		assert(intf->intfName != NULL);         // intf->intfName already set up above
 		intf->index                = if_nametoindex(intf->intfName);
-		intf->multicastSocket      = -1;
-		intf->multicastSocketv6    = -1;
+		intf->multicastSocket4     = -1;
+		intf->multicastSocket6     = -1;
 		alias                      = SearchForInterfaceByName(m, intf->intfName);
 		if (alias == NULL) alias   = intf;
 		intf->coreIntf.InterfaceID = (mDNSInterfaceID)alias;
@@ -769,11 +768,11 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 	// Set up the multicast socket
 	if (err == 0)
 		{
-		if (alias->multicastSocket == -1 && intfAddr->sa_family == AF_INET)
-			err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocket);
+		if (alias->multicastSocket4 == -1 && intfAddr->sa_family == AF_INET)
+			err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocket4);
 #ifdef mDNSIPv6Support
-		else if (alias->multicastSocketv6 == -1 && intfAddr->sa_family == AF_INET6)
-			err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocketv6);
+		else if (alias->multicastSocket6 == -1 && intfAddr->sa_family == AF_INET6)
+			err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocket6);
 #endif
 		}
 
@@ -1264,17 +1263,17 @@ mDNSexport void mDNSPosixGetFDSet(mDNS *m, int *nfds, fd_set *readfds, struct ti
 	PosixNetworkInterface *info = (PosixNetworkInterface *)(m->HostInterfaces);
 	while (info)
 		{
-		if (info->multicastSocket != -1)
+		if (info->multicastSocket4 != -1)
 			{
-			if (*nfds < info->multicastSocket + 1)
-				*nfds = info->multicastSocket + 1;
-			FD_SET(info->multicastSocket, readfds);
+			if (*nfds < info->multicastSocket4 + 1)
+				*nfds = info->multicastSocket4 + 1;
+			FD_SET(info->multicastSocket4, readfds);
 			}
-		if (info->multicastSocketv6 != -1)
+		if (info->multicastSocket6 != -1)
 			{
-			if (*nfds < info->multicastSocketv6 + 1)
-				*nfds = info->multicastSocketv6 + 1;
-			FD_SET(info->multicastSocketv6, readfds);
+			if (*nfds < info->multicastSocket6 + 1)
+				*nfds = info->multicastSocket6 + 1;
+			FD_SET(info->multicastSocket6, readfds);
 			}
 		info = (PosixNetworkInterface *)(info->coreIntf.next);
 		}
@@ -1299,15 +1298,15 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 	info = (PosixNetworkInterface *)(m->HostInterfaces);
 	while (info)
 		{
-		if (info->multicastSocket != -1 && FD_ISSET(info->multicastSocket, readfds))
+		if (info->multicastSocket4 != -1 && FD_ISSET(info->multicastSocket4, readfds))
 			{
-			FD_CLR(info->multicastSocket, readfds);
-			SocketDataReady(m, info, info->multicastSocket);
+			FD_CLR(info->multicastSocket4, readfds);
+			SocketDataReady(m, info, info->multicastSocket4);
 			}
-		if (info->multicastSocketv6 != -1 && FD_ISSET(info->multicastSocketv6, readfds))
+		if (info->multicastSocket6 != -1 && FD_ISSET(info->multicastSocket6, readfds))
 			{
-			FD_CLR(info->multicastSocketv6, readfds);
-			SocketDataReady(m, info, info->multicastSocketv6);
+			FD_CLR(info->multicastSocket6, readfds);
+			SocketDataReady(m, info, info->multicastSocket6);
 			}
 		info = (PosixNetworkInterface *)(info->coreIntf.next);
 		}
