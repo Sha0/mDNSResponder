@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.62  2002/09/20 03:25:37  cheshire
+Fix some compiler warnings
+
 Revision 1.61  2002/09/20 01:05:24  cheshire
 Don't kill the Extras list in mDNS_DeregisterService()
 
@@ -985,7 +988,7 @@ mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rr->rdata->u.name, name));
 		case kDNSType_TXT:  return(rr->rdata->RDLength); // TXT is not self-describing, so have to just trust rdlength
-		case kDNSType_SRV:	return(6 + CompressedDomainNameLength(&rr->rdata->u.srv.target, name));
+		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rr->rdata->u.srv.target, name));
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdata->RDLength);
 		}
@@ -1578,9 +1581,9 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 
 	if (ptr + 10 > end) { debugf("getResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
 	
-	rr->rrtype            = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
-	rr->rrclass           = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSQClass_Mask;
-	rr->rroriginalttl     = (mDNSu32)((mDNSu32)ptr[4] << 24 | (mDNSu32)ptr[5] << 16 | (mDNSu32)ptr[6] << 8 | ptr[7]);
+	rr->rrtype            = (mDNSu16) ((mDNSu16)ptr[0] <<  8 | ptr[1]);
+	rr->rrclass           = (mDNSu16)(((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSQClass_Mask);
+	rr->rroriginalttl     = (mDNSu32) ((mDNSu32)ptr[4] << 24 | (mDNSu32)ptr[5] << 16 | (mDNSu32)ptr[6] << 8 | ptr[7]);
 	if (rr->rroriginalttl > 0x70000000UL / mDNSPlatformOneSecond)
 		rr->rroriginalttl = 0x70000000UL / mDNSPlatformOneSecond;
 	rr->rrremainingttl    = 0;
@@ -2487,7 +2490,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 				// divided by the number of times it has been used (we want to keep frequently used records longer).
 				mDNSs32 count = (*rr)->UseCount < 100 ? 1 + (mDNSs32)(*rr)->UseCount : 100;
 				mDNSs32 age = (timenow - (*rr)->LastUsed) / count;
-				mDNSu8 rtype = ((*rr)->RecordType) & ~kDNSRecordTypeUniqueMask;
+				mDNSu8 rtype = (mDNSu8)(((*rr)->RecordType) & ~kDNSRecordTypeUniqueMask);
 				if (rtype == kDNSRecordTypePacketAnswer) age /= 2;		// Keep answer records longer than additionals
 
 				// Records that answer still-active questions are not candidates for deletion
@@ -3523,7 +3526,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	if (answer->rrtype != kDNSType_TXT) return;
 	if (answer->rdata->RDLength > sizeof(query->info->TXTinfo)) return;
 
-	query->GotTXT       = 1 + (query->GotTXT || query->GotADD);
+	query->GotTXT       = (mDNSu8)(1 + (query->GotTXT || query->GotADD));
 	query->info->TXTlen = answer->rdata->RDLength;
 	mDNSPlatformMemCopy(answer->rdata->u.txt.c, query->info->TXTinfo, answer->rdata->RDLength);
 
