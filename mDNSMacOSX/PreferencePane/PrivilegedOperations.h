@@ -42,6 +42,10 @@
 
     Change History (most recent first):
 $Log: PrivilegedOperations.h,v $
+Revision 1.3  2005/02/16 00:17:35  cheshire
+Don't create empty arrays -- CFArrayGetValueAtIndex(array,0) returns an essentially random (non-null)
+result for empty arrays, which can lead to code crashing if it's not sufficiently defensive.
+
 Revision 1.2  2005/02/10 22:35:20  cheshire
 <rdar://problem/3727944> Update name
 
@@ -53,7 +57,7 @@ Add Preference Pane to facilitate testing of DDNS & wide-area features
 #include <CoreServices/CoreServices.h>
 #include <CoreFoundation/CoreFoundation.h>
 
-#define	PRIV_OP_TOOL_VERS	1
+#define	PRIV_OP_TOOL_VERS	2
 
 #define	kToolHome	"/Library/Application Support/"
 #define	kToolDir	"Bonjour"

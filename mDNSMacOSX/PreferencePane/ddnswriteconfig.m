@@ -44,6 +44,10 @@
 
     Change History (most recent first):
 $Log: ddnswriteconfig.m,v $
+Revision 1.3  2005/02/16 00:17:35  cheshire
+Don't create empty arrays -- CFArrayGetValueAtIndex(array,0) returns an essentially random (non-null)
+result for empty arrays, which can lead to code crashing if it's not sufficiently defensive.
+
 Revision 1.2  2005/02/10 22:35:20  cheshire
 <rdar://problem/3727944> Update name
 
@@ -152,8 +156,12 @@ WriteArrayToDynDNS(CFStringRef arrayKey, CFArrayRef domainArray)
 	}
 	require_action( dict != NULL, NoDict, err=memFullErr;);
 
-	CFDictionarySetValue(dict, arrayKey, domainArray);
-
+	if (CFArrayGetCount(domainArray) > 0) {
+		CFDictionarySetValue(dict, arrayKey, domainArray);
+	} else {
+		CFDictionaryRemoveValue(dict, arrayKey);
+	}
+	
 	result = SCPreferencesPathSetValue(store, scKey, dict);
 	require_action(result, SCError, err=kernelPrivilegeErr;);
 
@@ -410,11 +418,11 @@ SetKeychainEntry(int fd)
 		result = SecKeychainFindGenericPassword(NULL, strlen(domain), domain, 0, NULL, 0, NULL, &item);
 		if (result == noErr) {
 			result = SecKeychainItemDelete(item);
-			fprintf(stderr, "SecKeychainItemDelete returned %d\n", result);
+			if (result != noErr) fprintf(stderr, "SecKeychainItemDelete returned %d\n", result);
 		}
 			 
 		result = MyAddDynamicDNSPassword(NULL, MyMakeUidAccess(0), strlen(domain), domain, strlen(keyname)+1, keyname, strlen(secret)+1, secret);
-		fprintf(stderr, "MyAddDynamicDNSPassword returned %d\n", result);
+		if (result != noErr) fprintf(stderr, "MyAddDynamicDNSPassword returned %d\n", result);
 		if (item) CFRelease(item);
 	}
 
