@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.14  2004/05/20 18:40:31  cheshire
+Remove trailing comma that breaks build on strict compilers
+
 Revision 1.13  2004/05/18 23:51:27  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -166,7 +169,7 @@ enum
     kDNSServiceErr_BadinterfaceIndex   = -65552,
     kDNSServiceErr_Refused             = -65553,
     kDNSServiceErr_NoSuchRecord        = -65554,
-    kDNSServiceErr_NoAuth              = -65555,
+    kDNSServiceErr_NoAuth              = -65555
     /* mDNS Error codes are in the range
      * FFFE FF00 (-65792) to FFFE FFFF (-65537) */
     };
@@ -370,7 +373,7 @@ DNSServiceErrorType DNSServiceEnumerateDomains
  *
  * errorCode:       Will be kDNSServiceErr_NoError on success, otherwise will 
  *                  indicate the failure that occurred (including name conflicts, if the
- *                  kDNSServiceFlagsNoAutoRenameOnConflict flag was passed to the
+ *                  kDNSServiceFlagsNoAutoRename flag was passed to the
  *                  callout.)  Other parameters are undefined if errorCode is nonzero.
  *
  * name:            The service name registered (if the application did not specify a name in 
