@@ -23,6 +23,15 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.117  2004/11/18 18:04:21  ksekar
+Restore checkins lost due to repository disk failure: Update comments & <rdar://problem/3880688>
+
+Revision 1.xxx  2004/11/17 06:17:57  cheshire
+Update comments to show correct SRV names: _dns-update._udp.<zone>. and _dns-llq._udp.<zone>.
+
+Revision 1.xxx  2004/11/17 00:45:28  ksekar
+<rdar://problem/3880688> Result of putUpdateLease not error-checked
+
 Revision 1.116  2004/11/16 01:41:47  ksekar
 Fixed typo in debugf
 
@@ -1064,7 +1073,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
       	// !!!KRS we need to update the SRV here!
 	n->PublicPort = pub;
 
-	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)mDNSVal32(lease) * mDNSPlatformOneSecond / 2);  // retry half way to expiration
+	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)mDNSVal32(lease) * mDNSPlatformOneSecond * INIT_REFRESH);  // retry half way to expiration
 	
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return; }
 	n->state = NATState_Established;
@@ -2193,7 +2202,7 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	if (pktData.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData.err); return; }
 
 	qInfo->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond);
-	qInfo->retry = qInfo->expire - ((mDNSs32)pktData.lease * mDNSPlatformOneSecond * 1/2);
+	qInfo->retry = qInfo->expire - ((mDNSs32)pktData.lease * mDNSPlatformOneSecond * INIT_REFRESH);
  
 	qInfo->origLease = pktData.lease;
 	qInfo->state = LLQ_Established;	
@@ -2237,7 +2246,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	else info->ntries++;
 	info->state = LLQ_Refresh;
 	q->LastQTime = timenow;
-	info->retry = (info->expire - q->LastQTime) / 2;	
+	info->retry = (info->expire - q->LastQTime) * INIT_REFRESH;	
 	}
 
 mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, mDNSInterfaceID InterfaceID)
@@ -2269,7 +2278,7 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 	if (llq->err) { LogMsg("hndlChallengeResponseAck - received error %d from server", llq->err); goto error; }
 	if (!sameID(info->id, llq->id)) { LogMsg("hndlChallengeResponseAck - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
 	info->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
-	info->retry = info->expire - ((mDNSs32)llq->lease * mDNSPlatformOneSecond * 1/2);
+	info->retry = info->expire - ((mDNSs32)llq->lease * mDNSPlatformOneSecond * INIT_REFRESH);
  
 	info->origLease = llq->lease;
 	info->state = LLQ_Established;	
@@ -2779,10 +2788,10 @@ mDNSlocal mStatus startInternalQuery(DNSQuestion *q, mDNS *m, InternalResponseHn
  * written to the syslog.
  *
  * If the FindUpdatePort arg is set, the port on which the server accepts dynamic updates is determined
- * by querying for the _update._dns-sd._udp.<zone>. SRV record.  Likewise, if the FindLLQPort arg is set,
- * the port on which the server accepts long lived queries is determined by querying for _llq._dns-sd.
- * _udp.<zone>. record.  If either of these queries fail, or flags are not specified, the llqPort and
- * updatePort fields in the result structure are set to zero.
+ * by querying for the _dns-update._udp.<zone>. SRV record.  Likewise, if the FindLLQPort arg is set,
+ * the port on which the server accepts long lived queries is determined by querying for
+ * _dns-llq._udp.<zone>. record.  If either of these queries fail, or flags are not specified,
+ * the llqPort and updatePort fields in the result structure are set to zero.
  *
  *  Steps for deriving the zone name are as follows:
  *
@@ -3344,7 +3353,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	if (!ptr) goto error;
 
 	if (rr->uDNS_info.lease)
-		ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease);
+		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
 	   
 	rr->uDNS_info.expire = -1;
 	
@@ -3357,6 +3366,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	return;
 
 error:
+	LogMsg("sendRecordRegistration: Error formatting message");
 	if (rr->uDNS_info.state != regState_Unregistered)
 		{
 		unlinkAR(&u->RecordRegistrations, rr);
@@ -3524,7 +3534,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	// !!!KRS do subtypes/extras etc.
 
 	if (srs->uDNS_info.lease)
-		ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease);
+		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
 	   
 	srs->uDNS_info.expire = -1;
 
@@ -3540,6 +3550,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	return;
 
 error:
+	LogMsg("SendServiceRegistration - Error formatting message");
 	if (mapped) srv->resrec.rdata->u.srv.port = privport;	
 	unlinkSRS(u, srs);
 	rInfo->state = regState_Unregistered;
@@ -3936,7 +3947,8 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	SwapRData(m, rr, mDNSfalse);  // swap rdata back to original in case we need to retransmit
 	if (!ptr) goto error;         // (rdata gets changed permanently on success)
 
-	if (info->lease) ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease);
+	if (info->lease)
+		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
 	
 	// don't report send errors - retransmission will occurr if necessary
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
