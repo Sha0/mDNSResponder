@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.175  2004/06/10 20:23:21  cheshire
+Also list interfaces in SIGINFO output
+
 Revision 1.174  2004/06/08 18:54:48  ksekar
 <rdar://problem/3681378>: mDNSResponder leaks after exploring in Printer Setup Utility
 
@@ -1828,6 +1831,7 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	DNSServiceBrowser           *b;
 	DNSServiceResolver          *l;
 	DNSServiceRegistration      *r;
+	NetworkInterfaceInfoOSX     *i;
 	mDNSu32 slot;
 	CacheRecord *rr;
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
@@ -1874,7 +1878,25 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 		LogMsgNoIdent("%5d: ServiceRegistration %##s %u", r->ClientMachPort, r->ls.RR_SRV.resrec.name.c, mDNSVal16(r->ls.RR_SRV.resrec.rdata->u.srv.port));
 		if (r->gs) LogMsgNoIdent("%5d: ServiceRegistration %##s %u", r->ClientMachPort, r->gs->RR_SRV.resrec.name.c, mDNSVal16(r->gs->RR_SRV.resrec.rdata->u.srv.port));
 		}
+
 	udsserver_info();
+
+	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
+		{
+		if (!i->Exists)
+			LogMsgNoIdent("Interface: %s %5s(%lu) DORMANT",
+				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id);
+		else
+			LogMsgNoIdent("Interface: %s %5s(%lu) %s %s %2d %s %2d InterfaceID %p %s %s %#a",
+				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id,
+				i->ifinfo.InterfaceActive ? "Active" : "      ",
+				i->ifinfo.IPv4Available ? "v4" : "  ", i->ss.sktv4,
+				i->ifinfo.IPv6Available ? "v6" : "  ", i->ss.sktv6,
+				i->ifinfo.InterfaceID,
+				i->ifinfo.Advertise ? "Adv"  : "   ",
+				i->ifinfo.McastTxRx ? "TxRx" : "    ",
+				&i->ifinfo.ip);
+		}
 
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
 	}
