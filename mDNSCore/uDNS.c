@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.143  2004/12/10 01:21:27  cheshire
+<rdar://problem/3914089> Get rid of "LLQ Responses over TCP not currently supported" message
+
 Revision 1.142  2004/12/08 02:03:31  ksekar
 <rdar://problem/3865124> Looping on NAT Traversal error - check for
 NULL RR on error
@@ -2163,7 +2166,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	if (QR_OP == StdR)
 		{		
 		// !!!KRS we should to a table lookup here to see if it answers an LLQ or a 1-shot
-		if (recvLLQResponse(m, msg, end, srcaddr, srcport, InterfaceID)) return;
+		// LLQ Responses over TCP not currently supported
+		if (srcaddr && recvLLQResponse(m, msg, end, srcaddr, srcport, InterfaceID)) return;
 	
 		for (qptr = u->ActiveQueries; qptr; qptr = qptr->next)
 			{
@@ -2731,8 +2735,6 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	const mDNSu8 *ptr = msg->data;
 	LLQ_Info *llqInfo;
 
-	if (!srcaddr) { LogMsg("recvLLQResponse: LLQ Responses over TCP not currently supported"); return mDNSfalse; }
-	
 	if (!msg->h.numQuestions) return mDNSfalse;
 
 	ptr = getQuestion(msg, ptr, end, 0, &pktQ);
