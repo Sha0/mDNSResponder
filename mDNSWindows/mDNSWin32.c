@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.8 2003/03/22 02:57:44 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.9 2003/04/26 02:40:01 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.9  2003/04/26 02:40:01  cheshire
+        Add void LogMsg( const char *format, ... )
+
         Revision 1.8  2003/03/22 02:57:44  cheshire
         Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
@@ -683,6 +686,25 @@ static void	DebugPrintAssert( const char *		inSignature,
 	fflush( stderr );
 }
 #endif	// MDNS_DEBUGMSGS
+
+//===========================================================================================================================
+//	verbosedebugf_
+//===========================================================================================================================
+
+void LogMsg( const char *format, ... )
+{
+	char		buffer[ 512 ];
+    va_list		args;
+    int			length;
+	
+	va_start( args, format );
+	length = mDNS_vsprintf( buffer, format, args );
+	va_end( args );
+	buffer[ length ] = '\0';
+	
+	fprintf( stderr, "%s\n", buffer );
+	fflush( stderr );
+}
 
 #if 0
 #pragma mark -
