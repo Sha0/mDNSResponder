@@ -298,11 +298,12 @@ int main(int argc, char **argv)
                     }
 
         case 'M':	{
-                    Opaque16 registerPort = { { 0x23, 0x45 } };
+                    pid_t pid = getpid();
+                    Opaque16 registerPort = { { pid >> 8, pid & 0xFF } };
                     static const char TXT1[] = "First String\001Second String\001Third String";
                     static const char TXT2[] = "\x0D" "Fourth String" "\x0C" "Fifth String" "\x0C" "Sixth String";
                     printf("Registering Service Test._testdualtxt._tcp.local.\n");
-                    client = DNSServiceRegistrationCreate("Test", "_testdualtxt._tcp.", "", registerPort.NotAnInteger, TXT1, reg_reply, nil);
+                    client = DNSServiceRegistrationCreate("", "_testdualtxt._tcp.", "", registerPort.NotAnInteger, TXT1, reg_reply, nil);
                     record = DNSServiceRegistrationAddRecord(client, T_TXT, sizeof(TXT2), TXT2, 120);
                     break;
                     }

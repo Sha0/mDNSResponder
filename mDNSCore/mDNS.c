@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.61  2002/09/20 01:05:24  cheshire
+Don't kill the Extras list in mDNS_DeregisterService()
+
 Revision 1.60  2002/09/19 23:47:35  cheshire
 Added mDNS_RegisterNoSuchService() function for assertion of non-existence
 of a particular named service
@@ -4080,6 +4083,9 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 		host, sr->RR_SRV.rdata->u.srv.port, sr->RR_TXT.rdata->u.txt.c, sr->RR_TXT.rdata->RDLength,
 		sr->Callback, sr->Context);
 
+	// mDNS_RegisterService() just reset sr->Extras to NULL.
+	// Fortunately we already grabbed ourselves a copy of this pointer (above), so we can now run
+	// through the old list of extra records, and re-add them to our freshly created service registration
 	while (!err && extras)
 		{
 		ExtraResourceRecord *e = extras;
@@ -4096,16 +4102,19 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
+	ExtraResourceRecord *e = sr->Extras;
 
 	// We use mDNS_Dereg_repeat because, in the event of a collision, some or all of
 	// these records could have already been automatically deregistered, and that's okay
 	mDNS_Deregister_internal(m, &sr->RR_SRV, timenow, mDNS_Dereg_repeat);
 	mDNS_Deregister_internal(m, &sr->RR_TXT, timenow, mDNS_Dereg_repeat);
-	while (sr->Extras)
+	
+	// We deregister all of the extra records, but we leave the sr->Extras list intact
+	// in case the client wants to do a RenameAndReregister and reinstate the registration
+	while (e)
 		{
-		ExtraResourceRecord *e = sr->Extras;
-		sr->Extras = sr->Extras->next;
 		mDNS_Deregister_internal(m, &e->r, timenow, mDNS_Dereg_repeat);
+		e = e->next;
 		}
 
 	// Be sure to deregister the PTR last!
