@@ -33,6 +33,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.23  2003/07/16 22:20:23  cheshire
+ * <rdar://problem/3315761> Implement unicast reply request, using top bit of qclass
+ * Made mDNSNetMonitor distinguish between QM and QU in its logging output
+ *
  * Revision 1.22  2003/07/02 21:19:58  cheshire
  * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
  *
@@ -418,9 +422,13 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			}
 		else
 			{
-			const char *ptype = "(Q) ";
-			if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumQuestions++;
-			else { NumLegacy++; ptype = "(LQ)"; }
+			const char *ptype = "(QM) ";
+			if (srcport.NotAnInteger != MulticastDNSPort.NotAnInteger) { NumLegacy++; ptype = "(LQ)"; }
+			else
+				{
+				NumQuestions++;
+				if (q.qclass & kDNSQClass_UnicastResponse) ptype = "(QU)";
+				}
 			mprintf("%#-16a %-5s %-5s      %##s\n", srcaddr, ptype, DNSTypeName(q.qtype), q.qname.c);
 			recordstat(&q.qname, OP_query, q.qtype);
 			}
@@ -608,7 +616,9 @@ usage:
 	fprintf(stderr, "\nPer-record display:\n");
 	fprintf(stderr, "(P)            Probe Question (new service starting)\n");
 	fprintf(stderr, "(DE)           Deletion/Goodbye (service going away)\n");
-	fprintf(stderr, "(Q)            Query Question\n");
+	fprintf(stderr, "(LQ)           Legacy Query Question\n");
+	fprintf(stderr, "(QM)           Query Question, requesting multicast response\n");
+	fprintf(stderr, "(QU)           Query Question, requesting unicast response\n");
 	fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
 	fprintf(stderr, "(AN)           Unique Answer to question (or periodic announcment) (entire RR Set)\n");
 	fprintf(stderr, "(AN+)          Answer to question (or periodic announcment) (add to existing RR Set members)\n");
