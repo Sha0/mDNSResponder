@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.254  2004/12/10 01:55:31  ksekar
+<rdar://problem/3899067> Keychain lookups should be in lower case.
+
 Revision 1.253  2004/12/09 03:15:41  ksekar
 <rdar://problem/3806610> use _legacy instead of _default to find "empty string" browse domains
 
@@ -2425,8 +2428,15 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	char dstring[MAX_ESCAPED_DOMAIN_NAME];
 	mDNSu32 secretlen;
 	void *secret = NULL;
-	const domainname *d = domain;
-	int dlen;
+	domainname *d, canon;
+	int i, dlen;
+
+	// canonicalize name by converting to lower case (keychain and some name servers are case sensitive)
+	ConvertDomainNameToCString(domain, dstring);
+	dlen = strlen(dstring);
+	for (i = 0; i < dlen; i++) dstring[i] = tolower(dstring[i]);  // canonicalize -> lower case
+	MakeDomainNameFromDNSNameString(&canon, dstring);
+	d = &canon;		
 	
 	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &SysKeychain);
 	if (err) { LogMsg("SetSecretForDomain: couldn't open system keychain (error %d)", err); return; }
@@ -2434,7 +2444,7 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	while (d->c[0] && *(d->c + d->c[0] + 1))
 		{
 		if (!ConvertDomainNameToCString(d, dstring)) { LogMsg("SetSecretForDomain: bad domain %##s", d->c); return; }	
-		dlen = strlen(dstring);
+		dlen = strlen(dstring);		
 		if (dstring[dlen-1] == '.') { dstring[dlen-1] = '\0'; dlen--; }  // chop trailing dot
 		err = SecKeychainFindGenericPassword(SysKeychain, strlen(DYNDNS_KEYCHAIN_SERVICE), DYNDNS_KEYCHAIN_SERVICE, dlen, dstring, &secretlen, &secret, &KeychainItem);
 		if (!err)
