@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.432  2004/09/24 21:35:17  cheshire
+<rdar://problem/3561220> Browses are no longer piggybacking on other browses
+TargetPort and TargetQID are allowed to be undefined if no question->Target is set
+
 Revision 1.431  2004/09/24 21:33:12  cheshire
 Adjust comment
 
@@ -4894,6 +4898,12 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		LogMsg("Warning! Target.type = %ld port = %u (Client forgot to initialize before calling mDNS_StartQuery?)",
 			question->Target.type, mDNSVal16(question->TargetPort));
 		question->Target.type = mDNSAddrType_None;
+		}
+
+	if (!question->Target.type)		// No question->Target specified, so clear TargetPort and TargetQID
+		{
+		question->TargetPort = zeroIPPort;
+		question->TargetQID  = zeroID;
 		}
 
 #ifndef UNICAST_DISABLED	
