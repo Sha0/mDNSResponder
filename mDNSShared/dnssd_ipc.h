@@ -27,6 +27,10 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.17  2004/11/23 03:39:47  cheshire
+Let interface name/index mapping capability live directly in JNISupport.c,
+instead of having to call through to the daemon via IPC to get this information.
+
 Revision 1.16  2004/11/12 03:21:41  rpantos
 rdar://problem/3809541 Add DNSSDMapIfIndexToName, DNSSDMapNameToIfIndex.
 
@@ -148,9 +152,7 @@ typedef enum
     reconfirm_record_request,
     add_record_request,
     update_record_request,
-    setdomain_request,
-    map_ifindex_request,
-    map_ifname_request
+    setdomain_request
     } request_op_t;
 
 typedef enum
@@ -160,9 +162,7 @@ typedef enum
     browse_reply,
     resolve_reply,
     query_reply,
-    reg_record_reply,
-    map_ifindex_reply,
-    map_ifname_reply
+    reg_record_reply
     } reply_op_t;
 
 typedef struct ipc_msg_hdr_struct ipc_msg_hdr;

@@ -1648,59 +1648,6 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
 	
 #endif //__APPLE_API_PRIVATE
 
-#ifdef __APPLE_API_PRIVATE
-
-/*
- * Candidate API's
- * These API's have not yet passed through Apple's formal API review process.
- */
-
-/*********************************************************************************************
- *
- * Network interface mapping functions
- *
- *********************************************************************************************/
-
-
-/* DNSSDMapIfIndexToName()
- *
- * Map a DNS-SD interface index to a platform-specific interface name (e.g. "en0").
- * This interface index is the same one used in the if_nametoindex() family of calls.
- *
- * interfaceIndex:   Must be non-zero.
- * nameBuff:         A buffer which will hold the null-terminated interface name.
- * buffLen:          The length of the buffer in bytes.
- *
- * return value:    Will point to nameBuff if a valid interface name was returned,
- *                  or NULL if the interface could not be found.
- */
-
-char * DNSSD_API DNSSDMapIfIndexToName
-    (
-    uint32_t                            interfaceIndex,
-    char								*nameBuff,
-    uint16_t                            buffLen
-    );
-
-
-/* DNSSDMapNameToIfIndex()
- *
- * Map a platform-specific interface name (e.g. "en0") to a DNS-SD interface index.
- * This interface index is the same one used in the if_nametoindex() family of calls.
- *
- * name:             A null-terminated interface name.
- *
- * return value:    The interface index, or 0 if the interface could not be found.
- */
-
-uint32_t DNSSD_API DNSSDMapNameToIfIndex
-    (
-    const char                          *name
-    );
-
-
-#endif //__APPLE_API_PRIVATE
-
 #ifdef  __cplusplus
     }
 #endif

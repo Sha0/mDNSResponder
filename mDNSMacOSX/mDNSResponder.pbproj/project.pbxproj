@@ -289,7 +289,6 @@
 				FF25794606C9A8BF00376F7B,
 				FF25794C06C9A9D500376F7B,
 				FF25794F06C9AA8B00376F7B,
-				FF31FC37074AD5F600F9E327,
 			);
 			isa = PBXGroup;
 			name = "mDNS Server Sources";
@@ -1062,8 +1061,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				DB2CC46A0662E00700335AB3,
-				FF31FC38074AD5F600F9E327,
-				FF31FC39074AD65A00F9E327,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1099,7 +1096,6 @@
 				INSTALL_PATH = /usr/lib/java;
 				LIBRARY_STYLE = DYNAMIC;
 				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "-multiply_defined suppress";
 				OTHER_LIBTOOL_FLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = libjdns_sd.jnilib;
@@ -1582,25 +1578,6 @@
 		FF25795106C9AB1D00376F7B = {
 			isa = PBXTargetDependency;
 			target = FF25792906C9A70800376F7B;
-		};
-		FF31FC37074AD5F600F9E327 = {
-			fileEncoding = 4;
-			isa = PBXFileReference;
-			name = dnssd_clientstub.c;
-			path = ../mDNSShared/dnssd_clientstub.c;
-			refType = 2;
-		};
-		FF31FC38074AD5F600F9E327 = {
-			fileRef = FF31FC37074AD5F600F9E327;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		FF31FC39074AD65A00F9E327 = {
-			fileRef = F5E11B5A04A28126019798ED;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 		FF485D5105632E0000130380 = {
 			fileEncoding = 4;

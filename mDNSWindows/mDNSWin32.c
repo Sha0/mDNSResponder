@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.63  2004/11/23 03:39:47  cheshire
+Let interface name/index mapping capability live directly in JNISupport.c,
+instead of having to call through to the daemon via IPC to get this information.
+
 Revision 1.62  2004/11/12 03:16:41  rpantos
 rdar://problem/3809541 Add mDNSPlatformGetInterfaceByName, mDNSPlatformGetInterfaceName
 
@@ -882,41 +886,6 @@ mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( const mDNS * const inMDNS, mD
 	}
 	return( index );
 }
-
-#define	LOCAL_ONLY_NAME	"loo"
-
-mDNSexport mDNSInterfaceID mDNSPlatformGetInterfaceByName(const mDNS *const m, const char *ifName)
-	{
-	mDNSInterfaceData *		ifd;
-	
-	for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
-		if( 0 == strcmp( ifd->name, ifName) )
-			break;
-	if ( ifd == NULL && 0 == strcmp( ifName, LOCAL_ONLY_NAME))
-		ifd = (mDNSInterfaceData*) mDNSInterface_LocalOnly;
-	return (mDNSInterfaceID) ifd;
-	}
-
-extern char *mDNSPlatformGetInterfaceName(const mDNS *const m, mDNSInterfaceID id, char *nameBuff, mDNSu32 buffLen)
-	{
-	mDNSInterfaceData		*intf = (mDNSInterfaceData*) id;
-	const char				*pName;
-	uint32_t				nameLen;
-	(void) m;	// unused
-	
-	if ( id == mDNSInterface_LocalOnly)
-		pName = LOCAL_ONLY_NAME;
-	else
-		pName = intf->name;
-	nameLen = strlen(pName) + 1;
-
-	if (nameLen > buffLen)
-		nameLen = buffLen;
-	memcpy(nameBuff, pName, nameLen - 1);
-	nameBuff[ nameLen - 1] = '\0';
-	return nameBuff;
-	}
-
 
 //===========================================================================================================================
 //	mDNSPlatformTCPConnect

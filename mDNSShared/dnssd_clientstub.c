@@ -28,6 +28,10 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.40  2004/11/23 03:39:47  cheshire
+Let interface name/index mapping capability live directly in JNISupport.c,
+instead of having to call through to the daemon via IPC to get this information.
+
 Revision 1.39  2004/11/12 03:22:00  rpantos
 rdar://problem/3809541 Add DNSSDMapIfIndexToName, DNSSDMapNameToIfIndex.
 
@@ -1131,110 +1135,5 @@ void DNSSD_API DNSServiceReconfirmRecord
     my_write(tmp->sockfd, (char *)hdr, (int) len);
     free(hdr);
     DNSServiceRefDeallocate(tmp);
-    }
-
-static void handle_mapifindex_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
-    {
-    DNSServiceFlags flags;
-    DNSServiceErrorType err;
-    uint32_t ifi;
-    char *nameBuff = (char*) sdr->app_context;
-
-    flags = get_flags(&data);
-    ifi = get_long(&data);
-    err = get_error_code(&data);
-    if (err == kDNSServiceErr_NoError)
-		get_string(&data, nameBuff, hdr->datalen);	// server truncates to buffLen
-    }
-
-char * DNSSD_API DNSSDMapIfIndexToName
- (
- uint32_t                           interfaceIndex,
- char								*nameBuff,
- uint16_t                           buffLen
- )
-    {
-    char *ptr;
-    size_t len;
-    ipc_msg_hdr *hdr;
-    DNSServiceRef sdr;
-    DNSServiceErrorType err;
-
-	if (interfaceIndex == 0 || nameBuff == NULL || buffLen == 0)
-		return NULL;
-
-	nameBuff[0] = '\0';
-
-    len = sizeof(interfaceIndex);
-    len += sizeof(buffLen);
-    sdr = connect_to_server();
-    if (!sdr) return NULL;
-    hdr = create_hdr(map_ifindex_request, &len, &ptr, 1);
-    if (!hdr) return NULL;
-
-    sdr->op = map_ifindex_request;
-    sdr->process_reply = handle_mapifindex_response;
-    sdr->app_callback = NULL;
-    sdr->app_context = nameBuff;
-
-    put_long(interfaceIndex, &ptr);
-    put_short(buffLen, &ptr);
-    err = deliver_request((char *)hdr, sdr, 1);
-
-	if (err == kDNSServiceErr_NoError)
-		DNSServiceProcessResult( sdr);	// willing to block for the response
-
-    DNSServiceRefDeallocate(sdr);
-
-	return (err == kDNSServiceErr_NoError && nameBuff[0] != '\0') ? nameBuff : NULL;
-    }
-
-static void handle_mapifname_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
-    {
-    DNSServiceFlags flags;
-    DNSServiceErrorType err;
-    uint32_t *pIndex = (uint32_t*) sdr->app_context;
-	(void) hdr;	// unused
-
-    flags = get_flags(&data);
-    *pIndex = get_long(&data);
-    err = get_error_code(&data);
-    }
-
-uint32_t DNSSD_API DNSSDMapNameToIfIndex
- (
-    const char                          *name
- )
-    {
-    char *ptr;
-    size_t len;
-    ipc_msg_hdr *hdr;
-    DNSServiceRef sdr;
-    DNSServiceErrorType err;
-    uint32_t ifi = 0;
-
-	if (name == NULL)
-		return 0;
-
-    len = strlen( name) + 1;
-    sdr = connect_to_server();
-    if (!sdr) return 0;
-    hdr = create_hdr(map_ifname_request, &len, &ptr, 1);
-    if (!hdr) return 0;
-
-    sdr->op = map_ifname_request;
-    sdr->process_reply = handle_mapifname_response;
-    sdr->app_callback = NULL;
-    sdr->app_context = &ifi;
-
-	put_string(name, &ptr);
-    err = deliver_request((char *)hdr, sdr, 1);
-
-	if (err == kDNSServiceErr_NoError)
-		DNSServiceProcessResult(sdr);	// willing to block for the response
-
-    DNSServiceRefDeallocate(sdr);
-
-	return ifi;
     }
 

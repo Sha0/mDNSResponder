@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.236  2004/11/23 03:39:46  cheshire
+Let interface name/index mapping capability live directly in JNISupport.c,
+instead of having to call through to the daemon via IPC to get this information.
+
 Revision 1.235  2004/11/17 01:45:35  cheshire
 <rdar://problem/3847435> mDNS buddy list frequently becomes empty if you let the machine sleep
 Refresh our interface list on receiving kIOMessageSystemHasPoweredOn,
@@ -933,39 +937,6 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 			// Don't use i->ifinfo.InterfaceID here, because we DO want to find inactive interfaces, which have no InterfaceID set
 			if ((mDNSInterfaceID)i == id) return(i->scope_id);
 	return 0;
-	}
-
-#define	LOCAL_ONLY_NAME	"loo"
-
-mDNSexport mDNSInterfaceID mDNSPlatformGetInterfaceByName(const mDNS *const m, const char *ifName)
-	{
-	NetworkInterfaceInfoOSX *intf = SearchForInterfaceByName( (mDNS *const) m, ifName, AF_INET);
-
-	if ( intf == NULL)
-		intf = SearchForInterfaceByName( (mDNS *const) m, ifName, AF_INET6);
-	if ( intf == NULL && 0 == strcmp( ifName, LOCAL_ONLY_NAME))
-		intf = (NetworkInterfaceInfoOSX*) mDNSInterface_LocalOnly;
-	return (mDNSInterfaceID) intf;
-	}
-
-extern char *mDNSPlatformGetInterfaceName(const mDNS *const m, mDNSInterfaceID id, char *nameBuff, mDNSu32 buffLen)
-	{
-	NetworkInterfaceInfoOSX *intf = (NetworkInterfaceInfoOSX*) id;
-	const char				*pName;
-	uint32_t				nameLen;
-	(void) m;	// unused
-	
-	if ( id == mDNSInterface_LocalOnly)
-		pName = LOCAL_ONLY_NAME;
-	else
-		pName = intf->ifa_name;
-	nameLen = strlen(pName) + 1;
-
-	if (nameLen > buffLen)
-		nameLen = buffLen;
-	memcpy(nameBuff, pName, nameLen - 1);
-	nameBuff[ nameLen - 1] = '\0';
-	return nameBuff;
 	}
 
 // NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"

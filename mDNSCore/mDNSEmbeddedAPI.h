@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.242  2004/11/23 03:39:46  cheshire
+Let interface name/index mapping capability live directly in JNISupport.c,
+instead of having to call through to the daemon via IPC to get this information.
+
 Revision 1.241  2004/11/22 17:16:19  ksekar
 <rdar://problem/3854298> Unicast services don't disappear when you disable all networking
 
@@ -2365,8 +2369,6 @@ extern mDNSs32  mDNSPlatformUTC         (void);
 // multiple interfaces and/or does not support the DNS-SD API, these functions can be empty.
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
-extern mDNSInterfaceID mDNSPlatformGetInterfaceByName(const mDNS *const m, const char *ifName);
-extern char *mDNSPlatformGetInterfaceName(const mDNS *const m, mDNSInterfaceID id, char *nameBuff, mDNSu32 buffLen);
 
 // Every platform support module must provide the following functions if it is to support unicast DNS
 // and Dynamic Update.
