@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.4  2004/07/09 18:04:17  shersche
+bump version to 1.0.0.8
+
 Revision 1.3  2004/06/27 17:00:15  rpantos
 Hey, we're Rendezvous again.
 
@@ -40,7 +43,7 @@ First checked in.
 #define MASTER_PROD_NAME	"Rendezvous"
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		1,0,0,7
-#define MASTER_PROD_VERS_STR	"1,0,0,7"
+#define MASTER_PROD_VERS		1,0,0,8
+#define MASTER_PROD_VERS_STR	"1,0,0,8"
 
 #endif // WINRESVERS_H
