@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.214  2004/09/25 02:41:39  cheshire
+<rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
+
 Revision 1.213  2004/09/25 02:24:27  cheshire
 Removed unused rr->UseCount
 
@@ -1341,6 +1344,7 @@ struct CacheRecord_struct
 	// Transient state for Cache Records
 	CacheRecord    *NextInKAList;		// Link to the next element in the chain of known answers to send
 	mDNSs32         TimeRcvd;			// In platform time units
+	mDNSs32         DelayDelivery;		// Set if we want to defer delivery of this answer to local clients
 	mDNSs32         NextRequiredQuery;	// In platform time units
 	mDNSs32         LastUsed;			// In platform time units
 	DNSQuestion    *CRActiveQuestion;	// Points to an active question referencing this answer

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.58  2004/09/25 02:41:39  cheshire
+<rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
+
 Revision 1.57  2004/09/25 02:24:27  cheshire
 Removed unused rr->UseCount
 
@@ -1623,6 +1626,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 	rr->NextInKAList      = mDNSNULL;
 	rr->TimeRcvd          = m ? m->timenow : 0;
+	rr->DelayDelivery     = 0;
 	rr->NextRequiredQuery = m ? m->timenow : 0;		// Will be updated to the real value when we call SetNextCacheCheckTime()
 	rr->LastUsed          = m ? m->timenow : 0;
 	rr->CRActiveQuestion  = mDNSNULL;

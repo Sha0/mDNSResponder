@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.435  2004/09/25 02:41:39  cheshire
+<rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
+
 Revision 1.434  2004/09/25 02:32:06  cheshire
 Update comments
 
@@ -2711,12 +2714,14 @@ mDNSlocal void SendResponses(mDNS *const m)
 // 4. Else, it is expiring and had an original TTL of ten seconds or less (includes explicit goodbye packets),
 //    so allow at most 1/10 second lateness
 #define CacheCheckGracePeriod(RR) (                                                   \
+	((RR)->DelayDelivery                           ) ? (mDNSPlatformOneSecond/10)   : \
 	((RR)->CRActiveQuestion == mDNSNULL            ) ? (60 * mDNSPlatformOneSecond) : \
 	((RR)->UnansweredQueries < MaxUnansweredQueries) ? (TicksTTL(rr)/50)            : \
 	((RR)->resrec.rroriginalttl > 10               ) ? (mDNSPlatformOneSecond)      : (mDNSPlatformOneSecond/10))
 
 // Note: MUST call SetNextCacheCheckTime any time we change:
 // rr->TimeRcvd
+// rr->DelayDelivery
 // rr->resrec.rroriginalttl
 // rr->UnansweredQueries
 // rr->CRActiveQuestion
@@ -2736,6 +2741,10 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 
 	if (m->NextCacheCheck - (rr->NextRequiredQuery + CacheCheckGracePeriod(rr)) > 0)
 		m->NextCacheCheck = (rr->NextRequiredQuery + CacheCheckGracePeriod(rr));
+	
+	if (rr->DelayDelivery)
+		if (m->NextCacheCheck - rr->DelayDelivery > 0)
+			m->NextCacheCheck = rr->DelayDelivery;
 	}
 
 #define kDefaultReconfirmTimeForNoAnswer        ((mDNSu32)mDNSPlatformOneSecond * 15)
@@ -3254,6 +3263,10 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 	verbosedebugf("AnswerQuestionWithResourceRecord:%4lu %s TTL%6lu %##s (%s)",
 		q->CurrentAnswers, AddRecord ? "Add" : "Rmv", rr->resrec.rroriginalttl, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 
+	// Note: Use caution here. In the case of records with rr->DelayDelivery set, AnswerQuestionWithResourceRecord(... mDNStrue)
+	// may be called twice, once when the record is received, and again when it's time to notify local clients.
+	// If any counters or similar are added here, care must be taken to ensure that they are not double-incremented by this.
+
 	rr->LastUsed = m->timenow;
 	if (ActiveQuestion(q) && rr->CRActiveQuestion != q)
 		{
@@ -3261,6 +3274,8 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 		rr->CRActiveQuestion = q;						// We know q is non-null
 		SetNextCacheCheckTime(m, rr);
 		}
+
+	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
 
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
@@ -3271,6 +3286,38 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 	// Right now the only routines that call AnswerQuestionWithResourceRecord() are CacheRecordAdd(), CacheRecordRmv()
 	// and AnswerNewQuestion(), and all of them use the "m->CurrentQuestion" mechanism to protect against questions
 	// being deleted out from under them.
+	}
+
+mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
+	{
+	rr->DelayDelivery = 0;
+	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
+	m->CurrentQuestion = m->Questions;
+	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
+		{
+		DNSQuestion *q = m->CurrentQuestion;
+		m->CurrentQuestion = q->next;
+		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
+		}
+	m->CurrentQuestion = mDNSNULL;
+	}
+
+mDNSlocal void CheckForSoonToExpireRecords(mDNS *const m, CacheRecord *newrr)
+	{
+	mDNSu32 slot;
+	CacheRecord *rr;
+	mDNSs32 start = m->timenow - 0x10000000;
+	mDNSs32 delay = start;
+	mDNSs32 threshhold = m->timenow + mDNSPlatformOneSecond;	// See if there are any records expiring within one second
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+			if (rr->resrec.namehash == newrr->resrec.namehash && SameDomainName(&rr->resrec.name, &newrr->resrec.name))
+				if (threshhold - RRExpireTime(rr) >= 0)		// If we have records about to expire within a second
+					if (delay - RRExpireTime(rr) < 0)		// then delay until after they've been deleted
+						delay = RRExpireTime(rr);
+	if (delay - start > 0)
+		newrr->DelayDelivery = delay;
 	}
 
 // CacheRecordAdd is only called from mDNSCoreReceiveResponse, *never* directly as a result of a client API call.
@@ -3369,6 +3416,8 @@ mDNSlocal void ReleaseCacheRR(mDNS *const m, CacheRecord *r)
 	m->rrcache_totalused--;
 	}
 
+// Note: We want to be careful that we deliver all the CacheRecordRmv calls before delivering CacheRecordDeferredAdd calls
+// The in-order nature of the cache lists ensures that all callbacks for old records are delivered before callbacks for newer records
 mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
 	{
 	CacheRecord **rp = &(m->rrcache_hash[slot]);
@@ -3394,18 +3443,24 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
 			}
 		else							// else, not expired; see if we need to query
 			{
-			if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
+			if (rr->DelayDelivery && rr->DelayDelivery - m->timenow > 0)
+				event = rr->DelayDelivery;
+			else
 				{
-				if (m->timenow - rr->NextRequiredQuery < 0)		// If not yet time for next query
-					event = rr->NextRequiredQuery;				// then just record when we want the next query
-				else											// else trigger our question to go out now
+				if (rr->DelayDelivery) CacheRecordDeferredAdd(m, rr);
+				if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 					{
-					// Set NextScheduledQuery to timenow so that SendQueries() will run.
-					// SendQueries() will see that we have records close to expiration, and send FEQs for them.
-					m->NextScheduledQuery = m->timenow;
-					// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
-					// which will correctly update m->NextCacheCheck for us
-					event = m->timenow + 0x3FFFFFFF;
+					if (m->timenow - rr->NextRequiredQuery < 0)		// If not yet time for next query
+						event = rr->NextRequiredQuery;				// then just record when we want the next query
+					else											// else trigger our question to go out now
+						{
+						// Set NextScheduledQuery to timenow so that SendQueries() will run.
+						// SendQueries() will see that we have records close to expiration, and send FEQs for them.
+						m->NextScheduledQuery = m->timenow;
+						// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
+						// which will correctly update m->NextCacheCheck for us
+						event = m->timenow + 0x3FFFFFFF;
+						}
 					}
 				}
 			if (m->NextCacheCheck - (event + CacheCheckGracePeriod(rr)) > 0)
@@ -4745,6 +4800,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (pkt.r.resrec.rdlength > InlineCacheRDSize)
 						mDNSPlatformMemCopy(pkt.r.resrec.rdata, rr->resrec.rdata, sizeofRDataHeader + pkt.r.resrec.rdlength);
 					rr->next = mDNSNULL;					// Clear 'next' pointer
+					CheckForSoonToExpireRecords(m, rr);		// Do this before linking new record into cache
 					*(m->rrcache_tail[slot]) = rr;			// Append this record to tail of cache slot list
 					m->rrcache_tail[slot] = &(rr->next);	// Advance tail pointer
 					m->rrcache_used[slot]++;
