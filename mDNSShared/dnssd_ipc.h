@@ -27,6 +27,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.19  2005/02/02 02:25:22  cheshire
+<rdar://problem/3980388> /var/run/mDNSResponder should be /var/run/mdnsd on Linux
+
 Revision 1.18  2005/01/27 22:57:56  cheshire
 Fix compile errors on gcc4
 
@@ -118,7 +121,9 @@ Update to APSL 2.0
 #	define dnssd_sockaddr_t		struct sockaddr_in
 #else
 #	define AF_DNSSD				AF_LOCAL
-#	define MDNS_UDS_SERVERPATH	"/var/run/mDNSResponder"
+#	ifndef MDNS_UDS_SERVERPATH
+#		define MDNS_UDS_SERVERPATH	"/var/run/mDNSResponder"
+#	endif
 #	define LISTENQ				100
     // longest legal control path length
 #	define MAX_CTLPATH			256	
