@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBar.cpp,v $
+Revision 1.3  2004/07/26 05:44:08  shersche
+remove extraneous debug statement
+
 Revision 1.2  2004/07/13 21:24:21  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -611,8 +614,6 @@ STDMETHODIMP ExplorerBar::GetCommandString(UINT idCmd, UINT uType, UINT* pwReser
 //		I can treat the 'verb' as an menu item position	
 STDMETHODIMP ExplorerBar::InvokeCommand(LPCMINVOKECOMMANDINFO lpici)
 {
-	OutputDebugString(L"hello im no here\n");
-
 	// IE doesn't send string commands
 	if (HIWORD(lpici->lpVerb) != 0) return 0;
 
