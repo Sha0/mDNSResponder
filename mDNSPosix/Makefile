@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.38  2004/06/25 02:19:40  rpantos
+# And FreeBSD...
+#
 # Revision 1.37  2004/06/25 00:51:09  rpantos
 # And fix the Java build for Posix on Solaris, too.
 #
@@ -197,6 +200,7 @@ LOCALBASE?=/usr/local
 INSTBASE=$(LOCALBASE)
 STARTUPSCRIPTNAME=mdns.sh
 CFLAGS_OS =
+JAVACFLAGS_OS += -I$(JDK)/include/freebsd
 LDCONFIG = ldconfig
 else
 ifeq ($(os),openbsd)
