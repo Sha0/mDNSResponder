@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.187  2004/09/18 01:37:01  cheshire
+Update comment
+
 Revision 1.186  2004/09/18 01:11:57  ksekar
 <rdar://problem/3806734> Add a user's default domain to empty-string browse list
 
@@ -656,8 +659,8 @@ mDNSlocal void NotifyOfElusiveBug(mDNS *const m, const char *title, mDNSu32 rada
 	static int notifyCount = 0;
 	if (notifyCount) return;
 	
-	// Calling CFUserNotificationDisplayNotice too early in the boot process seems to kill the machine
-	// so we won't do this until at least three minutes after boot
+	// If we display our alert early in the boot process, then it vanishes once the desktop appears.
+	// To avoid this, we don't try to display alerts in the first three minutes after boot.
 	if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return;
 	
 	// Determine if we're at Apple (17.*.*.*)
