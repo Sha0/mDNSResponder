@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.207  2004/10/13 22:45:23  cheshire
+<rdar://problem/3438392> Ten-second delay before kIOMessageSystemHasPoweredOn message
+
 Revision 1.206  2004/10/13 22:11:46  cheshire
 Update debugging messages
 
@@ -1622,9 +1625,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
 	struct ifaddrs *v4Loopback  = NULL;
 	struct ifaddrs *v6Loopback  = NULL;
-	int err = (ifa != NULL) ? 0 : (errno != 0 ? errno : -1);
-	int InfoSocket              = err ? -1 : socket(AF_INET6, SOCK_DGRAM, 0);
-	if (err) return(err);
+	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
+	if (m->SleepState) ifa = NULL;
 
 	// Set up the nice label
 	m->nicelabel.c[0] = 0;
@@ -1735,7 +1737,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 				}
 			}
 	if (InfoSocket >= 0) close(InfoSocket);
-	return(err);
+	return(mStatus_NoError);
 	}
 
 mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, char *ifname, int type)
@@ -2375,16 +2377,20 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	(void)service;    // Parameter not used
 	switch(messageType)
 		{
-		case kIOMessageCanSystemPowerOff:     debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");                      break; // E0000240
-		case kIOMessageSystemWillPowerOff:    debugf("PowerChanged kIOMessageSystemWillPowerOff"); mDNSCoreMachineSleep(m, true);  break; // E0000250
-		case kIOMessageSystemWillNotPowerOff: debugf("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");                  break; // E0000260
-		case kIOMessageCanSystemSleep:        debugf("PowerChanged kIOMessageCanSystemSleep (no action)");                         break; // E0000270
-		case kIOMessageSystemWillSleep:       debugf("PowerChanged kIOMessageSystemWillSleep");    mDNSCoreMachineSleep(m, true);  break; // E0000280
-		case kIOMessageSystemWillNotSleep:    debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");                     break; // E0000290
-		case kIOMessageSystemHasPoweredOn:    debugf("PowerChanged kIOMessageSystemHasPoweredOn"); mDNSCoreMachineSleep(m, false); break; // E0000300
-		case kIOMessageSystemWillRestart:     debugf("PowerChanged kIOMessageSystemWillRestart (no action)");                      break; // E0000310
-		case kIOMessageSystemWillPowerOn:     debugf("PowerChanged kIOMessageSystemWillPowerOn (no action)");                      break; // E0000320
-		default:                              debugf("PowerChanged unknown message %X", messageType);                              break;
+		case kIOMessageCanSystemPowerOff:		debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");							break; // E0000240
+		case kIOMessageSystemWillPowerOff:		debugf("PowerChanged kIOMessageSystemWillPowerOff"); mDNSCoreMachineSleep(m, true);		break; // E0000250
+		case kIOMessageSystemWillNotPowerOff:	debugf("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");						break; // E0000260
+		case kIOMessageCanSystemSleep:			debugf("PowerChanged kIOMessageCanSystemSleep (no action)");							break; // E0000270
+		case kIOMessageSystemWillSleep:			debugf("PowerChanged kIOMessageSystemWillSleep");	 mDNSCoreMachineSleep(m, true);		break; // E0000280
+		case kIOMessageSystemWillNotSleep:		debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");						break; // E0000290
+		case kIOMessageSystemHasPoweredOn:		debugf("PowerChanged kIOMessageSystemHasPoweredOn");
+												// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
+												if (m->SleepState) mDNSCoreMachineSleep(m, false);										break; // E0000300
+		case kIOMessageSystemWillRestart:		debugf("PowerChanged kIOMessageSystemWillRestart (no action)");							break; // E0000310
+		case kIOMessageSystemWillPowerOn:		debugf("PowerChanged kIOMessageSystemWillPowerOn");
+												// Make sure our interface list is updated, then tell mDNSCore to wake
+												NetworkChanged(NULL, NULL, m); mDNSCoreMachineSleep(m, false);                          break; // E0000320
+		default:								debugf("PowerChanged unknown message %X", messageType);									break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
 	}
