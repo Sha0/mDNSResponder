@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.5  2003/08/15 00:05:04  bradley
+Updated to use name/InterfaceID from new AuthRecord resrec field. Added output of new record sizes.
+
 Revision 1.4  2003/08/14 02:19:55  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -1943,7 +1946,9 @@ void	mDNSShow( BOOL inShowRecords )
 	
 	printf( "\n-- mDNS globals --\n" );
 	printf( "    sizeof( mDNS )                     = %d\n", (int) sizeof( mDNS ) );
- 	printf( "    sizeof( ResourceRecord )           = %d\n", (int) sizeof( ResourceRecord ) );
+	printf( "    sizeof( ResourceRecord )           = %d\n", (int) sizeof( ResourceRecord ) );
+	printf( "    sizeof( AuthRecord )               = %d\n", (int) sizeof( AuthRecord ) );
+	printf( "    sizeof( CacheRecord )              = %d\n", (int) sizeof( CacheRecord ) );
 	printf( "    gMDNSPtr                           = 0x%08lX\n", (unsigned long) gMDNSPtr );
 	printf( "    gMDNSTicksToMicrosecondsMultiplier = %ld\n", gMDNSTicksToMicrosecondsMultiplier );
 	printf( "    lockID                             = 0x%08lX\n", (unsigned long) gMDNSPtr->p->lockID );
@@ -2010,8 +2015,8 @@ void	mDNSShowRecords( void )
 	n = 1;
 	for( record = gMDNSPtr->ResourceRecords; record; record = record->next )
 	{
-		item = (MDNSInterfaceItem *) record->InterfaceID;
-		ConvertDomainNameToCString( &record->name, name );
+		item = (MDNSInterfaceItem *) record->resrec.InterfaceID;
+		ConvertDomainNameToCString( &record->resrec.name, name );
 		printf( "    -- record %d --\n", n );
 		printf( "        interface = 0x%08X (%s)\n", (int) item, item ? item->name : "<any>" );
 		printf( "        name      = \"%s\"\n", name );
