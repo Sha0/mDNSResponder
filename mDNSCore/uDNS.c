@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.168  2004/12/23 23:22:47  ksekar
+<rdar://problem/3933606> Unicast known answers "name" pointers point to garbage stack memory
+
 Revision 1.167  2004/12/22 22:25:47  ksekar
 <rdar://problem/3734265> NAT-PMP: handle location changes
 
@@ -1741,6 +1744,7 @@ mDNSlocal void addKnownAnswer(DNSQuestion *question, const CacheRecord *rr)
 	umemcpy(newCR, rr, size);
 	newCR->resrec.rdata = (RData*)&newCR->rdatastorage;
 	newCR->resrec.rdata->MaxRDLength = rr->resrec.rdlength;
+	newCR->resrec.name = &question->qname;
 	newCR->next = question->uDNS_info.knownAnswers;
 	question->uDNS_info.knownAnswers = newCR;
 	}
