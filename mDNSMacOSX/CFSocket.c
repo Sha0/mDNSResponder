@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.160  2004/07/29 19:27:16  ksekar
+NATPMP Support - minor fixes and cleanup
+
 Revision 1.159  2004/07/26 22:49:31  ksekar
 <rdar://problem/3651409>: Feature #9516: Need support for NATPMP in client
 
@@ -1736,13 +1739,16 @@ mDNSlocal void RouterChanged(SCDynamicStoreRef session, CFArrayRef changes, void
 	CFRelease(key);
 	if (!dict) return;	
 	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);		
-	if (!router) return;
-	if (!CFStringGetCString(router, buf, 256, kCFStringEncodingASCII))
-		LogMsg("ERROR: RouterChanged - CFStringGetCString");
-	else
+	if (router)
 		{
-		m->uDNS_info.Router.type = mDNSAddrType_IPv4;
-		inet_aton(buf, (struct in_addr *)&m->uDNS_info.Router.ip.v4);
+		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingASCII))
+			LogMsg("ERROR: RouterChanged - CFStringGetCString");
+		else
+			{
+			m->uDNS_info.Router.type = mDNSAddrType_IPv4;
+			inet_aton(buf, (struct in_addr *)&m->uDNS_info.Router.ip.v4);
+			RouterInitialized = mDNStrue;
+			}
 		}
 	CFRelease(dict);
 	}

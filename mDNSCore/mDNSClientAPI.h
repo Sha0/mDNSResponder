@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.181  2004/07/29 19:27:15  ksekar
+NATPMP Support - minor fixes and cleanup
+
 Revision 1.180  2004/07/29 02:03:35  ksekar
 Delete unused #define and structure field
 
@@ -1074,7 +1077,7 @@ typedef struct
     mDNSAddr     ns;     // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
     mDNSIPPort   port;   // port on which server accepts dynamic updates
     mDNSBool     add;    // !!!KRS this should really be an enumerated state
-    NATTraversalInfo *NATinfo;
+    NATTraversalInfo *NATinfo; // NAT traversal context.  may be NULL
     mDNSBool     lease;  // dynamic update contains (should contain) lease option
     mDNSs32      expire; // expiration of lease (-1 for static)
 	} uDNS_RegInfo;
@@ -1194,7 +1197,7 @@ struct NetworkInterfaceInfo_struct
 	AuthRecord RR_HINFO;
 
     uDNS_NetworkInterfaceInfo *uDNS_info;  // Storage allocated by core may persist beyond life of NetworkInterfaceInfo,
-                                           // since we need to asyncronously deregister the A records
+                                           // since we need to asynchronously deregister the A records
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
@@ -1407,21 +1410,21 @@ struct ServiceInfoQuery_struct
 #endif
 	
 #define NATMAP_INIT_RETRY (mDNSPlatformOneSecond / 4)          // start at 250ms w/ exponential decay
+#define NATMAP_MAX_RETRY mDNSPlatformOneSecond                 // back off to once per second
+#define NATMAP_MAX_TRIES 3                                     // for max 3 tries
 #define NATMAP_DEFAULT_LEASE (60 * 60)  // lease life in seconds
-#define NATMAP_MAX_TRIES 3
 #define NATMAP_VERS 0
 #define NATMAP_PORT 5351
 #define ADDR_REQUEST_PKTLEN 2
 #define ADDR_REPLY_PKTLEN 8
 #define PORTMAP_PKTLEN 12
-#define NATMAP_RESPONSE_MASK 128
+#define NATMAP_RESPONSE_MASK 0x80
 
 typedef enum
 	{
 	NATOp_AddrRequest = 0,
 	NATOp_MapUDP      = 1,
-	NATOp_MapTCP      = 2,
-	NATOp_MapAll      = 3	
+	NATOp_MapTCP      = 2
 	} NATOp_t;
 
 typedef enum
@@ -1446,7 +1449,7 @@ typedef enum
  // have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL
 	
 // Pass NULL for pkt on error (including timeout)
-typedef void (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, int len);
+typedef void (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 
 struct NATTraversalInfo_struct
 	{
@@ -2010,7 +2013,7 @@ extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mD
 // The TCPConnectionCallback is subsequently invoked when the connection
 // completes (in which case the ConnectionEstablished parameter is true), or data is available for
 // reading on the socket (indicated by the ConnectionEstablished parameter being false.)  If the connection
-// asyncronously fails, the TCPConnectionCallback should be invoked as usual, with the error being
+// asynchronously fails, the TCPConnectionCallback should be invoked as usual, with the error being
 // returned in subsequent calls to PlatformReadTCP or PlatformWriteTCP.  (This allows for platforms
 // with limited asyncronous error detection capabilities.)  PlatformReadTCP and PlatformWriteTCP must
 // return the number of bytes read/written, 0 if the call would block, and -1 if an error.
