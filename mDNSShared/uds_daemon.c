@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.106  2004/11/02 02:12:21  cheshire
+<rdar://problem/3839111> Remove unnecessary memory allocations
+
 Revision 1.105  2004/10/28 19:07:19  cheshire
 Add some more debugging checks and improved LogOperation() messages
 
@@ -483,7 +486,6 @@ typedef struct request_state
     // registration context associated with this request (null if not applicable)
     registered_record_entry *reg_recs;  // muliple registrations for a connection-oriented request
     service_info *service_registration;
-    struct resolve_result_t *resolve_results;
     browser_info_t *browser_info;
     struct request_state *next;
     } request_state;
@@ -534,20 +536,9 @@ typedef struct
 
 typedef struct
     {
-    DNSQuestion question;
-    uint16_t	qtype;
     request_state *rstate;
-    } resolve_t;
-    
-typedef struct
-    {
-    resolve_t *txt;
-    resolve_t *srv;
-    request_state *rstate;
-    } resolve_termination_t;
-    
-typedef struct resolve_result_t
-    {
+    DNSQuestion qtxt;
+    DNSQuestion qsrv;
     // const ResourceRecord *txt;
     // const ResourceRecord *srv;
     mDNSBool   srv;
@@ -556,8 +547,8 @@ typedef struct resolve_result_t
     mDNSIPPort port;
     mDNSu16    txtlen;
     mDNSu8     txtdata[AbsoluteMaxDNSMessageData];
-    } resolve_result_t;
-
+    } resolve_termination_t;
+    
 typedef struct
     {
     request_state *rstate;
@@ -880,7 +871,7 @@ void udsserver_info(mDNS *const m)
 				LogMsgNoIdent("DNSServiceBrowse           %##s", blist->q.qname.c);
 			}
         else if (req->terminate == resolve_termination_callback)
-            LogMsgNoIdent("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->srv->question.qname.c);
+            LogMsgNoIdent("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->qsrv.qname.c);
         else if (req->terminate == question_termination_callback)
             LogMsgNoIdent("DNSServiceQueryRecord      %##s", ((DNSQuestion *)          t)->qname.c);
         else if (req->terminate == enum_termination_callback)
@@ -1212,7 +1203,6 @@ static void handle_resolve_request(request_state *rstate)
     char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
     char *ptr;  // message data pointer
     domainname fqdn;
-    resolve_t *srv, *txt;
     resolve_termination_t *term;
     mStatus err;
     
@@ -1249,63 +1239,46 @@ static void handle_resolve_request(request_state *rstate)
     if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
         goto bad_param;
 
-    // allocate question wrapper structs
-    srv = mallocL("handle_resolve_request", sizeof(resolve_t));
-    txt = mallocL("handle_resolve_request", sizeof(resolve_t));
-    if (!srv || !txt) goto malloc_error;
-    srv->qtype = kDNSType_SRV;
-    txt->qtype = kDNSType_TXT;
-    srv->rstate = rstate;
-    txt->rstate = rstate;
-    
-    // format questions
-    srv->question.InterfaceID      = InterfaceID;
-    srv->question.Target           = zeroAddr;
-    memcpy(&srv->question.qname, &fqdn, MAX_DOMAIN_NAME);
-    srv->question.qtype            = kDNSType_SRV;
-    srv->question.qclass           = kDNSClass_IN;
-    srv->question.LongLived        = mDNSfalse;
-    srv->question.ExpectUnique     = mDNStrue;
-	srv->question.ForceMCast       = mDNSfalse;
-    srv->question.QuestionCallback = resolve_result_callback;
-    srv->question.QuestionContext  = rstate;
-
-    txt->question.InterfaceID      = InterfaceID;
-    txt->question.Target           = zeroAddr;
-    memcpy(&txt->question.qname, &fqdn, MAX_DOMAIN_NAME);
-    txt->question.qtype            = kDNSType_TXT;
-    txt->question.qclass           = kDNSClass_IN;
-    txt->question.LongLived        = mDNSfalse;
-    txt->question.ExpectUnique     = mDNStrue;
-	txt->question.ForceMCast       = mDNSfalse;
-    txt->question.QuestionCallback = resolve_result_callback;
-    txt->question.QuestionContext  = rstate;
-
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
+    bzero(term, sizeof(*term));
     if (!term) goto malloc_error;
-    term->srv = srv;
-    term->txt = txt;
+
+    // format questions
+    term->qsrv.InterfaceID      = InterfaceID;
+    term->qsrv.Target           = zeroAddr;
+    memcpy(&term->qsrv.qname, &fqdn, MAX_DOMAIN_NAME);
+    term->qsrv.qtype            = kDNSType_SRV;
+    term->qsrv.qclass           = kDNSClass_IN;
+    term->qsrv.LongLived        = mDNSfalse;
+    term->qsrv.ExpectUnique     = mDNStrue;
+	term->qsrv.ForceMCast       = mDNSfalse;
+    term->qsrv.QuestionCallback = resolve_result_callback;
+    term->qsrv.QuestionContext  = rstate;
+    
+    term->qtxt.InterfaceID      = InterfaceID;
+    term->qtxt.Target           = zeroAddr;
+    memcpy(&term->qtxt.qname, &fqdn, MAX_DOMAIN_NAME);
+    term->qtxt.qtype            = kDNSType_TXT;
+    term->qtxt.qclass           = kDNSClass_IN;
+    term->qtxt.LongLived        = mDNSfalse;
+    term->qtxt.ExpectUnique     = mDNStrue;
+	term->qtxt.ForceMCast       = mDNSfalse;
+    term->qtxt.QuestionCallback = resolve_result_callback;
+    term->qtxt.QuestionContext  = rstate;
+
     term->rstate = rstate;
     rstate->termination_context = term;
     rstate->terminate = resolve_termination_callback;
     
-    // set up reply wrapper struct (since answer will come via 2 callbacks)
-    rstate->resolve_results = mallocL("handle_resolve_response", sizeof(resolve_result_t));
-    if (!rstate->resolve_results) goto malloc_error;
-    bzero(rstate->resolve_results, sizeof(resolve_result_t));
-
     // ask the questions
-	LogOperation("%3d: DNSServiceResolve(%##s) START", rstate->sd, srv->question.qname.c);
-    err = mDNS_StartQuery(gmDNS, &srv->question);
-    if (!err) err = mDNS_StartQuery(gmDNS, &txt->question);
+	LogOperation("%3d: DNSServiceResolve(%##s) START", rstate->sd, term->qsrv.qname.c);
+    err = mDNS_StartQuery(gmDNS, &term->qsrv);
+    if (!err) err = mDNS_StartQuery(gmDNS, &term->qtxt);
 
     if (err)
         {
-        freeL("handle_resolve_request", txt);
-        freeL("handle_resolve_request", srv);
         freeL("handle_resolve_request", term);
-        freeL("handle_resolve_request", rstate->resolve_results);
         rstate->terminate = NULL;  // prevent abort_request() from invoking termination callback
         }
     if (deliver_error(rstate, err) < 0 || err) 
@@ -1337,20 +1310,14 @@ static void resolve_termination_callback(void *context)
         return;
         }
     rs = term->rstate;
-	LogOperation("%3d: DNSServiceResolve(%##s) STOP", rs->sd, term->txt->question.qname.c);
+	LogOperation("%3d: DNSServiceResolve(%##s) STOP", rs->sd, term->qtxt.qname.c);
     
-    mDNS_StopQuery(gmDNS, &term->txt->question);
-    mDNS_StopQuery(gmDNS, &term->srv->question);
+    mDNS_StopQuery(gmDNS, &term->qtxt);
+    mDNS_StopQuery(gmDNS, &term->qsrv);
     
-    freeL("resolve_termination_callback", term->txt);
-    freeL("resolve_termination_callback", term->srv);
     freeL("resolve_termination_callback", term);
     rs->termination_context = NULL;
-    freeL("resolve_termination_callback", rs->resolve_results);
-    rs->resolve_results = NULL;
     }
-    
-    
 
 static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 {
@@ -1360,7 +1327,7 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     transfer_state result;
     reply_state *rep;
     request_state *rs = question->QuestionContext;
-    resolve_result_t *res = rs->resolve_results;
+    resolve_termination_t *res = rs->termination_context;
     (void)m; // Unused
 
 	LogOperation("%3d: DNSServiceResolve(%##s, %s) RESULT %s", rs->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
