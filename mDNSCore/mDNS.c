@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.98  2003/04/03 03:43:55  cheshire
+<rdar://problem/3216837>:	Off-by-one error in probe rate limiting
+
 Revision 1.97  2003/04/02 01:48:17  cheshire
 <rdar://problem/3212360> mDNSResponder sometimes suffers false self-conflicts when it sees its own packets
 Additional fix pointed out by Josh:
@@ -1452,7 +1455,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 			m->ProbeFailTime = timenow;
 			// If we've had ten probe failures, rate-limit to one every five seconds
 			// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
-			if (m->NumFailedProbes < 10) m->NumFailedProbes++;
+			if (m->NumFailedProbes < 9) m->NumFailedProbes++;
 			else m->SuppressProbes = (timenow + mDNSPlatformOneSecond * 5) | 1;
 			if (rr->RecordCallback)
 				rr->RecordCallback(m, rr, mStatus_NameConflict);
@@ -3650,7 +3653,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								// We increment NumFailedProbes here to make sure that repeated late conflicts
 								// will also cause us to back off to the slower probing rate
 								m->ProbeFailTime = timenow;
-								if (m->NumFailedProbes < 10) m->NumFailedProbes++;
+								if (m->NumFailedProbes < 9) m->NumFailedProbes++;
 								else m->SuppressProbes = (timenow + mDNSPlatformOneSecond * 5) | 1;
 								}
 							// If we're probing for this record, we just failed
