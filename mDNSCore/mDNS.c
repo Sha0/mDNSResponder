@@ -2584,10 +2584,21 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	// *** 6. Mark the send flags on the records we plan to send
 	// ***
-	if (replymulticast)
-		for (rr=ResponseRecords; rr; rr=rr->NextResponse)
+	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
+		{
+		if (MustSendRecord(rr))
 			{
-			if (MustSendRecord(rr))
+			// For oversized records which we are going to send back to the requester via unicast
+			// anyway, don't waste network bandwidth by also sending them via multicast.
+			// This means we lose passive conflict detection for these oversized records, but
+			// that is a reasonable tradeoff -- these large records usually have an associated
+			// SRV record with the same name which will catch conflicts for us anyway.
+			mDNSBool LargeRecordWithUnicastReply = (rr->rdestimate > 1024 && replyunicast);
+
+			if (rr->NR_AnswerTo)
+				answers = mDNStrue;
+
+			if (replymulticast && !LargeRecordWithUnicastReply)
 				{
 				// If this query has additional duplicate suppression info
 				// coming in another packet, then remember the requesting IP address
@@ -2601,7 +2612,6 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				if (rr->NR_AnswerTo)
 					{
 					// This is a direct answer in response to one of the questions
-					answers = mDNStrue;
 					rr->SendPriority = kDNSSendPriorityAnswer;
 					}
 				else
@@ -2612,6 +2622,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					}
 				}
 			}
+		}
 
 	// ***
 	// *** 7. If we think other machines are likely to answer these questions, set our packet suppression timer
@@ -2654,7 +2665,10 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	DNSMessage   *replyunicast   = mDNSNULL;
 	mDNSBool      replymulticast = mDNSfalse;
 	
-	verbosedebugf("Received Query with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+	verbosedebugf("Received Query from %.4a:%d to %.4a:%d on %.4a with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+		&srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1],
+		&dstaddr, (mDNSu16)dstport.b[0]<<8 | dstport.b[1],
+		&InterfaceAddr,
 		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? "" : "s",
 		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? "" : "s",
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y" : "ies",
@@ -2669,12 +2683,17 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceAddr, replyunicast, replymulticast, timenow);
 	if (replyunicast && responseend)
+		{
 		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceAddr, dstport, srcaddr, srcport);
+		verbosedebugf("Unicast Response: %d Answer%s, %d Additional%s on %.4a",
+			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
+			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s", &InterfaceAddr);
+		}
 	}
 
 // NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const response, const mDNSu8 *end, const mDNSIPAddr InterfaceAddr)
+mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const response, const mDNSu8 *end, const mDNSIPAddr dstaddr, const mDNSIPAddr InterfaceAddr)
 	{
 	int i;
 	const mDNSs32 timenow = mDNSPlatformTimeNow();
@@ -2687,11 +2706,17 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
 	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
 
-	verbosedebugf("Received Response with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+	verbosedebugf("Received Response addressed to %.4a on %.4a with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+		&dstaddr, &InterfaceAddr,
 		response->h.numQuestions,   response->h.numQuestions   == 1 ? "" : "s",
 		response->h.numAnswers,     response->h.numAnswers     == 1 ? "" : "s",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y" : "ies",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
+
+	// Other mDNS devices may issue unicast queries (which we correctly answer),
+	// but we never *issue* unicast queries, so if we ever receive a unicast response then it is someone trying to spoof us, so ignore it!
+	if (dstaddr.NotAnInteger != AllDNSLinkGroup.NotAnInteger)
+		{ debugf("** Ignored attempted spoof unicast mDNS response packet **"); return; }
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
@@ -2832,6 +2857,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSIPAddr srcaddr, mDNSIPPort srcport, mDNSIPAddr dstaddr, mDNSIPPort dstport, mDNSIPAddr InterfaceAddr)
 	{
+	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
@@ -2846,8 +2873,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	mDNS_Lock(m);
 	if (m->mDNS_busy > 1) debugf("mDNSCoreReceive: Locking failure! mDNS already busy");
 
-	if      (QR_OP == (kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery)) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceAddr);
-	else if (QR_OP == (kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery)) mDNSCoreReceiveResponse(m, msg, end, InterfaceAddr);
+	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceAddr);
+	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end,                   dstaddr,          InterfaceAddr);
 	else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
 
 	// Packet reception often causes a change to the task list:
