@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.104  2004/10/26 18:53:15  cheshire
+Avoid unused variable warning
+
 Revision 1.103  2004/10/26 07:15:55  cheshire
 Add file descriptor number to all LogOperation messages
 
@@ -1471,8 +1474,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
 static void question_termination_callback(void *context)
     {
     DNSQuestion *q = context;
-    request_state *req = q->QuestionContext;
-	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) STOP", req->sd, q->qname.c, DNSTypeName(q->qtype));
+	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) STOP", ((request_state *)q->QuestionContext)->sd, q->qname.c, DNSTypeName(q->qtype));
     mDNS_StopQuery(gmDNS, q);  // no need to error check
     freeL("question_termination_callback", q);
     }
