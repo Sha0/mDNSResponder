@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.153  2004/12/14 20:45:02  cheshire
+Improved error logging in "unexpected answer" message
+
 Revision 1.152  2004/12/14 03:02:10  ksekar
 <rdar://problem/3919016> Rare race condition can cause crash
 
@@ -1488,7 +1491,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
     if (!MakeDomainNameFromDNSNameString(&q->qname, buf)) { LogMsg("Error: GetStaticHostname - bad name %s", buf); return; }	
 
-	q->InterfaceID       = mDNSInterface_Any;
+	q->InterfaceID      = mDNSInterface_Any;
     q->Target           = zeroAddr;
     q->qtype            = kDNSType_PTR;
     q->qclass           = kDNSClass_IN;
@@ -1791,6 +1794,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	mDNSBool goodbye, inKAList, followedCName = mDNSfalse;
 	LLQ_Info *llqInfo = question->uDNS_info.llq;
 	domainname origname;
+	origname.c[0] = 0;
 	
 	if (question != m->uDNS_info.CurrentQuery)
 		{ LogMsg("ERROR: pktResponseHdnlr called without CurrentQuery ptr set!");  return; }
@@ -1838,7 +1842,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 				}
 			}			
 		else if (!followedCName || !SameDomainName(&cr->resrec.name, &origname))
-			LogMsg("Question %##s type %d - unexpected answer %##s type %d", question->qname.c, question->qtype, cr->resrec.name.c, cr->resrec.rrtype);
+			LogMsg("Question %##s %X %s %##s- unexpected answer %##s %X %s",
+				question->qname.c, DNSTypeName(question->qtype), origname.c,
+				cr->resrec.name.c, DNSTypeName(cr->resrec.rrtype));
 		}
 	
 	if (!llq || llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume)
