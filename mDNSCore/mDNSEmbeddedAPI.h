@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.271  2005/01/15 00:56:41  ksekar
+<rdar://problem/3954575> Unicast services don't disappear when logging
+out of VPN
+
 Revision 1.270  2005/01/14 18:34:22  ksekar
 <rdar://problem/3954571> Services registered outside of firewall don't succeed after location change
 
@@ -2487,7 +2491,9 @@ extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mD
 extern void mDNS_UpdateLLQs(mDNS *m);
 extern void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
 extern void mDNS_DeleteDNSServers(mDNS *const m);
-	
+
+extern void mDNS_PurgeResultsForDomain(mDNS *m, DNSQuestion *q, const domainname *d);
+
 // Routines called by the core, exported by DNSDigest.c
 
 // Convert a base64 encoded key into a binary byte stream

@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.154  2005/01/15 00:56:42  ksekar
+<rdar://problem/3954575> Unicast services don't disappear when logging
+out of VPN
+
 Revision 1.153  2005/01/14 18:44:28  ksekar
 <rdar://problem/3954609> mDNSResponder is crashing when changing domains
 
@@ -1922,6 +1926,7 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 					{
 					if (prev) prev->next = ptr->next;
 					else info->browsers = ptr->next;
+					mDNS_PurgeResultsForDomain(gmDNS, &ptr->q, d);  // give goodbyes for domain about to disappear
 					mDNS_StopBrowse(gmDNS, &ptr->q);
 					freeL("browser_t", ptr);
 					break;

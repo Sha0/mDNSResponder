@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.175  2005/01/15 00:56:41  ksekar
+<rdar://problem/3954575> Unicast services don't disappear when logging
+out of VPN
+
 Revision 1.174  2005/01/14 18:44:28  ksekar
 <rdar://problem/3954609> mDNSResponder is crashing when changing domains
 
@@ -1886,6 +1890,45 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 
 	malloc_error:
 	LogMsg("ERROR: Malloc");
+	}
+
+mDNSexport void mDNS_PurgeResultsForDomain(mDNS *m, DNSQuestion *q, const domainname *d)
+	{
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	int nlabels = CountLabels(d);
+	
+	u->CurrentQuery = q;
+	CacheRecord **ka = &q->uDNS_info.knownAnswers;
+
+	while (*ka)
+		{
+		domainname *name = (*ka)->resrec.name;
+		int acount = CountLabels(name);
+		int prefixlen = acount - nlabels;
+
+		if (prefixlen >= 0)
+			{
+			const domainname *suffix = name;
+			int i;
+			for (i = 0; i < prefixlen; i++) suffix = (domainname *)(suffix->c + 1 + suffix->c[0]);
+			if (SameDomainName(suffix, d))
+				{
+				m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+				q->QuestionCallback(m, q, &(*ka)->resrec, mDNSfalse);
+				m->mDNS_reentrancy--; // Decrement to block mDNS API calls again				
+
+				if (u->CurrentQuery != q) return; // question cancelled in callback				
+				else
+					{
+					CacheRecord *fptr = *ka;
+					*ka = (*ka)->next;
+					ufree(fptr);
+					continue;
+					}
+				}
+			}
+		ka = &(*ka)->next;
+		}
 	}
 
 mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, mDNSBool llq)

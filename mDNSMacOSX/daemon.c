@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.235  2005/01/15 00:56:41  ksekar
+<rdar://problem/3954575> Unicast services don't disappear when logging
+out of VPN
+
 Revision 1.234  2005/01/10 03:42:30  ksekar
 Clarify debugf
 
@@ -1122,30 +1126,23 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 				}
 			else
 				{
-#if 0
-				/*
-				 * By cancelling the browse immediately, we may lose remove events.
-				 * Instead, we allow the browse to run.  If our previous results are no longer valid (e.g. because we
-				 * moved out from behind a firewall) we will get remove events for those names.
-				 */
-				 // find the question for this domain
-				 DNSServiceBrowserQuestion *q = ptr->qlist, *prev = NULL;
-				 while (q)
-					 {
-					 if (SameDomainName(&q->domain, d))
-						 {
-						 if (prev) prev->next = q->next;
-						 else ptr->qlist = q->next;
-						 mDNS_StopBrowse(&mDNSStorage, &q->q);
-						 freeL("DNSServiceBrowserQuestion", q);
-						 break;
-						 }
-					 prev = q;
-					 q = q->next;
-					 }
-				 if (!q) LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
-#endif
-                 }			
+				DNSServiceBrowserQuestion *q = ptr->qlist, *prev = NULL;
+				while (q)
+					{
+					if (SameDomainName(&q->domain, d))
+						{
+						if (prev) prev->next = q->next;
+						else ptr->qlist = q->next;
+						mDNS_PurgeResultsForDomain(&mDNSStorage, &q->q, d);
+						mDNS_StopBrowse(&mDNSStorage, &q->q);
+						freeL("DNSServiceBrowserQuestion", q);
+						break;
+						}
+					prev = q;
+					q = q->next;
+					}
+				if (!q) LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
+				}
 			}
 		}
 	}
