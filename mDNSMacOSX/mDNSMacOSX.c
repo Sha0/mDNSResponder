@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.272  2005/01/07 23:21:42  ksekar
+<rdar://problem/3891628> Clean up SCPreferences format
+
 Revision 1.271  2004/12/20 23:18:12  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 One more refinement: When an interface with a v6LL address gets a v4 address too, that's not a flap
@@ -1527,6 +1530,15 @@ mDNSlocal void GetUserSpecifiedLocalHostName(domainlabel *const namelabel)
 		}
 	}
 
+mDNSlocal mDNSBool DDNSSettingEnabled(CFDictionaryRef dict)
+	{
+	mDNSs32 val;
+	CFNumberRef state = CFDictionaryGetValue(dict, CFSTR("Enabled"));
+	if (!state) return mDNSfalse;
+	if (!CFNumberGetValue(state, kCFNumberSInt32Type, &val)) { LogMsg("ERROR: DDNSSettingEnabled - CFNumberGetValue"); return mDNSfalse; }
+	return val ? mDNStrue : mDNSfalse;
+	}
+
 mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const regDomain, domainname *const browseDomain)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];
@@ -1542,42 +1554,55 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
 		if (dict)
 			{
-			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("FQDN"));
-			CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("DefaultRegistrationDomain"));
-			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("DefaultBrowseDomain"));
+			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
 			if (fqdnArray)
-				{
-				CFStringRef name = CFArrayGetValueAtIndex(fqdnArray, 0);
-				if (name)
-					{
-					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-                        !MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
-						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
-					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
-					}
-				}			
-			if (regArray)
-				{
-				CFStringRef name = CFArrayGetValueAtIndex(regArray, 0);
-				if (name)
-					{
-					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-                        !MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
-						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
-					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
+				{				
+				CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0); // for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
+				if (fqdnDict && DDNSSettingEnabled(fqdnDict))
+					{						
+					CFStringRef name = CFDictionaryGetValue(fqdnDict, CFSTR("Domain"));
+					if (name)
+						{
+						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+							!MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
+							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
+						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
+						}
 					}
 				}
+
+			CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
+			if (regArray)
+				{
+				CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
+				if (regDict && DDNSSettingEnabled(regDict))
+					{
+					CFStringRef name = CFDictionaryGetValue(regDict, CFSTR("Domain"));
+					if (name)
+						{
+						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+							!MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
+							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
+						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
+						}
+					}
+				}
+			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
 			if (browseArray)
 				{
-				CFStringRef name = CFArrayGetValueAtIndex(browseArray, 0);
-				if (name)
+				CFDictionaryRef browseDict = CFArrayGetValueAtIndex(browseArray, 0);
+				if (browseDict && DDNSSettingEnabled(browseDict))
 					{
-					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-                        !MakeDomainNameFromDNSNameString(browseDomain, buf) || !browseDomain->c[0])
-						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browse domain: %s", buf[0] ? buf : "(unknown)");
-					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browse zone: %s", buf);
+					CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
+					if (name)
+						{
+						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+							!MakeDomainNameFromDNSNameString(browseDomain, buf) || !browseDomain->c[0])
+							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browse domain: %s", buf[0] ? buf : "(unknown)");
+						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browse zone: %s", buf);						
+						}
 					}
-				}			
+				}
 			CFRelease(dict);
 			}
 		CFRelease(store);
@@ -1593,17 +1618,25 @@ mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
 		ConvertDomainNameToCString(dname, uname);
 		char *p = uname;
 		while (*p) { *p = tolower(*p); p++; }
-		const void *n1 = CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8); // CFStringRef
-		const void *v1 = CFNumberCreate(NULL, kCFNumberSInt32Type, &status); // CFNumberRef
-		const void *n2 = CFSTR("FQDN"); // CFStringRef
-		const void *v2 = CFDictionaryCreate(NULL, &n1, &v1, 1, NULL, NULL); // CFDictionaryRef
-		CFDictionaryRef dict = CFDictionaryCreate(NULL, &n2, &v2, 1, NULL, NULL);
-		SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), dict);
-		CFRelease(dict);
-		CFRelease(v2);
-		CFRelease(n2);
-		CFRelease(v1);
-		CFRelease(n1);
+		
+		const void *StatusKey = CFSTR("Status");		
+		const void *StatusVal = CFNumberCreate(NULL, kCFNumberSInt32Type, &status); // CFNumberRef
+		const void *StatusDict = CFDictionaryCreate(NULL, &StatusKey, &StatusVal, 1, NULL, NULL);
+
+		const void *HostKey = CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8);
+		const void *HostDict = CFDictionaryCreate(NULL, &HostKey, &StatusDict, 1, NULL, NULL);
+				
+		const void *StateKey = CFSTR("HostNames"); // CFStringRef
+		CFDictionaryRef StateDict = CFDictionaryCreate(NULL, &StateKey, &HostDict, 1, NULL, NULL);
+		SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), StateDict);
+
+		CFRelease(StateDict);
+		CFRelease(StateKey);
+		CFRelease(HostDict);
+		CFRelease(HostKey);
+		CFRelease(StatusDict);
+		CFRelease(StatusVal);
+		CFRelease(StatusKey);
 		CFRelease(store);
 		}
 	}
@@ -2588,18 +2621,24 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	GetUserSpecifiedDDNSConfig(&fqdn, &RegDomain, &BrowseDomain);
 	if (!fqdn.c[0] && !RegDomain.c[0]) ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &fqdn, &RegDomain);
 
+	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
+		{		
+		if (DynDNSRegDomain.c[0]) RemoveDefRegDomain(&DynDNSRegDomain);
+		if (!SameDomainName(&DynDNSRegDomain, &DynDNSBrowseDomain)) SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
+		AssignDomainName(&DynDNSRegDomain, &RegDomain);		
+		if (DynDNSRegDomain.c[0])
+			{
+			SetSecretForDomain(m, &DynDNSRegDomain);
+			AddDefRegDomain(&DynDNSRegDomain);
+			if (!SameDomainName(&DynDNSRegDomain, &BrowseDomain)) SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNStrue);
+			}
+		}
+	
 	if (!SameDomainName(&BrowseDomain, &DynDNSBrowseDomain))
 		{
 		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNSfalse);
 		AssignDomainName(&DynDNSBrowseDomain, &BrowseDomain);
 		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNStrue);
-		}
-	
-	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
-		{		
-		if (DynDNSRegDomain.c[0]) RemoveDefRegDomain(&DynDNSRegDomain);
-		AssignDomainName(&DynDNSRegDomain, &RegDomain);		
-		if (DynDNSRegDomain.c[0]) { SetSecretForDomain(m, &DynDNSRegDomain); AddDefRegDomain(&DynDNSRegDomain); }
 		}
 	
 	if (!SameDomainName(&fqdn, &DynDNSHostname))
