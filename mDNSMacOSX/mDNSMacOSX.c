@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.296  2005/02/01 21:06:52  ksekar
+Avoid spurious log message
+
 Revision 1.295  2005/02/01 19:33:30  ksekar
 <rdar://problem/3985239> Keychain format too restrictive
 
@@ -2803,7 +2806,7 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 		}
 
 	cleanup:
-	if (err) LogMsg("Error: SetSecretForDomain - %s failed with error code %d", failedfn, err);
+	if (err && err != errSecItemNotFound) LogMsg("Error: SetSecretForDomain - %s failed with error code %d", failedfn, err);
 	if (attrList) SecKeychainItemFreeAttributesAndData(attrList, secret);
 	if (itemRef) CFRelease(itemRef);
 	}
