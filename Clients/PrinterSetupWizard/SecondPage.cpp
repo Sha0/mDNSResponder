@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.5  2004/12/30 01:02:47  shersche
+<rdar://problem/3734478> Add Printer information box that displays description and location information when printer name is selected
+Bug #: 3734478
+
 Revision 1.4  2004/12/29 18:53:38  shersche
 <rdar://problem/3725106>
 <rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
@@ -198,6 +202,11 @@ CSecondPage::InitBrowseList()
 	psheet->SetWizardButtons(PSWIZB_BACK);
 
 	//
+	// disable the printer information box
+	//
+	SetPrinterInformationState( FALSE );
+
+	//
 	// disable the window until there's a printer to select
 	//
 	m_browseList.EnableWindow( FALSE );
@@ -357,12 +366,6 @@ CSecondPage::StartResolve( Printer * printer )
 		printer->resolving++;
 	}
 
-	//
-	// set the cursor to arrow+hourglass
-	//
-	psheet->m_active = psheet->m_wait;
-	SetCursor(psheet->m_active);
-
 exit:
 
 	return err;
@@ -397,6 +400,11 @@ void CSecondPage::DoDataExchange(CDataExchange* pDX)
 {
 	CPropertyPage::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_BROWSE_LIST, m_browseList);
+	DDX_Control(pDX, IDC_PRINTER_INFORMATION, m_printerInformation);
+	DDX_Control(pDX, IDC_DESCRIPTION_LABEL, m_descriptionLabel);
+	DDX_Control(pDX, IDC_DESCRIPTION_FIELD, m_descriptionField);
+	DDX_Control(pDX, IDC_LOCATION_LABEL, m_locationLabel);
+	DDX_Control(pDX, IDC_LOCATION_FIELD, m_locationField);
 }
 
 
@@ -1117,6 +1125,31 @@ CSecondPage::OnResolveService( Service * service )
 		// printer
 		//
 		psheet->SetSelectedPrinter( service->printer );
+
+		//
+		// and update the printer information box
+		//
+		SetPrinterInformationState( TRUE );
+
+		if ( service->usb_MFG.GetLength() > 0 )
+		{
+			CString text;
+
+			text.Format(L"%s %s", service->usb_MFG, service->usb_MDL);
+
+			m_descriptionField.SetWindowText( text );
+		}
+		else
+		{
+			CString text( service->product );
+
+			text.Remove('(');
+			text.Remove(')');
+
+			m_descriptionField.SetWindowText( text );
+		}
+
+		m_locationField.SetWindowText( service->location );
 	}
 
 exit:
@@ -1195,6 +1228,19 @@ void CSecondPage::OnTvnSelchangedBrowseList(NMHDR *pNMHDR, LRESULT *pResult)
 	{
 		psheet->SetWizardButtons( PSWIZB_BACK );
 	}
+
+	//
+	// set the cursor to arrow+hourglass
+	//
+	psheet->m_active = psheet->m_wait;
+	SetCursor(psheet->m_active);
+
+	//
+	// And clear out the printer information box
+	//
+	SetPrinterInformationState( FALSE );
+	m_descriptionField.SetWindowText(L"");
+	m_locationField.SetWindowText(L"");
 
 exit:
 
@@ -1277,3 +1323,13 @@ CSecondPage::OrderQueueFunc( const Queue * q1, const Queue * q2 )
 	return ( q1->priority <= q2->priority ) ? true : false;
 }
 
+
+void
+CSecondPage::SetPrinterInformationState( BOOL state )
+{
+	m_printerInformation.EnableWindow( state );
+	m_descriptionLabel.EnableWindow( state );
+	m_descriptionField.EnableWindow( state );
+	m_locationLabel.EnableWindow( state );
+	m_locationField.EnableWindow( state );
+}

@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: SecondPage.h,v $
+Revision 1.4  2004/12/30 01:02:46  shersche
+<rdar://problem/3734478> Add Printer information box that displays description and location information when printer name is selected
+Bug #: 3734478
+
 Revision 1.3  2004/12/29 18:53:38  shersche
 <rdar://problem/3725106>
 <rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
@@ -177,6 +181,9 @@ private:
 	static bool
 	OrderQueueFunc( const Queue * q1, const Queue * q2 );
 
+	void
+	SetPrinterInformationState( BOOL state );
+
 	typedef std::map<CString,CString>	PrinterNameMap;
 	typedef std::list<DNSServiceRef>	ServiceRefList;
 
@@ -189,4 +196,12 @@ private:
 	std::string		m_selectedPrinter;
 
 	UINT_PTR		m_timer;
+	
+private:
+
+	CStatic m_printerInformation;
+	CStatic m_descriptionLabel;
+	CStatic m_descriptionField;
+	CStatic m_locationLabel;
+	CStatic m_locationField;
 };
