@@ -2339,6 +2339,17 @@ mDNSexport void mDNSCoreTask(mDNS *const m)
 	mDNS_Unlock(m);
 	}
 
+// Call mDNSCoreSleep(m, mDNStrue) when the machine is about to go to sleep.
+// Call mDNSCoreSleep(m, mDNSfalse) when the machine is has just woken up.
+// Normally, the platform support layer below mDNSCore should call this, not the client layer above.
+// Note that sleep/wake calls do not have to be paired one-for-one; it is acceptable to call
+// mDNSCoreSleep(m, mDNSfalse) any time there is reason to believe that the machine may have just
+// found itself in a new network environment. For example, if the Ethernet hardware indicates that the
+// cable has just been connected, the platform support layer should call mDNSCoreSleep(m, mDNSfalse)
+// to make mDNSCore re-issue its outstanding queries, probe for record uniqueness, etc.
+// While it is safe to call mDNSCoreSleep(m, mDNSfalse) at any time, it does cause extra network
+// traffic, so it should only be called when there is legitimate reason to believe the machine
+// may have become attached to a new network.
 mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 	{
 	ResourceRecord *rr;
