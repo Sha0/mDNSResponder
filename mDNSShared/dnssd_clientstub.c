@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.26  2004/07/26 06:07:27  shersche
+fix bugs when using an error socket to communicate with the daemon
+
 Revision 1.25  2004/07/26 05:54:02  shersche
 DNSServiceProcessResult() returns NoError if socket read returns EWOULDBLOCK
 
@@ -199,7 +202,7 @@ static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse
 
     if (!reuse_socket)
         {
-#if defined(_WIN32)
+#if defined(USE_TCP_LOOPBACK)
 		*len += 2;	// Allocate space for two-byte port number
 #else
 		struct timeval time;
@@ -224,7 +227,12 @@ static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse
     hdr->op.request_op = op;
     if (reuse_socket) hdr->flags |= IPC_FLAGS_REUSE_SOCKET;
     *data_start = msg + sizeof(ipc_msg_hdr);
-#if !defined(_WIN32)
+#if defined(USE_TCP_LOOPBACK)
+	// Put dummy data in for the port, since we don't know what
+	// it is yet.  The data will get filled in before we
+	// send the message. This happens in deliver_request().
+	if (!reuse_socket)	put_short(0, data_start);
+#else
     if (!reuse_socket)  put_string(ctrl_path, data_start);
 #endif
     return hdr;
@@ -295,8 +303,8 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 			if (getsockname(listenfd, (struct sockaddr*) &caddr, &len) < 0) goto cleanup;
 			listen(listenfd, 1);
 			port = caddr.sin_port;
-			data[0] = (char)(port >> 8);
-			data[1] = (char)(port & 0x00FF);
+			data[0] = (char)(port & 0x00FF);	// don't switch the byte order, as the
+			data[1] = (char)(port >> 8);		// daemon expects it in network byte order
 			}
 #else
 			{
