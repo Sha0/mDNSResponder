@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.47  2004/06/09 03:48:28  ksekar
+<rdar://problem/3685226>: nameserver address fails with prod. Lighthouse server
+
 Revision 1.46  2004/06/09 01:44:30  ksekar
 <rdar://problem/3681378> reworked Cache Record copy code
 
@@ -2040,32 +2043,48 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 	else { LogMsg("ERROR: confirmNS - bad state %d", context->state); return smError; }
 	}
 
+mDNSlocal smAction queryNSAddr(ntaContext *context)
+	{
+	mStatus err;
+	DNSQuestion *query = &context->question;
+	
+	ustrcpy(query->qname.c, context->ns.c);
+	query->qtype = kDNSType_A;
+	query->qclass = kDNSClass_IN;
+	err = startInternalQuery(query, context->m, getZoneData, context);
+	if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
+	context->questionActive = mDNStrue;
+	context->state = lookupA;
+	return smBreak;
+	}
+
 mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
 	{
 	const mDNSu8 *ptr;
 	int i;
 	LargeCacheRecord lcr;
 	ResourceRecord *rr = &lcr.r.resrec;
-	DNSQuestion *query = &context->question;
-	mStatus err;
 	
 	if (context->state == foundNS)
 		{
 		// we just found the NS record - look for the corresponding A record in the Additionals section
+		if (!msg->h.numAdditionals) return queryNSAddr(context);
 		ptr = LocateAdditionals(msg, end);
 		if (!ptr)
 			{
-			if (msg->h.numAdditionals)
-				LogMsg("ERROR: lookupNSAddr - LocateAdditionals returned NULL, expected %d additionals", msg->h.numAdditionals);
-			// error case: continue with query			
+			LogMsg("ERROR: lookupNSAddr - LocateAdditionals returned NULL, expected %d additionals", msg->h.numAdditionals);
+			return queryNSAddr(context);
 			}
 		else
 			{
-			ptr = LocateAdditionals(msg, end);
 			for (i = 0; i < msg->h.numAdditionals; i++)
 				{
 				ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
-				if (!ptr) { LogMsg("ERROR: lookupNSAddr, Additionals - GetLargeResourceRecord returned NULL"); break; }
+				if (!ptr)
+					{
+					LogMsg("ERROR: lookupNSAddr, Additionals - GetLargeResourceRecord returned NULL");
+					return queryNSAddr(context);
+					}
 				if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, &rr->name))
 					{
 					context->addr.NotAnInteger = rr->rdata->u.ip.NotAnInteger;
@@ -2075,14 +2094,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 				}
 			}
 		// no A record in Additionals - query the server
-		ustrcpy(query->qname.c, context->ns.c);
-		query->qtype = kDNSType_A;
-		query->qclass = kDNSClass_IN;
-		err = startInternalQuery(query, context->m, getZoneData, context);
-		if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
-		context->questionActive = mDNStrue;
-		context->state = lookupA;
-		return smBreak;
+		return queryNSAddr(context);
 		}
 	else if (context->state == lookupA)
 		{
@@ -2090,6 +2102,8 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 		if (!ptr) { LogMsg("ERROR: lookupNSAddr: LocateAnswers returned NULL");  return smError; }
 		for (i = 0; i < msg->h.numAnswers; i++)
 			{
+			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+			if (!ptr) { LogMsg("ERROR: lookupNSAddr, Answers - GetLargeResourceRecord returned NULL"); break; }			
 			if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, &rr->name))
 				{
 				context->addr.NotAnInteger = rr->rdata->u.ip.NotAnInteger;
@@ -2102,8 +2116,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 		}
 	else { LogMsg("ERROR: lookupNSAddr - bad state %d", context->state); return smError; }
 	}
-
-
+	
 mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext *context, char *portName, mDNSIPPort *port)
 	{
 	int i;
