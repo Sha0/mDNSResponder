@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.305  2003/09/09 02:49:31  cheshire
+<rdar://problem/3413975> Initial probes and queries not grouped on wake-from-sleep
+
 Revision 1.304  2003/09/09 02:41:19  cheshire
 <rdar://problem/3411105> Don't send a Goodbye record if we never announced it
 
@@ -2212,9 +2215,12 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	if (m->SuppressProbes == 0 || m->SuppressProbes - m->timenow < 0)
 		{
 		m->SuppressProbes = (m->timenow + DefaultProbeIntervalForTypeUnique) | 1;
-		// If we already have a probe sheduled to go out sooner, then use that time to get better aggregation
+		// If we already have a probe scheduled to go out sooner, then use that time to get better aggregation
 		if (m->SuppressProbes - m->NextScheduledProbe >= 0)
 			m->SuppressProbes = m->NextScheduledProbe;
+		// If we already have a query scheduled to go out sooner, then use that time to get better aggregation
+		if (m->SuppressProbes - m->NextScheduledQuery >= 0)
+			m->SuppressProbes = m->NextScheduledQuery;
 		}
 	
 	// We announce to flush stale data from other caches. It is a reasonable assumption that any
@@ -4632,6 +4638,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 				q->ThisQInterval = InitialQuestionInterval;	// MUST be > zero for an active question
 				q->LastQTime     = m->timenow - q->ThisQInterval;
 				q->RecentAnswers = 0;
+				ExpireDupSuppressInfo(q->DupSuppress, m->timenow);
 				m->NextScheduledQuery = m->timenow;
 				}
 
@@ -6376,14 +6383,14 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		// Use a small amount of randomness:
 		// In the case of a network administrator turning on an Ethernet hub so that all the connected machines establish link at
 		// exactly the same time, we don't want them to all go and hit the network with identical queries at exactly the same moment.
-		mDNSs32 jitter = (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
+		if (!m->SuppressSending) m->SuppressSending = m->timenow + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
 		DNSQuestion *q;
 		AuthRecord *rr;
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
 				q->ThisQInterval = InitialQuestionInterval;				// MUST be > zero for an active question
-				q->LastQTime     = m->timenow - q->ThisQInterval + jitter;
+				q->LastQTime     = m->timenow - q->ThisQInterval;
 				q->RecentAnswers = 0;
 				if (ActiveQuestion(q)) m->NextScheduledQuery = m->timenow;
 				}
