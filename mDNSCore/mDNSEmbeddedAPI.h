@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.60  2003/05/31 00:09:49  cheshire
+<rdar://problem/3274862> Add ability to discover what services are on a network
+
 Revision 1.59  2003/05/29 06:11:35  cheshire
 <rdar://problem/3272214>:	Report if there appear to be too many "Resolve" callbacks
 
@@ -397,43 +400,81 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 #pragma mark - Resource Record structures
 #endif
 
-// Shared Resource Records do not have to be unique
-// -- Shared Resource Records are used for NIAS service PTRs
+// Authoritative Resource Records:
+// There are four basic types: Shared, Advisory, Unique, Known Unique
+
+// * Shared Resource Records do not have to be unique
+// -- Shared Resource Records are used for DNS-SD service PTRs
 // -- It is okay for several hosts to have RRs with the same name but different RDATA
 // -- We use a random delay on replies to reduce collisions when all the hosts reply to the same query
 // -- These RRs typically have moderately high TTLs (e.g. one hour)
 // -- These records are announced on startup and topology changes for the benefit of passive listeners
-
-// Unique Resource Records should be unique among hosts within any given mDNS scope
+// -- These records send a goodbye packet when deregistering
+//
+// * Advisory Resource Records are like Shared Resource Records, except they don't send a goodbye packet
+//
+// * Unique Resource Records should be unique among hosts within any given mDNS scope
 // -- The majority of Resource Records are of this type
 // -- If two entities on the network have RRs with the same name but different RDATA, this is a conflict
 // -- Replies may be sent immediately, because only one host should be replying to any particular query
 // -- These RRs typically have low TTLs (e.g. ten seconds)
 // -- On startup and after topology changes, a host issues queries to verify uniqueness
 
-// Known Unique Resource Records are treated like Unique Resource Records, except that mDNS does
+// * Known Unique Resource Records are treated like Unique Resource Records, except that mDNS does
 // not have to verify their uniqueness because this is already known by other means (e.g. the RR name
 // is derived from the host's IP or Ethernet address, which is already known to be a unique identifier).
+
+// Summary of properties of different record types:
+// Probe?    Does this record type send probes before announcing?
+// Conflict? Does this record type react if we observe an apparent conflict?
+// Goodbye?  Does this record type send a goodbye packet on departure?
+//
+//               Probe? Conflict? Goodbye? Notes
+// Unregistered                            Should not appear in any list (sanity check value)
+// Shared         No      No       Yes     e.g. Service PTR record
+// Deregistering  No      No       Yes     Shared record about to announce its departure and leave the list
+// Advisory       No      No       No
+// Unique         Yes     Yes      No      Record intended to be unique -- will probe to verify
+// Verified       Yes     Yes      No      Record has completed probing, and is verified unique
+// KnownUnique    No      Yes      No      Record is assumed by other means to be unique
+
+// Valid lifecycle of a record:
+// Unregistered ->                   Shared      -> Deregistering -(goodbye)-> Unregistered
+// Unregistered ->                   Advisory                               -> Unregistered
+// Unregistered -> Unique -(probe)-> Verified                               -> Unregistered
+// Unregistered ->                   KnownUnique                            -> Unregistered
+
+// Each Authoritative kDNSRecordType has only one bit set. This makes it easy to quickly see if a record
+// is one of a particular set of types simply by performing the appropriate bitwise masking operation.
+
+// Cache Resource Records (received from the network):
+// There are four basic types: Answer, Unique Answer, Additional, Unique Additional
+// Bit 7 (the top bit) of kDNSRecordType is always set for Cache Resource Records; always clear for Authoritative Resource Records
+// Bit 6 (value 0x40) is set for answer records; clear for additional records
+// Bit 5 (value 0x20) is set for records received with the kDNSClass_UniqueRRSet
 
 enum
 	{
 	kDNSRecordTypeUnregistered     = 0x00,	// Not currently in any list
 	kDNSRecordTypeDeregistering    = 0x01,	// Shared record about to announce its departure and leave the list
 
-	kDNSRecordTypeUnique           = 0x08,	// Will become a kDNSRecordTypeVerified when probing is complete
+	kDNSRecordTypeUnique           = 0x02,	// Will become a kDNSRecordTypeVerified when probing is complete
 
-	kDNSRecordTypePacketAnswer     = 0x10,	// Received in the Answer Section of a DNS Response
-	kDNSRecordTypePacketAdditional = 0x11,	// Received in the Additional Section of a DNS Response
-	kDNSRecordTypePacketUniqueAns  = 0x18,	// Received in the Answer Section of a DNS Response with kDNSClass_UniqueRRSet set
-	kDNSRecordTypePacketUniqueAdd  = 0x19,	// Received in the Additional Section of a DNS Response with kDNSClass_UniqueRRSet set
+	kDNSRecordTypeAdvisory         = 0x04,	// Like Shared, but no goodbye packet
+	kDNSRecordTypeShared           = 0x08,	// Shared means record name does not have to be unique -- use random delay on replies
+	kDNSRecordTypeVerified         = 0x10,	// Unique means mDNS should check that name is unique (and then send immediate replies)
+	kDNSRecordTypeKnownUnique      = 0x20,	// Known Unique means mDNS can assume name is unique without checking
 
-	kDNSRecordTypeShared           = 0x20,	// Shared means record name does not have to be unique -- so use random delay on replies
-	kDNSRecordTypeVerified         = 0x28,	// Unique means mDNS should check that name is unique (and then send immediate replies)
-	kDNSRecordTypeKnownUnique      = 0x29,	// Known Unique means mDNS can assume name is unique without checking
+	kDNSRecordTypeUniqueMask       = (kDNSRecordTypeUnique | kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique),
+	kDNSRecordTypeActiveMask       = (kDNSRecordTypeAdvisory | kDNSRecordTypeShared | kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique),
 
-	kDNSRecordTypeUniqueMask       = 0x08,	// Test for records that are supposed to not be shared with other hosts
-	kDNSRecordTypeRegisteredMask   = 0xF8,	// Test for records that have not had mDNS_Deregister called on them yet
-	kDNSRecordTypeActiveMask       = 0xF0	// Test for all records that have finished their probing and are now active
+	kDNSRecordTypePacketAdd        = 0x80,	// Received in the Additional Section of a DNS Response
+	kDNSRecordTypePacketAddUnique  = 0xA0,	// Received in the Additional Section of a DNS Response with kDNSClass_UniqueRRSet set
+	kDNSRecordTypePacketAns        = 0xC0,	// Received in the Answer Section of a DNS Response
+	kDNSRecordTypePacketAnsUnique  = 0xE0,	// Received in the Answer Section of a DNS Response with kDNSClass_UniqueRRSet set
+
+	kDNSRecordTypePacketAnsMask    = 0x40,	// True for PacketAns       and PacketAnsUnique
+	kDNSRecordTypePacketUniqueMask = 0x20	// True for PacketAddUnique and PacketAnsUnique
 	};
 
 typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target; } rdataSRV;
@@ -572,9 +613,10 @@ struct ServiceRecordSet_struct
 	ExtraResourceRecord *Extras;	// Optional list of extra ResourceRecords attached to this service registration
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           Host;		// Set if this service record does not use the standard target host name
-	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.      PTR Name._printer._tcp.local.
-	ResourceRecord       RR_SRV;	// e.g. Name._printer._tcp.local. SRV 0 0 port target
-	ResourceRecord       RR_TXT;	// e.g. Name._printer._tcp.local. TXT PrintQueueName
+	ResourceRecord       RR_ADV;	// e.g. _services._mdns._udp.local. PTR _printer._tcp.local.
+	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
+	ResourceRecord       RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target
+	ResourceRecord       RR_TXT;	// e.g. Name._printer._tcp.local.   TXT PrintQueueName
 	// Don't add any fields after ResourceRecord RR_TXT.
 	// This is where the implicit extra space goes if we allocate a ServiceRecordSet containing an oversized RR_TXT record
 	};
