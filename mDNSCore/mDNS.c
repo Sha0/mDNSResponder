@@ -88,6 +88,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.155  2003/05/30 23:48:00  cheshire
+<rdar://problem/3274832> Announcements not properly grouped
+Due to inconsistent setting of rr->LastAPTime at different places in the
+code, announcements were not properly grouped into a single packet.
+Fixed by creating a single routine called InitializeLastAPTime().
+
 Revision 1.154  2003/05/30 23:38:14  cheshire
 <rdar://problem/3274814> Fix error in IPv6 reverse-mapping PTR records
 Wrote buffer[32] where it should have said buffer[64]
@@ -1606,6 +1612,34 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const ResourceRecord *con
 	((RR)->rrtype == kDNSType_CNAME || (RR)->rrtype == kDNSType_PTR) ? &(RR)->rdata->u.name       :          \
 	((RR)->rrtype == kDNSType_SRV                                  ) ? &(RR)->rdata->u.srv.target : mDNSNULL )
 
+mDNSlocal void InitializeLastAPTime(mDNS *const m, ResourceRecord *const rr)
+	{
+	// Back-date LastAPTime to make it appear that the next annoucement/probe is due immediately
+	rr->LastAPTime = m->timenow - rr->ThisAPInterval;
+	
+	if (rr->RecordType == kDNSRecordTypeUnique)
+		{
+		// If this is a record that's going to probe, check SuppressProbes
+		if (m->SuppressProbes && m->SuppressProbes - m->timenow > 0)
+			rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
+		}
+	else
+		{
+		// If this is a record type that's not going to probe, then delay its first announcement so that it will go out
+		// synchronized with the first announcement for the other records that *are* probing.
+		// This is a minor performance tweak that helps keep groups of related records synchronized together.
+		// The addition of "rr->ThisAPInterval / 4" is to make sure that this announcement is not scheduled to go out
+		// *before* the probing is complete. When the probing is complete and those records begin to
+		// announce, these records will also be picked up and accelerated, because they will be considered to be
+		// more than half-way to their scheduled announcement time.
+		// Ignoring timing jitter, they will be exactly 3/4 of the way to their scheduled announcement time.
+		// Anything between 50% and 100% would work, so aiming for 75% gives us the best safety margin in case of timing jitter.
+		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 4;
+		}
+	
+	SetNextAnnounceProbeTime(m, rr);
+	}
+
 mDNSlocal void SetTargetToHostName(mDNS *const m, ResourceRecord *const rr)
 	{
 	domainname *target = GetRRHostNameTarget(rr);
@@ -1635,20 +1669,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, ResourceRecord *const rr)
 		if (rr->AnnounceCount < ReannounceCount)
 			rr->AnnounceCount = ReannounceCount;
 		rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->RecordType);
-		rr->LastAPTime     = m->timenow - rr->ThisAPInterval;
-		if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
-	
-		// If this is a record type that's not going to probe, then delay its first announcement so that it will go out
-		// synchronized with the first announcement for the other records that *are* probing
-		// The addition of "rr->ThisAPInterval / 4" is to make sure that this announcement is not scheduled to go out
-		// *before* the probing is complete. When the probing is complete and those records begin to
-		// announce, these records will also be picked up and accelerated, because they will be considered to be
-		// more than half-way to their scheduled announcement time.
-		// Ignoring timing jitter, they will be exactly 3/4 of the way to their scheduled announcement time.
-		// Anything between 50% and 100% would work, so aiming for 75% gives us the best safety margin in case of timing jitter.
-		if (rr->ProbeCount == 0) rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 4;
-
-		SetNextAnnounceProbeTime(m, rr);
+		InitializeLastAPTime(m,rr);
 		}
 	}
 
@@ -1719,13 +1740,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
-	rr->LastAPTime        = m->timenow - rr->ThisAPInterval;
-	if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
-	// If this record is not going to probe, adjust it so its announcement will go out
-	// synchronized with other associated records that will probe.
-	if (rr->RecordType == kDNSRecordTypeKnownUnique)
-		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 4;
-	SetNextAnnounceProbeTime(m, rr);
+	InitializeLastAPTime(m, rr);
 	rr->NewRData          = mDNSNULL;
 	rr->UpdateCallback    = mDNSNULL;
 
@@ -3604,8 +3619,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			if (rr->AnnounceCount < ReannounceCount)
 				rr->AnnounceCount = ReannounceCount;
 			rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
-			rr->LastAPTime        = m->timenow - rr->ThisAPInterval;
-			SetNextAnnounceProbeTime(m, rr);
+			InitializeLastAPTime(m, rr);
 			}
 
 		}
@@ -4200,8 +4214,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								rr->RecordType     = kDNSRecordTypeUnique;
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
 								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
-								rr->LastAPTime     = m->timenow - rr->ThisAPInterval;
-								SetNextAnnounceProbeTime(m, rr);
+								InitializeLastAPTime(m, rr);
 
 								// We increment NumFailedProbes here to make sure that repeated late conflicts
 								// will also cause us to back off to the slower probing rate
@@ -4804,9 +4817,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 	if (rr->AnnounceCount < ReannounceCount)
 		rr->AnnounceCount = ReannounceCount;
 	rr->ThisAPInterval   = DefaultAPIntervalForRecordType(rr->RecordType);
-	rr->LastAPTime       = m->timenow - rr->ThisAPInterval;
-	if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
-	SetNextAnnounceProbeTime(m, rr);
+	InitializeLastAPTime(m, rr);
 	rr->NewRData         = newrdata;
 	rr->UpdateCallback   = Callback;
 	rr->rroriginalttl    = newttl;
@@ -5042,8 +5053,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				if (rr->AnnounceCount < ReannounceCount)
 					rr->AnnounceCount = ReannounceCount;
 				rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
-				rr->LastAPTime        = m->timenow - rr->ThisAPInterval;
-				SetNextAnnounceProbeTime(m, rr);
+				InitializeLastAPTime(m, rr);
 				}
 		}
 
