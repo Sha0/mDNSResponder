@@ -32,6 +32,7 @@
 			);
 			buildSettings = {
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OTHER_CFLAGS = "-no-cpp-precomp -DmDNSResponderVersion=$(MVERS)";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -106,6 +107,7 @@
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				HEADER_SEARCH_PATHS = "\"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\"";
 				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DMDNS_DEBUGMSGS=1 -DmDNSResponderVersion=$(MVERS)";
 				OTHER_LDFLAGS = "";
@@ -386,6 +388,7 @@
 				HEADER_SEARCH_PATHS = "\"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\"";
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS)";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -668,6 +671,7 @@
 			buildSettings = {
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				INSTALL_PATH = /usr/bin;
+				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OTHER_CFLAGS = "-no-cpp-precomp -DmDNSResponderVersion=$(MVERS)";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
