@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.135  2004/03/19 01:01:03  ksekar
+Fixed config file parsing to chop newline
+
 Revision 1.134  2004/03/13 01:57:34  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -1736,27 +1739,46 @@ mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
 	return(err == 0);
 	}
 
+
+//!!!KRS this should be less order-dependent as we support more configuration options
+mDNSlocal mDNSBool SetConfigOption(char *dst, const char *option, FILE *f)
+	{
+	char buf[1024];
+	int len;
+	
+	if (!fgets(buf, 1024, f)) { LogMsg("Option %s not set", option); return mDNSfalse; }
+	len = strlen(option);
+	if (!strncmp(buf, option, len))
+		{
+		strcpy(dst, buf + len + 1);
+		len = strlen(dst);
+		if ( len && dst[len-1] == '\n') dst[len-1] = '\0';  // chop newline
+		return mDNStrue;
+		}
+	LogMsg("Malformatted config file - %s not set", option);	
+	return mDNSfalse;
+	}
+	
+
+	
 mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	{
-	FILE *fd;
-	char buf[1024];
-
+	FILE *f;
+	
     // read registration domain (for dynamic updates) from config file
     // !!!KRS these must go away once we can learn the reg domain from the network or prefs	
 	m->uDNS_info.regdomain[0] = '\0';
-	fd = fopen(CONFIG_FILE, "r");
-	if (!fd)
+	m->uDNS_info.defaultRegDomain[0] = '\0';
+	
+	f = fopen(CONFIG_FILE, "r");
+	if (!f)
 		{
 		if (errno != ENOENT)  LogMsg("ERROR: Config file exists, but cannot be opened.");
 		return;
 		}
-	if (!fgets(buf, 1024, fd)) { LogMsg("ERROR: fgets"); fclose(fd); return; }
-	if (!strncmp(buf, "regdomain", strlen("regdomain"))) strcpy(m->uDNS_info.regdomain, buf + strlen("regdomain") + 1);
-	else LogMsg("Malformatted config file - no registration domain set");
-	if (!fgets(buf, 1024, fd)) { debugf("fgets - no default registration domain"); fclose(fd); return; }
-	if (!strncmp(buf, "defaultreg", strlen("defaultreg"))) strcpy(m->uDNS_info.defaultRegDomain, buf + strlen("defaultreg") + 1);
-	else LogMsg("Malformatted config file - no default registration domain set");
-	fclose(fd);
+	SetConfigOption(m->uDNS_info.regdomain, "regdomain", f);
+	SetConfigOption(m->uDNS_info.defaultRegDomain, "defaultreg", f);
+	fclose(f);
 	}
 
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
