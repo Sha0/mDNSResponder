@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.5  2004/09/02 17:32:45  cheshire
+# Look for headers in ../mDNSShared before we go to /usr/include
+#
 # Revision 1.4  2004/05/21 17:25:56  cheshire
 # Fixes to make sample client work on Linux
 #
@@ -59,4 +62,4 @@ build:
 	mkdir build
 
 build/dns-sd: build dns-sd.c
-	cc $(filter %.c %.o, $+) $(LIBS) -o $@
+	cc $(filter %.c %.o, $+) $(LIBS) -I../mDNSShared -o $@
