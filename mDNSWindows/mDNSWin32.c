@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.47  2004/08/06 17:33:02  shersche
+<rdar://problem/3753797> Put correct length of string in first byte of nicelabel
+Bug #: 3753797
+
 Revision 1.46  2004/08/05 05:43:01  shersche
 <rdar://problem/3751566> Add HostDescriptionChangedCallback so callers can choose to handle it when mDNSWin32 core detects that the computer description string has changed
 Bug #: 3751566
@@ -1088,8 +1092,8 @@ mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 
 	tempString[ sizeof( tempString ) - 1 ] = '\0';
 	
-	inMDNS->nicelabel.c[ 0 ] = (mDNSu8) strlen( tempString );
-	memcpy( &inMDNS->nicelabel.c[ 1 ], tempString, inMDNS->nicelabel.c[ 0 ] < MAX_DOMAIN_LABEL ? inMDNS->nicelabel.c[0] : MAX_DOMAIN_LABEL );
+	inMDNS->nicelabel.c[ 0 ] = (mDNSu8) (strlen( tempString ) < MAX_DOMAIN_LABEL ? strlen( tempString ) : MAX_DOMAIN_LABEL);
+	memcpy( &inMDNS->nicelabel.c[ 1 ], tempString, inMDNS->nicelabel.c[ 0 ] );
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "nice name \"%.*s\"\n", inMDNS->nicelabel.c[ 0 ], &inMDNS->nicelabel.c[ 1 ] );
 	
@@ -1125,8 +1129,8 @@ mDNSlocal mStatus	SetupHostName( mDNS * const inMDNS )
 	}
 
 	tempString[ sizeof( tempString ) - 1 ] = '\0';
-	tempLabel.c[ 0 ] = (mDNSu8) strlen( tempString );
-	memcpy( &tempLabel.c[ 1 ], tempString, tempLabel.c[ 0 ] < MAX_DOMAIN_LABEL ? tempLabel.c[0] : MAX_DOMAIN_LABEL );
+	tempLabel.c[ 0 ] = (mDNSu8) (strlen( tempString ) < MAX_DOMAIN_LABEL ? strlen( tempString ) : MAX_DOMAIN_LABEL );
+	memcpy( &tempLabel.c[ 1 ], tempString, tempLabel.c[ 0 ] );
 	
 	// Set up the host name.
 	
