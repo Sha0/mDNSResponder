@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.87  2003/07/22 23:57:20  cheshire
+Move platform-layer function prototypes from mDNSClientAPI.h to mDNSPlatformFunctions.h where they belong
+
 Revision 1.86  2003/07/20 03:52:02  ksekar
 Bug #: <rdar://problem/3320722>: Feature: New Rendezvous APIs (#7875) (mDNSResponder component)
 Added error type for incompatibility between daemon and client versions
@@ -931,7 +934,6 @@ extern mDNSs32  mDNSPlatformTimeNow(void);
 #pragma mark - General utility and helper functions
 #endif
 
-// mDNS_RegisterHostSet is a single call to register the standard resource records associated with every host.
 // mDNS_RegisterService is a single call to register the set of resource records associated with a given named service.
 //
 // mDNS_StartResolveService is single call which is equivalent to multiple calls to mDNS_StartQuery,
@@ -951,10 +953,6 @@ extern mDNSs32  mDNSPlatformTimeNow(void);
 
 extern void    mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
                mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context);
-
-extern void    mDNS_GenerateFQDN(mDNS *const m);
-extern mStatus mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
-extern void    mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
 
 extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,

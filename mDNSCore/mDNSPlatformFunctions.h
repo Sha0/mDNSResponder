@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.18  2003/07/22 23:57:20  cheshire
+Move platform-layer function prototypes from mDNSClientAPI.h to mDNSPlatformFunctions.h where they belong
+
 Revision 1.17  2003/07/19 03:15:15  cheshire
 Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
 and add the obvious trivial implementations to each platform support layer
@@ -128,6 +131,33 @@ extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
+//
+// mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())
+// and then again on each subsequent dot-local host name change.
+//
+// mDNS_RegisterInterface() is used by the platform support layer to inform mDNSCore of what
+// physical and/or logical interfaces are available for sending and receiving packets.
+// Typically it is called on startup for each available interface, but register/deregister may be
+// called again later, on multiple occasions, to inform the core of interface configuration changes.
+// If set->Advertise is set non-zero, then mDNS_RegisterInterface() also registers the standard
+// resource records that should be associated with every publicised IP address/interface:
+// -- Name-to-address records (A/AAAA)
+// -- Address-to-name records (PTR)
+// -- Host information (HINFO)
+//
+// mDNSCoreInitComplete() is called when the platform support layer is finished.
+// Typically this is at the end of mDNSPlatformInit(), but may be later
+// (on platforms like OT that allow asynchronous initialization of the networking stack).
+//
+// mDNSCoreReceive() is called when a UDP packet is received
+//
+// mDNSCoreMachineSleep() is called when the machine sleeps or wakes
+// (This refers to  heavyweight laptop-style sleep/wake that disables network access,
+// not lightweight second-by-second CPU power management modes.)
+
+extern void     mDNS_GenerateFQDN(mDNS *const m);
+extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
+extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
