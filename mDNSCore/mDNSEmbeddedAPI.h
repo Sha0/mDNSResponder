@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.125  2003/11/22 00:18:27  cheshire
+Add compile-time asserts to verify correct sizes of mDNSu32, mDNSOpaque16, etc.
+
 Revision 1.124  2003/11/20 22:59:54  cheshire
 Changed runtime checks in mDNS.c to be compile-time checks in mDNSEmbeddedAPI.h
 Thanks to Bob Bradley for suggesting the ingenious compiler trick to make this work.
@@ -1441,6 +1444,15 @@ struct mDNS_CompileTimeAssertionChecks
 	char assert0[(sizeof(rdataSRV)         == 262                          ) ? 1 : -1];
 	char assert1[(sizeof(DNSMessageHeader) ==  12                          ) ? 1 : -1];
 	char assert2[(sizeof(DNSMessage)       ==  12+AbsoluteMaxDNSMessageData) ? 1 : -1];
+	char assert3[(sizeof(mDNSs8)           ==   1                          ) ? 1 : -1];
+	char assert4[(sizeof(mDNSu8)           ==   1                          ) ? 1 : -1];
+	char assert5[(sizeof(mDNSs16)          ==   2                          ) ? 1 : -1];
+	char assert6[(sizeof(mDNSu16)          ==   2                          ) ? 1 : -1];
+	char assert7[(sizeof(mDNSs32)          ==   4                          ) ? 1 : -1];
+	char assert8[(sizeof(mDNSu32)          ==   4                          ) ? 1 : -1];
+	char assert9[(sizeof(mDNSOpaque16)     ==   2                          ) ? 1 : -1];
+	char assertA[(sizeof(mDNSOpaque32)     ==   4                          ) ? 1 : -1];
+	char assertB[(sizeof(mDNSOpaque128)    ==  16                          ) ? 1 : -1];
 	};
 
 // ***************************************************************************
