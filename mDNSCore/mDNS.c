@@ -68,6 +68,13 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.69  2003/01/21 22:56:32  jgraessl
+Bug #: 3124348  service name changes are not properly handled
+Submitted by: Stuart Cheshire
+Reviewed by: Joshua Graessley
+Applying changes for 3124348 to main branch. 3124348 changes went in to a
+branch for SU.
+
 Revision 1.68  2003/01/17 04:09:27  cheshire
 Bug #: 3141038 mDNSResponder Resolves are unreliable on multi-homed hosts
 
@@ -1247,7 +1254,7 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 	mDNSu8 RecordType = rr->RecordType;
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
-	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < DefaultAnnounceCountForTypeShared)
+	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCountForTypeShared)
 		{
 		debugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 		rr->RecordType     = kDNSRecordTypeDeregistering;
@@ -1934,7 +1941,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSs32 timenow)
 		if (rr->RecordType == kDNSRecordTypeDeregistering)
 			{
 			rr->RecordType    = kDNSRecordTypeShared;
-			rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
+			rr->AnnounceCount = DefaultAnnounceCountForTypeShared+1;
 			mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 			}
 		}
@@ -2009,7 +2016,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 					numDereg++;
 					responseptr = newptr;
 					rr->RecordType    = kDNSRecordTypeShared;
-					rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
+					rr->AnnounceCount = DefaultAnnounceCountForTypeShared+1;
 					mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 					}
 				}
@@ -2916,7 +2923,7 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 		{
 		// First mark all the records we need to deregister
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount < DefaultAnnounceCountForTypeShared)
+			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCountForTypeShared)
 				rr->rrremainingttl = 0;
 		while (HaveResponses(m, timenow)) SendResponses(m, timenow);
 		}
