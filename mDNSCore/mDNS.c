@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.180  2003/06/07 06:31:07  cheshire
+Create little four-line helper function "FindIdenticalRecordInCache()"
+
 Revision 1.179  2003/06/07 06:28:13  cheshire
 For clarity, change name of "DNSQuestion q" to "DNSQuestion pktq"
 
@@ -4101,6 +4104,14 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 		debugf("ResolveSimultaneousProbe: %##s (%s): No Update Record found", our->name.c, DNSTypeName(our->rrtype));
 	}
 
+mDNSlocal ResourceRecord *FindIdenticalRecordInCache(const mDNS *const m, ResourceRecord *pktrr)
+	{
+	ResourceRecord *rr;
+	for (rr = m->rrcache_hash[HashSlot(&pktrr->name)]; rr; rr=rr->next)
+		if (IdenticalResourceRecord(pktrr, rr)) break;
+	return(rr);
+	}
+
 // ProcessQuery examines a received query to see if we have any answers to give
 mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
 	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID,
@@ -4234,9 +4245,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// See if this Known-Answer suppresses any answers we were expecting for our cache records
 		if (query->h.flags.b[0] & kDNSFlag0_TC)
 			{
-			for (rr = m->rrcache_hash[HashSlot(&pktrr.name)]; rr; rr=rr->next)
-				if (IdenticalResourceRecord(&pktrr, rr))
-					rr->UnansweredTCKA++;
+			rr = FindIdenticalRecordInCache(m, &pktrr);
+			if (rr) rr->UnansweredTCKA++;
 			}
 		else
 			{
