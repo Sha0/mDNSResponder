@@ -533,8 +533,8 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	{
 	uint16_t PortAsNumber = atoi(port);
 	Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
-	char txt[2048] = "";
-	char *ptr = txt;
+	unsigned char txt[2048] = "";
+	unsigned char *ptr = txt;
 	int i;
 	
 	if (nam[0] == '.' && nam[1] == 0) nam = "";   // We allow '.' on the command line as a synonym for empty string
@@ -542,9 +542,9 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	
 	for (i = 0; i < argc; i++)
 		{
-		char *len = ptr++;
+		unsigned char *len = ptr++;
 		*len = strlen(argv[i]);
-		strcpy(ptr, argv[i]);
+		strcpy((char*)ptr, argv[i]);
 		ptr += *len;
 		}
 	
