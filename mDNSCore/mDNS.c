@@ -86,7 +86,7 @@ typedef enum
 #pragma mark - Program Constants
 #endif
 
-mDNSexport const ResourceRecord zeroRR = { 0 };
+mDNSexport const ResourceRecord zeroRR;
 mDNSexport const mDNSIPPort zeroIPPort = { { 0 } };
 mDNSexport const mDNSIPAddr zeroIPAddr = { { 0 } };
 mDNSexport const mDNSIPAddr onesIPAddr = { { 255, 255, 255, 255 } };
