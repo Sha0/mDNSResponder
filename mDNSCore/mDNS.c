@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.361  2004/03/09 03:00:46  cheshire
+<rdar://problem/3581961> Don't take lock until after mDNS_Update() has validated that the data is good.
+
 Revision 1.360  2004/03/08 02:52:41  cheshire
 Minor debugging fix: Make sure 'target' is initialized so we don't crash writing debugging log messages
 
@@ -5148,10 +5151,10 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	const mDNSu16 newrdlength,
 	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
-	mDNS_Lock(m);
-
 	if (!ValidateRData(rr->resrec.rrtype, newrdlength, newrdata))
 		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(m, &rr->resrec, &newrdata->u)); return(mStatus_Invalid); }
+
+	mDNS_Lock(m);
 
 	// If TTL is unspecified, leave TTL unchanged
 	if (newttl == 0) newttl = rr->resrec.rroriginalttl;
