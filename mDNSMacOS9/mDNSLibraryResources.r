@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSLibraryResources.r,v $
+Revision 1.2  2004/05/27 06:24:21  cheshire
+Update version string to 1.0a64
+
 Revision 1.1  2004/03/12 21:30:26  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -44,15 +47,15 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 
 resource 'vers' (1, purgeable)
 	{
-   0x01, 0x00, alpha, 62, verUS,
-   "1.0a62",
-   "Multicast DNS & DNS Service Discovery 1.0a62"
+   0x01, 0x00, alpha, 64, verUS,
+   "1.0a64",
+   "Multicast DNS & DNS Service Discovery 1.0a64"
 	};
 
 resource 'vers' (2, purgeable)
 	{
-   0x01, 0x00, alpha, 62, verUS,
-   "1.0a62",
+   0x01, 0x00, alpha, 64, verUS,
+   "1.0a64",
    "developer.apple.com/darwin/projects/rendezvous/"
 	};
 
