@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.9  2005/01/06 08:13:50  shersche
+Don't use moreComing flag to determine number of text record, disregard queue name if qtotal isn't defined, don't disregard queue name if "rp" is the only key specified
+
 Revision 1.8  2005/01/04 21:09:14  shersche
 Fix problems in parsing text records. Fix problems in remove event handling. Ensure that the same service can't be resolved more than once.
 
@@ -358,6 +361,17 @@ CSecondPage::StartResolve( Service * service )
 
 	check( service->serviceRef == NULL );
 
+	//
+	// clean out any queues that were collected during a previous
+	// resolve
+	//
+
+	service->EmptyQueues();
+
+	//
+	// now start the new resolve
+	//
+
 	err = DNSServiceResolve( &service->serviceRef, 0, 0, service->printer->name.c_str(), service->type.c_str(), service->domain.c_str(), (DNSServiceResolveReply) OnResolve, service );
 	require_noerr( err, exit );
 
@@ -661,7 +675,11 @@ CSecondPage::OnResolve(
 
 		require_action( q, exit, err = E_OUTOFMEMORY );
 
-		q->name		= qname;
+		if ( qtotalDefined )
+		{
+			q->name = qname;
+		}
+
 		q->priority = qpriority;
 		
 		service->queues.push_back( q );
@@ -750,24 +768,19 @@ CSecondPage::OnQuery(
 		err = service->printer->window->ParseTextRecord( service, inRDLen, inTXT, qtotalDefined, q->name, q->priority );
 		require_noerr( err, exit );
 
+		if ( !qtotalDefined )
+		{
+			q->name = L"";
+		}
+
 		//
 		// add this queue
 		//
 
 		service->queues.push_back( q );
 
-		if ( !moreComing )
+		if ( service->queues.size() == service->qtotal )
 		{
-			//
-			// double check here...if moreComing is not set, we should have
-			// all the queues
-			//
-
-			if ( service->queues.size() != service->qtotal )
-			{
-				dlog( kDebugLevelError, "there was an internal inconsistency with the text record associated with %s\n", inFullName );
-			}
-
 			//
 			// else if moreComing is not set, then we're going
 			// to assume that we're done
@@ -1271,8 +1284,9 @@ CSecondPage::SetPrinterInformationState( BOOL state )
 OSStatus
 CSecondPage::ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, bool & qtotalDefined, CString & qname, uint32_t & qpriority )
 {
-	OSStatus err = kNoErr;
-
+	bool		rpOnly = true;
+	OSStatus	err = kNoErr;
+	
 	while (inTXTSize)
 	{
 		char buf[256];
@@ -1298,42 +1312,52 @@ CSecondPage::ParseTextRecord( Service * service, uint16_t inTXTSize, const char 
 
 		key.MakeLower();
 
-		if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
-		{
-			service->usb_MFG = val;
-		}
-		else if ((key == L"usb_mdl") || (key == L"usb_model"))
-		{
-			service->usb_MDL = val;
-		}
-		else if (key == L"ty")
-		{
-			service->description = val;
-		}
-		else if (key == L"product")
-		{
-			service->product = val;
-		}
-		else if (key == L"note")
-		{
-			service->location = val;
-		}
-		else if (key == L"qtotal")
-		{
-			service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
-			qtotalDefined = true;
-		}
-		else if (key == L"priority")
-		{
-			qpriority = _ttoi((LPCTSTR) val);
-		}
-		else if (key == L"rp")
+		if ( key == L"rp" )
 		{
 			qname = val;
+		}
+		else
+		{
+			rpOnly = false;
+
+			if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
+			{
+				service->usb_MFG = val;
+			}
+			else if ((key == L"usb_mdl") || (key == L"usb_model"))
+			{
+				service->usb_MDL = val;
+			}
+			else if (key == L"ty")
+			{
+				service->description = val;
+			}
+			else if (key == L"product")
+			{
+				service->product = val;
+			}
+			else if (key == L"note")
+			{
+				service->location = val;
+			}
+			else if (key == L"qtotal")
+			{
+				service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
+				qtotalDefined = true;
+			}
+			else if (key == L"priority")
+			{
+				qpriority = _ttoi((LPCTSTR) val);
+			}
 		}
 	}
 
 exit:
+
+	if ( rpOnly )
+	{
+		qtotalDefined = true;
+	}
 
 	return err;
 }
