@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.4  2004/06/24 20:58:15  shersche
+Fix compiler error in Release build
+Submitted by: herscher
+
 Revision 1.3  2004/06/24 15:28:53  shersche
 Automatically setup routes to link-local addresses upon interface list change events.
 Submitted by: herscher
@@ -187,7 +191,7 @@ DEBUG_LOCAL int							gWaitCount				= 0;
 DEBUG_LOCAL HANDLE					*	gWaitList				= NULL;
 DEBUG_LOCAL HANDLE						gStopEvent				= NULL;
 DEBUG_LOCAL CRITICAL_SECTION			gEventSourceLock;
-DEBUG_LOCAL static GenLinkedList		gEventSources;
+DEBUG_LOCAL GenLinkedList				gEventSources;
 
 
 #if 0
