@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.120  2004/11/19 02:32:43  ksekar
+<rdar://problem/3682608> Wide-Area Security: Add LLQ-ID to events
+
 Revision 1.119  2004/11/18 23:21:24  ksekar
 <rdar://problem/3764544> LLQ Security: Need to verify src port/address for LLQ handshake
 
@@ -2260,8 +2263,16 @@ mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNS
 	DNSMessage ack;
 	mDNSu8 *ackEnd = ack.data;
 	mStatus err;
-
+	LLQOptData opt;
+	
 	(void)InterfaceID;  // unused
+
+    // find Opt RR, verify correct ID
+	if (!getLLQAtIndex(m, msg, end, &opt, 0)) { LogMsg("Error: recvLLQEvent - getLLQAtIndex failed"); return; }
+	if (opt.llqOp != kLLQOp_Event) { LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return; }
+	if (!q->uDNS_info.llq) { LogMsg("Error: recvLLQEvent - question onject does not contain LLQ metadata"); return; }
+	if (!sameID(opt.id, q->uDNS_info.llq->id)) { LogMsg("recvLLQEvent - incorrect ID. Discarding"); return; }
+
     // invoke response handler
 	m->uDNS_info.CurrentQuery = q;
 	q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context);
