@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Searcher.c,v $
+Revision 1.2  2004/05/27 06:30:21  cheshire
+Add code to test DNSServiceQueryRecord()
+
 Revision 1.1  2004/03/12 21:30:25  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -38,8 +41,12 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 #include <SIOUX.h>						// For SIOUXHandleOneEvent()
 
 #include <OpenTransport.h>
+#include <OpenTptInternet.h>
 
 #include "dns_sd.h"
+
+#define ns_c_in 1
+#define ns_t_a 1
 
 typedef union { UInt8 b[2]; UInt16 NotAnInteger; } mDNSOpaque16;
 static UInt16 mDNSVal16(mDNSOpaque16 x) { return((UInt16)(x.b[0]<<8 | x.b[1])); }
@@ -61,6 +68,7 @@ typedef struct
 	char domn[kDNSServiceMaxDomainName];
 	char host[kDNSServiceMaxDomainName];
 	char text[kDNSServiceMaxDomainName];
+	InetHost      address;
 	mDNSOpaque16  notAnIntPort;
 	DNSServiceRef sdRef;
 	Boolean       add;
@@ -82,7 +90,7 @@ static void PrintServiceInfo(SearcherServices *services)
 
 		if (!services->headerPrinted)
 			{
-			printf("%-55s Type             Domain         Target Host      Port Info\n", "Name");
+			printf("%-55s Type             Domain         Target Host     IP Address      Port Info\n", "Name");
 			services->headerPrinted = true;
 			}
 
@@ -93,14 +101,36 @@ static void PrintServiceInfo(SearcherServices *services)
 			}
 		else
 			{
+			char ip[16];
+			unsigned char *p = (unsigned char *)&s->address;
+			sprintf(ip, "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);
 			printf("%-55s %-16s %-14s ", s->name, s->type, s->domn);
-			if (s->add) printf("%-15s %5d %s\n", s->host, mDNSVal16(s->notAnIntPort), s->text);
+			if (s->add) printf("%-15s %-15s %5d %s\n", s->host, ip, mDNSVal16(s->notAnIntPort), s->text);
 			else        printf("Removed\n");
 			}
 
 		link = link->fNext;
 		OTFreeMem(s);
 		}
+	}
+
+static void FoundInstanceAddress(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode,
+	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
+	{
+	linkedServiceInfo *info = (linkedServiceInfo *)context;
+	SearcherServices *services = info->services;
+	(void)sdRef;			// Unused
+	(void)interfaceIndex;	// Unused
+	(void)fullname;			// Unused
+	(void)ttl;				// Unused
+	if (errorCode == kDNSServiceErr_NoError)
+		if (flags & kDNSServiceFlagsAdd)
+			if (rrclass == ns_c_in && rrtype == ns_t_a && rdlen == sizeof(info->address))
+				{
+				memcpy(&info->address, rdata, sizeof(info->address));
+				DNSServiceRefDeallocate(info->sdRef);
+				OTLIFOEnqueue(&services->serviceinfolist, &info->link);
+				}
 	}
 
 static void FoundInstanceInfo(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
@@ -123,7 +153,7 @@ static void FoundInstanceInfo(DNSServiceRef sdRef, DNSServiceFlags flags, uint32
 		}
 	info->notAnIntPort.NotAnInteger = notAnIntPort;
 	DNSServiceRefDeallocate(info->sdRef);
-	OTLIFOEnqueue(&services->serviceinfolist, &info->link);
+	DNSServiceQueryRecord(&info->sdRef, 0, 0, info->host, ns_t_a, ns_c_in, FoundInstanceAddress, info);
 	}
 
 // When a new named instance of a service is found, FoundInstance() is called.
@@ -178,7 +208,7 @@ int main()
 	SIOUXSettings.asktosaveonclose = false;
 	SIOUXSettings.userwindowtitle  = "\pMulticast DNS Searcher";
 	SIOUXSettings.rows             = 40;
-	SIOUXSettings.columns          = 132;
+	SIOUXSettings.columns          = 160;
 
 	printf("DNS-SD Search Client\n\n");
 	printf("This software reports errors using MacsBug breaks,\n");
