@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.514  2005/01/21 01:33:45  cheshire
+<rdar://problem/3962979> Shutdown time regression: mDNSResponder not responding to SIGTERM
+
 Revision 1.513  2005/01/21 00:07:54  cheshire
 <rdar://problem/3962717> Infinite loop when the same service is registered twice, and then suffers a name conflict
 
@@ -2900,9 +2903,10 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 	while (m->CurrentRecord)
 		{
 		AuthRecord *rr = m->CurrentRecord;
-		m->CurrentRecord = rr->next;
 		if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 			CompleteDeregistration(m, rr);		// Don't touch rr after this
+		else
+			m->CurrentRecord = rr->next;
 		}
 	}
 
@@ -7100,8 +7104,6 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	if (rrcache_active != m->rrcache_active)
 		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
 
-	m->Questions = mDNSNULL;		// We won't be answering any more questions!
-	
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		if (intf->Advertise)
 			DeadvertiseInterface(m, intf);
@@ -7112,23 +7114,22 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	while (m->CurrentRecord)
 		{
 		AuthRecord *rr = m->CurrentRecord;
-		m->CurrentRecord = rr->next;
 		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
 			{
 			debugf("mDNS_Close: Record type %X still in ResourceRecords list %##s", rr->resrec.RecordType, rr->resrec.name->c);
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 			}
+		else
+			m->CurrentRecord = rr->next;
 		}
 
 	if (m->ResourceRecords) debugf("mDNS_Close: Sending final packets for deregistering records");
 	else debugf("mDNS_Close: No deregistering records remain");
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
-	if (m->mDNSPlatformStatus != mStatus_NoError)
-		DiscardDeregistrations(m);
-	else
-		while (m->ResourceRecords)
-			SendResponses(m);
+	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
+	else if (m->ResourceRecords) SendResponses(m);
+	if (m->ResourceRecords) LogMsg("mDNS_Close failed to send goodbye for: %s", ARDisplayString(m, m->ResourceRecords));
 	
 	mDNS_Unlock(m);
 	debugf("mDNS_Close: mDNSPlatformClose");
