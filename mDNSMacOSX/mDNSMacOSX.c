@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 4 -*-
  *
- * Copright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.247  2004/12/01 03:26:58  cheshire
+Remove unused variables
+
 Revision 1.246  2004/12/01 01:51:34  cheshire
 Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
 
@@ -802,8 +805,6 @@ typedef struct SearchListElem
 // Globals
 
 static mDNSu32 clockdivisor = 0;
-static mDNSBool DNSConfigInitialized = mDNSfalse;
-#define MAX_SEARCH_DOMAINS 32
 
 // for domain enumeration and default browsing/registration
 static SearchListElem *SearchList = NULL;    // where we search for _browse domains
@@ -2321,7 +2322,6 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
-
 	debugf("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
 	SetDDNSNameStatus(&rr->resrec.name, result);
 	}
@@ -2392,7 +2392,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 			SetDDNSNameStatus(&DynDNSHostname, 1);
 			}
 		}
-			
+
     // get DNS settings
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
 	if (!store) return;
@@ -2699,7 +2699,6 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	{
 	mStatus err;
 	AuthRecord local;
-	DNSConfigInitialized = mDNStrue;
 
 	// start query for domains to be used in default (empty string domain) browses
 	err = mDNS_GetDomains(m, &DefBrowseDomainQ, mDNS_DomainTypeBrowseDefault, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
