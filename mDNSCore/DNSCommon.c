@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.79  2004/12/16 21:38:37  cheshire
+Add DNSTypeName case for kDNSType_NS
+
 Revision 1.78  2004/12/16 21:27:37  ksekar
 Fixed build failures when compiled with verbose debugging messages
 
@@ -376,6 +379,7 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 	switch (rrtype)
 		{
 		case kDNSType_A:    return("Addr");
+		case kDNSType_NS:   return("NS");
 		case kDNSType_CNAME:return("CNAME");
 		case kDNSType_NULL: return("NULL");
 		case kDNSType_PTR:  return("PTR");
