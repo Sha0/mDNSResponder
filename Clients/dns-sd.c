@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.5  2004/05/21 17:39:27  cheshire
+Include extra headers to fix Xcode build
+
 Revision 1.4  2004/05/21 17:25:56  cheshire
 Fixes to make sample client work on Linux
 
@@ -50,7 +53,9 @@ Check in code to make command-line "dns-sd" testing tool
 
 */
 
-#include <stdio.h>		// For stdout, stderr
+#include <stdio.h>			// For stdout, stderr
+#include <stdlib.h>			// For exit()
+#include <strings.h>		// For strlen(), strcpy(), bzero()
 #include <unistd.h>         // For getopt() and optind
 #include <errno.h>          // For errno, EINTR
 #define BIND_8_COMPAT
