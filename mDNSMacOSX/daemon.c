@@ -52,6 +52,15 @@ static int debug_mode = 0;
 //*************************************************************************************************************
 // General Utility Functions
 
+void LogErrorMessage(const char *format, ...)
+	{
+	va_list ap;
+	va_start(ap, format);
+	openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
+	vsyslog(LOG_ERR, format, ap);
+	closelog();
+	va_end(ap);
+	}
 
 //*************************************************************************************************************
 // Client Death Detection
@@ -153,8 +162,8 @@ mDNSlocal void AbortClient(mach_port_t port)
 
 mDNSlocal void AbortBlockedClient(mach_port_t port, char *msg)
 	{
-	fprintf(stderr, "mDNSResponder [%d] Client %d has stopped accepting messages.  "
-		"The client has been disconnected from its %s reply\n", getpid(), port, msg);
+	LogErrorMessage("Client %d stopped accepting Mach messages and has been disconnected from its %s reply",
+		port, msg);
 	AbortClient(port);
 	}
 
@@ -426,7 +435,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	{
 	mStatus err = 0;
 
-	printf("Received a request to add the record(s) of type: %d length: %d data: %s, returned cookie 32\n", type, data_len, data);
+	LogErrorMessage("Received a request to add the record(s) of type: %d length: %d data: %s, returned cookie 32", type, data_len, data);
 	*reference = 32;
 	return(err);
 	}
@@ -435,7 +444,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	{
 	mStatus err = 0;
 
-	printf("Received a request to update the record(s) of type: %d length: %d data: %s for reference: %d\n", type, data_len, data, reference);
+	LogErrorMessage("Received a request to update the record(s) of type: %d length: %d data: %s for reference: %d", type, data_len, data, reference);
 	return(err);
 	}
 
@@ -444,7 +453,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 	{
 	mStatus err = 0;
 
-	printf("Received a request to remove the record(s) of reference: %d\n", (int)reference);
+	LogErrorMessage("Received a request to remove the record(s) of reference: %d", (int)reference);
 	return(err);
 	}
 
@@ -547,12 +556,12 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	if (status)
 		{
-		fprintf(stderr, "Bootstrap_register failed(): %s %d\n", mach_error_string(status), status);
+		LogErrorMessage("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
 		return(status);
 		}
 	
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
-	if (err) { fprintf(stderr, "Daemon start: mDNS_Init failed %ld\n", err); return(err); }
+	if (err) { LogErrorMessage("Daemon start: mDNS_Init failed %ld", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
