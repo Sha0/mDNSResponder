@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
@@ -23,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.144  2004/01/28 20:20:45  ksekar
+Unified ActiveQueries and ActiveInternalQueries lists, using a flag to
+demux them.  Check-in includes work-in-progress code, #ifdef'd out.
+
 Revision 1.143  2004/01/28 03:41:00  cheshire
 <rdar://problem/3541946>: Need ability to do targeted queries as well as multicast queries
 
@@ -705,6 +710,34 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 #define MAX_ESCAPED_DOMAIN_LABEL 254
 #define MAX_ESCAPED_DOMAIN_NAME 1005
 
+
+// ***************************************************************************
+#if 0
+#pragma mark - DNS Message structures
+#endif
+
+typedef packedstruct
+	{
+	mDNSOpaque16 id;
+	mDNSOpaque16 flags;
+	mDNSu16 numQuestions;
+	mDNSu16 numAnswers;
+	mDNSu16 numAuthorities;
+	mDNSu16 numAdditionals;
+	} DNSMessageHeader;
+
+// We can send and receive packets up to 9000 bytes (Ethernet Jumbo Frame size, if that ever becomes widely used)
+// However, in the normal case we try to limit packets to 1500 bytes so that we don't get IP fragmentation on standard Ethernet
+// 40 (IPv6 header) + 8 (UDP header) + 12 (DNS message header) + 1440 (DNS message body) = 1500 total
+#define AbsoluteMaxDNSMessageData 8940
+#define NormalMaxDNSMessageData 1440
+typedef packedstruct
+	{
+	DNSMessageHeader h;						// Note: Size 12 bytes
+	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 40 (IPv6) + 8 (UDP) + 12 (DNS header) + 8940 (data) = 9000
+	} DNSMessage;
+
+	
 // ***************************************************************************
 #if 0
 #pragma mark - Resource Record structures
@@ -1021,11 +1054,13 @@ typedef struct
 	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
 
+typedef void (*InternalResponseHndlr)(DNSMessage *msg, void *context);
 typedef struct
     {
     mDNSOpaque16          id;
     mDNSs32               timestamp;
     mDNSBool              internal;
+    InternalResponseHndlr internalQuestionCallback;   // NULL if internal field is false
     } uDNS_QuestionInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
@@ -1117,14 +1152,8 @@ enum
 typedef struct 
     {
     DNSQuestion     *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
-    DNSQuestion     *ActiveInternalQueries; // queries not requested by the client
-    // messageID used to demux responses and match with request.  NextMessageID is initially 1 
-    // and is incremented while NextInternalID is initially all 1's and decremented.  They are reset
-    // to initial values if they ever collide.  ID zero is reserved for mDNS messages and unicast
-    // DNS messages sent over a TCP socket
-    mDNSu16    NextMessageID;
-    mDNSu16    NextInternalMessageID;
-    mDNSAddr   Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
+    mDNSu16         NextMessageID;
+    mDNSAddr        Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
     } uDNS_data_t;  
 
 struct mDNS_struct
@@ -1473,27 +1502,6 @@ extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 // The definitions are placed here because sometimes clients do use these calls indirectly, via other supported client operations.
 // For example, AssignDomainName is a macro defined using mDNSPlatformMemCopy()
 
-typedef packedstruct
-	{
-	mDNSOpaque16 id;
-	mDNSOpaque16 flags;
-	mDNSu16 numQuestions;
-	mDNSu16 numAnswers;
-	mDNSu16 numAuthorities;
-	mDNSu16 numAdditionals;
-	} DNSMessageHeader;
-
-// We can send and receive packets up to 9000 bytes (Ethernet Jumbo Frame size, if that ever becomes widely used)
-// However, in the normal case we try to limit packets to 1500 bytes so that we don't get IP fragmentation on standard Ethernet
-// 40 (IPv6 header) + 8 (UDP header) + 12 (DNS message header) + 1440 (DNS message body) = 1500 total
-#define AbsoluteMaxDNSMessageData 8940
-#define NormalMaxDNSMessageData 1440
-typedef packedstruct
-	{
-	DNSMessageHeader h;						// Note: Size 12 bytes
-	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 40 (IPv6) + 8 (UDP) + 12 (DNS header) + 8940 (data) = 9000
-	} DNSMessage;
-
 // Every platform support module must provide the following functions.
 // mDNSPlatformInit() typically opens a communication endpoint, and starts listening for mDNS packets.
 // When Setup is complete, the platform support layer calls mDNSCoreInitComplete().
@@ -1509,7 +1517,7 @@ typedef packedstruct
 extern mStatus  mDNSPlatformInit        (mDNS *const m);
 extern void     mDNSPlatformClose       (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
+mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
 
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);

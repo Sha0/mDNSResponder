@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.9  2004/01/28 20:20:45  ksekar
+Unified ActiveQueries and ActiveInternalQueries lists, using a flag to
+demux them.  Check-in includes work-in-progress code, #ifdef'd out.
+
 Revision 1.8  2004/01/28 02:30:07  ksekar
 Added default Search Domains to unicast browsing, controlled via
 Networking sharing prefs pane.  Stopped sending unicast messages on
@@ -71,7 +75,6 @@ static mDNSAddr   hcNS = { mDNSAddrType_IPv4, { { { 17,   202,   41, 107 } } } }
 // top-to-bottom.
 
 mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, mDNS *m);
-mDNSlocal mStatus stopQuery(mDNS *const m, DNSQuestion *const question);
 
 #define ustrcpy(d,s) mDNSPlatformStrCopy(s,d)       // use strcpy(2) param ordering
 #define umalloc(x) mDNSPlatformMemAllocate(x)       // short hands for common routines
@@ -148,11 +151,6 @@ mDNSexport void mDNS_DeregisterDNSList(mDNS *const m)
 #pragma mark - Incoming Message Processing
 #endif
 
-// InternalResponseHndlr is stored in the DNSQuestion->QuestionCallback field, but uses a different signature,
-// taking the raw DNS packet and its context pointer as arguments
-
-typedef void (*InternalResponseHndlr)(DNSMessage *msg, void *context);
-
 mDNSlocal void processAnswers(mDNS *m, uDNS_data_t *u, DNSMessage *const msg, const mDNSu8 *ansptr, const mDNSu8 *const end,
 								   const mDNSAddr *src, const mDNSInterfaceID ifid)
     {
@@ -172,20 +170,11 @@ mDNSlocal void processAnswers(mDNS *m, uDNS_data_t *u, DNSMessage *const msg, co
 				}
 			}
 
-		for (qptr = u->ActiveInternalQueries; qptr; qptr = qptr->next)
-			{
-			if (msg->h.id.NotAnInteger == qptr->uDNS_info.id.NotAnInteger)
-				{
-				hndlTruncatedAnswer(qptr, src, m);
-				return;
-				}
-			}
 		LogMsg("Received truncated answer that does not match any active query.  Discarding.");
 		return;
 		}
 
-    //!!!KRS we should determine up front if it matches an internal or external query - be careful if we have to reset the NextIndex variables!
-	//!!!KRS we should call LocateAnswers() here!
+	//!!!KRS we should call LocateAnswers() here!  //no, we shouldn't...
 	//!!!KRS this can be done more efficiently...
 
 	for (i = 0; i < msg->h.numAnswers; i++)
@@ -197,18 +186,19 @@ mDNSlocal void processAnswers(mDNS *m, uDNS_data_t *u, DNSMessage *const msg, co
             if (msg->h.id.NotAnInteger == qptr->uDNS_info.id.NotAnInteger &&
                 ResourceRecordAnswersQuestion(&rr.r.resrec, qptr) && qptr->QuestionCallback)
                 {
-                qptr->QuestionCallback(m, qptr, &rr.r.resrec, 1);     //!!!KRS how are we going to detect removes?
+				if (qptr->uDNS_info.internal)
+					{
+					if (!qptr->uDNS_info.internalQuestionCallback)
+						{
+						LogMsg("ERROR: Received answer to internal query with NULL internalQuestionCallback");
+						continue;
+						}					
+					qptr->uDNS_info.internalQuestionCallback(msg, qptr->QuestionContext);
+					}
+				else  qptr->QuestionCallback(m, qptr, &rr.r.resrec, 1);
                 }
             }
-        for (qptr = u->ActiveInternalQueries; qptr; qptr = qptr->next)
-            {
-            if (msg->h.id.NotAnInteger == qptr->uDNS_info.id.NotAnInteger &&
-                ResourceRecordAnswersQuestion(&rr.r.resrec, qptr) && qptr->QuestionCallback)
-                {
-				((InternalResponseHndlr)qptr->QuestionCallback)(msg, qptr->QuestionContext);
-                }
-            }
-        }
+		}
     }
 
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
@@ -269,35 +259,36 @@ mDNSlocal mDNSAddr *getInitializedDNS(uDNS_data_t *u)
 
 mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_data_t *u)
     {
+	//!!!KRS We should remove the list check at some point...
 	DNSQuestion *qptr;
+	mDNSBool inList = mDNSfalse;
 
-	// see if query is in our lists
 	for (qptr = u->ActiveQueries; qptr; qptr = qptr->next)
-		if (qptr == question) return mDNStrue;
-	for (qptr = u->ActiveInternalQueries; qptr; qptr = qptr->next)
-		if (qptr == question) return mDNStrue;
+		if (qptr == question) { inList = mDNStrue;  break; }
+	
+	if (question->uDNS_info.id.NotAnInteger && inList) return mDNStrue;
+	if (!question->uDNS_info.id.NotAnInteger && !inList) return mDNSfalse;
+
+	LogMsg("ERROR: IsActiveUnicastQuery - conflicting results:\n"
+		   "%s question id, %s ActiveQueries list",
+		   question->uDNS_info.id.NotAnInteger ? "non-zero" : "zero",
+		   inList ? "in" : "not in");
 	return mDNSfalse;
 	}
-
-mDNSlocal mStatus stopQuery(mDNS *const m, DNSQuestion *const question)
-    {
+	
+mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
+	{
 	uDNS_data_t *u = &m->uDNS_data;
 	DNSQuestion *qptr, *prev = NULL;
 	char errbuf[MAX_ESCAPED_DOMAIN_NAME];
-	mDNSBool internal = question->uDNS_info.internal;
 
-	qptr = internal ? u->ActiveInternalQueries : u->ActiveQueries;
-
+	qptr = u->ActiveQueries;
 	while (qptr)
         {
         if (qptr == question)
             {
             if (prev) prev->next = question->next;
-            else
-				{
-				if (internal) u->ActiveInternalQueries = question->next;
-				else u->ActiveQueries = question->next;
-				}
+            else u->ActiveQueries = question->next;
 			return mStatus_NoError;
             }
         prev = qptr;
@@ -306,10 +297,6 @@ mDNSlocal mStatus stopQuery(mDNS *const m, DNSQuestion *const question)
     LogMsg("uDNS_StopQuery: no such active query (%s)", ConvertDomainNameToCString(&question->qname, errbuf));
     return mStatus_UnknownErr;
     }
-mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
-	{
-	return stopQuery(m, question);
-	}
 
 mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, mDNSOpaque16 id, mDNSOpaque16 flags, DNSQuestion *const question)
 	{
@@ -341,16 +328,9 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 		return mStatus_Invalid;
 		}
 
-    // determine message ID to demux response
-    if (!u->NextInternalMessageID) u->NextInternalMessageID = (mDNSu16)~0;   // initialize on first query
-	if (!u->NextMessageID) u->NextMessageID = 1;
-    if (u->NextInternalMessageID == u->NextMessageID)
-        {
-        LogMsg("startQuery: Internal and external message IDs have collided - resetting");
-        u->NextInternalMessageID = (mDNSu16)~0;
-        u->NextMessageID = 1;
-        }
-	idval = internal ? --u->NextInternalMessageID : ++u->NextMessageID;
+	// if NextMessageID is 0 (ininitialized) or 0xffff (reserved for TCP packets) reset to 1
+	if (!u->NextMessageID || u->NextMessageID == (mDNSu16)~0) u->NextMessageID = 1;
+	idval = u->NextMessageID++;
 	question->next = NULL;
 	err = constructQueryMsg(&msg, &endPtr, mDNSOpaque16fromIntVal(idval), QueryFlags, question);
 	if (err) return err;
@@ -360,16 +340,8 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     question->uDNS_info.timestamp = m->timenow;
 	question->uDNS_info.internal = internal;
     question->qnamehash = DomainNameHashValue(&question->qname);    // to do quick domain name comparisons
-    if (internal)
-        {
-        question->next = u->ActiveInternalQueries;
-        u->ActiveInternalQueries = question;
-        }
-    else
-        {
-        question->next = u->ActiveQueries;
-        u->ActiveQueries = question;
-        }
+	question->next = u->ActiveQueries;
+	u->ActiveQueries = question;
 
 	err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
 	if (err) LogMsg("ERROR: mDNSSendDNSMessage - %d", err);
@@ -382,7 +354,195 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
     return startQuery(m, question, 0);
     }
 
+#if 0 //!!!KRS incomplete
+mDNSlocal mStatus startInternalQuery(DNSQuestion *q, mDNS *m, InternalResponseHndlr callback, void *hndlrContext)
+    {    
+    q->QuestionContext = hndlrContext;
+    q->uDNS_info.internalQuestionCallback = callback;
+    return startQuery(m, q, 1);
+    }
 
+
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - Domain -> Name Server Conversion
+#endif
+
+
+
+/* findZoneNS
+ *
+ * asyncronously find the address of the nameserver for the enclosing zone for a given domain name,
+ * i.e. the server to which update requests will be sent for a given name.  Once the address is
+ * derived, it will be passed to the callback, along with a context pointer.  If the zone cannot
+ * be determined or if an error occurs, an all-zeros address will be passed and a message will be
+ * written to the syslog.  Steps for deriving the name are as follows:
+ *
+ * Query for an SOA record for the dname.  If we don't get an answer (or an SOA in the Authority
+ * section), we strip the leading label from the dname and repeat, until we get an answer.
+ *
+ * The name of the SOA record is our enclosing zone.  The mname field in the SOA rdata is the domain
+ * name of the primary NS.
+ *
+ * We verify that there is an NS record with this zone for a name and the mname for its rdata.
+ * (!!!KRS this seems redundant, but BIND does this, and it should normally be zero-overhead since
+ * the NS query will get us address records in the additionals section, which we'd otherwise have to
+ * explicitly query for.)
+ *
+ * We then query for the address record for this nameserver (if it is not in the addionals section of
+ * the NS record response.)
+ */
+  
+
+
+
+
+// state machine types and structs
+//
+
+// state machine states
+typedef enum
+    {
+    init,
+    lookupSOA,
+	receivedSOA,
+	confirmNS,
+    } ntaState;
+
+// state machine actions
+typedef enum
+    {
+    smContinue,
+    smBreak,
+    } smAction;
+ 
+typedef struct
+    {
+    domainname 	origName;            // name we originally try to convert
+    domainname 	*curSOA;             // name we have an outstanding SOA query for
+    ntaState  	state;               // determines what we do upon receiving a packet
+    mDNS	    *m;
+    domainname  zone;                // left-hand-side of SOA record
+    domainname ns;                   // mname in SOA rdata, verified in confirmNS state
+    } ntaContext;
+
+
+// function prototypes (for routines that must be used as fn pointers prior to their definitions,
+// and allows states to be read top-to-bottom in logical order)
+mDNSlocal mStatus startNameToAddr(domainname *name, mDNS *m);
+mDNSlocal void nameToAddr(DNSMessage *msg, void *contextPtr);
+mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, ntaContext *context);
+
+
+// initialization
+mDNSlocal mStatus startNameToAddr(domainname *name, mDNS *m)
+    {
+    ntaContext *context = umalloc(sizeof(ntaContext));
+    if (!context) { LogMsg("ERROR: startNameToAddr - umalloc failed");  return mStatus_NoMemoryErr; }
+    ustrcpy(context->origName.c, name->c);
+    context->state = init;
+    context->m = m;
+    nameToAddr(NULL, context);
+    return mStatus_NoError;
+    }
+
+ 
+// general SM entry routine
+mDNSlocal void nameToAddr(DNSMessage *msg, void *contextPtr)
+    {
+    ntaContext *context = contextPtr;
+
+    switch (context->state)
+        {
+        case init:
+        case lookupSOA:
+            if (hndlLookupSOA(msg, context) != smContinue) break;
+		case lookupNS:
+			if (hdnlLookupNS(msg, context) != smContinue) break;
+		 
+        }
+        
+    }
+
+mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, mDNSu8 *end, ntaContext *context)
+    {
+    DNSQuestion *query;
+    char errbuf[MAX_ESCAPED_DOMAIN_NAME], errbuf2[MAX_ESCAPED_DOMAIN_NAME];
+    mStatus err;
+    LargeCacheRecord rr;
+	DNSQuestion *query = &context->query;
+	mDNSu8 *ptr;
+	
+    if (msg)
+        {
+        // if msg contains SOA record in answer or authority sections, update context/state and return 		
+		int i;
+		ptr = LocateAnswers(msg, end);
+		for (i = 0; i < msg->h.numAnswers; i++)
+			{
+			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, context->ifid, kDNSRecordTypePacketAns, &rr);
+			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  goto error; }
+			if (rr.rrtype == kDNSType_SOA && SameDomainName(context->curSOA, &rr->name))
+				{
+				ustrcpy(&context->soa, &rr.rdata->soa.mname);
+				debugf("Located SOA w/ mname %s for name %s", ConvertDomainNameToCString(&context->soa, errbuf),
+					   ConvertDomainNameToCString(&context->origName, errbuf2));
+				context->state = receivedSOA;
+				return smContinue;
+				}
+			}		
+
+		// SOA not in answers, check in authority
+		if (msg->h.numAuthorities)
+			{
+			ptr = LocateAuthorities(msg, end);
+			if (!GetLargeResourceRecord(context->m, msg, ptr, end, context->ifid, kDNSRecordTypeAuth, &rr))
+				{ LogMsg("ERROR: GetLargeResourceRecord returned NULL");  goto error; }		 		
+			ustrcpy(&context->soa, &rr.rdata->soa.mname);
+			debugf("Located SOA in authority section w/ mname %s for name %s",
+				   ConvertDomainNameToCString(&context->soa, errbuf), ConvertDomainNameToCString(&context->origName, errbuf2));
+			context->state = receivedSOA;
+			return smContinue;
+			}
+		}    
+
+    if (context->state != init && !context->curSOA->c[0])
+        {
+        // we've gone down to the root and have not found an SOA  
+        LogMsg("ERROR: hndlLookupSOA - recursed to root label of %s without finding SOA", 
+                ConvertDomainNameToCString(&context->origName, errbuf));
+        ufree(context);
+        return smBreak;
+        }
+        
+	if (context->state != init)
+		{
+		uDNS_StopQuery(context->m, query);
+		}
+
+    ubzero(query, sizeof(DNSQuestion));
+    // chop off leading label unless this is our first try
+    if (context->state == init)  context->curSOA = &context->origName;
+    else                         (void *)context->curSOA = context->curSOA->c + context->curSOA->c[0]+1;
+    
+    context->state = lookupSOA;
+    ustrcpy(query->qname.c, context->curSOA->c);
+    query->InterfaceID = 0;     //!!!KRS
+    query->qtype = kDNSType_SOA;
+    query->qclass = kDNSClass_IN;
+    query->QuestionCallback = NULL;   // use our own dispatch table?
+    query->QuestionContext = NULL;
+    err = startInternalQuery(query, context->m, nameToAddr, context);
+    if (err) { LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  goto error;  }
+    return smBreak;     // break from state machine until we receive another packet
+   
+error:
+    if (context) ufree(context);
+    return smBreak;  
+    }
+
+#endif //0 (incomplete)
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -411,7 +571,7 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 	int n;
 
 	flags.NotAnInteger = 0;
-	id.NotAnInteger = 0;
+	id.NotAnInteger = (mDNSu16)~0;
 
 	if (ConnectionEstablished)
 		{
@@ -468,9 +628,8 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	context->question = question;
 	context->m = m;
 
-	// zero ID, reset timestamp
-	info->id.NotAnInteger = 0;
-	info->timestamp = m->timenow;
+	info->id.NotAnInteger = (mDNSu16)~0;  // all 1's indicates TCP queries
+	info->timestamp = m->timenow;         // reset timestamp
 
 	connectionStatus = mDNSPlatformTCPConnect(src, UnicastDNSPort, question->InterfaceID, conQueryCallback, context, &sd);
 	if (connectionStatus == mStatus_ConnectionEstablished)  // manually invoke callback if connection completes
@@ -480,7 +639,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 		}
 	if (connectionStatus == mStatus_ConnectionPending) return; // callback will be automatically invoked when connection completes
 	LogMsg("hndlTruncatedAnswer: connection failed");
-	stopQuery(m, question);  //!!!KRS can we really call this here?
+	uDNS_StopQuery(m, question);  //!!!KRS can we really call this here?
 	}
 
 mDNSexport mDNSs32 uDNS_GetNextEventTime(const mDNS *const m)
