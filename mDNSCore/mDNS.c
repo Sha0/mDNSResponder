@@ -743,7 +743,9 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	return(mStatus_NoError);
 	}
 
-mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr)
+// NOTE: mDNS_Deregister_internal can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
+mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow, mDNSBool conflict)
 	{
 	mDNSu8 RecordType = rr->RecordType;
 	if (RecordType == kDNSRecordTypeShared)
@@ -780,8 +782,17 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr)
 		else
 			rr->RecordType = kDNSRecordTypeUnregistered;
 
+		if (conflict && RecordType == kDNSRecordTypeShared)
+			debugf("mDNS_Deregister_internal: Cannot have a conflict on a shared record! %##s", rr->name.c);
+
 		if (RecordType == kDNSRecordTypeShared && rr->Callback)
 			rr->Callback(m, rr, mStatus_MemFree);
+		else if (conflict)
+			{
+			m->SuppressProbes = timenow + mDNSPlatformOneSecond;
+			if (m->SuppressProbes == 0) m->SuppressProbes = 1;
+			if (rr->Callback) rr->Callback(m, rr, mStatus_NameConflict);
+			}
 		}
 	}
 
@@ -1005,9 +1016,9 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 						*np = 0;	// Tentatively place the root label here (may be overwritten if we have more labels)
 						break;
 
-			case 0x40:	debugf("Extended EDNS0 label types 0x%X not supported in name %##s", len, name->c); break;
+			case 0x40:	debugf("Extended EDNS0 label types 0x%X not supported in name %##s", len, name->c); return(mDNSNULL);
 
-			case 0x80:	debugf("Illegal label length 0x%X in domain name %##s", len, name->c); break;
+			case 0x80:	debugf("Illegal label length 0x%X in domain name %##s", len, name->c); return(mDNSNULL);
 
 			case 0xC0:	offset = (mDNSu16)((((mDNSu16)(len & 0x3F)) << 8) | *ptr++);
 						if (!nextbyte) nextbyte = ptr;	// Record where we got to before we started following pointers
@@ -1081,7 +1092,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 							break;
 
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	getDomainName(msg, ptr, end, &rr->rdata.name);
+		case kDNSType_PTR:	if (!getDomainName(msg, ptr, end, &rr->rdata.name)) return(mDNSNULL);
 							//debugf("%##s PTR %##s rdlen %d", rr->name.c, rr->rdata.name.c, pktrdlength);
 							break;
 
@@ -1093,7 +1104,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 							rr->rdata.srv.weight   = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
 							rr->rdata.srv.port.b[0] = ptr[4];
 							rr->rdata.srv.port.b[1] = ptr[5];
-							getDomainName(msg, ptr+6, end, &rr->rdata.srv.target);
+							if (!getDomainName(msg, ptr+6, end, &rr->rdata.srv.target)) return(mDNSNULL);
 							//debugf("%##s SRV %##s rdlen %d", rr->name.c, rr->rdata.srv.target.c, pktrdlength);
 							break;
 
@@ -1117,6 +1128,7 @@ mDNSlocal const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, co
 	{
 	question->InterfaceAddr = InterfaceAddr;
 	ptr = getDomainName(msg, ptr, end, &question->name);
+	if (!ptr) { debugf("Malformed domain name in DNS question section"); return(mDNSNULL); }
 	if (ptr+4 > end) { debugf("Malformed DNS question section -- no query type and class!"); return(mDNSNULL); }
 	
 	question->rrtype  = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);			// Get type
@@ -1207,7 +1219,9 @@ mDNSlocal mDNSBool HaveResponses(const mDNS *const m, const mDNSs32 timenow)
 	return(mDNSfalse);
 	}
 
-mDNSlocal void DiscardDeregistrations(mDNS *const m)
+// NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
+mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSs32 timenow)
 	{
 	if (m->CurrentRecord) debugf("DiscardDeregistrations ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
@@ -1220,7 +1234,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 			{
 			rr->RecordType    = kDNSRecordTypeShared;
 			rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
-			mDNS_Deregister_internal(m, rr);
+			mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
 			}
 		}
 	}
@@ -1228,6 +1242,8 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 // This routine sends as many records as it can fit in a single DNS Response Message, in order of priority.
 // If there are any deregistrations, announcements, or answers that don't fit, they are left in the work list for next time.
 // If there are any additionals that don't fit, they are discarded -- they were optional anyway.
+// NOTE: BuildResponse calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu8 *responseptr, const mDNSIPAddr InterfaceAddr, const mDNSs32 timenow)
 	{
 	const mDNSu8 *const limit = response->data + sizeof(response->data);
@@ -1272,7 +1288,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 				responseptr = newptr;
 				rr->RecordType    = kDNSRecordTypeShared;
 				rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
-				mDNS_Deregister_internal(m, rr);
+				mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
 				}
 			}
 		
@@ -1398,6 +1414,8 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 // BuildProbe puts a probe question into a DNS Query packet and if successful, updates the value of queryptr.
 // It also sets the record's IncludeInProbe flag so that we know to add an Update Record too
 // and updates the forcast for the size of the duplicate suppression (answer) section.
+// NOTE: BuildProbe can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 	ResourceRecord *rr, mDNSu32 *answerforecast, const mDNSs32 timenow)
 	{
@@ -1679,6 +1697,8 @@ mDNSlocal void TriggerImmediateQuestions(mDNS *const m, const ResourceRecord *co
 			}
 	}
 
+// NOTE: AnswerQuestionWithResourceRecord can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr, const mDNSs32 timenow)
 	{
 	mDNSu32 timesincercvd = (mDNSu32)(timenow - rr->TimeRcvd);
@@ -1696,6 +1716,8 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 // If new questions are created as a result of invoking client callbacks, they will be added to
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is a ResourceRecord in our cache (kDNSRecordTypePacketAnswer or kDNSRecordTypePacketAdditional)
+// NOTE: AnswerLocalQuestions calls AnswerQuestionWithResourceRecord which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr, const mDNSs32 timenow)
 	{
 	if (m->CurrentQuestion) debugf("AnswerLocalQuestions ERROR m->CurrentQuestion already set");
@@ -1999,7 +2021,7 @@ mDNSexport void mDNSCoreTask(mDNS *const m)
 		// If the platform code is currently non-operational,
 		// then we'll just complete deregistrations immediately,
 		// without waiting for the goodbye packet to be sent
-		DiscardDeregistrations(m);
+		DiscardDeregistrations(m, timenow);
 		}
 	else if (m->SuppressSending == 0 || timenow - m->SuppressSending >= 0)
 		{
@@ -2198,6 +2220,8 @@ mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const ResourceRecord *c
 	return(mDNStrue);
 	}
 
+// NOTE: ResolveSimultaneousProbe calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
 	DNSQuestion *q, ResourceRecord *our, const mDNSs32 timenow)
 	{
@@ -2221,10 +2245,7 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",    our->name.c, DNSTypeName(our->rrtype)); break;
 				case  0:	/*debugf("ResolveSimultaneousProbe: %##s (%s): Identical", our->name.c, DNSTypeName(our->rrtype));*/ break;
 				case -1:	debugf("ResolveSimultaneousProbe: %##s (%s): We lost",   our->name.c, DNSTypeName(our->rrtype));
-							m->SuppressProbes = timenow + mDNSPlatformOneSecond;
-							if (m->SuppressProbes == 0) m->SuppressProbes = 1;
-							mDNS_Deregister_internal(m, our);
-							if (our->Callback) our->Callback(m, our, mStatus_NameConflict);
+							mDNS_Deregister_internal(m, our, timenow, mDNStrue);
 							return;
 				}
 			}
@@ -2433,6 +2454,8 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceAddr, dstport, srcaddr, srcport);
 	}
 
+// NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const response, const mDNSu8 *end, const mDNSIPAddr InterfaceAddr)
 	{
 	int i;
@@ -2512,10 +2535,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 								{
 								debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 								// If we're probing for this record (or we assumed it must be unique) we just failed
-								m->SuppressProbes = timenow + mDNSPlatformOneSecond;
-								if (m->SuppressProbes == 0) m->SuppressProbes = 1;
-								mDNS_Deregister_internal(m, rr);
-								if (rr->Callback) rr->Callback(m, rr, mStatus_NameConflict);
+								mDNS_Deregister_internal(m, rr, timenow, mDNStrue);
 								}
 							}
 						}
@@ -2868,10 +2888,12 @@ mDNSexport mStatus mDNS_Register(mDNS *const m, ResourceRecord *const rr)
 	return(status);
 	}
 
+// NOTE: mDNS_Deregister calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_Deregister(mDNS *const m, ResourceRecord *const rr)
 	{
-	mDNS_Lock(m);
-	mDNS_Deregister_internal(m, rr);
+	const mDNSs32 timenow = mDNS_Lock(m);
+	mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
 	mDNS_Unlock(m);
 	}
 
@@ -2995,6 +3017,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	return(mStatus_NoError);
 	}
 
+// NOTE: mDNS_DeregisterInterface calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	NetworkInterfaceInfo *i;
@@ -3026,9 +3050,9 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			}
 	
 		// Unregister these records
-		if (set->RR_A1.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A1);
-		if (set->RR_A2.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A2);
-		if (set->RR_PTR.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_PTR);
+		if (set->RR_A1.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A1, timenow, mDNSfalse);
+		if (set->RR_A2.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A2, timenow, mDNSfalse);
+		if (set->RR_PTR.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_PTR, timenow, mDNSfalse);
 		}
 
 	mDNS_Unlock(m);
@@ -3128,14 +3152,16 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 		sr->Callback, sr->Context));
 	}
 
+// NOTE: mDNS_DeregisterService calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
-	mDNS_Lock(m);
+	const mDNSs32 timenow = mDNS_Lock(m);
 	// These checks are because, in the event of a collision, either or both the SRV and TXT could
 	// have already been automatically deregistered
-	if (sr->RR_SRV.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_SRV);
-	if (sr->RR_TXT.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_TXT);
-	mDNS_Deregister_internal(m, &sr->RR_PTR);
+	if (sr->RR_SRV.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_SRV, timenow, mDNSfalse);
+	if (sr->RR_TXT.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_TXT, timenow, mDNSfalse);
+	mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNSfalse);
 	mDNS_Unlock(m);
 	}
 
@@ -3225,7 +3251,7 @@ extern void mDNS_Close(mDNS *const m)
 		if (rr->RecordType != kDNSRecordTypeDeregistering)
 			{
 			debugf("mDNS_Close: Record type %d still in ResourceRecords list %##s", rr->RecordType, rr->name.c);
-			mDNS_Deregister_internal(m, rr);
+			mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
 			}
 		}
 
@@ -3234,7 +3260,7 @@ extern void mDNS_Close(mDNS *const m)
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError)
-		DiscardDeregistrations(m);
+		DiscardDeregistrations(m, timenow);
 	else
 		while (m->ResourceRecords)
 			SendResponses(m, timenow);
