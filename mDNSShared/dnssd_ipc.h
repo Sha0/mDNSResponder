@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.10  2004/07/07 17:39:25  shersche
+Change MDNS_SERVERPORT from 5533 to 5354.
+
 Revision 1.9  2004/06/25 00:26:27  rpantos
 Changes to fix the Posix build on Solaris.
 
@@ -80,7 +83,7 @@ Update to APSL 2.0
 #if defined(USE_TCP_LOOPBACK)
 #	define AF_DNSSD				AF_INET
 #	define MDNS_TCP_SERVERADDR	"127.0.0.1"
-#	define MDNS_TCP_SERVERPORT	5533
+#	define MDNS_TCP_SERVERPORT	5354
 #	define LISTENQ				5
 #	define dnssd_sockaddr_t		struct sockaddr_in
 #else
