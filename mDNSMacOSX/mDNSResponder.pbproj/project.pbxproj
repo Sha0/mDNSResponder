@@ -7,7 +7,7 @@
 	objects = {
 		000753D303367C1C0CCA2C71 = {
 			isa = PBXFileReference;
-			path = mDNSOSX.h;
+			path = mDNSMacOSX.h;
 			refType = 4;
 		};
 		00AD62A3032D799A0CCA2C71 = {

@@ -40,7 +40,7 @@ int mDNS_AdvertiseLocalAddresses = 1;
 
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
-#include "mDNSOSX.h"				// Defines the specific types needed to run mDNS on this platform
+#include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 #include "mDNSvsprintf.h"           // Used to implement debugf_();
 
 #include <stdio.h>
