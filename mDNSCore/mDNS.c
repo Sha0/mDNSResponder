@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.519  2005/02/15 01:57:20  cheshire
+When setting "q->LastQTxTime = m->timenow", must also clear q->RecentAnswerPkts to zero
+
 Revision 1.518  2005/02/10 22:35:17  cheshire
 <rdar://problem/3727944> Update name
 
@@ -3823,6 +3826,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 			{
 			q->LastQTime      = m->timenow;
 			q->LastQTxTime    = m->timenow;
+			q->RecentAnswerPkts = 0;
 			q->ThisQInterval  = MaxQuestionInterval;
 			q->RequestUnicast = mDNSfalse;
 			}
