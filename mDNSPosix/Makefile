@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.54  2004/12/17 19:33:03  cheshire
+# Add "-lresolv" for Solaris
+#
 # Revision 1.53  2004/12/01 20:04:31  cheshire
 # Tidy up alignment
 #
@@ -236,7 +239,7 @@ CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -DNOT_HAVE_SOCKLEN_T -DNOT_HAVE_
 	 -DLOG_PERROR=0 -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -DUSE_TCP_LOOPBACK
 CC = gcc
 LD = gcc -shared
-LIBFLAGS = -lsocket -lnsl
+LIBFLAGS = -lsocket -lnsl -lresolv
 JAVACFLAGS_OS += -I$(JDK)/include/solaris
 ifneq ($(DEBUG),1)
 STRIP = strip
