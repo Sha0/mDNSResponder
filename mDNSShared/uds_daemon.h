@@ -29,6 +29,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.8  2004/09/21 21:05:11  cheshire
+Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
+into mDNSShared/uds_daemon.c
+
 Revision 1.7  2004/09/17 01:08:55  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -68,7 +72,7 @@ extern int udsserver_init(void);
 // takes the next scheduled event time, does idle work, and returns the updated nextevent time
 extern mDNSs32 udsserver_idle(mDNSs32 nextevent);
 
-extern void udsserver_info(void);	// print out info about current state
+extern void udsserver_info(mDNS *const m);	// print out info about current state
 
 extern void udsserver_handle_configchange(void);
 

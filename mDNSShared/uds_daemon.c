@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.86  2004/09/21 21:05:11  cheshire
+Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
+into mDNSShared/uds_daemon.c
+
 Revision 1.85  2004/09/18 01:11:58  ksekar
 <rdar://problem/3806734> Add a user's default domain to empty-string browse list
 
@@ -740,10 +744,38 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
     return nextevent;
     }
 
-void udsserver_info(void)
+void udsserver_info(mDNS *const m)
     {
+	mDNSs32 now = mDNS_TimeNow(m);
+	mDNSu32 CacheUsed = 0, CacheActive = 0;
+	mDNSu32 slot;
     request_state *req;
-	mDNSs32 timenow;
+
+    LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
+
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		{
+		mDNSu32 SlotUsed = 0;
+		CacheRecord *rr;
+		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+			{
+			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
+			CacheUsed++;
+			SlotUsed++;
+			if (rr->CRActiveQuestion) CacheActive++;
+			LogMsgNoIdent("%s%6ld %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
+				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, GetRRDisplayString(m, rr));
+			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
+			}
+		if (m->rrcache_used[slot] != SlotUsed)
+			LogMsgNoIdent("Cache use mismatch: rrcache_used[slot] is %lu, true count %lu", m->rrcache_used[slot], SlotUsed);
+		}
+	if (m->rrcache_totalused != CacheUsed)
+		LogMsgNoIdent("Cache use mismatch: rrcache_totalused is %lu, true count %lu", m->rrcache_totalused, CacheUsed);
+	if (m->rrcache_active != CacheActive)
+		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", m->rrcache_active, CacheActive);
+	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
+
     for (req = all_requests; req; req=req->next)
         {
         void *t = req->termination_context;
@@ -763,8 +795,9 @@ void udsserver_info(void)
         else if (req->terminate == enum_termination_callback)
             LogMsgNoIdent("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
         }
-    timenow = mDNS_TimeNow(&mDNSStorage);
-    LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)timenow, timenow);
+
+    now = mDNS_TimeNow(m);
+    LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
     }
 
 

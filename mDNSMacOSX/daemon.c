@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.191  2004/09/21 21:05:12  cheshire
+Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
+into mDNSShared/uds_daemon.c
+
 Revision 1.190  2004/09/21 19:51:15  cheshire
 Move "Starting time value" message from mDNS.c to mDNSMacOSX/daemon.c
 
@@ -1836,54 +1840,28 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	DNSServiceResolver          *l;
 	DNSServiceRegistration      *r;
 	NetworkInterfaceInfoOSX     *i;
-	mDNSu32 slot;
-	CacheRecord *rr;
-	mDNSu32 CacheUsed = 0, CacheActive = 0;
-	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
 
 	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
 
-	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		{
-		mDNSu32 SlotUsed = 0;
-		for (rr = mDNSStorage.rrcache_hash[slot]; rr; rr=rr->next)
-			{
-			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
-			CacheUsed++;
-			SlotUsed++;
-			if (rr->CRActiveQuestion) CacheActive++;
-			LogMsgNoIdent("%s%6ld %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
-				((NetworkInterfaceInfoOSX *)rr->resrec.InterfaceID)->ifa_name, GetRRDisplayString(&mDNSStorage, rr));
-			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
-			}
-		if (mDNSStorage.rrcache_used[slot] != SlotUsed)
-			LogMsgNoIdent("Cache use mismatch: rrcache_used[slot] is %lu, true count %lu", mDNSStorage.rrcache_used[slot], SlotUsed);
-		}
-	if (mDNSStorage.rrcache_totalused != CacheUsed)
-		LogMsgNoIdent("Cache use mismatch: rrcache_totalused is %lu, true count %lu", mDNSStorage.rrcache_totalused, CacheUsed);
-	if (mDNSStorage.rrcache_active != CacheActive)
-		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", mDNSStorage.rrcache_active, CacheActive);
-	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
+	udsserver_info(&mDNSStorage);
 
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
-		LogMsgNoIdent("%5d: DomainEnumeration   %##s", e->ClientMachPort, e->dom.qname.c);
+		LogMsgNoIdent("%5d: Mach DomainEnumeration   %##s", e->ClientMachPort, e->dom.qname.c);
 
 	for (b = DNSServiceBrowserList; b; b=b->next)
 		{
 		DNSServiceBrowserQuestion *qptr;
 		for (qptr = b->qlist; qptr; qptr = qptr->next)
-			LogMsgNoIdent("%5d: ServiceBrowse       %##s", b->ClientMachPort, qptr->q.qname.c);
+			LogMsgNoIdent("%5d: Mach ServiceBrowse       %##s", b->ClientMachPort, qptr->q.qname.c);
 		}
 	for (l = DNSServiceResolverList; l; l=l->next)
-		LogMsgNoIdent("%5d: ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
+		LogMsgNoIdent("%5d: Mach ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
 
 	for (r = DNSServiceRegistrationList; r; r=r->next)
 		{
-		LogMsgNoIdent("%5d: ServiceRegistration %##s %u", r->ClientMachPort, r->ls.RR_SRV.resrec.name.c, mDNSVal16(r->ls.RR_SRV.resrec.rdata->u.srv.port));
+		LogMsgNoIdent("%5d: Mach ServiceRegistration %##s %u", r->ClientMachPort, r->ls.RR_SRV.resrec.name.c, mDNSVal16(r->ls.RR_SRV.resrec.rdata->u.srv.port));
 		if (r->gs) LogMsgNoIdent("%5d: ServiceRegistration %##s %u", r->ClientMachPort, r->gs->RR_SRV.resrec.name.c, mDNSVal16(r->gs->RR_SRV.resrec.rdata->u.srv.port));
 		}
-
-	udsserver_info();
 
 	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 		{

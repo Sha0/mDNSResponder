@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.16  2004/09/21 21:05:12  cheshire
+Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
+into mDNSShared/uds_daemon.c
+
 Revision 1.15  2004/09/17 01:08:53  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -232,40 +236,11 @@ static void	ParseCmdLinArgs( int argc, char **argv)
 }
 
 
-static void		DumpStateLog( mDNS *m)
+static void		DumpStateLog(mDNS *const m)
 // Dump a little log of what we've been up to.
 {
-	mDNSu32 slot;
-	CacheRecord *rr;
-	mDNSu32 CacheUsed = 0, CacheActive = 0;
-	mDNSs32 now = mDNS_TimeNow(m);
-
 	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
-
-	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		{
-		mDNSu32 SlotUsed = 0;
-		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
-			{
-			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
-			CacheUsed++;
-			SlotUsed++;
-			if (rr->CRActiveQuestion) CacheActive++;
-			LogMsgNoIdent("%s%6ld %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
-				((PosixNetworkInterface *)rr->resrec.InterfaceID)->intfName, GetRRDisplayString(m, rr));
-			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
-			}
-		if (m->rrcache_used[slot] != SlotUsed)
-			LogMsgNoIdent("Cache use mismatch: rrcache_used[slot] is %lu, true count %lu", m->rrcache_used[slot], SlotUsed);
-		}
-	if (m->rrcache_totalused != CacheUsed)
-		LogMsgNoIdent("Cache use mismatch: rrcache_totalused is %lu, true count %lu", m->rrcache_totalused, CacheUsed);
-	if (m->rrcache_active != CacheActive)
-		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", m->rrcache_active, CacheActive);
-	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
-
-	udsserver_info();
-
+	udsserver_info(m);
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
 }
 
