@@ -1,4 +1,7 @@
 # $Log: Makefile,v $
+# Revision 1.10  2003/06/18 05:47:41  cheshire
+# Enable stricter warnings on Jaguar and Panther builds
+#
 # Revision 1.9  2003/06/04 18:34:45  ksekar
 # Bug #: <rdar://problem/3218120>: mDNSPosix does not build on Panther that has socklen_t
 # Changed build targets "osx10.2" and "osx10.3" to "jaguar" and "panther".
@@ -34,13 +37,13 @@ ifeq ($(os),openbsd)
 CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_SOCKLEN_T -DHAVE_BROKEN_RECVDSTADDR
 else
 ifeq ($(os),jaguar)
-CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_IPV6 -Wall -no-cpp-precomp
+CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_IPV6 -W -Wall -no-cpp-precomp
 else
 ifeq ($(os),panther)
-CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_IPV6 -DHAVE_SOCKLEN_T -Wall -no-cpp-precomp
+CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_IPV6 -W -Wall -no-cpp-precomp -DHAVE_SOCKLEN_T
 else
 cantbuild:
-	echo "Error: Must specify target OS on command-line, e.g. \"make os=panther\" or \"make os=jaguar\" or \"make os=linux\""
+	@echo "Error: Must specify target OS on command-line, e.g. \"make os=panther\" or \"make os=jaguar\" or \"make os=linux\""
 endif
 endif
 endif
@@ -64,16 +67,16 @@ setup:
 	if test ! -d build   ; then mkdir build   ; fi
 
 Client: setup build/mDNSClientPosix
-	echo "Client done"
+	@echo "Client done"
 
 Responder: setup build/mDNSResponderPosix
-	echo "Responder done"
+	@echo "Responder done"
 
 ProxyResponder: setup build/mDNSProxyResponderPosix
-	echo "ProxyResponder done"
+	@echo "ProxyResponder done"
 
 NetMonitor: setup build/mDNSNetMonitor
-	echo "NetMonitor done"
+	@echo "NetMonitor done"
 
 build/mDNSClientPosix: $(COMMONOBJ) objects/mDNS.c.o objects/Client.c.o
 	$(CC) $+ -o $@
