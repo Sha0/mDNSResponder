@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.15  2004/02/10 03:02:46  cheshire
+Fix compiler warning
+
 Revision 1.14  2004/02/06 23:04:19  ksekar
 Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
@@ -109,7 +112,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, 
 
 typedef enum
 	{
-	zoneDataResult,
+	zoneDataResult
 	// other async. operation names go here
 	} AsyncOpResultType;
 
@@ -509,7 +512,7 @@ typedef enum
     {
     smContinue,  // continue immediately to next state 
     smBreak,     // break until next packet/timeout 
-	smError,     // terminal error - cleanup and abort
+	smError      // terminal error - cleanup and abort
     } smAction;
  
 typedef struct
