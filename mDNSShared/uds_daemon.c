@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.152  2005/01/13 17:16:38  ksekar
+Back out checkin 1.150 - correct fix is on clientstub side
+
 Revision 1.151  2005/01/11 21:06:29  ksekar
 Changed now-benign LogMsg to debugf
 
@@ -1497,7 +1500,8 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     // write reply data to message
     put_string(fullname, &data);
     put_string(target, &data);
-	put_short(res->port.NotAnInteger, &data);
+	*data++ = res->port.b[0];
+	*data++ = res->port.b[1];
     put_short(res->txtlen, &data);
     put_rdata(res->txtlen, res->txtdata, &data);
     
@@ -2093,7 +2097,9 @@ static void handle_regservice_request(request_state *request)
         get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
     	{ LogMsg("ERROR: handle_regservice_request - Couldn't read name/regtype/domain"); goto bad_param; }
         
-	service->port.NotAnInteger = get_short(&ptr);
+	service->port.b[0] = *ptr++;
+	service->port.b[1] = *ptr++;
+
     service->txtlen  = get_short(&ptr);
     service->txtdata = get_rdata(&ptr, service->txtlen);
 
