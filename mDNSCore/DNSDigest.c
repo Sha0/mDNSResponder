@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.9  2004/10/26 09:00:12  cheshire
+Save a few bytes by creating HMAC_MD5_AlgName as a C string instead of a 256-byte object
+
 Revision 1.8  2004/09/17 01:08:48  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -1306,11 +1309,8 @@ mDNSexport mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 #define HMAC_OPAD   0x5c
 #define MD5_LEN     16
 
-static domainname HMAC_MD5_AlgName = { { '\010', 'h', 'm', 'a', 'c', '-', 'm', 'd', '5',
-										 '\007', 's', 'i', 'g', '-', 'a', 'l', 'g',
-										 '\003', 'r', 'e', 'g',
-										 '\003', 'i', 'n', 't',
-										 '\0' } };
+#define HMAC_MD5_AlgName (*(const domainname*) "\010" "hmac-md5" "\007" "sig-alg" "\003" "reg" "\003" "int")
+
 // Adapted from Appendix, RFC 2104
 mDNSexport void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32 len)		
 	{
