@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.295  2003/08/28 01:10:59  cheshire
+<rdar://problem/3396034> Add syslog message to report when query is reset because of immediate answer burst
+
 Revision 1.294  2003/08/27 02:30:22  cheshire
 <rdar://problem/3395909> Traffic Reduction: Inefficiencies in DNSServiceResolverResolve()
 One more change: "query->GotTXT" is now a straightforward bi-state boolean again
@@ -3993,7 +3996,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			if (ActiveQuestion(q) && ++q->RecentAnswers >= 10 &&
 				q->ThisQInterval > InitialQuestionInterval*16 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 				{
-				debugf("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
+				LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 					q->qname.c, DNSTypeName(q->qtype));
 				q->LastQTime     = m->timenow - InitialQuestionInterval + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*4);
 				q->ThisQInterval = InitialQuestionInterval;
