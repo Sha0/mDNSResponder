@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.65  2004/08/13 23:12:32  cheshire
+Don't use strcpy() and strlen() on "struct domainname" objects;
+use AssignDomainName() and DomainNameLength() instead
+(A "struct domainname" is a collection of packed pascal strings, not a C string.)
+
 Revision 1.64  2004/08/13 23:01:05  cheshire
 Use platform-independent mDNSNULL instead of NULL
 
@@ -249,13 +254,10 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	#pragma warning(disable:4706)
 #endif
 
-#define ustrcpy(d,s)       mDNSPlatformStrCopy(s,d)       // use strcpy(2) param ordering
-#define ustrlen(s)         mDNSPlatformStrLen(s)
 #define umalloc(x)         mDNSPlatformMemAllocate(x)       // short hands for common routines
 #define ufree(x)           mDNSPlatformMemFree(x)
 #define ubzero(x,y)        mDNSPlatformMemZero(x,y)
 #define umemcpy(x, y, l)   mDNSPlatformMemCopy(y, x, l)  // uses memcpy(2) arg ordering
-
 
 // Asyncronous operation types
 
@@ -449,8 +451,8 @@ mDNSexport mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *
 	info = (uDNS_AuthInfo*)umalloc(sizeof(uDNS_AuthInfo) + ssLen);
 	if (!info) { LogMsg("ERROR: umalloc"); return mStatus_NoMemoryErr; }
    	ubzero(info, sizeof(uDNS_AuthInfo));
-	ustrcpy(info->zone.c, zone->c);
-	ustrcpy(info->keyname.c, key->c);
+	AssignDomainName(info->zone, *zone);
+	AssignDomainName(info->keyname, *key);
 
 	if (base64)
 		{
@@ -491,11 +493,11 @@ mDNSlocal uDNS_AuthInfo *GetAuthInfoForZone(const uDNS_GlobalInfo *u, const doma
 	domainname *z;
 	mDNSu32 zoneLen, ptrZoneLen;
 
-	zoneLen = ustrlen(zone->c);
+	zoneLen = DomainNameLength(zone);
 	for (ptr = u->AuthInfoList; ptr; ptr = ptr->next)
 		{
 		z = &ptr->zone;
-		ptrZoneLen = ustrlen(z->c);
+		ptrZoneLen = DomainNameLength(z);
 		if (zoneLen < ptrZoneLen) continue;
 		// return info if zone ends in info->zone
 		if (mDNSPlatformMemSame(z->c, zone->c + (zoneLen - ptrZoneLen), ptrZoneLen)) return ptr;
@@ -855,10 +857,10 @@ mDNSexport void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set
 	set->uDNS_info = umalloc(sizeof(uDNS_NetworkInterfaceInfo));
 	if (!set->uDNS_info) { LogMsg("ERROR: Malloc"); return; }
 	a = &set->uDNS_info->RR_A;
-	ustrcpy(set->uDNS_info->name.c, m->uDNS_info.hostname.c);
+	AssignDomainName(set->uDNS_info->name, m->uDNS_info.hostname);
 	mDNS_SetupResourceRecord(a, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeShared, hostnameCallback, set->uDNS_info); 
 
-	ustrcpy(a->resrec.name.c, m->uDNS_info.hostname.c);
+	AssignDomainName(a->resrec.name, m->uDNS_info.hostname);
 	a->resrec.rdata->u.ip = set->ip.ip.v4;
 	
 	if (IsPrivateAddr(set->ip.ip.v4)) 
@@ -2258,7 +2260,7 @@ mDNSlocal mStatus startGetZoneData(domainname *name, mDNS *m, mDNSBool findUpdat
     ntaContext *context = (ntaContext*)umalloc(sizeof(ntaContext));
     if (!context) { LogMsg("ERROR: startGetZoneData - umalloc failed");  return mStatus_NoMemoryErr; }
 	ubzero(context, sizeof(ntaContext));
-    ustrcpy(context->origName.c, name->c);
+    AssignDomainName(context->origName, *name);
     context->state = init;
     context->m = m;
 	context->callback = callback;
@@ -2335,7 +2337,7 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 	result.type = zoneDataResult;
 	result.zoneData.primaryAddr.ip.v4.NotAnInteger = context->addr.NotAnInteger;
 	result.zoneData.primaryAddr.type = mDNSAddrType_IPv4;
-	ustrcpy(result.zoneData.zoneName.c, context->zone.c);
+	AssignDomainName(result.zoneData.zoneName, context->zone);
 	result.zoneData.zoneClass = context->zoneClass;
 	result.zoneData.llqPort    = context->findLLQPort    ? context->llqPort    : zeroIPPort;
 	result.zoneData.updatePort = context->findUpdatePort ? context->updatePort : zeroIPPort;
@@ -2405,7 +2407,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     else                         context->curSOA = (domainname *)(context->curSOA->c + context->curSOA->c[0]+1);
     
     context->state = lookupSOA;
-    ustrcpy(query->qname.c, context->curSOA->c);
+    AssignDomainName(query->qname, *context->curSOA);
     query->qtype = kDNSType_SOA;
     query->qclass = kDNSClass_IN;
     err = startInternalQuery(query, context->m, getZoneData, context);
@@ -2417,9 +2419,9 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 
 mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr)
 	{
-	ustrcpy(context->zone.c, rr->name.c);
+	AssignDomainName(context->zone, rr->name);
 	context->zoneClass = rr->rrclass;
-	ustrcpy(context->ns.c, rr->rdata->u.soa.mname.c);
+	AssignDomainName(context->ns, rr->rdata->u.soa.mname);
 	context->state = foundZone;
 	}
 
@@ -2436,7 +2438,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 	if (context->state == foundZone)
 		{
 		// we've just learned the zone.  confirm that an NS record exists
-		ustrcpy(query->qname.c, context->zone.c);
+		AssignDomainName(query->qname, context->zone);
 		query->qtype = kDNSType_NS;
 		query->qclass = kDNSClass_IN;
 		err = startInternalQuery(query, context->m, getZoneData, context);
@@ -2470,7 +2472,7 @@ mDNSlocal smAction queryNSAddr(ntaContext *context)
 	mStatus err;
 	DNSQuestion *query = &context->question;
 	
-	ustrcpy(query->qname.c, context->ns.c);
+	AssignDomainName(query->qname, context->ns);
 	query->qtype = kDNSType_A;
 	query->qclass = kDNSClass_IN;
 	err = startInternalQuery(query, context->m, getZoneData, context);
@@ -2572,7 +2574,7 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 	context->state = lookupPort;
 	q = &context->question;
 	MakeDomainNameFromDNSNameString(&q->qname, portName);
-	ustrcpy((q->qname.c + ustrlen(q->qname.c)), context->zone.c);
+	AppendDomainName(&q->qname, &context->zone);
     q->qtype = kDNSType_SRV;
     q->qclass = kDNSClass_IN;
     err = startInternalQuery(q, context->m, getZoneData, context);
@@ -2811,7 +2813,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 		}	
 	
 	// cache zone data
-	ustrcpy(newRR->uDNS_info.zone.c, zoneData->zoneName.c);
+	AssignDomainName(newRR->uDNS_info.zone, zoneData->zoneName);
     newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
 	newRR->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
 	newRR->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
@@ -2978,7 +2980,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		goto error;
 		}
 	// cache zone data
-	ustrcpy(srs->uDNS_info.zone.c, zoneData->zoneName.c);
+	AssignDomainName(srs->uDNS_info.zone, zoneData->zoneName);
     srs->uDNS_info.ns.type = mDNSAddrType_IPv4;
 	srs->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
 	srs->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
