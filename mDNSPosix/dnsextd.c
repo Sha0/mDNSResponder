@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.19  2004/12/01 01:16:29  cheshire
+Solaris compatibility fixes
+
 Revision 1.18  2004/11/30 23:51:06  cheshire
 Remove double semicolons
 
@@ -108,6 +111,11 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #include <sys/time.h>
 #include <time.h>
 #include <errno.h>
+
+// Compatibility workaround
+#ifndef AF_LOCAL
+#define AF_LOCAL AF_UNIX
+#endif
 
 //
 // Constants
@@ -290,11 +298,7 @@ mDNSlocal void Log(const char *format, ...)
 mDNSlocal void LogErr(const char *fn, const char *operation)
 	{
 	char buf[512];
-	char errbuf[256];
-
-	if (strerror_r(errno, errbuf, 256))
-		sprintf(buf, "errno %d", errno);  // strerror failed - just print number
-	snprintf(buf, 512, "%s: %s - %s", fn, operation, errbuf);
+	snprintf(buf, sizeof(buf), "%s: %s - %s", fn, operation, strerror(errno));
 	PrintLog(buf);
 	}
 
