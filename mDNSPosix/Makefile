@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.42  2004/08/24 22:04:37  cheshire
+# Need to specify -lpthread for building dnsextd
+#
 # Revision 1.41  2004/08/11 00:43:26  ksekar
 # <rdar://problem/3722542>: DNS Extension daemon for DNS Update Lease
 #
@@ -167,7 +170,7 @@ RM = rm
 LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\"
 LIBFLAGS =
-DNSEXT_FLAGS = -D_REENTRANT -g -Wall
+DNSEXT_FLAGS = -D_REENTRANT -g -Wall -lpthread
 LDSUFFIX = so
 JAVACFLAGS_OS = -fPIC -shared -lmdns
 
