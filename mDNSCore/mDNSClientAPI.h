@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.142  2004/01/28 02:30:07  ksekar
+Added default Search Domains to unicast browsing, controlled via
+Networking sharing prefs pane.  Stopped sending unicast messages on
+every interface.  Fixed unicast resolving via mach-port API.
+
 Revision 1.141  2004/01/27 20:15:22  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -1113,7 +1118,7 @@ typedef struct
     // DNS messages sent over a TCP socket
     mDNSu16    NextMessageID;
     mDNSu16    NextInternalMessageID;
-    mDNSAddr      Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
+    mDNSAddr   Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
     } uDNS_data_t;  
 
 struct mDNS_struct

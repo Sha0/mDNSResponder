@@ -36,6 +36,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.149  2004/01/28 02:30:08  ksekar
+Added default Search Domains to unicast browsing, controlled via
+Networking sharing prefs pane.  Stopped sending unicast messages on
+every interface.  Fixed unicast resolving via mach-port API.
+
 Revision 1.148  2004/01/25 00:03:20  cheshire
 Change to use mDNSVal16() instead of private PORT_AS_NUM() macro
 
@@ -319,11 +324,18 @@ struct DNSServiceBrowserResult_struct
 	};
 
 typedef struct DNSServiceBrowser_struct DNSServiceBrowser;
+
+typedef struct DNSServiceBrowserQuestion
+	{
+    struct DNSServiceBrowserQuestion *next;
+    DNSQuestion q;
+	} DNSServiceBrowserQuestion;
+
 struct DNSServiceBrowser_struct
 	{
 	DNSServiceBrowser *next;
 	mach_port_t ClientMachPort;
-	DNSQuestion q;
+    DNSServiceBrowserQuestion *qlist;
 	DNSServiceBrowserResult *results;
 	mDNSs32 lastsuccess;
 	};
@@ -499,12 +511,19 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 	while (*b && (*b)->ClientMachPort != ClientMachPort) b = &(*b)->next;
 	if (*b)
 		{
-		DNSServiceBrowser *x = *b;
+		DNSServiceBrowser *x = *b;		
+		DNSServiceBrowserQuestion *freePtr, *qptr = x->qlist;
 		*b = (*b)->next;
-		if (m && m != x)
-			LogMsg("%5d: DNSServiceBrowser(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->q.qname.c, m, x);
-		else LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, x->q.qname.c);
-		mDNS_StopBrowse(&mDNSStorage, &x->q);
+		while (qptr)
+			{
+			if (m && m != x)
+				LogMsg("%5d: DNSServiceBrowser(%##s) STOP; WARNING m %p != x %p", ClientMachPort, qptr->q.qname.c, m, x);
+			else LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, qptr->q.qname.c);
+			mDNS_StopBrowse(&mDNSStorage, &qptr->q);
+			freePtr = qptr;
+			qptr = qptr->next;			
+			freeL("DNSServiceBrowserQuestion", freePtr);
+			}
 		while (x->results)
 			{
 			DNSServiceBrowserResult *r = x->results;
@@ -557,12 +576,18 @@ mDNSlocal void AbortClientWithLogMessage(mach_port_t c, char *reason, char *msg,
 	DNSServiceBrowser           *b = DNSServiceBrowserList;
 	DNSServiceResolver          *l = DNSServiceResolverList;
 	DNSServiceRegistration      *r = DNSServiceRegistrationList;
+	DNSServiceBrowserQuestion   *qptr;
+
 	while (e && e->ClientMachPort != c) e = e->next;
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
 	if      (e) LogMsg("%5d: DomainEnumeration(%##s) %s%s",                   c, e->dom.qname.c,            reason, msg);
-	else if (b) LogMsg("%5d: Browser(%##s) %s%s",                             c, b->q.qname.c,              reason, msg);
+	else if (b)
+		{
+		for (qptr = b->qlist; qptr; qptr = qptr->next)
+			LogMsg("%5d: Browser(%##s) %s%s",                             c, qptr->q.qname.c,              reason, msg);
+		}
 	else if (l) LogMsg("%5d: Resolver(%##s) %s%s",                            c, l->i.name.c,               reason, msg);
 	else if (r) LogMsg("%5d: Registration(%##s) %s%s",                        c, r->s.RR_SRV.resrec.name.c, reason, msg);
 	else        LogMsg("%5d: (%s) %s, but no record of client can be found!", c,                            reason, msg);
@@ -576,12 +601,18 @@ mDNSlocal mDNSBool CheckForExistingClient(mach_port_t c)
 	DNSServiceBrowser           *b = DNSServiceBrowserList;
 	DNSServiceResolver          *l = DNSServiceResolverList;
 	DNSServiceRegistration      *r = DNSServiceRegistrationList;
+	DNSServiceBrowserQuestion   *qptr;
+	
 	while (e && e->ClientMachPort != c) e = e->next;
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
 	if (e) LogMsg("%5d: DomainEnumeration(%##s) already exists!", c, e->dom.qname.c);
-	if (b) LogMsg("%5d: Browser(%##s) already exists!",           c, b->q.qname.c);
+	if (b)
+		{
+		for (qptr = b->qlist; qptr; qptr = qptr->next)
+			LogMsg("%5d: Browser(%##s) already exists!",          c, qptr->q.qname.c);
+		}
 	if (l) LogMsg("%5d: Resolver(%##s) already exists!",          c, l->i.name.c);
 	if (r) LogMsg("%5d: Registration(%##s) already exists!",      c, r->s.RR_SRV.resrec.name.c);
 	return(e || b || l || r);
@@ -737,38 +768,66 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	(void)unusedserver;		// Unused
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
+	SearchDomainList *SearchDomains = NULL, *sdPtr;
+	DNSServiceBrowserQuestion *qptr;
+	
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
 
 	// Check other parameters
 	domainname t, d;
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Illegal regtype"; goto badparam; }
-	if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) { errormsg = "Illegal domain";  goto badparam; }
 
 	// Allocate memory, and handle failure
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
 	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
-
+	
 	// Set up object, and link into list
 	x->ClientMachPort = client;
 	x->results = NULL;
 	x->lastsuccess = 0;
+	x->qlist = NULL;	
 	x->next = DNSServiceBrowserList;
 	DNSServiceBrowserList = x;
 
-	// Do the operation
-	LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", client, t.c, d.c);
-	err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, mDNSInterface_Any, FoundInstance, x);
-	if (err) { AbortClient(client, x); errormsg = "mDNS_StartBrowse"; goto fail; }
-
+	if (domain[0])
+		{
+		// Start browser for an explicit domain
+		x->qlist = mallocL("DNSServiceBrowserQuestion", sizeof(DNSServiceBrowserQuestion));
+		x->qlist->next = NULL;
+		if (!x->qlist)  { err = mStatus_UnknownErr; AbortClient(client, x); errormsg = "malloc"; goto fail; }
+		
+		if (!MakeDomainNameFromDNSNameString(&d, domain)) { errormsg = "Illegal domain";  goto badparam; }
+		LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", client, t.c, d.c);
+		err = mDNS_StartBrowse(&mDNSStorage, &x->qlist->q, &t, &d, mDNSInterface_Any, FoundInstance, x);
+		if (err) { AbortClient(client, x); errormsg = "mDNS_StartBrowse"; goto fail; }
+		}
+	else
+		{
+		// Start browser on all domains
+		SearchDomains = GetSearchDomainList();
+		if (!SearchDomains) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
+		for (sdPtr = SearchDomains; sdPtr; sdPtr = sdPtr->next)
+			{
+			qptr = mallocL("DNSServiceBrowserQuestion", sizeof(DNSServiceBrowserQuestion));
+			if (!qptr)  { err = mStatus_UnknownErr; AbortClient(client, x); errormsg = "malloc"; goto fail; }
+			qptr->next = x->qlist;
+			x->qlist = qptr;
+			LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", client, t.c, sdPtr->SearchDomain.c);
+			err = mDNS_StartBrowse(&mDNSStorage, &qptr->q, &t, &sdPtr->SearchDomain, mDNSInterface_Any, FoundInstance, x);
+			if (err) { AbortClient(client, x); errormsg = "mDNS_StartBrowse"; goto fail; }			
+			}
+		FreeSearchDomainList(SearchDomains);
+		}
 	// Succeeded: Wrap up and return
 	EnableDeathNotificationForClient(client, x);
 	return(mStatus_NoError);
-
-badparam:
+	
+	badparam:
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
+	if (SearchDomains) FreeSearchDomainList(SearchDomains);
 	return(err);
 	}
 
@@ -1521,8 +1580,11 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 		LogMsgNoIdent("%5d: DomainEnumeration   %##s", e->ClientMachPort, e->dom.qname.c);
 
 	for (b = DNSServiceBrowserList; b; b=b->next)
-		LogMsgNoIdent("%5d: ServiceBrowse       %##s", b->ClientMachPort, b->q.qname.c);
-
+		{
+		DNSServiceBrowserQuestion *qptr;
+		for (qptr = b->qlist; qptr; qptr = qptr->next)
+			LogMsgNoIdent("%5d: ServiceBrowse       %##s", b->ClientMachPort, qptr->q.qname.c);
+		}
 	for (l = DNSServiceResolverList; l; l=l->next)
 		LogMsgNoIdent("%5d: ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
 

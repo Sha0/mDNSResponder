@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.352  2004/01/28 02:30:07  ksekar
+Added default Search Domains to unicast browsing, controlled via
+Networking sharing prefs pane.  Stopped sending unicast messages on
+every interface.  Fixed unicast resolving via mach-port API.
+
 Revision 1.351  2004/01/27 20:15:22  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -4966,10 +4971,14 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *query)
 	{
 	mDNS_Lock(m);
-	if (query->qSRV.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &query->qSRV);
-	if (query->qTXT.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &query->qTXT);
-	if (query->qAv4.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &query->qAv4);
-	if (query->qAv6.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &query->qAv6);
+	if (query->qSRV.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qSRV, &m->uDNS_data))
+		mDNS_StopQuery_internal(m, &query->qSRV);
+	if (query->qTXT.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qTXT, &m->uDNS_data))
+		mDNS_StopQuery_internal(m, &query->qTXT);
+	if (query->qAv4.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv4, &m->uDNS_data))
+		mDNS_StopQuery_internal(m, &query->qAv4);
+	if (query->qAv6.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv6, &m->uDNS_data))
+		mDNS_StopQuery_internal(m, &query->qAv6);
 	mDNS_Unlock(m);
 	}
 

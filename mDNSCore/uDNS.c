@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.8  2004/01/28 02:30:07  ksekar
+Added default Search Domains to unicast browsing, controlled via
+Networking sharing prefs pane.  Stopped sending unicast messages on
+every interface.  Fixed unicast resolving via mach-port API.
+
 Revision 1.7  2004/01/27 20:15:22  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -135,6 +140,8 @@ mDNSexport void mDNS_DeregisterDNSList(mDNS *const m)
     {
     ubzero(m->uDNS_data.Servers, 32 * sizeof(mDNSAddr));
     }
+
+
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -324,8 +331,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     uDNS_data_t *u = &m->uDNS_data;
     DNSMessage msg;
     mDNSu8 *endPtr;
-    NetworkInterfaceInfo *ifi;
-    mStatus err = mStatus_NoError, rv;
+    mStatus err = mStatus_NoError;
     mDNSu16 idval;
 
     //!!!KRS we should check if the question is already in our acivequestion list
@@ -365,20 +371,9 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
         u->ActiveQueries = question;
         }
 
-	if (question->InterfaceID)
-        {
-		err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
-		if (err) LogMsg("ERROR: mDNSSendDNSMessage - %d", err);
-		}
-	else
-		{
-		for (ifi = m->HostInterfaces; ifi; ifi = ifi->next)
-            {
-            if (!ifi->InterfaceActive || !ifi->IPv4Available) continue;
-			rv = mDNSSendDNSMessage(m, &msg, endPtr, ifi->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
-			if (rv)  { LogMsg("ERROR: mDNSSendDNSMessage - %d", rv);  err = rv; }
-    	    }
-        }
+	err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
+	if (err) LogMsg("ERROR: mDNSSendDNSMessage - %d", err);
+	
 	return err;
 	}
 
@@ -386,6 +381,8 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
     {
     return startQuery(m, question, 0);
     }
+
+
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK

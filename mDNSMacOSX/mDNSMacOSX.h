@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.30  2004/01/28 02:30:08  ksekar
+Added default Search Domains to unicast browsing, controlled via
+Networking sharing prefs pane.  Stopped sending unicast messages on
+every interface.  Fixed unicast resolving via mach-port API.
+
 Revision 1.29  2004/01/27 22:57:48  cheshire
 <rdar://problem/3534352>: Need separate socket for issuing unicast queries
 
@@ -136,6 +141,8 @@ Defines mDNS_PlatformSupport_struct for OS X
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include "mDNSClientAPI.h"  // for domain name structure
+	
 
 typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;
 
@@ -176,6 +183,17 @@ extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
 
+typedef struct SearchDomainList
+	{
+    domainname SearchDomain;
+    struct SearchDomainList *next;
+    } SearchDomainList;
+	
+extern SearchDomainList *GetSearchDomainList(void);
+extern void FreeSearchDomainList(SearchDomainList *list);
+
+
+	
 #ifdef  __cplusplus
     }
 #endif
