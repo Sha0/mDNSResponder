@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.20  2005/01/25 08:12:52  shersche
+<rdar://problem/3947417> Enable Unicast and add Dynamic DNS support.
+Bug #: 3947417
+
 Revision 1.19  2004/12/15 07:34:45  shersche
 Add platform support for IPv4 and IPv6 unicast sockets
 
@@ -109,6 +113,7 @@ Multicast DNS platform plugin for Win32
 #endif
 
 #include	"mDNSEmbeddedAPI.h"
+#include	"dDNS.h"
 
 #ifdef	__cplusplus
 	extern "C" {
@@ -179,10 +184,12 @@ struct	mDNS_PlatformSupport_struct
 	HANDLE						cancelEvent;
 	HANDLE						quitEvent;
 	HANDLE						interfaceListChangedEvent;
-	HANDLE						regEvent;
+	HANDLE						descChangedEvent;	// Computer description changed event
+	HANDLE						ddnsChangedEvent;	// DynDNS config changed
 	HANDLE						wakeupEvent;
 	HANDLE						initEvent;
-	HKEY						regKey;
+	HKEY						descKey;
+	HKEY						ddnsKey;
 	mStatus						initStatus;
 	SocketRef					interfaceListChangedSocket;
 	int							interfaceCount;
@@ -194,8 +201,16 @@ struct	mDNS_PlatformSupport_struct
 	HostDescriptionChangedCallback	hostDescriptionChangedCallback;
 	SocketRef						unicastSock4;
 	HANDLE							unicastSock4ReadEvent;
+	mDNSAddr						unicastSock4DestAddr;
+#if( !defined( _WIN32_WCE ) )
+	LPFN_WSARECVMSG					unicastSock4RecvMsgPtr;
+#endif
 	SocketRef						unicastSock6;
 	HANDLE							unicastSock6ReadEvent;
+	mDNSAddr						unicastSock6DestAddr;
+#if( !defined( _WIN32_WCE ) )
+	LPFN_WSARECVMSG					unicastSock6RecvMsgPtr;
+#endif
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -247,6 +262,20 @@ int	getifaddrs( struct ifaddrs **outAddrs );
 */
 
 void	freeifaddrs( struct ifaddrs *inAddrs );
+
+
+//---------------------------------------------------------------------------------------------------------------------------
+//	Registry Constants
+//---------------------------------------------------------------------------------------------------------------------------
+
+#define	kServiceName							"Apple mDNSResponder"
+#define kServiceDynDNSBrowseDomains				"BrowseDomains"
+#define kServiceDynDNSHostNames					"HostNames"
+#define kServiceDynDNSRegistrationDomains		"RegistrationDomains"
+#define kServiceDynDNSDomains					"Domains"	// value is comma separated list of domains
+#define kServiceDynDNSEnabled					"Enabled"
+#define kServiceDynDNSStatus					"Status"
+
 
 #ifdef	__cplusplus
 	}
