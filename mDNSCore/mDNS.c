@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.202  2003/07/04 02:23:20  cheshire
+<rdar://problem/3311955> Responder too aggressive at flushing stale data
+Changed mDNSResponder to require four unanswered queries before purging a record, instead of two.
+
 Revision 1.201  2003/07/04 01:09:41  cheshire
 <rdar://problem/3315775> Need to implement subtype queries
 Modified ConstructServiceName() to allow three-part service types
@@ -1625,6 +1629,8 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 #define TimeToAnnounceThisRecord(RR,time) ((RR)->RRInterfaceActive && (RR)->AnnounceCount && (time) - ((RR)->LastAPTime + (RR)->ThisAPInterval) >= 0)
 #define TimeToSendThisRecord(RR,time) ((TimeToAnnounceThisRecord(RR,time) || (RR)->ImmedAnswer) && ResourceRecordIsValidAnswer(RR))
 
+#define MaxUnansweredQueries 4
+
 mDNSlocal mDNSBool SameRData(const mDNSu16 r1type, const mDNSu16 r2type, const RData *const r1, const RData *const r2)
 	{
 	if (r1type != r2type) return mDNSfalse;
@@ -2968,11 +2974,12 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 	mDNSs32 ttl = (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
 	rr->NextRequiredQuery = rr->TimeRcvd + ttl;
 
-	// If we have an active question, then see if we want to schedule an 80% or 90% query for this record
-	if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
+	// If we have an active question, then see if we want to schedule a refresher query for this record.
+	// Usually we expect to do four queries, at 80-84%, 85-89%, 90-94% and then 95-99% of the TTL.
+	if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 		{
-		rr->NextRequiredQuery -= ttl/10 * (2 - rr->UnansweredQueries);
-		rr->NextRequiredQuery += mDNSRandom(ttl/20);
+		rr->NextRequiredQuery -= ttl/20 * (MaxUnansweredQueries - rr->UnansweredQueries);
+		rr->NextRequiredQuery += mDNSRandom(ttl/25);
 		verbosedebugf("SetNextCacheCheckTime: %##s (%s) NextRequiredQuery in %ld sec",
 			rr->name.c, DNSTypeName(rr->rrtype), (rr->NextRequiredQuery - m->timenow) / mDNSPlatformOneSecond);
 		}
@@ -3519,11 +3526,11 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 				}
 			else							// else, not expired; see if we need to query
 				{
-				if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
+				if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 					{
-					if (m->timenow - rr->NextRequiredQuery < 0)
-						event = rr->NextRequiredQuery;
-					else
+					if (m->timenow - rr->NextRequiredQuery < 0)		// If not yet time for next query
+						event = rr->NextRequiredQuery;				// then just record when we want the next query
+					else											// else trigger our question to go out now
 						{
 						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
 						rr->CRActiveQuestion->DupSuppress[0].InterfaceID = mDNSNULL;
@@ -3627,9 +3634,9 @@ mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, ResourceRecord *rr)
 	// a positive answer using an expired record (e.g. from an interface that has gone away).
 	// We don't want to clear CRActiveQuestion here, because that would leave the record subject to
 	// summary deletion without giving the proper callback to any questions that are monitoring it.
-	// By setting UnansweredQueries to 2 we ensure it won't trigger any further expiration queries.
+	// By setting UnansweredQueries to MaxUnansweredQueries we ensure it won't trigger any further expiration queries.
 	rr->TimeRcvd          = m->timenow - mDNSPlatformOneSecond * 60;
-	rr->UnansweredQueries = 2;
+	rr->UnansweredQueries = MaxUnansweredQueries;
 	rr->rroriginalttl     = 0;
 	SetNextCacheCheckTime(m, rr);
 	}
@@ -4535,16 +4542,16 @@ exit:
 				{
 				rr->UnansweredQueries++;
 				rr->LastUnansweredTime = m->timenow;
-				verbosedebugf("ProcessQuery: UAQ %lu MPQ %lu MPKA %lu %s",
+				debugf("ProcessQuery: (!TC) UAQ %lu MPQ %lu MPKA %lu %s",
 					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
 				SetNextCacheCheckTime(m, rr);
 				}
 
 		// If we've seen two definite queries for this record,
 		// then mark it to expire in five seconds if we don't get a reply by then.
-		if (rr->UnansweredQueries >= 2 )
+		if (rr->UnansweredQueries >= MaxUnansweredQueries)
 			{
-			debugf("ProcessQuery: UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
+			debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
 				rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
 			mDNS_Reconfirm_internal(m, rr, 0);
 			}
@@ -4556,17 +4563,18 @@ exit:
 			// We want to do this conservatively.
 			// If there are so many machines on the network that they have to use multi-packet known-answer lists,
 			// then we don't want them to all hit the network simultaneously with their final expiration queries.
-			// By setting the record to expire in five minutes, we achieve two things:
+			// By setting the record to expire in four minutes, we achieve two things:
 			// (a) the 90-95% final expiration queries will be less bunched together
 			// (b) we allow some time for us to witness enough other failed queries that we don't have to do our own
 			mDNSs32 remain = (rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond - m->timenow) / 4;
-			if (remain > 300 * mDNSPlatformOneSecond)
-				remain = 300 * mDNSPlatformOneSecond;
+			if (remain > 240 * mDNSPlatformOneSecond)
+				remain = 240 * mDNSPlatformOneSecond;
 			
-			debugf("ProcessQuery: UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
+			debugf("ProcessQuery: (MPQ) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
 				rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
 
-			rr->UnansweredQueries++;		// Treat this as equivalent to one definite unanswered query
+			if (remain <= 60 * mDNSPlatformOneSecond)
+				rr->UnansweredQueries++;	// Treat this as equivalent to one definite unanswered query
 			rr->MPUnansweredQ  = 0;			// Clear MPQ/MPKA statistics
 			rr->MPUnansweredKA = 0;
 			rr->MPExpectingKA  = mDNSfalse;
@@ -4769,11 +4777,11 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						{
 						// If the packet TTL is zero, that means we're deleting this record.
 						// To give other hosts on the network a chance to protest, we push the deletion
-						// out one second into the future. Also, we set UnansweredQueries to 2.
+						// out one second into the future. Also, we set UnansweredQueries to MaxUnansweredQueries.
 						// Otherwise, we'll do final queries for this record at 80% and 90% of its apparent
 						// lifetime (800ms and 900ms from now) which is a pointless waste of network bandwidth.
 						rr->rroriginalttl = 1;
-						rr->UnansweredQueries = 2;
+						rr->UnansweredQueries = MaxUnansweredQueries;
 						}
 					SetNextCacheCheckTime(m, rr);
 					break;
