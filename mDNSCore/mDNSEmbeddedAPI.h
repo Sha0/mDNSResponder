@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.268  2004/12/22 22:25:47  ksekar
+<rdar://problem/3734265> NAT-PMP: handle location changes
+
 Revision 1.267  2004/12/22 00:13:49  ksekar
 <rdar://problem/3873993> Change version, port, and polling interval for LLQ
 
@@ -1418,7 +1421,8 @@ typedef enum
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
 	regState_UpdatePending     = 11,    // update in flight as result of mDNS_Update call
 	regState_NoTarget          = 12,    // service registration pending registration of hostname (ServiceRegistrations only)
-    regState_ExtraQueued       = 13     // extra record to be registered upon completion of service registration (RecordRegistrations only)
+    regState_ExtraQueued       = 13,    // extra record to be registered upon completion of service registration (RecordRegistrations only)
+	regState_NATError          = 14     // unable to complete NAT traversal
 	} regState_t; 
 
 // context for both ServiceRecordSet and individual AuthRec structs
@@ -1440,12 +1444,12 @@ typedef struct
 	
 	// NAT traversal context
 	NATTraversalInfo *NATinfo; // may be NULL
-	
+
 	// state for deferred operations
     mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
 	mStatus      DeferredStatus;          // status to deliver when above flag is set
     mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
-    mDNSBool     LostTarget;              // temporarily deregistered service because its target was deregistered
+    mDNSBool     SRVChanged;              // temporarily deregistered service because its SRV target or port changed
 
     // uDNS_UpdateRecord support fields
 	mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
@@ -1915,7 +1919,8 @@ struct NATTraversalInfo_struct
 	NATOp_t op;
 	NATResponseHndlr ReceiveResponse;
 	union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
-	mDNSIPPort PublicPort;
+    mDNSAddr Router;
+    mDNSIPPort PublicPort;
     union { NATAddrRequest AddrReq; NATPortMapRequest PortReq; } request;
 	mDNSs32 retry;                   // absolute time when we retry
 	mDNSs32 RetryInterval;           // delta between time sent and retry

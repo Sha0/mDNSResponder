@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.167  2004/12/22 22:25:47  ksekar
+<rdar://problem/3734265> NAT-PMP: handle location changes
+
 Revision 1.166  2004/12/22 00:04:12  ksekar
 <rdar://problem/3930324> mDNSResponder crashing in ReceivePortMapReply
 
@@ -629,7 +632,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs);
 mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs);
 mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const AsyncOpResult *result);
 mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info);
-mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs);
 mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);
 mDNSlocal void RestartQueries(mDNS *m);
 mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer);
@@ -894,17 +896,6 @@ exit:
 #pragma mark - NAT Traversal
 #endif
 
-mDNSlocal mDNSBool MapServicePort(mDNS *m)
-	{
-	uDNS_HostnameInfo *i;
-
-	//!!!KRS this could be cached
-	for (i = m->uDNS_info.Hostnames; i; i= i->next)
-		if (i->ar->uDNS_info.NATinfo && i->ar->uDNS_info.NATinfo->state != NATState_Error) return mDNStrue;
-	
-	return mDNSfalse;
-	}
-
 mDNSlocal mDNSBool DomainContainsLabelString(const domainname *d, const char *str)
 	{
 	const domainlabel *l;
@@ -931,6 +922,7 @@ mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, NATResponseH
 	info->state = NATState_Init;
 	info->ReceiveResponse = callback;
 	info->PublicPort.NotAnInteger = 0;
+	info->Router = u->Router;
 	return info;
 	}
 
@@ -1242,15 +1234,20 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 		{
 		LogMsg("NAT Port Mapping: timeout");
 		n->state = NATState_Error;
-		if (srs) uDNS_DeregisterService(m, srs);
+		if (srs) srs->uDNS_info.state = regState_NATError;
 		else LLQNatMapComplete(m);
 		return;  // note - unsafe to touch srs here
 		}
 
 	LogMsg("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
 	if (!srs) { LLQNatMapComplete(m); return; }
-	srs->uDNS_info.state = regState_FetchingZoneData;
-	startGetZoneData(srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
+
+	if (srs->uDNS_info.ns.ip.v4.NotAnInteger) SendServiceRegistration(m, srs);  // non-zero server address means we already have necessary zone data to send update
+	else
+		{	
+		srs->uDNS_info.state = regState_FetchingZoneData;
+		startGetZoneData(srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
+		}
 	}
 
 mDNSlocal void FormatPortMaprequest(NATTraversalInfo *info, mDNSIPPort port)
@@ -1287,6 +1284,7 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	else if (DomainContainsLabelString(srs->RR_PTR.resrec.name, "_udp")) op = NATOp_MapUDP;
 	else { LogMsg("StartNATPortMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name->c); goto error; }
 
+	if (srs->uDNS_info.NATinfo) { LogMsg("Error: StartNATPortMap - NAT info already initialized!");  FreeNATInfo(m, srs->uDNS_info.NATinfo); }
 	info = AllocNATInfo(m, op, ReceivePortMapReply);
 	srs->uDNS_info.NATinfo = info;
 	info->reg.ServiceRegistration = srs;
@@ -1382,11 +1380,38 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	ExtraResourceRecord *e;
+
+	// Target change if:
+	// We have a target and were previously waiting for one, or
+	// We had a target and no longer do, or
+	// The target has changed
+
 	domainname newtarget;
 	domainname *curtarget = &srs->RR_SRV.resrec.rdata->u.srv.target;
-	mDNSBool havetarget = GetServiceTarget(u, &srs->RR_SRV, &newtarget);
+	mDNSBool HaveTarget = GetServiceTarget(u, &srs->RR_SRV, &newtarget);
+	mDNSBool TargetChanged = (HaveTarget && srs->uDNS_info.state == regState_NoTarget) || (curtarget->c[0] && !HaveTarget) || !SameDomainName(curtarget, &newtarget);
+
+	// Nat state change if:
+	// We were behind a NAT, and now we are behind a new NAT, or
+	// We're not behind a NAT but our port was previously mapped to a different public port
+	// We were not behind a NAT and now we are
 	
-	if ((!havetarget && srs->uDNS_info.state == regState_NoTarget) || (havetarget && SameDomainName(curtarget, &newtarget))) return;  // target unchanged
+	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
+	mDNSIPPort port = srs->RR_SRV.resrec.rdata->u.srv.port;
+	mDNSBool NATChanged = mDNSfalse;
+	mDNSBool NowBehindNAT = port.NotAnInteger && IsPrivateV4Addr(&u->PrimaryIP);
+	mDNSBool WereBehindNAT = nat != mDNSNULL;
+	mDNSBool NATRouterChanged = nat && nat->Router.ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger;
+	mDNSBool PortWasMapped = nat && (nat->state == NATState_Established || nat->state == NATState_Legacy) && nat->PublicPort.NotAnInteger != port.NotAnInteger;
+	
+	if (WereBehindNAT && NowBehindNAT && NATRouterChanged) NATChanged = mDNStrue;
+	else if (!NowBehindNAT && PortWasMapped)               NATChanged = mDNStrue;
+	else if (!WereBehindNAT && NowBehindNAT)               NATChanged = mDNStrue;
+	
+	if (!TargetChanged && !NATChanged) return;
+
+	debugf("UpdateSRV (%##s) TargetChanged=%d, HaveTarget=%d, NowBehindNAT=%d, WereBehindNAT=%d, NATRouterChanged=%d, PortWasMapped=%d",
+		   srs->RR_SRV.resrec.name->c, TargetChanged, HaveTarget, NowBehindNAT, WereBehindNAT, NATRouterChanged, PortWasMapped); 
 	
 	switch(srs->uDNS_info.state)
 		{
@@ -1407,18 +1432,26 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 			// let the in-flight operation complete before updating
 			srs->uDNS_info.SRVUpdateDeferred = mDNStrue;
 			return;
-			
+						
+		case regState_NATError:
+			if (!NATChanged) return;
+			// if nat changed, register if we have a target (below)
+
 		case regState_NoTarget:
-			// Service has not been registered due to lack of a target hostname
-			if (havetarget) SendServiceRegistration(m, srs);
+			if (HaveTarget)
+				{
+				debugf("UpdateSRV: %s service %##s", NATChanged && NowBehindNAT ? "Starting Port Map for" : "Registering", srs->RR_SRV.resrec.name->c);	
+				if (nat && (NATChanged || !NowBehindNAT)) { srs->uDNS_info.NATinfo = mDNSNULL; FreeNATInfo(m, nat); }
+				if (NATChanged && NowBehindNAT) { srs->uDNS_info.state = regState_NATMap; StartNATPortMap(m, srs); }
+				else SendServiceRegistration(m, srs);
+				}		
 			return;
 			
 		case regState_Registered:
-			// target lost or changed.  deregister service.  upon completion, we'll look for a new target
-			// extra will be re-registed if the service is re-registered
-			for (e = srs->Extras; e; e = e->next) e->r.uDNS_info.state = regState_ExtraQueued;
-			
-			srs->uDNS_info.LostTarget = mDNStrue;
+			// target or nat changed.  deregister service.  upon completion, we'll look for a new target
+			debugf("UpdateSRV: SRV record changed for service %##s - deregistering (will re-register with new SRV)",  srs->RR_SRV.resrec.name->c);
+			for (e = srs->Extras; e; e = e->next) e->r.uDNS_info.state = regState_ExtraQueued;  // extra will be re-registed if the service is re-registered
+			srs->uDNS_info.SRVChanged = mDNStrue;
 			SendServiceDeregistration(m, srs);
 			return;
 		}
@@ -1514,6 +1547,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 		m->uDNS_info.ReverseMapActive = mDNSfalse;
 		}
 
+	m->uDNS_info.StaticHostname.c[0] = 0;
 	if (!m->uDNS_info.PrimaryIP.ip.v4.NotAnInteger) return;
 	ubzero(q, sizeof(*q));
 	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
@@ -1651,13 +1685,10 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, cons
 	if (router) u->Router = *router;
 	else        u->Router.ip.v4.NotAnInteger = 0; // setting router to zero indicates that nat mappings must be reestablished when router is reset
 	
-	if (AddrChanged)
+	if ((AddrChanged || RouterChanged ) && (addr && router))
 		{
-		if (addr)
-			{
-			UpdateHostnameRegistrations(m);
-			UpdateSRVRecords(m);
-			}
+		UpdateHostnameRegistrations(m);
+		UpdateSRVRecords(m);
 		GetStaticHostname(m);  // look up reverse map record to find any static hostnames for our IP address
 		}
 	
@@ -2050,9 +2081,9 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			break;
 		case regState_DeregPending:
 			if (err) LogMsg("Error %ld for deregistration of service %##s", err, srs->RR_SRV.resrec.name->c);
-			if (info->LostTarget)
+			if (info->SRVChanged)
 				{
-				info->state = regState_NoTarget;
+				info->state = regState_NoTarget;  // NoTarget will allow us to pick up new target OR nat traversal state
 				break;
 				}
 			err = mStatus_MemFree;
@@ -2093,13 +2124,15 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 		case regState_NATMap:
 		case regState_NoTarget:
 		case regState_ExtraQueued:
+		case regState_NATError:
 			LogMsg("hndlServiceUpdateReply called for service %##s in unexpected state %d with error %ld.  Unlinking.",
 				   srs->RR_SRV.resrec.name->c, info->state, err);
 			err = mStatus_UnknownErr;
 		}
 
-	if ((info->LostTarget || info->SRVUpdateDeferred) && (info->state == regState_NoTarget || info->state == regState_Registered))
+	if ((info->SRVChanged || info->SRVUpdateDeferred) && (info->state == regState_NoTarget || info->state == regState_Registered))
 		{
+		info->SRVChanged = mDNSfalse;		
 		UpdateSRV(m, srs);
 		return;
 		}
@@ -3910,6 +3943,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		LogMsg("Service %##s - class does not match zone", srs->RR_SRV.resrec.name->c);
 		goto error;
 		}
+
 	// cache zone data
 	AssignDomainName(&srs->uDNS_info.zone, &zoneData->zoneName);
     srs->uDNS_info.ns.type = mDNSAddrType_IPv4;
@@ -3921,7 +3955,10 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		srs->uDNS_info.port = UnicastDNSPort;
 		srs->uDNS_info.lease = mDNSfalse;
 		}
-	SendServiceRegistration(m, srs);
+
+	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && IsPrivateV4Addr(&m->uDNS_info.PrimaryIP))
+		{ srs->uDNS_info.state = regState_NATMap; StartNATPortMap(m, srs); }
+	else SendServiceRegistration(m, srs);
 	return;
 		
 error:
@@ -3930,7 +3967,6 @@ error:
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	srs->ServiceCallback(m, srs, err);
 	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-	//!!!KRS will mem still be free'd on error?
 	// NOTE: not safe to touch any client structures here
 	}
 
@@ -4056,8 +4092,9 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 			LogMsg("Requested deregistration of unregistered record %##s type %d",
 				   rr->resrec.name->c, rr->resrec.rrtype);
 			return mStatus_UnknownErr;
+		case regState_NATError:
 		case  regState_NoTarget:
-			LogMsg("ERROR: uDNS_DeregisterRecord called for record %##s with bad state (regState_NoTarget)", rr->resrec.name->c);
+			LogMsg("ERROR: uDNS_DeregisterRecord called for record %##s with bad state %s", rr->resrec.name->c, rr->uDNS_info.state == regState_NoTarget ? "regState_NoTarget" : "regState_NATError");
 			return mStatus_UnknownErr;
 		}
 
@@ -4078,41 +4115,25 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	SendRecordDeregistration(m, rr);
 	return mStatus_NoError;
 	}
-
-// register a service already in list with initialized state
-mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs)
-	{
-	uDNS_RegInfo *info = &srs->uDNS_info;
 	
+mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
+	{
+    // Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
+	uDNS_RegInfo *info = &srs->uDNS_info;
+	ServiceRecordSet **p = &m->uDNS_info.ServiceRegistrations;
+	while (*p && *p != srs) p=&(*p)->next;
+	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
+	ubzero(info, sizeof(*info));
+	*p = srs;
+	srs->next = mDNSNULL;
+
 	srs->RR_SRV.resrec.rroriginalttl = 3;
 	srs->RR_TXT.resrec.rroriginalttl = 3;
 	srs->RR_PTR.resrec.rroriginalttl = 3;
 	
 	info->lease = mDNStrue;
-
-	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && MapServicePort(m))
-		{
-		// !!!KRS if interface is already in NATState_Legacy, don't try NAT-PMP
-		info->state = regState_NATMap;
-		StartNATPortMap(m, srs);
-		return mStatus_NoError;
-		}
-	
 	info->state = regState_FetchingZoneData;
 	return startGetZoneData(srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
-	}
-	
-mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
-	{
-	// Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
-	ServiceRecordSet **p = &m->uDNS_info.ServiceRegistrations;
-	while (*p && *p != srs) p=&(*p)->next;
-	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
-	ubzero(&srs->uDNS_info, sizeof(uDNS_RegInfo));
-	srs->uDNS_info.state = regState_Unregistered;
-	*p = srs;
-	srs->next = mDNSNULL;
-	return RegisterService(m, srs);
 	}
 
 mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
@@ -4165,7 +4186,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		}
 
 	// don't re-register with a new target following deregistration
-	srs->uDNS_info.LostTarget = srs->uDNS_info.SRVUpdateDeferred = mDNSfalse;
+	srs->uDNS_info.SRVChanged = srs->uDNS_info.SRVUpdateDeferred = mDNSfalse;
 
 	if (nat)
 		{
@@ -4196,8 +4217,9 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_Cancelled:
 			debugf("Double deregistration of service %##s", srs->RR_SRV.resrec.name->c);
 			return mStatus_NoError;
-		case regState_NATMap:
-		case regState_NoTarget:
+		case regState_NATError:  // not registered
+		case regState_NATMap:    // not registered
+		case regState_NoTarget:  // not registered
 			unlinkSRS(m, srs);
 			srs->uDNS_info.state = regState_Unregistered;
 			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
@@ -4343,8 +4365,10 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 			else SendRecordUpdate(m, rr, info); 				
 			return mStatus_NoError;
 
+		case regState_NATError:
 		case regState_NoTarget:
-			LogMsg("Bad state (regState_NoTarget)"); return mStatus_UnknownErr;  // state for service records only
+			LogMsg("ERROR: uDNS_UpdateRecord called for record %##s with bad state %s", rr->resrec.name->c, rr->uDNS_info.state == regState_NoTarget ? "regState_NoTarget" : "regState_NATError");
+			return mStatus_UnknownErr;  // states for service records only
 		}
 
 	unreg_error:
