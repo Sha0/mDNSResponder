@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.504  2004/12/20 20:24:35  cheshire
+<rdar://problem/3928456> Network efficiency: Don't keep polling if we have at least one unique-type answer
+
 Revision 1.503  2004/12/20 18:41:47  cheshire
 <rdar://problem/3591622> Low memory support: Provide answers even when we don't have cache space
 
@@ -3479,7 +3482,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					else if (q->SendQNow != rr->resrec.InterfaceID) q->SendQNow = mDNSInterfaceMark;
 					}
 
-		// Scan our list of questions to see which unicast queries need to be sent
+		// Scan our list of questions to see which *unicast* queries need to be sent
 		for (q = m->Questions; q; q=q->next)
 			if (q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
@@ -3491,7 +3494,6 @@ mDNSlocal void SendQueries(mDNS *const m)
 				q->ThisQInterval   *= 2;
 				if (q->ThisQInterval > MaxQuestionInterval)
 					q->ThisQInterval = MaxQuestionInterval;
-				if (q->RequestUnicast) q->RequestUnicast--;
 				q->LastQTime        = m->timenow;
 				q->LastQTxTime      = m->timenow;
 				q->RecentAnswerPkts = 0;
@@ -3499,7 +3501,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				m->ExpectUnicastResponse = m->timenow;
 				}
 	
-		// Scan our list of questions to see which ones we're definitely going to send
+		// Scan our list of questions to see which *multicast* queries we're definitely going to send
 		for (q = m->Questions; q; q=q->next)
 			if (!q->Target.type && TimeToSendThisQuestion(q, m->timenow))
 				{
@@ -3510,7 +3512,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 	
 		// Scan our list of questions
 		// (a) to see if there are any more that are worth accelerating, and
-		// (b) to update the state variables for all the questions we're going to send
+		// (b) to update the state variables for *all* the questions we're going to send
 		for (q = m->Questions; q; q=q->next)
 			{
 			if (q->SendQNow ||
@@ -3524,7 +3526,6 @@ mDNSlocal void SendQueries(mDNS *const m)
 					q->ThisQInterval *= 2;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
-					if (q->RequestUnicast) q->RequestUnicast--;
 					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * 8)
 						{
 						debugf("SendQueries: Zero current answers for %##s (%s); will reconfirm antecedents", q->qname.c, DNSTypeName(q->qtype));
@@ -3546,6 +3547,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 
 				q->LastQTxTime      = m->timenow;
 				q->RecentAnswerPkts = 0;
+				if (q->RequestUnicast) q->RequestUnicast--;
 				}
 			// For all questions (not just the ones we're sending) check what the next scheduled event will be
 			SetNextQueryTime(m,q);
@@ -3756,6 +3758,21 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 		SetNextCacheCheckTime(m, rr);
 		}
 
+	// If this is:
+	// (a) a no-cache add, where we've already done at least one 'QM' query, or
+	// (b) a normal add, where we have at least one unique-type answer,
+	// then there's no need to keep polling the network.
+	// (If we have an answer in the cache, then we'll automatically ask again in time to stop it expiring.)
+	if ((AddRecord == 2 && !q->RequestUnicast) ||
+		(AddRecord == 1 && (q->ExpectUnique || (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))))
+		if (ActiveQuestion(q))
+			{
+			q->LastQTime      = m->timenow;
+			q->LastQTxTime    = m->timenow;
+			q->ThisQInterval  = MaxQuestionInterval;
+			q->RequestUnicast = mDNSfalse;
+			}
+
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
 
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
@@ -3876,16 +3893,8 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 		DNSQuestion *q = m->CurrentQuestion;
 		m->CurrentQuestion = q->next;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-			{
-			if (!q->RequestUnicast)				// If we've already done at least one 'QM' query for this
-				{
-				q->LastQTime   = m->timenow;	// then don't do any more and time soon
-				q->LastQTxTime = m->timenow;
-				q->ThisQInterval = MaxQuestionInterval;
-				}
 			AnswerQuestionWithResourceRecord(m, q, rr, 2);	// Value '2' indicates "don't expect 'remove' events for this"
-			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
-			}
+		// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 		}
 	m->CurrentQuestion = mDNSNULL;
 	}
@@ -5371,24 +5380,31 @@ exit:
 		CacheFlushRecords = CacheFlushRecords->NextInCFList;
 		r1->NextInCFList = mDNSNULL;
 		for (r2 = cg ? cg->members : mDNSNULL; r2; r2=r2->next)
-			if (SameResourceRecordSignature(&r1->resrec, &r2->resrec) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)
+			if (SameResourceRecordSignature(&r1->resrec, &r2->resrec))
 				{
-				verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->resrec.name->c, DNSTypeName(r2->resrec.rrtype));
-				// We set stale records to expire in one second.
-				// This gives the owner a chance to rescue it if necessary.
-				// This is important in the case of multi-homing and bridged networks:
-				//   Suppose host X is on Ethernet. X then connects to an AirPort base station, which happens to be
-				//   bridged onto the same Ethernet. When X announces its AirPort IP address with the cache-flush bit
-				//   set, the AirPort packet will be bridged onto the Ethernet, and all other hosts on the Ethernet
-				//   will promptly delete their cached copies of the (still valid) Ethernet IP address record.
-				//   By delaying the deletion by one second, we give X a change to notice that this bridging has
-				//   happened, and re-announce its Ethernet IP address to rescue it from deletion from all our caches.
-				// We set UnansweredQueries to MaxUnansweredQueries to avoid expensive and unnecessary
-				// final expiration queries for this record.
-				r2->resrec.rroriginalttl = 1;
-				r2->TimeRcvd          = m->timenow;
-				r2->UnansweredQueries = MaxUnansweredQueries;
-				SetNextCacheCheckTime(m, r2);
+				// If record is recent, just ensure the whole RRSet has the same TTL (as required by DNS semantics)
+				// else, if record is old, mark it to be flushed
+				if (m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
+					r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
+				else
+					{
+					verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->resrec.name->c, DNSTypeName(r2->resrec.rrtype));
+					// We set stale records to expire in one second.
+					// This gives the owner a chance to rescue it if necessary.
+					// This is important in the case of multi-homing and bridged networks:
+					//   Suppose host X is on Ethernet. X then connects to an AirPort base station, which happens to be
+					//   bridged onto the same Ethernet. When X announces its AirPort IP address with the cache-flush bit
+					//   set, the AirPort packet will be bridged onto the Ethernet, and all other hosts on the Ethernet
+					//   will promptly delete their cached copies of the (still valid) Ethernet IP address record.
+					//   By delaying the deletion by one second, we give X a change to notice that this bridging has
+					//   happened, and re-announce its Ethernet IP address to rescue it from deletion from all our caches.
+					// We set UnansweredQueries to MaxUnansweredQueries to avoid expensive and unnecessary
+					// final expiration queries for this record.
+					r2->resrec.rroriginalttl = 1;
+					r2->TimeRcvd          = m->timenow;
+					r2->UnansweredQueries = MaxUnansweredQueries;
+					SetNextCacheCheckTime(m, r2);
+					}
 				}
 		if (r1->DelayDelivery)	// If we were planning to delay delivery of this record, see if we still need to
 			{
