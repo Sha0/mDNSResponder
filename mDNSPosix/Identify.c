@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.15  2004/01/21 21:55:06  cheshire
+Don't need to wait for timeout once we've got the information we wanted
+
 Revision 1.14  2003/12/17 00:51:22  cheshire
 Changed mDNSNetMonitor and mDNSIdentify to link the object files
 instead of #including the "DNSCommon.c" "uDNS.c" and source files
@@ -193,6 +196,9 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 		NumAnswers++;
 		NumHINFO++;
 		}
+
+	// If we've got everything we're looking for, don't need to wait any more
+	if (NumHINFO && (NumAddr || NumAAAA)) StopNow = 1;
 	}
 
 mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
