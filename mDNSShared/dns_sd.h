@@ -237,6 +237,48 @@ enum
 
 #define kDNSServiceMaxDomainName 1005
 
+/*
+ * Notes on DNS Name Escaping
+ *   -- or --
+ * "Why is kDNSServiceMaxDomainName 1005, when the maximum legal domain name is 255 bytes?"
+ *
+ * All strings used in DNS-SD are UTF-8 strings.
+ * With few exceptions, most are also escaped using standard DNS escaping rules:
+ *
+ *   '\\' represents a single literal '\' in the name
+ *   '\.' represents a single literal '.' in the name
+ *   '\ddd', where ddd is a three-digit decimal value from 000 to 255,
+ *        represents a single literal byte with that value.
+ *   A bare unescaped '.' is a label separator, marking a boundary between domain and subdomain.
+ *
+ * The exceptions, that do not use escaping, are the routines where the full
+ * DNS name of a resource is broken, for convenience, into servicename/regtype/domain.
+ * In these routines, the "servicename" is NOT escaped. It does not need to be, since
+ * it is, by definition, just a single literal string. Any characters in that string
+ * represent exactly what they are. The "regtype" portion is, technically speaking,
+ * escaped, but since legal regtypes are only allowed to contain letters, digits,
+ * and hyphens, the issue is moot. The "domain" portion is also escaped, though
+ * most domains in use on the public Internet today, like regtypes, don't contain
+ * any characters that need to be escaped. As DNS-SD becomes more popular, rich-text
+ * domains for service discovery will become common, so software should be written
+ * to cope with domains with escaping.
+ *
+ * For most software, these issues are transparent. When browsing, the discovered
+ * servicenames should simply be displayed as-is. When resolving, the discovered
+ * servicename/regtype/domain are simply passed unchanged to DNSServiceResolve().
+ * When a DNSServiceResolve() succeeds, the returned fullname is already in
+ * the correct format to pass to standard system DNS APIs such as res_query().
+ * For converting from servicename/regtype/domain to a single properly-escaped
+ * full DNS name, the helper function DNSServiceConstructFullName() is provided.
+ *
+ * The following (highly contrived) example illustrates the escaping process.
+ * Suppose you have an service called "Dr. Smith\Dr. Johnson", of type "_ftp._tcp"
+ * in subdomain "4th. Floor" of subdomain "Building 2" of domain "apple.com."
+ * The full (escaped) DNS name of this service's SRV record would be:
+ * Dr\.\032Smith\\Dr\.\032Johnson._ftp._tcp.4th\.\032Floor.Building\0322.apple.com.
+ */
+
+
 /* 
  * Constants for specifying an interface index
  *
@@ -250,9 +292,9 @@ enum
  * DNS server." Normally, most clients will use 0 for interface index to
  * automatically get the default sensible behaviour.
  * 
- * If the client passes a positive interface index, that indicates to do the
- * operation *only* via multicast on that one interface, even for names that
- * would normally be looked up via unicast DNS.
+ * If the client passes a positive interface index, then for multicast names that
+ * indicates to do the operation only on that one interface. For unicast names the
+ * interface index is ignored unless kDNSServiceFlagsForceMulticast is also set.
  * 
  * If the client passes kDNSServiceInterfaceIndexLocalOnly when registering
  * a service, then that service will be found *only* by other local clients
@@ -260,7 +302,7 @@ enum
  * If a client has a 'private' service, accessible only to other processes
  * running on the same machine, this allows the client to advertise that service
  * in a way such that it does not inadvertently appear in service lists on
- * all the other machines on the network. 
+ * all the other machines on the network.
  * Note that to discover these special non-public services, the browsing
  * client also has to explicitly use kDNSServiceInterfaceIndexLocalOnly in its
  * DNSServiceBrowse() call. These special non-public services are not reported to
@@ -376,11 +418,16 @@ void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef);
 /* DNSServiceEnumerateDomains()
  *
  * Asynchronously enumerate domains available for browsing and registration.
- * Currently, the only domain returned is "local.", but other domains will be returned in future.
  *
  * The enumeration MUST be cancelled via DNSServiceRefDeallocate() when no more domains
  * are to be found.
  *
+ * Note that the names returned are (like all of DNS-SD) UTF-8 strings,
+ * and are escaped using standard DNS escaping rules.
+ * (See "Notes on DNS Name Escaping" earlier in this file for more details.)
+ * A graphical browser displaying a hierarchical tree-structured view should cut
+ * the names at the bare dots to yield individual labels, then de-escape each
+ * label according to the escaping rules, and then display the resulting UTF-8 text.
  *
  * DNSServiceDomainEnumReply Callback Parameters:
  *
@@ -821,12 +868,10 @@ DNSServiceErrorType DNSSD_API DNSServiceBrowse
  *                  the errorCode is nonzero.
  *
  * fullname:        The full service domain name, in the form <servicename>.<protocol>.<domain>.
- *                  (Any literal dots (".") are escaped with a backslash ("\."), and literal
- *                  backslashes are escaped with a second backslash ("\\"), e.g. a web server
- *                  named "Dr. Pepper" would have the fullname  "Dr\.\032Pepper._http._tcp.local.").
- *                  This is the appropriate format to pass to standard system DNS APIs such as
- *                  res_query(), or to the special-purpose functions included in this API that
- *                  take fullname parameters.
+ *                  (This name is escaped following standard DNS rules, making it suitable for
+ *                  passing to standard system DNS APIs such as res_query(), or to the
+ *                  special-purpose functions included in this API that take fullname parameters.
+ *                  See "Notes on DNS Name Escaping" earlier in this file for more details.)
  *
  * hosttarget:      The target hostname of the machine providing the service.  This name can
  *                  be passed to functions like gethostbyname() to identify the host's IP address.
@@ -913,28 +958,6 @@ DNSServiceErrorType DNSSD_API DNSServiceResolve
  *  Special Purpose Calls (most applications will not use these)
  *
  *********************************************************************************************/
-
-/* Note on DNS Naming Conventions:
- *
- * The functions below refer to resource records by their full domain name, unlike the
- * functions above which divide the name into servicename/regtype/domain fields.  In the
- * functions above, a dot (".") is considered to be a literal dot in the servicename field
- * (e.g. "Dr. Pepper") and a label separator in the regtype ("_ftp._tcp") or domain
- * ("apple.com") fields.  Literal dots in the domain field would be escaped with a backslash,
- * and literal backslashes would be escaped with a second backslash (this is generally not an
- * issue, as domain names on the Internet today almost never use characters other than
- * letters, digits, or hyphens, and the dots are label separators.) Furthermore, this is
- * transparent to the caller, so long as the fields are passed between functions without
- * manipulation.  However, the following, special-purpose calls use a single, full domain
- * name.  As such, all dots are considered to be label separators, unless escaped, and all
- * backslashes are considered to be escape characters, unless preceded by a second backslash.
- * For example, the name "Dr. Smith \ Dr. Johnson" could be passed literally as a service
- * name parameter in the above calls, but in the special purpose calls, the dots and backslash
- * would have to be escaped (e.g. "Dr\. Smith \\ Dr\. Johnson._ftp._tcp.apple.com" for an ftp
- * service on the apple.com domain.) The function DNSServiceConstructFullName() is provided
- * to aid in this conversion from servicename/regtype/domain to a single fully-qualified DNS
- * name with proper escaping.
- */
 
 /* DNSServiceCreateConnection()
  *
@@ -1212,15 +1235,15 @@ void DNSSD_API DNSServiceReconfirmRecord
  *                  The buffer must be kDNSServiceMaxDomainName (1005) bytes in length to
  *                  accommodate the longest legal domain name without buffer overrun.
  *
- * service:         The service name - any dots or slashes must NOT be escaped.
+ * service:         The service name - any dots or backslashes must NOT be escaped.
  *                  May be NULL (to construct a PTR record name, e.g.
- *                  "_ftp._tcp.apple.com").
+ *                  "_ftp._tcp.apple.com.").
  *
  * regtype:         The service type followed by the protocol, separated by a dot
  *                  (e.g. "_ftp._tcp").
  *
- * domain:          The domain name, e.g. "apple.com".  Any literal dots or backslashes
- *                  must be escaped.
+ * domain:          The domain name, e.g. "apple.com.".  Literal dots or backslashes,
+ *                  if any, must be escaped, e.g. "1st\. Floor.apple.com."
  *
  * return value:    Returns 0 on success, -1 on error.
  *
