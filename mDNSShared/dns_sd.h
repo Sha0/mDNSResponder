@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.20  2004/06/15 04:44:34  cheshire
+Use "privatedata" instead of "private" -- "private" is a reserved word in C++
+
 Revision 1.19  2004/06/12 00:39:32  ksekar
 stricter checking for FreeBSD version in conditional #include of
 sys/types.h instead of stdint.h.
@@ -1170,7 +1173,7 @@ int DNSSD_API DNSServiceConstructFullName
  * Note: Represents a DNS-SD TXT record.
  */
 
-typedef struct _TXTRecordRef_t { char private[16]; } TXTRecordRef;
+typedef struct _TXTRecordRef_t { char privatedata[16]; } TXTRecordRef;
 
 
 /* TXTRecordCreate()
