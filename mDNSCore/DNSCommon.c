@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.68  2004/11/24 00:10:43  cheshire
+<rdar://problem/3869241> For unicast operations, verify that service types are legal
+
 Revision 1.67  2004/10/26 03:52:02  cheshire
 Update checkin comments
 
@@ -738,15 +741,6 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 	hostlabel->c[0] = (mDNSu8)(ptr - &hostlabel->c[1]);
 	}
 
-#if MDNS_ENFORCE_SERVICE_TYPE_LENGTH
-mDNSlocal mDNSBool AllowedServiceNameException(const mDNSu8 *const src)
-	{
-	if (SameDomainLabel(src, (mDNSu8*)"\x12_MacOSXDupSuppress")) return(mDNStrue);
-	LogMsg("Application protocol name %#s too long; see <http://www.dns-sd.org/ServiceTypes.html>", src);
-	return(mDNSfalse);
-	}
-#endif
-
 mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	const domainlabel *name, const domainname *type, const domainname *const domain)
 	{
@@ -797,13 +791,11 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
-#if MDNS_ENFORCE_SERVICE_TYPE_LENGTH
-	if (len < 2 || len > 15)
-		if (!AllowedServiceNameException(src))			// If length not legal, check our grandfather-exceptions list
-			{ errormsg="Application protocol name must be underscore plus 1-14 characters"; goto fail; }
-#else
-	if (len < 2 || len >= 0x40) { errormsg="Application protocol name should be underscore plus 1-14 characters"; goto fail; }
-#endif
+	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, (domainname*)"\x05" "local")))
+		{
+		errormsg="Application protocol name must be underscore plus 1-14 characters. See <http://www.dns-sd.org/ServiceTypes.html>";
+		goto fail;
+		}
 	if (src[1] != '_') { errormsg="Application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
 		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-' && src[i] != '_')
@@ -814,7 +806,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	if (!(len == 4 && src[1] == '_' &&
 		(((src[2] | 0x20) == 'u' && (src[3] | 0x20) == 'd') || ((src[2] | 0x20) == 't' && (src[3] | 0x20) == 'c')) &&
 		(src[4] | 0x20) == 'p'))
-		{ errormsg="Service transport protocol name must be _udp or _tcp"; goto fail; }
+		{ errormsg="Transport protocol name must be _udp or _tcp"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	if (*src) { errormsg="Service type must have only two labels"; goto fail; }

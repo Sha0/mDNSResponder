@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.120  2004/11/24 00:10:44  cheshire
+<rdar://problem/3869241> For unicast operations, verify that service types are legal
+
 Revision 1.119  2004/11/23 23:54:17  ksekar
 <rdar://problem/3890318> Wide-Area DNSServiceRegisterRecord() failures
 can crash mDNSResponder
@@ -1665,7 +1668,7 @@ static void handle_browse_request(request_state *request)
     uint32_t interfaceIndex;
     mDNSInterfaceID InterfaceID;
     char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
-    domainname typedn, d;
+    domainname typedn, d, temp;
     mDNSs32 NumSubTypes;
     char *ptr;
     mStatus err;
@@ -1699,7 +1702,10 @@ static void handle_browse_request(request_state *request)
 	if (NumSubTypes == 1 && !AppendDNSNameString(&typedn, regtype + strlen(regtype) + 1))
 		{ err = mStatus_BadParamErr;  goto error; }
 
-    if (!AppendDNSNameString(&typedn, regtype)) { err = mStatus_BadParamErr;  goto error; }
+    if (!regtype[0] || !AppendDNSNameString(&typedn, regtype)) { err = mStatus_BadParamErr;  goto error; }
+
+	if (!MakeDomainNameFromDNSNameString(&temp, regtype)) { err = mStatus_BadParamErr;  goto error; }
+	if (temp.c[0] > 15 && domain[0] == 0) strcpy(domain, "local."); // For over-long service types, we only allow domain "local"
 
 	// allocate and set up browser info
 	info = mallocL("browser_info_t", sizeof(*info));
@@ -1717,7 +1723,7 @@ static void handle_browse_request(request_state *request)
 	request->termination_context = info;
     request->terminate = browse_termination_callback;
 	
-	LogOperation("%3d: DNSServiceBrowse(%##s%s) START", request->sd, info->regtype.c, domain ? domain : "");
+	LogOperation("%3d: DNSServiceBrowse(%##s%s) START", request->sd, info->regtype.c, domain);
 	if (domain[0])
 		{
 		if (!MakeDomainNameFromDNSNameString(&d, domain)) { err = mStatus_BadParamErr;  goto error; }

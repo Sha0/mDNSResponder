@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.216  2004/11/24 00:10:44  cheshire
+<rdar://problem/3869241> For unicast operations, verify that service types are legal
+
 Revision 1.215  2004/11/23 22:33:01  cheshire
 <rdar://problem/3654910> Remove temporary workaround code for iChat
 
@@ -1082,7 +1085,6 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 		}
 	}
 
-
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unusedserver, mach_port_t client,
 	DNSCString regtype, DNSCString domain)
 	{
@@ -1103,6 +1105,9 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	if (NumSubTypes == 1 && !AppendDNSNameString(&t, regtype + strlen(regtype) + 1))
 	                                                      { errormsg = "Bad Service SubType"; goto badparam; }
 	if (!regtype[0] || !AppendDNSNameString(&t, regtype)) { errormsg = "Illegal regtype";     goto badparam; }
+	domainname temp;
+	if (!MakeDomainNameFromDNSNameString(&temp, regtype)) { errormsg = "Illegal regtype";     goto badparam; }
+	if (temp.c[0] > 15 && (!domain || domain[0] == 0)) domain = "local."; // For over-long service types, we only allow domain "local"
 
 	// Allocate memory, and handle failure
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
@@ -1758,7 +1763,6 @@ fail:
 	LogMsg("%5d: DNSServiceRegistrationUpdateRecord(%##s, %d) failed: %s (%ld)", client, name->c, data_len, errormsg, err);
 	return(err);
 	}
-
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t unusedserver, mach_port_t client,
 		natural_t reference, const char *data, mach_msg_type_number_t data_len, uint32_t ttl)
