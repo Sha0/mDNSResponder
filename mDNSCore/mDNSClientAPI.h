@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.147  2004/02/03 18:57:35  cheshire
+Update comment for "IsLocalDomain()"
+
 Revision 1.146  2004/01/30 02:20:24  bradley
 Map inline to __inline when building with Microsoft C compilers since they do not support C99 inline.
 
@@ -1440,7 +1443,7 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 // Comparison functions
 extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
 extern mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2);
-extern mDNSBool IsLocalDomain(const domainname *d);     // returns true if domain name ends in ".local."
+extern mDNSBool IsLocalDomain(const domainname *d);     // returns true for domains that by default should be looked up using link-local multicast
 
 // Get total length of domain name, in native DNS format, including terminal root label
 //   (e.g. length of "com." is 5 (length byte, three data bytes, final zero)
