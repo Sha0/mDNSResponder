@@ -1,4 +1,5 @@
-/*
+/* -*- Mode: C; tab-width: 4 -*-
+ *
  * Copyright (c) 2003-2004, Apple Computer, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without 
@@ -27,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.37  2004/10/14 01:43:35  cheshire
+Fix opaque port passing problem
+
 Revision 1.36  2004/10/06 02:22:19  cheshire
 Changed MacRoman copyright symbol (should have been UTF-8 in any case :-) to ASCII-compatible "(c)"
 
@@ -332,7 +336,7 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 
 #if defined(USE_TCP_LOOPBACK)
 			{
-			uint16_t port;
+			union { uint16_t s; u_char b[2]; } port;
 			caddr.sin_family      = AF_INET;
 			caddr.sin_port        = 0;
 			caddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
@@ -340,9 +344,9 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 			if (ret < 0) goto cleanup;
 			if (getsockname(listenfd, (struct sockaddr*) &caddr, &len) < 0) goto cleanup;
 			listen(listenfd, 1);
-			port = caddr.sin_port;
-			data[0] = (char)(port & 0x00FF);	// don't switch the byte order, as the
-			data[1] = (char)(port >> 8);		// daemon expects it in network byte order
+			port.s = caddr.sin_port;
+			data[0] = port.b[0];	// don't switch the byte order, as the
+			data[1] = port.b[1];	// daemon expects it in network byte order
 			}
 #else
 			{
@@ -435,7 +439,8 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
     DNSServiceFlags flags;
     char fullname[kDNSServiceMaxDomainName];
     char target[kDNSServiceMaxDomainName];
-    uint16_t port, txtlen;
+    uint16_t txtlen;
+    union { uint16_t s; u_char b[2]; } port;
     uint32_t ifi;
     DNSServiceErrorType err;
     char *txtrecord;
@@ -447,12 +452,13 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
     err = get_error_code(&data);
     if (get_string(&data, fullname, kDNSServiceMaxDomainName) < 0) str_error = 1;
     if (get_string(&data, target, kDNSServiceMaxDomainName) < 0) str_error = 1;
-    port = get_short(&data);
+    port.b[0] = *data++;
+    port.b[1] = *data++;
     txtlen = get_short(&data);
     txtrecord = get_rdata(&data, txtlen);
 
 	if (!err && str_error) err = kDNSServiceErr_Unknown;
-    ((DNSServiceResolveReply)sdr->app_callback)(sdr, flags, ifi, err, fullname, target, port, txtlen, txtrecord, sdr->app_context);
+    ((DNSServiceResolveReply)sdr->app_callback)(sdr, flags, ifi, err, fullname, target, port.s, txtlen, txtrecord, sdr->app_context);
     }
 
 DNSServiceErrorType DNSSD_API DNSServiceResolve
@@ -727,16 +733,16 @@ static void handle_regservice_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char
 DNSServiceErrorType DNSSD_API DNSServiceRegister
     (
     DNSServiceRef                       *sdRef,
-    DNSServiceFlags               flags,
-    uint32_t                      interfaceIndex,
+    DNSServiceFlags                     flags,
+    uint32_t                            interfaceIndex,
     const char                          *name,
     const char                          *regtype,
     const char                          *domain,
     const char                          *host,
-    uint16_t                      port,
-    uint16_t                      txtLen,
+    uint16_t                            PortInNetworkByteOrder,
+    uint16_t                            txtLen,
     const void                          *txtRecord,
-    DNSServiceRegisterReply       callBack,
+    DNSServiceRegisterReply             callBack,
     void                                *context
     )
     {
@@ -745,6 +751,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
     ipc_msg_hdr *hdr;
     DNSServiceRef sdr;
     DNSServiceErrorType err;
+    union { uint16_t s; u_char b[2]; } port = { PortInNetworkByteOrder };
 
     if (!sdRef) return kDNSServiceErr_BadParam;
     *sdRef = NULL;
@@ -778,7 +785,8 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
     put_string(regtype, &ptr);
     put_string(domain, &ptr);
     put_string(host, &ptr);
-    put_short(port, &ptr);
+    *ptr++ = port.b[0];
+    *ptr++ = port.b[1];
     put_short(txtLen, &ptr);
     put_rdata(txtLen, txtRecord, &ptr);
 
