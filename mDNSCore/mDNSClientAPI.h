@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.196  2004/09/14 23:42:35  cheshire
+<rdar://problem/3801296> Need to seed random number generator from platform-layer data
+
 Revision 1.195  2004/09/14 23:27:46  cheshire
 Fix compile errors
 
@@ -2140,6 +2143,7 @@ extern mDNSBool mDNSPlatformMemSame     (const void *src, const void *dst, mDNSu
 extern void     mDNSPlatformMemZero     (                       void *dst, mDNSu32 len);
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
+extern mDNSu32  mDNSPlatformRandomSeed  (void);
 extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 
 // Platform support modules should provide the following functions to map between opaque interface IDs

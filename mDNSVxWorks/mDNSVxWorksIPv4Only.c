@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.20  2004/09/14 23:42:36  cheshire
+<rdar://problem/3801296> Need to seed random number generator from platform-layer data
+
 Revision 1.19  2004/09/14 23:16:09  cheshire
 mDNS_SetFQDNs has been renamed to mDNS_SetFQDN
 
@@ -709,6 +712,15 @@ mDNSexport void	mDNSPlatformMemFree( void *inMem )
 	check( inMem );
 	
 	free( inMem );
+}
+
+//===========================================================================================================================
+//	mDNSPlatformRandomSeed
+//===========================================================================================================================
+
+mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
+{
+	return( tickGet() );
 }
 
 //===========================================================================================================================

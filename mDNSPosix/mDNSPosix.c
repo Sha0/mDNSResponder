@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.53  2004/09/14 23:42:36  cheshire
+<rdar://problem/3801296> Need to seed random number generator from platform-layer data
+
 Revision 1.52  2004/08/25 16:42:13  ksekar
 Fix Posix build - change mDNS_SetFQDNs to mDNS_SetFQDN, remove unicast
 hostname parameter.
@@ -1361,6 +1364,13 @@ mDNSexport void    mDNSPlatformMemZero(                       void *dst, mDNSu32
 
 mDNSexport void *  mDNSPlatformMemAllocate(mDNSu32 len) { return(malloc(len)); }
 mDNSexport void    mDNSPlatformMemFree    (void *mem)   { free(mem); }
+
+mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
+	{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return(tv.tv_usec);
+	}
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.34  2004/09/14 23:42:36  cheshire
+<rdar://problem/3801296> Need to seed random number generator from platform-layer data
+
 Revision 1.33  2004/09/14 23:16:31  cheshire
 Fix compile error: mDNS_SetFQDNs has been renamed to mDNS_SetFQDN
 
@@ -693,6 +696,7 @@ mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, UInt32
 mDNSexport void     mDNSPlatformMemZero(                       void *dst, UInt32 len) { OTMemzero(dst, len); }
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len)                              { return(OTAllocMem(len)); }
 mDNSexport void     mDNSPlatformMemFree(void *mem)                                    { OTFreeMem(mem); }
+mDNSexport mDNSu32  mDNSPlatformRandomSeed(void)                                      { return(TickCount()); }
 mDNSexport mStatus  mDNSPlatformTimeInit(mDNSs32 *timenow) { *timenow = mDNSPlatformTimeNow(); return(mStatus_NoError); }
 mDNSexport SInt32   mDNSPlatformTimeNow()                                             { return((SInt32)TickCount()); }
 mDNSexport SInt32   mDNSPlatformOneSecond = 60;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.176  2004/09/14 23:42:36  cheshire
+<rdar://problem/3801296> Need to seed random number generator from platform-layer data
+
 Revision 1.175  2004/09/14 21:35:46  cheshire
 Minor code tidying, and added comments about CFRetainCounts
 
@@ -2644,6 +2647,11 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	MarkAllInterfacesInactive(m);
 	ClearInactiveInterfaces(m);
 	CloseSocketSet(&m->p->unicastsockets);
+	}
+
+mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
+	{
+	return(mach_absolute_time());
 	}
 
 mDNSexport mDNSs32 mDNSPlatformOneSecond = 1000;

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.51  2004/09/14 23:42:37  cheshire
+<rdar://problem/3801296> Need to seed random number generator from platform-layer data
+
 Revision 1.50  2004/08/25 23:36:56  shersche
 <rdar://problem/3658379> Remove code that retrieves TTL from received packets
 Bug #: 3658379
@@ -656,6 +659,15 @@ mDNSexport void	mDNSPlatformMemFree( void *inMem )
 	check( inMem );
 	
 	free( inMem );
+}
+
+//===========================================================================================================================
+//	mDNSPlatformRandomSeed
+//===========================================================================================================================
+
+mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
+{
+	return( GetTickCount() );
 }
 
 //===========================================================================================================================

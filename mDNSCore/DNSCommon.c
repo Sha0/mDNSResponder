@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.49  2004/09/14 23:42:35  cheshire
+<rdar://problem/3801296> Need to seed random number generator from platform-layer data
+
 Revision 1.48  2004/09/14 23:27:46  cheshire
 Fix compile errors
 
@@ -319,7 +322,12 @@ mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)
 	static mDNSu32 seed = 0;
 	mDNSu32 mask = 1;
 
-	if (!seed) seed = (mDNSu32)mDNSPlatformTimeNow();
+	if (!seed)
+		{
+		int i;
+		seed = mDNSPlatformRandomSeed();				// Pick an initial seed
+		for (i=0; i<100; i++) seed = seed * 21 + 1;		// And mix it up a bit
+		}
 	while (mask < max) mask = (mask << 1) | 1;
 	do seed = seed * 21 + 1; while ((seed & mask) > max);
 	return (seed & mask);
