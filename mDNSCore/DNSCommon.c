@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.13  2004/02/06 23:04:18  ksekar
+Basic Dynamic Update support via mDNS_Register (dissabled via
+UNICAST_REGISTRATION #define)
+
 Revision 1.12  2004/02/03 22:37:10  cheshire
 Delete unused (commented-out) code
 
@@ -764,6 +768,47 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 		}
 	}
 
+mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd)
+	{
+	mDNSu16 len;
+	switch(rrtype)
+		{
+		case kDNSType_A:	return(rdlength == sizeof(mDNSv4Addr));
+
+		case kDNSType_NS:	// Same as PTR
+		case kDNSType_MD:	// Same as PTR
+		case kDNSType_MF:	// Same as PTR
+		case kDNSType_CNAME:// Same as PTR
+		//case kDNSType_SOA not checked
+		case kDNSType_MB:	// Same as PTR
+		case kDNSType_MG:	// Same as PTR
+		case kDNSType_MR:	// Same as PTR
+		//case kDNSType_NULL not checked (no specified format, so always valid)
+		//case kDNSType_WKS not checked
+		case kDNSType_PTR:	len = DomainNameLength(&rd->u.name);
+							return(len <= MAX_DOMAIN_NAME && rdlength == len);
+
+		case kDNSType_HINFO:// Same as TXT (roughly)
+		case kDNSType_MINFO:// Same as TXT (roughly)
+		case kDNSType_TXT:  {
+							const mDNSu8 *ptr = rd->u.txt.c;
+							const mDNSu8 *end = rd->u.txt.c + rdlength;
+							while (ptr < end) ptr += 1 + ptr[0];
+							return (ptr == end);
+							}
+
+		case kDNSType_AAAA:	return(rdlength == sizeof(mDNSv6Addr));
+
+		case kDNSType_MX:   len = DomainNameLength(&rd->u.mx.exchange);
+							return(len <= MAX_DOMAIN_NAME && rdlength == 2+len);
+
+		case kDNSType_SRV:	len = DomainNameLength(&rd->u.srv.target);
+							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
+
+		default:			return(mDNStrue);	// Allow all other types without checking
+		}
+	}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -978,11 +1023,10 @@ mDNSexport mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr
 	return(PutResourceRecordTTL(msg, ptr, count, rr, maxttl));
 	}
 
-#if 0
 mDNSexport mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
 	mDNSu16 *count, const AuthRecord *rr)
 	{
-	ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->name);
+	ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->resrec.name);
 	if (!ptr || ptr + 10 > limit) return(mDNSNULL);		// If we're out-of-space, return mDNSNULL
 	ptr[0] = (mDNSu8)(rr->resrec.rrtype  >> 8);				// Put type
 	ptr[1] = (mDNSu8)(rr->resrec.rrtype  &  0xFF);
@@ -993,7 +1037,18 @@ mDNSexport mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, co
 	(*count)++;
 	return(ptr + 10);
 	}
-#endif
+
+mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, domainname *zone, mDNSOpaque16 zoneClass)
+	{
+	ptr = putDomainNameAsLabels(msg, ptr, limit, zone);
+	if (!ptr || ptr + 4 > limit) return mDNSNULL;		// If we're out-of-space, return mDNSNULL
+	((mDNSOpaque16 *)ptr)->NotAnInteger = kDNSType_SOA;
+	ptr += 2;
+	((mDNSOpaque16 *)ptr)->NotAnInteger = zoneClass.NotAnInteger;
+	ptr += 2;
+	msg->h.numZones++;
+	return ptr;
+	}
 
 mDNSexport mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass)
 	{

@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.356  2004/02/06 23:04:19  ksekar
+Basic Dynamic Update support via mDNS_Register (dissabled via
+UNICAST_REGISTRATION #define)
+
 Revision 1.355  2004/02/05 09:32:33  cheshire
 Fix from Bob Bradley: When using the "%.*s" string form,
 guard against truncating in the middle of a multi-byte UTF-8 character.
@@ -1199,6 +1203,8 @@ mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF
 mDNSexport const mDNSOpaque16 zeroID = { { 0, 0 } };
 mDNSexport const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
 mDNSexport const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
+mDNSexport const mDNSOpaque16 UpdateReqFlags= { { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Query,                   0 } }; 
+mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response,                0 } };                  
 #define zeroDomainNamePtr ((domainname*)"")
 
 // Any records bigger than this are considered 'large' records
@@ -1760,47 +1766,6 @@ mDNSlocal void CompleteProbing(mDNS *const m, AuthRecord *const rr)
 		}
 	}
 
-mDNSlocal mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd)
-	{
-	mDNSu16 len;
-	switch(rrtype)
-		{
-		case kDNSType_A:	return(rdlength == sizeof(mDNSv4Addr));
-
-		case kDNSType_NS:	// Same as PTR
-		case kDNSType_MD:	// Same as PTR
-		case kDNSType_MF:	// Same as PTR
-		case kDNSType_CNAME:// Same as PTR
-		//case kDNSType_SOA not checked
-		case kDNSType_MB:	// Same as PTR
-		case kDNSType_MG:	// Same as PTR
-		case kDNSType_MR:	// Same as PTR
-		//case kDNSType_NULL not checked (no specified format, so always valid)
-		//case kDNSType_WKS not checked
-		case kDNSType_PTR:	len = DomainNameLength(&rd->u.name);
-							return(len <= MAX_DOMAIN_NAME && rdlength == len);
-
-		case kDNSType_HINFO:// Same as TXT (roughly)
-		case kDNSType_MINFO:// Same as TXT (roughly)
-		case kDNSType_TXT:  {
-							const mDNSu8 *ptr = rd->u.txt.c;
-							const mDNSu8 *end = rd->u.txt.c + rdlength;
-							while (ptr < end) ptr += 1 + ptr[0];
-							return (ptr == end);
-							}
-
-		case kDNSType_AAAA:	return(rdlength == sizeof(mDNSv6Addr));
-
-		case kDNSType_MX:   len = DomainNameLength(&rd->u.mx.exchange);
-							return(len <= MAX_DOMAIN_NAME && rdlength == 2+len);
-
-		case kDNSType_SRV:	len = DomainNameLength(&rd->u.srv.target);
-							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
-
-		default:			return(mDNStrue);	// Allow all other types without checking
-		}
-	}
-
 // Two records qualify to be local duplicates if the RecordTypes are the same, or if one is Unique and the other Verified
 #define RecordLDT(A,B) ((A)->resrec.RecordType == (B)->resrec.RecordType || ((A)->resrec.RecordType | (B)->resrec.RecordType) == (kDNSRecordTypeUnique | kDNSRecordTypeVerified))
 #define RecordIsLocalDuplicate(A,B) ((A)->resrec.InterfaceID == (B)->resrec.InterfaceID && RecordLDT((A),(B)) && IdenticalResourceRecord(&(A)->resrec, &(B)->resrec))
@@ -1816,6 +1781,14 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 #if TEST_LOCALONLY_FOR_EVERYTHING
 	rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
 #endif
+
+#ifdef UNICAST_REGISTRATION
+	// If the client has specified an explicit InterfaceID,
+	// then we do a multicast query on that interface, even for unicast domains.
+    if (rr->resrec.InterfaceID || IsLocalDomain(&rr->resrec.name))
+    	rr->uDNS_info.id = zeroID;
+    else return uDNS_Register(m, rr);
+#endif // UNICAST_REGISTRATION
 
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
@@ -2010,6 +1983,12 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	{
 	mDNSu8 RecordType = rr->resrec.RecordType;
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
+
+#ifdef UNICAST_REGISTRATION
+    if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name) && rr->uDNS_info.id.NotAnInteger)
+		return uDNS_Deregister(m, rr);
+#endif // UNICAST_REGISTRATION
+	
 	if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly) p = &m->LocalOnlyRecords;
 	while (*p && *p != rr) p=&(*p)->next;
 
@@ -4551,9 +4530,10 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
-	const mDNSu8 StdQ  = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
-	const mDNSu8 StdR  = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
-	const mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
+	const mDNSu8 StdQ    = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
+	const mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
 	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
@@ -4569,7 +4549,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 
     if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger && 
-        QR_OP == StdR && msg->h.id.NotAnInteger)
+        (QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
         {
         uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
         return;

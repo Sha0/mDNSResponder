@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.8  2004/02/06 23:04:18  ksekar
+Basic Dynamic Update support via mDNS_Register (dissabled via
+UNICAST_REGISTRATION #define)
+
 Revision 1.7  2004/02/03 19:47:36  ksekar
 Added an asyncronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
@@ -172,10 +176,12 @@ extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, co
 
 extern mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
 
-
 #define GetRRDomainNameTarget(RR) (                                                                          \
-	((RR)->rrtype == kDNSType_CNAME || (RR)->rrtype == kDNSType_PTR) ? &(RR)->rdata->u.name       :          \
+	((RR)->rrtype == kDNSType_CNAME || (RR)->rrtype == kDNSType_PTR || (RR)->rrtype == kDNSType_NS)          \
+	                                                                 ? &(RR)->rdata->u.name       :          \
 	((RR)->rrtype == kDNSType_SRV                                  ) ? &(RR)->rdata->u.srv.target : mDNSNULL )
+
+mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd);
 
 
 // ***************************************************************************
@@ -196,11 +202,11 @@ extern mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 
 
 extern mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl);
 
-#if 0
 extern mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, mDNSu16 *count, const AuthRecord *rr);
-#endif
 
 extern mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass);
+
+extern mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, domainname *zone, mDNSOpaque16 zoneClass);
 
 #define PutResourceRecord(MSG, P, C, RR) PutResourceRecordTTL((MSG), (P), (C), (RR), (RR)->rroriginalttl)
 

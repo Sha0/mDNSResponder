@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.149  2004/02/06 23:04:19  ksekar
+Basic Dynamic Update support via mDNS_Register (dissabled via
+UNICAST_REGISTRATION #define)
+
 Revision 1.148  2004/02/03 19:47:36  ksekar
 Added an asyncronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
@@ -744,9 +748,9 @@ typedef packedstruct
 	{
 	mDNSOpaque16 id;
 	mDNSOpaque16 flags;
-	mDNSu16 numQuestions;
-	mDNSu16 numAnswers;
-	mDNSu16 numAuthorities;
+	union { mDNSu16 numQuestions;   mDNSu16 numZones;   };
+	union { mDNSu16 numAnswers;     mDNSu16 numPrereqs; };
+	union { mDNSu16 numAuthorities; mDNSu16 numUpdates; }; 
 	mDNSu16 numAdditionals;
 	} DNSMessageHeader;
 
@@ -920,6 +924,14 @@ struct ResourceRecord_struct
 	RData           *rdata;				// Pointer to storage for this rdata
 	};
 
+typedef struct
+	{
+    mDNSOpaque16 id;
+    domainname zone;  // the zone that is updated
+    mDNSAddr ns;  // primary name server for the record's zone
+	} uDNS_ResRecInfo;
+
+	
 struct AuthRecord_struct
 	{
 	// For examples of how to set up this structure for use in mDNS_Register(),
@@ -929,8 +941,9 @@ struct AuthRecord_struct
 
 	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
 	ResourceRecord  resrec;
+    uDNS_ResRecInfo uDNS_info;
 
-	// Persistent metadata for Authoritative Records
+    // Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response
 	AuthRecord     *Additional2;		// Another additional
 	AuthRecord     *DependentOn;		// This record depends on another for its uniqueness checking
@@ -1176,6 +1189,7 @@ enum
 typedef struct 
     {
     DNSQuestion     *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+    AuthRecord      *ActiveRegistrations;
     mDNSu16         NextMessageID;
     mDNSAddr        Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
     } uDNS_data_t;  
@@ -1284,6 +1298,8 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 extern const mDNSOpaque16 zeroID;
 extern const mDNSOpaque16 QueryFlags;
 extern const mDNSOpaque16 ResponseFlags;
+extern const mDNSOpaque16 UpdateReqFlags;
+extern const mDNSOpaque16 UpdateRespFlags;	
 
 // ***************************************************************************
 #if 0

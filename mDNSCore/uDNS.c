@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.14  2004/02/06 23:04:19  ksekar
+Basic Dynamic Update support via mDNS_Register (dissabled via
+UNICAST_REGISTRATION #define)
+
 Revision 1.13  2004/02/03 22:15:01  ksekar
 Fixed nameToAddr error check: don't abort state machine on nxdomain error.
 
@@ -105,23 +109,49 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, 
 
 typedef enum
 	{
-	addrResult,
+	zoneDataResult,
+	// other async. operation names go here
 	} AsyncOpResultType;
 
-typedef union
+typedef struct
 	{
-    mDNSv4Addr addr;
-	} AsyncOpResultVal;
+    domainname zoneName; 
+    mDNSAddr primaryAddr;
+    mDNSu16 zoneClass;
+	} zoneData_t;
+
+// other async. result struct defs go here
 
 typedef struct
 	{
     AsyncOpResultType type;
-    AsyncOpResultVal val;
+    union
+	    {
+        zoneData_t zoneData;
+    	// other async result structs go here
+        };
 	} AsyncOpResult;
 
 typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, AsyncOpResult *result); 
 
-mDNSlocal mStatus startNameToZoneNSAddr(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo);
+
+
+
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - General Utility Functions
+#endif
+
+mDNSlocal mDNSOpaque16 newMessageID(uDNS_data_t *u)
+	{
+	// if NextMessageID is 0 (ininitialized) or 0xffff (reserved for TCP packets) reset to 1
+	if (!u->NextMessageID || u->NextMessageID == (mDNSu16)~0) u->NextMessageID = 1;
+	return mDNSOpaque16fromIntVal(u->NextMessageID++);
+	}
+
+
+
 
 
 
@@ -245,7 +275,12 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	DNSQuestion *qptr;
+	AuthRecord *rptr;
 
+	const mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
+	const mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
+	
 	// unused
 	(void)srcaddr;
 	(void)srcport;
@@ -254,7 +289,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	(void)ttl;
 	(void)InterfaceID;
 	
-	if (msg->h.flags.NotAnInteger & kDNSFlag0_QR_Response)
+	if (QR_OP == StdR)
 		{
 		for (qptr = m->uDNS_data.ActiveQueries; qptr; qptr = qptr->next)
 			{
@@ -265,9 +300,19 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				return;
 				}
 			}
-		LogMsg("Received unexpected response: ID %d matches no active queries", mDNSVal16(msg->h.id));		
 		}
-	LogMsg("Received unexpected unicast message");
+	if (QR_OP == UpdateR)
+		{
+		for (rptr = m->uDNS_data.ActiveRegistrations; rptr; rptr = rptr->next)
+			{
+			if (rptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
+				{
+				rptr->RecordCallback(m, rptr, msg->h.flags.b[2] >> 4 ? mStatus_UnknownErr : mStatus_NoError);
+				return;
+				}
+			}
+		}
+	LogMsg("Received unexpected response: ID %d matches no active records", mDNSVal16(msg->h.id));		
 	}
 
 		
@@ -361,8 +406,8 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     DNSMessage msg;
     mDNSu8 *endPtr;
     mStatus err = mStatus_NoError;
-    mDNSu16 idval;
-
+	mDNSOpaque16 id;
+	
     //!!!KRS we should check if the question is already in our acivequestion list
 	if (!ValidateDomainName(&question->qname))
 		{
@@ -370,15 +415,15 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 		return mStatus_Invalid;
 		}
 
-	// if NextMessageID is 0 (ininitialized) or 0xffff (reserved for TCP packets) reset to 1
-	if (!u->NextMessageID || u->NextMessageID == (mDNSu16)~0) u->NextMessageID = 1;
-	idval = u->NextMessageID++;
+	id = newMessageID(u);
+	
 	question->next = NULL;
-	err = constructQueryMsg(&msg, &endPtr, mDNSOpaque16fromIntVal(idval), QueryFlags, question);
+	err = constructQueryMsg(&msg, &endPtr, id, QueryFlags, question);
 	if (err) return err;
 
+
     // store the question/id in active question list
-    question->uDNS_info.id.NotAnInteger = mDNSOpaque16fromIntVal(idval).NotAnInteger;
+    question->uDNS_info.id.NotAnInteger = id.NotAnInteger;
     question->uDNS_info.timestamp = m->timenow;
 	question->uDNS_info.internal = internal;
     question->qnamehash = DomainNameHashValue(&question->qname);    // to do quick domain name comparisons
@@ -474,6 +519,7 @@ typedef struct
     ntaState  	state;               // determines what we do upon receiving a packet
     mDNS	    *m;
     domainname  zone;                // left-hand-side of SOA record
+    mDNSu16     zoneClass; 
     domainname  ns;                  // mname in SOA rdata, verified in confirmNS state
     mDNSv4Addr  addr;                // address of nameserver
     DNSQuestion question;            // storage for any active question
@@ -485,15 +531,15 @@ typedef struct
 
 // function prototypes (for routines that must be used as fn pointers prior to their definitions,
 // and allows states to be read top-to-bottom in logical order)
-mDNSlocal mStatus startNameToZoneNSAddr(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo);
-mDNSlocal void nameToAddr(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr);
+mDNSlocal mStatus startGetZoneData(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo);
+mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr);
 mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
 mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr);
 mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
 mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
 
 // initialization
-mDNSlocal mStatus startNameToZoneNSAddr(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo)
+mDNSlocal mStatus startGetZoneData(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo)
     {
     ntaContext *context = umalloc(sizeof(ntaContext));
     if (!context) { LogMsg("ERROR: startNameToAddr - umalloc failed");  return mStatus_NoMemoryErr; }
@@ -503,12 +549,12 @@ mDNSlocal mStatus startNameToZoneNSAddr(domainname *name, mDNS *m, AsyncOpCallba
     context->m = m;
 	context->callback = callback;
 	context->callbackInfo = callbackInfo;
-    nameToAddr(m, NULL, NULL, NULL, context);
+    getZoneData(m, NULL, NULL, NULL, context);
     return mStatus_NoError;
     }
 
 // state machine entry routine
-mDNSlocal void nameToAddr(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr)
+mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr)
     {
 	AsyncOpResult result;
 	ntaContext *context = contextPtr;
@@ -528,7 +574,7 @@ mDNSlocal void nameToAddr(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNS
 	if (msg && msg->h.flags.b[2] >> 4 && msg->h.flags.b[2] >> 4 != kDNSFlag1_RC_NXDomain)
 		{
 		// rcode non-zero, non-nxdomain
-		LogMsg("ERROR: nameToAddr - received response w/ rcode %d", msg->h.flags.b[2] >> 4);
+		LogMsg("ERROR: getZoneData - received response w/ rcode %d", msg->h.flags.b[2] >> 4);
 		goto error;
 		}
  	
@@ -550,11 +596,14 @@ mDNSlocal void nameToAddr(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNS
 			if (action == smError) goto error;
 			if (action == smBreak) return;
 		case complete:
-			result.type = addrResult;
-			result.val.addr.NotAnInteger = context->addr.NotAnInteger;
+			result.type = zoneDataResult;
+			result.zoneData.primaryAddr.ip.v4.NotAnInteger = context->addr.NotAnInteger;
+			result.zoneData.primaryAddr.type = mDNSAddrType_IPv4;
+			ustrcpy(result.zoneData.zoneName.c, context->zone.c);
+			result.zoneData.zoneClass = context->zoneClass;
 			context->callback(mStatus_NoError, context->m, context->callbackInfo, &result);
 			goto cleanup;
-		default: { LogMsg("ERROR: nameToAddr - bad state %d", context->state); goto error; }			
+		default: { LogMsg("ERROR: getZoneData - bad state %d", context->state); goto error; }			
         }
 
 error:
@@ -624,7 +673,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     ustrcpy(query->qname.c, context->curSOA->c);
     query->qtype = kDNSType_SOA;
     query->qclass = kDNSClass_IN;
-    err = startInternalQuery(query, context->m, nameToAddr, context);
+    err = startInternalQuery(query, context->m, getZoneData, context);
     if (err) { LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  return smError;  }
 	context->questionActive = mDNStrue;
     return smBreak;     // break from state machine until we receive another packet	
@@ -633,6 +682,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr)
 	{
 	ustrcpy(context->zone.c, rr->name.c);
+	context->zoneClass = rr->rrclass;
 	ustrcpy(context->ns.c, rr->rdata->u.soa.mname.c);
 	context->state = foundZone;
 	}
@@ -654,7 +704,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 		ustrcpy(query->qname.c, context->zone.c);
 		query->qtype = kDNSType_NS;
 		query->qclass = kDNSClass_IN;
-		err = startInternalQuery(query, context->m, nameToAddr, context);
+		err = startInternalQuery(query, context->m, getZoneData, context);
 		if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
 		context->questionActive = mDNStrue;	   
 		context->state = lookupNS;
@@ -718,7 +768,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 		ustrcpy(query->qname.c, context->ns.c);
 		query->qtype = kDNSType_A;
 		query->qclass = kDNSClass_IN;
-		err = startInternalQuery(query, context->m, nameToAddr, context);
+		err = startInternalQuery(query, context->m, getZoneData, context);
 		if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
 		context->questionActive = mDNStrue;
 		context->state = lookupA;
@@ -845,12 +895,178 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	uDNS_StopQuery(m, question);  //!!!KRS can we really call this here?
 	}
 
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - Dynamic Updates
+#endif
+
+mDNSlocal void sendUpdate(mStatus err, mDNS *const m, void *authPtr, AsyncOpResult *result)
+	{
+	AuthRecord *newRR = authPtr;
+	DNSMessage msg;
+	mDNSu8 *ptr = msg.data;
+	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
+	AuthRecord prereq;
+	zoneData_t *zoneData = &result->zoneData;
+	uDNS_data_t *u = &m->uDNS_data;
+	mDNSOpaque16 id;
+
+	if (err) goto error;
+	if (result->type != zoneDataResult)
+		{
+		LogMsg("ERROR: buildUpdatePacket passed incorrect result type %d", result->type);
+		goto error;
+		}
+
+	id = newMessageID(u);
+	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
+	newRR->uDNS_info.id.NotAnInteger = id.NotAnInteger;
+	
+	// set zone
+	ptr = putZone(&msg, ptr, end, &zoneData->zoneName, mDNSOpaque16fromIntVal(zoneData->zoneClass));
+	if (!ptr) goto error;
+	
+	if (newRR->resrec.RecordType != kDNSRecordTypeShared)
+		{
+		// build prereq (no RR w/ same name/type may exist in zone)
+		ubzero(&prereq, sizeof(AuthRecord));
+		ustrcpy(prereq.resrec.name.c, newRR->resrec.name.c);
+		prereq.resrec.rrtype = newRR->resrec.rrtype;
+		prereq.resrec.rrclass = kDNSClass_NONE;
+		ptr = putEmptyResourceRecord(&msg, ptr, end, &msg.h.numPrereqs, &prereq);
+		if (!ptr) goto error;
+		}
+
+	// add new record, send the message, link into list
+	if (newRR->resrec.rrclass != zoneData->zoneClass)
+		{
+		LogMsg("ERROR: New resource record's class (%d) does not match zone class (%d)",
+			   newRR->resrec.rrclass, zoneData->zoneClass);
+		goto error;
+		}
+	ptr = PutResourceRecord(&msg, ptr, &msg.h.numUpdates, &newRR->resrec);
+	if (!ptr) goto error;
+
+	err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
+	if (err) { LogMsg("ERROR: mDNSSendDNSMessage - %d", err); goto error; }
+
+	// cache zone data, link into list
+	ustrcpy(newRR->uDNS_info.zone.c, zoneData->zoneName.c);
+    newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
+	newRR->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
+	newRR->next = u->ActiveRegistrations;
+	u->ActiveRegistrations = newRR;
+
+	return;
+		
+error:
+	newRR->RecordCallback(m, newRR, err);
+	// NOTE: not safe to touch any client structures here
+	}
+
+
+
+extern mStatus uDNS_Register(mDNS *const m, AuthRecord *const rr)
+	{
+	domainname *target = GetRRDomainNameTarget(&rr->resrec);	
+
+	if (rr->HostTarget)
+		{
+		if (target) target->c[0] = 0;
+		//!!!KRS do we need to reassign target here?
+		if (target && !SameDomainName(target, &m->hostname))
+			{
+			AssignDomainName(*target, m->hostname);
+			SetNewRData(&rr->resrec, mDNSNULL, 0);
+			}
+		}
+	else
+		{
+		rr->resrec.rdlength   = GetRDLength(&rr->resrec, mDNSfalse);
+		rr->resrec.rdestimate = GetRDLength(&rr->resrec, mDNStrue);
+		}
+		
+	if (!ValidateDomainName(&rr->resrec.name))
+		{
+		LogMsg("Attempt to register record with invalid name: %s", GetRRDisplayString(m, rr));
+		return mStatus_Invalid;
+		}
+
+	// Don't do this until *after* we've set rr->resrec.rdlength
+	if (!ValidateRData(rr->resrec.rrtype, rr->resrec.rdlength, rr->resrec.rdata))
+		{ LogMsg("Attempt to register record with invalid rdata: %s", GetRRDisplayString(m, rr));
+		return mStatus_Invalid;
+		}
+
+	rr->resrec.namehash   = DomainNameHashValue(&rr->resrec.name);
+	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
+	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
+
+	rr->resrec.RecordType = kDNSRecordTypeUnique;
+	return startGetZoneData(&rr->resrec.name, m, sendUpdate, rr);
+	}
+
+extern mStatus uDNS_Deregister(mDNS *const m, AuthRecord *const rr)
+	{
+	AuthRecord *rptr, *prev = NULL;
+	uDNS_data_t *u = &m->uDNS_data;
+	DNSMessage msg;
+	mDNSu8 *ptr = msg.data;
+	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
+	mDNSu16 origclass;
+	mStatus err;
+	
+	for (rptr = u->ActiveRegistrations; rptr; rptr = rptr->next)
+		{
+		if (rptr == rr)
+			{
+			if (prev) prev->next = rptr->next;
+			else u->ActiveRegistrations = rptr->next;
+			rptr->next = NULL;
+			break;			
+			}
+		prev = rptr;
+		}
+	if (!rptr)
+		{
+		LogMsg("ERROR: uDNS_Deregister - no such active record");
+		return mStatus_UnknownErr;
+		}
+	
+	InitializeDNSMessage(&msg.h, rr->uDNS_info.id, UpdateReqFlags);
+
+	// put zone
+	ptr = putZone(&msg, ptr, end, &rr->uDNS_info.zone, mDNSOpaque16fromIntVal(rr->resrec.rrtype));
+	if (!ptr) goto error;
+
+	// prereq: record must exist (put record in prereq section w/ TTL 0)
+	ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.numPrereqs, &rr->resrec, 0);
+	if (!ptr) goto error;
+
+	// deletion: specify record w/ TTL 0, class NONE
+	origclass = rr->resrec.rrclass;
+	rr->resrec.rrclass = kDNSClass_NONE;
+	ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.numUpdates, &rr->resrec, 0);
+	if (!ptr) goto error;
+	rr->resrec.rrclass = origclass;
+
+	err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, UnicastDNSPort);
+	if (err) { LogMsg("ERROR: mDNSSendDNSMessage - %d", err); goto error; }
+
+	return mStatus_NoError;
+
+	error:
+	LogMsg("ERROR: uDNS_Deregister");
+	return mStatus_UnknownErr;
+	}
+
+	
+
 mDNSexport mDNSs32 uDNS_GetNextEventTime(const mDNS *const m)
     {
     const uDNS_data_t *u = &m->uDNS_data;
     (void)u;				// unused
 
     return m->timenow + 0x78000000;
-
-	(void)startNameToZoneNSAddr; //!!!KRS surpress unused function warning until this function is integrated
 	}
