@@ -47,6 +47,7 @@
 #include "mDNSClientAPI.h"				// Defines the interface to the client layer above
 #include "mDNSPlatformEnvironment.h"	// Defines the specific types needed to run mDNS on this platform
 #include "mDNSsprintf.h"
+#include "mDNSvsprintf.h"				// Used to implement LogErrorMessage();
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
@@ -133,12 +134,16 @@ static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 
 void LogErrorMessage(const char *format, ...)
 	{
-	va_list ap;
-	va_start(ap, format);
+	unsigned char buffer[512];
+	va_list ptr;
+	va_start(ptr,format);
+	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	va_end(ptr);
 	openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
-	vsyslog(LOG_ERR, format, ap);
+	fprintf(stderr, "%s\n", buffer);
+	syslog(LOG_ERR, "%s", buffer);
 	closelog();
-	va_end(ap);
+	fflush(stderr);
 	}
 
 #if MACOSX_MDNS_MALLOC_DEBUGGING
@@ -257,23 +262,31 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 	while (*r && (*r)->ClientMachPort != ClientMachPort) r = &(*r)->next;
 	if (*r)
 		{
-		char name[256];
 		DNSServiceRegistration *x = *r;
 		*r = (*r)->next;
-		mDNS_sprintf(name, "%##s", &x->s.RR_SRV.name);
-		debugf("Client %5d deregistering Service Record Set \"%s\"", x->ClientMachPort, name);
-		LogErrorMessage("Client %5d deregistering Service Record Set \"%s\"", x->ClientMachPort, name);
 		mDNS_DeregisterService(&mDNSStorage, &x->s);
 		// Note that we don't do the "free(x);" here -- wait for the mStatus_MemFree message
 		return;
 		}
 	}
 
-mDNSlocal void AbortBlockedClient(mach_port_t ClientMachPort, char *msg)
+mDNSlocal void AbortBlockedClient(mach_port_t c, char *m)
 	{
-	LogErrorMessage("Client %5d stopped accepting Mach messages and has been disconnected from its %s reply",
-		ClientMachPort, msg);
-	AbortClient(ClientMachPort);
+	DNSServiceDomainEnumeration **e = &DNSServiceDomainEnumerationList;
+	DNSServiceBrowser           **b = &DNSServiceBrowserList;
+	DNSServiceResolver          **l = &DNSServiceResolverList;
+	DNSServiceRegistration      **r = &DNSServiceRegistrationList;
+	while (*e && (*e)->ClientMachPort != c) e = &(*e)->next;
+	while (*b && (*b)->ClientMachPort != c) b = &(*b)->next;
+	while (*l && (*l)->ClientMachPort != c) l = &(*l)->next;
+	while (*r && (*r)->ClientMachPort != c) r = &(*r)->next;
+	if      (*e) LogErrorMessage("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e[0]->dom.name, m);
+	else if (*b) LogErrorMessage("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b[0]->q.name, m);
+	else if (*l) LogErrorMessage("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l[0]->i.name, m);
+	else if (*r) LogErrorMessage("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r[0]->s.RR_SRV.name, m);
+	else         LogErrorMessage("%5d (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
+
+	AbortClient(c);
 	}
 
 mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIndex size, void *info)
@@ -282,8 +295,6 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIn
 	if (msg->msgh_id == MACH_NOTIFY_DEAD_NAME)
 		{
 		const mach_dead_name_notification_t *const deathMessage = (mach_dead_name_notification_t *)msg;
-		debugf("Client on port %d died or deallocated", deathMessage->not_port);
-		LogErrorMessage("Client %5d died or deallocated", deathMessage->not_port);
 		AbortClient(deathMessage->not_port);
 
 		/* Deallocate the send right that came in the dead name notification */
@@ -626,10 +637,6 @@ mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainl
 		LogErrorMessage("Client %5d   registering Service Record Set \"%s\"; WARNING! now have %d instances",
 			x->ClientMachPort, name, count+1);
 		}
-	else
-		{
-		LogErrorMessage("Client %5d   registering Service Record Set \"%s\"", x->ClientMachPort, name);
-		}
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -821,7 +828,6 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 		return(err);
 		}
 
-	LogErrorMessage("Received a request to remove the record of reference: %X", extra);
 	debugf("Received a request to remove the record of reference: %X", extra);
 	if (extra->r.rdata != &extra->r.rdatastorage)
 		freeL("Extra RData", extra->r.rdata);
@@ -1096,7 +1102,7 @@ mDNSexport int main(int argc, char **argv)
 	if (status == 0)
 		{
 		CFRunLoopRun();
-		debugf("Exiting");
+		LogErrorMessage("CFRunLoopRun Exiting. This is bad.");
 		mDNS_Close(&mDNSStorage);
 		}
 
