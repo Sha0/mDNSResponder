@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.69  2003/05/06 20:14:44  cheshire
+Change "tp" to "tv"
+
 Revision 1.68  2003/05/06 00:00:49  cheshire
 <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -963,15 +966,15 @@ mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
 
 mDNSexport mDNSs32  mDNSPlatformTimeNow(void)
 	{
-	struct timeval tp;
-	gettimeofday(&tp, NULL);
-	// tp.tv_sec is seconds since 1st January 1970 (GMT, with no adjustment for daylight savings time)
-	// tp.tv_usec is microseconds since the start of this second (i.e. values 0 to 999999)
-	// We use the lower 22 bits of tp.tv_sec for the top 22 bits of our result
-	// and we multiply tp.tv_usec by 16 / 15625 to get a value in the range 0-1023 to go in the bottom 10 bits.
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	// tv.tv_sec is seconds since 1st January 1970 (GMT, with no adjustment for daylight savings time)
+	// tv.tv_usec is microseconds since the start of this second (i.e. values 0 to 999999)
+	// We use the lower 22 bits of tv.tv_sec for the top 22 bits of our result
+	// and we multiply tv.tv_usec by 16 / 15625 to get a value in the range 0-1023 to go in the bottom 10 bits.
 	// This gives us a proper modular (cyclic) counter that has a resolution of roughly 1ms (actually 1/1024 second)
 	// and correctly cycles every 2^22 seconds (4194304 seconds = approx 48 days).
-	return( (tp.tv_sec << 10) | (tp.tv_usec * 16 / 15625) );
+	return( (tv.tv_sec << 10) | (tv.tv_usec * 16 / 15625) );
 	}
 
 // Locking is a no-op here, because we're single-threaded with a CFRunLoop, so we can never interrupt ourselves
