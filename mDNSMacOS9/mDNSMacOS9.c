@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.29  2004/05/26 20:53:16  cheshire
+Remove unncecessary "return( -1 );" at the end of mDNSPlatformUTC()
+
 Revision 1.28  2004/05/20 18:39:06  cheshire
 Fix build broken by addition of mDNSPlatformUTC requirement
 
@@ -692,5 +695,4 @@ mDNSexport mDNSs32	mDNSPlatformUTC(void)
 	GetDateTime(&SecsSince1904);
 	ReadLocation(&ThisLocation);
 	return((mDNSs32)(SecsSince1904 - ThisLocationGMTdelta - TIME_ADJUST));
-	return( -1 );
 	}
