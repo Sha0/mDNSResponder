@@ -808,22 +808,21 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	return(mStatus_NoError);
 	}
 
+// mDNS_Dereg_normal is used for most calls to mDNS_Deregister_internal
+// mDNS_Dereg_conflict is used to indicate that this record is being forcibly deregistered because of a conflict
+// mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
+typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_Dereg_type;
+
 // NOTE: mDNS_Deregister_internal can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow, mDNSBool conflict)
+mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow, mDNS_Dereg_type drt)
 	{
 	mDNSu8 RecordType = rr->RecordType;
-	if (RecordType == kDNSRecordTypeShared)
-		{
-		if (rr->AnnounceCount < DefaultAnnounceCountForTypeShared)
-			debugf("Sending deregister for  %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
-		else
-			debugf("Now deleting record for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
-		}
-
-	// If this is a shared record and we've announced it at least once, we need to retract that announcement before we delete the record
+	// If this is a shared record and we've announced it at least once,
+	// we need to retract that announcement before we delete the record
 	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < DefaultAnnounceCountForTypeShared)
 		{
+		debugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 		rr->RecordType     = kDNSRecordTypeDeregistering;
 		rr->rroriginalttl  = 0;
 		rr->rrremainingttl = 0;
@@ -835,20 +834,29 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 		while (*p && *p != rr) p=&(*p)->next;
 
 		if (*p) *p = rr->next;
-		else debugf("mDNS_Deregister_internal: Record %##s not found in list", rr->name.c);
+		else
+			{
+			// No need to give an error message if we already know this is a potentially repeated deregistration
+			if (drt != mDNS_Dereg_repeat)
+				debugf("mDNS_Deregister_internal: Record %##s (%s) not found in list", rr->name.c, DNSTypeName(rr->rrtype));
+			return;
+			}
 		// If someone is about to look at this, bump the pointer forward
 		if (m->CurrentRecord == rr) m->CurrentRecord = rr->next;
 		rr->next = mDNSNULL;
 
 		if      (RecordType == kDNSRecordTypeUnregistered)
-			debugf("mDNS_Deregister_internal: Record %##s already marked kDNSRecordTypeUnregistered", rr->name.c);
+			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeUnregistered", rr->name.c, DNSTypeName(rr->rrtype));
 		else if (RecordType == kDNSRecordTypeDeregistering)
-			debugf("mDNS_Deregister_internal: Record %##s already marked kDNSRecordTypeDeregistering", rr->name.c);
+			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeDeregistering", rr->name.c, DNSTypeName(rr->rrtype));
 		else
+			{
+			debugf("mDNS_Deregister_internal: Deleting record for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 			rr->RecordType = kDNSRecordTypeUnregistered;
+			}
 
-		if (conflict && RecordType == kDNSRecordTypeShared)
-			debugf("mDNS_Deregister_internal: Cannot have a conflict on a shared record! %##s", rr->name.c);
+		if ((drt == mDNS_Dereg_conflict || drt == mDNS_Dereg_repeat) && RecordType == kDNSRecordTypeShared)
+			debugf("mDNS_Deregister_internal: Cannot have a conflict on a shared record! %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 
 		// If we have an update queued up which never executed, give the client a chance to free that memory
 		if (rr->NewRData)
@@ -860,7 +868,7 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 		
 		if (RecordType == kDNSRecordTypeShared && rr->Callback)
 			rr->Callback(m, rr, mStatus_MemFree);
-		else if (conflict)
+		else if (drt == mDNS_Dereg_conflict)
 			{
 			m->SuppressProbes = timenow + mDNSPlatformOneSecond;
 			if (m->SuppressProbes == 0) m->SuppressProbes = 1;
@@ -1451,7 +1459,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSs32 timenow)
 			{
 			rr->RecordType    = kDNSRecordTypeShared;
 			rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
-			mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
+			mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 			}
 		}
 	}
@@ -1525,7 +1533,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 					responseptr = newptr;
 					rr->RecordType    = kDNSRecordTypeShared;
 					rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
-					mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
+					mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 					}
 				}
 			}
@@ -2543,7 +2551,7 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 								break;
 					case  0:	break;
 					case -1:	debugf("ResolveSimultaneousProbe: %##s (%s): We lost", our->name.c, DNSTypeName(our->rrtype));
-								mDNS_Deregister_internal(m, our, timenow, mDNStrue);
+								mDNS_Deregister_internal(m, our, timenow, mDNS_Dereg_conflict);
 								return;
 					}
 				}
@@ -2879,7 +2887,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								{
 								debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 								// If we're probing for this record (or we assumed it must be unique) we just failed
-								mDNS_Deregister_internal(m, rr, timenow, mDNStrue);
+								mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_conflict);
 								}
 							}
 						}
@@ -3330,7 +3338,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 mDNSexport void mDNS_Deregister(mDNS *const m, ResourceRecord *const rr)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
-	mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
+	mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 	mDNS_Unlock(m);
 	}
 
@@ -3462,12 +3470,30 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	return(mStatus_NoError);
 	}
 
+mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set, const mDNSs32 timenow)
+	{
+	NetworkInterfaceInfo *i;
+	// If we still have address records referring to this one, update them
+	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
+	ResourceRecord *A1 = primary ? &primary->RR_A1 : mDNSNULL;
+	ResourceRecord *A2 = primary ? &primary->RR_A2 : mDNSNULL;
+	for (i=m->HostInterfaces; i; i=i->next)
+		{
+		if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = A1;
+		if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = A2;
+		}
+
+	// Unregister these records
+	mDNS_Deregister_internal(m, &set->RR_A1,  timenow, mDNS_Dereg_normal);
+	mDNS_Deregister_internal(m, &set->RR_A2,  timenow, mDNS_Dereg_normal);
+	mDNS_Deregister_internal(m, &set->RR_PTR, timenow, mDNS_Dereg_normal);
+	}
+
 // NOTE: mDNS_DeregisterInterface calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
-	NetworkInterfaceInfo *i;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	const mDNSs32 timenow = mDNS_Lock(m);
 
@@ -3483,23 +3509,10 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	FlushCacheRecords(m, set->ip, timenow);
 
 	// If we were advertising on this interface, deregister now
-	if (set->Advertise)
-		{
-		// If we still have address records referring to this one, update them
-		NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
-		ResourceRecord *A1 = primary ? &primary->RR_A1 : mDNSNULL;
-		ResourceRecord *A2 = primary ? &primary->RR_A2 : mDNSNULL;
-		for (i=m->HostInterfaces; i; i=i->next)
-			{
-			if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = A1;
-			if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = A2;
-			}
-	
-		// Unregister these records
-		if (set->RR_A1.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A1, timenow, mDNSfalse);
-		if (set->RR_A2.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A2, timenow, mDNSfalse);
-		if (set->RR_PTR.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_PTR, timenow, mDNSfalse);
-		}
+	// When doing the mDNS_Close processing, we first call mDNS_DeadvertiseInterface for each interface
+	// so by the time the platform support layer gets to call mDNS_DeregisterInterface,
+	// the address and PTR records have already been deregistered for it
+	if (set->Advertise && set->RR_A1.RecordType) mDNS_DeadvertiseInterface(m, set, timenow);
 
 	mDNS_Unlock(m);
 	}
@@ -3607,9 +3620,14 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->Extras = mDNSNULL;
 
 	timenow = mDNS_Lock(m);
-	mDNS_Register_internal(m, &sr->RR_PTR, timenow);
 	mDNS_Register_internal(m, &sr->RR_SRV, timenow);
 	mDNS_Register_internal(m, &sr->RR_TXT, timenow);
+	// We register the RR_PTR last, because we want to be sure that in the event of a forced call to
+	// mDNS_Close, the RR_PTR will be the last one to be forcibly deregistered, since that is what triggers
+	// the mStatus_MemFree callback to ServiceCallback, which in turn passes on the mStatus_MemFree back to
+	// the client callback, which is then at liberty to free the ServiceRecordSet memory at will. We need to
+	// make sure we've deregistered all our records and done any other necessary cleanup before that happens.
+	mDNS_Register_internal(m, &sr->RR_PTR, timenow);
 	mDNS_Unlock(m);
 
 	return(mStatus_NoError);
@@ -3681,17 +3699,25 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
-	mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNSfalse);
-	// These checks are because, in the event of a collision, some or all records could have already been automatically deregistered
-	if (sr->RR_SRV.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_SRV, timenow, mDNSfalse);
-	if (sr->RR_TXT.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_TXT, timenow, mDNSfalse);
+
+	// We use mDNS_Dereg_repeat because, in the event of a collision, some or all of
+	// these records could have already been automatically deregistered, and that's okay
+	mDNS_Deregister_internal(m, &sr->RR_SRV, timenow, mDNS_Dereg_repeat);
+	mDNS_Deregister_internal(m, &sr->RR_TXT, timenow, mDNS_Dereg_repeat);
 	while (sr->Extras)
 		{
 		ExtraResourceRecord *e = sr->Extras;
 		sr->Extras = sr->Extras->next;
-		if (e->r.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &e->r, timenow, mDNSfalse);
+		mDNS_Deregister_internal(m, &e->r, timenow, mDNS_Dereg_repeat);
 		}
-	
+
+	// Be sure to deregister the PTR last!
+	// Deregistering this record is what triggers the mStatus_MemFree callback to ServiceCallback,
+	// which in turn passes on the mStatus_MemFree (or mStatus_NameConflict) back to the client callback,
+	// which is then at liberty to free the ServiceRecordSet memory at will. We need to make sure
+	// we've deregistered all our records and done any other necessary cleanup before that happens.
+	mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNS_Dereg_normal);
+
 	mDNS_Unlock(m);
 	}
 
@@ -3768,8 +3794,13 @@ extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 
 extern void mDNS_Close(mDNS *const m)
 	{
+	NetworkInterfaceInfo *i;
 	const mDNSs32 timenow = mDNS_Lock(m);
 	m->ActiveQuestions = mDNSNULL;		// We won't be answering any more questions!
+	
+	for (i=m->HostInterfaces; i; i=i->next)
+		if (i->Advertise)
+			mDNS_DeadvertiseInterface(m, i, timenow);
 
 	// Make sure there are nothing but deregistering records remaining in the list
 	if (m->CurrentRecord) debugf("DiscardDeregistrations ERROR m->CurrentRecord already set");
@@ -3780,8 +3811,8 @@ extern void mDNS_Close(mDNS *const m)
 		m->CurrentRecord = rr->next;
 		if (rr->RecordType != kDNSRecordTypeDeregistering)
 			{
-			debugf("mDNS_Close: Record type %d still in ResourceRecords list %##s", rr->RecordType, rr->name.c);
-			mDNS_Deregister_internal(m, rr, timenow, mDNSfalse);
+			debugf("mDNS_Close: Record type %X still in ResourceRecords list %##s", rr->RecordType, rr->name.c);
+			mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 			}
 		}
 
