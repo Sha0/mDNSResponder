@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.73  2003/05/21 17:56:29  ksekar
+Bug #: <rdar://problem/3191277>:	mDNSResponder doesn't watch for IPv6 address changes
+
 Revision 1.72  2003/05/14 18:48:41  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 More minor refinements:
@@ -906,19 +909,24 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NetworkChanged, &context);
 	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	CFStringRef           key2     = SCDynamicStoreKeyCreateComputerName(NULL);
-	CFStringRef           key3     = SCDynamicStoreKeyCreateHostNames(NULL);
-	CFStringRef           pattern  = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
+	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
+	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
+	CFStringRef           key4     = SCDynamicStoreKeyCreateHostNames(NULL);
+	CFStringRef           pattern1  = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
+CFStringRef           pattern2  = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
+
 	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
 	if (!store) { fprintf(stderr, "SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
-	if (!key1 || !key2 || !key3 || !keys || !pattern || !patterns) goto error;
+	if (!key1 || !key2 || !key3 || !key4 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
 
 	CFArrayAppendValue(keys, key1);
 	CFArrayAppendValue(keys, key2);
 	CFArrayAppendValue(keys, key3);
-	CFArrayAppendValue(patterns, pattern);
+	CFArrayAppendValue(keys, key4);
+	CFArrayAppendValue(patterns, pattern1);
+	CFArrayAppendValue(patterns, pattern2);
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
 		{ fprintf(stderr, "SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
 
@@ -937,7 +945,9 @@ exit:
 	if (key1)     CFRelease(key1);
 	if (key2)     CFRelease(key2);
 	if (key3)     CFRelease(key3);
-	if (pattern)  CFRelease(pattern);
+	if (key4)     CFRelease(key4);
+	if (pattern1) CFRelease(pattern1);
+	if (pattern2) CFRelease(pattern2);
 	if (keys)     CFRelease(keys);
 	if (patterns) CFRelease(patterns);
 	
