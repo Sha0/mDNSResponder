@@ -18,6 +18,11 @@
  * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
+ *
+ * $Log: ExampleClientApp.h,v $
+ * Revision 1.3  2003/03/31 22:49:35  cheshire
+ * Add "$Log" header
+ *
  */
 
 extern void ExampleClientEventLoop(mDNS *const m);

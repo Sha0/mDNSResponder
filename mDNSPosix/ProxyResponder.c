@@ -18,6 +18,11 @@
  * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
+ *
+ * $Log: ProxyResponder.c,v $
+ * Revision 1.11  2003/03/31 22:49:35  cheshire
+ * Add "$Log" header
+ *
  */
 
 #include <stdio.h>			// For printf()
