@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.148  2004/12/20 20:37:35  cheshire
+AllowRemoteQuery not set for the extras in a ServiceRecordSet
+
 Revision 1.147  2004/12/20 00:15:41  cheshire
 Include client file descriptor numbers in udsserver_info() output
 
@@ -2193,10 +2196,12 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
 		{
 		if (instance->allowremotequery)
 			{
+			ExtraResourceRecord *e;
 			srs->RR_ADV.AllowRemoteQuery = mDNStrue;
 			srs->RR_PTR.AllowRemoteQuery = mDNStrue;
 			srs->RR_SRV.AllowRemoteQuery = mDNStrue;
 			srs->RR_TXT.AllowRemoteQuery = mDNStrue;
+			for (e = instance->srs.Extras; e; e = e->next) e->r.AllowRemoteQuery = mDNStrue;	
 			}
         process_service_registration(srs);
         if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
