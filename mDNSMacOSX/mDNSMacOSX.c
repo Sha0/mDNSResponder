@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.167  2004/08/17 00:52:43  ksekar
+Fix config file parse error, make semantics match SCPreferences
+configuration input.
+
 Revision 1.166  2004/08/16 19:55:07  ksekar
 Change enumeration type to BrowseDefault to construct empty-string
 browse list as result of checking 1.161.
@@ -2168,65 +2172,48 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	
 mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;;
-	char key[MAX_ESCAPED_DOMAIN_NAME], uname[MAX_ESCAPED_DOMAIN_NAME], ServiceRegDomain[MAX_ESCAPED_DOMAIN_NAME];
-	domainname key_d, newhostname;
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	char uname[MAX_ESCAPED_DOMAIN_NAME];
+	domainname newhostname;
 	char secret[1024];
 	int slen;
 	mStatus err;
-
+	FILE *f;
+	
     // read registration domain (for dynamic updates) from config file
-    // !!!KRS these must go away once we can learn the reg domain from the network or prefs	
+	
 	if (m->uDNS_info.UnicastHostname.c[0])
 		{ debugf("Options from config already set via keychain. Ignoring config file."); return; }
 
-	FILE *f = fopen(CONFIG_FILE, "r");
+	secret[0] = 0;
+	uname[0] = 0;
+	f = fopen(CONFIG_FILE, "r");
 	if (f)
 		{
-		if (!GetConfigOption(uname, "name", f)) goto end;
-		if (!GetConfigOption(ServiceRegDomain, "service-reg", f)) goto end;
-		if (!GetConfigOption(key, "key-name", f)) goto end;
-		if (!GetConfigOption(secret, "secret-64", f)) { LogMsg("ERROR: config file contains key without secret"); goto end; }
-	
-		if (!MakeDomainNameFromDNSNameString(&newhostname, uname))
-			{ LogMsg("ERROR: config file contains bad service hostname %s", uname); uname[0] = '\0'; }	
-	
-		if (!MakeDomainNameFromDNSNameString(&u->ServiceRegDomain, ServiceRegDomain))
-			{ LogMsg("ERROR: config file contains bad service reg domain %s", ServiceRegDomain); ServiceRegDomain[0] = '\0'; }	
-	
-		if (!MakeDomainNameFromDNSNameString(&key_d, key))
-			{ LogMsg("ERROR: config file contains bad key %s", key); key[0] = '\0'; }
-	
-		if (key[0])
-			{
-			slen = strlen(secret);
-			if (u->ServiceRegDomain.c[0]) 
-				{
-				err = mDNS_UpdateDomainRequiresAuthentication(m, &u->ServiceRegDomain, &key_d, secret, slen, mDNStrue);
-				if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain %#s", err, &u->ServiceRegDomain);
-				}
-			if (newhostname.c[0])
-				{
-				err = mDNS_UpdateDomainRequiresAuthentication(m, &newhostname, &key_d, secret, slen, mDNStrue);
-				if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain %#s", err, &newhostname);
-				}
-			}
-		end:
+		GetConfigOption(uname, "hostname", f);
+		if (uname[0] && !MakeDomainNameFromDNSNameString(&newhostname, uname))
+			{ LogMsg("ERROR: config file contains bad hostname %s", uname); uname[0] = '\0'; }	
+		else GetConfigOption(secret, "secret-64", f);  // failure means no authentication
 		fclose(f);
 		}
 	else
 		{
 		if (errno != ENOENT) LogMsg("ERROR: Config file exists, but cannot be opened.");
 		GetUserSpecifiedDDNSName(&newhostname);
-		if (newhostname.c[0])
-			{
-			AssignDomainName(u->ServiceRegDomain, *(domainname*)(newhostname.c + 1 + newhostname.c[0]));
-			// !!!SDC In future will need to get the key and key name from keychain
-			LogMsg("ReadRegDomainFromConfig ServiceRegDomain: %##s", u->ServiceRegDomain.c);
-			}
+		if (newhostname.c[0]) LogMsg("ReadRegDomainFromConfig ServiceRegDomain: %##s", u->ServiceRegDomain.c);
+		// !!!SDC In future will need to get the key and key name from keychain		
 		}
 
-	mDNS_SetFQDNs(m, &newhostname);  // no-op if we didn't get a config
+	// set empty-string service registration domain to hostname minus first label
+	AssignDomainName(u->ServiceRegDomain, *(domainname*)(newhostname.c + 1 + newhostname.c[0]));
+	if (secret[0] && u->ServiceRegDomain.c[0]) 
+		{
+		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
+		slen = strlen(secret);
+		err = mDNS_UpdateDomainRequiresAuthentication(m, &u->ServiceRegDomain, &u->ServiceRegDomain, secret, slen, mDNStrue);
+		if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain %#s", err, &u->ServiceRegDomain);
+		}	
+	if (newhostname.c[0]) mDNS_SetFQDNs(m, &newhostname);
 	}
 
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
