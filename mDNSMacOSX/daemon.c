@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.102  2003/05/22 01:32:31  cheshire
+ * Fix typo in Log message format string
+ *
  * Revision 1.101  2003/05/22 00:26:55  cheshire
  * <rdar://problem/3239284> DNSServiceRegistrationCreate() should return error on dup
  * Modify error message to explain that this is technically legal, but may indicate a bug.
@@ -44,7 +47,7 @@
  * Changed kmDNSBootstrapName to "com.apple.mDNSResponderRestart" since we're changing the main Mach message port to "com.apple.mDNSResponder.
  *
  * Revision 1.99  2003/05/21 17:33:49  cheshire
- * Fix warnings (mainly printf format string warnings, like using "%d" where it should say "%lud", etc.)
+ * Fix warnings (mainly printf format string warnings, like using "%d" where it should say "%lu", etc.)
  *
  * Revision 1.98  2003/05/20 00:33:07  cheshire
  * <rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
@@ -234,7 +237,7 @@ void *mallocL(char *msg, unsigned int size)
 		}
 	else
 		{
-		LogMalloc("malloc( %s : %lud ) = %p", msg, size, &mem[2]);
+		LogMalloc("malloc( %s : %lu ) = %p", msg, size, &mem[2]);
 		mem[0] = 0xDEAD1234;
 		mem[1] = size;
 		//bzero(&mem[2], size);
