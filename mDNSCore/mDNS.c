@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.103  2003/04/19 02:26:35  cheshire
+Bug #: <rdar://problem/3233804> Incorrect goodbye packet after conflict
+
 Revision 1.102  2003/04/17 03:06:28  cheshire
 Bug #: <rdar://problem/3231321> No need to query again when a service goes away
 Set UnansweredQueries to 2 when receiving a "goodbye" packet
@@ -1130,7 +1133,15 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 #define DefaultProbeCountForRecordType(X)      ((X) == kDNSRecordTypeUnique ? DefaultProbeCountForTypeUnique : (mDNSu8)0)
 
-#define DefaultAnnounceCount ((mDNSu8)10)
+// For records that have *never* been announced on the wire, their AnnounceCount will be set to InitialAnnounceCount (10).
+// When de-registering these records we do not need to send any goodbye packet because we never announced them in the first
+// place. If AnnounceCount is less than InitialAnnounceCount that means we have announced them at least once, so a goodbye
+// packet is needed. For this reason, if we ever reset AnnounceCount (e.g. after an interface change) we set it to
+// ReannounceCount (9), not InitialAnnounceCount. If we were to reset AnnounceCount back to InitialAnnounceCount that would
+// imply that the record had never been announced on the wire (which is false) and if the client were then to immediately
+// deregister that record before it had a chance to announce, we'd fail to send its goodbye packet (which would be a bug).
+#define InitialAnnounceCount ((mDNSu8)10)
+#define ReannounceCount      ((mDNSu8)9)
 
 // Note that the announce intervals use exponential backoff, doubling each time. The probe intervals do not.
 // This means that because the announce interval is doubled after sending the first packet, the first
@@ -1270,35 +1281,52 @@ mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		}
 	}
 
+#define GetRRHostNameTarget(RR) (                                                                                    \
+	((RR)->rrtype == kDNSType_CNAME || (RR)->rrtype == kDNSType_PTR) ? &(RR)->rdata->u.name       :          \
+	((RR)->rrtype == kDNSType_SRV                                  ) ? &(RR)->rdata->u.srv.target : mDNSNULL )
+
 mDNSlocal void SetTargetToHostName(const mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow)
 	{
-	switch (rr->rrtype)
-		{
-		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	rr->rdata->u.name       = m->hostname1; break;
-		case kDNSType_SRV:	rr->rdata->u.srv.target = m->hostname1; break;
-		default: debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->rrtype); break;
-		}
-	rr->rdata->RDLength      = GetRDLength(rr, mDNSfalse);
-	rr->rdestimate           = GetRDLength(rr, mDNStrue);
-	
-	// If we're in the middle of probing this record, we need to start again,
-	// because changing its rdata may change the outcome of the tie-breaker.
-	rr->ProbeCount     = DefaultProbeCountForRecordType(rr->RecordType);
-	rr->AnnounceCount  = DefaultAnnounceCount;
-	rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->RecordType);
-	rr->LastAPTime     = timenow - rr->ThisAPInterval;
-	if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
+	domainname *target = GetRRHostNameTarget(rr);
 
-	// If this is a record type that's not going to probe, then delay its first announcement so that it will go out
-	// synchronized with the first announcement for the other records that *are* probing
-	// The addition of "rr->ThisAPInterval / 4" is to make sure that this announcement is not scheduled to go out
-	// *before* the probing is complete. When the probing is complete and those records begin to
-	// announce, these records will also be picked up and accelerated, because they will be considered to be
-	// more than half-way to their scheduled announcement time.
-	// Ignoring timing jitter, they will be exactly 3/4 of the way to their scheduled announcement time.
-	// Anything between 50% and 100% would work, so aiming for 75% gives us the best safety margin in case of timing jitter.
-	if (rr->ProbeCount == 0) rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 4;
+	if (!target) debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->rrtype);
+
+	if (target && SameDomainName(target, &m->hostname1))
+		debugf("SetTargetToHostName: Target of %##s is already %##s", rr->name.c, target->c);
+	
+	if (target && !SameDomainName(target, &m->hostname1))
+		{
+		*target = m->hostname1;
+		rr->rdata->RDLength = GetRDLength(rr, mDNSfalse);
+		rr->rdestimate      = GetRDLength(rr, mDNStrue);
+		
+		// If we're in the middle of probing this record, we need to start again,
+		// because changing its rdata may change the outcome of the tie-breaker.
+		// (If the record type is kDNSRecordTypeUnique (unconfirmed unique) then DefaultProbeCountForRecordType is non-zero.)
+		rr->ProbeCount     = DefaultProbeCountForRecordType(rr->RecordType);
+
+		// If we've announced this record, we really should send a goodbye packet for the old rdata before
+		// changing to the new rdata. However, in practice, we only do SetTargetToHostName for unique records,
+		// so when we announce them we'll set the kDNSQClass_CacheFlushBit and clear any stale data that way.
+		if (rr->AnnounceCount < InitialAnnounceCount && !(rr->RecordType & kDNSRecordTypeUniqueMask))
+			debugf("Have announced shared record %##s at least once: should have sent a goodbye packet before updating", rr->name.c);
+
+		if (rr->AnnounceCount < ReannounceCount)
+			rr->AnnounceCount = ReannounceCount;
+		rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->RecordType);
+		rr->LastAPTime     = timenow - rr->ThisAPInterval;
+		if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
+	
+		// If this is a record type that's not going to probe, then delay its first announcement so that it will go out
+		// synchronized with the first announcement for the other records that *are* probing
+		// The addition of "rr->ThisAPInterval / 4" is to make sure that this announcement is not scheduled to go out
+		// *before* the probing is complete. When the probing is complete and those records begin to
+		// announce, these records will also be picked up and accelerated, because they will be considered to be
+		// more than half-way to their scheduled announcement time.
+		// Ignoring timing jitter, they will be exactly 3/4 of the way to their scheduled announcement time.
+		// Anything between 50% and 100% would work, so aiming for 75% gives us the best safety margin in case of timing jitter.
+		if (rr->ProbeCount == 0) rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 4;
+		}
 	}
 
 mDNSlocal void UpdateHostNameTargets(const mDNS *const m, const mDNSs32 timenow)
@@ -1365,7 +1393,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->RRInterfaceActive = mDNStrue;
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
-	rr->AnnounceCount     = DefaultAnnounceCount;
+	rr->AnnounceCount     = InitialAnnounceCount;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->SendPriority      = 0;
 	rr->Requester         = zeroAddr;
@@ -1397,7 +1425,11 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 //	rr->rrremainingttl    = already set in mDNS_SetupResourceRecord
 
 	if (rr->HostTarget)
-		SetTargetToHostName(m, rr ,timenow);	// This also sets rdlength and rdestimate for us
+		{
+		domainname *target = GetRRHostNameTarget(rr);
+		if (target) target->c[0] = 0;
+		SetTargetToHostName(m, rr, timenow);	// This also sets rdlength and rdestimate for us
+		}
 	else
 		{
 		rr->rdata->RDLength = GetRDLength(rr, mDNSfalse);
@@ -1432,7 +1464,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
-	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCount && rr->RRInterfaceActive)
+	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount && rr->RRInterfaceActive)
 		{
 		debugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 		rr->RecordType     = kDNSRecordTypeDeregistering;
@@ -2079,10 +2111,10 @@ mDNSlocal mDNSBool HaveResponses(const mDNS *const m, const mDNSs32 timenow)
 
 mDNSlocal void CompleteDeregistration(mDNS *const m, ResourceRecord *rr, mDNSs32 timenow)
 	{
-	// Setting AnnounceCount to one greater than DefaultAnnounceCount signals mDNS_Deregister_internal()
+	// Setting AnnounceCount to InitialAnnounceCount signals mDNS_Deregister_internal()
 	// that it should go ahead and immediately dispose of this registration
 	rr->RecordType    = kDNSRecordTypeShared;
-	rr->AnnounceCount = DefaultAnnounceCount+1;
+	rr->AnnounceCount = InitialAnnounceCount;
 	mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 	}
 
@@ -2398,7 +2430,6 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 	if (rr->ProbeCount == 0)
 		{
 		rr->RecordType     = kDNSRecordTypeVerified;
-		rr->AnnounceCount  = DefaultAnnounceCount;
 		rr->ThisAPInterval = DefaultAnnounceIntervalForTypeUnique;
 		rr->LastAPTime     = timenow - DefaultAnnounceIntervalForTypeUnique;
 		verbosedebugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
@@ -3136,7 +3167,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		// We set rr->rrremainingttl to zero here.
 		// After the record is put in the packet, rr->rrremainingttl is automatically reset to rr->rroriginalttl
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCount)
+			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
 				rr->rrremainingttl = 0;
 		while (HaveResponses(m, timenow)) SendResponses(m, timenow);
 		}
@@ -3148,7 +3179,8 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			{
 			if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
 			rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
-			rr->AnnounceCount     = DefaultAnnounceCount;
+			if (rr->AnnounceCount < ReannounceCount)
+				rr->AnnounceCount = ReannounceCount;
 			rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
 			rr->LastAPTime        = timenow - rr->LastAPTime;
 			}
@@ -4285,7 +4317,8 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 			rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
 		}
 	
-	rr->AnnounceCount    = DefaultAnnounceCount;
+	if (rr->AnnounceCount < ReannounceCount)
+		rr->AnnounceCount = ReannounceCount;
 	rr->ThisAPInterval   = DefaultAPIntervalForRecordType(rr->RecordType);
 	rr->LastAPTime       = timenow - rr->ThisAPInterval;
 	if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
@@ -4514,7 +4547,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				rr->RRInterfaceActive = mDNStrue;
 				if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
-				rr->AnnounceCount     = DefaultAnnounceCount;
+				if (rr->AnnounceCount < ReannounceCount)
+					rr->AnnounceCount = ReannounceCount;
 				rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
 				rr->LastAPTime        = timenow - rr->ThisAPInterval;
 				}
