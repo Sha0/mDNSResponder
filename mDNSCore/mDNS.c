@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.84  2003/03/05 01:27:30  cheshire
+Bug #: 3185482 Different TTL for multicast versus unicast replies
+When building unicast replies, record TTLs are capped to 10 seconds
+
 Revision 1.83  2003/03/04 23:48:52  cheshire
 Bug #: 3188865 Double probes after wake from sleep
 Don't reset record type to kDNSRecordTypeUnique if record is DependentOn another
@@ -1566,8 +1570,8 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 // domainname is a fully-qualified name
 // Only pass the "m" and "timenow" parameters in cases where the LastSendTime is to be updated,
 // and the kDNSClass_UniqueRRSet bit set
-mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
-	mDNSu16 *count, ResourceRecord *rr, mDNS *const m, const mDNSs32 timenow)
+mDNSlocal mDNSu8 *putResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr,
+	mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, mDNS *const m, const mDNSs32 timenow)
 	{
 	mDNSu8 *endofrdata;
 	mDNSu16 actualLength;
@@ -1590,10 +1594,10 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 	ptr[1] = (mDNSu8)(rr->rrtype      );
 	ptr[2] = (mDNSu8)(rr->rrclass >> 8);
 	ptr[3] = (mDNSu8)(rr->rrclass     );
-	ptr[4] = (mDNSu8)(rr->rrremainingttl >> 24);
-	ptr[5] = (mDNSu8)(rr->rrremainingttl >> 16);
-	ptr[6] = (mDNSu8)(rr->rrremainingttl >>  8);
-	ptr[7] = (mDNSu8)(rr->rrremainingttl      );
+	ptr[4] = (mDNSu8)(ttl >> 24);
+	ptr[5] = (mDNSu8)(ttl >> 16);
+	ptr[6] = (mDNSu8)(ttl >>  8);
+	ptr[7] = (mDNSu8)(ttl      );
 	endofrdata = putRData(msg, ptr+10, limit, rr->rrtype, rr->rdata);
 	if (!endofrdata) { debugf("Ran out of space in putResourceRecord!"); return(mDNSNULL); }
 
@@ -1622,6 +1626,15 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 
 	(*count)++;
 	return(endofrdata);
+	}
+
+#define putResourceRecord(MSG, P, C, RR, M, T) putResourceRecordTTL((MSG), (P), (C), (RR), (RR)->rrremainingttl, (M), (T))
+
+mDNSlocal mDNSu8 *putResourceRecordMaxTTL(DNSMessage *const msg, mDNSu8 *ptr,
+	mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl, mDNS *const m, const mDNSs32 timenow)
+	{
+	if (maxttl > rr->rrremainingttl) maxttl = rr->rrremainingttl;
+	return(putResourceRecordTTL(msg, ptr, count, rr, maxttl, m, timenow));
 	}
 
 #if 0
@@ -2085,14 +2098,12 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 					RData *OldRData = rr->rdata;
 					if (ResourceRecordIsValidAnswer(rr))		// First see if we have to de-register the old data
 						{
-						rr->rrremainingttl = 0;					// Clear rroriginalttl before putting record
-						newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0);
+						newptr = putResourceRecordTTL(response, responseptr, &response->h.numAnswers, rr, 0, mDNSNULL, 0);
 						if (newptr)
 							{
 							numDereg++;
 							responseptr = newptr;
 							}
-						rr->rrremainingttl = rr->rroriginalttl;	// Now restore rroriginalttl
 						}
 					rr->rdata = rr->NewRData;	// Update our rdata
 					rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
@@ -3004,6 +3015,8 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	if (sleepstate)
 		{
 		// First mark all the records we need to deregister
+		// We set rr->rrremainingttl to zero here.
+		// After the record is put in the packet, rr->rrremainingttl is automatically reset to rr->rroriginalttl
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCountForTypeShared)
 				rr->rrremainingttl = 0;
@@ -3091,26 +3104,27 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	if (reply->h.numQuestions == 0) { debugf("GenerateUnicastResponse: ERROR! Why no questions?"); return(mDNSNULL); }
 
 	// ***
-	// *** 2. Write answers and additionals
+	// *** 2. Write Answers
 	// ***
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
-		{
-		if (MustSendRecord(rr))
+		if (rr->NR_AnswerTo)
 			{
-			if (rr->NR_AnswerTo)
-				{
-				mDNSu8 *p = putResourceRecord(reply, responseptr, &reply->h.numAnswers, rr, mDNSNULL, 0);
-				if (p) responseptr = p;
-				else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); reply->h.flags.b[0] |= kDNSFlag0_TC; }
-				}
-			else
-				{
-				mDNSu8 *p = putResourceRecord(reply, responseptr, &reply->h.numAdditionals, rr, mDNSNULL, 0);
-				if (p) responseptr = p;
-				else debugf("GenerateUnicastResponse: No more space for additionals");
-				}
+			mDNSu8 *p = putResourceRecordMaxTTL(reply, responseptr, &reply->h.numAnswers, rr, 10, mDNSNULL, 0);
+			if (p) responseptr = p;
+			else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); reply->h.flags.b[0] |= kDNSFlag0_TC; }
 			}
-		}
+
+	// ***
+	// *** 3. Write Additionals
+	// ***
+	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
+		if (rr->NR_AdditionalTo && !rr->NR_AnswerTo)
+			{
+			mDNSu8 *p = putResourceRecordMaxTTL(reply, responseptr, &reply->h.numAdditionals, rr, 10, mDNSNULL, 0);
+			if (p) responseptr = p;
+			else debugf("GenerateUnicastResponse: No more space for additionals");
+			}
+
 	return(responseptr);
 	}
 
