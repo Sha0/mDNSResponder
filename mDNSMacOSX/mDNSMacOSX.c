@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.249  2004/12/04 00:29:46  cheshire
+Add "#ifdef MAC_OS_X_VERSION_10_4" around split-DNS code that can't be compiled on 10.3 systems
+(When compiled on 10.3, code will not include split-DNS support.)
+
 Revision 1.248  2004/12/01 20:57:20  ksekar
 <rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
 
@@ -776,7 +780,11 @@ Minor code tidying
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 
 #include <Security/Security.h>
+
+#include <AvailabilityMacros.h>
+#ifdef MAC_OS_X_VERSION_10_4
 #include <dnsinfo.h>
+#endif
 
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
@@ -2068,6 +2076,10 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 
 mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 	{
+#ifndef MAC_OS_X_VERSION_10_4
+	(void)m;
+	LogMsg("Note: Compiled without Apple-specific split DNS support");
+#else
 	int i;
 	dns_config_t *config = dns_configuration_copy();
 
@@ -2113,6 +2125,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 			}
 		}
 	dns_configuration_free(config);
+#endif
 	return mStatus_NoError;
 	}
 
