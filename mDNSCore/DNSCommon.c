@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.15  2004/03/08 02:44:09  cheshire
+<rdar://problem/3579561>: Need to limit service types to fourteen characters
+
 Revision 1.14  2004/02/21 02:06:24  cheshire
 Can't use anonymous unions -- they're non-standard and don't work on all compilers
 
@@ -492,6 +495,13 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 	hostlabel->c[0] = (mDNSu8)(ptr - &hostlabel->c[1]);
 	}
 
+mDNSlocal mDNSBool AllowedServiceNameException(const mDNSu8 *const src)
+	{
+	if (SameDomainLabel(src, (mDNSu8*)"\x12_MacOSXDupSuppress")) return(mDNStrue);
+	LogMsg("Application protocol name %#s too long; see <http://www.dns-sd.org/ServiceTypes.html>", src);
+	return(mDNSfalse);
+	}
+
 mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	const domainlabel *name, const domainname *type, const domainname *const domain)
 	{
@@ -526,7 +536,9 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
-	if (len < 2 || len >= 0x40)  { errormsg="Invalid service application protocol name"; goto fail; }
+	if (len < 2 || len > 15)
+		if (!AllowedServiceNameException(src))			// If length not legal, check our grandfather-exceptions list
+			{ errormsg="Application protocol name must be underscore plus 1-14 characters"; goto fail; }
 	if (src[1] != '_') { errormsg="Service application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
 		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-' && src[i] != '_')
