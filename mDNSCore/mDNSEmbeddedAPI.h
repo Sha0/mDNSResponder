@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.130  2003/12/14 05:05:29  cheshire
+Add comments explaining mDNS_Init_NoCache and mDNS_Init_ZeroCacheSize
+
 Revision 1.129  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -1160,9 +1163,18 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 #pragma mark - Main Client Functions
 #endif
 
-// Every client should call mDNS_Init, passing in storage for the mDNS object, mDNS_PlatformSupport object, and rrcache.
-// The rrcachesize parameter is the size of (i.e. number of entries in) the rrcache array passed in.
-// Most clients use mDNS_Init_AdvertiseLocalAddresses. This causes mDNSCore to automatically
+// Every client should call mDNS_Init, passing in storage for the mDNS object and the mDNS_PlatformSupport object.
+//
+// Clients that are only advertising services should use mDNS_Init_NoCache and mDNS_Init_ZeroCacheSize.
+// Clients that plan to perform queries (mDNS_StartQuery, mDNS_StartBrowse, mDNS_StartResolveService, etc.)
+// need to provide storage for the resource record cache, or the query calls will return 'mStatus_NoCache'.
+// The rrcachestorage parameter is the address of memory for the resource record cache, and
+// the rrcachesize parameter is the number of entries in the CacheRecord array passed in.
+// (i.e. the size of the cache memory needs to be sizeof(CacheRecord) * rrcachesize).
+// OS X 10.3 Panther uses an initial cache size of 64 entries, and then mDNSCore sends an
+// mStatus_GrowCache message if it needs more.
+//
+// Most clients should use mDNS_Init_AdvertiseLocalAddresses. This causes mDNSCore to automatically
 // create the correct address records for all the hosts interfaces. If you plan to advertise
 // services being offered by the local machine, this is almost always what you want.
 // There are two cases where you might use mDNS_Init_DontAdvertiseLocalAddresses:
@@ -1171,6 +1183,7 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 //    the appropriate steps to manually create the correct address records for those other machines.
 // In principle, a proxy-like registration service could manually create address records for its own machine too,
 // but this would be pointless extra effort when using mDNS_Init_AdvertiseLocalAddresses does that for you.
+//
 // When mDNS has finished setting up the client's callback is called
 // A client can also spin and poll the mDNSPlatformStatus field to see when it changes from mStatus_Waiting to mStatus_NoError
 //
@@ -1196,6 +1209,7 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 								CacheRecord *rrcachestorage, mDNSu32 rrcachesize,
 								mDNSBool AdvertiseLocalAddresses,
 								mDNSCallback *Callback, void *Context);
+// See notes above on use of NoCache/ZeroCacheSize
 #define mDNS_Init_NoCache                     mDNSNULL
 #define mDNS_Init_ZeroCacheSize               0
 // See notes above on use of Advertise/DontAdvertiseLocalAddresses
