@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.126  2004/12/07 17:23:55  ksekar
+Fixed LogOperation
+
 Revision 1.125  2004/12/06 21:15:23  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -2447,7 +2450,7 @@ static void handle_regrecord_request(request_state *rstate)
     if (rr->resrec.rroriginalttl == 0)
         rr->resrec.rroriginalttl = (rr->resrec.RecordType == kDNSRecordTypeUnique) ? kDefaultTTLforUnique : kDefaultTTLforShared;
     
-	LogOperation("%3d: DNSServiceRegisterRecord(%##s) %s", rstate->sd, RRDisplayString(gmDNS, &rr->resrec));
+	LogOperation("%3d: DNSServiceRegisterRecord %s", rstate->sd, RRDisplayString(gmDNS, &rr->resrec));
     result = mDNS_Register(gmDNS, rr);
     deliver_error(rstate, result); 
     reset_connected_rstate(rstate);
