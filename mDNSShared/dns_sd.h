@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.22  2004/06/25 00:26:27  rpantos
+Changes to fix the Posix build on Solaris.
+
 Revision 1.21  2004/06/18 04:51:42  rpantos
 Add platform stuff. Use _WIN32 instead of less-defined WIN32. Add DNSSD_API to DNSServiceReconfirmRecord().
 
@@ -109,6 +112,8 @@ Update to APSL 2.0
 
 #if defined(__FreeBSD__) && defined(__FreeBSD_version) && (__FreeBSD_version < 500000)
 /* stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead */
+#include <sys/types.h>
+#elif defined(__sun__)
 #include <sys/types.h>
 #elif defined(_WIN32)
 #include <windows.h>

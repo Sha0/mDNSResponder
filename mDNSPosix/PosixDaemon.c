@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.11  2004/06/25 00:26:27  rpantos
+Changes to fix the Posix build on Solaris.
+
 Revision 1.10  2004/06/08 04:59:40  cheshire
 Tidy up wording -- log messages are already prefixed with "mDNSResponder", so don't need to repeat it
 
@@ -68,6 +71,7 @@ Add support for mDNSResponder on Linux.
 #include <stdlib.h>
 #include <signal.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <sys/types.h>
 
@@ -77,6 +81,7 @@ Add support for mDNSResponder on Linux.
 #include "uds_daemon.h"
 
 
+static int		Daemon_Init( int nochdir, int noclose );
 static void		ParseCmdLinArgs( int argc, char **argv);
 static void		DumpStateLog( mDNS *m);
 static mStatus	MainLoop( mDNS *m);
@@ -130,6 +135,52 @@ int		main( int argc, char **argv)
 }
 
 
+#ifdef NOT_HAVE_DAEMON
+static int	Daemon_Init( int nochdir, int noclose )
+// daemonize the process. Adapted from "Unix Network Programming" vol 1 by Stevens, section 12.4.
+// Returns 0 on success, -1 on failure.
+{
+	pid_t	pid = fork();
+	
+	if ( -1 == (int) pid)		// fork failure
+		return -1;
+	else if ( 0 != (int) pid)
+		exit( 0);				// quit parent
+
+	pid = setsid();
+	if ( -1 == (int) pid)
+		return -1;				// setsid() failure; inform child
+
+	signal( SIGHUP, SIG_IGN);
+
+	pid = fork();	// again, primarily for reasons of Unix trivia
+	if ( -1 == (int) pid)		// fork failure
+		return -1;
+	else if ( 0 != (int) pid)
+		exit( 0);				// quit 1st child
+
+	if ( 0 == nochdir)
+		chdir( "/");
+	umask( 0);
+
+	if ( 0 == noclose)
+	{
+		int	fd = open( "/dev/null", O_RDWR, 0);
+		if (fd != -1)
+		{
+			// Avoid unnecessarily duplicating a file descriptor to itself
+			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
+			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
+			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
+			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) 
+				(void)close (fd);
+		}
+	}
+
+	return 0;
+}
+#endif
+
 static void	ParseCmdLinArgs( int argc, char **argv)
 // Do appropriate things at startup with command line arguments. Calls exit() if unhappy.
 {
@@ -145,7 +196,11 @@ static void	ParseCmdLinArgs( int argc, char **argv)
 
 	if ( !mDNS_DebugMode)
 	{
+#ifdef NOT_HAVE_DAEMON
+		int		result = Daemon_Init( 0, 0);
+#else
 		int		result = daemon( 0, 0);
+#endif
 		
 		if ( result != 0)
 		{

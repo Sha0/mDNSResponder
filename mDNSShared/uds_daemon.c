@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.64  2004/06/25 00:26:27  rpantos
+Changes to fix the Posix build on Solaris.
+
 Revision 1.63  2004/06/24 03:43:44  rpantos
 Fix previous checkin so it builds on Windows.
 
@@ -204,7 +207,6 @@ Update to APSL 2.0
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <sys/socket.h>
 #endif
 
 #include <stdlib.h>

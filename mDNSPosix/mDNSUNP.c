@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.17  2004/06/25 00:26:27  rpantos
+Changes to fix the Posix build on Solaris.
+
 Revision 1.16  2004/03/20 05:37:09  cheshire
 Fix contributed by Terry Lambert & Alfred Perlstein:
 Don't use uint8_t -- it requires stdint.h, which doesn't exist on FreeBSD 4.x
@@ -113,6 +116,9 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     int                 junk;
     struct ifi_info     *ifi, *ifihead, **ifipnext;
     int                 sockfd, len, lastlen, flags, myflags;
+#ifdef NOT_HAVE_IF_NAMETOINDEX
+    int                 index = 200;
+#endif
     char                *ptr, *buf, lastname[IFNAMSIZ], *cptr;
     struct ifconf       ifc;
     struct ifreq        *ifr, ifrcopy;
@@ -197,7 +203,14 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
 
         ifi->ifi_flags = flags;     /* IFF_xxx values */
         ifi->ifi_myflags = myflags; /* IFI_xxx values */
+#ifndef NOT_HAVE_IF_NAMETOINDEX
         ifi->ifi_index = if_nametoindex(ifr->ifr_name);
+#else
+		if ( 0 >= ioctl(sockfd, SIOCGIFINDEX, ifr))
+            ifi->ifi_index = ifr->ifr_index;
+        else
+            ifi->ifi_index = index++;	/* SIOCGIFINDEX is broken on Solaris 2.5ish, so fake it */
+#endif
         memcpy(ifi->ifi_name, ifr->ifr_name, IFI_NAME);
         ifi->ifi_name[IFI_NAME-1] = '\0';
 /* end get_ifi_info2 */

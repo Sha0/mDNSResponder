@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.47  2004/06/25 00:26:27  rpantos
+Changes to fix the Posix build on Solaris.
+
 Revision 1.46  2004/05/13 04:54:20  ksekar
 Unified list copy/free code.  Added symetric list for
 
@@ -822,7 +825,7 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 
 // Creates a PosixNetworkInterface for the interface whose IP address is
 // intfAddr and whose name is intfName and registers it with mDNS core.
-static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName)
+static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName, int intfIndex)
 	{
 	int err = 0;
 	PosixNetworkInterface *intf;
@@ -852,7 +855,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 
 		// Set up the extra fields in PosixNetworkInterface.
 		assert(intf->intfName != NULL);         // intf->intfName already set up above
-		intf->index                = if_nametoindex(intf->intfName);
+		intf->index                = intfIndex;
 		intf->multicastSocket4     = -1;
 #if HAVE_IPV6
 		intf->multicastSocket6     = -1;
@@ -940,7 +943,7 @@ static int SetupInterfaceList(mDNS *const m)
 					}
 				else
 					{
-					if (SetupOneInterface(m, i->ifi_addr, i->ifi_name) == 0)
+					if (SetupOneInterface(m, i->ifi_addr, i->ifi_name, i->ifi_index) == 0)
 						if (i->ifi_addr->sa_family == AF_INET)
 							foundav4 = mDNStrue;
 					}
@@ -954,7 +957,7 @@ static int SetupInterfaceList(mDNS *const m)
 		// In the interim, we skip loopback interface only if we found at least one v4 interface to use
 		// if ( (m->HostInterfaces == NULL) && (firstLoopback != NULL) )
 		if ( !foundav4 && firstLoopback )
-			(void) SetupOneInterface(m, firstLoopback->ifi_addr, firstLoopback->ifi_name);
+			(void) SetupOneInterface(m, firstLoopback->ifi_addr, firstLoopback->ifi_name, firstLoopback->ifi_index);
 		}
 
 	// Clean up.

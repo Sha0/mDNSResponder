@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.9  2004/06/25 00:26:27  rpantos
+Changes to fix the Posix build on Solaris.
+
 Revision 1.8  2004/06/18 04:56:51  rpantos
 Add layer for platform code
 
@@ -63,6 +66,8 @@ Update to APSL 2.0
 #	include <stdio.h>
 #	include <stdlib.h>
 #	include <sys/stat.h>
+#	include <sys/socket.h>
+#	include <netinet/in.h>
 #	define dnssd_InvalidSocket	-1
 #	define dnssd_EWOULDBLOCK	EWOULDBLOCK
 #	define dnssd_EINTR			EINTR
@@ -71,7 +76,6 @@ Update to APSL 2.0
 #	define dnssd_close(sock)	close(sock)
 #	define dnssd_errno()		errno
 #endif
-
 
 #if defined(USE_TCP_LOOPBACK)
 #	define AF_DNSSD				AF_INET
@@ -90,6 +94,11 @@ Update to APSL 2.0
 
 
 //#define UDSDEBUG  // verbose debug output
+
+// Compatibility workaround
+#ifndef AF_LOCAL
+#define	AF_LOCAL	AF_UNIX
+#endif
 
 // General UDS constants
 #define TXT_RECORD_INDEX -1	// record index for default text record

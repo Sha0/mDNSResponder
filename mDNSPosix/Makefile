@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.36  2004/06/25 00:26:27  rpantos
+# Changes to fix the Posix build on Solaris.
+#
 # Revision 1.35  2004/06/18 18:51:31  cheshire
 # Add (commented out) "-pedantic" for when we want to check for "mixed declarations and code" warnings
 #
@@ -141,12 +144,12 @@ SHAREDDIR = ../mDNSShared
 JDK = /usr/jdk
 
 CC = cc
-LD = ld
+LD = ld -shared
 CP = cp
 RM = rm
 LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\"
-LDFLAGS = -shared
+LIBFLAGS =
 LDSUFFIX = so
 JAVACFLAGS_OS = -fPIC -shared -lmdns
 
@@ -166,7 +169,14 @@ endif
 
 # Configure per-OS peculiarities
 ifeq ($(os),solaris)
-CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -lsocket -lnsl
+CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -DNOT_HAVE_SOCKLEN_T -DNOT_HAVE_IF_NAMETOINDEX \
+	 -DLOG_PERROR=0 -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -DUSE_TCP_LOOPBACK
+CC = gcc
+LD = gcc -shared
+LIBFLAGS = -lsocket -lnsl
+ifneq ($(DEBUG),1)
+STRIP = strip
+endif
 else
 ifeq ($(os),linux)
 CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK
@@ -191,16 +201,16 @@ LDCONFIG = ldconfig
 else
 ifeq ($(os),jaguar)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
-LD = libtool
-LDFLAGS = -dynamic -lSystem
+LD = libtool -dynamic
+LIBFLAGS = -lSystem
 LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
 else
 ifeq ($(os),panther)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp #-pedantic
-LD = libtool
-LDFLAGS = -dynamic -lSystem
+LD = libtool -dynamic
+LIBFLAGS = -lSystem
 LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
@@ -273,7 +283,7 @@ Daemon: setup $(BUILDDIR)/mdnsd
 	@echo "Responder daemon done"
 
 $(BUILDDIR)/mdnsd: $(DAEMONOBJS)
-	$(CC) -o $@ $+
+	$(CC) -o $@ $+ $(CFLAGS) $(LIBFLAGS)
 	$(STRIP) $@
 
 # libmdns target builds the client library
@@ -281,7 +291,7 @@ libmdns: setup $(BUILDDIR)/libmdns.$(LDSUFFIX)
 	@echo "Client library done"
 
 $(BUILDDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
-	$(LD) $(LDFLAGS) -o $@ $+
+	$(LD) $(LIBFLAGS) -o $@ $+
 	$(STRIP) $@
 
 #############################################################################
@@ -398,19 +408,19 @@ NetMonitor: setup $(BUILDDIR)/mDNSNetMonitor
 	@echo "NetMonitor done"
 
 $(BUILDDIR)/mDNSClientPosix:         $(APPOBJ)     $(OBJDIR)/Client.c.o
-	$(CC) $+ -o $@
+	$(CC) $+ -o $@ $(LIBFLAGS)
 
 $(BUILDDIR)/mDNSResponderPosix:      $(COMMONOBJ)  $(OBJDIR)/Responder.c.o
-	$(CC) $+ -o $@
+	$(CC) $+ -o $@ $(LIBFLAGS)
 
 $(BUILDDIR)/mDNSProxyResponderPosix: $(COMMONOBJ)  $(OBJDIR)/ProxyResponder.c.o
-	$(CC) $+ -o $@
+	$(CC) $+ -o $@ $(LIBFLAGS)
 
 $(BUILDDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
-	$(CC) $+ -o $@
+	$(CC) $+ -o $@ $(LIBFLAGS)
 
 $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
-	$(CC) $+ -o $@
+	$(CC) $+ -o $@ $(LIBFLAGS)
 
 #############################################################################
 

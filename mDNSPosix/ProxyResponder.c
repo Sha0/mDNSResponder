@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.28  2004/06/25 00:26:27  rpantos
+Changes to fix the Posix build on Solaris.
+
 Revision 1.27  2004/03/12 08:03:14  cheshire
 Update comments
 
@@ -93,6 +96,11 @@ Add "$Log" header
 #include "mDNSClientAPI.h"  // Defines the interface to the client layer above
 #include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"
+
+// Compatibility workaround: Solaris 2.5 has no INADDR_NONE
+#ifndef	INADDR_NONE
+#define	INADDR_NONE	(uint32_t)0xffffffff
+#endif
 
 //*************************************************************************************************************
 // Globals
