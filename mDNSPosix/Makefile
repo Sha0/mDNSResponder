@@ -1,4 +1,8 @@
 # $Log: Makefile,v $
+# Revision 1.8  2003/06/04 00:23:12  ksekar
+# Bug #: <rdar://problem/3218120>: mDNSPosix does not build on Panther that has socklen_t
+# Created separate target OS's for 10.2 and 10.3.
+#
 # Revision 1.7  2003/04/16 02:11:37  cheshire
 # Remove unnecessary $(CFLAGS) from linking rules
 #
@@ -25,18 +29,21 @@ else
 ifeq ($(os),openbsd)
 CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_SOCKLEN_T -DHAVE_BROKEN_RECVDSTADDR
 else
-ifeq ($(os),osx)
+ifeq ($(os),osx10.2)
 CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_IPV6 -Wall -no-cpp-precomp
 else
+ifeq ($(os),osx10.3)
+CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_IPV6 -DHAVE_SOCKLEN_T -Wall -no-cpp-precomp
+else
 cantbuild:
-	echo "Error: Must specify target OS on command-line, e.g. \"make os=osx\" or \"make os=linux\""
+	echo "Error: Must specify target OS on command-line, e.g. \"make os=osx10.3\" or \"make os=osx10.2\" or \"make os=linux\""
 endif
 endif
 endif
 endif
 endif
 endif
-
+endif
 CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS)
 
 COMMONOBJ = objects/mDNSPosix.c.o objects/mDNSUNP.c.o objects/ExampleClientApp.c.o
