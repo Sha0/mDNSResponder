@@ -358,6 +358,10 @@ main(int argc, char ** argv)
         }
     }
 
+    if (!debug_mode) {
+        daemon(0,0);
+    }
+
     start(NULL, NULL);
     CFRunLoopRun();
     /* not reached */
