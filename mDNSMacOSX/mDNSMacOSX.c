@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.224  2004/10/28 17:47:34  cheshire
+Oops. Forgot the %d in the log message.
+
 Revision 1.223  2004/10/28 17:24:28  cheshire
 Updated "bad ifa_netmask" log message to give more information
 
@@ -1781,7 +1784,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 					{
 					mDNSAddr ip;
 					SetupAddr(&ip, ifa->ifa_addr);
-					LogMsg("getifaddrs ifa_netmask for %5s(%d) Flags %04X Family %2d %#a has different family: ",
+					LogMsg("getifaddrs ifa_netmask for %5s(%d) Flags %04X Family %2d %#a has different family: %d",
 						ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family, &ip, ifa->ifa_netmask->sa_family);
 					}
 				else
