@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.2  2003/04/04 20:42:02  cheshire
+ * Fix broken statistics counting
+ *
  * Revision 1.1  2003/04/04 01:37:14  cheshire
  * Added NetMonitor.c
  *
@@ -61,13 +64,19 @@
 
 enum
 	{
-	OP_bprobe = 0,
-	OP_bquery,
-	OP_banswer,
-	OP_rprobe,
-	OP_rquery,
-	OP_ranswer,
-	NumStatOps
+	OP_probe        = 0,
+	OP_query        = 1,
+	OP_answer       = 2,
+
+	OP_browsegroup  = 1,
+	OP_browseq      = 1,
+	OP_browsea      = 2,
+
+	OP_resolvegroup = 3,
+	OP_resolveq     = 3,
+	OP_resolvea     = 4,
+
+	NumStatOps = 5
 	};
 
 typedef struct ActivityStat_struct ActivityStat;
@@ -138,9 +147,11 @@ mDNSlocal void recordstat(domainname *fqdn, int op, mDNSu16 rrtype)
 	ActivityStat **s = &stats;
 	domainname srvtype;
 
-	if (rrtype == kDNSType_PTR) op += OP_bquery;
-	else if (rrtype == kDNSType_SRV || rrtype == kDNSType_TXT) op += OP_rprobe;
-	else return;
+	if (op != OP_probe)
+		{
+		if (rrtype == kDNSType_SRV || rrtype == kDNSType_TXT) op = op - OP_browsegroup + OP_resolvegroup;
+		else if (rrtype != kDNSType_PTR) return;
+		}
 	
 	if (!ExtractServiceType(fqdn, &srvtype)) return;
 
@@ -164,7 +175,7 @@ mDNSlocal void recordstat(domainname *fqdn, int op, mDNSu16 rrtype)
 mDNSlocal void printstats(void)
 	{
 	int i;
-	mprintf("%-30s    Total Ops  Probe Q   Probe A  Browse Q  Browse A Resolve Q Resolve A\n", "Service Type");
+	mprintf("%-25sTotal Ops    Probe  BrowseQ  BrowseA ResolveQ ResolveA\n", "Service Type");
 
 	for (i=0; i<20; i++) 
 		{
@@ -175,8 +186,7 @@ mDNSlocal void printstats(void)
 				{ m = s; max = s->totalops; }
 		if (!m) return;
 		m->printed = mDNStrue;
-		mprintf("%##-30s %9d %9d %9d %9d %9d %9d %9d\n", &m->srvtype, m->totalops, m->stat[0], m->stat[1], m->stat[2], m->stat[3], m->stat[4], m->stat[5]);
-		//mprintf("%9d %9d %9d %9d %9d\n", m->totalops, m->stat[0], m->stat[1], m->stat[2], m->stat[3]);
+		mprintf("%##-25s%8d %8d %8d %8d %8d %8d\n", &m->srvtype, m->totalops, m->stat[0], m->stat[1], m->stat[2], m->stat[3], m->stat[4]);
 		}
 	}
 
@@ -211,13 +221,13 @@ mDNSlocal void DisplayQuery(const DNSMessage *const msg, const mDNSu8 *const end
 			{
 			NumProbes++;
 			mprintf("%#-16a (P)  %-5s %##s\n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
-			recordstat(&q.name, OP_bprobe, q.rrtype);
+			recordstat(&q.name, OP_probe, q.rrtype);
 			}
 		else
 			{
 			NumQuestions++;
 			mprintf("%#-16a (Q)  %-5s %##s\n", srcaddr, DNSTypeName(q.rrtype), q.name.c);
-			recordstat(&q.name, OP_bquery, q.rrtype);
+			recordstat(&q.name, OP_query, q.rrtype);
 			}
 		}
 
@@ -255,7 +265,7 @@ mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, c
 		mprintf("%#-16a (AN) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
 		if (pktrr.rrtype == kDNSType_PTR) mprintf("-> %##s", pktrr.rdata->u.name.c);
 		mprintf("\n");
-		recordstat(&pktrr.name, OP_banswer, pktrr.rrtype);
+		recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
 		}
 
 	for (i=0; i<msg->h.numAuthorities; i++)
@@ -314,12 +324,11 @@ mDNSexport int main(int argc, char **argv)
 	ExampleClientEventLoop(&mDNSStorage);
 
 	mprintf("\n\n");
-	
 	mprintf("Total Query Questions:      %6d\n", NumQuestions);
 	mprintf("Total Probe Questions:      %6d\n", NumProbes);
 	mprintf("Total Answers/Announcements:%6d\n", NumAnswers);
 	mprintf("Total Additional Records:   %6d\n", NumAdditionals);
-	
+	mprintf("\n");
 	printstats();
 
 	mDNS_Close(&mDNSStorage);
