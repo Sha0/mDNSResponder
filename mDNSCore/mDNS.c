@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.390  2004/08/11 02:17:01  cheshire
+<rdar://problem/3514236> Registering service with port number 0 should create a "No Such Service" record
+
 Revision 1.389  2004/08/10 23:19:14  ksekar
 <rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
 Moved routines/constants to allow extern access for garbage collection daemon
@@ -5814,6 +5817,13 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 		sr->ServiceCallback(m, sr, result);
 	}
 
+mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
+	{
+	ServiceRecordSet *sr = (ServiceRecordSet *)rr->RecordContext;
+	if (sr->ServiceCallback)
+		sr->ServiceCallback(m, sr, result);
+	}
+
 // Note:
 // Name is first label of domain name (any dots in the name are actual dots, not label separators)
 // Type is service type (e.g. "_ipp._tcp.")
@@ -5840,6 +5850,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	if (host && host->c[0]) sr->Host = *host;
 	else sr->Host.c[0] = 0;
 	
+	// If port number is zero, that means the client is really trying to do a RegisterNoSuchService
+	if (!port.NotAnInteger) return(mDNS_RegisterNoSuchService(m, &sr->RR_SRV, name, type, domain, mDNSNULL, mDNSInterface_Any, NSSCallback, sr));
+
 	// Initialize the AuthRecord objects to sane values
 	mDNS_SetupResourceRecord(&sr->RR_ADV, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeAdvisory, ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared,   ServiceCallback, sr);
@@ -5906,7 +5919,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration  on that interface, even for unicast domains.
-    if (!InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+	if (!InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
 		return uDNS_RegisterService(m, sr);
 
 	mDNS_Lock(m);
@@ -6031,7 +6044,10 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
-    if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+	// If port number is zero, that means this was actually registered using mDNS_RegisterNoSuchService()
+	if (!sr->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger) return(mDNS_DeregisterNoSuchService(m, &sr->RR_SRV));
+
+	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
 		return uDNS_DeregisterService(m, sr);
 
 	if (sr->RR_PTR.resrec.RecordType == kDNSRecordTypeUnregistered)
