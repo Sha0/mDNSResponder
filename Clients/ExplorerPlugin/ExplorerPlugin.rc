@@ -64,8 +64,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,15
- PRODUCTVERSION 1,0,0,15
+ FILEVERSION MASTER_PROD_VERS
+ PRODUCTVERSION MASTER_PROD_VERS
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -82,12 +82,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Apple Computer, Inc."
             VALUE "FileDescription", "DNSServices Explorer Bar"
-            VALUE "FileVersion", "1,0,0,15"
+            VALUE "FileVersion", MASTER_PROD_VERS_STR
             VALUE "InternalName", "ExplorerPlugin.dll"
             VALUE "LegalCopyright", "Copyright (C) 2003-2004 Apple Computer, Inc."
             VALUE "OriginalFilename", "ExplorerPlugin.dll"
-            VALUE "ProductName", "Rendezvous"
-            VALUE "ProductVersion", "1,0,0,15"
+            VALUE "ProductName", MASTER_PROD_NAME
+            VALUE "ProductVersion", MASTER_PROD_VERS_STR
         END
     END
     BLOCK "VarFileInfo"
@@ -126,7 +126,7 @@ FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     CONTROL         119,IDC_STATIC,"Static",SS_BITMAP | SS_REALSIZEIMAGE,0,0,
                     220,86
-    CONTROL         "Explorer Plugin 1.0.0.15",IDC_COMPONENT,"Static",
+    CONTROL         MASTER_PROD_VERS_STR3,IDC_COMPONENT,"Static",
                     SS_SIMPLE | WS_GROUP,92,10,122,8
     LTEXT           "Copyright (c) 2004 Apple Computer, Inc. All rights reserved. Apple and the Apple logo are trademarks of Apple Computer, Inc., registered in the U.S. and other countries.",
                     IDC_LEGAL,92,31,123,50,0,WS_EX_RTLREADING
