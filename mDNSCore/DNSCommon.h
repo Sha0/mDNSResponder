@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.23  2004/10/03 23:18:58  cheshire
+Move address comparison macros from DNSCommon.h to mDNSEmbeddedAPI.h
+
 Revision 1.22  2004/09/30 00:24:56  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -165,28 +168,6 @@ extern const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfac
 extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
 extern mDNSu32 mDNSRandom(mDNSu32 max);
-
-#define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
-#define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
-
-#define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zerov4Addr)
-#define mDNSIPv6AddressIsZero(A) mDNSSameIPv6Address((A), zerov6Addr)
-
-#define mDNSIPv4AddressIsOnes(A) mDNSSameIPv4Address((A), onesIPv4Addr)
-#define mDNSIPv6AddressIsOnes(A) mDNSSameIPv6Address((A), onesIPv6Addr)
-
-#define mDNSAddressIsZero(X) (                                              \
-	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsZero((X)->ip.v4)) || \
-	((X)->type == mDNSAddrType_IPv6 && mDNSIPv6AddressIsZero((X)->ip.v6))    )
-
-#define mDNSAddressIsOnes(X) (                                              \
-	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsOnes((X)->ip.v4)) || \
-	((X)->type == mDNSAddrType_IPv6 && mDNSIPv6AddressIsOnes((X)->ip.v6))    )
-
-#define mDNSAddressIsValid(X) (                                                                                             \
-	((X)->type == mDNSAddrType_IPv4) ? !(mDNSIPv4AddressIsZero((X)->ip.v4) || mDNSIPv4AddressIsOnes((X)->ip.v4)) :          \
-	((X)->type == mDNSAddrType_IPv6) ? !(mDNSIPv6AddressIsZero((X)->ip.v6) || mDNSIPv6AddressIsOnes((X)->ip.v6)) : mDNSfalse)
-
 
 
 // ***************************************************************************

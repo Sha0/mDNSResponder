@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.219  2004/10/03 23:18:58  cheshire
+Move address comparison macros from DNSCommon.h to mDNSEmbeddedAPI.h
+
 Revision 1.218  2004/10/03 23:14:12  cheshire
 Add "mDNSEthAddr" type and "zeroEthAddr" constant
 
@@ -2102,7 +2105,7 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 
 // ***************************************************************************
 #if 0
-#pragma mark - Other utility functions
+#pragma mark - Other utility functions and macros
 #endif
 
 extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg);
@@ -2114,6 +2117,29 @@ extern char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, cha
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 private addresses
+
+#define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
+#define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
+#define mDNSSameEthAddress(A,B)  ((A)->w[0] == (B)->w[0] && (A)->w[1] == (B)->w[1] && (A)->w[2] == (B)->w[2])
+
+#define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zerov4Addr)
+#define mDNSIPv6AddressIsZero(A) mDNSSameIPv6Address((A), zerov6Addr)
+
+#define mDNSIPv4AddressIsOnes(A) mDNSSameIPv4Address((A), onesIPv4Addr)
+#define mDNSIPv6AddressIsOnes(A) mDNSSameIPv6Address((A), onesIPv6Addr)
+
+#define mDNSAddressIsZero(X) (                                              \
+	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsZero((X)->ip.v4)) || \
+	((X)->type == mDNSAddrType_IPv6 && mDNSIPv6AddressIsZero((X)->ip.v6))    )
+
+#define mDNSAddressIsOnes(X) (                                              \
+	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsOnes((X)->ip.v4)) || \
+	((X)->type == mDNSAddrType_IPv6 && mDNSIPv6AddressIsOnes((X)->ip.v6))    )
+
+#define mDNSAddressIsValid(X) (                                                                                             \
+	((X)->type == mDNSAddrType_IPv4) ? !(mDNSIPv4AddressIsZero((X)->ip.v4) || mDNSIPv4AddressIsOnes((X)->ip.v4)) :          \
+	((X)->type == mDNSAddrType_IPv6) ? !(mDNSIPv6AddressIsZero((X)->ip.v6) || mDNSIPv6AddressIsOnes((X)->ip.v6)) : mDNSfalse)
+
 
 // ***************************************************************************
 #if 0
