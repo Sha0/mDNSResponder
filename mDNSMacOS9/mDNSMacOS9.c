@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.30  2004/07/29 19:26:03  ksekar
+Plaform-level changes for NAT-PMP support
+
 Revision 1.29  2004/05/26 20:53:16  cheshire
 Remove unncecessary "return( -1 );" at the end of mDNSPlatformUTC()
 
@@ -163,7 +166,7 @@ mDNSexport void LogMsg(const char *format, ...)
 	}
 #endif
 
-mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
+mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	// Note: If we did multi-homing, we'd have to use the InterfaceID parameter to specify from which interface to send this response
@@ -244,7 +247,6 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 
 	if      (flags & T_MORE)                                debugf("ERROR: OTRcvUData() buffer too small (T_MORE set)");
 	else if (recvdata.addr.len < sizeof(InetAddress))       debugf("ERROR: recvdata.addr.len (%d) too short", recvdata.addr.len);
-	else if (recvdata.udata.len < sizeof(DNSMessageHeader)) debugf("ERROR: recvdata.udata.len (%d) too short", recvdata.udata.len);
 	else mDNSCoreReceive(m, &packet, recvdata.udata.buf + recvdata.udata.len, &senderaddr, senderport, &destaddr, MulticastDNSPort, interface, 255);
 	
 	return(err);

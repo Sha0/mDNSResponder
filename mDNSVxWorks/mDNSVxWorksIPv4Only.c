@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.17  2004/07/29 19:26:03  ksekar
+Plaform-level changes for NAT-PMP support
+
 Revision 1.16  2004/04/22 05:11:28  bradley
 Added mDNSPlatformUTC for TSIG signed dynamic updates.
 
@@ -459,7 +462,7 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 mStatus
 	mDNSPlatformSendUDP( 
 		const mDNS * const			inMDNS, 
-		const DNSMessage * const	inMsg, 
+		const void * const	        inMsg, 
 		const mDNSu8 * const		inMsgEnd, 
 		mDNSInterfaceID 			inInterfaceID, 
 		const mDNSAddr *			inDstIP, 
