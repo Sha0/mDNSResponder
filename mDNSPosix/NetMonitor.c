@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.37  2003/08/20 22:32:08  cheshire
+Error in DisplayQuery: Authorities come *after* Answers, not before
+
 Revision 1.36  2003/08/18 23:20:10  cheshire
 RDLength moved from the RData to the ResourceRecord object.
 
@@ -509,19 +512,19 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			}
 		}
 
-	for (i=0; i<msg->h.numAuthorities; i++)
-		{
-		const mDNSu8 *ep = ptr;
-		ptr = skipResourceRecord(msg, ptr, end);
-		if (!ptr) { DisplayError(srcaddr, ep, end, "AUTHORITY"); return; }
-		}
-
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
 		const mDNSu8 *ep = ptr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "KNOWN ANSWER"); return; }
 		DisplayResourceRecord(srcaddr, "(KA)", &pkt.r.resrec);
+		}
+
+	for (i=0; i<msg->h.numAuthorities; i++)
+		{
+		const mDNSu8 *ep = ptr;
+		ptr = skipResourceRecord(msg, ptr, end);
+		if (!ptr) { DisplayError(srcaddr, ep, end, "AUTHORITY"); return; }
 		}
 	}
 
