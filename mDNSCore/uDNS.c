@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.18  2004/02/21 08:34:15  bradley
+Added casts from void * to specific type for C++ builds. Changed void * l-value cast
+r-value cast to fix problems with VC++ builds. Removed empty switch to fix VC++ error.
+
 Revision 1.17  2004/02/21 02:06:24  cheshire
 Can't use anonymous unions -- they're non-standard and don't work on all compilers
 
@@ -134,11 +138,8 @@ typedef struct
 typedef struct
 	{
     AsyncOpResultType type;
-    union
-	    {
-        zoneData_t zoneData;
-    	// other async result structs go here
-        };
+    zoneData_t zoneData;
+    // other async result structs go here
 	} AsyncOpResult;
 
 typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, AsyncOpResult *result); 
@@ -449,12 +450,8 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
     {
     // how the answer is processed is determined by the type of query
-	switch(question->qtype)
-		{
-		default:
-			question->uDNS_info.responseCallback = simpleResponseHndlr;
-			question->uDNS_info.context = NULL;
-		}  
+	question->uDNS_info.responseCallback = simpleResponseHndlr;
+	question->uDNS_info.context = NULL;
 	return startQuery(m, question, 0);
     }
 
@@ -551,7 +548,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 // initialization
 mDNSlocal mStatus startGetZoneData(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo)
     {
-    ntaContext *context = umalloc(sizeof(ntaContext));
+    ntaContext *context = (ntaContext*)umalloc(sizeof(ntaContext));
     if (!context) { LogMsg("ERROR: startNameToAddr - umalloc failed");  return mStatus_NoMemoryErr; }
 	ubzero(context, sizeof(ntaContext));
     ustrcpy(context->origName.c, name->c);
@@ -567,7 +564,7 @@ mDNSlocal mStatus startGetZoneData(domainname *name, mDNS *m, AsyncOpCallback ca
 mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr)
     {
 	AsyncOpResult result;
-	ntaContext *context = contextPtr;
+	ntaContext *context = (ntaContext*)contextPtr;
 	smAction action;
 
     // unused
@@ -677,7 +674,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     ubzero(query, sizeof(DNSQuestion));
     // chop off leading label unless this is our first try
     if (context->state == init)  context->curSOA = &context->origName;
-    else                         (void *)context->curSOA = context->curSOA->c + context->curSOA->c[0]+1;
+    else                         context->curSOA = (domainname *)(context->curSOA->c + context->curSOA->c[0]+1);
     
     context->state = lookupSOA;
     ustrcpy(query->qname.c, context->curSOA->c);
@@ -913,7 +910,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 
 mDNSlocal void sendUpdate(mStatus err, mDNS *const m, void *authPtr, AsyncOpResult *result)
 	{
-	AuthRecord *newRR = authPtr;
+	AuthRecord *newRR = (AuthRecord*)authPtr;
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
