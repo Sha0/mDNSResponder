@@ -23,14 +23,17 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.5  2004/07/13 22:20:02  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.4  2004/07/09 18:04:17  shersche
 bump version to 1.0.0.8
 
 Revision 1.3  2004/06/27 17:00:15  rpantos
-Hey, we're Rendezvous again.
+Cleanup.
 
 Revision 1.2  2004/06/26 22:24:08  rpantos
-Hey, we're Rendezvous again.
+Cleanup.
 
 Revision 1.1  2004/06/26 19:17:41  rpantos
 First checked in.
