@@ -1,4 +1,3 @@
-
 /* -*- Mode: C; tab-width: 4 -*-
  *
  * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
@@ -25,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.284  2005/01/21 23:07:17  ksekar
+<rdar://problem/3960795> mDNSResponder causes Dial on Demand
+
 Revision 1.283  2005/01/19 21:16:16  cheshire
 Make sure when we set NetworkChanged that we don't set it to zero
 
@@ -1090,6 +1092,22 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 	return 0;
 	}
 
+mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
+	{
+	mDNSBool result = mDNSfalse;
+	SCNetworkConnectionFlags flags;
+	SCNetworkReachabilityRef ReachRef = NULL;
+
+	ReachRef = SCNetworkReachabilityCreateWithAddress(kCFAllocatorDefault, addr);
+	if (!ReachRef) { LogMsg("ERROR: RequiresConnection - SCNetworkReachabilityCreateWithAddress"); goto end; }
+	if (!SCNetworkReachabilityGetFlags(ReachRef, &flags)) { LogMsg("ERROR: RequiresConnection - SCNetworkReachabilityGetFlags"); goto end; }
+	result = flags & kSCNetworkFlagsConnectionRequired;
+
+	end:
+	if (ReachRef) CFRelease(ReachRef);
+	return result;	
+	}
+
 // NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
 // NOTE: If InterfaceID is non-NULL it means, "send this packet through our port 5353 socket on the specified interface"
 // OR send via our primary v4 unicast socket
@@ -1115,7 +1133,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		if ((m->h.flags.b[0] & kDNSFlag0_QR_Mask) == kDNSFlag0_QR_Query)
 			LogMsg("mDNSPlatformSendUDP: ERROR: Sending query OP from mDNS port to non-mDNS destination %#a:%d", dst, mDNSVal16(dstPort));
 		}
-
+	
 	if (dst->type == mDNSAddrType_IPv4)
 		{
 		struct sockaddr_in *sin_to = (struct sockaddr_in*)&to;
@@ -1142,6 +1160,15 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		return mStatus_BadParamErr;
 		}
 
+	// Don't send if it would cause dial on demand connection initiation.  As an optimization,
+	// don't bother consulting reachability API / routing table when sending Multicast DNS
+	// since we ignore PPP interfaces for mDNS traffic
+	if (!mDNSAddrIsDNSMulticast(dst) && AddrRequiresPPPConnection((struct sockaddr *)&to))
+		{
+		debugf("mDNSPlatformSendUDP: Surpressing sending to avoid dial-on-demand connection");
+		return mStatus_NoError;
+		}
+		
 	if (s >= 0)
 		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %p %5s/%ld to %#a:%d skt %d",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s);
@@ -1424,6 +1451,18 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 		return mStatus_UnknownErr;
 		}
 
+	bzero(&saddr, sizeof(saddr));
+	saddr.sin_family = AF_INET;
+	saddr.sin_port = dstport.NotAnInteger;
+	memcpy(&saddr.sin_addr, &dst->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
+
+	// Don't send if it would cause dial on demand connection initiation.
+	if (AddrRequiresPPPConnection((struct sockaddr *)&saddr))
+		{
+		debugf("mDNSPlatformTCPConnect: Surpressing sending to avoid dial-on-demand connection");
+		return mStatus_UnknownErr;
+		}
+
 	sd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sd < 3) { LogMsg("mDNSPlatformTCPConnect: socket error %d errno %d (%s)", sd, errno, strerror(errno)); return mStatus_UnknownErr; }
 
@@ -1466,10 +1505,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 	CFRelease(rls);
 	
 	// initiate connection wth peer
-	bzero(&saddr, sizeof(saddr));
-	saddr.sin_family = AF_INET;
-	saddr.sin_port = dstport.NotAnInteger;
-	memcpy(&saddr.sin_addr, &dst->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
 	if (connect(sd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS)
@@ -2306,7 +2341,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 	mStatus err = GetDNSConfig(&v);
 	if (!err && v)
 		{
-#ifdef MAC_OS_X_VERSION_10_4	
+#ifdef MAC_OS_X_VERSION_10_4
 		int i;
 		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
 		mDNS_DeleteDNSServers(m);
@@ -2340,7 +2375,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 			// we're using this resolver - find the first IPv4 address
 			for (n = 0; n < r->n_nameserver; n++)
 				{
-				if (r->nameserver[n]->sa_family == AF_INET)
+				if (r->nameserver[n]->sa_family == AF_INET && !AddrRequiresPPPConnection(r->nameserver[n]))
 					{
 					mDNSAddr saddr;
 					if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
@@ -2774,9 +2809,19 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	CFStringRef router = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
 	if (router)
 		{
+		struct sockaddr_in saddr;
+		
 		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
 			LogMsg("Could not convert router to CString");
-		else inet_aton(buf, (struct in_addr *)&r.ip.v4);
+		else
+			{
+			saddr.sin_len = sizeof(saddr);
+			saddr.sin_family = AF_INET;
+			saddr.sin_port = 0;			
+			inet_aton(buf, &saddr.sin_addr);
+			if (AddrRequiresPPPConnection((struct sockaddr *)&saddr)) { debugf("Ignoring router %s (requires PPP connection)", buf); }
+			else *(in_addr_t *)&r.ip.v4 = saddr.sin_addr.s_addr;
+			}
 		}
 
 	// handle primary interface changes
@@ -2801,7 +2846,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 					r.ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger)
 					{
 					if (LegacyNATInitialized) { LegacyNATDestroy(); LegacyNATInitialized = mDNSfalse; }
-					if (IsPrivateV4Addr(&ip))
+					if (r.ip.v4.NotAnInteger && IsPrivateV4Addr(&ip))
 						{
 						mStatus err = LegacyNATInit();
 						if (err)  LogMsg("ERROR: LegacyNATInit");
