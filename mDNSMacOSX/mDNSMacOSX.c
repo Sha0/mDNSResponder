@@ -24,6 +24,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.235  2004/11/17 01:45:35  cheshire
+<rdar://problem/3847435> mDNS buddy list frequently becomes empty if you let the machine sleep
+Refresh our interface list on receiving kIOMessageSystemHasPoweredOn,
+in case we get no System Configuration Framework "network changed" event.
+
 Revision 1.234  2004/11/17 00:32:56  ksekar
 <rdar://problem/3880773> mDNSResponder will not discover zones contained both in Search Domains and DHCP Domain option
 
@@ -2622,10 +2627,14 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemWillNotSleep:		debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");						break; // E0000290
 		case kIOMessageSystemHasPoweredOn:		debugf("PowerChanged kIOMessageSystemHasPoweredOn");
 												// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
-												if (m->SleepState) mDNSCoreMachineSleep(m, false);										break; // E0000300
+												if (m->SleepState) mDNSCoreMachineSleep(m, false);
+												// Just to be safe, also make sure our interface list is fully up to date, in case we
+												// haven't yet received the System Configuration Framework "network changed" event that
+												// we expect to receive some time shortly after the kIOMessageSystemWillPowerOn message
+												mDNSMacOSXNetworkChanged(NULL, NULL, m);												break; // E0000300
 		case kIOMessageSystemWillRestart:		debugf("PowerChanged kIOMessageSystemWillRestart (no action)");							break; // E0000310
 		case kIOMessageSystemWillPowerOn:		debugf("PowerChanged kIOMessageSystemWillPowerOn");
-												// Make sure our interface list is updated, then tell mDNSCore to wake
+												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
 												mDNSMacOSXNetworkChanged(NULL, NULL, m); mDNSCoreMachineSleep(m, false);                break; // E0000320
 		default:								debugf("PowerChanged unknown message %X", messageType);									break;
 		}
