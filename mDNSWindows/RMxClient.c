@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: RMxClient.c,v $
+Revision 1.3  2004/04/15 01:00:05  bradley
+Removed support for automatically querying for A/AAAA records when resolving names. Platforms
+without .local name resolving support will need to manually query for A/AAAA records as needed.
+
 Revision 1.2  2004/04/09 21:03:14  bradley
 Changed port numbers to use network byte order for consistency with other platforms.
 
@@ -100,12 +104,7 @@ struct	_DNSServiceRef_t
 		struct	// Resolve
 		{
 			DNSServiceFlags							flags;
-			union
-			{
-				DNSServiceResolveReply				callback;
-				DNSServiceResolveAddressReply		addressCallBack;
-			
-			}	u;
+			DNSServiceResolveReply					callback;
 		
 		}	resolve;
 
@@ -176,16 +175,6 @@ DEBUG_LOCAL void	DNSServiceRegisterReply_client( RMxMessage *inMessage );
 DEBUG_LOCAL DNSRecordRef	DNSServiceConnectionRecordRemove_client( DNSServiceRef inRef, DNSRecordRef inRecordRef );
 DEBUG_LOCAL void			DNSServiceRegisterRecordReply_client( RMxMessage *inMessage );
 DEBUG_LOCAL void			DNSServiceQueryRecordReply_client( RMxMessage *inMessage );
-
-// Private Utilities
-
-DEBUG_LOCAL void
-	AddrDataToSockAddr( 
-		const void *		inAddr, 
-		size_t 				inAddrSize, 
-		uint16_t			inPort, 
-		uint32_t 			inScopeID, 
-		struct sockaddr *	outAddr );
 
 #if 0
 #pragma mark -
@@ -912,7 +901,7 @@ DNSServiceErrorType
 	dlog( kDebugLevelTrace, "\n" DEBUG_NAME "Resolve flags=0x%08X, ifi=%d, name=\"%s\", type=\"%s\", domain=\"%s\"\n", 
 		inFlags, inInterfaceIndex, inName, inType, inDomain ? inDomain : "<default>" );
 	require_action( outRef, exit, err = kDNSServiceErr_BadReference );
-	require_action( ( inFlags & ~kDNSServiceFlagsResolveAddress ) == 0, exit, err = kDNSServiceErr_BadFlags );
+	require_action( inFlags == 0, exit, err = kDNSServiceErr_BadFlags );
 	require_action( inName, exit, err = kDNSServiceErr_BadParam );
 	require_action( inType, exit, err = kDNSServiceErr_BadParam );
 	require_action( inCallBack, exit, err = kDNSServiceErr_BadParam );
@@ -922,14 +911,7 @@ DNSServiceErrorType
 	
 	obj->context			= inContext;
 	obj->u.resolve.flags	= inFlags;
-	if( inFlags & kDNSServiceFlagsResolveAddress )
-	{
-		obj->u.resolve.u.addressCallBack = (DNSServiceResolveAddressReply) inCallBack;
-	}
-	else
-	{
-		obj->u.resolve.u.callback = inCallBack;
-	}
+	obj->u.resolve.callback = inCallBack;
 		
 	// Open a session to the server and send the request.
 	
@@ -963,8 +945,6 @@ DEBUG_LOCAL void	DNSServiceResolveReply_client( RMxMessage *inMessage )
 	DNSServiceErrorType		errorCode;
 	const char *			name;
 	const char *			host;
-	void *					addrPtr;
-	size_t					addrSize;
 	uint16_t				port;
 	const char *			txt;
 	size_t					txtSize;
@@ -976,40 +956,22 @@ DEBUG_LOCAL void	DNSServiceResolveReply_client( RMxMessage *inMessage )
 	err = inMessage->status;
 	if( err == kNoErr )
 	{
-		err = RMxUnpack( inMessage->recvData, inMessage->recvSize, "wwwssnhn", 
-			&flags, &interfaceIndex, &errorCode, &name, NULL, &host, NULL, &addrPtr, &addrSize, &port, &txt, &txtSize );
+		err = RMxUnpack( inMessage->recvData, inMessage->recvSize, "wwwsshn", 
+			&flags, &interfaceIndex, &errorCode, &name, NULL, &host, NULL, &port, &txt, &txtSize );
 		check_noerr( err );
 		if( err == kNoErr )
 		{
 			dlog( kDebugLevelTrace, DEBUG_NAME
-				"Resolve reply flags=0x%08X, ifi=%d, err=%d, name=\"%s\", host=\"%s\", addr=%.*a, port=%d, txtSize=%d\n", 
-				flags, interfaceIndex, errorCode, name, host, (int) addrSize, addrPtr, ntohs( port ), (int) txtSize );
+				"Resolve reply flags=0x%08X, ifi=%d, err=%d, name=\"%s\", host=\"%s\", port=%d, txtSize=%d\n", 
+				flags, interfaceIndex, errorCode, name, host, ntohs( port ), (int) txtSize );
 			
-			if( obj->u.resolve.flags & kDNSServiceFlagsResolveAddress )
-			{
-				struct sockaddr_storage		addr;
-				
-				AddrDataToSockAddr( addrPtr, addrSize, ntohs( port ), interfaceIndex, (struct sockaddr *) &addr );
-				obj->u.resolve.u.addressCallBack( obj, flags, interfaceIndex, errorCode, name, host, 
-					(struct sockaddr *) &addr, port, (uint16_t) txtSize, txt, obj->context );
-			}
-			else
-			{
-				obj->u.resolve.u.callback( obj, flags, interfaceIndex, errorCode, name, host, port, (uint16_t) txtSize, txt, 
-					obj->context );
-			}
+			obj->u.resolve.callback( obj, flags, interfaceIndex, errorCode, name, host, port, (uint16_t) txtSize, txt, 
+			obj->context );
 		}
 	}
 	if( err != kNoErr )
 	{
-		if( obj->u.resolve.flags & kDNSServiceFlagsResolveAddress )
-		{
-			obj->u.resolve.u.addressCallBack( obj, 0, 0, err, "", "", NULL, 0, 0, NULL, obj->context );
-		}
-		else
-		{
-			obj->u.resolve.u.callback( obj, 0, 0, err, "", "", 0, 0, NULL, obj->context );
-		}
+		obj->u.resolve.callback( obj, 0, 0, err, "", "", 0, 0, NULL, obj->context );
 	}
 }
 
@@ -1331,52 +1293,6 @@ void
 	
 exit:
 	return;
-}
-
-#if 0
-#pragma mark -
-#pragma mark == Private Utilities ==
-#endif
-
-//===========================================================================================================================
-//	AddrDataToSockAddr
-//===========================================================================================================================
-
-DEBUG_LOCAL void
-	AddrDataToSockAddr( 
-		const void *		inAddr, 
-		size_t 				inAddrSize, 
-		uint16_t			inPort, 
-		uint32_t 			inScopeID, 
-		struct sockaddr *	outAddr )
-{
-	if( inAddrSize == 4 )
-	{
-		struct sockaddr_in *		sin4;
-		
-		sin4					= (struct sockaddr_in *) outAddr;
-		memset( sin4, 0, sizeof( *sin4 ) );
-		sin4->sin_family		= AF_INET;
-		sin4->sin_port			= htons( inPort );
-		memcpy( &sin4->sin_addr.s_addr, inAddr, 4 );
-	}
-	else if( inAddrSize == 16 )
-	{
-		struct sockaddr_in6 *		sin6;
-		
-		sin6				= (struct sockaddr_in6 *) outAddr;
-		memset( sin6, 0, sizeof( *sin6 ) );
-		sin6->sin6_family	= AF_INET6;
-		sin6->sin6_port		= htons( inPort );
-		sin6->sin6_flowinfo	= 0;
-		memcpy( &sin6->sin6_addr, inAddr, inAddrSize );
-		sin6->sin6_scope_id	= inScopeID;
-	}
-	else
-	{
-		memset( outAddr, 0, sizeof( *outAddr ) );
-		outAddr->sa_family = AF_UNSPEC;
-	}
 }
 
 #ifdef	__cplusplus

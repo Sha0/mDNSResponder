@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.34  2004/04/15 01:00:05  bradley
+Removed support for automatically querying for A/AAAA records when resolving names. Platforms
+without .local name resolving support will need to manually query for A/AAAA records as needed.
+
 Revision 1.33  2004/04/14 23:09:29  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -610,9 +614,13 @@ mDNSs32	mDNSPlatformTimeNow( void )
 	return( (mDNSs32) GetTickCount() );
 }
 
-mDNSexport mDNSs32 mDNSPlatformUTC(void)
+//===========================================================================================================================
+//	mDNSPlatformUTC
+//===========================================================================================================================
+
+mDNSexport mDNSs32	mDNSPlatformUTC( void )
 {
- return -1;
+	return( -1 );
 }
 
 //===========================================================================================================================
@@ -744,10 +752,6 @@ mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( const mDNS * const inMDNS, mD
 	}
 	return( index );
 }
-
-#if 0
-#pragma mark -
-#endif
 
 //===========================================================================================================================
 //	mDNSPlatformTCPConnect

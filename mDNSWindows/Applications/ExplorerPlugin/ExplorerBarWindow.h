@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.h,v $
+Revision 1.3  2004/04/15 01:00:05  bradley
+Removed support for automatically querying for A/AAAA records when resolving names. Platforms
+without .local name resolving support will need to manually query for A/AAAA records as needed.
+
 Revision 1.2  2004/04/08 09:43:43  bradley
 Changed callback calling conventions to __stdcall so they can be used with C# delegates.
 
@@ -148,7 +152,6 @@ struct	TextRecord
 struct	ResolveInfo
 {
 	CString						host;
-	sockaddr_storage			addr;
 	uint16_t					port;
 	uint32_t					ifi;
 	TextRecord					txt;
@@ -257,7 +260,6 @@ class	ExplorerBarWindow : public CWnd
 				DNSServiceErrorType		inErrorCode,
 				const char *			inFullName,	
 				const char *			inHostName, 
-				const struct sockaddr *	inAddr, 
 				uint16_t 				inPort,
 				uint16_t 				inTXTSize,
 				const char *			inTXT,

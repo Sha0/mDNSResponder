@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: DNSSDDirect.c,v $
+Revision 1.3  2004/04/15 01:00:05  bradley
+Removed support for automatically querying for A/AAAA records when resolving names. Platforms
+without .local name resolving support will need to manually query for A/AAAA records as needed.
+
 Revision 1.2  2004/04/09 21:03:14  bradley
 Changed port numbers to use network byte order for consistency with other platforms.
 
@@ -121,12 +125,7 @@ struct	_DNSServiceRef_t
 			ServiceInfoQuery						query;
 			ServiceInfo								info;
 			mDNSBool								active;
-			union
-			{
-				DNSServiceResolveReply				callback;
-				DNSServiceResolveAddressReply		addressCallBack;
-			
-			}	u;
+			DNSServiceResolveReply					callback;
 			
 		}	resolve;
 				
@@ -238,10 +237,6 @@ DEBUG_STATIC void
 		DNSQuestion *					inQuestion, 
 		const ResourceRecord * const	inAnswer, 
 		mDNSBool 						inAddRecord );
-
-// Private Utilities
-
-DEBUG_LOCAL void	MDNSAddrToSockAddr( const mDNSAddr *inAddr, mDNSIPPort inPort, uint32_t inScopeID, struct sockaddr *outAddr );
 
 #if 0
 #pragma mark == Globals ==
@@ -396,15 +391,7 @@ DEBUG_LOCAL void	DNSServiceMDNSCallBack( mDNS * const inMDNS, mStatus inStatus )
 			}
 			else if( obj->releaseCallBack == DNSServiceResolveRelease_direct )
 			{
-				if( obj->u.resolve.flags & kDNSServiceFlagsResolveAddress )
-				{
-					obj->u.resolve.u.addressCallBack( obj, 0, 0, kDNSServiceErr_ConfigChanged, "", "", NULL, 0, 0, NULL, 
-						obj->context );
-				}
-				else
-				{
-					obj->u.resolve.u.callback( obj, 0, 0, kDNSServiceErr_ConfigChanged, "", "", 0, 0, NULL, obj->context );
-				}
+				obj->u.resolve.callback( obj, 0, 0, kDNSServiceErr_ConfigChanged, "", "", 0, 0, NULL, obj->context );
 			}
 			else if( obj->releaseCallBack == DNSServiceCreateConnectionRelease_direct )
 			{
@@ -1280,7 +1267,7 @@ DNSServiceErrorType
 	DNSServiceLock();
 	dlog( kDebugLevelTrace, DEBUG_NAME "%s\n", __ROUTINE__ );
 	require_action( outRef, exit, err = kDNSServiceErr_BadReference );
-	require_action( ( inFlags & ~kDNSServiceFlagsResolveAddress ) == 0, exit, err = kDNSServiceErr_BadFlags );
+	require_action( inFlags == 0, exit, err = kDNSServiceErr_BadFlags );
 	require_action( inName, exit, err = kDNSServiceErr_BadParam );
 	require_action( inType, exit, err = kDNSServiceErr_BadParam );
 	require_action( inCallBack, exit, err = kDNSServiceErr_BadParam );
@@ -1311,14 +1298,7 @@ DNSServiceErrorType
 	obj->releaseCallBack	= DNSServiceResolveRelease_direct;
 	obj->context 			= inContext;
 	obj->u.resolve.flags	= inFlags;
-	if( inFlags & kDNSServiceFlagsResolveAddress )
-	{
-		obj->u.resolve.u.addressCallBack = (DNSServiceResolveAddressReply) inCallBack;
-	}
-	else
-	{
-		obj->u.resolve.u.callback = inCallBack;
-	}
+	obj->u.resolve.callback	= inCallBack;
 	
 	// Start resolving with mDNS.
 	
@@ -1390,19 +1370,8 @@ mDNSlocal void	DNSServiceResolveCallBack_direct( mDNS * const inMDNS, ServiceInf
 	ConvertDomainNameToCString( &inQuery->qAv4.qname, hostName );
 	port = inQuery->info->port.NotAnInteger;
 	
-	if( obj->u.resolve.flags & kDNSServiceFlagsResolveAddress )
-	{
-		struct sockaddr_storage		addr;
-		
-		MDNSAddrToSockAddr( &inQuery->info->ip, inQuery->info->port, interfaceIndex, (struct sockaddr *) &addr );
-		obj->u.resolve.u.addressCallBack( obj, 0, interfaceIndex, kDNSServiceErr_NoError, fullName, hostName, 
-			(struct sockaddr *) &addr, port, inQuery->info->TXTlen, (const char *) inQuery->info->TXTinfo, obj->context );
-	}
-	else
-	{
-		obj->u.resolve.u.callback( obj, 0, interfaceIndex, kDNSServiceErr_NoError, fullName, hostName, port, 
+	obj->u.resolve.callback( obj, 0, interfaceIndex, kDNSServiceErr_NoError, fullName, hostName, port, 
 			inQuery->info->TXTlen, (const char *) inQuery->info->TXTinfo, obj->context );
-	}
 }
 
 #if 0
@@ -1795,48 +1764,6 @@ exit:
 		free( rr );
 	}
 	DNSServiceUnlock();
-}
-
-#if 0
-#pragma mark -
-#pragma mark == Private Utilities ==
-#endif
-
-//===========================================================================================================================
-//	MDNSAddrToSockAddr
-//===========================================================================================================================
-
-DEBUG_LOCAL void	MDNSAddrToSockAddr( const mDNSAddr *inAddr, mDNSIPPort inPort, uint32_t inScopeID, struct sockaddr *outAddr )
-{
-	if( inAddr->type == mDNSAddrType_IPv4 )
-	{
-		struct sockaddr_in *		sin4;
-		
-		sin4					= (struct sockaddr_in *) outAddr;
-		memset( sin4, 0, sizeof( *sin4 ) );
-		sin4->sin_family		= AF_INET;
-		sin4->sin_port			= inPort.NotAnInteger;
-		sin4->sin_addr.s_addr	= inAddr->ip.v4.NotAnInteger;
-	}
-#if( defined( AF_INET6 ) )
-	else if( inAddr->type == mDNSAddrType_IPv6 )
-	{
-		struct sockaddr_in6 *		sin6;
-		
-		sin6				= (struct sockaddr_in6 *) outAddr;
-		memset( sin6, 0, sizeof( *sin6 ) );
-		sin6->sin6_family	= AF_INET6;
-		sin6->sin6_port		= inPort.NotAnInteger;
-		sin6->sin6_flowinfo	= 0;
-		memcpy( &sin6->sin6_addr, &inAddr->ip.v6, sizeof( struct in6_addr ) );
-		sin6->sin6_scope_id	= inScopeID;
-	}
-#endif
-	else
-	{
-		memset( outAddr, 0, sizeof( *outAddr ) );
-		outAddr->sa_family = AF_UNSPEC;
-	}
 }
 
 #ifdef	__cplusplus

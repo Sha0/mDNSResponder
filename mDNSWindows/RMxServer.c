@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: RMxServer.c,v $
+Revision 1.6  2004/04/15 01:00:05  bradley
+Removed support for automatically querying for A/AAAA records when resolving names. Platforms
+without .local name resolving support will need to manually query for A/AAAA records as needed.
+
 Revision 1.5  2004/04/09 21:03:14  bradley
 Changed port numbers to use network byte order for consistency with other platforms.
 
@@ -177,7 +181,6 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 		DNSServiceErrorType		inErrorCode,
 		const char *			inFullName,  
 		const char *			inHostName,  
-		const struct sockaddr *	inAddr, 
 		uint16_t				inPort, 
 		uint16_t				inTXTSize, 
 		const char *			inTXT, 
@@ -1311,8 +1314,8 @@ DEBUG_LOCAL void	DNSServiceResolve_server( RMxMessage *inMessage )
 	obj->opcode  = inMessage->opcode;
 	obj->session = inMessage->session;
 	
-	err = DNSServiceResolve_direct( &obj->directObj, flags | kDNSServiceFlagsResolveAddress, interfaceIndex, 
-		name, type, domain, (DNSServiceResolveReply) DNSServiceResolveCallBack_server, obj );
+	err = DNSServiceResolve_direct( &obj->directObj, flags, interfaceIndex, name, type, domain, 
+		DNSServiceResolveCallBack_server, obj );
 	require_noerr( err, exit );
 	
 	// Success!
@@ -1344,7 +1347,6 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 		DNSServiceErrorType		inErrorCode,
 		const char *			inFullName,  
 		const char *			inHostName,  
-		const struct sockaddr *	inAddr, 
 		uint16_t				inPort, 
 		uint16_t				inTXTSize, 
 		const char *			inTXT, 
@@ -1352,36 +1354,18 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 {
 	DNSServiceRef		obj;
 	OSStatus			err;
-	int					addrSize;
-	const void *		addr;
 	
 	DEBUG_UNUSED( inRef );
 	
 	check( inFullName );
 	check( inHostName );
-	check( inAddr );
 	obj = (DNSServiceRef) inContext;
-	dlog( kDebugLevelTrace, DEBUG_NAME "%s: ref=%#p, directRef=%#p, addr=%##a\n", __ROUTINE__, obj, inRef, inAddr );
+	dlog( kDebugLevelTrace, DEBUG_NAME "%s: ref=%#p, directRef=%#p\n", __ROUTINE__, obj, inRef );
 	check( obj );
 	check( obj->session );
 	
-	if( inAddr->sa_family == AF_INET )
-	{
-		addrSize = 4;
-		addr 	 = &( (const struct sockaddr_in *) inAddr )->sin_addr;
-	}
-	else if( inAddr->sa_family == AF_INET6 )
-	{
-		addrSize = 16;
-		addr 	 = &( (const struct sockaddr_in6 *) inAddr )->sin6_addr;
-	}
-	else
-	{
-		addrSize = 0;
-		addr 	 = NULL;
-	}
-	err = RMxSessionSendMessage( obj->session, kRMxOpCodeResolve, kNoErr, "wwwssnhn", 
-		inFlags, inInterfaceIndex, inErrorCode, inFullName, inHostName, addrSize, addr, inPort, inTXTSize, inTXT );
+	err = RMxSessionSendMessage( obj->session, kRMxOpCodeResolve, kNoErr, "wwwsshn", 
+		inFlags, inInterfaceIndex, inErrorCode, inFullName, inHostName, inPort, inTXTSize, inTXT );
 	check_noerr( err );
 }
 

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSSD.h,v $
+Revision 1.4  2004/04/15 01:00:05  bradley
+Removed support for automatically querying for A/AAAA records when resolving names. Platforms
+without .local name resolving support will need to manually query for A/AAAA records as needed.
+
 Revision 1.3  2004/04/09 21:03:14  bradley
 Changed port numbers to use network byte order for consistency with other platforms.
 
@@ -112,6 +116,9 @@ typedef struct _DNSRecordRef_t *		DNSRecordRef;
 
 	@abstract	General flags used in DNS-SD functions.
 	
+	@constant	kDNSServiceFlagsNone
+					No flags (makes it clearer to use this symbolic constant rather than using a 0).
+					
 	@constant	kDNSServiceFlagsMoreComing
 					MoreComing indicates to a callback that at least one more result is queued and will be delivered 
 					following immediately after this one. Applications should not update their UI to display browse 
@@ -158,16 +165,13 @@ typedef struct _DNSRecordRef_t *		DNSRecordRef;
 
 	@constant	kDNSServiceFlagsRegistrationDomains
 					Enumerates domains recommended for registration.
-
-	@constant	kDNSServiceFlagsResolveAddress
-					When used when with DNSServiceResolve, this enables a special version of the callback containing an 
-					extra parameter for the resolved IP address in addition to the resolved host name. This is needed
-					when the system's DNS resolving API's do not support .local. resolving.
 */
 
 typedef uint32_t		DNSServiceFlags;
 enum
 {
+	kDNSServiceFlagsNone				= 0, 
+	
 	kDNSServiceFlagsMoreComing			= ( 1 << 0 ),
 	kDNSServiceFlagsFinished			= 0,	// MoreComing not set means Finished
 	
@@ -182,9 +186,7 @@ enum
 	kDNSServiceFlagsUnique				= ( 1 << 5 ),
 
 	kDNSServiceFlagsBrowseDomains		= ( 1 << 6 ),
-	kDNSServiceFlagsRegistrationDomains	= ( 1 << 7 ), 
-	
-	kDNSServiceFlagsResolveAddress		= ( 1 << 16 )
+	kDNSServiceFlagsRegistrationDomains	= ( 1 << 7 )
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -968,20 +970,6 @@ typedef void
 		const char *			inTXT,
 		void *					inContext );
 
-typedef void
-	( CALLBACK_COMPAT *DNSServiceResolveAddressReply )(
-		DNSServiceRef			inRef,
-		DNSServiceFlags			inFlags,
-		uint32_t				inInterfaceIndex,
-		DNSServiceErrorType		inErrorCode,
-		const char *			inFullName,	
-		const char *			inHostName, 
-		const struct sockaddr *	inAddr, 
-		uint16_t 				inPort,
-		uint16_t 				inTXTSize,
-		const char *			inTXT,
-		void *					inContext );
-
 //---------------------------------------------------------------------------------------------------------------------------
 /*! @function	DNSServiceResolve
 	
@@ -992,7 +980,7 @@ typedef void
 					the resolve.
 
 	@param		inFlags
-					Possible values are kDNSServiceFlagsResolveAddress or 0. See flag definitions for details.
+					Currently unused, reserved for future use.
 
 	@param		inInterfaceIndex
 					The interface on which to resolve the service. The client should pass the interface on which the 

@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.5  2004/04/15 01:00:05  bradley
+Removed support for automatically querying for A/AAAA records when resolving names. Platforms
+without .local name resolving support will need to manually query for A/AAAA records as needed.
+
 Revision 1.4  2004/04/09 21:03:15  bradley
 Changed port numbers to use network byte order for consistency with other platforms.
 
@@ -64,8 +68,6 @@ static char THIS_FILE[] = __FILE__;
 //===========================================================================================================================
 //	Constants
 //===========================================================================================================================
-
-#define	ENABLE_DOT_LOCAL_NAMES			1
 
 // Control IDs
 
@@ -462,8 +464,8 @@ OSStatus	ExplorerBarWindow::StartResolve( ServiceInfo *inService )
 	
 	// Resolve the service.
 	
-	err = DNSServiceResolve( &mResolveServiceRef, kDNSServiceFlagsResolveAddress, inService->ifi, 
-		inService->name, inService->type, inService->domain, (DNSServiceResolveReply) ResolveCallBack, inService->handler );
+	err = DNSServiceResolve( &mResolveServiceRef, kDNSServiceFlagsNone, inService->ifi, 
+		inService->name, inService->type, inService->domain, ResolveCallBack, inService->handler );
 	require_noerr( err, exit );
 	
 exit:
@@ -495,7 +497,6 @@ void CALLBACK_COMPAT
 		DNSServiceErrorType		inErrorCode,
 		const char *			inFullName,	
 		const char *			inHostName, 
-		const struct sockaddr *	inAddr, 
 		uint16_t 				inPort,
 		uint16_t 				inTXTSize,
 		const char *			inTXT,
@@ -521,17 +522,7 @@ void CALLBACK_COMPAT
 		ResolveInfo *		resolve;
 		BOOL				ok;
 		
-		dlog( kDebugLevelNotice, "resolved %s on ifi %d to %s/%##a\n", inFullName, inInterfaceIndex, inHostName, inAddr );
-
-		// Internet Explorer does not support numeric IPv6 addresses so skip the address if it is IPv6 and keep resolving 
-		// so we get an IPv4 address if available.
-		
-	#if( !ENABLE_DOT_LOCAL_NAMES )
-		if( inAddr->sa_family == AF_INET6 )
-		{
-			goto exit;
-		}
-	#endif
+		dlog( kDebugLevelNotice, "resolved %s on ifi %d to %s\n", inFullName, inInterfaceIndex, inHostName );
 		
 		// Stop resolving after the first good result.
 		
@@ -543,18 +534,6 @@ void CALLBACK_COMPAT
 		require_action( resolve, exit, err = kNoMemoryErr );
 		
 		UTF8StringToStringObject( inHostName, resolve->host );
-		if( inAddr->sa_family == AF_INET )
-		{
-			memcpy( &resolve->addr, inAddr, sizeof( struct sockaddr_in ) );
-		}
-		else if( inAddr->sa_family == AF_INET6 )
-		{
-			memcpy( &resolve->addr, inAddr, sizeof( struct sockaddr_in6 ) );
-		}
-		else
-		{
-			memcpy( &resolve->addr, inAddr, sizeof( *inAddr ) );
-		}
 		resolve->port		= ntohs( inPort );
 		resolve->ifi		= inInterfaceIndex;
 		resolve->handler	= handler;
@@ -585,12 +564,6 @@ exit:
 LONG	ExplorerBarWindow::OnResolve( WPARAM inWParam, LPARAM inLParam )
 {
 	ResolveInfo *		resolve;
-#if( !ENABLE_DOT_LOCAL_NAMES )
-	OSStatus			err;
-	socklen_t			size;
-	char				addrString[ 64 ];
-	char				portString[ 64 ];
-#endif
 	CString				url;
 	uint8_t *			path;
 	size_t				pathSize;
@@ -603,27 +576,6 @@ LONG	ExplorerBarWindow::OnResolve( WPARAM inWParam, LPARAM inLParam )
 	resolve = reinterpret_cast < ResolveInfo * > ( inLParam );
 	check( resolve );
 		
-#if( !ENABLE_DOT_LOCAL_NAMES )
-	// Convert the IP address and port to strings.
-	
-	if( resolve->addr.ss_family == AF_INET )
-	{
-		size = sizeof( struct sockaddr_in );
-	}
-	else if( resolve->addr.ss_family == AF_INET6 )
-	{
-		size = sizeof( struct sockaddr_in6 );
-	}
-	else
-	{
-		dlog( kDebugLevelNotice, "OnResolve: unsupported address type (%d)\n", resolve->addr.ss_family );
-		goto exit;
-	}
-	err = getnameinfo( (struct sockaddr *) &resolve->addr, size, addrString, sizeof( addrString ), 
-		portString, sizeof( portString ), NI_NUMERICHOST | NI_NUMERICSERV ); 
-	require_noerr( err, exit );
-#endif
-	
 	// Get login info if needed.
 	
 	if( resolve->handler->needsLogin )
@@ -682,13 +634,8 @@ LONG	ExplorerBarWindow::OnResolve( WPARAM inWParam, LPARAM inLParam )
 		url.AppendFormat( TEXT( "@" ) );
 	}
 	
-#if( ENABLE_DOT_LOCAL_NAMES )
 	url += resolve->host;															// Host
 	url.AppendFormat( TEXT( ":%d" ), resolve->port );								// :Port
-#else
-	url.AppendFormat( TEXT( "%S:%S" ), addrString, portString );					// IP:Port
-#endif
-	
 	url.AppendFormat( TEXT( "%S" ), pathPrefix );									// Path Prefix ("/" or empty).
 	url.AppendFormat( TEXT( "%.*S" ), (int) pathSize, (char *) path );				// Path (possibly empty).
 	
