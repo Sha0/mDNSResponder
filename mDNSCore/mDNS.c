@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.128  2003/05/23 01:55:13  cheshire
+<rdar://problem/3267127> After name change, mDNSResponder needs to re-probe for name uniqueness
+
 Revision 1.127  2003/05/23 01:02:15  ksekar
 Bug #: <rdar://problem/3032577>: mDNSResponder needs to include unique id in default name
 
@@ -1517,14 +1520,6 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, ResourceRecord *const rr)
 
 		SetNextAnnounceProbeTime(m, rr);
 		}
-	}
-
-mDNSlocal void UpdateHostNameTargets(mDNS *const m)
-	{
-	ResourceRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->HostTarget)
-			SetTargetToHostName(m, rr);
 	}
 
 mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr)
@@ -4620,27 +4615,6 @@ mDNSexport mStatus mDNS_Deregister(mDNS *const m, ResourceRecord *const rr)
 	return(status);
 	}
 
-mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
-	{
-	mDNS_Lock(m);
-
-	// Set up the Primary mDNS FQDN
-	m->hostname1.c[0] = 0;
-	if (!AppendDomainLabel(&m->hostname1, &m->hostlabel))   LogMsg("ERROR! Cannot create dot-local hostname1");
-	if (!AppendLiteralLabelString(&m->hostname1, "local"))  LogMsg("ERROR! Cannot create dot-local hostname1");
-
-	// Set up the Secondary mDNS FQDN
-	m->hostname2.c[0] = 0;
-	if (!AppendDomainLabel(&m->hostname2, &m->hostlabel))   LogMsg("ERROR! Cannot create dot-local hostname2");
-	if (!AppendDNSNameString(&m->hostname2, "local.arpa.")) LogMsg("ERROR! Cannot create dot-local hostname2");
-
-	// Make sure that any SRV records (and the like) that reference our 
-	// host name in their rdata get updated to reference this new host name
-	UpdateHostNameTargets(m);
-
-	mDNS_Unlock(m);
-	}
-
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result);
 
 mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
@@ -4731,6 +4705,40 @@ mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *se
 	if (set->RR_PTR.RecordType) mDNS_Deregister_internal(m, &set->RR_PTR, mDNS_Dereg_normal);
 	}
 
+mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
+	{
+	domainname newname;
+	mDNS_Lock(m);
+
+	newname.c[0] = 0;
+	if (!AppendDomainLabel(&newname, &m->hostlabel))  LogMsg("ERROR! Cannot create dot-local hostname");
+	if (!AppendLiteralLabelString(&newname, "local")) LogMsg("ERROR! Cannot create dot-local hostname");
+	if (!SameDomainName(&m->hostname1, &newname))
+		{
+		NetworkInterfaceInfo *intf;
+		ResourceRecord *rr;
+
+		m->hostname1 = newname;
+		m->hostname2 = newname;
+		if (!AppendLiteralLabelString(&m->hostname2, "arpa")) LogMsg("ERROR! Cannot create local.arpa hostname");
+
+		// 1. Stop advertising our address records on all interfaces
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->Advertise) mDNS_DeadvertiseInterface(m, intf);
+
+		// 2. Start advertising our address records using the new name
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->Advertise) mDNS_AdvertiseInterface(m, intf);
+
+		// 3. Make sure that any SRV records (and the like) that reference our 
+		// host name in their rdata get updated to reference this new host name
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->HostTarget) SetTargetToHostName(m, rr);
+		}
+
+	mDNS_Unlock(m);
+	}
+
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
 	#pragma unused(rr)
@@ -4749,32 +4757,19 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 
 	if (result == mStatus_NameConflict)
 		{
-		NetworkInterfaceInfo *intf;
 		domainlabel oldlabel = m->hostlabel;
 
-		// 1. Stop advertising our address records on all interfaces
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise)
-				mDNS_DeadvertiseInterface(m, intf);
-		
-		// 2. Pick a new name
-
-		// 2a. First give the client callback a chance to pick a new name
+		// 1. First give the client callback a chance to pick a new name
 		if (m->MainCallback)
 			m->MainCallback(m, mStatus_NameConflict);
 
-		// 2b. If the client callback didn't do it, add (or increment) an index ourselves
+		// 2. If the client callback didn't do it, add (or increment) an index ourselves
 		if (SameDomainLabel(m->hostlabel.c, oldlabel.c))
 			IncrementLabelSuffix(&m->hostlabel, mDNSfalse);
 
-		// 2c. Generate the FQDNs from the hostlabel,
+		// 3. Generate the FQDNs from the hostlabel,
 		// and make sure all SRV records, etc., are updated to reference our new hostname
 		mDNS_GenerateFQDN(m);
-		
-		// 3. Re-advertise all our address records on all interfaces
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise)
-				mDNS_AdvertiseInterface(m, intf);
 		}
 	}
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
