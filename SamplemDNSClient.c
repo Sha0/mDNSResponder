@@ -41,7 +41,6 @@
 
 //*************************************************************************************************************
 // Globals
-//
 
 static char operation;
 static dns_service_discovery_ref client = NULL;
@@ -130,8 +129,16 @@ static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, 
 		union { uint32_t l; u_char b[4]; } addr = { ip->sin_addr.s_addr };
 		union { uint16_t s; u_char b[2]; } port = { ip->sin_port };
 		uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
-		printf("Service can be reached at %d.%d.%d.%d:%u %s",
-			addr.b[0], addr.b[1], addr.b[2], addr.b[3], PortAsNumber, txtRecord);
+        char *ptr = txtRecord;
+		printf("Service can be reached at %d.%d.%d.%d:%u", addr.b[0], addr.b[1], addr.b[2], addr.b[3], PortAsNumber);
+        while (*ptr)
+            {
+            char *p = ptr;
+            while (*p && *p != 1) p++;
+            if (*p == 1) *p++ = 0;
+            printf(" TXT \"%s\"", ptr);
+            ptr = p;
+            }
 		if (flags) printf(" Flags: %X", flags);
 		printf("\n");
 		}
@@ -243,7 +250,7 @@ int main(int argc, char **argv)
         case 'U':	{
                     Opaque16 registerPort = { { 0x12, 0x34 } };
                     printf("Registering Service Test._testupdate._tcp.local.\n");
-                    client = DNSServiceRegistrationCreate("Test", "_testupdate._tcp.", "", registerPort, "A", reg_reply, nil);
+                    client = DNSServiceRegistrationCreate("Test", "_testupdate._tcp.", "", registerPort, "A\001B\001C", reg_reply, nil);
                     break;
                     }
 
