@@ -175,12 +175,12 @@ static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, 
             const char *const lim = &txtInfo[sizeof(txtInfo)];
             while (*src && dst < lim-1)
             	{
+            	if (*src == '\\') *dst++ = '\\';			// '\' displays as "\\"
             	if (*src >= ' ') *dst++ = *src++;			// Display normal characters as-is
             	else
             		{
-            		*dst++ = '\\';							// Otherwise, display a backslash
-            		if      (*src == '\\') *dst++ = '\\';	// '\' displays as "\\"
-            		else if (*src ==    1) *dst++ = ' ';	// String boundary displayed as "\ "
+            		*dst++ = '\\';							// Display a backslash
+            		if (*src ==    1) *dst++ = ' ';			// String boundary displayed as "\ "
             		else									// Other chararacters displayed as "\0xHH"
             			{
             			static const char hexchars[16] = "0123456789ABCDEF";
