@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.46  2004/11/02 01:32:34  cheshire
+<rdar://problem/3861705> Update code so it still compiles when DNSServiceDiscovery.h is deprecated
+
 Revision 1.45  2004/06/15 02:39:47  cheshire
 When displaying error message, only show command name, not entire path
 
@@ -81,6 +84,12 @@ Add checkin history header
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <CoreFoundation/CoreFoundation.h>
+
+// We already know this tool is using the old deprecated API (that's its purpose)
+// Since we compile with all warnings treated as errors, we have to turn off the warnings here or the project won't compile
+#include <AvailabilityMacros.h>
+#undef AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED
+#define AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 //*************************************************************************************************************
