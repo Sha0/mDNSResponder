@@ -3091,7 +3091,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainname *const host, mDNSIPPort port, const char txtinfo[],
 	mDNSServiceCallback Callback, void *Context)
 	{
-	const mDNSs32 timenow = mDNS_Lock(m);
+	const mDNSs32 timenow;
 
 	sr->Callback = Callback;
 	sr->Context  = Context;
@@ -3119,7 +3119,11 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// 2. Set up the TXT record rdata.
 	if (txtinfo == mDNSNULL) sr->RR_TXT.rdata.txt.c[0] = 0;
 	else if (txtinfo != (char *)(sr->RR_TXT.rdata.txt.c))
-		mDNSPlatformStrNCopy(txtinfo,(char *)(sr->RR_TXT.rdata.txt.c), 255);
+		{
+		if (mDNSPlatformStrLen(txtinfo) > 255) return(mStatus_BadParamErr);
+		mDNSPlatformStrCopy(txtinfo,(char *)(sr->RR_TXT.rdata.txt.c), 255);
+		}
+
 	// Set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 
@@ -3129,6 +3133,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->RR_PTR.Additional1 = &sr->RR_SRV;
 	sr->RR_PTR.Additional2 = &sr->RR_TXT;
 
+	timenow = mDNS_Lock(m);
 	mDNS_Register_internal(m, &sr->RR_SRV, timenow);
 	mDNS_Register_internal(m, &sr->RR_TXT, timenow);
 	mDNS_Register_internal(m, &sr->RR_PTR, timenow);
