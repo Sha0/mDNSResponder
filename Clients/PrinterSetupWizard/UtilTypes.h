@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.11  2005/03/05 02:27:46  shersche
+<rdar://problem/4030388> Generic drivers don't do color
+
 Revision 1.10  2005/02/08 21:45:06  shersche
 <rdar://problem/3947490> Default to Generic PostScript or PCL if unable to match driver
 
@@ -199,6 +202,9 @@ namespace PrinterSetupWizard
 		CString		name;
 		CString		tag;
 		Models		models;
+
+		Model*
+		find( const CString & name );
 	};
 
 
@@ -284,6 +290,24 @@ namespace PrinterSetupWizard
 	inline
 	Queue::~Queue()
 	{
+	}
+
+	inline Model*
+	Manufacturer::find( const CString & name )
+	{
+		Models::iterator it;
+
+		for ( it = models.begin(); it != models.end(); it++ )
+		{
+			Model * model = *it;
+
+			if ( model->name = name )
+			{
+				return model;
+			}
+		}
+
+		return NULL;
 	}
 }
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.20  2005/03/05 02:27:45  shersche
+<rdar://problem/4030388> Generic drivers don't do color
+
 Revision 1.19  2005/02/23 02:08:51  shersche
 <rdar://problem/4012275> If we can't match the manufacturer, and select a generic printer, then show all the manufacturers in the manufacturer pane, not just "Generic".
 
@@ -123,8 +126,11 @@ First checked in
 #define kGenericPCL					L"Generic / PCL"
 #define kPDLPostscriptKey			L"application/postscript"
 #define kPDLPCLKey					L"application/vnd.hp-pcl"
-#define kGenericPostscriptDriver	L"HP LaserJet 2100 Series PS";
-#define kGenericPCLDriver			L"HP LaserJet 2200 Series PCL"
+#define kGenericPSColorDriver		L"HP Color LaserJet 4550 PS"
+#define kGenericPSDriver			L"HP LaserJet 4050 Series PS"
+#define kGenericPCLColorDriver		L"HP Color LaserJet 4550 PCL"
+#define kGenericPCLDriver			L"HP LaserJet 4050 Series PCL"
+
 
 //
 // states for parsing ntprint.inf
@@ -808,65 +814,119 @@ OSStatus
 CThirdPage::LoadGenericPrintDriverDefs( Manufacturers & manufacturers )
 {
 	Manufacturer		*	manufacturer;
+	Model				*	model;
 	Manufacturers::iterator	iter;
+	CString					psDriverName;
+	CString					pclDriverName;
 	OSStatus				err	= 0;
 
-	iter = manufacturers.find(L"Generic");
-	
-	if (iter != manufacturers.end())
+	// <rdar://problem/4030388> Generic drivers don't do color
+
+	// First try and find our generic driver names
+
+	iter = manufacturers.find(L"HP");
+	require_action( iter != manufacturers.end(), exit, err = kUnknownErr );
+	manufacturer = iter->second;
+
+	// Look for Postscript 
+
+	model = manufacturer->find( kGenericPSColorDriver );
+
+	if ( !model )
 	{
-		manufacturer = iter->second;
+		model = manufacturer->find( kGenericPSDriver );
 	}
-	else
+
+	if ( model )
 	{
-		try
+		psDriverName = model->name;
+	
+	}
+
+	// Look for PCL
+	
+	model = manufacturer->find( kGenericPCLColorDriver );
+
+	if ( !model )
+	{
+		model = manufacturer->find( kGenericPCLDriver );
+	}
+
+	if ( model )
+	{
+		pclDriverName = model->name;	
+	}
+
+	// If we found either a generic PS driver, or a generic PCL driver,
+	// then add them to the list
+
+	if ( psDriverName.GetLength() || pclDriverName.GetLength() )
+	{
+		// Try and find generic manufacturer if there is one
+
+		iter = manufacturers.find(L"Generic");
+		
+		if (iter != manufacturers.end())
 		{
-			manufacturer = new Manufacturer;
+			manufacturer = iter->second;
 		}
-		catch (...)
+		else
 		{
-			manufacturer = NULL;
+			try
+			{
+				manufacturer = new Manufacturer;
+			}
+			catch (...)
+			{
+				manufacturer = NULL;
+			}
+		
+			require_action( manufacturer, exit, err = kNoMemoryErr );
+		
+			manufacturer->name					=	"Generic";
+			manufacturers[manufacturer->name]	=	manufacturer;
 		}
-	
-		require_action( manufacturer, exit, err = kNoMemoryErr );
-	
-		manufacturer->name					=	"Generic";
-		manufacturers[manufacturer->name]	=	manufacturer;
+
+		if ( psDriverName.GetLength() > 0 )
+		{
+			try
+			{
+				m_genericPostscript = new Model;
+			}
+			catch (...)
+			{
+				m_genericPostscript = NULL;
+			}
+			
+			require_action( m_genericPostscript, exit, err = kNoMemoryErr );
+
+			m_genericPostscript->displayName		=	kGenericPostscript;
+			m_genericPostscript->name				=	psDriverName;
+			m_genericPostscript->driverInstalled	=	false;
+
+			manufacturer->models.push_back( m_genericPostscript );
+		}
+
+		if ( pclDriverName.GetLength() > 0 )
+		{
+			try
+			{
+				m_genericPCL = new Model;
+			}
+			catch (...)
+			{
+				m_genericPCL = NULL;
+			}
+			
+			require_action( m_genericPCL, exit, err = kNoMemoryErr );
+
+			m_genericPCL->displayName		=	kGenericPCL;
+			m_genericPCL->name				=	pclDriverName;
+			m_genericPCL->driverInstalled	=	false;
+
+			manufacturer->models.push_back( m_genericPCL );
+		}
 	}
-
-	try
-	{
-		m_genericPostscript = new Model;
-	}
-	catch (...)
-	{
-		m_genericPostscript = NULL;
-	}
-	
-	require_action( m_genericPostscript, exit, err = kNoMemoryErr );
-
-	m_genericPostscript->displayName		=	kGenericPostscript;
-	m_genericPostscript->name				=	kGenericPostscriptDriver;
-	m_genericPostscript->driverInstalled	=	false;
-
-	manufacturer->models.push_back( m_genericPostscript );
-
-	try
-	{
-		m_genericPCL = new Model;
-	}
-	catch (...)
-	{
-		m_genericPCL = NULL;
-	}
-	
-	require_action( m_genericPCL, exit, err = kNoMemoryErr );
-
-	m_genericPCL->displayName		=	kGenericPCL;
-	m_genericPCL->name				=	kGenericPCLDriver;
-	m_genericPCL->driverInstalled	=	false;
-
-	manufacturer->models.push_back( m_genericPCL );
 
 exit:
 
