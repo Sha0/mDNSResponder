@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.125  2004/11/23 04:16:48  cheshire
+Removed receiveMsg() routine.
+
 Revision 1.124  2004/11/23 04:06:51  cheshire
 Get rid of floating point constant -- in a small embedded device, bringing in all
 the floating point libraries just to halve an integer value is a bit too heavyweight.
@@ -2113,14 +2116,6 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	}
 
 		
-mDNSlocal void receiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSInterfaceID InterfaceID)
-	{
-	mDNS_Lock(m);
-	uDNS_ReceiveMsg(m, msg, end, mDNSNULL, zeroIPPort, mDNSNULL, zeroIPPort, InterfaceID);
-	mDNS_Unlock(m);
-	}
-
 //!!!KRS this should go away (don't just pick one randomly!)
 mDNSlocal const mDNSAddr *getInitializedDNS(uDNS_GlobalInfo *u)
     {
@@ -3305,9 +3300,7 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 		if (info->nread == info->replylen)
 			{
 			// finished reading message
-			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback (callback can't/won't touch info struct)
-			receiveMsg(m, &info->reply, ((mDNSu8 *)&info->reply) + info->replylen, question->InterfaceID);
-			m->mDNS_reentrancy--; 
+			uDNS_ReceiveMsg(m, &info->reply, ((mDNSu8 *)&info->reply) + info->replylen, mDNSNULL, zeroIPPort, mDNSNULL, zeroIPPort, question->InterfaceID);
 			mDNSPlatformTCPCloseConnection(sd);
 			ufree(info);
 			}
