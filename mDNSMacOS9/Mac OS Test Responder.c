@@ -168,7 +168,7 @@ mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	//RegisterService(m, &njp, 80, "NJP/", &m->nicelabel, "_njp._tcp.", "local.");
 
 	// Advertise that apple.com. is available for browsing
-	mDNS_AdvertiseDomains(m, &browsedomain, mDNS_DomainTypeBrowse, mDNSInterface_Any, "apple.com.");
+	mDNS_AdvertiseDomains(m, &browsedomain, mDNS_DomainTypeBrowse, mDNSInterface_Any, "IL 2\\4th Floor.apple.com.");
 
 	return(kOTNoError);
 	}
