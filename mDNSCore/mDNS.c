@@ -2147,10 +2147,6 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 			{
 			mDNSs32 timesincercvd = timenow - (*rr)->TimeRcvd;
 
-			// If we found a record *past* (not at) its expiration time, we can use it.
-			if (timesincercvd / mDNSPlatformOneSecond > (mDNSs32)(*rr)->rroriginalttl)
-				{ best = rr; break; }
-
 			// Records we've only just received are not candidates for deletion
 			if (timesincercvd > 0)
 				{
@@ -2161,7 +2157,8 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 				mDNSu8 rtype = ((*rr)->RecordType) & ~kDNSRecordTypeUniqueMask;
 				if (rtype == kDNSRecordTypePacketAnswer) age /= 2;		// Keep answer records longer than additionals
 
-				if (bestage < age) { best = rr; bestage = age; }
+				// Records that answer still-active questions are not candidates for deletion
+				if (bestage < age && !CacheRRActive(m, *rr)) { best = rr; bestage = age; }
 				}
 
 			rr=&(*rr)->next;
@@ -3843,6 +3840,14 @@ extern void mDNS_Close(mDNS *const m)
 	{
 	NetworkInterfaceInfo *i;
 	const mDNSs32 timenow = mDNS_Lock(m);
+
+#if DEBUGBREAKS
+	ResourceRecord *rr;
+	int rrcache_active = 0;
+	for (rr = m->rrcache; rr; rr=rr->next) if (CacheRRActive(m, rr)) rrcache_active++;
+	debugf("mDNS_Close: RR Cache now using %d records, %d active", m->rrcache_used, rrcache_active);
+#endif
+
 	m->ActiveQuestions = mDNSNULL;		// We won't be answering any more questions!
 	
 	for (i=m->HostInterfaces; i; i=i->next)
@@ -3863,7 +3868,7 @@ extern void mDNS_Close(mDNS *const m)
 			}
 		}
 
-	if (m->ResourceRecords) debugf("mDNS_Close: Deregistering records remain");
+	if (m->ResourceRecords) debugf("mDNS_Close: Sending final packets for deregistering records");
 	else debugf("mDNS_Close: No deregistering records remain");
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
