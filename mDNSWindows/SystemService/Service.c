@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.29  2005/03/06 05:21:56  shersche
+<rdar://problem/4037635> Fix corrupt UTF-8 name when non-ASCII system name used, enabled unicode support
+
 Revision 1.28  2005/03/03 02:27:24  shersche
 Include the RegNames.h header file for names of registry keys
 
@@ -166,7 +169,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #define	DEBUG_NAME							"[Server] "
 #define kServiceFirewallName				L"Bonjour"
-#define	kServiceDependencies				"Tcpip\0winmgmt\0\0"
+#define	kServiceDependencies				TEXT("Tcpip\0winmgmt\0\0")
 #define	kDNSServiceCacheEntryCountDefault	512
 
 #define RR_CACHE_SIZE 500
@@ -220,30 +223,33 @@ typedef struct Win32EventSource
 //===========================================================================================================================
 //	Prototypes
 //===========================================================================================================================
-
+#if defined(UNICODE)
+int __cdecl			wmain( int argc, LPTSTR argv[] );
+#else
 int __cdecl 		main( int argc, char *argv[] );
+#endif
 static void			Usage( void );
 static BOOL WINAPI	ConsoleControlHandler( DWORD inControlEvent );
-static OSStatus		InstallService( const char *inName, const char *inDisplayName, const char *inDescription, const char *inPath );
-static OSStatus		RemoveService( const char *inName );
+static OSStatus		InstallService( LPCTSTR inName, LPCTSTR inDisplayName, LPCTSTR inDescription, LPCTSTR inPath );
+static OSStatus		RemoveService( LPCTSTR inName );
 static OSStatus		SetServiceParameters();
 static OSStatus		GetServiceParameters();
 static OSStatus		CheckFirewall();
-static OSStatus		SetServiceInfo( SC_HANDLE inSCM, const char *inServiceName, const char *inDescription );
+static OSStatus		SetServiceInfo( SC_HANDLE inSCM, LPCTSTR inServiceName, LPCTSTR inDescription );
 static void			ReportStatus( int inType, const char *inFormat, ... );
-static OSStatus		RunDirect( int argc, char *argv[] );
+static OSStatus		RunDirect( int argc, LPTSTR argv[] );
 
-static void WINAPI	ServiceMain( DWORD argc, LPSTR argv[] );
+static void WINAPI	ServiceMain( DWORD argc, LPTSTR argv[] );
 static OSStatus		ServiceSetupEventLogging( void );
 static DWORD WINAPI	ServiceControlHandler( DWORD inControl, DWORD inEventType, LPVOID inEventData, LPVOID inContext );
 
-static OSStatus		ServiceRun( int argc, char *argv[] );
+static OSStatus		ServiceRun( int argc, LPTSTR argv[] );
 static void			ServiceStop( void );
 
-static OSStatus		ServiceSpecificInitialize( int argc, char *argv[] );
-static OSStatus		ServiceSpecificRun( int argc, char *argv[] );
+static OSStatus		ServiceSpecificInitialize( int argc, LPTSTR  argv[] );
+static OSStatus		ServiceSpecificRun( int argc, LPTSTR argv[] );
 static OSStatus		ServiceSpecificStop( void );
-static void			ServiceSpecificFinalize( int argc, char *argv[] );
+static void			ServiceSpecificFinalize( int argc, LPTSTR argv[] );
 static mStatus		EventSourceFinalize(Win32EventSource * source);
 static void			EventSourceLock();
 static void			EventSourceUnlock();
@@ -253,6 +259,15 @@ static void			HostDescriptionChanged(mDNS * const inMDNS);
 static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
 static bool			HaveLLRoute(PMIB_IPFORWARDROW rowExtant);
 static OSStatus		SetLLRoute();
+
+#if defined(UNICODE)
+#	define StrLen(X)	wcslen(X)
+#	define StrCmp(X,Y)	wcscmp(X,Y)
+#else
+#	define StrLen(X)	strlen(X)
+#	define StrCmp(X,Y)	strcmp(X,Y)
+#endif
+
 
 #define kLLNetworkAddr      "169.254.0.0"
 #define kLLNetworkAddrMask  "255.255.0.0"
@@ -295,8 +310,11 @@ DEBUG_LOCAL GenLinkedList				gEventSources;
 //===========================================================================================================================
 //	main
 //===========================================================================================================================
-
+#if defined(UNICODE)
+int __cdecl wmain( int argc, wchar_t * argv[] )
+#else
 int	__cdecl main( int argc, char *argv[] )
+#endif
 {
 	OSStatus		err;
 	BOOL			ok;
@@ -305,7 +323,7 @@ int	__cdecl main( int argc, char *argv[] )
 	
 	debug_initialize( kDebugOutputTypeMetaConsole );
 	debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelVerbose );
-	
+
 	// Default to automatically starting the service dispatcher if no extra arguments are specified.
 	
 	start = ( argc <= 1 );
@@ -314,20 +332,20 @@ int	__cdecl main( int argc, char *argv[] )
 	
 	for( i = 1; i < argc; ++i )
 	{
-		if( strcmp( argv[ i ], "-install" ) == 0 )			// Install
+		if( StrCmp( argv[ i ], TEXT("-install") ) == 0 )			// Install
 		{
-			char		desc[ 256 ];
+			TCHAR desc[ 256 ];
 			
 			desc[ 0 ] = 0;
-			LoadStringA( GetModuleHandle( NULL ), IDS_SERVICE_DESCRIPTION, desc, sizeof( desc ) );
-			err = InstallService( kServiceName, kServiceName, desc, argv[ 0 ] );
+			LoadString( GetModuleHandle( NULL ), IDS_SERVICE_DESCRIPTION, desc, sizeof( desc ) );
+			err = InstallService( kServiceName, kServiceName, desc, argv[0] );
 			if( err )
 			{
 				ReportStatus( EVENTLOG_ERROR_TYPE, "install service failed (%d)\n", err );
 				goto exit;
 			}
 		}
-		else if( strcmp( argv[ i ], "-remove" ) == 0 )		// Remove
+		else if( StrCmp( argv[ i ], TEXT("-remove") ) == 0 )		// Remove
 		{
 			err = RemoveService( kServiceName );
 			if( err )
@@ -336,11 +354,11 @@ int	__cdecl main( int argc, char *argv[] )
 				goto exit;
 			}
 		}
-		else if( strcmp( argv[ i ], "-start" ) == 0 )		// Start
+		else if( StrCmp( argv[ i ], TEXT("-start") ) == 0 )		// Start
 		{
 			start = TRUE;
 		}
-		else if( strcmp( argv[ i ], "-server" ) == 0 )		// Server
+		else if( StrCmp( argv[ i ], TEXT("-server") ) == 0 )		// Server
 		{
 			err = RunDirect( argc, argv );
 			if( err )
@@ -349,26 +367,12 @@ int	__cdecl main( int argc, char *argv[] )
 			}
 			goto exit;
 		}
-		else if( strcmp( argv[ i ], "-q" ) == 0 )			// Quiet Mode (toggle)
+		else if( StrCmp( argv[ i ], TEXT("-q") ) == 0 )			// Quiet Mode (toggle)
 		{
 			gServiceQuietMode = !gServiceQuietMode;
 		}
-		else if( strcmp( argv[ i ], "-remote" ) == 0 )		// Allow Remote Connections
-		{
-			gServiceAllowRemote = true;
-		}
-		else if( strcmp( argv[ i ], "-cache" ) == 0 )		// Number of mDNS cache entries
-		{
-			if( i <= argc )
-			{
-				ReportStatus( EVENTLOG_ERROR_TYPE, "-cache used, but number of cache entries not specified\n" );
-				err = kParamErr;
-				goto exit;
-			}
-			gServiceCacheEntryCount = atoi( argv[ ++i ] );
-		}
-		else if( ( strcmp( argv[ i ], "-help" ) == 0 ) || 	// Help
-				 ( strcmp( argv[ i ], "-h" ) == 0 ) )
+		else if( ( StrCmp( argv[ i ], TEXT("-help") ) == 0 ) || 	// Help
+				 ( StrCmp( argv[ i ], TEXT("-h") ) == 0 ) )
 		{
 			Usage();
 			err = 0;
@@ -459,7 +463,7 @@ exit:
 //	InstallService
 //===========================================================================================================================
 
-static OSStatus	InstallService( const char *inName, const char *inDisplayName, const char *inDescription, const char *inPath )
+static OSStatus	InstallService( LPCTSTR inName, LPCTSTR inDisplayName, LPCTSTR inDescription, LPCTSTR inPath )
 {
 	OSStatus		err;
 	SC_HANDLE		scm;
@@ -522,7 +526,7 @@ exit:
 //	RemoveService
 //===========================================================================================================================
 
-static OSStatus	RemoveService( const char *inName )
+static OSStatus	RemoveService( LPCTSTR inName )
 {
 	OSStatus			err;
 	SC_HANDLE			scm;
@@ -585,7 +589,7 @@ static OSStatus SetServiceParameters()
 	DWORD 			value;
 	DWORD			valueLen = sizeof(DWORD);
 	DWORD			type;
-	const char	*	s;
+	LPCTSTR			s;
 	OSStatus		err;
 	HKEY			key;
 
@@ -594,7 +598,7 @@ static OSStatus SetServiceParameters()
 	//
 	// Add/Open Parameters section under service entry in registry
 	//
-	s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
+	s = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters");
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
 	require_noerr( err, exit );
 	
@@ -632,7 +636,7 @@ static OSStatus GetServiceParameters()
 	DWORD 			value;
 	DWORD			valueLen;
 	DWORD			type;
-	const char	*	s;
+	LPCTSTR			s;
 	OSStatus		err;
 	HKEY			key;
 
@@ -641,7 +645,7 @@ static OSStatus GetServiceParameters()
 	//
 	// Add/Open Parameters section under service entry in registry
 	//
-	s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
+	s = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters");
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
 	require_noerr( err, exit );
 	
@@ -679,7 +683,7 @@ static OSStatus CheckFirewall()
 	DWORD 			value;
 	DWORD			valueLen;
 	DWORD			type;
-	const char	*	s;
+	LPCTSTR			s;
 	HKEY			key = NULL;
 	OSStatus		err = kUnknownErr;
 	
@@ -689,7 +693,7 @@ static OSStatus CheckFirewall()
 	// the case, then we need to manipulate the firewall
 	// so networking works correctly.
 
-	s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
+	s = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters");
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
 	require_noerr( err, exit );
 
@@ -731,7 +735,7 @@ exit:
 //	SetServiceInfo
 //===========================================================================================================================
 
-static OSStatus	SetServiceInfo( SC_HANDLE inSCM, const char *inServiceName, const char *inDescription )
+static OSStatus	SetServiceInfo( SC_HANDLE inSCM, LPCTSTR inServiceName, LPCTSTR inDescription )
 {
 	OSStatus				err;
 	SC_LOCK					lock;
@@ -768,7 +772,7 @@ static OSStatus	SetServiceInfo( SC_HANDLE inSCM, const char *inServiceName, cons
 	
 	// Change the description.
 	
-	description.lpDescription = (char *) inDescription;
+	description.lpDescription = (LPTSTR) inDescription;
 	ok = ChangeServiceConfig2( service, SERVICE_CONFIG_DESCRIPTION, &description );
 	err = translate_errno( ok, (OSStatus) GetLastError(), kParamErr );
 	require_noerr( err, exit );
@@ -820,7 +824,7 @@ static void	ReportStatus( int inType, const char *inFormat, ... )
 			
 			vsprintf( s, inFormat, args );
 			array[ 0 ] = s;
-			ok = ReportEvent( gServiceEventSource, (WORD) inType, 0, 0x20000001L, NULL, 1, 0, array, NULL );
+			ok = ReportEventA( gServiceEventSource, (WORD) inType, 0, 0x20000001L, NULL, 1, 0, array, NULL );
 			check_translated_errno( ok, GetLastError(), kUnknownErr );
 		}
 		else
@@ -838,7 +842,7 @@ static void	ReportStatus( int inType, const char *inFormat, ... )
 //	RunDirect
 //===========================================================================================================================
 
-static OSStatus	RunDirect( int argc, char *argv[] )
+static OSStatus	RunDirect( int argc, LPTSTR argv[] )
 {
 	OSStatus		err;
 	BOOL			initialized;
@@ -881,11 +885,11 @@ exit:
 //	ServiceMain
 //===========================================================================================================================
 
-static void WINAPI ServiceMain( DWORD argc, LPSTR argv[] )
+static void WINAPI ServiceMain( DWORD argc, LPTSTR argv[] )
 {
 	OSStatus		err;
 	BOOL			ok;
-	char			desc[ 256 ];
+	TCHAR			desc[ 256 ];
 	
 	err = ServiceSetupEventLogging();
 	check_noerr( err );
@@ -910,7 +914,7 @@ static void WINAPI ServiceMain( DWORD argc, LPSTR argv[] )
 	// Setup the description. This should be done by the installer, but it doesn't support that yet.
 			
 	desc[ 0 ] = '\0';
-	LoadStringA( GetModuleHandle( NULL ), IDS_SERVICE_DESCRIPTION, desc, sizeof( desc ) );
+	LoadString( GetModuleHandle( NULL ), IDS_SERVICE_DESCRIPTION, desc, sizeof( desc ) );
 	err = SetServiceInfo( NULL, kServiceName, desc );
 	check_noerr( err );
 	
@@ -956,25 +960,25 @@ static OSStatus	ServiceSetupEventLogging( void )
 {
 	OSStatus			err;
 	HKEY				key;
-	const char *		s;
+	LPCTSTR				s;
 	DWORD				typesSupported;
-	char				path[ MAX_PATH ];
+	TCHAR				path[ MAX_PATH ];
 	DWORD 				n;
 	
 	key = NULL;
 	
 	// Add/Open source name as a sub-key under the Application key in the EventLog registry key.
 
-	s = "SYSTEM\\CurrentControlSet\\Services\\EventLog\\Application\\" kServiceName;
+	s = TEXT("SYSTEM\\CurrentControlSet\\Services\\EventLog\\Application\\") kServiceName;
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
 	require_noerr( err, exit );
 	
 	// Add the name to the EventMessageFile subkey.
-	
+
 	path[ 0 ] = '\0';
 	GetModuleFileName( NULL, path, MAX_PATH );
-	n = (DWORD)( strlen( path ) + 1 );
-	err = RegSetValueEx( key, "EventMessageFile", 0, REG_EXPAND_SZ, (const LPBYTE) path, n );
+	n = (DWORD) ( ( StrLen( path ) + 1 ) * sizeof( TCHAR ) );
+	err = RegSetValueEx( key, TEXT("EventMessageFile"), 0, REG_EXPAND_SZ, (const LPBYTE) path, n );
 	require_noerr( err, exit );
 	
 	// Set the supported event types in the TypesSupported subkey.
@@ -986,7 +990,7 @@ static OSStatus	ServiceSetupEventLogging( void )
 					 | EVENTLOG_INFORMATION_TYPE
 					 | EVENTLOG_AUDIT_SUCCESS
 					 | EVENTLOG_AUDIT_FAILURE; 
-	err = RegSetValueEx( key, "TypesSupported", 0, REG_DWORD, (const LPBYTE) &typesSupported, sizeof( DWORD ) );
+	err = RegSetValueEx( key, TEXT("TypesSupported"), 0, REG_DWORD, (const LPBYTE) &typesSupported, sizeof( DWORD ) );
 	require_noerr( err, exit );
 	
 	// Set up the event source.
@@ -1056,7 +1060,7 @@ static DWORD WINAPI	ServiceControlHandler( DWORD inControl, DWORD inEventType, L
 //	ServiceRun
 //===========================================================================================================================
 
-static OSStatus	ServiceRun( int argc, char *argv[] )
+static OSStatus	ServiceRun( int argc, LPTSTR argv[] )
 {
 	OSStatus		err;
 	BOOL			initialized;
@@ -1128,7 +1132,7 @@ static void	ServiceStop( void )
 //	ServiceSpecificInitialize
 //===========================================================================================================================
 
-static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
+static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 {
 	OSStatus						err;
 	
@@ -1173,7 +1177,7 @@ exit:
 //	ServiceSpecificRun
 //===========================================================================================================================
 
-static OSStatus	ServiceSpecificRun( int argc, char *argv[] )
+static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 {
 	DWORD result;
 	
@@ -1210,7 +1214,7 @@ exit:
 //	ServiceSpecificFinalize
 //===========================================================================================================================
 
-static void	ServiceSpecificFinalize( int argc, char *argv[] )
+static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 {
 	DEBUG_UNUSED( argc );
 	DEBUG_UNUSED( argv );

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.82  2005/03/06 05:20:24  shersche
+<rdar://problem/4037635> Fix corrupt UTF-8 name when non-ASCII system name used, enabled unicode support
+
 Revision 1.81  2005/03/04 22:44:53  shersche
 <rdar://problem/4022802> mDNSResponder did not notice changes to DNS server config
 
@@ -454,9 +457,11 @@ mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInter
 
 mDNSlocal mDNSBool	CanReceiveUnicast( void );
 
-mDNSlocal mStatus			StringToAddress( mDNSAddr * ip, const char * string );
-mDNSlocal mStatus			RegQueryString( HKEY key, const char * param, char ** string, DWORD * stringLen, DWORD * enabled );
+mDNSlocal mStatus			StringToAddress( mDNSAddr * ip, LPSTR string );
+mDNSlocal mStatus			RegQueryString( HKEY key, LPCSTR param, LPSTR * string, DWORD * stringLen, DWORD * enabled );
 mDNSlocal struct ifaddrs*	myGetIfAddrs(int refresh);
+mDNSlocal OSStatus			TCHARtoUTF8( const TCHAR *inString, char *inBuffer, size_t inBufferSize );
+mDNSlocal OSStatus			WindowsLatin1toUTF8( const char *inString, char *inBuffer, size_t inBufferSize );
 mDNSlocal OSStatus			ConvertUTF8ToLsaString( const char * input, PLSA_UNICODE_STRING output );
 mDNSlocal OSStatus			ConvertLsaStringToUTF8( PLSA_UNICODE_STRING input, char ** output );
 mDNSlocal void				FreeTCPConnectionData( mDNSTCPConnectionData * data );
@@ -510,6 +515,8 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	int			supported;
 	struct sockaddr_in	sa4;
 	struct sockaddr_in6 sa6;
+	int					sa4len;
+	int					sa6len;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "platform init\n" );
 	
@@ -555,6 +562,10 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	sa4.sin_addr.s_addr = INADDR_ANY;
 	err = SetupSocket( inMDNS, (const struct sockaddr*) &sa4, zeroIPPort, &inMDNS->p->unicastSock4 );
 	check_noerr( err );
+	sa4len = sizeof( sa4 );
+	err = getsockname( inMDNS->p->unicastSock4, (struct sockaddr*) &sa4, &sa4len );
+	require_noerr( err, exit );
+	inMDNS->UnicastPort4.NotAnInteger = sa4.sin_port;
 	inMDNS->p->unicastSock4ReadEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
 	err = translate_errno( inMDNS->p->unicastSock4ReadEvent, (mStatus) GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
@@ -601,6 +612,11 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 
 	if ( inMDNS->p->unicastSock6 != INVALID_SOCKET )
 	{
+		sa6len = sizeof( sa6 );
+		err = getsockname( inMDNS->p->unicastSock6, (struct sockaddr*) &sa6, &sa6len );
+		require_noerr( err, exit );
+		inMDNS->UnicastPort6.NotAnInteger = sa6.sin6_port;
+
 		err = WSAEventSelect( inMDNS->p->unicastSock6, inMDNS->p->unicastSock6ReadEvent, FD_READ );
 		require_noerr( err, exit );
 
@@ -1267,8 +1283,8 @@ exit:
 void
 dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
 {
-	char	*	name = NULL;
-	TCHAR		subKeyName[kRegistryMaxKeyLength];
+	LPSTR		name = NULL;
+	char		subKeyName[kRegistryMaxKeyLength + 1];
 	DWORD		cSubKeys = 0;
 	DWORD		cbMaxSubKey;
 	DWORD		cchMaxClass;
@@ -1286,7 +1302,7 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 
 	*browseDomains = NULL;
 	
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSHostNames, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup\\") kServiceDynDNSHostNames, &key );
 	require_noerr( err, exit );
 
 	err = RegQueryString( key, "", &name, &dwSize, &enabled );
@@ -1310,7 +1326,7 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 		name = NULL;
 	}
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSBrowseDomains, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup\\") kServiceDynDNSBrowseDomains, &key );
 	require_noerr( err, exit );
 
 	// Get information about this node
@@ -1324,15 +1340,15 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 
 		dwSize = kRegistryMaxKeyLength;
             
-		err = RegEnumKeyEx( key, i, subKeyName, &dwSize, NULL, NULL, NULL, NULL );
+		err = RegEnumKeyExA( key, i, subKeyName, &dwSize, NULL, NULL, NULL, NULL );
 
 		if ( !err )
 		{
-			err = RegOpenKeyEx( key, subKeyName, 0, KEY_READ, &subKey );
+			err = RegOpenKeyExA( key, subKeyName, 0, KEY_READ, &subKey );
 			require_noerr( err, exit );
 
 			dwSize = sizeof( DWORD );
-			err = RegQueryValueEx( subKey, "Enabled", NULL, NULL, (LPBYTE) &enabled, &dwSize );
+			err = RegQueryValueExA( subKey, "Enabled", NULL, NULL, (LPBYTE) &enabled, &dwSize );
 
 			if ( !err && ( subKeyName[0] != '\0' ) && enabled )
 			{
@@ -1363,7 +1379,7 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 		key = NULL;
 	}
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSRegistrationDomains, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup\\") kServiceDynDNSRegistrationDomains, &key );
 	require_noerr( err, exit );
 	
 	err = RegQueryString( key, "", &name, &dwSize, &enabled );
@@ -1402,7 +1418,7 @@ void
 dDNSPlatformSetNameStatus(domainname *const dname, mStatus status)
 {
 	char		uname[MAX_ESCAPED_DOMAIN_NAME];
-	char		name[MAX_ESCAPED_DOMAIN_NAME + 256];
+	LPCTSTR		name;
 	HKEY		key = NULL;
 	mStatus		err;
 	char	*	p;
@@ -1419,7 +1435,7 @@ dDNSPlatformSetNameStatus(domainname *const dname, mStatus status)
 	}
 
 	check( strlen( p ) <= MAX_ESCAPED_DOMAIN_NAME );
-	sprintf( name, "SYSTEM\\CurrentControlSet\\Services\\%s\\Parameters\\DynDNS\\State\\HostNames", kServiceName );
+	name = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\State\\HostNames");
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, name, &key );
 	require_noerr( err, exit );
 
@@ -1538,7 +1554,7 @@ dDNSPlatformGetSearchDomainList( void )
 	HKEY				key;
 	mStatus				err;
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"), &key );
 	require_noerr( err, exit );
 
 	err = RegQueryString( key, "SearchList", &searchList, &searchListLen, NULL );
@@ -2055,16 +2071,18 @@ mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 {
 	mStatus		err = 0;
 	char		tempString[ 256 ];
+	char		utf8[ 256 ];
 	
 	check( inMDNS );
 	
 	// Set up the nice name.
 	tempString[ 0 ] = '\0';
+	utf8[0]			= '\0';
 
 	// First try and open the registry key that contains the computer description value
 	if (inMDNS->p->descKey == NULL)
 	{
-		const char * s = "SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\parameters";
+		LPCTSTR s = TEXT("SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\parameters");
 		err = RegOpenKeyEx( HKEY_LOCAL_MACHINE, s, 0, KEY_READ, &inMDNS->p->descKey);
 		check_translated_errno( err == 0, errno_compat(), kNameErr );
 
@@ -2077,33 +2095,51 @@ mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 	// if we opened it...
 	if (inMDNS->p->descKey != NULL)
 	{
-		DWORD type;
-		DWORD valueLen = sizeof(tempString);
+		TCHAR	desc[256];
+		DWORD	descSize = sizeof( desc );
 
 		// look for the computer description
-		err = RegQueryValueEx(inMDNS->p->descKey, "srvcomment", 0, &type, (LPBYTE) &tempString, &valueLen);
-		check_translated_errno( err == 0, errno_compat(), kNameErr );
+		err = RegQueryValueEx(inMDNS->p->descKey, TEXT("srvcomment"), 0, NULL, (LPBYTE) &desc, &descSize);
+		
+		if ( !err )
+		{
+			err = TCHARtoUTF8( desc, utf8, sizeof( utf8 ) );
+		}
+
+		if ( err )
+		{
+			utf8[ 0 ] = '\0';
+		}
 	}
 
 	// if we can't find it in the registry, then use the hostname of the machine
-	if (err || ( tempString[ 0] == '\0' ) )
+	if ( err || ( utf8[ 0 ] == '\0' ) )
 	{
 		err = gethostname( tempString, sizeof( tempString ) - 1 );
 		check_translated_errno( err == 0, errno_compat(), kNameErr );
+		
+		if( !err )
+		{
+			err = WindowsLatin1toUTF8( tempString, utf8, sizeof( utf8 ) );
+		}
+
+		if ( err )
+		{
+			utf8[ 0 ] = '\0';
+		}
 	}
 
 	// if we can't get the hostname
-	if( err || ( tempString[ 0 ] == '\0' ) )
+	if ( err || ( utf8[ 0 ] == '\0' ) )
 	{
 		// Invalidate name so fall back to a default name.
 		
-		strcpy( tempString, kMDNSDefaultName );
+		strcpy( utf8, kMDNSDefaultName );
 	}
 
-	tempString[ sizeof( tempString ) - 1 ] = '\0';
-	
-	inMDNS->nicelabel.c[ 0 ] = (mDNSu8) (strlen( tempString ) < MAX_DOMAIN_LABEL ? strlen( tempString ) : MAX_DOMAIN_LABEL);
-	memcpy( &inMDNS->nicelabel.c[ 1 ], tempString, inMDNS->nicelabel.c[ 0 ] );
+	utf8[ sizeof( utf8 ) - 1 ]	= '\0';	
+	inMDNS->nicelabel.c[ 0 ]	= (mDNSu8) (strlen( utf8 ) < MAX_DOMAIN_LABEL ? strlen( utf8 ) : MAX_DOMAIN_LABEL);
+	memcpy( &inMDNS->nicelabel.c[ 1 ], utf8, inMDNS->nicelabel.c[ 0 ] );
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "nice name \"%.*s\"\n", inMDNS->nicelabel.c[ 0 ], &inMDNS->nicelabel.c[ 1 ] );
 	
@@ -2912,7 +2948,7 @@ mDNSlocal mStatus	SetupNotifications( mDNS * const inMDNS )
 	err = translate_errno( inMDNS->p->tcpipChangedEvent, (mStatus) GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", &inMDNS->p->tcpipKey );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"), &inMDNS->p->tcpipKey );
 	require_noerr( err, exit );
 
 	err = RegNotifyChangeKeyValue(inMDNS->p->tcpipKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->tcpipChangedEvent, TRUE);
@@ -2924,7 +2960,7 @@ mDNSlocal mStatus	SetupNotifications( mDNS * const inMDNS )
 	err = translate_errno( inMDNS->p->ddnsChangedEvent, (mStatus) GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters\\DynDNS\\Setup", &inMDNS->p->ddnsKey );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup"), &inMDNS->p->ddnsKey );
 	require_noerr( err, exit );
 
 	err = RegNotifyChangeKeyValue(inMDNS->p->ddnsKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->ddnsChangedEvent, TRUE);
@@ -4393,7 +4429,7 @@ exit:
 //===========================================================================================================================
 
 static mStatus
-RegQueryString( HKEY key, const char * valueName, char ** string, DWORD * stringLen, DWORD * enabled )
+RegQueryString( HKEY key, LPCSTR valueName, LPSTR * string, DWORD * stringLen, DWORD * enabled )
 {
 	DWORD	type;
 	int		i;
@@ -4413,7 +4449,7 @@ RegQueryString( HKEY key, const char * valueName, char ** string, DWORD * string
 		*string = (char*) malloc( *stringLen );
 		require_action( *string, exit, err = mStatus_NoMemoryErr );
 
-		err = RegQueryValueEx( key, valueName, 0, &type, (LPBYTE) *string, stringLen );
+		err = RegQueryValueExA( key, valueName, 0, &type, (LPBYTE) *string, stringLen );
 
 		i++;
 	}
@@ -4425,7 +4461,7 @@ RegQueryString( HKEY key, const char * valueName, char ** string, DWORD * string
 	{
 		DWORD dwSize = sizeof( DWORD );
 
-		err = RegQueryValueEx( key, "Enabled", NULL, NULL, (LPBYTE) enabled, &dwSize );
+		err = RegQueryValueEx( key, TEXT("Enabled"), NULL, NULL, (LPBYTE) enabled, &dwSize );
 		check_noerr( err );
 
 		err = kNoErr;
@@ -4441,7 +4477,7 @@ exit:
 //	StringToAddress
 //===========================================================================================================================
 
-static mStatus StringToAddress( mDNSAddr * ip, const char * string )
+static mStatus StringToAddress( mDNSAddr * ip, LPSTR string )
 {
 	struct sockaddr_in6 sa6;
 	struct sockaddr_in	sa4;
@@ -4451,7 +4487,7 @@ static mStatus StringToAddress( mDNSAddr * ip, const char * string )
 	sa6.sin6_family	= AF_INET6;
 	dwSize			= sizeof( sa6 );
 
-	err = WSAStringToAddress( (LPSTR) string, AF_INET6, NULL, (struct sockaddr*) &sa6, &dwSize );
+	err = WSAStringToAddressA( string, AF_INET6, NULL, (struct sockaddr*) &sa6, &dwSize );
 
 	if ( err == mStatus_NoError )
 	{
@@ -4463,7 +4499,7 @@ static mStatus StringToAddress( mDNSAddr * ip, const char * string )
 		sa4.sin_family = AF_INET;
 		dwSize = sizeof( sa4 );
 
-		err = WSAStringToAddress( (LPSTR) string, AF_INET, NULL, (struct sockaddr*) &sa4, &dwSize );
+		err = WSAStringToAddressA( string, AF_INET, NULL, (struct sockaddr*) &sa4, &dwSize );
 		require_noerr( err, exit );
 			
 		err = dDNS_SetupAddr( ip, (struct sockaddr*) &sa4 );
@@ -4497,6 +4533,67 @@ myGetIfAddrs(int refresh)
 	}
 	
 	return ifa;
+}
+
+
+//===========================================================================================================================
+//	TCHARtoUTF8
+//===========================================================================================================================
+
+mDNSlocal OSStatus
+TCHARtoUTF8( const TCHAR *inString, char *inBuffer, size_t inBufferSize )
+{
+#if( defined( UNICODE ) || defined( _UNICODE ) )
+	OSStatus		err;
+	int				len;
+	
+	len = WideCharToMultiByte( CP_UTF8, 0, inString, -1, inBuffer, (int) inBufferSize, NULL, NULL );
+	err = translate_errno( len > 0, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+	
+exit:
+	return( err );
+#else
+	return( WindowsLatin1toUTF8( inString, inBuffer, inBufferSize ) );
+#endif
+}
+
+
+//===========================================================================================================================
+//	WindowsLatin1toUTF8
+//===========================================================================================================================
+
+mDNSlocal OSStatus
+WindowsLatin1toUTF8( const char *inString, char *inBuffer, size_t inBufferSize )
+{
+	OSStatus		err;
+	WCHAR *			utf16;
+	int				len;
+	
+	utf16 = NULL;
+	
+	// Windows doesn't support going directly from Latin-1 to UTF-8 so we have to go from Latin-1 to UTF-16 first.
+	
+	len = MultiByteToWideChar( CP_ACP, 0, inString, -1, NULL, 0 );
+	err = translate_errno( len > 0, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+	
+	utf16 = (WCHAR *) malloc( len * sizeof( *utf16 ) );
+	require_action( utf16, exit, err = kNoMemoryErr );
+	
+	len = MultiByteToWideChar( CP_ACP, 0, inString, -1, utf16, len );
+	err = translate_errno( len > 0, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+	
+	// Now convert the temporary UTF-16 to UTF-8.
+	
+	len = WideCharToMultiByte( CP_UTF8, 0, utf16, -1, inBuffer, (int) inBufferSize, NULL, NULL );
+	err = translate_errno( len > 0, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+
+exit:
+	if( utf16 ) free( utf16 );
+	return( err );
 }
 
 
