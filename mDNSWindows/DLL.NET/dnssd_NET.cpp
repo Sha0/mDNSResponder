@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.6  2004/09/02 21:20:56  cheshire
+<rdar://problem/3774871> DLL.NET crashes on null record
+
 Revision 1.5  2004/07/27 07:12:56  shersche
 make TextRecord an instantiable class object
 
@@ -815,7 +818,7 @@ DNSService::UpdateRecord
 		v	= (void*) p;
 	}
 
-	int err = DNSServiceUpdateRecord(sdRef->m_impl->m_ref, record->m_impl->m_ref, flags, len, v, ttl);
+	int err = DNSServiceUpdateRecord(sdRef->m_impl->m_ref, record ? record->m_impl->m_ref : NULL, flags, len, v, ttl);
 
 	if (err != 0)
 	{
