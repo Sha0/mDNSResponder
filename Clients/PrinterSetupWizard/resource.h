@@ -30,6 +30,8 @@
 #define IDS_NO_RENDEZVOUS_SERVICE_CAPTION 120
 #define IDS_PRINTER_MATCH_GOOD          121
 #define IDS_PRINTER_MATCH_BAD           122
+#define IDS_YES                         123
+#define IDS_NO                          124
 #define IDR_MAINFRAME                   128
 #define IDB_BANNER_ICON                 129
 #define IDD_THIRD_PAGE                  130

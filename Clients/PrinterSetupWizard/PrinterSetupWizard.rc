@@ -137,8 +137,8 @@ STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Rendezvous Printer Wizard"
 FONT 8, "MS Shell Dlg", 0, 0, 0x0
 BEGIN
-    LTEXT           "Welcome to the Rendezvous Printer Wizard",
-                    IDC_GREETING,114,7,171,46
+    LTEXT           "Welcome to the Rendezvous Printer Wizard",IDC_GREETING,
+                    114,7,171,46
     LTEXT           "To continue, click Next.",IDC_STATIC,115,188,143,8
     LTEXT           "This wizard helps you connect to a shared printer using Rendezvous.  Be sure your printer is powered up, and connected to your network.",
                     IDC_STATIC,146,60,139,62
@@ -173,8 +173,8 @@ STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Rendezvous Printer Wizard"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    LTEXT           "Completing the Rendezvous Printer Wizard",IDC_GOODBYE,116,
-                    7,171,27
+    LTEXT           "Completing the Rendezvous Printer Wizard",IDC_GOODBYE,
+                    116,7,171,27
     LTEXT           "You have successfully completed the Rendezvous Printer Wizard.  The printer has the following settings:",
                     IDC_STATIC,116,42,158,31
     LTEXT           "Name:",IDC_STATIC,116,78,22,8
@@ -211,8 +211,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION MASTER_PROD_VERS
- PRODUCTVERSION MASTER_PROD_VERS
+ FILEVERSION 1,0,0,8
+ PRODUCTVERSION 1,0,0,8
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -229,12 +229,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Apple Computer, Inc."
             VALUE "FileDescription", "Rendezvous Printer Wizard"
-            VALUE "FileVersion", MASTER_PROD_VERS_STR
+            VALUE "FileVersion", "1,0,0,8"
             VALUE "InternalName", "PrinterSetupWizard.exe"
             VALUE "LegalCopyright", "Copyright (C) 2003-2004 Apple Computer, Inc."
             VALUE "OriginalFilename", "PrinterSetupWizard.exe"
-            VALUE "ProductName", MASTER_PROD_NAME
-            VALUE "ProductVersion", MASTER_PROD_VERS_STR
+            VALUE "ProductName", "Rendezvous"
+            VALUE "ProductVersion", "1,0,0,8"
         END
     END
     BLOCK "VarFileInfo"
@@ -314,6 +314,8 @@ BEGIN
     IDS_NO_RENDEZVOUS_SERVICE_CAPTION "Error"
     IDS_PRINTER_MATCH_GOOD  "The Rendezvous Printer Wizard has auto-selected the following printer settings.  Click 'Next' to continue installing this printer."
     IDS_PRINTER_MATCH_BAD   "The Rendezvous Printer Wizard cannot find a driver for this printer.  Manually select from the list, or click 'Have Disk' if your printer came with an installation disk. "
+    IDS_YES                 "Yes"
+    IDS_NO                  "No"
 END
 
 #endif    // English (U.S.) resources
