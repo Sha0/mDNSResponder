@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.75  2005/02/16 02:36:25  shersche
+<rdar://problem/3830846> Use IPv6 if interface has no routable IPv4 address
+
 Revision 1.74  2005/02/08 06:06:16  shersche
 <rdar://problem/3986597> Implement mDNSPlatformTCPConnect, mDNSPlatformTCPCloseConnection, mDNSPlatformTCPRead, mDNSPlatformTCPWrite
 
@@ -332,8 +335,6 @@ Multicast DNS platform plugin for Win32
 #define	MDNS_WINDOWS_USE_IPV6_IF_ADDRS				1
 #define	MDNS_WINDOWS_ENABLE_IPV4					1
 #define	MDNS_WINDOWS_ENABLE_IPV6					1
-#define	MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6		1
-#define	MDNS_WINDOWS_AAAA_OVER_IPV4					1
 #define	MDNS_FIX_IPHLPAPI_PREFIX_BUG				1
 
 #define	kMDNSDefaultName							"My Computer"
@@ -2366,9 +2367,10 @@ mDNSlocal mStatus	TearDownInterfaceList( mDNS * const inMDNS )
 
 mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inIFA, mDNSInterfaceData **outIFD )
 {
-	mStatus					err;
-	mDNSInterfaceData *		ifd;
+	mDNSInterfaceData	*	ifd;
+	mDNSInterfaceData	*	p;
 	SocketRef				sock;
+	mStatus					err;
 	
 	ifd = NULL;
 	dlog( kDebugLevelTrace, DEBUG_NAME "setting up interface\n" );
@@ -2400,50 +2402,35 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	// but we cut the packet rate in half. At this time, reducing the packet rate is more important than v6-only 
 	// devices on a large configured network, so we are willing to make that sacrifice.
 	
-	ifd->interfaceInfo.McastTxRx		= mDNStrue;
-	
-#if( MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6 )
-	if( inIFA->ifa_addr->sa_family != AF_INET )
+	ifd->interfaceInfo.McastTxRx   = mDNStrue;
+	ifd->interfaceInfo.InterfaceID = NULL;
+
+	for( p = inMDNS->p->interfaceList; p; p = p->next )
 	{
-		const mDNSInterfaceData *		p;
-		
-		for( p = inMDNS->p->interfaceList; p; p = p->next )
+		if ( strcmp( p->name, ifd->name ) == 0 )
 		{
-			if( ( p->interfaceInfo.ip.type == mDNSAddrType_IPv4 ) &&
-				( ( p->interfaceInfo.ip.ip.v4.b[ 0 ] != 169 ) && ( p->interfaceInfo.ip.ip.v4.b[ 1 ] != 254 ) ) &&
-				( strcmp( p->name, inIFA->ifa_name ) == 0 ) )
+			if (!ifd->interfaceInfo.InterfaceID)
+			{
+				p->scopeID						= ifd->scopeID;
+				ifd->interfaceInfo.InterfaceID	= (mDNSInterfaceID) p;
+			}
+
+			if ( ( inIFA->ifa_addr->sa_family != AF_INET ) &&
+			     ( p->interfaceInfo.ip.type == mDNSAddrType_IPv4 ) &&
+			     ( p->interfaceInfo.ip.ip.v4.b[ 0 ] != 169 || p->interfaceInfo.ip.ip.v4.b[ 1 ] != 254 ) )
 			{
 				ifd->interfaceInfo.McastTxRx = mDNSfalse;
-				break;
 			}
-		}
-	}
-#endif
 
-	// If this is an IPv6 interface, search for its IPv4 equivalent and use that InterfaceID. This causes the IPv4
-	// interface to send both A and AAAA records so we can publish IPv6 support without doubling the packet rate.
-	// Note: this search only works because we register all IPv4 interfaces before IPv6 interfaces.
-	
-	ifd->interfaceInfo.InterfaceID = (mDNSInterfaceID) ifd;
-	
-#if( MDNS_WINDOWS_AAAA_OVER_IPV4 )
-	if( inIFA->ifa_addr->sa_family != AF_INET )
-	{
-		mDNSInterfaceData *		ipv4IFD;
-		
-		for( ipv4IFD = inMDNS->p->interfaceList; ipv4IFD; ipv4IFD = ipv4IFD->next )
-		{
-			if( strcmp( ipv4IFD->name, ifd->name ) == 0 )
-			{
-				ipv4IFD->scopeID				= ifd->scopeID;
-				ifd->interfaceInfo.McastTxRx	= mDNSfalse;
-				ifd->interfaceInfo.InterfaceID	= (mDNSInterfaceID) ipv4IFD;
-				break;
-			}
+			break;
 		}
 	}
-#endif
-	
+
+	if ( !ifd->interfaceInfo.InterfaceID )
+	{
+		ifd->interfaceInfo.InterfaceID = (mDNSInterfaceID) ifd;
+	}
+
 	// Set up a socket for this interface (if needed).
 	
 	if( ifd->interfaceInfo.McastTxRx )
