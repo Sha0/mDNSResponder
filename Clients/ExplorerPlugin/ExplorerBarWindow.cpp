@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.11  2004/10/18 23:49:17  shersche
+<rdar://problem/3841564> Remove trailing dot from hostname, because some flavors of Windows have difficulty parsing hostnames with a trailing dot.
+Bug #: 3841564
+
 Revision 1.10  2004/09/02 02:18:58  cheshire
 Minor textual cleanup to improve readability
 
@@ -638,6 +642,7 @@ void DNSSD_API
 	try
 	{
 		ResolveInfo *		resolve;
+		int					idx;
 		
 		dlog( kDebugLevelNotice, "resolved %s on ifi %d to %s\n", inFullName, inInterfaceIndex, inHostName );
 		
@@ -651,6 +656,19 @@ void DNSSD_API
 		require_action( resolve, exit, err = kNoMemoryErr );
 		
 		UTF8StringToStringObject( inHostName, resolve->host );
+
+		// rdar://problem/3841564
+		// 
+		// strip trailing dot from hostname because some flavors of Windows
+		// have trouble parsing it.
+
+		idx = resolve->host.ReverseFind('.');
+
+		if ((idx > 1) && ((resolve->host.GetLength() - 1) == idx))
+		{
+			resolve->host.Delete(idx, 1);
+		}
+
 		resolve->port		= ntohs( inPort );
 		resolve->ifi		= inInterfaceIndex;
 		resolve->handler	= handler;
