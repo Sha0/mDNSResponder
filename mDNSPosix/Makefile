@@ -20,6 +20,10 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.23  2004/02/04 01:50:54  cheshire
+# Make InstalledStartup conditional, so it automatically installs into
+# either /etc/init.d/ or /etc/rc.d/init.d/ as appropriate
+#
 # Revision 1.22  2004/01/20 01:41:21  rpantos
 # Define USES_NETLINK for Linux builds.
 #
@@ -83,6 +87,13 @@
 # 'make DEBUG=1' to build debugging targets.
 # 'make clean' or 'make clean DEBUG=1' to delete prod/debug objects & targets
 # 'sudo make install [DEBUG=1]' to install mdnsd daemon and libmdns.
+#
+# Notes:
+# $@ means "The file name of the target of the rule"
+# $< means "The name of the first prerequisite"
+# $+ means "The names of all the prerequisites, with spaces between them, exactly as given"
+# For more magic automatic variables, see
+# <http://www.gnu.org/manual/make-3.80/html_chapter/make_10.html#SEC111>
 
 LIBVERS = 1
 
@@ -150,6 +161,10 @@ endif
 endif
 endif
 
+# If directory /etc/rc.d/init.d/ exists, then we install into that,
+# else install into /etc/init.d/
+STARTUPSCRIPTSDIR = $(if $(wildcard /etc/rc.d/init.d/), /etc/rc.d, /etc)
+
 CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS) $(CFLAGS_DEBUG)
 
 all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor
@@ -169,13 +184,6 @@ setup:
 clean:
 	if test -d $(OBJDIR) ; then rm -r $(OBJDIR) ; fi
 	if test -d $(TARGDIR)   ; then rm -r $(TARGDIR)   ; fi
-
-
-# $@ means "The file name of the target of the rule"
-# $< means "The name of the first prerequisite"
-# $+ means "The names of all the prerequisites, with spaces between them, exactly as given"
-# For more magic automatic variables, see
-# <http://www.gnu.org/manual/make-3.80/html_chapter/make_10.html#SEC111>
 
 
 # daemon target builds the daemon
@@ -214,20 +222,20 @@ InstalledLib: /usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS)
 	$(CP) $(TARGDIR)/libmdns.$(LDSUFFIX) $@
 	$(LN) $@ /usr/lib/libmdns.$(LDSUFFIX)
 
-InstalledStartup: /etc/init.d/mDNS
+InstalledStartup: $(STARTUPSCRIPTSDIR)/init.d/mDNS
 	@echo $< " installed"
 
-/etc/init.d/mDNS: mdnsd.sh
+$(STARTUPSCRIPTSDIR)/init.d/mDNS: mdnsd.sh $(STARTUPSCRIPTSDIR)/init.d
 	$(CP) mdnsd.sh $@
 	chmod ugo+x $@
-	$(LN) $@ /etc/rc2.d/S52mDNS
-	$(LN) $@ /etc/rc3.d/S52mDNS
-	$(LN) $@ /etc/rc4.d/S52mDNS
-	$(LN) $@ /etc/rc5.d/S52mDNS
-	$(LN) $@ /etc/rc2.d/K16mDNS
-	$(LN) $@ /etc/rc3.d/K16mDNS
-	$(LN) $@ /etc/rc4.d/K16mDNS
-	$(LN) $@ /etc/rc5.d/K16mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc2.d/S52mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc3.d/S52mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc4.d/S52mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc5.d/S52mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc2.d/K16mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc3.d/K16mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc4.d/K16mDNS
+	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc5.d/K16mDNS
 
 # The following targets build embedded example programs
 SPECIALOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o
@@ -265,7 +273,7 @@ $(TARGDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@
 
 
-# implicit rules
+# Implicit rules
 $(OBJDIR)/%.c.o:	%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
