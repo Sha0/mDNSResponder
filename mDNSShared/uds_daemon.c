@@ -24,6 +24,11 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.181  2005/03/20 20:21:32  shersche
+<rdar://problem/4056827> mDNSResponder crashes when incorrect interface index is passed to DNSServiceRegister()
+Text record length and data parameters must be initialized to 0 and NULL to ensure that the service request
+object is cleaned up correctly when encountering an interface index error.
+
 Revision 1.180  2005/03/10 00:13:12  cheshire
 <rdar://problem/4043098> DNSServiceBrowse no longer returning error codes for invalid types
 In handle_browse_request(), mStatus err was being set correctly if an error occurred,
@@ -2206,6 +2211,8 @@ static void handle_regservice_request(request_state *request)
 
 	service->instances = NULL;
 	service->request = request;
+	service->txtlen  = 0;
+	service->txtdata = NULL;
 	request->service_registration = service;
     request->termination_context = request->service_registration;
     request->terminate = regservice_termination_callback;
