@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.11  2004/02/03 22:35:34  cheshire
+<rdar://problem/3548256>: Should not allow empty string for resolve domain
+
 Revision 1.10  2004/02/03 19:47:36  ksekar
 Added an asyncronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
@@ -531,6 +534,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	if (*src) { errormsg="Service type must have only two labels"; goto fail; }
 
 	*dst = 0;
+	if (!domain->c[0]) { errormsg="Service domain must be non-empty"; goto fail; }
 	dst = AppendDomainName(fqdn, domain);
 	if (!dst) { errormsg="Service domain too long"; goto fail; }
 	return(dst);
