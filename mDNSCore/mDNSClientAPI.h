@@ -241,13 +241,16 @@ struct ResourceRecord_struct
 
 	// Field Group 4: The actual information pertaining to this resource record
 	mDNSIPAddr      InterfaceAddr;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)
+										// For records received off the wire, InterfaceAddr is *always* set to the receiving interface
+										// For our authoritative records, InterfaceAddr is usually zero,
+										// except those few records that are interface-specific (e.g. linklocal address records)
 	domainname      name;				// --: All the rest are used both in our authoritative records and in cache records
 	mDNSu16         rrtype;
 	mDNSu16         rrclass;
 	mDNSu32         rroriginalttl;		// In seconds.
 	mDNSu32         rrremainingttl;		// In seconds. Always set to correct value before calling question callback.
 	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
-	RData           *rdata;			// Pointer to storage for this rdata
+	RData           *rdata;				// Pointer to storage for this rdata
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
 	};
 
