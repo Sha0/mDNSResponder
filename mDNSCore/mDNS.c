@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.327  2003/11/19 22:03:44  cheshire
+Move common "m->NextScheduledResponse = m->timenow" to before "if" statement
+
 Revision 1.326  2003/11/17 22:27:02  cheshire
 Another fix from ramaprasad.kr@hp.com: Improve reply delay computation
 on platforms that have native clock rates below fifty ticks per second.
@@ -5228,17 +5231,16 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	
 			if (SendMulticastResponse)
 				{
+				m->NextScheduledResponse = m->timenow;
 				// If we're already planning to send this on another interface, just send it on all interfaces
 				if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
 					{
 					rr->ImmedAnswer = mDNSInterfaceMark;
-					m->NextScheduledResponse = m->timenow;
 					debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 					}
 				else
 					{
 					rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
-					m->NextScheduledResponse = m->timenow;
 					if (srcaddr->type == mDNSAddrType_IPv4)
 						{
 						if      (mDNSIPv4AddressIsZero(rr->v4Requester))                rr->v4Requester = srcaddr->ip.v4;
