@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.14  2005/01/25 17:55:39  shersche
+<rdar://problem/3911084> Get bitmaps from non-localizable resource module
+Bug #: 3911084
+
 Revision 1.13  2005/01/06 21:13:09  shersche
 <rdar://problem/3796779> Handle kDNSServiceErr_Firewall return codes
 Bug #: 3796779
@@ -97,6 +101,7 @@ Explorer Plugin to browse for DNS-SD advertised Web and FTP servers from within 
 #include	"Resource.h"
 
 #include	"ExplorerBarWindow.h"
+#include	"ExplorerPlugin.h"
 
 // MFC Debugging
 
@@ -252,8 +257,8 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 
 	m_serviceRefs.push_back(e->ref); 
 
-	m_imageList.Create(16, 16, ILC_COLORDDB, 1, 0);
-	bitmap.LoadBitmap(IDB_LOGO);
+	m_imageList.Create( 16, 16, ILC_COLORDDB, 1, 0);
+	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_LOGO ) ) );
 	m_imageList.Add(&bitmap, (CBitmap*) NULL);
 
 	mTree.SetImageList(&m_imageList, TVSIL_NORMAL);
