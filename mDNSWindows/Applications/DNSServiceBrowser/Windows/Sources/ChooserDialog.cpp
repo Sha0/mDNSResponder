@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.4  2003/10/10 03:41:29  bradley
+Changed HTTP double-click handling to work with or without the path= prefix in the TXT record.
+
 Revision 1.3  2003/10/09 19:50:40  bradley
 Sort service type list by description.
 
@@ -563,16 +566,36 @@ void	ChooserDialog::OnChooserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 		}
 		if( service->serviceType )
 		{
+			const char *		text;
+			
 			// Create a URL representing the service instance. Special case for SMB (no port number).
 			
-			if( strcmp( service->serviceType, "_smb._tcp" ) == 0 )
+			if( strcmp( service->serviceType, "_smb._tcp." ) == 0 )
 			{
+				// Special case for SMB (no port number).
+				
 				url.Format( "%s%s/", service->urlScheme, (const char *) p->ip.c_str() ); 
+			}
+			else if( strcmp( service->serviceType, "_http._tcp." ) == 0 )
+			{
+				// Special case for HTTP to exclude "path=" if present.
+				
+				text = service->useText ? p->text.c_str() : "";
+				if( strncmp( text, "path=", 5 ) == 0 )
+				{
+					text += 5;
+				}
+				if( *text != '/' )
+				{
+					url.Format( "%s%s/%s", service->urlScheme, (const char *) p->ip.c_str(), text );
+				}
+				else
+				{
+					url.Format( "%s%s%s", service->urlScheme, (const char *) p->ip.c_str(), text );
+				}
 			}
 			else
 			{
-				const char *		text;
-				
 				text = service->useText ? p->text.c_str() : "";
 				url.Format( "%s%s/%s", service->urlScheme, (const char *) p->ip.c_str(), text ); 
 			}
