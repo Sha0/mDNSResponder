@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.6  2004/02/14 01:10:42  rpantos
+Allow daemon to run if 'nobody' is not defined, with a warning. (For Roku HD1000.)
+
 Revision 1.5  2004/02/05 07:45:43  cheshire
 Add Log header
 
@@ -96,7 +99,7 @@ int		main( int argc, char **argv)
 		if ( pw != NULL)
 			setuid( pw->pw_uid);
 		else
-			err = mStatus_Incompatible;		// refuse to run as root
+			fprintf( stderr, "%s: WARNING user 'nobody' is not defined. Will continue to run as root.\n", argv[0]);
 	}
 
 	if ( mStatus_NoError == err)
