@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.232  2003/07/18 00:11:38  cheshire
+Add extra case to switch statements to handle HINFO data for Get, Put and Display
+(In all but GetRDLength(), this is is just a fall-through to kDNSType_TXT)
+
 Revision 1.231  2003/07/18 00:06:37  cheshire
 To make code a little easier to read in GetRDLength(), search-and-replace "rr->rdata->u." with "rd->"
 
@@ -1121,6 +1125,7 @@ char *GetRRDisplayString(mDNS *const m, const ResourceRecord *rr)
 		case kDNSType_A:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.4a", &rr->rdata->u.ip);         break;
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rr->rdata->u.name);       break;
+		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
 		case kDNSType_TXT:  mDNS_snprintf(m->MsgBuffer+length, 79-length, "%#s", rr->rdata->u.txt.c);        break;
 		case kDNSType_AAAA:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.16a", &rr->rdata->u.ipv6);      break;
 		case kDNSType_SRV:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rr->rdata->u.srv.target); break;
@@ -1871,6 +1876,7 @@ mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		case kDNSType_A:	return(sizeof(rd->ip)); break;
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
+		case kDNSType_HINFO:return(2 + rd->data[0] + rd->data[1 + rd->data[0]]);
 		case kDNSType_TXT:  return(rr->rdata->RDLength); // TXT is not self-describing, so have to just trust rdlength
 		case kDNSType_AAAA:	return(sizeof(rd->ipv6)); break;
 		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
@@ -2393,6 +2399,7 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(putDomainNameAsLabels(msg, ptr, limit, &rdata->u.name));
 
+		case kDNSType_HINFO:// Same as TXT
 		case kDNSType_TXT:  if (ptr + rdata->RDLength > limit) return(mDNSNULL);
 							mDNSPlatformMemCopy(rdata->u.data, ptr, rdata->RDLength);
 							return(ptr + rdata->RDLength);
@@ -2688,12 +2695,13 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 							rr->rdata->u.ip.b[3] = ptr[3];
 							break;
 
-		case kDNSType_CNAME:// CNAME is same as PTR
+		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	if (!getDomainName(msg, ptr, end, &rr->rdata->u.name))
 								{ debugf("GetResourceRecord: Malformed CNAME/PTR RDATA name"); return(mDNSNULL); }
 							//debugf("%##s PTR %##s rdlen %d", rr->name.c, rr->rdata->u.name.c, pktrdlength);
 							break;
 
+		case kDNSType_HINFO://Same as TXT
 		case kDNSType_TXT:  if (pktrdlength > rr->rdata->MaxRDLength)
 								{
 								debugf("GetResourceRecord: TXT rdata size (%d) exceeds storage (%d)",
