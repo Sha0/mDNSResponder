@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.194  2004/09/24 19:16:54  cheshire
+Remove "mDNS *const m" parameter from NotifyOfElusiveBug();
+Refine error message to say "Flaw in Kernel (select/recvfrom mismatch)"
+
 Revision 1.193  2004/09/22 00:41:59  cheshire
 Move tcp connection status codes into the legal range allocated for mDNS use
 
@@ -671,8 +675,9 @@ static KeychainDomain *KeychainHostDomains = NULL;  // List of domains in which 
 // ***************************************************************************
 // Functions
 
-mDNSlocal void NotifyOfElusiveBug(mDNS *const m, const char *title, mDNSu32 radarid, const char *msg)
+mDNSlocal void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const char *msg)
 	{
+	extern mDNS mDNSStorage;
 	NetworkInterfaceInfoOSX *i;
 	static int notifyCount = 0;
 	if (notifyCount) return;
@@ -682,7 +687,7 @@ mDNSlocal void NotifyOfElusiveBug(mDNS *const m, const char *title, mDNSu32 rada
 	if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return;
 	
 	// Determine if we're at Apple (17.*.*.*)
-	for (i = m->p->InterfaceList; i; i = i->next)
+	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 		if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && i->ifinfo.ip.ip.v4.b[0] == 17)
 			break;
 	if (!i) return;	// If not at Apple, don't show the alert
@@ -1000,7 +1005,8 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
 		if (numLogMessages > 5)
-			NotifyOfElusiveBug(m, "Flaw in Kernel", 3375328, "You can also send email to radar-3387020@group.apple.com. "
+			NotifyOfElusiveBug("Flaw in Kernel (select/recvfrom mismatch)", 3375328,
+				"Alternatively, you can send email to radar-3387020@group.apple.com. "
 				"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
 
 		sleep(1);		// After logging this error, rate limit so we don't flood syslog
