@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.89  2003/08/06 18:58:19  cheshire
+Update comments
+
 Revision 1.88  2003/07/24 23:45:44  cheshire
 To eliminate compiler warnings, changed definition of mDNSBool from
 "unsigned char" to "int", since "int" is in fact truly the type that C uses
@@ -50,7 +53,7 @@ Revision 1.82  2003/07/17 17:35:04  cheshire
 
 Revision 1.81  2003/07/16 05:01:36  cheshire
 Add fields 'LargeAnswers' and 'ExpectUnicastResponse' in preparation for
-<rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
+<rdar://problem/3315761> Need to implement "unicast response" request, using top bit of qclass
 
 Revision 1.80  2003/07/15 01:55:12  cheshire
 <rdar://problem/3315777> Need to implement service registration with subtypes
@@ -78,7 +81,7 @@ Revision 1.74  2003/07/02 02:41:23  cheshire
 Revision 1.73  2003/06/10 04:24:39  cheshire
 <rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
 Some additional refinements:
-Don't try to do this for unicast-reply queries
+Don't try to do this for unicast-response queries
 better tracking of Qs and KAs in multi-packet KA lists
 
 Revision 1.72  2003/06/10 01:46:27  cheshire
@@ -328,7 +331,7 @@ typedef enum							// From RFC 1035
 	kDNSClass_UniqueRRSet      = 0x8000,// ... and the top bit indicates that all other cached records are now invalid
 
 	kDNSQClass_ANY             = 255,	// Not a DNS class, but a DNS query class, meaning "all classes"
-	kDNSQClass_UnicastResponse = 0x8000	// Top bit set in a question means "unicast reply acceptable"
+	kDNSQClass_UnicastResponse = 0x8000	// Top bit set in a question means "unicast response acceptable"
 	} DNS_ClassValues;
 
 typedef enum				// From RFC 1035
@@ -457,7 +460,7 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // * Shared Resource Records do not have to be unique
 // -- Shared Resource Records are used for DNS-SD service PTRs
 // -- It is okay for several hosts to have RRs with the same name but different RDATA
-// -- We use a random delay on replies to reduce collisions when all the hosts reply to the same query
+// -- We use a random delay on responses to reduce collisions when all the hosts respond to the same query
 // -- These RRs typically have moderately high TTLs (e.g. one hour)
 // -- These records are announced on startup and topology changes for the benefit of passive listeners
 // -- These records send a goodbye packet when deregistering
@@ -467,7 +470,7 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // * Unique Resource Records should be unique among hosts within any given mDNS scope
 // -- The majority of Resource Records are of this type
 // -- If two entities on the network have RRs with the same name but different RDATA, this is a conflict
-// -- Replies may be sent immediately, because only one host should be replying to any particular query
+// -- Responses may be sent immediately, because only one host should be responding to any particular query
 // -- These RRs typically have low TTLs (e.g. ten seconds)
 // -- On startup and after topology changes, a host issues queries to verify uniqueness
 
@@ -512,8 +515,8 @@ enum
 	kDNSRecordTypeUnique           = 0x02,	// Will become a kDNSRecordTypeVerified when probing is complete
 
 	kDNSRecordTypeAdvisory         = 0x04,	// Like Shared, but no goodbye packet
-	kDNSRecordTypeShared           = 0x08,	// Shared means record name does not have to be unique -- use random delay on replies
-	kDNSRecordTypeVerified         = 0x10,	// Unique means mDNS should check that name is unique (and then send immediate replies)
+	kDNSRecordTypeShared           = 0x08,	// Shared means record name does not have to be unique -- use random delay on responses
+	kDNSRecordTypeVerified         = 0x10,	// Unique means mDNS should check that name is unique (and then send immediate responses)
 	kDNSRecordTypeKnownUnique      = 0x20,	// Known Unique means mDNS can assume name is unique without checking
 
 	kDNSRecordTypeUniqueMask       = (kDNSRecordTypeUnique | kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique),
@@ -891,7 +894,7 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 // the resource record's mDNSRecordCallback will be called with error code mStatus_NameConflict. The callback should deregister
 // the record, and may then try registering the record again after picking a new name (e.g. by automatically appending a number).
 //
-// Call mDNS_StartQuery to initiate a query. mDNS will proceed to issue Multicast DNS query packets, and any time a reply
+// Call mDNS_StartQuery to initiate a query. mDNS will proceed to issue Multicast DNS query packets, and any time a response
 // is received containing a record which matches the question, the DNSQuestion's mDNSAnswerCallback function will be called
 // Call mDNS_StopQuery when no more answers are required
 //

@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.250  2003/08/06 19:01:55  cheshire
+Update comments
+
 Revision 1.249  2003/08/06 00:13:28  cheshire
 Tidy up debugf messages
 
@@ -114,11 +117,11 @@ Revision 1.229  2003/07/17 17:35:04  cheshire
 <rdar://problem/3325583> Rate-limit responses, to guard against packet flooding
 
 Revision 1.228  2003/07/16 20:50:27  cheshire
-<rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
+<rdar://problem/3315761> Need to implement "unicast response" request, using top bit of qclass
 
 Revision 1.227  2003/07/16 05:01:36  cheshire
 Add fields 'LargeAnswers' and 'ExpectUnicastResponse' in preparation for
-<rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
+<rdar://problem/3315761> Need to implement "unicast response" request, using top bit of qclass
 
 Revision 1.226  2003/07/16 04:51:44  cheshire
 Fix use of constant 'mDNSPlatformOneSecond' where it should have said 'InitialQuestionInterval'
@@ -162,7 +165,7 @@ Minor refinement: No need to make address query broader than the original SRV qu
 
 Revision 1.216  2003/07/13 03:13:17  cheshire
 <rdar://problem/3325169> Services on multiple interfaces not always resolving
-If we get an identical SRV reply on a second interface, convert address queries to non-specific
+If we get an identical SRV on a second interface, convert address queries to non-specific
 
 Revision 1.215  2003/07/13 02:28:00  cheshire
 <rdar://problem/3325166> SendResponses didn't all its responses
@@ -271,7 +274,7 @@ Only interface-specific records were re-probing and re-announcing, not non-speci
 Revision 1.186  2003/06/10 04:24:39  cheshire
 <rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
 Some additional refinements:
-Don't try to do this for unicast-reply queries
+Don't try to do this for unicast-response queries
 better tracking of Qs and KAs in multi-packet KA lists
 
 Revision 1.185  2003/06/10 03:52:49  cheshire
@@ -640,8 +643,8 @@ Bug #: 3185731 Bogus error message in console: died or deallocated, but no recor
 Fixed by leaving client in list after conflict, until client explicitly deallocates
 
 Revision 1.84  2003/03/05 01:27:30  cheshire
-Bug #: 3185482 Different TTL for multicast versus unicast replies
-When building unicast replies, record TTLs are capped to 10 seconds
+Bug #: 3185482 Different TTL for multicast versus unicast responses
+When building unicast responses, record TTLs are capped to 10 seconds
 
 Revision 1.83  2003/03/04 23:48:52  cheshire
 Bug #: 3188865 Double probes after wake from sleep
@@ -1959,7 +1962,8 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const ResourceRecord *con
 
 mDNSlocal void InitializeLastAPTime(mDNS *const m, ResourceRecord *const rr)
 	{
-	// Back-date LastAPTime to make it appear that the next announcement/probe is due immediately
+	// Back-date LastAPTime to make it appear that the next announcement/probe is due immediately and set LastMCTime to
+	// now, to inhibit multicast responses (no need to send additional multicast responses when we're announcing anyway)
 	rr->LastAPTime = m->timenow - rr->ThisAPInterval;
 	rr->LastMCTime = m->timenow;
 	
@@ -3302,7 +3306,7 @@ mDNSlocal mDNSBool SuppressOnThisInterface(DupSuppressInfo ds[DupSuppressInfoSiz
 
 // How Standard Queries are generated:
 // 1. The Question Section contains the question
-// 2. The Additional Section contains answers we already know, to suppress duplicate replies
+// 2. The Additional Section contains answers we already know, to suppress duplicate responses
 
 // How Probe Queries are generated:
 // 1. The Question Section contains queries for the name we intend to use, with QType=ANY because
@@ -4575,10 +4579,10 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			{
 			mDNSBool SendMulticastResponse = mDNSfalse;
 			
-			// If it's been a while since we multicast this, then send a multicast reply for conflict detection, etc.
+			// If it's been a while since we multicast this, then send a multicast response for conflict detection, etc.
 			if (m->timenow - (rr->LastAPTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
 			
-			// If the client insists on a multicast reply, then we'd better send one
+			// If the client insists on a multicast response, then we'd better send one
 			if (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
 			else if (rr->NR_AnswerTo) HaveUnicastAnswer = mDNStrue;
 	
@@ -4784,7 +4788,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
 	
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
-	// to guard against spoof replies, then the only credible protection against that is cryptographic
+	// to guard against spoof responses, then the only credible protection against that is cryptographic
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
 	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
 

@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.32  2003/08/06 18:57:01  cheshire
+ * Update comments
+ *
  * Revision 1.31  2003/08/06 02:05:12  cheshire
  * Add ability to give a list of hosts to monitor
  *
@@ -56,11 +59,11 @@
  * Remove erroneous trailing '\' from TXT record display
  *
  * Revision 1.24  2003/07/17 17:10:51  cheshire
- * <rdar://problem/3315761> Implement unicast reply request, using top bit of qclass
+ * <rdar://problem/3315761> Implement "unicast response" request, using top bit of qclass
  * Further work: distinguish between PM and PU
  *
  * Revision 1.23  2003/07/16 22:20:23  cheshire
- * <rdar://problem/3315761> Implement unicast reply request, using top bit of qclass
+ * <rdar://problem/3315761> Implement "unicast response" request, using top bit of qclass
  * Made mDNSNetMonitor distinguish between QM and QU in its logging output
  *
  * Revision 1.22  2003/07/02 21:19:58  cheshire
@@ -713,9 +716,9 @@ usage:
 	fprintf(stderr, "Optional <host> parameter displays only packets from that host\n");
 
 	fprintf(stderr, "\nPer-packet header output:\n");
-	fprintf(stderr, "-Q-            Multicast Query from mDNS client that accepts multicast replies\n");
+	fprintf(stderr, "-Q-            Multicast Query from mDNS client that accepts multicast responses\n");
 	fprintf(stderr, "-R-            Multicast Response packet containing answers/announcements\n");
-	fprintf(stderr, "-LQ-           Multicast Query from legacy client that does *not* listen for multicast replies\n");
+	fprintf(stderr, "-LQ-           Multicast Query from legacy client that does *not* listen for multicast responses\n");
 	fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet\n");
 
 	fprintf(stderr, "\nPer-record display:\n");
