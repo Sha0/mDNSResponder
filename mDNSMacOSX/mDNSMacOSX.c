@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.131  2004/01/27 22:57:48  cheshire
+<rdar://problem/3534352>: Need separate socket for issuing unicast queries
+
 Revision 1.130  2004/01/27 22:28:40  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 Additional lingering port 53 code deleted
@@ -464,6 +467,8 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 	return 0;
 	}
 
+// NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
+// NOTE: If InterfaceID is non-NULL it means, "send this packet through our port 5353 socket on the specified interface"
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
@@ -473,10 +478,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	// to the NetworkInterfaceInfoOSX structure that holds the active sockets. The mDNSCore code
 	// doesn't know that and doesn't need to know that -- it just treats InterfaceIDs as opaque identifiers.
 	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
+	char *ifa_name = info ? info->ifa_name : "unicast";
 	struct sockaddr_storage to;
-	int s, err;
-
-	if (!InterfaceID) { LogMsg("mDNSPlatformSendUDP ERROR! Cannot send from zero InterfaceID"); return mStatus_BadParamErr; }
+	int s = -1, err;
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
@@ -485,6 +489,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin_to->sin_family         = AF_INET;
 		sin_to->sin_port           = dstPort.NotAnInteger;
 		sin_to->sin_addr.s_addr    = dst->ip.v4.NotAnInteger;
+		s = info ? info->ss.sktv4 : m->p->unicastsockets.sktv4;
 		}
 	else if (dst->type == mDNSAddrType_IPv6)
 		{
@@ -494,7 +499,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin6_to->sin6_port           = dstPort.NotAnInteger;
 		sin6_to->sin6_flowinfo       = 0;
 		sin6_to->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
-		sin6_to->sin6_scope_id       = info->scope_id;
+		sin6_to->sin6_scope_id       = info ? info->scope_id : 0;
+		s = info ? info->ss.sktv6 : m->p->unicastsockets.sktv6;
 		}
 	else
 		{
@@ -502,16 +508,12 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		return mStatus_BadParamErr;
 		}
 
-	if      (dst->type == mDNSAddrType_IPv4) s = info->sktv4;
-	else if (dst->type == mDNSAddrType_IPv6) s = info->sktv6;
-	else                                     s = -1;
-	
 	if (s >= 0)
 		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %X %s/%d to %#a:%d skt %d",
-			InterfaceID, info->ifa_name, dst->type, dst, mDNSVal16(dstPort), s);
+			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s);
 	else
 		verbosedebugf("mDNSPlatformSendUDP: NOT sending on InterfaceID %X %s/%d (socket of this type not available)",
-			InterfaceID, info->ifa_name, dst->type, dst, mDNSVal16(dstPort));
+			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort));
 
 	// Note: When sending, mDNSCore may often ask us to send both a v4 multicast packet and then a v6 multicast packet
 	// If we don't have the corresponding type of socket available, then return mStatus_Invalid
@@ -527,7 +529,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
 		if (errno == EHOSTUNREACH && (mDNSu32)(m->timenow) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
-			InterfaceID, info->ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
+			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 		return(err);
 		}
 	
@@ -615,12 +617,16 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	return(n);
 	}
 
+// On entry, context points to our CFSocketSet
+// If ss->info is NULL, we received this packet on our anonymous unicast socket
+// If ss->info is non-NULL, we received this packet on port 5353 on the indicated interface
 mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBackType, CFDataRef address, const void *data, void *context)
 	{
 	mDNSAddr senderAddr, destAddr;
 	mDNSIPPort senderPort, destPort = MulticastDNSPort;
-	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)context;
-	mDNS *const m = info->m;
+	const CFSocketSet *ss = (const CFSocketSet *)context;
+	mDNS *const m = ss->m;
+	const mDNSInterfaceID InterfaceID = ss->info ? ss->info->ifinfo.InterfaceID : mDNSNULL;
 	DNSMessage packet;
 	struct sockaddr_storage from;
 	size_t fromlen = sizeof(from);
@@ -634,14 +640,14 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	if (CallBackType != kCFSocketReadCallBack)
 		LogMsg("myCFSocketCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
 
-	if      (cfs == info->cfsv4) s1 = info->sktv4;
-	else if (cfs == info->cfsv6) s1 = info->sktv6;
+	if      (cfs == ss->cfsv4) s1 = ss->sktv4;
+	else if (cfs == ss->cfsv6) s1 = ss->sktv6;
 
 	if (s1 < 0 || s1 != skt)
 		{
 		LogMsg("myCFSocketCallBack: s1 %d native socket %d, cfs %p", s1, skt, cfs);
-		LogMsg("myCFSocketCallBack: cfsv4 %p, sktv4 %d", info->cfsv4, info->sktv4);
-		LogMsg("myCFSocketCallBack: cfsv6 %p, sktv6 %d", info->cfsv6, info->sktv6);
+		LogMsg("myCFSocketCallBack: cfsv4 %p, sktv4 %d", ss->cfsv4, ss->sktv4);
+		LogMsg("myCFSocketCallBack: cfsv6 %p, sktv6 %d", ss->cfsv6, ss->sktv6);
 		}
 
 	mDNSu8 ttl;
@@ -674,19 +680,21 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		// interface they arrive on. According to the official Unix Powers That Be, this is Not A Bug.
 		// To work around this weirdness, we use the IP_RECVIF option to find the name of the interface
 		// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
-		if (strcmp(info->ifa_name, packetifname))
-			{
-			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
-				&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name, packetifname);
-			return;
-			}
-		else
+		if (!ss->info)
+			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on unicast socket", &senderAddr, &destAddr);
+		else if (!strcmp(ss->info->ifa_name, packetifname))
 			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s",
 				&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name);
+		else
+			{
+			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
+				&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name, packetifname);
+			return;
+			}
 		
 		if (err < (int)sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 		
-		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, info->ifinfo.InterfaceID, ttl);
+		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID, ttl);
 		}
 
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
@@ -915,23 +923,28 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 		}
 	}
 
-mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *s, CFSocketRef *c)
+// If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
+// If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
+mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *ifaddr, u_short sa_family)
 	{
+	int         *s = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
+	CFSocketRef *c = (sa_family == AF_INET) ? &cp->cfsv4 : &cp->cfsv6;
 	const int on = 1;
 	const int twofivefive = 255;
+	mStatus err = mStatus_NoError;
 
 	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
 	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %p is already set", *c); return(-1); }
 
 	// Open the socket...
-	int skt = socket(i->sa_family, SOCK_DGRAM, IPPROTO_UDP);
+	int skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
 	if (skt < 0) { LogMsg("socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
-	// ... with a shared UDP port
-	mStatus err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	// ... with a shared UDP port, if it's for multicast receiving
+	if (port.NotAnInteger) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
 	if (err < 0) { LogMsg("setsockopt - SO_REUSEPORT error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 
-	if (i->sa_family == AF_INET)
+	if (sa_family == AF_INET)
 		{
 		// We want to receive destination addresses
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
@@ -945,17 +958,20 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVTTL, &on, sizeof(on));
 		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
 		
-		// Add multicast group membership on this interface
-		struct in_addr addr = { i->ifinfo.ip.ip.v4.NotAnInteger };
-		struct ip_mreq imr;
-		imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
-		imr.imr_interface        = addr;
-		err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
-		if (err < 0) { LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
-		
-        // Specify outgoing interface too
-		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr));
-		if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		// Add multicast group membership on this interface, if it's for multicast receiving
+		if (port.NotAnInteger)
+			{
+			struct in_addr addr = { ifaddr->ip.v4.NotAnInteger };
+			struct ip_mreq imr;
+			imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
+			imr.imr_interface        = addr;
+			err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
+			if (err < 0) { LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			
+			// Specify outgoing interface too
+			err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr));
+			if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			}
 		
 		// Send unicast packets with TTL 255
 		err = setsockopt(skt, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
@@ -978,7 +994,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
 		if (err) { LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		}
-	else if (i->sa_family == AF_INET6)
+	else if (sa_family == AF_INET6)
 		{
 		// We want to receive destination addresses and receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
@@ -993,17 +1009,20 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
 		if (err < 0) { LogMsg("setsockopt - IPV6_V6ONLY error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
-		// Add multicast group membership on this interface
-		int interface_id = if_nametoindex(i->ifa_name);
-		struct ipv6_mreq i6mr;
-		i6mr.ipv6mr_interface = interface_id;
-		i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
-		if (err < 0) { LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
-		
-		// Specify outgoing interface too
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_IF, &interface_id, sizeof(interface_id));
-		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (port.NotAnInteger)
+			{
+			// Add multicast group membership on this interface, if it's for multicast receiving
+			int interface_id = if_nametoindex(cp->info->ifa_name);
+			struct ipv6_mreq i6mr;
+			i6mr.ipv6mr_interface = interface_id;
+			i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
+			err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
+			if (err < 0) { LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			
+			// Specify outgoing interface too
+			err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_IF, &interface_id, sizeof(interface_id));
+			if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			}
 		
 		// Send unicast packets with TTL 255
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &twofivefive, sizeof(twofivefive));
@@ -1040,7 +1059,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 	
 	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
 	*s = skt;
-	CFSocketContext myCFSocketContext = { 0, i->ifinfo.InterfaceID, NULL, NULL, NULL };
+	CFSocketContext myCFSocketContext = { 0, cp, NULL, NULL, NULL };
 	*c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, &myCFSocketContext);
 	CFRunLoopSourceRef rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
@@ -1100,14 +1119,16 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->ifinfo.TxAndRx     = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 
 	i->next            = mDNSNULL;
-	i->m               = m;
-	i->scope_id        = scope_id;
 	i->CurrentlyActive = mDNStrue;
+	i->scope_id        = scope_id;
 	i->sa_family       = ifa->ifa_addr->sa_family;
-	i->sktv4 = -1;
-	i->cfsv4 = NULL;
-	i->sktv6 = -1;
-	i->cfsv6 = NULL;
+
+	i->ss.m     = m;
+	i->ss.info  = i;
+	i->ss.sktv4 = -1;
+	i->ss.cfsv4 = NULL;
+	i->ss.sktv6 = -1;
+	i->ss.cfsv6 = NULL;
 	
 	if (!i->ifa_name) return(-1);
 	*p = i;
@@ -1253,7 +1274,6 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
-		mStatus err = 0;
 		NetworkInterfaceInfo *n = &i->ifinfo;
 		NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
 		if (!alias) alias = i;
@@ -1276,18 +1296,18 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			debugf("SetupActiveInterfaces: No TX/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, alias, &n->ip);
 		else
 			{
-			if (i->sa_family == AF_INET && alias->sktv4 == -1)
+			if (i->sa_family == AF_INET && alias->ss.sktv4 == -1)
 				{
-				if (!err) err = SetupSocket(i, MulticastDNSPort, &alias->sktv4, &alias->cfsv4);
-				if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-				else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
+				if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
 				}
 		
-			if (i->sa_family == AF_INET6 && alias->sktv6 == -1)
+			if (i->sa_family == AF_INET6 && alias->ss.sktv6 == -1)
 				{
-				err = SetupSocket(i, MulticastDNSPort, &alias->sktv6, &alias->cfsv6);
-				if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-				else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
+				if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
 				}
 			}
 		}
@@ -1298,6 +1318,17 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		i->CurrentlyActive = mDNSfalse;
+	}
+
+mDNSlocal void CloseSocketSet(CFSocketSet *ss)
+	{
+	// Note: MUST NOT close the underlying native BSD sockets.
+	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
+	// because it first has to unhook the sockets from its select() call, before it can safely close them.
+	if (ss->cfsv4) { CFSocketInvalidate(ss->cfsv4); CFRelease(ss->cfsv4); }
+	if (ss->cfsv6) { CFSocketInvalidate(ss->cfsv6); CFRelease(ss->cfsv6); }
+	ss->sktv4 = ss->sktv6 = -1;
+	ss->cfsv4 = ss->cfsv6 = NULL;
 	}
 
 mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
@@ -1331,14 +1362,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		i = *p;
 		// 2. Close all our CFSockets. We'll recreate them later as necessary.
 		// (We may have previously had both v4 and v6, and we may not need both any more.)
-		// Note: MUST NOT close the underlying native BSD sockets.
-		// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
-		// because it first has to unhook the sockets from its select() call, before it can safely close them.
-		if (i->cfsv4) { CFSocketInvalidate(i->cfsv4); CFRelease(i->cfsv4); }
-		if (i->cfsv6) { CFSocketInvalidate(i->cfsv6); CFRelease(i->cfsv6); }
-		i->sktv4 = i->sktv6 = -1;
-		i->cfsv4 = i->cfsv6 = NULL;
-
+		CloseSocketSet(&i->ss);
 		// 3. If no longer active, delete interface from list and free memory
 		if (!i->CurrentlyActive)
 			{
@@ -1605,6 +1629,15 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
 
+	m->p->unicastsockets.m     = m;
+	m->p->unicastsockets.info  = NULL;
+	m->p->unicastsockets.sktv4 = -1;
+	m->p->unicastsockets.cfsv4 = NULL;
+	m->p->unicastsockets.sktv6 = -1;
+	m->p->unicastsockets.cfsv6 = NULL;
+	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET);
+	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET6);
+
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);
@@ -1655,6 +1688,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	
 	MarkAllInterfacesInactive(m);
 	ClearInactiveInterfaces(m);
+	CloseSocketSet(&m->p->unicastsockets);
 	}
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1000;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.29  2004/01/27 22:57:48  cheshire
+<rdar://problem/3534352>: Need separate socket for issuing unicast queries
+
 Revision 1.28  2004/01/27 20:15:23  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -135,24 +138,32 @@ Defines mDNS_PlatformSupport_struct for OS X
 #include <netinet/in.h>
 
 typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;
-struct NetworkInterfaceInfoOSX_struct
+
+typedef struct
 	{
-	NetworkInterfaceInfo     ifinfo;			// MUST be the first element in this structure
-	NetworkInterfaceInfoOSX *next;
 	mDNS                    *m;
-	mDNSu32                  CurrentlyActive;	// 0 not active; 1 active; 2 active but TxRx state changed
-	char                    *ifa_name;			// Memory for this is allocated using malloc
-	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
-	u_short                  sa_family;
+	NetworkInterfaceInfoOSX *info;
 	int                      sktv4;
 	CFSocketRef              cfsv4;
 	int                      sktv6;
 	CFSocketRef	             cfsv6;
+	} CFSocketSet;
+
+struct NetworkInterfaceInfoOSX_struct
+	{
+	NetworkInterfaceInfo     ifinfo;			// MUST be the first element in this structure
+	NetworkInterfaceInfoOSX *next;
+	mDNSu32                  CurrentlyActive;	// 0 not active; 1 active; 2 active but TxRx state changed
+	char                    *ifa_name;			// Memory for this is allocated using malloc
+	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
+	u_short                  sa_family;
+	CFSocketSet              ss;
 	};
 
 struct mDNS_PlatformSupport_struct
     {
     NetworkInterfaceInfoOSX *InterfaceList;
+    CFSocketSet              unicastsockets;
     domainlabel              userhostlabel;
     SCDynamicStoreRef        Store;
     CFRunLoopSourceRef       StoreRLS;
