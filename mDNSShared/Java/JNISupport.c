@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.6  2004/11/23 03:41:14  cheshire
+Change JNISupport.c to call if_indextoname & if_nametoindex directly.
+(May require some additional glue code to work on Windows.)
+
 Revision 1.5  2004/11/17 17:07:44  cheshire
 Updated comment about AUTO_CALLBACKS
 
@@ -68,6 +72,8 @@ First checked in.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <net/if.h>
 #include <jni.h>
 
 #include "DNSSD.java.h"
@@ -770,13 +776,15 @@ JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleDNSSD_ReconfirmRecord( JNIEnv *
 	SafeReleaseUTFChars( pEnv, fullName, nameStr);
 }
 
+#define LOCAL_ONLY_NAME "loo"
 
 JNIEXPORT jstring JNICALL Java_com_apple_dnssd_AppleDNSSD_GetNameForIfIndex( JNIEnv *pEnv, jobject pThis _UNUSED, 
 							jint ifIndex)
 {
-	char					*p, nameBuff[256];
+	char					*p = LOCAL_ONLY_NAME, nameBuff[IF_NAMESIZE];
 
-	p = DNSSDMapIfIndexToName( ifIndex, nameBuff, sizeof nameBuff);
+	if (ifIndex != kDNSServiceInterfaceIndexLocalOnly)
+		p = if_indextoname( ifIndex, nameBuff );
 
 	return (*pEnv)->NewStringUTF( pEnv, p);
 }
@@ -785,10 +793,11 @@ JNIEXPORT jstring JNICALL Java_com_apple_dnssd_AppleDNSSD_GetNameForIfIndex( JNI
 JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSSD_GetIfIndexForName( JNIEnv *pEnv, jobject pThis _UNUSED, 
 							jstring ifName)
 {
-	uint32_t				ifIndex;
+	uint32_t				ifIndex = kDNSServiceInterfaceIndexLocalOnly;
 	const char				*nameStr = SafeGetUTFChars( pEnv, ifName);
 
-	ifIndex = DNSSDMapNameToIfIndex( nameStr);
+	if (strcmp(nameStr, LOCAL_ONLY_NAME))
+		ifIndex = if_nametoindex( nameStr);
 
 	SafeReleaseUTFChars( pEnv, ifName, nameStr);
 
