@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.85  2003/05/28 02:39:47  cheshire
+Minor change to debugging messages
+
 Revision 1.84  2003/05/27 22:29:40  cheshire
 Remove out-dated comment
 
@@ -483,9 +486,12 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 
 	if (s1 < 0 || s1 != skt)
 		{
-		LogMsg("myCFSocketCallBack: s1 %d native socket %d", s1, skt);
-		LogMsg("myCFSocketCallBack: cfs %p, cfs53 %p, cfsv4 %p, cfsv6 %p", cfs, info->cfs53, info->cfsv4, info->cfsv6);
-		LogMsg("myCFSocketCallBack: skt53 %d, sktv4 %d, sktv6 %d", info->skt53, info->sktv4, info->sktv6);
+		LogMsg("myCFSocketCallBack: s1 %d native socket %d, cfs %p", s1, skt, cfs);
+#if mDNS_AllowPort53
+		LogMsg("myCFSocketCallBack: cfs53 %p, skt53 %d", info->cfs53, info->skt53);
+#endif
+		LogMsg("myCFSocketCallBack: cfsv4 %p, sktv4 %d", info->cfsv4, info->sktv4);
+		LogMsg("myCFSocketCallBack: cfsv6 %p, sktv6 %d", info->cfsv6, info->sktv6);
 		}
 
 	while ((err = myrecvfrom(s1, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname)) >= 0)
