@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.62  2004/06/24 00:57:08  ksekar
+Replaced code acccidentally removed in checkin 1.59.
+
 Revision 1.61  2004/06/19 00:09:39  cheshire
 Remove unused strsep() implementation
 
@@ -708,6 +711,27 @@ static void connect_callback(void *info)
     	}
     optval = 1;
 
+#ifdef SO_NOSIGPIPE
+	// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
+    if (setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
+    	{
+        my_perror("ERROR: setsockopt - SOL_NOSIGPIPE - aborting client");  
+        dnssd_close(sd);
+        return;
+    	}
+#endif
+
+#if defined(_WIN32)
+	if (ioctlsocket(sd, FIONBIO, &opt) != 0)
+#else
+	if (fcntl(sd, F_SETFL, O_NONBLOCK) != 0)
+#endif
+        {
+		my_perror("ERROR: setsockopt - SOL_NOSIGPIPE - aborting client");  
+		close(sd);
+		return;
+		}			
+		
 /*
     // open a pipe to deliver error messages, pass descriptor to client
     if (pipe(errpipe) < 0)
