@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.221  2003/07/15 22:17:56  cheshire
+<rdar://problem/3328394> mDNSResponder is not being efficient when doing certain queries
+
 Revision 1.220  2003/07/15 02:12:51  cheshire
 Slight tidy-up of debugf messages and comments
 
@@ -3610,8 +3613,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 					else											// else trigger our question to go out now
 						{
 						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
-						rr->CRActiveQuestion->DupSuppress[0].InterfaceID = mDNSNULL;
-						rr->CRActiveQuestion->DupSuppress[1].InterfaceID = mDNSNULL;
+						UpdateDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
 						m->NextScheduledQuery = m->timenow;	// And adjust NextScheduledQuery so it will happen
 						// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
 						// which will correctly update m->NextCacheCheck for us
@@ -3623,6 +3625,23 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 				}
 			}
 		}
+
+	// If we're going to send a query anyway, see if any expiring cache records are close enough
+	// to their NextRequiredQuery to be worth batching them together with this one
+	if (m->timenow - m->NextScheduledQuery >= 0)
+		{
+		ResourceRecord *rr;
+		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+				if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
+					if (m->timenow + (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond)/25 - rr->NextRequiredQuery >= 0)
+						{
+						debugf("Accelerating %s", GetRRDisplayString(m, rr));
+						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
+						UpdateDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
+						}
+		}
+
 	m->lock_rrcache = 0;
 	}
 
