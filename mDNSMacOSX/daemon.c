@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.230  2004/12/17 04:09:30  cheshire
+<rdar://problem/3191011> Switch mDNSResponder to launchd
+
 Revision 1.229  2004/12/16 21:51:36  cheshire
 Remove some startup messages
 
@@ -559,6 +562,7 @@ static mach_port_t server_priv_port  = MACH_PORT_NULL;
 #define MDNS_MM_TIMEOUT 250
 
 static int restarting_via_mach_init = 0;
+static int started_via_launchdaemon = 0;
 
 //*************************************************************************************************************
 // Active client list structures
@@ -2073,8 +2077,8 @@ mDNSlocal void ExitCallback(int signal)
 	{
 	LogMsgIdent(mDNSResponderVersionString, "stopping");
 
-	debugf("ExitCallback: destroyBootstrapService");
-	if (!mDNS_DebugMode && signal != SIGHUP)
+	debugf("ExitCallback");
+	if (!mDNS_DebugMode && !started_via_launchdaemon && signal != SIGHUP)
 		destroyBootstrapService();
 
 	debugf("ExitCallback: Aborting MIG clients");
@@ -2333,6 +2337,7 @@ mDNSexport int main(int argc, char **argv)
 	for (i=1; i<argc; i++)
 		{
 		if (!strcmp(argv[i], "-d")) mDNS_DebugMode = mDNStrue;
+		if (!strcmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
 		}
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Exit cleanly and let mach_init restart us (for debugging)
@@ -2342,14 +2347,13 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
 	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
 
+	LogMsgIdent(mDNSResponderVersionString, "starting via %s", started_via_launchdaemon ? "launchdaemon" : "Startup Item");
+
 	// Register the server with mach_init for automatic restart only during normal (non-debug) mode
-    if (!mDNS_DebugMode) registerBootstrapService();
-
-	if (!mDNS_DebugMode && !restarting_via_mach_init)
-		exit(0); /* mach_init will restart us immediately as a daemon */
-
-	if (!mDNS_DebugMode)
-		{
+    if (!mDNS_DebugMode && !started_via_launchdaemon)
+    	{
+    	registerBootstrapService();
+    	if (!restarting_via_mach_init) exit(0); // mach_init will restart us immediately as a daemon
 		int fd = open(_PATH_DEVNULL, O_RDWR, 0);
 		if (fd < 0) LogMsg("open(_PATH_DEVNULL, O_RDWR, 0) failed errno %d (%s)", errno, strerror(errno));
 		else
@@ -2427,8 +2431,9 @@ mDNSexport int main(int argc, char **argv)
 		mDNS_Close(&mDNSStorage);
 		}
 
-	if (!mDNS_DebugMode) destroyBootstrapService();
+	if (!mDNS_DebugMode && !started_via_launchdaemon) destroyBootstrapService();
 
+	LogMsgIdent(mDNSResponderVersionString, "exiting");
 	return(status);
 	}
 
