@@ -22,6 +22,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.72  2003/05/14 18:48:41  cheshire
+<rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
+More minor refinements:
+CFSocket.c needs to do *all* its mDNS_DeregisterInterface calls before freeing memory
+mDNS_DeregisterInterface revalidates cache record when *any* representative of an interface goes away
+
 Revision 1.71  2003/05/14 07:08:37  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 Previously, when there was any network configuration change, mDNSResponder
@@ -655,12 +661,12 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
 		if (mDNSSameAddress(&ip, &(*p)->ifinfo.ip))
 			{
-			debugf("UpdateInterfaceList: Found existing interface with address %#a", &ip);
+			debugf("AddInterfaceToList: Found existing interface with address %#a", &ip);
 			(*p)->CurrentlyActive = mDNStrue;
 			return(0);
 			}
 
-	debugf("UpdateInterfaceList: Making   new   interface with address %#a", &ip);
+	debugf("AddInterfaceToList: Making   new   interface with address %#a", &ip);
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
 	if (!i) return(-1);
 	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
@@ -692,7 +698,6 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	{
-	debugf("UpdateInterfaceList");
 	mDNSBool foundav4           = mDNSfalse;
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
 	struct ifaddrs *theLoopback = NULL;
@@ -781,17 +786,21 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 		NetworkInterfaceInfo *n = &i->ifinfo;
 		NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
 		if (!alias) alias = i;
-	
+
+		if (n->InterfaceID && n->InterfaceID != alias)
+			{
+			LogMsg("SetupActiveInterfaces ERROR! n->InterfaceID %p != alias %p", n->InterfaceID, alias);
+			n->InterfaceID = mDNSNULL;
+			}
+
 		if (!n->InterfaceID)
 			{
+			n->InterfaceID = alias;
 			mDNS_RegisterInterface(m, n);
-			debugf("SetupActiveInterfaces: Registered  %s(%d) InterfaceID %04X %#a", i->ifa_name, n->scope_id, alias, &n->ip);
+			debugf("SetupActiveInterfaces: Registered  %s(%d) InterfaceID %04X %#a%s",
+				i->ifa_name, n->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 			}
-		else if (n->InterfaceID != alias)
-			LogMsg("SetupActiveInterfaces ERROR! n->InterfaceID %p != alias %p", n->InterfaceID, alias);
-	
-		n->InterfaceID = alias;
-	
+
 		if (i->sa_family == AF_INET && alias->sktv4 == -1)
 			{
 			#if mDNS_AllowPort53
@@ -813,7 +822,6 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 
 mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
 	{
-	debugf("MarkAllInterfacesInactive");
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		i->CurrentlyActive = mDNSfalse;
@@ -821,11 +829,16 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
 
 mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	{
-	debugf("ClearInactiveInterfaces");
-	NetworkInterfaceInfoOSX **p = &m->p->InterfaceList;
-	while (*p)
+	// First pass:
+	// If an interface is going away, then deregister this from the mDNSCore.
+	// We also have to deregister it if the alias interface that it's using for its InterfaceID is going away.
+	// We have to do this because mDNSCore will use that InterfaceID when sending packets, and if the memory
+	// it refers to has gone away we'll crash.
+	// Don't actually close the sockets or free the memory yet: When the last representative of an interface goes away
+	// mDNSCore may want to send goodbye packets on that interface. (Not yet implemented, but a good idea anyway.)
+	NetworkInterfaceInfoOSX *i;
+	for (i = m->p->InterfaceList; i; i = i->next)
 		{
-		NetworkInterfaceInfoOSX *i = *p;
 		// 1. If this interface is no longer active, or it's InterfaceID is changing, deregister it
 		NetworkInterfaceInfoOSX *alias = i->ifinfo.InterfaceID;
 		if (!i->CurrentlyActive || (alias && !alias->CurrentlyActive))
@@ -834,7 +847,14 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 			mDNS_DeregisterInterface(m, &i->ifinfo);
 			i->ifinfo.InterfaceID = mDNSNULL;
 			}
+		}
 
+	// Second pass:
+	// Now that everything that's going to deregister has done so, we can close sockets and free the memory
+	NetworkInterfaceInfoOSX **p = &m->p->InterfaceList;
+	while (*p)
+		{
+		i = *p;
 		// 2. Close all our sockets. We'll recreate them later as necessary.
 		// (We may have both v4 and v6, and we may not need both now.)
 		#if mDNS_AllowPort53
@@ -850,7 +870,6 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		if (!i->CurrentlyActive)
 			{
 			debugf("ClearInactiveInterfaces: Deleting      %#a", &i->ifinfo.ip);
-			NetworkInterfaceInfoOSX *i = *p;
 			*p = i->next;
 			if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
 			freeL("NetworkInterfaceInfoOSX", i);

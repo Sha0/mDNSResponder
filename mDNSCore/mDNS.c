@@ -88,6 +88,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.118  2003/05/14 18:48:40  cheshire
+<rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
+More minor refinements:
+CFSocket.c needs to do *all* its mDNS_DeregisterInterface calls before freeing memory
+mDNS_DeregisterInterface revalidates cache record when *any* representative of an interface goes away
+
 Revision 1.117  2003/05/14 07:08:36  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 Previously, when there was any network configuration change, mDNSResponder
@@ -3334,6 +3340,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 				}
 
 		// 2. Re-validate our cache records
+		m->NextCacheTidyTime  = m->timenow;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				{
@@ -3341,7 +3348,6 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 				rr->TimeRcvd          = m->timenow;
 				rr->rroriginalttl     = 5;
 				rr->UnansweredQueries = 0;
-				m->NextCacheTidyTime  = m->timenow;
 				}
 
 		// 3. Retrigger probing and announcing for all our authoritative records
@@ -4726,6 +4732,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
+	mDNSBool revalidate = mDNStrue;
 	mDNS_Lock(m);
 
 	// Find this record in our list
@@ -4761,6 +4768,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 					q->ThisQInterval = 0;
 
 			// 2. Flush any cache records received on this interface
+			revalidate = mDNSfalse;		// Don't revalidate if we're flushing the records
 			for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 				for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 					if (rr->InterfaceID == set->InterfaceID)
@@ -4775,9 +4783,28 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			}
 		}
 
-	// If we were advertising on this interface, deregister now
+	// If we were advertising on this interface, deregister those address and reverse-lookup records now
 	if (set->Advertise)
 		mDNS_DeadvertiseInterface(m, set);
+
+	// If we have any cache records received on this interface that went away, then re-verify them.
+	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
+	// giving the false impression that there's an active representative of this interface when there really isn't.
+	if (revalidate)
+		{
+		mDNSs32	slot;
+		ResourceRecord *rr;
+		m->NextCacheTidyTime  = m->timenow;
+		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+				if (rr->InterfaceID == set->InterfaceID)
+					{
+					// If we don't get an answer for these in the next five seconds, assume they're gone
+					rr->TimeRcvd          = m->timenow;
+					rr->rroriginalttl     = 5;
+					rr->UnansweredQueries = 0;
+					}
+		}
 
 	mDNS_Unlock(m);
 	}
