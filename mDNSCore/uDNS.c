@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.51  2004/06/10 04:36:44  cheshire
+Fix compiler warning
+
 Revision 1.50  2004/06/10 00:55:13  ksekar
 <rdar://problem/3686213>: crash on network reconnect
 
@@ -603,7 +606,7 @@ mDNSlocal void removeKnownAnswer(DNSQuestion *question, CacheRecord *rr)
 mDNSlocal void addKnownAnswer(DNSQuestion *question, const CacheRecord *rr)
 	{
 	CacheRecord *newCR = NULL;
-	int size;	
+	mDNSu32 size;	
 
 	size = sizeof(CacheRecord) + rr->resrec.rdlength - InlineCacheRDSize;
 	newCR = (CacheRecord *)umalloc(size);
