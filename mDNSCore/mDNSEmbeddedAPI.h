@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.63  2003/06/06 17:20:14  cheshire
+For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
+(Global search-and-replace; no functional change to code execution.)
+
 Revision 1.62  2003/06/04 01:25:33  cheshire
 <rdar://problem/3274950> Cannot perform multi-packet known-answer suppression messages
 Display time interval between first and subsequent queries
@@ -648,9 +652,9 @@ struct DNSQuestion_struct
 	DNSQuestion          *DuplicateOf;
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
-	domainname            name;
-	mDNSu16               rrtype;
-	mDNSu16               rrclass;
+	domainname            qname;
+	mDNSu16               qtype;
+	mDNSu16               qclass;
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
 	};

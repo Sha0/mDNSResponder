@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.166  2003/06/06 17:20:14  cheshire
+For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
+(Global search-and-replace; no functional change to code execution.)
+
 Revision 1.165  2003/06/04 02:53:21  cheshire
 Add some "#pragma warning" lines so it compiles clean on Microsoft compilers
 
@@ -1527,9 +1531,9 @@ mDNSlocal mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr,
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
-	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->rrtype  && q->rrtype  != kDNSQType_ANY ) return(mDNSfalse);
-	if (                                rr->rrclass != q->rrclass && q->rrclass != kDNSQClass_ANY) return(mDNSfalse);
-	return(SameDomainName(&rr->name, &q->name));
+	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
+	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+	return(SameDomainName(&rr->name, &q->qname));
 	}
 
 mDNSlocal mDNSs32 HashSlot(const domainname *name)
@@ -2479,12 +2483,12 @@ mDNSlocal const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, co
 	DNSQuestion *question)
 	{
 	question->InterfaceID = InterfaceID;
-	ptr = getDomainName(msg, ptr, end, &question->name);
+	ptr = getDomainName(msg, ptr, end, &question->qname);
 	if (!ptr) { debugf("Malformed domain name in DNS question section"); return(mDNSNULL); }
 	if (ptr+4 > end) { debugf("Malformed DNS question section -- no query type and class!"); return(mDNSNULL); }
 	
-	question->rrtype  = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);			// Get type
-	question->rrclass = (mDNSu16)((mDNSu16)ptr[2] << 8 | ptr[3]);			// and class
+	question->qtype  = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);			// Get type
+	question->qclass = (mDNSu16)((mDNSu16)ptr[2] << 8 | ptr[3]);			// and class
 	return(ptr+4);
 	}
 
@@ -2807,15 +2811,15 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 	ResourceRecord ***kalistptrptr, mDNSu32 *answerforecast)
 	{
 	const mDNSu8 *const limit = query->data + (query->h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
-	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->name, q->rrtype, q->rrclass);
+	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, q->qclass);
 	if (!newptr)
 		{
-		debugf("BuildQuestion: No more space in this packet for question %##s", q->name.c);
+		debugf("BuildQuestion: No more space in this packet for question %##s", q->qname.c);
 		return(mDNSfalse);
 		}
 	else if (newptr + *answerforecast >= limit)
 		{
-		verbosedebugf("BuildQuestion: Retracting question %##s new forecast total %d", q->name.c, newptr + *answerforecast - query->data);
+		verbosedebugf("BuildQuestion: Retracting question %##s new forecast total %d", q->qname.c, newptr + *answerforecast - query->data);
 		query->h.numQuestions--;
 		return(mDNSfalse);
 		}
@@ -2825,7 +2829,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		ResourceRecord *rr;
 		ResourceRecord **ka = *kalistptrptr;	// Make a working copy of the pointer we're going to update
 
-		for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)		// If we have a resource record in our cache,
+		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// If we have a resource record in our cache,
 			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
 				ResourceRecordAnswersQuestion(rr, q))						// which answers our question, then add it
@@ -2845,7 +2849,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 					// then undo that last question and try again next time
 					if (query->h.numQuestions > 1 && newptr + forecast >= limit)
 						{
-						debugf("BuildQuestion: Retracting question %##s new forecast total %d", q->name.c, newptr + forecast - query->data);
+						debugf("BuildQuestion: Retracting question %##s new forecast total %d", q->qname.c, newptr + forecast - query->data);
 						query->h.numQuestions--;
 						ka = *kalistptrptr;		// Go back to where we started and retract these answer records
 						while (*ka) { ResourceRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
@@ -2859,7 +2863,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		*answerforecast  = forecast;			// Update the forecast
 		*kalistptrptr    = ka;					// Update the known answer list pointer
 
-		for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)		// For every resource record in our cache,
+		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// For every resource record in our cache,
 			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not in the known answer list
 				ResourceRecordAnswersQuestion(rr, q))						// which answers our question
@@ -2999,7 +3003,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				if (q->SendQNow == intf->InterfaceID)
 					{
 					verbosedebugf("SendQueries:   Putting question for %##s at %lu forecast total %lu",
-						q->name.c, queryptr - query.data, queryptr + answerforecast - query.data);
+						q->qname.c, queryptr - query.data, queryptr + answerforecast - query.data);
 					// If we successfully put this question, update its SendQNow state
 					if (BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
 						q->SendQNow = (q->InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
@@ -3159,7 +3163,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, ResourceRecord *rr)
 				q->ThisQInterval > mDNSPlatformOneSecond && m->timenow - q->LastQTime < mDNSPlatformOneSecond)
 				{
 				debugf("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
-					q->name.c, DNSTypeName(q->rrtype));
+					q->qname.c, DNSTypeName(q->qtype));
 				q->ThisQInterval = mDNSPlatformOneSecond;
 				SetNextQueryTime(m,q);
 				}
@@ -3206,7 +3210,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
 	m->NewQuestions = q->next;				// Advance NewQuestions to the next (if any)
 
-	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->name.c, DNSTypeName(q->rrtype));
+	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
 	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
 	// This should be safe, because calling the client's question callback may cause the
@@ -3216,7 +3220,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	m->lock_rrcache = 1;
 	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
-	for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)
+	for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)
 		if (ResourceRecordAnswersQuestion(rr, q))
 			{
 			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
@@ -3234,7 +3238,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			NumAnswersGiven++;
 			// Must do this debugging message *before* calling AnswerQuestionWithResourceRecord
 			if (NumAnswersGiven == 1)
-				debugf("Had   answer   for %##s (%s) already in our cache", q->name.c, DNSTypeName(q->rrtype));
+				debugf("Had   answer   for %##s (%s) already in our cache", q->qname.c, DNSTypeName(q->qtype));
 			rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
 			AnswerQuestionWithResourceRecord(m, q, rr);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
@@ -3243,7 +3247,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 	if (NumAnswersGiven == 0)
 		{
-		debugf("Had no answers for %##s (%s) already in our cache; sending query packet", q->name.c, DNSTypeName(q->rrtype));
+		debugf("Had no answers for %##s (%s) already in our cache; sending query packet", q->qname.c, DNSTypeName(q->qtype));
 		// This is safe because we only do it if NumAnswersGiven is zero,
 		// in which case we never called AnswerQuestionWithResourceRecord
 		q->LastQTime = m->timenow - q->ThisQInterval;
@@ -3799,7 +3803,7 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 			{
 			if (rr->NR_AnswerTo == ptr)							// If we're going to generate a record answering this question
 				{												// then put the question in the question section
-				responseptr = putQuestion(reply, responseptr, limit, &q.name, q.rrtype, q.rrclass);
+				responseptr = putQuestion(reply, responseptr, limit, &q.qname, q.qtype, q.qclass);
 				if (!responseptr) { debugf("GenerateUnicastResponse: Ran out of space for questions!"); return(mDNSNULL); }
 				break;		// break out of the ResponseRecords loop, and go on to the next question
 				}
@@ -4508,11 +4512,11 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 	// This prevents circular references, where two questions are each marked as a duplicate of the other.
 	// Accordingly, we break out of the loop when we get to 'question', because there's no point searching
 	// further in the list.
-	for (q = m->Questions; q && q != question; q=q->next)	// Scan our list of questions
-		if (q->InterfaceID == question->InterfaceID &&		// for another question with the same InterfaceID,
-			q->rrtype      == question->rrtype      &&		// type,
-			q->rrclass     == question->rrclass     &&		// class,
-			SameDomainName(&q->name, &question->name))		// and name
+	for (q = m->Questions; q && q != question; q=q->next)		// Scan our list of questions
+		if (q->InterfaceID == question->InterfaceID &&			// for another question with the same InterfaceID,
+			q->qtype       == question->qtype       &&			// type,
+			q->qclass      == question->qclass      &&			// class,
+			SameDomainName(&q->qname, &question->qname))		// and name
 			return(q);
 	return(mDNSNULL);
 	}
@@ -4546,7 +4550,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		if (*q)
 			{
 			LogMsg("Error! Tried to add a question %##s (%s) that's already in the active list",
-				question->name.c, DNSTypeName(question->rrtype));
+				question->qname.c, DNSTypeName(question->qtype));
 			return(mStatus_AlreadyRegistered);
 			}
 
@@ -4557,7 +4561,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				if (intf->InterfaceID == question->InterfaceID) break;
 			if (!intf)
 				{
-				debugf("mDNS_StartQuery_internal: Question %##s InterfaceID %p not found", question->name.c, question->InterfaceID);
+				debugf("mDNS_StartQuery_internal: Question %##s InterfaceID %p not found", question->qname.c, question->InterfaceID);
 				return(mStatus_BadReferenceErr);
 				}
 			}
@@ -4566,25 +4570,25 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		// wanted, and they may immediately cancel their question. In this case, sending an actual query on the wire would
 		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
 		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
-		question->next          = mDNSNULL;
-		question->ThisQInterval = mDNSPlatformOneSecond/2;  // MUST be > zero for an active question
-		question->LastQTime     = m->timenow;
-		question->RecentAnswers = 0;
-		question->DuplicateOf   = FindDuplicateQuestion(m, question);
+		question->next           = mDNSNULL;
+		question->ThisQInterval  = mDNSPlatformOneSecond/2;  // MUST be > zero for an active question
+		question->LastQTime      = m->timenow;
+		question->RecentAnswers  = 0;
+		question->DuplicateOf    = FindDuplicateQuestion(m, question);
 		// question->InterfaceID must be already set by caller
-		question->SendQNow      = mDNSNULL;
+		question->SendQNow       = mDNSNULL;
 
 		if (!question->DuplicateOf)
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p (%p) started",
-				question->name.c, DNSTypeName(question->rrtype), question->InterfaceID, question);
+				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question);
 		else
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p (%p) duplicate of (%p)",
-				question->name.c, DNSTypeName(question->rrtype), question->InterfaceID, question, question->DuplicateOf);
+				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question, question->DuplicateOf);
 
 		*q = question;
 		
 		if (!m->NewQuestions)
-			debugf("mDNS_StartQuery_internal: Setting NewQuestions to %##s (%s)", question->name.c, DNSTypeName(question->rrtype));
+			debugf("mDNS_StartQuery_internal: Setting NewQuestions to %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		if (!m->NewQuestions) m->NewQuestions = question;
 
 		SetNextQueryTime(m,question);
@@ -4600,7 +4604,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
 	else debugf("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
-		question->name.c, DNSTypeName(question->rrtype));
+		question->qname.c, DNSTypeName(question->qtype));
 
 	// Take care to cut question from list *before* calling UpdateQuestionDuplicates
 	UpdateQuestionDuplicates(m, question);
@@ -4609,7 +4613,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
-	for (rr = m->rrcache_hash[HashSlot(&question->name)]; rr; rr=rr->next)
+	for (rr = m->rrcache_hash[HashSlot(&question->qname)]; rr; rr=rr->next)
 		{
 		if (rr->CRActiveQuestion == question)
 			{
@@ -4627,14 +4631,14 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 	if (m->CurrentQuestion == question)
 		{
 		debugf("mDNS_StopQuery_internal: Just deleted the currently active question: %##s (%s)",
-			question->name.c, DNSTypeName(question->rrtype));
+			question->qname.c, DNSTypeName(question->qtype));
 		m->CurrentQuestion = question->next;
 		}
 
 	if (m->NewQuestions == question)
 		{
 		debugf("mDNS_StopQuery_internal: Just deleted a new question that wasn't even answered yet: %##s (%s)",
-			question->name.c, DNSTypeName(question->rrtype));
+			question->qname.c, DNSTypeName(question->qtype));
 		m->NewQuestions = question->next;
 		}
 
@@ -4663,9 +4667,9 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
 	question->InterfaceID       = InterfaceID;
-	if (!ConstructServiceName(&question->name, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
-	question->rrtype            = kDNSType_PTR;
-	question->rrclass           = kDNSClass_IN;
+	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
+	question->qtype             = kDNSType_PTR;
+	question->qclass            = kDNSClass_IN;
 	question->QuestionCallback  = Callback;
 	question->QuestionContext   = Context;
 	return(mDNS_StartQuery(m, question));
@@ -4685,29 +4689,29 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		{
 		query->GotSRV             = mDNStrue;
 		query->qAv4.InterfaceID   = answer->InterfaceID;
-		query->qAv4.name          = answer->rdata->u.srv.target;
+		query->qAv4.qname         = answer->rdata->u.srv.target;
 		query->qAv6.InterfaceID   = answer->InterfaceID;
-		query->qAv6.name          = answer->rdata->u.srv.target;
+		query->qAv6.qname         = answer->rdata->u.srv.target;
 		mDNS_StartQuery_internal(m, &query->qAv4);
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
 	// If this is not our first answer, only re-issue the address query if the target host name has changed
 	else if (query->qAv4.InterfaceID != answer->InterfaceID ||
-		!SameDomainName(&query->qAv4.name, &answer->rdata->u.srv.target))
+		!SameDomainName(&query->qAv4.qname, &answer->rdata->u.srv.target))
 		{
 		mDNS_StopQuery_internal(m, &query->qAv4);
 		mDNS_StopQuery_internal(m, &query->qAv6);
 		query->qAv4.InterfaceID   = answer->InterfaceID;
-		query->qAv4.name          = answer->rdata->u.srv.target;
+		query->qAv4.qname         = answer->rdata->u.srv.target;
 		query->qAv6.InterfaceID   = answer->InterfaceID;
-		query->qAv6.name          = answer->rdata->u.srv.target;
+		query->qAv6.qname         = answer->rdata->u.srv.target;
 		mDNS_StartQuery_internal(m, &query->qAv4);
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
 	else if (query->ServiceInfoQueryCallback && query->GotADD && query->GotTXT && PortChanged)
 		{
 		if (++query->Answers >= 100)
-			LogMsg("**** WARNING **** Have given %lu answers for %##s (SRV)", query->Answers, query->qSRV.name.c);
+			LogMsg("**** WARNING **** Have given %lu answers for %##s (SRV)", query->Answers, query->qSRV.qname.c);
 		query->ServiceInfoQueryCallback(m, query);
 		}
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
@@ -4732,7 +4736,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	if (query->ServiceInfoQueryCallback && query->GotADD)
 		{
 		if (++query->Answers >= 100)
-			LogMsg("**** WARNING **** have given %lu answers for %##s (TXT)", query->Answers, query->qSRV.name.c);
+			LogMsg("**** WARNING **** have given %lu answers for %##s (TXT)", query->Answers, query->qSRV.qname.c);
 		query->ServiceInfoQueryCallback(m, query);
 		}
 	}
@@ -4780,7 +4784,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 		{
 		if (++query->Answers >= 100)
 			LogMsg("**** WARNING **** have given %lu answers for %##s (%s)",
-				query->Answers, query->qSRV.name.c, (answer->rrtype == kDNSType_A) ? "A" : "AAAA");
+				query->Answers, query->qSRV.qname.c, (answer->rrtype == kDNSType_A) ? "A" : "AAAA");
 		query->ServiceInfoQueryCallback(m, query);
 		}
 	}
@@ -4797,33 +4801,33 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 
 	query->qSRV.ThisQInterval       = -1;		// This question not yet in the question list
 	query->qSRV.InterfaceID         = info->InterfaceID;
-	query->qSRV.name                = info->name;
-	query->qSRV.rrtype              = kDNSType_SRV;
-	query->qSRV.rrclass             = kDNSClass_IN;
+	query->qSRV.qname               = info->name;
+	query->qSRV.qtype               = kDNSType_SRV;
+	query->qSRV.qclass              = kDNSClass_IN;
 	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
 	query->qSRV.QuestionContext     = query;
 
 	query->qTXT.ThisQInterval       = -1;		// This question not yet in the question list
 	query->qTXT.InterfaceID         = info->InterfaceID;
-	query->qTXT.name                = info->name;
-	query->qTXT.rrtype              = kDNSType_TXT;
-	query->qTXT.rrclass             = kDNSClass_IN;
+	query->qTXT.qname               = info->name;
+	query->qTXT.qtype               = kDNSType_TXT;
+	query->qTXT.qclass              = kDNSClass_IN;
 	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
 	query->qTXT.QuestionContext     = query;
 
 	query->qAv4.ThisQInterval       = -1;		// This question not yet in the question list
 	query->qAv4.InterfaceID         = info->InterfaceID;
-	query->qAv4.name.c[0]           = 0;
-	query->qAv4.rrtype              = kDNSType_A;
-	query->qAv4.rrclass             = kDNSClass_IN;
+	query->qAv4.qname.c[0]          = 0;
+	query->qAv4.qtype               = kDNSType_A;
+	query->qAv4.qclass              = kDNSClass_IN;
 	query->qAv4.QuestionCallback    = FoundServiceInfo;
 	query->qAv4.QuestionContext     = query;
 
 	query->qAv6.ThisQInterval       = -1;		// This question not yet in the question list
 	query->qAv6.InterfaceID         = info->InterfaceID;
-	query->qAv6.name.c[0]           = 0;
-	query->qAv6.rrtype              = kDNSType_AAAA;
-	query->qAv6.rrclass             = kDNSClass_IN;
+	query->qAv6.qname.c[0]          = 0;
+	query->qAv6.qtype               = kDNSType_AAAA;
+	query->qAv6.qclass              = kDNSClass_IN;
 	query->qAv6.QuestionCallback    = FoundServiceInfo;
 	query->qAv6.QuestionContext     = query;
 
@@ -4863,10 +4867,10 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *que
 mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
-	MakeDomainNameFromDNSNameString(&question->name, mDNS_DomainTypeNames[DomainType]);
+	MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType]);
 	question->InterfaceID      = InterfaceID;
-	question->rrtype           = kDNSType_PTR;
-	question->rrclass          = kDNSClass_IN;
+	question->qtype            = kDNSType_PTR;
+	question->qclass           = kDNSClass_IN;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	return(mDNS_StartQuery(m, question));
