@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.38  2004/05/31 22:19:44  ksekar
+<rdar://problem/3258021>: Feature: DNS server->client notification on
+record changes (#7805) - revert to polling mode on setup errors
+
 Revision 1.37  2004/05/28 23:42:37  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
 
@@ -684,7 +688,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			question->QuestionCallback(m, question, &cr->resrec, !goodbye);
 			if (question != m->uDNS_info.CurrentQuery)
 				{
-				debugf("simpleResponseHndlr - CurrentQuery changed by QuestionCallback - returning");
+				debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning");
 				return;
 				}
 			}			
@@ -701,7 +705,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	return;
 
 	pkt_error:
-	LogMsg("ERROR: simpleResponseHndlr - received malformed response to query for %s (%d)",
+	LogMsg("ERROR: pktResponseHndlr - received malformed response to query for %s (%d)",
 		   question->qname.c, question->qtype);
 	return;
 
@@ -1266,7 +1270,14 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 
 	(void)clientContext;  // unused
 	
-	if (rcode && rcode != kDNSFlag1_RC_NXDomain) { LogMsg("LLQ Setup for %s failed with rcode %d", q->qname.c, rcode); goto error; }
+	if (rcode && rcode != kDNSFlag1_RC_NXDomain)
+		{
+		LogMsg("LLQ Setup for %s failed with rcode %d.  Reverting to polling mode", q->qname.c, rcode);
+		info->state = LLQ_Poll;
+		q->uDNS_info.responseCallback = simpleResponseHndlr;
+		q->LastQTxTime = mDNSPlatformTimeNow() - (UNICAST_POLL_INTERVAL * mDNSPlatformOneSecond);  // trigger question immediately
+		return;
+		}
 	
 	ptr = getQuestion(pktMsg, ptr, end, 0, &pktQuestion);
 	if (!ptr) { LogMsg("ERROR: recvSetupResponse - getQuestion"); goto error; }
