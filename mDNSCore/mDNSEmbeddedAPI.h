@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.280  2005/02/25 04:21:00  cheshire
+<rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
+
 Revision 1.279  2005/02/17 01:56:14  cheshire
 Increase ifname field to 64 bytes
 
@@ -1374,7 +1377,7 @@ typedef packedstruct
 #define StandardAuthRDSize 264
 #define MaximumRDSize 8192
 
-// InlineCacheRDSize is 64
+// InlineCacheRDSize is 68
 // Records received from the network with rdata this size or less have their rdata stored right in the CacheRecord object
 // Records received from the network with rdata larger than this have additional storage allocated for the rdata
 // A quick unscientific sample from a busy network at Apple with lots of machines revealed this:
@@ -1386,7 +1389,7 @@ typedef packedstruct
 // Only 69 records had rdata bigger than 64 bytes
 // Note that since CacheRecord object and a CacheGroup object are allocated out of the same pool, it's sensible to
 // have them both be the same size. Making one smaller without making the other smaller won't actually save any memory.
-#define InlineCacheRDSize 64
+#define InlineCacheRDSize 68
 
 #define InlineCacheGroupNameSize 144
 
@@ -1440,9 +1443,13 @@ typedef struct
 	mDNSu32         rroriginalttl;		// In seconds
 	mDNSu16         rdlength;			// Size of the raw rdata, in bytes
 	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
-	mDNSu32         namehash;			// Name-based (i.e. case insensitive) hash of name
-	mDNSu32         rdatahash;			// 32-bit hash of the raw rdata
-	mDNSu32         rdnamehash;			// Set if this rdata contains a domain name (e.g. PTR, SRV, CNAME etc.)
+	mDNSu32         namehash;			// Name-based (i.e. case-insensitive) hash of name
+	mDNSu32         rdatahash;			// For rdata containing domain name (e.g. PTR, SRV, CNAME etc.), case-insensitive name hash
+										// else, for all other rdata, 32-bit hash of the raw rdata
+										// Note: This requirement is important. Various routines like AddAdditionalsToResponseList(),
+										// ReconfirmAntecedents(), etc., use rdatahash as a pre-flight check to see
+										// whether it's worth doing a full SameDomainName() call. If the rdatahash
+										// is not a correct case-insensitive name hash, they'll get false negatives.
 	RData           *rdata;				// Pointer to storage for this rdata
 	} ResourceRecord;
 

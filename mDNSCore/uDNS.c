@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.199  2005/02/25 04:21:00  cheshire
+<rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
+
 Revision 1.198  2005/02/25 02:35:22  cheshire
 <rdar://problem/4017292> Should not indicate successful dynamic update if no network connection
 If we get NXDomain error looking for the _dns-update._udp record,
@@ -4125,8 +4128,7 @@ mDNSlocal mStatus SetupRecordRegistration(mDNS *m, AuthRecord *rr)
 		}
 
 	rr->resrec.namehash   = DomainNameHashValue(rr->resrec.name);
-	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
-	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
+	rr->resrec.rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
 
 	rr->uDNS_info.state = regState_FetchingZoneData;
 	rr->next = m->uDNS_info.RecordRegistrations;

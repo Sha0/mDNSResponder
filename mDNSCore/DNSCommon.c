@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.87  2005/02/25 04:21:00  cheshire
+<rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
+
 Revision 1.86  2005/02/18 00:43:12  cheshire
 <rdar://problem/4010245> mDNSResponder should auto-truncate service names that are too long
 
@@ -1082,10 +1085,9 @@ mDNSexport mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const
 
 mDNSexport mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
-	if (r1->rrtype     != r2->rrtype)   return(mDNSfalse);
-	if (r1->rdlength   != r2->rdlength) return(mDNSfalse);
-	if (r1->rdatahash  != r2->rdatahash) return(mDNSfalse);
-	if (r1->rdnamehash != r2->rdnamehash) return(mDNSfalse);
+	if (r1->rrtype     != r2->rrtype)     return(mDNSfalse);
+	if (r1->rdlength   != r2->rdlength)   return(mDNSfalse);
+	if (r1->rdatahash  != r2->rdatahash)  return(mDNSfalse);
 	switch(r1->rrtype)
 		{
 		case kDNSType_CNAME:// Same as PTR
@@ -1673,8 +1675,7 @@ mDNSexport void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 r
 	target = GetRRDomainNameTarget(rr);
 	rr->rdlength   = GetRDLength(rr, mDNSfalse);
 	rr->rdestimate = GetRDLength(rr, mDNStrue);
-	rr->rdatahash  = RDataHashValue(rr->rdlength, &rr->rdata->u);
-	rr->rdnamehash = target ? DomainNameHashValue(target) : 0;
+	rr->rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(rr->rdlength, &rr->rdata->u);
 	}
 
 mDNSexport const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end)

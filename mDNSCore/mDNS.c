@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.521  2005/02/25 04:21:00  cheshire
+<rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
+
 Revision 1.520  2005/02/16 01:14:11  cheshire
 Convert RR Cache LogOperation() calls to debugf()
 
@@ -2553,8 +2556,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		{ LogMsg("Attempt to register record with invalid rdata: %s", ARDisplayString(m, rr)); return(mStatus_Invalid); }
 
 	rr->resrec.namehash   = DomainNameHashValue(rr->resrec.name);
-	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
-	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
+	rr->resrec.rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
 	
 	if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
 		{
@@ -2584,7 +2586,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	
 	if (r)
 		{
-		debugf("Adding %p %##s (%s) to duplicate list", rr, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+		debugf("Adding to duplicate list %p %s", rr, ARDisplayString(m,rr));
 		*d = rr;
 		// If the previous copy of this record is already verified unique,
 		// then indicate that we should move this record promptly to kDNSRecordTypeUnique state.
@@ -2595,7 +2597,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		}
 	else
 		{
-		debugf("Adding %p %##s (%s) to active record list", rr, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+		debugf("Adding to active record list %p %s", rr, ARDisplayString(m,rr));
 		if (!m->NewLocalRecords) m->NewLocalRecords = rr;
 		*p = rr;
 		}
@@ -2821,7 +2823,7 @@ mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseR
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
 				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
 					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
-					rr->resrec.rdnamehash == rr2->resrec.namehash &&			// ... whose name is the name of the SRV target
+					rr->resrec.rdatahash == rr2->resrec.namehash &&			// ... whose name is the name of the SRV target
 					SameDomainName(&rr->resrec.rdata->u.srv.target, rr2->resrec.name))
 					AddRecordToResponseList(nrpp, rr2, rr);
 		}
@@ -3012,7 +3014,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				if (RRTypeIsAddressType(r2->resrec.rrtype) &&			// For all address records (A/AAAA) ...
 					ResourceRecordIsValidAnswer(r2) &&					// ... which are valid for answer ...
 					rr->LastMCTime - r2->LastMCTime >= 0 &&				// ... which we have not sent recently ...
-					rr->resrec.rdnamehash == r2->resrec.namehash &&		// ... whose name is the name of the SRV target
+					rr->resrec.rdatahash == r2->resrec.namehash &&		// ... whose name is the name of the SRV target
 					SameDomainName(&rr->resrec.rdata->u.srv.target, r2->resrec.name) &&
 					(rr->ImmedAnswer == mDNSInterfaceMark || rr->ImmedAnswer == r2->resrec.InterfaceID))
 					r2->ImmedAdditional = r2->resrec.InterfaceID;		// ... then mark this address record for sending too
@@ -3414,7 +3416,7 @@ mDNSlocal void ReconfirmAntecedents(mDNS *const m, DNSQuestion *q)
 	CacheRecord *rr;
 	domainname *target;
 	FORALL_CACHERECORDS(slot, cg, rr)
-		if ((target = GetRRDomainNameTarget(&rr->resrec)) && rr->resrec.rdnamehash == q->qnamehash && SameDomainName(target, &q->qname))
+		if ((target = GetRRDomainNameTarget(&rr->resrec)) && rr->resrec.rdatahash == q->qnamehash && SameDomainName(target, &q->qname))
 			mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
 	}
 
@@ -5297,8 +5299,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				// else, the packet RR has different type or different rdata -- check to see if this is a conflict
 				else if (m->rec.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &m->rec.r))
 					{
-					debugf("mDNSCoreReceiveResponse: Our Record: %08lX %08lX %s", rr->     resrec.rdatahash, rr->     resrec.rdnamehash, ARDisplayString(m, rr));
-					debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %08lX %s", m->rec.r.resrec.rdatahash, m->rec.r.resrec.rdnamehash, CRDisplayString(m, &m->rec.r));
+					debugf("mDNSCoreReceiveResponse: Our Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
+					debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
 
 					// If this record is marked DependentOn another record for conflict detection purposes,
 					// then *that* record has to be bumped back to probing state to resolve the conflict
@@ -5380,13 +5382,25 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							}
 						}
 
-					if (m->rec.r.resrec.rroriginalttl > 0)
+					if (!mDNSPlatformMemSame(m->rec.r.resrec.rdata->u.data, rr->resrec.rdata->u.data, m->rec.r.resrec.rdlength))
+						{
+						// If the rdata of the packet record differs in name capitalization from the record in our cache
+						// then mDNSPlatformMemSame will detect this. In this case, throw the old record away, so that clients get
+						// a 'remove' event for the record with the old capitalization, and then an 'add' event for the new one.
+						rr->resrec.rroriginalttl = 0;
+						rr->UnansweredQueries = MaxUnansweredQueries;
+						SetNextCacheCheckTime(m, rr);
+						// DO NOT break out here -- we want to continue as if we never found it
+						}
+					else if (m->rec.r.resrec.rroriginalttl > 0)
 						{
 						rr->resrec.rroriginalttl = m->rec.r.resrec.rroriginalttl;
 						rr->UnansweredQueries = 0;
 						rr->MPUnansweredQ     = 0;
 						rr->MPUnansweredKA    = 0;
 						rr->MPExpectingKA     = mDNSfalse;
+						SetNextCacheCheckTime(m, rr);
+						break;
 						}
 					else
 						{
@@ -5397,9 +5411,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						// lifetime (800ms and 900ms from now) which is a pointless waste of network bandwidth.
 						rr->resrec.rroriginalttl = 1;
 						rr->UnansweredQueries = MaxUnansweredQueries;
+						SetNextCacheCheckTime(m, rr);
+						break;
 						}
-					SetNextCacheCheckTime(m, rr);
-					break;
 					}
 				}
 
