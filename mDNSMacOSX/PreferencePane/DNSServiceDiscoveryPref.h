@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.h,v $
+Revision 1.5  2005/02/26 00:44:24  cheshire
+Restore default reg domain if user deletes text and clicks "apply"
+
 Revision 1.4  2005/02/25 02:29:28  cheshire
 Show yellow dot for "update in progress"
 
@@ -102,6 +105,7 @@ typedef struct MyDNSServiceState {
 	NSArray        *currentBrowseDomainsArray;
 	NSMutableArray *browseDomainsArray;
 	NSMutableArray *defaultBrowseDomainsArray;
+    NSString       *defaultRegDomain;
 
     NSString       *hostNameSharedSecretName;
     NSString       *hostNameSharedSecretValue;
@@ -141,6 +145,9 @@ typedef struct MyDNSServiceState {
 - (NSMutableArray *)defaultBrowseDomainsArray;
 - (NSArray *)currentBrowseDomainsArray;
 - (NSString *)currentHostName;
+- (NSString *)defaultRegDomain;
+- (void)setDefaultRegDomain:(NSString *)domain;
+
 
 
 - (void)enableApplyButton;

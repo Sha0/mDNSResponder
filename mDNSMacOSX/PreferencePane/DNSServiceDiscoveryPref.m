@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.6  2005/02/26 00:44:24  cheshire
+Restore default reg domain if user deletes text and clicks "apply"
+
 Revision 1.5  2005/02/25 02:29:28  cheshire
 Show yellow dot for "update in progress"
 
@@ -145,7 +148,7 @@ static void ServiceDomainEnumReply( DNSServiceRef sdRef, DNSServiceFlags flags, 
     // Remove trailing dot from domain name.
     decodedDomainString[strlen(decodedDomainString)-1] = '\0';
     
-    domainString = [[NSString alloc] initWithUTF8String:(const char *)decodedDomainString];
+    domainString = [[[NSString alloc] initWithUTF8String:(const char *)decodedDomainString] autorelease];
 
     if (enumType & kDNSServiceFlagsRegistrationDomains) {
         domainArray    = [me registrationDataSource];
@@ -160,10 +163,10 @@ static void ServiceDomainEnumReply( DNSServiceRef sdRef, DNSServiceFlags flags, 
 	if (flags & kDNSServiceFlagsAdd) {
 		[domainArray removeObject:domainString];  // How can I check if an object is in the array?
 		[domainArray addObject:domainString];
-        if ((flags & kDNSServiceFlagsDefault) && currentDomain && ([currentDomain length] == 0)) {
-            [domainComboBox setStringValue:domainString];
-		}
-        if ((flags & kDNSServiceFlagsDefault) && !(enumType & kDNSServiceFlagsRegistrationDomains)) {
+        if ((flags & kDNSServiceFlagsDefault) && (enumType & kDNSServiceFlagsRegistrationDomains)) {
+			[me setDefaultRegDomain:domainString];
+			if ([[domainComboBox stringValue] length] == 0) [domainComboBox setStringValue:domainString];
+		} else if ((flags & kDNSServiceFlagsDefault) && !(enumType & kDNSServiceFlagsRegistrationDomains)) {
 			[defaultBrowseDomainsArray removeObject:domainString];
 			[defaultBrowseDomainsArray addObject:domainString];
 		}
@@ -172,9 +175,7 @@ static void ServiceDomainEnumReply( DNSServiceRef sdRef, DNSServiceFlags flags, 
     if (moreComing == NO) {
         [domainArray sortUsingFunction:MyArrayCompareFunction context:nil];
         [domainComboBox reloadData];
-    }
-    
-    [domainString release];
+    }    
 }
 
 
@@ -231,8 +232,7 @@ MySocketReadCallback(CFSocketRef s, CFSocketCallBackType type, CFDataRef address
     
     /* Read a reply from the mDNSResponder.  */
     err= DNSServiceProcessResult(query->service);
-    if (err != kDNSServiceErr_NoError)
-    {
+    if (err != kDNSServiceErr_NoError) {
         fprintf(stderr, "DNSServiceProcessResult returned %d\n", err);
         
         /* Terminate the query operation and release the CFRunLoopSource and CFSocket. */
@@ -314,13 +314,12 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     assert(store != NULL);
         
     NSDictionary *dynamicDNS = (NSDictionary *)SCDynamicStoreCopyValue(store, SC_DYNDNS_STATE_KEY);
-    if (dynamicDNS)
-    	{
+    if (dynamicDNS) {
         NSDictionary *hostNames = [dynamicDNS objectForKey:(NSString *)SC_DYNDNS_HOSTNAMES_KEY];
         NSDictionary *infoDict  = [hostNames objectForKey:lowercaseDomain];
         if (infoDict) status = [[infoDict objectForKey:(NSString*)SC_DYNDNS_STATUS_KEY] intValue];
         CFRelease(dynamicDNS);
-	    }
+	}
     CFRelease(store);
 
     return status;
@@ -542,6 +541,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     prefsNeedUpdating         = NO;
     toolInstalled             = NO;
 	browseDomainListEnabled   = NO;
+	defaultRegDomain          = nil;
     currentRegDomain          = nil;
 	currentBrowseDomainsArray = nil;
     currentHostName           = nil;
@@ -814,6 +814,21 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 {
     return currentHostName;
 }
+
+
+- (NSString *)defaultRegDomain
+{
+	return defaultRegDomain;
+}
+
+
+- (void)setDefaultRegDomain:(NSString *)domain
+{
+	[defaultRegDomain release];
+	defaultRegDomain = domain;
+	[defaultRegDomain retain];
+}
+
 
 - (void)didSelect
 {
@@ -1090,6 +1105,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
         } else {
 			currentWideAreaState = NO;
 			[self toggleWideAreaBonjour:NO];
+            if (defaultRegDomain != nil) [regDomainsComboBox setStringValue:defaultRegDomain];
 		}
     } else if (regSecretWasSet) {
         WriteRegistrationDomain((CFDataRef)[self dataForDomain:@"" isEnabled:NO]);
