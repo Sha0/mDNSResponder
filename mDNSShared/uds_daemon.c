@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.177  2005/02/25 03:05:41  cheshire
+Change "broken pipe" message to debugf()
+
 Revision 1.176  2005/02/24 18:44:45  ksekar
 <rdar://problem/4018516> Printer Sharing does not get re-registered with wide-area
 
@@ -3256,7 +3259,7 @@ static int send_msg(reply_state *rs)
 #if !defined(PLATFORM_NO_EPIPE)
             if (dnssd_errno() == EPIPE)
             	{
-                LogMsg("%3d: broken pipe", rs->sd);
+                debugf("%3d: broken pipe", rs->sd);
                 rs->ts = t_terminated;
                 rs->request->ts = t_terminated;
                 return t_terminated;
