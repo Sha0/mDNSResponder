@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.18  2004/06/11 19:56:31  cheshire
+To be callable from the broadest range of clients on Windows (e.g. Visual Basic, C#, etc.)
+API routines have to be declared as "__stdcall", instead of the C default, "__cdecl"
+
 Revision 1.17  2004/06/01 14:34:48  cheshire
 For compatibility with older compilers, change '//' comments to ' / * ... * / '
 
@@ -84,6 +88,13 @@ Update to APSL 2.0
 
 #ifdef  __cplusplus
     extern "C" {
+#endif
+
+// standard calling convention under Win32 is __stdcall
+#if defined(WIN32)
+#	define DNSSD_API	__stdcall
+#else
+#	define DNSSD_API
 #endif
 
 #if defined(__FreeBSD__) && (__FreeBSD_version < 500000)
@@ -230,7 +241,7 @@ typedef int32_t DNSServiceErrorType;
  *                  error.
  */
 
-int DNSServiceRefSockFD(DNSServiceRef sdRef);
+int DNSSD_API DNSServiceRefSockFD(DNSServiceRef sdRef);
 
 
 /* DNSServiceProcessResult()
@@ -251,7 +262,7 @@ int DNSServiceRefSockFD(DNSServiceRef sdRef);
  *                  an error code indicating the specific failure that occurred.
  */
 
-DNSServiceErrorType DNSServiceProcessResult(DNSServiceRef sdRef);
+DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef);
 
 
 /* DNSServiceRefDeallocate()
@@ -280,7 +291,7 @@ DNSServiceErrorType DNSServiceProcessResult(DNSServiceRef sdRef);
  *
  */
 
-void DNSServiceRefDeallocate(DNSServiceRef sdRef);
+void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef);
 
 
 /*********************************************************************************************
@@ -319,7 +330,7 @@ void DNSServiceRefDeallocate(DNSServiceRef sdRef);
  *
  */
 
-typedef void (*DNSServiceDomainEnumReply)
+typedef void (DNSSD_API *DNSServiceDomainEnumReply)
     (
     DNSServiceRef                       sdRef,
     DNSServiceFlags                     flags,
@@ -358,7 +369,7 @@ typedef void (*DNSServiceDomainEnumReply)
  *                  is not initialized.)
  */
 
-DNSServiceErrorType DNSServiceEnumerateDomains
+DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
     (
     DNSServiceRef                       *sdRef,
     DNSServiceFlags                     flags,
@@ -401,7 +412,7 @@ DNSServiceErrorType DNSServiceEnumerateDomains
  *
  */
 
-typedef void (*DNSServiceRegisterReply)
+typedef void (DNSSD_API *DNSServiceRegisterReply)
     (
     DNSServiceRef                       sdRef,
     DNSServiceFlags                     flags,
@@ -476,7 +487,7 @@ typedef void (*DNSServiceRegisterReply)
  *
  */
 
-DNSServiceErrorType DNSServiceRegister
+DNSServiceErrorType DNSSD_API DNSServiceRegister
     (
     DNSServiceRef                       *sdRef,
     DNSServiceFlags                     flags,
@@ -524,7 +535,7 @@ DNSServiceErrorType DNSServiceRegister
  *                  error code indicating the error that occurred (the RecordRef is not initialized).
  */
 
-DNSServiceErrorType DNSServiceAddRecord
+DNSServiceErrorType DNSSD_API DNSServiceAddRecord
     (
     DNSServiceRef                       sdRef,
     DNSRecordRef                        *RecordRef,
@@ -564,7 +575,7 @@ DNSServiceErrorType DNSServiceAddRecord
  *                  error code indicating the error that occurred.
  */
 
-DNSServiceErrorType DNSServiceUpdateRecord
+DNSServiceErrorType DNSSD_API DNSServiceUpdateRecord
     (
     DNSServiceRef                       sdRef,
     DNSRecordRef                        RecordRef,     /* may be NULL */
@@ -596,7 +607,7 @@ DNSServiceErrorType DNSServiceUpdateRecord
  *                  error code indicating the error that occurred.
  */
 
-DNSServiceErrorType DNSServiceRemoveRecord
+DNSServiceErrorType DNSSD_API DNSServiceRemoveRecord
     (
     DNSServiceRef                 sdRef,
     DNSRecordRef                  RecordRef,
@@ -639,7 +650,7 @@ DNSServiceErrorType DNSServiceRemoveRecord
  *
  */
 
-typedef void (*DNSServiceBrowseReply)
+typedef void (DNSSD_API *DNSServiceBrowseReply)
     (
     DNSServiceRef                       sdRef,
     DNSServiceFlags                     flags,
@@ -683,7 +694,7 @@ typedef void (*DNSServiceBrowseReply)
  *                  is not initialized.)
  */
 
-DNSServiceErrorType DNSServiceBrowse
+DNSServiceErrorType DNSSD_API DNSServiceBrowse
     (
     DNSServiceRef                       *sdRef,
     DNSServiceFlags                     flags,
@@ -744,7 +755,7 @@ DNSServiceErrorType DNSServiceBrowse
  *
  */
 
-typedef void (*DNSServiceResolveReply)
+typedef void (DNSSD_API *DNSServiceResolveReply)
     (
     DNSServiceRef                       sdRef,
     DNSServiceFlags                     flags,
@@ -791,7 +802,7 @@ typedef void (*DNSServiceResolveReply)
  *                  is not initialized.)
  */
 
-DNSServiceErrorType DNSServiceResolve
+DNSServiceErrorType DNSSD_API DNSServiceResolve
     (
     DNSServiceRef                       *sdRef,
     DNSServiceFlags                     flags,
@@ -849,7 +860,7 @@ DNSServiceErrorType DNSServiceResolve
  *                  case the DNSServiceRef is not initialized).
  */
 
-DNSServiceErrorType DNSServiceCreateConnection(DNSServiceRef *sdRef);
+DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
 
 
 /* DNSServiceRegisterRecord
@@ -879,7 +890,7 @@ DNSServiceErrorType DNSServiceCreateConnection(DNSServiceRef *sdRef);
  *
  */
 
- typedef void (*DNSServiceRegisterRecordReply)
+ typedef void (DNSSD_API *DNSServiceRegisterRecordReply)
     (
     DNSServiceRef                       sdRef,
     DNSRecordRef                        RecordRef,
@@ -933,7 +944,7 @@ DNSServiceErrorType DNSServiceCreateConnection(DNSServiceRef *sdRef);
  *                  not initialized.)
  */
 
-DNSServiceErrorType DNSServiceRegisterRecord
+DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
     (
     DNSServiceRef                       sdRef,
     DNSRecordRef                        *RecordRef,
@@ -986,7 +997,7 @@ DNSServiceErrorType DNSServiceRegisterRecord
  *
  */
 
-typedef void (*DNSServiceQueryRecordReply)
+typedef void (DNSSD_API *DNSServiceQueryRecordReply)
     (
     DNSServiceRef                       DNSServiceRef,
     DNSServiceFlags                     flags,
@@ -1039,7 +1050,7 @@ typedef void (*DNSServiceQueryRecordReply)
  *                  is not initialized.)
  */
 
-DNSServiceErrorType DNSServiceQueryRecord
+DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
     (
     DNSServiceRef                       *sdRef,
     DNSServiceFlags                     flags,
@@ -1119,7 +1130,7 @@ void DNSServiceReconfirmRecord
  *
  */
 
-int DNSServiceConstructFullName
+int DNSSD_API DNSServiceConstructFullName
     (
     char                            *fullName,
     const char                      *service,      /* may be NULL */
@@ -1194,7 +1205,7 @@ typedef struct _TXTRecordRef_t { char private[16]; } TXTRecordRef;
  *                  the TXTRecordRef.
  */
 
-void TXTRecordCreate
+void DNSSD_API TXTRecordCreate
     (
     TXTRecordRef     *txtRecord,
     uint16_t         bufferLen,
@@ -1212,7 +1223,7 @@ void TXTRecordCreate
  *
  */
 
-void TXTRecordDeallocate
+void DNSSD_API TXTRecordDeallocate
     (
     TXTRecordRef     *txtRecord
     );
@@ -1255,7 +1266,7 @@ void TXTRecordDeallocate
  *                  exceed the available storage.
  */
 
-DNSServiceErrorType TXTRecordSetValue
+DNSServiceErrorType DNSSD_API TXTRecordSetValue
     (
     TXTRecordRef     *txtRecord,
     const char       *key,
@@ -1279,7 +1290,7 @@ DNSServiceErrorType TXTRecordSetValue
  *
  */
 
-DNSServiceErrorType TXTRecordRemoveValue
+DNSServiceErrorType DNSSD_API TXTRecordRemoveValue
     (
     TXTRecordRef     *txtRecord,
     const char       *key
@@ -1299,7 +1310,7 @@ DNSServiceErrorType TXTRecordRemoveValue
  *
  */
 
-uint16_t TXTRecordGetLength
+uint16_t DNSSD_API TXTRecordGetLength
     (
     const TXTRecordRef *txtRecord
     );
@@ -1317,7 +1328,7 @@ uint16_t TXTRecordGetLength
  *
  */
 
-const void * TXTRecordGetBytesPtr
+const void DNSSD_API * TXTRecordGetBytesPtr
     (
     const TXTRecordRef *txtRecord
     );
@@ -1372,7 +1383,7 @@ const void * TXTRecordGetBytesPtr
  *
  */
 
-int TXTRecordContainsKey
+int DNSSD_API TXTRecordContainsKey
     (
     uint16_t         txtLen,
     const void       *txtRecord,
@@ -1401,7 +1412,7 @@ int TXTRecordContainsKey
  *                  For non-empty value, valueLen will be length of value data.
  */
 
-const void * TXTRecordGetValuePtr
+const void DNSSD_API * TXTRecordGetValuePtr
     (
     uint16_t         txtLen,
     const void       *txtRecord,
@@ -1423,7 +1434,7 @@ const void * TXTRecordGetValuePtr
  *
  */
 
-uint16_t TXTRecordGetCount
+uint16_t DNSSD_API TXTRecordGetCount
     (
     uint16_t         txtLen,
     const void       *txtRecord
@@ -1468,7 +1479,7 @@ uint16_t TXTRecordGetCount
  *                  TXTRecordGetCount()-1.
  */
 
-DNSServiceErrorType TXTRecordGetItemAtIndex
+DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
     (
     uint16_t         txtLen,
     const void       *txtRecord,
