@@ -1353,7 +1353,7 @@ mDNSexport int main(int argc, char **argv)
 						{
 						DNSServiceBrowserResult *const r = x->results;
 						DNSServiceDiscoveryReplyFlags flags = (r->next) ? DNSServiceDiscoverReplyFlagsMoreComing : 0;
-						kern_return_t status = DNSServiceBrowserReply_rpc(x->ClientMachPort, r->resultType, r->name, r->type, r->dom, flags, 0);
+						kern_return_t status = DNSServiceBrowserReply_rpc(x->ClientMachPort, r->resultType, r->name, r->type, r->dom, flags, 1);
 						// If we failed to send the mach message, try again in one second
 						if (status == MACH_SEND_TIMED_OUT)
 							{
