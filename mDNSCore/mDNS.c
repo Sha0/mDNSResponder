@@ -548,6 +548,9 @@ mDNSlocal void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 		((RR)->Additional2 == mDNSNULL || ((RR)->Additional2->RecordType & kDNSRecordTypeActiveMask)) && \
 		((RR)->DependentOn == mDNSNULL || ((RR)->DependentOn->RecordType & kDNSRecordTypeActiveMask))  )
 
+#define ResourceRecordIsValidInterfaceAnswer(RR, I) \
+	(ResourceRecordIsValidAnswer(RR) && ((RR)->InterfaceAddr.NotAnInteger == 0 || (RR)->InterfaceAddr.NotAnInteger == (I).NotAnInteger))
+
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 
 #define DefaultAnnounceCountForTypeShared ((mDNSu8)10)
@@ -2549,18 +2552,20 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		{
 		// (Note: This is an "if", not a "while". If we add a record, we'll find it again
 		// later in the "for" loop, and we will follow further "additional" links then.)
-		if (rr->Additional1 && ResourceRecordIsValidAnswer(rr->Additional1) && AddRecordToResponseList(nrp, rr->Additional1, mDNSNULL, rr))
+		if (rr->Additional1 && ResourceRecordIsValidInterfaceAnswer(rr->Additional1, InterfaceAddr) &&
+			AddRecordToResponseList(nrp, rr->Additional1, mDNSNULL, rr))
 			nrp = &rr->Additional1->NextResponse;
 
-		if (rr->Additional2 && ResourceRecordIsValidAnswer(rr->Additional2) && AddRecordToResponseList(nrp, rr->Additional2, mDNSNULL, rr))
+		if (rr->Additional2 && ResourceRecordIsValidInterfaceAnswer(rr->Additional2, InterfaceAddr) &&
+			AddRecordToResponseList(nrp, rr->Additional2, mDNSNULL, rr))
 			nrp = &rr->Additional2->NextResponse;
 		
 		// For SRV records, automatically add the Address record(s) for the target host
 		if (rr->rrtype == kDNSType_SRV)
-			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)				// Scan list of resource records
-				if (rr2->rrtype == kDNSType_A &&							// For all records type "A" ...
-					ResourceRecordIsValidAnswer(rr2) &&						// ... which are valid for answer ...
-					SameDomainName(&rr->rdata->u.srv.target, &rr2->name) &&	// ... whose name is the name of the SRV target
+			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
+				if (rr2->rrtype == kDNSType_A &&								// For all records type "A" ...
+					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceAddr) &&	// ... which are valid for answer ...
+					SameDomainName(&rr->rdata->u.srv.target, &rr2->name) &&		// ... whose name is the name of the SRV target
 					AddRecordToResponseList(nrp, rr2, mDNSNULL, rr))
 					nrp = &rr2->NextResponse;
 		}
