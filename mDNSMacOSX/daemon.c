@@ -746,16 +746,15 @@ mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainl
 	domainname srvname;
 	ConstructServiceName(&srvname, n, t, d);
 
+	LogOperation("%5d: DNSServiceRegistration(%##s) START", x->ClientMachPort, &srvname);
+
 	for (rr = mDNSStorage.ResourceRecords; rr; rr=rr->next)
 		if (rr->rrtype == kDNSType_SRV && SameDomainName(&rr->name, &srvname))
 			count++;
 
 	if (count)
-		LogMsg("%5d: DNSServiceRegistration(%##s) START; WARNING! %d identical instances",
-			x->ClientMachPort, &srvname, count+1);
-	else
-		LogOperation("%5d: DNSServiceRegistration(%##s) START",
-			x->ClientMachPort, &srvname);
+		LogMsg("%5d: WARNING! Bogus client application has now registered %d identical instances of service %##s",
+			x->ClientMachPort, count+1, &srvname);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
