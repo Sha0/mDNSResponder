@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.11  2005/03/16 03:04:51  shersche
+<rdar://problem/4050633> Don't issue multicast query multilabel dot-local names
+
 Revision 1.10  2005/02/23 22:16:07  shersche
 Unregister the NSP before registering to workaround an installer problem during upgrade installs
 
@@ -227,6 +230,7 @@ DEBUG_LOCAL OSStatus	HostsFileOpen( HostsFile ** self, const char * fname );
 DEBUG_LOCAL OSStatus	HostsFileClose( HostsFile * self );
 DEBUG_LOCAL void		HostsFileInfoFree( HostsFileInfo * info );
 DEBUG_LOCAL OSStatus	HostsFileNext( HostsFile * self, HostsFileInfo ** hInfo );
+DEBUG_LOCAL const char * GetNextLabel( const char *cstr, char label[64] );
 
 
 #if 0
@@ -599,6 +603,11 @@ DEBUG_LOCAL int WSPAPI
 	}
 	else
 	{
+		char			*	replyDomain;
+		int				labels		= 0;
+		const char	*	label[128];
+		char				text[64];
+
 		// <rdar://problem/3936771>
 		//
 		// Check to see if the name of this host is in the hosts table. If so,
@@ -610,6 +619,20 @@ DEBUG_LOCAL int WSPAPI
 		n = WideCharToMultiByte( CP_UTF8, 0, name, -1, translated, sizeof( translated ), NULL, NULL );
 		require_action( n > 0, exit, err = WSASERVICE_NOT_FOUND );
 		require_action( InHostsTable( translated ) == FALSE, exit, err = WSASERVICE_NOT_FOUND );
+
+		// <rdar://problem/4050633>
+
+		// Don't resolve multi-label name
+
+		replyDomain = translated;
+
+		while ( *replyDomain )
+		{
+			label[labels++]	= replyDomain;
+			replyDomain			= GetNextLabel(replyDomain, text);
+		}
+
+		require_action( labels == 2, exit, err = WSASERVICE_NOT_FOUND );
 	}
 
 	// The name ends in .local ( and isn't in the hosts table ), .0.8.e.f.ip6.arpa, or .254.169.in-addr.arpa so start the resolve operation. Lazy initialize DNS-SD if needed.
@@ -1983,4 +2006,35 @@ exit:
 	}
 
 	return err;
+}
+
+
+//===========================================================================================================================
+//	GetNextLabel
+//===========================================================================================================================
+DEBUG_LOCAL const char*
+GetNextLabel(const char *cstr, char label[64])
+{
+	char *ptr = label;
+	while (*cstr && *cstr != '.')								// While we have characters in the label...
+		{
+		char c = *cstr++;
+		if (c == '\\')
+			{
+			c = *cstr++;
+			if (isdigit(cstr[-1]) && isdigit(cstr[0]) && isdigit(cstr[1]))
+				{
+				int v0 = cstr[-1] - '0';						// then interpret as three-digit decimal
+				int v1 = cstr[ 0] - '0';
+				int v2 = cstr[ 1] - '0';
+				int val = v0 * 100 + v1 * 10 + v2;
+				if (val <= 255) { c = (char)val; cstr += 2; }	// If valid three-digit decimal value, use it
+				}
+			}
+		*ptr++ = c;
+		if (ptr >= label+64) return(NULL);
+		}
+	if (*cstr) cstr++;											// Skip over the trailing dot (if present)
+	*ptr++ = 0;
+	return(cstr);
 }
