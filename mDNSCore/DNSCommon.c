@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.8  2004/01/24 23:24:36  cheshire
+Expanded out the list of local domains to reduce risk of mistakes in future
+
 Revision 1.7  2004/01/24 08:32:30  bradley
 Mask values with 0xFF before casting to avoid runtime truncation errors on Windows debug builds.
 Separated octal-escaped sequences preceding decimal digits to avoid errors with some compilers wanting
@@ -201,6 +204,12 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 
 mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 	{
+	// Domains that are defined to be resolved via link-local multicast are:
+	// local., 254.169.in-addr.arpa., and 0.8.E.F.ip6.arpa.
+	static const domainname *n0 = (domainname*)"\x5" "local";
+	static const domainname *n1 = (domainname*)"\x3" "254" "\x3" "169"                     "\x7" "in-addr" "\x4" "arpa";
+	static const domainname *n2 = (domainname*)"\x1" "0"   "\x1" "8"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+
 	const domainname *d1, *d2, *d3, *d4, *d5, *d6;	// Top-level domain, second-level domain, etc.
 	d1 = d2 = d3 = d4 = d5 = d6 = mDNSNULL;
 	while (d->c[0])
@@ -209,14 +218,9 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 		d = (domainname*)(d->c + 1 + d->c[0]);
 		}
 
-	// Domains that are defined to be resolved via link-local multicast are:
-	// local., 254.169.in-addr.arpa., and 0.8.E.F.ip6.arpa.
-	// Note that we use octal ('\ooo') instead of hex ('\xhh') because trying to use "\x3254" doesn't work.
-	// Escape sequences preceding digits use separate concatenated strings to avoid errors on some compilers that
-	// want to signal potentially hidden errors about the subsequent digit not being part of the octal sequence.
-	if (d1 && SameDomainName(d1, (domainname*)"\005local")) return(mDNStrue);
-	if (d4 && SameDomainName(d4, (domainname*)"\003""254\003""169\007in-addr\004arpa")) return(mDNStrue);
-	if (d6 && SameDomainName(d6, (domainname*)"\001""0\001""8\001e\001f\003ip6\004arpa")) return(mDNStrue);
+	if (d1 && SameDomainName(d1, n0)) return(mDNStrue);
+	if (d4 && SameDomainName(d4, n1)) return(mDNStrue);
+	if (d6 && SameDomainName(d6, n2)) return(mDNStrue);
 	return(mDNSfalse);
 	}
 
