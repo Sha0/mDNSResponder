@@ -607,7 +607,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 		return(err);
 		}
 
-	debugf("Received a request to update the record of type: %d length: %d for reference: %X", type, data_len, reference);
+	debugf("Received a request to update the record of length: %d for reference: %X", data_len, reference);
 	return(err);
 	}
 
