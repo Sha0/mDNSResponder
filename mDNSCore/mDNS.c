@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.513  2005/01/21 00:07:54  cheshire
+<rdar://problem/3962717> Infinite loop when the same service is registered twice, and then suffers a name conflict
+
 Revision 1.512  2005/01/20 00:37:45  cheshire
 <rdar://problem/3941448> mDNSResponder crashed in mDNSCoreReceiveResponse
 Take care not to recycle records while they are on the CacheFlushRecords list
@@ -2619,6 +2622,7 @@ typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt)
 	{
+	AuthRecord *r2;
 	mDNSu8 RecordType = rr->resrec.RecordType;
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 
@@ -2634,12 +2638,9 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		// We found our record on the main list. See if there are any duplicates that need special handling.
 		if (drt == mDNS_Dereg_conflict)		// If this was a conflict, see that all duplicates get the same treatment
 			{
-			AuthRecord *r2 = m->DuplicateRecords;
-			while (r2)
-				{
-				if (RecordIsLocalDuplicate(r2, rr)) { mDNS_Deregister_internal(m, r2, drt); r2 = m->DuplicateRecords; }
-				else r2=r2->next;
-				}
+			// Scan for duplicates of rr, and mark them for deregistration at the end of this routine, after we've finished
+			// deregistering rr. We need to do this scan *before* we give the client the chance to free and reuse the rr memory.
+			for (r2 = m->DuplicateRecords; r2; r2=r2->next) if (RecordIsLocalDuplicate(r2, rr)) r2->ProbeCount = 0xFF;						
 			}
 		else
 			{
@@ -2735,12 +2736,24 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
 		// so any attempt to touch rr after this is likely to lead to a crash.
 		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-		if (drt == mDNS_Dereg_conflict)
+		if (drt != mDNS_Dereg_conflict)
+			{
+			if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_MemFree);			// MUST NOT touch rr after this
+			}
+		else
 			{
 			RecordProbeFailure(m, rr);
-			if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_NameConflict);
+			if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_NameConflict);	// MUST NOT touch rr after this
+			// Now that we've finished deregistering rr, check our DuplicateRecords list for any that we marked previously.
+			// Note that with all the client callbacks going on, by the time we get here all the
+			// records we marked may have been explicitly deregistered by the client anyway.
+			r2 = m->DuplicateRecords;
+			while (r2)
+				{
+				if (r2->ProbeCount != 0xFF) r2 = r2->next;
+				else { mDNS_Deregister_internal(m, r2, mDNS_Dereg_conflict); r2 = m->DuplicateRecords; }
+				}
 			}
-		else if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_MemFree);
 		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 		}
 	return(mStatus_NoError);
