@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.42  2004/06/04 22:36:16  ksekar
+Properly set u->nextevent in uDNS_Execute
+
 Revision 1.41  2004/06/04 08:58:29  ksekar
 <rdar://problem/3668624>: Keychain integration for secure dynamic update
 
@@ -2836,6 +2839,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	const mDNSAddr *server = getInitializedDNS(&m->uDNS_info);
 	mDNSs32 timenow = mDNSPlatformTimeNow();
 	
+	u->nextevent = timenow + 0x78000000;
 	if (!server) { debugf("uDNS_Execute - no DNS server"); return; }	
 	
 	for (q = u->ActiveQueries; q; q = q->next)
@@ -2883,28 +2887,36 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	for (rr = u->RecordRegistrations; rr; rr = rr->next)
 		{
 		rInfo = &rr->uDNS_info;		
-		if (rInfo->lease && rInfo->expire <= timenow && rInfo->expire > 0 && rInfo->state == regState_Registered)
-			{
-			debugf("refreshing record %s", rr->resrec.name.c);
-			rInfo->state = regState_Refresh;
-			sendRecordRegistration(m, rr);
-			}
+		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
+		    {		    
+		    if (rInfo->expire < timenow)
+		        {
+		        debugf("refreshing record %s", rr->resrec.name.c);
+		        rInfo->state = regState_Refresh;
+		        sendRecordRegistration(m, rr);
+		        }
+		    else if (rInfo->expire < u->nextevent) u->nextevent = rInfo->expire;
+		    }
 		}
 	//!!!KRS list should be pre-sorted by expiration
 	for (srs = u->ServiceRegistrations; srs; srs = srs->next)
 		{
-		rInfo = &srs->uDNS_info;		
-		if (rInfo->lease && rInfo->expire <= timenow && rInfo->expire > 0 && rInfo->state == regState_Registered)
-			{
-			debugf("refreshing service %s", srs->RR_SRV.resrec.name.c);
-			rInfo->state = regState_Refresh;
-			SendServiceRegistration(m, srs);
-			}
-		}	
+		rInfo = &srs->uDNS_info;	
+		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
+		    {		    
+		    if (rInfo->expire < timenow)
+		        {	
+			    debugf("refreshing service %s", srs->RR_SRV.resrec.name.c);
+			    rInfo->state = regState_Refresh;
+			    SendServiceRegistration(m, srs);
+		        }
+		    else if (rInfo->expire < u->nextevent) u->nextevent = rInfo->expire;
+		    }	
+		}
 	}
 
 mDNSexport void uDNS_Init(mDNS *const m)
 	{
 	mDNSPlatformMemZero(&m->uDNS_info, sizeof(uDNS_GlobalInfo));
-	m->uDNS_info.nextevent = mDNSPlatformTimeNow() + mDNSPlatformOneSecond;
+	m->uDNS_info.nextevent = mDNSPlatformTimeNow() + 0x78000000;
 	}
