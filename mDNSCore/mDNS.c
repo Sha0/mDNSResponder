@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.290  2003/08/21 02:25:23  cheshire
+Minor changes to comments and debugf() messages
+
 Revision 1.289  2003/08/21 02:21:50  cheshire
 <rdar://problem/3386473> Efficiency: Reduce repeated queries
 
@@ -3491,7 +3494,7 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, 
 		rr->resrec.rroriginalttl     = interval * 4 / mDNSPlatformOneSecond;
 		SetNextCacheCheckTime(m, rr);
 		}
-	debugf("mDNS_Reconfirm_internal: %ld ticks to go for %s", RRExpireTime(rr) - m->timenow, GetRRDisplayString(m, rr));
+	debugf("mDNS_Reconfirm_internal:%5ld ticks to go for %s", RRExpireTime(rr) - m->timenow, GetRRDisplayString(m, rr));
 	return(mStatus_NoError);
 	}
 
@@ -3539,11 +3542,12 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 				// then undo that last question and try again next time
 				if (query->h.numQuestions > 1 && newptr + forecast >= limit)
 					{
-					debugf("BuildQuestion: Retracting question %##s new forecast total %d", q->qname.c, newptr + forecast - query->data);
+					debugf("BuildQuestion: Retracting question %##s (%s) new forecast total %d",
+						q->qname.c, DNSTypeName(q->qtype), newptr + forecast - query->data);
 					query->h.numQuestions--;
 					ka = *kalistptrptr;		// Go back to where we started and retract these answer records
 					while (*ka) { CacheRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
-					return(mDNSfalse);
+					return(mDNSfalse);		// Return false, so we'll try again in the next packet
 					}
 				}
 
@@ -4167,7 +4171,7 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 
 mDNSlocal void AnswerLocalOnlyQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddRecord)
 	{
-	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion) LogMsg("AnswerLocalOnlyQuestions ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = m->LocalOnlyQuestions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewLocalOnlyQuestions)
 		{
@@ -5338,9 +5342,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							pkt.r.resrec.rdlength, InterfaceID, GetRRDisplayString(m, &pkt.r));
 					rr->TimeRcvd  = m->timenow;
 					
-					// If this record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
 					if (pkt.r.resrec.RecordType & kDNSRecordTypeUniqueMask)
 						{
+						// If this packet record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
 						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList)
 							{ *cfp = rr; cfp = &rr->NextInCFList; }
 
@@ -5732,6 +5736,7 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 			query->qAv6.InterfaceID   = answer->InterfaceID;
 			AssignDomainName(query->qAv6.qname, answer->rdata->u.srv.target);
 			}
+		debugf("FoundServiceInfoSRV: Restarting address queries for %##s", query->qAv4.qname.c);
 		mDNS_StartQuery_internal(m, &query->qAv4);
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
@@ -5804,6 +5809,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	// of these cases we may have lost information, so we should re-issue the TXT question.
 	if (query->GotTXT > 1)
 		{
+		debugf("FoundServiceInfo: Restarting TXT queries for %##s", query->qTXT.qname.c);
 		mDNS_StopQuery_internal(m, &query->qTXT);
 		mDNS_StartQuery_internal(m, &query->qTXT);
 		}
