@@ -640,7 +640,8 @@ mDNSlocal mDNSu32 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		}
 	}
 
-// rr is a ResourceRecord in our cache (kDNSRecordTypePacketAnswer or kDNSRecordTypePacketAdditional)
+// rr is a ResourceRecord in our cache
+// (kDNSRecordTypePacketAnswer/kDNSRecordTypePacketAdditional/kDNSRecordTypePacketUniqueAns/kDNSRecordTypePacketUniqueAdd)
 mDNSlocal DNSQuestion *CacheRRActive(const mDNS *const m, ResourceRecord *rr)
 	{
 	DNSQuestion *q;
@@ -723,6 +724,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->NextResponse      = mDNSNULL;
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
+	rr->LastSendTime      = timenow - mDNSPlatformOneSecond;
 	rr->NextSendTime      = timenow;
 	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
 	rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
@@ -736,7 +738,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->UseCount          = 0;			// Not strictly relevant for a local record
 	rr->UnansweredQueries = 0;			// Not strictly relevant for a local record
 	rr->Active            = mDNSfalse;	// Not strictly relevant for a local record
-	
+	rr->NewData           = mDNSfalse;	// Not strictly relevant for a local record
+
 	// Field Group 4: The actual information pertaining to this resource record
 //	rr->interface         = already set in mDNS_SetupResourceRecord
 //	rr->name.c            = MUST be set by client
@@ -800,6 +803,14 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 		if (conflict && RecordType == kDNSRecordTypeShared)
 			debugf("mDNS_Deregister_internal: Cannot have a conflict on a shared record! %##s", rr->name.c);
 
+		// If we have an update queued up which never executed, give the client a chance to free that memory
+		if (rr->NewRData)
+			{
+			RData *n = rr->NewRData;
+			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
+			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n);	// ... and let the client free this memory, if necessary
+			}
+		
 		if (RecordType == kDNSRecordTypeShared && rr->Callback)
 			rr->Callback(m, rr, mStatus_MemFree);
 		else if (conflict)
@@ -956,9 +967,10 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 	}
 
 // Put a domain name, type, class, ttl, length, and type-specific data
-// domainname is a fully-qualified name (i.e. assumed to be ending in a dot, even if it doesn't)
+// domainname is a fully-qualified name
+// Only pass the "m" and "timenow" parameters in cases where the LastSendTime is to be updated, and the kDNSClass_UniqueRRSet bit set
 mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
-	mDNSu16 *count, const ResourceRecord *rr)
+	mDNSu16 *count, ResourceRecord *rr, mDNS *const m, const mDNSs32 timenow)
 	{
 	mDNSu8 *endofrdata;
 	mDNSu32 actualLength;
@@ -988,6 +1000,23 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mD
 	ptr[8] = (mDNSu8)(actualLength >> 8);
 	ptr[9] = (mDNSu8)(actualLength     );
 
+	if (m)														// If the 'm' parameter was passed in...
+		{
+		rr->LastSendTime = timenow;								// ... then update LastSendTime
+		if (rr->RecordType & kDNSRecordTypeUniqueMask)			// If it is supposed to be unique
+			{
+			const ResourceRecord *a = mDNSNULL;
+			const ResourceRecord *b = rr->RRSet;
+			// If we find a member of the same set that hasn't been updated within the last quarter second, don't set the bit
+			if (rr->RRSet)
+				for (a = m->ResourceRecords; a; a=a->next)
+					if (a->RRSet == b && timenow - a->LastSendTime > mDNSPlatformOneSecond/4)
+						break;
+			if (a == mDNSNULL)
+				ptr[2] |= kDNSClass_UniqueRRSet >> 8;
+			}
+		}
+
 	(*count)++;
 	return(endofrdata);
 	}
@@ -1002,7 +1031,7 @@ mDNSlocal mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, con
 	ptr[1] = (mDNSu8)(rr->rrtype      );
 	ptr[2] = (mDNSu8)(rr->rrclass >> 8);				// Put class
 	ptr[3] = (mDNSu8)(rr->rrclass     );
-	ptr[4] = ptr[5] = ptr[6] = ptr[7] = 0;				// TTL is zero (we're deleting this RRSet)
+	ptr[4] = ptr[5] = ptr[6] = ptr[7] = 0;				// TTL is zero
 	ptr[8] = ptr[9] = 0;								// RDATA length is zero
 	(*count)++;
 	return(ptr + 10);
@@ -1144,6 +1173,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->NextResponse      = mDNSNULL;
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
+	rr->LastSendTime      = 0;
 	rr->NextSendTime      = 0;
 	rr->NextSendInterval  = 0;
 	rr->NewRData          = mDNSNULL;
@@ -1156,6 +1186,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->UseCount          = 0;
 	rr->UnansweredQueries = 0;
 	rr->Active            = mDNSfalse;
+	rr->NewData           = mDNStrue;
 
 	// Field Group 4: The actual information pertaining to this resource record
 	rr->InterfaceAddr     = InterfaceAddr;
@@ -1165,12 +1196,14 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	if (ptr + 10 > end) { debugf("getResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
 	
 	rr->rrtype            = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
-	rr->rrclass           = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
+	rr->rrclass           = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSQClass_Mask;
 	rr->rroriginalttl     = (mDNSu32)((mDNSu32)ptr[4] << 24 | (mDNSu32)ptr[5] << 16 | (mDNSu32)ptr[6] << 8 | ptr[7]);
 	if (rr->rroriginalttl > 0x70000000UL / mDNSPlatformOneSecond)
 		rr->rroriginalttl = 0x70000000UL / mDNSPlatformOneSecond;
 	rr->rrremainingttl    = 0;
 	pktrdlength           = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
+	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8))
+		rr->RecordType |= kDNSRecordTypeUniqueMask;
 	ptr += 10;
 	if (ptr + pktrdlength > end) { debugf("getResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
 
@@ -1383,7 +1416,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 			m->CurrentRecord = rr->next;
 			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
 				rr->RecordType == kDNSRecordTypeShared && rr->rrremainingttl == 0 &&
-				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, mDNSNULL, 0)))
 				{
 				numDereg++;
 				responseptr = newptr;
@@ -1406,7 +1439,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 					if (ResourceRecordIsValidAnswer(rr))		// First see if we have to de-register the old data
 						{
 						rr->rrremainingttl = 0;					// Clear rroriginalttl before putting record
-						newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr);
+						newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, mDNSNULL, 0);
 						if (newptr)
 							{
 							numDereg++;
@@ -1415,11 +1448,11 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 						rr->rrremainingttl = rr->rroriginalttl;	// Now restore rroriginalttl
 						}
 					rr->rdata = rr->NewRData;	// Update our rdata
-					rr->NewRData = mDNSNULL;	// Clear the NewRData pointer
-					if (rr->UpdateCallback) rr->UpdateCallback(m, rr, OldRData);	// And let the client know
+					rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
+					if (rr->UpdateCallback) rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
 					}
 				if (rr->RecordType == kDNSRecordTypeDeregistering &&
-					(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+					(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, mDNSNULL, 0)))
 					{
 					numDereg++;
 					responseptr = newptr;
@@ -1436,7 +1469,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
 				rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
 				timenow + mDNSPlatformOneSecond - rr->NextSendTime >= 0 &&
-				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, m, timenow)))
 					{
 					numAnnounce++;
 					responseptr = newptr;
@@ -1454,7 +1487,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
 				rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr) &&
-				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, m, timenow)))
 					{
 					numAnswer++;
 					responseptr = newptr;
@@ -1468,7 +1501,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 				rr->SendPriority == kDNSSendPriorityAdditional)
 				{
 				if (ResourceRecordIsValidAnswer(rr) &&
-					(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAdditionals, rr)))
+					(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAdditionals, rr, m, timenow)))
 						responseptr = newptr;
 				rr->SendPriority = 0;	// Clear SendPriority anyway, even if we didn't put the additional in the packet
 				rr->Requester    = zeroIPAddr;
@@ -1698,7 +1731,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketAnswers(DNSMessage *query, mDNSu8 *queryptr,
 		mDNSu8 *newptr;
 		// Need to update rrremainingttl correctly before we put this cache record in the packet
 		rr->rrremainingttl = rr->rroriginalttl - timesincercvd / mDNSPlatformOneSecond;
-		newptr = putResourceRecord(query, queryptr, limit, &query->h.numAnswers, rr);
+		newptr = putResourceRecord(query, queryptr, limit, &query->h.numAnswers, rr, mDNSNULL, 0);
 		if (newptr)
 			{
 			*dups_ptr = rr->NextDupSuppress;
@@ -1738,7 +1771,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketUpdates(mDNS *const m, DNSMessage *query, mDNS
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->IncludeInProbe)
 			{
-			mDNSu8 *newptr = putResourceRecord(query, queryptr, limit, &query->h.numAuthorities, rr);
+			mDNSu8 *newptr = putResourceRecord(query, queryptr, limit, &query->h.numAuthorities, rr, mDNSNULL, 0);
 			rr->IncludeInProbe = mDNSfalse;
 			if (newptr)
 				queryptr = newptr;
@@ -1819,7 +1852,7 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 #endif
 
 // rr is a new ResourceRecord just received into our cache
-// (type kDNSRecordTypePacketAnswer or kDNSRecordTypePacketAdditional)
+// (kDNSRecordTypePacketAnswer/kDNSRecordTypePacketAdditional/kDNSRecordTypePacketUniqueAns/kDNSRecordTypePacketUniqueAdd)
 mDNSlocal void TriggerImmediateQuestions(mDNS *const m, const ResourceRecord *const rr, const mDNSs32 timenow)
 	{
 	// If we just received a new record off the wire that we've never seen before, we want to ask our question again
@@ -1853,7 +1886,8 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 // AnswerLocalQuestions is *never* called directly as a result from withing a client API call
 // If new questions are created as a result of invoking client callbacks, they will be added to
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
-// rr is a ResourceRecord in our cache (kDNSRecordTypePacketAnswer or kDNSRecordTypePacketAdditional)
+// rr is a ResourceRecord in our cache
+// (kDNSRecordTypePacketAnswer/kDNSRecordTypePacketAdditional/kDNSRecordTypePacketUniqueAns/kDNSRecordTypePacketUniqueAdd)
 // NOTE: AnswerLocalQuestions calls AnswerQuestionWithResourceRecord which can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr, const mDNSs32 timenow)
@@ -1995,7 +2029,8 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 				// divided by the number of times it has been used (we want to keep frequently used records longer).
 				mDNSs32 count = (*rr)->UseCount < 100 ? 1 + (mDNSs32)(*rr)->UseCount : 100;
 				mDNSs32 age = (timenow - (*rr)->LastUsed) / count;
-				if ((*rr)->RecordType == kDNSRecordTypePacketAnswer) age /= 2;		// Keep answer records longer
+				mDNSu8 rtype = ((*rr)->RecordType) & ~kDNSRecordTypeUniqueMask;
+				if (rtype == kDNSRecordTypePacketAnswer) age /= 2;		// Keep answer records longer than additionals
 
 				if (bestage < age) { best = rr; bestage = age; }
 				}
@@ -2280,13 +2315,13 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 			{
 			if (rr->NR_AnswerTo)
 				{
-				mDNSu8 *p = putResourceRecord(reply, responseptr, limit, &reply->h.numAnswers, rr);
+				mDNSu8 *p = putResourceRecord(reply, responseptr, limit, &reply->h.numAnswers, rr, mDNSNULL, 0);
 				if (p) responseptr = p;
 				else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); reply->h.flags.b[0] |= kDNSFlag0_TC; }
 				}
 			else
 				{
-				mDNSu8 *p = putResourceRecord(reply, responseptr, limit, &reply->h.numAdditionals, rr);
+				mDNSu8 *p = putResourceRecord(reply, responseptr, limit, &reply->h.numAdditionals, rr, mDNSNULL, 0);
 				if (p) responseptr = p;
 				else debugf("GenerateUnicastResponse: No more space for additionals");
 				}
@@ -2335,6 +2370,9 @@ mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const Resou
 	return(mDNSNULL);
 	}
 
+// Find the canonical RRSet pointer for this RR received in a packet.
+// If we find any identical ResourceRecord in our authoritative list, then follow its RRSet
+// pointers to make sure we return the canonical member of this name/type/class
 mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRecord *const pktrr)
 	{
 	const ResourceRecord *rr;
@@ -2342,7 +2380,7 @@ mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRec
 		{
 		if (IdenticalResourceRecord(rr, pktrr))
 			{
-			while (rr->RRSet) rr = rr->RRSet;
+			while (rr->RRSet && rr != rr->RRSet) rr = rr->RRSet;
 			return(rr);
 			}
 		}
@@ -2709,6 +2747,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 					//debugf("Found RR %##s size %d already in cache", pktrr.name.c, pktrr.rdata->RDLength);
 					rr->TimeRcvd = timenow;
 					rr->UnansweredQueries = 0;
+					rr->NewData = mDNStrue;
 					// If we're deleting a record, push it out one second into the future
 					// to give other hosts on the network a chance to protest
 					if (pktrr.rroriginalttl == 0) rr->rroriginalttl = 1;
@@ -2729,7 +2768,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 					rr->rdata = &rr->rdatastorage;	// For now, all cache records use local storage
 					rr->next = m->rrcache;
 					m->rrcache = rr;
-					TriggerImmediateQuestions(m, rr, timenow);
+					if ((rr->RecordType & kDNSRecordTypeUniqueMask) == 0)
+						TriggerImmediateQuestions(m, rr, timenow);
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
 					AnswerLocalQuestions(m, rr, timenow);
 					}
@@ -2737,7 +2777,29 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 			}
 		}
 
-	TidyRRCache(m, timenow);
+	// If we have a cache, then run through all the new records that we've just added,
+	// clear their 'NewData' flags, and if they were marked as unique in the packet,
+	// then search our cache for any records with the same name/type/class,
+	// and purge them if they are more than one second old.
+	if (m->rrcache_size)
+		{
+		ResourceRecord *rr;
+		for (rr = m->rrcache; rr; rr=rr->next)
+			{
+			if (rr->NewData)
+				{
+				rr->NewData = mDNSfalse;
+				if (rr->RecordType & kDNSRecordTypeUniqueMask)
+					{
+					ResourceRecord *r;
+					for (r = m->rrcache; r; r=r->next)
+						if (SameResourceRecordSignature(rr, r) && timenow - r->TimeRcvd > mDNSPlatformOneSecond)
+							r->rroriginalttl = 0;
+					}
+				}
+			}
+		TidyRRCache(m, timenow);
+		}
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
@@ -3075,15 +3137,27 @@ mDNSexport mStatus mDNS_Register(mDNS *const m, ResourceRecord *const rr)
 	return(status);
 	}
 
-mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, RData *const newrdata, mDNSRecordUpdateCallback *Callback)
+mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 newttl,
+	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
+
+	// If we already have an update queued up which has not gone through yet, give the client a chance to free that memory
+	if (rr->NewRData)
+		{
+		RData *n = rr->NewRData;
+		rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
+		if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n);	// ... and let the client free this memory, if necessary
+		}
+	
 	rr->AnnounceCount    = DefaultAnnounceCountForRecordType(rr->RecordType);
 	rr->NextSendTime     = timenow;
 	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
 	rr->NextSendInterval = DefaultSendIntervalForRecordType(rr->RecordType);
 	rr->NewRData         = newrdata;
 	rr->UpdateCallback   = Callback;
+	rr->rroriginalttl    = newttl;
+	rr->rrremainingttl   = newttl;
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
 	}
@@ -3182,6 +3256,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		{
 		char buffer[256];
 		NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
+		if (!primary) primary = set;	// If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary set
 		
 		mDNS_SetupResourceRecord(&set->RR_A1,  mDNSNULL, set->ip, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
 		mDNS_SetupResourceRecord(&set->RR_A2,  mDNSNULL, set->ip, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
@@ -3202,11 +3277,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		ConvertCStringToDomainName(buffer, &set->RR_PTR.name);
 		set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
 	
-		if (primary)
-			{
-			set->RR_A1.RRSet = &primary->RR_A1;
-			set->RR_A2.RRSet = &primary->RR_A2;
-			}
+		set->RR_A1.RRSet = &primary->RR_A1;	// May refer to self
+		set->RR_A2.RRSet = &primary->RR_A2;	// May refer to self
 	
 		mDNS_Register_internal(m, &set->RR_A1,  timenow);
 		mDNS_Register_internal(m, &set->RR_A2,  timenow);
@@ -3348,13 +3420,13 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	return(mStatus_NoError);
 	}
 
-mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata)
+mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl)
 	{
 	ExtraResourceRecord **e = &sr->Extras;
 	while (*e) e = &(*e)->next;
 
 	extra->next          = mDNSNULL;
- 	mDNS_SetupResourceRecord(&extra->r, rdata, zeroIPAddr, extra->r.rrtype, 60, kDNSRecordTypeUnique, ServiceCallback, sr);
+ 	mDNS_SetupResourceRecord(&extra->r, rdata, zeroIPAddr, extra->r.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
 	extra->r.name        = sr->RR_SRV.name;
 	extra->r.DependentOn = &sr->RR_SRV;
 	
@@ -3370,11 +3442,11 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	while (*e && *e != extra) e = &(*e)->next;
 	if (!*e)
 		{
-		debugf("mDNS_AddRecordToService failed to remove record from %##s", extra->r.name.c);
+		debugf("mDNS_RemoveRecordFromService failed to remove record from %##s", extra->r.name.c);
 		return(mStatus_BadReferenceErr);
 		}
 
-	debugf("mDNS_AddRecordToService removing record from %##s", extra->r.name.c);
+	debugf("mDNS_RemoveRecordFromService removing record from %##s", extra->r.name.c);
 	
 	*e = (*e)->next;
 	mDNS_Deregister(m, &extra->r);
@@ -3402,7 +3474,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 		{
 		ExtraResourceRecord *e = extras;
 		extras = extras->next;
-		err = mDNS_AddRecordToService(m, sr, e, e->r.rdata);
+		err = mDNS_AddRecordToService(m, sr, e, e->r.rdata, e->r.rroriginalttl);
 		}
 	
 	return(err);

@@ -19,14 +19,16 @@
 #pragma mark - DNS Resource Record class and type constants
 #endif
 
-typedef enum				// From RFC 1035
+typedef enum						// From RFC 1035
 	{
-	kDNSClass_IN = 1,		// Internet
-	kDNSClass_CS,			// CSNET
-	kDNSClass_CH,			// CHAOS
-	kDNSClass_HS,			// Hesiod
-	kDNSClass_NONE = 254,	// Used in DNS UPDATE
-	kDNSQClass_ANY = 255	// Not a DNS class, but a DNS query class, meaning "all classes"
+	kDNSClass_IN          = 1,		// Internet
+	kDNSClass_CS          = 2,		// CSNET
+	kDNSClass_CH          = 3,		// CHAOS
+	kDNSClass_HS          = 4,		// Hesiod
+	kDNSClass_NONE        = 254,	// Used in DNS UPDATE [RFC 2136]
+	kDNSQClass_ANY        = 255,	// Not a DNS class, but a DNS query class, meaning "all classes"
+	kDNSQClass_Mask       = 0x7FFF,	// Multicast DNS uses the bottom 15 bits to identify the record class...
+	kDNSClass_UniqueRRSet = 0x8000	// ... and the top bit indicates that all other cached records are now invalid
 	} DNS_ClassValues;
 
 typedef enum				// From RFC 1035
@@ -145,6 +147,8 @@ enum
 
 	kDNSRecordTypePacketAnswer     = 0x10,	// Received in the Answer Section of a DNS Response
 	kDNSRecordTypePacketAdditional = 0x11,	// Received in the Additional Section of a DNS Response
+	kDNSRecordTypePacketUniqueAns  = 0x18,	// Received in the Answer Section of a DNS Response with kDNSQClass_CacheFlushBit set
+	kDNSRecordTypePacketUniqueAdd  = 0x19,	// Received in the Additional Section of a DNS Response with kDNSQClass_CacheFlushBit set
 
 	kDNSRecordTypeShared           = 0x20,	// Shared means record name does not have to be unique -- so use random delay on replies
 	kDNSRecordTypeVerified         = 0x28,	// Unique means mDNS should check that name is unique (and then send immediate replies)
@@ -220,6 +224,7 @@ struct ResourceRecord_struct
 	ResourceRecord *NextResponse;		// AR: Link to the next element in the chain of responses to generate
 	const mDNSu8   *NR_AnswerTo;		// AR: Set if this record was selected by virtue of being a direct answer to a question
 	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another
+	mDNSs32         LastSendTime;		// AR: In platform time units
 	mDNSs32         NextSendTime;		// AR: In platform time units
 	mDNSs32         NextSendInterval;	// AR: In platform time units
 	RData          *NewRData;			// AR: Set if we are updating this record with new rdata
@@ -232,6 +237,7 @@ struct ResourceRecord_struct
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
 	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
 	mDNSBool        Active;				// CR: Set if there is currently a question referencing this answer
+	mDNSBool        NewData;			// CR: Set if this is a record we just received
 
 	// Field Group 4: The actual information pertaining to this resource record
 	mDNSIPAddr      InterfaceAddr;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)
@@ -428,7 +434,8 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 								ResourceRecord *rrcachestorage, mDNSu32 rrcachesize, mDNSCallback *Callback, void *Context);
 extern void    mDNS_Close     (mDNS *const m);
 extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
-extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, RData *const newrdata, mDNSRecordUpdateCallback *Callback);
+extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 newttl,
+								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern void    mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
@@ -467,7 +474,7 @@ extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
                const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
                mDNSServiceCallback Callback, void *Context);
-extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata);
+extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr);
 extern void    mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
