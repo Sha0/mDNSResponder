@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.310  2003/10/07 20:27:05  cheshire
+Patch from Bob Bradley, to fix warning and compile error on Windows
+
 Revision 1.309  2003/09/26 01:06:36  cheshire
 <rdar://problem/3427923> Set kDNSClass_UniqueRRSet bit for updates too
 Made new routine HaveSentEntireRRSet() to check if flag should be set
@@ -3772,7 +3775,7 @@ mDNSlocal mDNSBool AccelerateThisQuery(mDNS *const m, DNSQuestion *q)
 	if (TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/2))
 		{
 		// We forecast: qname (n) type (2) class (2)
-		mDNSu32 forecast = DomainNameLength(&q->qname) + 4;
+		mDNSu16 forecast = DomainNameLength(&q->qname) + 4;
 		CacheRecord *rr;
 		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// If we have a resource record in our cache,
 			if (rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
@@ -6406,12 +6409,12 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	// even if we believe that we previously had an active representative of this interface.
 	if ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || FirstOfType || set->InterfaceActive)
 		{
+		DNSQuestion *q;
+		AuthRecord *rr;
 		// Use a small amount of randomness:
 		// In the case of a network administrator turning on an Ethernet hub so that all the connected machines establish link at
 		// exactly the same time, we don't want them to all go and hit the network with identical queries at exactly the same moment.
 		if (!m->SuppressSending) m->SuppressSending = m->timenow + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
-		DNSQuestion *q;
-		AuthRecord *rr;
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
