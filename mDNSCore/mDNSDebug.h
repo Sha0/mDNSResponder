@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.15  2003/12/08 20:55:26  rpantos
+Move some definitions here from mDNSMacOSX.h.
+
 Revision 1.14  2003/08/12 19:56:24  cheshire
 Update to APSL 2.0
 
@@ -104,6 +107,37 @@ extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1
 
 // LogMsg is used even in shipping code, to write truly serious error messages to syslog (or equivalent)
 extern void LogMsg(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+extern void LogMsgIdent(const char *ident, const char *format, ...);
+#define LogMsgNoIdent(args...) LogMsgIdent("", args)
+
+// LogInDebugMode() should be called when running in debug mode.
+extern void	LogInDebugMode( void );
+
+// Set this symbol to 1 to do extra debug checks on malloc() and free()
+// Set this symbol to 2 to write a log message for every malloc() and free()
+#define MACOSX_MDNS_MALLOC_DEBUGGING 0
+
+#if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
+extern void *mallocL(char *msg, unsigned int size);
+extern void freeL(char *msg, void *x);
+#else
+#define mallocL(X,Y) malloc(Y)
+#define freeL(X,Y) free(Y)
+#endif
+
+#if MACOSX_MDNS_MALLOC_DEBUGGING >= 2
+#define LogMalloc LogMsg
+#else
+#define	LogMalloc(ARGS...) ((void)0)
+#endif
+
+#define LogAllOperations 0
+
+#if LogAllOperations
+#define LogOperation LogMsg
+#else
+#define	LogOperation debugf
+#endif
 
 #ifdef	__cplusplus
 	}
