@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.49  2004/11/11 01:44:52  cheshire
+# Updated error message
+#
 # Revision 1.48  2004/10/06 02:22:19  cheshire
 # Changed MacRoman copyright symbol (should have been UTF-8 in any case :-) to ASCII-compatible "(c)"
 #
@@ -274,7 +277,8 @@ JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
 else
 
-$(error ERROR: Must specify target OS on command-line: "make os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris} [target]") 
+$(error ERROR: Must specify target OS on command-line, e.g. "make os=panther [target]".\
+Supported operating systems include: jaguar, panther, linux, netbsd, freebsd, openbsd, solaris) 
 endif
 endif
 endif
