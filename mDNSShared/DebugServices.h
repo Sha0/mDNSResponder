@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DebugServices.h,v $
+Revision 1.4  2004/04/15 08:59:08  bradley
+Removed deprecated debug and log levels and replaced them with modern equivalents.
+
 Revision 1.3  2004/04/08 09:29:55  bradley
 Manually do host->network byte order conversion to avoid needing libraries for htons/htonl. Changed
 hex dumps to better separate hex and ASCII. Added support for %.8a syntax in DebugSNPrintF for Fibre
@@ -308,9 +311,7 @@ typedef int32_t			DebugLevel;
 #define kDebugLevelVerbose				500
 #define kDebugLevelTrace 				800
 #define kDebugLevelInfo 				1000
-#define kDebugLevelRareInfo				2000
 #define kDebugLevelNotice				3000
-#define kDebugLevelAllowedError			4000
 #define kDebugLevelWarning				5000
 #define kDebugLevelAssert 				6000
 #define kDebugLevelRequire				7000
@@ -341,10 +342,8 @@ typedef int32_t						LogLevel;
 #define kLogLevelVerbose			500L
 #define kLogLevelTrace 				800L
 #define kLogLevelInfo 				1000L
-#define kLogLevelRareInfo			2000L
 #define kLogLevelNotice				3000L
 #define kLogLevelWarning			4000L
-#define kLogLevelAllowedError		5000L
 #define kLogLevelAssert 			6000L
 #define kLogLevelRequire			7000L
 #define kLogLevelError				8000L

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DebugServices.c,v $
+Revision 1.4  2004/04/15 08:59:08  bradley
+Removed deprecated debug and log levels and replaced them with modern equivalents.
+
 Revision 1.3  2004/04/08 09:29:55  bradley
 Manually do host->network byte order conversion to avoid needing libraries for htons/htonl. Changed
 hex dumps to better separate hex and ASCII. Added support for %.8a syntax in DebugSNPrintF for Fibre
@@ -1577,7 +1580,7 @@ DEBUG_EXPORT size_t DebugSNPrintFVAList(char *sbuffer, size_t buflen, const char
 							if (F.altForm == 0) flags |= kDebugFlagsNoASCII;
 							size = (max < size) ? max : size;
 							s = mDNS_VACB;	// Adjust s to point to the start of the buffer, not the end
-							i = DebugHexDump(0, 0, NULL, 0, 0, NULL, 0, a, a, size, flags, mDNS_VACB, sizeof(mDNS_VACB));
+							i = DebugHexDump(kDebugLevelMax, 0, NULL, 0, 0, NULL, 0, a, a, size, flags, mDNS_VACB, sizeof(mDNS_VACB));
 							}
 							break;
 				
@@ -3075,10 +3078,10 @@ require26Good:
 	
 	// dlog's
 	
-	dlog( kDebugLevelRareInfo, "dlog\n" );
-	dlog( kDebugLevelRareInfo, "dlog integer: %d\n", 123 );
-	dlog( kDebugLevelRareInfo, "dlog string:  \"%s\"\n", "test string" );
-	dlogmem( kDebugLevelRareInfo, data, sizeof( data ) );
+	dlog( kDebugLevelNotice, "dlog\n" );
+	dlog( kDebugLevelNotice, "dlog integer: %d\n", 123 );
+	dlog( kDebugLevelNotice, "dlog string:  \"%s\"\n", "test string" );
+	dlogmem( kDebugLevelNotice, data, sizeof( data ) );
 	
 	// Done
 	
