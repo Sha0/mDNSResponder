@@ -608,14 +608,28 @@ mStatus dDNS_Setup( mDNS *const m )
 mStatus dDNS_InitDNSConfig(mDNS *const m)
 	{
 	mStatus err;
+	static AuthRecord LocalRegPTR;
 
 	// start query for domains to be used in default (empty string domain) browses
 	err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
 
 	// provide .local automatically
 	SetSCPrefsBrowseDomain(m, &localdomain, mDNStrue);
+
+	// <rdar://problem/4055653> dns-sd -E does not return "local."
+	// register registration domain "local"
+	mDNS_SetupResourceRecord(&LocalRegPTR, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200, kDNSRecordTypeShared, NULL, NULL);
+	MakeDomainNameFromDNSNameString(LocalRegPTR.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeRegistration]);
+	AppendDNSNameString            (LocalRegPTR.resrec.name, "local");
+	AssignDomainName(&LocalRegPTR.resrec.rdata->u.name, &localdomain);
+	err = mDNS_Register(m, &LocalRegPTR);
+	if (err)
+		{
+		LogMsg("ERROR: dDNS_InitDNSConfig - mDNS_Register returned error %d", err);
+		}
+
     return mStatus_NoError;
-}
+	}
 
 void
 dDNS_FreeIPAddrList(IPAddrListElem * list)
