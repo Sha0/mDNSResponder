@@ -43,6 +43,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.197  2003/07/02 22:33:05  cheshire
+<rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
+Minor refinements:
+When cache is exhausted, verify that rrcache_totalused == rrcache_size and report if not
+Allow cache to grow to 512 records before considering it a potential denial-of-service attack
+
 Revision 1.196  2003/07/02 21:19:45  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -3511,13 +3517,17 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 	// If we have no free records, ask the client layer to give us some more memory
 	if (!m->rrcache_free && m->MainCallback)
 		{
+		if (m->rrcache_totalused != m->rrcache_size)
+			LogMsg("GetFreeCacheRR: count mismatch: m->rrcache_totalused %lu != m->rrcache_size %lu",
+				m->rrcache_totalused, m->rrcache_size);
+		
 		// We don't want to be vulnerable to a malicious attacker flooding us with an infinite
 		// number of bogus records so that we keep growing our cache until the machine runs out of memory.
 		// To guard against this, if we're actively using less than 1/32 of our cache, then we
 		// purge all the unused records and recycle them, instead of allocating more memory.
-		if (m->rrcache_totalused / 32 > m->rrcache_active)
-			debugf("Possible denial-of-service attack in progress: m->rrcache_totalused %lu; m->rrcache_active %lu",
-				m->rrcache_totalused, m->rrcache_active);
+		if (m->rrcache_size >= 512 && m->rrcache_size / 32 > m->rrcache_active)
+			debugf("Possible denial-of-service attack in progress: m->rrcache_size %lu; m->rrcache_active %lu",
+				m->rrcache_size, m->rrcache_active);
 		else
 			{
 			mDNSu32 oldsize = m->rrcache_size;
