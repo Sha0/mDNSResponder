@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.421  2004/09/21 23:29:49  cheshire
+<rdar://problem/3680045> DNSServiceResolve should delay sending packets
+
 Revision 1.420  2004/09/21 23:01:42  cheshire
 Update debugf messages
 
@@ -3416,7 +3419,8 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 			// If this record set is marked unique, then that means we can reasonably assume we have the whole set
 			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
-			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ShouldQueryImmediately = mDNSfalse;
+			if ((rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) || (q->ExpectUnique))
+				ShouldQueryImmediately = mDNSfalse;
 			q->CurrentAnswers++;
 			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
 			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
@@ -5075,6 +5079,8 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->Target           = zeroAddr;
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
+	question->LongLived        = mDNSfalse;
+	question->ExpectUnique     = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
@@ -5254,6 +5260,8 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	AssignDomainName(query->qSRV.qname, info->name);
 	query->qSRV.qtype               = kDNSType_SRV;
 	query->qSRV.qclass              = kDNSClass_IN;
+	query->qSRV.LongLived           = mDNSfalse;
+	query->qSRV.ExpectUnique        = mDNStrue;
 	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
 	query->qSRV.QuestionContext     = query;
 
@@ -5263,6 +5271,8 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	AssignDomainName(query->qTXT.qname, info->name);
 	query->qTXT.qtype               = kDNSType_TXT;
 	query->qTXT.qclass              = kDNSClass_IN;
+	query->qTXT.LongLived           = mDNSfalse;
+	query->qTXT.ExpectUnique        = mDNStrue;
 	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
 	query->qTXT.QuestionContext     = query;
 
@@ -5272,6 +5282,8 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv4.qname.c[0]          = 0;
 	query->qAv4.qtype               = kDNSType_A;
 	query->qAv4.qclass              = kDNSClass_IN;
+	query->qAv4.LongLived           = mDNSfalse;
+	query->qAv4.ExpectUnique        = mDNStrue;
 	query->qAv4.QuestionCallback    = FoundServiceInfo;
 	query->qAv4.QuestionContext     = query;
 
@@ -5281,6 +5293,8 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv6.qname.c[0]          = 0;
 	query->qAv6.qtype               = kDNSType_AAAA;
 	query->qAv6.qclass              = kDNSClass_IN;
+	query->qAv6.LongLived           = mDNSfalse;
+	query->qAv6.ExpectUnique        = mDNStrue;
 	query->qAv6.QuestionCallback    = FoundServiceInfo;
 	query->qAv6.QuestionContext     = query;
 
@@ -5330,6 +5344,8 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->Target           = zeroAddr;
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
+	question->LongLived        = mDNSfalse;
+	question->ExpectUnique     = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (DomainType > mDNS_DomainTypeRegistrationDefault) return(mStatus_BadParamErr);

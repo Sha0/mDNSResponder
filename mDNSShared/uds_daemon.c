@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.89  2004/09/21 23:29:51  cheshire
+<rdar://problem/3680045> DNSServiceResolve should delay sending packets
+
 Revision 1.88  2004/09/21 23:12:46  cheshire
 Reorder initialization of question fields to match structure order
 
@@ -1093,6 +1096,7 @@ static void handle_query_request(request_state *rstate)
     q->qtype            = rrtype;
     q->qclass           = rrclass;
     q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
+    q->ExpectUnique     = mDNSfalse;
     q->QuestionCallback = question_result_callback;
     q->QuestionContext  = rstate;
 
@@ -1175,6 +1179,8 @@ static void handle_resolve_request(request_state *rstate)
     memcpy(&srv->question.qname, &fqdn, MAX_DOMAIN_NAME);
     srv->question.qtype            = kDNSType_SRV;
     srv->question.qclass           = kDNSClass_IN;
+    srv->question.LongLived        = mDNSfalse;
+    srv->question.ExpectUnique     = mDNStrue;
     srv->question.QuestionCallback = resolve_result_callback;
     srv->question.QuestionContext  = rstate;
 
@@ -1183,6 +1189,8 @@ static void handle_resolve_request(request_state *rstate)
     memcpy(&txt->question.qname, &fqdn, MAX_DOMAIN_NAME);
     txt->question.qtype            = kDNSType_TXT;
     txt->question.qclass           = kDNSClass_IN;
+    txt->question.LongLived        = mDNSfalse;
+    txt->question.ExpectUnique     = mDNStrue;
     txt->question.QuestionCallback = resolve_result_callback;
     txt->question.QuestionContext  = rstate;
 

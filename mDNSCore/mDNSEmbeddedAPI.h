@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.204  2004/09/21 23:29:50  cheshire
+<rdar://problem/3680045> DNSServiceResolve should delay sending packets
+
 Revision 1.203  2004/09/21 20:58:22  cheshire
 Add ifname field to NetworkInterfaceInfo_struct
 
@@ -917,7 +920,7 @@ enum
 	mStatus_BadInterfaceErr   = -65552,
 	mStatus_Refused           = -65553,
 	mStatus_NoSuchRecord      = -65554,
-    mStatus_NoAuth            = -65555,
+	mStatus_NoAuth            = -65555,
 	// -65556 - -65789 currently unused
 
 	// Non-error values:
@@ -1079,7 +1082,7 @@ typedef packedstruct { domainname mname; domainname rname; mDNSOpaque32 serial; 
 typedef packedstruct
 	{
 	mDNSu16 vers;
-    mDNSu16 llqOp;
+	mDNSu16 llqOp;
 	mDNSu16 err;
 	mDNSu8 id[8];
 	mDNSu32 lease;
@@ -1119,8 +1122,8 @@ typedef union
 	UTF8str255  txt;		// For TXT record
 	rdataSRV    srv;		// For SRV record
 	rdataMX     mx;			// For MX record
-    rdataSOA    soa;        // For SOA record
-    rdataOpt    opt;        // For eDNS0 opt record
+	rdataSOA    soa;        // For SOA record
+	rdataOpt    opt;        // For eDNS0 opt record
 	} RDataBody;
 
 typedef struct
@@ -1186,34 +1189,34 @@ typedef mDNSu16 regState_t;
 // context for both ServiceRecordSet and individual AuthRec structs
 typedef struct
 	{
-    // registration/lease state
-    regState_t   state;
-    mDNSBool     lease;    // dynamic update contains (should contain) lease option
-    mDNSs32      expire;   // expiration of lease (-1 for static)
-    mDNSBool      TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
-
-    // identifier to match update request and response
-    mDNSOpaque16 id;
-
-    // server info
-    domainname   zone;     // the zone that is updated
-    mDNSAddr     ns;       // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
-    mDNSIPPort   port;     // port on which server accepts dynamic updates
-
-    // NAT traversal context
-    NATTraversalInfo *NATinfo; // may be NULL
-
-    // state for deferred operations
-    domainname   OrigTarget;              // un-ack'd target change
-    mDNSBool     TargetChangeDeferred;    // update service target upon completion of current operation
-    mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
-    mStatus      DeferredStatus;          // status to deliver when above flag is set
-
-    // uDNS_UpdateRecord support fields
-    mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
-    RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
-    mDNSu16      UpdateRDLen;  // length of above field
-    mDNSRecordUpdateCallback *UpdateRDCallback; // client callback to free old rdata
+	// registration/lease state
+	regState_t   state;
+	mDNSBool     lease;    // dynamic update contains (should contain) lease option
+	mDNSs32      expire;   // expiration of lease (-1 for static)
+	mDNSBool      TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
+	
+	// identifier to match update request and response
+	mDNSOpaque16 id;
+	
+	// server info
+	domainname   zone;     // the zone that is updated
+	mDNSAddr     ns;       // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
+	mDNSIPPort   port;     // port on which server accepts dynamic updates
+	
+	// NAT traversal context
+	NATTraversalInfo *NATinfo; // may be NULL
+	
+	// state for deferred operations
+	domainname   OrigTarget;              // un-ack'd target change
+	mDNSBool     TargetChangeDeferred;    // update service target upon completion of current operation
+	mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
+	mStatus      DeferredStatus;          // status to deliver when above flag is set
+	
+	// uDNS_UpdateRecord support fields
+	mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
+	RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
+	mDNSu16      UpdateRDLen;  // length of above field
+	mDNSRecordUpdateCallback *UpdateRDCallback; // client callback to free old rdata
 	} uDNS_RegInfo;
 
 struct AuthRecord_struct
@@ -1225,9 +1228,9 @@ struct AuthRecord_struct
 
 	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
 	ResourceRecord  resrec;
-    uDNS_RegInfo uDNS_info;
+	uDNS_RegInfo uDNS_info;
 
-    // Persistent metadata for Authoritative Records
+	// Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response
 	AuthRecord     *Additional2;		// Another additional
 	AuthRecord     *DependentOn;		// This record depends on another for its uniqueness checking
@@ -1274,8 +1277,8 @@ struct AuthRecord_struct
 // Wrapper struct for Auth Records for higher-level code that cannot use the AuthRecord's ->next pointer field
 typedef struct ARListElem
 	{
-    struct ARListElem *next;
-    AuthRecord ar;          // Note: Must be last struct in field to accomodate oversized AuthRecords
+	struct ARListElem *next;
+	AuthRecord ar;          // Note: Must be last struct in field to accomodate oversized AuthRecords
 	} ARListElem;
 
 struct CacheRecord_struct
@@ -1309,10 +1312,10 @@ typedef struct
 
 typedef struct uDNS_HostnameInfo
 	{
-    struct uDNS_HostnameInfo *next;
-    AuthRecord *ar;                           // registered address record
-    mDNSRecordCallback *StatusCallback;       // callback to deliver success or error code to client layer
-    const void *StatusContext;                // Client Context
+	struct uDNS_HostnameInfo *next;
+	AuthRecord *ar;                           // registered address record
+	mDNSRecordCallback *StatusCallback;       // callback to deliver success or error code to client layer
+	const void *StatusContext;                // Client Context
 	} uDNS_HostnameInfo;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
@@ -1366,9 +1369,9 @@ struct ServiceRecordSet_struct
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	// No fields need to be set up by the client prior to calling mDNS_RegisterService();
 	// all required data is passed as parameters to that function.
-    ServiceRecordSet    *next;
-    uDNS_RegInfo        uDNS_info;
-    mDNSServiceCallback *ServiceCallback;
+	ServiceRecordSet    *next;
+	uDNS_RegInfo        uDNS_info;
+	mDNSServiceCallback *ServiceCallback;
 	void                *ServiceContext;
 	ExtraResourceRecord *Extras;	// Optional list of extra AuthRecords attached to this service registration
 	mDNSu32              NumSubTypes;
@@ -1410,8 +1413,8 @@ typedef enum
 	LLQ_Established       = 4,
 	LLQ_Refresh           = 5,
 	LLQ_Retry             = 6,
-    LLQ_Suspended         = 7,
-    // safe to re-start LLQ before this point
+	LLQ_Suspended         = 7,
+	// safe to re-start LLQ before this point
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,
 	LLQ_Error             = 18,
@@ -1420,16 +1423,16 @@ typedef enum
 
 typedef struct
 	{
-    LLQ_State state;
-    mDNSAddr servAddr;
-    mDNSIPPort servPort;
-    DNSQuestion *question;
-    mDNSu32 origLease;  // seconds (relative)
-    mDNSs32 retry;  // ticks (absolute)
-    mDNSs32 expire; // ticks (absolute)
-    mDNSs16 ntries;
-    mDNSu8 id[8];
-    mDNSBool deriveRemovesOnResume;
+	LLQ_State state;
+	mDNSAddr servAddr;
+	mDNSIPPort servPort;
+	DNSQuestion *question;
+	mDNSu32 origLease;  // seconds (relative)
+	mDNSs32 retry;  // ticks (absolute)
+	mDNSs32 expire; // ticks (absolute)
+	mDNSs16 ntries;
+	mDNSu8 id[8];
+	mDNSBool deriveRemovesOnResume;
 	} LLQ_Info;
 
 // LLQ constants
@@ -1462,15 +1465,15 @@ enum
 
 typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *internalContext);
 typedef struct
-    {
-    mDNSOpaque16          id;
-    mDNSs32               timestamp;
-    mDNSBool              internal;
-    InternalResponseHndlr responseCallback;   // NULL if internal field is false
-    LLQ_Info              *llq;               // NULL for 1-shot queries
-    CacheRecord           *knownAnswers;
-    void *context;
-    } uDNS_QuestionInfo;
+	{
+	mDNSOpaque16          id;
+	mDNSs32               timestamp;
+	mDNSBool              internal;
+	InternalResponseHndlr responseCallback;   // NULL if internal field is false
+	LLQ_Info              *llq;               // NULL for 1-shot queries
+	CacheRecord           *knownAnswers;
+	void *context;
+	} uDNS_QuestionInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
@@ -1494,7 +1497,7 @@ struct DNSQuestion_struct
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
-    uDNS_QuestionInfo     uDNS_info;
+	uDNS_QuestionInfo     uDNS_info;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
@@ -1504,20 +1507,20 @@ struct DNSQuestion_struct
 	domainname            qname;
 	mDNSu16               qtype;
 	mDNSu16               qclass;
+	mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
+	mDNSBool              ExpectUnique;		// Set by client if it's expecting unique RR(s) for this question, not shared RRs
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
-    mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
-                                            // Set by mDNS.c in mDNS_StartBrowse.
 	};
 
 typedef struct
 	{
-    // Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()
+	// Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()
 	// When the callback is invoked, ip, port, TXTlen and TXTinfo will have been filled in with the results learned from the network.
 	domainname      name;
 	mDNSInterfaceID InterfaceID;		// ID of the interface the response was received on
 	mDNSAddr        ip;					// Remote (destination) IP address where this service can be accessed
-    mDNSIPPort      port;				// Port where this service can be accessed
+	mDNSIPPort      port;				// Port where this service can be accessed
 	mDNSu16         TXTlen;
 	mDNSu8          TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
@@ -1543,7 +1546,7 @@ struct ServiceInfoQuery_struct
 	mDNSu32                       Answers;
 	ServiceInfo                  *info;
 	mDNSServiceInfoQueryCallback *ServiceInfoQueryCallback;
-    void                         *ServiceInfoQueryContext;
+	void                         *ServiceInfoQueryContext;
 	};
 
 // ***************************************************************************
@@ -1586,7 +1589,7 @@ typedef enum
 	NATState_Init,
 	NATState_Request,
 	NATState_Established,
-    NATState_Legacy,
+	NATState_Legacy,
 	NATState_Error,
 	NATState_Refresh,
 	NATState_Deleted
@@ -1599,17 +1602,17 @@ typedef void (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNS
 
 struct NATTraversalInfo_struct
 	{
-    NATOp_t op;
-    NATResponseHndlr ReceiveResponse;
-    union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
-    mDNSIPPort PublicPort;
-    mDNSu8 request[PORTMAP_PKTLEN];  // buffer for request messages
-    int requestlen;                  // length of buffer used
-    mDNSs32 retry;                   // absolute time when we retry
-    mDNSs32 RetryInterval;           // delta between time sent and retry
-    int ntries;
-    NATState_t state;
-    NATTraversalInfo *next;
+	NATOp_t op;
+	NATResponseHndlr ReceiveResponse;
+	union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
+	mDNSIPPort PublicPort;
+	mDNSu8 request[PORTMAP_PKTLEN];  // buffer for request messages
+	int requestlen;                  // length of buffer used
+	mDNSs32 retry;                   // absolute time when we retry
+	mDNSs32 RetryInterval;           // delta between time sent and retry
+	int ntries;
+	NATState_t state;
+	NATTraversalInfo *next;
 	};
 
 // ***************************************************************************
@@ -1627,25 +1630,25 @@ enum
 	};
 
 typedef struct
-    {
-    mDNSs32          nextevent;
-    DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
-    DNSQuestion      *CurrentQuery;      // pointer to ActiveQueries list being examined in a loop.  Functions that remove
-                                         // elements from the ActiveQueries list must update this pointer (if non-NULL) as necessary.
-                                         //!!!KRS do the same for registration lists
-    ServiceRecordSet *ServiceRegistrations;
-    AuthRecord       *RecordRegistrations;
-    NATTraversalInfo *NATTraversals;
-    mDNSu16          NextMessageID;
-    mDNSAddr         Servers[32];
-    mDNSAddr         Router;
-    mDNSAddr         PrimaryIP;          // Address of primary interface
-    mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
-    domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
-    domainname       ServiceRegDomain;   // (going away w/ multi-user support)
-    struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
-    uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
-    } uDNS_GlobalInfo;
+	{
+	mDNSs32          nextevent;
+	DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+	DNSQuestion      *CurrentQuery;      // pointer to ActiveQueries list being examined in a loop.  Functions that remove
+										 // elements from the ActiveQueries list must update this pointer (if non-NULL) as necessary.
+										 //!!!KRS do the same for registration lists
+	ServiceRecordSet *ServiceRegistrations;
+	AuthRecord       *RecordRegistrations;
+	NATTraversalInfo *NATTraversals;
+	mDNSu16          NextMessageID;
+	mDNSAddr         Servers[32];
+	mDNSAddr         Router;
+	mDNSAddr         PrimaryIP;          // Address of primary interface
+	mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
+	domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
+	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
+	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
+	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
+	} uDNS_GlobalInfo;
 
 struct mDNS_struct
 	{
@@ -1706,7 +1709,7 @@ struct mDNS_struct
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;				// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
 	domainname  MulticastHostname;		// Fully Qualified "dot-local" Host Name, e.g. "Foo.local."
-    UTF8str255  HIHardware;
+	UTF8str255  HIHardware;
 	UTF8str255  HISoftware;
 	AuthRecord *ResourceRecords;
 	AuthRecord *DuplicateRecords;		// Records currently 'on hold' because they are duplicates of existing records
@@ -1719,8 +1722,8 @@ struct mDNS_struct
 	mDNSu32 NumFailedProbes;
 	mDNSs32 SuppressProbes;
 
-    // unicast-specific data
-    uDNS_GlobalInfo uDNS_info;
+	// unicast-specific data
+	uDNS_GlobalInfo uDNS_info;
 	};
 
 // ***************************************************************************
@@ -2050,17 +2053,17 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 // padded keys for inned/outer hash rounds
 typedef struct
 	{
-    mDNSu8 ipad[HMAC_LEN];
-    mDNSu8 opad[HMAC_LEN];
-   	} HMAC_Key;
+	mDNSu8 ipad[HMAC_LEN];
+	mDNSu8 opad[HMAC_LEN];
+	} HMAC_Key;
 
 // Internal data structure to maintain authentication information for an update domain
 typedef struct uDNS_AuthInfo
 	{
-    domainname zone;
-    domainname keyname;
-    HMAC_Key key;
-    struct uDNS_AuthInfo *next;
+	domainname zone;
+	domainname keyname;
+	HMAC_Key key;
+	struct uDNS_AuthInfo *next;
 	} uDNS_AuthInfo;
 
 // Client Calls
@@ -2209,9 +2212,9 @@ extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 
 typedef struct DNameListElem
 	{
-    domainname name;
-    struct DNameListElem *next;
-    } DNameListElem;
+	domainname name;
+	struct DNameListElem *next;
+	} DNameListElem;
 
 extern DNameListElem *mDNSPlatformGetSearchDomainList(void);
 extern DNameListElem *mDNSPlatformGetRegDomainList(void);

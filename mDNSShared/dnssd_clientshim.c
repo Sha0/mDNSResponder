@@ -31,6 +31,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.5  2004/09/21 23:29:51  cheshire
+<rdar://problem/3680045> DNSServiceResolve should delay sending packets
+
 Revision 1.4  2004/09/17 01:08:55  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -528,6 +531,8 @@ DNSServiceErrorType DNSServiceResolve
 	AssignDomainName(x->qSRV.qname, srv);
 	x->qSRV.qtype               = kDNSType_SRV;
 	x->qSRV.qclass              = kDNSClass_IN;
+	x->qSRV.LongLived           = mDNSfalse;
+	x->qSRV.ExpectUnique        = mDNStrue;
 	x->qSRV.QuestionCallback    = FoundServiceInfo;
 	x->qSRV.QuestionContext     = x;
 
@@ -537,6 +542,8 @@ DNSServiceErrorType DNSServiceResolve
 	AssignDomainName(x->qTXT.qname, srv);
 	x->qTXT.qtype               = kDNSType_TXT;
 	x->qTXT.qclass              = kDNSClass_IN;
+	x->qTXT.LongLived           = mDNSfalse;
+	x->qTXT.ExpectUnique        = mDNStrue;
 	x->qTXT.QuestionCallback    = FoundServiceInfo;
 	x->qTXT.QuestionContext     = x;
 
@@ -656,6 +663,8 @@ DNSServiceErrorType DNSServiceQueryRecord
 	MakeDomainNameFromDNSNameString(&x->q.qname, fullname);
 	x->q.qtype               = rrtype;
 	x->q.qclass              = rrclass;
+	x->q.LongLived           = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
+	x->q.ExpectUnique        = mDNSfalse;
 	x->q.QuestionCallback    = DNSServiceQueryRecordResponse;
 	x->q.QuestionContext     = x;
 

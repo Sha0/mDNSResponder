@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.30  2004/09/21 23:29:51  cheshire
+<rdar://problem/3680045> DNSServiceResolve should delay sending packets
+
 Revision 1.29  2004/09/17 01:08:53  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -317,6 +320,8 @@ mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, const m
 	q->InterfaceID      = mDNSInterface_ForceMCast;
 	q->qtype            = qtype;
 	q->qclass           = kDNSClass_IN;
+	q->LongLived        = mDNSfalse;
+	q->ExpectUnique     = mDNStrue;
 	q->QuestionCallback = callback;
 	q->QuestionContext  = NULL;
 
