@@ -185,30 +185,87 @@ static void printtimestamp(void)
 #define DomainMsg(X) (((X) & kDNSServiceFlagsDefault) ? "(Default)" : \
                       ((X) & kDNSServiceFlagsAdd)     ? "Added"     : "Removed")
 
-static void DNSSD_API regdom_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex,
-	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
+static const char *GetNextLabel(const char *cstr, char label[64])
 	{
-	(void)sdRef;        // Unused
-	(void)ifIndex;      // Unused
-	(void)errorCode;    // Unused
-	(void)context;      // Unused
-	printtimestamp();
-	printf("Recommended Registration Domain %s %s", replyDomain, DomainMsg(flags));
-	if (flags) printf(" Flags: %X", flags);
-	printf("\n");
+	char *ptr = label;
+	while (*cstr && *cstr != '.')								// While we have characters in the label...
+		{
+		char c = *cstr++;
+		if (c == '\\')
+			{
+			c = *cstr++;
+			if (isdigit(cstr[-1]) && isdigit(cstr[0]) && isdigit(cstr[1]))
+				{
+				int v0 = cstr[-1] - '0';						// then interpret as three-digit decimal
+				int v1 = cstr[ 0] - '0';
+				int v2 = cstr[ 1] - '0';
+				int val = v0 * 100 + v1 * 10 + v2;
+				if (val <= 255) { c = (char)val; cstr += 2; }	// If valid three-digit decimal value, use it
+				}
+			}
+		*ptr++ = c;
+		if (ptr >= label+64) return(NULL);
+		}
+	if (*cstr) cstr++;											// Skip over the trailing dot (if present)
+	*ptr++ = 0;
+	return(cstr);
 	}
 
-static void DNSSD_API browsedom_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex,
+static void DNSSD_API enum_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
+	int labels = 0, depth = 0, i, initial = 0;
+	char text[64];
+	const char *label[128];
+	
 	(void)client;       // Unused
 	(void)ifIndex;      // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
+	
+	if (!*replyDomain) return;
+
+	// 1. Print the header
+	if (num_printed++ == 0) printf("Timestamp     Recommended %s domain\n", operation == 'E' ? "Registration" : "Browsing");
 	printtimestamp();
-	printf("Recommended Browsing Domain %s %s", replyDomain, DomainMsg(flags));
-	if (flags) printf(" Flags: %X", flags);
+	printf("%-10s", DomainMsg(flags));
+	printf("%-8s", (flags & kDNSServiceFlagsMoreComing) ? "(More)" : "");
+	flags &= ~kDNSServiceFlagsMoreComing;
+	flags &= ~kDNSServiceFlagsAdd;
+	flags &= ~kDNSServiceFlagsDefault;
+	if (flags) printf("Flags: %4X  ", flags);
+	else printf("             ");
+	
+	// 2. Count the labels
+	while (*replyDomain)
+		{
+		label[labels++] = replyDomain;
+		replyDomain = GetNextLabel(replyDomain, text);
+		}
+	
+	// 3. Decide if we're going to clump the last two or three labels (e.g. "apple.com", or "nicta.com.au")
+	if      (labels >= 3 && replyDomain - label[labels-1] <= 3 && label[labels-1] - label[labels-2] <= 4) initial = 3;
+	else if (labels >= 2 && replyDomain - label[labels-1] <= 4) initial = 2;
+	else initial = 1;
+	labels -= initial;
+
+	// 4. Print the initial one-, two- or three-label clump
+	for (i=0; i<initial; i++)
+		{
+		GetNextLabel(label[labels+i], text);
+		if (i>0) printf(".");
+		printf("%s", text);
+		}
 	printf("\n");
+
+	// 5. Print the remainder of the hierarchy
+	for (depth=0; depth<labels; depth++)
+		{
+		printf("                                             ");
+		for (i=0; i<=depth; i++) printf("- ");
+		GetNextLabel(label[labels-1-depth], text);
+		printf("> %s\n", text);
+		}
 	}
 
 static void DNSSD_API browse_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
@@ -516,11 +573,15 @@ int main(int argc, char **argv)
 	switch (operation)
 		{
 		case 'E':	printf("Looking for recommended registration domains:\n");
-					err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsRegistrationDomains, 0, regdom_reply, NULL);
+					err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsRegistrationDomains, 0, enum_reply, NULL);
 					break;
 
 		case 'F':	printf("Looking for recommended browsing domains:\n");
-					err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsBrowseDomains, 0, browsedom_reply, NULL);
+					err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsBrowseDomains, 0, enum_reply, NULL);
+					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "nicta.com.au.", NULL);
+					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "rendezvous.nicta.com.au.", NULL);
+					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "ibm.com.", NULL);
+					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "dns-sd.ibm.com.", NULL);
 					break;
 
 		case 'B':	if (argc < optind+1) goto Fail;
