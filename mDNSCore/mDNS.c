@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.206  2003/07/11 00:45:02  cheshire
+<rdar://problem/3321909> Client should get callback confirming successful host name registration
+
 Revision 1.205  2003/07/11 00:40:18  cheshire
 Tidy up debug message in HostNameCallback()
 
@@ -5535,7 +5538,13 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 		}
 	#endif
 
-	if (result == mStatus_NameConflict)
+	if (result == mStatus_NoError)
+		{
+		// Notify the client that the host name is successfully registered
+		if (m->MainCallback)
+			m->MainCallback(m, result);
+		}
+	else if (result == mStatus_NameConflict)
 		{
 		domainlabel oldlabel = m->hostlabel;
 
