@@ -3499,8 +3499,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	if (sr->RR_TXT.rdata->MaxRDLength < txtlen)
 		sr->RR_TXT.rdata->MaxRDLength = txtlen;
 
-	ConstructServiceName(&sr->RR_PTR.name, mDNSNULL, type, domain);
-	ConstructServiceName(&sr->RR_SRV.name, name,     type, domain);
+	if (ConstructServiceName(&sr->RR_PTR.name, mDNSNULL, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
+	if (ConstructServiceName(&sr->RR_SRV.name, name,     type, domain) == mDNSNULL) return(mStatus_BadParamErr);
 	sr->RR_TXT.name = sr->RR_SRV.name;
 	
 	// 1. Set up the PTR record rdata to point to our service name
