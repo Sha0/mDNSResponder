@@ -28,6 +28,16 @@
 
     Change History (most recent first):
 
+$Log: uds_daemon.h,v $
+Revision 1.3  2004/01/25 00:03:21  cheshire
+Change to use mDNSVal16() instead of private PORT_AS_NUM() macro
+
+Revision 1.2  2004/01/24 08:46:26  bradley
+Added InterfaceID<->Index platform interfaces since they are now used by all platforms for the DNS-SD APIs.
+
+Revision 1.1  2003/12/08 21:11:42  rpantos;
+Changes necessary to support mDNSResponder on Linux.
+
 */
 
 #include "mDNSClientAPI.h"
@@ -35,8 +45,7 @@
 
 /* Client interface: */
 
-#define PORT_AS_NUM(P) (((mDNSu16)(P).b[0]) << 8 | (P).b[1])
-#define SRS_PORT_AS_NUM(S) PORT_AS_NUM((S)->RR_SRV.resrec.rdata->u.srv.port)
+#define SRS_PORT(S) mDNSVal16((S)->RR_SRV.resrec.rdata->u.srv.port)
 
 extern int udsserver_init( mDNS *globalInstance);
 

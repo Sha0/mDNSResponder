@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.39  2004/01/25 00:03:21  cheshire
+Change to use mDNSVal16() instead of private PORT_AS_NUM() macro
+
 Revision 1.38  2004/01/19 19:51:46  cheshire
 Fix compiler error (mixed declarations and code) on some versions of Linux
 
@@ -480,7 +483,7 @@ void udsserver_info(void)
         void *t = req->termination_context;
         if (!t) continue;
         if (req->terminate == regservice_termination_callback)
-            LogMsgNoIdent("DNSServiceRegister         %##s %u", ((registered_service *)t)->srs->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(((registered_service *)t)->srs));
+            LogMsgNoIdent("DNSServiceRegister         %##s %u", ((registered_service *)t)->srs->RR_SRV.resrec.name.c, SRS_PORT(((registered_service *)t)->srs));
         else if (req->terminate == browse_termination_callback)
             LogMsgNoIdent("DNSServiceBrowse           %##s", ((DNSQuestion *)          t)->qname.c);
         else if (req->terminate == resolve_termination_callback)
