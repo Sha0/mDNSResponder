@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.247  2005/02/15 02:13:49  cheshire
+If we did registerBootstrapService() when starting, then we must do
+destroyBootstrapService() before exiting, or Mach init will keep restarting us.
+
 Revision 1.246  2005/02/03 00:44:37  cheshire
 <rdar://problem/3986663> DNSServiceUpdateRecord returns kDNSServiceErr_Invalid when rdlen=0, rdata=NULL
 
@@ -2446,7 +2450,7 @@ mDNSexport int main(int argc, char **argv)
 	// Make our PID file and Unix Domain Socket first, because launchd waits for those before it starts launching other daemons.
 	// The sooner we do this, the faster the machine will boot.
 	status = udsserver_init();
-	if (status) { LogMsg("Daemon start: udsserver_init failed"); return(status); }
+	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 	
 	// First do the all the initialization we need root privilege for, before we change to user "nobody"
 	LogMsgIdent(mDNSResponderVersionString, "starting");
@@ -2512,9 +2516,10 @@ mDNSexport int main(int argc, char **argv)
 		mDNS_Close(&mDNSStorage);
 		}
 
-	if (!mDNS_DebugMode && !started_via_launchdaemon) destroyBootstrapService();
-
 	LogMsgIdent(mDNSResponderVersionString, "exiting");
+
+exit:
+	if (!mDNS_DebugMode && !started_via_launchdaemon) destroyBootstrapService();
 	return(status);
 	}
 
