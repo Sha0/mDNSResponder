@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.176  2005/01/17 21:03:04  cheshire
+<rdar://problem/3904954> Wide-area services not found on little-endian
+
 Revision 1.175  2005/01/15 00:56:41  ksekar
 <rdar://problem/3954575> Unicast services don't disappear when logging
 out of VPN
@@ -3708,12 +3711,14 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 		if (!info->nread)
 			{
 			// read msg len
-			n = mDNSPlatformReadTCP(sd, &info->replylen, 2);
+			mDNSu8 lenbuf[2];
+			n = mDNSPlatformReadTCP(sd, lenbuf, 2);
 			if (n != 2)
 				{
 				LogMsg("ERROR:conQueryCallback - attempt to read message length failed (read returned %d)", n);
 				goto error;
 				}
+			info->replylen = ((mDNSu16)lenbuf[0]) << 8 | lenbuf[1];
 			}
 		n = mDNSPlatformReadTCP(sd, ((char *)&info->reply) + info->nread, info->replylen - info->nread);
 		if (n < 0) { LogMsg("ERROR: conQueryCallback - read returned %d", n); goto error; }
