@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.146  2004/04/27 02:49:15  cheshire
+<rdar://problem/3634655>: mDNSResponder leaks sockets on bind() error
+
 Revision 1.145  2004/04/21 03:08:03  cheshire
 Rename 'alias' to more descriptive name 'primary'
 
@@ -981,6 +984,7 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 	const int on = 1;
 	const int twofivefive = 255;
 	mStatus err = mStatus_NoError;
+	char *errstr = mDNSNULL;
 
 	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
 	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %p is already set", *c); return(-1); }
@@ -991,17 +995,17 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 
 	// ... with a shared UDP port, if it's for multicast receiving
 	if (port.NotAnInteger) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
-	if (err < 0) { LogMsg("setsockopt - SO_REUSEPORT error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+	if (err < 0) { errstr = "setsockopt - SO_REUSEPORT"; goto fail; }
 
 	if (sa_family == AF_INET)
 		{
 		// We want to receive destination addresses
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
-		if (err < 0) { LogMsg("setsockopt - IP_RECVDSTADDR error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IP_RECVDSTADDR"; goto fail; }
 		
 		// We want to receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
-		if (err < 0) { LogMsg("setsockopt - IP_RECVIF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IP_RECVIF"; goto fail; }
 		
 		// We want to receive packet TTL value so we can check it
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVTTL, &on, sizeof(on));
@@ -1015,25 +1019,25 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 			imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 			imr.imr_interface        = addr;
 			err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
-			if (err < 0) { LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			if (err < 0) { errstr = "setsockopt - IP_ADD_MEMBERSHIP"; goto fail; }
 			
 			// Specify outgoing interface too
 			err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr));
-			if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			if (err < 0) { errstr = "setsockopt - IP_MULTICAST_IF"; goto fail; }
 			}
 		
 		// Send unicast packets with TTL 255
 		err = setsockopt(skt, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { LogMsg("setsockopt - IP_TTL error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IP_TTL"; goto fail; }
 		
 		// And multicast packets with TTL 255 too
 		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_TTL error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IP_MULTICAST_TTL"; goto fail; }
 
 		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
 		const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
 		err = setsockopt(skt, IPPROTO_IP, IP_TOS, &ip_tosbits, sizeof(ip_tosbits));
-		if (err < 0) { LogMsg("setsockopt - IP_TOS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IP_TOS"; goto fail; }
 
 		// And start listening for packets
 		struct sockaddr_in listening_sockaddr;
@@ -1041,22 +1045,22 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 		listening_sockaddr.sin_port        = port.NotAnInteger;
 		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
-		if (err) { LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err) { errstr = "bind"; goto fail; }
 		}
 	else if (sa_family == AF_INET6)
 		{
 		// We want to receive destination addresses and receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
-		if (err < 0) { LogMsg("setsockopt - IPV6_PKTINFO error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IPV6_PKTINFO"; goto fail; }
 		
 		// We want to receive packet hop count value so we can check it
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_HOPLIMIT, &on, sizeof(on));
-		if (err < 0) { LogMsg("setsockopt - IPV6_HOPLIMIT error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IPV6_HOPLIMIT"; goto fail; }
 		
 		// We want to receive only IPv6 packets, without this option, we may
 		// get IPv4 addresses as mapped addresses.
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
-		if (err < 0) { LogMsg("setsockopt - IPV6_V6ONLY error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IPV6_V6ONLY"; goto fail; }
 		
 		if (port.NotAnInteger)
 			{
@@ -1066,32 +1070,32 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 			i6mr.ipv6mr_interface = interface_id;
 			i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
 			err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
-			if (err < 0) { LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			if (err < 0) { errstr = "setsockopt - IPV6_JOIN_GROUP"; goto fail; }
 			
 			// Specify outgoing interface too
 			err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_IF, &interface_id, sizeof(interface_id));
-			if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+			if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_IF"; goto fail; }
 			}
 		
 		// Send unicast packets with TTL 255
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { LogMsg("setsockopt - IPV6_UNICAST_HOPS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IPV6_UNICAST_HOPS"; goto fail; }
 		
 		// And multicast packets with TTL 255 too
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_HOPS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_HOPS"; goto fail; }
 		
 		// Note: IPV6_TCLASS appears not to be implemented on OS X right now (or indeed on ANY version of Unix?)
 		#ifdef IPV6_TCLASS
 		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
 		int tclass = IPTOS_LOWDELAY | IPTOS_THROUGHPUT; // This may not be right (since tclass is not implemented on OS X, I can't test it)
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
-		if (err < 0) { LogMsg("setsockopt - IPV6_TCLASS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IPV6_TCLASS"; goto fail; }
 		#endif
 		
 		// Want to receive our own packets
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &on, sizeof(on));
-		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_LOOP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_LOOP"; goto fail; }
 		
 		// And start listening for packets
 		struct sockaddr_in6 listening_sockaddr6;
@@ -1103,7 +1107,7 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 //		listening_sockaddr6.sin6_addr = IN6ADDR_ANY_INIT; // Want to receive multicasts AND unicasts on this socket
 		listening_sockaddr6.sin6_scope_id    = 0;
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
-		if (err) { LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		if (err) { errstr = "bind"; goto fail; }
 		}
 	
 	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
@@ -1114,6 +1118,11 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
 	CFRelease(rls);
 	
+	return(err);
+
+fail:
+	LogMsg("%s error %ld errno %d (%s)", errstr, err, errno, strerror(errno));
+	close(skt);
 	return(err);
 	}
 
