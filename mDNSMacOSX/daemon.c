@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.186  2004/09/16 00:24:49  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.185  2004/08/25 02:01:45  cheshire
 <rdar://problem/3774777> Need to be able to get status of Dynamic DNS Host Name Update
 
@@ -1117,7 +1120,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	x->ClientMachPort = client;
 	x->i.InterfaceID = mDNSInterface_Any;
 	x->i.name = srv;
-	x->ReportTime = (mDNSPlatformTimeNow() + 130 * mDNSPlatformOneSecond) | 1;
+	x->ReportTime = (mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond) | 1;
 	// Don't report errors for old iChat ("_ichat._tcp") service.
 	// New iChat ("_presence._tcp") uses DNSServiceQueryRecord() (from /usr/include/dns_sd.h) instead,
 	// and so should other applications that have valid reasons to be doing ongoing record monitoring.
@@ -1816,7 +1819,7 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	mDNSu32 slot;
 	CacheRecord *rr;
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
-	mDNSs32 now = mDNSPlatformTimeNow();
+	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
 
 	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
 
@@ -1949,7 +1952,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 	// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
 	mDNSs32 nextevent = mDNS_Execute(&mDNSStorage);
 
-	mDNSs32 now = mDNSPlatformTimeNow();
+	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
 
 	// 2. Deliver any waiting browse messages to clients
 	DNSServiceBrowser *b = DNSServiceBrowserList;
@@ -2075,7 +2078,7 @@ mDNSexport int main(int argc, char **argv)
 			nextevent = udsserver_idle(nextevent);
 
 			// 2. Work out how long we expect to sleep before the next scheduled task
-			mDNSs32 ticks = nextevent - mDNSPlatformTimeNow();
+			mDNSs32 ticks = nextevent - mDNS_TimeNow(&mDNSStorage);
 			static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
 			if (ticks > 1)
 				RepeatedBusy = 0;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.35  2004/09/16 00:24:49  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.34  2004/09/14 23:42:36  cheshire
 <rdar://problem/3801296> Need to seed random number generator from platform-layer data
 
@@ -74,7 +77,7 @@ Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined 
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
 
 Revision 1.19  2003/08/18 23:09:20  cheshire
-<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformRawTime()
 
 Revision 1.18  2003/08/12 19:56:24  cheshire
 Update to APSL 2.0
@@ -670,7 +673,7 @@ mDNSlocal void ScheduleNextTimerCallback(const mDNS *const m)
 	{
 	if (m->mDNSPlatformStatus == mStatus_NoError)
 		{
-		SInt32 interval = m->NextScheduledEvent - mDNSPlatformTimeNow();
+		SInt32 interval = m->NextScheduledEvent - mDNS_TimeNow(m);
 		if      (interval < 1)                 interval = 1;
 		else if (interval > 0x70000000 / 1000) interval = 0x70000000 / mDNSPlatformOneSecond;
 		else                                   interval = (interval * 1000 + mDNSPlatformOneSecond-1)/ mDNSPlatformOneSecond;
@@ -697,8 +700,8 @@ mDNSexport void     mDNSPlatformMemZero(                       void *dst, UInt32
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len)                              { return(OTAllocMem(len)); }
 mDNSexport void     mDNSPlatformMemFree(void *mem)                                    { OTFreeMem(mem); }
 mDNSexport mDNSu32  mDNSPlatformRandomSeed(void)                                      { return(TickCount()); }
-mDNSexport mStatus  mDNSPlatformTimeInit(mDNSs32 *timenow) { *timenow = mDNSPlatformTimeNow(); return(mStatus_NoError); }
-mDNSexport SInt32   mDNSPlatformTimeNow()                                             { return((SInt32)TickCount()); }
+mDNSexport mStatus  mDNSPlatformTimeInit(void)                                        { return(mStatus_NoError); }
+mDNSexport SInt32   mDNSPlatformRawTime()                                             { return((SInt32)TickCount()); }
 mDNSexport SInt32   mDNSPlatformOneSecond = 60;
 
 mDNSexport mDNSs32	mDNSPlatformUTC(void)

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.405  2004/09/16 00:24:48  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.404  2004/09/15 21:44:11  cheshire
 <rdar://problem/3681031> Randomize initial timenow_adjust value in mDNS_Init
 Show time value in log to help diagnose errors
@@ -485,7 +488,7 @@ Final expiration queries now only mark the question for sending on the particula
 pertaining to the record that's expiring.
 
 Revision 1.278  2003/08/18 22:53:37  cheshire
-<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformRawTime()
 
 Revision 1.277  2003/08/18 19:05:44  cheshire
 <rdar://problem/3382423> UpdateRecord not working right
@@ -3554,6 +3557,22 @@ mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr)
 	SetNextCacheCheckTime(m, rr);
 	}
 
+mDNSexport mDNSs32 mDNS_TimeNow(mDNS *const m)
+	{
+	mDNSs32 time;
+	mDNSPlatformLock(m);
+	if (m->mDNS_busy)
+		{
+		LogMsg("mDNS_TimeNow called while holding mDNS lock. This is incorrect. Code protected by lock should just use m->timenow.");
+		if (!m->timenow) LogMsg("mDNS_TimeNow: m->mDNS_busy is %ld but m->timenow not set", m->mDNS_busy);
+		}
+	
+	if (m->timenow) time = m->timenow;
+	else            time = mDNSPlatformRawTime() + m->timenow_adjust;
+	mDNSPlatformUnlock(m);
+	return(time);
+	}
+
 mDNSlocal void mDNS_Lock(mDNS *const m)
 	{
 	// MUST grab the platform lock FIRST!
@@ -3571,21 +3590,21 @@ mDNSlocal void mDNS_Lock(mDNS *const m)
 	if (m->mDNS_busy == 0)
 		{
 		if (m->timenow)
-			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNSPlatformTimeNow() + m->timenow_adjust);
-		m->timenow = mDNSPlatformTimeNow() + m->timenow_adjust;
+			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNSPlatformRawTime() + m->timenow_adjust);
+		m->timenow = mDNSPlatformRawTime() + m->timenow_adjust;
 		if (m->timenow == 0) m->timenow = 1;
 		}
 	else if (m->timenow == 0)
 		{
 		LogMsg("mDNS_Lock: m->mDNS_busy is %ld but m->timenow not set", m->mDNS_busy);
-		m->timenow = mDNSPlatformTimeNow() + m->timenow_adjust;
+		m->timenow = mDNSPlatformRawTime() + m->timenow_adjust;
 		if (m->timenow == 0) m->timenow = 1;
 		}
 
 	if (m->timenow_last - m->timenow > 0)
 		{
 		m->timenow_adjust += m->timenow_last - m->timenow;
-		LogMsg("mDNSPlatformTimeNow went backwards by %ld ticks; setting correction factor to %ld", m->timenow_last - m->timenow, m->timenow_adjust);
+		LogMsg("mDNSPlatformRawTime went backwards by %ld ticks; setting correction factor to %ld", m->timenow_last - m->timenow, m->timenow_adjust);
 		m->timenow = m->timenow_last;
 		}
 	m->timenow_last = m->timenow;
@@ -6214,11 +6233,11 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	mDNSBool AdvertiseLocalAddresses, mDNSCallback *Callback, void *Context)
 	{
 	mDNSu32 slot;
-	mDNSs32 timenow;
-	mDNSs32 timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
-	mStatus result = mDNSPlatformTimeInit(&timenow);
+	mDNSs32 timenow, timenow_adjust;
+	mStatus result = mDNSPlatformTimeInit();
 	if (result != mStatus_NoError) return(result);
-	timenow += timenow_adjust;
+	timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
+	timenow = mDNSPlatformRawTime() + timenow_adjust;
 	LogMsg("Starting time value 0x%08X (%d)", timenow, timenow);
 	
 	if (!rrcachestorage) rrcachesize = 0;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.79  2004/09/16 00:24:48  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.78  2004/09/15 01:16:57  ksekar
 <rdar://problem/3797598> mDNSResponder printing too many messages
 
@@ -350,6 +353,30 @@ mDNSlocal void UpdateServiceTargets(mDNS *const m);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - Temporary workaround
+#endif
+
+// 17 Places in this file directly call mDNSPlatformTimeNow(), which is unsafe
+// The platform function is now called mDNSPlatformRawTime(), and
+// mDNSPlatformTimeNow() is defined here as a temporary workaround.
+// This is a gross hack, and after this change has been tested for a while,
+// all these calls should be replaced by simple references to m->timenow
+
+mDNSlocal mDNSs32 mDNSPlatformTimeNow(mDNS *m)
+	{
+	//extern mDNS mDNSStorage;
+	if (m->mDNS_busy && m->timenow) return(m->timenow);
+	LogMsg("ERROR: uDNS.c code executing without holding main mDNS lock");
+
+	// To get a quick and easy stack trace to find out *how* this routine
+	// is being called without holding main mDNS lock, uncomment the line below:
+	//*(long*)0 = 0;
+	
+	return(mDNS_TimeNow(m));
+	}
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - General Utility Functions
 #endif
 
@@ -410,9 +437,9 @@ mDNSlocal void SwapRData(mDNS *m, AuthRecord *rr, mDNSBool DeallocOld)
 
 // set retry timestamp for record with exponential backoff
 // (for service record sets, use RR_SRV as representative for time checks
-mDNSlocal void SetRecordRetry(AuthRecord *rr)
+mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr)
 	{
-	rr->LastAPTime = mDNSPlatformTimeNow();	
+	rr->LastAPTime = mDNSPlatformTimeNow(m);	
 	if (rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL)   { rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL; return; }
 	if (rr->ThisAPInterval*2 <= MAX_UCAST_POLL_INTERVAL) { rr->ThisAPInterval *= 2;                       return; }
 	if (rr->ThisAPInterval != MAX_UCAST_POLL_INTERVAL)   { rr->ThisAPInterval = MAX_UCAST_POLL_INTERVAL;          }
@@ -590,14 +617,15 @@ mDNSlocal mDNSBool DomainContainsLabelString(const domainname *d, const char *st
 	}
 
 // allocate struct, link into global list, initialize
-mDNSlocal NATTraversalInfo *AllocNATInfo(uDNS_GlobalInfo *u, NATOp_t op, NATResponseHndlr callback)
+mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, NATResponseHndlr callback)
 	{
+	uDNS_GlobalInfo *u = &m->uDNS_info;
 	NATTraversalInfo *info = umalloc(sizeof(NATTraversalInfo));
 	if (!info) { LogMsg("ERROR: malloc"); return mDNSNULL; }
 	ubzero(info, sizeof(NATTraversalInfo));
 	info->next = u->NATTraversals;
 	u->NATTraversals = info;
-	info->retry = mDNSPlatformTimeNow() + NATMAP_INIT_RETRY;
+	info->retry = mDNSPlatformTimeNow(m) + NATMAP_INIT_RETRY;
 	info->op = op;
 	info->state = NATState_Init;
 	info->ReceiveResponse = callback;
@@ -651,7 +679,7 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	if (info->RetryInterval < NATMAP_INIT_RETRY) info->RetryInterval = NATMAP_INIT_RETRY;
 	else if (info->RetryInterval * 2 > NATMAP_MAX_RETRY) info->RetryInterval = NATMAP_MAX_RETRY;
 	else info->RetryInterval *= 2;
-	info->retry = mDNSPlatformTimeNow() + info->RetryInterval;
+	info->retry = mDNSPlatformTimeNow(m) + info->RetryInterval;
 
 	}
 
@@ -732,7 +760,7 @@ mDNSlocal void StartGetPublicAddr(mDNS *m, uDNS_HostnameInfo *hInfo)
 	mDNSu8 *msg;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
-	NATTraversalInfo *info = AllocNATInfo(u, NATOp_AddrRequest, ReceiveNATAddrResponse);
+	NATTraversalInfo *info = AllocNATInfo(m, NATOp_AddrRequest, ReceiveNATAddrResponse);
 	if (!info) { uDNS_RegisterRecord(m, hInfo->ar); return; } 
 	hInfo->ar->uDNS_info.NATinfo = info;
 	info->reg.RecordRegistration = hInfo->ar;
@@ -846,7 +874,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
       	// !!!KRS we need to update the SRV here!
 	n->PublicPort = pub;
 
-	n->retry = mDNSPlatformTimeNow() + ((mDNSs32)mDNSVal32(lease) * mDNSPlatformOneSecond / 2);  // retry half way to expiration
+	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)mDNSVal32(lease) * mDNSPlatformOneSecond / 2);  // retry half way to expiration
 	
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return; }
 	n->state = NATState_Established;
@@ -874,7 +902,7 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	else if (DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_udp")) op = NATOp_MapUDP;
 	else { LogMsg("StartNATPortMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name.c); goto error; }
 
-	info = AllocNATInfo(u, op, ReceivePortMapReply);
+	info = AllocNATInfo(m, op, ReceivePortMapReply);
 	srs->uDNS_info.NATinfo = info;
 	info->reg.ServiceRegistration = srs;
 	info->state = NATState_Request;
@@ -900,7 +928,7 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	if (!u->Router.ip.v4.NotAnInteger)
 		{
 		debugf("No router.  Will retry NAT traversal in %d seconds", NATMAP_INIT_RETRY);
-		info->retry = mDNSPlatformTimeNow() + NATMAP_INIT_RETRY;
+		info->retry = mDNSPlatformTimeNow(m) + NATMAP_INIT_RETRY;
 		info->RetryInterval = NATMAP_INIT_RETRY;
 		return;
 		}
@@ -1661,7 +1689,7 @@ mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	
 	if (lease > 0)
 		{
-		expire = (mDNSPlatformTimeNow() + (((mDNSs32)lease * mDNSPlatformOneSecond)) * 3/4);
+		expire = (mDNSPlatformTimeNow(m) + (((mDNSs32)lease * mDNSPlatformOneSecond)) * 3/4);
 		if (info->state == regState_UpdatePending)  
             // if updating individual record, the service record set may expire sooner
 			{ if (expire - info->expire < 0) info->expire = expire; }
@@ -1885,7 +1913,7 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	if (!sameID(pktData.id, qInfo->id)) { LogMsg("recvRefreshReply - ID mismatch.  Discarding");  return; }
 	if (pktData.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData.err); return; }
 
-	qInfo->expire = mDNSPlatformTimeNow() + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond);
+	qInfo->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond);
 	qInfo->retry = qInfo->expire + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond * 3/4);
  
 	qInfo->origLease = pktData.lease;
@@ -1901,13 +1929,13 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	mStatus err;
 	mDNSs32 timenow;
 
-	timenow = mDNSPlatformTimeNow();
+	timenow = mDNSPlatformTimeNow(m);
 	if ((info->state == LLQ_Refresh && info->ntries >= kLLQ_MAX_TRIES) ||
 		info->expire - timenow < 0)
 		{
 		LogMsg("Unable to refresh LLQ %##s - will retry in %d minutes", q->qname.c, kLLQ_DEF_RETRY/60);
 		info->state = LLQ_Retry;
-		info->retry = mDNSPlatformTimeNow() + kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
+		info->retry = mDNSPlatformTimeNow(m) + kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
 		info->deriveRemovesOnResume = mDNStrue;
 		return;
 		//!!!KRS handle this - periodically try to re-establish
@@ -1960,7 +1988,7 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 	
 	if (llq->err) { LogMsg("hndlChallengeResponseAck - received error %d from server", llq->err); goto error; }
 	if (!sameID(info->id, llq->id)) { LogMsg("hndlChallengeResponseAck - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
-	info->expire = mDNSPlatformTimeNow() + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
+	info->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
 	info->retry = info->expire + ((mDNSs32)llq->lease * mDNSPlatformOneSecond * 3/4);
  
 	info->origLease = llq->lease;
@@ -1980,7 +2008,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	mDNSu8 *responsePtr = response.data;
 	mStatus err;
 	LLQOptData llqBuf;
-	mDNSs32 timenow = mDNSPlatformTimeNow();
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	
 	if (info->ntries++ == kLLQ_MAX_TRIES)
 		{
@@ -2025,7 +2053,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, LLQOptData *llq, DNSQuestion *q)
 	{
 	LLQ_Info *info = q->uDNS_info.llq;
-	mDNSs32 timenow = mDNSPlatformTimeNow();
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	switch(llq->err)
 		{
 		case LLQErr_NoError: break;
@@ -2117,7 +2145,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	LLQOptData llqData;
 	DNSQuestion *q = info->question; 
 	mStatus err;
-	mDNSs32 timenow = mDNSPlatformTimeNow();
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	
 	if (info->ntries++ == kLLQ_MAX_TRIES)
 		{
@@ -2391,7 +2419,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 
 	// else send the query to our server
 
-	question->LastQTime = mDNSPlatformTimeNow();
+	question->LastQTime = mDNSPlatformTimeNow(m);
 	question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
     // store the question/id in active question list
     question->uDNS_info.timestamp = question->LastQTime;
@@ -2951,7 +2979,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	context->m = m;
 
 	info->id.NotAnInteger = (mDNSu16)~0;             // all 1's indicates TCP queries
-	info->timestamp = mDNSPlatformTimeNow();         // reset timestamp
+	info->timestamp = mDNSPlatformTimeNow(m);         // reset timestamp
 
 	connectionStatus = mDNSPlatformTCPConnect(src, UnicastDNSPort, question->InterfaceID, conQueryCallback, context, &sd);
 	if (connectionStatus == mStatus_ConnectionEstablished)  // manually invoke callback if connection completes
@@ -3024,7 +3052,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %d", err);
 		}
 
-	SetRecordRetry(rr);
+	SetRecordRetry(m, rr);
 	
 	if (regInfo->state != regState_Refresh) regInfo->state = regState_Pending;
 	return;
@@ -3206,7 +3234,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (rInfo->state != regState_Refresh)
 		rInfo->state = regState_Pending;
 
-	SetRecordRetry(&srs->RR_SRV);
+	SetRecordRetry(m, &srs->RR_SRV);
 	rInfo->id.NotAnInteger = id.NotAnInteger;
 	if (mapped) srv->resrec.rdata->u.srv.port = privport;
 	return;
@@ -3375,7 +3403,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		if (err) LogMsg("ERROR: uDNS_DeregisterRecord - mDNSSendDNSMessage - %d", err); 
 		}
 
-	SetRecordRetry(rr);
+	SetRecordRetry(m, rr);
 	rr->uDNS_info.state = regState_DeregPending;
 
 	if (n) FreeNATInfo(m, n);
@@ -3514,7 +3542,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		if (err) { LogMsg("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %d", err); goto error; }
 		}
 
-	SetRecordRetry(&srs->RR_SRV);
+	SetRecordRetry(m, &srs->RR_SRV);
     info->id.NotAnInteger = id.NotAnInteger;
 	return;
 	
@@ -3637,7 +3665,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 		}
 
 	//!!! Update this when we implement retransmission for services	
-	SetRecordRetry(rr);
+	SetRecordRetry(m, rr);
 	
 	rr->uDNS_info.state = regState_UpdatePending;
 	if (&rr->uDNS_info != info) info->state = regState_UpdatePending; // set parent SRS
@@ -3884,7 +3912,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 mDNSexport void uDNS_Execute(mDNS *const m)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-	mDNSs32 nexte, timenow = mDNSPlatformTimeNow();	
+	mDNSs32 nexte, timenow = mDNSPlatformTimeNow(m);	
 
 	u->nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
 	if (!getInitializedDNS(&m->uDNS_info)) return; 	// return immediately if we don't have a DNS server
@@ -3961,7 +3989,7 @@ mDNSlocal void SuspendRecordRegistrations(mDNS *m)
 mDNSexport void uDNS_Init(mDNS *const m)
 	{
 	mDNSPlatformMemZero(&m->uDNS_info, sizeof(uDNS_GlobalInfo));
-	m->uDNS_info.nextevent = mDNSPlatformTimeNow() + 0x78000000;
+	m->uDNS_info.nextevent = m->timenow_last + 0x78000000;
 	}
 
 mDNSexport void uDNS_Close(mDNS *m)

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.79  2004/09/16 00:24:49  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.78  2004/09/15 21:44:20  cheshire
 <rdar://problem/3681031> Randomize initial timenow_adjust value in mDNS_Init
 Show time value in log to help diagnose errors
@@ -97,7 +100,7 @@ Revision 1.59  2004/06/18 05:10:31  rpantos
 Changes to allow code to be used on Windows
 
 Revision 1.58  2004/06/15 03:54:08  cheshire
-Include mDNSPlatformTimeNow() in SIGINFO output
+Include mDNS_TimeNow(&mDNSStorage) in SIGINFO output
 
 Revision 1.57  2004/06/12 01:47:27  ksekar
 <rdar://problem/3690241>: BBEdit crashes when trying to check for newer version
@@ -205,7 +208,7 @@ Reviewed by: Stuart Cheshire
 
 Revision 1.26  2003/10/23 17:51:04  ksekar
 <rdar://problem/3335216>: handle blocked clients more efficiently
-Changed gettimeofday() to mDNSPlatformTimeNow()
+Changed gettimeofday() to mDNS_TimeNow(&mDNSStorage);
 
 Revision 1.25  2003/10/22 23:37:49  ksekar
 <rdar://problem/3459141>: crash/hang in abort_client
@@ -640,7 +643,7 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
     request_state *req = all_requests, *tmp, *prev = NULL;
     reply_state *fptr;
     transfer_state result; 
-    mDNSs32 now = mDNSPlatformTimeNow();
+    mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
 
     while(req)
         {
@@ -722,7 +725,7 @@ void udsserver_info(void)
         else if (req->terminate == enum_termination_callback)
             LogMsgNoIdent("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
         }
-    timenow = mDNSPlatformTimeNow() + mDNSStorage.timenow_adjust;
+    timenow = mDNS_TimeNow(&mDNSStorage);
     LogMsgNoIdent("Timenow 0x%08X (%d)", timenow, timenow);
     }
 

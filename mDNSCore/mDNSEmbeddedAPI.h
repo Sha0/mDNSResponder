@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.197  2004/09/16 00:24:48  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.196  2004/09/14 23:42:35  cheshire
 <rdar://problem/3801296> Need to seed random number generator from platform-layer data
 
@@ -1115,7 +1118,7 @@ typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 typedef struct NATTraversalInfo_struct NATTraversalInfo;
-	
+
 // Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
@@ -1167,11 +1170,11 @@ typedef struct
     // registration/lease state
     regState_t   state;
     mDNSBool     lease;    // dynamic update contains (should contain) lease option
-    mDNSs32      expire;   // expiration of lease (-1 for static)  
+    mDNSs32      expire;   // expiration of lease (-1 for static)
     mDNSBool      TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
 
     // identifier to match update request and response
-    mDNSOpaque16 id;      
+    mDNSOpaque16 id;
 
     // server info
     domainname   zone;     // the zone that is updated
@@ -1181,7 +1184,7 @@ typedef struct
     // NAT traversal context
     NATTraversalInfo *NATinfo; // may be NULL
 
-    // state for deferred operations 
+    // state for deferred operations
     domainname   OrigTarget;              // un-ack'd target change
     mDNSBool     TargetChangeDeferred;    // update service target upon completion of current operation
     mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
@@ -1193,7 +1196,7 @@ typedef struct
     mDNSu16      UpdateRDLen;  // length of above field
     mDNSRecordUpdateCallback *UpdateRDCallback; // client callback to free old rdata
 	} uDNS_RegInfo;
-	
+
 struct AuthRecord_struct
 	{
 	// For examples of how to set up this structure for use in mDNS_Register(),
@@ -1294,7 +1297,7 @@ typedef struct uDNS_HostnameInfo
 	} uDNS_HostnameInfo;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
-	
+
 // A NetworkInterfaceInfo_struct serves two purposes:
 // 1. It holds the address, PTR and HINFO records to advertise a given IP address on a given physical interface
 // 2. It tells mDNSCore which physical interfaces are available; each physical interface has its own unique InterfaceID.
@@ -1324,7 +1327,7 @@ struct NetworkInterfaceInfo_struct
 	mDNSBool        Advertise;			// False if you are only searching on this interface
 	mDNSBool        McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	};
-	
+
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
 struct ExtraResourceRecord_struct
 	{
@@ -1486,7 +1489,7 @@ struct DNSQuestion_struct
     mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
                                             // Set by mDNS.c in mDNS_StartBrowse.
 	};
-	
+
 typedef struct
 	{
     // Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()
@@ -1522,12 +1525,12 @@ struct ServiceInfoQuery_struct
 	mDNSServiceInfoQueryCallback *ServiceInfoQueryCallback;
     void                         *ServiceInfoQueryContext;
 	};
-	
+
 // ***************************************************************************
 #if 0
 #pragma mark - NAT Traversal structures and constants
 #endif
-	
+
 #define NATMAP_INIT_RETRY (mDNSPlatformOneSecond / 4)          // start at 250ms w/ exponential decay
 #define NATMAP_MAX_RETRY mDNSPlatformOneSecond                 // back off to once per second
 #define NATMAP_MAX_TRIES 3                                     // for max 3 tries
@@ -1570,7 +1573,7 @@ typedef enum
 	} NATState_t;
 // Note: we have no explicit "cancelled" state, where a service/interface is deregistered while we
  // have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL
-	
+
 // Pass NULL for pkt on error (including timeout)
 typedef void (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 
@@ -1589,7 +1592,6 @@ struct NATTraversalInfo_struct
     NATTraversalInfo *next;
 	};
 
-	
 // ***************************************************************************
 #if 0
 #pragma mark - Main mDNS object, used to hold all the mDNS state
@@ -1615,14 +1617,14 @@ typedef struct
     AuthRecord       *RecordRegistrations;
     NATTraversalInfo *NATTraversals;
     mDNSu16          NextMessageID;
-    mDNSAddr         Servers[32];        
+    mDNSAddr         Servers[32];
     mDNSAddr         Router;
     char             PrimaryIfName[256]; // Name of primary interface to be registered (e.g. "en0")
     mDNSAddr         PrimaryIP;          // Address of primary interface
     mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
     domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
     domainname       ServiceRegDomain;   // (going away w/ multi-user support)
-    struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates. 
+    struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
     uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
     } uDNS_GlobalInfo;
 
@@ -1856,6 +1858,7 @@ extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_Reconfirm (mDNS *const m, CacheRecord *const cacherr);
 extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
+extern mDNSs32 mDNS_TimeNow(mDNS *const m);
 
 // ***************************************************************************
 #if 0
@@ -1863,7 +1866,6 @@ extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
 #endif
 
 extern mDNSs32  mDNSPlatformOneSecond;
-extern mDNSs32  mDNSPlatformTimeNow(void);
 
 // ***************************************************************************
 #if 0
@@ -2042,11 +2044,6 @@ typedef struct uDNS_AuthInfo
     struct uDNS_AuthInfo *next;
 	} uDNS_AuthInfo;
 
-// Platform Support for computing MD5
-// mDNSPlatformUTC returns the time, in seconds, since Jan 1st 1970 UTC and is required for generating TSIG records
-
-extern mDNSs32  mDNSPlatformUTC(void);
-
 // Client Calls
 //
 // mDNS_SetSecretForZone tells the core to authenticate (via TSIG with an HMAC_MD5 hash of the shared secret)
@@ -2058,12 +2055,12 @@ extern mDNSs32  mDNSPlatformUTC(void);
 // to dissable authentication for the zone.
 
 extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key, mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
-	
+
 // Hostname Configuration
 
 // All hostnames advertised point to a single IP address, set via SetPrimaryInterface.  Invoking this routine
 // updates all existing hostnames to point to the new address.
-	
+
 // The current primary interface may be determined via GetPrimaryInterface, which is passed a buffer in which the IP
 // address is written and returns the interface name or NULL if no interface is set.
 
@@ -2078,7 +2075,7 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key,
 
 // mDNS_SetDynDNSComputerName specifies the label to prepend to all hostnames.  This routine must be called prior to the
 // first call to AddDynDNSHostDomain.  Subsequent invokations of this routine causes all existing hostnames and SRV records
-// that point to them to be updated.  
+// that point to them to be updated.
 
 // Host domains added prior to specification of the primary interface address and computer name will be deferred until
 // these values are initialized.
@@ -2088,7 +2085,7 @@ extern void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain);
 extern void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel);
 extern void mDNS_SetPrimaryInterface(mDNS *m, const char *ifname, const mDNSAddr *ip);
 extern const char *mDNS_GetPrimaryInterface(mDNS *m, mDNSAddr *ip);
-	
+
 // Routines called by the core, exported by DNSDigest.c
 
 // Convert a base64 encoded key into a binary byte stream
@@ -2122,12 +2119,21 @@ extern mStatus DNSDigest_MD5(const DNSMessage *msg, mDNSu32 msglen, mDNSOpaque16
 // mDNSPlatformSendUDP() sends one UDP packet
 // When a packet is received, the PlatformSupport code calls mDNSCoreReceive()
 // mDNSPlatformClose() tidies up on exit
+//
 // Note: mDNSPlatformMemAllocate/mDNSPlatformMemFree are only required for handling oversized resource records and unicast DNS.
 // If your target platform has a well-defined specialized application, and you know that all the records it uses
 // are InlineCacheRDSize or less, then you can just make a simple mDNSPlatformMemAllocate() stub that always returns
 // NULL. InlineCacheRDSize is a compile-time constant, which is set by default to 64. If you need to handle records
 // a little larger than this and you don't want to have to implement run-time allocation and freeing, then you
 // can raise the value of this constant to a suitable value (at the expense of increased memory usage).
+//
+// USE CAUTION WHEN CALLING mDNSPlatformRawTime: The m->timenow_adjust correction factor needs to be added
+// Generally speaking:
+// Code that's protected by the main mDNS lock should just use the m->timenow value
+// Code outside the main mDNS lock should use mDNS_TimeNow(m) to get properly adjusted time
+//
+// mDNSPlatformUTC returns the time, in seconds, since Jan 1st 1970 UTC and is required for generating TSIG records
+
 extern mStatus  mDNSPlatformInit        (mDNS *const m);
 extern void     mDNSPlatformClose       (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
@@ -2144,7 +2150,9 @@ extern void     mDNSPlatformMemZero     (                       void *dst, mDNSu
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
 extern mDNSu32  mDNSPlatformRandomSeed  (void);
-extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
+extern mStatus  mDNSPlatformTimeInit    (void);
+extern mDNSs32  mDNSPlatformRawTime     (void);
+extern mDNSs32  mDNSPlatformUTC         (void);
 
 // Platform support modules should provide the following functions to map between opaque interface IDs
 // and interface indexes in order to support the DNS-SD API. If your target platform does not support
@@ -2205,7 +2213,7 @@ extern mStatus LNT_GetPublicIP(mDNSOpaque32 *ip);
 extern mStatus LNT_MapPort(mDNSIPPort priv, mDNSIPPort pub, mDNSBool tcp);
 extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 #endif // _LEGACY_NAT_TRAVERSAL_
-	
+
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_SetFQDN() is called once on startup (typically from mDNSPlatformInit())

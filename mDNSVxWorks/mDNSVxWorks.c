@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.21  2004/09/16 00:24:50  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.20  2004/09/14 23:42:36  cheshire
 <rdar://problem/3801296> Need to seed random number generator from platform-layer data
 
@@ -76,7 +79,7 @@ Revision 1.7  2003/08/20 05:58:54  bradley
 Removed dependence on modified mDNSCore: define structures/prototypes locally.
 
 Revision 1.6  2003/08/18 23:19:05  cheshire
-<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformRawTime()
 
 Revision 1.5  2003/08/15 00:05:04  bradley
 Updated to use name/InterfaceID from new AuthRecord resrec field. Added output of new record sizes.
@@ -297,7 +300,7 @@ mDNSlocal mStatus	TearDownTask( mDNS * const inMDNS );
 mDNSlocal void		Task( mDNS *inMDNS );
 mDNSlocal mStatus	TaskInit( mDNS *inMDNS );
 mDNSlocal void		TaskSetupReadSet( mDNS *inMDNS, fd_set *outReadSet, int *outMaxSocket );
-mDNSlocal void		TaskSetupTimeout( mDNSs32 inNextTaskTime, struct timeval *outTimeout );
+mDNSlocal void		TaskSetupTimeout( mDNS *inMDNS, mDNSs32 inNextTaskTime, struct timeval *outTimeout );
 mDNSlocal void		TaskProcessPacket( mDNS *inMDNS, MDNSInterfaceItem *inItem, MDNSSocketRef inSocketRef );
 
 // Utilities
@@ -612,7 +615,7 @@ void	mDNSPlatformUnlock( const mDNS * const inMDNS )
 	// (a) handle immediate work (if any) resulting from this API call
 	// (b) calculate the next sleep time between now and the next interesting event
 	
-	if( ( mDNSPlatformTimeNow() - inMDNS->NextScheduledEvent ) >= 0 )
+	if( ( mDNS_TimeNow(inMDNS) - inMDNS->NextScheduledEvent ) >= 0 )
 	{
 		// We only need to send the reschedule event when called from a task other than the mDNS task since if we are 
 		// called from mDNS task, we'll loop back and call mDNS_Execute. This avoids filling up the command queue.
@@ -727,21 +730,17 @@ mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
 //	mDNSPlatformTimeInit
 //===========================================================================================================================
 
-mDNSexport mStatus mDNSPlatformTimeInit( mDNSs32 *outTimeNow )
+mDNSexport mStatus mDNSPlatformTimeInit( void )
 {
-	check( outTimeNow );
-	
 	// No special setup is required on VxWorks -- we just use tickGet().
-	
-	*outTimeNow = mDNSPlatformTimeNow();
 	return( mStatus_NoError );
 }
 
 //===========================================================================================================================
-//	mDNSPlatformTimeNow
+//	mDNSPlatformRawTime
 //===========================================================================================================================
 
-mDNSs32	mDNSPlatformTimeNow( void )
+mDNSs32	mDNSPlatformRawTime( void )
 {
 	return( (mDNSs32) tickGet() );
 }
@@ -1533,7 +1532,7 @@ mDNSlocal void	Task( mDNS *inMDNS )
 			
 			inMDNS->p->rescheduled = 0;
 			nextTaskTime = mDNS_Execute( inMDNS );
-			TaskSetupTimeout( nextTaskTime, &timeout );
+			TaskSetupTimeout( inMDNS, nextTaskTime, &timeout );
 			
 			// Wait until something occurs (e.g. command, incoming packet, or timeout).
 			
@@ -1546,7 +1545,7 @@ mDNSlocal void	Task( mDNS *inMDNS )
 			{
 				// Next task timeout occurred. Loop back up to give mDNS core a chance to work.
 				
-				dlog( kDebugLevelChatty, DEBUG_NAME "next task timeout occurred (%ld)\n", mDNSPlatformTimeNow() );
+				dlog( kDebugLevelChatty, DEBUG_NAME "next task timeout occurred (%ld)\n", mDNS_TimeNow(inMDNS) );
 				continue;
 			}
 			
@@ -1661,13 +1660,13 @@ mDNSlocal void	TaskSetupReadSet( mDNS *inMDNS, fd_set *outReadSet, int *outMaxSo
 //	TaskSetupTimeout
 //===========================================================================================================================
 
-mDNSlocal void	TaskSetupTimeout( mDNSs32 inNextTaskTime, struct timeval *outTimeout )
+mDNSlocal void	TaskSetupTimeout( mDNS *inMDNS, mDNSs32 inNextTaskTime, struct timeval *outTimeout )
 {
 	mDNSs32		delta;
 	
 	// Calculate how long to wait before performing idle processing.
 	
-	delta = inNextTaskTime - mDNSPlatformTimeNow();
+	delta = inNextTaskTime - mDNS_TimeNow(inMDNS);
 	if( delta <= 0 )
 	{
 		// The next task time is now or in the past. Set the timeout to fire immediately.

@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.55  2004/09/16 00:24:49  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.54  2004/09/15 23:55:00  ksekar
 <rdar://problem/3800597> mDNSPosix should #include stdint.h
 
@@ -135,7 +138,7 @@ Revision 1.25  2003/10/30 19:25:49  cheshire
 Fix signed/unsigned warning on certain compilers
 
 Revision 1.24  2003/08/18 23:12:23  cheshire
-<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformRawTime()
 
 Revision 1.23  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
@@ -1378,16 +1381,15 @@ mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
 
-mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
+mDNSexport mStatus mDNSPlatformTimeInit(void)
 	{
 	// No special setup is required on Posix -- we just use gettimeofday();
 	// This is not really safe, because gettimeofday can go backwards if the user manually changes the date or time
 	// We should find a better way to do this
-	*timenow = mDNSPlatformTimeNow();
 	return(mStatus_NoError);
 	}
 
-mDNSexport mDNSs32  mDNSPlatformTimeNow()
+mDNSexport mDNSs32  mDNSPlatformRawTime()
 	{
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
@@ -1435,7 +1437,7 @@ mDNSexport void mDNSPosixGetFDSet(mDNS *m, int *nfds, fd_set *readfds, struct ti
 		}
 
 	// 3. Calculate the time remaining to the next scheduled event (in struct timeval format)
-	ticks = nextevent - mDNSPlatformTimeNow();
+	ticks = nextevent - mDNS_TimeNow(m);
 	if (ticks < 1) ticks = 1;
 	interval.tv_sec  = ticks >> 10;						// The high 22 bits are seconds
 	interval.tv_usec = ((ticks & 0x3FF) * 15625) / 16;	// The low 10 bits are 1024ths

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.179  2004/09/16 00:24:49  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.178  2004/09/15 21:51:34  cheshire
 <rdar://problem/3387020> mDNSResponder should notify user of kernel flaw
 Calling CFUserNotificationDisplayNotice too early in the boot process seems to kill
@@ -247,7 +250,7 @@ Revision 1.112  2003/08/19 03:04:43  cheshire
 <rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
 
 Revision 1.111  2003/08/18 22:53:37  cheshire
-<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformRawTime()
 
 Revision 1.110  2003/08/16 03:39:00  cheshire
 <rdar://problem/3338440> InterfaceID -1 indicates "local only"
@@ -630,7 +633,7 @@ mDNSlocal void NotifyOfElusiveBug(mDNS *const m, const char *title, mDNSu32 rada
 	
 	// Calling CFUserNotificationDisplayNotice too early in the boot process seems to kill the machine
 	// so we won't do this until at least three minutes after boot
-	if ((mDNSu32)(mDNSPlatformTimeNow()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return;
+	if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return;
 	
 	// Determine if we're at Apple (17.*.*.*)
 	for (i = m->p->InterfaceList; i; i = i->next)
@@ -753,7 +756,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		// Don't report EHOSTUNREACH in the first three minutes after boot
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
-		if (errno == EHOSTUNREACH && (mDNSu32)(mDNSPlatformTimeNow()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
+		if (errno == EHOSTUNREACH && (mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 		return(err);
@@ -2692,7 +2695,7 @@ mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
 
 mDNSexport mDNSs32 mDNSPlatformOneSecond = 1000;
 
-mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
+mDNSexport mStatus mDNSPlatformTimeInit(void)
 	{
 	// Notes: Typical values for mach_timebase_info:
 	// tbi.numer = 1000 million
@@ -2714,15 +2717,13 @@ mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
 	// When we ship Macs with clock frequencies above 1000GHz, we may have to update this code.
 	struct mach_timebase_info tbi;
 	kern_return_t result = mach_timebase_info(&tbi);
-	if (result != KERN_SUCCESS) return(result);
-	clockdivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
-	*timenow = mDNSPlatformTimeNow();
-	return(mStatus_NoError);
+	if (result == KERN_SUCCESS) clockdivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
+	return(result);
 	}
 
-mDNSexport mDNSs32 mDNSPlatformTimeNow(void)
+mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 	{
-	if (clockdivisor == 0) { LogMsg("mDNSPlatformTimeNow called before mDNSPlatformTimeInit"); return(0); }
+	if (clockdivisor == 0) { LogMsg("mDNSPlatformRawTime called before mDNSPlatformTimeInit"); return(0); }
 	return((mDNSs32)(mach_absolute_time() / clockdivisor));
 	}
 

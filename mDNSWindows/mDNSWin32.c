@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.52  2004/09/16 00:24:50  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.51  2004/09/14 23:42:37  cheshire
 <rdar://problem/3801296> Need to seed random number generator from platform-layer data
 
@@ -146,7 +149,7 @@ platforms (re-mapped to CreateThread on Window CE) to avoid a leak in the Micros
 Added IPv4/IPv6 string<->address conversion routines; Cleaned up some code and added HeaderDoc.
 
 Revision 1.21  2003/08/18 23:09:57  cheshire
-<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformRawTime()
 
 Revision 1.20  2003/08/12 19:56:27  cheshire
 Update to APSL 2.0
@@ -674,21 +677,17 @@ mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
 //	mDNSPlatformTimeInit
 //===========================================================================================================================
 
-mDNSexport mStatus	mDNSPlatformTimeInit( mDNSs32 *outTimeNow )
+mDNSexport mStatus	mDNSPlatformTimeInit( void )
 {
-	check( outTimeNow );
-	
 	// No special setup is required on Windows -- we just use GetTickCount().
-	
-	*outTimeNow = mDNSPlatformTimeNow();
 	return( mStatus_NoError );
 }
 
 //===========================================================================================================================
-//	mDNSPlatformTimeNow
+//	mDNSPlatformRawTime
 //===========================================================================================================================
 
-mDNSs32	mDNSPlatformTimeNow( void )
+mDNSs32	mDNSPlatformRawTime( void )
 {
 	return( (mDNSs32) GetTickCount() );
 }
@@ -2020,7 +2019,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 		{
 			// Give the mDNS core a chance to do its work and determine next event time.
 			
-			mDNSs32 interval = mDNS_Execute(m) - mDNSPlatformTimeNow();
+			mDNSs32 interval = mDNS_Execute(m) - mDNS_TimeNow(m);
 			if (m->p->idleThreadCallback)
 			{
 				interval = m->p->idleThreadCallback(m, interval);

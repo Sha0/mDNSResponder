@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.14  2004/09/16 00:24:49  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.13  2004/08/11 01:59:41  cheshire
 Remove "mDNS *globalInstance" parameter from udsserver_init()
 
@@ -229,7 +232,7 @@ static void		DumpStateLog( mDNS *m)
 	mDNSu32 slot;
 	CacheRecord *rr;
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
-	mDNSs32 now = mDNSPlatformTimeNow();
+	mDNSs32 now = mDNS_TimeNow(m);
 
 	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
 
@@ -284,7 +287,7 @@ static mStatus	MainLoop( mDNS *m)
 		
 			nextTimerEvent = udsserver_idle( nextTimerEvent);
 	
-			ticks = nextTimerEvent - mDNSPlatformTimeNow();
+			ticks = nextTimerEvent - mDNS_TimeNow(m);
 			if (ticks < 1) ticks = 1;
 		}
 		else	// otherwise call EventLoop again with 0 timemout

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: SubTypeTester.c,v $
+Revision 1.4  2004/09/16 00:24:49  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+
 Revision 1.3  2004/08/13 23:25:01  cheshire
 Now that we do both uDNS and mDNS, global replace "m->hostname" with
 "m->MulticastHostname" for clarity
@@ -204,22 +207,22 @@ int main()
 			mDNSResponderTestSetup(&m);
 			mDNSResponderSetAvail(&m, &availRec1, &p1);
 			availRec2Active = false;
-			nextAvail = mDNSPlatformTimeNow() + mDNSPlatformOneSecond * 10;
-			nextBusy  = mDNSPlatformTimeNow() + mDNSPlatformOneSecond * 15;
+			nextAvail = mDNS_TimeNow(&m) + mDNSPlatformOneSecond * 10;
+			nextBusy  = mDNS_TimeNow(&m) + mDNSPlatformOneSecond * 15;
 			}
 
 		if (DoneSetup)
 			{
 			// We check availRec2.RecordType because we don't want to re-register this record
 			// if the previous mDNS_Deregister() has not yet completed
-			if (mDNSPlatformTimeNow() - nextAvail > 0 && !availRec2Active)
+			if (mDNS_TimeNow(&m) - nextAvail > 0 && !availRec2Active)
 				{
 				printf("Setting Two now available\n");
 				availRec2Active = true;
 				mDNSResponderSetAvail(&m, &availRec2, &p2);
 				nextAvail = nextBusy + mDNSPlatformOneSecond * 10;
 				}
-			else if (mDNSPlatformTimeNow() - nextBusy > 0)
+			else if (mDNS_TimeNow(&m) - nextBusy > 0)
 				{
 				printf("Setting Two now busy\n");
 				mDNS_Deregister(&m, &availRec2);
