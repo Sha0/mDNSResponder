@@ -669,7 +669,7 @@ mDNSlocal mDNSBool SuppressDuplicate(const ResourceRecord *const ds, const Resou
 	return(ds->rroriginalttl >= rr->rroriginalttl / 2);
 	}
 
-mDNSlocal mDNSu32 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
+mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 	{
 	const domainname *const name = estimate ? &rr->name : mDNSNULL;
 	switch (rr->rrtype)
