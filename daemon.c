@@ -218,7 +218,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	DNSServiceDomainEnumerationReplyResultType rt;
 	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->Context;
 
-	debugf("FoundDomain: %##s PTR %##s", answer->name.c, answer->rdata.name.c);
+	debugf("FoundDomain: %##s PTR %##s", answer->name.c, answer->rdata->u.name.c);
 	if (answer->rrtype != kDNSType_PTR) return;
 	if (!x) { debugf("FoundDomain: DNSServiceDomainEnumeration is NULL"); return; }
 
@@ -233,7 +233,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		else return;
 		}
 
-	ConvertDomainNameToCString(&answer->rdata.name, buffer);
+	ConvertDomainNameToCString(&answer->rdata->u.name, buffer);
 	if (DNSServiceDomainEnumerationReply_rpc(x->ClientMachPort, rt, buffer, 0, 10) == MACH_SEND_TIMED_OUT)
 		AbortBlockedClient(x->ClientMachPort, "enumeration");
 	}
@@ -282,8 +282,8 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	char c_name[256], c_type[256], c_dom[256];
 	
 	if (answer->rrtype != kDNSType_PTR) return;
-	debugf("FoundInstance: %##s", answer->rdata.name.c);
-	DeconstructServiceName(&answer->rdata.name, &name, &type, &domain);
+	debugf("FoundInstance: %##s", answer->rdata->u.name.c);
+	DeconstructServiceName(&answer->rdata->u.name, &name, &type, &domain);
 	ConvertDomainLabelToCString_unescaped(&name, c_name);
 	ConvertDomainNameToCString(&type, c_type);
 	ConvertDomainNameToCString(&domain, c_dom);
@@ -387,8 +387,14 @@ mDNSlocal void FreeDNSServiceRegistration(DNSServiceRegistration *x)
 		{
 		ExtraResourceRecord *extras = x->s.Extras;
 		x->s.Extras = x->s.Extras->next;
+		if (extras->r.rdata != &extras->r.rdatastorage)
+			free(extras->r.rdata);
 		free(extras);
 		}
+
+	if (x->s.RR_TXT.rdata != &x->s.RR_TXT.rdatastorage)
+			free(x->s.RR_TXT.rdata);
+
 	free(x);
 	}
 
@@ -471,25 +477,35 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	mStatus err;
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
 	ExtraResourceRecord *extra;
+	int size = sizeof(RDataBody);
+	if (size < data_len)
+		size = data_len;
 	
 	// Find this registered service
 	while (x && x->ClientMachPort != client) x = x->next;
 	if (!x) { debugf("provide_DNSServiceRegistrationAddRecord_rpc bad client %X", client); return(mStatus_BadReferenceErr); }
 
 	// Allocate storage for our new record
-	extra = malloc(sizeof(*extra));
+	extra = malloc(sizeof(*extra) + size - sizeof(RDataBody));
 	if (!extra) return(mStatus_NoMemoryErr);
 
 	// Fill in type, length, and data
-	extra->r.rrtype   = type;
-	extra->r.rdlength = data_len;
-	memcpy(&extra->r.rdata, data, data_len);
+	extra->r.rrtype = type;
+	extra->r.rdatastorage.MaxRDLength = size;
+	extra->r.rdatastorage.RDLength    = data_len;
+	memcpy(&extra->r.rdatastorage.u.data, data, data_len);
 	
 	// And register it
-	err = mDNS_AddRecordToService(&mDNSStorage, &x->s, extra);
+	err = mDNS_AddRecordToService(&mDNSStorage, &x->s, extra, &extra->r.rdatastorage);
 	*reference = (natural_t)extra;
 	debugf("Received a request to add the record of type: %d length: %d; returned reference %X", type, data_len, *reference);
 	return(err);
+	}
+
+mDNSlocal void UpdateCallback(mDNS *const m, ResourceRecord *const rr, RData *OldRData)
+	{
+	if (OldRData != &rr->rdatastorage)
+		free(OldRData);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -498,12 +514,17 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	mStatus err;
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
 	ResourceRecord *rr;
+	RData *newrdata;
+	int size = sizeof(RDataBody);
+	if (size < data_len)
+		size = data_len;
 
-	// Find this registered service, and check the record we're updating is real
+	// Find this registered service
 	while (x && x->ClientMachPort != client) x = x->next;
 	if (!x) { debugf("provide_DNSServiceRegistrationUpdateRecord_rpc bad client %X", client); return(mStatus_BadReferenceErr); }
 	
-	if (!reference)		// NULL reference means update the primary TXT record
+	// Find the record we're updating
+	if (!reference)			// NULL reference means update the primary TXT record
 		rr = &x->s.RR_TXT;
 	else					// Else, scan our list to make sure we're updating a valid record that was previously added
 		{
@@ -517,7 +538,17 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 		rr = &e->r;
 		}
 
-	err = mDNS_Update(&mDNSStorage, rr, data_len, data);
+	// Allocate storage for our new data
+	newrdata = malloc(sizeof(*newrdata) + size - sizeof(RDataBody));
+	if (!newrdata) return(mStatus_NoMemoryErr);
+
+	// Fill in new length, and data
+	newrdata->MaxRDLength = size;
+	newrdata->RDLength    = data_len;
+	memcpy(&newrdata->u, data, data_len);
+	
+	// And update our record
+	err = mDNS_Update(&mDNSStorage, rr, newrdata, UpdateCallback);
 	if (err)
 		{
 		debugf("Received a request to update the record of type: %d length: %d for reference: %X; failed %d",
@@ -698,8 +729,9 @@ mDNSlocal kern_return_t destroyBootstrapService()
 mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
 	debugf("Handling signal from mach msg");
+	if (!debug_mode)
+		destroyBootstrapService();
 	mDNS_Close(&mDNSStorage);
-	destroyBootstrapService();
 	exit(0);
 	}
 
