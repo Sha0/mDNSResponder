@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.45  2005/02/01 01:25:06  shersche
+Define sleep() to be Sleep() for Windows compatibility
+
 Revision 1.44  2005/01/27 22:57:56  cheshire
 Fix compile errors on gcc4
 
@@ -185,6 +188,8 @@ Update to APSL 2.0
 // disable warning: "nonstandard extension, function/data pointer
 // conversion in expression"
 #pragma warning(disable:4152)
+
+#define sleep(X) Sleep((X) * 1000)
 
 static int g_initWinsock = 0;
 #endif
