@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.68  2003/01/17 04:09:27  cheshire
+Bug #: 3141038 mDNSResponder Resolves are unreliable on multi-homed hosts
+
 Revision 1.67  2003/01/17 03:56:45  cheshire
 Default 24-hour TTL is far too long. Changing to two hours.
 
@@ -3722,17 +3725,22 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 	if (!query->GotSRV)
 		{
 		query->GotSRV             = mDNStrue;
+		query->qAv4.InterfaceID   = answer->InterfaceID;
 		query->qAv4.name          = answer->rdata->u.srv.target;
+		query->qAv6.InterfaceID   = answer->InterfaceID;
 		query->qAv6.name          = answer->rdata->u.srv.target;
 		mDNS_StartQuery_internal(m, &query->qAv4, mDNSPlatformTimeNow());
 		mDNS_StartQuery_internal(m, &query->qAv6, mDNSPlatformTimeNow());
 		}
 	// If this is not our first answer, only re-issue the address query if the target host name has changed
-	else if (!SameDomainName(&query->qAv4.name, &answer->rdata->u.srv.target))
+	else if (query->qAv4.InterfaceID != answer->InterfaceID ||
+		!SameDomainName(&query->qAv4.name, &answer->rdata->u.srv.target))
 		{
 		mDNS_StopQuery_internal(m, &query->qAv4);
 		mDNS_StopQuery_internal(m, &query->qAv6);
+		query->qAv4.InterfaceID   = answer->InterfaceID;
 		query->qAv4.name          = answer->rdata->u.srv.target;
+		query->qAv6.InterfaceID   = answer->InterfaceID;
 		query->qAv6.name          = answer->rdata->u.srv.target;
 		mDNS_StartQuery_internal(m, &query->qAv4, mDNSPlatformTimeNow());
 		mDNS_StartQuery_internal(m, &query->qAv6, mDNSPlatformTimeNow());
