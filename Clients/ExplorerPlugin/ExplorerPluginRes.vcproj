@@ -81,7 +81,7 @@
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Bonjour\Resources\ExplorerPlugin.dll.Resources"
+			OutputDirectory=".\Release\Root\Program Files\Rendezvous\Resources\ExplorerPlugin.dll.Resources"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"

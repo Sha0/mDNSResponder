@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.26  2005/02/15 08:00:27  shersche
+<rdar://problem/4007151> Update name
+
 Revision 1.25  2005/02/10 22:35:36  cheshire
 <rdar://problem/3727944> Update name
 
@@ -156,7 +159,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #define	DEBUG_NAME					"[Server] "
 #define	kServiceName				"Apple mDNSResponder"
-#define kServiceFirewallName		L"Bonjour"
+#define kServiceFirewallName		L"Rendezvous"
 #define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
 #define kServiceManageLLRouting		"ManageLLRouting"
 #define kServiceCacheEntryCount		"CacheEntryCount"
