@@ -251,9 +251,9 @@ struct ServiceRecordSet_struct
 	void                *Context;
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           host;		// Set if this service record does not use the standard target host name
-	ResourceRecord       RR_SRV;	// e.g. Name._printer._tcp.local.arpa. SRV 0 0 port target
-	ResourceRecord       RR_TXT;	// e.g. Name._printer._tcp.local.arpa. TXT PrintQueueName
-	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.arpa.      PTR Name._printer._tcp.local.arpa.
+	ResourceRecord       RR_SRV;	// e.g. Name._printer._tcp.local. SRV 0 0 port target
+	ResourceRecord       RR_TXT;	// e.g. Name._printer._tcp.local. TXT PrintQueueName
+	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.      PTR Name._printer._tcp.local.
 	};
 
 // ***************************************************************************
@@ -337,8 +337,8 @@ struct mDNS_struct
 	// Fields below only required for mDNS Responder...
 	domainlabel nicelabel;			// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;			// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
-	domainname  hostname1;			// Primary Host Name "Foo.local.arpa."
-	domainname  hostname2;			// Secondary Host Name "Foo.local."
+	domainname  hostname1;			// Primary Host Name "Foo.local."
+	domainname  hostname2;			// Secondary Host Name "Foo.local.arpa."
 	ResourceRecord *ResourceRecords;
 	ResourceRecord *CurrentRecord;	// Next ResourceRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;

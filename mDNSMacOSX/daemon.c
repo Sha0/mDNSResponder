@@ -221,8 +221,8 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	DNSServiceDomainEnumerationList = x;
 	
 	debugf("Client %d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
-	// We always give local.arpa. as the initial default browse domain, and then look for more
-	DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.arpa.", 0);
+	// We always give local. as the initial default browse domain, and then look for more
+	DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0);
 	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, zeroIPAddr, FoundDomain, x);
 	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, zeroIPAddr, FoundDomain, x);
 	if (!err) EnableDeathNotificationForClient(client);
@@ -265,7 +265,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server,
 	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
-	else ConvertCStringToDomainName("local.arpa.", &d);
+	else ConvertCStringToDomainName("local.", &d);
 
 	debugf("Client %d: provide_DNSServiceBrowserCreate_rpc", client);
 	debugf("Client %d: Browse for Services: %##s%##s", client, &t, &d);
@@ -313,7 +313,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t serve
 	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
-	else ConvertCStringToDomainName("local.arpa.", &d);
+	else ConvertCStringToDomainName("local.", &d);
 	ConstructServiceName(&x->i.name, &n, &t, &d);
 	x->i.InterfaceAddr = zeroIPAddr;
 
@@ -367,7 +367,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
-	else ConvertCStringToDomainName("local.arpa.", &d);
+	else ConvertCStringToDomainName("local.", &d);
 	port.NotAnInteger = notAnIntPort;
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);

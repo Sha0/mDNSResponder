@@ -88,10 +88,10 @@ static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
-	"_browse._mdns._udp.local.arpa.",
-	"_default._browse._mdns._udp.local.arpa.",
-	"_register._mdns._udp.local.arpa.",
-	"_default._register._mdns._udp.local.arpa."
+	"_browse._mdns._udp.local.",
+	"_default._browse._mdns._udp.local.",
+	"_register._mdns._udp.local.",
+	"_default._register._mdns._udp.local."
 	};
 
 // ***************************************************************************
@@ -2881,12 +2881,12 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 	m->hostname1.c[0] = 0;
 	AppendDomainLabelToName(&m->hostname1, &m->hostlabel);
 	AppendStringLabelToName(&m->hostname1, "local");
-	AppendStringLabelToName(&m->hostname1, "arpa");
 
 	// Set up the Secondary mDNS FQDN
 	m->hostname2.c[0] = 0;
 	AppendDomainLabelToName(&m->hostname2, &m->hostlabel);
 	AppendStringLabelToName(&m->hostname2, "local");
+	AppendStringLabelToName(&m->hostname2, "arpa");
 	}
 
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
@@ -2962,11 +2962,11 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		mDNS_SetupResourceRecord(&set->RR_A2,  set->ip, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
 		mDNS_SetupResourceRecord(&set->RR_PTR, set->ip, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	
-		// 1. Set up primary Address record to map from primary host name ("foo.local.arpa.") to IP address
+		// 1. Set up primary Address record to map from primary host name ("foo.local.") to IP address
 		set->RR_A1.name     = m->hostname1;
 		set->RR_A1.rdata.ip = set->ip;
 	
-		// 2. Set up secondary Address record to map from secondary host name ("foo.local.") to IP address
+		// 2. Set up secondary Address record to map from secondary host name ("foo.local.arpa.") to IP address
 		set->RR_A2.name     = m->hostname2;
 		set->RR_A2.rdata.ip = set->ip;
 	
