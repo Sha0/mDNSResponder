@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.412  2004/09/17 00:46:33  cheshire
+mDNS_TimeNow should take const mDNS parameter
+
 Revision 1.411  2004/09/17 00:31:51  cheshire
 For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
 
@@ -3549,9 +3552,9 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 			else                         m->rrcache_report += 100;
 			}
 		mDNSPlatformMemZero(r, sizeof(*r));
-		r->resrec.rdata = (RData*)&r->rdatastorage;		// By default, assume we're usually going to be using local storage
+		r->resrec.rdata = (RData*)&r->rdatastorage;	// By default, assume we're usually going to be using local storage
 	
-		if (RDLength > InlineCacheRDSize)		// If RDLength is too big, allocate extra storage
+		if (RDLength > InlineCacheRDSize)			// If RDLength is too big, allocate extra storage
 			{
 			r->resrec.rdata = (RData*)mDNSPlatformMemAllocate(sizeofRDataHeader + RDLength);
 			if (r->resrec.rdata) r->resrec.rdata->MaxRDLength = r->resrec.rdlength = RDLength;
@@ -3577,7 +3580,7 @@ mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr)
 	SetNextCacheCheckTime(m, rr);
 	}
 
-mDNSexport mDNSs32 mDNS_TimeNow(mDNS *const m)
+mDNSexport mDNSs32 mDNS_TimeNow(const mDNS *const m)
 	{
 	mDNSs32 time;
 	mDNSPlatformLock(m);

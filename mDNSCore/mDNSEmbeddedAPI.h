@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.202  2004/09/17 00:46:34  cheshire
+mDNS_TimeNow should take const mDNS parameter
+
 Revision 1.201  2004/09/17 00:31:51  cheshire
 For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
 
@@ -1870,7 +1873,7 @@ extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_Reconfirm (mDNS *const m, CacheRecord *const cacherr);
 extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
-extern mDNSs32 mDNS_TimeNow(mDNS *const m);
+extern mDNSs32 mDNS_TimeNow(const mDNS *const m);
 
 // ***************************************************************************
 #if 0
