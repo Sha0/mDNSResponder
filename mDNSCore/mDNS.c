@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.270  2003/08/13 17:07:28  ksekar
+Bug #: <rdar://problem/3376458>: Extra RR linked to list even if registration fails - causes crash
+Added check to result of mDNS_Register() before linking extra record into list.
+
 Revision 1.269  2003/08/12 19:56:23  cheshire
 Update to APSL 2.0
 
@@ -6169,6 +6173,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl)
 	{
+	mStatus result = mStatus_UnknownErr;
 	ExtraResourceRecord **e = &sr->Extras;
 	while (*e) e = &(*e)->next;
 
@@ -6182,8 +6187,9 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	
 	debugf("mDNS_AddRecordToService adding record to %##s", extra->r.name.c);
 	
-	*e = extra;
-	return(mDNS_Register(m, &extra->r));
+	result = mDNS_Register(m, &extra->r);
+	if (!result) *e = extra;
+	return result;
 	}
 
 mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra)
