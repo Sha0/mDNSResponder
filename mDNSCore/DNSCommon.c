@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.67  2004/10/26 03:52:02  cheshire
+Update checkin comments
+
 Revision 1.66  2004/10/23 01:16:00  cheshire
 <rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
 
@@ -210,7 +213,7 @@ Revision 1.11  2004/02/03 22:35:34  cheshire
 Revision 1.10  2004/02/03 19:47:36  ksekar
 Added an asynchronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
-in repository previously dissabled via "#if 0 //incomplete".  Codepath
+in repository previously dissabled via "#if 0 incomplete".  Codepath
 is currently unused, and will be called to create update records, etc.
 
 Revision 1.9  2004/01/27 20:15:22  cheshire

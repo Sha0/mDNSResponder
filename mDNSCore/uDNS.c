@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.106  2004/10/26 03:52:03  cheshire
+Update checkin comments
+
 Revision 1.105  2004/10/26 01:15:06  cheshire
 Use "#if 0" instead of commenting out code
 
@@ -328,7 +331,7 @@ Fixed nameToAddr error check: don't abort state machine on nxdomain error.
 Revision 1.12  2004/02/03 19:47:36  ksekar
 Added an asynchronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
-in repository previously dissabled via "#if 0 //incomplete".  Codepath
+in repository previously dissabled via "#if 0 incomplete".  Codepath
 is currently unused, and will be called to create update records, etc.
 
 Revision 1.11  2004/01/30 02:12:30  ksekar

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.230  2004/10/26 03:52:02  cheshire
+Update checkin comments
+
 Revision 1.229  2004/10/25 19:30:52  ksekar
 <rdar://problem/3827956> Simplify dynamic host name structures
 
@@ -328,7 +331,7 @@ UNICAST_REGISTRATION #define)
 Revision 1.148  2004/02/03 19:47:36  ksekar
 Added an asynchronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
-in repository previously dissabled via "#if 0 //incomplete".  Codepath
+in repository previously dissabled via "#if 0 incomplete".  Codepath
 is currently unused, and will be called to create update records, etc.
 
 Revision 1.147  2004/02/03 18:57:35  cheshire
