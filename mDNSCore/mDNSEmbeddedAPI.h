@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.58  2003/05/29 05:48:06  cheshire
+Minor fix for when generating printf warnings: mDNS_snprintf arguments are now 3,4
+
 Revision 1.57  2003/05/26 03:21:27  cheshire
 Tidy up address structure naming:
 mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
@@ -896,7 +899,7 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 #endif
 
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
-extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
+extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(3,4);
 extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 
