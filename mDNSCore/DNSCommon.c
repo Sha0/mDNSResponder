@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.89  2005/03/17 18:59:38  ksekar
+<rdar://problem/4012279> Properly parse multiple LLQ Options per packet on Windows
+
 Revision 1.88  2005/03/16 00:42:32  ksekar
 <rdar://problem/4012279> Long-lived queries not working on Windows
 
@@ -1380,11 +1383,10 @@ mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
 mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr, mDNSu16 pktRDLen)
 	{
 	int nread = 0;
-	rdataOpt *opt;
-	
-	while (nread < pktRDLen)
+	rdataOpt *opt = (rdataOpt *)rr->rdata->u.data;
+
+	while (nread < pktRDLen && (mDNSu8 *)opt < rr->rdata->u.data + MaximumRDSize - sizeof(rdataOpt))
 		{
-		opt = (rdataOpt *)(rr->rdata->u.data + nread);
 		// space for opt + optlen
 		if (nread + (2 * sizeof(mDNSu16)) > rr->rdata->MaxRDLength) goto space_err;
 		opt->opt = getVal16(&ptr);
@@ -1415,6 +1417,7 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 			nread += sizeof(mDNSs32);
 			}
 		else { LogMsg("ERROR: getOptRdata - unknown opt %d", opt->opt); return mDNSNULL; }
+		opt++;  // increment pointer into rdatabody
 		}
 	
 	rr->rdlength = pktRDLen;
