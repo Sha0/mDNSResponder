@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.36  2003/03/05 03:38:35  cheshire
+Bug #: 3185731 Bogus error message in console: died or deallocated, but no record of client can be found!
+Fixed by leaving client in list after conflict, until client explicitly deallocates
+
 Revision 1.35  2003/02/21 02:47:54  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Several places in the code were calling CacheRRActive(), which searched the entire
@@ -627,7 +631,7 @@ extern mDNSs32 mDNS_Execute   (mDNS *const m);
 extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 newttl,
 								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
-extern void    mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
+extern mStatus mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
 
@@ -676,7 +680,7 @@ extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
 extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname);
-extern void    mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
+extern mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
 extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,

@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.85  2003/03/05 03:38:35  cheshire
+Bug #: 3185731 Bogus error message in console: died or deallocated, but no record of client can be found!
+Fixed by leaving client in list after conflict, until client explicitly deallocates
+
 Revision 1.84  2003/03/05 01:27:30  cheshire
 Bug #: 3185482 Different TTL for multicast versus unicast replies
 When building unicast replies, record TTLs are capped to 10 seconds
@@ -1325,9 +1329,20 @@ typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_
 
 // NOTE: mDNS_Deregister_internal can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow, mDNS_Dereg_type drt)
+mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow, mDNS_Dereg_type drt)
 	{
 	mDNSu8 RecordType = rr->RecordType;
+	ResourceRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
+	while (*p && *p != rr) p=&(*p)->next;
+
+	if (!*p)
+		{
+		// No need to log an error message if we already know this is a potentially repeated deregistration
+		if (drt != mDNS_Dereg_repeat)
+			debugf("mDNS_Deregister_internal: Record %##s (%s) not found in list", rr->name.c, DNSTypeName(rr->rrtype));
+		return(mStatus_BadReferenceErr);
+		}
+
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
 	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCountForTypeShared && rr->RRInterfaceActive)
@@ -1339,18 +1354,7 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 		}
 	else
 		{
-		// Find this record in our list of active records
-		ResourceRecord **p = &m->ResourceRecords;
-		while (*p && *p != rr) p=&(*p)->next;
-
-		if (*p) *p = rr->next;
-		else
-			{
-			// No need to give an error message if we already know this is a potentially repeated deregistration
-			if (drt != mDNS_Dereg_repeat)
-				debugf("mDNS_Deregister_internal: Record %##s (%s) not found in list", rr->name.c, DNSTypeName(rr->rrtype));
-			return;
-			}
+		*p = rr->next;					// Cut this record from the list
 		// If someone is about to look at this, bump the pointer forward
 		if (m->CurrentRecord == rr) m->CurrentRecord = rr->next;
 		rr->next = mDNSNULL;
@@ -1393,6 +1397,7 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 			if (rr->Callback) rr->Callback(m, rr, mStatus_NameConflict);
 			}
 		}
+	return(mStatus_NoError);
 	}
 
 // ***************************************************************************
@@ -4135,11 +4140,12 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 // NOTE: mDNS_Deregister calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSexport void mDNS_Deregister(mDNS *const m, ResourceRecord *const rr)
+mDNSexport mStatus mDNS_Deregister(mDNS *const m, ResourceRecord *const rr)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
-	mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
+	mStatus status = mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 	mDNS_Unlock(m);
+	return(status);
 	}
 
 mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
@@ -4574,8 +4580,7 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	debugf("mDNS_RemoveRecordFromService removing record from %##s", extra->r.name.c);
 	
 	*e = (*e)->next;
-	mDNS_Deregister(m, &extra->r);
-	return(mStatus_NoError);
+	return(mDNS_Deregister(m, &extra->r));
 	}
 
 mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname)
@@ -4615,8 +4620,9 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 // NOTE: mDNS_DeregisterService calls mDNS_Deregister_internal which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
+mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
+	mStatus status;
 	const mDNSs32 timenow = mDNS_Lock(m);
 	ExtraResourceRecord *e = sr->Extras;
 
@@ -4638,9 +4644,9 @@ mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	// which in turn passes on the mStatus_MemFree (or mStatus_NameConflict) back to the client callback,
 	// which is then at liberty to free the ServiceRecordSet memory at will. We need to make sure
 	// we've deregistered all our records and done any other necessary cleanup before that happens.
-	mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNS_Dereg_normal);
-
+	status = mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNS_Dereg_normal);
 	mDNS_Unlock(m);
+	return(status);
 	}
 
 // Create a registration that asserts that no such service exists with this name.

@@ -212,6 +212,27 @@ void freeL(char *msg, void *x)
 //*************************************************************************************************************
 // Client Death Detection
 
+mDNSlocal void FreeDNSServiceRegistration(DNSServiceRegistration *x)
+	{
+	while (x->s.Extras)
+		{
+		ExtraResourceRecord *extras = x->s.Extras;
+		x->s.Extras = x->s.Extras->next;
+		if (extras->r.rdata != &extras->r.rdatastorage)
+			freeL("Extra RData", extras->r.rdata);
+		freeL("ExtraResourceRecord", extras);
+		}
+
+	if (x->s.RR_TXT.rdata != &x->s.RR_TXT.rdatastorage)
+			freeL("TXT RData", x->s.RR_TXT.rdata);
+
+	freeL("DNSServiceRegistration", x);
+	}
+
+// AbortClient finds whatever client is identified by the given Mach port,
+// stops whatever operation that client was doing, and frees its memory.
+// In the case of a service registration, the actual freeing may be deferred
+// until we get the mStatus_MemFree message, if necessary
 mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 	{
 	DNSServiceDomainEnumeration **e = &DNSServiceDomainEnumerationList;
@@ -268,14 +289,20 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		if (m && m != x)
 			LogMsg("%5d: DNSServiceRegistration(%##s) STOP; WARNING m %X != x %X", ClientMachPort, &x->s.RR_SRV.name, m, x);
 		else LogOperation("%5d: DNSServiceRegistration(%##s) STOP", ClientMachPort, &x->s.RR_SRV.name);
-		mDNS_DeregisterService(&mDNSStorage, &x->s);
-		// Note that we don't do the "free(x);" here -- wait for the mStatus_MemFree message
+		// If mDNS_DeregisterService() returns mStatus_NoError, that means that the service was found in the list,
+		// is sending its goodbye packet, and we'll get an mStatus_MemFree message when we can free the memory.
+		// If mDNS_DeregisterService() returns an error, it means that the service had already been removed from
+		// the list, so we should go ahead and free the memory right now
+		if (mDNS_DeregisterService(&mDNSStorage, &x->s) != mStatus_NoError)
+			FreeDNSServiceRegistration(x);
 		return;
 		}
 
 	LogMsg("%5d: died or deallocated, but no record of client can be found!", ClientMachPort);
 	}
 
+// AbortBlockedClient is logically identical to AbortClient,
+// except that it also writes an error message to the system log
 mDNSlocal void AbortBlockedClient(mach_port_t c, char *msg, void *m)
 	{
 	DNSServiceDomainEnumeration *e = DNSServiceDomainEnumerationList;
@@ -680,23 +707,6 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 //*************************************************************************************************************
 // Registration
 
-mDNSlocal void FreeDNSServiceRegistration(DNSServiceRegistration *x)
-	{
-	while (x->s.Extras)
-		{
-		ExtraResourceRecord *extras = x->s.Extras;
-		x->s.Extras = x->s.Extras->next;
-		if (extras->r.rdata != &extras->r.rdatastorage)
-			freeL("Extra RData", extras->r.rdata);
-		freeL("ExtraResourceRecord", extras);
-		}
-
-	if (x->s.RR_TXT.rdata != &x->s.RR_TXT.rdatastorage)
-			freeL("TXT RData", x->s.RR_TXT.rdata);
-
-	freeL("DNSServiceRegistration", x);
-	}
-
 mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result)
 	{
 	DNSServiceRegistration *x = (DNSServiceRegistration*)sr->Context;
@@ -719,13 +729,12 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 			mDNS_RenameAndReregisterService(m, sr, mDNSNULL);
 		else
 			{
-			kern_return_t status;
-			// AbortClient unlinks our DNSServiceRegistration from the list so we can safely free it
-			AbortClient(x->ClientMachPort, x);
-			status = DNSServiceRegistrationReply_rpc(x->ClientMachPort, result, MDNS_MM_TIMEOUT);
+			// If we get a name conflict, we tell the client about it, and then they are expected to dispose
+			// of their registration in the usual way (which we will catch via client death notification).
+			// If the Mach queue is full, we forcibly abort the client immediately.
+			kern_return_t status = DNSServiceRegistrationReply_rpc(x->ClientMachPort, result, MDNS_MM_TIMEOUT);
 			if (status == MACH_SEND_TIMED_OUT)
-				AbortBlockedClient(x->ClientMachPort, "registration conflict", x); // Yes, this IS safe :-)
-			FreeDNSServiceRegistration(x);
+				AbortBlockedClient(x->ClientMachPort, "registration conflict", x);
 			}
 		}
 
@@ -744,7 +753,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 			while (*r && *r != x) r = &(*r)->next;
 			if (*r)
 				{
-				debugf("RegCallback: %##s Still in DNSServiceRegistration list; removing now", &sr->RR_SRV.name);
+				LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", &sr->RR_SRV.name);
 				*r = (*r)->next;
 				}
 			LogOperation("%5d: DNSServiceRegistration(%##s) Memory Free", x->ClientMachPort, &sr->RR_SRV.name);
