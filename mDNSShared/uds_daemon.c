@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.130  2004/12/10 00:55:24  cheshire
+Add full name and type to LogOperation messages for DNSServiceAddRecord/UpdateRecord/RemoveRecord
+
 Revision 1.129  2004/12/09 03:17:23  ksekar
 <rdar://problem/3910435> DomainEnumeration interface index should be zero
 
@@ -2217,9 +2220,10 @@ static void handle_add_request(request_state *rstate)
     char *ptr, *rdata;
     mStatus result = mStatus_UnknownErr;
     DNSServiceFlags flags;
+	service_info *srvinfo = rstate->service_registration;
 	service_instance *i;
 
-	if (!rstate->service_registration) { LogMsg("handle_add_request called with NULL service_registration"); return; }
+	if (!srvinfo) { LogMsg("handle_add_request called with NULL service_registration"); return; }
 
 	ptr = rstate->msgdata;
     flags = get_flags(&ptr);
@@ -2236,9 +2240,10 @@ static void handle_add_request(request_state *rstate)
 		else { LogMsg("Don't know how to get default ttl for record.  Using default for Unique"); ttl = kDefaultTTLforUnique; }
 		}
 	
-	LogOperation("%3d: DNSServiceAddRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
+	LogOperation("%3d: DNSServiceAddRecord(%##s, %s)", rstate->sd, 
+		(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name.c : NULL, DNSTypeName(rrtype));
 
-	for (i = rstate->service_registration->instances; i; i = i->next)
+	for (i = srvinfo->instances; i; i = i->next)
 		{
 		result = add_record_to_service(rstate, i, rrtype, rdlen, rdata, ttl);
 		if (result && i->default_local) break;
@@ -2278,6 +2283,7 @@ static void handle_update_request(request_state *rstate)
     mStatus result = mStatus_BadReferenceErr;
 	service_info *srvinfo = rstate->service_registration;
 	service_instance *i;
+	AuthRecord *rr = NULL;
 
 	// get the message data
 	ptr = rstate->msgdata;
@@ -2304,10 +2310,8 @@ static void handle_update_request(request_state *rstate)
 
 	// update a record from a service record set
 	if (!srvinfo) { result = mStatus_BadReferenceErr;  goto end; }
-	LogOperation("%3d: DNSServiceUpdateRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
 	for (i = srvinfo->instances; i; i = i->next)
 		{
-		AuthRecord *rr = NULL;
 		if (rstate->hdr.reg_index == TXT_RECORD_INDEX) rr = &i->srs.RR_TXT;
 		else
 			{
@@ -2323,6 +2327,10 @@ static void handle_update_request(request_state *rstate)
 		}
 
 end:
+	LogOperation("%3d: DNSServiceUpdateRecord(%##s, %s)", rstate->sd,
+		(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name.c : NULL,
+		rr ? DNSTypeName(rr->resrec.rrtype) : "<NONE>");
+
     deliver_error(rstate, result);
     reset_connected_rstate(rstate);
     }
@@ -2541,17 +2549,19 @@ static void handle_removerecord_request(request_state *rstate)
     {
     mStatus err = mStatus_BadReferenceErr;
     char *ptr;
+	service_info *srvinfo = rstate->service_registration;
 
     ptr = rstate->msgdata;
     get_flags(&ptr);	// flags unused
 
 	if (rstate->reg_recs)  err = remove_record(rstate);  // remove individually registered record
-	else if (!rstate->service_registration) LogOperation("%3d: DNSServiceRemoveRecord (bad ref)", rstate->sd);
+	else if (!srvinfo) LogOperation("%3d: DNSServiceRemoveRecord (bad ref)", rstate->sd);
     else
 		{
-		LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
+		LogOperation("%3d: DNSServiceRemoveRecord(%##s, %s)", rstate->sd,
+			(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name.c : NULL);
 		service_instance *i;
-		for (i = rstate->service_registration->instances; i; i = i->next)
+		for (i = srvinfo->instances; i; i = i->next)
 			{
 			err = remove_extra(rstate, i);
 			if (err && i->default_local) break;
