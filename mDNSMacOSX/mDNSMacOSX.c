@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.91  2003/06/24 01:53:51  cheshire
+Minor update to comments
+
 Revision 1.90  2003/06/24 01:51:47  cheshire
 <rdar://problem/3303118> Oops: Double-dispose of sockets
 Don't need to close sockets: CFSocketInvalidate() does that for us
@@ -236,7 +239,7 @@ Minor code tidying
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
 #include <stdio.h>
-#include <unistd.h>					// For close()
+#include <unistd.h>					// For select() and close()
 #include <stdarg.h>					// For va_list support
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -964,8 +967,11 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	while (*p)
 		{
 		i = *p;
-		// 2. Close all our sockets. We'll recreate them later as necessary.
-		// (We may have both v4 and v6, and we may not need both now.)
+		// 2. Close all our CFSockets. We'll recreate them later as necessary.
+		// (We may have previously had both v4 and v6, and we may not need both any more.)
+		// Note: MUST NOT close the underlying native BSD sockets.
+		// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
+		// because it first has to unhook the sockets from its select() call, before it can safely close them.
 		#if mDNS_AllowPort53
 		if (i->cfs53) { CFSocketInvalidate(i->cfs53); CFRelease(i->cfs53); }
 		i->skt53 = -1;
