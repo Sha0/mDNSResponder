@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.53  2004/12/01 20:04:31  cheshire
+# Tidy up alignment
+#
 # Revision 1.52  2004/12/01 19:46:12  cheshire
 # Add install case for Suse 9 (rc*.d directories *inside* the init.d directory)
 #
@@ -564,7 +567,7 @@ $(BUILDDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
 $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
 
-$(BUILDDIR)/dnsextd:          $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.o
+$(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS) $(DNSEXT_FLAGS)
 
 #############################################################################
