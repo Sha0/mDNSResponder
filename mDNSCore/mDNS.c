@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.143  2003/05/28 04:31:29  cheshire
+<rdar://problem/3270733> mDNSResponder not sending probes at the prescribed time
+
 Revision 1.142  2003/05/28 03:13:07  cheshire
 <rdar://problem/3009899> mDNSResponder allows invalid service registrations
 Require that the transport protocol be _udp or _tcp
@@ -2756,15 +2759,22 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			ResourceRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (rr->RecordType == kDNSRecordTypeUnique && m->timenow - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
+			if (rr->RecordType == kDNSRecordTypeUnique)			// For all records that are still probing...
 				{
-				if (rr->ProbeCount)
+				// 1. If it's not reached its probe time, just make sure we update m->NextProbeTime correctly
+				if (m->timenow - (rr->LastAPTime + rr->ThisAPInterval) < 0)
+					{
+					SetNextAnnounceProbeTime(m, rr);
+					}
+				// 2. else, if it has reached its probe time, mark it for sending and then update m->NextProbeTime correctly
+				else if (rr->ProbeCount)
 					{
 					rr->SendRNow   = (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
 					rr->LastAPTime = m->timenow;
 					rr->ProbeCount--;
 					SetNextAnnounceProbeTime(m, rr);
 					}
+				// else, if it has now finished probing, move it to state Verified, and update m->NextResponseTime so it will be announced
 				else
 					{
 					rr->RecordType     = kDNSRecordTypeVerified;
