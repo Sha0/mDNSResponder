@@ -1,5 +1,6 @@
-/*
- * Copright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+/* -*- Mode: C; tab-width: 4 -*-
+ *
+ * Copyright (c) 2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -23,6 +24,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.10  2004/12/01 02:43:49  cheshire
+Update copyright message
+
 Revision 1.9  2004/10/27 02:25:05  cheshire
 <rdar://problem/3816029> Random memory smashing bug
 
