@@ -24,6 +24,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.211  2004/10/22 01:07:11  cheshire
+<rdar://problem/3375328> select() says data is waiting; recvfrom() says there is no data
+Log error message if socket() ever returns file descriptors 0, 1 or 2 (stdin/stdout/stderr).
+These are all supposed to be remapped to /dev/null
+
 Revision 1.210  2004/10/20 02:19:54  cheshire
 Eliminate "SetupAddr invalid sa_family" warning from RegisterSearchDomains()
 
@@ -902,10 +907,10 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		}
 
 	if (s >= 0)
-		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %p %s/%d to %#a:%d skt %d",
+		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %p %5s/%ld to %#a:%d skt %d",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s);
 	else
-		verbosedebugf("mDNSPlatformSendUDP: NOT sending on InterfaceID %p %s/%d (socket of this type not available)",
+		verbosedebugf("mDNSPlatformSendUDP: NOT sending on InterfaceID %p %5s/%ld (socket of this type not available)",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort));
 
 	// Note: When sending, mDNSCore may often ask us to send both a v4 multicast packet and then a v6 multicast packet
@@ -921,7 +926,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
 		if (errno == EHOSTUNREACH && (mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
-		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
+		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %5s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 		return(err);
 		}
@@ -1171,11 +1176,8 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 		}
 
 	sd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sd < 0)
-		{
-		LogMsg("ERROR: socket; %s", strerror(errno));
-		return mStatus_UnknownErr;
-		}
+	if (sd < 3) { LogMsg("mDNSPlatformTCPConnect: socket error %d errno %d (%s)", sd, errno, strerror(errno)); return mStatus_UnknownErr; }
+
 	// set non-blocking
 	if (fcntl(sd, F_SETFL, O_NONBLOCK) < 0)
 		{
@@ -1385,7 +1387,7 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 
 	// Open the socket...
 	int skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
-	if (skt < 0) { LogMsg("socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
+	if (skt < 3) { LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
 	// ... with a shared UDP port, if it's for multicast receiving
 	if (port.NotAnInteger) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
@@ -1637,6 +1639,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	struct ifaddrs *v4Loopback  = NULL;
 	struct ifaddrs *v6Loopback  = NULL;
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
+	if (InfoSocket < 3) LogMsg("UpdateInterfaceList: socket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
 	if (m->SleepState) ifa = NULL;
 
 	// Set up the nice label
@@ -1666,25 +1669,25 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		{
 #if LIST_ALL_INTERFACES
 		if (ifa->ifa_addr->sa_family == AF_APPLETALK)
-			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d is AF_APPLETALK",
+			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d is AF_APPLETALK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		else if (ifa->ifa_addr->sa_family == AF_LINK)
-			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d is AF_LINK",
+			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d is AF_LINK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		else if (ifa->ifa_addr->sa_family != AF_INET && ifa->ifa_addr->sa_family != AF_INET6)
-			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d not AF_INET (2) or AF_INET6 (30)",
+			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d not AF_INET (2) or AF_INET6 (30)",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (!(ifa->ifa_flags & IFF_UP))
-			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface not IFF_UP",
+			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface not IFF_UP",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (!(ifa->ifa_flags & IFF_MULTICAST))
-			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface not IFF_MULTICAST",
+			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface not IFF_MULTICAST",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (ifa->ifa_flags & IFF_POINTOPOINT)
-			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface IFF_POINTOPOINT",
+			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_POINTOPOINT",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (ifa->ifa_flags & IFF_LOOPBACK)
-			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
+			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
 		if (ifa->ifa_flags & IFF_UP)
@@ -1785,26 +1788,26 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
 				mDNS_RegisterInterface(m, n);
-				LogOperation("SetupActiveInterfaces:   Registered    %s(%lu) %.6a InterfaceID %p %#a%s",
+				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a%s",
 					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 				}
 	
 			if (!n->McastTxRx)
-				debugf("SetupActiveInterfaces:   No Tx/Rx on   %s(%lu) %.6a InterfaceID %p %#a", i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip);
+				debugf("SetupActiveInterfaces:   No Tx/Rx on   %5s(%lu) %.6a InterfaceID %p %#a", i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip);
 			else
 				{
 				if (i->sa_family == AF_INET && primary->ss.sktv4 == -1)
 					{
 					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
-					if (err == 0) debugf("SetupActiveInterfaces:   v4 socket%2d %s(%lu) %.6a InterfaceID %p %#a", primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
-					else LogMsg("SetupActiveInterfaces:   v4 socket%2d %s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
+					if (err == 0) debugf("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a",          primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
+					else          LogMsg("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					}
 			
 				if (i->sa_family == AF_INET6 && primary->ss.sktv6 == -1)
 					{
 					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
-					if (err == 0) debugf("SetupActiveInterfaces:   v6 socket%2d %s(%lu) %.6a InterfaceID %p %#a", primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
-					else LogMsg("SetupActiveInterfaces:   v6 socket%2d %s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
+					if (err == 0) debugf("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a",          primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
+					else          LogMsg("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					}
 				}
 			}
@@ -1855,7 +1858,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		if (i->ifinfo.InterfaceID)
 			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
-				LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) %.6a InterfaceID %p %#a%s",
+				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a%s",
 					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
 				mDNS_DeregisterInterface(m, &i->ifinfo);
 				i->ifinfo.InterfaceID = mDNSNULL;
@@ -2702,15 +2705,21 @@ mDNSexport mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 // we just need to be aware that we shouldn't expect to successfully receive unicast UDP responses.
 mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 	{
-	int err;
+	int err = -1;
 	int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	struct sockaddr_in s5353;
-	s5353.sin_family      = AF_INET;
-	s5353.sin_port        = MulticastDNSPort.NotAnInteger;
-	s5353.sin_addr.s_addr = 0;
-	err = bind(s, (struct sockaddr *)&s5353, sizeof(s5353));
-	close(s);
-	if (err) debugf("No unicast UDP responses");
+	if (s < 3)
+		LogMsg("mDNSPlatformInit_CanReceiveUnicast: socket error %d errno %d (%s)", s, errno, strerror(errno));
+	else
+		{
+		struct sockaddr_in s5353;
+		s5353.sin_family      = AF_INET;
+		s5353.sin_port        = MulticastDNSPort.NotAnInteger;
+		s5353.sin_addr.s_addr = 0;
+		err = bind(s, (struct sockaddr *)&s5353, sizeof(s5353));
+		close(s);
+		}
+
+	if (err) LogMsg("No unicast UDP responses");
 	else     debugf("Unicast UDP responses okay");
 	return(err == 0);
 	}
