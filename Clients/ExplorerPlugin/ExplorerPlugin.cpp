@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerPlugin.cpp,v $
+Revision 1.5  2004/09/15 10:33:54  shersche
+<rdar://problem/3721611> Install XP toolbar button (8 bit mask) if running on XP platform, otherwise install 1 bit mask toolbar button
+Bug #: 3721611
+
 Revision 1.4  2004/07/13 21:24:21  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -469,13 +473,29 @@ DEBUG_LOCAL OSStatus	RegisterServer( HINSTANCE inInstance, CLSID inCLSID, LPCTST
 	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
 	RegSetValueEx( key, L"BandCLSID", 0, REG_SZ, (LPBYTE) data, size );
 
-	wsprintf( data, L"%s,%d", moduleName, IDI_COLD );
-	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
-	RegSetValueEx( key, L"Icon", 0, REG_SZ, (LPBYTE) data, size);
+	// check if we're running XP or later
+	if ( ( versionInfo.dwPlatformId == VER_PLATFORM_WIN32_NT ) &&
+		 ( versionInfo.dwMajorVersion == 5 ) &&
+	     ( versionInfo.dwMinorVersion >= 1 ) )
+	{
+		wsprintf( data, L"%s,%d", moduleName, IDI_BUTTON_XP );
+		size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+		RegSetValueEx( key, L"Icon", 0, REG_SZ, (LPBYTE) data, size);
 
-	wsprintf( data, L"%s,%d", moduleName, IDI_COLD );
-	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
-	RegSetValueEx( key, L"HotIcon", 0, REG_SZ, (LPBYTE) data, size);
+		wsprintf( data, L"%s,%d", moduleName, IDI_BUTTON_XP );
+		size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+		RegSetValueEx( key, L"HotIcon", 0, REG_SZ, (LPBYTE) data, size);
+	}
+	else
+	{
+		wsprintf( data, L"%s,%d", moduleName, IDI_BUTTON_2K );
+		size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+		RegSetValueEx( key, L"Icon", 0, REG_SZ, (LPBYTE) data, size);
+
+		wsprintf( data, L"%s,%d", moduleName, IDI_BUTTON_2K );
+		size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+		RegSetValueEx( key, L"HotIcon", 0, REG_SZ, (LPBYTE) data, size);
+	}
 
 	RegCloseKey( key );
 	
