@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.245  2005/02/01 19:56:47  ksekar
+Moved LogMsg from daemon.c to uds_daemon.c, cleaned up wording
+
 Revision 1.244  2005/01/28 00:34:49  cheshire
 Turn off "Starting time value" log message
 
@@ -1513,7 +1516,6 @@ mDNSexport void DefaultRegDomainChanged(const domainname *d, mDNSBool add)
 	{
 	DNSServiceRegistration *reg;
 
-	LogMsg("%s default registration domain %##s", add ? "Adding" : "Removing", d->c);
 	for (reg = DNSServiceRegistrationList; reg; reg = reg->next)
 		{
 		if (reg->DefaultDomain)

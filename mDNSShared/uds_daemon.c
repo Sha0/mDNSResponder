@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.165  2005/02/01 19:56:47  ksekar
+Moved LogMsg from daemon.c to uds_daemon.c, cleaned up wording
+
 Revision 1.164  2005/01/28 06:07:55  cheshire
 Don't use deliver_error() from within handle_regrecord_request()
 
@@ -2073,7 +2076,8 @@ mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBo
 	{
 	request_state *rstate;
 	service_info *info;
-	
+
+	LogMsg("%s registration domain %##s", add ? "Adding" : "Removing", d->c);
 	for (rstate = all_requests; rstate; rstate = rstate->next)
 		{
 		if (rstate->terminate != regservice_termination_callback) continue;
