@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.32  2004/05/05 17:32:18  ksekar
+Prevent registration of loopback interface caused by removal of
+Multicast flag in interface structure.
+
 Revision 1.31  2004/05/05 17:05:02  ksekar
 Use LargeCacheRecord structs when pulling records off packets
 
@@ -443,20 +447,27 @@ mDNSlocal void deadvertiseIfCallback(mDNS *const m, AuthRecord *const rr, mStatu
 
 mDNSexport void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set) 
 	{
+	mDNSu8 *ip = set->ip.ip.v4.b;	
 	AuthRecord *a   = &set->uDNS_info.RR_A;
 	a->RecordContext = set;
-	if (set->ip.type != mDNSAddrType_IPv4 || (set->ip.ip.v4.b[0] == 169 && set->ip.ip.v4.b[1] == 254))
-		// routable v4 only
+	if (set->ip.type != mDNSAddrType_IPv4                             // non-v4
+		|| (ip[0] == 169 && ip[1] == 254)                             // link-local
+		|| (ip[0] == 127 && ip[1] == 0 && ip[2] == 0 && ip[3] == 1))  // loopback
+		{
+		LogMsg("uDNS_AdvertiseInterface: Bad Type (must be v4, non link-local, non loopback)");
 		return;		
-
+		}
 	if (set->uDNS_info.registered && SameDomainName(&m->uDNS_info.hostname, &set->uDNS_info.regname))
 		// already registered
+		{
+		LogMsg("uDNS_AdvertiseInterface: Already Registered");
 		return;
-
+		}
 	if (!m->uDNS_info.hostname.c[0])
 		{
 		// no hostname available
 		set->uDNS_info.registered = mDNSfalse;
+		LogMsg("uDNS_AdvertiseInterface: No hostname available");
 		return;
 		}
 	
@@ -467,9 +478,10 @@ mDNSexport void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set
 
 	ustrcpy(a->resrec.name.c, m->uDNS_info.hostname.c);
 	a->resrec.rdata->u.ip = set->ip.ip.v4;
+	LogMsg("uDNS_AdvertiseInterface: advertising %s", m->uDNS_info.hostname.c);
+		
 	uDNS_RegisterRecord(m, a); 
 	}
-
 
 
 // ***************************************************************************
