@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.16  2004/01/22 00:03:32  cheshire
+Add while() loop so that a list of targets may be specified on the command line
+
 Revision 1.15  2004/01/21 21:55:06  cheshire
 Don't need to wait for timeout once we've got the information we wanted
 
@@ -267,6 +270,7 @@ mDNSlocal void HandleSIG(int signal)
 
 mDNSexport int main(int argc, char **argv)
 	{
+	int this_arg = 1;
 	mStatus status;
 	struct in_addr s4;
 	struct in6_addr s6;
@@ -285,63 +289,72 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIG);
 
-	if (inet_pton(AF_INET, argv[1], &s4) == 1)
+	while (this_arg < argc)
 		{
-		mDNSu8 *p = (mDNSu8 *)&s4;
-		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p[3], p[2], p[1], p[0]);
-		printf("%s\n", buffer);
-		if (DoQuery(&q, buffer, kDNSType_PTR, NameCallback) != 1) goto exit;
-		}
-	else if (inet_pton(AF_INET6, argv[1], &s6) == 1)
-		{
-		DNSQuestion q1, q2;
-		int i;
-		mDNSu8 *p = (mDNSu8 *)&s6;
-		for (i = 0; i < 16; i++)
+		char *arg = argv[this_arg++];
+		if (this_arg > 2) printf("\n");
+
+		id.NotAnInteger = 0;
+		hardware[0] = software[0] = 0;
+		NumAddr = NumAAAA = NumHINFO = 0;
+
+		if (inet_pton(AF_INET, arg, &s4) == 1)
 			{
-			static const char hexValues[] = "0123456789ABCDEF";
-			buffer[i * 4    ] = hexValues[p[15-i] & 0x0F];
-			buffer[i * 4 + 1] = '.';
-			buffer[i * 4 + 2] = hexValues[p[15-i] >> 4];
-			buffer[i * 4 + 3] = '.';
+			mDNSu8 *p = (mDNSu8 *)&s4;
+			mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p[3], p[2], p[1], p[0]);
+			printf("%s\n", buffer);
+			if (DoQuery(&q, buffer, kDNSType_PTR, NameCallback) != 1) continue;
 			}
-		mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
-		MakeDomainNameFromDNSNameString(&q1.qname, buffer);
-		mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");	// Workaround for WWDC bug
-		MakeDomainNameFromDNSNameString(&q2.qname, buffer);
-		StartQuery(&q1, NULL, kDNSType_PTR, NameCallback);
-		StartQuery(&q2, NULL, kDNSType_PTR, NameCallback);
-		WaitForAnswer(&mDNSStorage, 4);
-		mDNS_StopQuery(&mDNSStorage, &q1);
-		mDNS_StopQuery(&mDNSStorage, &q2);
-		if (StopNow != 1) { mprintf("%##s %s *** No Answer ***\n", q1.qname.c, DNSTypeName(q1.qtype)); goto exit; }
+		else if (inet_pton(AF_INET6, arg, &s6) == 1)
+			{
+			DNSQuestion q1, q2;
+			int i;
+			mDNSu8 *p = (mDNSu8 *)&s6;
+			for (i = 0; i < 16; i++)
+				{
+				static const char hexValues[] = "0123456789ABCDEF";
+				buffer[i * 4    ] = hexValues[p[15-i] & 0x0F];
+				buffer[i * 4 + 1] = '.';
+				buffer[i * 4 + 2] = hexValues[p[15-i] >> 4];
+				buffer[i * 4 + 3] = '.';
+				}
+			mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
+			MakeDomainNameFromDNSNameString(&q1.qname, buffer);
+			mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");	// Workaround for WWDC bug
+			MakeDomainNameFromDNSNameString(&q2.qname, buffer);
+			StartQuery(&q1, NULL, kDNSType_PTR, NameCallback);
+			StartQuery(&q2, NULL, kDNSType_PTR, NameCallback);
+			WaitForAnswer(&mDNSStorage, 4);
+			mDNS_StopQuery(&mDNSStorage, &q1);
+			mDNS_StopQuery(&mDNSStorage, &q2);
+			if (StopNow != 1) { mprintf("%##s %s *** No Answer ***\n", q1.qname.c, DNSTypeName(q1.qtype)); continue; }
+			}
+		else
+			strcpy(hostname, arg);
+	
+		// Now we have the host name; get its A, AAAA, and HINFO
+		if (DoQuery(&q, hostname, kDNSQType_ANY, InfoCallback) == 2) continue;	// Interrupted with Ctrl-C
+	
+		if (hardware[0] || software[0])
+			{
+			printf("HINFO Hardware: %s\n", hardware);
+			printf("HINFO Software: %s\n", software);
+			}
+		else if (NumAnswers)
+			{
+			printf("Host has no HINFO record; Best guess is ");
+			if (id.b[1]) printf("mDNSResponder-%d\n", id.b[1]);
+			else if (NumAAAA) printf("very early Panther build (mDNSResponder-33 or earlier)\n");
+			else printf("Jaguar version of mDNSResponder with no IPv6 support\n");
+			}
+		else
+			printf("Incorrect dot-local hostname, address, or no mDNSResponder running on that machine\n");
 		}
-	else
-		strcpy(hostname, argv[1]);
 
-	// Now we have the host name; get its A, AAAA, and HINFO
-	if (DoQuery(&q, hostname, kDNSQType_ANY, InfoCallback) == 2) goto exit;	// Interrupted with Ctrl-C
-
-	if (hardware[0] || software[0])
-		{
-		printf("HINFO Hardware: %s\n", hardware);
-		printf("HINFO Software: %s\n", software);
-		}
-	else if (NumAnswers)
-		{
-		printf("Host has no HINFO record; Best guess is ");
-		if (id.b[1]) printf("mDNSResponder-%d\n", id.b[1]);
-		else if (NumAAAA) printf("very early Panther build (mDNSResponder-33 or earlier)\n");
-		else printf("Jaguar version of mDNSResponder with no IPv6 support\n");
-		}
-	else
-		printf("Incorrect dot-local hostname, address, or no mDNSResponder running on that machine\n");
-
-exit:
 	mDNS_Close(&mDNSStorage);
 	return(0);
 
 usage:
-	fprintf(stderr, "%s <dot-local hostname> or <IPv4 address> or <IPv6 address>\n", argv[0]);
+	fprintf(stderr, "%s <dot-local hostname> or <IPv4 address> or <IPv6 address> ...\n", argv[0]);
 	return(-1);
 	}
