@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.276  2005/01/10 17:39:10  ksekar
+Refinement to 1.272 - avoid spurious warnings when registration and browse domains are set to same value and toggled on/off
+
 Revision 1.275  2005/01/10 04:02:22  ksekar
 Refinement to <rdar://problem/3891628> - strip trailing dot before writing hostname status to dynamic store
 
@@ -2639,14 +2642,17 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 
 	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
 		{		
-		if (DynDNSRegDomain.c[0]) RemoveDefRegDomain(&DynDNSRegDomain);
-		if (DynDNSRegDomain.c[0] && !SameDomainName(&DynDNSRegDomain, &DynDNSBrowseDomain)) SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
+		if (DynDNSRegDomain.c[0])
+			{
+			RemoveDefRegDomain(&DynDNSRegDomain);
+			SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
+			}
 		AssignDomainName(&DynDNSRegDomain, &RegDomain);		
 		if (DynDNSRegDomain.c[0])
 			{
 			SetSecretForDomain(m, &DynDNSRegDomain);
 			AddDefRegDomain(&DynDNSRegDomain);
-			if (!SameDomainName(&DynDNSRegDomain, &BrowseDomain)) SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNStrue);
+			SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNStrue);
 			}
 		}
 	
