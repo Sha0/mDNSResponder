@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.24  2004/04/22 02:51:20  cheshire
+Use common code for HINFO/TXT and TSIG cases in putRData
+
 Revision 1.23  2004/04/15 00:51:28  bradley
 Minor tweaks for Windows and C++ builds. Added casts for signed/unsigned integers and 64-bit pointers.
 Prefix some functions with mDNS to avoid conflicts. Disable benign warnings on Microsoft compilers.
@@ -987,8 +990,6 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 
 mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr)
 	{
-	mDNSBool unknownRData = mDNStrue;
-
 	switch (rr->rrtype)
 		{
 		case kDNSType_A:	if (rr->rdlength != 4)
@@ -1005,11 +1006,6 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.name));
-
-		case kDNSType_HINFO:// Same as TXT
-		case kDNSType_TXT:  if (ptr + rr->rdlength > limit) return(mDNSNULL);
-							mDNSPlatformMemCopy(rr->rdata->u.data, ptr, rr->rdlength);
-							return(ptr + rr->rdlength);
 
 		case kDNSType_AAAA:	if (rr->rdlength != sizeof(rr->rdata->u.ipv6))
 								{
@@ -1029,9 +1025,11 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rr->rdata->u.srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.srv.target));
 
-		case kDNSType_TSIG: unknownRData = mDNSfalse;
-		default:			if (ptr + rr->rdlength > limit) return(mDNSNULL);
-			                if (unknownRData) debugf("putRData: Warning! Writing resource type %d as raw data", rr->rrtype);
+		default:			debugf("putRData: Warning! Writing unknown resource type %d as raw data", rr->rrtype);
+							// Fall through to common code below
+		case kDNSType_HINFO:
+		case kDNSType_TXT:  
+		case kDNSType_TSIG:	if (ptr + rr->rdlength > limit) return(mDNSNULL);
 							mDNSPlatformMemCopy(rr->rdata->u.data, ptr, rr->rdlength);
 							return(ptr + rr->rdlength);
 		}
