@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.172  2004/06/01 23:46:50  ksekar
+<rdar://problem/3675149>: DynDNS: dynamically look up LLQ/Update ports
+
 Revision 1.171  2004/05/28 23:42:37  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
 
@@ -1038,6 +1041,7 @@ typedef struct
     mDNSOpaque16 id;
     domainname   zone;  // the zone that is updated
     mDNSAddr     ns;    // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
+    mDNSIPPort   port;  // port on which server accepts dynamic updates
     mDNSBool     add;   // !!!KRS this should really be an enumerated state
     struct uDNS_AuthInfo *AuthInfo;  // authentication info (may be null)
 	} uDNS_RegInfo;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.39  2004/06/01 23:46:50  ksekar
+<rdar://problem/3675149>: DynDNS: dynamically look up LLQ/Update ports
+
 Revision 1.38  2004/05/31 22:19:44  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on
 record changes (#7805) - revert to polling mode on setup errors
@@ -1684,7 +1687,8 @@ typedef enum
 	foundNS,
 	lookupA,
 	foundA,
-	lookupPorts,
+	lookupPort,
+	foundPort,
 	complete
     } ntaState;
 
@@ -1793,11 +1797,12 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 				context->state = complete;
 				break;
 				}
-		case lookupPorts:
+		case lookupPort:
 			action = hndlLookupPorts(msg, end, context);
 			if (action == smError) goto error;
 			if (action == smBreak) return;
 			if (action == smContinue) context->state = complete;
+		case foundPort:
 		case complete: break;			
 		}
 					  
@@ -2003,17 +2008,60 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 	else { LogMsg("ERROR: lookupNSAddr - bad state %d", context->state); return smError; }
 	}
 
+mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext *context, char *portName, mDNSIPPort *port)
+	{
+	int i;
+	LargeCacheRecord lcr;
+	const char *ptr;
+	DNSQuestion *q;
+	mStatus err;
+	
+	if (context->state == lookupPort)  // we've already issued the query
+		{
+		if (!msg) { LogMsg("ERROR: hndlLookupUpdatePort - NULL message"); return smError; }
+		ptr = LocateAnswers(msg, end);
+		for (i = 0; i < msg->h.numAnswers; i++)
+			{
+			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+			if (!ptr) { LogMsg("ERROR: hndlLookupUpdatePort - GetLargeResourceRecord returned NULL");  return smError; }
+			if (ResourceRecordAnswersQuestion(&lcr.r.resrec, &context->question))
+				{
+				port->NotAnInteger = lcr.r.resrec.rdata->u.srv.port.NotAnInteger;
+				context->state = foundPort;
+				return smContinue;
+				}
+			}
+		LogMsg("hndlLookupUpdatePort %s - answer not contained in reply.  Guessing port %d", portName, UnicastDNSPort);
+		*port = UnicastDNSPort;
+		context->state = foundPort;
+		return smContinue;
+		}
+
+	// query the server for the update port for the zone
+	context->state = lookupPort;
+	q = &context->question;
+	MakeDomainNameFromDNSNameString(&q->qname, portName);
+	ustrcpy((q->qname.c + ustrlen(q->qname.c)), context->zone.c);
+    q->qtype = kDNSType_SRV;
+    q->qclass = kDNSClass_IN;
+    err = startInternalQuery(q, context->m, getZoneData, context);
+    if (err) { LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  return smError;  }
+	context->questionActive = mDNStrue;
+    return smBreak;     // break from state machine until we receive another packet	
+	}
+
 mDNSlocal smAction hndlLookupPorts(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
 	{
-	//!!!KRS implement me
-	(void)msg;
-	(void)end;
-
-	if (context->state != foundA && context->state != lookupPorts)
-		{ LogMsg("ERROR: hndlLookupPorts - bad state"); return smError; }
+	smAction action;
 	
-	context->updatePort = UnicastDNSPort; 
-	context->llqPort = UnicastDNSPort;  
+	if (context->findUpdatePort && !context->updatePort.NotAnInteger)
+		{
+		action = lookupDNSPort(msg, end, context, UPDATE_PORT_NAME, &context->updatePort);
+		if (action != smContinue) return action;
+		}
+	if (context->findLLQPort && !context->llqPort.NotAnInteger)
+		return lookupDNSPort(msg, end, context, LLQ_PORT_NAME, &context->llqPort);
+
 	return smContinue;
 	}
 
@@ -2222,20 +2270,21 @@ mDNSlocal void sendRecordRegistration(mStatus err, mDNS *const m, void *authPtr,
 	authInfo = GetAuthInfoForZone(u, &zoneData->zoneName);
 	if (authInfo)
 		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort, authInfo);
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort, authInfo);
 		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort);
 		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %d", err); goto error; }
 		}
 	// cache zone data
 	ustrcpy(newRR->uDNS_info.zone.c, zoneData->zoneName.c);
     newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
 	newRR->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
+	newRR->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
 	newRR->uDNS_info.state = regState_Pending;
-	
+
 	return;
 		
 error:
@@ -2334,12 +2383,12 @@ mDNSlocal void sendServiceRegistration(mStatus err, mDNS *const m, void *srsPtr,
 	authInfo = GetAuthInfoForZone(u, &zoneData->zoneName);
 	if (authInfo)
 		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort, authInfo);
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort, authInfo);
 		if (err) { LogMsg("ERROR: sendServiceRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort);
 		if (err) { LogMsg("ERROR: sendServiceRegistration - mDNSSendDNSMessage - %d", err); goto error; }
 		}
 
@@ -2347,6 +2396,7 @@ mDNSlocal void sendServiceRegistration(mStatus err, mDNS *const m, void *srsPtr,
 	ustrcpy(srs->uDNS_info.zone.c, zoneData->zoneName.c);
     srs->uDNS_info.ns.type = mDNSAddrType_IPv4;
 	srs->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
+	srs->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
 	srs->uDNS_info.state = regState_Pending;
 	return;
 		
@@ -2397,7 +2447,7 @@ mDNSexport void uDNS_UpdateServiceTargets(mDNS *const m)
 		if (ptr) ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec);  // put the new target
 		// !!!KRS do subtypes/extras etc.
 		if (!ptr) err = mStatus_UnknownErr;
-		else err = mDNSSendDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, UnicastDNSPort);
+		else err = mDNSSendDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, srs->uDNS_info.port);
 		if (err) 			
 			{
 			LogMsg("ERROR: uDNS_UpdateServiceTargets - %s", ptr ? "mDNSSendDNSMessage" : "message formatting error");
@@ -2448,7 +2498,7 @@ mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
 	rr->next = m->uDNS_info.RecordRegistrations;
 	m->uDNS_info.RecordRegistrations = rr;
 
-	return startGetZoneData(&rr->resrec.name, m, mDNSfalse, mDNSfalse, sendRecordRegistration, rr);
+	return startGetZoneData(&rr->resrec.name, m, mDNStrue, mDNSfalse, sendRecordRegistration, rr);
 	}
 
 
@@ -2498,12 +2548,12 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	authInfo = GetAuthInfoForZone(u, &rr->uDNS_info.zone);
 	if (authInfo)
 		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, UnicastDNSPort, authInfo);
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, rr->uDNS_info.port, authInfo);
 		if (err) { LogMsg("ERROR: uDNS_DeregiserRecord - mDNSSendSignedDNSMessage - %d", err); goto error; }
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, UnicastDNSPort);
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, rr->uDNS_info.port);
 		if (err) { LogMsg("ERROR: uDNS_DeregisterRecord - mDNSSendDNSMessage - %d", err); goto error; }
 		}
 	
@@ -2538,7 +2588,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	srs->next = m->uDNS_info.ServiceRegistrations;
 	m->uDNS_info.ServiceRegistrations = srs;
 
-	return startGetZoneData(&srs->RR_SRV.resrec.name, m, mDNSfalse, mDNSfalse, sendServiceRegistration, srs);
+	return startGetZoneData(&srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, sendServiceRegistration, srs);
 	}
 
 mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
@@ -2590,12 +2640,12 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	authInfo = GetAuthInfoForZone(u, &srs->uDNS_info.zone);
 	if (authInfo)
 		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, UnicastDNSPort, authInfo);
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, srs->uDNS_info.port, authInfo);
 		if (err) { LogMsg("ERROR: uDNS_DeregiserService - mDNSSendSignedDNSMessage - %d", err); goto error; }
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, UnicastDNSPort);
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, srs->uDNS_info.port);
 		if (err) { LogMsg("ERROR: uDNS_DeregisterService - mDNSSendDNSMessage - %d", err); goto error; }
 		}
 	
