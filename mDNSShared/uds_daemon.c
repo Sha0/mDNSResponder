@@ -1369,7 +1369,7 @@ static void connected_registration_termination(void *context)
 static void handle_removerecord_request(request_state *rstate)
     {
     registered_record_entry *reptr, *prev = NULL;
-    mStatus err;
+    mStatus err = mStatus_UnknownErr;
     char *ptr;
     reptr = rstate->reg_recs;
 
@@ -1390,6 +1390,11 @@ static void handle_removerecord_request(request_state *rstate)
         reptr = reptr->next;
     	}
     reset_connected_rstate(rstate);
+    if (deliver_error(rstate, err) < 0)
+        {
+        abort_request(rstate);
+        unlink_request(rstate);
+        }
     }
 
 
