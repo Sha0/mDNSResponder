@@ -397,12 +397,19 @@ mDNSlocal void DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFla
 
 mDNSlocal void DeliverInstanceTimerCallBack(CFRunLoopTimerRef timer, void *info)
 	{
-	DNSServiceBrowser *b;
+	DNSServiceBrowser *b = DNSServiceBrowserList;
 	(void)timer;	// Parameter not used
 
-	for (b = DNSServiceBrowserList; b; b=b->next)
-		if (b->resultType != -1)
-			DeliverInstance(b, 0);
+	while (b)
+		{
+		// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
+		// event that the client Mach queue overflows, DeliverInstance() will call AbortBlockedClient()
+		// and that will cause the DNSServiceBrowser object's memory to be freed before it returns
+		DNSServiceBrowser *x = b;
+		b = b->next;
+		if (x->resultType != -1)
+			DeliverInstance(x, 0);
+		}
 	}
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
