@@ -633,7 +633,7 @@ mDNSlocal mDNSu32 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		case kDNSType_A:	return(sizeof(rr->rdata.ip)); break;
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rr->rdata.name, name));
-		case kDNSType_TXT:  return(mDNSPlatformStrLen(rr->rdata.txt.c));
+		case kDNSType_TXT:  return(rr->rdlength);		// TXT is not self-describing, so have to just trust rdlength
 		case kDNSType_SRV:	return(6 + CompressedDomainNameLength(&rr->rdata.srv.target, name));
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdlength);
@@ -701,15 +701,20 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 			}
 		}
 
-	rr->next              = mDNSNULL;
-//	rr->Additional1       = may be set by client
-//	rr->Additional2       = may be set by client
-//	rr->DependentOn       = may be set by client
-//	rr->RRSet             = may be set by client
+	rr->next = mDNSNULL;
+//	rr->maxrdlength       = already set in mDNS_SetupResourceRecord
+
+	// Field Group 1: Persistent metadata for Authoritative Records
+//	rr->Additional1       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->Additional2       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->DependentOn       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->RRSet             = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
 //	rr->Callback          = already set in mDNS_SetupResourceRecord
 //	rr->Context           = already set in mDNS_SetupResourceRecord
-
 //	rr->RecordType        = already set in mDNS_SetupResourceRecord
+//	rr->HostTarget        = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
+
+	// Field Group 2: Transient state for Authoritative Records
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = (rr->RecordType == kDNSRecordTypeUnique) ? DefaultProbeCountForTypeUnique : (mDNSu8)0;
 	rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
@@ -723,8 +728,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->NextSendTime      = timenow;
 	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
 	rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
-//	rr->HostTarget        = already set in mDNS_SetupResourceRecord (or by client)
 
+	// Field Group 3: Transient state for Cache Records
 	rr->NextDupSuppress   = mDNSNULL;	// Not strictly relevant for a local record
 	rr->TimeRcvd          = 0;			// Not strictly relevant for a local record
 	rr->LastUsed          = 0;			// Not strictly relevant for a local record
@@ -732,14 +737,16 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->UnansweredQueries = 0;			// Not strictly relevant for a local record
 	rr->Active            = mDNSfalse;	// Not strictly relevant for a local record
 	
+	// Field Group 4: The actual information pertaining to this resource record
 //	rr->interface         = already set in mDNS_SetupResourceRecord
-//	rr->name.c            = already set by client
+//	rr->name.c            = MUST be set by client
 //	rr->rrtype            = already set in mDNS_SetupResourceRecord
 //	rr->rrclass           = already set in mDNS_SetupResourceRecord
 //	rr->rroriginalttl     = already set in mDNS_SetupResourceRecord
 //	rr->rrremainingttl    = already set in mDNS_SetupResourceRecord
 
-	if (rr->HostTarget) SetTargetToHostName(m, rr);
+	if (rr->HostTarget)
+		SetTargetToHostName(m, rr);	// This also sets rdlength and rdestimate for us
 	else
 		{
 		rr->rdlength      = GetRDLength(rr, mDNSfalse);
@@ -913,17 +920,22 @@ mDNSlocal mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg, mDNSu8 *ptr
 mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
 	const mDNSu16 rrtype, mDNSu32 rdlength, const RData *const rdata)
 	{
+	if (ptr + rdlength > limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
 	switch (rrtype)
 		{
-		case kDNSType_A:	*ptr++ = rdata->ip.b[0];
+		case kDNSType_A:	if (rdlength != 4) { debugf("putRData: Illegal length %d for kDNSType_A", rdlength); return(mDNSNULL); }
+							*ptr++ = rdata->ip.b[0];
 							*ptr++ = rdata->ip.b[1];
 							*ptr++ = rdata->ip.b[2];
 							*ptr++ = rdata->ip.b[3]; break;
 
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	ptr = putDomainNameAsLabels(msg, ptr, limit, &rdata->name);		break;
+		case kDNSType_PTR:	ptr = putDomainNameAsLabels(msg, ptr, limit, &rdata->name);
+							break;
 
-		case kDNSType_TXT:  mDNSPlatformMemCopy(rdata->data, ptr, rdlength); ptr += rdlength; break;
+		case kDNSType_TXT:  mDNSPlatformMemCopy(rdata->data, ptr, rdlength);
+							ptr += rdlength;
+							break;
 
 		case kDNSType_SRV:	*ptr++ = (mDNSu8)(rdata->srv.priority >> 8);
 							*ptr++ = (mDNSu8)(rdata->srv.priority     );
@@ -933,7 +945,10 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 							*ptr++ = rdata->srv.port.b[1];
 							ptr = putDomainNameAsLabels(msg, ptr, limit, &rdata->srv.target);
 							break;
-		default:			debugf("Error! Don't know how to write resource type %d", rrtype);
+
+		default:			debugf("putRData: Warning! Writing resource type %d as raw data", rrtype);
+							mDNSPlatformMemCopy(rdata->data, ptr, rdlength);
+							ptr += rdlength;
 							break;
 		}
 	return(ptr);
@@ -995,6 +1010,33 @@ mDNSlocal mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *
 #pragma mark - DNS Message Parsing Functions
 #endif
 
+mDNSlocal const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end)
+	{
+	mDNSu32 total = 0;
+
+	if (ptr < (mDNSu8*)msg || ptr >= end) { debugf("skipDomainName: Illegal ptr not within packet boundaries"); return(mDNSNULL); }
+
+	while (1)						// Read sequence of labels
+		{
+		const mDNSu8 len = *ptr++;	// Read length of this label
+		if (len == 0) return(ptr);	// If length is zero, that means this name is complete
+		switch (len & 0xC0)
+			{
+			case 0x00:	if (ptr + len >= end)					// Remember: expect at least one more byte for the root label
+							{ debugf("skipDomainName: Malformed domain name (overruns packet end)"); return(mDNSNULL); }
+						if (total + 1 + len >= MAX_DOMAIN_NAME)	// Remember: expect at least one more byte for the root label
+							{ debugf("skipDomainName: Malformed domain name (more than 255 characters)"); return(mDNSNULL); }
+						ptr += len;
+						total += 1 + len;
+						break;
+
+			case 0x40:	debugf("skipDomainName: Extended EDNS0 label types 0x%X not supported", len); return(mDNSNULL);
+			case 0x80:	debugf("skipDomainName: Illegal label length 0x%X", len); return(mDNSNULL);
+			case 0xC0:	return(ptr+1);
+			}
+		}
+	}
+
 // Routine to fetch an FQDN from the DNS message, following compression pointers if necessary.
 mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end, domainname *const name)
 	{
@@ -1006,7 +1048,7 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 
 	*np = 0;						// Tentatively place the root label here (may be overwritten if we have more labels)
 
-	while (ptr < end)				// Read sequence of labels
+	while (1)						// Read sequence of labels
 		{
 		const mDNSu8 len = *ptr++;	// Read length of this label
 		if (len == 0) break;		// If length is zero, that means this name is complete
@@ -1015,25 +1057,25 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 			int i;
 			mDNSu16 offset;
 
-			case 0x00:	if (ptr + len > end)
-							{ debugf("Malformed domain name (overruns packet end)"); return(mDNSNULL); }
-						if (np + 1 + len + 1 > limit)
-							{ debugf("Malformed domain name (more than 255 characters)"); return(mDNSNULL); }
+			case 0x00:	if (ptr + len >= end)		// Remember: expect at least one more byte for the root label
+							{ debugf("getDomainName: Malformed domain name (overruns packet end)"); return(mDNSNULL); }
+						if (np + 1 + len >= limit)	// Remember: expect at least one more byte for the root label
+							{ debugf("getDomainName: Malformed domain name (more than 255 characters)"); return(mDNSNULL); }
 						*np++ = len;
 						for (i=0; i<len; i++) *np++ = *ptr++;
 						*np = 0;	// Tentatively place the root label here (may be overwritten if we have more labels)
 						break;
 
-			case 0x40:	debugf("Extended EDNS0 label types 0x%X not supported in name %##s", len, name->c); return(mDNSNULL);
+			case 0x40:	debugf("getDomainName: Extended EDNS0 label types 0x%X not supported in name %##s", len, name->c); return(mDNSNULL);
 
-			case 0x80:	debugf("Illegal label length 0x%X in domain name %##s", len, name->c); return(mDNSNULL);
+			case 0x80:	debugf("getDomainName: Illegal label length 0x%X in domain name %##s", len, name->c); return(mDNSNULL);
 
 			case 0xC0:	offset = (mDNSu16)((((mDNSu16)(len & 0x3F)) << 8) | *ptr++);
 						if (!nextbyte) nextbyte = ptr;	// Record where we got to before we started following pointers
 						ptr = (mDNSu8 *)msg + offset;
 						if (ptr < (mDNSu8*)msg || ptr >= end)
 							{ debugf("getDomainName: Illegal compression pointer not within packet boundaries"); return(mDNSNULL); }
-						if (*ptr & 0xC0) { debugf("Compression pointer must point to real label"); return(mDNSNULL); }
+						if (*ptr & 0xC0) { debugf("getDomainName: Compression pointer must point to real label"); return(mDNSNULL); }
 						break;
 			}
 		}
@@ -1042,12 +1084,30 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 	else return(ptr);
 	}
 
-mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end,
-	const mDNSIPAddr InterfaceAddr, const mDNSs32 timenow, mDNSu8 RecordType, ResourceRecord *rr)
+mDNSlocal const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end)
 	{
-	mDNSu32 pktrdlength;
+	mDNSu16 pktrdlength;
+
+	ptr = skipDomainName(msg, ptr, end);
+	if (!ptr) { debugf("skipResourceRecord: Malformed RR name"); return(mDNSNULL); }
+	
+	if (ptr + 10 > end) { debugf("skipResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
+	pktrdlength = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
+	ptr += 10;
+	if (ptr + pktrdlength > end) { debugf("skipResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
+
+	return(ptr + pktrdlength);
+	}
+
+mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end,
+	const mDNSIPAddr InterfaceAddr, const mDNSs32 timenow, mDNSu8 RecordType, ResourceRecord *rr, mDNSu16 maxrdlength)
+	{
+	mDNSu16 pktrdlength;
 
 	rr->next              = mDNSNULL;
+	rr->maxrdlength       = maxrdlength ? maxrdlength : sizeof(rr->rdata);
+	
+	// Field Group 1: Persistent metadata for Authoritative Records
 	rr->Additional1       = mDNSNULL;
 	rr->Additional2       = mDNSNULL;
 	rr->DependentOn       = mDNSNULL;
@@ -1055,6 +1115,9 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->Callback          = mDNSNULL;
 	rr->Context           = mDNSNULL;
 	rr->RecordType        = RecordType;
+	rr->HostTarget        = mDNSfalse;
+
+	// Field Group 2: Transient state for Authoritative Records
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = 0;
 	rr->AnnounceCount     = 0;
@@ -1066,8 +1129,8 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->NextSendTime      = 0;
 	rr->NextSendInterval  = 0;
-	rr->HostTarget        = mDNSfalse;
 
+	// Field Group 3: Transient state for Cache Records
 	rr->NextDupSuppress   = mDNSNULL;
 	rr->TimeRcvd          = timenow;
 	rr->LastUsed          = timenow;
@@ -1075,11 +1138,12 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->UnansweredQueries = 0;
 	rr->Active            = mDNSfalse;
 
+	// Field Group 4: The actual information pertaining to this resource record
 	rr->InterfaceAddr     = InterfaceAddr;
 	ptr = getDomainName(msg, ptr, end, &rr->name);
-	if (!ptr) return(mDNSNULL);
+	if (!ptr) { debugf("getResourceRecord: Malformed RR name"); return(mDNSNULL); }
 
-	if (ptr + 10 > end) { debugf("Malformed DNS resource record -- no type/class/ttl/len!"); return(mDNSNULL); }
+	if (ptr + 10 > end) { debugf("getResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
 	
 	rr->rrtype            = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
 	rr->rrclass           = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
@@ -1089,7 +1153,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->rrremainingttl    = 0;
 	pktrdlength           = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
 	ptr += 10;
-	if (ptr + pktrdlength > end) { debugf("Malformed DNS resource record rdata !"); return(mDNSNULL); }
+	if (ptr + pktrdlength > end) { debugf("getResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
 
 	switch (rr->rrtype)
 		{
@@ -1099,29 +1163,42 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 							rr->rdata.ip.b[3] = ptr[3];
 							break;
 
-		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	if (!getDomainName(msg, ptr, end, &rr->rdata.name)) return(mDNSNULL);
+		case kDNSType_CNAME:// CNAME is same as PTR
+		case kDNSType_PTR:	if (!getDomainName(msg, ptr, end, &rr->rdata.name))
+								{ debugf("getResourceRecord: Malformed CNAME/PTR RDATA name"); return(mDNSNULL); }
 							//debugf("%##s PTR %##s rdlen %d", rr->name.c, rr->rdata.name.c, pktrdlength);
 							break;
 
-		case kDNSType_TXT:  mDNSPlatformMemCopy(ptr, rr->rdata.data, pktrdlength);
-							rr->rdata.data[pktrdlength] = 0;		// Null-terminate the C string
+		case kDNSType_TXT:  if (pktrdlength > rr->maxrdlength)
+								{
+								debugf("getResourceRecord: TXT rdata size (%d) exceeds storage (%d)", pktrdlength, rr->maxrdlength);
+								return(mDNSNULL);
+								}
+							rr->rdlength = pktrdlength;
+							mDNSPlatformMemCopy(ptr, rr->rdata.data, pktrdlength);
 							break;
 
 		case kDNSType_SRV:	rr->rdata.srv.priority = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
 							rr->rdata.srv.weight   = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
 							rr->rdata.srv.port.b[0] = ptr[4];
 							rr->rdata.srv.port.b[1] = ptr[5];
-							if (!getDomainName(msg, ptr+6, end, &rr->rdata.srv.target)) return(mDNSNULL);
+							if (!getDomainName(msg, ptr+6, end, &rr->rdata.srv.target))
+								{ debugf("getResourceRecord: Malformed SRV RDATA name"); return(mDNSNULL); }
 							//debugf("%##s SRV %##s rdlen %d", rr->name.c, rr->rdata.srv.target.c, pktrdlength);
 							break;
 
-		default:			debugf("Warning! Don't know how to read resource type %d", rr->rrtype);
+		default:			if (pktrdlength > rr->maxrdlength)
+								{
+								debugf("getResourceRecord: rdata %d size (%d) exceeds storage (%d)", rr->rrtype, pktrdlength, rr->maxrdlength);
+								return(mDNSNULL);
+								}
+							debugf("getResourceRecord: Warning! Reading resource type %d as opaque data", rr->rrtype);
 							// Note: Just because we don't understand the record type, that doesn't
 							// mean we fail. The DNS protocol specifies rdlength, so we can
 							// safely skip over unknown records and ignore them.
 							// We also grab a binary copy of the rdata anyway, since the caller
 							// might know how to interpret it even if we don't.
+							rr->rdlength = pktrdlength;
 							mDNSPlatformMemCopy(ptr, rr->rdata.data, pktrdlength);
 							break;
 		}
@@ -1129,6 +1206,14 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->rdlength          = GetRDLength(rr, mDNSfalse);
 	rr->rdestimate        = GetRDLength(rr, mDNStrue);
 	return(ptr + pktrdlength);
+	}
+
+mDNSlocal const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end)
+	{
+	ptr = skipDomainName(msg, ptr, end);
+	if (!ptr) { debugf("skipQuestion: Malformed domain name in DNS question section"); return(mDNSNULL); }
+	if (ptr+4 > end) { debugf("skipQuestion: Malformed DNS question section -- no query type and class!"); return(mDNSNULL); }
+	return(ptr+4);
 	}
 
 mDNSlocal const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSIPAddr InterfaceAddr,
@@ -1147,18 +1232,16 @@ mDNSlocal const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, co
 mDNSlocal const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *const end)
 	{
 	int i;
-	DNSQuestion q;
 	const mDNSu8 *ptr = msg->data;
-	for (i = 0; i < msg->h.numQuestions && ptr; i++) ptr = getQuestion(msg, ptr, end, zeroIPAddr, &q);
+	for (i = 0; i < msg->h.numQuestions && ptr; i++) ptr = skipQuestion(msg, ptr, end);
 	return(ptr);
 	}
 
 mDNSlocal const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end)
 	{
 	int i;
-	ResourceRecord r;
 	const mDNSu8 *ptr = LocateAnswers(msg, end);
-	for (i = 0; i < msg->h.numAnswers && ptr; i++) ptr = getResourceRecord(msg, ptr, end, zeroIPAddr, 0, 0, &r);
+	for (i = 0; i < msg->h.numAnswers && ptr; i++) ptr = skipResourceRecord(msg, ptr, end);
 	return(ptr);
 	}
 
@@ -2240,7 +2323,7 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
 		ResourceRecord pktrr;
-		ptr = getResourceRecord(query, ptr, end, zeroIPAddr, 0, 0, &pktrr);
+		ptr = getResourceRecord(query, ptr, end, zeroIPAddr, 0, 0, &pktrr, 0);
 		if (!ptr) break;
 		if (ResourceRecordAnswersQuestion(&pktrr, q) && PacketRRConflict(m, our, &pktrr))
 			{
@@ -2357,7 +2440,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		{
 		// Get the record...
 		ResourceRecord pktrr, *rr;
-		ptr = getResourceRecord(query, ptr, end, InterfaceAddr, timenow, kDNSRecordTypePacketAnswer, &pktrr);
+		ptr = getResourceRecord(query, ptr, end, InterfaceAddr, timenow, kDNSRecordTypePacketAnswer, &pktrr, 0);
 		if (!ptr) goto exit;
 
 		// See if it suppresses any of our planned answers
@@ -2502,7 +2585,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 		{
 		ResourceRecord pktrr;
 		mDNSu8 RecordType = (i < response->h.numAnswers) ? kDNSRecordTypePacketAnswer : kDNSRecordTypePacketAdditional;
-		ptr = getResourceRecord(response, ptr, end, InterfaceAddr, timenow, RecordType, &pktrr);
+		ptr = getResourceRecord(response, ptr, end, InterfaceAddr, timenow, RecordType, &pktrr, 0);
 		if (!ptr) return;
 
 		// 1. Check that this packet resource record does not conflict with any of ours
@@ -2762,10 +2845,24 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_SRV) return;
-	mDNS_StopQuery_internal(m, &query->qSRV);
-	query->info->port    = answer->rdata.srv.port;
-	query->qADD.name     = answer->rdata.srv.target;
-	mDNS_StartQuery_internal(m, &query->qADD, mDNSPlatformTimeNow());
+
+	query->info->port = answer->rdata.srv.port;
+
+	// If this is our first answer, then set the GotSRV flag and start the address query
+	if (!query->GotSRV)
+		{
+		query->GotSRV        = mDNStrue;
+		query->qADD.name     = answer->rdata.srv.target;
+		mDNS_StartQuery_internal(m, &query->qADD, mDNSPlatformTimeNow());
+		}
+	// If this is not our first answer, only re-issue the address query if the target host name has changed
+	else if (!SameDomainName(&query->qADD.name, &answer->rdata.srv.target))
+		{
+		mDNS_StopQuery_internal(m, &query->qADD);
+		query->qADD.name = answer->rdata.srv.target;
+		mDNS_StartQuery_internal(m, &query->qADD, mDNSPlatformTimeNow());
+		}
+
 	// Don't need to do ScheduleNextTask because this callback can only ever happen
 	// (a) as a result of an immediate result from the mDNS_StartQuery call, or
 	// (b) as a result of receiving a packet on the wire
@@ -2778,11 +2875,13 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_TXT) return;
-	mDNS_StopQuery_internal(m, &query->qTXT);
-	query->info->txtinfo = answer->rdata.txt;
-	query->info->got_txt = mDNStrue;
+	if (answer->rdlength > sizeof(query->info->TXTinfo)) return;
 
-	if (query->info->got_ip && query->info->got_txt && query->Callback)
+	query->GotTXT = mDNStrue;
+	query->info->TXTlen = answer->rdlength;
+	mDNSPlatformMemCopy(answer->rdata.txt.c, query->info->TXTinfo, answer->rdlength);
+	
+	if (query->Callback && query->GotADD)
 		query->Callback(m, query);
 	}
 
@@ -2792,11 +2891,10 @@ mDNSlocal void FoundServiceInfoADD(mDNS *const m, DNSQuestion *question, const R
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_A) return;
-//	mDNS_StopQuery_internal(m, &query->qADD);
 	query->info->ip     = answer->rdata.ip;
-	query->info->got_ip = mDNStrue;
+	query->GotADD  = mDNStrue;
 	
-	if (query->info->got_ip && query->info->got_txt && query->Callback)
+	if (query->Callback && query->GotTXT)
 		query->Callback(m, query);
 	}
 
@@ -2827,17 +2925,19 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qADD.Callback      = FoundServiceInfoADD;
 	query->qADD.Context       = query;
 
+	query->GotSRV             = mDNSfalse;
+	query->GotTXT             = mDNSfalse;
+	query->GotADD             = mDNSfalse;
+
 	query->info               = info;
 	query->Callback           = Callback;
 	query->Context            = Context;
 
-//	info->name         = Must already be set up by client
-//	info->interface    = Must already be set up by client
-	info->ip           = zeroIPAddr;
-	info->port         = zeroIPPort;
-	info->got_ip       = mDNSfalse;
-	info->got_txt      = mDNSfalse;
-	info->txtinfo.c[0] = 0;
+//	info->name      = Must already be set up by client
+//	info->interface = Must already be set up by client
+	info->ip        = zeroIPAddr;
+	info->port      = zeroIPPort;
+	info->TXTlen    = 0;
 
 	status = mDNS_StartQuery_internal(m, &query->qSRV, timenow);
 	if (status == mStatus_NoError) status = mDNS_StartQuery_internal(m, &query->qTXT, timenow);
@@ -2885,6 +2985,9 @@ mDNSexport void mDNS_SetupResourceRecord(ResourceRecord *rr,
 	else if (ttl == 0)		// And Zero TTL is illegal
 		ttl = 1;
 
+	rr->maxrdlength       = sizeof(rr->rdata);	// May be overridden by client if different
+
+	/// Field Group 1: Persistent metadata for Authoritative Records
 	rr->Additional1       = mDNSNULL;
 	rr->Additional2       = mDNSNULL;
 	rr->DependentOn       = mDNSNULL;
@@ -2894,13 +2997,19 @@ mDNSexport void mDNS_SetupResourceRecord(ResourceRecord *rr,
 
 	rr->RecordType        = RecordType;
 	rr->HostTarget        = mDNSfalse;
+	
+	// Field Groups 2 and 3 are set in mDNS_Register_internal
 
+	// Field Group 4: The actual information pertaining to this resource record
 	rr->InterfaceAddr     = InterfaceAddr;
-	rr->name.c[0]         = 0;
+	rr->name.c[0]         = 0;		// MUST be set by client
 	rr->rrtype            = rrtype;
 	rr->rrclass           = kDNSClass_IN;
 	rr->rroriginalttl     = ttl;
 	rr->rrremainingttl    = ttl;
+//	rr->rdlength          = MUST set by client and/or in mDNS_Register_internal
+//	rr->rdestimate        = set in mDNS_Register_internal
+//	rr->rdata             = MUST be set by client
 	}
 
 mDNSexport mStatus mDNS_Register(mDNS *const m, ResourceRecord *const rr)
@@ -2909,6 +3018,22 @@ mDNSexport mStatus mDNS_Register(mDNS *const m, ResourceRecord *const rr)
 	mStatus status = mDNS_Register_internal(m, rr, timenow);
 	mDNS_Unlock(m);
 	return(status);
+	}
+
+mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 rdlength, const mDNSu8 *rdata)
+	{
+	mDNSs32 timenow;
+	if (rdlength > rr->maxrdlength) return(mStatus_NoMemoryErr);
+
+	timenow = mDNS_Lock(m);
+	rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
+	rr->NextSendTime      = timenow;
+	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
+	rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
+	rr->rdlength = rdlength;
+	mDNSPlatformMemCopy(rdata, rr->rdata.data, rdlength);
+	mDNS_Unlock(m);
+	return(mStatus_NoError);
 	}
 
 // NOTE: mDNS_Deregister calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
@@ -3111,7 +3236,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 // left waiting forever looking for a nonexistent record.)
 mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
-	const domainname *const host, mDNSIPPort port, const char txtinfo[],
+	const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
 	mDNSServiceCallback Callback, void *Context)
 	{
 	mDNSs32 timenow;
@@ -3119,42 +3244,45 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->Callback = Callback;
 	sr->Context  = Context;
 	sr->Conflict = mDNSfalse;
-	if (host && host->c[0]) sr->host = *host;
-	else sr->host.c[0] = 0;
+	if (host && host->c[0]) sr->Host = *host;
+	else sr->Host.c[0] = 0;
 	
+	mDNS_SetupResourceRecord(&sr->RR_PTR, zeroIPAddr, kDNSType_PTR, 24*3600, kDNSRecordTypeShared, ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_SRV, zeroIPAddr, kDNSType_SRV, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
  	mDNS_SetupResourceRecord(&sr->RR_TXT, zeroIPAddr, kDNSType_TXT, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
-	mDNS_SetupResourceRecord(&sr->RR_PTR, zeroIPAddr, kDNSType_PTR, 24*3600, kDNSRecordTypeShared, ServiceCallback, sr);
 
-	ConstructServiceName(&sr->RR_SRV.name, name,     type, domain);
-	ConstructServiceName(&sr->RR_TXT.name, name,     type, domain);
 	ConstructServiceName(&sr->RR_PTR.name, mDNSNULL, type, domain);
+	ConstructServiceName(&sr->RR_SRV.name, name,     type, domain);
+	sr->RR_TXT.name = sr->RR_SRV.name;
 	
-	// 1. Set up the SRV record rdata.
+	// 1. Set up the PTR record rdata to point to our service name
+	// We set up two additionals, so when a client asks for this PTR we automatically send the SRV and the TXT too
+	sr->RR_PTR.rdata.name  = sr->RR_SRV.name;
+	sr->RR_PTR.Additional1 = &sr->RR_SRV;
+	sr->RR_PTR.Additional2 = &sr->RR_TXT;
+
+	// 2. Set up the SRV record rdata.
 	sr->RR_SRV.rdata.srv.priority = 0;
 	sr->RR_SRV.rdata.srv.weight   = 0;
 	sr->RR_SRV.rdata.srv.port     = port;
 
 	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
-	if (sr->host.c[0]) sr->RR_SRV.rdata.srv.target = sr->host;
+	if (sr->Host.c[0]) sr->RR_SRV.rdata.srv.target = sr->Host;
 	else sr->RR_SRV.HostTarget = mDNStrue;
 
-	// 2. Set up the TXT record rdata.
-	if (txtinfo == mDNSNULL) sr->RR_TXT.rdata.txt.c[0] = 0;
-	else if (txtinfo != (char *)(sr->RR_TXT.rdata.txt.c))
+	// 3. Set up the TXT record rdata,
+	// and set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
+	if (txtinfo == mDNSNULL) sr->RR_TXT.rdlength = 0;
+	else if (txtinfo != sr->RR_TXT.rdata.txt.c)
 		{
-		if (mDNSPlatformStrLen(txtinfo) > 255) return(mStatus_BadParamErr);
+		sr->RR_TXT.rdlength = mDNSPlatformStrLen(txtinfo);
+		if (sr->RR_TXT.rdlength > sr->RR_TXT.maxrdlength) return(mStatus_BadParamErr);
 		mDNSPlatformStrCopy(txtinfo,(char *)(sr->RR_TXT.rdata.txt.c));
 		}
-
-	// Set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 
-	// 3. Set up the PTR record rdata to point to our service name
-	// We set up two additionals, so when a client asks for this PTR we automatically send the SRV and the TXT too
-	sr->RR_PTR.rdata.name  = sr->RR_SRV.name;
-	sr->RR_PTR.Additional1 = &sr->RR_SRV;
-	sr->RR_PTR.Additional2 = &sr->RR_TXT;
+	// 4. We have no Extras yet
+	sr->Extras = mDNSNULL;
 
 	timenow = mDNS_Lock(m);
 	mDNS_Register_internal(m, &sr->RR_SRV, timenow);
@@ -3165,31 +3293,83 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	return(mStatus_NoError);
 	}
 
+mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra)
+	{
+	ExtraResourceRecord **e = &sr->Extras;
+	while (*e) e = &(*e)->next;
+
+	extra->next          = mDNSNULL;
+ 	mDNS_SetupResourceRecord(&extra->r, zeroIPAddr, extra->r.rrtype, 60, kDNSRecordTypeUnique, ServiceCallback, sr);
+	extra->r.name        = sr->RR_SRV.name;
+	extra->r.DependentOn = &sr->RR_SRV;
+	
+	debugf("mDNS_AddRecordToService adding record to %##s", extra->r.name.c);
+	
+	*e = extra;
+	return(mDNS_Register(m, &extra->r));
+	}
+
+mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra)
+	{
+	ExtraResourceRecord **e = &sr->Extras;
+	while (*e && *e != extra) e = &(*e)->next;
+	if (!*e)
+		{
+		debugf("mDNS_AddRecordToService failed to remove record from %##s", extra->r.name.c);
+		return(mStatus_BadReferenceErr);
+		}
+
+	debugf("mDNS_AddRecordToService removing record from %##s", extra->r.name.c);
+	
+	*e = (*e)->next;
+	mDNS_Deregister(m, &extra->r);
+	return(mStatus_NoError);
+	}
+
 mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr)
 	{
 	domainlabel name;
 	domainname type, domain;
 	domainname *host = mDNSNULL;
+	ExtraResourceRecord *extras = sr->Extras;
+	mStatus err;
 
 	DeconstructServiceName(&sr->RR_SRV.name, &name, &type, &domain);
 	IncrementLabelSuffix(&name, mDNStrue);
 	debugf("Reregistering as %#s", name.c);
-	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->host.c[0]) host = &sr->host;
-	return(mDNS_RegisterService(m, sr, &name, &type, &domain,
-		host, sr->RR_SRV.rdata.srv.port, (char *)sr->RR_TXT.rdata.txt.c,
-		sr->Callback, sr->Context));
+	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->Host.c[0]) host = &sr->Host;
+	
+	err = mDNS_RegisterService(m, sr, &name, &type, &domain,
+		host, sr->RR_SRV.rdata.srv.port, sr->RR_TXT.rdata.txt.c, sr->RR_TXT.rdlength,
+		sr->Callback, sr->Context);
+
+	while (!err && extras)
+		{
+		ExtraResourceRecord *e = extras;
+		extras = extras->next;
+		err = mDNS_AddRecordToService(m, sr, e);
+		}
+	
+	return(err);
 	}
 
-// NOTE: mDNS_DeregisterService calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// NOTE: mDNS_DeregisterService calls mDNS_Deregister_internal which can call a user callback,
+// which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
-	// These checks are because, in the event of a collision, either or both the SRV and TXT could
-	// have already been automatically deregistered
+	mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNSfalse);
+	// These checks are because, in the event of a collision, some or all records could have already been automatically deregistered
 	if (sr->RR_SRV.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_SRV, timenow, mDNSfalse);
 	if (sr->RR_TXT.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &sr->RR_TXT, timenow, mDNSfalse);
-	mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNSfalse);
+	while (sr->Extras)
+		{
+		ExtraResourceRecord *e = sr->Extras;
+		sr->Extras = sr->Extras->next;
+		if (e->r.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &e->r, timenow, mDNSfalse);
+		}
+	
 	mDNS_Unlock(m);
 	}
 
