@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.415  2004/09/18 01:14:09  cheshire
+<rdar://problem/3485375> Resolve() should not bother doing AAAA queries on machines with no IPv6 interfaces
+
 Revision 1.414  2004/09/18 01:06:48  cheshire
 Add comments
 
@@ -5073,6 +5076,14 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 #endif // UNICAST_DISABLED
 	}
 
+mDNSlocal mDNSBool MachineHasActiveIPv6(mDNS *const m)
+	{
+	NetworkInterfaceInfo *intf;
+	for (intf = m->HostInterfaces; intf; intf = intf->next)
+	if (intf->ip.type == mDNSAddrType_IPv6) return(mDNStrue);
+	return(mDNSfalse);
+	}
+
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
@@ -5090,15 +5101,16 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		AssignDomainName(query->qAv4.qname, answer->rdata->u.srv.target);
 		query->qAv6.InterfaceID   = answer->InterfaceID;
 		AssignDomainName(query->qAv6.qname, answer->rdata->u.srv.target);
-		mDNS_StartQuery_internal(m, &query->qAv4);
-		mDNS_StartQuery_internal(m, &query->qAv6);
+		mDNS_StartQuery(m, &query->qAv4);
+		// Only do the AAAA query if this machine actually has IPv6 active
+		if (MachineHasActiveIPv6(m)) mDNS_StartQuery(m, &query->qAv6);
 		}
 	// If this is not our first answer, only re-issue the address query if the target host name has changed
 	else if ((query->qAv4.InterfaceID != query->qSRV.InterfaceID && query->qAv4.InterfaceID != answer->InterfaceID) ||
 		!SameDomainName(&query->qAv4.qname, &answer->rdata->u.srv.target))
 		{
-		mDNS_StopQuery_internal(m, &query->qAv4);
-		mDNS_StopQuery_internal(m, &query->qAv6);
+		mDNS_StopQuery(m, &query->qAv4);
+		if (query->qAv6.ThisQInterval >= 0) mDNS_StopQuery(m, &query->qAv6);
 		if (SameDomainName(&query->qAv4.qname, &answer->rdata->u.srv.target) && !PortChanged)
 			{
 			// If we get here, it means:
@@ -5117,8 +5129,9 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 			AssignDomainName(query->qAv6.qname, answer->rdata->u.srv.target);
 			}
 		debugf("FoundServiceInfoSRV: Restarting address queries for %##s", query->qAv4.qname.c);
-		mDNS_StartQuery_internal(m, &query->qAv4);
-		mDNS_StartQuery_internal(m, &query->qAv6);
+		mDNS_StartQuery(m, &query->qAv4);
+		// Only do the AAAA query if this machine actually has IPv6 active
+		if (MachineHasActiveIPv6(m)) mDNS_StartQuery(m, &query->qAv6);
 		}
 	else if (query->ServiceInfoQueryCallback && query->GotADD && query->GotTXT && PortChanged)
 		{
