@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.15  2003/08/13 17:30:33  ksekar
+Bug #: <rdar://problem/3374671>: DNSServiceAddRecord doesn't work
+Fixed various problems with handling the AddRecord request and freeing the ExtraResourceRecords.
+
 Revision 1.14  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -1123,6 +1127,7 @@ malloc_error:
 static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
     {
     mStatus err;
+    ExtraResourceRecord *extra;
     registered_service *r_srv = srs->ServiceContext;
     request_state *rs = r_srv->request;
 
@@ -1149,6 +1154,12 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
             }
         else 
             {
+            while (r_srv->srs->Extras)
+                {
+                extra = r_srv->srs->Extras;
+                r_srv->srs->Extras = r_srv->srs->Extras->next;
+                freeL("regservice_callback", extra);
+                }
             freeL("regservice_callback", r_srv->srs);
             if (r_srv->subtypes) freeL("regservice_callback", r_srv->subtypes);
             if (r_srv->request) r_srv->request->service = NULL;
@@ -1198,6 +1209,7 @@ static void handle_add_request(request_state *rstate)
     uint16_t rrtype, rdlen;
     char *ptr, *rdata;
     mStatus result;
+    DNSServiceFlags flags;
     ServiceRecordSet *srs = rstate->service->srs;
     
     if (!srs)
@@ -1207,7 +1219,8 @@ static void handle_add_request(request_state *rstate)
         return;
         }
         
-
+    ptr = rstate->msgdata;
+    flags = get_flags(&ptr);
     rrtype = get_short(&ptr);
     rdlen = get_short(&ptr);
     rdata = get_rdata(&ptr, rdlen);
@@ -1229,8 +1242,15 @@ static void handle_add_request(request_state *rstate)
     extra->r.rdatastorage.RDLength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
     result =  mDNS_AddRecordToService(&mDNSStorage, srs , extra, &extra->r.rdatastorage, ttl);
-    deliver_error(rstate, mStatus_UnknownErr);
+    deliver_error(rstate, result);
     reset_connected_rstate(rstate);
+    if (result) 
+        {
+        freeL("handle_add_request", rstate->msgbuf);
+        rstate->msgbuf = NULL;
+        freeL("handle_add_request", extra);
+        return;
+        }
     re = mallocL("handle_add_request", sizeof(registered_record_entry));
     if (!re)
         {
