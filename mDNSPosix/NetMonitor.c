@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.14  2003/05/26 04:45:42  cheshire
+ * Limit line length when printing super-long TXT records
+ *
  * Revision 1.13  2003/05/26 03:21:29  cheshire
  * Tidy up address structure naming:
  * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
@@ -157,15 +160,17 @@ static ActivityStat *stats;
 // Utilities
 
 // Special version of printf that knows how to print IP addresses, DNS-format name strings, etc.
-mDNSlocal void mprintf(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
-mDNSlocal void mprintf(const char *format, ...)
+mDNSlocal mDNSu32 mprintf(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+mDNSlocal mDNSu32 mprintf(const char *format, ...)
 	{
+	mDNSu32 length;
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
+	length = mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr);
 	va_end(ptr);
 	printf("%s", buffer);
+	return(length);
 	}
 
 //*************************************************************************************************************
@@ -283,20 +288,21 @@ mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *
 
 mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *const op, const ResourceRecord *const pktrr)
 	{
+	#define MaxWidth 132
 	RDataBody *rd = &pktrr->rdata->u;
 	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdata->RDLength;
 	mDNSu8 *t = rd->txt.c;
-	mprintf("%#-16a %-4s %-5s %##s", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->name.c);
+	mDNSu32 n = mprintf("%#-16a %-4s %-5s %##s", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->name.c);
 
 	switch(pktrr->rrtype)
 		{
-		case kDNSType_A:	mprintf(" -> %.4a", &rd->ip); break;
-		case kDNSType_PTR:	mprintf(" -> %##s", &rd->name); break;
+		case kDNSType_A:	n += mprintf(" -> %.4a", &rd->ip); break;
+		case kDNSType_PTR:	n += mprintf(" -> %##.*s", MaxWidth - n, &rd->name); break;
 		case kDNSType_HINFO:// same as kDNSType_TXT below
-		case kDNSType_TXT:	while (t < rdend) { mprintf(" -> %#s", t); t += 1+t[0]; }
+		case kDNSType_TXT:	while (t < rdend && n+4 < MaxWidth) { n += mprintf(" -> %#.*s", MaxWidth - (n+4), t); t += 1+t[0]; }
 							break;
-		case kDNSType_AAAA:	mprintf(" -> %.16a", &rd->ipv6); break;
-		case kDNSType_SRV:	mprintf(" -> %##s:%d", &rd->srv.target, ((mDNSu16)rd->srv.port.b[0] << 8) | rd->srv.port.b[1]); break;
+		case kDNSType_AAAA:	n += mprintf(" -> %.16a", &rd->ipv6); break;
+		case kDNSType_SRV:	n += mprintf(" -> %##s:%d", &rd->srv.target, ((mDNSu16)rd->srv.port.b[0] << 8) | rd->srv.port.b[1]); break;
 		}
 	
 	mprintf("\n");
