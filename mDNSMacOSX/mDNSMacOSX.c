@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.90  2003/06/24 01:51:47  cheshire
+<rdar://problem/3303118> Oops: Double-dispose of sockets
+Don't need to close sockets: CFSocketInvalidate() does that for us
+
 Revision 1.89  2003/06/21 18:12:47  cheshire
 <rdar://problem/3296061> Rendezvous cannot handle interfaces whose total name is >3 chars
 One-line change: should say "IF_NAMESIZE", not sizeof(ifname)
@@ -963,13 +967,14 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		// 2. Close all our sockets. We'll recreate them later as necessary.
 		// (We may have both v4 and v6, and we may not need both now.)
 		#if mDNS_AllowPort53
-		if (i->skt53 >= 0) { close(i->skt53);                                   i->skt53 = -1; }
-		if (i->cfs53)      { CFSocketInvalidate(i->cfs53); CFRelease(i->cfs53); i->cfs53 = NULL; }
+		if (i->cfs53) { CFSocketInvalidate(i->cfs53); CFRelease(i->cfs53); }
+		i->skt53 = -1;
+		i->cfs53 = NULL;
 		#endif
-		if (i->sktv4 >= 0) { close(i->sktv4);                                   i->sktv4 = -1; }
-		if (i->cfsv4)      { CFSocketInvalidate(i->cfsv4); CFRelease(i->cfsv4); i->cfsv4 = NULL; }
-		if (i->sktv6 >= 0) { close(i->sktv6);                                   i->sktv6 = -1; }
-		if (i->cfsv6)      { CFSocketInvalidate(i->cfsv6); CFRelease(i->cfsv6); i->cfsv6 = NULL; }
+		if (i->cfsv4) { CFSocketInvalidate(i->cfsv4); CFRelease(i->cfsv4); }
+		if (i->cfsv6) { CFSocketInvalidate(i->cfsv6); CFRelease(i->cfsv6); }
+		i->sktv4 = i->sktv6 = -1;
+		i->cfsv4 = i->cfsv6 = NULL;
 
 		// 3. If no longer active, delete interface from list and free memory
 		if (!i->CurrentlyActive)
