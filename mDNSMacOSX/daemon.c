@@ -173,7 +173,7 @@ static void validatelists(mDNS *const m)
 
 	for (b = DNSServiceBrowserList; b; b=b->next)
 		if (b->ClientMachPort == 0 || b->ClientMachPort == (mach_port_t)~0)
-			LogMsg("!!!! DNSServiceBrowserList %X is garbag  (%X) !!!!", b, b->ClientMachPort);
+			LogMsg("!!!! DNSServiceBrowserList %X is garbage (%X) !!!!", b, b->ClientMachPort);
 
 	for (l = DNSServiceResolverList; l; l=l->next)
 		if (l->ClientMachPort == 0 || l->ClientMachPort == (mach_port_t)~0)
@@ -292,19 +292,19 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 
 mDNSlocal void AbortBlockedClient(mach_port_t c, char *m)
 	{
-	DNSServiceDomainEnumeration **e = &DNSServiceDomainEnumerationList;
-	DNSServiceBrowser           **b = &DNSServiceBrowserList;
-	DNSServiceResolver          **l = &DNSServiceResolverList;
-	DNSServiceRegistration      **r = &DNSServiceRegistrationList;
-	while (*e && (*e)->ClientMachPort != c) e = &(*e)->next;
-	while (*b && (*b)->ClientMachPort != c) b = &(*b)->next;
-	while (*l && (*l)->ClientMachPort != c) l = &(*l)->next;
-	while (*r && (*r)->ClientMachPort != c) r = &(*r)->next;
-	if      (*e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e[0]->dom.name, m);
-	else if (*b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b[0]->q.name, m);
-	else if (*l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l[0]->i.name, m);
-	else if (*r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r[0]->s.RR_SRV.name, m);
-	else         LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
+	DNSServiceDomainEnumeration *e = DNSServiceDomainEnumerationList;
+	DNSServiceBrowser           *b = DNSServiceBrowserList;
+	DNSServiceResolver          *l = DNSServiceResolverList;
+	DNSServiceRegistration      *r = DNSServiceRegistrationList;
+	while (e && e->ClientMachPort != c) e = e->next;
+	while (b && b->ClientMachPort != c) b = b->next;
+	while (l && l->ClientMachPort != c) l = l->next;
+	while (r && r->ClientMachPort != c) r = r->next;
+	if      (e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e->dom.name, m);
+	else if (b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b->q.name, m);
+	else if (l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l->i.name, m);
+	else if (r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r->s.RR_SRV.name, m);
+	else        LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
 
 	AbortClient(c);
 	}
@@ -424,11 +424,13 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 mDNSlocal void DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFlags flags)
 	{
 	kern_return_t status;
+#if 0
 	LogOperation("%5d: DNSServiceBrowser(%##s) %s %s.%s%s (%s)",
 		x->ClientMachPort, &x->q.name,
 		x->resultType == DNSServiceBrowserReplyAddInstance ? "+" : "-",
 		x->name, x->type, x->dom,
 		(flags & DNSServiceDiscoverReplyFlagsMoreComing) ? "more ..." : "last in this batch");
+#endif
 	status = DNSServiceBrowserReply_rpc(x->ClientMachPort,
 		x->resultType, x->name, x->type, x->dom, flags, MDNS_MM_TIMEOUT);
 	x->resultType = -1;
@@ -587,7 +589,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	(void)unusedserver;		// Unused
 	if (!x)
 		{
-		LogMsg("%5d: DNSServiceResolverResolve(%s.%s): No memory!", client, name, regtype);
+		LogMsg("%5d: DNSServiceResolve(%s.%s): No memory!", client, name, regtype);
 		return(mStatus_NoMemoryErr);
 		}
 
@@ -693,7 +695,7 @@ mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainl
 			count++;
 
 	if (count)
-		LogMsg("%5d: DNSServiceRegistration(%##s) START; WARNING! now have %d instances",
+		LogMsg("%5d: DNSServiceRegistration(%##s) START; WARNING! %d identical instances",
 			x->ClientMachPort, &srvname, count+1);
 	else
 		LogOperation("%5d: DNSServiceRegistration(%##s) START",
@@ -790,7 +792,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	while (x && x->ClientMachPort != client) x = x->next;
 	if (!x)
 		{
-		LogMsg("%5d: DNSServiceRegistrationAddRecord() no such client %X", client);
+		LogMsg("%5d: DNSServiceRegistrationAddRecord() no such client", client);
 		return(mStatus_BadReferenceErr);
 		}
 
