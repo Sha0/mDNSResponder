@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.33  2005/03/11 19:09:02  ksekar
+Fixed ZERO_LLQID macro
+
 Revision 1.32  2005/03/10 22:54:33  ksekar
 <rdar://problem/4046285> dnsextd leaks memory/ports
 
@@ -186,7 +189,7 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #endif
 
 #define SAME_INADDR(x,y) (*((mDNSu32 *)&x) == *((mDNSu32 *)&y))
-#define ZERO_LLQID(x) (!memcmp(x, "\x0\x0\x0\x0", 8))
+#define ZERO_LLQID(x) (!memcmp(x, "\x0\x0\x0\x0\x0\x0\x0\x0", 8))
 
 //
 // Data Structures
