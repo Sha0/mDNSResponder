@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.32  2004/06/03 03:09:58  ksekar
+<rdar://problem/3668626>: Garbage Collection for Dynamic Updates
+
 Revision 1.31  2004/05/28 23:42:36  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
 
@@ -1058,28 +1061,46 @@ mDNSlocal inline mDNSu8 *putVal16(mDNSu8 *ptr, mDNSu16 val)
 	return ptr + sizeof(mDNSOpaque16);
 	}
 
-mDNSlocal mDNSu8 *putLLQRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr)
+mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr)
 	{
 	int nput = 0;
-	rdataLLQ *llq;
+	rdataOpt *opt;
 	
 	while (nput < rr->rdlength)
 		{
-		if (ptr + sizeof(rdataLLQ) > limit) { LogMsg("ERROR: putLLQRData - out of space");  return mDNSNULL; }
-		if (rr->rdlength < sizeof(rdataLLQ)) { LogMsg("ERROR: putRData - bad llq"); return mDNSNULL; }
-		(mDNSu8 *)llq = rr->rdata->u.data + nput;
-		ptr = putVal16(ptr, llq->opt);
-		ptr = putVal16(ptr, llq->optlen);
-		ptr = putVal16(ptr, llq->vers);
-		ptr = putVal16(ptr, llq->llqOp);
-		ptr = putVal16(ptr, llq->err);
-		mDNSPlatformMemCopy(llq->id, ptr, 8);  // 8-byte id
-		ptr += 8;
-		*(mDNSOpaque32 *)ptr = mDNSOpaque32fromIntVal(llq->lease);
-		ptr += sizeof(mDNSOpaque32);
-		nput += sizeof(rdataLLQ);
+		// check if space for opt/optlen
+		if (ptr + (2 * sizeof(mDNSu16)) > limit) goto space_err;
+		(mDNSu8 *)opt = rr->rdata->u.data + nput;	
+		ptr = putVal16(ptr, opt->opt);
+		ptr = putVal16(ptr, opt->optlen);			
+		nput += 2 * sizeof(mDNSu16);
+		if (opt->opt == kDNSOpt_LLQ)
+			{
+			if (ptr + sizeof(LLQOptData) > limit) goto space_err;
+			ptr = putVal16(ptr, opt->OptData.llq.vers);
+			ptr = putVal16(ptr, opt->OptData.llq.llqOp);
+			ptr = putVal16(ptr, opt->OptData.llq.err);
+			mDNSPlatformMemCopy(opt->OptData.llq.id, ptr, 8);  // 8-byte id
+			ptr += 8;
+			*(mDNSOpaque32 *)ptr = mDNSOpaque32fromIntVal(opt->OptData.llq.lease);
+			ptr += sizeof(mDNSOpaque32);
+			nput += sizeof(LLQOptData);
+			}
+		else if (opt->opt == kDNSOpt_Lease)
+			{
+			if (ptr + sizeof(mDNSs32) > limit) goto space_err;			
+			*(mDNSOpaque32 *)ptr = mDNSOpaque32fromIntVal(opt->OptData.lease);
+			ptr += sizeof(mDNSs32);
+			nput += sizeof(mDNSs32);
+			}
+		else { LogMsg("putOptRData - unknown option %d", opt->opt); return mDNSNULL; }
 		}
+	
 	return ptr;
+
+	space_err:
+	LogMsg("ERROR: putOptRData - out of space");
+	return mDNSNULL;
 	}
 
 mDNSlocal inline mDNSu16 getVal16(const mDNSu8 **ptr)
@@ -1089,30 +1110,48 @@ mDNSlocal inline mDNSu16 getVal16(const mDNSu8 **ptr)
 	return val;
 	}
 
-mDNSlocal const mDNSu8 *getLLQRdata(const mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr, mDNSu16 pktRDLen)
+mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr, mDNSu16 pktRDLen)
 	{
 	int nread = 0;
-	rdataLLQ *llq = (rdataLLQ *)rr->rdata->u.data;
+	rdataOpt *opt;
 	
 	while (nread < pktRDLen)
 		{
-		if (nread + sizeof(rdataLLQ) > rr->rdata->MaxRDLength) { LogMsg("ERROR: getLLQRdata - out of space");  return mDNSNULL; }
-		if ((unsigned)(limit - ptr) < sizeof(rdataLLQ)) { LogMsg("ERROR: putRData - bad llq"); return mDNSNULL; }
+		opt = (rdataOpt *)(rr->rdata->u.data + nread);		
+		// space for opt + optlen
+		if (nread + (2 * sizeof(mDNSu16)) > rr->rdata->MaxRDLength) goto space_err;
+		opt->opt = getVal16(&ptr);
+		opt->optlen = getVal16(&ptr);		
+		nread += 2 * sizeof(mDNSu16);
+		if (opt->opt == kDNSOpt_LLQ)
+			{
+			if ((unsigned)(limit - ptr) < sizeof(LLQOptData)) goto space_err;			
+			opt->OptData.llq.vers = getVal16(&ptr);
+			opt->OptData.llq.llqOp = getVal16(&ptr);
+			opt->OptData.llq.err = getVal16(&ptr);
+			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id, 8);
+			ptr += 8;
+			opt->OptData.llq.lease = mDNSVal32(*(mDNSOpaque32 *)ptr);
+			ptr += sizeof(mDNSOpaque32);
+			nread += sizeof(LLQOptData);
+			}
+		else if (opt->opt == kDNSOpt_Lease)
+			{
+			if ((unsigned)(limit - ptr) < sizeof(mDNSs32)) goto space_err;						
 
-		llq->opt = getVal16(&ptr);
-		llq->optlen = getVal16(&ptr);
-		llq->vers = getVal16(&ptr);
-		llq->llqOp = getVal16(&ptr);
-		llq->err = getVal16(&ptr);
-		mDNSPlatformMemCopy(ptr, llq->id, 8);
-		ptr += 8;
-		llq->lease = mDNSVal32(*(mDNSOpaque32 *)ptr);
-		ptr += sizeof(mDNSOpaque32);
-		nread += sizeof(rdataLLQ);
-		llq++;  // incrememnt pointer into rdata
+			opt->OptData.lease = mDNSVal32(*(mDNSOpaque32 *)ptr);
+			ptr += sizeof(mDNSs32);
+			nread += sizeof(mDNSs32);
+			}
+		else { LogMsg("ERROR: getOptRdata - unknown opt %d", opt->opt); return mDNSNULL; }
 		}
+	
 	rr->rdlength = pktRDLen;
 	return ptr;
+
+	space_err:
+	LogMsg("ERROR: getLLQRdata - out of space");
+	return mDNSNULL; 
 	}			
 
 mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr)
@@ -1151,7 +1190,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rr->rdata->u.srv.port.b[0];
 							*ptr++ = rr->rdata->u.srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.srv.target));
-		case kDNSType_OPT:	return putLLQRData(ptr, limit, rr);		
+		case kDNSType_OPT:	return putOptRData(ptr, limit, rr);		
 							
 		default:			debugf("putRData: Warning! Writing unknown resource type %d as raw data", rr->rrtype);
 							// Fall through to common code below
@@ -1469,7 +1508,7 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 			                rr->resrec.rdata->u.soa.min.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;
 			                break;
 							
-		case kDNSType_OPT:  getLLQRdata(ptr, end, &rr->resrec, pktrdlength); break;
+		case kDNSType_OPT:  getOptRdata(ptr, end, &rr->resrec, pktrdlength); break;
 							   
 		default:			if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{

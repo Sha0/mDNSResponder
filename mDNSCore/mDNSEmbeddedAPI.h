@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.173  2004/06/03 03:09:58  ksekar
+<rdar://problem/3668626>: Garbage Collection for Dynamic Updates
+
 Revision 1.172  2004/06/01 23:46:50  ksekar
 <rdar://problem/3675149>: DynDNS: dynamically look up LLQ/Update ports
 
@@ -937,17 +940,23 @@ typedef packedstruct { mDNSu16 preference;                                domain
 typedef packedstruct { domainname mname; domainname rname; mDNSOpaque32 serial; mDNSOpaque32 refresh;
                        mDNSOpaque32 retry; mDNSOpaque32 expire; mDNSOpaque32 min;              } rdataSOA;
 
-// NOTE: rdataLLQ format may be repeated an arbitrary number of times in a single resource record
 typedef packedstruct
 	{
-    mDNSu16 opt;
-	mDNSu16 optlen;
 	mDNSu16 vers;
     mDNSu16 llqOp;
 	mDNSu16 err;
 	mDNSu8 id[8];
 	mDNSu32 lease;
-	} rdataLLQ; 
+	} LLQOptData;  
+
+// NOTE: rdataOpt format may be repeated an arbitrary number of times in a single resource record
+typedef packedstruct
+	{
+	mDNSu16 opt;
+	mDNSu16 optlen;
+	union { LLQOptData llq; mDNSs32 lease; } OptData;
+	} rdataOpt;
+	
 	
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
@@ -976,7 +985,7 @@ typedef union
 	rdataSRV    srv;		// For SRV record
 	rdataMX     mx;			// For MX record
     rdataSOA    soa;        // For SOA record
-    rdataLLQ    opt;        // For eDNS0 OPT record
+    rdataOpt    opt;        // For eDNS0 opt record
 	} RDataBody;
 
 typedef struct
@@ -1030,7 +1039,8 @@ enum
 	regState_DeregDeferred     = 5,     // dereg requested while in Pending state - send dereg AFTER registration is confirmed
 	regState_Cancelled         = 6,     // update not sent, reg. cancelled by client
 	regState_TargetChange      = 7,     // host name change update pending
-	regState_Unregistered      = 8      // not in any list
+	regState_Unregistered      = 8,     // not in any list
+	regState_Refresh           = 9      // outstanding refresh message
 	};
 
 typedef mDNSu16 regState_t;		
@@ -1039,11 +1049,13 @@ typedef struct
 	{
     regState_t   state;
     mDNSOpaque16 id;
-    domainname   zone;  // the zone that is updated
-    mDNSAddr     ns;    // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
-    mDNSIPPort   port;  // port on which server accepts dynamic updates
-    mDNSBool     add;   // !!!KRS this should really be an enumerated state
+    domainname   zone;   // the zone that is updated
+    mDNSAddr     ns;     // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
+    mDNSIPPort   port;   // port on which server accepts dynamic updates
+    mDNSBool     add;    // !!!KRS this should really be an enumerated state
     struct uDNS_AuthInfo *AuthInfo;  // authentication info (may be null)
+    mDNSBool     lease;  // dynamic update contains (should contain) lease option
+    mDNSs32      expire; // expiration of lease (-1 for static)
 	} uDNS_RegInfo;
 
 	
@@ -1258,9 +1270,10 @@ typedef struct
 
 // LLQ constants
 #define kDNSOpt_LLQ	   1 //!!!KRS
+#define kDNSOpt_Lease  2 //!!!KRS	
 #define kLLQ_Vers      0 // prerelease
-#define LLQ_OPTLEN     sizeof(rdataLLQ) - (2 * sizeof(mDNSOpaque16)); // sizeof rdata - (sizeof opt + sizeof len)
 #define kLLQ_DefLease  7200 // 2 hours
+#define kUpdate_DefLease 7200
 #define kLLQ_MAX_TRIES 3    // retry an operation 3 times max
 #define kLLQ_INIT_RESEND 2 // resend an un-ack'd packet after 2 seconds, then double for each additional
 #define kLLQ_DEF_RETRY 1800 // retry a failed operation after 30 minutes	
@@ -1268,7 +1281,9 @@ typedef struct
 #define kLLQ_Setup     1
 #define kLLQ_Refresh   2
 
-	
+#define LLQ_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(LLQOptData)
+#define LEASE_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(mDNSs32)
+						
 // LLQ Errror Codes
 enum
 	{

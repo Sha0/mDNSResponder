@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.40  2004/06/03 03:09:58  ksekar
+<rdar://problem/3668626>: Garbage Collection for Dynamic Updates
+
 Revision 1.39  2004/06/01 23:46:50  ksekar
 <rdar://problem/3675149>: DynDNS: dynamically look up LLQ/Update ports
 
@@ -225,7 +228,8 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, 
 mDNSlocal mStatus startGetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort,
 								   AsyncOpCallback callback, void *callbackInfo);
 mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID);
-
+mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr);
+mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -786,21 +790,41 @@ mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode, const DNSMes
 		}
 	}
 
-mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs, mStatus err)
+mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mStatus err)
 	{	
     //!!!KRS make sure we're doing the right thing w/ MemFree
 	
 	switch (srs->uDNS_info.state)
 		{
 		case regState_Pending:
-			if (!err) srs->uDNS_info.state = regState_Registered;
+		case regState_Refresh:
+			if (err)
+				{
+				if (srs->uDNS_info.lease && err == mStatus_UnknownErr)
+					{
+					LogMsg("Re-trying update of service %s without lease option", srs->RR_SRV.resrec.name.c);
+					srs->uDNS_info.lease = mDNSfalse;
+					srs->uDNS_info.expire = -1;
+					return SendServiceRegistration(m, srs);
+					}
+				else
+					{
+					LogMsg("hndlServiceUpdateReply: Error %d returned for registration of %s",
+						   err, srs->RR_SRV.resrec.name.c);
+					srs->uDNS_info.state = regState_Unregistered;
+					break;
+					}
+				}
 			else
 				{
-				LogMsg("hndlServiceUpdateReply: Error %d returned for registration of %s",
-					   err, srs->RR_SRV.resrec.name.c);
-				srs->uDNS_info.state = regState_Unregistered;
-				}
-			break;
+				if (srs->uDNS_info.state == regState_Refresh)
+					{
+					srs->uDNS_info.state = regState_Registered;				
+					return;
+					}
+				srs->uDNS_info.state = regState_Registered;
+				break;
+				}				
 		case regState_DeregPending:
 			if (err) LogMsg("hndlServiceUpdateReply: Error %d returned for dereg of %s",
 							err, srs->RR_SRV.resrec.name.c);
@@ -838,7 +862,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs, mSt
 	// NOTE: do not touch structures after calling ServiceCallback
 	}
 
-mDNSlocal void hndlRecordUpdateReply(mDNS *const m, AuthRecord *rr, mStatus err)
+mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
@@ -871,22 +895,70 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *const m, AuthRecord *rr, mStatus err)
 		uDNS_DeregisterRecord(m, rr);					
 		return;
 		}
-	if (rr->uDNS_info.state == regState_Pending)
+
+	if (rr->uDNS_info.state == regState_Pending || rr->uDNS_info.state == regState_Refresh)
 		{
 		if (err)
 			{
+			if (rr->uDNS_info.lease && err == mStatus_UnknownErr)
+				{
+				LogMsg("Re-trying update of record %s without lease option", rr->resrec.name.c);
+				rr->uDNS_info.lease = mDNSfalse;
+				rr->uDNS_info.expire = -1;
+				return sendRecordRegistration(m, rr);
+				}
+			
 			LogMsg("Registration of record %s type %d failed with error %d",
 				   rr->resrec.name.c, rr->resrec.rrtype, err);
 			unlinkAR(&u->RecordRegistrations, rr); 
 			rr->uDNS_info.state = regState_Unregistered;
 			}
-		else rr->uDNS_info.state = regState_Registered;
-		rr->RecordCallback(m, rr, err);
-		return;
+		else
+			{
+			if (rr->uDNS_info.state == regState_Refresh)
+				rr->uDNS_info.state = regState_Registered;			
+			else
+				{
+				rr->uDNS_info.state = regState_Registered;
+				rr->RecordCallback(m, rr, err);
+				}
+			return;
+			}
 		}
 	
 	LogMsg("Received unexpected response for record %s type %d, in state %d, with response error %d",
 		   rr->resrec.name.c, rr->resrec.rrtype, rr->uDNS_info.state, err);
+	}
+
+
+mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, uDNS_RegInfo *info)
+	{
+	LargeCacheRecord lcr;
+	const mDNSu8 *ptr;
+	int i;
+	mDNSs32 lease = -1;
+
+	ptr = LocateAdditionals(msg, end);
+
+	if (info->lease && (ptr = LocateAdditionals(msg, end)))
+		{
+		for (i = 0; i < msg->h.numAdditionals; i++)
+			{
+			ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
+			if (!ptr) break;
+			if (lcr.r.resrec.rrtype == kDNSType_OPT)
+				{
+				if (lcr.r.resrec.rdlength < LEASE_OPT_SIZE) continue;
+				if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) continue;
+				lease = lcr.r.resrec.rdata->u.opt.OptData.lease;
+				break;
+				}
+			}
+		}
+	
+	if (lease > 0)
+		info->expire = (mDNSPlatformTimeNow() + ((lease * mDNSPlatformOneSecond)) * 3/4);
+	else info->expire = -1;
 	}
 
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
@@ -941,6 +1013,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			if (sptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
 				err = checkUpdateResult(&sptr->RR_SRV.resrec.name, rcode, msg);
+				if (!err) SetUpdateExpiration(m, msg, end, &sptr->uDNS_info);
 				hndlServiceUpdateReply(m, sptr, err);
 				return;
 				}
@@ -950,6 +1023,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			if (rptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
 				err = checkUpdateResult(&rptr->resrec.name, rcode, msg);
+				if (!err) SetUpdateExpiration(m, msg, end, &rptr->uDNS_info);				
 				hndlRecordUpdateReply(m, rptr, err);
 				return;
 				}
@@ -1010,11 +1084,11 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 	return mStatus_NoError;
 	}
 
-mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *question, rdataLLQ *data, mDNSBool includeQuestion)
+mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *question, LLQOptData *data, mDNSBool includeQuestion)
 	{
 	AuthRecord rr;
 	ResourceRecord *opt = &rr.resrec; 
-	mDNSu8 *rdPtr;
+	rdataOpt *optRD;
 	
 	//!!!KRS when we implement multiple llqs per message, we'll need to memmove anything past the question section
 	if (includeQuestion)
@@ -1029,20 +1103,24 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *questi
 	// format opt rr (fields not specified are zero-valued)
 	ubzero(&rr, sizeof(AuthRecord));
 	opt->rdata = &rr.rdatastorage;
-	rdPtr = opt->rdata->u.data;
+	
 	opt->RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
 	opt->rrtype = kDNSType_OPT;
-	opt->rdlength = sizeof(rdataLLQ);
-	opt->rdestimate = sizeof(rdataLLQ);
-	umemcpy(rdPtr, data, sizeof(rdataLLQ));
+	opt->rdlength = LLQ_OPT_SIZE;
+	opt->rdestimate = LLQ_OPT_SIZE;
+
+	optRD = &rr.resrec.rdata->u.opt;
+	optRD->opt = kDNSOpt_LLQ;
+	optRD->optlen = sizeof(LLQOptData);
+	umemcpy(&optRD->OptData.llq, data, sizeof(LLQOptData));
 	ptr = PutResourceRecordTTL(msg, ptr, &msg->h.numAdditionals, opt, 0);
 	if (!ptr) { LogMsg("ERROR: putLLQ - PutResourceRecordTTL"); return NULL; }
 
 	return ptr;
 	}
 
-
-mDNSlocal mDNSBool getLLQAtIndex(mDNS *m, DNSMessage *msg, const mDNSu8 *end, rdataLLQ *llq, int index)
+			  
+mDNSlocal mDNSBool getLLQAtIndex(mDNS *m, DNSMessage *msg, const mDNSu8 *end, LLQOptData *llq, int index)
 	{
 	LargeCacheRecord lcr;
 	int i;
@@ -1057,15 +1135,15 @@ mDNSlocal mDNSBool getLLQAtIndex(mDNS *m, DNSMessage *msg, const mDNSu8 *end, rd
 //!!!KRS workaround for LH server bug, which puts OPT as first additional
 		{ ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr); if (!ptr) return mDNSfalse; if (lcr.r.resrec.rrtype == kDNSType_OPT) break; }		
 	if (lcr.r.resrec.rrtype != kDNSType_OPT) return mDNSfalse;
-	if (lcr.r.resrec.rdlength < (index + 1) * sizeof(rdataLLQ)) return mDNSfalse;  // rdata too small 
-	umemcpy(llq, lcr.r.resrec.rdata->u.data + (index * sizeof(rdataLLQ)), sizeof(rdataLLQ));
+	if (lcr.r.resrec.rdlength < (index + 1) * LLQ_OPT_SIZE) return mDNSfalse;  // rdata too small 
+	umemcpy(llq, (mDNSu8 *)&lcr.r.resrec.rdata->u.opt.OptData.llq + (index * sizeof(LLQOptData)), sizeof(LLQOptData));
 	return mDNStrue;
 	}
 
 mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *q)
 	{
 	LLQ_Info *qInfo;
-	rdataLLQ pktData;
+	LLQOptData pktData;
 
 	qInfo = q->uDNS_info.llq;
 	if (!getLLQAtIndex(m, msg, end, &pktData, 0)) { LogMsg("ERROR recvRefreshReply - getLLQAtIndex"); return; }
@@ -1084,7 +1162,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	{
 	DNSMessage msg;
 	mDNSu8 *end;
-	rdataLLQ llqRData;
+	LLQOptData llq;
 	LLQ_Info *info = q->uDNS_info.llq;
 	mStatus err;
 
@@ -1098,16 +1176,14 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 		//!!!KRS handle this - periodically try to re-establish
 		}
 		
-	llqRData.opt = kDNSOpt_LLQ;
-	llqRData.optlen = LLQ_OPTLEN;
-	llqRData.vers = kLLQ_Vers;
-	llqRData.llqOp = kLLQ_Refresh;
-	llqRData.err = LLQErr_NoError;
-	umemcpy(llqRData.id, info->id, 8);
-	llqRData.lease = lease;
+	llq.vers = kLLQ_Vers;
+	llq.llqOp = kLLQ_Refresh;
+	llq.err = LLQErr_NoError;
+	umemcpy(llq.id, info->id, 8);
+	llq.lease = lease;
 
 	initializeQuery(&msg, q);
-	end = putLLQ(&msg, msg.data, q, &llqRData, mDNStrue);
+	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 	
 	err = mDNSSendDNSMessage(m, &msg, end, q->InterfaceID, &info->servAddr, info->servPort);
@@ -1141,7 +1217,7 @@ mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNS
 
 
 
-mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, rdataLLQ *llq, DNSQuestion *q)
+mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, LLQOptData *llq, DNSQuestion *q)
 	{
 	LLQ_Info *info = q->uDNS_info.llq;
 	
@@ -1159,13 +1235,13 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 	info->state = LLQ_Error;
 	}
 
-mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, rdataLLQ *llq)
+mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	{
 	LLQ_Info *info = q->uDNS_info.llq;
 	DNSMessage response;
 	mDNSu8 *responsePtr = response.data;
 	mStatus err;
-	rdataLLQ llqBuf;
+	LLQOptData llqBuf;
 	mDNSs32 timenow = mDNSPlatformTimeNow();
 	
 	if (info->ntries++ == kLLQ_MAX_TRIES)
@@ -1182,8 +1258,6 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, rdataLLQ *llq)
 	if (!llq)
 		{
 		llq = &llqBuf;
-		llq->opt     = kDNSOpt_LLQ;
-		llq->optlen  = LLQ_OPTLEN;
 		llq->vers    = kLLQ_Vers;
 		llq->llqOp   = kLLQ_Setup;
 		llq->err     = LLQErr_NoError;
@@ -1210,7 +1284,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, rdataLLQ *llq)
 
 
 
-mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, rdataLLQ *llq, DNSQuestion *q)
+mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, LLQOptData *llq, DNSQuestion *q)
 	{
 	LLQ_Info *info = q->uDNS_info.llq;
 	mDNSs32 timenow = mDNSPlatformTimeNow();
@@ -1266,7 +1340,7 @@ mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *e
 mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, DNSQuestion *q, void *clientContext)
 	{
 	DNSQuestion pktQuestion;
-	rdataLLQ llq;
+	LLQOptData llq;
 	const mDNSu8 *ptr = pktMsg->data;
 	LLQ_Info *info = q->uDNS_info.llq;
 	mDNSu8 rcode = (mDNSu8)(pktMsg->h.flags.b[1] & kDNSFlag1_RC);
@@ -1306,7 +1380,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	{
 	DNSMessage msg;
 	mDNSu8 *end;
-	rdataLLQ llqData;
+	LLQOptData llqData;
 	DNSQuestion *q = info->question; 
 	mStatus err;
 	mDNSs32 timenow = mDNSPlatformTimeNow();
@@ -1322,8 +1396,6 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 		}	
 	
     // set llq rdata
-	llqData.opt     = kDNSOpt_LLQ;
-	llqData.optlen  = LLQ_OPTLEN;
 	llqData.vers    = kLLQ_Vers;
 	llqData.llqOp   = kLLQ_Setup;
 	llqData.err     = LLQErr_NoError;
@@ -2207,16 +2279,101 @@ mDNSlocal mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord
 	return ptr;
 	}
 
-mDNSlocal void sendRecordRegistration(mStatus err, mDNS *const m, void *authPtr, const AsyncOpResult *result)
+mDNSlocal mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end)
 	{
-	AuthRecord *newRR = (AuthRecord*)authPtr;
+	AuthRecord rr;
+	ResourceRecord *opt = &rr.resrec; 
+	rdataOpt *optRD;
+
+	ubzero(&rr, sizeof(AuthRecord));
+	opt->rdata = &rr.rdatastorage;
+	
+	opt->RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
+	opt->rrtype = kDNSType_OPT;
+	opt->rdlength = LEASE_OPT_SIZE;
+	opt->rdestimate = LEASE_OPT_SIZE;
+
+	optRD = &rr.resrec.rdata->u.opt;
+	optRD->opt = kDNSOpt_Lease;
+	optRD->optlen = sizeof(mDNSs32);
+	optRD->OptData.lease = kUpdate_DefLease;
+	end = PutResourceRecordTTL(msg, end, &msg->h.numAdditionals, opt, 0);
+	if (!end) { LogMsg("ERROR: putUpdateLease - PutResourceRecordTTL"); return NULL; }
+
+	return end;
+
+	}
+
+mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
+	{
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	const zoneData_t *zoneData = &result->zoneData;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSOpaque16 id;
 	uDNS_AuthInfo *authInfo;
+	uDNS_RegInfo *regInfo = &rr->uDNS_info;
+	mStatus err = mStatus_UnknownErr;
+
+	id = newMessageID(u);
+	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
+	rr->uDNS_info.id.NotAnInteger = id.NotAnInteger;
+	
+    // set zone
+	ptr = putZone(&msg, ptr, end, &regInfo->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
+	if (!ptr) goto error;
+	
+	if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique || rr->uDNS_info.state == regState_Refresh)
+		{
+		// KnownUnique means the record must ALREADY exist, as does refresh
+		// prereq: record must exist (put record in prereq section w/ TTL 0)
+		ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &rr->resrec, 0);
+		if (!ptr) goto error;
+		}
+	else if (rr->resrec.RecordType != kDNSRecordTypeShared)
+		{
+		ptr = putPrereqNameNotInUse(&rr->resrec.name, &msg, ptr, end);
+		if (!ptr) goto error;
+		}
+
+	ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec);
+	if (!ptr) goto error;
+
+	if (rr->uDNS_info.lease)
+		ptr = putUpdateLease(&msg, ptr);
+	   
+	rr->uDNS_info.expire = -1;
+	
+	authInfo = GetAuthInfoForZone(u, &regInfo->zone);
+	if (authInfo)
+		{
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &regInfo->ns, regInfo->port, authInfo);
+		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
+		}
+	else
+		{
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &regInfo->ns, regInfo->port);
+		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %d", err); goto error; }
+		}
+
+	if (regInfo->state != regState_Refresh) regInfo->state = regState_Pending;
+	return;
+
+error:
+	if (rr->uDNS_info.state != regState_Unregistered)
+		{
+		unlinkAR(&u->RecordRegistrations, rr);
+		rr->uDNS_info.state = regState_Unregistered;
+		}
+	rr->RecordCallback(m, rr, err);
+	// NOTE: not safe to touch any client structures here	
+	}
+
+mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const AsyncOpResult *result)	
+	{
+	AuthRecord *newRR = (AuthRecord*)authPtr;
+	const zoneData_t *zoneData = &result->zoneData;
+	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
 	if (err) goto error;
 	if (newRR->uDNS_info.state == regState_Cancelled)
@@ -2235,56 +2392,20 @@ mDNSlocal void sendRecordRegistration(mStatus err, mDNS *const m, void *authPtr,
 		goto error;
 		}
 
-	id = newMessageID(u);
-	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
-	newRR->uDNS_info.id.NotAnInteger = id.NotAnInteger;
-	
-	// set zone
-	ptr = putZone(&msg, ptr, end, &zoneData->zoneName, mDNSOpaque16fromIntVal(zoneData->zoneClass));
-	if (!ptr) goto error;
-	
-
-	if (newRR->resrec.RecordType == kDNSRecordTypeKnownUnique)
-		{
-		// Known Unique means re-register
-		// prereq: record must exist (put record in prereq section w/ TTL 0)
-		ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &newRR->resrec, 0);
-		if (!ptr) goto error;
-		}
-	else if (newRR->resrec.RecordType != kDNSRecordTypeShared)
-		{
-		ptr = putPrereqNameNotInUse(&newRR->resrec.name, &msg, ptr, end);
-		if (!ptr) goto error;
-		}
-
-	// add new record, send the message
 	if (newRR->resrec.rrclass != zoneData->zoneClass)
 		{
 		LogMsg("ERROR: New resource record's class (%d) does not match zone class (%d)",
 			   newRR->resrec.rrclass, zoneData->zoneClass);
 		goto error;
-		}
-	ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &newRR->resrec);
-	if (!ptr) goto error;
-
-	authInfo = GetAuthInfoForZone(u, &zoneData->zoneName);
-	if (authInfo)
-		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort, authInfo);
-		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
-		}
-	else
-		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort);
-		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %d", err); goto error; }
-		}
+		}	
+	
 	// cache zone data
 	ustrcpy(newRR->uDNS_info.zone.c, zoneData->zoneName.c);
     newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
 	newRR->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
 	newRR->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
-	newRR->uDNS_info.state = regState_Pending;
 
+	sendRecordRegistration(m, newRR);
 	return;
 		
 error:
@@ -2326,16 +2447,87 @@ mDNSlocal mDNSBool setHostTarget(AuthRecord *rr, mDNS *m)
 	return mDNStrue;
 	}
 
-mDNSlocal void sendServiceRegistration(mStatus err, mDNS *const m, void *srsPtr, const AsyncOpResult *result)
+mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	{
-	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	const zoneData_t *zoneData = &result->zoneData;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSOpaque16 id;
 	uDNS_AuthInfo *authInfo;
+	uDNS_RegInfo *rInfo = &srs->uDNS_info;
+	mStatus err = mStatus_UnknownErr;
+	
+	id = newMessageID(u);
+	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
+	rInfo->id.NotAnInteger = id.NotAnInteger;
+
+	// setup resource records
+	if (setHostTarget(&srs->RR_SRV, m))
+		SetNewRData(&srs->RR_SRV.resrec, NULL, 0);  // set rdlen/estimate/hash
+	
+	//SetNewRData(&srs->RR_ADV.resrec, NULL, 0); //!!!KRS
+	SetNewRData(&srs->RR_PTR.resrec, NULL, 0);	
+	SetNewRData(&srs->RR_TXT.resrec, NULL, 0);
+	
+	// construct update packet
+    // set zone
+	ptr = putZone(&msg, ptr, end, &rInfo->zone, mDNSOpaque16fromIntVal(srs->RR_SRV.resrec.rrclass));
+	if (!ptr) goto error;
+
+	if (srs->uDNS_info.state == regState_Refresh)
+		{
+		// prereq: record must exist (put record in prereq section w/ TTL 0)
+		ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0);
+		if (!ptr) goto error;
+		}
+	else
+		{
+		// use SRV for prereq
+		ptr = putPrereqNameNotInUse(&srs->RR_SRV.resrec.name, &msg, ptr, end);
+		if (!ptr) goto error;
+		}
+
+	//!!!KRS  Need to do bounds checking and use TCP if it won't fit!!!
+	//if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_ADV.resrec))) goto error;
+	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec))) goto error;
+	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_SRV.resrec))) goto error;
+	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec))) goto error;
+    // !!!KRS do subtypes/extras etc.
+
+	if (srs->uDNS_info.lease)
+		ptr = putUpdateLease(&msg, ptr);
+	   
+	srs->uDNS_info.expire = -1;
+
+	authInfo = GetAuthInfoForZone(u, &rInfo->zone);
+	if (authInfo)
+		{
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &rInfo->ns, rInfo->port, authInfo);
+		if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
+		}
+	else
+		{
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rInfo->ns, rInfo->port);
+		if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %d", err); goto error; }
+		}
+	if (rInfo->state != regState_Refresh)
+		rInfo->state = regState_Pending;
+	return;
+
+error:
+	unlinkSRS(u, srs);
+	rInfo->state = regState_Unregistered;
+	srs->ServiceCallback(m, srs, err);
+	//!!!KRS will mem still be free'd on error?
+	// NOTE: not safe to touch any client structures here	
+	}
+
+mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const AsyncOpResult *result)
+	{
+	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
+	const zoneData_t *zoneData = &result->zoneData;
+	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
 	if (err) goto error;
 	if (result->type != zoneDataResult)
@@ -2352,52 +2544,19 @@ mDNSlocal void sendServiceRegistration(mStatus err, mDNS *const m, void *srsPtr,
 		srs->ServiceCallback(m, srs, mStatus_MemFree);
 		return;
 		}
-	
-	id = newMessageID(u);
-	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
-	srs->uDNS_info.id.NotAnInteger = id.NotAnInteger;
 
-	// setup resource records
-	if (setHostTarget(&srs->RR_SRV, m))
-		SetNewRData(&srs->RR_SRV.resrec, NULL, 0);  // set rdlen/estimate/hash
-
-	//SetNewRData(&srs->RR_ADV.resrec, NULL, 0); //!!!KRS
-	SetNewRData(&srs->RR_PTR.resrec, NULL, 0);	
-	SetNewRData(&srs->RR_TXT.resrec, NULL, 0);
-	
-	// construct update packet
-    // set zone
-	ptr = putZone(&msg, ptr, end, &zoneData->zoneName, mDNSOpaque16fromIntVal(zoneData->zoneClass));
-	if (!ptr) goto error;
-	
-	ptr = putPrereqNameNotInUse(&srs->RR_SRV.resrec.name, &msg, ptr, end);
-	if (!ptr) goto error;
-
-	//!!!KRS  Need to do bounds checking and use TCP if it won't fit!!!
-	//if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_ADV.resrec))) goto error;
-	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec))) goto error;
-	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_SRV.resrec))) goto error;
-	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec))) goto error;
-    // !!!KRS do subtypes/extras etc.
-
-	authInfo = GetAuthInfoForZone(u, &zoneData->zoneName);
-	if (authInfo)
+	if (srs->RR_SRV.resrec.rrclass != zoneData->zoneClass)
 		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort, authInfo);
-		if (err) { LogMsg("ERROR: sendServiceRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
+		LogMsg("Service %s - class does not match zone", srs->RR_SRV.resrec.name.c);
+		goto error;
 		}
-	else
-		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, zoneData->updatePort);
-		if (err) { LogMsg("ERROR: sendServiceRegistration - mDNSSendDNSMessage - %d", err); goto error; }
-		}
-
 	// cache zone data
 	ustrcpy(srs->uDNS_info.zone.c, zoneData->zoneName.c);
     srs->uDNS_info.ns.type = mDNSAddrType_IPv4;
 	srs->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
 	srs->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
-	srs->uDNS_info.state = regState_Pending;
+
+	SendServiceRegistration(m, srs);
 	return;
 		
 error:
@@ -2498,7 +2657,8 @@ mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
 	rr->next = m->uDNS_info.RecordRegistrations;
 	m->uDNS_info.RecordRegistrations = rr;
 
-	return startGetZoneData(&rr->resrec.name, m, mDNStrue, mDNSfalse, sendRecordRegistration, rr);
+	rr->uDNS_info.lease = mDNStrue;
+	return startGetZoneData(&rr->resrec.name, m, mDNStrue, mDNSfalse, RecordRegistrationCallback, rr);
 	}
 
 
@@ -2587,8 +2747,9 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	srs->uDNS_info.state = regState_FetchingZoneData;
 	srs->next = m->uDNS_info.ServiceRegistrations;
 	m->uDNS_info.ServiceRegistrations = srs;
-
-	return startGetZoneData(&srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, sendServiceRegistration, srs);
+	srs->uDNS_info.lease = mDNStrue;
+	
+	return startGetZoneData(&srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
 	}
 
 mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
@@ -2665,6 +2826,9 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	mDNSu8 *end;
 	mDNSs32 sendtime;
 	LLQ_Info *llq;
+	AuthRecord *rr;
+	ServiceRecordSet *srs;
+	uDNS_RegInfo *rInfo;	
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	const mDNSAddr *server = getInitializedDNS(&m->uDNS_info);
 	mDNSs32 timenow = mDNSPlatformTimeNow();
@@ -2711,6 +2875,29 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 			else if (sendtime < u->nextevent)  u->nextevent = sendtime;
 			}
 		}
+
+	//!!!KRS list should be pre-sorted by expiration
+	for (rr = u->RecordRegistrations; rr; rr = rr->next)
+		{
+		rInfo = &rr->uDNS_info;		
+		if (rInfo->lease && rInfo->expire <= timenow && rInfo->expire > 0 && rInfo->state == regState_Registered)
+			{
+			debugf("refreshing record %s", rr->resrec.name.c);
+			rInfo->state = regState_Refresh;
+			sendRecordRegistration(m, rr);
+			}
+		}
+	//!!!KRS list should be pre-sorted by expiration
+	for (srs = u->ServiceRegistrations; srs; srs = srs->next)
+		{
+		rInfo = &srs->uDNS_info;		
+		if (rInfo->lease && rInfo->expire <= timenow && rInfo->expire > 0 && rInfo->state == regState_Registered)
+			{
+			debugf("refreshing service %s", srs->RR_SRV.resrec.name.c);
+			rInfo->state = regState_Refresh;
+			SendServiceRegistration(m, srs);
+			}
+		}	
 	}
 
 mDNSexport void uDNS_Init(mDNS *const m)
