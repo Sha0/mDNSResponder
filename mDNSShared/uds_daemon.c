@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.69  2004/08/10 16:14:48  cheshire
+Fix debug builds (oops)
+
 Revision 1.68  2004/08/10 06:24:56  cheshire
 Use types with precisely defined sizes for 'op' and 'reg_index', for better
 compatibility if the daemon and the client stub are built using different compilers
@@ -911,7 +914,7 @@ static void request_callback(void *info)
         case remove_record_request: handle_removerecord_request(rstate); break;
         case reconfirm_record_request: handle_reconfirm_request(rstate); break;
         default:
-            debugf("ERROR: udsserver_recv_request - unsupported request type: %d", rstate->hdr.op.request_op);
+            debugf("ERROR: udsserver_recv_request - unsupported request type: %d", rstate->hdr.op);
     	}
     }
 
