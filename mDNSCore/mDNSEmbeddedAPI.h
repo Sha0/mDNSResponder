@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.263  2004/12/16 20:40:25  cheshire
+Fix compile warnings
+
 Revision 1.262  2004/12/16 20:13:00  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -1161,8 +1164,8 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // For records containing a hostname (in the name on the left, or in the rdata on the right),
 // like A, AAAA, reverse-mapping PTR, and SRV, we use a two-minute TTL by default, because we don't want
 // them to hang around for too long in the cache if the host in question crashes or otherwise goes away.
-#define kStandardTTL (3600 * 100 / 80)
-#define kHostNameTTL 120
+#define kStandardTTL (3600UL * 100 / 80)
+#define kHostNameTTL 120UL
 
 #define DefaultTTLforRRType(X) (((X) == kDNSType_A || (X) == kDNSType_AAAA || (X) == kDNSType_SRV) ? kHostNameTTL : kStandardTTL)
 
@@ -2076,6 +2079,7 @@ extern const mDNSOpaque16 UpdateRespFlags;
 
 // If we're not doing inline functions, then this header needs to have the extern declarations
 #if !defined(mDNSinline)
+extern mDNSs32      NonZeroTime(mDNSs32 t);
 extern mDNSu16      mDNSVal16(mDNSOpaque16 x);
 extern mDNSu32      mDNSVal32(mDNSOpaque32 x);
 extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
@@ -2259,7 +2263,7 @@ typedef enum
 	mDNS_DomainTypeBrowseDefault       = 1,
 	mDNS_DomainTypeRegistration        = 2,
 	mDNS_DomainTypeRegistrationDefault = 3,
-	mDNS_DomainTypeBrowseLegacy        = 4,	
+	mDNS_DomainTypeBrowseLegacy        = 4
 	} mDNS_DomainType;
 
 extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const domainname *dom,
