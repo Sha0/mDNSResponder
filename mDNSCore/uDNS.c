@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.63  2004/08/12 00:32:36  ksekar
+<rdar://problem/3759567>: LLQ Refreshes never terminate if unanswered
+
 Revision 1.62  2004/08/10 23:19:14  ksekar
 <rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
 Moved routines/constants to allow extern access for garbage collection daemon
@@ -1569,7 +1572,7 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 
 	qInfo = q->uDNS_info.llq;
 	if (!getLLQAtIndex(m, msg, end, &pktData, 0)) { LogMsg("ERROR recvRefreshReply - getLLQAtIndex"); return; }
-	if (pktData.llqOp != kLLQ_Refresh) return;
+	if (pktData.llqOp != kLLQOp_Refresh) return;
 	if (!sameID(pktData.id, qInfo->id)) { LogMsg("recvRefreshReply - ID mismatch.  Discarding");  return; }
 	if (pktData.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData.err); return; }
 
@@ -1587,19 +1590,22 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	LLQOptData llq;
 	LLQ_Info *info = q->uDNS_info.llq;
 	mStatus err;
+	mDNSs32 timenow;
 
-	if (info->state == kLLQ_Refresh && info->ntries >= kLLQ_MAX_TRIES)
+	timenow = mDNSPlatformTimeNow();
+	if ((info->state == LLQ_Refresh && info->ntries >= kLLQ_MAX_TRIES) ||
+		info->expire - timenow < 0)
 		{
-		LogMsg("sendLLQRefresh - %d failed attempts for llq %s", info->ntries, q->qname.c);
+		LogMsg("Unable to refresh LLQ %s - will retry in %s minutes", q->qname.c, kLLQ_DEF_RETRY/60);
 		info->state = LLQ_Retry;
 		info->retry = mDNSPlatformTimeNow() + kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
 		info->deriveRemovesOnResume = mDNStrue;
 		return;
 		//!!!KRS handle this - periodically try to re-establish
 		}
-		
+
 	llq.vers = kLLQ_Vers;
-	llq.llqOp = kLLQ_Refresh;
+	llq.llqOp = kLLQOp_Refresh;
 	llq.err = LLQErr_NoError;
 	umemcpy(llq.id, info->id, 8);
 	llq.lease = lease;
@@ -1614,7 +1620,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	if (info->state == LLQ_Established) info->ntries = 1;
 	else info->ntries++;
 	info->state = LLQ_Refresh;
-	q->LastQTime = mDNSPlatformTimeNow();
+	q->LastQTime = timenow;
 	info->retry = (info->expire - q->LastQTime) / 2;	
 	}
 
@@ -1682,7 +1688,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 		{
 		llq = &llqBuf;
 		llq->vers    = kLLQ_Vers;
-		llq->llqOp   = kLLQ_Setup;
+		llq->llqOp   = kLLQOp_Setup;
 		llq->err     = LLQErr_NoError;
 		umemcpy(llq->id, info->id, 8);
 		llq->lease    = info->origLease;
@@ -1787,7 +1793,7 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 		{ LogMsg("ERROR: recvSetupResponse - mismatched question in response for llq setup %s", q->qname.c);   goto error; }
 
 	if (!getLLQAtIndex(m, pktMsg, end, &llq, 0)) { LogMsg("ERROR: recvSetupResponse - GetLLQAtIndex"); goto error; }
-	if (llq.llqOp != kLLQ_Setup) { LogMsg("ERROR: recvSetupResponse - bad op %d", llq.llqOp); goto error; } 
+	if (llq.llqOp != kLLQOp_Setup) { LogMsg("ERROR: recvSetupResponse - bad op %d", llq.llqOp); goto error; } 
 	if (llq.vers != kLLQ_Vers) { LogMsg("ERROR: recvSetupResponse - bad vers %d", llq.vers);  goto error; } 
 
 	if (info->state == LLQ_InitialRequest) { hndlRequestChallenge(m, pktMsg, end, &llq, q); return; }
@@ -1822,7 +1828,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	
     // set llq rdata
 	llqData.vers    = kLLQ_Vers;
-	llqData.llqOp   = kLLQ_Setup;
+	llqData.llqOp   = kLLQOp_Setup;
 	llqData.err     = LLQErr_NoError;
 	ubzero(llqData.id, 8);
 	llqData.lease    = kLLQ_DefLease;

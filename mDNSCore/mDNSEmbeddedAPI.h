@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.185  2004/08/12 00:32:36  ksekar
+<rdar://problem/3759567>: LLQ Refreshes never terminate if unanswered
+
 Revision 1.184  2004/08/11 17:09:31  cheshire
 Add comment clarifying the applicability of these APIs
 
@@ -1353,8 +1356,8 @@ typedef struct
 #define kLLQ_INIT_RESEND 2 // resend an un-ack'd packet after 2 seconds, then double for each additional
 #define kLLQ_DEF_RETRY 1800 // retry a failed operation after 30 minutes
 // LLQ Operation Codes
-#define kLLQ_Setup     1
-#define kLLQ_Refresh   2
+#define kLLQOp_Setup     1
+#define kLLQOp_Refresh   2
 
 #define LLQ_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(LLQOptData)
 #define LEASE_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(mDNSs32)
