@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.445  2004/10/12 21:07:09  cheshire
+Set up m->p in mDNS_Init() before calling mDNSPlatformTimeInit()
+
 Revision 1.444  2004/10/11 17:54:16  ksekar
 Changed hashtable pointer output from debugf to verbosedebugf.
 
@@ -6395,10 +6398,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	{
 	mDNSu32 slot;
 	mDNSs32 timenow, timenow_adjust;
-	mStatus result = mDNSPlatformTimeInit();
-	if (result != mStatus_NoError) return(result);
-	timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
-	timenow = mDNSPlatformRawTime() + timenow_adjust;
+	mStatus result;
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
@@ -6419,6 +6419,11 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->lock_Records            = 0;
 
 	// Task Scheduling variables
+	result = mDNSPlatformTimeInit();
+	if (result != mStatus_NoError) return(result);
+	timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
+	timenow = mDNSPlatformRawTime() + timenow_adjust;
+
 	m->timenow                 = 0;		// MUST only be set within mDNS_Lock/mDNS_Unlock section
 	m->timenow_last            = timenow;
 	m->timenow_adjust          = timenow_adjust;
