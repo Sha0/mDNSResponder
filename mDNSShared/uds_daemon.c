@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.125  2004/12/06 21:15:23  ksekar
+<rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
+
 Revision 1.124  2004/11/30 02:19:14  cheshire
 <rdar://problem/3827971> Raise maxfds.rlim_cur for mDNSResponder
 
@@ -2150,6 +2153,20 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
         }
     }
 
+mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
+	{
+	ExtraResourceRecord *extra = (ExtraResourceRecord *)rr->RecordContext;
+	(void)m;  //unused
+	
+	if (result != mStatus_MemFree) { LogMsg("Error: FreeExtraRR invoked with unexpected error %d", result); return; }
+	
+	debugf("%##s: MemFree", rr->resrec.name.c);
+	if (rr->resrec.rdata != &rr->rdatastorage)
+		freeL("Extra RData", rr->resrec.rdata);
+	freeL("ExtraResourceRecord", extra);
+	}
+
+
 static mStatus add_record_to_service(request_state *rstate, service_instance *instance, uint16_t rrtype, uint16_t rdlen, char *rdata, uint32_t ttl)
 	{
 	ServiceRecordSet *srs = &instance->srs;
@@ -2172,7 +2189,7 @@ static mStatus add_record_to_service(request_state *rstate, service_instance *in
     extra->r.rdatastorage.MaxRDLength = (mDNSu16) size;
     extra->r.resrec.rdlength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
-
+	
     result =  mDNS_AddRecordToService(gmDNS, srs , extra, &extra->r.rdatastorage, ttl);
 	if (result) { freeL("ExtraResourceRecord", extra); return result; }
 
@@ -2337,6 +2354,7 @@ static void process_service_registration(ServiceRecordSet *const srs)
 static void free_service_instance(service_instance *srv)
 	{
 	request_state *rstate = srv->request;
+	ExtraResourceRecord *e = srv->srs.Extras, *tmp;
 	
 	// clear pointers from parent struct
 	if (rstate)
@@ -2354,14 +2372,13 @@ static void free_service_instance(service_instance *srv)
 			ptr = ptr->next;
 			}
 		}
-
-	while (srv->srs.Extras)
+	
+	while(e)
 		{
-		ExtraResourceRecord *e = srv->srs.Extras;
-		srv->srs.Extras = e->next;
-		if (e->r.resrec.rdata != &e->r.rdatastorage)
-			freeL("free_service_instance", e->r.resrec.rdata);
-		freeL("regservice_callback", e);
+		e->r.RecordContext = e;
+		tmp = e;
+		e = e->next;
+		FreeExtraRR(gmDNS, &tmp->r, mStatus_MemFree);
 		}
 	
 	if (srv->subtypes) { freeL("regservice_callback", srv->subtypes); srv->subtypes = NULL; }
@@ -2574,13 +2591,7 @@ static mStatus remove_extra(request_state *rstate, service_instance *serv)
 	for (ptr = serv->srs.Extras; ptr; ptr = ptr->next)
 		{
 		if (ptr->ClientID == rstate->hdr.reg_index) // found match
-			{
-			err = mDNS_RemoveRecordFromService(gmDNS, &serv->srs, ptr);
-			if (ptr->r.resrec.rdata != &ptr->r.rdatastorage)
-				freeL("Extra RData", ptr->r.resrec.rdata);
-			freeL("ExtraResourceRecord", ptr);			
-			return err;
-			}
+			return mDNS_RemoveRecordFromService(gmDNS, &serv->srs, ptr, FreeExtraRR);
 		}
 	return err;
 	}

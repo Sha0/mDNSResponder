@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.478  2004/12/06 21:15:22  ksekar
+<rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
+
 Revision 1.477  2004/12/04 02:12:45  cheshire
 <rdar://problem/3517236> mDNSResponder puts LargeCacheRecord on the stack
 
@@ -6446,7 +6449,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	return(status);
 	}
 
-mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra)
+mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, mDNSRecordCallback MemFreeCallback)
 	{
 	ExtraResourceRecord **e;
 	mStatus status;
@@ -6462,13 +6465,15 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	else
 		{
 		debugf("mDNS_RemoveRecordFromService removing record from %##s", extra->r.resrec.name.c);
+		extra->r.RecordCallback = MemFreeCallback;
+		extra->r.RecordContext = extra;
 		*e = (*e)->next;
 #ifndef UNICAST_DISABLED	
 		if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
 			status = uDNS_DeregisterRecord(m, &extra->r);
 		else
 #endif
-		status = mDNS_Deregister_internal(m, &extra->r, mDNS_Dereg_normal);		
+		status = mDNS_Deregister_internal(m, &extra->r, mDNS_Dereg_normal);
 		}
 	mDNS_Unlock(m);
 	return(status);

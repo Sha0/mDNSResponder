@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.251  2004/12/06 21:15:22  ksekar
+<rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
+
 Revision 1.250  2004/12/04 02:12:45  cheshire
 <rdar://problem/3517236> mDNSResponder puts LargeCacheRecord on the stack
 
@@ -1359,7 +1362,7 @@ enum
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
 	regState_UpdatePending     = 11,    // update in flight as result of mDNS_Update call
 	regState_NoTarget          = 12,    // service registration pending registration of hostname
-	regState_DeregPendingExtras= 13     // deregistration complete, awaiting deregistration of extras
+     regState_ExtraQueued      = 13     // extra record to be registered upon completion of service registration
 	};
 
 typedef mDNSu16 regState_t;
@@ -2115,6 +2118,11 @@ extern mDNSs32  mDNSPlatformOneSecond;
 // found. After the service is resolved, the client should call mDNS_StopResolveService to complete the transaction.
 // The client can also call mDNS_StopResolveService at any time to abort the transaction.
 //
+// mDNS_AddRecordToService adds an additional record to a Service Record Set.  This record may be deregistered
+// via mDNS_RemoveRecordFromService, or by deregistering the service.  mDNS_RemoveRecordFromService is passed a
+// callback to free the memory associated with the extra RR when it is safe to do so.  The ExtraResourceRecord
+// object  can be found in the record's context pointer.
+	
 // mDNS_GetBrowseDomains is a special case of the mDNS_StartQuery call, where the resulting answers
 // are a list of PTR records indicating (in the rdata) domains that are recommended for browsing.
 // After getting the list of domains to browse, call mDNS_StopQuery to end the search.
@@ -2133,7 +2141,7 @@ extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                AuthRecord *SubTypes, mDNSu32 NumSubTypes,
                const mDNSInterfaceID InterfaceID, mDNSServiceCallback Callback, void *Context);
 extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
-extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
+extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, mDNSRecordCallback MemFreeCallback);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname);
 extern mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 

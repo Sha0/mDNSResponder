@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.222  2004/12/06 21:15:23  ksekar
+<rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
+
 Revision 1.221  2004/11/30 03:24:04  cheshire
 <rdar://problem/3854544> Defer processing network configuration changes until configuration has stabilized
 
@@ -729,15 +732,16 @@ void freeL(char *msg, void *x)
 mDNSlocal void FreeServiceInstance(ServiceInstance *x)
 	{
 	ServiceRecordSet *s = &x->srs;
-	while (s->Extras)
+	ExtraResourceRecord *e = x->srs.Extras, *tmp;
+	
+	while(e)
 		{
-		ExtraResourceRecord *extras = s->Extras;
-		s->Extras = s->Extras->next;
-		if (extras->r.resrec.rdata != &extras->r.rdatastorage)
-			freeL("Extra RData", extras->r.resrec.rdata);
-		freeL("ExtraResourceRecord", extras);
+		e->r.RecordContext = e;
+		tmp = e;
+		e = e->next;
+		FreeExtraRR(&mDNSStorage, &tmp->r, mStatus_MemFree);
 		}
-
+	
 	if (s->RR_TXT.resrec.rdata != &s->RR_TXT.rdatastorage)
 			freeL("TXT RData", s->RR_TXT.resrec.rdata);
 
@@ -1698,7 +1702,6 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	if (data_len > 8192) { err = mStatus_BadParamErr; errormsg = "data_len > 8K"; goto fail; }
 	if (data_len > sizeof(RDataBody)) size = data_len;
 	else size = sizeof(RDataBody);
-
 	
 	id = x->NextRef++;
 	*reference = (natural_t)id;
@@ -1713,6 +1716,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 		extra->r.rdatastorage.MaxRDLength = size;
 		extra->r.resrec.rdlength          = data_len;
 		memcpy(&extra->r.rdatastorage.u.data, data, data_len);
+
 		// Do the operation
 		LogOperation("%5d: DNSServiceRegistrationAddRecord(%##s, type %d, length %d) REF %p",
 					 client, si->srs.RR_SRV.resrec.name.c, type, data_len, extra);
@@ -1830,23 +1834,14 @@ mDNSlocal mStatus RemoveRecord(ServiceRecordSet *srs, ExtraResourceRecord *extra
 	{
 	domainname *name = &srs->RR_SRV.resrec.name;
 	mStatus err = mStatus_NoError;
-	const char *errormsg = "Unknown";
 
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistrationRemoveRecord(%##s)", client, srs->RR_SRV.resrec.name.c);
 
-	err = mDNS_RemoveRecordFromService(&mDNSStorage, srs, extra);
-	if (err) { errormsg = "mDNS_RemoveRecordFromService (No such record)"; goto fail; }
-
-	// Succeeded: Wrap up and return
-	if (extra->r.resrec.rdata != &extra->r.rdatastorage)
-		freeL("Extra RData", extra->r.resrec.rdata);
-	freeL("ExtraResourceRecord", extra);
-	return(mStatus_NoError);
-
-fail:
-	LogMsg("%5d: DNSServiceRegistrationRemoveRecord(%##s, %X) failed: %s", client, name->c, errormsg, err);
-	return(err);
+	err = mDNS_RemoveRecordFromService(&mDNSStorage, srs, extra, FreeExtraRR);
+	if (err) LogMsg("%5d: DNSServiceRegistrationRemoveRecord (%##s) failed: %d", client, name->c, err);
+	
+	return err;
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_port_t unusedserver, mach_port_t client,

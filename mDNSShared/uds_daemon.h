@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.11  2004/12/06 21:15:23  ksekar
+<rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
+
 Revision 1.10  2004/10/26 04:31:44  cheshire
 Rename CountSubTypes() as ChopSubTypes()
 
@@ -91,7 +94,6 @@ extern void udsserver_default_browse_domain_changed(const domainname *d, mDNSBoo
 
 typedef	void (*udsEventCallback)(void *context);
 
-
 extern mStatus udsSupportAddFDToEventLoop(dnssd_sock_t fd, udsEventCallback callback, void *context);
 extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd);
 
@@ -101,3 +103,4 @@ extern mDNS mDNSStorage;
 extern mDNSs32 ChopSubTypes(char *regtype);
 extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 extern int CountExistingRegistrations(domainname *srv, mDNSIPPort port);
+extern void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result);

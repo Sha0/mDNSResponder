@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.72  2004/12/06 21:15:20  ksekar
+<rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
+
 Revision 1.71  2004/12/04 02:12:45  cheshire
 <rdar://problem/3517236> mDNSResponder puts LargeCacheRecord on the stack
 
@@ -1485,6 +1488,25 @@ mDNSexport mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecor
 	ptr = PutResourceRecordTTLJumbo(msg, ptr, &msg->h.mDNS_numUpdates, rr, 0);
 	rr->rrclass = origclass;
 	return ptr;
+	}
+
+// for dynamic updates
+mDNSexport mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domainname *name)
+	{
+	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;;
+	mDNSu16 class = kDNSQClass_ANY;
+	mDNSu16 rrtype = kDNSQType_ANY;
+	
+	ptr = putDomainNameAsLabels(msg, ptr, limit, name);
+	if (!ptr || ptr + 10 >= limit) return mDNSNULL;	// If we're out-of-space, return mDNSNULL
+	ptr[0] = (mDNSu8)(rrtype  >> 8);
+	ptr[1] = (mDNSu8)(rrtype  &  0xFF);
+	ptr[2] = (mDNSu8)(class >> 8);
+	ptr[3] = (mDNSu8)(class &  0xFF);
+	ptr[4] = ptr[5] = ptr[6] = ptr[7] = 0; // zero ttl
+	ptr[8] = ptr[9] = 0; // zero rdlength/rdata
+
+	return ptr + 10;
 	}
 
 // for dynamic updates
