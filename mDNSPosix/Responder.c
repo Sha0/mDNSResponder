@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.25  2004/11/11 02:00:51  cheshire
+Minor fixes to getopt, error message
+
 Revision 1.24  2004/11/09 19:32:10  rpantos
 Suggestion from Ademar de Souza Reis Jr. to allow comments in services file
 
@@ -347,7 +350,7 @@ static void ParseArguments(int argc, char **argv)
     // Parse command line options using getopt.
     
     do {
-        ch = getopt(argc, argv, "v:rn:t:d:p:f:dPbx");
+        ch = getopt(argc, argv, "v:rn:t:d:p:f:dP:bx");
         if (ch != -1) {
             switch (ch) {
                 case 'v':
@@ -637,7 +640,7 @@ static mStatus RegisterServicesInFile(const char *filePath)
         } while (good && !feof(fp));
 
         if ( ! good ) {
-            fprintf(stderr, "%s: Error reading service file %s\n", gProgramName, gServiceFile);
+            fprintf(stderr, "%s: Error reading service file %s\n", gProgramName, filePath);
         }
     }
     
