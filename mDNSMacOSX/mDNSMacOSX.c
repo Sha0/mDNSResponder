@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.227  2004/11/02 04:23:03  cheshire
+Change to more informative name "GetUserSpecifiedLocalHostName()"
+
 Revision 1.226  2004/11/01 20:36:19  ksekar
 <rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
 
@@ -1356,7 +1359,7 @@ mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel
 	}
 
 // This gets the text of the field currently labelled "Local Hostname" in the Sharing Prefs Control Panel
-mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
+mDNSlocal void GetUserSpecifiedLocalHostName(domainlabel *const namelabel)
 	{
 	CFStringRef cfs = SCDynamicStoreCopyLocalHostName(NULL);
 	if (cfs)
@@ -1365,7 +1368,6 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 		CFRelease(cfs);
 		}
 	}
-
 
 mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const zone)
 	{
@@ -1721,7 +1723,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	// Set up the RFC 1034-compliant label
 	domainlabel hostlabel;
 	hostlabel.c[0] = 0;
-	GetUserSpecifiedRFC1034ComputerName(&hostlabel);
+	GetUserSpecifiedLocalHostName(&hostlabel);
 	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, "Macintosh");
 
 	// If the user has changed their dot-local host name since the last time we checked, then update our local copy.
