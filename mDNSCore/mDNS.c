@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.114  2003/05/07 01:47:03  cheshire
+<rdar://problem/3250330> Also protect against NULL domainlabels
+
 Revision 1.113  2003/05/07 00:28:18  cheshire
 <rdar://problem/3250330> Need to make mDNSResponder more defensive against bad clients
 
@@ -579,7 +582,8 @@ conv:	switch (c)	//  perform appropriate conversion
 			case 'c' :	*--s = (char)va_arg(arg, int); i = 1; break;
 
 			case 's' :	s = va_arg(arg, char *);
-						switch (F.altForm)
+						if (!s) { s = "<<NULL>>"; i=8; }
+						else switch (F.altForm)
 							{
 							case 0: { char *a=s; i=0; while(*a++) i++; break; }	// C string
 							case 1: i = (unsigned char) *s++; break;	// Pascal string
@@ -1037,20 +1041,22 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 	}
 
 mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
-	const domainlabel *const name, const domainname *const type, const domainname *const domain)
+	const domainlabel *name, const domainname *const type, const domainname *const domain)
 	{
 	int i, len;
 	mDNSu8 *dst = fqdn->c;
 	const mDNSu8 *src;
 	const char *errormsg;
 
-	if (name)
+	if (name && name->c[0])
 		{
 		src = name->c;									// Put the service name into the domain name
 		len = *src;
 		if (len >= 0x40) { errormsg="Service instance name too long"; goto fail; }
 		for (i=0; i<=len; i++) *dst++ = *src++;
 		}
+	else
+		name = (domainlabel*)"";	// Set this up to be non-null, to avoid errors if we have to call LogMsg() below
 	
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
