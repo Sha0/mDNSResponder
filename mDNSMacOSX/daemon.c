@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.213  2004/11/23 06:12:55  cheshire
+<rdar://problem/3871405> Update wording for name conflict dialogs
+
 Revision 1.212  2004/11/23 05:15:37  cheshire
 <rdar://problem/3875830> Computer Name in use message garbled
 
@@ -1568,7 +1571,7 @@ fail:
 // This updates either the text of the field currently labelled "Local Hostname",
 // or the text of the field currently labelled "Computer Name"
 // in the Sharing Prefs Control Panel
-mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlabel *n2, CFStringRef title, char *msg, char *suffix)
+mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlabel *n2, char *msg, char *suffix, CFStringRef subtext)
 	{
 	char oldname[MAX_DOMAIN_LABEL+1];
 	char newname[MAX_DOMAIN_LABEL+1];
@@ -1576,36 +1579,38 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlab
 	ConvertDomainLabelToCString_unescaped(n2, newname);
 	const CFStringRef      cfoldname = CFStringCreateWithCString(NULL, oldname,    kCFStringEncodingUTF8);
 	const CFStringRef      cfnewname = CFStringCreateWithCString(NULL, newname,    kCFStringEncodingUTF8);
-	const CFStringRef      f0        = CFStringCreateWithCString(NULL, msg,        kCFStringEncodingUTF8);
-	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%@%s” ",  kCFStringEncodingUTF8);
-	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%@%s”. ", kCFStringEncodingUTF8);
+	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%@%s”", kCFStringEncodingUTF8);
+	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%@%s”", kCFStringEncodingUTF8);
 	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
 	*n1 = *n2;
-	if (!cfoldname || !cfnewname || !f0 || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
+	if (!cfoldname || !cfnewname || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
 		LogMsg("RecordUpdatedName: ERROR: Couldn't create SCPreferences session");
 	else
 		{
+		const CFStringRef       s0           = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
 		const CFStringRef       s1           = CFStringCreateWithFormat(NULL, NULL, f1, cfoldname, suffix);
 		const CFStringRef       s2           = CFStringCreateWithFormat(NULL, NULL, f2, cfnewname, suffix);
-		const CFMutableArrayRef alertMessage = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+//		const CFMutableArrayRef alertMessage = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+		const CFMutableStringRef alertMessage = CFStringCreateMutable(NULL, 0);
 		Boolean result;
 		if (n2 == &m->hostlabel) result = SCPreferencesSetLocalHostName(session, cfnewname);
 		else                     result = SCPreferencesSetComputerName(session, cfnewname, kCFStringEncodingUTF8);
-		if (!result || !SCPreferencesCommitChanges(session) || !SCPreferencesApplyChanges(session) || !s1 || !s2 || !alertMessage)
+		if (!result || !SCPreferencesCommitChanges(session) || !SCPreferencesApplyChanges(session) || !s0 || !s1 || !s2 || !alertMessage)
 			LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
 		else if (m->p->NotifyUser)
 			{
-			CFArrayAppendValue(alertMessage, f0);
-			CFArrayAppendValue(alertMessage, s1);
-			CFArrayAppendValue(alertMessage, CFSTR("is already in use on this network. "));
-			CFArrayAppendValue(alertMessage, CFSTR("The name has been automatically updated to "));
-			CFArrayAppendValue(alertMessage, s2);
-			CFArrayAppendValue(alertMessage, CFSTR("You can change this name in the Sharing Preference Panel."));
+//			CFArrayAppendValue(alertMessage, s0);
+			CFStringAppend(alertMessage, s0);
+			CFStringAppend(alertMessage, s1);
+			CFStringAppend(alertMessage, CFSTR(" is already in use on this network.  The name has been changed to "));
+			CFStringAppend(alertMessage, s2);
+			CFStringAppend(alertMessage, CFSTR(" automatically."));
 			CFUserNotificationDisplayNotice(60.0,			// Auto-dismiss after 60 seconds
 				kCFUserNotificationCautionAlertLevel,
 				NULL, NULL, NULL,							// iconURL, soundURL, localizationURL
-				title, (CFStringRef)alertMessage, NULL);	// alertHeader, alertMessage, defaultButtonTitle
+				(CFStringRef)alertMessage, subtext, NULL);	// alertHeader, alertMessage, defaultButtonTitle
 			}
+		if (s0)           CFRelease(s0);
 		if (s1)           CFRelease(s1);
 		if (s2)           CFRelease(s2);
 		if (alertMessage) CFRelease(alertMessage);
@@ -1613,7 +1618,6 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlab
 		}
 	if (cfoldname) CFRelease(cfoldname);
 	if (cfnewname) CFRelease(cfnewname);
-	if (f0)        CFRelease(f0);
 	if (f1)        CFRelease(f1);
 	if (f2)        CFRelease(f2);
 	if (session)   CFRelease(session);
@@ -2244,13 +2248,15 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 			if (!SameDomainLabel(m->p->usernicelabel.c, m->nicelabel.c))
 				{
 				LogMsg("Updating Computer Name from \"%#s\" to \"%#s\"", m->p->usernicelabel.c, m->nicelabel.c);
-				RecordUpdatedName(m, &m->p->usernicelabel, &m->nicelabel, CFSTR("Computer Name Already In Use"), "This machine’s Computer Name ", "");
+				RecordUpdatedName(m, &m->p->usernicelabel, &m->nicelabel, "The name of your computer ", "",
+					CFSTR("To change the name of your computer, open System Preferences and click Sharing.  Then type the name in the Computer Name field."));
 				m->p->NotifyUser = 0;	// Clear m->p->NotifyUser here -- even if the hostlabel has changed too, we don't want to bug the user with *two* alerts
 				}
 			if (!SameDomainLabel(m->p->userhostlabel.c, m->hostlabel.c))
 				{
 				LogMsg("Updating Local Hostname from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
-				RecordUpdatedName(m, &m->p->userhostlabel, &m->hostlabel, CFSTR("Local Hostname Already In Use"), "This computer’s Local Hostname ", ".local");
+				RecordUpdatedName(m, &m->p->userhostlabel, &m->hostlabel, "This computer's local hostname ", ".local",
+					CFSTR("To change the local hostname, open System Preferences and click Sharing.  Then click Edit and type the name in the Local Hostname field."));
 				}
 			m->p->NotifyUser = 0;
 			}
