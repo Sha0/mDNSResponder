@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.193  2003/07/02 02:44:13  cheshire
+Fix warning in non-debug build
+
 Revision 1.192  2003/07/02 02:41:23  cheshire
 <rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
 
@@ -3558,7 +3561,9 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 	// Enumerating the entire cache is moderately expensive, so when we do it, we reclaim all the records we can in one pass.
 	if (!m->rrcache_free)
 		{
+		#if MDNS_DEBUGMSGS
 		mDNSu32 oldtotalused = m->rrcache_totalused;
+		#endif
 		mDNSu32 slot;
 		ResourceRecord **rr;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
