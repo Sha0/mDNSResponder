@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.22  2004/12/10 13:18:40  cheshire
+Create no-op function RecordUpdatedNiceLabel(), required by uds_daemon.c
+
 Revision 1.21  2004/11/10 04:03:41  shersche
 Remove SharedAccess dependency.  This causes problems on XP SP1, and isn't necessary for XP SP2 because we already are dependent on WMI, which itself is dependent on SharedAccess.
 
@@ -1481,6 +1484,14 @@ udsSupportRemoveFDFromEventLoop( SocketRef fd)
 
 	return err;
 }
+
+
+mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
+	{
+	(void)m;
+	(void)delay;
+	// No-op, for now
+	}
 
 
 static mStatus
