@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.4  2003/08/14 02:19:55  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.3  2003/08/12 19:56:27  cheshire
 Update to APSL 2.0
 
@@ -1940,7 +1943,7 @@ void	mDNSShow( BOOL inShowRecords )
 	
 	printf( "\n-- mDNS globals --\n" );
 	printf( "    sizeof( mDNS )                     = %d\n", (int) sizeof( mDNS ) );
-	printf( "    sizeof( ResourceRecord )           = %d\n", (int) sizeof( ResourceRecord ) );
+ 	printf( "    sizeof( ResourceRecord )           = %d\n", (int) sizeof( ResourceRecord ) );
 	printf( "    gMDNSPtr                           = 0x%08lX\n", (unsigned long) gMDNSPtr );
 	printf( "    gMDNSTicksToMicrosecondsMultiplier = %ld\n", gMDNSTicksToMicrosecondsMultiplier );
 	printf( "    lockID                             = 0x%08lX\n", (unsigned long) gMDNSPtr->p->lockID );
@@ -2000,7 +2003,7 @@ void	mDNSShowRecords( void )
 {
 	MDNSInterfaceItem *		item;
 	int						n;
-	ResourceRecord *		record;
+	AuthRecord *			record;
 	char					name[ 512 ];
 	
 	printf( "\n-- mDNS resource records --\n" );

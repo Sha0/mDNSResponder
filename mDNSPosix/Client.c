@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.9  2003/08/14 02:19:55  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.8  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -66,11 +69,11 @@ First checkin
 static mDNS mDNSStorage;       // mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 #define RR_CACHE_SIZE 500
-static ResourceRecord gRRCache[RR_CACHE_SIZE];
+static CacheRecord gRRCache[RR_CACHE_SIZE];
 
 static const char *gProgramName = "mDNSResponderPosix";
 
-static void BrowseCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void BrowseCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     // A callback from the core mDNS code that indicates that we've received a 
     // response to our query.  Note that this code runs on the main thread 
     // (in fact, there is only one thread!), so we can safely printf the results.
@@ -95,7 +98,7 @@ static void BrowseCallback(mDNS *const m, DNSQuestion *question, const ResourceR
     ConvertDomainNameToCString(&domain, domainC);
 
     // If the TTL has hit 0, the service is no longer available.
-    if (answer->rrremainingttl == 0) {
+    if (!AddRecord) {
         state = "Lost ";
     } else {
         state = "Found";

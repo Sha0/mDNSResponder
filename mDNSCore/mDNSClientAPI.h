@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.99  2003/08/14 02:17:05  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.98  2003/08/12 19:56:23  cheshire
 Update to APSL 2.0
 
@@ -588,101 +591,109 @@ typedef struct
 	} RData;
 #define sizeofRDataHeader (sizeof(RData) - sizeof(RDataBody))
 
+typedef struct AuthRecord_struct AuthRecord;
+typedef struct CacheRecord_struct CacheRecord;
 typedef struct ResourceRecord_struct ResourceRecord;
 typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 
 // Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
-typedef void mDNSRecordCallback(mDNS *const m, ResourceRecord *const rr, mStatus result);
+typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
 // Note:
 // Restrictions: An mDNSRecordUpdateCallback may not make any mDNS API calls.
 // The intent of this callback is to allow the client to free memory, if necessary.
 // The internal data structures of the mDNS code may not be in a state where mDNS API calls may be made safely.
-typedef void mDNSRecordUpdateCallback(mDNS *const m, ResourceRecord *const rr, RData *OldRData);
+typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData *OldRData);
 
-// Fields labelled "AR:" apply to our authoritative records
-// Fields labelled "CR:" apply to cache records
-// Fields labelled "--:" apply to both
-// (May want to make this a union later, but not now, because using the
-// same storage for two different purposes always makes debugging harder.)
 struct ResourceRecord_struct
+	{
+	mDNSu8          RecordType;			// See enum above
+	mDNSInterfaceID InterfaceID;		// Set if this RR is specific to one interface
+										// For records received off the wire, InterfaceID is *always* set to the receiving interface
+										// For our authoritative records, InterfaceID is usually zero, except for those few records
+										// that are interface-specific (e.g. address records, especially linklocal addresses)
+	domainname      name;				
+	mDNSu16         rrtype;
+	mDNSu16         rrclass;
+	mDNSu32         rroriginalttl;		// In seconds
+	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
+	RData           *rdata;				// Pointer to storage for this rdata
+	};
+
+struct AuthRecord_struct
 	{
 	// For examples of how to set up this structure for use in mDNS_Register(),
 	// see mDNS_AdvertiseInterface() or mDNS_RegisterService().
-	// Basically, Field Group 1 and Field Group 4 need to be set up before calling mDNS_Register().
+	// Basically, resrec and persistent metadata need to be set up before calling mDNS_Register().
 	// mDNS_SetupResourceRecord() is avaliable as a helper routine to set up most fields to sensible default values for you
 
-	ResourceRecord     *next;			// --: Next in list; first element of structure for efficiency reasons
+	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
+	ResourceRecord       resrec;
 
-	// Field Group 1: Persistent metadata for Authoritative Records
-	ResourceRecord     *Additional1;	// AR: Recommended additional record to include in response
-	ResourceRecord     *Additional2;	// AR: Another additional
-	ResourceRecord     *DependentOn;	// AR: This record depends on another for its uniqueness checking
-	ResourceRecord     *RRSet;			// AR: This unique record is part of an RRSet
-	mDNSRecordCallback *RecordCallback;	// AR: Callback function to call for state changes
-	void               *RecordContext;	// AR: Context parameter for the callback function
-	mDNSu8              RecordType;		// --: See enum above
-	mDNSu8              HostTarget;		// AR: Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
+	// Persistent metadata for Authoritative Records
+	AuthRecord     *Additional1;		// Recommended additional record to include in response
+	AuthRecord     *Additional2;		// Another additional
+	AuthRecord     *DependentOn;		// This record depends on another for its uniqueness checking
+	AuthRecord     *RRSet;				// This unique record is part of an RRSet
+	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes
+	void           *RecordContext;		// Context parameter for the callback function
+	mDNSu8          HostTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 
-	// Field Group 2: Transient state for Authoritative Records
-	mDNSu8          Acknowledged;		// AR: Set if we've given the success callback to the client
-	mDNSu8          ProbeCount;			// AR: Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
-	mDNSu8          AnnounceCount;		// AR: Number of announcements remaining (kDNSRecordTypeShared)
-	mDNSu8          IncludeInProbe;		// AR: Set if this RR is being put into a probe right now
-	mDNSInterfaceID ImmedAnswer;		// AR: Someone on this interface issued a query we need to answer (all-ones for all interfaces)
-	mDNSInterfaceID ImmedAdditional;	// AR: Hint that we might want to also send this record, just to be helpful
-	mDNSInterfaceID SendRNow;			// AR: The interface this query is being sent on right now
-	mDNSv4Addr      v4Requester;		// AR: Recent v4 query for this record, or all-ones if more than one recent query
-	mDNSv6Addr      v6Requester;		// AR: Recent v6 query for this record, or all-ones if more than one recent query
-	mDNSs32         v6RequesterTime;	// AR: For debugging: Time that v6Requester was set non-zero
-	ResourceRecord *NextResponse;		// AR: Link to the next element in the chain of responses to generate
-	const mDNSu8   *NR_AnswerTo;		// AR: Set if this record was selected by virtue of being a direct answer to a question
-	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another
-	mDNSs32         ThisAPInterval;		// AR: In platform time units: Current interval for announce/probe
-	mDNSs32         LastAPTime;			// AR: In platform time units: Last time we sent announcement/probe
-	mDNSs32         LastMCTime;			// AR: Last time we multicast this record (used to guard against packet-storm attacks)
-	mDNSInterfaceID LastMCInterface;	// AR: Interface this record was multicast on at the time LastMCTime was recorded
-	RData          *NewRData;			// AR: Set if we are updating this record with new rdata
+	// Transient state for Authoritative Records
+	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
+	mDNSu8          ProbeCount;			// Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
+	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
+	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
+	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
+	mDNSInterfaceID ImmedAdditional;	// Hint that we might want to also send this record, just to be helpful
+	mDNSInterfaceID SendRNow;			// The interface this query is being sent on right now
+	mDNSv4Addr      v4Requester;		// Recent v4 query for this record, or all-ones if more than one recent query
+	mDNSv6Addr      v6Requester;		// Recent v6 query for this record, or all-ones if more than one recent query
+	mDNSs32         v6RequesterTime;	// For debugging: Time that v6Requester was set non-zero
+	AuthRecord     *NextResponse;		// Link to the next element in the chain of responses to generate
+	const mDNSu8   *NR_AnswerTo;		// Set if this record was selected by virtue of being a direct answer to a question
+	AuthRecord     *NR_AdditionalTo;	// Set if this record was selected by virtue of being additional to another
+	mDNSs32         ThisAPInterval;		// In platform time units: Current interval for announce/probe
+	mDNSs32         LastAPTime;			// In platform time units: Last time we sent announcement/probe
+	mDNSs32         LastMCTime;			// Last time we multicast this record (used to guard against packet-storm attacks)
+	mDNSInterfaceID LastMCInterface;	// Interface this record was multicast on at the time LastMCTime was recorded
+	RData          *NewRData;			// Set if we are updating this record with new rdata
 	mDNSRecordUpdateCallback *UpdateCallback;
 
-	// Field Group 3: Transient state for Cache Records
-	ResourceRecord *NextInKAList;		// CR: Link to the next element in the chain of known answers to send
-	mDNSs32         TimeRcvd;			// CR: In platform time units
-	mDNSs32         NextRequiredQuery;	// CR: In platform time units
-	mDNSs32         LastUsed;			// CR: In platform time units
-	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
-	DNSQuestion    *CRActiveQuestion;	// CR: Points to an active question referencing this answer
-	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
-	mDNSs32         LastUnansweredTime;	// CR: In platform time units; last time we incremented UnansweredQueries
-	mDNSu32         MPUnansweredQ;		// CR: Multi-packet query handling: Number of times we've seen a query for this record
-	mDNSs32         MPLastUnansweredQT;	// CR: Multi-packet query handling: Last time we incremented MPUnansweredQ
-	mDNSu32         MPUnansweredKA;		// CR: Multi-packet query handling: Number of times we've seen this record in a KA list
-	mDNSBool        MPExpectingKA;		// CR: Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
-	ResourceRecord *NextInCFList;		// CR: Set if this is in the list of records we just received with the cache flush bit set
-
-	// Field Group 4: The actual information pertaining to this resource record
-	mDNSInterfaceID InterfaceID;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)
-										// For records received off the wire, InterfaceID is *always* set to the receiving interface
-										// For our authoritative records, InterfaceID is usually zero,
-										// except those few records that are interface-specific (e.g. linklocal address records)
-	domainname      name;				// --: All the rest are used both in our authoritative records and in cache records
-	mDNSu16         rrtype;
-	mDNSu16         rrclass;
-	mDNSu32         rroriginalttl;		// In seconds.
-	mDNSu32         rrremainingttl;		// In seconds. Always set to correct value before calling question callback.
-	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
-	RData           *rdata;				// Pointer to storage for this rdata
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
-	// rdatastorage MUST be the last thing in the structure -- when using oversized ResourceRecords, extra bytes
-	// are appended after the end of the ResourceRecord, logically augmenting the size of the rdatastorage
+	// rdatastorage MUST be the last thing in the structure -- when using oversized AuthRecords, extra bytes
+	// are appended after the end of the AuthRecord, logically augmenting the size of the rdatastorage
 	// DO NOT ADD ANY MORE FIELDS HERE
+	};
+
+struct CacheRecord_struct
+	{
+	CacheRecord    *next;				// Next in list; first element of structure for efficiency reasons
+	ResourceRecord       resrec;
+
+	// Transient state for Cache Records
+	CacheRecord    *NextInKAList;		// Link to the next element in the chain of known answers to send
+	mDNSs32         TimeRcvd;			// In platform time units
+	mDNSs32         NextRequiredQuery;	// In platform time units
+	mDNSs32         LastUsed;			// In platform time units
+	mDNSu32         UseCount;			// Number of times this RR has been used to answer a question
+	DNSQuestion    *CRActiveQuestion;	// Points to an active question referencing this answer
+	mDNSu32         UnansweredQueries;	// Number of times we've issued a query for this record without getting an answer
+	mDNSs32         LastUnansweredTime;	// In platform time units; last time we incremented UnansweredQueries
+	mDNSu32         MPUnansweredQ;		// Multi-packet query handling: Number of times we've seen a query for this record
+	mDNSs32         MPLastUnansweredQT;	// Multi-packet query handling: Last time we incremented MPUnansweredQ
+	mDNSu32         MPUnansweredKA;		// Multi-packet query handling: Number of times we've seen this record in a KA list
+	mDNSBool        MPExpectingKA;		// Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
+	CacheRecord    *NextInCFList;		// Set if this is in the list of records we just received with the cache flush bit set
+
+	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
 	};
 
 typedef struct
 	{
-	ResourceRecord r;
+	CacheRecord r;
 	mDNSu8 _extradata[MaximumRDSize-StandardRDSize];		// Glue on the necessary number of extra bytes
 	} LargeResourceRecord;
 
@@ -698,10 +709,10 @@ struct NetworkInterfaceInfo_struct
 										// and/or AAAA records, but there is already an earlier representative for this
 										// physical interface which will be used for the actual sending & receiving
 										// packets (this status may change as interfaces are added and removed)
-	// Standard ResourceRecords that every Responder host should have (one per active IP address)
-	ResourceRecord RR_A;				// 'A' or 'AAAA' (address) record for our ".local" name
-	ResourceRecord RR_PTR;				// PTR (reverse lookup) record
-	ResourceRecord RR_HINFO;
+	// Standard AuthRecords that every Responder host should have (one per active IP address)
+	AuthRecord RR_A;				// 'A' or 'AAAA' (address) record for our ".local" name
+	AuthRecord RR_PTR;				// PTR (reverse lookup) record
+	AuthRecord RR_HINFO;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;
@@ -713,10 +724,10 @@ typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
 struct ExtraResourceRecord_struct
 	{
 	ExtraResourceRecord *next;
-	ResourceRecord r;
-	// Note: Add any additional fields *before* the ResourceRecord in this structure, not at the end.
+	AuthRecord r;
+	// Note: Add any additional fields *before* the AuthRecord in this structure, not at the end.
 	// In some cases clients can allocate larger chunks of memory and set r->rdata->MaxRDLength to indicate
-	// that this extra memory is available, which would result in any fields after the ResourceRecord getting smashed
+	// that this extra memory is available, which would result in any fields after the AuthRecord getting smashed
 	};
 
 // Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
@@ -729,16 +740,16 @@ struct ServiceRecordSet_struct
 	// all required data is passed as parameters to that function.
 	mDNSServiceCallback *ServiceCallback;
 	void                *ServiceContext;
-	ExtraResourceRecord *Extras;	// Optional list of extra ResourceRecords attached to this service registration
+	ExtraResourceRecord *Extras;	// Optional list of extra AuthRecords attached to this service registration
 	mDNSu32              NumSubTypes;
-	ResourceRecord      *SubTypes;
+	AuthRecord      *SubTypes;
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           Host;		// Set if this service record does not use the standard target host name
-	ResourceRecord       RR_ADV;	// e.g. _services._mdns._udp.local. PTR _printer._tcp.local.
-	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
-	ResourceRecord       RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target
-	ResourceRecord       RR_TXT;	// e.g. Name._printer._tcp.local.   TXT PrintQueueName
-	// Don't add any fields after ResourceRecord RR_TXT.
+	AuthRecord       RR_ADV;	// e.g. _services._mdns._udp.local. PTR _printer._tcp.local.
+	AuthRecord       RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
+	AuthRecord       RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target
+	AuthRecord       RR_TXT;	// e.g. Name._printer._tcp.local.   TXT PrintQueueName
+	// Don't add any fields after AuthRecord RR_TXT.
 	// This is where the implicit extra space goes if we allocate a ServiceRecordSet containing an oversized RR_TXT record
 	};
 
@@ -756,7 +767,7 @@ typedef struct
 	} DupSuppressInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
-typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
+typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 struct DNSQuestion_struct
 	{
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
@@ -879,8 +890,8 @@ struct mDNS_struct
 	mDNSu32	rrcache_totalused;			// Number of cache entries currently occupied
 	mDNSu32 rrcache_active;				// Number of cache entries currently occupied by records that answer active questions
 	mDNSu32 rrcache_report;
-	ResourceRecord *rrcache_free;
-	ResourceRecord *rrcache_hash[CACHE_HASH_SLOTS];
+	CacheRecord *rrcache_free;
+	CacheRecord *rrcache_hash[CACHE_HASH_SLOTS];
 	mDNSu32 rrcache_used[CACHE_HASH_SLOTS];
 
 	// Fields below only required for mDNS Responder...
@@ -889,9 +900,9 @@ struct mDNS_struct
 	domainname  hostname;				// Host Name, e.g. "Foo.local."
 	UTF8str255 HIHardware;
 	UTF8str255 HISoftware;
-	ResourceRecord *ResourceRecords;
-	ResourceRecord *DuplicateRecords;	// Records currently 'on hold' because they are duplicates of existing records
-	ResourceRecord *CurrentRecord;		// Next ResourceRecord about to be examined
+	AuthRecord *ResourceRecords;
+	AuthRecord *DuplicateRecords;	// Records currently 'on hold' because they are duplicates of existing records
+	AuthRecord *CurrentRecord;		// Next AuthRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
 	mDNSs32 ProbeFailTime;
 	mDNSs32 NumFailedProbes;
@@ -903,7 +914,6 @@ struct mDNS_struct
 #pragma mark - Useful Static Constants
 #endif
 
-extern const ResourceRecord  zeroRR;
 extern const mDNSIPPort      zeroIPPort;
 extern const mDNSv4Addr      zeroIPAddr;
 extern const mDNSv6Addr      zerov6Addr;
@@ -931,7 +941,7 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 //
 // Call mDNS_Close to tidy up before exiting
 //
-// Call mDNS_Register with a completed ResourceRecord object to register a resource record
+// Call mDNS_Register with a completed AuthRecord object to register a resource record
 // If the resource record type is kDNSRecordTypeUnique (or kDNSknownunique) then if a conflicting resource record is discovered,
 // the resource record's mDNSRecordCallback will be called with error code mStatus_NameConflict. The callback should deregister
 // the record, and may then try registering the record again after picking a new name (e.g. by automatically appending a number).
@@ -949,7 +959,7 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 // interrupt-time timer callback while in the middle of processing a client call.
 
 extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
-								ResourceRecord *rrcachestorage, mDNSu32 rrcachesize,
+								CacheRecord *rrcachestorage, mDNSu32 rrcachesize,
 								mDNSBool AdvertiseLocalAddresses,
 								mDNSCallback *Callback, void *Context);
 #define mDNS_Init_NoCache                     mDNSNULL
@@ -958,18 +968,19 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 #define mDNS_Init_DontAdvertiseLocalAddresses mDNSfalse
 #define mDNS_Init_NoInitCallback              mDNSNULL
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
-extern void    mDNS_GrowCache (mDNS *const m, ResourceRecord *storage, mDNSu32 numrecords);
+extern void    mDNS_GrowCache (mDNS *const m, CacheRecord *storage, mDNSu32 numrecords);
 extern void    mDNS_Close     (mDNS *const m);
 extern mDNSs32 mDNS_Execute   (mDNS *const m);
 
-extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
-extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 newttl,
+extern mStatus mDNS_Register  (mDNS *const m, AuthRecord *const rr);
+extern mStatus mDNS_Update    (mDNS *const m, AuthRecord *const rr, mDNSu32 newttl,
 								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
-extern mStatus mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
+extern mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr);
 
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
-extern mStatus mDNS_Reconfirm (mDNS *const m, ResourceRecord *const cacherr);
+extern mStatus mDNS_Reconfirm (mDNS *const m, CacheRecord *const cacherr);
+extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
 
 // ***************************************************************************
 #if 0
@@ -1001,20 +1012,20 @@ extern mDNSs32  mDNSPlatformTimeNow(void);
 // of one or more domains that should be offered to the user as choices for where they may register their service,
 // and the default domain in which to register in the case where the user has made no selection.
 
-extern void    mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
+extern void    mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
                mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context);
 
 extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
                const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
-               ResourceRecord *SubTypes, mDNSu32 NumSubTypes,
+               AuthRecord *SubTypes, mDNSu32 NumSubTypes,
                const mDNSInterfaceID InterfaceID, mDNSServiceCallback Callback, void *Context);
 extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname);
 extern mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
-extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
+extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, AuthRecord *const rr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
                const domainname *const host,
                const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context);
@@ -1038,7 +1049,7 @@ typedef enum
 
 extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopGetDomains mDNS_StopQuery
-extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
+extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
 
 // ***************************************************************************

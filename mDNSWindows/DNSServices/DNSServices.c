@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.14  2003/08/14 02:19:56  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.13  2003/08/12 19:56:29  cheshire
 Update to APSL 2.0
 
@@ -194,7 +197,7 @@ struct	DNSDomainRegistration
 {
 	DNSDomainRegistration *			next;
 	DNSDomainRegistrationFlags		flags;
-	ResourceRecord					rr;
+	AuthRecord					rr;
 };
 
 #if 0
@@ -247,7 +250,8 @@ mDNSlocal void
 	DNSBrowserPrivateCallBack( 
 		mDNS * const 					inMDNS, 
 		DNSQuestion *					inQuestion, 
-		const ResourceRecord * const 	inAnswer );
+		const ResourceRecord * const 	inAnswer,
+		mDNSBool AddRecord );
 
 mDNSlocal void
 	DNSBrowserPrivateResolverCallBack( 
@@ -682,7 +686,8 @@ mDNSlocal void
 	DNSBrowserPrivateCallBack( 
 		mDNS * const 					inMDNS, 
 		DNSQuestion *					inQuestion, 
-		const ResourceRecord * const 	inAnswer )
+		const ResourceRecord * const 	inAnswer,
+		mDNSBool AddRecord )
 {
 	DNSBrowserRef		objectPtr;
 	domainlabel			name;
@@ -728,7 +733,7 @@ mDNSlocal void
 		// Fill in the event data. A TTL of zero means the service is no longer available. If the service instance is going
 		// away (ttl == 0), remove any resolvers dependent on the name since it is no longer valid.
 		
-		if( inAnswer->rrremainingttl == 0 )
+		if( !AddRecord )
 		{
 			DNSResolverRemoveDependentByName( &inAnswer->rdata->u.name );
 			
@@ -754,7 +759,7 @@ mDNSlocal void
 		
 		// Automatically resolve newly discovered names if the auto-resolve option is enabled.
 		
-		if( ( browserFlags & kDNSBrowserFlagAutoResolve ) && ( inAnswer->rrremainingttl != 0 ) )
+		if( ( browserFlags & kDNSBrowserFlagAutoResolve ) && ( AddRecord ) )
 		{
 			DNSStatus				err;
 			DNSResolverFlags		flags;
@@ -775,7 +780,7 @@ mDNSlocal void
 		domainDataPtr = mDNSNULL;
 		if( inQuestion == &objectPtr->domainQuestion )
 		{
-			if( inAnswer->rrremainingttl == 0 )
+			if( !AddRecord )
 			{
 				event.type = kDNSBrowserEventTypeRemoveDomain;
 				domainDataPtr = &event.data.removeDomain;
@@ -788,7 +793,7 @@ mDNSlocal void
 		}
 		else if( inQuestion == &objectPtr->defaultDomainQuestion )
 		{
-			if( inAnswer->rrremainingttl == 0 )
+			if( !AddRecord )
 			{
 				event.type = kDNSBrowserEventTypeRemoveDomain;
 				domainDataPtr = &event.data.removeDomain;
@@ -1466,7 +1471,7 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 	switch( inResult )
 	{
 		case mStatus_NoError:
-			debugf( DEBUG_NAME "registration callback: \"%##s\" name successfully registered", inSet->RR_SRV.name.c );
+			debugf( DEBUG_NAME "registration callback: \"%##s\" name successfully registered", inSet->RR_SRV.resrec.name.c );
 			
 			// Notify the client of a successful registration.
 			
@@ -1477,7 +1482,7 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 			break;
 		
 		case mStatus_NameConflict:
-			debugf( DEBUG_NAME "registration callback: \"%##s\" name conflict", inSet->RR_SRV.name.c );
+			debugf( DEBUG_NAME "registration callback: \"%##s\" name conflict", inSet->RR_SRV.resrec.name.c );
 			
 			// Notify the client of the name conflict. Remove the object first so they cannot try to use it in the callback.
 			
@@ -1502,13 +1507,13 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 			break;
 		
 		case mStatus_MemFree:
-			debugf( DEBUG_NAME "registration callback: \"%##s\" memory free", inSet->RR_SRV.name.c );
+			debugf( DEBUG_NAME "registration callback: \"%##s\" memory free", inSet->RR_SRV.resrec.name.c );
 			
 			DNSPlatformMemFree( object );
 			break;
 		
 		default:
-			debugf( DEBUG_NAME "registration callback: \"%##s\" unknown result %d", inSet->RR_SRV.name.c, inResult );
+			debugf( DEBUG_NAME "registration callback: \"%##s\" unknown result %d", inSet->RR_SRV.resrec.name.c, inResult );
 			break;
 	}
 

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.8  2003/08/14 02:19:55  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.7  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -92,7 +95,7 @@ Add mDNSIdentify tool, used to discover what version of mDNSResponder a particul
 static mDNS mDNSStorage;       // mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 #define RR_CACHE_SIZE 500
-static ResourceRecord gRRCache[RR_CACHE_SIZE];
+static CacheRecord gRRCache[RR_CACHE_SIZE];
 
 static volatile int StopNow;	// 0 means running, 1 means stop because we got an answer, 2 means stop because of Ctrl-C
 static volatile int NumAnswers, NumAddr, NumAAAA, NumHINFO;
@@ -128,20 +131,22 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	__MDNS__mDNSCoreReceive(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
 	}
 
-static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	(void)m;		// Unused
 	(void)question;	// Unused
+	(void)AddRecord;// Unused
 	if (!id.NotAnInteger) id = lastid;
 	ConvertDomainNameToCString(&answer->rdata->u.name, hostname);
 	StopNow = 1;
 	mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
 	}
 
-static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	(void)m;		// Unused
 	(void)question;	// Unused
+	(void)AddRecord;// Unused
 	if (answer->rrtype == kDNSType_A)
 		{
 		if (!id.NotAnInteger) id = lastid;

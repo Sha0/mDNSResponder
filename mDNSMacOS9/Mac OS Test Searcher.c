@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.13  2003/08/14 02:19:54  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.12  2003/08/12 19:56:24  cheshire
 Update to APSL 2.0
 
@@ -47,7 +50,7 @@ typedef struct { ServiceInfo i; mDNSBool add; mDNSBool dom; OTLink link; } linke
 // These don't have to be globals, but their memory does need to remain valid for as
 // long as the search is going on. They are declared as globals here for simplicity.
 #define RR_CACHE_SIZE 1000
-static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
+static CacheRecord rrcachestorage[RR_CACHE_SIZE];
 static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformSupportStorage;
 static SearcherServices services;
@@ -121,7 +124,7 @@ static void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 // When a new named instance of a service is found, FoundInstance() is called.
 // In this sample code we turn around and immediately issue a query to resolve that service name to
 // find its address, port, and txtinfo, but a normal browing application would just display the name.
-static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	#pragma unused (question)
 	SearcherServices *services = (SearcherServices *)question->QuestionContext;
@@ -140,10 +143,10 @@ static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRe
 	info->i.ip.type		  = mDNSAddrType_IPv4;
 	info->i.ip.ip.v4  = zeroIPAddr;
 	info->i.port          = zeroIPPort;
-	info->add             = (answer->rrremainingttl > 0);
+	info->add             = AddRecord;
 	info->dom             = mDNSfalse;
 	
-	if (answer->rrremainingttl == 0)	// If TTL == 0 we're deleting a service,
+	if (!AddRecord)	// If TTL == 0 we're deleting a service,
 		OTLIFOEnqueue(&services->serviceinfolist, &info->link);
 	else								// else we're adding a new service
 		{
@@ -153,7 +156,7 @@ static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRe
 		}
 	}
 
-static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	#pragma unused (m)
 	#pragma unused (question)
@@ -173,7 +176,7 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	info->i.ip.type		  = mDNSAddrType_IPv4;
 	info->i.ip.ip.v4  = zeroIPAddr;
 	info->i.port          = zeroIPPort;
-	info->add             = (answer->rrremainingttl > 0);
+	info->add             = AddRecord;
 	info->dom             = mDNStrue;
 		
 	OTLIFOEnqueue(&services->serviceinfolist, &info->link);

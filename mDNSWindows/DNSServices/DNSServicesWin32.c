@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServicesWin32.c,v $
+Revision 1.7  2003/08/14 02:19:56  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.6  2003/08/12 19:56:29  cheshire
 Update to APSL 2.0
 
@@ -109,7 +112,7 @@ DNS Services for Windows
 
 static mDNS						gMDNS					= { 0 };
 static mDNS_PlatformSupport		gMDNSPlatformSupport	= { 0 };
-static ResourceRecord *			gMDNSCache = NULL;
+static CacheRecord *			gMDNSCache = NULL;
 
 #if 0
 #pragma mark -
@@ -129,7 +132,7 @@ DNSStatus	DNSPlatformInitialize( DNSFlags inFlags, DNSCount inCacheEntryCount, m
 	
 	// Allocate memory for the cache.
 	
-	err = DNSPlatformMemAlloc( sizeof( ResourceRecord ) * inCacheEntryCount, &gMDNSCache );
+	err = DNSPlatformMemAlloc( sizeof( CacheRecord ) * inCacheEntryCount, &gMDNSCache );
 	require_noerr( err, exit );
 	
 	// Initialize mDNS and wait for it to complete.

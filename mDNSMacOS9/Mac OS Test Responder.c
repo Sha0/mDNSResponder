@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Responder.c,v $
+Revision 1.17  2003/08/14 02:19:54  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.16  2003/08/12 19:56:24  cheshire
 Update to APSL 2.0
 
@@ -43,7 +46,7 @@ Update to APSL 2.0
 static mDNS m;
 static mDNS_PlatformSupport p;
 static ServiceRecordSet p1, p2, afp, http, njp;
-static ResourceRecord browsedomain;
+static AuthRecord browsedomain;
 
 // This sample code just calls mDNS_RenameAndReregisterService to automatically pick a new
 // unique name for the service. For a device such as a printer, this may be appropriate.
@@ -53,10 +56,10 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 	{
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   sr->RR_SRV.name.c); break;
-		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     sr->RR_SRV.name.c); break;
-		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       sr->RR_SRV.name.c); break;
-		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   sr->RR_SRV.resrec.name.c); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     sr->RR_SRV.resrec.name.c); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       sr->RR_SRV.resrec.name.c); break;
+		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.resrec.name.c, result); break;
 		}
 
 	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr, mDNSNULL);
@@ -95,7 +98,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 		mDNSInterface_Any,							// Interace ID
 		Callback, mDNSNULL);						// Callback and context
 
-	ConvertDomainNameToCString(&recordset->RR_SRV.name, buffer);
+	ConvertDomainNameToCString(&recordset->RR_SRV.resrec.name, buffer);
 	printf("Made Service Records for %s\n", buffer);
 	}
 
@@ -233,11 +236,11 @@ int main()
 			}
 		}
 	
-	if (p1.RR_SRV.RecordType  ) mDNS_DeregisterService(&m, &p1);
-	if (p2.RR_SRV.RecordType  ) mDNS_DeregisterService(&m, &p2);
-	if (afp.RR_SRV.RecordType ) mDNS_DeregisterService(&m, &afp);
-	if (http.RR_SRV.RecordType) mDNS_DeregisterService(&m, &http);
-	if (njp.RR_SRV.RecordType ) mDNS_DeregisterService(&m, &njp);
+	if (p1.RR_SRV.resrec.RecordType  ) mDNS_DeregisterService(&m, &p1);
+	if (p2.RR_SRV.resrec.RecordType  ) mDNS_DeregisterService(&m, &p2);
+	if (afp.RR_SRV.resrec.RecordType ) mDNS_DeregisterService(&m, &afp);
+	if (http.RR_SRV.resrec.RecordType) mDNS_DeregisterService(&m, &http);
+	if (njp.RR_SRV.resrec.RecordType ) mDNS_DeregisterService(&m, &njp);
 
 	mDNS_Close(&m);
 	

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.22  2003/08/14 02:19:55  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.21  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -86,18 +89,18 @@ typedef struct
 	{
 	mDNSv4Addr ip;
 	domainlabel hostlabel;		// Conforms to standard DNS letter-digit-hyphen host name rules
-	ResourceRecord RR_A;		// 'A' (address) record for our ".local" name
-	ResourceRecord RR_PTR;		// PTR (reverse lookup) record
+	AuthRecord RR_A;		// 'A' (address) record for our ".local" name
+	AuthRecord RR_PTR;		// PTR (reverse lookup) record
 	} ProxyHost;
 
-mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
+mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	ProxyHost *f = (ProxyHost*)rr->RecordContext;
 	if (result == mStatus_NoError)
-		debugf("Host name successfully registered: %##s", &rr->name);
+		debugf("Host name successfully registered: %##s", &rr->resrec.name);
 	else
 		{
-		debugf("Host name conflict for %##s", &rr->name);
+		debugf("Host name conflict for %##s", &rr->resrec.name);
 		mDNS_Deregister(m, &f->RR_A);
 		mDNS_Deregister(m, &f->RR_PTR);
 		exit(-1);
@@ -111,20 +114,20 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	mDNS_SetupResourceRecord(&p->RR_A,   mDNSNULL, mDNSInterface_Any, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, p);
 	mDNS_SetupResourceRecord(&p->RR_PTR, mDNSNULL, mDNSInterface_Any, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, HostNameCallback, p);
 
-	p->RR_A.name.c[0] = 0;
-	AppendDomainLabel(&p->RR_A.name, &p->hostlabel);
-	AppendLiteralLabelString(&p->RR_A.name, "local");
+	p->RR_A.resrec.name.c[0] = 0;
+	AppendDomainLabel(&p->RR_A.resrec.name, &p->hostlabel);
+	AppendLiteralLabelString(&p->RR_A.resrec.name, "local");
 
 	mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p->ip.b[3], p->ip.b[2], p->ip.b[1], p->ip.b[0]);
-	MakeDomainNameFromDNSNameString(&p->RR_PTR.name, buffer);
+	MakeDomainNameFromDNSNameString(&p->RR_PTR.resrec.name, buffer);
 
-	p->RR_A.  rdata->u.ip   = p->ip;
-	p->RR_PTR.rdata->u.name = p->RR_A.name;
+	p->RR_A.  resrec.rdata->u.ip   = p->ip;
+	p->RR_PTR.resrec.rdata->u.name = p->RR_A.resrec.name;
 
 	mDNS_Register(m, &p->RR_A);
 	mDNS_Register(m, &p->RR_PTR);
 
-	debugf("Made Proxy Host Records for %##s", &p->RR_A.name);
+	debugf("Made Proxy Host Records for %##s", &p->RR_A.resrec.name);
 	
 	return(mStatus_NoError);
 	}
@@ -140,25 +143,25 @@ mDNSlocal void ServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatu
 	{
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &sr->RR_SRV.name); break;
-		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &sr->RR_SRV.name); break;
-		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &sr->RR_SRV.name); break;
-		default:                   debugf("Callback: %##s Unknown Result %d", &sr->RR_SRV.name, result); break;
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &sr->RR_SRV.resrec.name); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &sr->RR_SRV.resrec.name); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &sr->RR_SRV.resrec.name); break;
+		default:                   debugf("Callback: %##s Unknown Result %d", &sr->RR_SRV.resrec.name, result); break;
 		}
 
 	if (result == mStatus_NoError)
 		{
 		char buffer[256];
-		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer);
+		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.resrec.name, buffer);
 		printf("Service %s now registered and active\n", buffer);
 		}
 
 	if (result == mStatus_NameConflict)
 		{
 		char buffer1[256], buffer2[256];
-		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer1);
+		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.resrec.name, buffer1);
 		mDNS_RenameAndReregisterService(m, sr, mDNSNULL);
-		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer2);
+		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.resrec.name, buffer2);
 		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
 		}
 	}
@@ -198,7 +201,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 		mDNSInterface_Any,			// Interace ID
 		ServiceCallback, mDNSNULL);	// Callback and context
 
-	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.name, buffer);
+	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.resrec.name, buffer);
 	printf("Made Service Records for %s\n", buffer);
 	}
 
@@ -210,21 +213,21 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 // should also claim the LPR service name "My Printer" to stop a different printer offering LPR service under the same name,
 // since it would be confusing to users to have two equivalent services with the same name.
 
-mDNSlocal void NoSuchServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
+mDNSlocal void NoSuchServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	domainname *proxyhostname = (domainname *)rr->RecordContext;
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &rr->name); break;
-		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &rr->name); break;
-		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &rr->name); break;
-		default:                   debugf("Callback: %##s Unknown Result %d", &rr->name, result); break;
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &rr->resrec.name); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &rr->resrec.name); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &rr->resrec.name); break;
+		default:                   debugf("Callback: %##s Unknown Result %d", &rr->resrec.name, result); break;
 		}
 
 	if (result == mStatus_NoError)
 		{
 		char buffer[256];
-		ConvertDomainNameToCString_unescaped(&rr->name, buffer);
+		ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer);
 		printf("Non-existence assertion %s now registered and active\n", buffer);
 		}
 
@@ -233,16 +236,16 @@ mDNSlocal void NoSuchServiceCallback(mDNS *const m, ResourceRecord *const rr, mS
 		domainlabel n;
 		domainname t, d;
 		char buffer1[256], buffer2[256];
-		ConvertDomainNameToCString_unescaped(&rr->name, buffer1);
-		DeconstructServiceName(&rr->name, &n, &t, &d);
+		ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer1);
+		DeconstructServiceName(&rr->resrec.name, &n, &t, &d);
 		IncrementLabelSuffix(&n, mDNStrue);
 		mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, proxyhostname, mDNSInterface_Any, NoSuchServiceCallback, mDNSNULL);
-		ConvertDomainNameToCString_unescaped(&rr->name, buffer2);
+		ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer2);
 		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
 		}
 	}
 
-mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr, domainname *proxyhostname,
+mDNSlocal void RegisterNoSuchService(mDNS *m, AuthRecord *const rr, domainname *proxyhostname,
 	const char name[], const char type[], const char domain[])
 	{
 	domainlabel n;
@@ -252,7 +255,7 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr, domainna
 	MakeDomainNameFromDNSNameString(&t, type);
 	MakeDomainNameFromDNSNameString(&d, domain);
 	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, proxyhostname, mDNSInterface_Any, NoSuchServiceCallback, proxyhostname);
-	ConvertDomainNameToCString_unescaped(&rr->name, buffer);
+	ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer);
 	printf("Made Non-existence Record for %s\n", buffer);
 	}
 
@@ -274,7 +277,7 @@ mDNSexport int main(int argc, char **argv)
 	if (!strcmp(argv[1], "-"))
 		{
 		domainname proxyhostname;
-		ResourceRecord proxyrecord;
+		AuthRecord proxyrecord;
 		if (argc < 5) goto usage;
 		proxyhostname.c[0] = 0;
 		AppendLiteralLabelString(&proxyhostname, argv[2]);
@@ -306,7 +309,7 @@ mDNSexport int main(int argc, char **argv)
 
 		if (argc >=6)
 			RegisterService(&mDNSStorage, &proxyservice, argv[3], argv[4], "local.",
-							&proxyhost.RR_A.name, atoi(argv[5]), argc-6, &argv[6]);
+							&proxyhost.RR_A.resrec.name, atoi(argv[5]), argc-6, &argv[6]);
 
 		ExampleClientEventLoop(&mDNSStorage);
 		mDNS_Close(&mDNSStorage);

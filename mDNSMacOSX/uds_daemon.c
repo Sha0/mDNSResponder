@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.17  2003/08/14 02:18:21  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.16  2003/08/13 23:58:52  ksekar
 Bug #: <rdar://problem/3374911>: Bug: UDS Sub-type browsing works, but not sub-type registration
 Fixed pointer increment error, moved subtype reading for-loop for easier error bailout.
@@ -64,7 +67,7 @@ typedef void (*req_termination_fn)(void *);
 typedef struct registered_record_entry
     {
     int key;
-    ResourceRecord *rr;
+    AuthRecord *rr;
     struct registered_record_entry *next;
     } registered_record_entry;
 
@@ -77,7 +80,7 @@ typedef struct registered_service
     domainlabel name;
     ServiceRecordSet *srs;
     struct request_state *request;
-    ResourceRecord *subtypes;
+    AuthRecord *subtypes;
     } registered_service;
     
 typedef struct 
@@ -211,11 +214,11 @@ static int send_msg(reply_state *rs);
 static void abort_request(request_state *rs);
 static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
 static void handle_resolve_request(request_state *rstate);
-static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
+static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void question_termination_callback(void *context);
 static void handle_browse_request(request_state *request);
 static void browse_termination_callback(void *context);
-static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
+static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void handle_regservice_request(request_state *request);
 static void regservice_termination_callback(void *context);
 static void process_service_registration(ServiceRecordSet *const srs);
@@ -226,27 +229,26 @@ static mStatus gen_rr_response(domainname *servicename, mDNSInterfaceID id, requ
 static void append_reply(request_state *req, reply_state *rep);
 static int build_domainname_from_strings(domainname *srv, char *name, char *regtype, char *domain);
 static void enum_termination_callback(void *context);
-static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
+static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void handle_query_request(request_state *rstate);
 static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi, uint16_t rrtype, int16_t rrclass);
 static reply_state *format_enumeration_reply(request_state *rstate, char *domain,                                             	DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err);
 static void handle_enum_request(request_state *rstate);
 static void handle_regrecord_request(request_state *rstate);
-static void regrecord_callback(mDNS *const m, ResourceRecord *const rr, mStatus result);
+static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result);
 static void connected_registration_termination(void *context);
-static void reconfirm_record_callback(mDNS *const m, ResourceRecord *const rr, mStatus result);
 static void handle_reconfirm_request(request_state *rstate);
-static ResourceRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl);
+static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl);
 static void handle_removerecord_request(request_state *rstate);
 static void reset_connected_rstate(request_state *rstate);
 static int deliver_error(request_state *rstate, mStatus err);
 static int deliver_async_error(request_state *rs, reply_op_t op, mStatus err);
 static transfer_state send_undelivered_error(request_state *rs);
 static reply_state *create_reply(reply_op_t op, int datalen, request_state *request);
-static void update_callback(mDNS *const m, ResourceRecord *const rr, RData *oldrd);
+static void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd);
 static void my_perror(char *errmsg);
 static void unlink_request(request_state *rs);
-static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
+static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void resolve_termination_callback(void *context);
 
 // initialization, setup/teardown functions
@@ -795,7 +797,7 @@ static void resolve_termination_callback(void *context)
     
     
 
-static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 {
     int len = 0;
     char fullname[MAX_DOMAIN_NAME], target[MAX_DOMAIN_NAME];
@@ -806,9 +808,16 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     resolve_result_t *res = rs->resolve_results;
     #pragma unused(m)
     
+	if (!AddRecord)
+		{
+		if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
+		if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
+		return;
+		}
+
     if (answer->rrtype == kDNSType_TXT) res->txt = answer;
     if (answer->rrtype == kDNSType_SRV) res->srv = answer;
-    
+
     if (!res->txt || !res->srv) return;		// only deliver result to client if we have both answers
     
     ConvertDomainNameToCString(&answer->name, fullname);
@@ -882,7 +891,7 @@ static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi
     }
     
 // what gets called when a resolve is completed and we need to send the data back to the client
-static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char *data;
     char name[256];
@@ -904,7 +913,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     len += strlen(name) + 1;
     
     rep =  create_reply(query_reply, len, req);
-    rep->rhdr->flags = 0;
+    rep->rhdr->flags = AddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsRemove;
     rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID);
     rep->rhdr->error = kDNSServiceErr_NoError;
     data = rep->sdata;
@@ -914,7 +923,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     put_short(answer->rrclass, &data);
     put_short(answer->rdata->RDLength, &data);
     put_rdata(answer->rdata->RDLength, (char *)&answer->rdata->u, &data);
-    put_long(answer->rrremainingttl, &data);
+    put_long(AddRecord ? answer->rroriginalttl : 0, &data);
 
     append_reply(req, rep);
     return;
@@ -983,7 +992,7 @@ bad_param:
     unlink_request(request);
     }
 
-static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     request_state *req;
     reply_state *rep;
@@ -1002,7 +1011,7 @@ static void browse_result_callback(mDNS *const m, DNSQuestion *question, const R
             }
         return;
         }
-    if (answer->rrremainingttl) rep->rhdr->flags |= kDNSServiceFlagsAdd;  // non-zero TTL indicates add
+    if (AddRecord) rep->rhdr->flags |= kDNSServiceFlagsAdd;  // non-zero TTL indicates add
     append_reply(req, rep);
     return;
     }
@@ -1079,12 +1088,12 @@ static void handle_regservice_request(request_state *request)
     if (!r_srv->srs) goto malloc_error;
     if (num_subtypes > 0)
         {
-        r_srv->subtypes = mallocL("handle_regservice_request", num_subtypes * sizeof(ResourceRecord));
+        r_srv->subtypes = mallocL("handle_regservice_request", num_subtypes * sizeof(AuthRecord));
         if (!r_srv->subtypes) goto malloc_error;
         sub = regtype + strlen(regtype) + 1;
         for (i = 0; i < num_subtypes; i++)
             {
-            if (!MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->name, sub))
+            if (!MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->resrec.name, sub))
                 {
                 freeL("handle_regservice_request", r_srv->subtypes);
                 freeL("handle_regservice_request", r_srv);
@@ -1246,7 +1255,7 @@ static void handle_add_request(request_state *rstate)
         }
         
     bzero(extra, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
-    extra->r.rrtype = rrtype;
+    extra->r.resrec.rrtype = rrtype;
     extra->r.rdatastorage.MaxRDLength = size;
     extra->r.rdatastorage.RDLength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
@@ -1275,7 +1284,7 @@ static void handle_add_request(request_state *rstate)
 static void handle_update_request(request_state *rstate)
     {
     registered_record_entry *reptr;
-    ResourceRecord *rr;
+    AuthRecord *rr;
     RData *newrd;
     uint16_t rdlen, rdsize;
     char *ptr, *rdata;
@@ -1321,7 +1330,7 @@ static void handle_update_request(request_state *rstate)
     reset_connected_rstate(rstate);
     }
     
-static void update_callback(mDNS *const m, ResourceRecord *const rr, RData *oldrd)
+static void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd)
     {
     #pragma unused(m)
     
@@ -1337,7 +1346,7 @@ static void process_service_registration(ServiceRecordSet *const srs)
     request_state *req = r_srv->request;
 
 
-    err = gen_rr_response(&srs->RR_SRV.name, srs->RR_SRV.InterfaceID, req, &rep);
+    err = gen_rr_response(&srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, req, &rep);
     if (err) 
         {
         if (deliver_async_error(req, reg_service_reply, err) < 0)
@@ -1375,7 +1384,7 @@ static void regservice_termination_callback(void *context)
 
 static void handle_regrecord_request(request_state *rstate)
     {
-    ResourceRecord *rr;
+    AuthRecord *rr;
     regrecord_callback_context *rcc;
     registered_record_entry *re;
     mStatus result;
@@ -1426,7 +1435,7 @@ malloc_error:
     return;
     }
 
-static void regrecord_callback(mDNS *const m, ResourceRecord *const rr, mStatus result)
+static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result)
     {
     regrecord_callback_context *rcc;
     int len;
@@ -1446,7 +1455,7 @@ static void regrecord_callback(mDNS *const m, ResourceRecord *const rr, mStatus 
     reply = create_reply(reg_record_reply, len, rcc->rstate);
     reply->mhdr->client_context = rcc->client_context;
     reply->rhdr->flags = 0;
-    reply->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->InterfaceID);
+    reply->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID);
     reply->rhdr->error = result;
 
     ts = send_msg(reply);
@@ -1584,7 +1593,7 @@ static void handle_enum_request(request_state *rstate)
     if (tr == t_morecoming) append_reply(rstate, reply); // couldn't send whole reply because client is blocked - link into list
     }
 
-static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char domain[256];
     domain_enum_t *de = question->QuestionContext;
@@ -1593,7 +1602,7 @@ static void enum_result_callback(mDNS *const m, DNSQuestion *question, const Res
 
     #pragma unused(m)
     if (answer->rrtype != kDNSType_PTR) return;
-    if (answer->rrremainingttl > 0)
+    if (AddRecord)
     	{
         flags |= kDNSServiceFlagsAdd;
         if (de->type == mDNS_DomainTypeRegistrationDefault || de->type == mDNS_DomainTypeBrowseDefault)
@@ -1651,22 +1660,16 @@ static void enum_termination_callback(void *context)
 
 static void handle_reconfirm_request(request_state *rstate)
     {
-    ResourceRecord *rr;
+    AuthRecord *rr;
 
     rr = read_rr_from_ipc_msg(rstate->msgdata, 0);
     if (!rr) return;
-    rr->RecordCallback = reconfirm_record_callback;
-    mDNS_Reconfirm(&mDNSStorage, rr);
+    mDNS_ReconfirmByValue(&mDNSStorage, &rr->resrec);
     abort_request(rstate);
     unlink_request(rstate);
+    freeL("handle_reconfirm_request", rr);
     }
 
-
-static void reconfirm_record_callback(mDNS *const m, ResourceRecord *const rr, mStatus result)
-    {
-    #pragma unused(m)
-    if (result == mStatus_MemFree) freeL("reconfirm_record_callback", rr);
-    }
 
 // setup rstate to accept new reg/dereg requests
 static void reset_connected_rstate(request_state *rstate)
@@ -1684,45 +1687,44 @@ static void reset_connected_rstate(request_state *rstate)
 // returns a resource record (allocated w/ malloc) containing the data found in an IPC message
 // data must be in format flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
 // (ttl only extracted/set if ttl argument is non-zero).  returns NULL for a bad-parameter error
-static ResourceRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
+static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
     {
     char *rdata, name[256];
-    ResourceRecord *rr;
+    AuthRecord *rr;
     DNSServiceFlags flags;
     uint32_t interfaceIndex;
 
-    rr = mallocL("read_rr_from_ipc_msg", sizeof(ResourceRecord));
+    rr = mallocL("read_rr_from_ipc_msg", sizeof(AuthRecord));
     if (!rr) 	
         { 
         my_perror("ERROR: malloc");  
         exit(1);
         }
-    bzero(rr, sizeof(ResourceRecord));
-    rr->rdata = &rr->rdatastorage;
+    bzero(rr, sizeof(AuthRecord));
+    rr->resrec.rdata = &rr->rdatastorage;
     flags = get_flags(&msgbuf);
     interfaceIndex = get_long(&msgbuf);
-    rr->InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    rr->resrec.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
     if ((get_string(&msgbuf, name, 256) < 0) ||
-        (!MakeDomainNameFromDNSNameString(&rr->name, name)))
+        (!MakeDomainNameFromDNSNameString(&rr->resrec.name, name)))
     	{
         LogMsg("ERROR: bad name: %s", name);
         freeL("read_rr_from_ipc_msg", rr);
         return NULL;
     	}
-    rr->rrtype = get_short(&msgbuf);
+    rr->resrec.rrtype = get_short(&msgbuf);
     if ((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared)
-        rr->RecordType = kDNSRecordTypeShared;
+        rr->resrec.RecordType = kDNSRecordTypeShared;
     if ((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique)
-        rr->RecordType = kDNSRecordTypeUnique;
-    rr->rrclass = get_short(&msgbuf);
-    rr->rdata->RDLength = get_short(&msgbuf);
-    rr->rdata->MaxRDLength = sizeof(RDataBody);
-    rdata = get_rdata(&msgbuf, rr->rdata->RDLength);
-    memcpy(rr->rdata->u.data, rdata, rr->rdata->RDLength);
+        rr->resrec.RecordType = kDNSRecordTypeUnique;
+    rr->resrec.rrclass = get_short(&msgbuf);
+    rr->resrec.rdata->RDLength = get_short(&msgbuf);
+    rr->resrec.rdata->MaxRDLength = sizeof(RDataBody);
+    rdata = get_rdata(&msgbuf, rr->resrec.rdata->RDLength);
+    memcpy(rr->resrec.rdata->u.data, rdata, rr->resrec.rdata->RDLength);
     if (ttl)	
     	{
-        rr->rroriginalttl = get_long(&msgbuf);
-        rr->rrremainingttl = rr->rroriginalttl;
+        rr->resrec.rroriginalttl = get_long(&msgbuf);
     	}
     return rr;
     }

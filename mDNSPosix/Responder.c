@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.16  2003/08/14 02:19:55  cheshire
+<rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
+
 Revision 1.15  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -498,13 +501,13 @@ static void RegistrationCallback(mDNS *const m, ServiceRecordSet *const thisRegi
     switch (status) {
 
         case mStatus_NoError:      
-            debugf("Callback: %##s Name Registered",   thisRegistration->RR_SRV.name.c); 
+            debugf("Callback: %##s Name Registered",   thisRegistration->RR_SRV.resrec.name.c); 
             // Do nothing; our name was successfully registered.  We may 
             // get more call backs in the future.
             break;
 
         case mStatus_NameConflict: 
-            debugf("Callback: %##s Name Conflict",     thisRegistration->RR_SRV.name.c); 
+            debugf("Callback: %##s Name Conflict",     thisRegistration->RR_SRV.resrec.name.c); 
 
             // In the event of a conflict, this sample RegistrationCallback 
             // just calls mDNS_RenameAndReregisterService to automatically 
@@ -522,7 +525,7 @@ static void RegistrationCallback(mDNS *const m, ServiceRecordSet *const thisRegi
             break;
 
         case mStatus_MemFree:      
-            debugf("Callback: %##s Memory Free",       thisRegistration->RR_SRV.name.c); 
+            debugf("Callback: %##s Memory Free",       thisRegistration->RR_SRV.resrec.name.c); 
             
             // When debugging is enabled, make sure that thisRegistration 
             // is not on our gServiceList.
@@ -542,7 +545,7 @@ static void RegistrationCallback(mDNS *const m, ServiceRecordSet *const thisRegi
             break;
 
         default:                   
-            debugf("Callback: %##s Unknown Status %d", thisRegistration->RR_SRV.name.c, status); 
+            debugf("Callback: %##s Unknown Status %d", thisRegistration->RR_SRV.resrec.name.c, status); 
             break;
     }
 }
