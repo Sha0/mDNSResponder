@@ -86,7 +86,8 @@ typedef	int	pid_t;
 typedef union { unsigned char b[2]; unsigned short NotAnInteger; } Opaque16;
 
 static int operation;
-static DNSServiceRef client = NULL;
+static DNSServiceRef client  = NULL;
+static DNSServiceRef client2 = NULL;
 static int num_printed;
 static char addtest = 0;
 static DNSRecordRef record = NULL;
@@ -308,11 +309,14 @@ void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifI
 
 static void HandleEvents(void)
 	{
-	int dns_sd_fd = DNSServiceRefSockFD(client);
+	int dns_sd_fd  = client  ? DNSServiceRefSockFD(client ) : -1;
+	int dns_sd_fd2 = client2 ? DNSServiceRefSockFD(client2) : -1;
 	int nfds = dns_sd_fd + 1;
 	fd_set readfds;
 	struct timeval tv;
 	int result;
+	
+	if (dns_sd_fd2 > dns_sd_fd) nfds = dns_sd_fd2 + 1;
 
 	while (!stopNow)
 		{
@@ -322,7 +326,8 @@ static void HandleEvents(void)
 		FD_ZERO(&readfds);
 
 		// 2. Add the fd for our client(s) to the fd_set
-		FD_SET(dns_sd_fd, &readfds);
+		if (client ) FD_SET(dns_sd_fd , &readfds);
+		if (client2) FD_SET(dns_sd_fd2, &readfds);
 
 		// 3. Set up the timeout.
 		tv.tv_sec = timeOut;
@@ -331,7 +336,8 @@ static void HandleEvents(void)
 		result = select(nfds, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv);
 		if (result > 0)
 			{
-			if (FD_ISSET(dns_sd_fd, &readfds)) DNSServiceProcessResult(client);
+			if (client  && FD_ISSET(dns_sd_fd , &readfds)) DNSServiceProcessResult(client );
+			if (client2 && FD_ISSET(dns_sd_fd2, &readfds)) DNSServiceProcessResult(client2);
 			}
 		else if (result == 0)
 			myTimerCallBack();
@@ -367,6 +373,52 @@ int	getfirstoption( int argc, char **argv, const char *optstr, int *pOptInd)
 	}
 #endif
 
+static void MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record, DNSServiceFlags flags,
+    DNSServiceErrorType errorCode, void * context)
+	{
+	char *name = (char *)context;
+	printf("Got a reply for %s: ", name);
+	switch (errorCode)
+		{
+		case kDNSServiceErr_NoError:      printf("Name now registered and active\n"); break;
+		case kDNSServiceErr_NameConflict: printf("Name in use, please choose another\n"); exit(-1);
+		default:                          printf("Error %d\n", errorCode); return;
+		}
+	}
+
+static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
+	{
+	in_addr_t addr = inet_addr(host);
+	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
+	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
+	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, kDNSServiceInterfaceIndexAny, host,
+		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
+	}
+
+static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
+	const char *nam, const char *typ, const char *dom, const char *host, const char *port, int argc, char **argv)
+	{
+	uint16_t PortAsNumber = atoi(port);
+	Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
+	char txt[2048] = "";
+	char *ptr = txt;
+	int i;
+	
+	if (nam[0] == '.' && nam[1] == 0) nam = "";   // We allow '.' on the command line as a synonym for empty string
+	if (dom[0] == '.' && dom[1] == 0) dom = "";   // We allow '.' on the command line as a synonym for empty string
+	
+	for (i = 0; i < argc; i++)
+		{
+		char *len = ptr++;
+		*len = strlen(argv[i]);
+		strcpy(ptr, argv[i]);
+		ptr += *len;
+		}
+	
+	printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[-1], txt);
+	return(DNSServiceRegister(sdRef, 0, 0, nam, typ, dom, host, registerPort.NotAnInteger, ptr-txt, txt, reg_reply, NULL));
+	}
+
 int main(int argc, char **argv)
 	{
 #ifdef _WIN32
@@ -383,7 +435,7 @@ int main(int argc, char **argv)
 #endif
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getfirstoption( argc, argv, "EFBLQRAUNTMI", &optind);
+	operation = getfirstoption( argc, argv, "EFBLQRPAUNTMI", &optind);
 	if (operation == -1) goto Fail;
 
 	switch (operation)
@@ -411,31 +463,14 @@ int main(int argc, char **argv)
 					break;
 
 		case 'R':	if (argc < optind+4) goto Fail;
-					{
-					char *nam = argv[optind+0];
-					char *typ = argv[optind+1];
-					char *dom = argv[optind+2];
-					uint16_t PortAsNumber = atoi(argv[optind+3]);
-					Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
-					char txt[2048];
-					char *ptr = txt;
-					int i;
-
-					if (nam[0] == '.' && nam[1] == 0) nam[0] = 0;   // We allow '.' on the command line as a synonym for empty string
-					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
-
-					for (i = optind+4; i < argc; i++)
-						{
-						char *len = ptr++;
-						*len = strlen(argv[i]);
-						strcpy(ptr, argv[i]);
-						ptr += *len;
-						}
-
-					printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[optind+3], txt);
-					err = DNSServiceRegister(&client, 0, 0, nam, typ, dom, NULL, registerPort.NotAnInteger, ptr-txt, txt, reg_reply, NULL);
+					err = RegisterService(&client, argv[optind+0], argv[optind+1], argv[optind+2], NULL, argv[optind+3], argc-(optind+4), argv+(optind+4));
 					break;
-					}
+
+		case 'P':	if (argc < optind+6) goto Fail;
+					err = RegisterProxyAddressRecord(&client2, argv[optind+4], argv[optind+5]);
+					if (err) break;
+					err = RegisterService(&client, argv[optind+0], argv[optind+1], argv[optind+2], argv[optind+4], argv[optind+3], argc-(optind+6), argv+(optind+6));
+					break;
 
 		case 'Q':	{
 					uint16_t rrtype, rrclass;
@@ -495,7 +530,8 @@ int main(int argc, char **argv)
 	HandleEvents();
 
 	// Be sure to deallocate the DNSServiceRef when you're finished
-	DNSServiceRefDeallocate(client);
+	if (client ) DNSServiceRefDeallocate(client );
+	if (client2) DNSServiceRefDeallocate(client2);
 	return 0;
 
 Fail:
@@ -504,6 +540,7 @@ Fail:
 	fprintf(stderr, "%s -B        <Type> <Domain>        (Browse for services instances)\n", progname);
 	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", progname);
 	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", progname);
+	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", progname);
 	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", progname);
 	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", progname);
 	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", progname);
