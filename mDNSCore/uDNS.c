@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.191  2005/02/14 18:26:51  ksekar
+<rdar://problem/4005569> mDNSResponder complains about bad LLQ Opcode 2
+
 Revision 1.190  2005/02/11 19:44:06  shersche
 Remove extra semicolon at end of line
 
@@ -2694,9 +2697,9 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 
     // find Opt RR, verify correct ID
 	if (!getLLQAtIndex(m, msg, end, &opt, 0))  { debugf("Pkt does not contain LLQ Opt");                                        return mDNSfalse; }
-	if (opt.llqOp != kLLQOp_Event)             { LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp);                         return mDNSfalse; }
 	if (!q->uDNS_info.llq)                     { LogMsg("Error: recvLLQEvent - question object does not contain LLQ metadata"); return mDNSfalse; }
 	if (!sameID(opt.id, q->uDNS_info.llq->id)) {                                                                                return mDNSfalse; }
+	if (opt.llqOp != kLLQOp_Event)             { LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp);                         return mDNSfalse; }
 
     // invoke response handler
 	m->uDNS_info.CurrentQuery = q;
