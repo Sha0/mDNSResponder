@@ -3091,7 +3091,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainname *const host, mDNSIPPort port, const char txtinfo[],
 	mDNSServiceCallback Callback, void *Context)
 	{
-	const mDNSs32 timenow;
+	mDNSs32 timenow;
 
 	sr->Callback = Callback;
 	sr->Context  = Context;
@@ -3121,7 +3121,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	else if (txtinfo != (char *)(sr->RR_TXT.rdata.txt.c))
 		{
 		if (mDNSPlatformStrLen(txtinfo) > 255) return(mStatus_BadParamErr);
-		mDNSPlatformStrCopy(txtinfo,(char *)(sr->RR_TXT.rdata.txt.c), 255);
+		mDNSPlatformStrCopy(txtinfo,(char *)(sr->RR_TXT.rdata.txt.c));
 		}
 
 	// Set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
