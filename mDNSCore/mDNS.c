@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.199  2003/07/03 23:51:13  cheshire
+<rdar://problem/3315652>:	Lots of "have given xxx answers" syslog warnings
+Added more detailed debugging information
+
 Revision 1.198  2003/07/03 22:19:30  cheshire
 <rdar://problem/3314346> Bug fix in 3274153 breaks TiVo
 Make exception to allow _tivo_servemedia._tcp.
@@ -5063,7 +5067,9 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 	else if (query->ServiceInfoQueryCallback && query->GotADD && query->GotTXT && PortChanged)
 		{
 		if (++query->Answers >= 100)
-			LogMsg("**** WARNING **** Have given %lu answers for %##s (SRV)", query->Answers, query->qSRV.qname.c);
+			LogMsg("**** WARNING **** Have given %lu answers for %##s (SRV) %##s %u",
+				query->Answers, query->qSRV.qname.c, answer->rdata->u.srv.target.c,
+				((mDNSu16)answer->rdata->u.srv.port.b[0] << 8) | answer->rdata->u.srv.port.b[1]);
 		query->ServiceInfoQueryCallback(m, query);
 		}
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
@@ -5088,7 +5094,8 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	if (query->ServiceInfoQueryCallback && query->GotADD)
 		{
 		if (++query->Answers >= 100)
-			LogMsg("**** WARNING **** have given %lu answers for %##s (TXT)", query->Answers, query->qSRV.qname.c);
+			LogMsg("**** WARNING **** have given %lu answers for %##s (TXT) %#s...",
+				query->Answers, query->qSRV.qname.c, answer->rdata->u.txt.c);
 		query->ServiceInfoQueryCallback(m, query);
 		}
 	}
@@ -5135,8 +5142,12 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	if (query->ServiceInfoQueryCallback && query->GotTXT)
 		{
 		if (++query->Answers >= 100)
-			LogMsg("**** WARNING **** have given %lu answers for %##s (%s)",
-				query->Answers, query->qSRV.qname.c, (answer->rrtype == kDNSType_A) ? "A" : "AAAA");
+			{
+			if (answer->rrtype == kDNSType_A)
+				LogMsg("**** WARNING **** have given %lu answers for %##s (A) %.4a",     query->Answers, query->qSRV.qname.c, &answer->rdata->u.ip);
+			else
+				LogMsg("**** WARNING **** have given %lu answers for %##s (AAAA) %.16a", query->Answers, query->qSRV.qname.c, &answer->rdata->u.ipv6);
+			}
 		query->ServiceInfoQueryCallback(m, query);
 		}
 	}
