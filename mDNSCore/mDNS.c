@@ -1070,12 +1070,11 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 		if (rr->RecordType & kDNSRecordTypeUniqueMask)			// If it is supposed to be unique
 			{
 			const ResourceRecord *a = mDNSNULL;
-			const ResourceRecord *b = rr->RRSet;
-			// If we find a member of the same set that hasn't been updated
-			// within the last quarter second, don't set the bit
-			if (rr->RRSet)
-				for (a = m->ResourceRecords; a; a=a->next)
-					if (a->RRSet == b && timenow - a->LastSendTime > mDNSPlatformOneSecond/4)
+			// If we find a member of the same RRSet (same name/type/class)
+			// that hasn't been updated within the last quarter second, don't set the bit
+			for (a = m->ResourceRecords; a; a=a->next)
+				if (SameResourceRecordSignatureAnyInterface(rr, a))
+					if (timenow - a->LastSendTime > mDNSPlatformOneSecond/4)
 						break;
 			if (a == mDNSNULL)
 				ptr[2] |= kDNSClass_UniqueRRSet >> 8;
@@ -1620,7 +1619,20 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 	DNSMessageHeader baseheader;
 	mDNSu8 *baselimit, *responseptr;
 	NetworkInterfaceInfo *intf;
-	
+	ResourceRecord *rr, *r2;
+
+	// Run through our list of records,
+	// and if there's a record which is supposed to be unique that we're proposing to give as an answer,
+	// then make sure that the whole RRSet with that name/type/class is also marked for answering.
+	// Otherwise, if we set the kDNSClass_UniqueRRSet bit on a record, then other RRSet members
+	// that have not been sent recently will get flushed out of client caches.
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->RecordType & kDNSRecordTypeUniqueMask)
+			if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
+				for (r2 = m->ResourceRecords; r2; r2=r2->next)
+					if (SameResourceRecordSignatureAnyInterface(rr, r2))
+						r2->SendPriority = kDNSSendPriorityAnswer;
+
 	// First build the generic part of the message
 	InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
 	baselimit = BuildResponse(m, &response, response.data, zeroIPAddr, timenow);
@@ -1769,7 +1781,7 @@ mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr
 			debugf("BuildQuestion retracting question %##s answerforecast %d", q->name.c, *answerforecast);
 			query->h.numQuestions--;
 			d = *dups_ptr;		// Go back to where we started and retract these answer records
-			while (*d) { ResourceRecord *rr = *d; *d = mDNSNULL; rr->UnansweredQueries--; d = &rr->NextDupSuppress; }
+			while (*d) { ResourceRecord *rr = *d; *d = mDNSNULL; d = &rr->NextDupSuppress; }
 			}
 		else
 			{
@@ -1968,9 +1980,30 @@ mDNSlocal void TriggerImmediateQuestions(mDNS *const m, const ResourceRecord *co
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr, const mDNSs32 timenow)
 	{
 	mDNSu32 timesincercvd = (mDNSu32)(timenow - rr->TimeRcvd);
-	debugf("AnswerQuestionWithResourceRecord for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 	if (rr->rroriginalttl <= timesincercvd / mDNSPlatformOneSecond) rr->rrremainingttl = 0;
 	else rr->rrremainingttl = rr->rroriginalttl - timesincercvd / mDNSPlatformOneSecond;
+
+#if DEBUGBREAKS
+	if (rr->rrremainingttl)
+		{
+		if (rr->rrtype == kDNSType_TXT)
+			debugf("AnswerQuestionWithResourceRecord Add %##s TXT %#.20s remaining ttl %d",
+				rr->name.c, rr->rdata->u.txt.c, rr->rrremainingttl);
+		else
+			debugf("AnswerQuestionWithResourceRecord Add %##s (%s) remaining ttl %d",
+				rr->name.c, DNSTypeName(rr->rrtype), rr->rrremainingttl);
+		}
+	else
+		{
+		if (rr->rrtype == kDNSType_TXT)
+			debugf("AnswerQuestionWithResourceRecord Del %##s TXT %#.20s UnansweredQueries %d",
+				rr->name.c, rr->rdata->u.txt.c, rr->UnansweredQueries);
+		else
+			debugf("AnswerQuestionWithResourceRecord Del %##s (%s) UnansweredQueries %d",
+				rr->name.c, DNSTypeName(rr->rrtype), rr->UnansweredQueries);
+		}
+#endif
+
 	rr->LastUsed = timenow;
 	rr->UseCount++;
 	if (q->Callback) q->Callback(m, q, rr);
@@ -3148,10 +3181,12 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	if (answer->rrtype != kDNSType_TXT) return;
 	if (answer->rdata->RDLength > sizeof(query->info->TXTinfo)) return;
 
-	query->GotTXT       = mDNStrue;
+	query->GotTXT       = 1 + (query->GotTXT || query->GotADD);
 	query->info->TXTlen = answer->rdata->RDLength;
 	mDNSPlatformMemCopy(answer->rdata->u.txt.c, query->info->TXTinfo, answer->rdata->RDLength);
-	
+
+	debugf("FoundServiceInfoTXT: %##s GotADD=%d", &query->info->name, query->GotADD);
+
 	if (query->Callback && query->GotADD)
 		query->Callback(m, query);
 	}
@@ -3161,12 +3196,25 @@ mDNSlocal void FoundServiceInfoADD(mDNS *const m, DNSQuestion *question, const R
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_A) return;
-	query->GotADD   = mDNStrue;
+	query->GotADD = mDNStrue;
 	query->info->InterfaceAddr = answer->InterfaceAddr;
 	query->info->ip            = answer->rdata->u.ip;
-	
+
+	debugf("FoundServiceInfoADD: %##s GotTXT=%d", &query->info->name, query->GotTXT);
+
 	if (query->Callback && query->GotTXT)
 		query->Callback(m, query);
+
+	// If query->GotTXT is 1 that means we already got a single TXT answer but didn't
+	// deliver it to the client at that time, so no further action is required.
+	// If query->GotTXT is 2 that means we either got more than one TXT answer,
+	// or we got a TXT answer and delivered it to the client at that time, so in either
+	// of these cases we may have lost information, so we should re-issue the TXT question.
+	if (query->GotTXT > 1)
+		{
+		mDNS_StopQuery_internal(m, &query->qTXT);
+		mDNS_StartQuery_internal(m, &query->qTXT, mDNSPlatformTimeNow());
+		}
 	}
 
 // On entry, the client must have set the name and InterfaceAddr fields of the ServiceInfo structure
@@ -3633,6 +3681,9 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, 
 	{
 	ExtraResourceRecord **e = &sr->Extras;
 	while (*e) e = &(*e)->next;
+
+	// If TTL is unspecified, make it 60 seconds, the same as the service's TXT and SRV default
+	if (ttl == 0) ttl = 60;
 
 	extra->next          = mDNSNULL;
  	mDNS_SetupResourceRecord(&extra->r, rdata, zeroIPAddr, extra->r.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
