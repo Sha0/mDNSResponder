@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.9  2004/06/27 15:49:31  shersche
+clean up some cruft in the printer browsing code
+
 Revision 1.8  2004/06/27 08:04:51  shersche
 copy selected printer to prevent printer being deleted out from under
 
@@ -215,8 +218,11 @@ CPrinterSetupWizardSheet::SetSelectedPrinter(Printer * printer)
 	require_action( m_selectedPrinter, exit, err = E_OUTOFMEMORY );
 
 	m_selectedPrinter->window		=	printer->window;
+	m_selectedPrinter->serviceRef	=	NULL;
+	m_selectedPrinter->item			=	NULL;
 	m_selectedPrinter->ifi			=	printer->ifi;
 	m_selectedPrinter->name			=	printer->name;
+	m_selectedPrinter->displayName	=	printer->displayName;
 	m_selectedPrinter->actualName	=	printer->actualName;
 	m_selectedPrinter->type			=	printer->type;
 	m_selectedPrinter->domain		=	printer->domain;
