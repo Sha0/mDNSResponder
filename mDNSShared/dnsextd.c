@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.28  2004/12/17 00:30:00  ksekar
+<rdar://problem/3924045> dnsextd memory leak
+
 Revision 1.27  2004/12/17 00:27:32  ksekar
 Ignore SIGPIPE
 
@@ -1417,8 +1420,9 @@ mDNSlocal void GenLLQEvents(DaemonInfo *d)
 				}
 			else
 				{
-				CacheRecord *answers = AnswerQuestion(d, e, sd);
+				CacheRecord *tmp, *answers = AnswerQuestion(d, e, sd);
 				UpdateAnswerList(d, e, answers);
+				while (answers) { tmp = answers; answers = answers->next; free(tmp); }				
 				e = e->next;
 				}
 			}		
