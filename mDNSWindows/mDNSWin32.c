@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.76  2005/02/23 02:59:20  shersche
+<rdar://problem/4013482> Check to see if locks have been initialized before using them.
+
 Revision 1.75  2005/02/16 02:36:25  shersche
 <rdar://problem/3830846> Use IPv6 if interface has no routable IPv4 address
 
@@ -766,9 +769,11 @@ exit:
 void	mDNSPlatformLock( const mDNS * const inMDNS )
 {
 	check( inMDNS );
-	check( inMDNS->p->lockInitialized );
 	
-	EnterCriticalSection( &inMDNS->p->lock );
+	if ( inMDNS->p->lockInitialized )
+	{
+		EnterCriticalSection( &inMDNS->p->lock );
+	}
 }
 
 //===========================================================================================================================
@@ -779,20 +784,23 @@ void	mDNSPlatformUnlock( const mDNS * const inMDNS )
 {
 	check( inMDNS );
 	check( inMDNS->p );
-	check( inMDNS->p->lockInitialized );
-	check( inMDNS->p->threadID );
-	
-	// Signal a wakeup event if when called from a task other than the mDNS task since if we are called from mDNS task, 
-	// we'll loop back and call mDNS_Execute anyway. Signaling is needed to re-evaluate the wakeup via mDNS_Execute.
-	
-	if( GetCurrentThreadId() != inMDNS->p->threadID )
+
+	if ( inMDNS->p->lockInitialized )
 	{
-		BOOL		wasSet;
+		check( inMDNS->p->threadID );
+	
+		// Signal a wakeup event if when called from a task other than the mDNS task since if we are called from mDNS task, 
+		// we'll loop back and call mDNS_Execute anyway. Signaling is needed to re-evaluate the wakeup via mDNS_Execute.
+	
+		if( GetCurrentThreadId() != inMDNS->p->threadID )
+		{
+			BOOL		wasSet;
 		
-		wasSet = SetEvent( inMDNS->p->wakeupEvent );
-		check_translated_errno( wasSet, GetLastError(), kUnknownErr );
+			wasSet = SetEvent( inMDNS->p->wakeupEvent );
+			check_translated_errno( wasSet, GetLastError(), kUnknownErr );
+		}
+		LeaveCriticalSection( &inMDNS->p->lock );
 	}
-	LeaveCriticalSection( &inMDNS->p->lock );
 }
 
 //===========================================================================================================================
