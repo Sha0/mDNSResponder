@@ -3119,7 +3119,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// 2. Set up the TXT record rdata.
 	if (txtinfo == mDNSNULL) sr->RR_TXT.rdata.txt.c[0] = 0;
 	else if (txtinfo != (char *)(sr->RR_TXT.rdata.txt.c))
-		mDNSPlatformStrCopy(txtinfo,(char *)(sr->RR_TXT.rdata.txt.c));
+		mDNSPlatformStrNCopy(txtinfo,(char *)(sr->RR_TXT.rdata.txt.c), 255);
 	// Set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 

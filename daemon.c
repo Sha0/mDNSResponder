@@ -189,6 +189,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	char buffer[256];
 	DNSServiceDomainEnumerationReplyResultType rt;
 	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->Context;
+	kern_return_t status;
 
 	debugf("FoundDomain: %##s PTR %##s", answer->name.c, answer->rdata.name.c);
 	if (answer->rrtype != kDNSType_PTR) return;
@@ -206,12 +207,19 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 
 	ConvertDomainNameToCString(&answer->rdata.name, buffer);
-	DNSServiceDomainEnumerationReply_rpc(x->port, rt, buffer, 0);
+	status = DNSServiceDomainEnumerationReply_rpc(x->port, rt, buffer, 0, 10);
+
+	if (status == MACH_SEND_TIMED_OUT)
+		{
+		}
+
 	}
 
 mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t server, mach_port_t client, int regDom)
 	{
 	mStatus err;
+	kern_return_t status;
+
 	mDNS_DomainType dt1 = regDom ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
 	mDNS_DomainType dt2 = regDom ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
 	DNSServiceDomainEnumeration *x = malloc(sizeof(*x));
@@ -222,7 +230,11 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	
 	debugf("Client %d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
 	// We always give local. as the initial default browse domain, and then look for more
-	DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0);
+	status = DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0, 10);
+	if (status == MACH_SEND_TIMED_OUT)
+		{
+		}
+
 	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, zeroIPAddr, FoundDomain, x);
 	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, zeroIPAddr, FoundDomain, x);
 	if (!err) EnableDeathNotificationForClient(client);
@@ -235,11 +247,13 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
+	kern_return_t status;
 	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
 	int resultType = DNSServiceBrowserReplyAddInstance;
 	domainlabel name;
 	domainname type, domain;
 	char c_name[256], c_type[256], c_dom[256];
+	
 	if (answer->rrtype != kDNSType_PTR) return;
 	debugf("FoundInstance: %##s", answer->rdata.name.c);
 	DeconstructServiceName(&answer->rdata.name, &name, &type, &domain);
@@ -248,7 +262,11 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	ConvertDomainNameToCString(&domain, c_dom);
 	if (answer->rrremainingttl == 0) resultType = DNSServiceBrowserReplyRemoveInstance;
 	debugf("DNSServiceBrowserReply_rpc sending reply for %s", c_name);
-	DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0);
+	status = DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0, 10);
+	if (status == MACH_SEND_TIMED_OUT)
+		{
+		}
+
 	}
 
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_t client,
@@ -283,6 +301,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
 	struct sockaddr_in interface;
 	struct sockaddr_in address;
+	kern_return_t status;
 
 	interface.sin_len         = sizeof(interface);
 	interface.sin_family      = AF_INET;
@@ -294,7 +313,10 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	address.sin_port          = query->info->port.NotAnInteger;
 	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
 	
-	DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0);
+	DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0, 10);
+	if (status == MACH_SEND_TIMED_OUT)
+		{
+		}
 	}
 
 mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_port_t client,
@@ -343,9 +365,28 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       sr->RR_SRV.name.c); break;
 		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
 		}
-	if (result == mStatus_NoError) DNSServiceRegistrationReply_rpc(port, result);
+	if (result == mStatus_NoError)
+		{
+		kern_return_t status = DNSServiceRegistrationReply_rpc(port, result, 10);
+
+		if (status == MACH_SEND_TIMED_OUT)
+			{
+			}
+		
+		}
 //	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr);
-	if (result == mStatus_NameConflict) { AbortClient(port); DNSServiceRegistrationReply_rpc(port, result); free(x); }
+	if (result == mStatus_NameConflict)
+		{
+		kern_return_t status;
+		AbortClient(port);
+		status = DNSServiceRegistrationReply_rpc(port, result, 10);
+
+		if (status == MACH_SEND_TIMED_OUT)
+			{
+			}
+		
+		free(x);
+		}
 	if (result == mStatus_MemFree) { debugf("Freeing DNSServiceRegistration %d", x->port); free(x); }
 	}
 

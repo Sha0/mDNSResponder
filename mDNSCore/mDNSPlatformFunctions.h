@@ -46,6 +46,7 @@ extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);
 
 extern void     mDNSPlatformStrCopy(const void *src,       void *dst);
+extern void     mDNSPlatformStrNCopy(const void *src,       void *dst,	int len);
 extern mDNSu32  mDNSPlatformStrLen (const void *src);
 extern void     mDNSPlatformMemCopy(const void *src,       void *dst, mDNSu32 len);
 extern mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, mDNSu32 len);

@@ -752,6 +752,7 @@ mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTim
 mDNSexport void    mDNSPlatformLock   (const mDNS *const m) { (void)m; }
 mDNSexport void    mDNSPlatformUnlock (const mDNS *const m) { (void)m; }
 mDNSexport void    mDNSPlatformStrCopy(const void *src,       void *dst)             { strcpy((char *)dst, (char *)src); }
+mDNSexport void    mDNSPlatformStrNCopy(const void *src,       void *dst, int len)             { strncpy((char *)dst, (char *)src, len); }
 mDNSexport UInt32  mDNSPlatformStrLen (const void *src)                              { return(strlen((char*)src)); }
 mDNSexport void    mDNSPlatformMemCopy(const void *src,       void *dst, UInt32 len) { memcpy(dst, src, len); }
 mDNSexport Boolean mDNSPlatformMemSame(const void *src, const void *dst, UInt32 len) { return(memcmp(dst, src, len) == 0); }
