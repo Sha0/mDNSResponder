@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.4  2005/02/16 00:18:33  cheshire
+Bunch o' fixes
+
 Revision 1.3  2005/02/10 22:35:20  cheshire
 <rdar://problem/3727944> Update name
 
@@ -354,16 +357,23 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 	origDict = (NSDictionary *)SCDynamicStoreCopyValue(store, SC_DYNDNS_SETUP_KEY);
 
 	regDomainArray = [origDict objectForKey:(NSString *)SC_DYNDNS_REGDOMAINS_KEY];
-	if ([regDomainArray count] > 0) currentRegDomain = [[[regDomainArray objectAtIndex:0] objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY] copy];
-    else                            currentRegDomain = [[NSString alloc] initWithString:@""];
+	if (regDomainArray && [regDomainArray count] > 0) {
+		currentRegDomain = [[[regDomainArray objectAtIndex:0] objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY] copy];
+		currentWideAreaState = [[[regDomainArray objectAtIndex:0] objectForKey:(NSString *)SC_DYNDNS_ENABLED_KEY] intValue];
+    } else {
+		currentRegDomain = [[NSString alloc] initWithString:@""];
+		currentWideAreaState = NO;
+	}
 
-    currentWideAreaState      = [[[regDomainArray objectAtIndex:0] objectForKey:(NSString *)SC_DYNDNS_ENABLED_KEY] intValue];
 	currentBrowseDomainsArray = [[origDict objectForKey:(NSString *)SC_DYNDNS_BROWSEDOMAINS_KEY] retain];
 
     hostArray = [origDict objectForKey:(NSString *)SC_DYNDNS_HOSTNAMES_KEY];
-	if ([hostArray count] > 0) currentHostName = [[[hostArray objectAtIndex:0] objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY] copy];
-	else                       currentHostName = [[NSString alloc] initWithString:@""];
-    
+	if (hostArray && [hostArray count] > 0) {
+		currentHostName = [[[hostArray objectAtIndex:0] objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY] copy];
+	} else {
+		currentHostName = [[NSString alloc] initWithString:@""];
+    }
+
     [origDict release];
     CFRelease(store);
 }
@@ -972,11 +982,15 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 - (NSData *)dataForDomain:(NSString *)domainName isEnabled:(BOOL)enabled
 {
 	NSMutableArray      *domainsArray; 
-	NSMutableDictionary *domainDict = [[[NSMutableDictionary alloc] initWithCapacity:2] autorelease];	
-	[domainDict setObject:domainName forKey:(NSString *)SC_DYNDNS_DOMAIN_KEY];
-	[domainDict setObject:[[[NSNumber alloc] initWithBool:enabled] autorelease] forKey:(NSString *)SC_DYNDNS_ENABLED_KEY];
+	NSMutableDictionary *domainDict = nil;
+	
+	if (domainName && [domainName length] > 0) {
+		domainDict= [[[NSMutableDictionary alloc] initWithCapacity:2] autorelease];
+		[domainDict setObject:domainName forKey:(NSString *)SC_DYNDNS_DOMAIN_KEY];
+		[domainDict setObject:[[[NSNumber alloc] initWithBool:enabled] autorelease] forKey:(NSString *)SC_DYNDNS_ENABLED_KEY];
+	}
 	domainsArray = [[[NSMutableArray alloc] initWithCapacity:1] autorelease];
-	[domainsArray addObject:domainDict];
+	if (domainDict) [domainsArray addObject:domainDict];
 	return [NSArchiver archivedDataWithRootObject:domainsArray];
 }
 
@@ -1041,41 +1055,45 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     // Save hostname.
     if ((currentHostName == NULL) || [currentHostName compare:hostNameString] != NSOrderedSame) {
 		err = WriteHostname((CFDataRef)[self dataForDomain:hostNameString isEnabled:YES]);
-        if (err == noErr) currentHostName = [hostNameString copy];
+		if (err != noErr) NSLog(@"WriteHostname returned %d\n", err);
+        currentHostName = [hostNameString copy];
     } else if (hostSecretWasSet) {
 		WriteHostname((CFDataRef)[self dataForDomain:@"" isEnabled:NO]);
+		usleep(200000);  // Temporary hack
         if ([currentHostName length] > 0) WriteHostname((CFDataRef)[self dataForDomain:(NSString *)currentHostName isEnabled:YES]);
-		//WriteRegistrationDomain((CFDataRef)[self dataForDomain:@"" isEnabled:NO]);
-        //if ([currentRegDomain length] > 0) WriteRegistrationDomain((CFDataRef)[self dataForDomain:currentRegDomain isEnabled:currentWideAreaState]);
     }
     
     // Save browse domain.
 	if (browseDomainsArray && [browseDomainsArray isEqualToArray:currentBrowseDomainsArray] == NO) {
 		browseDomainData = [self dataForDomainArray:browseDomainsArray];
 		err = WriteBrowseDomain((CFDataRef)browseDomainData);
+		if (err != noErr) NSLog(@"WriteBrowseDomain returned %d\n", err);
 		currentBrowseDomainsArray = [browseDomainsArray copy];
     }
 	
     // Save registration domain.
     if ((currentRegDomain == NULL) || ([currentRegDomain compare:regDomainString] != NSOrderedSame) || (currentWideAreaState != [wideAreaCheckBox state])) {
 
-        currentWideAreaState = [wideAreaCheckBox state];
-		err = WriteRegistrationDomain((CFDataRef)[self dataForDomain:regDomainString isEnabled:currentWideAreaState]);
+		err = WriteRegistrationDomain((CFDataRef)[self dataForDomain:regDomainString isEnabled:[wideAreaCheckBox state]]);
+		if (err != noErr) NSLog(@"WriteRegistrationDomain returned %d\n", err);
         
-        if (currentRegDomain) CFRelease(currentRegDomain);
+		if (currentRegDomain) CFRelease(currentRegDomain);
         currentRegDomain = [regDomainString copy];
 
         if ([currentRegDomain length] > 0) {
+			currentWideAreaState = [wideAreaCheckBox state];
             [registrationDataSource removeObject:regDomainString];
             [registrationDataSource addObject:currentRegDomain];
             [registrationDataSource sortUsingFunction:MyArrayCompareFunction context:nil];
             [regDomainsComboBox reloadData];
-        }
+        } else {
+			currentWideAreaState = NO;
+			[self toggleWideAreaBonjour:NO];
+		}
     } else if (regSecretWasSet) {
         WriteRegistrationDomain((CFDataRef)[self dataForDomain:@"" isEnabled:NO]);
+		usleep(200000);  // Temporary hack
         if ([currentRegDomain length] > 0) WriteRegistrationDomain((CFDataRef)[self dataForDomain:currentRegDomain isEnabled:currentWideAreaState]);
-		//WriteHostname((CFDataRef)[self dataForDomain:@"" isEnabled:NO]);
-        //if ([currentHostName length] > 0) WriteHostname((CFDataRef)[self dataForDomain:(NSString *)currentHostName isEnabled:YES]);
     }
 }   
 
