@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.64  2002/11/26 20:49:06  cheshire
+Bug #: 3104543 RFC 1123 allows the first character of a name label to be either a letter or a digit
+
 Revision 1.63  2002/09/21 20:44:49  zarzycki
 Added APSL info
 
@@ -622,8 +625,6 @@ mDNSexport void AppendStringNameToName(domainname *const name, const char *cstr)
 
 #define mdnsIsLetter(X) (((X) >= 'A' && (X) <= 'Z') || ((X) >= 'a' && (X) <= 'z'))
 #define mdnsIsDigit(X) (((X) >= '0' && (X) <= '9'))
-#define mdnsValidHostChar(X, notfirst, notlast) (mdnsIsLetter(X) || \
-	((notfirst) && (mdnsIsDigit(X) || ((notlast) && (X) == '-'))) )
 
 mDNSexport void ConvertCStringToDomainLabel(const char *src, domainlabel *label)
 	{
@@ -750,6 +751,8 @@ mDNSexport char *ConvertDomainNameToCString_withescape(const domainname *const n
 // RFC 1034 rules:
 // Host names must start with a letter, end with a letter or digit,
 // and have as interior characters only letters, digits, and hyphen.
+// This was subsequently modified in RFC 1123 to allow the first character to be either a letter or a digit
+#define mdnsValidHostChar(X, notfirst, notlast) (mdnsIsLetter(X) || mdnsIsDigit(X) || ((notfirst) && (notlast) && (X) == '-') )
 
 mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], domainlabel *const hostlabel)
 	{
