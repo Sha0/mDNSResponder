@@ -23,6 +23,14 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.107  2003/08/19 06:48:25  cheshire
+<rdar://problem/3376552> Guard against excessive record updates
+Each record starts with 10 UpdateCredits.
+Every update consumes one UpdateCredit.
+UpdateCredits are replenished at a rate of one one per minute, up to a maximum of 10.
+As the number of UpdateCredits declines, the number of announcements is similarly scaled back.
+When fewer than 5 UpdateCredits remain, the first announcement is also delayed by an increasing amount.
+
 Revision 1.106  2003/08/19 04:49:28  cheshire
 <rdar://problem/3368159> Interaction between v4, v6 and dual-stack hosts not working quite right
 1. A dual-stack host should only suppress its own query if it sees the same query from other hosts on BOTH IPv4 and IPv6.
@@ -711,6 +719,9 @@ struct AuthRecord_struct
 	RData          *NewRData;			// Set if we are updating this record with new rdata
 	mDNSu16         newrdlength;		// ... and the length of the new RData
 	mDNSRecordUpdateCallback *UpdateCallback;
+	mDNSu32         UpdateCredits;		// Token-bucket rate limiting of excessive updates
+	mDNSs32         NextUpdateCredit;	// Time next token is added to bucket
+	mDNSs32         UpdateBlocked;		// Set if update delaying is in effect
 
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
 	// rdatastorage MUST be the last thing in the structure -- when using oversized AuthRecords, extra bytes
@@ -795,13 +806,13 @@ struct ServiceRecordSet_struct
 	void                *ServiceContext;
 	ExtraResourceRecord *Extras;	// Optional list of extra AuthRecords attached to this service registration
 	mDNSu32              NumSubTypes;
-	AuthRecord      *SubTypes;
+	AuthRecord          *SubTypes;
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           Host;		// Set if this service record does not use the standard target host name
-	AuthRecord       RR_ADV;	// e.g. _services._mdns._udp.local. PTR _printer._tcp.local.
-	AuthRecord       RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
-	AuthRecord       RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target
-	AuthRecord       RR_TXT;	// e.g. Name._printer._tcp.local.   TXT PrintQueueName
+	AuthRecord           RR_ADV;	// e.g. _services._mdns._udp.local. PTR _printer._tcp.local.
+	AuthRecord           RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
+	AuthRecord           RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target
+	AuthRecord           RR_TXT;	// e.g. Name._printer._tcp.local.   TXT PrintQueueName
 	// Don't add any fields after AuthRecord RR_TXT.
 	// This is where the implicit extra space goes if we allocate a ServiceRecordSet containing an oversized RR_TXT record
 	};

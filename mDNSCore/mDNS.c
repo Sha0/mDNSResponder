@@ -44,6 +44,14 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.282  2003/08/19 06:48:25  cheshire
+<rdar://problem/3376552> Guard against excessive record updates
+Each record starts with 10 UpdateCredits.
+Every update consumes one UpdateCredit.
+UpdateCredits are replenished at a rate of one one per minute, up to a maximum of 10.
+As the number of UpdateCredits declines, the number of announcements is similarly scaled back.
+When fewer than 5 UpdateCredits remain, the first announcement is also delayed by an increasing amount.
+
 Revision 1.281  2003/08/19 04:49:28  cheshire
 <rdar://problem/3368159> Interaction between v4, v6 and dual-stack hosts not working quite right
 1. A dual-stack host should only suppress its own query if it sees the same query from other hosts on BOTH IPv4 and IPv6.
@@ -986,6 +994,8 @@ static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_
 
 #define kDefaultTTLforUnique 240
 #define kDefaultTTLforShared (2*3600)
+
+#define kMaxUpdateCredits 10
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
@@ -2326,6 +2336,9 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NewRData          = mDNSNULL;
 	rr->newrdlength       = 0;
 	rr->UpdateCallback    = mDNSNULL;
+	rr->UpdateCredits     = kMaxUpdateCredits;
+	rr->NextUpdateCredit  = 0;
+	rr->UpdateBlocked     = 0;
 
 //	rr->resrec.interface         = already set in mDNS_SetupResourceRecord
 //	rr->resrec.name.c            = MUST be set by client
@@ -3157,12 +3170,20 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 	// Run through our list of records, and decide which ones we're going to announce on all interfaces
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
+		if (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0)
+			{
+			if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0; 
+			else rr->NextUpdateCredit = (m->timenow + mDNSPlatformOneSecond * 60) | 1;
+			}
 		if (TimeToAnnounceThisRecord(rr, m->timenow) && ResourceRecordIsValidAnswer(rr))
 			{
 			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
 			if (maxExistingAnnounceInterval < rr->ThisAPInterval)
 				maxExistingAnnounceInterval = rr->ThisAPInterval;
+			if (rr->UpdateBlocked) rr->UpdateBlocked = 0;
 			}
+		}
 
 	// Any interface-specific records we're going to send are marked as being sent on all appropriate interfaces (which is just one)
 	// Eligible records that are more than half-way to their announcement time are accelerated
@@ -5929,12 +5950,23 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	
 	if (rr->AnnounceCount < ReannounceCount)
 		rr->AnnounceCount = ReannounceCount;
-	rr->ThisAPInterval   = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
+	rr->ThisAPInterval       = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 	InitializeLastAPTime(m, rr);
-	rr->NewRData         = newrdata;
-	rr->newrdlength      = newrdlength;
-	rr->UpdateCallback   = Callback;
-	rr->resrec.rroriginalttl    = newttl;
+	rr->NewRData             = newrdata;
+	rr->newrdlength          = newrdlength;
+	rr->UpdateCallback       = Callback;
+	if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
+	if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + mDNSPlatformOneSecond * 60) | 1;
+	if (rr->AnnounceCount > rr->UpdateCredits+1) rr->AnnounceCount = rr->UpdateCredits+1;
+	if (rr->UpdateCredits <= 5)
+		{
+		mDNSs32 delay = 1 << (5 - rr->UpdateCredits);
+		if (!rr->UpdateBlocked) rr->UpdateBlocked = (m->timenow + delay * mDNSPlatformOneSecond) | 1;
+		rr->LastAPTime = rr->UpdateBlocked;
+		rr->ThisAPInterval *= 4;
+		LogMsg("Excessive update rate for %##s; delaying announcement by %d seconds", rr->resrec.name.c, delay);
+		}
+	rr->resrec.rroriginalttl = newttl;
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
 	}
