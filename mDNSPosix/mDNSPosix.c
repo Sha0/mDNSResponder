@@ -36,6 +36,12 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.45  2004/05/12 22:03:09  ksekar
+Made GetSearchDomainList a true platform-layer call (declaration moved
+from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+only on non-OSX platforms.  Changed call to return a copy of the list
+to avoid shared memory issues.  Added a routine to free the list.
+
 Revision 1.44  2004/04/21 02:49:11  cheshire
 To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
 
@@ -476,6 +482,34 @@ mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
 	(void)len;			// Unused
 	return(0);
 	}
+
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark ***** Get/Free Search Domain List
+#endif
+
+mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
+	{
+	DNameListElem *new;
+
+	new = mallocL("GetSearchDomainList", sizeof(DNameListElem));
+	if (!new) { LogMsg("ERROR: malloc"); return NULL; }
+	MakeDomainNameFromDNSNameString(&new->name, "local");
+	new->next = NULL;
+	return new;
+	}
+
+mDNSexport void mDNSPlatformFreeSearchDomainList(DNameListElem *list)
+	{
+	DNameListElem *fptr;
+
+	while (list)
+		{
+		fptr = list;
+		list = list->next;
+		freeL("FreeSearchDomainList", fptr);
+		}
+	}
+
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Init and Term

@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.168  2004/05/12 22:03:09  ksekar
+Made GetSearchDomainList a true platform-layer call (declaration moved
+from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+only on non-OSX platforms.  Changed call to return a copy of the list
+to avoid shared memory issues.  Added a routine to free the list.
+
 Revision 1.167  2004/04/22 04:07:01  cheshire
 Fix from Bob Bradley: Don't try to do inline functions on compilers that don't support it
 
@@ -1792,7 +1798,7 @@ extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 
-// Every platform support module must provide the following functions if it is to support unicats DNS
+// Every platform support module must provide the following functions if it is to support unicast DNS
 // and Dynamic Update.
 // All TCP socket operations implemented by the platform layer MUST NOT BLOCK.
 // mDNSPlatformTCPConnect initiates a TCP connection with a peer, adding the socket descriptor to the
@@ -1807,7 +1813,7 @@ extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mD
 // return the number of bytes read/written, 0 if the call would block, and -1 if an error.
 // PlatformTCPCloseConnection must close the connection to the peer and remove the descriptor from the
 // event loop.  CloseConnectin may be called at any time, including in a ConnectionCallback.
-	
+
 typedef void (*TCPConnectionCallback)(int sd, void *context, mDNSBool ConnectionEstablished);
 extern mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
 										  TCPConnectionCallback callback, void *context, int *descriptor);
@@ -1815,6 +1821,19 @@ extern void mDNSPlatformTCPCloseConnection(int sd);
 extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
 extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 
+// Platforms supporting unicast browsing must implement this function for the daemon layer to get the list of
+// domains to browse in by default, e.g. when the application client does not specify a domain.  The function
+// returns a copy of the list which may be deallocated via the FreeSearchDomainList call.
+
+typedef struct DNameListElem
+	{
+    domainname name;
+    struct DNameListElem *next;
+    } DNameListElem;
+
+extern	DNameListElem *mDNSPlatformGetSearchDomainList(void);	
+extern void mDNSPlatformFreeSearchDomainList(DNameListElem *list);
+	
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())

@@ -23,6 +23,12 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.36  2004/05/12 22:03:09  ksekar
+Made GetSearchDomainList a true platform-layer call (declaration moved
+from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+only on non-OSX platforms.  Changed call to return a copy of the list
+to avoid shared memory issues.  Added a routine to free the list.
+
 Revision 1.35  2004/04/21 02:49:12  cheshire
 To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
 
@@ -154,7 +160,7 @@ Multicast DNS platform plugin for Win32
 	- Get unicode name of machine for nice name instead of just the host name.
 	- Use the IPv6 Internet Connection Firewall API to allow IPv6 mDNS without manually changing the firewall.
 	- Get DNS server address(es) from Windows and provide them to the uDNS layer.
-	- Implement TCP support for truncated packets (only stubs now).
+	- Implement TCP support for truncated packets (only stubs now).	
 */
 
 #include	<stdarg.h>
@@ -813,6 +819,39 @@ int	mDNSPlatformWriteTCP( int inSock, const char *inMsg, int inMsgSize )
 	
 	return( -1 );
 }
+
+
+//===========================================================================================================================
+//	mDNSPlatformGet/FreeSearchDomainList
+//===========================================================================================================================
+
+
+mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
+	{
+	DNameListElem *new;
+
+	new = (DNameListElem *)mallocL("GetSearchDomainList", sizeof(DNameListElem));
+	if (!new) { LogMsg("ERROR: malloc"); return NULL; }
+	MakeDomainNameFromDNSNameString(&new->name, "local");
+	new->next = NULL;
+	return new;
+	}
+
+mDNSexport void mDNSPlatformFreeSearchDomainList(DNameListElem *list)
+	{
+	DNameListElem *fptr;
+
+	while (list)
+		{
+		fptr = list;
+		list = list->next;
+		freeL("FreeSearchDomainList", fptr);
+		}
+	}
+
+
+
+
 
 #if 0
 #pragma mark -

@@ -36,6 +36,12 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.164  2004/05/12 22:03:08  ksekar
+Made GetSearchDomainList a true platform-layer call (declaration moved
+from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+only on non-OSX platforms.  Changed call to return a copy of the list
+to avoid shared memory issues.  Added a routine to free the list.
+
 Revision 1.163  2004/05/12 02:03:25  ksekar
 Non-local domains will only be browsed by default, and show up in
 _browse domain enumeration, if they contain an _browse._dns-sd ptr record.
@@ -808,7 +814,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	(void)unusedserver;		// Unused
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
-	const DNameListElem *SearchDomains = NULL, *sdPtr;
+	DNameListElem *SearchDomains = NULL, *sdPtr;
 	DNSServiceBrowserQuestion *qptr;
 	
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
@@ -845,7 +851,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	else
 		{
 		// Start browser on all domains
-		SearchDomains = GetSearchDomainList();
+		SearchDomains = mDNSPlatformGetSearchDomainList();
 		if (!SearchDomains) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
 		for (sdPtr = SearchDomains; sdPtr; sdPtr = sdPtr->next)
 			{
@@ -860,12 +866,14 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		}
 	// Succeeded: Wrap up and return
 	EnableDeathNotificationForClient(client, x);
+	mDNSPlatformFreeSearchDomainList(SearchDomains);
 	return(mStatus_NoError);
 	
 	badparam:
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
+	if (SearchDomains) mDNSPlatformFreeSearchDomainList(SearchDomains);
 	return(err);
 	}
 

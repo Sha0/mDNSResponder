@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.148  2004/05/12 22:03:08  ksekar
+Made GetSearchDomainList a true platform-layer call (declaration moved
+from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+only on non-OSX platforms.  Changed call to return a copy of the list
+to avoid shared memory issues.  Added a routine to free the list.
+
 Revision 1.147  2004/05/12 02:03:25  ksekar
 Non-local domains will only be browsed by default, and show up in
 _browse domain enumeration, if they contain an _browse._dns-sd ptr record.
@@ -1518,6 +1524,7 @@ mDNSlocal void FoundBrowseDomain(mDNS *const m, DNSQuestion *question, const Res
 	SearchListElem *slElem = question->QuestionContext;
 	AuthRecordListElem *arElem, *ptr, *prev;
 	mStatus err;
+
 	if (AddRecord)
 		{
 		arElem = mallocL("FoundBrowseDomain - arElem", sizeof(AuthRecordListElem));
@@ -1538,6 +1545,7 @@ mDNSlocal void FoundBrowseDomain(mDNS *const m, DNSQuestion *question, const Res
 			{
 			if (SameDomainName(&ptr->ar.resrec.name, &answer->name) && SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
 				{
+				debugf("Deregistering PTR %s -> %s", ptr->ar.resrec.name.c, ptr->ar.resrec.rdata->u.name.c);
 				err = mDNS_Deregister(m, &ptr->ar);				
 				if (err) LogMsg("ERROR: FoundBrowseDomain - mDNS_Deregister returned %d", err);
 				if (prev) prev->next = ptr->next;
@@ -1616,6 +1624,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			ptr->AuthRecs = NULL;
 			while (arList)
 				{
+				debugf("Deregistering PTR %s -> %s", arList->ar.resrec.name.c, arList->ar.resrec.rdata->u.name.c);
 				err = mDNS_Deregister(m, &arList->ar);
 				if (err) LogMsg("ERROR: RegisterSearchDomains - mDNS_Deregister returned %d", err);
 				arList = arList->next;
@@ -1939,11 +1948,32 @@ mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	fclose(f);
 	}
 
-mDNSexport const DNameListElem *GetSearchDomainList(void)
+mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
 	{
-	return DefBrowseList;
+	DNameListElem *copy = NULL, *ptr, *new;
+
+	for (ptr = DefBrowseList; ptr; ptr = ptr->next)
+		{
+		new = mallocL("mDNSPlatformGetSearchDomainList", sizeof(DNameListElem));
+		if (!new) { LogMsg("ERROR: malloc"); return NULL; }
+		strcpy(new->name.c, ptr->name.c);
+		new->next = copy;
+		copy = new;
+		}
+	return copy;
 	}
 
+mDNSexport void mDNSPlatformFreeSearchDomainList(DNameListElem *list)
+	{
+	DNameListElem *fptr;
+
+	while (list)
+		{
+		fptr = list;
+		list = list->next;
+		freeL("mDNSPlatformFreeSearchDomainList", fptr);
+		}
+	}
 
 
 mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -1951,6 +1981,7 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 	DNameListElem *ptr, *prev, *new;
 	(void)m; // unused;
 	(void)question;  // unused
+
 	if (AddRecord)
 		{
 		new = mallocL("FoundDefBrowseDomain", sizeof(DNameListElem));
@@ -1975,6 +2006,7 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 				}
 			else ptr = ptr->next;
 			}
+		LogMsg("FoundDefBrowseDomain: Got remove event for domain %s not in list", answer->rdata->u.name.c);
 		}    
 	}
 

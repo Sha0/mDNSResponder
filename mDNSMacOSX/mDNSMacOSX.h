@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.34  2004/05/12 22:03:09  ksekar
+Made GetSearchDomainList a true platform-layer call (declaration moved
+from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+only on non-OSX platforms.  Changed call to return a copy of the list
+to avoid shared memory issues.  Added a routine to free the list.
+
 Revision 1.33  2004/05/12 02:03:25  ksekar
 Non-local domains will only be browsed by default, and show up in
 _browse domain enumeration, if they contain an _browse._dns-sd ptr record.
@@ -194,18 +200,6 @@ struct mDNS_PlatformSupport_struct
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
-
-typedef struct DNameListElem
-	{
-    domainname name;
-    struct DNameListElem *next;
-    } DNameListElem;
-
-// get the list of domains to browse by default.  this list should NOT be retained across callbacks,
-//as it may be invalidated.	
-extern const DNameListElem *GetSearchDomainList(void);
-
-
 	
 #ifdef  __cplusplus
     }
