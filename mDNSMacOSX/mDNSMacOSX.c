@@ -22,9 +22,13 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.75  2003/05/22 00:07:09  cheshire
+<rdar://problem/3264366> myCFSocketCallBack recvfrom(5) error 1, errno 35
+Extra logging to determine whether there is a bug in CFSocket
+
 Revision 1.74  2003/05/21 20:20:12  cheshire
 Fix warnings (mainly printf format string warnings, like using "%d" where
-it should say "%lu", etc.) and improve error logging (use strerror()
+it should say "%lud", etc.) and improve error logging (use strerror()
 to include textual error message as well as numeric error in log messages).
 
 Revision 1.73  2003/05/21 17:56:29  ksekar
@@ -489,8 +493,22 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		
 		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, info->ifinfo.InterfaceID);
 		}
+
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
-		LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s)", s1, err, errno, strerror(errno));
+		{
+		// Something is busted here.
+		// CFSocket says there is a packet, but myrecvfrom says there is not.
+		// Try calling select() to get another opinion.
+		fd_set readfds;
+		FD_ZERO(&readfds);
+		FD_SET(s1, &readfds);
+		struct timeval timeout;
+		timeout.tv_sec  = 0;
+		timeout.tv_usec = 0;
+		int selectresult = select(s1+1, &readfds, NULL, NULL, &timeout);
+		LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) selectresult %d (There are %spackets waiting)",
+			s1, err, errno, strerror(errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ");
+		}
 	}
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
