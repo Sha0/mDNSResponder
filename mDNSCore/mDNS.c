@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.190  2003/06/27 00:03:05  vlubet
+<rdar://problem/3304625> Merge of build failure fix for gcc 3.3
+
 Revision 1.189  2003/06/11 19:24:03  cheshire
 <rdar://problem/3287141> Crash in SendQueries/SendResponses when no active interfaces
 Slight refinement to previous checkin
@@ -686,10 +689,10 @@ static const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_
 static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
 #define zeroDomainNamePtr ((domainname*)"")
 
-static const mDNSOpaque16 zeroID = { { 0, 0 } };
 #ifdef mDNSResponderVersion
 static const mDNSOpaque16 mDNS_MessageID = { { mDNSResponderVersion >> 8, mDNSResponderVersion & 0xFF } };
 #else
+static const mDNSOpaque16 zeroID = { { 0, 0 } };
 #define mDNS_MessageID zeroID
 #endif
 
