@@ -5,6 +5,28 @@
 	};
 	objectVersion = 36;
 	objects = {
+		00CA213D02786FC30CCA2C71 = {
+			isa = PBXFrameworkReference;
+			name = IOKit.framework;
+			path = /System/Library/Frameworks/IOKit.framework;
+			refType = 0;
+		};
+		00CA234E02786FC30CCA2C71 = {
+			fileRef = 00CA213D02786FC30CCA2C71;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+//000
+//001
+//002
+//003
+//004
+//010
+//011
+//012
+//013
+//014
 		014CEA490018CE3211CA2923 = {
 			buildRules = (
 			);
@@ -91,6 +113,7 @@
 			children = (
 				09AB6884FE841BABC02AAC07,
 				65713D46025A293200000109,
+				00CA213D02786FC30CCA2C71,
 			);
 			isa = PBXGroup;
 			name = "External Frameworks and Libraries";
@@ -149,6 +172,7 @@
 			files = (
 				09AB6885FE841BABC02AAC07,
 				65713D66025A293200000109,
+				00CA234E02786FC30CCA2C71,
 			);
 			isa = PBXFrameworksBuildPhase;
 		};
