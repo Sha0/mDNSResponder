@@ -35,6 +35,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.20  2003/08/05 23:56:26  cheshire
+Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+(Right now mDNSPosix.c just reports 255 -- we should fix this)
+
 Revision 1.19  2003/07/19 03:15:16  cheshire
 Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
 and add the obvious trivial implementations to each platform support layer
@@ -377,7 +381,7 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 
 	if (packetLen >= 0)
 		mDNSCoreReceive(m, &packet, (mDNSu8 *)&packet + packetLen,
-			&senderAddr, senderPort, &destAddr, MulticastDNSPort, intf->coreIntf.InterfaceID);
+			&senderAddr, senderPort, &destAddr, MulticastDNSPort, intf->coreIntf.InterfaceID, 255);
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK

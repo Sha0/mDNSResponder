@@ -33,6 +33,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: Identify.c,v $
+ * Revision 1.5  2003/08/05 23:56:26  cheshire
+ * Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+ * (Right now mDNSPosix.c just reports 255 -- we should fix this)
+ *
  * Revision 1.4  2003/08/04 17:24:48  cheshire
  * Combine the three separate A/AAAA/HINFO queries into a single qtype "ANY" query
  *
@@ -108,11 +112,11 @@ mDNSlocal mDNSu32 mprintf(const char *format, ...)
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
-	const mDNSInterfaceID InterfaceID)
+	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	// Snag copy of header ID, then call through
 	lastid = msg->h.id;
-	__MDNS__mDNSCoreReceive(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
+	__MDNS__mDNSCoreReceive(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
 	}
 
 static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)

@@ -33,6 +33,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.30  2003/08/05 23:56:26  cheshire
+ * Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+ * (Right now mDNSPosix.c just reports 255 -- we should fix this)
+ *
  * Revision 1.29  2003/08/05 00:43:12  cheshire
  * Report errors encountered while processing authority section
  *
@@ -548,26 +552,38 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, const mDNSInterfaceID InterfaceID)
+	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
+	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
+
 	(void)dstaddr;	// Unused
 	(void)dstport;	// Unused
+	
+	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
+	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
+	msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+	msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
+	msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
+	msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
+	
+	if (ttl < 254)
+		{
+		debugf("** Apparent spoof mDNS %s packet from %#-15a to %#-15a TTL %d on %p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		(QR_OP == StdQ) ? "Query" : (QR_OP == StdR) ? "Response" : "Unkown",
+		srcaddr, dstaddr, ttl, InterfaceID,
+		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
+		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
+		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		}
+	
 	// For now we're only interested in monitoring IPv4 traffic.
 	// All IPv6 packets should just be duplicates of the v4 packets.
 	if (srcaddr->type == mDNSAddrType_IPv4)
 		if (FilterAddr.type == 0 || FilterAddr.ip.v4.NotAnInteger == srcaddr->ip.v4.NotAnInteger)
 			{
-			const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
-			const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
-			const mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
-			
-			// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
-			mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
-			msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
-			msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
-			msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
-			msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
-			
 			mDNS_Lock(m);
 			if      (QR_OP == StdQ) DisplayQuery   (m, msg, end, srcaddr, srcport, InterfaceID);
 			else if (QR_OP == StdR) DisplayResponse(m, msg, end, srcaddr, srcport, InterfaceID);
