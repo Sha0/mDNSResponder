@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.37  2003/03/14 21:34:11  cheshire
+<rdar://problem/3176950> Can't setup and print to Lexmark PS printers via Airport Extreme
+Increase size of cache rdata from 512 to 768
+
 Revision 1.36  2003/03/05 03:38:35  cheshire
 Bug #: 3185731 Bogus error message in console: died or deallocated, but no record of client can be found!
 Fixed by leaving client in list after conflict, until client explicitly deallocates
@@ -339,7 +343,7 @@ typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname t
 
 typedef union
 	{
-	mDNSu8     data[512];	// Generic untyped data (temporarily set 512 for the benefit of iChat)
+	mDNSu8     data[768];	// Generic untyped data (temporarily set 768 for the benefit of Airport Extreme printing)
 	mDNSIPAddr ip;			// For 'A' record
 	mDNSv6Addr ipv6;		// For 'AAAA' record
 	domainname name;		// For PTR and CNAME records
