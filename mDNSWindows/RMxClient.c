@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: RMxClient.c,v $
+Revision 1.2  2004/04/09 21:03:14  bradley
+Changed port numbers to use network byte order for consistency with other platforms.
+
 Revision 1.1  2004/01/30 02:35:13  bradley
 Rendezvous Message Exchange implementation for DNS-SD IPC on Windows.
 
@@ -600,8 +603,8 @@ DNSServiceErrorType
 	obj = NULL;
 	dlog( kDebugLevelTrace, "\n" DEBUG_NAME 
 		"Resolve flags=0x%08X, ifi=%d, name=\"%s\", type=\"%s\", domain=\"%s\", host=\"%s\", port=%d, txtSize=%d\n", 
-		inFlags, inInterfaceIndex, inName ? inName : "<default>", inType, inDomain ? inDomain : "<default>", inHost, inPort, 
-		inTXTSize );
+		inFlags, inInterfaceIndex, inName ? inName : "<default>", inType, inDomain ? inDomain : "<default>", inHost, 
+		ntohs( inPort ), inTXTSize );
 	require_action( outRef, exit, err = kDNSServiceErr_BadReference );
 	require_action( ( inFlags == 0 ) || ( inFlags == kDNSServiceFlagsNoAutoRename ), exit, err = kDNSServiceErr_BadFlags );
 	require_action( inType, exit, err = kDNSServiceErr_BadParam );
@@ -980,13 +983,13 @@ DEBUG_LOCAL void	DNSServiceResolveReply_client( RMxMessage *inMessage )
 		{
 			dlog( kDebugLevelTrace, DEBUG_NAME
 				"Resolve reply flags=0x%08X, ifi=%d, err=%d, name=\"%s\", host=\"%s\", addr=%.*a, port=%d, txtSize=%d\n", 
-				flags, interfaceIndex, errorCode, name, host, (int) addrSize, addrPtr, port, (int) txtSize );
+				flags, interfaceIndex, errorCode, name, host, (int) addrSize, addrPtr, ntohs( port ), (int) txtSize );
 			
 			if( obj->u.resolve.flags & kDNSServiceFlagsResolveAddress )
 			{
 				struct sockaddr_storage		addr;
 				
-				AddrDataToSockAddr( addrPtr, addrSize, port, interfaceIndex, (struct sockaddr *) &addr );
+				AddrDataToSockAddr( addrPtr, addrSize, ntohs( port ), interfaceIndex, (struct sockaddr *) &addr );
 				obj->u.resolve.u.addressCallBack( obj, flags, interfaceIndex, errorCode, name, host, 
 					(struct sockaddr *) &addr, port, (uint16_t) txtSize, txt, obj->context );
 			}

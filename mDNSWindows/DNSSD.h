@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.h,v $
+Revision 1.3  2004/04/09 21:03:14  bradley
+Changed port numbers to use network byte order for consistency with other platforms.
+
 Revision 1.2  2004/04/08 09:43:42  bradley
 Changed callback calling conventions to __stdcall so they can be used with C# delegates.
 
@@ -660,9 +663,9 @@ typedef void
 					address record exists, or creating it via DNSServiceRegisterRecord().
 
 	@param		inPort
-					The port on which the service accepts connections. Pass 0 for a "placeholder" service (i.e. a service 
-					that will not be discovered by browsing, but will cause a name conflict if another client tries to 
-					register that same name). Most clients will not use placeholder services.
+					The port on which the service accepts connections in network byte order. Pass 0 for a "placeholder" 
+					service (i.e. a service that will not be discovered by browsing, but will cause a name conflict if 
+					another client tries to register that same name). Most clients will not use placeholder services.
 
 	@param		inTXTSize
 					The length of the txtRecord, in bytes. Must be zero if the txtRecord is NULL.
@@ -940,7 +943,7 @@ DNSServiceErrorType
 					gethostbyname() to identify the host's IP address.
 
 	@param		inPort
-					The port number on which connections are accepted for this service.
+					The port number on which connections are accepted for this service in network byte order.
 
 	@param		inTXTSize
 					The length of the txt record, in bytes.

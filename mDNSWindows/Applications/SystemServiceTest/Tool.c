@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.3  2004/04/09 21:03:15  bradley
+Changed port numbers to use network byte order for consistency with other platforms.
+
 Revision 1.2  2004/04/08 09:43:43  bradley
 Changed callback calling conventions to __stdcall so they can be used with C# delegates.
 
@@ -333,7 +336,7 @@ static int ProcessArgs( int argc, char* argv[] )
 				domain = "local.";
 			}
 			
-			err = DNSServiceRegister( &gRef, 0, 0, name, type, domain, host, port, txtSize, txt, 
+			err = DNSServiceRegister( &gRef, 0, 0, name, type, domain, host, htons( port ), txtSize, txt, 
 				RegisterCallBack, NULL );
 			require_noerr( err, exit );
 			
@@ -630,7 +633,7 @@ static void CALLBACK_COMPAT
 	printf( "inErrorCode:      %ld\n", inErrorCode );
 	printf( "inFullName:       \"%s\"\n", inFullName ? inFullName : "<null>" );
 	printf( "inHostName:       \"%s\"\n", inHostName ? inHostName : "<null>" );
-	printf( "inPort:           %ld\n", inPort );
+	printf( "inPort:           %d\n", ntohs( inPort ) );
 	printf( "inTXTSize:        %ld\n", inTXTSize );
 	printf( "inTXT:            0x%08X\n", (uintptr_t) inTXT );
 	printf( "inContext:        0x%08X\n", (uintptr_t) inContext );

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSSDDirect.c,v $
+Revision 1.2  2004/04/09 21:03:14  bradley
+Changed port numbers to use network byte order for consistency with other platforms.
+
 Revision 1.1  2004/01/30 02:46:15  bradley
 Portable implementation of the DNS-SD API. This interacts with mDNSCore to perform all the real work
 of the DNS-SD API. This code does not rely on any platform-specifics so it should run on any platform
@@ -745,9 +748,7 @@ DNSServiceErrorType
 	
 	// Register the service with mDNS.
 	
-	port.b[ 0 ] = (mDNSu8)( ( inPort >> 8 ) & 0xFF );
-	port.b[ 1 ] = (mDNSu8)(   inPort        & 0xFF );
-	
+	port.NotAnInteger = inPort;
 	interfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex( gMDNSPtr, inInterfaceIndex );
 	
 	err = mDNS_RegisterService( gMDNSPtr, obj->u.reg.set, &name, &type, &domain, host, port, 
@@ -1387,8 +1388,7 @@ mDNSlocal void	DNSServiceResolveCallBack_direct( mDNS * const inMDNS, ServiceInf
 	interfaceIndex = mDNSPlatformInterfaceIndexfromInterfaceID( &gMDNS, inQuery->info->InterfaceID );
 	ConvertDomainNameToCString( &inQuery->info->name, fullName );
 	ConvertDomainNameToCString( &inQuery->qAv4.qname, hostName );
-	port  = (uint16_t)( inQuery->info->port.b[ 0 ] << 8 );
-	port |= (uint16_t)  inQuery->info->port.b[ 1 ];
+	port = inQuery->info->port.NotAnInteger;
 	
 	if( obj->u.resolve.flags & kDNSServiceFlagsResolveAddress )
 	{

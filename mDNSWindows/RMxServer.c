@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: RMxServer.c,v $
+Revision 1.5  2004/04/09 21:03:14  bradley
+Changed port numbers to use network byte order for consistency with other platforms.
+
 Revision 1.4  2004/04/08 21:14:19  bradley
 Changed resolve callback to use correct calling conventions (previously hidden by a cast).
 
@@ -934,7 +937,7 @@ DEBUG_LOCAL void	DNSServiceRegister_server( RMxMessage *inMessage )
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME
 		"%s: flags=0x%08X, ifi=%ld, name=\"%s\", type=\"%s\", domain=\"%s\", host=\"%s\", port=%d, txtSize=%d\n", 
-		__ROUTINE__, flags, interfaceIndex, name, type, domain, host, port, txtSize );
+		__ROUTINE__, flags, interfaceIndex, name, type, domain, host, ntohs( port ), txtSize );
 	
 	// Allocate and initialize the object.
 	

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.4  2004/04/09 21:03:15  bradley
+Changed port numbers to use network byte order for consistency with other platforms.
+
 Revision 1.3  2004/04/08 09:43:43  bradley
 Changed callback calling conventions to __stdcall so they can be used with C# delegates.
 
@@ -62,7 +65,7 @@ static char THIS_FILE[] = __FILE__;
 //	Constants
 //===========================================================================================================================
 
-#define	ENABLE_DOT_LOCAL_NAMES			0
+#define	ENABLE_DOT_LOCAL_NAMES			1
 
 // Control IDs
 
@@ -552,7 +555,7 @@ void CALLBACK_COMPAT
 		{
 			memcpy( &resolve->addr, inAddr, sizeof( *inAddr ) );
 		}
-		resolve->port		= inPort;
+		resolve->port		= ntohs( inPort );
 		resolve->ifi		= inInterfaceIndex;
 		resolve->handler	= handler;
 		

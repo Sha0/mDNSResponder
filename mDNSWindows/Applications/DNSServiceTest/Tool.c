@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.12  2004/04/09 21:03:15  bradley
+Changed port numbers to use network byte order for consistency with other platforms.
+
 Revision 1.11  2004/01/30 03:04:32  bradley
 Updated for latest changes to mDNSWindows.
 
@@ -301,7 +304,7 @@ static int ProcessArgs( int argc, char* argv[] )
 	const char *					name;
 	const char *					type;
 	const char *					domain;
-	int								port;
+	uint16_t						port;
 	const char *					text;
 	size_t							textSize;
 	DNSBrowserRef					browser;
@@ -445,7 +448,7 @@ static int ProcessArgs( int argc, char* argv[] )
 			name 		= argv[ i++ ];
 			type 		= argv[ i++ ];
 			domain	 	= argv[ i++ ];
-			port 		= atoi( argv[ i++ ] );
+			port 		= (uint16_t) atoi( argv[ i++ ] );
 			text 		= argv[ i ];
 			textSize	= strlen( text );
 			if( ( domain[ 0 ] == '\0' ) || ( ( domain[ 0 ] == '.' ) && ( domain[ 1 ] == '\0' ) ) )
@@ -471,7 +474,7 @@ static int ProcessArgs( int argc, char* argv[] )
 			name 		= argv[ i++ ];
 			type 		= argv[ i++ ];
 			domain	 	= argv[ i++ ];
-			port 		= atoi( argv[ i++ ] );
+			port 		= (uint16_t) atoi( argv[ i++ ] );
 			text 		= argv[ i ];
 			textSize	= strlen( text );
 			if( ( domain[ 0 ] == '\0' ) || ( ( domain[ 0 ] == '.' ) && ( domain[ 1 ] == '\0' ) ) )
@@ -585,7 +588,7 @@ static int ProcessArgs( int argc, char* argv[] )
 			name 		= argv[ i++ ];
 			type 		= argv[ i++ ];
 			domain	 	= argv[ i++ ];
-			port 		= atoi( argv[ i++ ] );
+			port 		= (uint16_t) atoi( argv[ i++ ] );
 			text 		= argv[ i ];
 			textSize	= strlen( text );
 			if( ( domain[ 0 ] == '\0' ) || ( ( domain[ 0 ] == '.' ) && ( domain[ 1 ] == '\0' ) ) )
@@ -594,7 +597,7 @@ static int ProcessArgs( int argc, char* argv[] )
 			}
 			fprintf( stdout, "registering service \"%s.%s.%s\" port %d text \"%s\"\n", name, type, domain, port, text );
 			
-			emulatedRef = DNSServiceRegistrationCreate( name, type, domain, (uint16_t) htons( (uint16_t) port ), text, 
+			emulatedRef = DNSServiceRegistrationCreate( name, type, domain, htons( port ), text, 
 														EmulatedRegistrationCallBack, NULL );
 			require_action_string( emulatedRef, exit, err = kDNSUnknownErr, "create emulated registration failed" );
 		}
