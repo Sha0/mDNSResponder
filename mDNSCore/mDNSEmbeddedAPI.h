@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.137  2004/01/24 03:40:56  cheshire
+Move mDNSAddrIsDNSMulticast() from DNSCommon.h to mDNSEmbeddedAPI.h so clients can use it
+
 Revision 1.136  2004/01/24 03:38:27  cheshire
 Fix minor syntactic error: Headers should use "extern" declarations, not "mDNSexport"
 
@@ -1567,6 +1570,8 @@ extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
+
+extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 // ***************************************************************************
 #if 0
