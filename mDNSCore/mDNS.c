@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.212  2003/07/12 01:59:11  cheshire
+Minor changes to debugf messages
+
 Revision 1.211  2003/07/12 01:47:01  cheshire
 <rdar://problem/3324495> After name conflict, appended number should be higher than previous number
 
@@ -1434,7 +1437,6 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 			s2[0]       > 0 && s2[0]       < 0x40 &&
 			s2[1+s2[0]] > 0 && s2[1+s2[0]] < 0x40)
 			{
-			debugf("********************************** Service type with subtype %##s", type->c);
 			name = (domainlabel *)type;
 			type = (domainname  *)s2;
 			}
@@ -1524,7 +1526,7 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 
 // Returns true if a rich text label ends in " (nnn)", or if an RFC 1034
 // name ends in "-nnn", where n is some decimal number.
-mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool RichText)
+mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText)
 	{
 	mDNSu16 l = name->c[0];
 	
@@ -3293,9 +3295,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (q = m->Questions; q; q=q->next)
 				if (q->SendQNow == intf->InterfaceID)
 					{
-					verbosedebugf("SendQueries: %s question for %##s at %lu forecast total %lu",
+					debugf("SendQueries: %s question for %##s (%s) at %lu forecast total %lu",
 						SuppressOnThisInterface(q->DupSuppress, intf->InterfaceID) ? "Suppressing" : "Putting    ",
-						q->qname.c, queryptr - query.data, queryptr + answerforecast - query.data);
+						q->qname.c, DNSTypeName(q->qtype), queryptr - query.data, queryptr + answerforecast - query.data);
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
 					if (SuppressOnThisInterface(q->DupSuppress, intf->InterfaceID) ||
 						BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
@@ -4642,8 +4644,7 @@ exit:
 			q->DupSuppress[1] = q->DupSuppress[0];
 		q->DupSuppress[0].InterfaceID = InterfaceID;
 		q->DupSuppress[0].Time = m->timenow;
-		if (q->LastQTime + q->ThisQInterval/2 - m->timenow < 0)
-			debugf("ProcessQuery: Expect to suppress Query %##s (%s) on %p", q->qname.c, DNSTypeName(q->qtype), InterfaceID);
+		debugf("ProcessQuery: Expect to suppress Query %##s (%s) on %p", q->qname.c, DNSTypeName(q->qtype), InterfaceID);
 		}
 	
 	return(responseptr);
