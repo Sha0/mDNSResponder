@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.38  2004/11/02 02:51:23  cheshire
+<rdar://problem/3526342> Remove overly-restrictive flag checks
+
 Revision 1.37  2004/10/14 01:43:35  cheshire
 Fix opaque port passing problem
 
@@ -844,12 +847,12 @@ DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
     ipc_msg_hdr *hdr;
     DNSServiceRef sdr;
     DNSServiceErrorType err;
+    int f1 = (flags & kDNSServiceFlagsBrowseDomains) != 0;
+    int f2 = (flags & kDNSServiceFlagsRegistrationDomains) != 0;
+    if (f1 + f2 != 1) return kDNSServiceErr_BadParam;
 
     if (!sdRef) return kDNSServiceErr_BadParam;
     *sdRef = NULL;
-
-	if (flags != kDNSServiceFlagsBrowseDomains && flags != kDNSServiceFlagsRegistrationDomains)
-		return kDNSServiceErr_BadParam;
 
 	len = sizeof(DNSServiceFlags);
     len += sizeof(uint32_t);
@@ -934,13 +937,13 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
     ipc_msg_hdr *hdr = NULL;
     DNSServiceRef tmp = NULL;
     DNSRecordRef rref = NULL;
+    int f1 = (flags & kDNSServiceFlagsShared) != 0;
+    int f2 = (flags & kDNSServiceFlagsUnique) != 0;
+    if (f1 + f2 != 1) return kDNSServiceErr_BadParam;
 
     if (!sdRef || sdRef->op != connection || sdRef->sockfd < 0)
         return kDNSServiceErr_BadReference;
     *RecordRef = NULL;
-
-	if (flags != kDNSServiceFlagsShared && flags != kDNSServiceFlagsUnique)
-		return kDNSServiceErr_BadReference;
 
 	len = sizeof(DNSServiceFlags);
     len += 2 * sizeof(uint32_t);  // interfaceIndex, ttl
