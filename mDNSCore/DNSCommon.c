@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.14  2004/02/21 02:06:24  cheshire
+Can't use anonymous unions -- they're non-standard and don't work on all compilers
+
 Revision 1.13  2004/02/06 23:04:18  ksekar
 Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
@@ -1046,7 +1049,7 @@ mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, do
 	ptr += 2;
 	((mDNSOpaque16 *)ptr)->NotAnInteger = zoneClass.NotAnInteger;
 	ptr += 2;
-	msg->h.numZones++;
+	msg->h.mDNS_numZones++;
 	return ptr;
 	}
 

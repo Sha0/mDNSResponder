@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.17  2004/02/21 02:06:24  cheshire
+Can't use anonymous unions -- they're non-standard and don't work on all compilers
+
 Revision 1.16  2004/02/12 01:51:45  cheshire
 Don't try to send uDNS queries unless we have at least one uDNS server available
 
@@ -941,7 +944,7 @@ mDNSlocal void sendUpdate(mStatus err, mDNS *const m, void *authPtr, AsyncOpResu
 		ustrcpy(prereq.resrec.name.c, newRR->resrec.name.c);
 		prereq.resrec.rrtype = newRR->resrec.rrtype;
 		prereq.resrec.rrclass = kDNSClass_NONE;
-		ptr = putEmptyResourceRecord(&msg, ptr, end, &msg.h.numPrereqs, &prereq);
+		ptr = putEmptyResourceRecord(&msg, ptr, end, &msg.h.mDNS_numPrereqs, &prereq);
 		if (!ptr) goto error;
 		}
 
@@ -952,7 +955,7 @@ mDNSlocal void sendUpdate(mStatus err, mDNS *const m, void *authPtr, AsyncOpResu
 			   newRR->resrec.rrclass, zoneData->zoneClass);
 		goto error;
 		}
-	ptr = PutResourceRecord(&msg, ptr, &msg.h.numUpdates, &newRR->resrec);
+	ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &newRR->resrec);
 	if (!ptr) goto error;
 
 	err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
@@ -1048,13 +1051,13 @@ extern mStatus uDNS_Deregister(mDNS *const m, AuthRecord *const rr)
 	if (!ptr) goto error;
 
 	// prereq: record must exist (put record in prereq section w/ TTL 0)
-	ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.numPrereqs, &rr->resrec, 0);
+	ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &rr->resrec, 0);
 	if (!ptr) goto error;
 
 	// deletion: specify record w/ TTL 0, class NONE
 	origclass = rr->resrec.rrclass;
 	rr->resrec.rrclass = kDNSClass_NONE;
-	ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.numUpdates, &rr->resrec, 0);
+	ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec, 0);
 	if (!ptr) goto error;
 	rr->resrec.rrclass = origclass;
 

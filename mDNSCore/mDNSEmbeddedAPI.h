@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.150  2004/02/21 02:06:24  cheshire
+Can't use anonymous unions -- they're non-standard and don't work on all compilers
+
 Revision 1.149  2004/02/06 23:04:19  ksekar
 Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
@@ -744,13 +747,17 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 #pragma mark - DNS Message structures
 #endif
 
+#define mDNS_numZones   numQuestions
+#define mDNS_numPrereqs numAnswers
+#define mDNS_numUpdates numAuthorities
+
 typedef packedstruct
 	{
 	mDNSOpaque16 id;
 	mDNSOpaque16 flags;
-	union { mDNSu16 numQuestions;   mDNSu16 numZones;   };
-	union { mDNSu16 numAnswers;     mDNSu16 numPrereqs; };
-	union { mDNSu16 numAuthorities; mDNSu16 numUpdates; }; 
+	mDNSu16 numQuestions;
+	mDNSu16 numAnswers;
+	mDNSu16 numAuthorities;
 	mDNSu16 numAdditionals;
 	} DNSMessageHeader;
 
