@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.184  2005/02/01 19:33:29  ksekar
+<rdar://problem/3985239> Keychain format too restrictive
+
 Revision 1.183  2005/01/27 22:57:55  cheshire
 Fix compile errors on gcc4
 
@@ -871,14 +874,14 @@ mDNSexport void mDNS_DeleteDNSServers(mDNS *const m)
 #pragma mark - authorization management
 #endif
 
-mDNSlocal uDNS_AuthInfo *GetAuthInfoForZone(const uDNS_GlobalInfo *u, const domainname *zone)
+mDNSlocal uDNS_AuthInfo *GetAuthInfoForName(const uDNS_GlobalInfo *u, const domainname *name)
 	{
 	uDNS_AuthInfo *ptr;
-	while (zone->c[0])
+	while (name->c[0])
 		{
 		for (ptr = u->AuthInfoList; ptr; ptr = ptr->next)
-			if (SameDomainName(&ptr->zone, zone)) return(ptr);
-		zone = (const domainname *)(zone->c + 1 + zone->c[0]);
+			if (SameDomainName(&ptr->zone, name)) return(ptr);
+		name = (const domainname *)(name->c + 1 + name->c[0]);
 		}
 	return mDNSNULL;
 	}
@@ -900,7 +903,7 @@ mDNSlocal void DeleteAuthInfoForZone(uDNS_GlobalInfo *u, const domainname *zone)
 		}
 	}
 
-mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret, mDNSu32 ssLen, mDNSBool base64)
+mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret)
 	{
 	uDNS_AuthInfo *info;
 	mDNSu8 keybuf[1024];
@@ -910,28 +913,24 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const 
 
 	mDNS_Lock(m);
 	
-	if (GetAuthInfoForZone(u, zone)) DeleteAuthInfoForZone(u, zone);
+	if (GetAuthInfoForName(u, zone)) DeleteAuthInfoForZone(u, zone);
 	if (!key) goto exit;
 	
-	info = (uDNS_AuthInfo*)umalloc(sizeof(uDNS_AuthInfo) + ssLen);
+	info = (uDNS_AuthInfo*)umalloc(sizeof(*info));
 	if (!info) { LogMsg("ERROR: umalloc"); status = mStatus_NoMemoryErr; goto exit; }
-   	ubzero(info, sizeof(uDNS_AuthInfo));
+   	ubzero(info, sizeof(*info));
 	AssignDomainName(&info->zone, zone);
 	AssignDomainName(&info->keyname, key);
 
-	if (base64)
+	keylen = DNSDigest_Base64ToBin(sharedSecret, keybuf, 1024);
+	if (keylen < 0)
 		{
-		keylen = DNSDigest_Base64ToBin(sharedSecret, keybuf, 1024);
-		if (keylen < 0)
-			{
-			LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication - could not convert shared secret from base64");
-			ufree(info);
-			status = mStatus_UnknownErr;
-			goto exit;
-			}
-		DNSDigest_ConstructHMACKey(info, keybuf, (mDNSu32)keylen);
+		LogMsg("ERROR: mDNS_SetSecretForZone - could not convert shared secret from base64");
+		ufree(info);
+		status = mStatus_UnknownErr;
+		goto exit;
 		}
-	else DNSDigest_ConstructHMACKey(info, (mDNSu8*)sharedSecret, ssLen);
+	DNSDigest_ConstructHMACKey(info, keybuf, (mDNSu32)keylen);
 
     // link into list
 	info->next = m->uDNS_info.AuthInfoList;
@@ -3802,7 +3801,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	if (rr->uDNS_info.lease)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	   	
-	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &regInfo->ns, regInfo->port, -1, GetAuthInfoForZone(u, &regInfo->zone));
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &regInfo->ns, regInfo->port, -1, GetAuthInfoForName(u, rr->resrec.name));
 	if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
 	SetRecordRetry(m, rr);
@@ -3980,7 +3979,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (srs->uDNS_info.lease)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	   
-	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForZone(u, &rInfo->zone));
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForName(u, srs->RR_SRV.resrec.name));
 	if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
 	if (rInfo->state != regState_Refresh && rInfo->state != regState_DeregDeferred && srs->uDNS_info.state != regState_UpdatePending)
@@ -4127,7 +4126,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (!ptr) goto error;
 	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) goto error;
 
-	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForZone(u, &rr->uDNS_info.zone));
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForName(u, rr->resrec.name));
 	if (err) LogMsg("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
 
 	SetRecordRetry(m, rr);
@@ -4263,7 +4262,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		if (!(ptr = putDeletionRecord(&msg, ptr, &srs->SubTypes[i].resrec))) goto error;
 
 	
-	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForName(u, srs->RR_SRV.resrec.name));
 	if (err) { LogMsg("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
 	SetRecordRetry(m, &srs->RR_SRV);
@@ -4380,7 +4379,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	
 	// don't report send errors - retransmission will occurr if necessary
-	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForName(u, rr->resrec.name));
 	if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
 	//!!! Update this when we implement retransmission for services
@@ -4842,7 +4841,7 @@ mDNSlocal void SleepRecordRegistrations(mDNS *m)
 			ptr = putDeletionRecord(&msg, ptr, &rr->resrec);
 			if (!ptr) {  LogMsg("Error: SleepRecordRegistrations - could not put deletion record"); return; }
 
-			mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForZone(&m->uDNS_info, &rr->uDNS_info.zone));
+			mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForName(&m->uDNS_info, rr->resrec.name));
 			rr->uDNS_info.state = regState_Refresh;
 			rr->LastAPTime = timenow;
 			rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.295  2005/02/01 19:33:30  ksekar
+<rdar://problem/3985239> Keychain format too restrictive
+
 Revision 1.294  2005/01/27 21:30:23  cheshire
 <rdar://problem/3952067> "Can't assign requested address" message after AirPort turned off
 Don't write syslog messages for EADDRNOTAVAIL if we know network configuration changes are happening
@@ -2725,14 +2728,20 @@ mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatu
 mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	{
 	OSStatus err = 0;
-	SecKeychainRef SysKeychain = NULL;
-	SecKeychainItemRef KeychainItem;
 	char dstring[MAX_ESCAPED_DOMAIN_NAME];
 	mDNSu32 secretlen;
 	void *secret = NULL;
 	domainname *d, canon;
 	int i, dlen;
-
+	mDNSu32 type = 'ddns';
+	mDNSu32 typelen = sizeof(type);	
+	char *failedfn = "(none)";
+	SecKeychainAttributeList *attrList = NULL;
+	SecKeychainItemRef itemRef = NULL;
+	
+	err = SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
+	if (err) { failedfn = "SecKeychainSetPreferenceDomain"; goto cleanup; }
+	
 	// canonicalize name by converting to lower case (keychain and some name servers are case sensitive)
 	ConvertDomainNameToCString(domain, dstring);
 	dlen = strlen(dstring);
@@ -2740,30 +2749,63 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	MakeDomainNameFromDNSNameString(&canon, dstring);
 	d = &canon;		
 	
-	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &SysKeychain);
-	if (err) { LogMsg("SetSecretForDomain: couldn't open system keychain (error %d)", err); return; }
-	// find longest-match key ("account") name, excluding last label (e.g. excluding ".com")
+	// find longest-match key, excluding last label (e.g. excluding ".com")
 	while (d->c[0] && *(d->c + d->c[0] + 1))
 		{
 		if (!ConvertDomainNameToCString(d, dstring)) { LogMsg("SetSecretForDomain: bad domain %##s", d->c); return; }	
 		dlen = strlen(dstring);		
 		if (dstring[dlen-1] == '.') { dstring[dlen-1] = '\0'; dlen--; }  // chop trailing dot
-		err = SecKeychainFindGenericPassword(SysKeychain, strlen(DYNDNS_KEYCHAIN_SERVICE), DYNDNS_KEYCHAIN_SERVICE, dlen, dstring, &secretlen, &secret, &KeychainItem);
+		SecKeychainAttribute attrs[] = { { kSecServiceItemAttr, strlen(dstring), dstring },
+										 { kSecTypeItemAttr, typelen, (UInt32 *)&type } };
+		SecKeychainAttributeList attributes = { sizeof(attrs) / sizeof(attrs[0]), attrs };
+		SecKeychainSearchRef searchRef;
+
+		err = SecKeychainSearchCreateFromAttributes(NULL, kSecGenericPasswordItemClass, &attributes, &searchRef);
+		if (err) { failedfn = "SecKeychainSearchCreateFromAttributes"; goto cleanup; }
+
+		err = SecKeychainSearchCopyNext(searchRef, &itemRef);
 		if (!err)
 			{
-			debugf("Setting shared secret for zone %s with key %##s", dstring, d->c);
-			mDNS_SetSecretForZone(m, d, d, secret, secretlen, mDNStrue);
-			free(secret);
-			return;
+	        mDNSu32 tags[1];
+			SecKeychainAttributeInfo attrInfo;
+			mDNSu32 i;
+			char keybuf[MAX_ESCAPED_DOMAIN_NAME+1];			
+			domainname keyname;
+			
+			tags[0] = kSecAccountItemAttr;
+			attrInfo.count = 1;
+			attrInfo.tag = tags;
+			attrInfo.format = NULL;
+			
+			err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &attrList, &secretlen, &secret);
+			if (err || !attrList) { failedfn = "SecKeychainItemCopyAttributesAndData"; goto cleanup; }
+			if (!secretlen || !secret) { LogMsg("SetSecretForDomain - bad shared secret"); return; }
+			if (((char *)secret)[secretlen-1]) { LogMsg("SetSecretForDomain - Shared secret not NULL-terminated"); goto cleanup; }
+			
+			for (i = 0; i < attrList->count; i++)
+				{
+				SecKeychainAttribute attr = attrList->attr[i];
+				if (attr.tag == kSecAccountItemAttr)
+					{
+					if (!attr.length || attr.length > MAX_ESCAPED_DOMAIN_NAME) { LogMsg("SetSecretForDomain - Bad key length %d", attr.length); goto cleanup; }					
+					strncpy(keybuf, attr.data, attr.length);
+					if (!MakeDomainNameFromDNSNameString(&keyname, keybuf)) { LogMsg("SetSecretForDomain - bad key %s", keybuf); goto cleanup; }
+					debugf("Setting shared secret for zone %s with key %##s", dstring, keyname.c);
+					mDNS_SetSecretForZone(m, d, &keyname, secret);
+					break;
+					}
+				}
+			if (i == attrList->count) LogMsg("SetSecretForDomain - no key name set");
+			goto cleanup;
 			}
-		if (err == errSecItemNotFound) d = (domainname *)(d->c + d->c[0] + 1);
-		else
-			{
-			if (err == errSecNoSuchKeychain) debugf("SetSecretForDomain: keychain not found");
-			else LogMsg("SetSecretForDomain: SecKeychainFindGenericPassword returned error %d", err);
-			return;
-			}
+		else if (err == errSecItemNotFound) d = (domainname *)(d->c + d->c[0] + 1);
+		else { failedfn = "SecKeychainSearchCopyNext"; goto cleanup; }
 		}
+
+	cleanup:
+	if (err) LogMsg("Error: SetSecretForDomain - %s failed with error code %d", failedfn, err);
+	if (attrList) SecKeychainItemFreeAttributesAndData(attrList, secret);
+	if (itemRef) CFRelease(itemRef);
 	}
 
 mDNSlocal void SetSCPrefsBrowseDomainsFromCFArray(mDNS *m, CFArrayRef browseDomains, mDNSBool add)

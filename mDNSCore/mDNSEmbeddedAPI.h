@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.276  2005/02/01 19:33:29  ksekar
+<rdar://problem/3985239> Keychain format too restrictive
+
 Revision 1.275  2005/01/27 22:57:55  cheshire
 Fix compile errors on gcc4
 
@@ -2474,13 +2477,12 @@ typedef struct uDNS_AuthInfo
 //
 // mDNS_SetSecretForZone tells the core to authenticate (via TSIG with an HMAC_MD5 hash of the shared secret)
 // when dynamically updating a given zone (and its subdomains).  The key used in authentication must be in
-// domain name format.  The shared secret must be a base64 encoded string with the base64 parameter set to
-// true, or binary data with the base64 parameter set to false.  The length is the size of the secret in
-// bytes.  (A minimum size of 16 bytes (128 bits) is recommended for an MD5 hash as per RFC 2485).
+// domain name format.  The shared secret must be a null-terminated base64 encoded string.  A minimum size of
+// 16 bytes (128 bits) is recommended for an MD5 hash as per RFC 2485.
 // Calling this routine multiple times for a zone replaces previously entered values.  Call with a NULL key
 // to dissable authentication for the zone.
 
-extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
+extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret);
 
 // Hostname/Unicast Interface Configuration
 
