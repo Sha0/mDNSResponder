@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.19  2004/12/15 07:34:45  shersche
+Add platform support for IPv4 and IPv6 unicast sockets
+
 Revision 1.18  2004/10/11 21:53:15  shersche
 <rdar://problem/3832450> Change GetWindowsVersionString link scoping from static to non-static so that it can be accessed from other compilation units. The information returned in this function will be used to determine what service dependencies to use when calling CreateService().
 Bug #: 3832450
@@ -189,6 +192,10 @@ struct	mDNS_PlatformSupport_struct
 	IdleThreadCallback			idleThreadCallback;
 	InterfaceListChangedCallback	interfaceListChangedCallback;
 	HostDescriptionChangedCallback	hostDescriptionChangedCallback;
+	SocketRef						unicastSock4;
+	HANDLE							unicastSock4ReadEvent;
+	SocketRef						unicastSock6;
+	HANDLE							unicastSock6ReadEvent;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------

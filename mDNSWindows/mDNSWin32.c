@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.65  2004/12/15 07:34:45  shersche
+Add platform support for IPv4 and IPv6 unicast sockets
+
 Revision 1.64  2004/12/15 06:06:15  shersche
 Fix problem in obtaining IPv6 subnet mask
 
@@ -310,7 +313,7 @@ Multicast DNS platform plugin for Win32
 #define	kWaitListInterfaceListChangedEvent			( WAIT_OBJECT_0 + 1 )
 #define	kWaitListWakeupEvent						( WAIT_OBJECT_0 + 2 )
 #define kWaitListRegEvent							( WAIT_OBJECT_0 + 3 )
-#define	kWaitListFixedItemCount						4
+#define	kWaitListFixedItemCount						4 + MDNS_WINDOWS_ENABLE_IPV4 + MDNS_WINDOWS_ENABLE_IPV6
 
 #if( !TARGET_OS_WINDOWS_CE )
 	static GUID										kWSARecvMsgGUID = WSAID_WSARECVMSG;
@@ -333,7 +336,7 @@ mDNSlocal mStatus			SetupInterfaceList( mDNS * const inMDNS );
 mDNSlocal mStatus			TearDownInterfaceList( mDNS * const inMDNS );
 mDNSlocal mStatus			SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inIFA, mDNSInterfaceData **outIFD );
 mDNSlocal mStatus			TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inIFD );
-mDNSlocal mStatus			SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAddr, SocketRef *outSocketRef  );
+mDNSlocal mStatus			SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAddr, mDNSIPPort port, SocketRef *outSocketRef  );
 mDNSlocal mStatus			SockAddrToMDNSAddr( const struct sockaddr * const inSA, mDNSAddr *outIP, mDNSIPPort *outPort );
 mDNSlocal mStatus			SetupNotifications( mDNS * const inMDNS );
 mDNSlocal mStatus			TearDownNotifications( mDNS * const inMDNS );
@@ -423,6 +426,8 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	mStatus		err;
 	WSADATA		wsaData;
 	int			supported;
+	struct sockaddr_in	sa4;
+	struct sockaddr_in6 sa6;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "platform init\n" );
 	
@@ -456,6 +461,45 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	inMDNS->HISoftware.c[ 0 ] = (mDNSu8) mDNSPlatformStrLen( &inMDNS->HISoftware.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "HISoftware: %#s\n", inMDNS->HISoftware.c );
 	
+	// Set up the IPv4 unicast socket
+
+	inMDNS->p->unicastSock4 = INVALID_SOCKET;
+	inMDNS->p->unicastSock4ReadEvent = NULL;
+
+#if ( MDNS_WINDOWS_ENABLE_IPV4 )
+
+	sa4.sin_family		= AF_INET;
+	sa4.sin_addr.s_addr = INADDR_ANY;
+	err = SetupSocket( inMDNS, (const struct sockaddr*) &sa4, zeroIPPort, &inMDNS->p->unicastSock4 );
+	check_noerr( err );
+	inMDNS->p->unicastSock4ReadEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( inMDNS->p->unicastSock4ReadEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+	err = WSAEventSelect( inMDNS->p->unicastSock4, inMDNS->p->unicastSock4ReadEvent, FD_READ );
+	require_noerr( err, exit );
+
+#endif
+
+	// Set up the IPv6 unicast socket
+
+	inMDNS->p->unicastSock6 = INVALID_SOCKET;
+	inMDNS->p->unicastSock6ReadEvent = NULL;
+
+#if ( MDNS_WINDOWS_ENABLE_IPV6 )
+
+	sa6.sin6_family		= AF_INET6;
+	sa6.sin6_addr		= in6addr_any;
+	sa6.sin6_scope_id	= 0;
+	err = SetupSocket( inMDNS, (const struct sockaddr*) &sa6, zeroIPPort, &inMDNS->p->unicastSock6 );
+	check_noerr( err );
+	inMDNS->p->unicastSock6ReadEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( inMDNS->p->unicastSock6ReadEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+	err = WSAEventSelect( inMDNS->p->unicastSock6, inMDNS->p->unicastSock6ReadEvent, FD_READ );
+	require_noerr( err, exit );
+
+#endif
+
 	// Set up the mDNS thread.
 	
 	err = SetupSynchronizationObjects( inMDNS );
@@ -500,6 +544,36 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 	err = TearDownSynchronizationObjects( inMDNS );
 	check_noerr( err );
 
+#if ( MDNS_WINDOWS_ENABLE_IPV4 )
+
+	if ( inMDNS->p->unicastSock4ReadEvent )
+	{
+		CloseHandle( inMDNS->p->unicastSock4ReadEvent );
+		inMDNS->p->unicastSock4ReadEvent = 0;
+	}
+	
+	if ( IsValidSocket( inMDNS->p->unicastSock4 ) )
+	{
+		close_compat( inMDNS->p->unicastSock4 );
+	}
+
+#endif
+	
+#if ( MDNS_WINDOWS_ENABLE_IPV6 )
+
+	if ( inMDNS->p->unicastSock6ReadEvent )
+	{
+		CloseHandle( inMDNS->p->unicastSock6ReadEvent );
+		inMDNS->p->unicastSock6ReadEvent = 0;
+	}
+	
+	if ( IsValidSocket( inMDNS->p->unicastSock6 ) )
+	{
+		close_compat( inMDNS->p->unicastSock6 );
+	}
+
+#endif
+
 	// Free the DLL needed for IPv6 support.
 	
 #if( MDNS_WINDOWS_USE_IPV6_IF_ADDRS )
@@ -530,8 +604,9 @@ mStatus
 		const mDNSAddr *			inDstIP, 
 		mDNSIPPort 					inDstPort )
 {
-	mStatus						err;
-	mDNSInterfaceData *			ifd;
+	SOCKET						sendingsocket = INVALID_SOCKET;
+	mStatus						err = mStatus_NoError;
+	mDNSInterfaceData *			ifd = (mDNSInterfaceData*) inInterfaceID;
 	struct sockaddr_storage		addr;
 	int							n;
 	
@@ -541,13 +616,7 @@ mStatus
 	check( inMDNS );
 	check( inMsg );
 	check( inMsgEnd );
-	check( inInterfaceID );
 	check( inDstIP );
-	
-	ifd = (mDNSInterfaceData *) inInterfaceID;
-	require_action_quiet( ifd->interfaceInfo.McastTxRx, exit, err = mStatus_Invalid );					// Silent Interface
-	require_action_quiet( inDstIP->type == ifd->interfaceInfo.ip.type, exit, err = mStatus_NoError );	// Wrong Type
-	check( IsValidSocket( ifd->sock ) );
 	
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send %d bytes to %#a:%u\n", n, inDstIP, ntohs( inDstPort.NotAnInteger ) );
 	
@@ -559,6 +628,7 @@ mStatus
 		sa4->sin_family			= AF_INET;
 		sa4->sin_port			= inDstPort.NotAnInteger;
 		sa4->sin_addr.s_addr	= inDstIP->ip.v4.NotAnInteger;
+		sendingsocket           = ifd ? ifd->sock : inMDNS->p->unicastSock4;
 	}
 	else if( inDstIP->type == mDNSAddrType_IPv6 )
 	{
@@ -570,6 +640,7 @@ mStatus
 		sa6->sin6_flowinfo	= 0;
 		sa6->sin6_addr		= *( (struct in6_addr *) &inDstIP->ip.v6 );
 		sa6->sin6_scope_id	= 0;	// Windows requires the scope ID to be zero. IPV6_MULTICAST_IF specifies interface.
+		sendingsocket		= ifd ? ifd->sock : inMDNS->p->unicastSock6;
 	}
 	else
 	{
@@ -578,9 +649,12 @@ mStatus
 		goto exit;
 	}
 	
-	n = sendto( ifd->sock, (char *) inMsg, n, 0, (struct sockaddr *) &addr, sizeof( addr ) );
-	err = translate_errno( n > 0, errno_compat(), kWriteErr );
-	require_noerr( err, exit );
+	if (IsValidSocket(sendingsocket))
+	{
+		n = sendto( sendingsocket, (char *) inMsg, n, 0, (struct sockaddr *) &addr, sizeof( addr ) );
+		err = translate_errno( n > 0, errno_compat(), kWriteErr );
+		require_noerr( err, exit );
+	}
 	
 exit:
 	return( err );
@@ -1540,7 +1614,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	
 	if( ifd->interfaceInfo.McastTxRx )
 	{
-		err = SetupSocket( inMDNS, inIFA->ifa_addr, &sock );
+		err = SetupSocket( inMDNS, inIFA->ifa_addr, MulticastDNSPort, &sock );
 		require_noerr( err, exit );
 		ifd->sock = sock;
 		ifd->defaultAddr = ( inIFA->ifa_addr->sa_family == AF_INET6 ) ? AllDNSLinkGroup_v6 : AllDNSLinkGroup_v4;
@@ -1665,7 +1739,7 @@ mDNSlocal mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inI
 //	SetupSocket
 //===========================================================================================================================
 
-mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAddr, SocketRef *outSocketRef  )
+mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAddr, mDNSIPPort port, SocketRef *outSocketRef  )
 {
 	mStatus			err;
 	SocketRef		sock;
@@ -1683,11 +1757,15 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 	err = translate_errno( IsValidSocket( sock ), errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
 		
-	// Turn on reuse address option so multiple servers can listen for Multicast DNS packets.
+	// Turn on reuse address option so multiple servers can listen for Multicast DNS packets,
+	// if we're creating a multicast socket
 	
-	option = 1;
-	err = setsockopt( sock, SOL_SOCKET, SO_REUSEADDR, (char *) &option, sizeof( option ) );
-	check_translated_errno( err == 0, errno_compat(), kOptionErr );
+	if ( port.NotAnInteger )
+	{
+		option = 1;
+		err = setsockopt( sock, SOL_SOCKET, SO_REUSEADDR, (char *) &option, sizeof( option ) );
+		check_translated_errno( err == 0, errno_compat(), kOptionErr );
+	}
 	
 	if( inAddr->sa_family == AF_INET )
 	{
@@ -1695,12 +1773,12 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		struct sockaddr_in		sa4;
 		struct ip_mreq			mreqv4;
 		
-		// Bind to the multicast DNS port 5353.
+		// Bind the socket to the desired port
 		
 		ipv4.NotAnInteger 	= ( (const struct sockaddr_in *) inAddr )->sin_addr.s_addr;
 		memset( &sa4, 0, sizeof( sa4 ) );
 		sa4.sin_family 		= AF_INET;
-		sa4.sin_port 		= MulticastDNSPort.NotAnInteger;
+		sa4.sin_port 		= port.NotAnInteger;
 		sa4.sin_addr.s_addr	= ipv4.NotAnInteger;
 		
 		err = bind( sock, (struct sockaddr *) &sa4, sizeof( sa4 ) );
@@ -1712,36 +1790,40 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		err = setsockopt( sock, IPPROTO_IP, IP_PKTINFO, (char *) &option, sizeof( option ) );
 		check_translated_errno( err == 0, errno_compat(), kOptionErr );
 		
-		// Join the all-DNS multicast group so we receive Multicast DNS packets.
+		if (port.NotAnInteger)
+		{
+			// Join the all-DNS multicast group so we receive Multicast DNS packets
+
+			mreqv4.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
+			mreqv4.imr_interface.s_addr = ipv4.NotAnInteger;
+			err = setsockopt( sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreqv4, sizeof( mreqv4 ) );
+			check_translated_errno( err == 0, errno_compat(), kOptionErr );
 		
-		mreqv4.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
-		mreqv4.imr_interface.s_addr = ipv4.NotAnInteger;
-		err = setsockopt( sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreqv4, sizeof( mreqv4 ) );
-		check_translated_errno( err == 0, errno_compat(), kOptionErr );
+			// Specify the interface to send multicast packets on this socket.
 		
-		// Specify the interface to send multicast packets on this socket.
+			sa4.sin_addr.s_addr = ipv4.NotAnInteger;
+			err = setsockopt( sock, IPPROTO_IP, IP_MULTICAST_IF, (char *) &sa4.sin_addr, sizeof( sa4.sin_addr ) );
+			check_translated_errno( err == 0, errno_compat(), kOptionErr );
 		
-		sa4.sin_addr.s_addr = ipv4.NotAnInteger;
-		err = setsockopt( sock, IPPROTO_IP, IP_MULTICAST_IF, (char *) &sa4.sin_addr, sizeof( sa4.sin_addr ) );
-		check_translated_errno( err == 0, errno_compat(), kOptionErr );
+			// Enable multicast loopback so we receive multicast packets we send (for same-machine operations).
 		
+			option = 1;
+			err = setsockopt( sock, IPPROTO_IP, IP_MULTICAST_LOOP, (char *) &option, sizeof( option ) );
+			check_translated_errno( err == 0, errno_compat(), kOptionErr );
+		}
+
 		// Send unicast packets with TTL 255 (helps against spoofing).
 		
 		option = 255;
 		err = setsockopt( sock, IPPROTO_IP, IP_TTL, (char *) &option, sizeof( option ) );
 		check_translated_errno( err == 0, errno_compat(), kOptionErr );
-		
+
 		// Send multicast packets with TTL 255 (helps against spoofing).
 		
 		option = 255;
 		err = setsockopt( sock, IPPROTO_IP, IP_MULTICAST_TTL, (char *) &option, sizeof( option ) );
 		check_translated_errno( err == 0, errno_compat(), kOptionErr );
-		
-		// Enable multicast loopback so we receive multicast packets we send (for same-machine operations).
-		
-		option = 1;
-		err = setsockopt( sock, IPPROTO_IP, IP_MULTICAST_LOOP, (char *) &option, sizeof( option ) );
-		check_translated_errno( err == 0, errno_compat(), kOptionErr );
+
 	}
 	else if( inAddr->sa_family == AF_INET6 )
 	{
@@ -1751,11 +1833,11 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		
 		sa6p = (struct sockaddr_in6 *) inAddr;
 		
-		// Bind to the multicast DNS port 5353.
+		// Bind the socket to the desired port
 		
 		memset( &sa6, 0, sizeof( sa6 ) );
 		sa6.sin6_family		= AF_INET6;
-		sa6.sin6_port		= MulticastDNSPort.NotAnInteger;
+		sa6.sin6_port		= port.NotAnInteger;
 		sa6.sin6_flowinfo	= 0;
 		sa6.sin6_addr		= sa6p->sin6_addr;
 		sa6.sin6_scope_id	= sa6p->sin6_scope_id;
@@ -1779,35 +1861,38 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 			check_translated_errno( err == 0, errno_compat(), kOptionErr );		
 		#endif
 		
-		// Join the all-DNS multicast group so we receive Multicast DNS packets.
+		if ( port.NotAnInteger )
+		{
+			// Join the all-DNS multicast group so we receive Multicast DNS packets.
 		
-		mreqv6.ipv6mr_multiaddr = *( (struct in6_addr *) &AllDNSLinkGroupv6 );
-		mreqv6.ipv6mr_interface = sa6p->sin6_scope_id;
-		err = setsockopt( sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *) &mreqv6, sizeof( mreqv6 ) );
-		check_translated_errno( err == 0, errno_compat(), kOptionErr );
+			mreqv6.ipv6mr_multiaddr = *( (struct in6_addr *) &AllDNSLinkGroupv6 );
+			mreqv6.ipv6mr_interface = sa6p->sin6_scope_id;
+			err = setsockopt( sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *) &mreqv6, sizeof( mreqv6 ) );
+			check_translated_errno( err == 0, errno_compat(), kOptionErr );
 		
-		// Specify the interface to send multicast packets on this socket.
+			// Specify the interface to send multicast packets on this socket.
 		
-		option = (int) sa6p->sin6_scope_id;
-		err = setsockopt( sock, IPPROTO_IPV6, IPV6_MULTICAST_IF, (char *) &option, sizeof( option ) );
-		check_translated_errno( err == 0, errno_compat(), kOptionErr );
+			option = (int) sa6p->sin6_scope_id;
+			err = setsockopt( sock, IPPROTO_IPV6, IPV6_MULTICAST_IF, (char *) &option, sizeof( option ) );
+			check_translated_errno( err == 0, errno_compat(), kOptionErr );
 		
+			// Enable multicast loopback so we receive multicast packets we send (for same-machine operations).
+			
+			option = 1;
+			err = setsockopt( sock, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, (char *) &option, sizeof( option ) );
+			check_translated_errno( err == 0, errno_compat(), kOptionErr );
+		}
+
 		// Send unicast packets with TTL 255 (helps against spoofing).
 		
 		option = 255;
 		err = setsockopt( sock, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (char *) &option, sizeof( option ) );
 		check_translated_errno( err == 0, errno_compat(), kOptionErr );
-		
+
 		// Send multicast packets with TTL 255 (helps against spoofing).
-		
+			
 		option = 255;
 		err = setsockopt( sock, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, (char *) &option, sizeof( option ) );
-		check_translated_errno( err == 0, errno_compat(), kOptionErr );
-		
-		// Enable multicast loopback so we receive multicast packets we send (for same-machine operations).
-		
-		option = 1;
-		err = setsockopt( sock, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, (char *) &option, sizeof( option ) );
 		check_translated_errno( err == 0, errno_compat(), kOptionErr );
 	}
 	else
@@ -2137,12 +2222,27 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 				if( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) )
 				{
 					HANDLE					signaledObject;
-					int						n;
+					int						n = 0;
 					mDNSInterfaceData *		ifd;
 					
 					signaledObject = waitList[ waitItemIndex ];
+
+#if ( MDNS_WINDOWS_ENABLE_IPV4 )
+					if ( m->p->unicastSock4ReadEvent == signaledObject )
+					{
+						ProcessingThreadProcessPacket( m, NULL, m->p->unicastSock4 );
+						++n;
+					}
+#endif
 					
-					n = 0;
+#if ( MDNS_WINDOWS_ENABLE_IPV6 )
+					if ( m->p->unicastSock6ReadEvent == signaledObject )
+					{
+						ProcessingThreadProcessPacket( m, NULL, m->p->unicastSock6 );
+						++n;
+					}
+#endif
+					
 					for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
 					{
 						if( ifd->readPendingEvent == signaledObject )
@@ -2151,6 +2251,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 							++n;
 						}
 					}
+
 					check( n > 0 );
 				}
 				else
@@ -2244,7 +2345,14 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	*waitItemPtr++ = inMDNS->p->regEvent;
 	
 	// Append all the dynamic wait items to the list.
-	
+#if ( MDNS_WINDOWS_ENABLE_IPV4 )
+	*waitItemPtr++ = inMDNS->p->unicastSock4ReadEvent;
+#endif
+
+#if ( MDNS_WINDOWS_ENABLE_IPV6 )
+	*waitItemPtr++ = inMDNS->p->unicastSock6ReadEvent;
+#endif
+
 	for( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
 	{
 		*waitItemPtr++ = ifd->readPendingEvent;
