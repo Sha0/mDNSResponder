@@ -18,6 +18,11 @@
  * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
+ *
+ * $Log: ExampleClientApp.c,v $
+ * Revision 1.6  2003/03/31 22:44:36  cheshire
+ * Add log header
+ *
  */
 
 #include <stdio.h>			// For printf()
