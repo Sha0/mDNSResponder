@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: Identify.c,v $
+ * Revision 1.3  2003/08/04 17:14:08  cheshire
+ * Do both AAAA queries in parallel
+ *
  * Revision 1.2  2003/08/02 02:25:13  cheshire
  * Multiple improvements: Now displays host's name, and all v4 and v6 addresses, as well as HINFO record
  *
@@ -182,7 +185,7 @@ mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
 
 mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQuestionCallback callback)
 	{
-	MakeDomainNameFromDNSNameString(&q->qname, qname);
+	if (qname) MakeDomainNameFromDNSNameString(&q->qname, qname);
 
 	q->InterfaceID      = mDNSInterface_Any;
 	q->qtype            = qtype;
@@ -190,7 +193,7 @@ mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQue
 	q->QuestionCallback = callback;
 	q->QuestionContext  = NULL;
 
-	printf("%s %s ?\n", qname, DNSTypeName(qtype));
+	mprintf("%##s %s ?\n", q->qname.c, DNSTypeName(qtype));
 	return(mDNS_StartQuery(&mDNSStorage, q));
 	}
 
@@ -237,10 +240,11 @@ mDNSexport int main(int argc, char **argv)
 	struct in6_addr s6;
 
 	char buffer[256];
-	DNSQuestion q, qAddr, qAAAA, qHINFO;
+	DNSQuestion qAddr, qAAAA, qHINFO;
 
 	if (inet_pton(AF_INET, argv[1], &s4) == 1)
 		{
+		DNSQuestion q;
 		mDNSu8 *p = (mDNSu8 *)&s4;
 		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p[3], p[2], p[1], p[0]);
 		printf("%s\n", buffer);
@@ -248,6 +252,7 @@ mDNSexport int main(int argc, char **argv)
 		}
 	else if (inet_pton(AF_INET6, argv[1], &s6) == 1)
 		{
+		DNSQuestion q1, q2;
 		int i;
 		mDNSu8 *p = (mDNSu8 *)&s6;
 		for (i = 0; i < 16; i++)
@@ -259,13 +264,15 @@ mDNSexport int main(int argc, char **argv)
 			buffer[i * 4 + 3] = '.';
 			}
 		mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
-		i = DoQuery(&q, buffer, kDNSType_PTR, NameCallback);
-		if (i == 0)	// Timeout. Try workaround for WWDC bug
-			{
-			mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");
-			i = DoQuery(&q, buffer, kDNSType_PTR, NameCallback);
-			}
-		if (i != 1) goto exit;
+		MakeDomainNameFromDNSNameString(&q1.qname, buffer);
+		mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");	// Workaround for WWDC bug
+		MakeDomainNameFromDNSNameString(&q2.qname, buffer);
+		StartQuery(&q1, NULL, kDNSType_PTR, NameCallback);
+		StartQuery(&q2, NULL, kDNSType_PTR, NameCallback);
+		WaitForAnswer(&mDNSStorage, 4);
+		mDNS_StopQuery(&mDNSStorage, &q1);
+		mDNS_StopQuery(&mDNSStorage, &q2);
+		if (StopNow != 1) goto exit;
 		}
 	else
 		strcpy(hostname, argv[1]);
