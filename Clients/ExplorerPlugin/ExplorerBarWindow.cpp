@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.7  2004/07/22 16:08:20  shersche
+clean up debug print statements, re-enable code inadvertently commented out
+
 Revision 1.6  2004/07/22 05:27:20  shersche
 <rdar://problem/3735827> Check to make sure error isn't WSAEWOULDBLOCK when canceling browse
 Bug #: 3735827
@@ -405,20 +408,16 @@ void DNSSD_API
 	//
 	// set the UI to hold off on updates
 	//
-	// obj->obj->mTree.SetRedraw(FALSE);
+	obj->obj->mTree.SetRedraw(FALSE);
 
 	try
 	{
-		// Post a message to the main thread so it can handle it since MFC is not thread safe.
-		
 		service = new ServiceInfo;
 		require_action( service, exit, err = kNoMemoryErr );
 		
 		err = UTF8StringToStringObject( inName, service->displayName );
 		check_noerr( err );
 
-OutputDebugString(service->displayName);
-		
 		service->name = strdup( inName );
 		require_action( service->name, exit, err = kNoMemoryErr );
 		
@@ -455,8 +454,8 @@ exit:
 	//
 	if (obj && obj->obj && ((inFlags & kDNSServiceFlagsMoreComing) == 0))
 	{
-		// obj->obj->mTree.SetRedraw(TRUE);
-		// obj->obj->mTree.Invalidate();
+		obj->obj->mTree.SetRedraw(TRUE);
+		obj->obj->mTree.Invalidate();
 	}
 
 	if( service )
