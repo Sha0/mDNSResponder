@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.21  2003/08/19 22:20:00  cheshire
+<rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
+More minor refinements
+
 Revision 1.20  2003/08/19 05:39:43  cheshire
 <rdar://problem/3380097> SIGINFO dump should include resolves started by DNSServiceQueryRecord
 
@@ -111,14 +115,13 @@ Defines mDNS_PlatformSupport_struct for OS X
 typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;
 struct NetworkInterfaceInfoOSX_struct
 	{
-	NetworkInterfaceInfo     ifinfo;	// MUST be the first element in this structure
+	NetworkInterfaceInfo     ifinfo;			// MUST be the first element in this structure
 	NetworkInterfaceInfoOSX *next;
 	mDNS                    *m;
-	mDNSBool                 CurrentlyActive;
-	char                    *ifa_name;					// Memory for this is allocated using malloc
-	mDNSu32                  scope_id;					// interface index / IPv6 scope ID
+	mDNSu32                  CurrentlyActive;	// 0 not active; 1 active; 2 active but TxRx state changed
+	char                    *ifa_name;			// Memory for this is allocated using malloc
+	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	u_short                  sa_family;
-	mDNSBool                 HasIPv4Routable;
 #if mDNS_AllowPort53
 	int                      skt53;
 	CFSocketRef              cfs53;

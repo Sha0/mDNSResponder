@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.113  2003/08/19 22:20:00  cheshire
+<rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
+More minor refinements
+
 Revision 1.112  2003/08/19 03:04:43  cheshire
 <rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
 
@@ -490,9 +494,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 
 	if (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger)
 		{
-		if (dst->type == mDNSAddrType_IPv4) s = info->sktv4;
-		else if (!info->HasIPv4Routable) s = info->sktv6;
-		else s = -1;
+		if      (dst->type == mDNSAddrType_IPv4) s = info->sktv4;
+		else if (dst->type == mDNSAddrType_IPv6) s = info->sktv6;
+		else                                     s = -1;
 		}
 #if mDNS_AllowPort53
 	else if (srcPort.NotAnInteger == UnicastDNSPort.NotAnInteger && dst->type == mDNSAddrType_IPv4)
@@ -927,13 +931,13 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
+	i->ifinfo.TxAndRx     = mDNSfalse;		// For now; will be set up later at the end of UpdateInterfaceList
 
 	i->next            = mDNSNULL;
 	i->m               = m;
 	i->scope_id        = scope_id;
 	i->CurrentlyActive = mDNStrue;
 	i->sa_family       = ifa->ifa_addr->sa_family;
-	i->HasIPv4Routable = mDNSfalse;
 	#if mDNS_AllowPort53
 	i->skt53 = -1;
 	i->cfs53 = NULL;
@@ -946,6 +950,16 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	if (!i->ifa_name) return(-1);
 	*p = i;
 	return(0);
+	}
+
+mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope_id)
+	{
+	NetworkInterfaceInfoOSX *i;
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (i->CurrentlyActive && i->scope_id == scope_id && i->ifinfo.ip.type == mDNSAddrType_IPv4)
+			if (!(i->ifinfo.ip.ip.v4.b[0] == 169 && i->ifinfo.ip.ip.v4.b[1] == 254))
+				return(i);
+	return(mDNSNULL);
 	}
 
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
@@ -1037,6 +1051,26 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	if (!foundav4 && theLoopback)
 		AddInterfaceToList(m, theLoopback);
 
+	// Now the list is complete, set the TxAndRx setting for each interface.
+	// We always send and receive using IPv4.
+	// To reduce traffic, we send and receive using IPv6 only on interfaces that have no routable IPv4 address.
+	// Having a routable IPv4 address assigned is a reasonable indicator of being on a large configured network,
+	// which means there's a good chance that most or all the other devices on that network should also have v4.
+	// By doing this we lose the ability to talk to true v6-only devices on that link, but we cut the packet rate in half.
+	// At this time, reducing the packet rate is more important than v6-only devices on a large configured network,
+	// so we are willing to make that sacrifice.
+	NetworkInterfaceInfoOSX *i;
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (i->CurrentlyActive)
+			{
+			mDNSBool txrx = ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
+			if (i->ifinfo.TxAndRx != txrx)
+				{
+				i->ifinfo.TxAndRx = txrx;
+				i->CurrentlyActive = 2;	// State change; need to deregister and reregister this interface
+				}
+			}
+
 	if (InfoSocket >= 0) close(InfoSocket);
 	return(err);
 	}
@@ -1076,23 +1110,26 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 			}
 
-		if (i->sa_family == AF_INET && !(n->ip.ip.v4.b[0] == 169 && n->ip.ip.v4.b[1] != 254)) alias->HasIPv4Routable = mDNStrue;
-
-		if (i->sa_family == AF_INET && alias->sktv4 == -1)
+		if (!n->TxAndRx)
+			debugf("SetupActiveInterfaces: No TX/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, alias, &n->ip);
+		else
 			{
-			#if mDNS_AllowPort53
-			err = SetupSocket(i, UnicastDNSPort, &alias->skt53, &alias->cfs53);
-			#endif
-			if (!err) err = SetupSocket(i, MulticastDNSPort, &alias->sktv4, &alias->cfsv4);
-			if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-			}
-	
-		if (i->sa_family == AF_INET6 && alias->sktv6 == -1)
-			{
-			err = SetupSocket(i, MulticastDNSPort, &alias->sktv6, &alias->cfsv6);
-			if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+			if (i->sa_family == AF_INET && alias->sktv4 == -1)
+				{
+				#if mDNS_AllowPort53
+				err = SetupSocket(i, UnicastDNSPort, &alias->skt53, &alias->cfs53);
+				#endif
+				if (!err) err = SetupSocket(i, MulticastDNSPort, &alias->sktv4, &alias->cfsv4);
+				if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				}
+		
+			if (i->sa_family == AF_INET6 && alias->sktv6 == -1)
+				{
+				err = SetupSocket(i, MulticastDNSPort, &alias->sktv6, &alias->cfsv6);
+				if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				}
 			}
 		}
 	}
@@ -1118,7 +1155,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		{
 		// 1. If this interface is no longer active, or it's InterfaceID is changing, deregister it
 		NetworkInterfaceInfoOSX *alias = (NetworkInterfaceInfoOSX *)(i->ifinfo.InterfaceID);
-		if (!i->CurrentlyActive || (alias && !alias->CurrentlyActive))
+		if (i->ifinfo.InterfaceID && (!i->CurrentlyActive || (alias && !alias->CurrentlyActive) || i->CurrentlyActive == 2))
 			{
 			debugf("ClearInactiveInterfaces: Deregistering %#a", &i->ifinfo.ip);
 			mDNS_DeregisterInterface(m, &i->ifinfo);
@@ -1137,7 +1174,6 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		// Note: MUST NOT close the underlying native BSD sockets.
 		// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
 		// because it first has to unhook the sockets from its select() call, before it can safely close them.
-		i->HasIPv4Routable = mDNSfalse;
 		#if mDNS_AllowPort53
 		if (i->cfs53) { CFSocketInvalidate(i->cfs53); CFRelease(i->cfs53); }
 		i->skt53 = -1;

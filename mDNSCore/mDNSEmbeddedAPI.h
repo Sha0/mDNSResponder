@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.108  2003/08/19 22:20:00  cheshire
+<rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
+More minor refinements
+
 Revision 1.107  2003/08/19 06:48:25  cheshire
 <rdar://problem/3376552> Guard against excessive record updates
 Each record starts with 10 UpdateCredits.
@@ -782,6 +786,7 @@ struct NetworkInterfaceInfo_struct
 	mDNSInterfaceID InterfaceID;
 	mDNSAddr        ip;
 	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
+	mDNSBool        TxAndRx;			// Set to false if not sending and receiving packets on this interface
 	};
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;

@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.284  2003/08/19 22:20:00  cheshire
+<rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
+More minor refinements
+
 Revision 1.283  2003/08/19 22:16:27  cheshire
 Minor fix: Add missing "mDNS_Unlock(m);" in mDNS_DeregisterInterface() error case.
 
@@ -6155,8 +6159,8 @@ mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *act
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		if (intf->InterfaceID == active->InterfaceID)
 			{
-			if (intf->ip.type == mDNSAddrType_IPv4) active->IPv4Available = mDNStrue;
-			if (intf->ip.type == mDNSAddrType_IPv6) active->IPv6Available = mDNStrue;
+			if (intf->ip.type == mDNSAddrType_IPv4 && intf->TxAndRx) active->IPv4Available = mDNStrue;
+			if (intf->ip.type == mDNSAddrType_IPv6 && intf->TxAndRx) active->IPv6Available = mDNStrue;
 			}
 	}
 
@@ -6168,8 +6172,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	
 	// Assume this interface will be active
 	set->InterfaceActive = mDNStrue;
-	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4);
-	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6);
+	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->TxAndRx);
+	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->TxAndRx);
 
 	while (*p)
 		{
@@ -6185,8 +6189,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			{
 			set->InterfaceActive = mDNSfalse;
 			if (set->ip.type == (*p)->ip.type) FirstOfType = mDNSfalse;
-			if (set->ip.type == mDNSAddrType_IPv4) (*p)->IPv4Available = mDNStrue;
-			if (set->ip.type == mDNSAddrType_IPv6) (*p)->IPv6Available = mDNStrue;
+			if (set->ip.type == mDNSAddrType_IPv4 && set->TxAndRx) (*p)->IPv4Available = mDNStrue;
+			if (set->ip.type == mDNSAddrType_IPv6 && set->TxAndRx) (*p)->IPv6Available = mDNStrue;
 			}
 
 		p=&(*p)->next;
@@ -6261,7 +6265,15 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	*p = (*p)->next;
 	set->next = mDNSNULL;
 
-	if (set->InterfaceActive)
+	if (!set->InterfaceActive)
+		{
+		// If this interface not the active member of its set, update the v4/v6Available flags for the active member
+		NetworkInterfaceInfo *intf;
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->InterfaceActive && intf->InterfaceID == set->InterfaceID)
+				UpdateInterfaceProtocols(m, intf);
+		}
+	else
 		{
 		NetworkInterfaceInfo *intf;
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
