@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.17  2004/03/19 22:25:20  cheshire
+<rdar://problem/3579561>: Need to limit service types to fourteen characters
+Won't actually do this for now, but keep the code around just in case
+
 Revision 1.16  2004/03/08 02:45:35  cheshire
 Minor change to make a couple of the log messages a bit shorter
 
@@ -498,12 +502,14 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 	hostlabel->c[0] = (mDNSu8)(ptr - &hostlabel->c[1]);
 	}
 
+#if MDNS_ENFORCE_SERVICE_TYPE_LENGTH
 mDNSlocal mDNSBool AllowedServiceNameException(const mDNSu8 *const src)
 	{
 	if (SameDomainLabel(src, (mDNSu8*)"\x12_MacOSXDupSuppress")) return(mDNStrue);
 	LogMsg("Application protocol name %#s too long; see <http://www.dns-sd.org/ServiceTypes.html>", src);
 	return(mDNSfalse);
 	}
+#endif
 
 mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	const domainlabel *name, const domainname *type, const domainname *const domain)
@@ -539,9 +545,13 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
+#if MDNS_ENFORCE_SERVICE_TYPE_LENGTH
 	if (len < 2 || len > 15)
 		if (!AllowedServiceNameException(src))			// If length not legal, check our grandfather-exceptions list
 			{ errormsg="Application protocol name must be underscore plus 1-14 characters"; goto fail; }
+#else
+	if (len < 2 || len >= 0x40) { errormsg="Application protocol name should be underscore plus 1-14 characters"; goto fail; }
+#endif
 	if (src[1] != '_') { errormsg="Application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
 		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-' && src[i] != '_')
