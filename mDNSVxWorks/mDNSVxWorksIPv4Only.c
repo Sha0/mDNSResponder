@@ -22,11 +22,15 @@
 
 	Contains:	mDNS platform plugin for VxWorks.
 
-	Copyright:  Copyright (C) 2002-2003 Apple Computer, Inc., All Rights Reserved.
+	Copyright:  Copyright (C) 2002-2004 Apple Computer, Inc., All Rights Reserved.
 
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.12  2004/01/24 09:12:37  bradley
+Avoid TOS socket options to workaround a TOS routing problem with VxWorks and multiple interfaces
+when sending unicast responses, which resulted in packets going out the wrong interface.
+
 Revision 1.11  2004/01/24 04:59:16  cheshire
 Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
@@ -1199,12 +1203,17 @@ mDNSlocal mStatus
 		err = setsockopt( socketRef, IPPROTO_IP, IP_MULTICAST_TTL, (char *) &optionByte, sizeof( optionByte ) );
 		check_errno( err, errno );
 		
+		// WARNING: Setting this option causes unicast responses to be routed to the wrong interface so they are 
+		// WARNING: disabled. These options were only hints to improve 802.11 performance (and not implemented) anyway.
+		
+#if 0
 		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to maximize 802.11 multicast rate.
 		
 		option = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
 		err = setsockopt( socketRef, IPPROTO_IP, IP_TOS, (char *) &option, sizeof( option ) );
 		check_errno( err, errno );
-		
+#endif
+	
 		dlog( kDebugLevelVerbose, DEBUG_NAME "setting up sending socket done (%s, %u.%u.%u.%u, %d)\n", 
 			  inAddr->ifa_name, ip.b[ 0 ], ip.b[ 1 ], ip.b[ 2 ], ip.b[ 3 ], socketRef );
 	}
@@ -1673,6 +1682,7 @@ mDNSlocal void	TaskProcessPacket( mDNS *inMDNS, MDNSInterfaceItem *inItem, MDNSS
 		srcPort.NotAnInteger		= addr.sin_port;
 		dstAddr.type				= mDNSAddrType_IPv4;
 		dstAddr.ip.v4				= AllDNSLinkGroup;
+		dstPort						= MulticastDNSPort;
 		
 		dlog( kDebugLevelChatty, DEBUG_NAME "packet received\n" );
 		dlog( kDebugLevelChatty, DEBUG_NAME "    size      = %d\n", n );
