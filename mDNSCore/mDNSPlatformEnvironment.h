@@ -73,6 +73,17 @@ struct mDNS_PlatformSupport_struct
 	CFRunLoopSourceRef PowerRLS;
 	};
 
+// Set this symbol to 1 to do extra debug checks on malloc() and free()
+#define MACOSX_MDNS_MALLOC_DEBUGGING 0
+
+#if MACOSX_MDNS_MALLOC_DEBUGGING
+extern void *mallocL(char *msg, unsigned int size);
+extern void freeL(char *msg, void *x);
+#else
+#define mallocL(X,Y) malloc(Y)
+#define freeL(X,Y) free(Y)
+#endif
+
 // ***************************************************************************
 // Placeholder for future platforms
 
