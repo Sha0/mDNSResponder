@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.420  2004/09/21 23:01:42  cheshire
+Update debugf messages
+
 Revision 1.419  2004/09/21 19:51:14  cheshire
 Move "Starting time value" message from mDNS.c to mDNSMacOSX/daemon.c
 
@@ -4943,11 +4946,11 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->LastQTxTime    = m->timenow;
 
 		if (!question->DuplicateOf)
-			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p (%p) started",
-				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question);
+			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p %d (%p) started",
+				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question->LastQTime + question->ThisQInterval - m->timenow, question);
 		else
-			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p (%p) duplicate of (%p)",
-				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question, question->DuplicateOf);
+			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p %d (%p) duplicate of (%p)",
+				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
 
 		*q = question;
 		if (question->InterfaceID == mDNSInterface_LocalOnly)
