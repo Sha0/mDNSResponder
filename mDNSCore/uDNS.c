@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.25  2004/04/14 04:07:11  ksekar
+Fixed crash in IsActiveUnicastQuery().  Removed redundant checks in routine.
+
 Revision 1.24  2004/04/08 09:41:40  bradley
 Added const to AuthRecord in deadvertiseIfCallback to match callback typedef.
 
@@ -827,20 +830,10 @@ mDNSlocal mDNSAddr *getInitializedDNS(uDNS_GlobalInfo *u)
 
 mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_GlobalInfo *u)
     {
-	//!!!KRS We should remove the list check at some point...
-	DNSQuestion *qptr;
-	mDNSBool inList = mDNSfalse;
+	(void)u;  // unused
 
-	for (qptr = u->ActiveQueries; qptr; qptr = qptr->next)
-		if (qptr == question) { inList = mDNStrue;  break; }
-	
-	if (question->uDNS_info.id.NotAnInteger && inList && !IsLocalDomain(&qptr->qname)) return mDNStrue;
-	if (!question->uDNS_info.id.NotAnInteger && !inList) return mDNSfalse;
-
-	LogMsg("ERROR: IsActiveUnicastQuery - conflicting results:\n"
-		   "%s question id, %s ActiveQueries list, %s domain %s",
-		   question->uDNS_info.id.NotAnInteger ? "non-zero" : "zero",
-		   inList ? "in" : "not in", IsLocalDomain(&qptr->qname) ? "local" : "non-local", qptr->qname.c);
+	if (question->uDNS_info.id.NotAnInteger && !question->InterfaceID && !IsLocalDomain(&question->qname))
+		return mDNStrue;
 	return mDNSfalse;
 	}
 
