@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.30  2004/04/09 00:33:58  bradley
+Turn on Multicast flag for interfaces to tell mDNSCore that the interfaces are multicast capable.
+
 Revision 1.29  2004/03/15 02:07:46  bradley
 Changed interface index handling to use the upper 24 bits for IPv4 and the lower 8 bits for IPv6 to
 handle some IPv4 interface indexes that are greater than 16-bit. This is not perfect because Windows
@@ -169,9 +172,9 @@ Multicast DNS platform plugin for Win32
 
 #define	MDNS_WINDOWS_USE_IPV6_IF_ADDRS				1
 #define	MDNS_WINDOWS_ENABLE_IPV4					1
-#define	MDNS_WINDOWS_ENABLE_IPV6					1
-#define	MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6		1
-#define	MDNS_WINDOWS_AAAA_OVER_IPV4					1
+#define	MDNS_WINDOWS_ENABLE_IPV6					0
+#define	MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6		0
+#define	MDNS_WINDOWS_AAAA_OVER_IPV4					0
 
 #define	kMDNSDefaultName							"My Computer"
 
@@ -1191,7 +1194,8 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	// but we cut the packet rate in half. At this time, reducing the packet rate is more important than v6-only 
 	// devices on a large configured network, so we are willing to make that sacrifice.
 	
-	ifd->interfaceInfo.TxAndRx = mDNStrue;
+	ifd->interfaceInfo.TxAndRx		= mDNStrue;
+	ifd->interfaceInfo.Multicast	= mDNStrue;
 	
 #if( MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6 )
 	if( inIFA->ifa_addr->sa_family != AF_INET )
