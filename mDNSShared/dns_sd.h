@@ -150,9 +150,49 @@ enum
 
 #define kDNSServiceMaxDomainName 1005
 
-/* Constants for specifying an interface index.  Specific interface indexes are
- * identified via a 32-bit unsigned integer returned by the if_nametoindex()
- * family of calls
+/* 
+ * Constants for specifying an interface index
+ *
+ * Specific interface indexes are identified via a 32-bit unsigned integer returned
+ * by the if_nametoindex() family of calls.
+ * 
+ * If the client passes 0 for interface index, that means "do the right thing",
+ * which (at present) means, "if the name is in an mDNS local multicast domain
+ * (e.g. 'local.', '254.169.in-addr.arpa.', '0.8.E.F.ip6.arpa.') then multicast
+ * on all applicable interfaces, otherwise send via unicast to the appropriate
+ * DNS server." Normally, most clients will use 0 for interface index to
+ * automatically get the default sensible behaviour.
+ * 
+ * If the client passes a positive interface index, that indicates to do the
+ * operation *only* via multicast on that one interface, even for names that
+ * would normally be looked up via unicast DNS.
+ * 
+ * If the client passes kDNSServiceInterfaceForceMulticast, that indicates
+ * to do the operation via multicast on all applicable interfaces, even for
+ * names that would normally be looked up via unicast DNS.
+ * 
+ * If the client passes kDNSServiceInterfaceIndexLocalOnly when registering
+ * a service, then that service will be found *only* by other local clients
+ * on the same machine that pass kDNSServiceInterfaceIndexLocalOnly when browsing.
+ * If a client has a 'private' service, accessible only to other processes
+ * running on the same machine, this allows the client to advertise that service
+ * in a way such that it does not inadvertently appear in service lists on
+ * all the other machines on the network. 
+ * Note that to discover these special non-public services, the browsing
+ * client also has to explicitly use kDNSServiceInterfaceIndexLocalOnly in its
+ * DNSServiceBrowse() call. These special non-public services are not reported to
+ * other clients on the same machine using interface index 0 or other index values.
+ * 
+ * If the client passes kDNSServiceInterfaceIndexLocalOnly when browsing
+ * then it will find only records registered on that same local machine.
+ * Note that this is *not* exactly symmetrical with the registering case:
+ * Services advertised using LocalOnly are ONLY discovered by clients browsing
+ * on LocalOnly; in contrast, clients browsing on LocalOnly find ALL services
+ * advertised by this machine, not only those advertised on LocalOnly.
+ * Clients explicitly wishing to discover only LocalOnly services can
+ * accomplish this by inspecting the interfaceIndex of each service reported
+ * to their DNSServiceBrowseReply() callback function, and discarding those
+ * where the interface index is not kDNSServiceInterfaceIndexLocalOnly.
  */
 
 #define kDNSServiceInterfaceIndexAny 0
@@ -295,8 +335,10 @@ typedef void (DNSSD_API *DNSServiceDomainEnumReply)
 /* DNSServiceEnumerateDomains() Parameters:
  *
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef.  May be passed to
- *                  DNSServiceRefDeallocate() to cancel the enumeration.
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
+ *                  and the enumeration operation will run indefinitely until the client
+ *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
  *
  * flags:           Possible values are:
  *                  kDNSServiceFlagsBrowseDomains to enumerate domains recommended for browsing.
@@ -306,7 +348,7 @@ typedef void (DNSSD_API *DNSServiceDomainEnumReply)
  * interfaceIndex:  If non-zero, specifies the interface on which to look for domains.
  *                  (the index for a given interface is determined via the if_nametoindex()
  *                  family of calls.)  Most applications will pass 0 to enumerate domains on
- *                  all interfaces.
+ *                  all interfaces. See "Constants for specifying an interface index" for more details.
  *
  * callBack:        The function to be called when a domain is found or the call asynchronously
  *                  fails.
@@ -377,15 +419,15 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
 
 /* DNSServiceRegister()  Parameters:
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef.  If this call succeeds, the reference
- *                  may be passed to
- *                  DNSServiceRefDeallocate() to deregister the service.
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
+ *                  and the registration will remain active indefinitely until the client
+ *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to register the service
  *                  (the index for a given interface is determined via the if_nametoindex()
  *                  family of calls.)  Most applications will pass 0 to register on all
- *                  available interfaces.  Pass -1 to register a service only on the local
- *                  machine (service will not be visible to remote hosts.)
+ *                  available interfaces. See "Constants for specifying an interface index" for more details.
  *
  * flags:           Indicates the renaming behavior on name conflict (most applications
  *                  will pass 0).  See flag definitions above for details.
@@ -589,13 +631,23 @@ DNSServiceErrorType DNSSD_API DNSServiceRemoveRecord
  *                  indicate the failure that occurred.  Other parameters are undefined if
  *                  the errorCode is nonzero.
  *
- * serviceName:     The service name discovered.
+ * serviceName:     The discovered service name. This name should be displayed to the user,
+ *                  and stored for subsequent use in the DNSServiceResolve() call.
  *
- * regtype:         The service type, as passed in to DNSServiceBrowse().
+ * regtype:         The service type, which is usually (but not always) the same as was passed
+ *                  to DNSServiceBrowse(). One case where the discovered service type may
+ *                  not be the same as the requested service type is when using subtypes:
+ *                  The client may want to browse for only those ftp servers that allow
+ *                  anonymous connections. The client will pass the string "_ftp._tcp,_anon"
+ *                  to DNSServiceBrowse(), but the type of the service that's discovered
+ *                  is simply "_ftp._tcp". The regtype for each discovered service instance
+ *                  should be stored along with the name, so that it can be passed to
+ *                  DNSServiceResolve() when the service is later resolved.
  *
- * domain:          The domain on which the service was discovered (if the application did not
- *                  specify a domain in DNSServicBrowse(), this indicates the domain on which the
- *                  service was discovered.)
+ * domain:          The domain of the discovered service instance. This may or may not be the
+ *                  same as the domain that was passed to DNSServiceBrowse(). The domain for each
+ *                  discovered service instance should be stored along with the name, so that
+ *                  it can be passed to DNSServiceResolve() when the service is later resolved.
  *
  * context:         The context pointer that was passed to the callout.
  *
@@ -616,15 +668,17 @@ typedef void (DNSSD_API *DNSServiceBrowseReply)
 
 /* DNSServiceBrowse() Parameters:
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef.  May be passed to
- *                  DNSServiceRefDeallocate() to terminate the browse.
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
+ *                  and the browse operation will run indefinitely until the client
+ *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
  *
  * flags:           Currently ignored, reserved for future use.
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to browse for services
  *                  (the index for a given interface is determined via the if_nametoindex()
  *                  family of calls.)  Most applications will pass 0 to browse on all available
- *                  interfaces.  Pass -1 to only browse for services provided on the local host.
+ *                  interfaces. See "Constants for specifying an interface index" for more details.
  *
  * regtype:         The service type being browsed for followed by the protocol, separated by a
  *                  dot (e.g. "_ftp._tcp").  The transport protocol must be "_tcp" or "_udp".
@@ -723,23 +777,29 @@ typedef void (DNSSD_API *DNSServiceResolveReply)
 
 /* DNSServiceResolve() Parameters
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef.  May be passed to
- *                  DNSServiceRefDeallocate() to terminate the resolve.
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
+ *                  and the resolve operation will run indefinitely until the client
+ *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
  *
  * flags:           Currently ignored, reserved for future use.
  *
- * interfaceIndex:  The interface on which to resolve the service.  The client should
- *                  pass the interface on which the servicename was discovered, i.e.
- *                  the interfaceIndex passed to the DNSServiceBrowseReply callback,
- *                  or 0 to resolve the named service on all available interfaces.
+ * interfaceIndex:  The interface on which to resolve the service. If this resolve call is
+ *                  as a result of a currently active DNSServiceBrowse() operation, then the
+ *                  interfaceIndex should be the index reported in the DNSServiceBrowseReply
+ *                  callback. If this resolve call is using information previously saved
+ *                  (e.g. in a preference file) for later use, then use interfaceIndex 0, because
+ *                  the desired service may now be reachable via a different physical interface.
+ *                  See "Constants for specifying an interface index" for more details.
  *
- * name:            The servicename to be resolved.
+ * name:            The name of the service instance to be resolved, as reported to the
+ *                  DNSServiceBrowseReply() callback.
  *
- * regtype:         The service type being resolved followed by the protocol, separated by a
- *                  dot (e.g. "_ftp._tcp").  The transport protocol must be "_tcp" or "_udp".
+ * regtype:         The type of the service instance to be resolved, as reported to the
+ *                  DNSServiceBrowseReply() callback.
  *
- * domain:          The domain on which the service is registered, i.e. the domain passed
- *                  to the DNSServiceBrowseReply callback.
+ * domain:          The domain of the service instance to be resolved, as reported to the
+ *                  DNSServiceBrowseReply() callback.
  *
  * callBack:        The function to be called when a result is found, or if the call
  *                  asynchronously fails.
@@ -867,7 +927,7 @@ DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
  * interfaceIndex:  If non-zero, specifies the interface on which to register the record
  *                  (the index for a given interface is determined via the if_nametoindex()
  *                  family of calls.)  Passing 0 causes the record to be registered on all interfaces.
- *                  Passing -1 causes the record to only be visible on the local host.
+ *                  See "Constants for specifying an interface index" for more details.
  *
  * fullname:        The full domain name of the resource record.
  *
@@ -927,6 +987,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
  *
  * interfaceIndex:  The interface on which the query was resolved (the index for a given
  *                  interface is determined via the if_nametoindex() family of calls).
+ *                  See "Constants for specifying an interface index" for more details.
  *
  * errorCode:       Will be kDNSServiceErr_NoError on success, otherwise will
  *                  indicate the failure that occurred.  Other parameters are undefined if
@@ -966,7 +1027,10 @@ typedef void (DNSSD_API *DNSServiceQueryRecordReply)
 
 /* DNSServiceQueryRecord() Parameters:
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef.
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
+ *                  and the query operation will run indefinitely until the client
+ *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
  *
  * flags:           Pass kDNSServiceFlagsLongLivedQuery to create a "long-lived" unicast
  *                  query in a non-local domain.  Without setting this flag, unicast queries
@@ -978,8 +1042,7 @@ typedef void (DNSSD_API *DNSServiceQueryRecordReply)
  * interfaceIndex:  If non-zero, specifies the interface on which to issue the query
  *                  (the index for a given interface is determined via the if_nametoindex()
  *                  family of calls.)  Passing 0 causes the name to be queried for on all
- *                  interfaces.  Passing -1 causes the name to be queried for only on the
- *                  local host.
+ *                  interfaces. See "Constants for specifying an interface index" for more details.
  *
  * fullname:        The full domain name of the resource record to be queried for.
  *
@@ -1024,6 +1087,9 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
  * Parameters:
  *
  * flags:           Currently unused, reserved for future use.
+ *
+ * interfaceIndex:  If non-zero, specifies the interface of the record in question.
+ *                  Passing 0 causes all instances of this record to be reconfirmed.
  *
  * fullname:        The resource record's full domain name.
  *
@@ -1197,7 +1263,7 @@ void DNSSD_API TXTRecordDeallocate
  *
  * key:             A null-terminated string which only contains printable ASCII
  *                  values (0x20-0x7E), excluding '=' (0x3D). Keys should be
- *                  14 characters or less (not counting the terminating null).
+ *                  8 characters or less (not counting the terminating null).
  *
  * valueSize:       The size of the value.
  *
@@ -1416,7 +1482,7 @@ uint16_t DNSSD_API TXTRecordGetCount
  * key:             A string buffer used to store the key name.
  *                  On return, the buffer contains a null-terminated C string
  *                  giving the key name. DNS-SD TXT keys are usually
- *                  14 characters or less. To hold the maximum possible
+ *                  8 characters or less. To hold the maximum possible
  *                  key name, the buffer should be 256 bytes long.
  *
  * valueLen:        On output, will be set to the size of the "value" data.
