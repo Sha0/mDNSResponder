@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.290  2005/01/25 23:18:30  ksekar
+fix for <rdar://problem/3971467> requires that local-only ".local" registration record be created
+
 Revision 1.289  2005/01/25 18:08:31  ksekar
 Removed redundant debug output
 
@@ -3113,7 +3116,7 @@ mDNSlocal void FoundLegacyBrowseDomain(mDNS *const m, DNSQuestion *question, con
 	(void)m; // unused;
 	(void)question;  // unused
 
-	LogMsg("%s legacy browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
+	LogMsg("%s browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
 	
 	if (AddRecord)
 		{
@@ -3221,13 +3224,23 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	{
 	mStatus err;
-
+	static AuthRecord LocalRegPTR;
+	
 	// start query for domains to be used in default (empty string domain) browses
 	err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, NULL, mDNSInterface_LocalOnly, FoundLegacyBrowseDomain, NULL);
 
-	// provide .local automatically
+	// provide browse domain "local" automatically
 	SetSCPrefsBrowseDomain(m, &localdomain, mDNStrue);
-    return mStatus_NoError;
+
+	// register registration domain "local"
+	mDNS_SetupResourceRecord(&LocalRegPTR, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, NULL, NULL);
+	MakeDomainNameFromDNSNameString(LocalRegPTR.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeRegistration]);
+	AppendDNSNameString            (LocalRegPTR.resrec.name, "local");
+	AssignDomainName(&LocalRegPTR.resrec.rdata->u.name, &localdomain);
+	err = mDNS_Register(m, &LocalRegPTR);
+	if (err) LogMsg("ERROR: InitDNSConfig - mDNS_Register returned error %d", err);
+	
+	return mStatus_NoError;
 	}
 
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
