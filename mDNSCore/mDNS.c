@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.354  2004/02/05 09:30:22  cheshire
+Update comments
+
 Revision 1.353  2004/01/28 03:41:00  cheshire
 <rdar://problem/3541946>: Need ability to do targeted queries as well as multicast queries
 
@@ -1424,7 +1427,8 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 										break;
 										}
 								}
-							if (F.havePrecision && i > F.precision)		// Make sure we don't truncate in the middle of a UTF-8 character
+							// Make sure we don't truncate in the middle of a UTF-8 character (see similar comment below)
+							if (F.havePrecision && i > F.precision)
 								{ i = F.precision; while (i>0 && (s[i] & 0xC0) == 0x80) i--; }
 							break;
 	
@@ -1448,7 +1452,11 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 					if (++nwritten >= buflen) goto exit;
 					} while (i < --F.fieldWidth);
 	
-			if (i > buflen - nwritten)	// Make sure we don't truncate in the middle of a UTF-8 character
+			// Make sure we don't truncate in the middle of a UTF-8 character.
+			// Note: s[i] is the first eliminated character; i.e. the next character *after* the last character of the allowed output. If s[i] is a
+			// UTF-8 continuation character, then we've cut a unicode character in half, so back up 'i' until s[i] is no longer a UTF-8 continuation
+			// character. (if the input was proprly formed, s[i] will now be the UTF-8 start character of the multi-byte character we just eliminated).
+			if (i > buflen - nwritten)
 				{ i = buflen - nwritten; while (i>0 && (s[i] & 0xC0) == 0x80) i--; }
 			for (j=0; j<i; j++) *sbuffer++ = *s++;			// Write the converted result
 			nwritten += i;
