@@ -72,7 +72,7 @@ mDNSexport void debugf_(const char *format, ...)
 	unsigned char buffer[256];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf(buffer, format, ptr)] = 0;
+	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
 	va_end(ptr);
 	fprintf(stderr, "%s\n", buffer);
 	fflush(stderr);
@@ -106,7 +106,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	struct sockaddr *const from, size_t *const fromlen, struct in_addr *dstaddr, char ifname[128])
 	{
-	struct iovec databuffers = { buffer, max };
+	struct iovec databuffers = { (char *)buffer, max };
 	struct msghdr   msg;
 	ssize_t         n;
 	struct cmsghdr *cmPtr;
@@ -161,6 +161,10 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	size_t fromlen = sizeof(from);
 	char ifname[128] = "";
 	int err;
+	
+	(void)address;	// Parameter not used
+	(void)data;		// Parameter not used
+	
 	if (type != kCFSocketReadCallBack) debugf("myCFSocketCallBack: Why is type not kCFSocketReadCallBack?");
 	err = myrecvfrom(skt, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, ifname);
 
@@ -184,11 +188,12 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 
 	if (err < sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 	
-	mDNSCoreReceive(m, &packet, (char*)&packet + err, senderaddr, senderport, destaddr, destport, interface);
+	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, destport, interface);
 	}
 
 mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 	{
+	(void)timer;	// Parameter not used
 	mDNSCoreTask((mDNS *const)info);
 	}
 
@@ -292,7 +297,7 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
 	info->ifinfo.Advertise       = mDNStrue;
 	info->m         = m;
-	info->ifa_name  = malloc(strlen(ifa->ifa_name) + 1);
+	info->ifa_name  = (char *)malloc(strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
 	strcpy(info->ifa_name, ifa->ifa_name);
 	info->alias     = SearchForInterfaceByName(m, ifa->ifa_name);
@@ -365,7 +370,7 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 #endif
 		if (ifa->ifa_addr->sa_family == AF_INET && (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_LOOPBACK))
 			{
-			NetworkInterfaceInfo2 *info = malloc(sizeof(NetworkInterfaceInfo2));
+			NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)malloc(sizeof(NetworkInterfaceInfo2));
 			if (!info) debugf("SetupInterfaceList: Out of Memory!");
 			else SetupInterface(m, info, ifa);
 			}
@@ -379,6 +384,8 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	{
 	mDNS *const m = (mDNS *const)context;
 	debugf("***   Network Configuration Change   ***");
+	(void)store;		// Parameter not used
+	(void)changedKeys;	// Parameter not used
 	ClearInterfaceList(m);
 	SetupInterfaceList(m);
 	mDNSCoreSleep(m, false);
@@ -434,6 +441,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	mDNS *const m = (mDNS *const)refcon;
 	debugf("***   Power Change   ***");
 	debugf("PowerChanged got message %X", messageType);
+	(void)service;		// Parameter not used
 	switch(messageType)
 		{
 		case kIOMessageSystemWillPowerOff: debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true); break;
@@ -515,9 +523,9 @@ mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTim
 	}
 
 // Locking is a no-op here, because we're CFRunLoop-based, so we can never interrupt ourselves
-mDNSexport void    mDNSPlatformLock   (const mDNS *const m) { }
-mDNSexport void    mDNSPlatformUnlock (const mDNS *const m) { }
-mDNSexport void    mDNSPlatformStrCopy(const void *src,       void *dst)             { strcpy(dst, src); }
+mDNSexport void    mDNSPlatformLock   (const mDNS *const m) { (void)m; }
+mDNSexport void    mDNSPlatformUnlock (const mDNS *const m) { (void)m; }
+mDNSexport void    mDNSPlatformStrCopy(const void *src,       void *dst)             { strcpy((char *)dst, (char *)src); }
 mDNSexport UInt32  mDNSPlatformStrLen (const void *src)                              { return(strlen((char*)src)); }
 mDNSexport void    mDNSPlatformMemCopy(const void *src,       void *dst, UInt32 len) { memcpy(dst, src, len); }
 mDNSexport Boolean mDNSPlatformMemSame(const void *src, const void *dst, UInt32 len) { return(memcmp(dst, src, len) == 0); }
