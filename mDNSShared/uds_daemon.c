@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.24  2003/10/21 20:59:40  ksekar
+Bug #: <rdar://problem/3335216>: handle blocked clients more efficiently
+
 Revision 1.23  2003/09/23 02:12:43  cheshire
 Also include port number in list of services registered via new UDS API
 
@@ -133,6 +136,7 @@ typedef struct request_state
 
     // reply, termination, error, and client context info
     int no_reply;		// don't send asynchronous replies to client
+    int time_blocked;           // record time of a blocked client
     void *client_context;	// don't touch this - pointer only valid in client's addr space
     struct reply_state *replies;  // corresponding (active) reply list
     undelivered_error_t *u_err;
@@ -229,7 +233,8 @@ static request_state *all_requests = NULL;
 
 
 #define MAX_OPENFILES 1024
-
+#define MAX_TIME_BLOCKED 60    // try to send data to a blocked client for 60 seconds before
+                                // terminating connection
  
 // private function prototypes
 static void connect_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
@@ -256,7 +261,7 @@ static void enum_termination_callback(void *context);
 static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void handle_query_request(request_state *rstate);
 static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi, uint16_t rrtype, int16_t rrclass);
-static reply_state *format_enumeration_reply(request_state *rstate, char *domain,                                             	DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err);
+static reply_state *format_enumeration_reply(request_state *rstate, char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err);
 static void handle_enum_request(request_state *rstate);
 static void handle_regrecord_request(request_state *rstate);
 static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result);
@@ -360,7 +365,7 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
     reply_state *fptr;
     transfer_state result; 
     mDNSs32 now = mDNSPlatformTimeNow();
-
+    struct timeval time;
 
     while(req)
         {
@@ -380,20 +385,32 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
                     fptr = req->replies;
                     req->replies = req->replies->next;
                     freeL("udsserver_idle", fptr);
+                    req->time_blocked = 0;                              // reset failure counter after successful send
                     }
                 else if (result == t_terminated || result == t_error)
                     {
                     abort_request(req);
                     break;
                     }
-                else if (result == t_morecoming)	   		// client's queues are full, move to next
-                    {
-                    if (nextevent - now > mDNSPlatformOneSecond)
-                        nextevent = now + mDNSPlatformOneSecond;
-                    break;					// start where we left off in a second
-                    }
+                else if (result == t_morecoming) break;	   		// client's queues are full, move to next
                 }
             }
+        if (result == t_morecoming)
+        {	
+	    if (gettimeofday(&time, NULL) < 0)
+		{
+		my_perror("ERROR: gettimeofday");
+		exit(1);
+		}
+	    if (!req->time_blocked) req->time_blocked = time.tv_sec;
+	    debugf("udsserver_idle: client has been blocked for %d seconds", time.tv_sec - req->time_blocked);
+	    if (time.tv_sec - req->time_blocked >= MAX_TIME_BLOCKED)
+		{
+		LogMsg("Could not write data to client after %d seconds - aborting connection", MAX_TIME_BLOCKED);
+		result = t_terminated;
+		}
+	    else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;  // try again in a second
+	}
         if (result == t_terminated || result == t_error)  
         //since we're already doing a list traversal, we unlink the request manunally instead of calling unlink_request()
             {
