@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.67  2004/07/27 07:14:16  shersche
+make error socket non-blocking after call to connect()
+
 Revision 1.66  2004/07/13 21:24:25  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -851,20 +854,10 @@ static void request_callback(void *info)
             exit(1);
             }
 
-#if defined(_WIN32)
-		if (ioctlsocket(rstate->errfd, FIONBIO, &opt) != 0)
-#else
-    	if (fcntl(rstate->errfd, F_SETFL, O_NONBLOCK) != 0)
-#endif
-            {
-            my_perror("ERROR: could not set control socket to non-blocking mode");
-            abort_request(rstate);
-            unlink_request(rstate);
-            return;
-            }        
 #if defined(USE_TCP_LOOPBACK)
 		{
 		mDNSOpaque16 port;
+
 		port.b[0] = rstate->msgdata[0];
 		port.b[1] = rstate->msgdata[1];
         rstate->msgdata += 2;
@@ -886,7 +879,19 @@ static void request_callback(void *info)
             my_perror("ERROR: connect");
             abort_request(rstate);
             unlink_request(rstate);
+			return;
             }
+#if defined(_WIN32)
+		if (ioctlsocket(rstate->errfd, FIONBIO, &opt) != 0)
+#else
+    	if (fcntl(rstate->errfd, F_SETFL, O_NONBLOCK) != 0)
+#endif
+            {
+            my_perror("ERROR: could not set control socket to non-blocking mode");
+            abort_request(rstate);
+            unlink_request(rstate);
+            return;
+            }        
 		}
 
     switch(rstate->hdr.op.request_op)
