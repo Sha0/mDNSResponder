@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.319  2003/11/13 00:47:40  cheshire
+<rdar://problem/3437556> We should delay AAAA record query if A record already in cache.
+
 Revision 1.318  2003/11/13 00:33:26  cheshire
 Change macro "RRIsAddressType" to "RRTypeIsAddressType"
 
@@ -4289,6 +4292,9 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 			}
+		else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
+			if (rr->resrec.namehash == q->qnamehash && SameDomainName(&rr->resrec.name, &q->qname))
+				ShouldQueryImmediately = mDNSfalse;
 
 	if (ShouldQueryImmediately && m->CurrentQuestion == q)
 		{
