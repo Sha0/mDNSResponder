@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.260  2004/12/16 22:17:16  cheshire
+Only accept multicast packets on interfaces that have McastTxRx set
+
 Revision 1.259  2004/12/16 20:13:01  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -1235,7 +1238,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			// interface they arrive on. According to the official Unix Powers That Be, this is Not A Bug.
 			// To work around this weirdness, we use the IP_RECVIF option to find the name of the interface
 			// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
-			if (!ss->info)
+			if (!ss->info || !ss->info->Exists || !ss->info->ifinfo.McastTxRx)
 				{
 				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on unicast socket (Ignored)", &senderAddr, &destAddr);
 				return;
