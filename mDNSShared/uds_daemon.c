@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.57  2004/06/12 01:47:27  ksekar
+<rdar://problem/3690241>: BBEdit crashes when trying to check for newer version
+udsserver_idle compared time in ticks to interval in seconds.
+
 Revision 1.56  2004/06/12 01:35:47  cheshire
 Changes for Windows compatibility
 
@@ -364,10 +368,10 @@ static request_state *all_requests = NULL;
 
 
 #define MAX_OPENFILES 1024
-#define MAX_TIME_BLOCKED 60   // try to send data to a blocked client for 60 seconds before
-                              // terminating connection
-#define MSG_PAD_BYTES 5       // pad message buffer (read from client) with n zero'd bytes to guarantee
-                              // n get_string() calls w/o buffer overrun    
+#define MAX_TIME_BLOCKED 60 * mDNSPlatformOneSecond  // try to send data to a blocked client for 60 seconds before
+                                                     // terminating connection
+#define MSG_PAD_BYTES 5                              // pad message buffer (read from client) with n zero'd bytes to guarantee
+                                                     // n get_string() calls w/o buffer overrun    
 // private function prototypes
 static void connect_callback(void *info);
 static int read_msg(request_state *rs);
@@ -538,10 +542,10 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
         if (result == t_morecoming)
         {	
 	    if (!req->time_blocked) req->time_blocked = now;
-	    debugf("udsserver_idle: client has been blocked for %d seconds", now - req->time_blocked);
+	    debugf("udsserver_idle: client has been blocked for %d seconds", (now - req->time_blocked) / mDNSPlatformOneSecond);
 	    if (now - req->time_blocked >= MAX_TIME_BLOCKED)
 		{
-		LogMsg("Could not write data to client after %d seconds - aborting connection", MAX_TIME_BLOCKED);
+		LogMsg("Could not write data to client after %d seconds - aborting connection", MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
 		abort_request(req);
 		result = t_terminated;
 		}
