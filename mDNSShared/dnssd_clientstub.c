@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.43  2005/01/27 00:02:29  cheshire
+<rdar://problem/3947461> Handle case where client runs before daemon has finished launching
+
 Revision 1.42  2005/01/11 02:01:02  shersche
 Use dnssd_close() rather than close() for Windows compatibility
 
@@ -300,6 +303,7 @@ static DNSServiceRef connect_to_server(void)
     {
 	dnssd_sockaddr_t saddr;
 	DNSServiceRef sdr;
+	int NumTries = 0;
 
 #if defined(_WIN32)
 	if (!g_initWinsock)
@@ -327,12 +331,24 @@ static DNSServiceRef connect_to_server(void)
 	saddr.sun_family = AF_LOCAL;
 	strcpy(saddr.sun_path, MDNS_UDS_SERVERPATH);
 #endif
-	if (connect(sdr->sockfd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
+	while (1)
 		{
-		dnssd_close(sdr->sockfd);
-		sdr->sockfd = dnssd_InvalidSocket;
-		free(sdr);
-		return NULL;
+		int err = connect(sdr->sockfd, (struct sockaddr *) &saddr, sizeof(saddr));
+		if (!err) break;		// If we succeeded, return sdr
+		// If we failed, then it may be because the daemon is still launching.
+		// This can happen for processes that launch early in the boot process, while the
+		// daemon is still coming up. Rather than fail here, we'll wait a bit and try again.
+		// If, after ten seconds, we still can't connect to the daemon,
+		// then we give up and return a failure code.
+		if (++NumTries < 10)
+			sleep(1);		// Sleep a bit, then try again
+		else
+			{
+			dnssd_close(sdr->sockfd);
+			sdr->sockfd = dnssd_InvalidSocket;
+			free(sdr);
+			return NULL;
+			}
 		}
     return sdr;
 	}
