@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.52  2003/05/22 02:29:22  cheshire
+<rdar://problem/2984918> SendQueries needs to handle multihoming better
+Complete rewrite of SendQueries. Works much better now :-)
+
 Revision 1.51  2003/05/21 20:14:55  cheshire
 Fix comments and warnings
 
@@ -260,7 +264,7 @@ typedef enum				// From RFC 1035
 	kDNSType_MINFO,			// 14 Mailbox information
 	kDNSType_MX,			// 15 Mail Exchanger
 	kDNSType_TXT,			// 16 Arbitrary text string
-	
+
 	kDNSType_AAAA = 28,		// 28 IPv6 address
 	kDNSType_SRV = 33,		// 33 Service record
 
@@ -321,7 +325,6 @@ typedef struct
 enum { mDNSfalse = 0, mDNStrue = 1 };
 
 #define mDNSNULL 0L
-#define mDNSInterface_Any	0
 
 enum
 	{
@@ -342,7 +345,7 @@ enum
 	mStatus_AlreadyRegistered = -65547,
 	mStatus_NameConflict      = -65548,
 	mStatus_Invalid           = -65549,
-	
+
 	mStatus_ConfigChanged     = -65791,
 	mStatus_MemFree           = -65792		// 0xFFFE FF00
 	};
@@ -397,7 +400,7 @@ enum
 	kDNSRecordTypeShared           = 0x20,	// Shared means record name does not have to be unique -- so use random delay on replies
 	kDNSRecordTypeVerified         = 0x28,	// Unique means mDNS should check that name is unique (and then send immediate replies)
 	kDNSRecordTypeKnownUnique      = 0x29,	// Known Unique means mDNS can assume name is unique without checking
-	
+
 	kDNSRecordTypeUniqueMask       = 0x08,	// Test for records that are supposed to not be shared with other hosts
 	kDNSRecordTypeRegisteredMask   = 0xF8,	// Test for records that have not had mDNS_Deregister called on them yet
 	kDNSRecordTypeActiveMask       = 0xF0	// Test for all records that have finished their probing and are now active
@@ -452,7 +455,7 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, ResourceRecord *const rr, R
 struct ResourceRecord_struct
 	{
 	ResourceRecord     *next;			// --: Next in list
-	
+
 	// Field Group 1: Persistent metadata for Authoritative Records
 	ResourceRecord     *Additional1;	// AR: Recommended additional record to include in response
 	ResourceRecord     *Additional2;	// AR: Another additional
@@ -468,6 +471,7 @@ struct ResourceRecord_struct
 	mDNSu8          Acknowledged;		// AR: Set if we've given the success callback to the client
 	mDNSu8          ProbeCount;			// AR: Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// AR: Number of announcements remaining (kDNSRecordTypeShared)
+	mDNSInterfaceID SendRNow;			// AR: The interface this query is being sent on right now
 	mDNSu8          IncludeInProbe;		// AR: Set if this RR is being put into a probe right now
 	mDNSu8          SendPriority;		// AR: See enum above
 	mDNSAddr        Requester;			// AR: Used for inter-packet duplicate suppression
@@ -571,6 +575,7 @@ struct DNSQuestion_struct
 	mDNSu32               RecentAnswers;	// Number of answers since the last time we sent this query
 	DNSQuestion          *DuplicateOf;
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
+	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
 	domainname            name;
 	mDNSu16               rrtype;
 	mDNSu16               rrclass;
@@ -616,7 +621,7 @@ typedef void mDNSCallback(mDNS *const m, mStatus result);
 
 struct mDNS_struct
 	{
-	mDNS_PlatformSupport *p;		// Pointer to platform-specific data of indeterminite size
+	mDNS_PlatformSupport *p;			// Pointer to platform-specific data of indeterminite size
 	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
 	mDNSCallback *MainCallback;
@@ -625,13 +630,22 @@ struct mDNS_struct
 	// For debugging: To catch and report locking failures
 	mDNSu32 mDNS_busy;					// Incremented between mDNS_Lock/mDNS_Unlock section
 	mDNSu32 mDNS_reentrancy;			// Incremented when calling a client callback
-	mDNSs32 timenow;					// The time that this particular activation of the mDNS code started
-	mDNSs32 NextScheduledEvent;
-
 	mDNSu8 lock_rrcache;				// For debugging: Set at times when these lists may not be modified
 	mDNSu8 lock_Questions;
 	mDNSu8 lock_Records;
 	mDNSu8 padding;
+
+	// Task Scheduling variables
+	mDNSs32  timenow;					// The time that this particular activation of the mDNS code started
+	mDNSs32  NextScheduledEvent;		// Derived from values below
+	mDNSs32  SuppressSending;			// Don't send *any* packets during this time
+	mDNSs32  NextCacheCheck;			// Next time to refresh cache record before it expires
+	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
+	mDNSs32  NextProbeTime;				// Next time to probe for new authoritative record
+	mDNSs32  NextAnnouncementTime;		// Next time to announce new authoritative record
+	mDNSBool SendDeregistrations;		// Set if we need to send deregistrations (immediately)
+	mDNSBool SendImmediateAnswers;		// Set if we need to send answers (immediately -- or as soon as SuppressSending clears)
+	mDNSBool SleepState;				// Set if we're sleeping (send no more packets)
 
 	// These fields only required for mDNS Searcher...
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
@@ -652,13 +666,9 @@ struct mDNS_struct
 	ResourceRecord *ResourceRecords;
 	ResourceRecord *CurrentRecord;		// Next ResourceRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
-	mDNSs32 SuppressSending;
 	mDNSs32 ProbeFailTime;
 	mDNSs32 NumFailedProbes;
 	mDNSs32 SuppressProbes;
-	mDNSs32	NextCacheTidyTime;
-	mDNSBool SleepState;
-	mDNSBool NetChanged;
 	};
 
 // ***************************************************************************
@@ -666,19 +676,20 @@ struct mDNS_struct
 #pragma mark - Useful Static Constants
 #endif
 
-extern const ResourceRecord zeroRR;
-extern const mDNSIPPort zeroIPPort;
-extern const mDNSIPAddr zeroIPAddr;
-extern const mDNSv6Addr zerov6Addr;
-extern const mDNSIPAddr onesIPAddr;
+extern const ResourceRecord  zeroRR;
+extern const mDNSIPPort      zeroIPPort;
+extern const mDNSIPAddr      zeroIPAddr;
+extern const mDNSv6Addr      zerov6Addr;
+extern const mDNSIPAddr      onesIPAddr;
+extern const mDNSInterfaceID mDNSInterface_Any;
 
-extern const mDNSIPPort UnicastDNSPort;
-extern const mDNSIPPort MulticastDNSPort;
-extern const mDNSIPAddr AllDNSAdminGroup;
-extern const mDNSIPAddr AllDNSLinkGroup;
-extern const mDNSv6Addr AllDNSLinkGroupv6;
-extern const mDNSAddr   AllDNSLinkGroup_v4;
-extern const mDNSAddr   AllDNSLinkGroup_v6;
+extern const mDNSIPPort      UnicastDNSPort;
+extern const mDNSIPPort      MulticastDNSPort;
+extern const mDNSIPAddr      AllDNSAdminGroup;
+extern const mDNSIPAddr      AllDNSLinkGroup;
+extern const mDNSv6Addr      AllDNSLinkGroupv6;
+extern const mDNSAddr        AllDNSLinkGroup_v4;
+extern const mDNSAddr        AllDNSLinkGroup_v6;
 
 // ***************************************************************************
 #if 0
