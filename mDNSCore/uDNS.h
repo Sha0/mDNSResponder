@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.2  2004/01/23 23:23:15  ksekar
+Added TCP support for truncated unicast messages.
+
 Revision 1.1  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -41,7 +44,7 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 
 // returns true if OK to call StopQuery
-mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question);      
+mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_data_t *u);
 mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 
 

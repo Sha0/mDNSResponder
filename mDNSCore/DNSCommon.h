@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.3  2004/01/23 23:23:14  ksekar
+Added TCP support for truncated unicast messages.
+
 Revision 1.2  2004/01/21 21:12:23  cheshire
 Add missing newline at end of file to make Unix tools happier
 
@@ -36,6 +39,51 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 #define __DNSCOMMON_H_
 
 #include "mDNSClientAPI.h"
+
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - DNS Protocol Constants
+#endif
+
+typedef enum
+	{
+	kDNSFlag0_QR_Mask     = 0x80,		// Query or response?
+	kDNSFlag0_QR_Query    = 0x00,
+	kDNSFlag0_QR_Response = 0x80,
+	
+	kDNSFlag0_OP_Mask     = 0x78,		// Operation type
+	kDNSFlag0_OP_StdQuery = 0x00,
+	kDNSFlag0_OP_Iquery   = 0x08,
+	kDNSFlag0_OP_Status   = 0x10,
+	kDNSFlag0_OP_Unused3  = 0x18,
+	kDNSFlag0_OP_Notify   = 0x20,
+	kDNSFlag0_OP_Update   = 0x28,
+	
+	kDNSFlag0_QROP_Mask   = kDNSFlag0_QR_Mask | kDNSFlag0_OP_Mask,
+	
+	kDNSFlag0_AA          = 0x04,		// Authoritative Answer?
+	kDNSFlag0_TC          = 0x02,		// Truncated?
+	kDNSFlag0_RD          = 0x01,		// Recursion Desired?
+	kDNSFlag1_RA          = 0x80,		// Recursion Available?
+	
+	kDNSFlag1_Zero        = 0x40,		// Reserved; must be zero
+	kDNSFlag1_AD          = 0x20,		// Authentic Data [RFC 2535]
+	kDNSFlag1_CD          = 0x10,		// Checking Disabled [RFC 2535]
+
+	kDNSFlag1_RC          = 0x0F,		// Response code
+	kDNSFlag1_RC_NoErr    = 0x00,
+	kDNSFlag1_RC_FmtErr   = 0x01,
+	kDNSFlag1_RC_SrvErr   = 0x02,
+	kDNSFlag1_RC_NXDomain = 0x03,
+	kDNSFlag1_RC_NotImpl  = 0x04,
+	kDNSFlag1_RC_Refused  = 0x05,
+	kDNSFlag1_RC_YXDomain = 0x06,
+	kDNSFlag1_RC_YXRRSet  = 0x07,
+	kDNSFlag1_RC_NXRRSet  = 0x08,
+	kDNSFlag1_RC_NotAuth  = 0x09,
+	kDNSFlag1_RC_NotZone  = 0x0A
+	} DNS_Flags;
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -184,5 +232,7 @@ mDNSexport const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mD
 #endif
 
 mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
+mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd);
+
 
 #endif // __DNSCOMMON_H_

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.135  2004/01/23 23:23:15  ksekar
+Added TCP support for truncated unicast messages.
+
 Revision 1.134  2004/01/22 03:54:11  cheshire
 Create special meta-interface 'mDNSInterface_ForceMCast' (-2),
 which means "do this query via multicast, even if it's apparently a unicast domain"
@@ -634,7 +637,12 @@ enum
 	// Non-error values:
 	mStatus_GrowCache         = -65790,
 	mStatus_ConfigChanged     = -65791,
-	mStatus_MemFree           = -65792		// 0xFFFE FF00
+	mStatus_MemFree           = -65792,		// 0xFFFE FF00
+
+	// tcp connection status
+	mStatus_ConnectionPending = -65793,
+	mStatus_ConnectionFailed =  -65794,
+	mStatus_ConnectionEstablished = -65795
 	};
 
 typedef mDNSs32 mStatus;
@@ -741,6 +749,7 @@ enum
 	kDNSRecordTypePacketAddUnique  = 0xA0,	// Received in the Additional Section of a DNS Response with kDNSClass_UniqueRRSet set
 	kDNSRecordTypePacketAns        = 0xC0,	// Received in the Answer Section of a DNS Response
 	kDNSRecordTypePacketAnsUnique  = 0xE0,	// Received in the Answer Section of a DNS Response with kDNSClass_UniqueRRSet set
+	kDNSRecordTypePacketAuth       = 0x100, // Received in the Authority Section of a DNS Response
 
 	kDNSRecordTypePacketAnsMask    = 0x40,	// True for PacketAns       and PacketAnsUnique
 	kDNSRecordTypePacketUniqueMask = 0x20	// True for PacketAddUnique and PacketAnsUnique
@@ -748,7 +757,9 @@ enum
 
 typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target;   } rdataSRV;
 typedef packedstruct { mDNSu16 preference;                                domainname exchange; } rdataMX;
-
+typedef packedstruct { domainname mname; domainname rname; mDNSu32 serial; mDNSu32 refresh;
+                       mDNSu32 retry; mDNSu32 expire; mDNSu32 min;                              } rdataSOA;
+	
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
 #define StandardAuthRDSize 264
@@ -775,6 +786,7 @@ typedef union
 	UTF8str255  txt;		// For TXT record
 	rdataSRV    srv;		// For SRV record
 	rdataMX     mx;			// For MX record
+    rdataSOA    soa;        // For SOA record
 	} RDataBody;
 
 typedef struct
@@ -980,6 +992,7 @@ typedef struct
     {
     mDNSOpaque16          id;
     mDNSs32               timestamp;
+    mDNSBool              internal;
     } uDNS_QuestionInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
@@ -1067,9 +1080,15 @@ enum
 
 typedef struct 
     {
-    DNSQuestion *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
-    mDNSu16      NextMessageID;
-    mDNSv4Addr   Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
+    DNSQuestion     *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+    DNSQuestion     *ActiveInternalQueries; // queries not requested by the client
+    // messageID used to demux responses and match with request.  NextMessageID is initially 1 
+    // and is incremented while NextInternalID is initially all 1's and decremented.  They are reset
+    // to initial values if they ever collide.  ID zero is reserved for mDNS messages and unicast
+    // DNS messages sent over a TCP socket
+    mDNSu16    NextMessageID;
+    mDNSu16    NextInternalMessageID;
+    mDNSAddr      Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
     } uDNS_data_t;  
 
 struct mDNS_struct
@@ -1467,6 +1486,39 @@ extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
 extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 
+
+// Every platform support module must provide the following functions if it is to support unicats DNS
+// and Dynamic Update.
+// All TCP socket operations implemented by the platform layerMUST NOT BLOCK.
+// mDNSPlatformTCPConnect initiates a TCP connection with a peer, adding the socket descriptor to the
+// main event loop.  The return value indicates whether the connection succeeded, failed, or is pending
+// (i.e. the call would block.)  On return, the descriptor parameter is set to point to the connected socket.
+// The TCPConnectionCallback is subsequently invoked when the connection
+// completes (in which case the ConnectionEstablished parameter is true), or data is available for
+// reading on the socket (indicated by the ConnectionEstablished parameter being false.)  If the connection
+// asyncronously fails, the TCPConnectionCallback should be invoked as usual, with the error being
+// returned in subsequent calls to PlatformReadTCP or PlatformWriteTCP.  (This allows for platforms
+// with limited asyncronous error detection capabilities.)  PlatformReadTCP and PlatformWriteTCP must
+// return the number of bytes read/written, 0 if the call would block, and -1 if an error.
+// PlatformTCPCloseConnection must close the connection to the peer and remove the descriptor from the
+// event loop.  CloseConnectin may be called at any time, including in a ConnectionCallback.
+	
+typedef void (*TCPConnectionCallback)(int sd, void *context, mDNSBool ConnectionEstablished);
+mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context, int *descriptor);
+extern void mDNSPlatformTCPCloseConnection(int sd);
+extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
+extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
+
+extern void mDNSPlatformAssert(mDNSBool exp);
+
+// Byte order conversion functions
+extern mDNSu16 mDNSPlatformNtoHS(mDNSu16 s);
+extern mDNSu16 mDNSPlatformHtoNS(mDNSu32 s);
+extern mDNSu32 mDNSPlatformNtoHL(mDNSu32 l);
+extern mDNSu32 mDNSPlatformHtoHL(mDNSu32 l);
+	
+	
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())

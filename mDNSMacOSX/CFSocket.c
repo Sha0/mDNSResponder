@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.126  2004/01/23 23:23:15  ksekar
+Added TCP support for truncated unicast messages.
+
 Revision 1.125  2004/01/22 03:43:09  cheshire
 Export constants like mDNSInterface_LocalOnly so that the client layers can use them
 
@@ -391,6 +394,9 @@ Minor code tidying
 #include <IOKit/IOMessage.h>
 #include <mach/mach_time.h>
 
+#include <assert.h>
+
+
 // ***************************************************************************
 // Globals
 
@@ -516,7 +522,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, to.ss_len);
 	if (err < 0)
 		{
-		// Don't report EHOSTDOWN (i.e. ARP failure) to unicast destinations
+        // Don't report EHOSTDOWN (i.e. ARP failure) to unicast destinations
 		if (errno == EHOSTDOWN && !mDNSAddressIsAllDNSLinkGroup(dst)) return(err);
 		// Don't report EHOSTUNREACH in the first three minutes after boot
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
@@ -720,9 +726,187 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		if (numLogMessages++ < 100)
 			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
-		sleep(1); // After logging this error, rate limit so we don't flood syslog
-		}
+		sleep(1);		// After logging this error, rate limit so we don't flood syslog
+		} 
 	}
+
+
+// TCP socket support for unicast DNS and Dynamic DNS Update
+
+typedef struct
+	{
+    TCPConnectionCallback callback;
+    void *context;
+    int connected;
+	} tcpInfo_t;
+
+mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType CallbackType, CFDataRef address,
+								   const void *data, void *context)
+	{
+	#pragma unused(CallbackType, address, data)
+	mDNSBool connect = mDNSfalse;  
+	
+	tcpInfo_t *info = context;
+	if (!info->connected)
+		{
+		connect = mDNStrue;
+		info->connected = mDNStrue;  // prevent connected flag from being set in future callbacks
+		}
+	info->callback(CFSocketGetNative(cfs), info->context, connect);
+	// NOTE: the callback may call CloseConnection here, which frees the context structure!  
+	}
+
+
+mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context, int *descriptor)
+	{
+	int sd, on = 1;  // "on" for setsockopt
+	struct sockaddr_in saddr;
+	CFSocketContext cfContext = { 0, NULL, 0, 0, 0 };  
+	tcpInfo_t *info;
+	CFSocketRef sr;
+	CFRunLoopSourceRef rls;
+	CFOptionFlags srFlags;
+	
+	(void)InterfaceID;	//!!!KRS use this if non-zero!!!
+
+	*descriptor = 0;
+	if (dst->type != mDNSAddrType_IPv4)
+		{
+		LogMsg("ERROR: mDNSPlatformTCPConnect - attempt to connect to an IPv6 address: opperation not supported");
+		return mStatus_UnknownErr;
+		}
+
+	sd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sd < 0)
+		{
+		LogMsg("ERROR: socket; %s", strerror(errno));
+		return mStatus_UnknownErr;
+		}
+	// set non-blocking
+	if (fcntl(sd, F_SETFL, O_NONBLOCK) < 0)
+		{
+		LogMsg("ERROR: setsockopt O_NONBLOCK - %s", strerror(errno));
+		return mStatus_UnknownErr;
+		}
+	
+	// receive interface identifiers
+	if (setsockopt(sd, IPPROTO_IP, IP_RECVIF, &on, sizeof(on)) < 0)
+		{
+		LogMsg("setsockopt IP_RECVIF - %s", strerror(errno));
+		return mStatus_UnknownErr;
+		}
+	// set up CF wrapper, add to Run Loop
+	info = mallocL("mDNSPlatformTCPConnect", sizeof(tcpInfo_t));
+	info->callback = callback;
+	info->context = context;
+	cfContext.info = info;
+	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketReadCallBack | kCFSocketConnectCallBack,
+								  tcpCFSocketCallback, &cfContext);
+	if (!sr)
+		{
+		LogMsg("ERROR: mDNSPlatformTCPConnect - CFSocketRefCreateWithNative failed");
+		freeL("mDNSPlatformTCPConnect", info);
+		return mStatus_UnknownErr;
+		}
+
+	// prevent closing of native socket
+	srFlags = CFSocketGetSocketFlags(sr);
+	CFSocketSetSocketFlags(sr, srFlags & (~kCFSocketCloseOnInvalidate));
+	
+	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, sr, 0);
+	if (!rls) 
+		{
+		LogMsg("ERROR: mDNSPlatformTCPConnect - CFSocketCreateRunLoopSource failed");
+		freeL("mDNSPlatformTCPConnect", info);
+		return mStatus_UnknownErr;
+		}
+	
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+	CFRelease(rls);
+	
+	// initiate connection wth peer
+	bzero(&saddr, sizeof(saddr));
+	saddr.sin_family = AF_INET;
+	saddr.sin_port = dstport.NotAnInteger;
+	memcpy(&saddr.sin_addr, &dst->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
+	if (connect(sd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
+		{
+		if (errno == EINPROGRESS)
+			{
+			info->connected = 0;
+			*descriptor= sd;
+			return mStatus_ConnectionPending;
+			}
+		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: %s", strerror(errno));
+		freeL("mDNSPlatformTCPConnect", info);
+		CFSocketInvalidate(sr);
+		return mStatus_ConnectionFailed;
+		}
+	info->connected = 1;
+	*descriptor = sd;
+	return mStatus_ConnectionEstablished;
+	}
+
+mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
+	{
+	CFSocketContext cfContext;
+	tcpInfo_t *info;
+	CFSocketRef sr;
+
+    // get the CFSocket for the descriptor, if it exists
+	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, NULL, NULL, NULL);
+	if (!sr)
+		{
+		LogMsg("ERROR: mDNSPlatformTCPCloseConnection - attempt to close a socket that was not properly created");
+		return;
+		}
+	CFSocketGetContext(sr, &cfContext);
+	if (!cfContext.info)
+		{
+		LogMsg("ERROR: mDNSPlatformTCPCloseConnection - could not retreive tcpInfo from socket context");
+		CFRelease(sr);
+		return;
+		}
+	CFRelease(sr);  // this only releases the copy we allocated with CreateWithNative above
+	
+	info = cfContext.info;
+	CFSocketInvalidate(sr);
+	CFRelease(sr);	
+	close(sd);
+	freeL("mDNSPlatformTCPCloseConnection", info);	
+	}
+mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+	{
+	int nread = recv(sd, buf, buflen, 0);
+	if (nread < 0)
+		{
+		if (errno == EAGAIN) return 0;  // no data available (call would block)
+		LogMsg("ERROR: mDNSPlatformReadTCP - recv: %s", strerror(errno));
+		return -1;
+		}
+	return nread;
+	}
+
+mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+	{
+	int nsent = send(sd, msg, len, 0);
+
+	if (nsent < 0)
+		{
+		if (errno == EAGAIN) return 0;  // blocked
+		LogMsg("ERROR: mDNSPlatformWriteTCP - sendL %s", strerror(errno));
+		return -1;
+		}
+	return nsent;
+	}
+
+mDNSexport mDNSu16 mDNSPlatformNtoHS(mDNSu16 s)  { return ntohs(s); }
+mDNSexport mDNSu16 mDNSPlatformHtoNS(mDNSu32 s)  { return htons(s); }
+mDNSexport mDNSu32 mDNSPlatformNtoHL(mDNSu32 l)  { return ntohl(l); }
+mDNSexport mDNSu32 mDNSPlatformHtoHL(mDNSu32 l)  { return htonl(l); }
+
+mDNSexport void mDNSPlatformAssert(mDNSBool exp) { assert(exp); }
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
 mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
@@ -785,7 +969,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 		if (err < 0) { LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
-		// Specify outgoing interface too
+        // Specify outgoing interface too
 		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr));
 		if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
@@ -1250,43 +1434,43 @@ mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, v
 	}
 
 mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)
-	{
-	CFStringRef             key;
-	CFMutableArrayRef       keyList;
-	CFRunLoopSourceRef      rls;
-	SCDynamicStoreRef       session;
+    {
+    CFStringRef			    key;
+    CFMutableArrayRef		keyList;
+    CFRunLoopSourceRef		rls;
+    SCDynamicStoreRef 		session;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 	
-	session = SCDynamicStoreCreate(NULL, CFSTR("trackDNS"), DNSConfigChanged, &context);
-	if (!session) { LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
+    session = SCDynamicStoreCreate(NULL, CFSTR("trackDNS"), DNSConfigChanged, &context);    
+    if (!session) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
 
-	keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-	if (!keyList) { LogMsg("ERROR: WatchForDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
-
-	// create a pattern that matches the global DNS dictionary key
-	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-	if (!key) { LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity"); return mStatus_UnknownErr; }
-
-	CFArrayAppendValue(keyList, key);
-	CFRelease(key);
-
-	// set the keys for our DynamicStore session
-	SCDynamicStoreSetNotificationKeys(session, keyList, NULL);
-	CFRelease(keyList);
-
-	// create a CFRunLoopSource for our DynamicStore session
-	rls = SCDynamicStoreCreateRunLoopSource(NULL, session, 0);
-	if (!rls) { LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreateRunLoopSource");  return mStatus_UnknownErr;  }
-
-	// add the run loop source to our current run loop
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-	CFRelease(rls);
-
+    keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+    if (!keyList) {  LogMsg("ERROR: WatchForDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
+    
+    // create a pattern that matches the global DNS dictionary key
+    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+    if (!key) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr;  }
+    
+    CFArrayAppendValue(keyList, key);
+    CFRelease(key);
+    
+    // set the keys for our DynamicStore session
+    SCDynamicStoreSetNotificationKeys(session, keyList, NULL);
+    CFRelease(keyList);
+    
+    // create a CFRunLoopSource for our DynamicStore session
+    rls = SCDynamicStoreCreateRunLoopSource(NULL, session, 0);
+    if (!rls) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreateRunLoopSource");  return mStatus_UnknownErr;  }
+    
+    // add the run loop source to our current run loop 
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+    CFRelease(rls);
+    
 	// get initial configuration
-	DNSConfigChanged(session, NULL, m);
-	DNSConfigInitialized = mDNStrue;
-	return mStatus_NoError;
-	}
+    DNSConfigChanged(session, NULL, m);
+    DNSConfigInitialized = mDNStrue;
+    return mStatus_NoError;
+    }
 
 mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{

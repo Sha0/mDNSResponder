@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.5  2004/01/23 23:23:14  ksekar
+Added TCP support for truncated unicast messages.
+
 Revision 1.4  2004/01/22 02:15:33  cheshire
 <rdar://problem/3536597>: Link-local reverse-mapping domains need to be resolved using link-local multicast
 
@@ -1258,14 +1261,23 @@ mDNSexport const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mD
 #pragma mark - Packet Sending Functions
 #endif
 
-mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport)
+mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
+	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport, int sd, mDNSBool tcp)
 	{
 	mStatus status;
+	int nsent;
+	mDNSu16 msglen;
+	mDNSu8 lenbuf[2];
 	mDNSu16 numQuestions   = msg->h.numQuestions;
 	mDNSu16 numAnswers     = msg->h.numAnswers;
 	mDNSu16 numAuthorities = msg->h.numAuthorities;
 	mDNSu16 numAdditionals = msg->h.numAdditionals;
+
+	if (tcp && sd < 0)
+		{
+		LogMsg("sendDNSMessage: attempt to send tcp message over invalid desciptor");
+		return mStatus_UnknownErr;
+		}
 
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
 	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
@@ -1279,7 +1291,23 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 	*ptr++ = (mDNSu8)(numAdditionals     );
 
 	// Send the packet on the wire
-	status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, srcport, dst, dstport);
+
+	if (tcp)
+		{
+		msglen = end - (mDNSu8 *)msg; 
+		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
+		lenbuf[1] = (mDNSu8)(msglen);
+		nsent = mDNSPlatformWriteTCP(sd, lenbuf, 2);
+		//!!!KRS make sure kernel is sending these as 1 packet!
+		if (nsent != 2) goto tcp_error;
+		nsent = mDNSPlatformWriteTCP(sd, (char *)msg, msglen);
+		if (nsent != msglen) goto tcp_error;
+		status = mStatus_NoError;
+		}
+	else
+		{
+		status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, srcport, dst, dstport);
+		}
 
 	// Put all the integer values back the way they were before we return
 	msg->h.numQuestions   = numQuestions;
@@ -1288,4 +1316,27 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 	msg->h.numAdditionals = numAdditionals;
 
 	return(status);
+
+	tcp_error:
+	LogMsg("sendDNSMessage: error sending message over tcp");
+	return mStatus_UnknownErr;
+
 	}
+				
+mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd)
+	{
+	mDNSIPPort sp, dp;
+
+	sp.NotAnInteger = 0;
+	dp.NotAnInteger = 0;
+	//return sendDNSMessage(m, msg, end, InterfaceID, srcport, dst, dstport, sd, mDNStrue);
+	return sendDNSMessage(m, msg, end, 0, sp, 0, dp, sd, mDNStrue);
+	}
+
+
+mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
+	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport)
+	{
+	return sendDNSMessage(m, msg, end, InterfaceID, srcport, dst, dstport, -1, mDNSfalse);
+	}	
+	

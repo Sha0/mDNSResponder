@@ -337,6 +337,7 @@
 				00AD62A3032D799A0CCA2C71,
 				6575FC1C022EB76000000109,
 				0044D34804CC73600CCA2C71,
+				7F87DDB90597CD7A00D3D5C8,
 			);
 		};
 		08FB7794FE84155DC02AAC07 = {
@@ -497,6 +498,7 @@
 				6575FC1D022EB76000000109,
 				00AD62B8032D799A0CCA2C71,
 				0044D34F04CC73600CCA2C71,
+				7F87DDBA0597CD7A00D3D5C8,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -702,6 +704,7 @@
 		};
 		6575FC1F022EB78C00000109 = {
 			children = (
+				7F87DDBD0597CD9D00D3D5C8,
 				6575FC20022EB7AA00000109,
 				0017390704CC75C30CCA2C71,
 				004EFB9604CC78130CCA2C71,
@@ -781,6 +784,76 @@
 		};
 		7F18A9FB0587CEF6001880B3 = {
 			fileRef = 7F18A9F70587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F87DDB50597CD7A00D3D5C8 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXHeadersBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F87DDB60597CD7A00D3D5C8 = {
+			buildActionMask = 2147483647;
+			files = (
+				7F87DDBF0597CD9D00D3D5C8,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F87DDB70597CD7A00D3D5C8 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F87DDB80597CD7A00D3D5C8 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXRezBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F87DDB90597CD7A00D3D5C8 = {
+			buildPhases = (
+				7F87DDB50597CD7A00D3D5C8,
+				7F87DDB60597CD7A00D3D5C8,
+				7F87DDB70597CD7A00D3D5C8,
+				7F87DDB80597CD7A00D3D5C8,
+			);
+			buildSettings = {
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = uDNSTest;
+				REZ_EXECUTABLE = YES;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
+			};
+			dependencies = (
+			);
+			isa = PBXToolTarget;
+			name = uDNSTest;
+			productInstallPath = /usr/local/bin;
+			productName = uDNSTest;
+			productReference = 7F87DDBA0597CD7A00D3D5C8;
+		};
+		7F87DDBA0597CD7A00D3D5C8 = {
+			isa = PBXExecutableFileReference;
+			path = uDNSTest;
+			refType = 3;
+		};
+		7F87DDBD0597CD9D00D3D5C8 = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			path = uDNSTest.c;
+			refType = 4;
+		};
+		7F87DDBF0597CD9D00D3D5C8 = {
+			fileRef = 7F87DDBD0597CD9D00D3D5C8;
 			isa = PBXBuildFile;
 			settings = {
 			};
