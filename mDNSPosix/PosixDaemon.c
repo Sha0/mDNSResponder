@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.9  2004/05/29 00:14:20  rpantos
+<rdar://problem/3508093> Runtime check to disable prod mdnsd on OS X.
+
 Revision 1.8  2004/04/07 01:19:04  cheshire
 Hash slot value should be unsigned
 
@@ -146,6 +149,13 @@ static void	ParseCmdLinArgs( int argc, char **argv)
 			LogMsg("Could not run as daemon - exiting");
 			exit( result);
 		}
+
+#if __APPLE__
+		{
+			LogMsg("The POSIX mDNSResponder should only be used on OS X for testing - exiting");
+			exit( -1);
+		}
+#endif
 	}
 }
 
