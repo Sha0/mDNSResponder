@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.9  2004/10/27 02:25:05  cheshire
+<rdar://problem/3816029> Random memory smashing bug
+
 Revision 1.8  2004/10/27 02:17:21  cheshire
 Turn off "safe_close: ERROR" error messages -- there are too many of them
 
@@ -498,7 +501,7 @@ static int GetIPInfo(PPIPINFO ppIPInfo)
 			}
 			else pIPInfo = pIPInfoNew;
 
-			memset(pIPInfo - (iMax - 10), 0, sizeof(IPINFO) * 10);
+			memset(pIPInfo + (iMax - 10), 0, sizeof(IPINFO) * 10);
 		}
 
 		ifr = (struct ifreq *)pcTemp;
