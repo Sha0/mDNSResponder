@@ -68,6 +68,13 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.41  2003/04/15 18:09:13  jgraessl
+
+Bug #: 3228892
+Reviewed by: Stuart Cheshire
+Added code to keep track of when the next cache item will expire so we can
+call TidyRRCache only when necessary.
+
 Revision 1.40  2003/03/29 01:55:19  cheshire
 <rdar://problem/3212360> mDNSResponder sometimes suffers false self-conflicts when it sees its own packets
 Solution: Major cleanup of packet timing and conflict handling rules
@@ -594,6 +601,7 @@ struct mDNS_struct
 	mDNSs32 ProbeFailTime;
 	mDNSs32 NumFailedProbes;
 	mDNSs32 SuppressProbes;
+	mDNSs32	NextCacheTidyTime;
 	mDNSBool SleepState;
 	mDNSBool NetChanged;
 	};
