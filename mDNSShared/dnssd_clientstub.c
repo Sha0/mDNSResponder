@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.8  2003/08/13 23:54:52  ksekar
+Bringing dnssd_clientstub.c up to date with Libinfo, per radar 3376640
+
 Revision 1.7  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -54,7 +57,7 @@ typedef struct _DNSServiceRef_t
     process_reply_callback process_reply;
     void *app_callback;
     void *app_context;
-    uint32_t max_index;  //largest assigned record index
+    uint32_t max_index;  //largest assigned record index - 0 if no additl. recs registered
     } _DNSServiceRef_t;			
 
 typedef struct _DNSRecordRef_t
@@ -686,8 +689,7 @@ DNSServiceErrorType DNSServiceUpdateRecord
     int len = 0;
     char *ptr;
 
-    if (!sdRef || 
-        (sdRef->op != connection && sdRef->op != add_record_request)) 
+    if (!sdRef || !RecordRef || !sdRef->max_index) 
         return kDNSServiceErr_BadReference;
     
     len += sizeof(uint16_t);
@@ -719,7 +721,7 @@ DNSServiceErrorType DNSServiceRemoveRecord
     char *ptr;
     DNSServiceErrorType err;
 
-    if (!sdRef || sdRef->op != connection || sdRef->sockfd < 0) 
+    if (!sdRef || !RecordRef || !sdRef->max_index) 
         return kDNSServiceErr_BadReference;
     
     len += sizeof(flags);
