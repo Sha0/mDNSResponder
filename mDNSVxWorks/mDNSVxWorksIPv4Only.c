@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.16  2004/04/22 05:11:28  bradley
+Added mDNSPlatformUTC for TSIG signed dynamic updates.
+
 Revision 1.15  2004/04/21 02:49:12  cheshire
 To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
 
@@ -717,6 +720,15 @@ mDNSexport mStatus mDNSPlatformTimeInit( mDNSs32 *outTimeNow )
 mDNSs32	mDNSPlatformTimeNow( void )
 {
 	return( (mDNSs32) tickGet() );
+}
+
+//===========================================================================================================================
+//	mDNSPlatformUTC
+//===========================================================================================================================
+
+mDNSexport mDNSs32	mDNSPlatformUTC( void )
+{
+	return( -1 );
 }
 
 //===========================================================================================================================
