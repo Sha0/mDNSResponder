@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.61  2004/02/20 09:36:46  cheshire
+Also show TTL in packet header, if it's not 255
+
 Revision 1.60  2004/02/07 02:11:35  cheshire
 Make mDNSNetMonitor smarter about sending targeted unicast HINFO queries
 
@@ -505,6 +508,7 @@ mDNSlocal void SendUnicastQuery(mDNS *const m, HostEntry *entry, domainname *nam
 		}
 	else
 		{
+		//mprintf("%#a Q\n", target);
 		InterfaceID = mDNSInterface_Any;	// Send query from our unicast reply socket
 		m->ExpectUnicastResponse = m->timenow;
 		}
@@ -646,7 +650,8 @@ mDNSlocal void printstats(int max)
 		}
 	}
 
-mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, LargeCacheRecord *pkt)
+mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end,\
+	DNSQuestion *q, LargeCacheRecord *pkt)
 	{
 	int i;
 	for (i = 0; i < query->h.numAuthorities; i++)
@@ -668,7 +673,7 @@ mDNSlocal void DisplayTimestamp(void)
 	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
 	}
 
-mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport)
+mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, mDNSu8 ttl)
 	{
 	const char *const ptype =   (msg->h.flags.b[0] & kDNSFlag0_QR_Response)             ? "-R- " :
 								(srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? "-Q- " : "-LQ-";
@@ -678,6 +683,8 @@ mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *co
 		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals, end - (mDNSu8 *)msg);
 
 	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", mDNSVal16(msg->h.id));
+
+	if (ttl != 255) mprintf("  TTL:%u", ttl);
 
 	if (msg->h.flags.b[0] & kDNSFlag0_TC)
 		{
@@ -774,7 +781,8 @@ mDNSlocal void DisplayError(const mDNSAddr *srcaddr, const mDNSu8 *ptr, const mD
 	HexDump(ptr, end);
 	}
 
-mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID)
+mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
+	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
@@ -783,7 +791,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	HostEntry *entry = GotPacketFromHost(srcaddr, MQ ? HostPkt_Q : HostPkt_L, msg->h.id);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, end, srcaddr, srcport);
+	DisplayPacketHeader(msg, end, srcaddr, srcport, ttl);
 	if (msg->h.id.NotAnInteger != 0xFFFF)
 		{
 		if (MQ) NumPktQ++; else NumPktL++;
@@ -841,14 +849,15 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	if (entry) AnalyseHost(m, entry, InterfaceID);
 	}
 
-mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID)
+mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *end,
+	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
 	HostEntry *entry = GotPacketFromHost(srcaddr, HostPkt_R, msg->h.id);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, end, srcaddr, srcport);
+	DisplayPacketHeader(msg, end, srcaddr, srcport, ttl);
 	if (msg->h.id.NotAnInteger != 0xFFFF) NumPktR++;
 
 	for (i=0; i<msg->h.numQuestions; i++)
@@ -910,6 +919,7 @@ mDNSlocal void ProcessUnicastResponse(mDNS *const m, const DNSMessage *const msg
 	int i;
 	const mDNSu8 *ptr = LocateAnswers(msg, end);
 	HostEntry *entry = GotPacketFromHost(srcaddr, HostPkt_R, msg->h.id);
+	//mprintf("%#a R\n", srcaddr);
 
 	for (i=0; i<msg->h.numAnswers + msg->h.numAuthorities + msg->h.numAdditionals; i++)
 		{
@@ -962,12 +972,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 		mDNS_Lock(m);
 		if (!mDNSAddrIsDNSMulticast(dstaddr))
 			{
-			if      (QR_OP == StdR) ProcessUnicastResponse(m, msg, end, srcaddr,                   InterfaceID);
+			if      (QR_OP == StdQ) mprintf("Unicast query from %#a\n", srcaddr);
+			else if (QR_OP == StdR) ProcessUnicastResponse(m, msg, end, srcaddr,                   InterfaceID);
 			}
 		else
 			{
-			if      (QR_OP == StdQ) DisplayQuery          (m, msg, end, srcaddr, srcport,          InterfaceID);
-			else if (QR_OP == StdR) DisplayResponse       (m, msg, end, srcaddr, srcport, dstaddr, InterfaceID);
+			if      (QR_OP == StdQ) DisplayQuery          (m, msg, end, srcaddr, srcport,          InterfaceID, ttl);
+			else if (QR_OP == StdR) DisplayResponse       (m, msg, end, srcaddr, srcport, dstaddr, InterfaceID, ttl);
 			else
 				{
 				debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
