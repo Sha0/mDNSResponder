@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.83  2004/09/16 23:26:33  cheshire
+Move version check inside preceeding "if" that checks we have a complete header
+
 Revision 1.82  2004/09/16 23:14:25  cheshire
 Changes for Windows compatibility
 
@@ -2608,13 +2611,15 @@ static int read_msg(request_state *rs)
         if (nread < 0) goto rerror;
         rs->hdr_bytes += nread;
         if (rs->hdr_bytes == sizeof(ipc_msg_hdr))
+        	{
         	ConvertHeaderBytes(&rs->hdr);
-        if (rs->hdr.version != VERSION)
-            {
-            LogMsg("ERROR: read_msg - client version 0x%08X does not match daemon version 0x%08X", rs->hdr.version, VERSION);
-            rs->ts = t_error;
-            return t_error;
-            }
+			if (rs->hdr.version != VERSION)
+				{
+				LogMsg("ERROR: read_msg - client version 0x%08X does not match daemon version 0x%08X", rs->hdr.version, VERSION);
+				rs->ts = t_error;
+				return t_error;
+				}
+			}
         if (rs->hdr_bytes > sizeof(ipc_msg_hdr))
             {
             LogMsg("ERROR: read_msg - read too many header bytes");
