@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.463  2004/10/29 02:38:48  cheshire
+Fix Windows compile errors
+
 Revision 1.462  2004/10/28 19:21:07  cheshire
 Guard against registering interface with zero InterfaceID
 
@@ -4726,18 +4729,17 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	CacheRecord *CacheFlushRecords = mDNSNULL;
 	CacheRecord **cfp = &CacheFlushRecords;
 
-	(void)srcport; // unused for non-debug builds
-	(void)dstport;
-	
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
 	// to guard against spoof responses, then the only credible protection against that is cryptographic
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
 	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
 
 	(void)srcaddr;	// Currently used only for display in debugging message
+	(void)srcport;
+	(void)dstport;
 
-	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p TTL %d with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
-		srcaddr, dstaddr, InterfaceID, ttl,
+	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		srcaddr, dstaddr, InterfaceID,
 		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", " : "s,",
 		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
