@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.298  2003/09/03 01:47:01  cheshire
+<rdar://problem/3319418> Rendezvous services always in a state of flux
+Change mDNS_Reconfirm_internal() minimum timeout from 5 seconds to 45-60 seconds
+
 Revision 1.297  2003/08/29 19:44:15  cheshire
 <rdar://problem/3400967> Traffic reduction: Eliminate synchronized QUs when a new service appears
 1. Use m->RandomQueryDelay to impose a random delay in the range 0-500ms on queries
@@ -3513,17 +3517,16 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 
 mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, mDNSu32 interval)
 	{
-	if (interval < (mDNSu32)mDNSPlatformOneSecond * 5)
-		interval = (mDNSu32)mDNSPlatformOneSecond * 5;
+	if (interval < (mDNSu32)mDNSPlatformOneSecond * 45)
+		interval = (mDNSu32)mDNSPlatformOneSecond * 45;
 	if (interval > 0x10000000)	// Make sure interval doesn't overflow when we multiply by four below
 		interval = 0x10000000;
-	if (RRExpireTime(rr) - m->timenow > (mDNSs32)interval)
+
+	// If the expected expiration time for this record is more than interval+33%, then accelerate its expiration
+	if (RRExpireTime(rr) - m->timenow > (mDNSs32)((interval * 4) / 3))
 		{
-		// Typically, we use an expiry interval of five seconds.
-		// That means we pretend we received it 15 seconds ago with a TTL of 20,
-		// so its 80-85% check will occur at 16-17 seconds (1-2 seconds from now)
-		// and its 90-95% check at 18-19 seconds (3-4 seconds from now).
-		// If neither query elicits a response, the record will expire five seconds from now.
+		// Add a 33% random amount to the interval, to avoid synchronization between multiple hosts
+		interval += mDNSRandom(interval/3);
 		rr->TimeRcvd          = m->timenow - (mDNSs32)interval * 3;
 		rr->resrec.rroriginalttl     = interval * 4 / mDNSPlatformOneSecond;
 		SetNextCacheCheckTime(m, rr);
@@ -4540,7 +4543,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	mDNS_Lock(m);
 
 	m->SleepState = sleepstate;
-	debugf("mDNSCoreMachineSleep: %s @ %ld", sleepstate ? "Sleep" : "Wake", m->timenow);
+	LogMsg("mDNSResponder %s at %ld", sleepstate ? "Sleeping" : "Waking", m->timenow);
 
 	if (sleepstate)
 		{
