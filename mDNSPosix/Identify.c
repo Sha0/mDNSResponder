@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.17  2004/01/22 03:57:00  cheshire
+Use the new meta-interface mDNSInterface_ForceMCast. This restores mDNSIdentify's
+ability to use multicast queries with non-link-local target addresses, like 17.x.x.x.
+
 Revision 1.16  2004/01/22 00:03:32  cheshire
 Add while() loop so that a list of targets may be specified on the command line
 
@@ -235,7 +239,7 @@ mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQue
 	{
 	if (qname) MakeDomainNameFromDNSNameString(&q->qname, qname);
 
-	q->InterfaceID      = mDNSInterface_Any;
+	q->InterfaceID      = mDNSInterface_ForceMCast;
 	q->qtype            = qtype;
 	q->qclass           = kDNSClass_IN;
 	q->QuestionCallback = callback;
