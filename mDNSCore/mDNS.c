@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.383  2004/06/11 00:04:59  cheshire
+<rdar://problem/3595602> TTL must be greater than zero for DNSServiceRegisterRecord
+
 Revision 1.382  2004/06/08 04:59:40  cheshire
 Tidy up wording -- log messages are already prefixed with "mDNSResponder", so don't need to repeat it
 
@@ -1853,6 +1856,9 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	AuthRecord **p = &m->ResourceRecords;
 	AuthRecord **d = &m->DuplicateRecords;
 	AuthRecord **l = &m->LocalOnlyRecords;
+
+	if ((mDNSs32)rr->resrec.rroriginalttl <= 0)
+		{ LogMsg("mDNS_Register_internal: TTL must be 1 - 0x7FFFFFFF %s", GetRRDisplayString(m, rr)); return(mStatus_BadParamErr); }
 	
 #if TEST_LOCALONLY_FOR_EVERYTHING
 	rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
