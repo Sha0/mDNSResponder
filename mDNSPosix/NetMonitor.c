@@ -36,6 +36,12 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.39  2003/08/28 02:07:48  vlubet
+Added "per hosts" statistics
+Bug #:
+Submitted by: Vincent Lubet
+Reviewed by:
+
 Revision 1.38  2003/08/20 22:41:42  cheshire
 Also display total multicast packet count
 
@@ -263,6 +269,153 @@ mDNSlocal mDNSu32 mprintf(const char *format, ...)
 	va_end(ptr);
 	printf("%s", buffer);
 	return(length);
+	}
+
+//*************************************************************************************************************
+// Host Address List
+//
+// Would benefit from a hash
+
+typedef struct 
+	{
+	mDNSAddr addr;
+	unsigned long total;
+	unsigned long queries;
+	unsigned long responses;
+	unsigned long bad_op;
+	} HostEntry;
+
+typedef struct 
+	{
+	long		num;
+	long		max;
+	HostEntry	*hosts;
+	unsigned long total;
+	unsigned long queries;
+	unsigned long responses;
+	unsigned long bad_op;
+	} HostList;
+
+
+static HostList IPv4HostList = {0, 0, 0, 0, 0, 0, 0};
+static HostList IPv6HostList = {0, 0, 0, 0, 0, 0, 0};
+
+mDNSlocal HostEntry *FindHost(const mDNSAddr *addr, HostList* list) 
+	{
+	long	i;
+	
+	for (i = 0; i < list->num; i++)
+		{
+		HostEntry *entry = list->hosts + i;
+		if (mDNSSameAddress(addr, &entry->addr)) 
+			return entry;
+		}
+
+	return NULL;
+	}
+	
+mDNSlocal HostEntry *AddHost(HostList* list) 
+	{
+	HostEntry *entry;
+	if (list->num >= list->max)
+		{
+		long newMax = list->max + 64;
+		HostEntry *newHosts = realloc(list->hosts, newMax * sizeof(HostEntry));
+		if (newHosts == NULL)
+			return NULL;
+		list->max = newMax;
+		list->hosts = newHosts;
+		}
+	entry = list->hosts + list->num++;
+	return entry;
+	}
+
+mDNSlocal void GotPacketFromHost(const mDNSAddr *addr, mDNSu8 QR_OP)
+	{
+	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	HostList *list = (addr->type == mDNSAddrType_IPv4) ? &IPv4HostList : &IPv6HostList;
+	HostEntry *entry = FindHost(addr, list);
+
+	if (entry == 0) 
+		{
+		entry = AddHost(list);
+		if (entry == 0)
+			return;
+		entry->addr = *addr;
+		}
+	if (entry != 0)
+		{
+		entry->total++;
+		list->total++;
+		if (QR_OP == StdQ)
+			{
+			entry->queries++;
+			list->queries++;
+			}
+		else if (QR_OP == StdR)
+			{
+			entry->responses++;
+			list->responses++;
+			}
+		else
+			{
+			entry->bad_op++;
+			list->bad_op++;
+			}
+		}
+	
+	return;
+	}
+
+int CompareHosts(const void *p1, const void *p2)
+{
+	HostEntry *h1 = (HostEntry *)p1;
+	HostEntry *h2 = (HostEntry *)p2;
+	
+	return (int) (h2->total - h1->total);
+}
+
+void printhoststats()
+	{
+	HostList *list;
+	long i;
+	
+	list = &IPv4HostList;
+	printf("\n                  total    quer    resp     bad\n");
+	printf("IPv4 Packets   ");
+	printf("  %6lu  %6lu  %6lu  %6lu", list->total, list->queries, list->responses, list->bad_op);
+	printf("  (%ld hosts)\n", list->num);
+
+	qsort(list->hosts, list->num, sizeof(HostEntry), CompareHosts);
+	for (i = 0; i < list->num; i++)
+		{
+		HostEntry *entry = list->hosts + i;
+		unsigned char *a = (unsigned char  *)&entry->addr.ip.v4;
+		mDNSu32 len = printf("%d.%d.%d.%d", a[0], a[1], a[2], a[3]);
+		const char blanks[16] = "               ";
+
+		printf("%s", &blanks[len]);
+		printf("  %6lu  %6lu  %6lu  %6lu\n", entry->total, entry->queries, entry->responses, entry->bad_op);
+		}
+	
+
+	list = &IPv6HostList;
+	printf("\n                                          total    quer    resp     bad\n");
+	printf("IPv6 Packets                           ");
+	printf("  %6lu  %6lu  %6lu  %6lu", list->total, list->queries, list->responses, list->bad_op);
+	printf("  (%ld hosts)\n", list->num);
+
+	qsort(list->hosts, list->num, sizeof(HostEntry), CompareHosts);
+	for (i = 0; i < list->num; i++)
+		{
+		HostEntry *entry = list->hosts + i;
+		unsigned short *w = (unsigned short *)&entry->addr.ip.v6;
+		printf("%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X", 
+			w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]);
+		printf("  %6lu  %6lu  %6lu  %6lu\n", entry->total, entry->queries, entry->responses, entry->bad_op);
+		}
+	return;
 	}
 
 //*************************************************************************************************************
@@ -625,6 +778,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 		else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
 		mDNS_Unlock(m);
 		}
+	
+	if (!Filters)
+		{
+		mDNS_Lock(m);
+		GotPacketFromHost(srcaddr, QR_OP);
+		mDNS_Unlock(m);
+		}
 	}
 
 mDNSlocal mStatus mDNSNetMonitor(void)
@@ -684,6 +844,9 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	mprintf("Total Additional Records:         %7d   (avg%5d/min)\n", NumAdditionals, NumAdditionals * mul / div);
 	mprintf("\n");
 	printstats();
+
+	if (!Filters)
+		printhoststats();
 
 	mDNS_Close(&mDNSStorage);
 	return(0);
