@@ -89,8 +89,8 @@
 			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = dnssd_clientstub.c;
-			path = /Users/roger/mDNSResponder/mDNSShared/dnssd_clientstub.c;
-			refType = 0;
+			path = ../mDNSShared/dnssd_clientstub.c;
+			refType = 2;
 		};
 		0066920A04CC7AA80CCA2C71 = {
 			isa = PBXTargetDependency;
