@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.9  2003/03/20 21:10:31  cheshire
+Fixes done at IETF 56 to make mDNSProxyResponderPosix run on Solaris
+
 Revision 1.8  2003/03/15 04:40:38  cheshire
 Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
@@ -101,6 +104,13 @@ struct PosixNetworkInterface
 	};
 
 // ***************************************************************************
+// Globals (for debugging)
+
+static int num_registered_interfaces = 0;
+static int num_pkts_accepted = 0;
+static int num_pkts_rejected = 0;
+
+// ***************************************************************************
 // Functions
 
 int gMDNSPlatformPosixVerboseLevel = 0;
@@ -133,13 +143,13 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 
 #define PosixErrorToStatus(errNum) ((errNum) == 0 ? mStatus_NoError : mStatus_UnknownErr)
 
-static void SockAddrTomDNSAddr(const struct sockaddr *const s_addr, mDNSAddr *ipAddr, mDNSIPPort *ipPort)
+static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr, mDNSIPPort *ipPort)
 	{
-	switch (s_addr->sa_family)
+	switch (sa->sa_family)
 		{
 		case AF_INET:
 			{
-			struct sockaddr_in* sin          = (struct sockaddr_in*)s_addr;
+			struct sockaddr_in* sin          = (struct sockaddr_in*)sa;
 			ipAddr->type                     = mDNSAddrType_IPv4;
 			ipAddr->addr.ipv4.NotAnInteger   = sin->sin_addr.s_addr;
 			if (ipPort) ipPort->NotAnInteger = sin->sin_port;
@@ -149,7 +159,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const s_addr, mDNSAddr *ip
 #ifdef mDNSIPv6Support
 		case AF_INET6:
 			{
-			struct sockaddr_in6* sin6        = (struct sockaddr_in6*)s_addr;
+			struct sockaddr_in6* sin6        = (struct sockaddr_in6*)sa;
 			assert(sin6->sin6_len == sizeof(*sin6));
 			ipAddr->type                     = mDNSAddrType_IPv6;
 			ipAddr->addr.ipv6                = *(mDNSv6Addr*)&sin6->sin6_addr;
@@ -159,7 +169,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const s_addr, mDNSAddr *ip
 #endif
 
 		default:
-			verbosedebugf("SockAddrTomDNSAddr: Uknown address family %d\n", s_addr->sa_family);
+			verbosedebugf("SockAddrTomDNSAddr: Uknown address family %d\n", sa->sa_family);
 			ipAddr->type = mDNSAddrType_None;
 			if (ipPort) ipPort->NotAnInteger = 0;
 			break;
@@ -289,14 +299,26 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 
 		if (reject)
 			{
-			debugf("SocketDataReady ignored a packet from %#a to %#a on interface %s/%d expecting %#a/%s/%d",
+			verbosedebugf("SocketDataReady ignored a packet from %#a to %#a on interface %s/%d expecting %#a/%s/%d",
 				&senderAddr, &destAddr, packetInfo.ipi_ifname, packetInfo.ipi_ifindex,
 				&intf->coreIntf.ip, intf->intfName, intf->index);
 			packetLen = -1;
+			num_pkts_rejected++;
+			if (num_pkts_rejected > (num_pkts_accepted + 1) * (num_registered_interfaces + 1) * 2)
+				{
+				fprintf(stderr,
+					"*** WARNING: Received %d packets; Accepted %d packets; Rejected %d packets because of interface mismatch\n",
+					num_pkts_accepted + num_pkts_rejected, num_pkts_accepted, num_pkts_rejected);
+				num_pkts_accepted = 0;
+				num_pkts_rejected = 0;
+				}
 			}
 		else
+			{
 			verbosedebugf("SocketDataReady got a packet from %#a to %#a on interface %#a/%s/%d",
 				&senderAddr, &destAddr, &intf->coreIntf.ip, intf->intfName, intf->index);
+			num_pkts_accepted++;
+			}
 		}
 
 	if (packetLen >= 0 && packetLen < sizeof(DNSMessageHeader))
@@ -368,6 +390,9 @@ static void ClearInterfaceList(mDNS *const m)
 		if (gMDNSPlatformPosixVerboseLevel > 0) fprintf(stderr, "Deregistered interface %s\n", intf->intfName);
 		FreePosixNetworkInterface(intf);
 		}
+	num_registered_interfaces = 0;
+	num_pkts_accepted = 0;
+	num_pkts_rejected = 0;
 	}
 
 // Sets up a multicast send/receive socket for the specified
@@ -632,6 +657,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 	// Clean up.
 	if (err == 0)
 		{
+		num_registered_interfaces++;
 		debugf("SetupOneInterface: %s %#a Registered", intf->intfName, &intf->coreIntf.ip);
 		if (gMDNSPlatformPosixVerboseLevel > 0)
 			fprintf(stderr, "Registered interface %s\n", intf->intfName);

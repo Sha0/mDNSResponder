@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.7  2003/03/20 21:10:31  cheshire
+Fixes done at IETF 56 to make mDNSProxyResponderPosix run on Solaris
+
 Revision 1.6  2003/03/13 03:46:21  cheshire
 Fixes to make the code build on Linux
 
@@ -410,16 +413,12 @@ struct in_pktinfo
 #ifdef  IP_RECVIF
         if (cmptr->cmsg_level == IPPROTO_IP &&
             cmptr->cmsg_type == IP_RECVIF) {
-            struct sockaddr_dl  *sdl;
-            int nameLen;
-
-            sdl = (struct sockaddr_dl *) CMSG_DATA(cmptr);
+            struct sockaddr_dl  *sdl = (struct sockaddr_dl *) CMSG_DATA(cmptr);
+            int nameLen = (sdl->sdl_nlen < IFI_NAME - 1) ? sdl->sdl_nlen : (IFI_NAME - 1);
             pktp->ipi_ifindex = sdl->sdl_index;
-            nameLen = sdl->sdl_nlen;
-            if (nameLen > (IFI_NAME - 1)) {
-                nameLen = IFI_NAME - 1;
-            }
+#ifndef HAVE_BROKEN_RECVIF_NAME
             strncpy(pktp->ipi_ifname, sdl->sdl_data, nameLen);
+#endif
             assert(pktp->ipi_ifname[IFI_NAME - 1] == 0);
             // null terminated because of memset above
             continue;

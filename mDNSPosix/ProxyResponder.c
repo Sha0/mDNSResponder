@@ -210,12 +210,12 @@ mDNSexport int main(int argc, char **argv)
 	if (argc < 3) goto usage;
 	
 	proxyhost.ip.NotAnInteger = inet_addr(argv[1]);
-	if (proxyhost.ip.NotAnInteger == INADDR_NONE)
+	if (proxyhost.ip.NotAnInteger == 0)
 		{
 		struct hostent *h = gethostbyname(argv[1]);
 		if (h) proxyhost.ip.NotAnInteger = *(long*)h->h_addr;
 		}
-	if (proxyhost.ip.NotAnInteger == INADDR_NONE)
+	if (proxyhost.ip.NotAnInteger == 0)
 		{
 		fprintf(stderr, "%s is not valid host address\n", argv[1]);
 		return(-1);
