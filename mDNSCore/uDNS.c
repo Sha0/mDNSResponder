@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.161  2004/12/16 20:42:02  cheshire
+Fix compiler warnings
+
 Revision 1.160  2004/12/16 20:13:00  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -658,7 +661,7 @@ mDNSlocal mDNSOpaque16 newMessageID(uDNS_GlobalInfo *u)
 	{
 	static mDNSBool randomized = mDNSfalse;
 
-	if (!randomized) { u->NextMessageID = mDNSRandom(~0); randomized = mDNStrue; }
+	if (!randomized) { u->NextMessageID = (mDNSu16)mDNSRandom(~0UL); randomized = mDNStrue; }
 	return mDNSOpaque16fromIntVal(u->NextMessageID++);
 	}
 
@@ -1176,7 +1179,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	if (priv.NotAnInteger != reply->priv.NotAnInteger)
 		{ LogMsg("ReceivePortMapReply: reply private port does not match requested private port");  goto end; }
 
-	lease = (mDNSs32)mDNSVal32(reply->lease);
+	lease = (mDNSu32)mDNSVal32(reply->lease);
 	if (lease > 0x70000000UL / mDNSPlatformOneSecond) lease = 0x70000000UL / mDNSPlatformOneSecond;
 
 		if (n->state == NATState_Refresh && reply->pub.NotAnInteger != n->PublicPort.NotAnInteger)
@@ -1590,8 +1593,8 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, cons
 	if (router && router->type !=mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 address.  Discarding."); return; }
 	mDNS_Lock(m);
 
-	AddrChanged = addr ? (addr->ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger) : u->PrimaryIP.ip.v4.NotAnInteger;
-	RouterChanged = router ? (router->ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger) : u->Router.ip.v4.NotAnInteger;
+	AddrChanged   = ((addr   ? addr  ->ip.v4.NotAnInteger : 0) != u->PrimaryIP.ip.v4.NotAnInteger);
+	RouterChanged = ((router ? router->ip.v4.NotAnInteger : 0) != u->Router   .ip.v4.NotAnInteger);
 	
 #if MDNS_DEBUGMSGS
 	if (addr && (AddrChanged || RouterChanged))

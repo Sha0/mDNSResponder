@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.494  2004/12/16 20:46:56  cheshire
+Fix compiler warnings
+
 Revision 1.493  2004/12/16 20:13:00  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -5983,8 +5986,8 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
 		if (rr->UpdateCredits <= 5)
 			{
-			mDNSs32 delay = 6 - rr->UpdateCredits;		// Delay 1 second, then 2, then 3, etc. up to 6 seconds maximum
-			if (!rr->UpdateBlocked) rr->UpdateBlocked = NonZeroTime(m->timenow + delay * mDNSPlatformOneSecond);
+			mDNSu32 delay = 6 - rr->UpdateCredits;		// Delay 1 second, then 2, then 3, etc. up to 6 seconds maximum
+			if (!rr->UpdateBlocked) rr->UpdateBlocked = NonZeroTime(m->timenow + (mDNSs32)delay * mDNSPlatformOneSecond);
 			rr->ThisAPInterval *= 4;
 			rr->LastAPTime = rr->UpdateBlocked - rr->ThisAPInterval;
 			LogMsg("Excessive update rate for %##s; delaying announcement by %ld second%s", rr->resrec.name->c, delay, delay > 1 ? "s" : "");
