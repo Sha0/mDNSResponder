@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.278  2003/08/18 22:53:37  cheshire
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+
 Revision 1.277  2003/08/18 19:05:44  cheshire
 <rdar://problem/3382423> UpdateRecord not working right
 Added "newrdlength" field to hold new length of updated rdata
@@ -6518,9 +6521,10 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	CacheRecord *rrcachestorage, mDNSu32 rrcachesize,
 	mDNSBool AdvertiseLocalAddresses, mDNSCallback *Callback, void *Context)
 	{
-	mDNSs32 timenow = mDNSPlatformTimeNow();
-	mStatus result;
 	mDNSu32 i;
+	mDNSs32 timenow;
+	mStatus result = mDNSPlatformTimeInit(&timenow);
+	if (result != mStatus_NoError) return(result);
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
@@ -6581,7 +6585,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->HIHardware.c[0]         = 0;
 	m->HISoftware.c[0]         = 0;
 	m->ResourceRecords         = mDNSNULL;
- 	m->DuplicateRecords        = mDNSNULL;
+	m->DuplicateRecords        = mDNSNULL;
 	m->LocalOnlyRecords        = mDNSNULL;
 	m->NewLocalOnlyRecords     = mDNSNULL;
 	m->DiscardLocalOnlyRecords = mDNSfalse;
@@ -6592,7 +6596,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SuppressProbes          = 0;
 
 	result = mDNSPlatformInit(m);
-	
+
 	return(result);
 	}
 

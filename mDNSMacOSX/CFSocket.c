@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.111  2003/08/18 22:53:37  cheshire
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+
 Revision 1.110  2003/08/16 03:39:00  cheshire
 <rdar://problem/3338440> InterfaceID -1 indicates "local only"
 
@@ -1299,29 +1302,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
 
-	// Notes: Typical values for mach_timebase_info:
-	// tbi.numer = 1000 million
-	// tbi.denom =   33 million
-	// These are set such that (mach_absolute_time() * numer/denom) gives us nanoseconds;
-	//          numer  / denom = nanoseconds per hardware clock tick (e.g. 30);
-	//          denom  / numer = hardware clock ticks per nanosecond (e.g. 0.033)
-	// (denom*1000000) / numer = hardware clock ticks per millisecond (e.g. 33333)
-	// So: mach_absolute_time() / ((denom*1000000)/numer) = milliseconds
-	//
-	// Arithmetic notes:
-	// tbi.denom is at least 1, and not more than 2^32-1.
-	// Therefore (tbi.denom * 1000000) is at least one million, but cannot overflow a uint64_t.
-	// tbi.denom is at least 1, and not more than 2^32-1.
-	// Therefore clockdivisor should end up being a number roughly in the range 10^3 - 10^9.
-	// If clockdivisor is less than 10^3 then that means that the native clock frequency is less than 1MHz,
-	// which is unlikely on any current or future Macintosh.
-	// If clockdivisor is greater than 10^9 then that means the native clock frequency is greater than 1000GHz.
-	// When we ship Macs with clock frequencies above 1000GHz, we may have to update this code.
-	struct mach_timebase_info tbi;
-	if (mach_timebase_info(&tbi) != KERN_SUCCESS) return(-1);
-	clockdivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
-	LogMsg("Clock divisor %lu, timenow %ld", clockdivisor, mDNSPlatformTimeNow());
-
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);
@@ -1372,8 +1352,37 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1000;
 
+mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
+	{
+	// Notes: Typical values for mach_timebase_info:
+	// tbi.numer = 1000 million
+	// tbi.denom =   33 million
+	// These are set such that (mach_absolute_time() * numer/denom) gives us nanoseconds;
+	//          numer  / denom = nanoseconds per hardware clock tick (e.g. 30);
+	//          denom  / numer = hardware clock ticks per nanosecond (e.g. 0.033)
+	// (denom*1000000) / numer = hardware clock ticks per millisecond (e.g. 33333)
+	// So: mach_absolute_time() / ((denom*1000000)/numer) = milliseconds
+	//
+	// Arithmetic notes:
+	// tbi.denom is at least 1, and not more than 2^32-1.
+	// Therefore (tbi.denom * 1000000) is at least one million, but cannot overflow a uint64_t.
+	// tbi.denom is at least 1, and not more than 2^32-1.
+	// Therefore clockdivisor should end up being a number roughly in the range 10^3 - 10^9.
+	// If clockdivisor is less than 10^3 then that means that the native clock frequency is less than 1MHz,
+	// which is unlikely on any current or future Macintosh.
+	// If clockdivisor is greater than 10^9 then that means the native clock frequency is greater than 1000GHz.
+	// When we ship Macs with clock frequencies above 1000GHz, we may have to update this code.
+	struct mach_timebase_info tbi;
+	kern_return_t result = mach_timebase_info(&tbi);
+	if (result != KERN_SUCCESS) return(result);
+	clockdivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
+	*timenow = mDNSPlatformTimeNow();
+	return(mStatus_NoError);
+	}
+
 mDNSexport mDNSs32  mDNSPlatformTimeNow(void)
 	{
+	if (clockdivisor == 0) { LogMsg("mDNSPlatformTimeNow called before mDNSPlatformTimeInit"); return(0); }
 	return((mDNSs32)(mach_absolute_time() / clockdivisor));
 	}
 

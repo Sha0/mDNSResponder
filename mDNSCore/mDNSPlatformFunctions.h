@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.22  2003/08/18 22:53:37  cheshire
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+
 Revision 1.21  2003/08/15 20:16:57  cheshire
 Update comment for <rdar://problem/3366590> mDNSResponder takes too much RPRVT
 
@@ -124,8 +127,8 @@ typedef struct
 // NULL. InlineCacheRDSize is a compile-time constant, which is set by default to 64. If you need to handle records
 // a little larger than this and you don't want to have to implement run-time allocation and freeing, then you
 // can raise the value of this constant to a suitable value (at the expense of increased memory usage).
-extern mStatus  mDNSPlatformInit   (mDNS *const m);
-extern void     mDNSPlatformClose  (mDNS *const m);
+extern mStatus  mDNSPlatformInit        (mDNS *const m);
+extern void     mDNSPlatformClose       (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
 
@@ -139,6 +142,7 @@ extern mDNSBool mDNSPlatformMemSame     (const void *src, const void *dst, mDNSu
 extern void     mDNSPlatformMemZero     (                       void *dst, mDNSu32 len);
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
+extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
