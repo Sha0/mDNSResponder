@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.171  2005/02/18 00:43:12  cheshire
+<rdar://problem/4010245> mDNSResponder should auto-truncate service names that are too long
+
 Revision 1.170  2005/02/16 01:15:02  cheshire
 Improve LogOperation() debugging messages for DNSServiceBrowse and DNSServiceRegister
 
@@ -2147,7 +2150,8 @@ static void handle_regservice_request(request_state *request)
     {
     DNSServiceFlags flags;
     uint32_t ifi;
-    char name[256], domain[MAX_ESCAPED_DOMAIN_NAME], host[MAX_ESCAPED_DOMAIN_NAME];
+    char name[1024];	// Lots of spare space for extra-long names that we'll auto-truncate down to 63 bytes
+    char domain[MAX_ESCAPED_DOMAIN_NAME], host[MAX_ESCAPED_DOMAIN_NAME];
     char *ptr;
     domainname d, srv;
     mStatus result;
@@ -2177,7 +2181,7 @@ static void handle_regservice_request(request_state *request)
     service->InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
     if (ifi && !service->InterfaceID)
     	{ LogMsg("ERROR: handle_regservice_request - Couldn't find InterfaceID for interfaceIndex %d", ifi); goto bad_param; }
-    if (get_string(&ptr, name, 256) < 0 ||
+    if (get_string(&ptr, name, sizeof(name)) < 0 ||
         get_string(&ptr, service->type_as_string, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
         get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
         get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
@@ -2205,6 +2209,12 @@ static void handle_regservice_request(request_state *request)
 		}
     else
 		{
+		// If the client is allowing AutoRename, then truncate name to legal length before converting it to a DomainLabel
+		if ((flags & kDNSServiceFlagsNoAutoRename) == 0)
+			{
+			int newlen = TruncateUTF8ToLength(name, mDNSPlatformStrLen(name), MAX_DOMAIN_LABEL);
+			name[newlen] = 0;
+			}
 		if (!MakeDomainLabelFromLiteralString(&service->name, name))
 			{ LogMsg("ERROR: handle_regservice_request - name bad %s", name); goto bad_param; }
 		service->autoname = mDNSfalse;

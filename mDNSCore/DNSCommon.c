@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.86  2005/02/18 00:43:12  cheshire
+<rdar://problem/4010245> mDNSResponder should auto-truncate service names that are too long
+
 Revision 1.85  2005/02/10 22:35:17  cheshire
 <rdar://problem/3727944> Update name
 
@@ -919,6 +922,45 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	return(mDNStrue);
 	}
 
+// Notes on UTF-8:
+// 0xxxxxxx represents a 7-bit ASCII value from 0x00 to 0x7F
+// 10xxxxxx is a continuation byte of a multi-byte character
+// 110xxxxx is the first byte of a 2-byte character (11 effective bits; values 0x     80 - 0x     800-1)
+// 1110xxxx is the first byte of a 3-byte character (16 effective bits; values 0x    800 - 0x   10000-1)
+// 11110xxx is the first byte of a 4-byte character (21 effective bits; values 0x  10000 - 0x  200000-1)
+// 111110xx is the first byte of a 5-byte character (26 effective bits; values 0x 200000 - 0x 4000000-1)
+// 1111110x is the first byte of a 6-byte character (31 effective bits; values 0x4000000 - 0x80000000-1)
+//
+// UTF-16 surrogate pairs are used in UTF-16 to encode values larger than 0xFFFF.
+// Although UTF-16 surrogate pairs are not supposed to appear in legal UTF-8, we want to be defensive
+// about that too. (See <http://www.unicode.org/faq/utf_bom.html#34>, "What are surrogates?")
+// The first of pair is a UTF-16 value in the range 0xD800-0xDBFF (11101101 1010xxxx 10xxxxxx in UTF-8),
+// and the second    is a UTF-16 value in the range 0xDC00-0xDFFF (11101101 1011xxxx 10xxxxxx in UTF-8).
+
+mDNSexport mDNSu32 TruncateUTF8ToLength(mDNSu8 *string, mDNSu32 length, mDNSu32 max)
+	{
+	if (length > max)
+		{
+		mDNSu8 c1 = string[max];								// First byte after cut point
+		mDNSu8 c2 = (max+1 < length) ? string[max+1] : 0xB0;	// Second byte after cut point
+		length = max;	// Trim length down
+		while (length > 0)
+			{
+			// Check if the byte right after the chop point is a UTF-8 continuation byte,
+			// or if the character right after the chop point is the second of a UTF-16 surrogate pair.
+			// If so, then we continue to chop more bytes until we get to a legal chop point.
+			mDNSBool continuation    = ((c1 & 0xC0) == 0x80);
+			mDNSBool secondsurrogate = (c1 == 0xED && (c2 & 0xF0) == 0xB0);
+			if (!continuation && !secondsurrogate) break;
+			c2 = c1;
+			c1 = string[--length];
+			}
+		// Having truncated characters off the end of our string, also cut off any residual white space
+		while (length > 0 && string[length-1] <= ' ') length--;
+		}
+	return(length);
+	}
+
 // Returns true if a rich text label ends in " (nnn)", or if an RFC 1034
 // name ends in "-nnn", where n is some decimal number.
 mDNSexport mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText)
@@ -983,13 +1025,7 @@ mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichT
 
 	while (val >= divisor * 10) { divisor *= 10; chars++; }
 
-	if (name->c[0] > (mDNSu8)(MAX_DOMAIN_LABEL - chars))
-		{
-		name->c[0] = (mDNSu8)(MAX_DOMAIN_LABEL - chars);
-		// If the following character is a UTF-8 continuation character,
-		// we just chopped a multi-byte UTF-8 character in the middle, so strip back to a safe truncation point
-		while (name->c[0] > 0 && (name->c[name->c[0]+1] & 0xC0) == 0x80) name->c[0]--;
-		}
+	name->c[0] = TruncateUTF8ToLength(name->c+1, name->c[0], MAX_DOMAIN_LABEL - chars);
 
 	if (RichText) { name->c[++name->c[0]] = ' '; name->c[++name->c[0]] = '('; }
 	else          { name->c[++name->c[0]] = '-'; }

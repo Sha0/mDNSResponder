@@ -522,9 +522,9 @@ DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
  * flags:           Currently unused, reserved for future use.
  *
  * errorCode:       Will be kDNSServiceErr_NoError on success, otherwise will
- *                  indicate the failure that occurred (including name conflicts, if the
- *                  kDNSServiceFlagsNoAutoRename flag was passed to the
- *                  callout.)  Other parameters are undefined if errorCode is nonzero.
+ *                  indicate the failure that occurred (including name conflicts,
+ *                  if the kDNSServiceFlagsNoAutoRename flag was used when registering.)
+ *                  Other parameters are undefined if errorCode is nonzero.
  *
  * name:            The service name registered (if the application did not specify a name in
  *                  DNSServiceRegister(), this indicates what name was automatically chosen).
@@ -570,6 +570,9 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *                  Most applications will not specify a name, in which case the computer
  *                  name is used (this name is communicated to the client via the callback).
  *                  If a name is specified, it must be 1-63 bytes of UTF-8 text.
+ *                  If the name is longer than 63 bytes it will be automatically truncated
+ *                  to a legal length, unless the NoAutoRename flag is set,
+ *                  in which case kDNSServiceErr_BadParam will be returned.
  *
  * regtype:         The service type followed by the protocol, separated by a dot
  *                  (e.g. "_ftp._tcp"). The service type must be an underscore, followed
