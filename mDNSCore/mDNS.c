@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.137  2003/05/27 20:04:33  cheshire
+<rdar://problem/3269900> mDNSResponder crash in mDNS_vsnprintf()
+
 Revision 1.136  2003/05/27 18:50:07  cheshire
 <rdar://problem/3269768> mDNS_StartResolveService doesn't inform client of port number changes
 
@@ -633,30 +636,34 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 	
 				case 'a' :	{
 							unsigned char *a = va_arg(arg, unsigned char *);
-							unsigned short *w = (unsigned short *)a;
-							mDNSAddr *ip = (mDNSAddr*)a;
-							s = mDNS_VACB;	// Adjust s to point to the start of the buffer, not the end
-							if (F.altForm)
+							if (!a) { static char emsg[] = "<<NULL>>"; s = emsg; i = sizeof(emsg)-1; }
+							else
 								{
-								a = (unsigned char  *)&ip->ip.v4;
-								w = (unsigned short *)&ip->ip.v6;
-								switch (ip->type)
+								unsigned short *w = (unsigned short *)a;
+								s = mDNS_VACB;	// Adjust s to point to the start of the buffer, not the end
+								if (F.altForm)
 									{
-									case mDNSAddrType_IPv4: F.precision =  4; break;
-									case mDNSAddrType_IPv6: F.precision = 16; break;
-									default:                F.precision =  0; break;
+									mDNSAddr *ip = (mDNSAddr*)a;
+									a = (unsigned char  *)&ip->ip.v4;
+									w = (unsigned short *)&ip->ip.v6;
+									switch (ip->type)
+										{
+										case mDNSAddrType_IPv4: F.precision =  4; break;
+										case mDNSAddrType_IPv6: F.precision = 16; break;
+										default:                F.precision =  0; break;
+										}
 									}
-								}
-							switch (F.precision)
-								{
-								case  4: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%d.%d.%d.%d",
-													a[0], a[1], a[2], a[3]); break;
-								case  6: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%02X:%02X:%02X:%02X:%02X:%02X",
-													a[0], a[1], a[2], a[3], a[4], a[5]); break;
-								case 16: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X",
-													w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]); break;
-								default: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%s", "<< ERROR: Must specify address size "
-													"(i.e. %.4a=IPv4, %.6a=Ethernet, %.16a=IPv6) >>"); break;
+								switch (F.precision)
+									{
+									case  4: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%d.%d.%d.%d",
+														a[0], a[1], a[2], a[3]); break;
+									case  6: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%02X:%02X:%02X:%02X:%02X:%02X",
+														a[0], a[1], a[2], a[3], a[4], a[5]); break;
+									case 16: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X",
+														w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]); break;
+									default: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%s", "<< ERROR: Must specify address size "
+														"(i.e. %.4a=IPv4, %.6a=Ethernet, %.16a=IPv6) >>"); break;
+									}
 								}
 							}
 							break;
@@ -2436,10 +2443,10 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				debugf("%##s %d", rr->name.c, rr->AnnounceCount);
+				verbosedebugf("%##s %d", rr->name.c, rr->AnnounceCount);
 				}
 			}
-		else if (rr->ImmedAnswer)						// Else, just respond to asingle query on single interface:
+		else if (rr->ImmedAnswer)						// Else, just respond to a single query on single interface:
 			{
 			rr->SendRNow = rr->ImmedAnswer;				// Just reply on that interface
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional too
@@ -2579,8 +2586,6 @@ mDNSlocal void SendResponses(mDNS *const m)
 			CompleteDeregistration(m, rr);
 		else
 			{
-			if (!mDNSIPv4AddressIsZero(rr->v4Requester)) LogMsg("%##s : Clear  Client %.4a",  rr->name.c, &rr->v4Requester);
-			if (!mDNSIPv6AddressIsZero(rr->v6Requester)) LogMsg("%##s : Clear  Client %.16a", rr->name.c, &rr->v6Requester);
 			rr->ImmedAnswer     = mDNSNULL;
 			rr->v4Requester     = zeroIPAddr;
 			rr->v6Requester     = zerov6Addr;
@@ -2778,7 +2783,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (q = m->Questions; q; q=q->next)
 				if (q->SendQNow == intf->InterfaceID)
 					{
-					debugf("SendQueries: Putting question for %##s at %lu forecast total %lu",
+					verbosedebugf("SendQueries: Putting question for %##s at %lu forecast total %lu",
 						q->name.c, queryptr - query.data, queryptr + answerforecast - query.data);
 					// If we successfully put this question, update its SendQNow state
 					if (BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
@@ -2817,14 +2822,17 @@ mDNSlocal void SendQueries(mDNS *const m)
 			mDNSu8 *newptr = PutResourceRecordTTL(&query, queryptr, &query.h.numAnswers, rr, rr->rroriginalttl - SecsSinceRcvd);
 			if (newptr)
 				{
-				debugf("SendQueries: Put %##s at %lu - %lu", rr->name.c, queryptr - query.data, newptr - query.data);
+				verbosedebugf("SendQueries: Put %##s at %lu - %lu", rr->name.c, queryptr - query.data, newptr - query.data);
 				queryptr = newptr;
 				KnownAnswerList = rr->NextInKAList;
 				rr->NextInKAList = mDNSNULL;
 				}
 			else
 				{
-				debugf("SendQueries: Put %d answers; No more space for known answers", query.h.numAnswers);
+				// If we ran out of space and we have more than one question in the packet, that's an error --
+				// we shouldn't have put more than one question if there was a risk of us running out of space.
+				if (query.h.numQuestions > 1)
+					LogMsg("SendQueries: Put %d answers; No more space for known answers", query.h.numAnswers);
 				query.h.flags.b[0] |= kDNSFlag0_TC;
 				break;
 				}
@@ -2842,7 +2850,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		
 		if (queryptr > query.data)
 			{
-			debugf("SendQueries: Sending %d Question%s %d Answer%s %d Update%s on %p",
+			verbosedebugf("SendQueries: Sending %d Question%s %d Answer%s %d Update%s on %p",
 				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
 				query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
@@ -2986,14 +2994,17 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			if (rr->rrremainingttl > 0)
 				{
 				NumAnswersGiven++;
-				debugf("Had   answer   for %##s already in our cache", q->name.c);
 				AnswerQuestionWithResourceRecord(m, q, rr);
 				}
 			// MUST NOT touch q again after calling AnswerQuestionWithResourceRecord()
 			}
-	if (NumAnswersGiven == 0)
+	if (NumAnswersGiven)
+		debugf("Had   answer   for %##s already in our cache", q->name.c);
+	else
 		{
 		debugf("Had no answers for %##s already in our cache; sending query packet", q->name.c);
+		// This is safe because we only do it if NumAnswersGiven is zero,
+		// in which case we never called AnswerQuestionWithResourceRecord
 		q->LastQTime = m->timenow - q->ThisQInterval;
 		m->NextScheduledQuery = m->timenow;
 		}
@@ -3872,7 +3883,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 							{
 							LogMsg("%##s : Cannot perform multi-packet known answer suppression from more than one"
 								" client at a time %.4a %.4a (this is benign if it happens only rarely)",
-								rr->name.c, rr->v4Requester, srcaddr->ip.v4);
+								rr->name.c, &rr->v4Requester, &srcaddr->ip.v4);
 							rr->v4Requester = onesIPv4Addr;
 							}
 						}
@@ -3883,7 +3894,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 							{
 							LogMsg("%##s : Cannot perform multi-packet known answer suppression from more than one "
 								"client at a time %.16a %.16a (this is benign if it happens only rarely)",
-								rr->name.c, rr->v6Requester, srcaddr->ip.v6);
+								rr->name.c, &rr->v6Requester, &srcaddr->ip.v6);
 							rr->v6Requester = onesIPv6Addr;
 							}
 						}
@@ -3965,7 +3976,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 			replyunicast->h.numQuestions,   replyunicast->h.numQuestions   == 1 ? "" : "s",
 			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
 			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s",
-			&srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1], InterfaceID, srcaddr->type);
+			srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1], InterfaceID, srcaddr->type);
 		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceID, dstport, srcaddr, srcport);
 		}
 	}
