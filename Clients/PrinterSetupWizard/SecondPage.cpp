@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.3  2004/09/13 21:26:15  shersche
+<rdar://problem/3796483> Use the moreComing flag to determine whether drawing should take place in OnAddPrinter and OnRemovePrinter callbacks
+Bug #: 3796483
+
 Revision 1.2  2004/06/26 03:19:57  shersche
 clean up warning messages
 
@@ -198,9 +202,12 @@ END_MESSAGE_MAP()
 // Printer::EventHandler implementation
 void
 CSecondPage::OnAddPrinter(
-						Printer * printer)
+						Printer	*	printer,
+						bool			moreComing)
 {
 	check( IsWindow( m_hWnd ) );
+
+	m_browseList.SetRedraw(FALSE);
 
 	printer->item = m_browseList.InsertItem(printer->displayName);
 
@@ -223,14 +230,23 @@ CSecondPage::OnAddPrinter(
 		m_emptyListItem = NULL;
 		m_browseList.EnableWindow(TRUE);
 	}
+
+	if (!moreComing)
+	{
+		m_browseList.SetRedraw(TRUE);
+		m_browseList.Invalidate();
+	}
 }
 
 
 void
 CSecondPage::OnRemovePrinter(
-						Printer * printer)
+						Printer	*	printer,
+						bool			moreComing)
 {
 	check( IsWindow( m_hWnd ) );
+
+	m_browseList.SetRedraw(FALSE);
 
 	//
 	// check to make sure if we're the only item in the control...i.e.
@@ -251,6 +267,12 @@ CSecondPage::OnRemovePrinter(
 		// it with the no rendezvous printers message
 		//
 		InitBrowseList();
+	}
+
+	if (!moreComing)
+	{
+		m_browseList.SetRedraw(TRUE);
+		m_browseList.Invalidate();
 	}
 }
 
