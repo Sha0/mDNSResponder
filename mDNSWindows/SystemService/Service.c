@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.19  2004/10/12 17:59:55  shersche
+<rdar://problem/3718122> Disable routing table modifications when Nortel VPN adapter is active
+Bug #: 3718122
+
 Revision 1.18  2004/10/11 21:57:50  shersche
 <rdar://problem/3832450> The SharedAccess service dependency causes a circular dependency on Windows Server 2003.  Only add the SharedAccess service dependency if running on XP.  All other platforms do not manipulate the firewall and thus are not dependent on it.
 Bug #: 3832450
@@ -1777,6 +1781,35 @@ GetRouteDestination(DWORD * ifIndex, DWORD * address)
 	pAdapter	=	pAdapterInfo;
 	err			=	kUnknownErr;
 			
+	// <rdar://problem/3718122>
+	//
+	// Look for the Nortel VPN virtual interface.  This interface
+	// is identified by it's unique MAC address: 44-45-53-54-42-00
+	//
+	// If the interface is active (i.e., has a non-zero IP Address),
+	// then we want to disable routing table modifications.
+
+	while (pAdapter)
+	{
+		if ((pAdapter->Type == MIB_IF_TYPE_ETHERNET) &&
+		    (pAdapter->AddressLength == 6) &&
+		    (pAdapter->Address[0] == 0x44) &&
+		    (pAdapter->Address[1] == 0x45) &&
+		    (pAdapter->Address[2] == 0x53) &&
+		    (pAdapter->Address[3] == 0x54) &&
+		    (pAdapter->Address[4] == 0x42) &&
+		    (pAdapter->Address[5] == 0x00) &&
+			(inet_addr( pAdapter->IpAddressList.IpAddress.String ) != 0))
+		{
+			goto exit;
+		}
+
+		pAdapter = pAdapter->Next;
+	}
+
+	pAdapter	=	pAdapterInfo;
+	err			=	kUnknownErr;
+
 	while (pAdapter)
 	{
 		//
