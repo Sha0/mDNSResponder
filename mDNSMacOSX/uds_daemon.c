@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.26  2003/10/23 17:51:04  ksekar
+Bug #: <rdar://problem/3335216>: handle blocked clients more efficiently
+Changed gettimeofday() to mDNSPlatformTimeNow()
+
 Revision 1.25  2003/10/22 23:37:49  ksekar
 Bug #: <rdar://problem/3459141>: crash/hang in abort_client
 
@@ -368,7 +372,6 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
     reply_state *fptr;
     transfer_state result; 
     mDNSs32 now = mDNSPlatformTimeNow();
-    struct timeval time;
 
     while(req)
         {
@@ -400,14 +403,9 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
             }
         if (result == t_morecoming)
         {	
-	    if (gettimeofday(&time, NULL) < 0)
-		{
-		my_perror("ERROR: gettimeofday");
-		exit(1);
-		}
-	    if (!req->time_blocked) req->time_blocked = time.tv_sec;
-	    debugf("udsserver_idle: client has been blocked for %d seconds", time.tv_sec - req->time_blocked);
-	    if (time.tv_sec - req->time_blocked >= MAX_TIME_BLOCKED)
+	    if (!req->time_blocked) req->time_blocked = now;
+	    debugf("udsserver_idle: client has been blocked for %d seconds", now - req->time_blocked);
+	    if (now - req->time_blocked >= MAX_TIME_BLOCKED)
 		{
 		LogMsg("Could not write data to client after %d seconds - aborting connection", MAX_TIME_BLOCKED);
 		abort_request(req);
