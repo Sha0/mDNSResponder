@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.125  2003/05/22 01:50:45  cheshire
+Fix warnings, and improve log messages
+
 Revision 1.124  2003/05/22 01:41:50  cheshire
 DiscardDeregistrations doesn't need InterfaceID parameter
 
@@ -1243,9 +1246,9 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 		((RR)->Additional2 == mDNSNULL || ((RR)->Additional2->RecordType & kDNSRecordTypeActiveMask)) && \
 		((RR)->DependentOn == mDNSNULL || ((RR)->DependentOn->RecordType & kDNSRecordTypeActiveMask))  )
 
-#define ResourceRecordIsValidInterfaceAnswer(RR, I) \
+#define ResourceRecordIsValidInterfaceAnswer(RR, INTID) \
 	(ResourceRecordIsValidAnswer(RR) && \
-	((RR)->InterfaceID == mDNSInterface_Any || (RR)->InterfaceID == (I)))
+	((RR)->InterfaceID == mDNSInterface_Any || (RR)->InterfaceID == (INTID)))
 
 #define RRUniqueOrKnownUnique(RR) ((RR)->RecordType == kDNSRecordTypeUnique || (RR)->RecordType == kDNSRecordTypeKnownUnique)
 
@@ -2875,19 +2878,19 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 	if (rr->rrremainingttl)
 		{
 		if (rr->rrtype == kDNSType_TXT)
-			debugf("AnswerQuestionWithResourceRecord Add %##s TXT %#.20s remaining ttl %d",
+			debugf("AnswerQuestionWithResourceRecord Add %##s TXT %#.20s remaining ttl %lu",
 				rr->name.c, rr->rdata->u.txt.c, rr->rrremainingttl);
 		else
-			debugf("AnswerQuestionWithResourceRecord Add %##s (%s) remaining ttl %d",
+			debugf("AnswerQuestionWithResourceRecord Add %##s (%s) remaining ttl %lu",
 				rr->name.c, DNSTypeName(rr->rrtype), rr->rrremainingttl);
 		}
 	else
 		{
 		if (rr->rrtype == kDNSType_TXT)
-			debugf("AnswerQuestionWithResourceRecord Del %##s TXT %#.20s UnansweredQueries %d",
+			debugf("AnswerQuestionWithResourceRecord Del %##s TXT %#.20s UnansweredQueries %lu",
 				rr->name.c, rr->rdata->u.txt.c, rr->UnansweredQueries);
 		else
-			debugf("AnswerQuestionWithResourceRecord Del %##s (%s) UnansweredQueries %d",
+			debugf("AnswerQuestionWithResourceRecord Del %##s (%s) UnansweredQueries %lu",
 				rr->name.c, DNSTypeName(rr->rrtype), rr->UnansweredQueries);
 		}
 #endif
@@ -3879,7 +3882,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	DNSMessage   *replyunicast   = mDNSNULL;
 	mDNSBool      replymulticast = mDNSfalse;
 	
-	verbosedebugf("Received Query from %#a:%d to %#a:%d on 0x%.8X with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+	verbosedebugf("Received Query from %#-15a:%d to %#-15a:%d on 0x%.8X with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
 		srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1],
 		dstaddr, (mDNSu16)dstport.b[0]<<8 | dstport.b[1],
 		InterfaceID,
@@ -3898,7 +3901,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID, replyunicast, replymulticast);
 	if (replyunicast && responseend)
 		{
-		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#a:%d on %p/%d",
+		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#-15a:%d on %p/%ld",
 			replyunicast->h.numQuestions,   replyunicast->h.numQuestions   == 1 ? "" : "s",
 			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
 			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s",
@@ -3911,9 +3914,10 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
-	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID)
+	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
+	(void)srcaddr;	// Currently used only for display in debugging message
 	
 	// We ignore questions (if any) in a DNS response packet
 	const mDNSu8 *ptr = LocateAnswers(response, end);
@@ -3923,8 +3927,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
 	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
 
-	verbosedebugf("Received Response addressed to %#a on 0x%.8X with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
-		dstaddr, InterfaceID,
+	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+		srcaddr, dstaddr, InterfaceID,
 		response->h.numQuestions,   response->h.numQuestions   == 1 ? "" : "s",
 		response->h.numAnswers,     response->h.numAnswers     == 1 ? "" : "s",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y" : "ies",
@@ -3934,7 +3938,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// but we never *issue* unicast queries, so if we ever receive a unicast
 	// response then it is someone trying to spoof us, so ignore it!
 	if (!mDNSAddrIsDNSMulticast(dstaddr))
-		{ debugf("** Ignored apparent spoof mDNS response packet addressed to %#a **", dstaddr); return; }
+		{ debugf("** Ignored apparent spoof mDNS response packet addressed to %#-15a **", dstaddr); return; }
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
@@ -4136,7 +4140,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	
 	mDNS_Lock(m);
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end,                   dstaddr,          InterfaceID);
+	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr,          dstaddr,          InterfaceID);
 	else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
 
 	// Packet reception often causes a change to the task list:
@@ -4208,7 +4212,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				if (intf->InterfaceID == question->InterfaceID) break;
 			if (!intf)
 				{
-				debugf("mDNS_StartQuery_internal: Bogus InterfaceID %p in question", question->InterfaceID);
+				debugf("mDNS_StartQuery_internal: Question %##s InterfaceID %p not found", question->name.c, question->InterfaceID);
 				return(mStatus_BadReferenceErr);
 				}
 			}
