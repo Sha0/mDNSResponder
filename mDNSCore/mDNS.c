@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.360  2004/03/08 02:52:41  cheshire
+Minor debugging fix: Make sure 'target' is initialized so we don't crash writing debugging log messages
+
 Revision 1.359  2004/03/02 03:21:56  cheshire
 <rdar://problem/3549576> Properly support "_services._dns-sd._udp" meta-queries
 
@@ -1850,6 +1853,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 //	rr->Context           = already set in mDNS_SetupResourceRecord
 //	rr->RecordType        = already set in mDNS_SetupResourceRecord
 //	rr->HostTarget        = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
+	// Make sure target is not uninitialized data, or we may crash writing debugging log messages
+	if (rr->HostTarget && target) target->c[0] = 0;
 
 	// Field Group 2: Transient state for Authoritative Records
 	rr->Acknowledged      = mDNSfalse;
@@ -1865,7 +1870,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-	InitializeLastAPTime(m, rr);
+	if (!rr->HostTarget) InitializeLastAPTime(m, rr);
 //	rr->AnnounceUntil     = Set for us in InitializeLastAPTime()
 //	rr->LastAPTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCTime        = Set for us in InitializeLastAPTime()
@@ -1885,10 +1890,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 //	rr->resrec.rdata             = MUST be set by client, unless record type is CNAME or PTR and rr->HostTarget is set
 
 	if (rr->HostTarget)
-		{
-		if (target) target->c[0] = 0;
-		SetTargetToHostName(m, rr);	// This also sets rdlength and rdestimate for us
-		}
+		SetTargetToHostName(m, rr);	// Also sets rdlength and rdestimate for us, and calls InitializeLastAPTime();
 	else
 		{
 		rr->resrec.rdlength   = GetRDLength(&rr->resrec, mDNSfalse);
