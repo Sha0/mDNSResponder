@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.11  2004/07/08 02:24:53  rpantos
+Changes to allow dns-sd tool to be built on Windows.
+
 Revision 1.10  2004/06/29 01:28:43  cheshire
 Fixes to compile properly on Linux
 
@@ -67,18 +70,50 @@ Changes from Marc Krochmal: Fix inconsistent use of space/tab
 Revision 1.1  2004/02/06 03:19:09  cheshire
 Check in code to make command-line "dns-sd" testing tool
 
+To build this tool, copy and paste the following into a command line:
+
+OS X:
+gcc dns-sd.c -o dns-sd
+
+POSIX systems:
+gcc dns-sd.c -o dns-sd -lmdns
+
+Windows:
+cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib ..\mDNSWindows\DLL\Release\dnssd.lib
+(may require that you run a Visual Studio script such as vsvars32.bat first)
 */
 
+#include "dns_sd.h"
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
 #include <string.h>			// For strlen(), strcpy(), bzero()
-#include <unistd.h>         // For getopt() and optind
 #include <errno.h>          // For errno, EINTR
+#include <time.h>
+#ifdef _WIN32
+#include <process.h>
+#include <WinDNS.h>
+#else
+#include <sys/time.h>		// For struct timeval
+#include <unistd.h>         // For getopt() and optind
 #define BIND_8_COMPAT
 #include <arpa/nameser.h>	// For T_HINFO, etc.
+#endif
 #define T_SRV 33
-#include <sys/time.h>		// For struct timeval
-#include <dns_sd.h>
+
+#ifdef _WIN32
+typedef	int	pid_t;
+#define	getpid	_getpid
+
+#define	C_IN	DNS_CLASS_INTERNET
+#define	T_PTR	DNS_TYPE_PTR
+#define	T_A		DNS_TYPE_A
+#define	T_TXT	DNS_TYPE_TEXT
+#define	T_NULL	DNS_TYPE_NULL
+#define	T_HINFO	DNS_TYPE_HINFO
+
+#define	strcasecmp	_stricmp
+#endif
+
 
 //*************************************************************************************************************
 // Globals
@@ -114,20 +149,30 @@ static uint16_t GetRRType(const char *s)
 
 static void printtimestamp(void)
 	{
-	struct timeval tv;
 	struct tm tm;
+	int ms;
+#ifdef _WIN32
+	SYSTEMTIME sysTime;
+	time_t uct = time(NULL);
+	tm = *localtime(&uct);
+	GetLocalTime(&sysTime);
+	ms = sysTime.wMilliseconds;
+#else
+	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	localtime_r((time_t*)&tv.tv_sec, &tm);
-	printf("%2d:%02d:%02d.%03d  ", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec/1000);
+	ms = tv.tv_usec/1000;
+#endif
+	printf("%2d:%02d:%02d.%03d  ", tm.tm_hour, tm.tm_min, tm.tm_sec, ms);
 	}
 
 #define DomainMsg(X) (((X) & kDNSServiceFlagsDefault) ? "(Default)" : \
                       ((X) & kDNSServiceFlagsAdd)     ? "Added"     : "Removed")
 
-static void regdom_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interface,
+static void DNSSD_API regdom_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
-	(void)interface;    // Unused
+	(void)ifIndex;    // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
 	printtimestamp();
@@ -136,11 +181,11 @@ static void regdom_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t in
 	printf("\n");
 	}
 
-static void browsedom_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t interface,
+static void DNSSD_API browsedom_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
 	(void)client;       // Unused
-	(void)interface;    // Unused
+	(void)ifIndex;    // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
 	printtimestamp();
@@ -149,20 +194,19 @@ static void browsedom_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_
 	printf("\n");
 	}
 
-static void browse_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t interface, DNSServiceErrorType errorCode,
+static void DNSSD_API browse_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *replyName, const char *replyType, const char *replyDomain, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	(void)client;       // Unused
-	(void)interface;    // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
-	printf("%s%6X%3d %-24s %-24s %s\n", op, flags, interface, replyDomain, replyType, replyName);
+	printf("%s%6X%3d %-24s %-24s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
 	}
 
-static void resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t interface, DNSServiceErrorType errorCode,
+static void DNSSD_API resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const char *txtRecord, void *context)
 	{
 	const char *src = txtRecord;
@@ -170,7 +214,7 @@ static void resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t 
 	uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
 
 	(void)client;       // Unused
-	(void)interface;    // Unused
+	(void)ifIndex;    // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
 
@@ -261,7 +305,7 @@ static void myTimerCallBack(void)
 		}
 	}
 
-static void reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNSServiceErrorType errorCode,
+static void DNSSD_API reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNSServiceErrorType errorCode,
 	const char *name, const char *regtype, const char *domain, void *context)
 	{
 	(void)client;   // Unused
@@ -279,15 +323,15 @@ static void reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNSServiceErr
 	if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
 	}
 
-void qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode,
+void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 	{
 	const unsigned char *rd = rdata;
 	char rdb[1000];
 	switch (rrtype)
 		{
-		case T_A: snprintf(rdb, sizeof(rdb), "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
-		default : snprintf(rdb, sizeof(rdb), "Unknown rdata: %d bytes", rdlen);          break;
+		case T_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
+		default : sprintf(rdb, "Unknown rdata: %d bytes", rdlen);          break;
 		}
 	printf("%-30s%4d%4d  %s\n", fullname, rrtype, rrclass, rdb);
 	}
@@ -332,15 +376,42 @@ static void HandleEvents(void)
 		}
 	}
 
+int	getfirstoption( int argc, char **argv, const char *optstr, int *pOptInd)
+// Return the recognized option in optstr and the option index of the next arg.
+#if NOT_HAVE_GETOPT
+	{
+	int	i;
+	for ( i=1; i < argc; i++)
+		{
+		if ( argv[i][0] == '-' && &argv[i][1] && 
+			 NULL != strchr( optstr, argv[i][1]))
+			{
+			*pOptInd = i + 1;
+			return argv[i][1];
+			}
+		}
+	return -1;
+	}
+#else
+	{
+	int	operation = getopt(argc, (char * const *)argv, optstr);
+	*pOptInd = optind;
+	return operation;
+	}
+#endif
+
 int main(int argc, char **argv)
 	{
 	DNSServiceErrorType err;
 	char *dom;
+	int	optind;
 	const char *progname = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
+#ifndef NOT_HAVE_SETLINEBUF
 	setlinebuf(stdout);             // Want to see lines as they appear, not block buffered
+#endif
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getopt(argc, (char * const *)argv, "EFBLQRAUNTMI");
+	operation = getfirstoption( argc, argv, "EFBLQRAUNTMI", &optind);
 	if (operation == -1) goto Fail;
 
 	switch (operation)
@@ -394,10 +465,11 @@ int main(int argc, char **argv)
 					break;
 					}
 
-		case 'Q':	if (argc < optind+1) goto Fail;
-					{
-					uint16_t rrtype  = (argc <= optind+1) ? T_A  : GetRRType(argv[optind+1]);
-					uint16_t rrclass = (argc <= optind+2) ? C_IN : atoi(argv[optind+2]);
+		case 'Q':	{
+					uint16_t rrtype, rrclass;
+					if (argc < optind+1) goto Fail;
+					rrtype = (argc <= optind+1) ? T_A  : GetRRType(argv[optind+1]);
+					rrclass = (argc <= optind+2) ? C_IN : atoi(argv[optind+2]);
 					err = DNSServiceQueryRecord(&client, 0, 0, argv[optind+0], rrtype, rrclass, qr_reply, NULL);
 					break;
 					}
