@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: DebugServices.c,v $
+Revision 1.3  2004/04/08 09:29:55  bradley
+Manually do host->network byte order conversion to avoid needing libraries for htons/htonl. Changed
+hex dumps to better separate hex and ASCII. Added support for %.8a syntax in DebugSNPrintF for Fibre
+Channel addresses (00:11:22:33:44:55:66:77). Fixed a few places where HeaderDoc was incorrect.
+
 Revision 1.2  2004/03/07 05:59:34  bradley
 Sync'd with internal version: Added expect macros, error codes, and CoreServices exclusion.
 
@@ -308,7 +313,7 @@ DEBUG_EXPORT OSStatus	DebugInitialize( DebugOutputType inType, ... )
 		#elif( TARGET_OS_VXWORKS )
 			#if( DEBUG_FPRINTF_ENABLED )
 				type = kDebugOutputTypeFPrintF;
-		#else
+			#else
 				#error target is VxWorks, but fprintf output is disabled
 			#endif
 		#else
@@ -1172,6 +1177,7 @@ static pascal void
 //	Conditionalized mDNS stuff so it can be used with or with mDNSClientAPI.h.
 //	Added 64-bit support for %d (%lld), %i (%lli), %u (%llu), %o (%llo), %x (%llx), and %b (%llb).
 //	Added %@   - Cocoa/CoreFoundation object. Param is the object. Strings are used directly. Others use CFCopyDescription.
+//	Added %.8a - FIbre Channel address. Arg=ptr to address.
 //	Added %##a - IPv4 (if AF_INET defined) or IPv6 (if AF_INET6 defined) sockaddr. Arg=ptr to sockaddr.
 //	Added %b   - Binary representation of integer (e.g. 01101011). Modifiers and arg=the same as %d, %x, etc.
 //	Added %C   - Mac-style FourCharCode (e.g. 'APPL'). Arg=32-bit value to print as a Mac-style FourCharCode.
@@ -1414,12 +1420,14 @@ DEBUG_EXPORT size_t DebugSNPrintFVAList(char *sbuffer, size_t buflen, const char
 														a[0], a[1], a[2], a[3], post); break;
 									case  6: i = DebugSNPrintF(mDNS_VACB, sizeof(mDNS_VACB), "%02X:%02X:%02X:%02X:%02X:%02X",
 														a[0], a[1], a[2], a[3], a[4], a[5]); break;
+									case  8: i = DebugSNPrintF(mDNS_VACB, sizeof(mDNS_VACB), "%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
+														a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]); break;
 									case 16: i = DebugSNPrintF(mDNS_VACB, sizeof(mDNS_VACB), 
 														"%s%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X%s",
 														pre, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], 
 														a[9], a[10], a[11], a[12], a[13], a[14], a[15], post); break;		
 									default: i = DebugSNPrintF(mDNS_VACB, sizeof(mDNS_VACB), "%s", "<< ERROR: Must specify address size "
-														"(i.e. %.4a=IPv4, %.6a=Ethernet, %.16a=IPv6) >>"); break;
+														"(i.e. %.4a=IPv4, %.6a=Ethernet, %.8a=Fibre Channel %.16a=IPv6) >>"); break;
 									}
 								}
 							}
@@ -1763,7 +1771,7 @@ DEBUG_EXPORT const char *	DebugGetErrorString( int_least32_t inErrorCode, char *
 		CaseErrorStringifyHardCode( -65552, mStatus_Incompatible );
 		CaseErrorStringifyHardCode( -65791, mStatus_ConfigChanged );
 		CaseErrorStringifyHardCode( -65792, mStatus_MemFree );
-
+		
 		// RSP Errors
 		
 		CaseErrorStringifyHardCode( -400000, kRSPUnknownErr );
@@ -2240,7 +2248,7 @@ DEBUG_EXPORT size_t
 		if( !( inFlags & kDebugFlagsNoASCII ) )
 		{
 			*s++ = ' ';
-			*s++ = '\'';
+			*s++ = '|';
 			for( i = 0; i < n; ++i )
 			{
 				if( i < chunkSize )
@@ -2257,7 +2265,7 @@ DEBUG_EXPORT size_t
 				}
 				*s++ = (char) c;
 			}
-			*s++ = '\'';
+			*s++ = '|';
 			check( ( (size_t)( s - asciiString ) ) < sizeof( asciiString ) );
 		}
 		*s = '\0';
@@ -2618,6 +2626,7 @@ DEBUG_EXPORT OSStatus	DebugServicesTest( void )
 {
 	OSStatus		err;
 	char			s[ 512 ];
+	uint8_t *		p;
 	uint8_t			data[] = 
 	{
 		0x11, 0x22, 0x33, 0x44, 
@@ -2630,7 +2639,7 @@ DEBUG_EXPORT OSStatus	DebugServicesTest( void )
 		0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0, 
 		0x11, 0x21, 0x31, 0x41, 0x51, 0x61, 0x71, 0x81, 0x91, 0xA1 
 	};
-
+	
 	debug_initialize( kDebugOutputTypeMetaConsole );	
 	
 	// check's
@@ -2865,8 +2874,14 @@ require26Good:
 		
 		memset( &sa4, 0, sizeof( sa4 ) );
 		sa4.sin_family 		= AF_INET;
-		sa4.sin_port		= htons( 80 );
-		sa4.sin_addr.s_addr	= htonl( INADDR_LOOPBACK );
+		p 					= (uint8_t *) &sa4.sin_port;
+		p[ 0 ] 				= (uint8_t)( ( 80 >> 8 ) & 0xFF );
+		p[ 1 ] 				= (uint8_t)(   80        & 0xFF );
+		p 					= (uint8_t *) &sa4.sin_addr.s_addr;
+		p[ 0 ] 				= (uint8_t)( ( INADDR_LOOPBACK >> 24 ) & 0xFF );
+		p[ 1 ] 				= (uint8_t)( ( INADDR_LOOPBACK >> 16 ) & 0xFF );
+		p[ 2 ] 				= (uint8_t)( ( INADDR_LOOPBACK >>  8 ) & 0xFF );
+		p[ 3 ] 				= (uint8_t)(   INADDR_LOOPBACK         & 0xFF );
 		DebugSNPrintF( s, sizeof( s ), "%##a", &sa4 );
 		require_action( strcmp( s, "127.0.0.1:80" ) == 0, exit, err = -1 );
 	}
@@ -2878,7 +2893,9 @@ require26Good:
 		
 		memset( &sa6, 0, sizeof( sa6 ) );
 		sa6.sin6_family 			= AF_INET6;
-		sa6.sin6_port				= htons( 80 );
+		p 							= (uint8_t *) &sa6.sin6_port;
+		p[ 0 ] 						= (uint8_t)( ( 80 >> 8 ) & 0xFF );
+		p[ 1 ] 						= (uint8_t)(   80        & 0xFF );
 		sa6.sin6_addr.s6_addr[  0 ]	= 0xFE;
 		sa6.sin6_addr.s6_addr[  1 ]	= 0x80;
 		sa6.sin6_addr.s6_addr[ 15 ]	= 0x01;

@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: DebugServices.h,v $
+Revision 1.3  2004/04/08 09:29:55  bradley
+Manually do host->network byte order conversion to avoid needing libraries for htons/htonl. Changed
+hex dumps to better separate hex and ASCII. Added support for %.8a syntax in DebugSNPrintF for Fibre
+Channel addresses (00:11:22:33:44:55:66:77). Fixed a few places where HeaderDoc was incorrect.
+
 Revision 1.2  2004/03/07 05:59:34  bradley
 Sync'd with internal version: Added expect macros, error codes, and CoreServices exclusion.
 
@@ -1495,7 +1500,7 @@ typedef uint32_t		DebugPropertyTag;
 	<pre>
 		64-bit support for %d (%lld), %i (%lli), %u (%llu), %o (%llo), %x (%llx), and %b (%llb).
 		%@   - Cocoa/CoreFoundation object. Param is the object. Strings are used directly. Others use CFCopyDescription.
-		%a   - Network Address: %.4a=IPv4, %.6a=IEEE 802/Ethernet/MAC, %.16a=IPv6. Arg=ptr to network address.
+		%a   - Network Address: %.4a=IPv4, %.6a=Ethernet, %.8a Fibre Channel, %.16a=IPv6. Arg=ptr to network address.
 		%#a  - IPv4 or IPv6 mDNSAddr. Arg=ptr to mDNSAddr.
 		%##a - IPv4 (if AF_INET defined) or IPv6 (if AF_INET6 defined) sockaddr. Arg=ptr to sockaddr.
 		%b   - Binary representation of integer (e.g. 01101011). Modifiers and arg=the same as %d, %x, etc.
