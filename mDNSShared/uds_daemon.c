@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.164  2005/01/28 06:07:55  cheshire
+Don't use deliver_error() from within handle_regrecord_request()
+
 Revision 1.163  2005/01/28 01:39:16  cheshire
 Include file descriptor number in "broken pipe" message
 
@@ -2589,11 +2592,7 @@ static mStatus handle_regrecord_request(request_state *rstate)
         }
         
     rr = read_rr_from_ipc_msg(rstate->msgdata, 1, 1);
-    if (!rr)
-        {
-        deliver_error(rstate, mStatus_BadParamErr);
-        return(-1);
-        }
+    if (!rr) return(mStatus_BadParamErr);
 
     // allocate registration entry, link into list
     re = mallocL("handle_regrecord_request", sizeof(registered_record_entry));
