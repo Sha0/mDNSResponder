@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.279  2005/02/17 01:56:14  cheshire
+Increase ifname field to 64 bytes
+
 Revision 1.278  2005/02/09 23:38:51  ksekar
 <rdar://problem/3993508> Reregister hostname when DNS server changes but IP address does not
 
@@ -1651,7 +1654,7 @@ struct NetworkInterfaceInfo_struct
 	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
 	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
 	mDNSAddr        mask;
-	char            ifname[16];
+	char            ifname[64];			// Windows uses a GUID string for the interface name, which doesn't fit in 16 bytes
 	mDNSBool        Advertise;			// False if you are only searching on this interface
 	mDNSBool        McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	};
