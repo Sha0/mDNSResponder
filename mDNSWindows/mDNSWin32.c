@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.57  2004/10/11 21:53:15  shersche
+<rdar://problem/3832450> Change GetWindowsVersionString link scoping from static to non-static so that it can be accessed from other compilation units. The information returned in this function will be used to determine what service dependencies to use when calling CreateService().
+Bug #: 3832450
+
 Revision 1.56  2004/09/26 23:20:36  ksekar
 <rdar://problem/3813108> Allow default registrations in multiple wide-area domains
 
@@ -349,7 +353,6 @@ mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInter
 #endif
 
 mDNSlocal mDNSBool	CanReceiveUnicast( void );
-mDNSlocal OSStatus	GetWindowsVersionString(  char *inBuffer, size_t inBufferSize );
 
 #ifdef	__cplusplus
 	}
@@ -2974,7 +2977,7 @@ mDNSlocal mDNSBool	CanReceiveUnicast( void )
 //	GetWindowsVersionString
 //===========================================================================================================================
 
-mDNSlocal OSStatus	GetWindowsVersionString( char *inBuffer, size_t inBufferSize )
+OSStatus	GetWindowsVersionString( char *inBuffer, size_t inBufferSize )
 {
 #if( !defined( VER_PLATFORM_WIN32_CE ) )
 	#define VER_PLATFORM_WIN32_CE		3

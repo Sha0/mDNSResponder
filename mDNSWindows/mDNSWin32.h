@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.18  2004/10/11 21:53:15  shersche
+<rdar://problem/3832450> Change GetWindowsVersionString link scoping from static to non-static so that it can be accessed from other compilation units. The information returned in this function will be used to determine what service dependencies to use when calling CreateService().
+Bug #: 3832450
+
 Revision 1.17  2004/09/17 01:08:57  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -210,6 +214,16 @@ struct ifaddrs
 	
 	}	ifa_extra;
 };
+
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	GetWindowsVersionString
+
+	@abstract	Stores Windows version information in the string passed in (inBuffer)
+*/
+
+OSStatus	GetWindowsVersionString( char *inBuffer, size_t inBufferSize );
+
 
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@function	getifaddrs
