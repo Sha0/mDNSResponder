@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.158  2004/12/15 02:04:28  ksekar
+Refinement to previous checkin - we should still return NatTraversal error  when the port mapping fails
+
 Revision 1.157  2004/12/15 01:39:21  ksekar
 Refinement to previous checkin - we should still return NatTraversal error  when the port mapping fails
 
@@ -4142,7 +4145,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 			unlinkSRS(u, srs);
 			srs->uDNS_info.state = regState_Unregistered;
 			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-			srs->ServiceCallback(m, srs, mStatus_MemFree);
+			srs->ServiceCallback(m, srs, err);
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return mStatus_NoError;
 		case regState_Unregistered:
