@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.209  2003/07/12 01:27:50  cheshire
+<rdar://problem/3320079> Hostname conflict naming should not use two hyphens
+Fix missing "-1" in RemoveLabelSuffix()
+
 Revision 1.208  2003/07/11 01:32:38  cheshire
 Syntactic cleanup (no change to funcationality): Now that we only have one host name,
 rename field "hostname1" to "hostname", and field "RR_A1" to "RR_A".
@@ -1551,7 +1555,7 @@ mDNSlocal mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 	// Chop opening parentheses or dash from suffix
 	if (RichText)
 		{
-		if (name->c[0] >= 2 && name->c[name->c[0]] == '(' && name->c[name->c[0]] == ' ') name->c[0] -= 2;
+		if (name->c[0] >= 2 && name->c[name->c[0]] == '(' && name->c[name->c[0]-1] == ' ') name->c[0] -= 2;
 		}
 	else
 		{
