@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.31  2003/11/20 20:33:05  ksekar
+Bug #: <rdar://problem/3486635>: leak: DNSServiceRegisterRecord
+
 Revision 1.30  2003/11/20 02:10:55  ksekar
 Bug #: <rdar://problem/3486643>: cleanup DNSServiceAdd/RemoveRecord
 
@@ -1574,12 +1577,20 @@ static void connected_registration_termination(void *context)
     {
     registered_record_entry *fptr, *ptr = ((request_state *)context)->reg_recs;
     while(ptr)
-    	{
+        {
         mDNS_Deregister(&mDNSStorage, ptr->rr);
         fptr = ptr;
         ptr = ptr->next;
+        freeL("connected_registration_termination", fptr->rr->RecordContext);
+        fptr->rr->RecordContext = NULL;
+        if (fptr->rr->resrec.RecordType != kDNSRecordTypeShared)
+            // shared records free'd via callback w/ mStatus_MemFree
+            {
+            freeL("connected_registration_termination", fptr->rr);
+            fptr->rr = NULL;
+            }
         freeL("connected_registration_termination", fptr);
-    	}
+        }
     }
     
 
@@ -1617,8 +1628,21 @@ static mStatus remove_record(request_state *rstate)
             if (prev) prev->next = reptr->next;
             else rstate->reg_recs = reptr->next;
             err  = mDNS_Deregister(&mDNSStorage, reptr->rr);
-	    if (err) return err;	// don't try to free memory if there's an error
-	    freeL("handle_removerecord_request", reptr);  //rr gets freed by callback	    
+	        if (err) 
+	            {
+	            LogMsg("ERROR: remove_record, mDNS_Deregister: %d", err);
+	            return err;	// this should not happen.  don't try to free memory if there's an error
+	            }
+            freeL("remove_record", reptr->rr->RecordContext);
+            reptr->rr->RecordContext = NULL;
+            if (reptr->rr->resrec.RecordType != kDNSRecordTypeShared)
+	            // shared records free'd via callback w/ mStatus_MemFree		
+	            {
+	            freeL("remove_record", reptr->rr);
+	            reptr->rr = NULL;
+	            }
+            freeL("remove_record", reptr);  	    
+            break;
             }
         prev = reptr;
         reptr = reptr->next;
