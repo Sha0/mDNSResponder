@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.67  2003/01/17 03:56:45  cheshire
+Default 24-hour TTL is far too long. Changing to two hours.
+
 Revision 1.66  2003/01/13 23:49:41  jgraessl
 Merged changes for the following fixes in to top of tree:
 3086540  computer name changes not handled properly
@@ -4237,9 +4240,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	if (host && host->c[0]) sr->Host = *host;
 	else sr->Host.c[0] = 0;
 	
-	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, mDNSInterface_Any, kDNSType_PTR, 24*3600, kDNSRecordTypeShared, ServiceCallback, sr);
-	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
- 	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, mDNSInterface_Any, kDNSType_TXT, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, mDNSInterface_Any, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, 60,     kDNSRecordTypeUnique, ServiceCallback, sr);
+ 	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, mDNSInterface_Any, kDNSType_TXT, 60,     kDNSRecordTypeUnique, ServiceCallback, sr);
 	
 	// If the client is registering an oversized TXT record,
 	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it
@@ -4418,7 +4421,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *con
 mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
 	mDNSu8 DomainType, const mDNSOpaqueID InterfaceID, char *domname)
 	{
-	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, 24*3600, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
+	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
 	ConvertCStringToDomainName(mDNS_DomainTypeNames[DomainType], &rr->name);
 	ConvertCStringToDomainName(domname, &rr->rdata->u.name);
 	return(mDNS_Register(m, rr));
