@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.160  2003/06/03 05:02:16  cheshire
+<rdar://problem/3277080> Duplicate registrations not handled as efficiently as they should be
+
 Revision 1.159  2003/06/03 03:31:57  cheshire
 <rdar://problem/3277033> False self-conflict when there are duplicate registrations on one machine
 
@@ -606,7 +609,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 	int c;
 	buflen--;		// Pre-reserve one space in the buffer for the terminating nul
 
-	for (c = *fmt; c != 0 ; c = *++fmt)
+	for (c = *fmt; c != 0; c = *++fmt)
 		{
 		if (c != '%')
 			{
@@ -1677,11 +1680,32 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, ResourceRecord *const rr)
 		}
 	}
 
+mDNSlocal void CompleteProbing(mDNS *const m, ResourceRecord *const rr)
+	{
+	verbosedebugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
+	if (!rr->Acknowledged && rr->RecordCallback)
+		{
+		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
+		rr->Acknowledged = mDNStrue;
+		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		rr->RecordCallback(m, rr, mStatus_NoError);
+		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		}
+	}
+
+// Two records qualify to be local duplicates if the RecordTypes are the same, or if one is Unique and the other Verified
+#define RecordLDT(A,B) ((A)->RecordType == (B)->RecordType || ((A)->RecordType | (B)->RecordType) == (kDNSRecordTypeUnique | kDNSRecordTypeVerified))
+#define RecordIsLocalDuplicate(A,B) ((A)->InterfaceID == (B)->InterfaceID && RecordLDT((A),(B)) && IdenticalResourceRecord((A), (B)))
+
 mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr)
 	{
+	ResourceRecord *r;
 	ResourceRecord **p = &m->ResourceRecords;
+	ResourceRecord **d = &m->DuplicateRecords;
 	while (*p && *p != rr) p=&(*p)->next;
-	if (*p)
+	while (*d && *d != rr) d=&(*d)->next;
+	if (*d || *p)
 		{
 		LogMsg("Error! Tried to register a ResourceRecord %p %##s (%s) that's already in the list", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		return(mStatus_AlreadyRegistered);
@@ -1778,7 +1802,26 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 		}
 //	rr->rdata             = MUST be set by client
 
-	*p = rr;
+	// Now that's we've finished building our new record, make sure it's not identical to one we already have
+	for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
+	
+	if (r)
+		{
+		debugf("Adding %##s (%s) to duplicate list", rr->name.c, DNSTypeName(rr->rrtype));
+		*d = rr;
+		if (rr->RecordType == kDNSRecordTypeUnique)
+			{
+			rr->RecordType = kDNSRecordTypeVerified;
+			CompleteProbing(m, rr);
+			// MUST NOT dereference rr after this -- client could already have disposed it
+			}
+		}
+	else
+		{
+		debugf("Adding %##s (%s) to active record list", rr->name.c, DNSTypeName(rr->rrtype));
+		*p = rr;
+		}
+
 	return(mStatus_NoError);
 	}
 
@@ -1794,6 +1837,42 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 	mDNSu8 RecordType = rr->RecordType;
 	ResourceRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 	while (*p && *p != rr) p=&(*p)->next;
+
+	if (*p)
+		{
+		// We found our record on the main list. Before we delete it (and potentially send a goodbye packet)
+		// first see if we have a record on the duplicate list ready to take over from it.
+		ResourceRecord **d = &m->DuplicateRecords;
+		while (*d && !RecordIsLocalDuplicate(*d, rr)) d=&(*d)->next;
+		if (*d)
+			{
+			ResourceRecord *dup = *d;
+			debugf("Duplicate record %p taking over from %p %##s (%s)", dup, rr, rr->name.c, DNSTypeName(rr->rrtype));
+			*d        = dup->next;		// Cut replacement record from DuplicateRecords list
+			dup->next = rr->next;		// And then...
+			rr->next  = dup;			// ... splice it in right after the record we're about to delete
+			dup->RecordType        = rr->RecordType;
+			dup->RRInterfaceActive = rr->RRInterfaceActive;
+			dup->ProbeCount        = rr->ProbeCount;
+			dup->AnnounceCount     = rr->AnnounceCount;
+			dup->ImmedAnswer       = rr->ImmedAnswer;
+			dup->ImmedAdditional   = rr->ImmedAdditional;
+			dup->v4Requester       = rr->v4Requester;
+			dup->v6Requester       = rr->v6Requester;
+			dup->ThisAPInterval    = rr->ThisAPInterval;
+			dup->LastAPTime        = rr->LastAPTime;
+			if (dup->HostTarget) SetTargetToHostName(m, dup);
+			if (RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
+			}
+		}
+	else
+		{
+		// We didn't find our record on the main list; try the DuplicateRecords list instead.
+		p = &m->DuplicateRecords;
+		while (*p && *p != rr) p=&(*p)->next;
+		// If we found our record on the duplicate list, then make sure we don't send a goodbye for it
+		if (*p && RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
+		}
 
 	if (!*p)
 		{
@@ -2844,16 +2923,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					rr->ThisAPInterval = DefaultAnnounceIntervalForTypeUnique;
 					rr->LastAPTime     = m->timenow - DefaultAnnounceIntervalForTypeUnique;
 					SetNextAnnounceProbeTime(m, rr);
-					verbosedebugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
-					if (!rr->Acknowledged && rr->RecordCallback)
-						{
-						// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
-						// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
-						rr->Acknowledged = mDNStrue;
-						m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-						rr->RecordCallback(m, rr, mStatus_NoError);
-						m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-						}
+					CompleteProbing(m, rr);
 					}
 				}
 			}
@@ -5278,9 +5348,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// make sure we've deregistered all our records and done any other necessary cleanup before that happens.
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_ADV);
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_PTR);
-	if (err) mDNS_DeregisterService(m, sr);
 	mDNS_Unlock(m);
 
+	if (err) mDNS_DeregisterService(m, sr);
 	return(err);
 	}
 

@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.61  2003/06/03 05:02:16  cheshire
+<rdar://problem/3277080> Duplicate registrations not handled as efficiently as they should be
+
 Revision 1.60  2003/05/31 00:09:49  cheshire
 <rdar://problem/3274862> Add ability to discover what services are on a network
 
@@ -729,6 +732,7 @@ struct mDNS_struct
 	domainname  hostname1;				// Primary Host Name, e.g. "Foo.local."
 	domainname  hostname2;				// Secondary Host Name, e.g. "Foo.local.arpa."
 	ResourceRecord *ResourceRecords;
+	ResourceRecord *DuplicateRecords;	// Records currently 'on hold' because they are duplicates of existing records
 	ResourceRecord *CurrentRecord;		// Next ResourceRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
 	mDNSs32 ProbeFailTime;
