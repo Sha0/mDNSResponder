@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.464  2004/11/03 01:44:36  cheshire
+Update debugging messages
+
 Revision 1.463  2004/10/29 02:38:48  cheshire
 Fix Windows compile errors
 
@@ -2393,7 +2396,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		{
 		// No need to log an error message if we already know this is a potentially repeated deregistration
 		if (drt != mDNS_Dereg_repeat)
-			debugf("mDNS_Deregister_internal: Record %p %##s (%s) not found in list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+			LogMsg("mDNS_Deregister_internal: Record %p %##s (%s) not found in list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 		return(mStatus_BadReferenceErr);
 		}
 
@@ -5882,7 +5885,7 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 		// 3. Generate the FQDNs from the hostlabel,
 		// and make sure all SRV records, etc., are updated to reference our new hostname
 		mDNS_SetFQDN(m);
-		LogMsg("Host Name %#s already in use; new name %#s selected for this host.", oldlabel.c, m->hostlabel.c);
+		LogMsg("Local Hostname %#s.local already in use; will try %#s.local instead", oldlabel.c, m->hostlabel.c);
 		}
 	else LogMsg("mDNS_HostNameCallback: Unknown error %ld for registration of record %s", result,  rr->resrec.name.c);
 	}
@@ -6377,12 +6380,12 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 #endif
 	if (sr->RR_PTR.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
-		debugf("Service set for %##s already deregistered", sr->RR_PTR.resrec.name.c);
+		debugf("Service set for %##s already deregistered", sr->RR_SRV.resrec.name.c);
 		return(mStatus_BadReferenceErr);
 		}
 	else if (sr->RR_PTR.resrec.RecordType == kDNSRecordTypeDeregistering)
 		{
-		debugf("Service set for %##s already in the process of deregistering", sr->RR_PTR.resrec.name.c);
+		debugf("Service set for %##s already in the process of deregistering", sr->RR_SRV.resrec.name.c);
 		return(mStatus_NoError);
 		}
 	else
