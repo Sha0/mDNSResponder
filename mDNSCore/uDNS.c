@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.112  2004/11/11 20:45:14  ksekar
+<rdar://problem/3876052> self-conflict test not compatible with some BIND servers
+
 Revision 1.111  2004/11/11 20:14:55  ksekar
 <rdar://problem/3719574> Wide-Area registrations not deregistered on sleep
 
@@ -3446,8 +3449,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (srs->uDNS_info.TestForSelfConflict)
 		{
 		// update w/ prereq that records already exist to make sure previous registration was ours
-		if (!(ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_PTR.resrec, 0))) goto error;		
-		if (!(ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_TXT.resrec, 0))) goto error;
+		if (!(ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0))) goto error;
 		if (!(ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_TXT.resrec, 0))) goto error;
 		}
 	
