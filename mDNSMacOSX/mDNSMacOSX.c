@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.225  2004/10/28 19:03:04  cheshire
+Remove \n from LogMsg() calls
+
 Revision 1.224  2004/10/28 17:47:34  cheshire
 Oops. Forgot the %d in the log message.
 
@@ -952,7 +955,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		}
 	else
 		{
-		LogMsg("mDNSPlatformSendUDP: dst is not an IPv4 or IPv6 address!\n");
+		LogMsg("mDNSPlatformSendUDP: dst is not an IPv4 or IPv6 address!");
 		return mStatus_BadParamErr;
 		}
 
@@ -1843,7 +1846,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 			if (IsPrivateV4Addr(&i->ifinfo.ip) && !LegacyNATInitialized)
 				{
 				mStatus err = LegacyNATInit();
-				if (err)  LogMsg("ERROR: LegacyNATInit\n");
+				if (err)  LogMsg("ERROR: LegacyNATInit");
 				LegacyNATInitialized = mDNStrue;
 				}
 			}
@@ -2449,7 +2452,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
-	if (!store) { LogMsg("SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
+	if (!store) { LogMsg("SCDynamicStoreCreate failed: %s", SCErrorString(SCError())); goto error; }
 	if (!key1 || !key2 || !key3 || !key4 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
 
 	CFArrayAppendValue(keys, key1);
@@ -2462,10 +2465,10 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(patterns, pattern2);
 	CFArrayAppendValue(patterns, CFSTR("State:/Network/Interface/[^/]+/AirPort"));
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
-		{ LogMsg("SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
+		{ LogMsg("SCDynamicStoreSetNotificationKeys failed: %s", SCErrorString(SCError())); goto error; }
 
 	m->p->StoreRLS = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
-	if (!m->p->StoreRLS) { LogMsg("SCDynamicStoreCreateRunLoopSource failed: %s\n", SCErrorString(SCError())); goto error; }
+	if (!m->p->StoreRLS) { LogMsg("SCDynamicStoreCreateRunLoopSource failed: %s", SCErrorString(SCError())); goto error; }
 
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), m->p->StoreRLS, kCFRunLoopDefaultMode);
 	m->p->Store = store;
