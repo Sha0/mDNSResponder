@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.70  2004/08/11 02:07:00  cheshire
+Remove "mDNS *globalInstance" parameter from udsserver_init()
+Move CheckForDuplicateRegistrations from daemon.c
+<rdar://problem/3501938> No warning when accidentally registering the same service multiple times using socket API
+
 Revision 1.69  2004/08/10 16:14:48  cheshire
 Fix debug builds (oops)
 
@@ -407,7 +412,9 @@ typedef struct
 
 
 // globals
-static mDNS				*	gmDNS			=	NULL;
+mDNSexport mDNS mDNSStorage;
+#define gmDNS (&mDNSStorage)
+
 static dnssd_sock_t			listenfd		=	dnssd_InvalidSocket;  
 static request_state	*	all_requests	=	NULL;  
 //!!!KRS we should keep a separate list containing only the requests that need to be examined
@@ -474,17 +481,13 @@ static uint32_t dnssd_htonl(uint32_t l);
 #define PID_FILE "/var/run/mDNSResponder.pid"
 #endif
 
-int udsserver_init( mDNS *globalInstance)  
+int udsserver_init(void)
     {
 	dnssd_sockaddr_t laddr;
 	int				 ret;
 #if defined(_WIN32)
 	u_long opt = 1;
 #endif
-
-    if ( !globalInstance)
-        goto error;
-	gmDNS = globalInstance;
 
 	// If a particular platform wants to opt out of having a PID file, define PID_FILE to be ""
 	if (PID_FILE[0])
@@ -1282,7 +1285,6 @@ static char *FindNextSubType(char *p)
 	}
 
 // Returns -1 if illegal subtype found
-extern mDNSs32 CountSubTypes(char *regtype);
 mDNSexport mDNSs32 CountSubTypes(char *regtype)
 	{
 	mDNSs32 NumSubTypes = 0;
@@ -1297,7 +1299,6 @@ mDNSexport mDNSs32 CountSubTypes(char *regtype)
 	return(NumSubTypes);
 	}
 
-extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 	{
 	AuthRecord *st = mDNSNULL;
@@ -1468,6 +1469,18 @@ static void browse_termination_callback(void *context)
 	freeL("browse_termination_callback", t);
 	}
 
+mDNSexport int CountExistingRegistrations(domainname *srv, mDNSIPPort port)
+	{
+	int count = 0;
+	AuthRecord *rr;
+	for (rr = gmDNS->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.rrtype == kDNSType_SRV &&
+			rr->resrec.rdata->u.srv.port.NotAnInteger == port.NotAnInteger &&
+			SameDomainName(&rr->resrec.name, srv))
+			count++;
+	return(count);
+	}
+
 static mStatus register_service(request_state *request, registered_service **srv_ptr, DNSServiceFlags flags,
 	uint16_t txtlen, void *txtdata, mDNSIPPort port, domainlabel *n, char *type_as_string,
     domainname *t, domainname *d, domainname *h, mDNSBool autoname, int num_subtypes, mDNSInterfaceID InterfaceID)
@@ -1476,7 +1489,10 @@ static mStatus register_service(request_state *request, registered_service **srv
     int srs_size;
 	mStatus result;	
 	*srv_ptr = NULL;
+	domainname srv;
 	
+	if (!ConstructServiceName(&srv, n, t, d)) return(mStatus_BadParamErr);
+
 	r_srv = mallocL("handle_regservice_request", sizeof(registered_service));
     if (!r_srv) goto malloc_error;
     srs_size = sizeof(ServiceRecordSet) + (sizeof(RDataBody) > txtlen ? 0 : txtlen - sizeof(RDataBody));
@@ -1492,6 +1508,17 @@ static mStatus register_service(request_state *request, registered_service **srv
     r_srv->rename_on_memfree = 0;
     r_srv->renameonconflict = !(flags & kDNSServiceFlagsNoAutoRename);
 	memcpy(r_srv->name.c, n->c, n->c[0]);
+
+	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
+	// a port number of zero. When two instances of the protected client are allowed to run on one
+	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
+	if (port.NotAnInteger)
+		{
+		int count = CountExistingRegistrations(&srv, port);
+		if (count)
+			LogMsg("Client application registered %d identical instances of service %##s port %u.",
+				count+1, srv.c, mDNSVal16(port));
+		}
 
     result = mDNS_RegisterService(gmDNS, r_srv->srs, n, t, d, h, port,
     	txtdata, txtlen, r_srv->subtypes, num_subtypes, InterfaceID, regservice_callback, r_srv);
