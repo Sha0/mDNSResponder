@@ -66,6 +66,11 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.5  2003/02/07 03:02:02  cheshire
+Submitted by: Mitsutaka Watanabe
+The code saying "index += 1;" was effectively making up random interface index values.
+The right way to find the correct interface index is if_nametoindex();
+
 Revision 1.4  2002/12/23 22:13:31  jgraessl
 
 Reviewed by: Stuart Cheshire
@@ -124,9 +129,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     struct ifreq        *ifr, ifrcopy;
     struct sockaddr_in  *sinptr;
     struct sockaddr_in6 *sinptr6;
-    int                 index;
 
-    index = 0;
     sockfd = -1;
     buf = NULL;
     ifihead = NULL;
@@ -216,8 +219,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
 
         ifi->ifi_flags = flags;     /* IFF_xxx values */
         ifi->ifi_myflags = myflags; /* IFI_xxx values */
-        index += 1;
-        ifi->ifi_index = index;
+        ifi->ifi_index = if_nametoindex(ifr->ifr_name);
         memcpy(ifi->ifi_name, ifr->ifr_name, IFI_NAME);
         ifi->ifi_name[IFI_NAME-1] = '\0';
 /* end get_ifi_info2 */
