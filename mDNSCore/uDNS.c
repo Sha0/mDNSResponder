@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.173  2005/01/14 18:34:22  ksekar
+<rdar://problem/3954571> Services registered outside of firewall don't succeed after location change
+
 Revision 1.172  2005/01/11 22:50:52  ksekar
 Fixed constant naming (was using kLLQ_DefLease for update leases)
 
@@ -1405,7 +1408,8 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	domainname *curtarget = &srs->RR_SRV.resrec.rdata->u.srv.target;
 	mDNSBool HaveTarget = GetServiceTarget(u, &srs->RR_SRV, &newtarget);
 	mDNSBool TargetChanged = (HaveTarget && srs->uDNS_info.state == regState_NoTarget) || (curtarget->c[0] && !HaveTarget) || !SameDomainName(curtarget, &newtarget);
-
+	mDNSBool HaveZoneData = srs->uDNS_info.ns.ip.v4.NotAnInteger ? mDNStrue : mDNSfalse;
+	
 	// Nat state change if:
 	// We were behind a NAT, and now we are behind a new NAT, or
 	// We're not behind a NAT but our port was previously mapped to a different public port
@@ -1425,8 +1429,8 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	
 	if (!TargetChanged && !NATChanged) return;
 
-	debugf("UpdateSRV (%##s) TargetChanged=%d, HaveTarget=%d, NowBehindNAT=%d, WereBehindNAT=%d, NATRouterChanged=%d, PortWasMapped=%d",
-		   srs->RR_SRV.resrec.name->c, TargetChanged, HaveTarget, NowBehindNAT, WereBehindNAT, NATRouterChanged, PortWasMapped); 
+	debugf("UpdateSRV (%##s) HadZoneData=%d, TargetChanged=%d, HaveTarget=%d, NowBehindNAT=%d, WereBehindNAT=%d, NATRouterChanged=%d, PortWasMapped=%d",
+		   srs->RR_SRV.resrec.name->c,  HaveZoneData, TargetChanged, HaveTarget, NowBehindNAT, WereBehindNAT, NATRouterChanged, PortWasMapped); 
 	
 	switch(srs->uDNS_info.state)
 		{
@@ -1455,11 +1459,19 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 		case regState_NoTarget:
 			if (HaveTarget)
 				{
-				debugf("UpdateSRV: %s service %##s", NATChanged && NowBehindNAT ? "Starting Port Map for" : "Registering", srs->RR_SRV.resrec.name->c);	
-				if (nat && (NATChanged || !NowBehindNAT)) { srs->uDNS_info.NATinfo = mDNSNULL; FreeNATInfo(m, nat); }
-				if (NATChanged && NowBehindNAT) { srs->uDNS_info.state = regState_NATMap; StartNATPortMap(m, srs); }
-				else SendServiceRegistration(m, srs);
-				}		
+				debugf("UpdateSRV: %s service %##s", HaveZoneData ? (NATChanged && NowBehindNAT ? "Starting Port Map for" : "Registering") : "Getting Zone Data for", srs->RR_SRV.resrec.name->c);	
+				if (!HaveZoneData)
+					{
+					srs->uDNS_info.state = regState_FetchingZoneData;
+					startGetZoneData(srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
+					}
+				else
+					{
+					if (nat && (NATChanged || !NowBehindNAT)) { srs->uDNS_info.NATinfo = mDNSNULL; FreeNATInfo(m, nat); }
+					if (NATChanged && NowBehindNAT) { srs->uDNS_info.state = regState_NATMap; StartNATPortMap(m, srs); }
+					else SendServiceRegistration(m, srs);
+					}
+				}
 			return;
 			
 		case regState_Registered:
@@ -1534,12 +1546,25 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 	{
 	const domainname *pktname = &answer->rdata->u.name;
 	domainname *storedname = &m->uDNS_info.StaticHostname;
+	uDNS_HostnameInfo *h = m->uDNS_info.Hostnames;
+
 	(void)question;
 	
 	debugf("FoundStaticHostname: %##s -> %##s (%s)", question->qname.c, answer->rdata->u.name.c, AddRecord ? "added" : "removed");
 	if (AddRecord && !SameDomainName(pktname, storedname))
 		{
 		AssignDomainName(storedname, pktname);
+		while (h)
+			{
+			if (h->ar && (h->ar->uDNS_info.state == regState_FetchingZoneData || h->ar->uDNS_info.state == regState_Pending || h->ar->uDNS_info.state == regState_NATMap))
+				{
+				// if we're in the process of registering a dynamic hostname, delay SRV update so we don't have to reregister services if the dynamic name succeeds
+				m->uDNS_info.DelaySRVUpdate = mDNStrue;
+				m->uDNS_info.NextSRVUpdate = mDNSPlatformTimeNow(m) + (5 * mDNSPlatformOneSecond);
+				return;
+				}
+			h = h->next;
+			}
 		UpdateSRVRecords(m);
 		}
 	else if (!AddRecord && SameDomainName(pktname, storedname))
@@ -2148,6 +2173,11 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 
 	if ((info->SRVChanged || info->SRVUpdateDeferred) && (info->state == regState_NoTarget || info->state == regState_Registered))
 		{
+		if (InvokeCallback)
+			{
+			info->ClientCallbackDeferred = mDNStrue;
+			info->DeferredStatus = err;
+			}
 		info->SRVChanged = mDNSfalse;		
 		UpdateSRV(m, srs);
 		return;
@@ -3836,6 +3866,8 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	domainname target;
 	AuthRecord *srv = &srs->RR_SRV;
 	
+	if (!rInfo->ns.ip.v4.NotAnInteger) { LogMsg("SendServiceRegistration - NS not set!"); return; }
+
 	id = newMessageID(u);
 	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
 
@@ -4135,6 +4167,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
     // Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
+	domainname target;
 	uDNS_RegInfo *info = &srs->uDNS_info;
 	ServiceRecordSet **p = &m->uDNS_info.ServiceRegistrations;
 	while (*p && *p != srs) p=&(*p)->next;
@@ -4146,8 +4179,18 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	srs->RR_SRV.resrec.rroriginalttl = 3;
 	srs->RR_TXT.resrec.rroriginalttl = 3;
 	srs->RR_PTR.resrec.rroriginalttl = 3;
-	
+
 	info->lease = mDNStrue;
+	
+	srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
+	if (!GetServiceTarget(&m->uDNS_info, &srs->RR_SRV, &target))
+		{
+		// defer registration until we've got a target
+		LogMsg("uDNS_RegisterService - no target available for service %##s.  Defering registration", srs->RR_SRV.resrec.name->c);
+		info->state = regState_NoTarget;
+		return mStatus_NoError;
+		}  
+	
 	info->state = regState_FetchingZoneData;
 	return startGetZoneData(srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
 	}
@@ -4610,6 +4653,12 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	mDNSs32 nexte, timenow = mDNSPlatformTimeNow(m);
 
 	u->nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+
+	if (u->DelaySRVUpdate && u->NextSRVUpdate - timenow < 0)
+		{
+		u->DelaySRVUpdate = mDNSfalse;
+		UpdateSRVRecords(m);
+		}
 	
 	nexte = CheckNATMappings(m, timenow);
 	if (nexte - u->nextevent < 0) u->nextevent = nexte;

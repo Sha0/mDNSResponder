@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.270  2005/01/14 18:34:22  ksekar
+<rdar://problem/3954571> Services registered outside of firewall don't succeed after location change
+
 Revision 1.269  2005/01/11 22:50:52  ksekar
 Fixed constant naming (was using kLLQ_DefLease for update leases)
 
@@ -1967,6 +1970,8 @@ typedef struct
     DNSQuestion      ReverseMap;         // Reverse-map query to find  static hostname for service target
     mDNSBool         ReverseMapActive;   // Is above query active?
     domainname       StaticHostname;     // Current answer to reverse-map query (above)
+    mDNSBool         DelaySRVUpdate;     // Delay SRV target/port update to avoid "flap"
+    mDNSs32          NextSRVUpdate;      // Time to perform delayed update
 	} uDNS_GlobalInfo;
 
 struct mDNS_struct
