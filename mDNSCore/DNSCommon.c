@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.43  2004/08/12 02:55:46  ksekar
+Fix param order error moving putPrereqNameNotInUse from uDNS.c using
+ustrcpy macro to DNSCommon.c using mDNSPlatformStrCopy().
+
 Revision 1.42  2004/08/10 23:19:14  ksekar
 <rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
 Moved routines/constants to allow extern access for garbage collection daemon
@@ -1357,7 +1361,7 @@ mDNSexport mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNS
 	AuthRecord prereq;
 
 	mDNSPlatformMemZero(&prereq, sizeof(AuthRecord));
-	mDNSPlatformStrCopy(prereq.resrec.name.c, name->c);
+	mDNSPlatformStrCopy(name->c, prereq.resrec.name.c);
 	prereq.resrec.rrtype = kDNSQType_ANY;
 	prereq.resrec.rrclass = kDNSClass_NONE;
 	ptr = putEmptyResourceRecord(msg, ptr, end, &msg->h.mDNS_numPrereqs, &prereq);
