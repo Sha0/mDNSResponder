@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.123  2003/05/22 01:38:55  cheshire
+Change bracketing of #pragma mark
+
 Revision 1.122  2003/05/21 19:59:04  cheshire
 <rdar://problem/3148431> ER: Tweak responder's default name conflict behavior
 Minor refinements; make sure we don't truncate in the middle of a multi-byte UTF-8 character
@@ -361,7 +364,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #endif
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - DNS Protocol Constants
 #endif
 
@@ -405,7 +408,7 @@ typedef enum
 	} DNS_Flags;
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Program Constants
 #endif
@@ -441,7 +444,7 @@ static const char *const mDNS_DomainTypeNames[] =
 	};
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Specialized mDNS version of vsprintf
 #endif
@@ -684,7 +687,7 @@ mDNSexport int mDNS_sprintf(char *sbuffer, const char *fmt, ...)
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - General Utility Functions
 #endif
@@ -762,7 +765,7 @@ mDNSlocal mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Domain Name Utility Functions
 #endif
@@ -1225,7 +1228,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	}	
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Resource Record Utility Functions
 #endif
@@ -1659,7 +1662,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark -
 #pragma mark - DNS Message Creation Functions
@@ -1928,7 +1931,7 @@ mDNSlocal mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - DNS Message Parsing Functions
 #endif
@@ -2195,7 +2198,7 @@ mDNSlocal const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDN
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark -
 #pragma mark - Packet Sending Functions
@@ -2857,7 +2860,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - RR List Management & Task Management
 #endif
@@ -3453,7 +3456,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Packet Reception Functions
 #endif
@@ -4143,7 +4146,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark -
 #pragma mark - Searcher Functions
@@ -4491,7 +4494,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Responder Functions
 #endif
@@ -5153,7 +5156,7 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
 	}
 
 // ***************************************************************************
-#if 0
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark -
 #pragma mark - Startup and Shutdown
