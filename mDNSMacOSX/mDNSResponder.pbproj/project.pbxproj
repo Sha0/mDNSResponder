@@ -2211,7 +2211,7 @@
 		FFFB0DAF07B43CBA00B88D48 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
-			path = dnssdwriteconfig.m;
+			path = ddnswriteconfig.m;
 			refType = 4;
 		};
 		FFFB0DB307B43CBA00B88D48 = {
