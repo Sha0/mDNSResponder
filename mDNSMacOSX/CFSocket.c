@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.165  2004/08/16 19:52:40  ksekar
+Pass computer name + zone for FQDN after keychain notification,
+setting global default service registration domain to the zone.
+
 Revision 1.164  2004/08/16 16:52:37  ksekar
 Pass in zone read from keychain to mDNS_SetFQDNs.
 
@@ -1984,10 +1988,11 @@ mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
 	SecKeychainAttributeList *authAttrList = NULL; 
 	void *data;
 	mDNSu32 dataLen;
-	
+	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mStatus regErr;		
 	char accountName[MAX_ESCAPED_DOMAIN_NAME];
-	domainname zone;
+	domainname fqdn;
+	domainlabel computername;
 	AuthRecord *rrReg, *rrBrowse;
 
 	info.count = 1;
@@ -1999,22 +2004,27 @@ mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
 	
 	// copy account name
 	if (!authAttrList->count || authAttrList->attr->tag != kSecAccountItemAttr)
-	    { LogMsg("Received bad authAttrList"); return; }
-	
+	    { LogMsg("Received bad authAttrList"); return; }	
 	if (authAttrList->attr->length + strlen(LH_SUFFIX) > MAX_ESCAPED_DOMAIN_NAME)
 		{ LogMsg("Account name too long (%d bytes)", authAttrList->attr->length); return; }
 	memcpy(accountName, authAttrList->attr->data, authAttrList->attr->length);
 	accountName[authAttrList->attr->length] = '\0';
+
+	// construct FQDN (computername.accountname.members.mac.com.)
+	fqdn.c[0] = '\0';
+	computername.c[0] = '\0';
+	GetUserSpecifiedRFC1034ComputerName(&computername);
+	if (!computername.c[0]) MakeDomainLabelFromLiteralString(&computername, "Macintosh");
+	if (!AppendDomainLabel(&fqdn, &computername) ||
+		!AppendLiteralLabelString(&fqdn, accountName) ||
+		!AppendDNSNameString(&fqdn, LH_SUFFIX))
+		{ LogMsg("InitAuthInfo - bad domain name"); return; }
+
+	// set default service registration domain (accountname.members.mac.com.)
+	AssignDomainName(u->ServiceRegDomain, *(domainname*)(fqdn.c + 1 + fqdn.c[0]));	
+	mDNS_UpdateDomainRequiresAuthentication(m, &u->ServiceRegDomain, &u->ServiceRegDomain, data, dataLen, mDNStrue);
 	
-	zone.c[0] = '\0';
-	if (!AppendLiteralLabelString(&zone, accountName) ||
-		!AppendDNSNameString(&zone, LH_SUFFIX))
-		{ LogMsg("InitAuthInfo - bad account name"); return; }
-	
-	mDNS_UpdateDomainRequiresAuthentication(m, &zone, &zone, data, dataLen, mDNStrue);
-	if (m->uDNS_info.UnicastHostname.c[0]) { debugf("Overwriting config file options with KeyChain values"); }
-	
-	mDNS_SetFQDNs(m, &zone);
+	mDNS_SetFQDNs(m, &fqdn);
 	// normally we'd query the zone for _register/_browse domains, but to reduce server load we manually generate the records
 
 	haveSecInfo = mDNStrue;
@@ -2026,18 +2036,18 @@ mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
 	// set up _browse
 	mDNS_SetupResourceRecord(rrBrowse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
 	MakeDomainNameFromDNSNameString(&rrBrowse->resrec.name, "_default._browse._dns-sd._udp.local.");
-	strcpy(rrBrowse->resrec.rdata->u.name.c, zone.c);
+	AssignDomainName(rrBrowse->resrec.rdata->u.name, u->ServiceRegDomain);
 	
 	// set up _register
 	mDNS_SetupResourceRecord(rrReg, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
 	MakeDomainNameFromDNSNameString(&rrReg->resrec.name, "_register._dns-sd._udp.local.");
-	strcpy(rrReg->resrec.rdata->u.name.c, zone.c);
+	AssignDomainName(rrReg->resrec.rdata->u.name, u->ServiceRegDomain);
 	
 	regErr = mDNS_Register(m, rrReg);
-	if (regErr) LogMsg("Registration of local-only reg domain %s failed", zone.c);
+	if (regErr) LogMsg("Registration of local-only reg domain %##s failed", u->ServiceRegDomain);
 	
 	regErr = mDNS_Register(m, rrBrowse);
-	if (regErr) LogMsg("Registration of local-only browse domain %s failed", zone.c);
+	if (regErr) LogMsg("Registration of local-only browse domain %##s failed", u->ServiceRegDomain);
 	SecKeychainItemFreeContent(authAttrList, data);
 	}
 
