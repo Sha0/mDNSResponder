@@ -2979,8 +2979,6 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	{
 	NetworkInterfaceInfo *i;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
-	NetworkInterfaceInfo *primary;
-	ResourceRecord *A1 = mDNSNULL, *A2 = mDNSNULL;
 	mDNS_Lock(m);
 
 	// Find this record in our list
@@ -2989,25 +2987,26 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 	// Unlink this record from our list
 	*p = (*p)->next;
-	
-	// If we still have address records referring to this one, update them
-	primary = FindFirstAdvertisedInterface(m);
-	if (primary)
-		{
-		A1 = &primary->RR_A1;
-		A2 = &primary->RR_A2;
-		}
-	for (i=m->HostInterfaces; i; i=i->next)
-		{
-		if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = A1;
-		if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = A2;
-		}
-
-	// Unregister these records
 	set->next = mDNSNULL;
-	if (set->RR_A1.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A1);
-	if (set->RR_A2.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A2);
-	if (set->RR_PTR.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_PTR);
+	
+	// If we were advertising on this interface, deregister now
+	if (set->Advertise)
+		{
+		// If we still have address records referring to this one, update them
+		NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
+		ResourceRecord *A1 = primary ? &primary->RR_A1 : mDNSNULL;
+		ResourceRecord *A2 = primary ? &primary->RR_A2 : mDNSNULL;
+		for (i=m->HostInterfaces; i; i=i->next)
+			{
+			if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = A1;
+			if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = A2;
+			}
+	
+		// Unregister these records
+		if (set->RR_A1.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A1);
+		if (set->RR_A2.RecordType  & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_A2);
+		if (set->RR_PTR.RecordType & kDNSRecordTypeRegisteredMask) mDNS_Deregister_internal(m, &set->RR_PTR);
+		}
 
 	mDNS_Unlock(m);
 	}
