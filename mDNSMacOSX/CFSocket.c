@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.53  2003/01/29 02:21:23  cheshire
+Return mStatus_Invalid if can't send packet because socket not available
+
 Revision 1.52  2003/01/28 19:39:43  jgraessl
 
 Enabling AAAA over IPv4 support.
@@ -205,6 +208,11 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		s = info->socket53;
 #endif
 	else { debugf("Source port %d not allowed", (mDNSu16)srcPort.b[0]<<8 | srcPort.b[1]); return(-1); }
+	
+	// Note: When sending, mDNSCore may often ask us to send both a v4 multicast packet and then a v6 multicast packet
+	// If we don't have the corresponding type of socket available, then return mStatus_Invalid
+	if (!s) return(mStatus_Invalid);
+
 	err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, to.ss_len);
 	if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
 	
