@@ -2141,6 +2141,43 @@ mDNSlocal int CompareRData(ResourceRecord *pkt, ResourceRecord *our)
 	return(-1);
 	}
 
+mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const ResourceRecord *const pktrr)
+	{
+	const ResourceRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
+		if (IdenticalResourceRecord(rr, pktrr))
+			{
+			while (rr->DependentOn) rr = rr->DependentOn;
+			return(rr);
+			}
+		}
+	return(mDNSNULL);
+	}
+
+mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRecord *const pktrr)
+	{
+	const ResourceRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
+		if (IdenticalResourceRecord(rr, pktrr))
+			{
+			while (rr->RRSet) rr = rr->RRSet;
+			return(rr);
+			}
+		}
+	return(mDNSNULL);
+	}
+
+mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const ResourceRecord *const our, const ResourceRecord *const pktrr)
+	{
+	const ResourceRecord *ourset = our->RRSet ? our->RRSet : our;
+	if (!(our->RecordType & kDNSRecordTypeUniqueMask)) return(mDNSfalse);			// If not supposed to be unique, not a conflict
+	if (our->DependentOn || FindDependentOn(m, pktrr) == our) return(mDNSfalse);	// If a dependent record, not a conflict
+	if (FindRRSet(m, pktrr) == ourset) return(mDNSfalse);							// If the pktrr matches a member of ourset, not a conflict
+	return(mDNStrue);
+	}
+
 mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
 	DNSQuestion *q, ResourceRecord *our, const mDNSs32 timenow)
 	{
@@ -2153,7 +2190,7 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 		ResourceRecord pktrr;
 		ptr = getResourceRecord(query, ptr, end, zeroIPAddr, 0, 0, &pktrr);
 		if (!ptr) break;
-		if (ResourceRecordAnswersQuestion(&pktrr, q))
+		if (ResourceRecordAnswersQuestion(&pktrr, q) && PacketRRConflict(m, our, &pktrr))
 			{
 			int result          = (int)pktrr.rrclass - (int)our->rrclass;
 			if (!result) result = (int)pktrr.rrtype  - (int)our->rrtype;
@@ -2374,43 +2411,6 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceAddr, replyunicast, replymulticast, timenow);
 	if (replyunicast && responseend)
 		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceAddr, dstport, srcaddr, srcport);
-	}
-
-mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const ResourceRecord *const pktrr)
-	{
-	const ResourceRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		{
-		if (IdenticalResourceRecord(rr, pktrr))
-			{
-			while (rr->DependentOn) rr = rr->DependentOn;
-			return(rr);
-			}
-		}
-	return(mDNSNULL);
-	}
-
-mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRecord *const pktrr)
-	{
-	const ResourceRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		{
-		if (IdenticalResourceRecord(rr, pktrr))
-			{
-			while (rr->RRSet) rr = rr->RRSet;
-			return(rr);
-			}
-		}
-	return(mDNSNULL);
-	}
-
-mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const ResourceRecord *const our, const ResourceRecord *const pktrr)
-	{
-	const ResourceRecord *ourset = our->RRSet ? our->RRSet : our;
-	if (!(our->RecordType & kDNSRecordTypeUniqueMask)) return(mDNSfalse);			// If not supposed to be unique, not a conflict
-	if (our->DependentOn || FindDependentOn(m, pktrr) == our) return(mDNSfalse);	// If a dependent record, not a conflict
-	if (FindRRSet(m, pktrr) == ourset) return(mDNSfalse);							// If the pktrr matches a member of ourset, not a conflict
-	return(mDNStrue);
 	}
 
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const response, const mDNSu8 *end, const mDNSIPAddr InterfaceAddr)
