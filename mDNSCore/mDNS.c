@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.116  2003/05/14 06:51:56  cheshire
+<rdar://problem/3027144> Rendezvous doesn't refresh server info if changed during sleep
+
 Revision 1.115  2003/05/14 06:44:31  cheshire
 Improve debugging message
 
@@ -3304,7 +3307,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	mDNS_Lock(m);
 
 	m->SleepState = sleepstate;
-	debugf("mDNSCoreMachineSleep: %d", sleepstate);
+	debugf("mDNSCoreMachineSleep: %s", sleepstate ? "Sleep" : "Wake");
 
 	if (sleepstate)
 		{
@@ -3319,7 +3322,29 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	else
 		{
 		DNSQuestion *q;
+		mDNSs32	slot;
 
+		// 1. Retrigger all our questions
+		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
+			if (ActiveQuestion(q))
+				{
+				q->LastQTime     = m->timenow - mDNSPlatformOneSecond/2;
+				q->ThisQInterval = mDNSPlatformOneSecond/2;	// MUST be > zero for an active question
+				q->RecentAnswers = 0;
+				}
+
+		// 2. Re-validate our cache records
+		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+				{
+				// If we don't get an answer for these in the next five seconds, assume they're gone
+				rr->TimeRcvd          = m->timenow;
+				rr->rroriginalttl     = 5;
+				rr->UnansweredQueries = 0;
+				m->NextCacheTidyTime  = m->timenow;
+				}
+
+		// 3. Retrigger probing and announcing for all our authoritative records
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			{
 			if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
@@ -3330,13 +3355,6 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			rr->LastAPTime        = m->timenow - rr->ThisAPInterval;
 			}
 
-		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
-			if (ActiveQuestion(q))
-				{
-				q->LastQTime     = m->timenow - mDNSPlatformOneSecond/2;
-				q->ThisQInterval = mDNSPlatformOneSecond/2;	// MUST be > zero for an active question
-				q->RecentAnswers = 0;
-				}
 		}
 
 	mDNS_Unlock(m);
