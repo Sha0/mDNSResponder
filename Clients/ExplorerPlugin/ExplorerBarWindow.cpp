@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.18  2005/02/26 01:24:05  shersche
+Remove display lines in tree control
+
 Revision 1.17  2005/02/25 19:57:30  shersche
 <rdar://problem/4023323> Remove FTP browsing from plugin
 
@@ -211,7 +214,7 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	require_noerr( err, exit );
 	
 	GetClientRect( rect );
-	mTree.Create( WS_TABSTOP | WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | TVS_NOHSCROLL , rect, this, 
+	mTree.Create( WS_TABSTOP | WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_NOHSCROLL , rect, this, 
 		IDC_EXPLORER_TREE );
 	
 	ServiceHandlerEntry *		e;
