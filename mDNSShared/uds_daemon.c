@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.110  2004/11/05 19:56:56  ksekar
+<rdar://problem/3862646> We no longer need to browse .Mac domains by
+default - changed #if 0 to more descriptive #ifdef _HAVE_SETDOMAIN_SUPPORT_
+
 Revision 1.109  2004/11/04 03:40:45  cheshire
 More debugging messages
 
@@ -564,7 +568,7 @@ typedef struct
     client_context_t client_context;
     } regrecord_callback_context;
 
-#if 0
+#ifdef _HAVE_SETDOMAIN_SUPPORT_
 typedef struct default_browse_list_t
 	{
     struct default_browse_list_t *next;
@@ -573,7 +577,7 @@ typedef struct default_browse_list_t
 	} default_browse_list_t;
 
 static default_browse_list_t *default_browse_list = NULL;
-#endif // 0
+#endif // _HAVE_SETDOMAIN_SUPPORT_
 
 // globals
 mDNSexport mDNS mDNSStorage;
@@ -1528,7 +1532,7 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 	}
 
 
-#if 0
+#ifdef _HAVE_SETDOMAIN_SUPPORT_
 static void free_defdomain(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
@@ -1543,7 +1547,7 @@ static void handle_setdomain_request(request_state *request)
 	char domainstr[MAX_ESCAPED_DOMAIN_NAME];
 	domainname domain;
 	DNSServiceFlags flags;
-#if 0
+#ifdef _HAVE_SETDOMAIN_SUPPORT_
 	struct xucred xuc;
 	socklen_t xuclen;
 #endif
@@ -1568,7 +1572,7 @@ static void handle_setdomain_request(request_state *request)
 
 	debugf("%3d: DNSServiceSetDefaultDomainForUser(%##s)", request->sd, domain.c);
 
-#if 0
+#ifdef _HAVE_SETDOMAIN_SUPPORT_
     // this functionality currently only used for Apple-specific configuration, so we don't burned other platforms by mandating
 	// the existence of this socket option
 	xuclen = sizeof(xuc);
@@ -1616,7 +1620,7 @@ static void handle_setdomain_request(request_state *request)
 		}		
 #else
 	err = mStatus_NoError;
-#endif // 0
+#endif // _HAVE_SETDOMAIN_SUPPORT_
 	
 	end:
     deliver_error(request, err);
