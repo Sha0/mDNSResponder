@@ -621,11 +621,28 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
 	}
 
+// SameResourceRecordSignatureAnyInterface returns true if two resources records have the same name, type, and class.
+// (InterfaceAddr, TTL and rdata may differ)
+mDNSlocal mDNSBool SameResourceRecordSignatureAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
+	{
+	if (!r1) { debugf("SameResourceRecordSignatureAnyInterface ERROR: r1 is NULL"); return(mDNSfalse); }
+	if (!r2) { debugf("SameResourceRecordSignatureAnyInterface ERROR: r2 is NULL"); return(mDNSfalse); }
+	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
+	}
+
 // IdenticalResourceRecord returns true if two resources records have the same interface, name, type, class, and identical rdata
 // (TTL may differ)
 mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!SameResourceRecordSignature(r1, r2)) return(mDNSfalse);
+	return(SameRData(r1->rrtype, r1->rdata, r2->rdata));
+	}
+
+// IdenticalResourceRecordAnyInterface returns true if two resources records have the same name, type, class, and identical rdata
+// (InterfaceAddr and TTL may differ)
+mDNSlocal mDNSBool IdenticalResourceRecordAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
+	{
+	if (!SameResourceRecordSignatureAnyInterface(r1, r2)) return(mDNSfalse);
 	return(SameRData(r1->rrtype, r1->rdata, r2->rdata));
 	}
 
@@ -2413,7 +2430,7 @@ mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const Resou
 	const ResourceRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (IdenticalResourceRecord(rr, pktrr))
+		if (IdenticalResourceRecordAnyInterface(rr, pktrr))
 			{
 			while (rr->DependentOn) rr = rr->DependentOn;
 			return(rr);
@@ -2431,7 +2448,7 @@ mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRec
 	const ResourceRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (IdenticalResourceRecord(rr, pktrr))
+		if (IdenticalResourceRecordAnyInterface(rr, pktrr))
 			{
 			while (rr->RRSet && rr != rr->RRSet) rr = rr->RRSet;
 			return(rr);
