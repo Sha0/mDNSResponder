@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.10  2003/10/31 12:18:31  bradley
+Added display of the resolved host name. Show separate TXT record entries on separate lines.
+
 Revision 1.9  2003/10/22 02:00:20  bradley
 Fixed proxy IP setup to be in network byte order so it works on Mac and Windows.
 
@@ -767,10 +770,11 @@ static void BrowserCallBack( void *inContext, DNSBrowserRef inRef, DNSStatus inS
 			const uint8_t *		end;
 			int					i;
 			
-			fprintf( stdout, "resolved       \"%s.%s%s\" to %s:%u on interface 0x%08X (%s)%s\n", 
+			fprintf( stdout, "resolved       \"%s.%s%s\" to \"%s\" (%s:%u) on interface 0x%08X (%s)%s\n", 
 					 inEvent->data.resolved->name, 
 					 inEvent->data.resolved->type, 
 					 inEvent->data.resolved->domain, 
+					 inEvent->data.resolved->hostName, 
 					 IPv4ToString( inEvent->data.resolved->address.u.ipv4.addr, ip ), 
 					 ( inEvent->data.resolved->address.u.ipv4.port.v8[ 0 ] << 8 ) | 
 					   inEvent->data.resolved->address.u.ipv4.port.v8[ 1 ], 
@@ -829,10 +833,11 @@ static void ResolverCallBack( void *inContext, DNSResolverRef inRef, DNSStatus i
 			const uint8_t *		end;
 			int					i;
 			
-			fprintf( stdout, "resolved       \"%s.%s%s\" to %s:%u on interface 0x%08X (%s)%s\n", 
+			fprintf( stdout, "resolved       \"%s.%s%s\" to \"%s\" (%s:%u) on interface 0x%08X (%s)%s\n", 
 					 inEvent->data.resolved.name, 
 					 inEvent->data.resolved.type, 
 					 inEvent->data.resolved.domain, 
+					 inEvent->data.resolved.hostName, 
 					 IPv4ToString( inEvent->data.resolved.address.u.ipv4.addr, ip ), 
 					 ( inEvent->data.resolved.address.u.ipv4.port.v8[ 0 ] << 8 ) | 
 					   inEvent->data.resolved.address.u.ipv4.port.v8[ 1 ], 

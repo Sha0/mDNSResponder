@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.h,v $
+Revision 1.2  2003/10/31 12:18:30  bradley
+Added display of the resolved host name. Show separate TXT record entries on separate lines.
+
 Revision 1.1  2003/08/21 02:06:47  bradley
 Moved Rendezvous Browser for non-Windows CE into Windows sub-folder.
 
@@ -68,6 +71,7 @@ struct	ServiceInstanceInfo
 	std::string		ip;
 	std::string		text;
 	std::string		ifIP;
+	std::string		hostName;
 };
 
 struct	ServiceTypeInfo

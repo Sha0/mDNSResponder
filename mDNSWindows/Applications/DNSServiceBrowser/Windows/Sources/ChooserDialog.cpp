@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.6  2003/10/31 12:18:30  bradley
+Added display of the resolved host name. Show separate TXT record entries on separate lines.
+
 Revision 1.5  2003/10/16 09:21:56  bradley
 Ignore non-IPv4 resolves until mDNS on Windows supports IPv6.
 
@@ -118,7 +121,7 @@ enum
 // Chooser List
 	
 #define kChooserListDefaultNameColumnIndex			0
-#define kChooserListDefaultNameColumnWidth			162
+#define kChooserListDefaultNameColumnWidth			200
 	
 #define kChooserListDefaultIPColumnIndex			1
 #define kChooserListDefaultIPColumnWidth			126
@@ -153,6 +156,7 @@ static const KnownServiceEntry		kKnownServiceTable[] =
 	{ "_afpovertcp._tcp.", 	"AppleShare Server", 				"afp://", 	false },
 	{ "_ftp._tcp.", 		"File Transfer (FTP)", 				"ftp://", 	false }, 
 	{ "_ichat._tcp.", 		"iChat",				 			"ichat://", false }, 
+	{ "_daap._tcp.", 		"iTunes Music Sharing",				"daap://", false }, 
 	{ "_printer._tcp.", 	"Printer (LPD)", 					"ldp://", 	false }, 
 	{ "_eppc._tcp.", 		"Remote AppleEvents", 				"eppc://", 	false }, 
 	{ "_ssh._tcp.", 		"Secure Shell (SSH)", 				"ssh://", 	false }, 
@@ -297,6 +301,7 @@ void ChooserDialog::DoDataExchange( CDataExchange *pDX )
 
 BOOL	ChooserDialog::OnInitDialog( void )
 {
+	HICON			icon;
 	BOOL			result;
 	CString			tempString;
 	DNSStatus		err;
@@ -304,7 +309,17 @@ BOOL	ChooserDialog::OnInitDialog( void )
 	// Initialize our parent.
 
 	CDialog::OnInitDialog();
-
+	
+	// Set up the window icon.
+	
+	icon = AfxGetApp()->LoadIcon( IDR_MAIN_ICON );
+	assert( icon );
+	if( icon )
+	{
+		SetIcon( icon, TRUE );		// Set big icon
+		SetIcon( icon, FALSE );		// Set small icon
+	}
+	
 	// Set up the Domain List.
 	
 	result = tempString.LoadString( IDS_CHOOSER_DOMAIN_COLUMN_NAME );
@@ -668,13 +683,15 @@ void	ChooserDialog::PopulateServicesList( void )
 
 void	ChooserDialog::UpdateInfoDisplay( void )
 {
-	int				selectedItem;
-	std::string		name;
-	CString			s;
-	std::string		ip;
-	std::string		ifIP;
-	std::string		text;
-	CWnd *			item;
+	int							selectedItem;
+	std::string					name;
+	CString						s;
+	std::string					ip;
+	std::string					ifIP;
+	std::string					text;
+	std::string					hostName;
+	CWnd *						item;
+	std::string::iterator		i;
 	
 	// Display the service instance if it is selected. Otherwise, clear all the info.
 	
@@ -686,11 +703,12 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 		assert( selectedItem < (int) mServiceInstances.size() );
 		p = &mServiceInstances[ selectedItem ];
 		
-		name 	= p->name;
-		ip 		= p->ip;
-		ifIP 	= p->ifIP;
-		text 	= p->text;
-		
+		name 		= p->name;
+		ip 			= p->ip;
+		ifIP 		= p->ifIP;
+		text 		= p->text;
+		hostName	= p->hostName;
+
 		// Sync up the list items with the actual data (IP address may change).
 		
 		mChooserList.SetItemText( selectedItem, 1, ip.c_str() );
@@ -715,14 +733,22 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 	assert( item );
 	item->SetWindowText( ifIP.c_str() );
 	
+
+	item = (CWnd *) this->GetDlgItem( IDC_INFO_HOST_NAME_TEXT );
+	assert( item );
+	item->SetWindowText( hostName.c_str() );
+
 	// Text
 	
-	if( text.size() > 255 )
-	{
-		text.resize( 255 );
-	}
 	item = (CWnd *) this->GetDlgItem( IDC_INFO_TEXT_TEXT );
 	assert( item );
+	for( i = text.begin(); i != text.end(); ++i )
+	{
+		if( *i == '\1' )
+		{
+			*i = '\n';
+		}
+	}
 	item->SetWindowText( text.c_str() );
 }
 
@@ -1109,13 +1135,14 @@ static void
 					serviceInstance = new ServiceInstanceInfo;
 					serviceInstanceAutoPtr.reset( serviceInstance );
 					
-					serviceInstance->name 	= inEvent->data.resolved->name;
-					serviceInstance->type 	= inEvent->data.resolved->type;
-					serviceInstance->domain = inEvent->data.resolved->domain;
-					serviceInstance->ip		= DNSNetworkAddressToString( &inEvent->data.resolved->address, s );
-					serviceInstance->ifIP	= DNSNetworkAddressToString( &inEvent->data.resolved->interfaceIP, s );
-					serviceInstance->text 	= inEvent->data.resolved->textRecord;
-					
+					serviceInstance->name 		= inEvent->data.resolved->name;
+					serviceInstance->type 		= inEvent->data.resolved->type;
+					serviceInstance->domain		= inEvent->data.resolved->domain;
+					serviceInstance->ip			= DNSNetworkAddressToString( &inEvent->data.resolved->address, s );
+					serviceInstance->ifIP		= DNSNetworkAddressToString( &inEvent->data.resolved->interfaceIP, s );
+					serviceInstance->text 		= inEvent->data.resolved->textRecord;
+					serviceInstance->hostName	= inEvent->data.resolved->hostName;
+
 					posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_RESOLVE, 0, (LPARAM) serviceInstance );
 					assert( posted );
 					if( posted )

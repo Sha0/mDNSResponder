@@ -17,6 +17,8 @@
 #define IDC_IP_TEXT3                    127
 #define IDC_INFO_INTERFACE_TEXT         127
 #define IDR_MAIN_ICON                   128
+#define IDC_INFO_INTERFACE_TEXT2        128
+#define IDC_INFO_HOST_NAME_TEXT         128
 #define IDR_CHOOSER_DIALOG_MENU         136
 #define IDD_CHOOSER_DIALOG              143
 #define IDD_ABOUT_DIALOG                144
