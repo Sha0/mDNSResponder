@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.29  2003/11/14 21:18:32  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.28  2003/11/08 22:18:29  cheshire
 <rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
 
@@ -885,7 +889,7 @@ static void resolve_termination_callback(void *context)
 static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 {
     int len = 0;
-    char fullname[MAX_DOMAIN_NAME], target[MAX_DOMAIN_NAME];
+    char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
     char *data;
     transfer_state result;
     reply_state *rep;
@@ -981,7 +985,7 @@ static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi
 static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char *data;
-    char name[256];
+    char name[MAX_ESCAPED_DOMAIN_NAME];
     request_state *req;
     reply_state *rep;
     int len;
@@ -1693,7 +1697,7 @@ static void handle_enum_request(request_state *rstate)
 
 static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
-    char domain[256];
+    char domain[MAX_ESCAPED_DOMAIN_NAME];
     domain_enum_t *de = question->QuestionContext;
     DNSServiceFlags flags = 0;
     reply_state *reply;
@@ -1851,7 +1855,9 @@ static mStatus gen_rr_response(domainname *servicename, mDNSInterfaceID id, requ
     int len;
     domainlabel name;
     domainname type, dom;
-    char namestr[256], typestr[256], domstr[256];
+	char namestr[MAX_DOMAIN_LABEL+1];		// Unescaped name: up to 63 bytes plus C-string terminating NULL.
+	char typestr[MAX_ESCAPED_DOMAIN_NAME];
+	char domstr [MAX_ESCAPED_DOMAIN_NAME];
 
     *rep = NULL;
     

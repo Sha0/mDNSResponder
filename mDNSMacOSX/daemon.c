@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.143  2003/11/14 21:18:32  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.142  2003/11/08 22:18:29  cheshire
 <rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
 
@@ -289,7 +293,7 @@ struct DNSServiceBrowserResult_struct
 	{
 	DNSServiceBrowserResult *next;
 	int resultType;
-	char name[256], type[256], dom[256];
+	domainname result;
 	};
 
 typedef struct DNSServiceBrowser_struct DNSServiceBrowser;
@@ -594,7 +598,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	{
 	kern_return_t status;
 	#pragma unused(m)
-	char buffer[256];
+	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	DNSServiceDomainEnumerationReplyResultType rt;
 	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->QuestionContext;
 
@@ -692,9 +696,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	if (!x) { LogMsg("FoundInstance: Failed to allocate memory for result %##s", answer->rdata->u.name.c); return; }
 	
 	verbosedebugf("FoundInstance: %s %##s", AddRecord ? "Add" : "Rmv", answer->rdata->u.name.c);
-	ConvertDomainLabelToCString_unescaped(&name, x->name);
-	ConvertDomainNameToCString(&type, x->type);
-	ConvertDomainNameToCString(&domain, x->dom);
+	AssignDomainName(x->result, answer->rdata->u.name);
 	if (AddRecord)
 		 x->resultType = DNSServiceBrowserReplyAddInstance;
 	else x->resultType = DNSServiceBrowserReplyRemoveInstance;
@@ -1596,8 +1598,17 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 			while (x->results)
 				{
 				DNSServiceBrowserResult *const r = x->results;
+				domainlabel name;
+				domainname type, domain;
+				DeconstructServiceName(&r->result, &name, &type, &domain);	// Don't need to check result; already validated in FoundInstance()
+				char cname[MAX_DOMAIN_LABEL+1];			// Unescaped name: up to 63 bytes plus C-string terminating NULL.
+				char ctype[MAX_ESCAPED_DOMAIN_NAME];
+				char cdom [MAX_ESCAPED_DOMAIN_NAME];
+				ConvertDomainLabelToCString_unescaped(&name, cname);
+				ConvertDomainNameToCString(&type, ctype);
+				ConvertDomainNameToCString(&domain, cdom);
 				DNSServiceDiscoveryReplyFlags flags = (r->next) ? DNSServiceDiscoverReplyFlagsMoreComing : 0;
-				kern_return_t status = DNSServiceBrowserReply_rpc(x->ClientMachPort, r->resultType, r->name, r->type, r->dom, flags, 1);
+				kern_return_t status = DNSServiceBrowserReply_rpc(x->ClientMachPort, r->resultType, cname, ctype, cdom, flags, 1);
 				// If we failed to send the mach message, try again in one second
 				if (status == MACH_SEND_TIMED_OUT)
 					{
