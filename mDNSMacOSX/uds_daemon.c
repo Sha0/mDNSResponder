@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.23  2003/09/23 02:12:43  cheshire
+Also include port number in list of services registered via new UDS API
+
 Revision 1.22  2003/08/19 16:03:55  ksekar
 Bug #: <rdar://problem/3380097>: ER: SIGINFO dump should include resolves started by DNSServiceQueryRecord
 Check termination_context for NULL before dereferencing.
@@ -417,7 +420,7 @@ void udsserver_info(void)
         void *t = req->termination_context;
         if (!t) continue;
         if (req->terminate == regservice_termination_callback)
-            LogMsg("DNSServiceRegister         %##s", ((registered_service *)   t)->srs->RR_SRV.resrec.name.c);
+            LogMsg("DNSServiceRegister         %##s %u", ((registered_service *)t)->srs->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(((registered_service *)t)->srs));
         else if (req->terminate == browse_termination_callback)
             LogMsg("DNSServiceBrowse           %##s", ((DNSQuestion *)          t)->qname.c);
         else if (req->terminate == resolve_termination_callback)

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.137  2003/09/23 02:12:43  cheshire
+Also include port number in list of services registered via new UDS API
+
 Revision 1.136  2003/09/23 02:07:25  cheshire
 Include port number in DNSServiceRegistration START/STOP messages
 
@@ -221,9 +224,6 @@ Add $Log header
 // To expand "version" to its value before making the string, use STRINGIFY(version) instead
 #define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s 
 #define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
-
-#define PORT_AS_NUM(P) (((mDNSu16)(P).b[0]) << 8 | (P).b[1])
-#define SRS_PORT_AS_NUM(S) PORT_AS_NUM((S)->RR_SRV.resrec.rdata->u.srv.port)
 
 //*************************************************************************************************************
 // Globals
