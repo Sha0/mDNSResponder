@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: StdAfx.h,v $
+Revision 1.2  2003/10/09 02:31:55  bradley
+Define WINVER if not already defined to avoid warning with Visual Studio .NET 2003.
+
 Revision 1.1  2003/08/21 02:06:47  bradley
 Moved Rendezvous Browser for non-Windows CE into Windows sub-folder.
 
@@ -49,17 +52,18 @@ Rendezvous Browser for Windows
 
 #define VC_EXTRALEAN		// Exclude rarely-used stuff from Windows headers
 
-#include <afxwin.h>         // MFC core and standard components
-#include <afxext.h>         // MFC extensions
-#include <afxdtctl.h>		// MFC support for Internet Explorer 4 Common Controls
+#ifndef WINVER				// Allow use of features specific to Windows 95 and Windows NT 4 or later.
+	#define WINVER 0x0400	// Change this to the appropriate value to target Windows 98 and Windows 2000 or later.
+#endif
+
+#include	<afxwin.h>		// MFC core and standard components
+#include	<afxext.h>		// MFC extensions
+#include	<afxdtctl.h>	// MFC support for Internet Explorer 4 Common Controls
 #ifndef _AFX_NO_AFXCMN_SUPPORT
-#include <afxcmn.h>			// MFC support for Windows Common Controls
+	#include	<afxcmn.h>	// MFC support for Windows Common Controls
 #endif // _AFX_NO_AFXCMN_SUPPORT
 
-#include <afxsock.h>		// MFC socket extensions
-
-//{{AFX_INSERT_LOCATION}}
-// Microsoft Visual C++ will insert additional declarations immediately before the previous line.
+#include 	<afxsock.h>		// MFC socket extensions
 
 #include	<stdlib.h>
 
