@@ -607,7 +607,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NetworkChanged, &context);
 	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	CFStringRef           key2     = SCDynamicStoreKeyCreateComputerName(NULL);
+	CFStringRef           key2     = SCDynamicStoreKeyCreateHostNames(NULL);
 	CFStringRef           pattern  = SCDynamicStoreKeyCreateNetworkServiceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
 	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
