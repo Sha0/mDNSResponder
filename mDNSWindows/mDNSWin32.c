@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.62  2004/11/12 03:16:41  rpantos
+rdar://problem/3809541 Add mDNSPlatformGetInterfaceByName, mDNSPlatformGetInterfaceName
+
 Revision 1.61  2004/11/05 22:54:38  shersche
 Change registry key flags from KEY_ALL_ACCESS to KEY_READ to support mDNSResponder running with limited access rights
 Submitted by: Pavel Repin <prepin@gmail.com>
@@ -879,6 +882,41 @@ mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( const mDNS * const inMDNS, mD
 	}
 	return( index );
 }
+
+#define	LOCAL_ONLY_NAME	"loo"
+
+mDNSexport mDNSInterfaceID mDNSPlatformGetInterfaceByName(const mDNS *const m, const char *ifName)
+	{
+	mDNSInterfaceData *		ifd;
+	
+	for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
+		if( 0 == strcmp( ifd->name, ifName) )
+			break;
+	if ( ifd == NULL && 0 == strcmp( ifName, LOCAL_ONLY_NAME))
+		ifd = (mDNSInterfaceData*) mDNSInterface_LocalOnly;
+	return (mDNSInterfaceID) ifd;
+	}
+
+extern char *mDNSPlatformGetInterfaceName(const mDNS *const m, mDNSInterfaceID id, char *nameBuff, mDNSu32 buffLen)
+	{
+	mDNSInterfaceData		*intf = (mDNSInterfaceData*) id;
+	const char				*pName;
+	uint32_t				nameLen;
+	(void) m;	// unused
+	
+	if ( id == mDNSInterface_LocalOnly)
+		pName = LOCAL_ONLY_NAME;
+	else
+		pName = intf->name;
+	nameLen = strlen(pName) + 1;
+
+	if (nameLen > buffLen)
+		nameLen = buffLen;
+	memcpy(nameBuff, pName, nameLen - 1);
+	nameBuff[ nameLen - 1] = '\0';
+	return nameBuff;
+	}
+
 
 //===========================================================================================================================
 //	mDNSPlatformTCPConnect

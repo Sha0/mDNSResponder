@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.233  2004/11/12 03:16:45  rpantos
+rdar://problem/3809541 Add mDNSPlatformGetInterfaceByName, mDNSPlatformGetInterfaceName
+
 Revision 1.232  2004/11/10 20:40:54  ksekar
 <rdar://problem/3868216> LLQ mobility fragile on non-primary interface
 
@@ -881,6 +884,17 @@ mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
 	return ifa;
 	}
 
+mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, const char *ifname, int type)
+	{
+	NetworkInterfaceInfoOSX *i;
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (i->Exists && !strcmp(i->ifa_name, ifname) &&
+			((AAAA_OVER_V4                                              ) ||
+			 (type == AF_INET  && i->ifinfo.ip.type == mDNSAddrType_IPv4) ||
+			 (type == AF_INET6 && i->ifinfo.ip.type == mDNSAddrType_IPv6) )) return(i);
+	return(NULL);
+	}
+
 mDNSlocal int myIfIndexToName(u_short index, char* name)
 	{
 	struct ifaddrs *ifa;
@@ -911,6 +925,39 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 			// Don't use i->ifinfo.InterfaceID here, because we DO want to find inactive interfaces, which have no InterfaceID set
 			if ((mDNSInterfaceID)i == id) return(i->scope_id);
 	return 0;
+	}
+
+#define	LOCAL_ONLY_NAME	"loo"
+
+mDNSexport mDNSInterfaceID mDNSPlatformGetInterfaceByName(const mDNS *const m, const char *ifName)
+	{
+	NetworkInterfaceInfoOSX *intf = SearchForInterfaceByName( (mDNS *const) m, ifName, AF_INET);
+
+	if ( intf == NULL)
+		intf = SearchForInterfaceByName( (mDNS *const) m, ifName, AF_INET6);
+	if ( intf == NULL && 0 == strcmp( ifName, LOCAL_ONLY_NAME))
+		intf = (NetworkInterfaceInfoOSX*) mDNSInterface_LocalOnly;
+	return (mDNSInterfaceID) intf;
+	}
+
+extern char *mDNSPlatformGetInterfaceName(const mDNS *const m, mDNSInterfaceID id, char *nameBuff, mDNSu32 buffLen)
+	{
+	NetworkInterfaceInfoOSX *intf = (NetworkInterfaceInfoOSX*) id;
+	const char				*pName;
+	uint32_t				nameLen;
+	(void) m;	// unused
+	
+	if ( id == mDNSInterface_LocalOnly)
+		pName = LOCAL_ONLY_NAME;
+	else
+		pName = intf->ifa_name;
+	nameLen = strlen(pName) + 1;
+
+	if (nameLen > buffLen)
+		nameLen = buffLen;
+	memcpy(nameBuff, pName, nameLen - 1);
+	nameBuff[ nameLen - 1] = '\0';
+	return nameBuff;
 	}
 
 // NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
@@ -1870,17 +1917,6 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		}
 
 	return(mStatus_NoError);
-	}
-
-mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, char *ifname, int type)
-	{
-	NetworkInterfaceInfoOSX *i;
-	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->Exists && !strcmp(i->ifa_name, ifname) &&
-			((AAAA_OVER_V4                                              ) ||
-			 (type == AF_INET  && i->ifinfo.ip.type == mDNSAddrType_IPv4) ||
-			 (type == AF_INET6 && i->ifinfo.ip.type == mDNSAddrType_IPv6) )) return(i);
-	return(NULL);
 	}
 
 // returns count of non-link local V4 addresses registered

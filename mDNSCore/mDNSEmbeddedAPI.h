@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.238  2004/11/12 03:16:48  rpantos
+rdar://problem/3809541 Add mDNSPlatformGetInterfaceByName, mDNSPlatformGetInterfaceName
+
 Revision 1.237  2004/11/10 20:40:53  ksekar
 <rdar://problem/3868216> LLQ mobility fragile on non-primary interface
 
@@ -2350,6 +2353,8 @@ extern mDNSs32  mDNSPlatformUTC         (void);
 // multiple interfaces and/or does not support the DNS-SD API, these functions can be empty.
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
+extern mDNSInterfaceID mDNSPlatformGetInterfaceByName(const mDNS *const m, const char *ifName);
+extern char *mDNSPlatformGetInterfaceName(const mDNS *const m, mDNSInterfaceID id, char *nameBuff, mDNSu32 buffLen);
 
 // Every platform support module must provide the following functions if it is to support unicast DNS
 // and Dynamic Update.

@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.63  2004/11/12 03:16:43  rpantos
+rdar://problem/3809541 Add mDNSPlatformGetInterfaceByName, mDNSPlatformGetInterfaceName
+
 Revision 1.62  2004/10/28 03:24:42  cheshire
 Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
 
@@ -629,6 +632,34 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 		intf = (PosixNetworkInterface *)(intf->coreIntf.next);
 
 	return intf ? intf->index : 0;
+	}
+
+#define	LOCAL_ONLY_NAME	"loo"
+
+mDNSexport mDNSInterfaceID mDNSPlatformGetInterfaceByName(const mDNS *const m, const char *ifName)
+	{
+	if ( 0 == strcmp( ifName, LOCAL_ONLY_NAME))
+		return mDNSInterface_LocalOnly;
+	return (mDNSInterfaceID) SearchForInterfaceByName( (mDNS *const) m, ifName);
+	}
+
+extern char *mDNSPlatformGetInterfaceName(const mDNS *const m, mDNSInterfaceID id, char *nameBuff, mDNSu32 buffLen)
+	{
+	PosixNetworkInterface *intf = (PosixNetworkInterface*) id;
+	const char	*pName;
+	uint32_t	nameLen;
+	(void) m;	// unused
+
+	if ( id == mDNSInterface_LocalOnly)
+		pName = LOCAL_ONLY_NAME;
+	else
+		pName = intf->intfName;
+	nameLen = strlen(pName) + 1;
+	if (nameLen > buffLen)
+		nameLen = buffLen;
+	memcpy(nameBuff, pName, nameLen - 1);
+	nameBuff[ nameLen - 1] = '\0';
+	return nameBuff;
 	}
 
 // Frees the specified PosixNetworkInterface structure. The underlying
