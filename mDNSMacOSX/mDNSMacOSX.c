@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.264  2004/12/17 19:03:05  cheshire
+Update debugging messages to show netmask a simple CIDR-style numeric value (0-128)
+
 Revision 1.263  2004/12/17 05:25:46  cheshire
 <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
 
@@ -2001,6 +2004,20 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	return(mStatus_NoError);
 	}
 
+mDNSlocal int CountMaskBits(mDNSAddr *mask)
+	{
+	int i = 0, bits = 0;
+	int bytes = mask->type == mDNSAddrType_IPv4 ? 4 : mask->type == mDNSAddrType_IPv6 ? 16 : 0;
+	while (i < bytes)
+		{
+		mDNSu8 b = mask->ip.v6.b[i++];
+		while (b & 0x80) { bits++; b <<= 1; }
+		if (b) return(-1);
+		}
+	while (i < bytes) if (mask->ip.v6.b[i++]) return(-1);
+	return(bits);
+	}
+
 // returns count of non-link local V4 addresses registered
 mDNSlocal int SetupActiveInterfaces(mDNS *const m)
 	{
@@ -2027,8 +2044,8 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m)
 				n->InterfaceID = (mDNSInterfaceID)primary;
 				mDNS_RegisterInterface(m, n);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
-				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%#a%s",
-					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, &n->mask, n->InterfaceActive ? " (Primary)" : "");
+				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s",
+					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask), n->InterfaceActive ? " (Primary)" : "");
 				}
 	
 			if (!n->McastTxRx)
@@ -2100,8 +2117,9 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 		if (i->ifinfo.InterfaceID)
 			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
-				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a%s",
-					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
+				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a/%d%s",
+					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
+					&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), i->ifinfo.InterfaceActive ? " (Primary)" : "");
 				mDNS_DeregisterInterface(m, &i->ifinfo);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
 				i->ifinfo.InterfaceID = mDNSNULL;
@@ -2123,7 +2141,9 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 		// 3. If no longer active, delete interface from list and free memory
 		if (!i->Exists && NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0)
 			{
-			debugf("ClearInactiveInterfaces: Deleting      %#a", &i->ifinfo.ip);
+			LogOperation("ClearInactiveInterfaces: Deleting      %5s(%lu) %.6a InterfaceID %p %#a/%d%s",
+				i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
+				&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), i->ifinfo.InterfaceActive ? " (Primary)" : "");
 			*p = i->next;
 			if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
 			freeL("NetworkInterfaceInfoOSX", i);
