@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.156  2004/03/19 18:19:19  ksekar
+Fixed daemon.c to compile with malloc debugging turned on.
+
 Revision 1.155  2004/03/13 01:57:34  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -417,12 +420,12 @@ static void validatelists(mDNS *const m)
 			LogMsg("!!!! DNSServiceRegistrationList: %p is garbage (%X) !!!!", r, r->ClientMachPort);
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->RecordType == 0 || rr->RecordType == 0xFF)
-			LogMsg("!!!! ResourceRecords list: %p is garbage (%X) !!!!", rr, rr->RecordType);
+		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
+			LogMsg("!!!! ResourceRecords list: %p is garbage (%X) !!!!", rr, rr->resrec.RecordType);
 
 	for (rr = m->DuplicateRecords; rr; rr=rr->next)
-		if (rr->RecordType == 0 || rr->RecordType == 0xFF)
-			LogMsg("!!!! DuplicateRecords list: %p is garbage (%X) !!!!", rr, rr->RecordType);
+		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
+			LogMsg("!!!! DuplicateRecords list: %p is garbage (%X) !!!!", rr, rr->resrec.RecordType);
 
 	for (q = m->Questions; q; q=q->next)
 		if (q->ThisQInterval == (mDNSs32)~0)
@@ -430,8 +433,8 @@ static void validatelists(mDNS *const m)
 
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for (cr = mDNSStorage.rrcache_hash[slot]; cr; cr=cr->next)
-			if (cr->RecordType == 0 || cr->RecordType == 0xFF)
-				LogMsg("!!!! Cache slot %lu: %p is garbage (%X) !!!!", slot, rr, rr->RecordType);
+			if (cr->resrec.RecordType == 0 || cr->resrec.RecordType == 0xFF)
+				LogMsg("!!!! Cache slot %lu: %p is garbage (%X) !!!!", slot, rr, rr->resrec.RecordType);
 	}
 
 void *mallocL(char *msg, unsigned int size)
