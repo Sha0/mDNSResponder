@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.86  2005/03/30 07:37:14  shersche
+Use prefix to compute IPv4 subnet mask, falling back to calling AddressToIndexAndMask only if prefix is zero.
+
 Revision 1.85  2005/03/30 07:34:52  shersche
 <rdar://problem/4045657> Interface index being returned is 512
 
@@ -3778,7 +3781,7 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 	// This loops to handle the case where the interface changes in the window after getting the size, but before the
 	// second call completes. A limit of 100 retries is enforced to prevent infinite loops if something else is wrong.
 	
-	flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
+	flags = GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
 	i = 0;
 	for( ;; )
 	{
@@ -3930,19 +3933,29 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			{
 				case AF_INET:
 				{
-					uint32_t				index;
-					struct sockaddr_in	*	sa4;
+					struct sockaddr_in * sa4;
+					
+					require_action( prefixLength <= 32, exit, err = ERROR_INVALID_DATA );
 					
 					sa4 = (struct sockaddr_in *) calloc( 1, sizeof( *sa4 ) );
 					require_action( sa4, exit, err = WSAENOBUFS );
 					
 					sa4->sin_family = AF_INET;
+					
+					if ( prefixLength != 0 )
+					{
+						sa4->sin_addr.s_addr = htonl( 0xFFFFFFFFU << ( 32 - prefixLength ) );
+					}
+					else
+					{
+						uint32_t index;
 
-					err = AddressToIndexAndMask( ifa->ifa_addr, &index, (struct sockaddr*) sa4 );
-					require_noerr( err, exit );
+						dlog( kDebugLevelWarning, DEBUG_NAME "%s: IPv4 prefixLength is 0\n", __ROUTINE__ );
+						err = AddressToIndexAndMask( ifa->ifa_addr, &index, (struct sockaddr*) sa4 );
+						require_noerr( err, exit );
+					}
 
-					dlog( kDebugLevelInfo, DEBUG_NAME "%s: IPv4 index = %d, mask = %s\n", __ROUTINE__, index, inet_ntoa( sa4->sin_addr ) );
-
+					dlog( kDebugLevelInfo, DEBUG_NAME "%s: IPv4 mask = %s\n", __ROUTINE__, inet_ntoa( sa4->sin_addr ) );
 					ifa->ifa_netmask = (struct sockaddr *) sa4;
 					break;
 				}
@@ -4331,13 +4344,13 @@ AddressToIndexAndMask( struct sockaddr * addr, uint32_t * ifIndex, struct sockad
 	// Make an initial call to GetIpAddrTable to get the
 	// necessary size into the dwSize variable
 
-	while ( GetIpAddrTable(pIPAddrTable, &dwSize, 0 ) == ERROR_INSUFFICIENT_BUFFER )
+	while ( GetIpAddrTable( pIPAddrTable, &dwSize, 0 ) == ERROR_INSUFFICIENT_BUFFER )
 	{
 		pIPAddrTable = (MIB_IPADDRTABLE *) realloc( pIPAddrTable, dwSize );
 		require_action( pIPAddrTable, exit, err = WSAENOBUFS );
 	}
 
-	for ( i = 0; i < ( dwSize / sizeof( MIB_IPADDRTABLE ) ); i++ )
+	for ( i = 0; i < pIPAddrTable->dwNumEntries; i++ )
 	{
 		if ( ( ( struct sockaddr_in* ) addr )->sin_addr.s_addr == pIPAddrTable->table[i].dwAddr )
 		{
