@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.27  2005/02/04 00:39:59  cheshire
+Move ParseDNSServers() from PosixDaemon.c to mDNSPosix.c so all Posix client layers can use it
+
 Revision 1.26  2005/02/02 02:21:30  cheshire
 Update references to "mDNSResponder" to say "mdnsd" instead
 
@@ -121,16 +124,12 @@ Add support for mDNSResponder on Linux.
 #include <fcntl.h>
 #include <pwd.h>
 #include <sys/types.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 #include "mDNSEmbeddedAPI.h"
 #include "mDNSDebug.h"
 #include "mDNSPosix.h"
 #include "uds_daemon.h"
 #include "PlatformCommon.h"
-
-#define uDNS_SERVERS_FILE "/etc/resolv.conf"
 
 #define CONFIG_FILE "/etc/mdnsd.conf"
 static domainname DynDNSZone;                // Default wide-area zone for service registration
@@ -140,32 +139,6 @@ static domainname DynDNSHostname;
 static CacheEntity gRRCache[RR_CACHE_SIZE];
 
 extern const char mDNSResponderVersionString[];
-
-static int ParseDNSServers(mDNS *m, const char *filePath)
-	{
-	char line[256];
-	char nameserver[16];
-	char keyword[10];
-	int  numOfServers = 0;
-	FILE *fp = fopen(filePath, "r");
-	if (fp == NULL) return -1;
-	while (fgets(line,sizeof(line),fp))
-		{
-		struct in_addr ina;
-		line[255]='\0';		// just to be safe
-		if (sscanf(line,"%10s %15s", keyword, nameserver) != 2) continue;	// it will skip whitespaces
-		if (strncmp(keyword,"nameserver",10)) continue;
-		if (inet_aton(nameserver, (struct in_addr *)&ina) != 0)
-			{
-			mDNSAddr DNSAddr;
-			DNSAddr.type = mDNSAddrType_IPv4;
-			DNSAddr.ip.v4.NotAnInteger = ina.s_addr;
-			mDNS_AddDNSServer(m, &DNSAddr, NULL);
-			numOfServers++;
-			}
-		}  
-	return (numOfServers > 0) ? 0 : -1;
-	}
 
 static void Reconfigure(mDNS *m)
 	{
