@@ -166,11 +166,18 @@ typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname t
 
 typedef union
 	{
-	mDNSu8     data[1];		// Generic untyped data
+	mDNSu8     data[512];	// Generic untyped data (temporarily set 512 for the benefit of iChat)
 	mDNSIPAddr ip;			// For 'A' record
 	domainname name;		// For PTR and CNAME records
 	UTF8str255 txt;			// For TXT record
 	rdataSRV   srv;			// For SRV record
+	} RDataBody;
+
+typedef struct
+	{
+	mDNSs16    MaxRDLength;	// Amount of storage allocated for rdata (usually sizeof(RDataBody))
+	mDNSs16    RDLength;	// Size of the rdata currently stored here
+	RDataBody  u;
 	} RData;
 
 typedef struct ResourceRecord_struct ResourceRecord;
@@ -180,6 +187,7 @@ typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 
 typedef void mDNSRecordCallback(mDNS *const m, ResourceRecord *const rr, mStatus result);
+typedef void mDNSRecordUpdateCallback(mDNS *const m, ResourceRecord *const rr, RData *OldRData);
 
 // Fields labelled "AR:" apply to our authoritative records
 // Fields labelled "CR:" apply to cache records
@@ -189,7 +197,6 @@ typedef void mDNSRecordCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 struct ResourceRecord_struct
 	{
 	ResourceRecord     *next;			// --: Next in list
-	mDNSu32            maxrdlength;		// Amount of storage allocated for rdata (usually sizeof(rdata))
 	
 	// Field Group 1: Persistent metadata for Authoritative Records
 	ResourceRecord     *Additional1;	// AR: Recommended additional record to include in response
@@ -215,6 +222,8 @@ struct ResourceRecord_struct
 	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another
 	mDNSs32         NextSendTime;		// AR: In platform time units
 	mDNSs32         NextSendInterval;	// AR: In platform time units
+	RData          *NewRData;			// AR: Set if we are updating this record with new rdata
+	mDNSRecordUpdateCallback *UpdateCallback;
 
 	// Field Group 3: Transient state for Cache Records
 	ResourceRecord *NextDupSuppress;	// CR: Link to the next element in the chain of duplicate suppression answers to send
@@ -231,9 +240,9 @@ struct ResourceRecord_struct
 	mDNSu16         rrclass;
 	mDNSu32         rroriginalttl;		// In seconds.
 	mDNSu32         rrremainingttl;		// In seconds. Always set to correct value before calling question callback.
-	mDNSu16         rdlength;			// Raw uncompressed size of the resource data
 	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
-	RData           rdata;
+	RData           *rdata;			// Pointer to storage for this rdata
+	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
 	};
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
@@ -254,6 +263,9 @@ struct ExtraResourceRecord_struct
 	{
 	ExtraResourceRecord *next;
 	ResourceRecord r;
+	// Note: Add any additional fields *before* the ResourceRecord in this structure, not at the end.
+	// In some cases clients can allocate larger chunks of memory and set r->rdata->MaxRDLength to indicate
+	// that this extra memory is available, which would result in any fields after the ResourceRecord getting smashed
 	};
 
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
@@ -414,7 +426,7 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 								ResourceRecord *rrcachestorage, mDNSu32 rrcachesize, mDNSCallback *Callback, void *Context);
 extern void    mDNS_Close     (mDNS *const m);
 extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
-extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 rdlength, const mDNSu8 *rdata);
+extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern void    mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
@@ -442,7 +454,7 @@ extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
 // of one or more domains that should be offered to the user as choices for where they may register their service,
 // and the default domain in which to register in the case where the user has made no selection.
 
-extern void    mDNS_SetupResourceRecord(ResourceRecord *rr, mDNSIPAddr InterfaceAddr,
+extern void    mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage, mDNSIPAddr InterfaceAddr,
                mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context);
 
 extern void    mDNS_GenerateFQDN(mDNS *const m);
@@ -453,7 +465,7 @@ extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
                const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
                mDNSServiceCallback Callback, void *Context);
-extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
+extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr);
 extern void    mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
