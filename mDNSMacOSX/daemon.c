@@ -47,6 +47,17 @@ static int debug_mode = 0;
 int use_53 = 1;
 
 //*************************************************************************************************************
+// General Utility Functions
+
+char *CorrectRegType(char *regtype)
+	{
+	if (!strncmp(regtype, "_afp.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _afp changed to _afpovertcp\n"); return("_afpovertcp._tcp"); }
+	if (!strncmp(regtype, "_lpr.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _lpr changed to _printer\n");    return("_printer._tcp"); }
+	if (!strncmp(regtype, "_lpd.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _lpd changed to _printer\n");    return("_printer._tcp"); }
+	return(regtype);
+	}
+
+//*************************************************************************************************************
 // Client Death Detection
 
 typedef struct DNSServiceDomainEnumeration_struct DNSServiceDomainEnumeration;
@@ -102,7 +113,7 @@ static void AbortClient(mach_port_t port)
 		{
 		DNSServiceDomainEnumeration *x = *e;
 		*e = (*e)->next;
-		debugf("Aborting %d", port);
+		debugf("Aborting DNSServiceDomainEnumeration %d", port);
 		mDNS_StopGetDomains(&mDNSStorage, &x->dom);
 		mDNS_StopGetDomains(&mDNSStorage, &x->def);
 		free(x);
@@ -138,7 +149,6 @@ static void AbortClient(mach_port_t port)
 		*r = (*r)->next;
 		debugf("Aborting DNSServiceRegistration %d", port);
 		mDNS_DeregisterService(&mDNSStorage, &x->s);
-		free(x);
 		return;
 		}
 	}
@@ -249,11 +259,12 @@ kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_
 	x->next = DNSServiceBrowserList;
 	DNSServiceBrowserList = x;
 
+	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
 	else ConvertCStringToDomainName("local.arpa.", &d);
 
-	debugf("Client %d: Browse for Services %##s.%##s", client, &t, &d);
+	debugf("Client %d: Browse for Services %##s%##s", client, &t, &d);
 	err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, zeroIPAddr, FoundInstance, x);
 	if (!err) EnableDeathNotificationForClient(client);
 	else debugf("provide_DNSServiceBrowserCreate_rpc: mDNS_StartBrowse failed");
@@ -295,6 +306,7 @@ kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_por
 	DNSServiceResolverList = x;
 
 	ConvertCStringToDomainLabel(name, &n);
+	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
 	else ConvertCStringToDomainName("local.arpa.", &d);
@@ -327,8 +339,9 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
 		}
 	if (result == mStatus_NoError) DNSServiceRegistrationReply_rpc(port, result);
-	if (result == mStatus_NameConflict) { AbortClient(port); DNSServiceRegistrationReply_rpc(port, result); }
 //	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr);
+	if (result == mStatus_NameConflict) { AbortClient(port); DNSServiceRegistrationReply_rpc(port, result); }
+	if (result == mStatus_MemFree) { debugf("Freeing DNSServiceRegistration %d", x->port); free(x); }
 	}
 
 kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
@@ -346,12 +359,13 @@ kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_
 
 	if (*name && *name != '.') ConvertCStringToDomainLabel(name, &n);
 	else n = mDNSStorage.nicelabel;
+	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
 	else ConvertCStringToDomainName("local.arpa.", &d);
 	port.NotAnInteger = notAnIntPort;
 
-	debugf("Client %d: Register Service %s.%s%s %d %s", client, name, regtype, domain, port.b[0] << 8 | port.b[1], txtRecord);
+	debugf("Client %d: Register Service %##s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
 	err = mDNS_RegisterService(&mDNSStorage, &x->s, port, txtRecord, &n, &t, &d, Callback, x);
 	if (!err) EnableDeathNotificationForClient(client);
 	debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
