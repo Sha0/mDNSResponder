@@ -20,9 +20,29 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
 
+ * 
+ * NOTE:
+ * 
+ * These .Net APIs are a work in progress, currently being discussed and refined.
+ * If you plan to build an application based on these APIs, you may wish to
+ * statically link this code into your application, or otherwise distribute
+ * the DLL so that it installs into the same folder as your application
+ * (not into any common system area where it might interfere with other
+ * applications using a future completed version of these APIs).
+ * If you plan to do this, please be sure to inform us by sending email
+ * to rendezvous@apple.com to let us know.
+ * You may want to discuss what you're doing on the Rendezvous mailing
+ * list to see if others in similar positions have any suggestions for you:
+ * 
+ * <http://lists.apple.com/mailman/listinfo/rendezvous-dev/>
+ * 
+
     Change History (most recent first):
 
 $Log: dnssd_NET.h,v $
+Revision 1.6  2004/09/20 22:47:06  cheshire
+Add cautionary comment
+
 Revision 1.5  2004/09/16 18:16:27  shersche
 Cleanup to parameter names
 Submitted by: prepin@gmail.com
