@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.139  2004/12/06 19:08:03  cheshire
+Add clarifying comment -- CountLabels() excludes the final root label.
+
 Revision 1.138  2004/12/06 01:45:54  ksekar
 Correct wording in LogMsg
 
@@ -574,6 +577,8 @@ mDNSlocal mDNSs32 mDNSPlatformTimeNow(mDNS *m)
 #pragma mark - General Utility Functions
 #endif
 
+// CountLabels() returns number of labels in name, excluding final root label
+// (e.g. for "apple.com." CountLabels returns 2.)
 mDNSlocal int CountLabels(const domainname *d)
 	{
 	int count = 0;
