@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.216  2004/10/26 01:02:37  cheshire
+Update comment
+
 Revision 1.215  2004/10/25 20:09:00  ksekar
 Cleaned up config file parsing.
 
@@ -1860,7 +1863,7 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
 
 mDNSlocal void CloseRunLoopSourceSocket(CFRunLoopSourceRef rls, CFSocketRef cfs)
 	{
-	// Comments show retain counts (obtained via CFGetRetainCount()) after each call.	// rls 3 cfs 3
+	// Comments show retain counts (obtained via CFGetRetainCount()) after each call.	   rls 3 cfs 3
 	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);			// rls 2 cfs 3
 	CFRelease(rls);																		// rls ? cfs 3
 	CFSocketInvalidate(cfs);															// rls ? cfs 1
