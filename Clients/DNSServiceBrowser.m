@@ -392,21 +392,20 @@ void resolve_reply (
 
 - (void)updateBrowseWithResult:(int)type name:(NSString *)name type:(NSString *)resulttype domain:(NSString *)domain flags:(int)flags
 {
+
+    //NSLog(@"Received result %@ %@ %@ %d", name, resulttype, domain, type);
+    
     if (([domain isEqualToString:Domain] || [domain isEqualToString:@"local.arpa."]) && [resulttype isEqualToString:SrvType]) {
 
         if (type == DNSServiceBrowserReplyRemoveInstance) {
-            NSEnumerator *nameEnum = [nameKeys objectEnumerator];
-            NSString *aName = nil;
-
-            while (aName = [nameEnum nextObject]) {
-                if ([aName isEqualToString:name]) {
-                    [nameKeys removeObject:name];
-                    break;
-                }
+            if ([nameKeys containsObject:name]) {
+                [nameKeys removeObject:name];
             }
         }
         if (type == DNSServiceBrowserReplyAddInstance) {
-            [nameKeys addObject:name];
+            if (![nameKeys containsObject:name]) {
+                [nameKeys addObject:name];
+            }
         }
         
         [nameField reloadData];		//Reload (redraw) Name TableView with newly found data
