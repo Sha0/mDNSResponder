@@ -22,6 +22,10 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.17  2003/07/23 02:23:01  cheshire
+        Updated mDNSPlatformUnlock() to work correctly, now that <rdar://problem/3160248>
+        "ScheduleNextTask needs to be smarter" has refined the way m->NextScheduledEvent is set
+
         Revision 1.16  2003/07/19 03:15:16  cheshire
         Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
         and add the obvious trivial implementations to each platform support layer
@@ -490,7 +494,8 @@ void	mDNSPlatformUnlock( const mDNS *const inMDNS )
 	// Since our main mDNS_Execute() loop is on a different thread, we need to wake up that thread to:
 	// (a) handle immediate work (if any) resulting from this API call
 	// (b) calculate the next sleep time between now and the next interesting event
-	if (mDNSPlatformTimeNow() - inMDNS->NextScheduledEvent >= 0) SetEvent( inMDNS->p->wakeupEvent );
+	if (inMDNS->NextScheduledEvent - inMDNS->p->nextWakeupTime < 0) { SetEvent( inMDNS->p->wakeupEvent ); debugf("Waking"); }
+	else debugf("Not Waking");
 	LeaveCriticalSection( &inMDNS->p->lock );
 }
 
@@ -1395,7 +1400,28 @@ static DWORD	WINAPI ProcessingThread( LPVOID inParam )
 		for( ;; )
 		{
 			// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
-			mDNSs32 interval = mDNS_Execute(mdnsPtr) - mDNSPlatformTimeNow();
+			// Notes:
+			// At the end of mDNS_Execute() (or any other API call) mDNSCore calls our mDNSPlatformUnlock() routine.
+			// In that routine, we check to see if we need to do a wakeupEvent.
+			// We need to do a wakeupEvent in the following case:
+			// - if this thread has gone to sleep in WaitForMultipleObjects(), and is not going to wake up in time
+			//   to handle the next required event indicated by mdnsPtr->NextScheduledEvent;
+			// To make this work we do the following:
+			// 1. Before mDNS_Execute(), we set WakeupTime to timenow (this effectively prevents wakeups)
+			// 2. At the end of mDNS_Execute(), when mDNSPlatformUnlock() is called,
+			//    we find we don't need to do a wakeup, because NextScheduledEvent is in the future
+			// 3. After mDNS_Execute(), we set WakeupTime to a long time in the future.
+			// After this point, if any other thread runs and makes an API call, it will see that it needs to trigger a wakeup
+			// We can now safely read NextScheduledEvent and set our sleep interval
+			// (if another thread runs while we're doing that, it will trigger a wakeup)
+			// Having calculated our sleep interval, we can now adjust nextWakeupTime to the correct accurate value and sleep
+			mDNSs32 timenow, interval;
+			mdnsPtr->p->nextWakeupTime = mDNSPlatformTimeNow();	// Disable wakeups
+			mDNS_Execute(mdnsPtr);								// (Some time may elapse while we're doing this)
+			timenow = mDNSPlatformTimeNow();					// Record time when mDNS_Execute() is complete
+			mdnsPtr->p->nextWakeupTime = timenow + 0x70000000;	// Re-enable wakeups
+			interval = mdnsPtr->NextScheduledEvent - timenow;	// Read value of NextScheduledEvent and set sleep interval accordingly
+			mdnsPtr->p->nextWakeupTime = timenow + interval;	// Adjust nextWakeupTime to the accurate expected wakeup time
 			if      (interval < 0)                 interval = 0;
 			else if (interval > 0x7FFFFFFF / 1000) interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
 			else                                   interval = interval * 1000 / mDNSPlatformOneSecond;

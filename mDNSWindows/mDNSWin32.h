@@ -22,6 +22,10 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.h,v $
+        Revision 1.7  2003/07/23 02:23:01  cheshire
+        Updated mDNSPlatformUnlock() to work correctly, now that <rdar://problem/3160248>
+        "ScheduleNextTask needs to be smarter" has refined the way m->NextScheduledEvent is set
+
         Revision 1.6  2003/07/02 21:20:04  cheshire
         <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -89,6 +93,7 @@ struct	mDNS_PlatformSupport_struct
 	mDNSInterfaceInfo *			interfaceList;
 	HANDLE						thread;
 	mDNSBool					advertise;
+	mDNSs32						nextWakeupTime;
 };
 
 #ifdef	__cplusplus
