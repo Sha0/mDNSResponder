@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.170  2004/08/25 00:37:28  ksekar
+<rdar://problem/3774635>: Cleanup DynDNS hostname registration code
+
 Revision 1.169  2004/08/18 17:35:41  ksekar
 <rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
 
@@ -535,12 +538,6 @@ Minor code tidying
 #include <IOKit/IOMessage.h>
 #include <mach/mach_time.h>
 
-typedef struct AuthRecordListElem
-	{
-    struct AuthRecordListElem *next;
-    AuthRecord ar;
-	} AuthRecordListElem;
-
 typedef struct SearchListElem
 	{
     struct SearchListElem *next;
@@ -548,16 +545,24 @@ typedef struct SearchListElem
     int flag;  
     DNSQuestion browseQ;
     DNSQuestion registerQ;
-    AuthRecordListElem *AuthRecs;
+    ARListElem *AuthRecs;
 	} SearchListElem;
 
+// information for a domain we learn about via the keychain
+typedef struct KeychainDomain
+	{
+    struct KeychainDomain *next;
+    domainname domain;             // the zone we register hostnames in
+    int flag;                      // temporary marker for list intersection computation
+    AuthRecord *browse;            // _default._browse ptr record
+    AuthRecord *reg;               // _default._register record 
+	} KeychainDomain;
 
 // ***************************************************************************
 // Globals
 
 static mDNSu32 clockdivisor = 0;
 static mDNSBool DNSConfigInitialized = mDNSfalse;
-static mDNSBool RouterInitialized = mDNSfalse;
 #define MAX_SEARCH_DOMAINS 32
 
 // for domain enumeration and default browsing
@@ -566,6 +571,11 @@ static DNSQuestion DefBrowseDomainQ;         // our local enumeration query for 
 static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
 
 static mDNSBool LegacyNATInitialized = mDNSfalse;
+
+static domainname DynDNSZone;           // Dynamic DNS hostname zone set via Prefs Pane
+                                        // Additional zones (e.g. .Mac domains) may be set via Keychain
+
+static KeychainDomain *KeychainHostDomains = NULL;  // List of domains in which we register hostnames that we learn from the system keychain
 
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
 #define LH_KEYCHAIN_DESC "Lighthouse Shared Secret"
@@ -1087,7 +1097,8 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 		}
 	}
 
-mDNSlocal void GetUserSpecifiedDDNSName(domainname *const dname)
+
+mDNSlocal void GetUserSpecifiedDDNSZone(domainname *const dname)
 	{
 	dname->c[0] = 0;
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NULL, NULL);
@@ -1366,19 +1377,16 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	GetUserSpecifiedRFC1034ComputerName(&hostlabel);
 	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, "Macintosh");
 
-	domainname newddnsname;
-	GetUserSpecifiedDDNSName(&newddnsname);
-
 	// If the user has changed their dot-local host name since the last time we checked, then update our local copy.
 	// If the user has not changed their dot-local host name, then leave ours alone (m->hostlabel may have gone through
 	// repeated conflict resolution to get to its current value, and if we reset it, we'll have to go through all that again.)
-	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c) && SameDomainName(&m->uDNS_info.UnicastHostname, &newddnsname))
+	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c))
 		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
 	else
 		{
 		debugf("Updating m->hostlabel to %#s", hostlabel.c);
 		m->p->userhostlabel = m->hostlabel = hostlabel;
-		mDNS_SetFQDNs(m, &newddnsname);
+		mDNS_SetFQDN(m);
 		}
 
 	while (ifa)
@@ -1634,21 +1642,21 @@ mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
 mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
-	AuthRecordListElem *elem = rr->RecordContext;
+	ARListElem *elem = rr->RecordContext;
 	if (result == mStatus_MemFree) freeL("FreeARElemCallback", elem);
 	}
 
 mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)	
 	{
 	SearchListElem *slElem = question->QuestionContext;
-	AuthRecordListElem *arElem, *ptr, *prev;
+	ARListElem *arElem, *ptr, *prev;
     AuthRecord *dereg;    
 	char *name;
 	mStatus err;
 	
 	if (AddRecord)
 		{
-		arElem = mallocL("FoundDomain - arElem", sizeof(AuthRecordListElem));
+		arElem = mallocL("FoundDomain - arElem", sizeof(ARListElem));
 		if (!arElem) { LogMsg("ERROR: malloc");  return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, arElem);
 		if (question == &slElem->browseQ) name = "_browse._dns-sd._udp.local.";
@@ -1690,21 +1698,42 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 	}
 
+mDNSlocal void MarkSearchListElem(domainname *domain)
+	{
+	SearchListElem *new, *ptr;
+	
+	// if domain is in list, mark as pre-existent (0)
+	for (ptr = SearchList; ptr; ptr = ptr->next)
+		if (SameDomainName(&ptr->domain, domain)) { ptr->flag = 0; break; }
+	
+	// if domain not in list, add to list, mark as add (1)
+	if (!ptr)
+		{
+		new = mallocL("RegisterSearchDomains - SearchListElem", sizeof(SearchListElem));
+		if (!new) { LogMsg("ERROR: RegisterSearchDomains - malloc"); return; }
+		bzero(new, sizeof(SearchListElem));
+		AssignDomainName(new->domain, *domain);
+		new->flag = 1;  // add
+		new->next = SearchList;
+		SearchList = new;
+		}
+	}	
+
 mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	{
 	int i, count;
-	CFArrayRef values;
+	CFArrayRef values = NULL;
 	domainname domain;
-	char            buf[MAX_ESCAPED_DOMAIN_NAME];
+	char  buf[MAX_ESCAPED_DOMAIN_NAME];
 	CFStringRef s;
-	SearchListElem *new, *ptr, *prev, *freeSLPtr;
-	AuthRecordListElem *arList;
+	SearchListElem *ptr, *prev, *freeSLPtr;
+	ARListElem *arList;
 	mStatus err;
 	
-	// step 1: mark each elem for removal (-1)
-	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = -1;
+	// step 1: mark each elem for removal (-1), unless we aren't passed a dictionary in which case we mark as preexistent
+	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = dict ? -1 : 0;
 	
-	values = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
+	if (dict) values = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
 	if (values)
 		{
 		count = CFArrayGetCount(values);
@@ -1716,29 +1745,17 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 				{
 				LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
 				continue;
-				}		   			
+				}
 			if (!MakeDomainNameFromDNSNameString(&domain, buf))
 				{
 				LogMsg("ERROR: RegisterNameServers - invalid search domain %s", buf);
 				continue;
-				}				
-			// if domain is in list, mark as pre-existent (0)
-			for (ptr = SearchList; ptr; ptr = ptr->next)
-				if (SameDomainName(&ptr->domain, &domain)) { ptr->flag = 0; break; }
-
-			// if domain not in list, add to list, mark as add (1)
-			if (!ptr)
-				{
-				new = mallocL("RegisterSearchDomains - SearchListElem", sizeof(SearchListElem));
-				if (!new) { LogMsg("ERROR: RegisterSearchDomains - malloc"); return mStatus_UnknownErr; }
-				bzero(new, sizeof(SearchListElem));
-				strcpy(new->domain.c, domain.c);
-				new->flag = 1;  // add
-				new->next = SearchList;
-				SearchList = new;
-				}
+				}							
+			MarkSearchListElem(&domain);
 			}
 		}
+	if (DynDNSZone.c[0]) MarkSearchListElem(&DynDNSZone);
+
 	// delete elems marked for removal, do queries for elems marked add
 	prev = NULL;
 	ptr = SearchList;
@@ -1788,98 +1805,204 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	return mStatus_NoError;
 	}
 
-// key must be kSCPropNetDNSServerAddresses or kSCPropNetDNSSearchDomains
-mDNSlocal mStatus RegisterDNSConfig(mDNS *const m, CFDictionaryRef dict, const CFStringRef key)
-	{	
-	if (key == kSCPropNetDNSSearchDomains) return RegisterSearchDomains(m, dict);
-	if (key == kSCPropNetDNSServerAddresses) return RegisterNameServers(m, dict);
-	LogMsg("ERROR: RegisterDNSConfig - bad key"); return mStatus_UnknownErr;
+//!!!KRS here is where we will give success/failure notification to the UI
+mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
+	{
+	(void)m;  // unused
+
+	LogMsg("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
 	}
 
-
-mDNSlocal void RouterChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
+mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	{
+	char buf[1024];
+	int len;
+	
+	if (!fgets(buf, 1024, f)) { LogMsg("Option %s not set", option); return mDNSfalse; }
+	len = strlen(option);
+	if (!strncmp(buf, option, len))
+		{
+		strcpy(dst, buf + len + 1);
+		len = strlen(dst);
+		if ( len && dst[len-1] == '\n') dst[len-1] = '\0';  // chop newline
+		return mDNStrue;
+		}
+	return mDNSfalse;
+	}
+
+mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
+	{
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	char buf[MAX_ESCAPED_DOMAIN_NAME];
+	char secret[1024];
+	int slen;
+	mStatus err;
+	FILE *f;
+	
+	secret[0] = 0;
+	DynDNSZone.c[0] = 0;
+	f = fopen(CONFIG_FILE, "r");
+	if (f)
+		{
+		if (GetConfigOption(buf, "zone", f))
+			{
+			if (!MakeDomainNameFromDNSNameString(&DynDNSZone, buf))
+				LogMsg("ERROR: config file contains bad hostname %s", buf); 
+			else GetConfigOption(secret, "secret-64", f);  // failure means no authentication
+			}
+		fclose(f);
+		}
+	else
+		{
+		if (errno != ENOENT) LogMsg("ERROR: Config file exists, but cannot be opened.");
+		return;
+		}
+
+	if (!DynDNSZone.c[0]) return;
+
+	// set default (empty-string) service registration domain
+	AssignDomainName(u->ServiceRegDomain, DynDNSZone);         //!!!KRS this needs to go away for multi-users
+	if (secret[0] && u->ServiceRegDomain.c[0]) 
+		{
+		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
+		slen = strlen(secret);
+		err = mDNS_SetSecretForZone(m, &u->ServiceRegDomain, &u->ServiceRegDomain, secret, slen, mDNStrue);
+		if (err) LogMsg("ERROR: mDNS_SetSecretForZone returned %d for domain %#s", err, &u->ServiceRegDomain);
+		}
+	mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
+	
+	// update _browse/_register domain list
+	RegisterSearchDomains(m, NULL); // passing NULL will only trigger query for DynDNSZone	
+	}
+
+mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
+	{
+	static mDNSBool DynDNSConfigInitialized = mDNSfalse;
 	mDNS *m = context;
 	CFDictionaryRef dict;
 	CFStringRef     key;
-	CFStringRef router;
+	CFStringRef router, primary;
 	char buf[256];
+	domainlabel hostlabel;
+	domainname zone;
 	
-	if (RouterInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
-	
-	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
+	if (DynDNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
+	DynDNSConfigInitialized = mDNStrue;  // set flag once we have initial configuration
 
-	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
-	dict = SCDynamicStoreCopyValue(session, key);
-	CFRelease(key);
-	if (!dict) return;	
-	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);		
-	if (router)
+	// get host label
+	GetUserSpecifiedRFC1034ComputerName(&hostlabel);
+	mDNS_SetDynDNSComputerName(m, &hostlabel); 
+
+	// get zone from SCPrefs
+	GetUserSpecifiedDDNSZone(&zone);
+	if (!SameDomainName(&zone, &DynDNSZone))
 		{
-		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
-			LogMsg("ERROR: RouterChanged - CFStringGetCString");
-		else
+		if (DynDNSZone.c[0]) mDNS_RemoveDynDNSHostDomain(m, &DynDNSZone);
+		AssignDomainName(DynDNSZone, zone);
+		if (DynDNSZone.c[0])
 			{
-			m->uDNS_info.Router.type = mDNSAddrType_IPv4;
-			inet_aton(buf, (struct in_addr *)&m->uDNS_info.Router.ip.v4);
-			RouterInitialized = mDNStrue;
+			mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
+			AssignDomainName(m->uDNS_info.ServiceRegDomain, zone);  //!!!KRS temporary until we have multi-user support
 			}
 		}
-	CFRelease(dict);
-	}
 
-mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
-	{
-	mDNS *m = context;
-	CFDictionaryRef dict;
-	CFStringRef     key;
+	if (!DynDNSZone.c[0]) ReadZoneFromConfFile(m);	
 
-	if (DNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
-
-	//!!!KRS fixme - we need a list of registerd servers. this wholesale
-    // dereg doesn't work if there's an error and we bail out before registering the new list
-
+    // get DNS settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
 	dict = SCDynamicStoreCopyValue(session, key);
 	CFRelease(key);
+
+	// handle any changes to search domains and DNS server addresses
 	if (dict)
 		{
-		RegisterDNSConfig(m, dict, kSCPropNetDNSServerAddresses);
-		RegisterDNSConfig(m, dict, kSCPropNetDNSSearchDomains);		
+		RegisterSearchDomains(m, dict);
+		RegisterNameServers(m, dict);
 		CFRelease(dict);
 		}		
-	mDNS_SetFQDNs(m, &m->uDNS_info.UnicastHostname);
-	// no-op if label & domain are unchanged
-	}
 
-mDNSlocal mStatus WatchForNetworkConfigChanges(mDNS *const m, const CFStringRef entity)	
+	// get IPv4 settings
+	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
+	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
+	dict = SCDynamicStoreCopyValue(session, key);
+	CFRelease(key);
+	if (!dict) return;	
+
+	// handle router changes
+	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);		
+	if (router)
+		{
+		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
+			LogMsg("Could not convert router to CString");
+		else
+			{
+			m->uDNS_info.Router.type = mDNSAddrType_IPv4;
+			inet_aton(buf, (struct in_addr *)&m->uDNS_info.Router.ip.v4);
+			}
+		}
+
+	// handle primary interface changes
+	primary = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
+	if (primary)
+		{
+		if (!CFStringGetCString(primary, buf, 256, kCFStringEncodingUTF8))
+			LogMsg("Could not convert router to CString");
+		else
+			{
+//			const char *CurPrimary;
+//			mDNSAddr CurIP;
+//			CurPrimary = mDNS_GetPrimaryInterface(m, &CurIP);			
+			// !!!KRS can we guarantee if the name hasn't changed we can bypass getifaddrs?
+			struct ifaddrs *ifa = myGetIfAddrs(1);
+			while (ifa)
+				{
+				if (ifa->ifa_addr->sa_family == AF_INET && !strcmp(buf, ifa->ifa_name))
+					{
+					mDNSAddr ip;
+					SetupAddr(&ip, ifa->ifa_addr);
+					mDNS_SetPrimaryInterface(m, buf, &ip);
+					break;
+					}
+				ifa = ifa->ifa_next;
+				}
+			}
+		}
+	CFRelease(dict);
+	}	
+	
+// change notification for events that specifically affect dynamic dns / unicast settings
+mDNSlocal mStatus WatchForDynDNSChanges(mDNS *const m)
     {
-    CFStringRef			    key;
+    CFStringRef			    DNSkey, v4key, hostkey;
+	CFStringRef             scprefkey = CFSTR("Setup:/Network/DynamicDNS");
     CFMutableArrayRef		keyList;
     CFRunLoopSourceRef		rls;
     SCDynamicStoreRef 		session;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
+
 	
-	if (entity == kSCEntNetDNS) 
-		session = SCDynamicStoreCreate(NULL, CFSTR("TrackDNS"), DNSConfigChanged, &context);    
-	else if (entity == kSCEntNetIPv4)
-	  session = SCDynamicStoreCreate(NULL, CFSTR("TrackRouter"), RouterChanged, &context); 		
-	else { LogMsg("ERROR: WatchForNetworkConfigChanges - bad entity"); return mStatus_UnknownErr; }
-			  
-	if (!session) {  LogMsg("ERROR: WatchForNetworkConfigChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
+	session = SCDynamicStoreCreate(NULL, CFSTR("WatchForDynDNSChanges"), DynDNSConfigChanged, &context);    
+	if (!session) {  LogMsg("ERROR: WatchForDynDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
 
     keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-    if (!keyList) {  LogMsg("ERROR: WatchForNetworkConfigChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
+    if (!keyList) {  LogMsg("ERROR: WatchForDynDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
     
     // create a pattern that matches the global DNS dictionary key
-    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, entity);
-    if (!key) {  LogMsg("ERROR:  - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr;  }
+    DNSkey = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+	v4key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
+	hostkey = SCDynamicStoreKeyCreateHostNames(NULL);	
+    if (!DNSkey || !v4key) { LogMsg("ERROR: WatchForDynDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr; }
     
-    CFArrayAppendValue(keyList, key);
-    CFRelease(key);
-    
-    // set the keys for our DynamicStore session
+    CFArrayAppendValue(keyList, DNSkey);
+    CFArrayAppendValue(keyList, v4key);
+	CFArrayAppendValue(keyList, hostkey);
+	CFArrayAppendValue(keyList, scprefkey);
+    CFRelease(DNSkey);
+	CFRelease(v4key);
+	CFRelease(hostkey);
+	// scprefkey doesn't need to be released
+
     SCDynamicStoreSetNotificationKeys(session, keyList, NULL);
     CFRelease(keyList);
     
@@ -1890,11 +2013,11 @@ mDNSlocal mStatus WatchForNetworkConfigChanges(mDNS *const m, const CFStringRef 
     // add the run loop source to our current run loop 
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
     CFRelease(rls);
-    
-    // get initial configuration
-    if (entity == kSCEntNetDNS) 
-      DNSConfigChanged(session, NULL, m);
-    else RouterChanged(session, NULL, m);
+
+	// get initial configuration
+	DynDNSZone.c[0] = '\0';
+    DynDNSConfigChanged(session, NULL, m);
+
     return mStatus_NoError;
     }
 
@@ -1926,7 +2049,6 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
 	CFStringRef           key4     = SCDynamicStoreKeyCreateHostNames(NULL);
-	CFStringRef           key5     = CFSTR("Setup:/Network/DynamicDNS");
 	CFStringRef           pattern1 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
 	CFStringRef           pattern2 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
 
@@ -1934,13 +2056,12 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
 	if (!store) { LogMsg("SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
-	if (!key1 || !key2 || !key3 || !key4 || !key5 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
+	if (!key1 || !key2 || !key3 || !key4 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
 
 	CFArrayAppendValue(keys, key1);
 	CFArrayAppendValue(keys, key2);
 	CFArrayAppendValue(keys, key3);
 	CFArrayAppendValue(keys, key4);
-	CFArrayAppendValue(keys, key5);
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
@@ -1962,7 +2083,6 @@ exit:
 	if (key2)     CFRelease(key2);
 	if (key3)     CFRelease(key3);
 	if (key4)     CFRelease(key4);
-	// key5 doesn't need to be released
 	if (pattern1) CFRelease(pattern1);
 	if (pattern2) CFRelease(pattern2);
 	if (keys)     CFRelease(keys);
@@ -2002,93 +2122,59 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 	return(-1);
 	}
 
-mDNSexport mDNSBool haveSecInfo = mDNSfalse;  // this must go away once we have full keychain integration
-mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
+mDNSlocal void DynDNSRegCallback(mDNS *m, AuthRecord *rr, mStatus result)
 	{
-	OSStatus err;
+	(void)m;
+	LogMsg("DynDNSRegCallback: result %d for registration of name %##s", result, rr->resrec.name.c);	
+	//!!!KRS this is where we deliver status to the prefs pane
+	}
+
+// caller must free secret (allocated via malloc()) if call is successful
+mDNSlocal OSStatus GetDomainFromKeychainItem(SecKeychainItemRef item, domainname *zone, mDNSu32 *secretlen, void **secret)
+	{
+	OSStatus err = 0;
 	mDNSu32 infoTag = kSecAccountItemAttr;
 	mDNSu32 infoFmt = 0; // string
     SecKeychainAttributeInfo info;		
 	SecKeychainAttributeList *authAttrList = NULL; 
 	void *data;
 	mDNSu32 dataLen;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-	mStatus regErr;		
 	char accountName[MAX_ESCAPED_DOMAIN_NAME];
-	domainname fqdn;
-	domainlabel computername;
-	AuthRecord *rrReg, *rrBrowse;
 
-	info.count = 1;
+    info.count = 1;
 	info.tag = &infoTag;
 	info.format = &infoFmt;
-		
-	err = SecKeychainItemCopyAttributesAndData(item, &info, NULL, &authAttrList, &dataLen, &data);
-	if (err) { LogMsg("SecKeychainItemCopyAttributesAndData returned error %d", err); return; }
 	
+	err = SecKeychainItemCopyAttributesAndData(item, &info, NULL, &authAttrList, &dataLen, &data);
+	if (err) { LogMsg("SecKeychainItemCopyAttributesAndData returned error %d", err); goto end; }
+
 	// copy account name
 	if (!authAttrList->count || authAttrList->attr->tag != kSecAccountItemAttr)
-	    { LogMsg("Received bad authAttrList"); return; }	
+	    { LogMsg("Received bad authAttrList"); goto end; }	
 	if (authAttrList->attr->length + strlen(LH_SUFFIX) > MAX_ESCAPED_DOMAIN_NAME)
-		{ LogMsg("Account name too long (%d bytes)", authAttrList->attr->length); return; }
+		{ LogMsg("Account name too long (%d bytes)", authAttrList->attr->length); goto end; }
 	memcpy(accountName, authAttrList->attr->data, authAttrList->attr->length);
 	accountName[authAttrList->attr->length] = '\0';
 
-	// construct FQDN (computername.accountname.members.mac.com.)
-	fqdn.c[0] = '\0';
-	computername.c[0] = '\0';
-	GetUserSpecifiedRFC1034ComputerName(&computername);
-	if (!computername.c[0]) MakeDomainLabelFromLiteralString(&computername, "Macintosh");
-	if (!AppendDomainLabel(&fqdn, &computername) ||
-		!AppendLiteralLabelString(&fqdn, accountName) ||
-		!AppendDNSNameString(&fqdn, LH_SUFFIX))
-		{ LogMsg("InitAuthInfo - bad domain name"); return; }
+	// construct zone (accountname.members.mac.com.)
+	zone->c[0] = '\0';
+    if (!AppendLiteralLabelString(zone, accountName) ||
+		!AppendDNSNameString(zone, LH_SUFFIX))
+		{ LogMsg("GetDomainFromKeychainItem - bad account name"); goto end; }
 
-	// set default service registration domain (accountname.members.mac.com.)
-	AssignDomainName(u->ServiceRegDomain, *(domainname*)(fqdn.c + 1 + fqdn.c[0]));	
-	mDNS_UpdateDomainRequiresAuthentication(m, &u->ServiceRegDomain, &u->ServiceRegDomain, data, dataLen, mDNStrue);
-	
-	mDNS_SetFQDNs(m, &fqdn);
-	// normally we'd query the zone for _register/_browse domains, but to reduce server load we manually generate the records
+	// copy secret for caller
+	*secret = malloc(dataLen);
+	if (!*secret) { LogMsg("ERROR: malloc"); goto end; }
+	memcpy(*secret, data, dataLen);
+	*secretlen = dataLen;
 
-	haveSecInfo = mDNStrue;
-	//!!!KRS need to do better bookkeeping once we support multiple users
-	rrReg = mallocL("AuthRecord", sizeof(AuthRecord));
-	rrBrowse = mallocL("AuthRecord", sizeof(AuthRecord));
-	if (!rrReg || !rrBrowse) { LogMsg("ERROR: Malloc"); return; }
-	
-	// set up _browse
-	mDNS_SetupResourceRecord(rrBrowse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	MakeDomainNameFromDNSNameString(&rrBrowse->resrec.name, "_default._browse._dns-sd._udp.local.");
-	AssignDomainName(rrBrowse->resrec.rdata->u.name, u->ServiceRegDomain);
-	
-	// set up _register
-	mDNS_SetupResourceRecord(rrReg, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	MakeDomainNameFromDNSNameString(&rrReg->resrec.name, "_register._dns-sd._udp.local.");
-	AssignDomainName(rrReg->resrec.rdata->u.name, u->ServiceRegDomain);
-	
-	regErr = mDNS_Register(m, rrReg);
-	if (regErr) LogMsg("Registration of local-only reg domain %##s failed", u->ServiceRegDomain);
-	
-	regErr = mDNS_Register(m, rrBrowse);
-	if (regErr) LogMsg("Registration of local-only browse domain %##s failed", u->ServiceRegDomain);
-	SecKeychainItemFreeContent(authAttrList, data);
+	end:
+	if (authAttrList) SecKeychainItemFreeContent(authAttrList, data);	
+	return err;
 	}
 
-mDNSlocal void InitAuthInfo(mDNS *m);
-
-mDNSlocal OSStatus KeychainCallback(SecKeychainEvent event, SecKeychainCallbackInfo *info, void *context)
-	{
-	(void)event;
-	(void)info;
-	// unused
-	
-	debugf("SecKeychainAddCallback received event %d", event);
-	InitAuthInfo((mDNS *)context);  // keychain events happen rarely - just rebuild the list
-	return 0;
-	}
-
-mDNSexport void InitAuthInfo(mDNS *m)
+// return the .Mac keychain items.  caller must release returned value
+mDNSlocal SecKeychainSearchRef GetKeychainItems(void)
 	{
 	OSStatus err;
 	
@@ -2097,31 +2183,164 @@ mDNSexport void InitAuthInfo(mDNS *m)
 	SecKeychainAttribute searchAttrs[] = { { kSecDescriptionItemAttr, strlen(LH_KEYCHAIN_DESC), LH_KEYCHAIN_DESC },
 									  { kSecServiceItemAttr, strlen(LH_KEYCHAIN_SERVICE), LH_KEYCHAIN_SERVICE } };	
 	SecKeychainAttributeList searchList = { sizeof(searchAttrs) / sizeof(*searchAttrs), searchAttrs };
-	SecKeychainItemRef item;
-
-	// clear any previous entries
-	mDNS_ClearAuthenticationList(m);
 
 	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &sysKeychain);
-	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't open system keychain - %d", err); goto release_refs; }
+	if (err) { LogMsg("ERROR: GetKeychainItems - couldn't open system keychain - %d", err); goto end; }
 	err = SecKeychainSetDomainDefault(kSecPreferencesDomainSystem, sysKeychain);
-	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't set domain default for system keychain - %d", err); goto release_refs; }
+	if (err) { LogMsg("ERROR: GetKeychainItems - couldn't set domain default for system keychain - %d", err); goto end; }
 	
 	err = SecKeychainSearchCreateFromAttributes(sysKeychain, kSecGenericPasswordItemClass, &searchList, &searchRef);
-	if (err) { LogMsg("ERROR: InitAuthInfo - SecKeychainSearchCreateFromAttributes %d", err); goto release_refs; }
+	if (err) { LogMsg("ERROR: GetKeychainItems - SecKeychainSearchCreateFromAttributes %d", err); goto end; }
 
-	while (!SecKeychainSearchCopyNext(searchRef, &item))
-		{
-		GetAuthInfoFromKeychainItem(m, item);
-		CFRelease(item);
-		}
-	err = SecKeychainAddCallback(KeychainCallback, kSecAddEventMask | kSecDeleteEventMask | kSecUpdateEventMask | kSecPasswordChangedEventMask, m);	
-	if (err && err != errSecDuplicateCallback) { LogMsg("SecKeychainAddCallback returned error %d", err); }							 	
-
-	release_refs:
-	
-	if (searchRef) CFRelease(searchRef);
+	end:
 	if (sysKeychain) CFRelease(sysKeychain);
+	return searchRef;
+	}
+
+// free memory for the _browse and _register records we create from keychain items
+mDNSlocal void KeychainEnumRRCallback(mDNS *m, AuthRecord *rr, mStatus result)
+	{
+	(void)m;  // unused
+	if (result == mStatus_MemFree) free(rr);
+	else LogMsg("Unexpected KeychainEnumRRCallback for domain %##s with result %d", rr->resrec.rdata->u.name.c, result);	
+	}
+
+// register hostnames and _browse/_register records for all new host domains found in keychain
+mDNSlocal void AddKeychainHostDomains(mDNS *m)
+	{
+	SecKeychainSearchRef KeychainItems;
+	SecKeychainItemRef item;
+
+	KeychainItems = GetKeychainItems();
+	if (!KeychainItems) return;
+	while (!SecKeychainSearchCopyNext(KeychainItems, &item))
+		{
+		KeychainDomain *ptr, *new;
+		domainname zone;
+		mDNSu32 secretlen;
+		void *secret = NULL;
+		mStatus regErr;
+		
+		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;			
+
+		// check if domain is already in our list
+		for (ptr = KeychainHostDomains; ptr; ptr = ptr->next)
+			if (SameDomainName(&ptr->domain, &zone)) break; 
+
+		if (!ptr)
+			{
+			// item not in our list
+			new = malloc(sizeof(*new));
+			if (!new) { LogMsg("ERROR: malloc"); return; }
+			AssignDomainName(new->domain, zone);
+			new->flag = 0;
+
+			// normally we'd query the zone for _register/_browse domains,
+			//but to reduce server load we manually generate the records
+			new->browse = malloc(sizeof(AuthRecord));
+			new->reg = malloc(sizeof(AuthRecord));
+			if (!new->browse || !new->reg) { LogMsg("ERROR: malloc"); return; }
+
+			// set up _browse
+			mDNS_SetupResourceRecord(new->browse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, KeychainEnumRRCallback, mDNSNULL);
+			MakeDomainNameFromDNSNameString(&new->browse->resrec.name, "_default._browse._dns-sd._udp.local.");
+			AssignDomainName(new->browse->resrec.rdata->u.name, new->domain );
+			regErr = mDNS_Register(m, new->browse);
+			if (regErr)
+				{
+				LogMsg("Registration of local-only browse domain %##s failed with error %d", new->domain.c, regErr);
+				free(new->browse);
+				new->browse = NULL;
+				}
+			
+			// set up _register
+			mDNS_SetupResourceRecord(new->reg, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, KeychainEnumRRCallback, mDNSNULL);
+			MakeDomainNameFromDNSNameString(&new->reg->resrec.name, "_register._dns-sd._udp.local.");
+			AssignDomainName(new->reg->resrec.rdata->u.name, new->domain);
+			regErr = mDNS_Register(m, new->reg);
+			if (regErr)
+				{
+				LogMsg("Registration of local-only reg domain %##s failed with error %d", new->domain.c, regErr);
+				free(new->reg);
+				new->reg = NULL;
+				}
+			new->next = KeychainHostDomains;
+			KeychainHostDomains = new;
+			
+			mDNS_SetSecretForZone(m, &zone, &zone, secret, secretlen, mDNStrue);
+			mDNS_AddDynDNSHostDomain(m, &zone, DynDNSRegCallback, NULL);
+
+			AssignDomainName(m->uDNS_info.ServiceRegDomain, zone);  //!!!KRS temporary until we have multi-user support
+			}
+
+		if (secret) free(secret);
+		CFRelease(item);
+		}	
+	}
+
+// deregister hostnames and _browse/_register records for all zones no longer in keychain
+mDNSlocal void RemoveKeychainDomains(mDNS *m)
+	{
+	SecKeychainSearchRef KeychainItems;
+	SecKeychainItemRef item;
+	KeychainDomain *ptr, *prev, *tmp;
+	
+	KeychainItems = GetKeychainItems();
+	if (!KeychainItems) return;
+
+	// flag all zones for deletion
+	for (ptr = KeychainHostDomains; ptr; ptr = ptr->next)
+		ptr->flag = 1;
+
+	// clear flag for zones still in keychain
+	while (!SecKeychainSearchCopyNext(KeychainItems, &item))
+		{
+		domainname zone;
+		mDNSu32 secretlen;
+		void *secret;
+		
+		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;			
+		free(secret);
+		secret = NULL;
+		
+		for (ptr = KeychainHostDomains; ptr; ptr = ptr->next)
+			if (SameDomainName(&ptr->domain, &zone))
+				{
+				ptr->flag = 0;  // clear deletion marker
+				break;
+				}
+		if (!ptr) LogMsg("Keychain zone %##s not in list!", zone.c);
+		}
+
+	// delete all zones with flag still set
+	prev = NULL;
+	ptr = KeychainHostDomains;
+	while (ptr)
+		{
+		if (ptr->flag) 	// delete
+			{		
+			mDNS_Deregister(m, ptr->reg);
+			mDNS_Deregister(m, ptr->browse);
+			mDNS_RemoveDynDNSHostDomain(m, &ptr->domain);
+			mDNS_SetSecretForZone(m, &ptr->domain, NULL, NULL, 0, mDNSfalse);
+			if (prev) prev->next = ptr->next;
+			else KeychainHostDomains = ptr->next;
+			tmp = ptr;
+			ptr = ptr->next;
+			free(tmp);			
+			}		
+		}
+	}
+
+mDNSlocal OSStatus KeychainCallback(SecKeychainEvent event, SecKeychainCallbackInfo *info, void *context)
+	{
+	(void)info; // unused
+
+	debugf("SecKeychainAddCallback received event %d", event);
+	if (event == kSecAddEvent) AddKeychainHostDomains((mDNS *)context);
+	else if (event == kSecDeleteEvent) RemoveKeychainDomains((mDNS *)context);
+	else LogMsg("Received unexpected event %d from keychain callback", event);	
+	return 0;
 	}
 
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
@@ -2167,71 +2386,6 @@ mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
 	return(err == 0);
 	}
 
-//!!!KRS this should be less order-dependent as we support more configuration options
-mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
-	{
-	char buf[1024];
-	int len;
-	
-	if (!fgets(buf, 1024, f)) { LogMsg("Option %s not set", option); return mDNSfalse; }
-	len = strlen(option);
-	if (!strncmp(buf, option, len))
-		{
-		strcpy(dst, buf + len + 1);
-		len = strlen(dst);
-		if ( len && dst[len-1] == '\n') dst[len-1] = '\0';  // chop newline
-		return mDNStrue;
-		}
-	LogMsg("Malformatted config file - %s not set", option);	
-	return mDNSfalse;
-	}
-	
-mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
-	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-	char uname[MAX_ESCAPED_DOMAIN_NAME];
-	domainname newhostname;
-	char secret[1024];
-	int slen;
-	mStatus err;
-	FILE *f;
-	
-    // read registration domain (for dynamic updates) from config file
-	
-	if (m->uDNS_info.UnicastHostname.c[0])
-		{ debugf("Options from config already set via keychain. Ignoring config file."); return; }
-
-	secret[0] = 0;
-	uname[0] = 0;
-	f = fopen(CONFIG_FILE, "r");
-	if (f)
-		{
-		GetConfigOption(uname, "hostname", f);
-		if (uname[0] && !MakeDomainNameFromDNSNameString(&newhostname, uname))
-			{ LogMsg("ERROR: config file contains bad hostname %s", uname); uname[0] = '\0'; }	
-		else GetConfigOption(secret, "secret-64", f);  // failure means no authentication
-		fclose(f);
-		}
-	else
-		{
-		if (errno != ENOENT) LogMsg("ERROR: Config file exists, but cannot be opened.");
-		GetUserSpecifiedDDNSName(&newhostname);
-		if (newhostname.c[0]) LogMsg("ReadRegDomainFromConfig ServiceRegDomain: %##s", u->ServiceRegDomain.c);
-		// !!!SDC In future will need to get the key and key name from keychain		
-		}
-
-	// set empty-string service registration domain to hostname minus first label
-	AssignDomainName(u->ServiceRegDomain, *(domainname*)(newhostname.c + 1 + newhostname.c[0]));
-	if (secret[0] && u->ServiceRegDomain.c[0]) 
-		{
-		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
-		slen = strlen(secret);
-		err = mDNS_UpdateDomainRequiresAuthentication(m, &u->ServiceRegDomain, &u->ServiceRegDomain, secret, slen, mDNStrue);
-		if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain %#s", err, &u->ServiceRegDomain);
-		}	
-	if (newhostname.c[0]) mDNS_SetFQDNs(m, &newhostname);
-	}
-
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
 	{
 	return mDNS_CopyDNameList(DefBrowseList);
@@ -2250,7 +2404,6 @@ mDNSexport DNameListElem *mDNSPlatformGetRegDomainList(void)
 		}
 	return mDNS_CopyDNameList(&tmp);
 	}
-
 	
 mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
@@ -2319,7 +2472,8 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
-
+	OSStatus keyerr;
+	
    	m->hostlabel.c[0]        = 0;
 	
 	char *HINFO_HWstring = "Macintosh";
@@ -2362,20 +2516,20 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	
 	err = WatchForPowerChanges(m);
 	if (err) return err;
-	
-	err = WatchForNetworkConfigChanges(m, kSCEntNetDNS);
+
+	err = WatchForDynDNSChanges(m);
 	if (err) return err;
 
-	err = WatchForNetworkConfigChanges(m, kSCEntNetIPv4);
-	if (err) return err;
-	
+	GetUserSpecifiedRFC1034ComputerName(&m->uDNS_info.hostlabel);
+	if (!m->uDNS_info.hostlabel.c[0]) MakeDomainLabelFromLiteralString(&m->uDNS_info.hostlabel, "Macintosh");
 	InitDNSConfig(m);
+	//m->uDNS_info.ServiceRegDomain.c[0] = '\0';
 
-	m->uDNS_info.UnicastHostname.c[0] = '\0';
-	m->uDNS_info.ServiceRegDomain.c[0] = '\0';
-	InitAuthInfo(m);
-	ReadRegDomainFromConfig(m);	
-	
+	// get initial keychain configuration, set up callbacks for changes
+	AddKeychainHostDomains(m);
+    keyerr = SecKeychainAddCallback(KeychainCallback, kSecAddEventMask | kSecDeleteEventMask, m);
+	if (keyerr) { LogMsg("SecKeychainAddCallback returned error %d", err); }
+
  	return(err);
 	}
 

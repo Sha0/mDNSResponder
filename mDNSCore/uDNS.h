@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.16  2004/08/25 00:37:27  ksekar
+<rdar://problem/3774635>: Cleanup DynDNS hostname registration code
+
 Revision 1.15  2004/07/30 17:40:06  ksekar
 <rdar://problem/3739115>: TXT Record updates not available for wide-area services
 
@@ -90,18 +93,15 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	
 // Entry points into unicast-specific routines
 
-extern void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set);
-extern void uDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set);
-
 extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_GlobalInfo *u);  // returns true if OK to call StopQuery
 extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 
-// SuspendLLQs stops all LLQs, preserving known answers.  RestartLLQs re-starts these suspended LLQs, generating appropriate add/removes
-// Call SuspendLLQs prior to sleep, and on shutdown.  Call RestartLLQs on wake from sleep.
-extern void uDNS_SuspendLLQs(mDNS *m);
-extern void uDNS_RestartLLQs(mDNS *m);
-
+extern void uDNS_Init(mDNS *m);
+extern void uDNS_Close(mDNS *m);
+extern void uDNS_Sleep(mDNS *m);
+extern void uDNS_Wake(mDNS *m);
+	
 // uDNS_UpdateRecord
 // following fields must be set, and the update validated, upon entry.
 // rr->NewRData
@@ -115,7 +115,6 @@ extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
 extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
-extern void uDNS_UpdateServiceTargets(mDNS *const m);  // call following namechange
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
@@ -127,7 +126,6 @@ extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
 
-extern void uDNS_Init(mDNS *const m);
 	
 #ifdef	__cplusplus
 	}

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.191  2004/08/25 00:37:27  ksekar
+<rdar://problem/3774635>: Cleanup DynDNS hostname registration code
+
 Revision 1.190  2004/08/18 17:35:41  ksekar
 <rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
 
@@ -1130,11 +1133,12 @@ enum
 	regState_DeregPending      = 4,     // dereg sent, reply not received
 	regState_DeregDeferred     = 5,     // dereg requested while in Pending state - send dereg AFTER registration is confirmed
 	regState_Cancelled         = 6,     // update not sent, reg. cancelled by client
-	regState_TargetChange      = 7,     // host name change update pending
+	regState_TargetChangeDeferred = 7,  // target change requested in the middle of some other operation - refresh upon completion
 	regState_Unregistered      = 8,     // not in any list
-	regState_Refresh           = 9,     // outstanding refresh message
+	regState_Refresh           = 9,     // outstanding refresh (or target change) message
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
-	regState_UpdatePending     = 11     // update in flight as result of mDNS_Update call
+	regState_UpdatePending     = 11,    // update in flight as result of mDNS_Update call
+	regState_NoTarget          = 12     // service registration pending registration of hostname
 	};
 
 typedef mDNSu16 regState_t;
@@ -1150,14 +1154,14 @@ typedef struct
     NATTraversalInfo *NATinfo; // NAT traversal context.  may be NULL
     mDNSBool     lease;    // dynamic update contains (should contain) lease option
     mDNSs32      expire;   // expiration of lease (-1 for static)  
-
+    domainname RegisteredTarget; // our previously registered target, in case we need to retransmit a target change refresh
     // uDNS_UpdateRecord support fields
     mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
     RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
     int          UpdateRDLen;  // length of above field
     mDNSRecordUpdateCallback *UpdateRDCallback; // client callback to free old rdata
 	} uDNS_RegInfo;
-
+	
 struct AuthRecord_struct
 	{
 	// For examples of how to set up this structure for use in mDNS_Register(),
@@ -1212,6 +1216,13 @@ struct AuthRecord_struct
 	// DO NOT ADD ANY MORE FIELDS HERE
 	};
 
+// Wrapper struct for Auth Records for higher-level code that cannot use the AuthRecord's ->next pointer field
+typedef struct ARListElem
+	{
+    struct ARListElem *next;
+    AuthRecord ar;          // Note: Must be last struct in field to accomodate oversized AuthRecords
+	} ARListElem;
+
 struct CacheRecord_struct
 	{
 	CacheRecord    *next;				// Next in list; first element of structure for efficiency reasons
@@ -1241,11 +1252,13 @@ typedef struct
 	mDNSu8 _extradata[MaximumRDSize-InlineCacheRDSize];		// Glue on the necessary number of extra bytes
 	} LargeCacheRecord;
 
-typedef struct
+typedef struct uDNS_HostnameInfo
 	{
-    AuthRecord RR_A;                          // Copy of address record (may be mapped NAT address)
-    domainname name;                          // The name registered
-	} uDNS_NetworkInterfaceInfo;
+    struct uDNS_HostnameInfo *next;
+    AuthRecord *ar;                           // registered address record
+    mDNSRecordCallback *StatusCallback;       // callback to deliver success or error code to client layer
+    const void *StatusContext;                // Client Context
+	} uDNS_HostnameInfo;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 	
@@ -1271,9 +1284,6 @@ struct NetworkInterfaceInfo_struct
 	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
 	AuthRecord RR_PTR;					// PTR (reverse lookup) record
 	AuthRecord RR_HINFO;
-
-    uDNS_NetworkInterfaceInfo *uDNS_info;  // Storage allocated by core may persist beyond life of NetworkInterfaceInfo,
-                                           // since we need to asynchronously deregister the A records
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
@@ -1569,12 +1579,15 @@ typedef struct
     AuthRecord       *RecordRegistrations;
     NATTraversalInfo *NATTraversals;
     mDNSu16          NextMessageID;
-    mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list
+    mDNSAddr         Servers[32];        
     mDNSAddr         Router;
-    domainname       UnicastHostname;           // global name for dynamic registration of address records
-    domainname       ServiceRegDomain;   // if set, all services that don't explicitly specify a domain upon registration will be
-                                         // registered in this domain.  if not set, .local will be used by default
-    struct uDNS_AuthInfo *AuthInfoList;  // list of domains required authentication for updates.  !!!KRS this shoudl be a hashtable
+    char             PrimaryIfName[256]; // Name of primary interface to be registered (e.g. "en0")
+    mDNSAddr         PrimaryIP;          // Address of primary interface
+    mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
+    domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
+    domainname       ServiceRegDomain;   // (going away w/ multi-user support)
+    struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates. 
+    uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
     } uDNS_GlobalInfo;
 
 struct mDNS_struct
@@ -1999,21 +2012,47 @@ typedef struct uDNS_AuthInfo
 extern mDNSs32  mDNSPlatformUTC(void);
 
 // Client Calls
-// mDNS_UpdateDomainRequiresAuthentication tells the core to authenticate (via TSIG with an HMAC_MD5 hash)
+//
+// mDNS_SetSecretForZone tells the core to authenticate (via TSIG with an HMAC_MD5 hash of the shared secret)
 // when dynamically updating a given zone (and its subdomains).  The key used in authentication must be in
 // domain name format.  The shared secret must be a base64 encoded string with the base64 parameter set to
 // true, or binary data with the base64 parameter set to false.  The length is the size of the secret in
 // bytes.  (A minimum size of 16 bytes (128 bits) is recommended for an MD5 hash as per RFC 2485).
-// The This routine is normally called once for each secure domain at startup, though it can be called at any time.
+// Calling this routine multiple times for a zone replaces previously entered values.  Call with a NULL key
+// to dissable authentication for the zone.
 
-// mDNS_ClearAuthenticationList clears from the core's internal structures all domains previously passed to
-// mDNS_UpdateDomainRequiresAuthentication.
+extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key, mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
+	
+// Hostname Configuration
 
-extern mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *zone, domainname *key,
-	mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
+// All hostnames advertised point to a single IP address, set via SetPrimaryInterface.  Invoking this routine
+// updates all existing hostnames to point to the new address.
+	
+// The current primary interface may be determined via GetPrimaryInterface, which is passed a buffer in which the IP
+// address is written and returns the interface name or NULL if no interface is set.
 
-extern void mDNS_ClearAuthenticationList(mDNS *m);
+// A hostname is added via AddDynDNSHostDomain, which registers a name of the form <computername>.<hostdomain>. and
+// points to the primary interface's IP address.
 
+// The status callback is invoked to convey success or failure codes - the callback should not modify the AuthRecord or free memory.
+// The record passed to the callback is the address record for the hostname.  The StatusContext pointer will be found in
+// this record's RecordContext field.
+
+// Added hostnames may be removed (deregistered) via mDNS_RemoveDynDNSHostDomain.
+
+// mDNS_SetDynDNSComputerName specifies the label to prepend to all hostnames.  This routine must be called prior to the
+// first call to AddDynDNSHostDomain.  Subsequent invokations of this routine causes all existing hostnames and SRV records
+// that point to them to be updated.  
+
+// Host domains added prior to specification of the primary interface address and computer name will be deferred until
+// these values are initialized.
+
+extern void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *domain, mDNSRecordCallback *StatusCallback, const void *StatusContext);
+extern void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain);
+extern void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel);
+extern void mDNS_SetPrimaryInterface(mDNS *m, const char *ifname, const mDNSAddr *ip);
+extern const char *mDNS_GetPrimaryInterface(mDNS *m, mDNSAddr *ip);
+	
 // Routines called by the core, exported by DNSDigest.c
 
 // Convert a base64 encoded key into a binary byte stream
@@ -2132,7 +2171,7 @@ extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 	
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
-// mDNS_SetFQDNs() is called once on startup (typically from mDNSPlatformInit())
+// mDNS_SetFQDN() is called once on startup (typically from mDNSPlatformInit())
 // and then again on each subsequent change of the host name.
 //
 // mDNS_RegisterInterface() is used by the platform support layer to inform mDNSCore of what
@@ -2165,7 +2204,7 @@ extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 // (This refers to heavyweight laptop-style sleep/wake that disables network access,
 // not lightweight second-by-second CPU power management modes.)
 
-extern void     mDNS_SetFQDNs(mDNS *const m, const domainname *newuname);
+extern void     mDNS_SetFQDN(mDNS *const m);
 extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.396  2004/08/25 00:37:27  ksekar
+<rdar://problem/3774635>: Cleanup DynDNS hostname registration code
+
 Revision 1.395  2004/08/18 17:21:18  ksekar
 Removed double-call of uDNS_AdvertiseInterface from mDNS_SetFQDNs()
 
@@ -3712,7 +3715,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 
 	if (sleepstate)
 		{
-		uDNS_SuspendLLQs(m);
+		uDNS_Sleep(m);
 		// Mark all the records we need to deregister and send them
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
@@ -3725,7 +3728,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		mDNSu32 slot;
 		CacheRecord *cr;
 
-		uDNS_RestartLLQs(m);
+		uDNS_Wake(m);
 
         // 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
@@ -5414,7 +5417,6 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
 
 	// Send dynamic update for non-linklocal IPv4 Addresses
-	uDNS_AdvertiseInterface(m, set);
 	mDNS_SetupResourceRecord(&set->RR_A,     mDNSNULL, set->InterfaceID, kDNSType_A,     kDefaultTTLforUnique, kDNSRecordTypeUnique,      mDNS_HostNameCallback, set);
 	mDNS_SetupResourceRecord(&set->RR_PTR,   mDNSNULL, set->InterfaceID, kDNSType_PTR,   kDefaultTTLforUnique, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	mDNS_SetupResourceRecord(&set->RR_HINFO, mDNSNULL, set->InterfaceID, kDNSType_HINFO, kDefaultTTLforUnique, kDNSRecordTypeUnique,      mDNSNULL, mDNSNULL);
@@ -5492,53 +5494,33 @@ mDNSlocal void DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (set->RR_HINFO.resrec.RecordType) mDNS_Deregister_internal(m, &set->RR_HINFO, mDNS_Dereg_normal);
 	}
 
-mDNSexport void mDNS_SetFQDNs(mDNS *const m, const domainname *newuname)
+mDNSexport void mDNS_SetFQDN(mDNS *const m)
 	{
-	mDNSBool mchanged, uchanged;
 	domainname newmname;
 	newmname.c[0] = 0;
+	NetworkInterfaceInfo *intf;
+	AuthRecord *rr;
 
-	if (!AppendDomainLabel(&newmname, &m->hostlabel))  { LogMsg("ERROR: mDNS_SetFQDNs: Cannot create MulticastHostname"); return; }
-	if (!AppendLiteralLabelString(&newmname, "local")) { LogMsg("ERROR: mDNS_SetFQDNs: Cannot create MulticastHostname"); return; }
+	if (!AppendDomainLabel(&newmname, &m->hostlabel))  { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
+	if (!AppendLiteralLabelString(&newmname, "local")) { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
+	if (SameDomainName(&m->MulticastHostname, &newmname)) { LogMsg("mDNS_SetFQDN - hostname unchanged"); return; }
 
 	mDNS_Lock(m);
-	
-	mchanged = !SameDomainName(&m->MulticastHostname, &newmname);
-	uchanged = !SameDomainName(&m->uDNS_info.UnicastHostname, newuname);
-	
-	if (mchanged || uchanged)
-		{
-		NetworkInterfaceInfo *intf;
-		AuthRecord *rr;
-		AssignDomainName(m->MulticastHostname, newmname);
-		AssignDomainName(m->uDNS_info.UnicastHostname, *newuname);
+	AssignDomainName(m->MulticastHostname, newmname);
 
-		// 1. Stop advertising our address records on all interfaces
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise)
-				{
-				if (mchanged) DeadvertiseInterface(m, intf);
-				if (uchanged) uDNS_DeadvertiseInterface(m, intf);
-				}
+	// 1. Stop advertising our address records on all interfaces
+	for (intf = m->HostInterfaces; intf; intf = intf->next)
+		if (intf->Advertise) DeadvertiseInterface(m, intf);
 
-		// 2. Start advertising our address records using the new name
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise)
-				{
-				if (mchanged) AdvertiseInterface(m, intf);
-				else if (uchanged) uDNS_AdvertiseInterface(m, intf); // AdvertiseInterface calls uDNS routine
-				}
+	// 2. Start advertising our address records using the new name
+	for (intf = m->HostInterfaces; intf; intf = intf->next)
+		if (intf->Advertise) { AdvertiseInterface(m, intf); }
 
-		// 3. Make sure that any SRV records (and the like) that reference our
-		// host name in their rdata get updated to reference this new host name
-		if (mchanged)
-			{
-			for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
-			for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
-			}
-		if (uchanged) uDNS_UpdateServiceTargets(m);
-		}
-
+	// 3. Make sure that any SRV records (and the like) that reference our
+	// host name in their rdata get updated to reference this new host name
+	for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
+	for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
+   
 	mDNS_Unlock(m);
 	}
 
@@ -5568,7 +5550,6 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 	else if (result == mStatus_NameConflict)
 		{
 		domainlabel oldlabel = m->hostlabel;
-		domainname  newuname;
 
 		// 1. First give the client callback a chance to pick a new name
 		if (m->MainCallback)
@@ -5584,10 +5565,7 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 		
 		// 3. Generate the FQDNs from the hostlabel,
 		// and make sure all SRV records, etc., are updated to reference our new hostname
-		newuname.c[0] = 0;
-		AppendDomainLabel(&newuname, &m->hostlabel);
-		AppendDomainName(&newuname, (domainname*)(m->uDNS_info.UnicastHostname.c + 1 + m->uDNS_info.UnicastHostname.c[0]));
-		mDNS_SetFQDNs(m, &newuname);
+		mDNS_SetFQDN(m);
 		LogMsg("Host Name %#s already in use; new name %#s selected for this host.", oldlabel.c, m->hostlabel.c);
 		}
 	else LogMsg("mDNS_HostNameCallback: Unknown error %d for registration of record %s", result,  rr->resrec.name.c);
@@ -5762,11 +5740,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 		}
 
 	// If we were advertising on this interface, deregister those address and reverse-lookup records now
-	if (set->Advertise)
-		{
-		DeadvertiseInterface(m, set);
-		uDNS_DeadvertiseInterface(m, set);
-		}
+	if (set->Advertise) DeadvertiseInterface(m, set);
+
 	// If we have any cache records received on this interface that went away, then re-verify them.
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
@@ -6274,6 +6249,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	
 	m->mDNS_shutdown = mDNStrue;
 
+	uDNS_Close(m);
 	rrcache_totalused = m->rrcache_totalused;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
@@ -6311,8 +6287,6 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 			}
 		}
-
-	uDNS_SuspendLLQs(m);
 
 	if (m->ResourceRecords) debugf("mDNS_Close: Sending final packets for deregistering records");
 	else debugf("mDNS_Close: No deregistering records remain");
