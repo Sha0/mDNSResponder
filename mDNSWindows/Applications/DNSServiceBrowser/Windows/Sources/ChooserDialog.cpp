@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.3  2003/10/09 19:50:40  bradley
+Sort service type list by description.
+
 Revision 1.2  2003/10/09 19:41:29  bradley
 Changed quit handling to go through normal close path so dialog is freed on quit. Integrated changes
 from Andrew van der Stock for the addition of an _rfb._tcp service type for a VNC Remote Framebuffer
@@ -148,9 +151,9 @@ static const KnownServiceEntry		kKnownServiceTable[] =
 	{ "_eppc._tcp.", 		"Remote AppleEvents", 				"eppc://", 	false }, 
 	{ "_ssh._tcp.", 		"Secure Shell (SSH)", 				"ssh://", 	false }, 
 	{ "_tftp._tcp.", 		"Trivial File Transfer (TFTP)", 	"tftp://", 	false }, 
+	{ "_rfb._tcp.",			"VNC Remote Framebuffer Server",	"vnc://",	false },
 	{ "_http._tcp.", 		"Web Server (HTTP)", 				"http://", 	true  }, 
 	{ "_smb._tcp.", 		"Windows File Sharing", 			"smb://", 	false }, 
-	{ "_rfb._tcp.",			"VNC Remote Framebuffer Server",	"vnc://",	false },
 	{ "_xserveraid._tcp.", 	"Xserve RAID",						"xsr://", 	false }, 
 	{ NULL,					NULL,								NULL,		false }, 
 };
