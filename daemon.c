@@ -211,6 +211,8 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 
 	if (status == MACH_SEND_TIMED_OUT)
 		{
+		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's enumeration reply\n", getpid(), x->port);
+		mDNS_StopGetDomains(m, question);
 		}
 
 	}
@@ -233,6 +235,9 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	status = DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0, 10);
 	if (status == MACH_SEND_TIMED_OUT)
 		{
+		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's local enumeration reply\n", getpid(), x->port);
+		err = mStatus_UnknownErr;
+		return(err);
 		}
 
 	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, zeroIPAddr, FoundDomain, x);
@@ -265,6 +270,8 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	status = DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0, 10);
 	if (status == MACH_SEND_TIMED_OUT)
 		{
+		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's browser reply\n", getpid(), x->port);
+		mDNS_StopBrowse(m, question);
 		}
 
 	}
@@ -316,6 +323,8 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0, 10);
 	if (status == MACH_SEND_TIMED_OUT)
 		{
+		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's resolver reply\n", getpid(), x->port);
+		mDNS_StopResolveService(m, query);
 		}
 	}
 
@@ -371,6 +380,9 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 
 		if (status == MACH_SEND_TIMED_OUT)
 			{
+#warning Should we really deregister a client who can't receive the "good" notification?
+			fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been deregistered\n", getpid(), x->port);
+			mDNS_DeregisterService(m, sr);
 			}
 		
 		}
@@ -383,6 +395,8 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 
 		if (status == MACH_SEND_TIMED_OUT)
 			{
+			fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been deregistered\n", getpid(), x->port);
+			mDNS_DeregisterService(m, sr);
 			}
 		
 		free(x);

@@ -98,6 +98,12 @@
 				6575FBE9022EAF5A00000109,
 				6575FC12022EB27800000109,
 				6575FBEB022EAF7200000109,
+				654BE64F02B63B93000001D1,
+				654BE65002B63B93000001D1,
+				654BE65102B63B93000001D1,
+				654BE65202B63B93000001D1,
+				654BE65302B63B93000001D1,
+				654BE65402B63B93000001D1,
 			);
 			isa = PBXGroup;
 			name = "mDNS Server Sources";
@@ -146,6 +152,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				6575FC02022EAFBA00000109,
+				654BE65502B63B93000001D1,
+				654BE65602B63B93000001D1,
+				654BE65702B63B93000001D1,
+				654BE65802B63B93000001D1,
+				654BE65902B63B93000001D1,
+				654BE65A02B63B93000001D1,
 			);
 			isa = PBXHeadersBuildPhase;
 		};
@@ -227,6 +239,78 @@
 //652
 //653
 //654
+		654BE64F02B63B93000001D1 = {
+			isa = PBXFileReference;
+			name = mDNSClientAPI.h;
+			path = mDNSCore/mDNSClientAPI.h;
+			refType = 4;
+		};
+		654BE65002B63B93000001D1 = {
+			isa = PBXFileReference;
+			name = mDNSDebug.h;
+			path = mDNSCore/mDNSDebug.h;
+			refType = 4;
+		};
+		654BE65102B63B93000001D1 = {
+			isa = PBXFileReference;
+			name = mDNSPlatformEnvironment.h;
+			path = mDNSCore/mDNSPlatformEnvironment.h;
+			refType = 4;
+		};
+		654BE65202B63B93000001D1 = {
+			isa = PBXFileReference;
+			name = mDNSPlatformFunctions.h;
+			path = mDNSCore/mDNSPlatformFunctions.h;
+			refType = 4;
+		};
+		654BE65302B63B93000001D1 = {
+			isa = PBXFileReference;
+			name = mDNSsprintf.h;
+			path = mDNSCore/mDNSsprintf.h;
+			refType = 4;
+		};
+		654BE65402B63B93000001D1 = {
+			isa = PBXFileReference;
+			name = mDNSvsprintf.h;
+			path = mDNSCore/mDNSvsprintf.h;
+			refType = 4;
+		};
+		654BE65502B63B93000001D1 = {
+			fileRef = 654BE64F02B63B93000001D1;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		654BE65602B63B93000001D1 = {
+			fileRef = 654BE65002B63B93000001D1;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		654BE65702B63B93000001D1 = {
+			fileRef = 654BE65102B63B93000001D1;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		654BE65802B63B93000001D1 = {
+			fileRef = 654BE65202B63B93000001D1;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		654BE65902B63B93000001D1 = {
+			fileRef = 654BE65302B63B93000001D1;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		654BE65A02B63B93000001D1 = {
+			fileRef = 654BE65402B63B93000001D1;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		65713D46025A293200000109 = {
 			isa = PBXFrameworkReference;
 			name = SystemConfiguration.framework;
