@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.10  2004/06/29 01:28:43  cheshire
+Fixes to compile properly on Linux
+
 Revision 1.9  2004/06/15 05:44:09  cheshire
 Add ability to use symbolic rrtype names like "ptr" and "srv" with "dns-sd -Q ..." command
 
@@ -68,7 +71,7 @@ Check in code to make command-line "dns-sd" testing tool
 
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
-#include <strings.h>		// For strlen(), strcpy(), bzero()
+#include <string.h>			// For strlen(), strcpy(), bzero()
 #include <unistd.h>         // For getopt() and optind
 #include <errno.h>          // For errno, EINTR
 #define BIND_8_COMPAT
@@ -391,8 +394,8 @@ int main(int argc, char **argv)
 					break;
 					}
 
-		case 'Q':	{
-					if (argc < optind+1) goto Fail;
+		case 'Q':	if (argc < optind+1) goto Fail;
+					{
 					uint16_t rrtype  = (argc <= optind+1) ? T_A  : GetRRType(argv[optind+1]);
 					uint16_t rrclass = (argc <= optind+2) ? C_IN : atoi(argv[optind+2]);
 					err = DNSServiceQueryRecord(&client, 0, 0, argv[optind+0], rrtype, rrclass, qr_reply, NULL);
