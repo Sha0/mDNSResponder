@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.70  2003/05/07 18:30:24  cheshire
+Fix signed/unsigned comparison warning
+
 Revision 1.69  2003/05/06 20:14:44  cheshire
 Change "tp" to "tv"
 
@@ -354,7 +357,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		if (errno != EWOULDBLOCK && numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) returned error %d errno %d", s, n, errno);
 		return(-1);
 		}
-	if (msg.msg_controllen < sizeof(struct cmsghdr))
+	if (msg.msg_controllen < (int)sizeof(struct cmsghdr))
 		{
 		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %d",
 			s, msg.msg_controllen, sizeof(struct cmsghdr));
