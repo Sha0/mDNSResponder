@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.281  2005/01/18 18:10:55  ksekar
+<rdar://problem/3954575> Use 10.4 resolver API to get search domains
+
 Revision 1.280  2005/01/17 22:48:52  ksekar
 No longer need to call MarkSearchListElem for registration domain
 
@@ -2258,18 +2261,18 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	return count;
 	}
 
-mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
+mDNSlocal mStatus GetDNSConfig(void **result)
 	{
 #ifndef MAC_OS_X_VERSION_10_4
 	static int MessageShown = 0;
-	(void)m;
 	if (!MessageShown) { MessageShown = 1; LogMsg("Note: Compiled without Apple-specific split DNS support"); }
-    return mStatus_UnsupportedErr;
+	*result = NULL;
+	return mStatus_UnsupportedErr;
 #else
-	int i;
-	dns_config_t *config = dns_configuration_copy();
 
-	if (!config)
+	*result = dns_configuration_copy();
+
+	if (!*result)
 		{
 		// When running on 10.3 (build 7xxx) and earlier, we don't expect dns_configuration_copy() to succeed
 		if (mDNSMacOSXSystemBuildNumber(NULL) < 8) return mStatus_UnsupportedErr;
@@ -2278,55 +2281,70 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 		// Apparently this is expected behaviour -- "not a bug".
 		// Accordingly, we suppress syslog messages for the first three minutes after boot.
 		// If we are still getting failures after three minutes, then we log them.
-		if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return mStatus_UnknownErr;
+		if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return mStatus_NoError;
 
-		LogMsg("RegisterSplitDNS: Error: dns_configuration_copy returned NULL");
+		LogMsg("GetDNSConfig: Error: dns_configuration_copy returned NULL");
 		return mStatus_UnknownErr;
 		}
-	mDNS_DeleteDNSServers(m);
-
-	LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
-	for (i = 0; i < config->n_resolver; i++)		
-		{
-		int j, n;
-		domainname d;
-		dns_resolver_t *r = config->resolver[i];
-		if (r->port == MulticastDNSPort.NotAnInteger) continue; // ignore configurations for .local
-		if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
-		else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
-
-		// check if this is the lowest-weighted server for the domain
-		for (j = 0; j < config->n_resolver; j++)
-			{
-			dns_resolver_t *p = config->resolver[j];
-			if (p->port == MulticastDNSPort.NotAnInteger) continue;
-			if (p->search_order <= r->search_order)
-				{
-				domainname tmp;				
-				if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
-				else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
-				if (SameDomainName(&d, &tmp))
-					if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
-				}
-			}
-		if (j < config->n_resolver) // found a lower-weighted resolver for this domain
-			{ debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j); continue; }
-		// we're using this resolver - find the first IPv4 address
-		for (n = 0; n < r->n_nameserver; n++)
-			{
-			if (r->nameserver[n]->sa_family == AF_INET)
-				{
-				mDNSAddr saddr;
-				if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
-				debugf("Adding dns server from slot %d %d.%d.%d.%d for domain %##s", i, saddr.ip.v4.b[0], saddr.ip.v4.b[1], saddr.ip.v4.b[2], saddr.ip.v4.b[3], d.c);
-				mDNS_AddDNSServer(m, &saddr, &d);
-				break;  // !!!KRS if we ever support round-robin servers, don't break here
-				}
-			}
-		}
-	dns_configuration_free(config);
 	return mStatus_NoError;
-#endif	
+#endif // MAC_OS_X_VERSION_10_4
+	}
+
+mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
+	{
+	(void)m;  // unused on 10.3 systems
+	void *v;
+	mStatus err = GetDNSConfig(&v);
+	if (!err && v)
+		{
+#ifdef MAC_OS_X_VERSION_10_4	
+		int i;
+		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
+		mDNS_DeleteDNSServers(m);
+		
+		LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
+		for (i = 0; i < config->n_resolver; i++)		
+			{
+			int j, n;
+			domainname d;
+			dns_resolver_t *r = config->resolver[i];
+			if (r->port == MulticastDNSPort.NotAnInteger) continue; // ignore configurations for .local
+			if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
+			else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
+			
+			// check if this is the lowest-weighted server for the domain
+			for (j = 0; j < config->n_resolver; j++)
+				{
+				dns_resolver_t *p = config->resolver[j];
+				if (p->port == MulticastDNSPort.NotAnInteger) continue;
+				if (p->search_order <= r->search_order)
+					{
+					domainname tmp;				
+					if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
+					else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
+					if (SameDomainName(&d, &tmp))
+						if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
+					}
+				}
+			if (j < config->n_resolver) // found a lower-weighted resolver for this domain
+				{ debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j); continue; }
+			// we're using this resolver - find the first IPv4 address
+			for (n = 0; n < r->n_nameserver; n++)
+				{
+				if (r->nameserver[n]->sa_family == AF_INET)
+					{
+					mDNSAddr saddr;
+					if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
+					debugf("Adding dns server from slot %d %d.%d.%d.%d for domain %##s", i, saddr.ip.v4.b[0], saddr.ip.v4.b[1], saddr.ip.v4.b[2], saddr.ip.v4.b[3], d.c);
+					mDNS_AddDNSServer(m, &saddr, &d);
+					break;  // !!!KRS if we ever support round-robin servers, don't break here
+					}
+				}
+			}
+		dns_configuration_free(config);
+#endif
+		}
+		return err;
 	}
 
 mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
@@ -2427,13 +2445,20 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 	}
 
-mDNSlocal void MarkSearchListElem(domainname *domain)
+mDNSlocal void MarkSearchListElem(const char *d)
 	{
 	SearchListElem *new, *ptr;
+	domainname domain;
 	
+	if (!MakeDomainNameFromDNSNameString(&domain, d))
+		{ LogMsg("ERROR: MarkSearchListElem - bad domain %##s", d); return; }
+
+	if (SameDomainName(&domain, &localdomain) || SameDomainName(&domain, &LocalReverseMapomain))
+		{ debugf("MarkSearchListElem - ignoring local domain %##s", domain.c); return; } 
+
 	// if domain is in list, mark as pre-existent (0)
 	for (ptr = SearchList; ptr; ptr = ptr->next)
-		if (SameDomainName(&ptr->domain, domain))
+		if (SameDomainName(&ptr->domain, &domain))
 			{
 			if (ptr->flag != 1) ptr->flag = 0;  // gracefully handle duplicates - if it is already marked as add, don't bump down to preexistent
 			break;
@@ -2445,26 +2470,40 @@ mDNSlocal void MarkSearchListElem(domainname *domain)
 		new = mallocL("MarkSearchListElem - SearchListElem", sizeof(SearchListElem));
 		if (!new) { LogMsg("ERROR: MarkSearchListElem - malloc"); return; }
 		bzero(new, sizeof(SearchListElem));
-		AssignDomainName(&new->domain, domain);
+		AssignDomainName(&new->domain, &domain);
 		new->flag = 1;  // add
 		new->next = SearchList;
 		SearchList = new;
 		}
 	}
 
-mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
+// Get the search domains via OS X resolver routines.  Returns mStatus_UnsupporterErr if compiled or run on 10.3 systems
+mDNSlocal mStatus GetSearchDomains(void)
 	{
-	struct ifaddrs *ifa = NULL;
+	void *v;
+	mStatus err = GetDNSConfig(&v);
+	if (!err && v)
+		{
+#ifdef MAC_OS_X_VERSION_10_4	
+		int i;
+		dns_config_t *config = v;
+		if (!config->n_resolver) return err;
+		dns_resolver_t *resolv = config->resolver[0];  // use the first slot for search domains
+
+		for (i = 0; i < resolv->n_search; i++) MarkSearchListElem(resolv->search[i]);
+		if (resolv->domain) MarkSearchListElem(resolv->domain);
+#endif
+		}
+	return err;
+	}
+
+// Get search domains from dynamic store - used as a fallback mechanism on 10.3 systems, if GetSearchDomains (above) fails.
+mDNSlocal void GetDSSearchDomains(CFDictionaryRef dict)
+	{
+	char buf[MAX_ESCAPED_DOMAIN_NAME];
 	int i, count;
-	domainname domain;
-	char  buf[MAX_ESCAPED_DOMAIN_NAME];
+
 	CFStringRef s;
-	SearchListElem *ptr, *prev, *freeSLPtr;
-	ARListElem *arList;
-	mStatus err;
-	
-	// step 1: mark each elem for removal (-1), unless we aren't passed a dictionary in which case we mark as preexistent
-	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = dict ? -1 : 0;
 
 	// get all the domains from "Search Domains" field of sharing prefs
 	if (dict)
@@ -2476,32 +2515,40 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			for (i = 0; i < count; i++)
 				{
 				s = CFArrayGetValueAtIndex(searchdomains, i);
-				if (!s) { LogMsg("ERROR: RegisterSearchDomains - CFArrayGetValueAtIndex"); break; }
+				if (!s) { LogMsg("ERROR: GetDSSearchDomains - CFArrayGetValueAtIndex"); break; }
 				if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
 					{
-					LogMsg("ERROR: RegisterSearchDomains - CFStringGetCString");
+					LogMsg("ERROR: GetDSSearchDomains - CFStringGetCString");
 					continue;
 					}
-				if (!MakeDomainNameFromDNSNameString(&domain, buf))
-					{
-					LogMsg("ERROR: RegisterSearchDomains - invalid search domain %s", buf);
-					continue;
-					}
-				MarkSearchListElem(&domain);
+				MarkSearchListElem(buf);
 				}
 			}
+
+		// get DHCP domain field
 		CFStringRef dname = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
 		if (dname)
 			{
 			if (CFStringGetCString(dname, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
-				{
-				if (MakeDomainNameFromDNSNameString(&domain, buf)) MarkSearchListElem(&domain);
-				else LogMsg("ERROR: RegisterSearchDomains - invalid domain %s", buf);
-				}
-			else LogMsg("ERROR: RegisterSearchDomains - CFStringGetCString");
+				MarkSearchListElem(buf);
+			else LogMsg("ERROR: GetDSSearchDomains - CFStringGetCString");
 			}
 		}
+	}
+
+mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
+	{
+	struct ifaddrs *ifa = NULL;
+	SearchListElem *ptr, *prev, *freeSLPtr;
+	ARListElem *arList;
+	mStatus err;
 	
+	// step 1: mark each elem for removal (-1), unless we aren't passed a dictionary in which case we mark as preexistent
+	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = dict ? -1 : 0;
+
+	// Get search domains from resolver library (available in OS X 10.4 and later), reverting to dynamic store on 10.3 systems
+	if (GetSearchDomains() == mStatus_UnsupportedErr) GetDSSearchDomains(dict);
+ 	
 	// Construct reverse-map search domains
 	ifa = myGetIfAddrs(1);
 	while (ifa)
@@ -2517,8 +2564,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
                                                              addr.ip.v4.b[2] & netmask.ip.v4.b[2],
                                                              addr.ip.v4.b[1] & netmask.ip.v4.b[1],
                                                              addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
-				MakeDomainNameFromDNSNameString(&domain, buffer);
-				MarkSearchListElem(&domain);
+				MarkSearchListElem(buffer);
 				}
 			}
 		ifa = ifa->ifa_next;
@@ -2757,13 +2803,13 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 			ifa = ifa->ifa_next;
 			}
 		}
-
+	
 	error:
 	CFRelease(dict);
 	}
 
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
-	{
+   {
 	LogOperation("***   Network Configuration Change   ***");
 	mDNSs32 utc = mDNSPlatformUTC();
 	MarkAllInterfacesInactive(m, utc);

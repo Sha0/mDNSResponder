@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.272  2005/01/18 18:10:55  ksekar
+<rdar://problem/3954575> Use 10.4 resolver API to get search domains
+
 Revision 1.271  2005/01/15 00:56:41  ksekar
 <rdar://problem/3954575> Unicast services don't disappear when logging
 out of VPN
@@ -2094,7 +2097,8 @@ extern const mDNSOpaque16 UpdateReqFlags;
 extern const mDNSOpaque16 UpdateRespFlags;
 
 #define localdomain (*(const domainname *)"\x5local")
-
+#define LocalReverseMapomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")
+	
 // ***************************************************************************
 #if 0
 #pragma mark - Inline functions
