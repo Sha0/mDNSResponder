@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: mDNSWin32.h,v 1.4 2003/03/22 02:57:44 cheshire Exp $
+	$Id: mDNSWin32.h,v 1.5 2003/04/29 00:06:09 cheshire Exp $
 
 	Contains:	Multicast DNS platform plugin for Win32.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.h,v $
+        Revision 1.5  2003/04/29 00:06:09  cheshire
+        <rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
+
         Revision 1.4  2003/03/22 02:57:44  cheshire
         Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
@@ -122,6 +125,7 @@ struct	mDNS_PlatformSupport_struct
 	HANDLE						cancelEvent;
 	HANDLE						quitEvent;
 	HANDLE						interfaceListChangedEvent;
+	HANDLE						wakeupEvent;
 	
 	SocketRef					interfaceListChangedSocketRef;
 	int							interfaceCount;

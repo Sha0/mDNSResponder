@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.9 2003/04/26 02:40:01 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.10 2003/04/29 00:06:09 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.10  2003/04/29 00:06:09  cheshire
+        <rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
+
         Revision 1.9  2003/04/26 02:40:01  cheshire
         Add void LogMsg( const char *format, ... )
 
@@ -145,7 +148,8 @@
 
 #define	kWaitListCancelEvent					WAIT_OBJECT_0
 #define	kWaitListInterfaceListChangedEvent		( WAIT_OBJECT_0 + 1 )
-#define	kWaitListFixedItemCount					2
+#define	kWaitListWakeupEvent					( WAIT_OBJECT_0 + 2 )
+#define	kWaitListFixedItemCount					3
 
 #if 0
 #pragma mark == Types ==
@@ -506,6 +510,10 @@ void	mDNSPlatformLock( const mDNS *const inMDNS )
 
 void	mDNSPlatformUnlock( const mDNS *const inMDNS )
 {
+	// Some API routine has been called. Wake up our main thread to can call mDNS_Execute():
+	// (a) to handle immediate work (if any) resulting from this API call
+	// (b) to calculate the next sleep time between now and the next interesting event
+	SetEvent( &inMDNS->p->wakeupEvent );
 	LeaveCriticalSection( &inMDNS->p->lock );
 }
 
@@ -804,6 +812,9 @@ static mStatus	SetupSynchronizationObjects( mDNS * const inMDNS )
 	inMDNS->p->interfaceListChangedEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
 	require_action( inMDNS->p->interfaceListChangedEvent, exit, err = mStatus_NoMemoryErr );
 	
+	inMDNS->p->wakeupEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	require_action( inMDNS->p->wakeupEvent, exit, err = mStatus_NoMemoryErr );
+	
 	err = mStatus_NoError;
 	
 exit:
@@ -839,6 +850,11 @@ static mStatus	TearDownSynchronizationObjects( mDNS * const inMDNS )
 	{
 		CloseHandle( inMDNS->p->interfaceListChangedEvent );
 		inMDNS->p->interfaceListChangedEvent = 0;
+	}
+	if( inMDNS->p->wakeupEvent )
+	{
+		CloseHandle( inMDNS->p->wakeupEvent );
+		inMDNS->p->wakeupEvent = 0;
 	}
 	if( inMDNS->p->lockInitialized )
 	{
@@ -1412,6 +1428,11 @@ static DWORD	WINAPI ProcessingThread( LPVOID inParam )
 				ProcessingThreadInterfaceListChanged( mdnsPtr );
 				break;
 			}
+			else if( result == kWaitListWakeupEvent )
+			{
+				// Another thread did an mDNSCore API call.
+				continue;
+			}
 			else
 			{
 				int		waitItemIndex;
@@ -1500,6 +1521,7 @@ static mStatus	ProcessingThreadSetupWaitList( mDNS *const inMDNS, HANDLE **outWa
 	
 	*waitItemPtr++ = inMDNS->p->cancelEvent;
 	*waitItemPtr++ = inMDNS->p->interfaceListChangedEvent;
+	*waitItemPtr++ = inMDNS->p->wakeupEvent;
 	
 	// Append all the dynamic wait items to the list.
 	
