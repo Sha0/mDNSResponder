@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.369  2004/04/09 16:34:00  cheshire
+Debugging code for later; currently unused
+
 Revision 1.368  2004/04/02 19:19:48  cheshire
 Add code to do optional logging of multi-packet KA list time intervals
 
@@ -1700,6 +1703,7 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 	{
 	if (rr->resrec.RecordType == kDNSRecordTypeUnique)
 		{
+		//LogMsg("ProbeCount %d Next %ld %s", rr->ProbeCount, (rr->LastAPTime + rr->ThisAPInterval) - m->timenow, GetRRDisplayString(m, rr));
 		if (m->NextScheduledProbe - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
 			m->NextScheduledProbe = (rr->LastAPTime + rr->ThisAPInterval);
 		}
@@ -2317,6 +2321,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->LastMCInterface = rr->ImmedAnswer;
 			}
 		SetNextAnnounceProbeTime(m, rr);
+		//if (rr->SendRNow) LogMsg("%-15.4a %s", &rr->v4Requester, GetRRDisplayString(m, rr));
 		}
 
 	// ***
