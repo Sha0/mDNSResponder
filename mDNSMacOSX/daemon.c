@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.147  2004/01/19 19:51:46  cheshire
+Fix compiler error (mixed declarations and code) on some versions of Linux
+
 Revision 1.146  2003/12/08 21:00:46  rpantos
 Changes to support mDNSResponder on Linux.
 
@@ -1494,10 +1497,10 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 		mDNSu32 SlotUsed = 0;
 		for (rr = mDNSStorage.rrcache_hash[slot]; rr; rr=rr->next)
 			{
+			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
 			CacheUsed++;
 			SlotUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
-			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
 			LogMsgNoIdent("%s%6ld %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfoOSX *)rr->resrec.InterfaceID)->ifa_name, GetRRDisplayString(&mDNSStorage, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.38  2004/01/19 19:51:46  cheshire
+Fix compiler error (mixed declarations and code) on some versions of Linux
+
 Revision 1.37  2003/12/08 21:11:42  rpantos
 Changes necessary to support mDNSResponder on Linux.
 
@@ -1590,10 +1593,10 @@ static void handle_removerecord_request(request_state *rstate)
 // remove a resource record registered via DNSServiceRegisterRecord()
 static mStatus remove_record(request_state *rstate)
     {
+    int shared;
     registered_record_entry *reptr, *prev = NULL;
     mStatus err = mStatus_UnknownErr;
     reptr = rstate->reg_recs;
-    int shared;
 
     while(reptr)
     	{

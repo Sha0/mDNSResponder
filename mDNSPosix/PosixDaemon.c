@@ -151,10 +151,10 @@ static void		DumpStateLog( mDNS *m)
 		mDNSu32 SlotUsed = 0;
 		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 			{
+			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
 			CacheUsed++;
 			SlotUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
-			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
 			LogMsgNoIdent("%s%6ld %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
 				((PosixNetworkInterface *)rr->resrec.InterfaceID)->intfName, GetRRDisplayString(m, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
