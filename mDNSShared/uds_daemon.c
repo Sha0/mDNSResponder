@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.137  2004/12/13 00:09:22  ksekar
+<rdar://problem/3915805> mDNSResponder error when quitting iChat
+
 Revision 1.136  2004/12/11 01:52:10  cheshire
 <rdar://problem/3785820> Support kDNSServiceFlagsAllowRemoteQuery for registering services too
 
@@ -1052,7 +1055,6 @@ static void connect_callback(void *info)
     bzero(rstate, sizeof(request_state));
     rstate->ts = t_morecoming;
     rstate->sd = sd;
-    //rstate->errfd = errpipe[1];
     
 	LogOperation("%3d: Adding FD", rstate->sd);
     if ( mStatus_NoError != udsSupportAddFDToEventLoop( sd, request_callback, rstate))
@@ -3210,11 +3212,9 @@ static int deliver_error(request_state *rstate, mStatus err)
         rstate->u_err = undeliv;
         return 0;
     }
-    if (rstate->errfd != rstate->sd) dnssd_close(rstate->errfd);
     return 0;
     
 error:
-    if (rstate->errfd != rstate->sd) dnssd_close(rstate->errfd);
     return -1;
     
     }
@@ -3283,7 +3283,7 @@ static void abort_request(request_state *rs)
 	LogOperation("%3d: Removing FD", rs->sd);
     udsSupportRemoveFDFromEventLoop(rs->sd);
     rs->sd = dnssd_InvalidSocket;
-    if (rs->errfd >= 0) dnssd_close(rs->errfd);
+    if (rs->errfd != rs->sd && rs->errfd != dnssd_InvalidSocket) dnssd_close(rs->errfd);
     rs->errfd = dnssd_InvalidSocket;
 
     // free pending replies
