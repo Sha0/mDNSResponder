@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.118  2003/11/14 19:18:34  cheshire
+Move AssignDomainName macro to mDNSEmbeddedAPI.h to that client layers can use it too
+
 Revision 1.117  2003/11/08 23:32:24  cheshire
 Gave name to anonymous struct, to avoid errors on certain compilers.
 (Thanks to ramaprasad.kr@hp.com for reporting this.)
@@ -1182,6 +1185,12 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 // in domain name labels, including unlikely characters like ascii nulls and even dots) all the mDNS APIs
 // work with DNS's native length-prefixed strings. For convenience in C, the following utility functions
 // are provided for converting between C's null-terminated strings and DNS's length-prefixed strings.
+
+// Assignment
+// A simple C structure assignment of a domainname can cause a protection fault by accessing unmapped memory,
+// because that object is defined to be 256 bytes long, but not all domainname objects are truly the full size.
+// This macro uses mDNSPlatformMemCopy() to make sure it only touches the actual bytes that are valid.
+#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC).c, (DST).c, DomainNameLength(&(SRC)))
 
 // Comparison functions
 extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
