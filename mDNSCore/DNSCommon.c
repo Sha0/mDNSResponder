@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.83  2005/01/27 22:57:55  cheshire
+Fix compile errors on gcc4
+
 Revision 1.82  2005/01/19 03:27:03  cheshire
 <rdar://problem/3961051> CPU Spin in mDNSResponder
 GetNextScheduledEvent() needs to check LocalRecordReady()
@@ -1286,7 +1289,7 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 		{
 		// check if space for opt/optlen
 		if (ptr + (2 * sizeof(mDNSu16)) > limit) goto space_err;
-		(mDNSu8 *)opt = rr->rdata->u.data + nput;
+		opt = (rdataOpt *)(rr->rdata->u.data + nput);
 		ptr = putVal16(ptr, opt->opt);
 		ptr = putVal16(ptr, opt->optlen);
 		nput += 2 * sizeof(mDNSu16);

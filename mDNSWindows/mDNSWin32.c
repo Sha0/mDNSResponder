@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.71  2005/01/27 22:57:57  cheshire
+Fix compile errors on gcc4
+
 Revision 1.70  2005/01/25 08:12:52  shersche
 <rdar://problem/3947417> Enable Unicast and add Dynamic DNS support.
 Bug #: 3947417
@@ -1282,7 +1285,7 @@ dDNSPlatformSetSecretForDomain( mDNS *m, const domainname * domain )
 	err = ConvertLsaStringToUTF8( secret, &converted );
 	require_noerr( err, exit );
 
-	mDNS_SetSecretForZone( m, d, d, (const mDNSu8*) converted, (mDNSu32) strlen( converted ) + 1, mDNStrue );
+	mDNS_SetSecretForZone( m, d, d, converted, (mDNSu32) strlen( converted ) + 1, mDNStrue );
 
 exit:
 

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.161  2005/01/27 22:57:56  cheshire
+Fix compile errors on gcc4
+
 Revision 1.160  2005/01/27 20:52:11  cheshire
 <rdar://problem/3972566> mDNSResponder leaks sockets for add/update/remove record calls
 
@@ -1082,7 +1085,7 @@ void udsserver_handle_configchange(void)
 static void connect_callback(void *info)
     {
     dnssd_sock_t sd;
-	int len;
+	unsigned int len;
 	unsigned long optval;
     dnssd_sockaddr_t cliaddr;
     request_state *rstate;
@@ -1591,7 +1594,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     put_short(answer->rrtype, &data);
     put_short(answer->rrclass, &data);
     put_short(answer->rdlength, &data);
-    put_rdata(answer->rdlength, (char *)&answer->rdata->u, &data);
+    put_rdata(answer->rdlength, answer->rdata->u.data, &data);
     put_long(AddRecord ? answer->rroriginalttl : 0, &data);
 
     append_reply(req, rep);

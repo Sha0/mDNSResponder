@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.275  2005/01/27 22:57:55  cheshire
+Fix compile errors on gcc4
+
 Revision 1.274  2005/01/19 21:01:54  ksekar
 <rdar://problem/3955355> uDNS needs to support subtype registration and browsing
 
@@ -2477,7 +2480,7 @@ typedef struct uDNS_AuthInfo
 // Calling this routine multiple times for a zone replaces previously entered values.  Call with a NULL key
 // to dissable authentication for the zone.
 
-extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
+extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
 
 // Hostname/Unicast Interface Configuration
 

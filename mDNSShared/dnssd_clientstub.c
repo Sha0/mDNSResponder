@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.44  2005/01/27 22:57:56  cheshire
+Fix compile errors on gcc4
+
 Revision 1.43  2005/01/27 00:02:29  cheshire
 <rdar://problem/3947461> Handle case where client runs before daemon has finished launching
 
@@ -360,7 +363,8 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
     dnssd_sockaddr_t caddr, daddr;  // (client and daemon address structs)
     char *data = (char *)msg + sizeof(ipc_msg_hdr);
     dnssd_sock_t listenfd = dnssd_InvalidSocket, errsd = dnssd_InvalidSocket;
-	int ret, len = sizeof(caddr);
+	int ret;
+	unsigned int len = sizeof(caddr);
     DNSServiceErrorType err = kDNSServiceErr_Unknown;
 
     if (!hdr || sdr->sockfd < 0) return kDNSServiceErr_Unknown;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.183  2005/01/27 22:57:55  cheshire
+Fix compile errors on gcc4
+
 Revision 1.182  2005/01/25 18:55:05  ksekar
 Shortened log message
 
@@ -897,7 +900,7 @@ mDNSlocal void DeleteAuthInfoForZone(uDNS_GlobalInfo *u, const domainname *zone)
 		}
 	}
 
-mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64)
+mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret, mDNSu32 ssLen, mDNSBool base64)
 	{
 	uDNS_AuthInfo *info;
 	mDNSu8 keybuf[1024];
@@ -918,7 +921,7 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const 
 
 	if (base64)
 		{
-		keylen = DNSDigest_Base64ToBin((const char*)sharedSecret, keybuf, 1024);
+		keylen = DNSDigest_Base64ToBin(sharedSecret, keybuf, 1024);
 		if (keylen < 0)
 			{
 			LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication - could not convert shared secret from base64");
@@ -928,7 +931,7 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const 
 			}
 		DNSDigest_ConstructHMACKey(info, keybuf, (mDNSu32)keylen);
 		}
-	else DNSDigest_ConstructHMACKey(info, sharedSecret, ssLen);
+	else DNSDigest_ConstructHMACKey(info, (mDNSu8*)sharedSecret, ssLen);
 
     // link into list
 	info->next = m->uDNS_info.AuthInfoList;
@@ -1539,7 +1542,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		LogMsg("HostnameCallback: Error %ld for registration of %##s IP %d.%d.%d.%d", result, rr->resrec.name->c, ip[0], ip[1], ip[2], ip[3]);
 		if (!hi) { ufree(rr); return; }
 		if (hi->ar->uDNS_info.state != regState_Unregistered) LogMsg("Error: HostnameCallback invoked with error code for record not in regState_Unregistered!");
-		(const void *)rr->RecordContext = hi->StatusContext;
+		rr->RecordContext = (void *)hi->StatusContext;
 		if (hi->StatusCallback)
 			hi->StatusCallback(m, rr, result); // client may NOT make API calls here
 		rr->RecordContext = (void *)hi;
@@ -1552,7 +1555,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	// Deliver success to client
 	if (!hi) { LogMsg("HostnameCallback invoked with orphaned address record"); return; }
 	LogMsg("Registered hostname %##s IP %d.%d.%d.%d", rr->resrec.name->c, ip[0], ip[1], ip[2], ip[3]);
-	(const void *)rr->RecordContext = hi->StatusContext;
+	rr->RecordContext = (void *)hi->StatusContext;
 	if (hi->StatusCallback)
 		hi->StatusCallback(m, rr, result); // client may NOT make API calls here
 	rr->RecordContext = (void *)hi;

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.30  2005/01/27 22:57:56  cheshire
+Fix compile errors on gcc4
+
 Revision 1.29  2004/12/22 00:13:50  ksekar
 <rdar://problem/3873993> Change version, port, and polling interval for LLQ
 
@@ -302,7 +305,7 @@ mDNSlocal void PrintLog(const char *buffer)
 // Verbose Logging (conditional on -v option)
 mDNSlocal void VLog(const char *format, ...)
 	{
-   	unsigned char buffer[512];
+   	char buffer[512];
 	va_list ptr;
 
 	if (!verbose) return;
@@ -315,7 +318,7 @@ mDNSlocal void VLog(const char *format, ...)
 // Unconditional Logging
 mDNSlocal void Log(const char *format, ...)
 	{
-   	unsigned char buffer[512];
+   	char buffer[512];
 	va_list ptr;
 
 	va_start(ptr,format);
@@ -445,7 +448,7 @@ mDNSlocal PktMsg *ReadTCPMsg(int sd, PktMsg *storage)
 	int nread, allocsize;
 	mDNSu16 msglen = 0;	
 	PktMsg *pkt = NULL;
-	int srclen;
+	unsigned int srclen;
 	
 	nread = my_recv(sd, &msglen, sizeof(msglen));
 	if (nread < 0) { LogErr("TCPRequestForkFn", "recv"); goto error; }
@@ -654,7 +657,7 @@ mDNSlocal mDNSu8 *PutUpdateSRV(DaemonInfo *d, PktMsg *pkt, mDNSu8 *ptr, char *re
 		rr.resrec.rdata->u.srv.target.c[0] = '\0';
 	
 	MakeDomainNameFromDNSNameString(rr.resrec.name, regtype);
-	strcpy(rr.resrec.name->c + strlen(rr.resrec.name->c), d->zone.c);
+	AppendDomainName(rr.resrec.name, &d->zone);
 	VLog("%s  %s", registration ? "Registering SRV record" : "Deleting existing RRSet",
 		 GetRRDisplayString_rdb(&rr.resrec, &rr.resrec.rdata->u, buf));
 	if (registration) ptr = PutResourceRecord(&pkt->msg, ptr, &pkt->msg.h.mDNS_numUpdates, &rr.resrec);
@@ -738,7 +741,7 @@ mDNSlocal int SetUpdateSRV(DaemonInfo *d)
 mDNSlocal int ReadAuthKey(int argc, char *argv[], DaemonInfo *d)
 	{
 	uDNS_AuthInfo *auth = NULL;
-	char keybuf[512];
+	unsigned char keybuf[512];
 	mDNSs32 keylen;
 	
 	auth = malloc(sizeof(*auth));
@@ -1825,7 +1828,7 @@ mDNSlocal int RecvUDPRequest(int sd, DaemonInfo *d)
 	{
 	UDPRequestArgs *req;
 	pthread_t tid;
-	int clisize = sizeof(req->cliaddr);
+	unsigned int clisize = sizeof(req->cliaddr);
 	
 	req = malloc(sizeof(UDPRequestArgs));
 	if (!req) { LogErr("RecvUDPRequest", "malloc"); return -1; }
@@ -1892,7 +1895,7 @@ mDNSlocal int RecvTCPRequest(int sd, DaemonInfo *d)
 	{
 	TCPRequestArgs *req;
 	pthread_t tid;
-	int clilen = sizeof(req->cliaddr);
+	unsigned int clilen = sizeof(req->cliaddr);
 	
 	req = malloc(sizeof(TCPRequestArgs));
 	if (!req) { LogErr("RecvTCPRequest", "malloc"); return -1; }
