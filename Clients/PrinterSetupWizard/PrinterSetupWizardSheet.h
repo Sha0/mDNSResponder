@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.2  2004/06/24 20:12:07  shersche
+Remove reference to Rendezvous in source code
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:36:57  rpantos
 First checked in
 
@@ -50,7 +54,7 @@ class CPrinterSetupWizardSheet : public CPropertySheet
 
 public:
 
-	struct RendezvousException
+	struct WizardException
 	{
 		CString	text;
 		CString	caption;

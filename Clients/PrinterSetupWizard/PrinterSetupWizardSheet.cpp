@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.3  2004/06/24 20:12:07  shersche
+Remove reference to Rendezvous in source code
+Submitted by: herscher
+
 Revision 1.2  2004/06/23 17:58:21  shersche
 <rdar://problem/3701837> eliminated memory leaks on exit
 <rdar://problem/3701926> installation of a printer that is already installed results in a no-op
@@ -452,7 +456,7 @@ exit:
 
 	if (err != kNoErr)
 	{
-		RendezvousException exc;
+		WizardException exc;
 
 		exc.text.LoadString(IDS_NO_RENDEZVOUS_SERVICE_TEXT);
 		exc.caption.LoadString(IDS_NO_RENDEZVOUS_SERVICE_CAPTION);

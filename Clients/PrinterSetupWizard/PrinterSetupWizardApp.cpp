@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardApp.cpp,v $
+Revision 1.2  2004/06/24 20:12:08  shersche
+Remove reference to Rendezvous in source code
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:36:57  rpantos
 First checked in
 
@@ -99,7 +103,7 @@ BOOL CPrinterSetupWizardApp::InitInstance()
 			//  dismissed with Cancel
 		}
 	}
-	catch (CPrinterSetupWizardSheet::RendezvousException & exc)
+	catch (CPrinterSetupWizardSheet::WizardException & exc)
 	{
 		MessageBox(NULL, exc.text, exc.caption, MB_OK|MB_ICONEXCLAMATION);
 	}
