@@ -77,6 +77,9 @@ typedef	int	pid_t;
 #define	getpid	_getpid
 #define	strcasecmp	_stricmp
 #define snprintf _snprintf
+#if defined(interface)
+#	undef interface
+#endif
 #else
 #include <sys/time.h>		// For struct timeval
 #include <unistd.h>         // For getopt() and optind
