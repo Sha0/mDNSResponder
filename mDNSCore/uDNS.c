@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.114  2004/11/13 02:32:47  ksekar
+<rdar://problem/3868216> LLQ mobility fragile on non-primary interface
+- fixed incorrect state comparison in CheckQueries
+
 Revision 1.113  2004/11/13 02:29:52  ksekar
 <rdar://problem/3878386> LLQ refreshes not reliable
 
@@ -4039,7 +4043,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq->state != LLQ_Poll)
 			{
-			if (llq->state >= LLQ_InitialRequest && llq->state < LLQ_Established)
+			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Established)
 				{
 				if (llq->retry - timenow < 0)				
 					{
