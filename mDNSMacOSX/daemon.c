@@ -36,6 +36,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.205  2004/10/28 02:21:01  cheshire
+<rdar://problem/3856500> Improve mDNSResponder signal handling
+Added SIGHUP as a way to do a forced restart of the daemon (better than kill -9)
+Added SIGUSR1 to simulate a network change notification from System Configuration Framework
+
 Revision 1.204  2004/10/27 01:57:21  cheshire
 Add check of  m->p->InterfaceList
 
@@ -465,8 +470,7 @@ static CacheRecord rrcachestorage[RR_CACHE_SIZE];
 
 static const char kmDNSBootstrapName[] = "com.apple.mDNSResponderRestart";
 static mach_port_t client_death_port = MACH_PORT_NULL;
-static mach_port_t exit_m_port       = MACH_PORT_NULL;
-static mach_port_t info_m_port       = MACH_PORT_NULL;
+static mach_port_t signal_port       = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
 
 // mDNS Mach Message Timeout, in milliseconds.
@@ -1922,12 +1926,8 @@ mDNSlocal kern_return_t destroyBootstrapService()
 	return bootstrap_register(server_priv_port, (char*)kmDNSBootstrapName, MACH_PORT_NULL);
 	}
 
-mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+mDNSlocal void ExitCallback(int signal)
 	{
-	(void)port;		// Unused
-	(void)msg;		// Unused
-	(void)size;		// Unused
-	(void)info;		// Unused
 #if 0
 	CacheRecord *rr;
 	int rrcache_active = 0;
@@ -1938,7 +1938,7 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	LogMsgIdent(mDNSResponderVersionString, "stopping");
 
 	debugf("ExitCallback: destroyBootstrapService");
-	if (!mDNS_DebugMode)
+	if (!mDNS_DebugMode && signal != SIGHUP)
 		destroyBootstrapService();
 
 	debugf("ExitCallback: Aborting MIG clients");
@@ -1958,27 +1958,25 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	}
 
 // Send a mach_msg to ourselves (since that is signal safe) telling us to cleanup and exit
-mDNSlocal void HandleSIGTERM(int signal)
+mDNSlocal void HandleSIG(int signal)
 	{
-	(void)signal;		// Unused
 	debugf(" ");
-	debugf("SIGINT/SIGTERM");
+	debugf("HandleSIG %d", signal);
 	mach_msg_header_t header;
 	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
-	header.msgh_remote_port = exit_m_port;
+	header.msgh_remote_port = signal_port;
 	header.msgh_local_port = MACH_PORT_NULL;
 	header.msgh_size = sizeof(header);
-	header.msgh_id = 0;
+	header.msgh_id = signal;
 	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
-		{ LogMsg("HandleSIGTERM: mach_msg_send failed; Exiting immediately."); exit(-1); }
+		{
+		LogMsg("HandleSIG %d: mach_msg_send failed", signal);
+		if (signal == SIGHUP || signal == SIGTERM || signal == SIGINT) exit(-1);
+		}
 	}
 
-mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+mDNSlocal void INFOCallback(void)
 	{
-	(void)port;		// Unused
-	(void)msg;		// Unused
-	(void)size;		// Unused
-	(void)info;		// Unused
 	DNSServiceDomainEnumeration *e;
 	DNSServiceBrowser           *b;
 	DNSServiceResolver          *l;
@@ -2028,17 +2026,22 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
 	}
 
-mDNSlocal void HandleSIGINFO(int signal)
+mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
-	(void)signal;		// Unused
-	mach_msg_header_t header;
-	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
-	header.msgh_remote_port = info_m_port;
-	header.msgh_local_port = MACH_PORT_NULL;
-	header.msgh_size = sizeof(header);
-	header.msgh_id = 0;
-	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
-		LogMsg("HandleSIGINFO: mach_msg_send failed; No state log will be generated.");
+	(void)port;		// Unused
+	(void)size;		// Unused
+	(void)info;		// Unused
+	mach_msg_header_t *m = (mach_msg_header_t *)msg;
+	LogMsg("SignalCallback: signal %d", m->msgh_id);
+	switch(m->msgh_id)
+		{
+		case SIGHUP:  
+		case SIGINT:  
+		case SIGTERM: ExitCallback(m->msgh_id); break;
+		case SIGINFO: INFOCallback(); break;
+		case SIGUSR1: mDNSMacOSXNetworkChanged(NULL, NULL, &mDNSStorage); break;
+		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id);
+		}
 	}
 
 mDNSlocal kern_return_t mDNSDaemonInitialize(void)
@@ -2046,14 +2049,12 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	mStatus            err;
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
 	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
-	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
-	CFMachPortRef      i_port = CFMachPortCreate(NULL, INFOCallback, NULL, NULL);
+	CFMachPortRef      i_port = CFMachPortCreate(NULL, SignalCallback, NULL, NULL);
 	mach_port_t        m_port = CFMachPortGetPort(s_port);
 	char *MachServerName = mDNSMacOSXSystemBuildNumber(NULL) < 7 ? "DNSServiceDiscoveryServer" : "com.apple.mDNSResponder";
 	kern_return_t      status = bootstrap_register(bootstrap_port, MachServerName, m_port);
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
-	CFRunLoopSourceRef e_rls  = CFMachPortCreateRunLoopSource(NULL, e_port, 0);
 	CFRunLoopSourceRef i_rls  = CFMachPortCreateRunLoopSource(NULL, i_port, 0);
 
 	if (status)
@@ -2073,16 +2074,13 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);
-	exit_m_port = CFMachPortGetPort(e_port);
-	info_m_port = CFMachPortGetPort(i_port);
+	signal_port = CFMachPortGetPort(i_port);
 
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), e_rls, kCFRunLoopDefaultMode);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), i_rls, kCFRunLoopDefaultMode);
 	CFRelease(d_rls);
 	CFRelease(s_rls);
-	CFRelease(e_rls);
 	CFRelease(i_rls);
 	if (mDNS_DebugMode) printf("Service registered with Mach Port %d\n", m_port);
 	err = udsserver_init();
@@ -2165,9 +2163,11 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcmp(argv[i], "-d")) mDNS_DebugMode = mDNStrue;
 		}
 
-	signal(SIGINT,  HandleSIGTERM);		// SIGINT is what you get for a Ctrl-C
-	signal(SIGTERM, HandleSIGTERM);
-	signal(SIGINFO, HandleSIGINFO);
+	signal(SIGHUP,  HandleSIG);		// (Debugging) Exit cleanly and let mach_init restart us (for debugging)
+	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
+	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
+	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
+	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
 
 	// Register the server with mach_init for automatic restart only during normal (non-debug) mode
     if (!mDNS_DebugMode) registerBootstrapService();
