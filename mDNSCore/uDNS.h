@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.10  2004/06/11 05:45:03  ksekar
+<rdar://problem/3682397>: Change SRV names for LLQ/Update port lookups
+
 Revision 1.9  2004/06/01 23:46:50  ksekar
 <rdar://problem/3675149>: DynDNS: dynamically look up LLQ/Update ports
 
@@ -67,8 +70,8 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 //!!!KRS these must go away once we have notifications
 #define UNICAST_POLL_INTERVAL 20         // polling rate for queries !!!KRS should go away w/ notifications
 #define NO_GOODBYE                       // will we receive goodbye packets from the server?
-#define UPDATE_PORT_NAME "_update._dns-sd._udp."
-#define LLQ_PORT_NAME "_llq._dns-sd._udp"
+#define UPDATE_PORT_NAME "_dns-update._udp."
+#define LLQ_PORT_NAME "_dns-llq._udp"
 	
 // Entry points into unicast-specific routines
 
