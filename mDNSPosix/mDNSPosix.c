@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.71  2005/02/26 01:29:12  cheshire
+Ignore multicasts accidentally delivered to our unicast receiving socket
+
 Revision 1.70  2005/02/04 00:39:59  cheshire
 Move ParseDNSServers() from PosixDaemon.c to mDNSPosix.c so all Posix client layers can use it
 
@@ -501,16 +504,21 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 		// different capabilities of our target platforms.
 
 		reject = mDNSfalse;
-		if (intf)
+		if (!intf)
+			{
+			// Ignore multicasts accidentally delivered to our unicast receiving socket
+			if (mDNSAddrIsDNSMulticast(&destAddr)) packetLen = -1;
+			}
+		else
 			{
 			if      ( packetInfo.ipi_ifname[0] != 0 ) reject = (strcmp(packetInfo.ipi_ifname, intf->intfName) != 0);
 			else if ( packetInfo.ipi_ifindex != -1 )  reject = (packetInfo.ipi_ifindex != intf->index);
 	
 			if (reject)
 				{
-				verbosedebugf("SocketDataReady ignored a packet from %#a to %#a on interface %s/%d expecting %#a/%s/%d",
+				verbosedebugf("SocketDataReady ignored a packet from %#a to %#a on interface %s/%d expecting %#a/%s/%d/%d",
 					&senderAddr, &destAddr, packetInfo.ipi_ifname, packetInfo.ipi_ifindex,
-					&intf->coreIntf.ip, intf->intfName, intf->index);
+					&intf->coreIntf.ip, intf->intfName, intf->index, skt);
 				packetLen = -1;
 				num_pkts_rejected++;
 				if (num_pkts_rejected > (num_pkts_accepted + 1) * (num_registered_interfaces + 1) * 2)
@@ -524,8 +532,8 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 				}
 			else
 				{
-				verbosedebugf("SocketDataReady got a packet from %#a to %#a on interface %#a/%s/%d",
-					&senderAddr, &destAddr, &intf->coreIntf.ip, intf->intfName, intf->index);
+				verbosedebugf("SocketDataReady got a packet from %#a to %#a on interface %#a/%s/%d/%d",
+					&senderAddr, &destAddr, &intf->coreIntf.ip, intf->intfName, intf->index, skt);
 				num_pkts_accepted++;
 				}
 			}
@@ -732,7 +740,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 	assert(*sktPtr == -1);
 
 	// Open the socket...
-	if       (intfAddr->sa_family == AF_INET) *sktPtr = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if      (intfAddr->sa_family == AF_INET ) *sktPtr = socket(PF_INET,  SOCK_DGRAM, IPPROTO_UDP);
 #if HAVE_IPV6
 	else if (intfAddr->sa_family == AF_INET6) *sktPtr = socket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 #endif
