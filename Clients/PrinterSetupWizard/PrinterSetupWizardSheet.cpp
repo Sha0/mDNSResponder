@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.29  2005/02/14 20:48:37  shersche
+<rdar://problem/4003710> Default pdl key to "application/postscript"
+
 Revision 1.28  2005/02/14 20:37:53  shersche
 <rdar://problem/4003944> Populate comment field with the model name that users see in the wizard UI.
 
@@ -1522,6 +1525,10 @@ CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize
 	// <rdar://problem/3987680> Default to queue "lp"
 
 	qname = L"lp";
+
+	// <rdar://problem/4003710> Default pdl key to be "application/postscript"
+
+	service->pdl = L"application/postscript";
 
 	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "rp", &len ) ) != NULL )
 	{
