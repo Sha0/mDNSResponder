@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.8  2004/04/07 01:19:04  cheshire
+Hash slot value should be unsigned
+
 Revision 1.7  2004/02/14 06:34:57  cheshire
 Use LogMsg instead of fprintf( stderr
 
@@ -150,7 +153,7 @@ static void	ParseCmdLinArgs( int argc, char **argv)
 static void		DumpStateLog( mDNS *m)
 // Dump a little log of what we've been up to.
 {
-	mDNSs32 slot;
+	mDNSu32 slot;
 	CacheRecord *rr;
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
 	mDNSs32 now = mDNSPlatformTimeNow();

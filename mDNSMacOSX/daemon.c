@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.161  2004/04/07 01:20:04  cheshire
+Hash slot value should be unsigned
+
 Revision 1.160  2004/04/06 19:51:24  cheshire
 <rdar://problem/3605898> mDNSResponder will not launch if "nobody" user doesn't exist.
 After more discussion, we've decided to use userid -2 if "nobody" user doesn't exist.
@@ -414,7 +417,7 @@ static void validatelists(mDNS *const m)
 	AuthRecord                  *rr;
 	CacheRecord                 *cr;
 	DNSQuestion                 *q;
-	mDNSs32 slot;
+	mDNSu32 slot;
 	
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
 		if (e->ClientMachPort == 0 || e->ClientMachPort == (mach_port_t)~0)
@@ -1582,7 +1585,7 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	DNSServiceBrowser           *b;
 	DNSServiceResolver          *l;
 	DNSServiceRegistration      *r;
-	mDNSs32 slot;
+	mDNSu32 slot;
 	CacheRecord *rr;
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
 	mDNSs32 now = mDNSPlatformTimeNow();
