@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.114  2003/08/29 19:44:15  cheshire
+<rdar://problem/3400967> Traffic reduction: Eliminate synchronized QUs when a new service appears
+1. Use m->RandomQueryDelay to impose a random delay in the range 0-500ms on queries
+   that already have at least one unique answer in the cache
+2. For these queries, go straight to QM, skipping QU
+
 Revision 1.113  2003/08/21 19:31:58  cheshire
 Cosmetic: Swap order of fields
 
@@ -971,6 +977,7 @@ struct mDNS_struct
 	mDNSs32  NextScheduledProbe;		// Next time to probe for new authoritative record
 	mDNSs32  NextScheduledResponse;		// Next time to send authoritative record(s) in responses
 	mDNSs32  ExpectUnicastResponse;		// Set when we send a query with the kDNSQClass_UnicastResponse bit set
+	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
 	mDNSBool SendDeregistrations;		// Set if we need to send deregistrations (immediately)
 	mDNSBool SendImmediateAnswers;		// Set if we need to send answers (immediately -- or as soon as SuppressSending clears)
 	mDNSBool SleepState;				// Set if we're sleeping (send no more packets)

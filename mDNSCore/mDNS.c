@@ -44,6 +44,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.297  2003/08/29 19:44:15  cheshire
+<rdar://problem/3400967> Traffic reduction: Eliminate synchronized QUs when a new service appears
+1. Use m->RandomQueryDelay to impose a random delay in the range 0-500ms on queries
+   that already have at least one unique answer in the cache
+2. For these queries, go straight to QM, skipping QU
+
 Revision 1.296  2003/08/29 19:08:21  cheshire
 <rdar://problem/3400986> Traffic reduction: Eliminate huge KA lists after wake from sleep
 Known answers are no longer eligible to go in the KA list if they are more than half-way to their expiry time.
@@ -4159,6 +4165,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 	if (ShouldQueryImmediately && m->CurrentQuestion == q)
 		{
+		q->ThisQInterval = InitialQuestionInterval;
 		q->LastQTime = m->timenow - q->ThisQInterval;
 		m->NextScheduledQuery = m->timenow;
 		}
@@ -4487,6 +4494,8 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				m->NextScheduledResponse = m->timenow + mDNSPlatformOneSecond;
 				}
 			}
+
+		m->RandomQueryDelay = 0;	// Clear m->RandomQueryDelay, ready to pick a new different value, when necessary
 		}
 
 	// Note about multi-threaded systems:
@@ -5595,10 +5604,13 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			LogMsg("Attempt to start query with invalid qname %##s %s", question->qname.c, DNSTypeName(question->qtype));
 			return(mStatus_Invalid);
 			}
+
+		if (!m->RandomQueryDelay) m->RandomQueryDelay = 1 + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
+
 		question->next           = mDNSNULL;
 		question->qnamehash      = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
-		question->ThisQInterval  = InitialQuestionInterval;  // MUST be > zero for an active question
-		question->LastQTime      = m->timenow;
+		question->ThisQInterval  = InitialQuestionInterval * 2;				// MUST be > zero for an active question
+		question->LastQTime      = m->timenow - m->RandomQueryDelay;	// Avoid inter-machine synchronization
 		question->RecentAnswers  = 0;
 		question->CurrentAnswers = 0;
 		question->LargeAnswers   = 0;
@@ -6782,6 +6794,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NextScheduledProbe      = timenow + 0x78000000;
 	m->NextScheduledResponse   = timenow + 0x78000000;
 	m->ExpectUnicastResponse   = timenow + 0x78000000;
+	m->RandomQueryDelay        = 0;
 	m->SendDeregistrations     = mDNSfalse;
 	m->SendImmediateAnswers    = mDNSfalse;
 	m->SleepState              = mDNSfalse;
