@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.30  2003/11/20 02:10:55  ksekar
+Bug #: <rdar://problem/3486643>: cleanup DNSServiceAdd/RemoveRecord
+
 Revision 1.29  2003/11/14 21:18:32  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -115,6 +118,13 @@ typedef struct registered_record_entry
     AuthRecord *rr;
     struct registered_record_entry *next;
     } registered_record_entry;
+    
+typedef struct extra_record_entry
+    {
+    int key;
+    ExtraResourceRecord extra;
+    struct extra_record_entry *next;
+    } extra_record_entry;
 
 typedef struct registered_service
     {
@@ -126,6 +136,7 @@ typedef struct registered_service
     ServiceRecordSet *srs;
     struct request_state *request;
     AuthRecord *subtypes;
+    extra_record_entry *extras;
     } registered_service;
     
 typedef struct 
@@ -299,6 +310,8 @@ static void unlink_request(request_state *rs);
 static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void resolve_termination_callback(void *context);
 static int validate_message(request_state *rstate);
+static mStatus remove_extra_rr_from_service(request_state *rstate);
+static mStatus remove_record(request_state *rstate);
 
 
 // initialization, setup/teardown functions
@@ -1241,7 +1254,7 @@ malloc_error:
 static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
     {
     mStatus err;
-    ExtraResourceRecord *extra;
+    extra_record_entry *extra;
     registered_service *r_srv = srs->ServiceContext;
     request_state *rs = r_srv->request;
 
@@ -1268,10 +1281,10 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
             }
         else 
             {
-            while (r_srv->srs->Extras)
+            while (r_srv->extras)
                 {
-                extra = r_srv->srs->Extras;
-                r_srv->srs->Extras = r_srv->srs->Extras->next;
+                extra = r_srv->extras;
+                r_srv->extras = r_srv->extras->next;
                 freeL("regservice_callback", extra);
                 }
             freeL("regservice_callback", r_srv->srs);
@@ -1317,8 +1330,8 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
         
 static void handle_add_request(request_state *rstate)
     {
-    registered_record_entry *re;
     ExtraResourceRecord *extra;
+    extra_record_entry *ere;
     uint32_t size, ttl;
     uint16_t rrtype, rdlen;
     char *ptr, *rdata;
@@ -1343,14 +1356,15 @@ static void handle_add_request(request_state *rstate)
     if (rdlen > sizeof(RDataBody)) size = rdlen;
     else size = sizeof(RDataBody);
     
-    extra = mallocL("hanle_add_request", sizeof(ExtraResourceRecord) - sizeof(RDataBody) + size);
-    if (!extra)
+    ere = mallocL("hanle_add_request", sizeof(extra_record_entry) - sizeof(RDataBody) + size);
+    if (!ere)
         {
         my_perror("ERROR: malloc");
         exit(1);
         }
         
-    bzero(extra, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
+    bzero(ere, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
+    extra = &ere->extra;
     extra->r.resrec.rrtype = rrtype;
     extra->r.rdatastorage.MaxRDLength = size;
     extra->r.resrec.rdlength = rdlen;
@@ -1362,19 +1376,12 @@ static void handle_add_request(request_state *rstate)
         {
         freeL("handle_add_request", rstate->msgbuf);
         rstate->msgbuf = NULL;
-        freeL("handle_add_request", extra);
+        freeL("handle_add_request", ere);
         return;
         }
-    re = mallocL("handle_add_request", sizeof(registered_record_entry));
-    if (!re)
-        {
-        my_perror("ERROR: malloc");
-        exit(1);
-        }
-    re->key = rstate->hdr.reg_index;
-    re->rr = &extra->r;
-    re->next = rstate->reg_recs;
-    rstate->reg_recs = re;
+    ere->key = rstate->hdr.reg_index;
+    ere->next = rstate->service->extras;
+    rstate->service->extras = ere;
     }
     
 static void handle_update_request(request_state *rstate)
@@ -1579,13 +1586,29 @@ static void connected_registration_termination(void *context)
 
 static void handle_removerecord_request(request_state *rstate)
     {
-    registered_record_entry *reptr, *prev = NULL;
-    mStatus err = mStatus_UnknownErr;
+    mStatus err;
     char *ptr;
-    reptr = rstate->reg_recs;
 
     ptr = rstate->msgdata;
     get_flags(&ptr);	// flags unused
+
+    if (rstate->service) err = remove_extra_rr_from_service(rstate);
+    else err = remove_record(rstate);
+
+    reset_connected_rstate(rstate);
+    if (deliver_error(rstate, err) < 0)
+        {
+        abort_request(rstate);
+        unlink_request(rstate);
+        }
+    }
+
+// remove a resource record registered via DNSServiceRegisterRecord()
+static mStatus remove_record(request_state *rstate)
+    {
+    registered_record_entry *reptr, *prev = NULL;
+    mStatus err = mStatus_UnknownErr;
+    reptr = rstate->reg_recs;
 
     while(reptr)
     	{
@@ -1594,19 +1617,40 @@ static void handle_removerecord_request(request_state *rstate)
             if (prev) prev->next = reptr->next;
             else rstate->reg_recs = reptr->next;
             err  = mDNS_Deregister(&mDNSStorage, reptr->rr);
-            freeL("handle_removerecord_request", reptr);  //rr gets freed by callback
-            break;
+	    if (err) return err;	// don't try to free memory if there's an error
+	    freeL("handle_removerecord_request", reptr);  //rr gets freed by callback	    
             }
         prev = reptr;
         reptr = reptr->next;
     	}
-    reset_connected_rstate(rstate);
-    if (deliver_error(rstate, err) < 0)
-        {
-        abort_request(rstate);
-        unlink_request(rstate);
-        }
+    return err;
     }
+
+
+static mStatus remove_extra_rr_from_service(request_state *rstate)
+    {
+    mStatus err = mStatus_UnknownErr;
+    extra_record_entry *ptr, *prev = NULL;
+    registered_service *serv = rstate->service;
+    
+    ptr = serv->extras;
+    while (ptr)
+	{
+	if (ptr->key == rstate->hdr.reg_index) // found match
+	    {
+	    if (prev) prev->next = ptr->next;
+	    else serv->extras = ptr->next;
+	    err = mDNS_RemoveRecordFromService(&mDNSStorage, serv->srs, &ptr->extra);
+	    if (err) return err;
+	    freeL("remove_extra_rr_from_service", ptr);
+	    break;
+	    }
+	prev = ptr;
+	ptr = ptr->next;
+	}
+    return err;
+    }
+
 
 
 // domain enumeration
