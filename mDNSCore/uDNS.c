@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.169  2005/01/08 00:42:18  ksekar
+<rdar://problem/3922758> Clean up syslog messages
+
 Revision 1.168  2004/12/23 23:22:47  ksekar
 <rdar://problem/3933606> Unicast known answers "name" pointers point to garbage stack memory
 
@@ -2613,10 +2616,10 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	(void)InterfaceID;  // unused
 
     // find Opt RR, verify correct ID
-	if (!getLLQAtIndex(m, msg, end, &opt, 0)) { debugf("Pkt does not contain LLQ Opt"); return mDNSfalse; }
-	if (opt.llqOp != kLLQOp_Event) { LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return mDNSfalse; }
-	if (!q->uDNS_info.llq) { LogMsg("Error: recvLLQEvent - question onject does not contain LLQ metadata"); return mDNSfalse; }
-	if (!sameID(opt.id, q->uDNS_info.llq->id)) { LogMsg("recvLLQEvent - incorrect ID. Discarding"); return mDNSfalse; }
+	if (!getLLQAtIndex(m, msg, end, &opt, 0))  { debugf("Pkt does not contain LLQ Opt");                                        return mDNSfalse; }
+	if (opt.llqOp != kLLQOp_Event)             { LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp);                         return mDNSfalse; }
+	if (!q->uDNS_info.llq)                     { LogMsg("Error: recvLLQEvent - question onject does not contain LLQ metadata"); return mDNSfalse; }
+	if (!sameID(opt.id, q->uDNS_info.llq->id)) {                                                                                return mDNSfalse; }
 
     // invoke response handler
 	m->uDNS_info.CurrentQuery = q;

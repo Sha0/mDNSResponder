@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.273  2005/01/08 00:42:18  ksekar
+<rdar://problem/3922758> Clean up syslog messages
+
 Revision 1.272  2005/01/07 23:21:42  ksekar
 <rdar://problem/3891628> Clean up SCPreferences format
 
@@ -2973,6 +2976,8 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
 	{
 	AuthRecord rec;
+
+	LogMsg("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 	
 	// Create dummy  record pointing to the domain to be added/removed
 	mDNS_SetupResourceRecord(&rec, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
