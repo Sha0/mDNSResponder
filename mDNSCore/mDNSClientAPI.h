@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.183  2004/08/10 23:19:14  ksekar
+<rdar://problem/3722542>: DNS Extension daemon for Wide Area Rendezvous
+Moved routines/constants to allow extern access for garbage collection daemon
+
 Revision 1.182  2004/07/30 17:40:06  ksekar
 <rdar://problem/3739115>: TXT Record updates not available for wide-area services
 
@@ -1899,8 +1903,8 @@ extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va
 extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(3,4);
 extern mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern char *DNSTypeName(mDNSu16 rrtype);
-extern char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd);
-#define GetRRDisplayString(m, rr) GetRRDisplayString_rdb((m), &(rr)->resrec, &(rr)->resrec.rdata->u)
+extern char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, char *buffer);
+#define GetRRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 
