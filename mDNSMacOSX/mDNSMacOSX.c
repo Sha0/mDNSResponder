@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.193  2004/09/22 00:41:59  cheshire
+Move tcp connection status codes into the legal range allocated for mDNS use
+
 Revision 1.192  2004/09/21 21:02:55  cheshire
 Set up ifname before calling mDNS_RegisterInterface()
 
@@ -1108,16 +1111,16 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 			{
 			info->connected = 0;
 			*descriptor= sd;
-			return mStatus_ConnectionPending;
+			return mStatus_ConnPending;
 			}
 		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: %s", strerror(errno));
 		freeL("mDNSPlatformTCPConnect", info);
 		CFSocketInvalidate(sr);
-		return mStatus_ConnectionFailed;
+		return mStatus_ConnFailed;
 		}
 	info->connected = 1;
 	*descriptor = sd;
-	return mStatus_ConnectionEstablished;
+	return mStatus_ConnEstablished;
 	}
 
 mDNSexport void mDNSPlatformTCPCloseConnection(int sd)

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.206  2004/09/22 00:41:59  cheshire
+Move tcp connection status codes into the legal range allocated for mDNS use
+
 Revision 1.205  2004/09/21 23:40:11  ksekar
 <rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
 
@@ -905,7 +908,7 @@ enum
 	// the bottom end of the range (FFFE FF00) is used for non-error values;
 
 	// Error codes:
-	mStatus_UnknownErr        = -65537,		// 0xFFFE FFFF
+	mStatus_UnknownErr        = -65537,		// First value: 0xFFFE FFFF
 	mStatus_NoSuchNameErr     = -65538,
 	mStatus_NoMemoryErr       = -65539,
 	mStatus_BadParamErr       = -65540,
@@ -923,22 +926,25 @@ enum
 	mStatus_BadInterfaceErr   = -65552,
 	mStatus_Refused           = -65553,
 	mStatus_NoSuchRecord      = -65554,
-    mStatus_NoAuth            = -65555,
-    mStatus_NoSuchKey         = -65556,
+	mStatus_NoAuth            = -65555,
+	mStatus_NoSuchKey         = -65556,
 	mStatus_NATTraversal      = -65557,
 	mStatus_DblNAT            = -65558,
 	mStatus_BadTime           = -65559,
-	// -65556 - -65789 currently unused
+
+	// tcp connection status
+	mStatus_ConnPending       = -65560,
+	mStatus_ConnFailed        = -65561,
+	mStatus_ConnEstablished   = -65562,
+
+	// -65563 to -65789 currently unused; available for allocation
 
 	// Non-error values:
 	mStatus_GrowCache         = -65790,
 	mStatus_ConfigChanged     = -65791,
-	mStatus_MemFree           = -65792,		// 0xFFFE FF00
-
-	// tcp connection status
-	mStatus_ConnectionPending = -65793,
-	mStatus_ConnectionFailed =  -65794,
-	mStatus_ConnectionEstablished = -65795
+	mStatus_MemFree           = -65792		// Last value: 0xFFFE FF00
+	
+	// mStatus_MemFree is the last legal mDNS error code, at the end of the range allocated for mDNS
 	};
 
 typedef mDNSs32 mStatus;

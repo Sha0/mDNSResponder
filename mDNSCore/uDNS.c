@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.87  2004/09/22 00:41:59  cheshire
+Move tcp connection status codes into the legal range allocated for mDNS use
+
 Revision 1.86  2004/09/21 23:40:11  ksekar
 <rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
 
@@ -3064,12 +3067,12 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	info->timestamp = mDNSPlatformTimeNow(m);         // reset timestamp
 
 	connectionStatus = mDNSPlatformTCPConnect(src, UnicastDNSPort, question->InterfaceID, conQueryCallback, context, &sd);
-	if (connectionStatus == mStatus_ConnectionEstablished)  // manually invoke callback if connection completes
+	if (connectionStatus == mStatus_ConnEstablished)  // manually invoke callback if connection completes
 		{
 		conQueryCallback(sd, context, mDNStrue);
 		return;
 		}
-	if (connectionStatus == mStatus_ConnectionPending) return; // callback will be automatically invoked when connection completes
+	if (connectionStatus == mStatus_ConnPending) return; // callback will be automatically invoked when connection completes
 	LogMsg("hndlTruncatedAnswer: connection failed");
 	uDNS_StopQuery(m, question);  //!!!KRS can we really call this here?
 	}
