@@ -151,6 +151,10 @@ static void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex size,
 		const mach_dead_name_notification_t *const deathMessage = (mach_dead_name_notification_t *)msg;
 		debugf("Client on port %d died or deallocated", deathMessage->not_port);
 		AbortClient(deathMessage->not_port);
+
+		/* Deallocate the send right that came in the dead name notification */
+		mach_port_deallocate( mach_task_self(), deathMessage->not_port );
+
 		}
 	}
 
