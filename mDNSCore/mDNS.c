@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.105  2003/04/22 01:07:43  cheshire
+<rdar://problem/3176248> DNSServiceRegistrationUpdateRecord should support a default ttl
+If TTL parameter is zero, leave record TTL unchanged
+
 Revision 1.104  2003/04/21 19:15:52  cheshire
 Fix some compiler warnings
 
@@ -4309,6 +4313,9 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
+
+	// If TTL is unspecified, leave TTL unchanged
+	if (newttl == 0) newttl = rr->rroriginalttl;
 
 	// If we already have an update queued up which has not gone through yet,
 	// give the client a chance to free that memory
