@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.18  2003/08/15 00:38:00  ksekar
+Bug #: <rdar://problem/3377005>: Bug: buffer overrun when reading long rdata from client
+
 Revision 1.17  2003/08/14 02:18:21  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -1693,35 +1696,48 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
     AuthRecord *rr;
     DNSServiceFlags flags;
     uint32_t interfaceIndex;
+    uint16_t type, class, rdlen;
+    int storage_size;
 
-    rr = mallocL("read_rr_from_ipc_msg", sizeof(AuthRecord));
+    flags = get_flags(&msgbuf);
+    interfaceIndex = get_long(&msgbuf);
+    if (get_string(&msgbuf, name, 256) < 0)
+        {
+        LogMsg("ERROR: read_rr_from_ipc_msg - get_string");
+        return NULL;
+        }
+    type = get_short(&msgbuf);    
+    class = get_short(&msgbuf);
+    rdlen = get_short(&msgbuf);
+
+    if (rdlen > sizeof(RDataBody)) storage_size = rdlen;
+    else storage_size = sizeof(RDataBody);
+    
+    rr = mallocL("read_rr_from_ipc_msg", sizeof(AuthRecord) - sizeof(RDataBody) + storage_size);
     if (!rr) 	
         { 
         my_perror("ERROR: malloc");  
         exit(1);
         }
-    bzero(rr, sizeof(AuthRecord));
+    bzero(rr, sizeof(AuthRecord));  // ok if oversized rdata not zero'd
     rr->resrec.rdata = &rr->rdatastorage;
-    flags = get_flags(&msgbuf);
-    interfaceIndex = get_long(&msgbuf);
     rr->resrec.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
-    if ((get_string(&msgbuf, name, 256) < 0) ||
-        (!MakeDomainNameFromDNSNameString(&rr->resrec.name, name)))
+    if (!MakeDomainNameFromDNSNameString(&rr->resrec.name, name))
     	{
         LogMsg("ERROR: bad name: %s", name);
         freeL("read_rr_from_ipc_msg", rr);
         return NULL;
     	}
-    rr->resrec.rrtype = get_short(&msgbuf);
+    rr->resrec.rrtype = type;
     if ((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared)
         rr->resrec.RecordType = kDNSRecordTypeShared;
     if ((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique)
         rr->resrec.RecordType = kDNSRecordTypeUnique;
-    rr->resrec.rrclass = get_short(&msgbuf);
-    rr->resrec.rdata->RDLength = get_short(&msgbuf);
-    rr->resrec.rdata->MaxRDLength = sizeof(RDataBody);
-    rdata = get_rdata(&msgbuf, rr->resrec.rdata->RDLength);
-    memcpy(rr->resrec.rdata->u.data, rdata, rr->resrec.rdata->RDLength);
+    rr->resrec.rrclass = class;
+    rr->resrec.rdata->RDLength = rdlen;
+    rr->resrec.rdata->MaxRDLength = rdlen;
+    rdata = get_rdata(&msgbuf, rdlen);
+    memcpy(rr->resrec.rdata->u.data, rdata, rdlen);
     if (ttl)	
     	{
         rr->resrec.rroriginalttl = get_long(&msgbuf);
