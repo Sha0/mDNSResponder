@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: Identify.c,v $
+ * Revision 1.2  2003/08/02 02:25:13  cheshire
+ * Multiple improvements: Now displays host's name, and all v4 and v6 addresses, as well as HINFO record
+ *
  * Revision 1.1  2003/08/01 02:20:02  cheshire
  * Add mDNSIdentify tool, used to discover what version of mDNSResponder a particular host is running
  *
@@ -72,9 +75,27 @@ static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 #define RR_CACHE_SIZE 500
 static ResourceRecord gRRCache[RR_CACHE_SIZE];
 
-static volatile int StopNow;
+static volatile int StopNow;	// 0 means running, 1 means stop because we got an answer, 2 means stop because of Ctrl-C
+static volatile int NumAnswers, NumAddr, NumAAAA, NumHINFO;
 static char hostname[256], hardware[256], software[256];
 static mDNSOpaque16 lastid, id;
+
+//*************************************************************************************************************
+// Utilities
+
+// Special version of printf that knows how to print IP addresses, DNS-format name strings, etc.
+mDNSlocal mDNSu32 mprintf(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+mDNSlocal mDNSu32 mprintf(const char *format, ...)
+	{
+	mDNSu32 length;
+	unsigned char buffer[512];
+	va_list ptr;
+	va_start(ptr,format);
+	length = mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr);
+	va_end(ptr);
+	printf("%s", buffer);
+	return(length);
+	}
 
 //*************************************************************************************************************
 // Main code
@@ -92,9 +113,30 @@ static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 	{
 	(void)m;		// Unused
 	(void)question;	// Unused
-	id = lastid;
+	if (!id.NotAnInteger) id = lastid;
 	ConvertDomainNameToCString(&answer->rdata->u.name, hostname);
 	StopNow = 1;
+	mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
+	}
+
+static void AddrCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+	{
+	(void)m;		// Unused
+	(void)question;	// Unused
+	if (!id.NotAnInteger) id = lastid;
+	NumAnswers++;
+	NumAddr++;
+	mprintf("%##s %s %.4a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ip);
+	}
+
+static void AAAACallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+	{
+	(void)m;		// Unused
+	(void)question;	// Unused
+	if (!id.NotAnInteger) id = lastid;
+	NumAnswers++;
+	NumAAAA++;
+	mprintf("%##s %s %.16a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ipv6);
 	}
 
 static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
@@ -107,7 +149,8 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 	p += 1 + p[0];
 	strncpy(software, p+1, p[0]);
 	software[p[0]] = 0;
-	StopNow = 1;
+	NumAnswers++;
+	NumHINFO++;
 	}
 
 mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
@@ -116,6 +159,7 @@ mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
 	gettimeofday(&end, NULL);
 	end.tv_sec += seconds;
 	StopNow = 0;
+	NumAnswers = 0;
 	while (!StopNow)
 		{
 		int nfds = 0;
@@ -134,6 +178,35 @@ mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
 		if (result >= 0) mDNSPosixProcessFDSet(m, &readfds);
 		else if (errno != EINTR) StopNow = 2;
 		}
+	}
+
+mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQuestionCallback callback)
+	{
+	MakeDomainNameFromDNSNameString(&q->qname, qname);
+
+	q->InterfaceID      = mDNSInterface_Any;
+	q->qtype            = qtype;
+	q->qclass           = kDNSClass_IN;
+	q->QuestionCallback = callback;
+	q->QuestionContext  = NULL;
+
+	printf("%s %s ?\n", qname, DNSTypeName(qtype));
+	return(mDNS_StartQuery(&mDNSStorage, q));
+	}
+
+mDNSlocal int DoQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQuestionCallback callback)
+	{
+	mStatus status = StartQuery(q, qname, qtype, callback);
+	if (status != mStatus_NoError)
+		StopNow = 2;
+	else
+		{
+		WaitForAnswer(&mDNSStorage, 4);
+		mDNS_StopQuery(&mDNSStorage, q);
+		if (StopNow == 0 && NumAnswers == 0)
+			printf("%s %s *** No Answer ***\n", qname, DNSTypeName(qtype));
+		}
+	return(StopNow);
 	}
 
 mDNSlocal void HandleSIG(int signal)
@@ -164,18 +237,14 @@ mDNSexport int main(int argc, char **argv)
 	struct in6_addr s6;
 
 	char buffer[256];
-	DNSQuestion q;
-	q.InterfaceID      = mDNSInterface_Any;
-	q.qtype            = kDNSType_PTR;
-	q.qclass           = kDNSClass_IN;
-	q.QuestionCallback = NameCallback;
-	q.QuestionContext  = NULL;
+	DNSQuestion q, qAddr, qAAAA, qHINFO;
 
 	if (inet_pton(AF_INET, argv[1], &s4) == 1)
 		{
 		mDNSu8 *p = (mDNSu8 *)&s4;
 		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p[3], p[2], p[1], p[0]);
 		printf("%s\n", buffer);
+		if (DoQuery(&q, buffer, kDNSType_PTR, NameCallback) != 1) goto exit;
 		}
 	else if (inet_pton(AF_INET6, argv[1], &s6) == 1)
 		{
@@ -190,41 +259,38 @@ mDNSexport int main(int argc, char **argv)
 			buffer[i * 4 + 3] = '.';
 			}
 		mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
-		printf("%s\n", buffer);
+		i = DoQuery(&q, buffer, kDNSType_PTR, NameCallback);
+		if (i == 0)	// Timeout. Try workaround for WWDC bug
+			{
+			mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");
+			i = DoQuery(&q, buffer, kDNSType_PTR, NameCallback);
+			}
+		if (i != 1) goto exit;
 		}
 	else
 		strcpy(hostname, argv[1]);
 
-	// If user entered a dotted decimal address, first find the host name
-	if (*hostname == 0)
-		{
-		MakeDomainNameFromDNSNameString(&q.qname, buffer);
-		status = mDNS_StartQuery(&mDNSStorage, &q);
-		WaitForAnswer(&mDNSStorage, 4);
-		mDNS_StopQuery(&mDNSStorage, &q);
-		if (StopNow == 2) goto exit;	// Interrupted with Ctrl-C
-		if (StopNow == 0) { fprintf(stderr, "No answer found for %s\n", buffer); goto exit; }
-		printf("Host name is: %s\n", hostname);
-		}
-
-	// Now we have the host name; get the HINFO
-	MakeDomainNameFromDNSNameString(&q.qname, hostname);
-	q.qtype = kDNSType_HINFO;
-	q.QuestionCallback = InfoCallback;
-	status = mDNS_StartQuery(&mDNSStorage, &q);
+	// Now we have the host name; get its A, AAAA, and HINFO
+	StartQuery(&qAddr,  hostname, kDNSType_A,     AddrCallback);
+	StartQuery(&qAAAA,  hostname, kDNSType_AAAA,  AAAACallback);
+	StartQuery(&qHINFO, hostname, kDNSType_HINFO, InfoCallback);
 	WaitForAnswer(&mDNSStorage, 4);
-	mDNS_StopQuery(&mDNSStorage, &q);
+	mDNS_StopQuery(&mDNSStorage, &qAddr);
+	mDNS_StopQuery(&mDNSStorage, &qAAAA);
+	mDNS_StopQuery(&mDNSStorage, &qHINFO);
 	if (StopNow == 2) goto exit;	// Interrupted with Ctrl-C
-	if (StopNow == 1)	// Interrupted because we found the answer we wanted
+
+	if (hardware[0] || software[0])
 		{
 		printf("HINFO Hardware: %s\n", hardware);
 		printf("HINFO Software: %s\n", software);
 		}
 	else
 		{
-		printf("Host has no HINFO record; Appears to be ");
+		printf("Host has no HINFO record; Best guess is ");
 		if (id.b[1]) printf("mDNSResponder-%d\n", id.b[1]);
-		else printf("very early Panther build\n");
+		else if (NumAAAA) printf("very early Panther build (mDNSResponder-33 or earlier)\n");
+		else printf("Jaguar version of mDNSResponder with no IPv6 support\n");
 		}
 
 exit:
