@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.300  2005/02/15 20:03:13  ksekar
+<rdar://problem/4005868> Crash when SCPreferences contains empty array
+
 Revision 1.299  2005/02/15 02:46:53  cheshire
 <rdar://problem/3967876> Don't log ENETUNREACH errors for unicast destinations
 
@@ -1679,7 +1682,7 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 		if (dict)
 			{
 			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
-			if (fqdnArray)
+			if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
 				{				
 				CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0); // for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
 				if (fqdnDict && DDNSSettingEnabled(fqdnDict))
@@ -1696,7 +1699,7 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 				}
 
 			CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
-			if (regArray)
+			if (regArray && CFArrayGetCount(regArray) > 0)
 				{
 				CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
 				if (regDict && DDNSSettingEnabled(regDict))
@@ -1712,7 +1715,7 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 					}
 				}
 			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
-			if (browseArray)
+			if (browseArray && CFArrayGetCount(browseArray) > 0)
 				{
 				CFRetain(browseArray);
 				*browseDomains = browseArray;
