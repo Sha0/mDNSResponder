@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.136  2004/04/07 01:08:57  cheshire
+<rdar://problem/3609972> When interface turned off, browse "remove" events delivered with interface index zero
+
 Revision 1.135  2004/03/19 01:01:03  ksekar
 Fixed config file parsing to chop newline
 
@@ -1295,44 +1298,47 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		{
-		NetworkInterfaceInfo *n = &i->ifinfo;
-		NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
-		if (!alias) alias = i;
-
-		if (n->InterfaceID && n->InterfaceID != (mDNSInterfaceID)alias)
-			{
-			LogMsg("SetupActiveInterfaces ERROR! n->InterfaceID %p != alias %p", n->InterfaceID, alias);
-			n->InterfaceID = mDNSNULL;
-			}
-
-		if (!n->InterfaceID)
-			{
-			n->InterfaceID = (mDNSInterfaceID)alias;
-			mDNS_RegisterInterface(m, n);
-			LogOperation("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
-				i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
-			}
-
-		if (!n->TxAndRx)
-			debugf("SetupActiveInterfaces: No TX/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, alias, &n->ip);
+		if (!i->CurrentlyActive)							// If not active, then just set its InterfaceID to refer to itself
+			i->ifinfo.InterfaceID = (mDNSInterfaceID)i;		// (mDNSPlatformInterfaceIndexfromInterfaceID() requires this)
 		else
 			{
-			if (i->sa_family == AF_INET && alias->ss.sktv4 == -1)
+			NetworkInterfaceInfo *n = &i->ifinfo;
+			NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
+			if (!alias) alias = i;
+	
+			if (n->InterfaceID && n->InterfaceID != (mDNSInterfaceID)alias)
 				{
-				mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
-				if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-				else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				LogMsg("SetupActiveInterfaces ERROR! n->InterfaceID %p != alias %p", n->InterfaceID, alias);
+				n->InterfaceID = mDNSNULL;
 				}
-		
-			if (i->sa_family == AF_INET6 && alias->ss.sktv6 == -1)
+	
+			if (!n->InterfaceID)
 				{
-				mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
-				if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-				else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+				n->InterfaceID = (mDNSInterfaceID)alias;
+				mDNS_RegisterInterface(m, n);
+				LogOperation("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
+					i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
+				}
+	
+			if (!n->TxAndRx)
+				debugf("SetupActiveInterfaces: No TX/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, alias, &n->ip);
+			else
+				{
+				if (i->sa_family == AF_INET && alias->ss.sktv4 == -1)
+					{
+					mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
+					if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					}
+			
+				if (i->sa_family == AF_INET6 && alias->ss.sktv6 == -1)
+					{
+					mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
+					if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					}
 				}
 			}
-		}
 	}
 
 mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
@@ -1351,6 +1357,16 @@ mDNSlocal void CloseSocketSet(CFSocketSet *ss)
 	if (ss->cfsv6) { CFSocketInvalidate(ss->cfsv6); CFRelease(ss->cfsv6); }
 	ss->sktv4 = ss->sktv6 = -1;
 	ss->cfsv4 = ss->cfsv6 = NULL;
+	}
+
+mDNSlocal mDNSu32 NumCacheRecordsForInterfaceID(mDNSInterfaceID id)
+	{
+	mDNSu32 slot, used = 0;
+	CacheRecord *rr;
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for (rr = mDNSStorage.rrcache_hash[slot]; rr; rr=rr->next)
+			if (rr->resrec.InterfaceID == id) used++;
+	return(used);
 	}
 
 mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
@@ -1386,7 +1402,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		// (We may have previously had both v4 and v6, and we may not need both any more.)
 		CloseSocketSet(&i->ss);
 		// 3. If no longer active, delete interface from list and free memory
-		if (!i->CurrentlyActive)
+		if (!i->CurrentlyActive && NumCacheRecordsForInterfaceID((mDNSInterfaceID)i) == 0)
 			{
 			debugf("ClearInactiveInterfaces: Deleting      %#a", &i->ifinfo.ip);
 			*p = i->next;
