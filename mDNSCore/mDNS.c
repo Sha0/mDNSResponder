@@ -88,8 +88,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.136  2003/05/27 18:50:07  cheshire
+<rdar://problem/3269768> mDNS_StartResolveService doesn't inform client of port number changes
+
 Revision 1.135  2003/05/26 04:57:28  cheshire
-<rdar://problem/3268953> Delay queries when there are already answers in the cache; don't overflow packet with too many questions
+<rdar://problem/3268953> Delay queries when there are already answers in the cache
 
 Revision 1.134  2003/05/26 04:54:54  cheshire
 <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
@@ -4393,6 +4396,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
+	mDNSBool PortChanged = (query->info->port.NotAnInteger != answer->rdata->u.srv.port.NotAnInteger);
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_SRV) return;
 
@@ -4422,6 +4426,10 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		mDNS_StartQuery_internal(m, &query->qAv4);
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
+	else if (query->ServiceInfoQueryCallback && query->GotADD && query->GotTXT && PortChanged)
+		query->ServiceInfoQueryCallback(m, query);
+	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
+	// callback function is allowed to do anything, including deleting this query and freeing its memory.
 	}
 
 mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
