@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.13  2004/01/19 21:46:52  cheshire
+Fix compiler warning
+
 Revision 1.12  2003/12/23 20:46:47  ksekar
 Bug #: <rdar://problem/3497428>: sync dnssd files between libinfo & mDNSResponder
 
@@ -1007,7 +1010,7 @@ static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start, int reuse_so
     if (!reuse_socket)
         {
 	  if (gettimeofday(&time, NULL) < 0) return NULL;
-	  sprintf(ctrl_path, "%s%d-%.3x-%.6u", CTL_PATH_PREFIX, (int)getpid(), 
+	  sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(), 
 		  time.tv_sec & 0xFFF, time.tv_usec);
 
         *len += strlen(ctrl_path) + 1;
