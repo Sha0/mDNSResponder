@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.14  2004/09/02 01:57:58  cheshire
+<rdar://problem/3783611> Fix incorrect testing of MoreComing flag
+
 Revision 1.13  2004/07/26 21:06:29  shersche
 <rdar://problem/3739200> Removing trailing '.' in hostname
 Bug #: 3739200
@@ -702,10 +705,13 @@ CPrinterSetupWizardSheet::OnBrowse(
 				EventHandler * handler = *it;
 
 				handler->OnAddPrinter(printer);
+				
+				// %%% NEED TO FIX THIS to respect the MoreComing flag, something like this:
+				// if (inFlags & kDNSServiceFlagsMoreComing) don't waste CPU cycles updating the UI
 			}
 		}
 	}
-	else if (!inFlags || (inFlags == kDNSServiceFlagsMoreComing))
+	else
 	{
 		if ((printer != NULL) && (--printer->refs == 0))
 		{
@@ -720,6 +726,9 @@ CPrinterSetupWizardSheet::OnBrowse(
 			}
 
 			self->m_printerList.remove(printer);
+
+			// %%% NEED TO FIX THIS to respect the MoreComing flag, something like this:
+			// if (inFlags & kDNSServiceFlagsMoreComing) don't waste CPU cycles updating the UI
 
 			//
 			// check to see if we've selected this printer
