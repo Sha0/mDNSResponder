@@ -435,7 +435,7 @@ void resolve_reply (
     //[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:txtRecord]];
 
     if ([SrvType isEqualToString:@"_http._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d/", ipAddr, port]]];
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d/%@", ipAddr, port, txtRecord]]];
     } else if ([SrvType isEqualToString:@"_ftp._tcp."]) {
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/", ipAddr, port]]];
     } else if ([SrvType isEqualToString:@"_ssh._tcp."]) {
