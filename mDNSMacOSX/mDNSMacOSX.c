@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.45  2002/09/17 01:45:13  cheshire
+Add LIST_ALL_INTERFACES symbol for debugging
+
 Revision 1.44  2002/09/17 01:36:23  cheshire
 Move Puma support to CFSocketPuma.c
 
@@ -45,6 +48,10 @@ Minor code tidying
 // the Classic subsystem of Mac OS X 10.2 Jaguar) has been corrected to issue Multicast DNS
 // queries on UDP port 5353, this backwards-compatibility legacy support is no longer needed.
 #define mDNS_AllowPort53 1
+
+// For debugging, set LIST_ALL_INTERFACES to 1 to display all found interfaces,
+// including ones that mDNSResponder chooses not to use.
+#define LIST_ALL_INTERFACES 0
 
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
@@ -443,7 +450,7 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 
 	while (ifa)
 		{
-#if 0
+#if LIST_ALL_INTERFACES
 		if (ifa->ifa_addr->sa_family != AF_INET)
 			debugf("SetupInterface: %s Flags %04X Family %d not AF_INET",
 				ifa->ifa_name, ifa->ifa_flags, ifa->ifa_addr->sa_family);
