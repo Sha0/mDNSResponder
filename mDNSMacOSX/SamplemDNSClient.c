@@ -337,7 +337,8 @@ int main(int argc, char **argv)
                     static const char TXT2[] = "\x0D" "Fourth String" "\x0C" "Fifth String" "\x0C" "Sixth String";
                     printf("Registering Service Test._testdualtxt._tcp.local.\n");
                     client = DNSServiceRegistrationCreate("", "_testdualtxt._tcp.", "", registerPort.NotAnInteger, TXT1, reg_reply, nil);
-                    record = DNSServiceRegistrationAddRecord(client, T_TXT, sizeof(TXT2), TXT2, 120);
+                    // use "sizeof(TXT2)-1" because we don't wan't the C compiler's null byte on the end of the string
+                    record = DNSServiceRegistrationAddRecord(client, T_TXT, sizeof(TXT2)-1, TXT2, 120);
                     break;
                     }
 
