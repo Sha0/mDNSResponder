@@ -845,9 +845,11 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 		rr->next = mDNSNULL;
 
 		if      (RecordType == kDNSRecordTypeUnregistered)
-			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeUnregistered", rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeUnregistered",
+				rr->name.c, DNSTypeName(rr->rrtype));
 		else if (RecordType == kDNSRecordTypeDeregistering)
-			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeDeregistering", rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeDeregistering",
+				rr->name.c, DNSTypeName(rr->rrtype));
 		else
 			{
 			debugf("mDNS_Deregister_internal: Deleting record for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
@@ -855,7 +857,8 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 			}
 
 		if ((drt == mDNS_Dereg_conflict || drt == mDNS_Dereg_repeat) && RecordType == kDNSRecordTypeShared)
-			debugf("mDNS_Deregister_internal: Cannot have a conflict on a shared record! %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("mDNS_Deregister_internal: Cannot have a conflict on a shared record! %##s (%s)",
+				rr->name.c, DNSTypeName(rr->rrtype));
 
 		// If we have an update queued up which never executed, give the client a chance to free that memory
 		if (rr->NewRData)
@@ -2803,7 +2806,8 @@ exit:
 	}
 
 mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSIPAddr srcaddr, const mDNSIPPort srcport, const mDNSIPAddr dstaddr, mDNSIPPort dstport, const mDNSIPAddr InterfaceAddr)
+	const mDNSIPAddr srcaddr, const mDNSIPPort srcport, const mDNSIPAddr dstaddr, mDNSIPPort dstport,
+	const mDNSIPAddr InterfaceAddr)
 	{
 	const mDNSs32 timenow        = mDNSPlatformTimeNow();
 	DNSMessage    response;
@@ -3685,7 +3689,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	return(mStatus_NoError);
 	}
 
-mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl)
+mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
+	ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl)
 	{
 	ExtraResourceRecord **e = &sr->Extras;
 	while (*e) e = &(*e)->next;
