@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.14  2003/04/28 21:54:57  cheshire
+Fix compiler warning
+
 Revision 1.13  2003/03/15 04:40:36  cheshire
 Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
@@ -154,7 +157,8 @@ extern void     mDNSPlatformMemZero(                       void *dst, mDNSu32 le
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-								const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSInterfaceID InterfaceID);
+								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
+								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
 #ifdef	__cplusplus
