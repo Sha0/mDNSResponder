@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.19  2004/07/20 01:47:36  rpantos
+NOT_HAVE_SA_LEN applies to v6, too. And use more-portable s6_addr.
+
 Revision 1.18  2004/07/08 21:30:21  rpantos
 
 Bug #:
@@ -274,7 +277,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
                 /* Some platforms (*BSD) inject the prefix in IPv6LL addresses */
                 /* We need to strip that out */
                 if (IN6_IS_ADDR_LINKLOCAL(&sinptr6->sin6_addr))
-                	sinptr6->sin6_addr.__u6_addr.__u6_addr16[1] = 0;
+                	sinptr6->sin6_addr.s6_addr[2] = sinptr6->sin6_addr.s6_addr[3] = 0;
                 memcpy(ifi->ifi_addr, sinptr6, sizeof(struct sockaddr_in6));
             }
             break;
@@ -456,7 +459,9 @@ struct in_pktinfo
 			struct in6_pktinfo *ip6_info = (struct in6_pktinfo*)CMSG_DATA(cmptr);
 			
             sin6->sin6_family   = AF_INET6;
+#ifndef NOT_HAVE_SA_LEN
             sin6->sin6_len      = sizeof(*sin6);
+#endif
             sin6->sin6_addr     = ip6_info->ipi6_addr;
             sin6->sin6_flowinfo = 0;
             sin6->sin6_scope_id = 0;

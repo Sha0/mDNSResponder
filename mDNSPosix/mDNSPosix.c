@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.48  2004/07/20 01:47:36  rpantos
+NOT_HAVE_SA_LEN applies to v6, too. And use more-portable s6_addr.
+
 Revision 1.47  2004/06/25 00:26:27  rpantos
 Changes to fix the Posix build on Solaris.
 
@@ -279,7 +282,9 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 		case AF_INET6:
 			{
 			struct sockaddr_in6* sin6        = (struct sockaddr_in6*)sa;
+#ifndef NOT_HAVE_SA_LEN
 			assert(sin6->sin6_len == sizeof(*sin6));
+#endif
 			ipAddr->type                     = mDNSAddrType_IPv6;
 			ipAddr->ip.v6                    = *(mDNSv6Addr*)&sin6->sin6_addr;
 			if (ipPort) ipPort->NotAnInteger = sin6->sin6_port;
@@ -331,7 +336,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		{
 		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&to;
 		mDNSPlatformMemZero(sin6, sizeof(*sin6));
+#ifndef NOT_HAVE_SA_LEN
 		sin6->sin6_len            = sizeof(*sin6);
+#endif
 		sin6->sin6_family         = AF_INET6;
 		sin6->sin6_port           = dstPort.NotAnInteger;
 		sin6->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
@@ -793,7 +800,9 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 		if (err == 0)
 			{
 			mDNSPlatformMemZero(&bindAddr6, sizeof(bindAddr6));
+#ifndef NOT_HAVE_SA_LEN
 			bindAddr6.sin6_len         = sizeof(bindAddr6);
+#endif
 			bindAddr6.sin6_family      = AF_INET6;
 			bindAddr6.sin6_port        = port.NotAnInteger;
 			bindAddr6.sin6_flowinfo    = 0;
