@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.32  2005/03/10 22:54:33  ksekar
+<rdar://problem/4046285> dnsextd leaks memory/ports
+
 Revision 1.31  2005/02/24 02:37:57  ksekar
 <rdar://problem/4021977> dnsextd memory management improvements
 
@@ -1911,7 +1914,7 @@ mDNSlocal void *UDPUpdateRequestForkFn(void *vptr)
 
 	if (reply) free(reply);		
 	free(req);
-	return NULL;
+	pthread_exit(NULL);
 	}
 
 //!!!KRS this needs to be changed to use non-blocking sockets
@@ -1941,6 +1944,7 @@ mDNSlocal int RecvUDPRequest(int sd, DaemonInfo *d)
 	if (IsLLQAck(&req->pkt)) { free(req); return 0; } // !!!KRS need to do acks + retrans
 	
 	if (pthread_create(&tid, NULL, UDPUpdateRequestForkFn, req)) { LogErr("RecvUDPRequest", "pthread_create"); free(req); return -1; }
+	pthread_detach(tid);
 	return 0;
 	}
 
@@ -1979,7 +1983,7 @@ mDNSlocal void *TCPRequestForkFn(void *vptr)
 	free(req);
 	if (in) free(in);
 	if (out) free(out);
-	return NULL;	
+	pthread_exit(NULL);
 	}
 
 mDNSlocal int RecvTCPRequest(int sd, DaemonInfo *d)
@@ -1996,6 +2000,7 @@ mDNSlocal int RecvTCPRequest(int sd, DaemonInfo *d)
 	if (req->sd < 0) { LogErr("RecvTCPRequest", "accept"); return -1; }	
 	if (clilen != sizeof(req->cliaddr)) { Log("Client address of unknown size %d", clilen); free(req); return -1; }
 	if (pthread_create(&tid, NULL, TCPRequestForkFn, req)) { LogErr("RecvTCPRequest", "pthread_create"); free(req); return -1; }
+	pthread_detach(tid);
 	return 0;
 	}
 
@@ -2096,8 +2101,12 @@ int main(int argc, char *argv[])
 	if (SetupSockets(d) < 0) exit(1); 
 	if (SetUpdateSRV(d) < 0) exit(1);
 	
-	if (pthread_create(&LLQtid, NULL, LLQEventMonitor, d)) { LogErr("main", "pthread_create"); }
-	else ListenForUpdates(d);              
+	if (pthread_create(&LLQtid, NULL, LLQEventMonitor, d)) { LogErr("main", "pthread_create"); }	
+	else
+		{
+		pthread_detach(LLQtid);
+		ListenForUpdates(d);
+		}
 		
 	if (ClearUpdateSRV(d) < 0) exit(1);  // clear update srv's even if ListenForUpdates or pthread_create returns an error
 	free(d);
