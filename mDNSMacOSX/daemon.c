@@ -441,7 +441,7 @@ DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 
 void start(const char *bundleName, const char *bundleDir)
     {
-	mStatus            err    = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL);
+	mStatus            err    = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
     CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
     CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 	mach_port_t        m_port = CFMachPortGetPort(s_port);
@@ -455,7 +455,7 @@ void start(const char *bundleName, const char *bundleDir)
     CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
     CFRelease(d_rls);
     CFRelease(s_rls);
-    if (debug_mode) printf("Service registered with port %d\n", m_port);
+    if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
     }
 
 int main(int argc, char **argv)
