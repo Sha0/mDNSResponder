@@ -3114,7 +3114,6 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	#pragma unused(question)
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_SRV) return;
@@ -3144,7 +3143,6 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 
 mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	#pragma unused(question)
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_TXT) return;
@@ -3160,7 +3158,6 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 
 mDNSlocal void FoundServiceInfoADD(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	#pragma unused(question)
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_A) return;
