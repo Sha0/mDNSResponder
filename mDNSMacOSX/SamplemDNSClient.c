@@ -124,11 +124,9 @@ static void browsedom_reply(DNSServiceDomainEnumerationReplyResultType resultTyp
 static void browse_reply(DNSServiceBrowserReplyResultType resultType,
     const char *replyName, const char *replyType, const char *replyDomain, DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
-	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Found" : "Removed";
+	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Add" : "Rmv";
     (void)context; // Unused
-	printf("Service \"%s\", type \"%s\", domain \"%s\" %s", replyName, replyType, replyDomain, op);
-	if (flags) printf(" Flags: %X", flags);
-	printf("\n");
+	printf("%s %4X %s %s %s\n", op, flags, replyDomain, replyType, replyName);
 	}
 
 static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, const char *txtRecord, DNSServiceDiscoveryReplyFlags flags, void *context)
