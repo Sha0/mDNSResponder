@@ -65,10 +65,12 @@ struct mDNS_PlatformSupport_struct
 
 struct mDNS_PlatformSupport_struct
 	{
-	CFRunLoopTimerRef cftimer;
-	SCDynamicStoreRef store;
-	io_connect_t powerconnection;
-	io_object_t  powernotifier;
+	CFRunLoopTimerRef  CFTimer;
+	SCDynamicStoreRef  Store;
+	CFRunLoopSourceRef StoreRLS;
+	io_connect_t       PowerConnection;
+	io_object_t        PowerNotifier;
+	CFRunLoopSourceRef PowerRLS;
 	};
 
 // ***************************************************************************
