@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.4  2004/04/22 20:28:20  cheshire
+Use existing facility of PutResourceRecordTTL() to update count field for us
+
 Revision 1.3  2004/04/22 03:05:28  cheshire
 kDNSClass_ANY should be kDNSQClass_ANY
 
@@ -1297,11 +1300,10 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	rdata += sizeof(mDNSOpaque16);
 	
 	tsig.resrec.rdlength = (mDNSu16)(rdata - tsig.resrec.rdata->u.data);
-	*end = PutResourceRecordTTL(msg, ptr, mDNSNULL, &tsig.resrec, 0);
+	*end = PutResourceRecordTTL(msg, ptr, numAdditionals, &tsig.resrec, 0);
 	if (!*end) { LogMsg("ERROR: DNSDigest_SignMessage - could not put TSIG"); return mDNSNULL; }
 
 	// update num additionals
-	(*numAdditionals)++;  // increment original (host-byte ordered) value
 	countPtr = (mDNSu8 *)&msg->h.numAdditionals;  // increment (network-byte ordered) header value
 	*countPtr++ = (mDNSu8)(*numAdditionals >> 8);
 	*countPtr++ = (mDNSu8)(*numAdditionals &  0xFF);
