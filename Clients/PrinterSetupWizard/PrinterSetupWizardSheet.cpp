@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.16  2004/09/13 21:27:22  shersche
+<rdar://problem/3796483> Pass the moreComing flag to OnAddPrinter and OnRemovePrinter callbacks
+Bug #: 3796483
+
 Revision 1.15  2004/09/11 05:59:06  shersche
 <rdar://problem/3785766> Fix code that generates unique printer names based on currently installed printers
 Bug #: 3785766
@@ -168,11 +172,13 @@ CPrinterSetupWizardSheet::InstallEventHandler(EventHandler * handler)
 	
 	m_eventHandlerList.push_back(handler);
 
-	for ( iter = m_printerList.begin(); iter != m_printerList.end(); iter++ )
-	{
-		Printer * printer = *iter;
+	iter = m_printerList.begin();
 
-		handler->OnAddPrinter(printer);
+	while (iter != m_printerList.end())
+	{
+		Printer * printer = *iter++;
+
+		handler->OnAddPrinter(printer, iter != m_printerList.end());
 	}
 	
 	return kNoErr;
@@ -641,6 +647,7 @@ CPrinterSetupWizardSheet::OnBrowse(
 	Printer						*	printer;
 	EventHandlerList::iterator		it;
 	DWORD							printerNameCount;
+	bool							moreComing = (bool) (inFlags & kDNSServiceFlagsMoreComing);
 
 	require_noerr( inErrorCode, exit );
 	
@@ -717,10 +724,7 @@ CPrinterSetupWizardSheet::OnBrowse(
 			{
 				EventHandler * handler = *it;
 
-				handler->OnAddPrinter(printer);
-				
-				// %%% NEED TO FIX THIS to respect the MoreComing flag, something like this:
-				// if (inFlags & kDNSServiceFlagsMoreComing) don't waste CPU cycles updating the UI
+				handler->OnAddPrinter(printer, moreComing);
 			}
 		}
 	}
@@ -735,13 +739,10 @@ CPrinterSetupWizardSheet::OnBrowse(
 			{
 				EventHandler * handler = *it;
 
-				handler->OnRemovePrinter(printer);
+				handler->OnRemovePrinter(printer, moreComing);
 			}
 
 			self->m_printerList.remove(printer);
-
-			// %%% NEED TO FIX THIS to respect the MoreComing flag, something like this:
-			// if (inFlags & kDNSServiceFlagsMoreComing) don't waste CPU cycles updating the UI
 
 			//
 			// check to see if we've selected this printer
