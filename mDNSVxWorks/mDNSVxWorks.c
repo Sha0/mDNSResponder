@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.6  2003/08/18 23:19:05  cheshire
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+
 Revision 1.5  2003/08/15 00:05:04  bradley
 Updated to use name/InterfaceID from new AuthRecord resrec field. Added output of new record sizes.
 
@@ -613,15 +616,23 @@ mDNSexport void	mDNSPlatformMemFree( void *inMem )
 }
 
 //===========================================================================================================================
+//	mDNSPlatformTimeInit
+//===========================================================================================================================
+
+mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
+	{
+	// No special setup is required on VxWorks -- we just use tickGet();
+	*timenow = mDNSPlatformTimeNow();
+	return(mStatus_NoError);
+	}
+
+//===========================================================================================================================
 //	mDNSPlatformTimeNow
 //===========================================================================================================================
 
 mDNSs32	mDNSPlatformTimeNow( void )
 {
-	// tickGet returns a 32-bit unsigned value. Since this value can exceed the range of a signed 32-bit value, 
-	// the time is mod'd with the maximum signed 32-bit value to return a continuously rolling number.
-	
-	return( (mDNSs32)( tickGet() % 0x7FFFFFFFUL ) );
+	return( (mDNSs32)( tickGet() ) );
 }
 
 //===========================================================================================================================
