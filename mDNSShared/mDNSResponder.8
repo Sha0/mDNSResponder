@@ -1,0 +1,58 @@
+.\""Copyright (c) 2003 Apple Computer, Inc. All Rights Reserved.
+.Dd 12th November 2003
+.Dt mDNSResponder 8  
+.Os "Mac OS X"
+.Sh NAME
+.Nm mDNSResponder
+.Nd Multicast DNS daemon
+.Sh SYNOPSIS
+.Nm mDNSResponder
+.Sh DESCRIPTION
+.Nm mDNSResponder
+is a daemon invoked at boot time to implement Multicast DNS
+and DNS Service Discovery.
+
+.Pp
+.Nm mDNSResponder
+listens UDP port 5353 for Multicast DNS Query packets. 
+When it receives a query for which it knows an answer, 
+.Nm mDNSResponder 
+issues the appropriate Multicast DNS Reply packet.
+
+.Pp
+.Nm mDNSResponder
+has no user-specifiable command-line argument, and users should not run 
+.Nm mDNSResponder
+manually.
+
+.Sh FILES
+/usr/sbin/mDNSResponder
+
+.Sh SEE ALSO
+For information on Multicast DNS, see 
+.Pa http://www.multicastdns.org/
+.Pp 
+For information on DNS Service Discovery, see 
+.Pa http://www.dns-sd.org/
+.Pp 
+For information on how to use the Multicast DNS and the DNS Service Discovery 
+API on Mac OS X, see 
+.Pa http://developer.apple.com/macosx/rendezvous/
+.Pp
+For the source code to 
+.Nm mDNSResponder,
+see 
+
+.Pa http://developer.apple.com/darwin/projects/rendezvous/
+
+
+
+.Sh BUGS
+
+.Nm mDNSResponder
+bugs are tracked in Apple Radar component "mDNSResponder".
+
+.Sh HISTORY
+The 
+.Nm mDNSResponder 
+daemon first appeared in Mac OS X 10.2 (Jaguar).
