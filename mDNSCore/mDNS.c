@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.178  2003/06/07 06:25:12  cheshire
+Update some comments
+
 Revision 1.177  2003/06/07 04:50:53  cheshire
 <rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
 
@@ -3035,7 +3038,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			if (q->SendQNow || (q->ThisQInterval <= maxExistingQuestionInterval && TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/2)))
 				{
+				// Mark for sending
 				q->SendQNow = (q->InterfaceID) ? q->InterfaceID : intf->InterfaceID;
+
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, treat this as logically a repeat of the last transmission, without advancing the interval
 				if (m->timenow - (q->LastQTime + q->ThisQInterval/2) >= 0)
@@ -3052,7 +3057,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				q->LastQTime     = m->timenow;
 				q->RecentAnswers = 0;
 				}
-			// For all questions (not just the ones we're sending) check with the next scheduled event will be
+			// For all questions (not just the ones we're sending) check what the next scheduled event will be
 			SetNextQueryTime(m,q);
 			}
 		}
@@ -4191,7 +4196,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 4. Parse Answer Section and cancel any records disallowed by known-answer list
+	// *** 4. Parse Answer Section and cancel any records disallowed by Known-Answer list
 	// ***
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
@@ -4200,12 +4205,12 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		ptr = GetResourceRecord(m, query, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pktrr, mDNSNULL);
 		if (!ptr) goto exit;
 
-		// See if it suppresses any of our planned answers
+		// See if this Known-Answer suppresses any of our currently planned answers
 		for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 			if (MustSendRecord(rr) && ShouldSuppressKnownAnswer(&pktrr, rr))
 				{ rr->NR_AnswerTo = mDNSNULL; rr->NR_AdditionalTo = mDNSNULL; }
 
-		// See if it suppresses any previously scheduled answers
+		// See if this Known-Answer suppresses any previously scheduled answers
 		for (rr=m->ResourceRecords; rr; rr=rr->next)
 			{
 			// If we're planning to send this answer on this interface, and only on this interface, then allow KA suppression
@@ -4223,7 +4228,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				}
 			}
 
-		// See if it suppresses any answers we were expecting for our cache records
+		// See if this Known-Answer suppresses any answers we were expecting for our cache records
 		if (query->h.flags.b[0] & kDNSFlag0_TC)
 			{
 			for (rr = m->rrcache_hash[HashSlot(&pktrr.name)]; rr; rr=rr->next)
