@@ -25,6 +25,9 @@
 // Supporting routines to run mDNS on a CFRunLoop platform
 // ***************************************************************************
 
+int mDNS_UsePort53 = 1;
+int mDNS_AdvertiseLocalAddresses = 1;
+
 #include "mDNSClientAPI.h"           // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"   // Defines the interface to the supporting layer below
 #include "mDNSPlatformEnvironment.h" // Defines the specific types needed to run mDNS on this platform
@@ -509,7 +512,7 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
 
 	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
-	info->ifinfo.Advertise       = mDNStrue;
+	info->ifinfo.Advertise       = mDNS_AdvertiseLocalAddresses;
 	info->m         = m;
 	info->ifa_name  = (char *) malloc(strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
@@ -538,13 +541,12 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 
 mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, struct ifaddrs *ifa)
 	{
-	extern int use_53;
 	mStatus err = 0;
 	struct sockaddr_in *ifa_addr = (struct sockaddr_in *)ifa->ifa_addr;
 	CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
 
 	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
-	info->ifinfo.Advertise       = mDNStrue;
+	info->ifinfo.Advertise       = mDNS_AdvertiseLocalAddresses;
 	info->m         = m;
 	info->ifa_name  = (char *)malloc(strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
@@ -561,8 +563,10 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 		debugf("SetupInterface: %s Flags %04X %.4a is an alias of %.4a",
 			ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip, &info->alias->ifinfo.ip);
 
-	if (use_53) err = SetupSocket(ifa_addr, UnicastDNSPort,   &info->socket2, &info->cfsocket2, &myCFSocketContext);
-	if (!err)   err = SetupSocket(ifa_addr, MulticastDNSPort, &info->socket1, &info->cfsocket1, &myCFSocketContext);
+	if (mDNS_UsePort53)
+		err = SetupSocket(ifa_addr, UnicastDNSPort,   &info->socket2, &info->cfsocket2, &myCFSocketContext);
+	if (!err)
+		err = SetupSocket(ifa_addr, MulticastDNSPort, &info->socket1, &info->cfsocket1, &myCFSocketContext);
 
 	debugf("SetupInterface: %s Flags %04X %.4a Registered",
 		ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip);
