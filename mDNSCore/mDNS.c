@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.403  2004/09/15 00:46:32  ksekar
+Changed debugf to verbosedebugf in CheckCacheExpiration
+
 Revision 1.402  2004/09/14 23:59:55  cheshire
 <rdar://problem/3681031> Randomize initial timenow_adjust value in mDNS_Init
 
@@ -3306,7 +3309,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
 			rp = &rr->next;
 			}
 		}
-	if (m->rrcache_tail[slot] != rp) debugf("CheckCacheExpiration: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
+	if (m->rrcache_tail[slot] != rp) verbosedebugf("CheckCacheExpiration: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
 	m->rrcache_tail[slot] = rp;
 	m->lock_rrcache = 0;
 	}
