@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.20  2004/10/19 21:33:18  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.19  2004/09/17 01:08:50  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -260,7 +265,7 @@ int main()
 			printf("\nSending mDNS service lookup queries and waiting for responses...\n\n");
 			MakeDomainNameFromDNSNameString(&srvtype, "_http._tcp.");
 			MakeDomainNameFromDNSNameString(&srvdom, "local.");
-			err = mDNS_StartBrowse(&mDNSStorage, &browsequestion, &srvtype, &srvdom, mDNSInterface_Any, FoundInstance, &services);
+			err = mDNS_StartBrowse(&mDNSStorage, &browsequestion, &srvtype, &srvdom, mDNSInterface_Any, mDNSfalse, FoundInstance, &services);
 			if (err) break;
 			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, NULL, mDNSInterface_Any, FoundDomain, &services);
 			if (err) break;

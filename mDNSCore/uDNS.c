@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.99  2004/10/19 21:33:18  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.98  2004/10/16 00:16:59  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -2462,7 +2467,7 @@ mDNSexport mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalI
 		{
 		if (q == question)
 			{
-			if (!question->uDNS_info.id.NotAnInteger || question->InterfaceID || IsLocalDomain(&question->qname))
+			if (!question->uDNS_info.id.NotAnInteger || question->InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&question->qname))
 				LogMsg("Warning: Question %##s in Active Unicast Query list with id %d, interfaceID %p",
 					   question->qname.c, question->uDNS_info.id.NotAnInteger, question->InterfaceID);
 			return mDNStrue;

@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.31  2004/10/19 21:33:23  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.30  2004/09/17 01:08:58  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -884,7 +889,7 @@ DNSStatus
 	MakeDomainNameFromDNSNameString( &type, inType );
 	MakeDomainNameFromDNSNameString( &domain, inDomain );
 	
-	err = mDNS_StartBrowse( gMDNSPtr, &inRef->serviceBrowseQuestion, &type, &domain, mDNSInterface_Any, 
+	err = mDNS_StartBrowse( gMDNSPtr, &inRef->serviceBrowseQuestion, &type, &domain, mDNSInterface_Any, mDNSfalse,
 							DNSBrowserPrivateCallBack, inRef );
 	require_noerr( err, exit );
 	

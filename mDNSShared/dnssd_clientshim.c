@@ -31,6 +31,11 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.6  2004/10/19 21:33:22  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.5  2004/09/21 23:29:51  cheshire
 <rdar://problem/3680045> DNSServiceResolve should delay sending packets
 
@@ -438,7 +443,7 @@ DNSServiceErrorType DNSServiceBrowse
 	x->q.QuestionContext = x;
 
 	// Do the operation
-	err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, mDNSInterface_Any, FoundInstance, x);
+	err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, mDNSInterface_Any, (flags & kDNSServiceFlagsForceMulticast) != 0, FoundInstance, x);
 	if (err) { mDNSPlatformMemFree(x); errormsg = "mDNS_StartBrowse"; goto fail; }
 
 	// Succeeded: Wrap up and return
@@ -533,6 +538,7 @@ DNSServiceErrorType DNSServiceResolve
 	x->qSRV.qclass              = kDNSClass_IN;
 	x->qSRV.LongLived           = mDNSfalse;
 	x->qSRV.ExpectUnique        = mDNStrue;
+	x->qSRV.ForceMCast          = mDNSfalse;
 	x->qSRV.QuestionCallback    = FoundServiceInfo;
 	x->qSRV.QuestionContext     = x;
 
@@ -544,6 +550,7 @@ DNSServiceErrorType DNSServiceResolve
 	x->qTXT.qclass              = kDNSClass_IN;
 	x->qTXT.LongLived           = mDNSfalse;
 	x->qTXT.ExpectUnique        = mDNStrue;
+	x->qTXT.ForceMCast          = mDNSfalse;
 	x->qTXT.QuestionCallback    = FoundServiceInfo;
 	x->qTXT.QuestionContext     = x;
 
@@ -665,6 +672,7 @@ DNSServiceErrorType DNSServiceQueryRecord
 	x->q.qclass              = rrclass;
 	x->q.LongLived           = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
 	x->q.ExpectUnique        = mDNSfalse;
+	x->q.ForceMCast          = (flags & kDNSServiceFlagsForceMulticast) != 0;
 	x->q.QuestionCallback    = DNSServiceQueryRecordResponse;
 	x->q.QuestionContext     = x;
 

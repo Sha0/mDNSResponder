@@ -24,6 +24,11 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.99  2004/10/19 21:33:22  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.98  2004/10/14 01:59:33  cheshire
 <rdar://problem/3839208> UDS resolves don't work for uDNS services
 
@@ -418,6 +423,7 @@ typedef struct browser_t
 typedef struct
 	{
     mDNSBool default_domain;
+    mDNSBool ForceMCast;
     domainname regtype;
     mDNSInterfaceID interface_id;
     struct request_state *rstate;
@@ -824,7 +830,7 @@ void udsserver_info(mDNS *const m)
 			SlotUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
 			LogMsgNoIdent("%s%6ld %s%-6s%-6s%s",
-				rr->CRActiveQuestion ? "*" : ".", remain,
+				rr->CRActiveQuestion ? "*" : " ", remain,
 				(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, GetRRDisplayString(m, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
@@ -1154,6 +1160,7 @@ static void handle_query_request(request_state *rstate)
     q->qclass           = rrclass;
     q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
     q->ExpectUnique     = mDNSfalse;
+    q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
     q->QuestionCallback = question_result_callback;
     q->QuestionContext  = rstate;
 
@@ -1238,6 +1245,7 @@ static void handle_resolve_request(request_state *rstate)
     srv->question.qclass           = kDNSClass_IN;
     srv->question.LongLived        = mDNSfalse;
     srv->question.ExpectUnique     = mDNStrue;
+	srv->question.ForceMCast       = mDNSfalse;
     srv->question.QuestionCallback = resolve_result_callback;
     srv->question.QuestionContext  = rstate;
 
@@ -1248,6 +1256,7 @@ static void handle_resolve_request(request_state *rstate)
     txt->question.qclass           = kDNSClass_IN;
     txt->question.LongLived        = mDNSfalse;
     txt->question.ExpectUnique     = mDNStrue;
+	txt->question.ForceMCast       = mDNSfalse;
     txt->question.QuestionCallback = resolve_result_callback;
     txt->question.QuestionContext  = rstate;
 
@@ -1623,13 +1632,13 @@ static mStatus add_domain_to_browser(browser_info_t *info, const domainname *d)
 	for (p = info->browsers; p; p = p->next)
 		{
 		if (SameDomainName(&p->domain, d))
-			{ LogMsg("add_domain_to_browser - attempt to add domani %##d already in list", d->c); return mStatus_AlreadyRegistered; }
+			{ LogMsg("add_domain_to_browser - attempt to add domain %##d already in list", d->c); return mStatus_AlreadyRegistered; }
 		}
 
 	b = mallocL("browser_t", sizeof(*b));
 	if (!b) return mStatus_NoMemoryErr;
 	AssignDomainName(b->domain, *d);
-	err = mDNS_StartBrowse(gmDNS, &b->q, &info->regtype, d, info->interface_id, browse_result_callback, info->rstate);
+	err = mDNS_StartBrowse(gmDNS, &b->q, &info->regtype, d, info->interface_id, info->ForceMCast, browse_result_callback, info->rstate);
 	if (err)
 		{
 		LogMsg("mDNS_StartBrowse returned %d for type %##s domain %##s", err, info->regtype.c, d->c);
@@ -1694,6 +1703,7 @@ static void handle_browse_request(request_state *request)
 	if (!info) { err = mStatus_NoMemoryErr; goto error; }
 
 	request->browser_info = info;
+	info->ForceMCast = (flags & kDNSServiceFlagsForceMulticast) != 0;
 	info->interface_id = InterfaceID;
 	AssignDomainName(info->regtype, typedn);
 	info->rstate = request;

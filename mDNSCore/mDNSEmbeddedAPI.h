@@ -60,6 +60,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.225  2004/10/19 21:33:17  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.224  2004/10/16 00:16:59  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -1324,7 +1329,8 @@ struct AuthRecord_struct
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes
 	void           *RecordContext;		// Context parameter for the callback function
 	mDNSu8          HostTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
-	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record.
+	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
+	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names (not yet implemented)
 
 	// Transient state for Authoritative Records
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
@@ -1602,6 +1608,7 @@ struct DNSQuestion_struct
 	mDNSu16               qclass;
 	mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
 	mDNSBool              ExpectUnique;		// Set by client if it's expecting unique RR(s) for this question, not shared RRs
+	mDNSBool              ForceMCast;		// Set by client to force mDNS query, even for apparently uDNS names
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
 	};
@@ -1837,7 +1844,6 @@ extern const mDNSAddr        zeroAddr;
 
 extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// (mDNSInterfaceID)-1;
-extern const mDNSInterfaceID mDNSInterface_ForceMCast;		// (mDNSInterfaceID)-2;
 
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      MulticastDNSPort;
@@ -2031,7 +2037,7 @@ extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, AuthRecord *const rr,
 
 extern mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
                const domainname *const srv, const domainname *const domain,
-               const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
+               const mDNSInterfaceID InterfaceID, mDNSBool ForceMCast, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopBrowse mDNS_StopQuery
 
 extern mStatus mDNS_StartResolveService(mDNS *const m, ServiceInfoQuery *query, ServiceInfo *info, mDNSServiceInfoQueryCallback *Callback, void *Context);

@@ -36,6 +36,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.199  2004/10/19 21:33:19  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.198  2004/10/15 23:00:18  ksekar
 <rdar://problem/3799242> Need to update LLQs on location changes
 
@@ -969,7 +974,7 @@ mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainnam
 	question->next = browser->qlist;
 	browser->qlist = question;
 	LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", browser->ClientMachPort, browser->type.c, d->c);
-	err = mDNS_StartBrowse(&mDNSStorage, &question->q, &browser->type, d, mDNSInterface_Any, FoundInstance, browser);
+	err = mDNS_StartBrowse(&mDNSStorage, &question->q, &browser->type, d, mDNSInterface_Any, mDNSfalse, FoundInstance, browser);
 	if (err) LogMsg("Error: AddDomainToBrowser: mDNS_StartBrowse %d", err);
 	return err;
 	}

@@ -121,9 +121,15 @@ enum
     kDNSServiceFlagsLongLivedQuery      = 0x100,
     /* Flag for creating a long-lived unicast query for the DNSServiceQueryRecord call. */
 
-    kDNSServiceFlagsAllowRemoteQuery    = 0x200
-    /* Flag for creating a record for which we will answer remote queries                           */
-    /* (queries from hosts more than one hop away; hosts not directly connected to the local link). */
+    kDNSServiceFlagsAllowRemoteQuery    = 0x200,
+    /* Flag for creating a record for which we will answer remote queries
+     * (queries from hosts more than one hop away; hosts not directly connected to the local link).
+     */
+
+    kDNSServiceFlagsForceMulticast      = 0x400
+    /* Flag for signifying that a query or registration should be performed exclusively via multicast DNS,
+     * even for a name in a domain (e.g. foo.apple.com.) that would normally imply unicast DNS.
+     */
     };
 
 /*
@@ -248,10 +254,6 @@ enum
  * operation *only* via multicast on that one interface, even for names that
  * would normally be looked up via unicast DNS.
  * 
- * If the client passes kDNSServiceInterfaceForceMulticast, that indicates
- * to do the operation via multicast on all applicable interfaces, even for
- * names that would normally be looked up via unicast DNS.
- * 
  * If the client passes kDNSServiceInterfaceIndexLocalOnly when registering
  * a service, then that service will be found *only* by other local clients
  * on the same machine that pass kDNSServiceInterfaceIndexLocalOnly when browsing.
@@ -278,7 +280,6 @@ enum
 
 #define kDNSServiceInterfaceIndexAny 0
 #define kDNSServiceInterfaceIndexLocalOnly ( (uint32_t) -1 )
-#define kDNSServiceInterfaceForceMulticast ( (uint32_t) -2 )
 
 
 typedef uint32_t DNSServiceFlags;

@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.13  2004/10/19 21:33:20  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.12  2004/09/17 01:08:53  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -240,7 +245,7 @@ int main(int argc, char **argv)
         MakeDomainNameFromDNSNameString(&type, gServiceType);
         MakeDomainNameFromDNSNameString(&domain, "local.");
 
-        status = mDNS_StartBrowse(&mDNSStorage, &question, &type, &domain, mDNSInterface_Any, BrowseCallback, NULL);
+        status = mDNS_StartBrowse(&mDNSStorage, &question, &type, &domain, mDNSInterface_Any, mDNSfalse, BrowseCallback, NULL);
     
         // Run the platform main event loop until the user types ^C. 
         // The BrowseCallback routine is responsible for printing 

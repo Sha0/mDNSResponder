@@ -36,6 +36,11 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.32  2004/10/19 21:33:21  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.31  2004/10/16 00:17:00  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -320,11 +325,12 @@ mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, const m
 	q->Target           = target ? *target : zeroAddr;
 	q->TargetPort       = MulticastDNSPort;
 	q->TargetQID        = zeroID;
-	q->InterfaceID      = mDNSInterface_ForceMCast;
+	q->InterfaceID      = mDNSInterface_Any;
 	q->qtype            = qtype;
 	q->qclass           = kDNSClass_IN;
 	q->LongLived        = mDNSfalse;
 	q->ExpectUnique     = mDNStrue;
+	q->ForceMCast       = mDNStrue;		// Query via multicast, even for apparently uDNS names like 1.1.1.17.in-addr.arpa.
 	q->QuestionCallback = callback;
 	q->QuestionContext  = NULL;
 

@@ -45,6 +45,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.451  2004/10/19 21:33:15  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
+doesn't force multicast unless you set this flag to indicate explicitly that this is what you want
+
 Revision 1.450  2004/10/19 17:42:59  ksekar
 Fixed compiler warnings for non-debug builds.
 
@@ -1489,7 +1494,6 @@ mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 
 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any        = 0;
 mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly  = (mDNSInterfaceID)-1;
-mDNSexport const mDNSInterfaceID mDNSInterface_ForceMCast = (mDNSInterfaceID)-2;
 
 // Note that mDNSInterfaceMark is the same value as mDNSInterface_LocalOnly, but they are used in different contexts
 mDNSlocal  const mDNSInterfaceID mDNSInterfaceMark        = (mDNSInterfaceID)~0;
@@ -2082,9 +2086,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 #endif
 
 #ifndef UNICAST_DISABLED
-	// If the client has specified an explicit InterfaceID,
-	// then we do a multicast registration  on that interface, even for unicast domains.
-    if (rr->resrec.InterfaceID || IsLocalDomain(&rr->resrec.name))
+    if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->resrec.name))
     	rr->uDNS_info.id = zeroID;
     else return uDNS_RegisterRecord(m, rr);
 #endif
@@ -2291,7 +2293,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 
 #ifndef UNICAST_DISABLED
-    if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name) && rr->uDNS_info.id.NotAnInteger)
+    if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->resrec.name) || !rr->uDNS_info.id.NotAnInteger))
 		return uDNS_DeregisterRecord(m, rr);
 #endif
 	
@@ -2802,14 +2804,6 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 
 mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, mDNSu32 interval)
 	{
-#ifndef UNICAST_DISABLED
-	if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name))
-		{
-		LogMsg("mDNS_Reconfirm_internal: Not implemented for unicast DNS");
-		return mStatus_UnsupportedErr;
-		}
-#endif
-
 	if (interval < kMinimumReconfirmTime)
 		interval = kMinimumReconfirmTime;
 	if (interval > 0x10000000)	// Make sure interval doesn't overflow when we multiply by four below
@@ -5056,21 +5050,15 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		}
 
 #ifndef UNICAST_DISABLED	
-	// If the client has specified an explicit InterfaceID,
+	// If the client has specified 'kDNSServiceFlagsForceMulticast'
 	// then we do a multicast query on that interface, even for unicast domains.
-    if (question->InterfaceID || IsLocalDomain(&question->qname))
+    if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
     	question->uDNS_info.id = zeroID;
     else return uDNS_StartQuery(m, question);
 #else
     question->uDNS_info.id = zeroID;
 #endif // UNICAST_DISABLED
 	
-	// The special interface ID "-2" means
-	// "do this query via multicast on all interfaces, even if it's apparently a unicast domain"
-	// After it's served its purpose by preventing a unicast query above, we now set it to mDNSInterface_Any.
-	if (question->InterfaceID == mDNSInterface_ForceMCast)
-		question->InterfaceID = mDNSInterface_Any;
-
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
 	else
@@ -5256,7 +5244,7 @@ mDNSexport mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr
 
 mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const domainname *const srv, const domainname *const domain,
-	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
+	const mDNSInterfaceID InterfaceID, mDNSBool ForceMCast, mDNSQuestionCallback *Callback, void *Context)
 	{
 	question->InterfaceID      = InterfaceID;
 	question->Target           = zeroAddr;
@@ -5264,14 +5252,13 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->qclass           = kDNSClass_IN;
 	question->LongLived        = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
+	question->ForceMCast       = ForceMCast;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 
 #ifndef UNICAST_DISABLED
-	// If the client has specified an explicit InterfaceID,
-	// then we do a multicast query on that interface, even for unicast domains.
-    if (question->InterfaceID || IsLocalDomain(&question->qname))
+    if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
     	{
 		question->LongLived = mDNSfalse;
 		question->uDNS_info.id = zeroID;
@@ -5445,6 +5432,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qSRV.qclass              = kDNSClass_IN;
 	query->qSRV.LongLived           = mDNSfalse;
 	query->qSRV.ExpectUnique        = mDNStrue;
+	query->qSRV.ForceMCast          = mDNSfalse;
 	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
 	query->qSRV.QuestionContext     = query;
 
@@ -5456,6 +5444,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qTXT.qclass              = kDNSClass_IN;
 	query->qTXT.LongLived           = mDNSfalse;
 	query->qTXT.ExpectUnique        = mDNStrue;
+	query->qTXT.ForceMCast          = mDNSfalse;
 	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
 	query->qTXT.QuestionContext     = query;
 
@@ -5467,6 +5456,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv4.qclass              = kDNSClass_IN;
 	query->qAv4.LongLived           = mDNSfalse;
 	query->qAv4.ExpectUnique        = mDNStrue;
+	query->qAv4.ForceMCast          = mDNSfalse;
 	query->qAv4.QuestionCallback    = FoundServiceInfo;
 	query->qAv4.QuestionContext     = query;
 
@@ -5478,6 +5468,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv6.qclass              = kDNSClass_IN;
 	query->qAv6.LongLived           = mDNSfalse;
 	query->qAv6.ExpectUnique        = mDNStrue;
+	query->qAv6.ForceMCast          = mDNSfalse;
 	query->qAv6.QuestionCallback    = FoundServiceInfo;
 	query->qAv6.QuestionContext     = query;
 
@@ -5529,6 +5520,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->qclass           = kDNSClass_IN;
 	question->LongLived        = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
+	question->ForceMCast       = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (DomainType > mDNS_DomainTypeRegistrationDefault) return(mStatus_BadParamErr);
@@ -5604,7 +5596,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
 #ifndef UNICAST_DISABLED
-	mDNSBool unicast = (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name));
+	mDNSBool unicast = !(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->resrec.name));
 #else
 	mDNSBool unicast = mDNSfalse;
 #endif
@@ -6188,7 +6180,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 #ifndef UNICAST_DISABLED	
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration  on that interface, even for unicast domains.
-	if (!InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+	if (!(InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
 		{
 		mStatus status;
 		mDNS_Lock(m);
@@ -6222,7 +6214,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	mStatus status;
 
 #ifndef UNICAST_DISABLED
-	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
 		{
 		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
 		return mStatus_UnsupportedErr;
@@ -6255,7 +6247,7 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	mStatus status;
 
 #ifndef UNICAST_DISABLED	
-	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
 		{
 		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
 		return mStatus_UnsupportedErr;
@@ -6327,7 +6319,7 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	if (!sr->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger) return(mDNS_DeregisterNoSuchService(m, &sr->RR_SRV));
 
 #ifndef UNICAST_DISABLED	
-	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
 		{
 		mStatus status;
 		mDNS_Lock(m);
