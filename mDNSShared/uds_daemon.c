@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.71  2004/08/11 04:21:21  rpantos
+Fix Windows build.
+
 Revision 1.70  2004/08/11 02:07:00  cheshire
 Remove "mDNS *globalInstance" parameter from udsserver_init()
 Move CheckForDuplicateRegistrations from daemon.c
@@ -1488,8 +1491,8 @@ static mStatus register_service(request_state *request, registered_service **srv
 	registered_service *r_srv;
     int srs_size;
 	mStatus result;	
-	*srv_ptr = NULL;
 	domainname srv;
+	*srv_ptr = NULL;
 	
 	if (!ConstructServiceName(&srv, n, t, d)) return(mStatus_BadParamErr);
 
