@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.430  2004/09/24 02:15:49  cheshire
+<rdar://problem/3680865> Late conflicts don't send goodbye packets on other interfaces
+
 Revision 1.429  2004/09/24 00:20:21  cheshire
 <rdar://problem/3483349> Any rrtype is a conflict for unique records
 
@@ -5892,7 +5895,6 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 	if (result == mStatus_NameConflict)
 		{
 		sr->Conflict = mDNStrue;				// Record that this service set had a conflict
-		sr->RR_PTR.RequireGoodbye = mDNSfalse;	// Make sure we don't send a goodbye for the PTR record
 		mDNS_DeregisterService(m, sr);			// Unlink the records from our list
 		return;
 		}
