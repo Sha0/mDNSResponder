@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.23  2003/09/23 16:38:25  cheshire
+When LogAllOperations is false, treat LogOperation() like debugf()
+(i.e. show in debug builds), rather than unconditionally ignoring
+
 Revision 1.22  2003/09/23 02:12:43  cheshire
 Also include port number in list of services registered via new UDS API
 
@@ -175,7 +179,7 @@ extern void freeL(char *msg, void *x);
 #if LogAllOperations
 #define LogOperation LogMsg
 #else
-#define	LogOperation(ARGS...) ((void)0)
+#define	LogOperation debugf
 #endif
 
 #define PORT_AS_NUM(P) (((mDNSu16)(P).b[0]) << 8 | (P).b[1])
