@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.259  2004/12/11 20:55:29  ksekar
+<rdar://problem/3916479> Clean up registration state machines
+
 Revision 1.258  2004/12/10 20:48:32  cheshire
 <rdar://problem/3705229> Need to pick final EDNS numbers for LLQ and GC
 
@@ -1372,7 +1375,8 @@ struct ResourceRecord_struct
 	RData           *rdata;				// Pointer to storage for this rdata
 	};
 
-enum
+// Unless otherwise noted, states may apply to either independent record registrations or service registrations	
+typedef enum
 	{
 	regState_FetchingZoneData  = 1,     // getting info - update not sent
 	regState_Pending           = 2,     // update sent, reply not received
@@ -1384,11 +1388,9 @@ enum
 	regState_Refresh           = 9,     // outstanding refresh (or target change) message
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
 	regState_UpdatePending     = 11,    // update in flight as result of mDNS_Update call
-	regState_NoTarget          = 12,    // service registration pending registration of hostname
-     regState_ExtraQueued      = 13     // extra record to be registered upon completion of service registration
-	};
-
-typedef mDNSu16 regState_t;
+	regState_NoTarget          = 12,    // service registration pending registration of hostname (ServiceRegistrations only)
+    regState_ExtraQueued       = 13     // extra record to be registered upon completion of service registration (RecordRegistrations only)
+	} regState_t; 
 
 // context for both ServiceRecordSet and individual AuthRec structs
 typedef struct
@@ -1397,7 +1399,7 @@ typedef struct
 	regState_t   state;
 	mDNSBool     lease;    // dynamic update contains (should contain) lease option
 	mDNSs32      expire;   // expiration of lease (-1 for static)
-	mDNSBool      TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
+	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
 	
 	// identifier to match update request and response
 	mDNSOpaque16 id;
