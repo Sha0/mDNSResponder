@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.21  2004/04/09 16:47:28  cheshire
+<rdar://problem/3617655>: mDNSResponder escape handling inconsistent with BIND
+
 Revision 1.20  2004/04/09 16:37:15  cheshire
 Suggestion from Bob Bradley:
 Move NumCacheRecordsForInterfaceID() to DNSCommon.c so it's available to all platform layers
@@ -357,15 +360,14 @@ mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstr)
 			mDNSu8 c = (mDNSu8)*cstr++;								// Read the character
 			if (c == '\\')											// If escape character, check next character
 				{
-				if (*cstr == '\\' || *cstr == '.')					// If a second escape, or a dot,
-					c = (mDNSu8)*cstr++;							// just use the second character
-				else if (mdnsIsDigit(cstr[0]) && mdnsIsDigit(cstr[1]) && mdnsIsDigit(cstr[2]))
-					{												// else, if three decimal digits,
-					int v0 = cstr[0] - '0';							// then interpret as three-digit decimal
-					int v1 = cstr[1] - '0';
-					int v2 = cstr[2] - '0';
+				c = (mDNSu8)*cstr++;								// Assume we'll just take the next character
+				if (mdnsIsDigit(cstr[-1]) && mdnsIsDigit(cstr[0]) && mdnsIsDigit(cstr[1]))
+					{												// If three decimal digits,
+					int v0 = cstr[-1] - '0';						// then interpret as three-digit decimal
+					int v1 = cstr[ 0] - '0';
+					int v2 = cstr[ 1] - '0';
 					int val = v0 * 100 + v1 * 10 + v2;
-					if (val <= 255) { c = (mDNSu8)val; cstr += 3; }	// If valid value, use it
+					if (val <= 255) { c = (mDNSu8)val; cstr += 2; }	// If valid three-digit decimal value, use it
 					}
 				}
 			*ptr++ = c;												// Write the character
