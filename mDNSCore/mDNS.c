@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.285  2003/08/20 01:59:06  cheshire
+<rdar://problem/3384478> rdatahash and rdnamehash not updated after changing rdata
+Made new routine SetNewRData() to update rdlength, rdestimate, rdatahash and rdnamehash in one place
+
 Revision 1.284  2003/08/19 22:20:00  cheshire
 <rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
 More minor refinements
@@ -2165,6 +2169,22 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	SetNextAnnounceProbeTime(m, rr);
 	}
 
+mDNSlocal void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 rdlength)
+	{
+	domainname *target;
+	if (NewRData)
+		{
+		rr->rdata    = NewRData;
+		rr->rdlength = rdlength;
+		}
+	// Must not try to get target pointer until after updating rr->rdata
+	target = GetRRDomainNameTarget(rr);
+	rr->rdlength   = GetRDLength(rr, mDNSfalse);
+	rr->rdestimate = GetRDLength(rr, mDNStrue);
+	rr->rdatahash  = RDataHashValue(rr->rdlength, &rr->rdata->u);
+	rr->rdnamehash = target ? DomainNameHashValue(target) : 0;
+	}
+
 mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 	{
 	domainname *target = GetRRDomainNameTarget(&rr->resrec);
@@ -2177,8 +2197,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 	if (target && !SameDomainName(target, &m->hostname))
 		{
 		AssignDomainName(*target, m->hostname);
-		rr->resrec.rdlength = GetRDLength(&rr->resrec, mDNSfalse);
-		rr->resrec.rdestimate      = GetRDLength(&rr->resrec, mDNStrue);
+		SetNewRData(&rr->resrec, mDNSNULL, 0);
 		
 		// If we're in the middle of probing this record, we need to start again,
 		// because changing its rdata may change the outcome of the tie-breaker.
@@ -2551,8 +2570,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		if (rr->NewRData)
 			{
 			RData *OldRData = rr->resrec.rdata;
-			rr->resrec.rdata    = rr->NewRData;	// Update our rdata
-			rr->resrec.rdlength = rr->newrdlength;
+			SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);	// Update our rdata
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
 			if (rr->UpdateCallback)
 				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
@@ -2931,7 +2949,6 @@ mDNSlocal const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *
 mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end,
 	const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, CacheRecord *rr, RData *RDataStorage)
 	{
-	domainname *target;
 	mDNSu16 pktrdlength;
 
 	rr->next              = mDNSNULL;
@@ -3034,12 +3051,9 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 							break;
 		}
 
-	target = GetRRDomainNameTarget(&rr->resrec);
-	rr->resrec.rdlength   = GetRDLength(&rr->resrec, mDNSfalse);
-	rr->resrec.rdestimate = GetRDLength(&rr->resrec, mDNStrue);
-	rr->resrec.namehash   = DomainNameHashValue(&rr->resrec.name);
-	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
-	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
+	rr->resrec.namehash = DomainNameHashValue(&rr->resrec.name);
+	SetNewRData(&rr->resrec, mDNSNULL, 0);
+
 	return(ptr + pktrdlength);
 	}
 
@@ -3298,12 +3312,10 @@ mDNSlocal void SendResponses(mDNS *const m)
 						responseptr = newptr;
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
-					rr->resrec.rdata    = rr->NewRData;
-					rr->resrec.rdlength = rr->newrdlength;
+					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
 					newptr = PutResourceRecord(&response, responseptr, &response.h.numAnswers, &rr->resrec);
 					if (newptr) responseptr = newptr;
-					rr->resrec.rdata    = OldRData;
-					rr->resrec.rdlength = oldrdlength;
+					SetNewRData(&rr->resrec, OldRData, oldrdlength);
 					}
 				else
 					{
@@ -3393,8 +3405,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if (rr->NewRData)
 			{
 			RData *OldRData = rr->resrec.rdata;
-			rr->resrec.rdata    = rr->NewRData;	// Update our rdata
-			rr->resrec.rdlength = rr->newrdlength;
+			SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);	// Update our rdata
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
 			if (rr->UpdateCallback)
 				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
