@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.45  2004/06/08 18:54:47  ksekar
+<rdar://problem/3681378>: mDNSResponder leaks after exploring in Printer Setup Utility
+
 Revision 1.44  2004/06/05 00:33:51  cheshire
 <rdar://problem/3681029>: Check for incorrect time comparisons
 
@@ -568,10 +571,21 @@ mDNSlocal void removeKnownAnswer(DNSQuestion *question, CacheRecord *rr)
 	}
 
 
-mDNSlocal void addKnownAnswer(DNSQuestion *question, CacheRecord *rr)
+mDNSlocal void addKnownAnswer(DNSQuestion *question, const CacheRecord *rr)
 	{
-	rr->next = question->uDNS_info.knownAnswers;
-	question->uDNS_info.knownAnswers = rr;
+	CacheRecord *newCR = NULL;
+	int rdsize = InlineCacheRDSize;
+
+	if (rr->resrec.rdlength > InlineCacheRDSize) rdsize = rr->resrec.rdlength;	
+	newCR = (CacheRecord *)umalloc(sizeof(CacheRecord) + rdsize - InlineCacheRDSize);
+	if (!newCR) { LogMsg("ERROR: addKnownAnswer - malloc"); return; }
+
+	umemcpy(&newCR->resrec, &rr->resrec, sizeof(ResourceRecord));
+	newCR->resrec.rdata = (RData*)&rr->rdatastorage;
+	newCR->resrec.rdata->MaxRDLength = rdsize;
+	umemcpy(newCR->resrec.rdata->u.data, rr->resrec.rdata->u.data, rr->resrec.rdlength);
+	newCR->next = question->uDNS_info.knownAnswers;
+	question->uDNS_info.knownAnswers = newCR;
 	}
 
 mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question)
@@ -672,8 +686,8 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	{
 	const mDNSu8 *ptr;
 	int i;
-	CacheRecord *cr;
-	LargeCacheRecord *lcr;
+	LargeCacheRecord lcr;
+	CacheRecord *cr = &lcr.r;
 	mDNSBool goodbye, inKAList;
 	LLQ_Info *llqInfo = question->uDNS_info.llq;
 	
@@ -685,12 +699,8 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 
 	for (i = 0; i < msg->h.numAnswers; i++)
 		{
-		lcr = (LargeCacheRecord *)umalloc(sizeof(LargeCacheRecord));
-		if (!lcr) goto malloc_error;
-		ubzero(lcr, sizeof(LargeCacheRecord));
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, lcr);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
 		if (!ptr) goto pkt_error;
-		cr = &lcr->r;
 		if (ResourceRecordAnswersQuestion(&cr->resrec, question))
 			{
 			goodbye = llq ? ((mDNSs32)cr->resrec.rroriginalttl == -1) : mDNSfalse;
@@ -709,7 +719,6 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 		else
 			{
 			LogMsg("unexpected answer: %s", cr->resrec.name.c);
-			ufree(cr);
 			}
 		}
 	if (llq && (llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume))	
@@ -722,9 +731,6 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	LogMsg("ERROR: pktResponseHndlr - received malformed response to query for %s (%d)",
 		   question->qname.c, question->qtype);
 	return;
-
-	malloc_error:
-	LogMsg("ERROR: Malloc");	
 	}
 
 mDNSlocal void simpleResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *context)
@@ -1537,8 +1543,8 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 				{ q = q->next; continue; }
 			else if (llqInfo->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers)
 				{ recvRefreshReply(m, msg, end, q); return mDNStrue; }
-			else 
-				{ q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context); return mDNStrue; }
+			else if (llqInfo->state < LLQ_Static)
+				{ q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context); return mDNStrue; }			
 			}
 		q = q->next;
 		}

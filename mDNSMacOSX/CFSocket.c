@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.157  2004/06/08 18:54:48  ksekar
+<rdar://problem/3681378>: mDNSResponder leaks after exploring in Printer Setup Utility
+
 Revision 1.156  2004/06/05 00:04:26  cheshire
 <rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
 
@@ -1961,7 +1964,7 @@ mDNSexport void InitAuthInfo(mDNS *m)
 	OSStatus err;
 	
 	SecKeychainSearchRef searchRef = NULL;
-	SecKeychainRef sysKeychain;
+	SecKeychainRef sysKeychain = NULL;
 	SecKeychainAttribute searchAttrs[] = { { kSecDescriptionItemAttr, strlen(LH_KEYCHAIN_DESC), LH_KEYCHAIN_DESC },
 									  { kSecServiceItemAttr, strlen(LH_KEYCHAIN_SERVICE), LH_KEYCHAIN_SERVICE } };	
 	SecKeychainAttributeList searchList = { sizeof(searchAttrs) / sizeof(*searchAttrs), searchAttrs };
@@ -1971,20 +1974,25 @@ mDNSexport void InitAuthInfo(mDNS *m)
 	mDNS_ClearAuthenticationList(m);
 
 	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &sysKeychain);
-	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't open system keychain - %d", err); return; }
+	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't open system keychain - %d", err); goto release_refs; }
 	err = SecKeychainSetDomainDefault(kSecPreferencesDomainSystem, sysKeychain);
-	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't set domain default for system keychain - %d", err); return; }
+	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't set domain default for system keychain - %d", err); goto release_refs; }
 	
 	err = SecKeychainSearchCreateFromAttributes(sysKeychain, kSecGenericPasswordItemClass, &searchList, &searchRef);
-	if (err) { LogMsg("ERROR: InitAuthInfo - SecKeychainSearchCreateFromAttributes %d", err); return; }
+	if (err) { LogMsg("ERROR: InitAuthInfo - SecKeychainSearchCreateFromAttributes %d", err); goto release_refs; }
 
 	while (!SecKeychainSearchCopyNext(searchRef, &item))
 		{
 		GetAuthInfoFromKeychainItem(m, item);
+		CFRelease(item);
 		}
-
 	err = SecKeychainAddCallback(KeychainCallback, kSecAddEventMask | kSecDeleteEventMask | kSecUpdateEventMask | kSecPasswordChangedEventMask, m);	
 	if (err && err != errSecDuplicateCallback) { LogMsg("SecKeychainAddCallback returned error %d", err); }							 	
+
+	release_refs:
+	
+	if (searchRef) CFRelease(searchRef);
+	if (sysKeychain) CFRelease(sysKeychain);
 	}
 
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);

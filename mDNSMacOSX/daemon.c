@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.174  2004/06/08 18:54:48  ksekar
+<rdar://problem/3681378>: mDNSResponder leaks after exploring in Printer Setup Utility
+
 Revision 1.173  2004/06/08 17:35:12  cheshire
 <rdar://problem/3683988> Detect and report if mDNSResponder uses too much CPU
 
@@ -1093,7 +1096,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	EnableDeathNotificationForClient(client, x);
 	return(mStatus_NoError);
 
-badparam:
+badparam: 
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceResolve(\"%s\", \"%s\", \"%s\") failed: %s (%ld)", client, name, regtype, domain, errormsg, err);
@@ -1163,8 +1166,11 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 		}
 	
 	else
+		{
 		LogMsg("%5d: DNSServiceRegistration(%##s, %u) Unknown Result %ld",
 			x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT(sr), result);
+		if (sr == x->gs) { freeL("RegCallback - ServiceRecordSet", x->gs); x->gs = NULL; }
+		}
 	}
 
 mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainname *srv, mDNSIPPort port)
