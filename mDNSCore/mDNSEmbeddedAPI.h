@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.198  2004/09/16 21:36:36  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+Changes to add necessary locking calls around unicast DNS operations
+
 Revision 1.197  2004/09/16 00:24:48  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -1619,7 +1623,6 @@ typedef struct
     mDNSu16          NextMessageID;
     mDNSAddr         Servers[32];
     mDNSAddr         Router;
-    char             PrimaryIfName[256]; // Name of primary interface to be registered (e.g. "en0")
     mDNSAddr         PrimaryIP;          // Address of primary interface
     mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
     domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
@@ -2083,8 +2086,7 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key,
 extern void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *domain, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain);
 extern void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel);
-extern void mDNS_SetPrimaryInterface(mDNS *m, const char *ifname, const mDNSAddr *ip);
-extern const char *mDNS_GetPrimaryInterface(mDNS *m, mDNSAddr *ip);
+extern void mDNS_SetPrimaryIP(mDNS *m, const mDNSAddr *ip);
 
 // Routines called by the core, exported by DNSDigest.c
 

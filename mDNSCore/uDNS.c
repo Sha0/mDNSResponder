@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.82  2004/09/16 21:36:36  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+Changes to add necessary locking calls around unicast DNS operations
+
 Revision 1.81  2004/09/16 02:29:39  cheshire
 Moved mDNS_Lock/mDNS_Unlock to DNSCommon.c; Added necessary locking around
 uDNS_ReceiveMsg, uDNS_StartQuery, uDNS_UpdateRecord, uDNS_RegisterService
@@ -377,7 +381,7 @@ mDNSlocal mDNSs32 mDNSPlatformTimeNow(mDNS *m)
 
 	// To get a quick and easy stack trace to find out *how* this routine
 	// is being called without holding main mDNS lock, uncomment the line below:
-	//*(long*)0 = 0;
+	//*(long*)0=0;
 	
 	return(mDNS_TimeNow(m));
 	}
@@ -470,22 +474,25 @@ mDNSexport void mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr)
         return;
         }
 
+	mDNS_Lock(m);
+
     for (i = 0; i < 32; i++)
         {
         if (!u->Servers[i].ip.v4.NotAnInteger)
             {
             u->Servers[i].ip.v4.NotAnInteger = dnsAddr->NotAnInteger;
 			u->Servers[i].type = mDNSAddrType_IPv4;
-            return;
+            goto exit;
             }
         if (u->Servers[i].ip.v4.NotAnInteger == dnsAddr->NotAnInteger)
             {
             LogMsg("ERROR: mDNS_RegisterDNS - DNS already registered");
-            return;
+            goto exit;
             }
         }
     if (i == 32) {  LogMsg("ERROR: mDNS_RegisterDNS - too many registered servers");  }
-
+exit:
+	mDNS_Unlock(m);
     }
 
 mDNSexport void mDNS_DeregisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr)
@@ -499,28 +506,36 @@ mDNSexport void mDNS_DeregisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr)
         return;
         }
 
+	mDNS_Lock(m);
+
     for (i = 0; i < 32; i++)
         {
 
         if (u->Servers[i].ip.v4.NotAnInteger == dnsAddr->NotAnInteger)
             {
             u->Servers[i].ip.v4.NotAnInteger = 0;
-            return;
+            goto exit;
             }
         }
     if (i == 32) {  LogMsg("ERROR: mDNS_DeregisterDNS - no such DNS registered");  }
-    }
+ exit:
+	mDNS_Unlock(m);
+   }
 
 mDNSexport void mDNS_DeregisterDNSList(mDNS *const m)
     {
+	mDNS_Lock(m);
     ubzero(m->uDNS_info.Servers, 32 * sizeof(mDNSAddr));
+	mDNS_Unlock(m);
     }
 
 mDNSexport mDNSBool mDNS_DNSRegistered(mDNS *const m)
 	{
 	int i;
-
-	for (i = 0; i < 32; i++) if (m->uDNS_info.Servers[i].ip.v4.NotAnInteger) return mDNStrue;
+	mDNS_Lock(m);
+	for (i = 0; i < 32; i++) if (m->uDNS_info.Servers[i].ip.v4.NotAnInteger)
+		{ mDNS_Unlock(m); return mDNStrue; }
+	mDNS_Unlock(m);
 	return mDNSfalse;
 	}
 	   
@@ -566,12 +581,15 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *
 	mDNSu8 keybuf[1024];
 	mDNSs32 keylen;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mStatus status = mStatus_NoError;
+
+	mDNS_Lock(m);
 	
 	if (GetAuthInfoForZone(u, zone)) DeleteAuthInfoForZone(u, zone);
-	if (!key) return mStatus_NoError;
+	if (!key) goto exit;
 	
 	info = (uDNS_AuthInfo*)umalloc(sizeof(uDNS_AuthInfo) + ssLen);
-	if (!info) { LogMsg("ERROR: umalloc"); return mStatus_NoMemoryErr; }
+	if (!info) { LogMsg("ERROR: umalloc"); status = mStatus_NoMemoryErr; goto exit; }
    	ubzero(info, sizeof(uDNS_AuthInfo));
 	AssignDomainName(info->zone, *zone);
 	AssignDomainName(info->keyname, *key);
@@ -583,7 +601,8 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *
 			{
 			LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication - could not convert shared secret from base64");
 			ufree(info);
-			return mStatus_UnknownErr;
+			status = mStatus_UnknownErr;
+			goto exit;
 			}		
 		DNSDigest_ConstructHMACKey(info, keybuf, (mDNSu32)keylen);		
 		}
@@ -592,7 +611,9 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *
     // link into list
 	info->next = m->uDNS_info.AuthInfoList;
 	m->uDNS_info.AuthInfoList = info;
-	return mStatus_NoError;
+exit:
+	mDNS_Unlock(m);
+	return status;
 	}
 	
  // ***************************************************************************
@@ -1121,18 +1142,20 @@ mDNSexport void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *newdomain, m
 	uDNS_HostnameInfo *ptr, *new;
 	domainname *d;
 
+	mDNS_Lock(m);
+
 	// check if domain already registered
 	for (ptr = u->Hostnames; ptr; ptr = ptr->next)
 		{
 		d = (domainname *)(ptr->ar->resrec.name.c + 1 + ptr->ar->resrec.name.c[0]);  // get the name of the registered hostname
 		if (SameDomainName(newdomain, d))
-			{ LogMsg("Host Domain %##s already in list", d->c); return; }
+			{ LogMsg("Host Domain %##s already in list", d->c); goto exit; }
 		}
 
 	// allocate and format new address record
 	new = umalloc(sizeof(*new));
 	if (new) new->ar = umalloc(sizeof(AuthRecord));
-	if (!new || !new->ar) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); return; }
+	if (!new || !new->ar) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); goto exit; }
 	new->StatusCallback = StatusCallback;
 	new->StatusContext = StatusContext;
 	mDNS_SetupResourceRecord(new->ar, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeUnique, HostnameCallback, new);	
@@ -1148,6 +1171,8 @@ mDNSexport void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *newdomain, m
 		AdvertiseHostname(m, new);
 		}
 	else new->ar->uDNS_info.state = regState_Unregistered;
+exit:
+	mDNS_Unlock(m);
 	}
 
 mDNSexport void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain)
@@ -1155,6 +1180,8 @@ mDNSexport void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain)
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	uDNS_HostnameInfo *ptr, *prev = mDNSNULL;
 	domainname *d;
+
+	mDNS_Lock(m);
 
 	for (ptr = u->Hostnames; ptr; ptr = ptr->next)
 		{
@@ -1164,40 +1191,48 @@ mDNSexport void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain)
 			if (prev) prev->next = ptr->next;             // unlink from list
 			else u->Hostnames = ptr->next;
 			uDNS_DeregisterRecord(m, ptr->ar);           // deregister the record
-			return;
+			goto exit;
 			}
 		prev = ptr;			
 		}
 	LogMsg("mDNS_RemoveDynDNSHostDomain: no such domain %##s", domain->c);
+exit:
+	mDNS_Unlock(m);
 	}
 
-mDNSexport void mDNS_SetPrimaryInterface(mDNS *m, const char *ifname, const mDNSAddr *ip)
+mDNSexport void mDNS_SetPrimaryIP(mDNS *m, const mDNSAddr *ip)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-	
-	if (!ifname || !ip) { LogMsg("mDNS_SetPrimaryInterface passed NULL argument"); return; }
-	mDNSPlatformStrCopy(ifname, u->PrimaryIfName);
-	if (ip->ip.v4.NotAnInteger == u->PrimaryIP.ip.v4.NotAnInteger) { LogMsg("mDNS_SetPrimaryInterface: IP address unchanged"); return; }
-	u->PrimaryIP.ip.v4 = ip->ip.v4;
-	UpdateHostnameRegistrations(m);
-	}
 
-mDNSexport const char *mDNS_GetPrimaryInterface(mDNS *m, mDNSAddr *ip)
-	{
-	if (!m->uDNS_info.PrimaryIP.ip.v4.NotAnInteger) return mDNSNULL;
-	*ip = m->uDNS_info.PrimaryIP;
-	return  m->uDNS_info.PrimaryIfName;	
+	if (!ip) { LogMsg("mDNS_SetPrimaryIP passed NULL argument"); return; }
+
+	mDNS_Lock(m);
+	
+	if (ip->ip.v4.NotAnInteger == u->PrimaryIP.ip.v4.NotAnInteger)
+		LogMsg("mDNS_SetPrimaryIP: IP address unchanged");
+	else
+		{
+		u->PrimaryIP.ip.v4 = ip->ip.v4;
+		UpdateHostnameRegistrations(m);
+		}
+
+	mDNS_Unlock(m);
 	}
 
 mDNSexport void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 
-	if (!u->hostlabel.c[0]) { u->hostlabel = *hostlabel; return; }  // initialization
-	if (SameDomainLabel(u->hostlabel.c, hostlabel->c)) { debugf("mDNS_SetDynDNSComputerName: hostlabel unchanged"); return; }
+	mDNS_Lock(m);
+
+	if (!u->hostlabel.c[0]) { u->hostlabel = *hostlabel; goto exit; }  // initialization
+	if (SameDomainLabel(u->hostlabel.c, hostlabel->c)) { debugf("mDNS_SetDynDNSComputerName: hostlabel unchanged"); goto exit; }
 	u->hostlabel = *hostlabel;
 	UpdateHostnameRegistrations(m);	
 	UpdateServiceTargets(m);   //!!!KRS this gets done for us for empty-string registrations - how do we tell when we need to do it?
+
+exit:
+	mDNS_Unlock(m);
 	}
 
 // ***************************************************************************
@@ -1269,7 +1304,10 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 		while (ka)
 			{
 			debugf("deriving goodbye for %##s", ka->resrec.name.c);
+			
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			if (question != m->uDNS_info.CurrentQuery)
 				{
 				debugf("deriveGoodbyes - question removed via callback.  returning.");
@@ -1312,7 +1350,9 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			if (prev) prev->next = ka->next;
 			else question->uDNS_info.knownAnswers = ka->next;
 			debugf("deriving goodbye for %##s", ka->resrec.name.c);
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			if (question != m->uDNS_info.CurrentQuery)
 				{
 				debugf("deriveGoodbyes - question removed via callback.  returning.");
@@ -1371,7 +1411,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			if ((goodbye && !inKAList) || (!goodbye && inKAList)) continue;  // list up to date
 			if (!inKAList) addKnownAnswer(question, cr);
 			if (goodbye) removeKnownAnswer(question, cr);
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			question->QuestionCallback(m, question, &cr->resrec, !goodbye);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			if (question != m->uDNS_info.CurrentQuery)
 				{
 				debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning");
@@ -1587,12 +1629,14 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			}				
 		}
 
+	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (InvokeCallback) srs->ServiceCallback(m, srs, err);
 	else if (info->ClientCallbackDeferred)
 		{
 		info->ClientCallbackDeferred = mDNSfalse;
 		srs->ServiceCallback(m, srs, info->DeferredStatus);
 		}
+	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	// NOTE: do not touch structures after calling ServiceCallback
 	}
 
@@ -1609,7 +1653,9 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 		if (unlinkAR(&m->uDNS_info.RecordRegistrations, rr))
 			LogMsg("ERROR: Could not unlink resource record following deregistration");
 		rr->uDNS_info.state = regState_Unregistered;
+		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 		rr->RecordCallback(m, rr, err);
+		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 		return;
 		}
 
@@ -1647,7 +1693,9 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 				   rr->resrec.name.c, rr->resrec.rrtype, err);
 			unlinkAR(&u->RecordRegistrations, rr); 
 			rr->uDNS_info.state = regState_Unregistered;
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			rr->RecordCallback(m, rr, err);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return;
 			}
 		else
@@ -1657,7 +1705,9 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 			else
 				{
 				rr->uDNS_info.state = regState_Registered;
+				m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 				rr->RecordCallback(m, rr, err);
+				m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 				}
 			return;
 			}
@@ -2437,9 +2487,9 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	question->uDNS_info.knownAnswers = mDNSNULL;
 
 	server = getInitializedDNS(u);
-	if (!server) { LogMsg("startQuery - no initialized DNS"); err =  mStatus_NotInitializedErr; }
+	if (!server) { debugf("startQuery - no initialized DNS"); err =  mStatus_NotInitializedErr; }
 	else err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, server, UnicastDNSPort);	
-	if (err) { LogMsg("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
+	if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
 
 	return err;
 	}
@@ -3072,7 +3122,9 @@ error:
 		unlinkAR(&u->RecordRegistrations, rr);
 		rr->uDNS_info.state = regState_Unregistered;
 		}
+	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	rr->RecordCallback(m, rr, err);
+	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	// NOTE: not safe to touch any client structures here	
 	}
 
@@ -3131,7 +3183,9 @@ error:
 		unlinkAR(&u->RecordRegistrations, newRR);
 		newRR->uDNS_info.state = regState_Unregistered;
 		}
+	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	newRR->RecordCallback(m, newRR, err);
+	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	// NOTE: not safe to touch any client structures here
 	}
 
@@ -3252,7 +3306,9 @@ error:
 	if (mapped) srv->resrec.rdata->u.srv.port = privport;	
 	unlinkSRS(u, srs);
 	rInfo->state = regState_Unregistered;
+	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	srs->ServiceCallback(m, srs, err);
+	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	//!!!KRS will mem still be free'd on error?
 	// NOTE: not safe to touch any client structures here	
 	}
@@ -3278,7 +3334,9 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		// client cancelled registration while fetching zone data
 		srs->uDNS_info.state = regState_Unregistered;
 		unlinkSRS(u, srs);
+		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 		srs->ServiceCallback(m, srs, mStatus_MemFree);
+		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 		return;
 		}
 	
@@ -3299,7 +3357,9 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 error:
 	unlinkSRS(u, srs);
 	srs->uDNS_info.state = regState_Unregistered;
+	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	srs->ServiceCallback(m, srs, err);
+	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	//!!!KRS will mem still be free'd on error?
 	// NOTE: not safe to touch any client structures here
 	}
@@ -3366,7 +3426,9 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
             rr->uDNS_info.NATinfo = mDNSNULL;
 			unlinkAR(&u->RecordRegistrations, rr);
 			rr->uDNS_info.state = regState_Unregistered;
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			rr->RecordCallback(m, rr, mStatus_MemFree);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return mStatus_NoError;
 		case regState_FetchingZoneData:
 			rr->uDNS_info.state = regState_Cancelled;
@@ -3577,7 +3639,9 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 				}
 			unlinkSRS(u, srs);
 			srs->uDNS_info.state = regState_Unregistered;
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return mStatus_NoError;		
 		case regState_Unregistered:
 			LogMsg("ERROR: uDNS_DeregisterService - service not registerd");
@@ -3595,7 +3659,9 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_NoTarget:
 			unlinkSRS(u, srs);
 			srs->uDNS_info.state = regState_Unregistered;
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return mStatus_NoError;
 		}
 

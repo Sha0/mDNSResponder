@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.408  2004/09/16 21:36:36  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+Changes to add necessary locking calls around unicast DNS operations
+
 Revision 1.407  2004/09/16 02:29:39  cheshire
 Moved mDNS_Lock/mDNS_Unlock to DNSCommon.c; Added necessary locking around
 uDNS_ReceiveMsg, uDNS_StartQuery, uDNS_UpdateRecord, uDNS_RegisterService
@@ -6062,7 +6066,13 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 
 #ifndef UNICAST_DISABLED	
 	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
-		return uDNS_DeregisterService(m, sr);
+		{
+		mStatus status;
+		mDNS_Lock(m);
+		status = uDNS_DeregisterService(m, sr);
+		mDNS_Unlock(m);
+		return(status);
+		}
 #endif
 	if (sr->RR_PTR.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{

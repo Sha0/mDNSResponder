@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.182  2004/09/16 21:36:36  cheshire
+<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
+Changes to add necessary locking calls around unicast DNS operations
+
 Revision 1.181  2004/09/16 02:03:42  cheshire
 <rdar://problem/3802944> Change address to notify user of kernel flaw
 
@@ -2072,10 +2076,6 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 			LogMsg("Could not convert router to CString");
 		else
 			{
-//			const char *CurPrimary;
-//			mDNSAddr CurIP;
-//			CurPrimary = mDNS_GetPrimaryInterface(m, &CurIP);			
-			// !!!KRS can we guarantee if the name hasn't changed we can bypass getifaddrs?
 			struct ifaddrs *ifa = myGetIfAddrs(1);
 			while (ifa)
 				{
@@ -2083,7 +2083,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 					{
 					mDNSAddr ip;
 					SetupAddr(&ip, ifa->ifa_addr);
-					mDNS_SetPrimaryInterface(m, buf, &ip);
+					mDNS_SetPrimaryIP(m, &ip);
 					break;
 					}
 				ifa = ifa->ifa_next;
