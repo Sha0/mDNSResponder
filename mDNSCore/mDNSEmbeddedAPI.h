@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.231  2004/10/26 06:11:41  cheshire
+Add improved logging to aid in diagnosis of <rdar://problem/3842714> mDNSResponder crashed
+
 Revision 1.230  2004/10/26 03:52:02  cheshire
 Update checkin comments
 
@@ -2160,7 +2163,9 @@ extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...
 extern mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern char *DNSTypeName(mDNSu16 rrtype);
 extern char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, char *buffer);
-#define GetRRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
+#define RRDisplayString(m, rr) GetRRDisplayString_rdb(rr, &(rr)->rdata->u, (m)->MsgBuffer)
+#define ARDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
+#define CRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 private addresses

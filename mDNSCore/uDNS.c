@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.107  2004/10/26 06:11:41  cheshire
+Add improved logging to aid in diagnosis of <rdar://problem/3842714> mDNSResponder crashed
+
 Revision 1.106  2004/10/26 03:52:03  cheshire
 Update checkin comments
 
@@ -2712,7 +2715,7 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
 	ubzero(&question->uDNS_info, sizeof(uDNS_QuestionInfo));
 	question->uDNS_info.responseCallback = simpleResponseHndlr;
 	question->uDNS_info.context = mDNSNULL;
-	LogOperation("uDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+	//LogOperation("uDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 	return startQuery(m, question, 0);
     }
 
@@ -3589,13 +3592,14 @@ mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
 
 	if (!ValidateDomainName(&rr->resrec.name))
 		{
-		LogMsg("Attempt to register record with invalid name: %s", GetRRDisplayString(m, rr));
+		LogMsg("Attempt to register record with invalid name: %s", ARDisplayString(m, rr));
 		return mStatus_Invalid;
 		}
 
 	// Don't do this until *after* we've set rr->resrec.rdlength
 	if (!ValidateRData(rr->resrec.rrtype, rr->resrec.rdlength, rr->resrec.rdata))
-		{ LogMsg("Attempt to register record with invalid rdata: %s", GetRRDisplayString(m, rr));
+		{ 
+		LogMsg("Attempt to register record with invalid rdata: %s", ARDisplayString(m, rr));
 		return mStatus_Invalid;
 		}
 

@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.455  2004/10/26 06:11:40  cheshire
+Add improved logging to aid in diagnosis of <rdar://problem/3842714> mDNSResponder crashed
+
 Revision 1.454  2004/10/23 01:16:00  cheshire
 <rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
 
@@ -1971,7 +1974,7 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 	{
 	if (rr->resrec.RecordType == kDNSRecordTypeUnique)
 		{
-		//LogMsg("ProbeCount %d Next %ld %s", rr->ProbeCount, (rr->LastAPTime + rr->ThisAPInterval) - m->timenow, GetRRDisplayString(m, rr));
+		//LogMsg("ProbeCount %d Next %ld %s", rr->ProbeCount, (rr->LastAPTime + rr->ThisAPInterval) - m->timenow, ARDisplayString(m, rr));
 		if (m->NextScheduledProbe - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
 			m->NextScheduledProbe = (rr->LastAPTime + rr->ThisAPInterval);
 		}
@@ -2089,7 +2092,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
 
 	if ((mDNSs32)rr->resrec.rroriginalttl <= 0)
-		{ LogMsg("mDNS_Register_internal: TTL must be 1 - 0x7FFFFFFF %s", GetRRDisplayString(m, rr)); return(mStatus_BadParamErr); }
+		{ LogMsg("mDNS_Register_internal: TTL must be 1 - 0x7FFFFFFF %s", ARDisplayString(m, rr)); return(mStatus_BadParamErr); }
 	
 #if TEST_LOCALONLY_FOR_EVERYTHING
 	rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
@@ -2199,11 +2202,11 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		}
 
 	if (!ValidateDomainName(&rr->resrec.name))
-		{ LogMsg("Attempt to register record with invalid name: %s", GetRRDisplayString(m, rr)); return(mStatus_Invalid); }
+		{ LogMsg("Attempt to register record with invalid name: %s", ARDisplayString(m, rr)); return(mStatus_Invalid); }
 
 	// Don't do this until *after* we've set rr->resrec.rdlength
 	if (!ValidateRData(rr->resrec.rrtype, rr->resrec.rdlength, rr->resrec.rdata))
-		{ LogMsg("Attempt to register record with invalid rdata: %s", GetRRDisplayString(m, rr)); return(mStatus_Invalid); }
+		{ LogMsg("Attempt to register record with invalid rdata: %s", ARDisplayString(m, rr)); return(mStatus_Invalid); }
 
 	rr->resrec.namehash   = DomainNameHashValue(&rr->resrec.name);
 	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
@@ -2600,7 +2603,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->LastMCInterface = rr->ImmedAnswer;
 			}
 		SetNextAnnounceProbeTime(m, rr);
-		//if (rr->SendRNow) LogMsg("%-15.4a %s", &rr->v4Requester, GetRRDisplayString(m, rr));
+		//if (rr->SendRNow) LogMsg("%-15.4a %s", &rr->v4Requester, ARDisplayString(m, rr));
 		}
 
 	// ***
@@ -2745,7 +2748,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		m->CurrentRecord = rr->next;
 
 		if (rr->SendRNow)
-			{ LogMsg("SendResponses: No active interface to send: %s", GetRRDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
+			{ LogMsg("SendResponses: No active interface to send: %s", ARDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
 
 		if (rr->ImmedAnswer)
 			{
@@ -2828,7 +2831,7 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, 
 		rr->resrec.rroriginalttl     = interval * 4 / mDNSPlatformOneSecond;
 		SetNextCacheCheckTime(m, rr);
 		}
-	debugf("mDNS_Reconfirm_internal:%5ld ticks to go for %s", RRExpireTime(rr) - m->timenow, GetRRDisplayString(m, rr));
+	debugf("mDNS_Reconfirm_internal:%5ld ticks to go for %s", RRExpireTime(rr) - m->timenow, CRDisplayString(m, rr));
 	return(mStatus_NoError);
 	}
 
@@ -3299,7 +3302,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		AuthRecord *rr;
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->SendRNow)
-				{ LogMsg("SendQueries: No active interface to send: %s", GetRRDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
+				{ LogMsg("SendQueries: No active interface to send: %s", ARDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
 		}
 	}
 
@@ -3483,7 +3486,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, const mDNSu32 slot)
 		if (m->timenow - event >= 0)	// If expired, delete it
 			{
 			*rp = rr->next;				// Cut it from the list
-			verbosedebugf("CheckCacheExpiration: Deleting %s", GetRRDisplayString(m, rr));
+			verbosedebugf("CheckCacheExpiration: Deleting %s", CRDisplayString(m, rr));
 			if (rr->CRActiveQuestion)	// If this record has one or more active questions, tell them it's going away
 				{
 				CacheRecordRmv(m, rr);
@@ -4377,7 +4380,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					{
 					rr->ImmedAnswer = mDNSNULL;
 #if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
-					LogMsg("Suppressed after%4d: %s", m->timenow - rr->ImmedAnswerMarkTime, GetRRDisplayString(m, rr));
+					LogMsg("Suppressed after%4d: %s", m->timenow - rr->ImmedAnswerMarkTime, ARDisplayString(m, rr));
 #endif
 					}
 				}
@@ -4552,7 +4555,7 @@ exit:
 				rr->LastUnansweredTime = m->timenow;
 				if (rr->UnansweredQueries > 1)
 					debugf("ProcessQuery: (!TC) UAQ %lu MPQ %lu MPKA %lu %s",
-						rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+						rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, CRDisplayString(m, rr));
 				SetNextCacheCheckTime(m, rr);
 				}
 
@@ -4563,7 +4566,7 @@ exit:
 			// Only show debugging message if this record was not about to expire anyway
 			if (RRExpireTime(rr) - m->timenow > 4 * mDNSPlatformOneSecond)
 				debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
-					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, CRDisplayString(m, rr));
 			mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
 			}
 		// Make a guess, based on the multi-packet query / known answer counts, whether we think we
@@ -4584,7 +4587,7 @@ exit:
 			// Only show debugging message if this record was not about to expire anyway
 			if (RRExpireTime(rr) - m->timenow > 4 * mDNSPlatformOneSecond)
 				debugf("ProcessQuery: (MPQ) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
-					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, CRDisplayString(m, rr));
 
 			if (remain <= 60 * (mDNSu32)mDNSPlatformOneSecond)
 				rr->UnansweredQueries++;	// Treat this as equivalent to one definite unanswered query
@@ -4761,8 +4764,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				// else, the packet RR has different type or different rdata -- check to see if this is a conflict
 				else if (pkt.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &pkt.r))
 					{
-					debugf("mDNSCoreReceiveResponse: Our Record: %08lX %08lX %s", rr->  resrec.rdatahash, rr->  resrec.rdnamehash, GetRRDisplayString(m, rr));
-					debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %08lX %s", pkt.r.resrec.rdatahash, pkt.r.resrec.rdnamehash, GetRRDisplayString(m, &pkt.r));
+					debugf("mDNSCoreReceiveResponse: Our Record: %08lX %08lX %s", rr->  resrec.rdatahash, rr->  resrec.rdnamehash, ARDisplayString(m, rr));
+					debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %08lX %s", pkt.r.resrec.rdatahash, pkt.r.resrec.rdnamehash, CRDisplayString(m, &pkt.r));
 
 					// If this record is marked DependentOn another record for conflict detection purposes,
 					// then *that* record has to be bumped back to probing state to resolve the conflict
@@ -4825,7 +4828,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					{
 					if (pkt.r.resrec.rdlength > InlineCacheRDSize)
 						verbosedebugf("Found record size %5d interface %p already in cache: %s",
-							pkt.r.resrec.rdlength, InterfaceID, GetRRDisplayString(m, &pkt.r));
+							pkt.r.resrec.rdlength, InterfaceID, CRDisplayString(m, &pkt.r));
 					rr->TimeRcvd  = m->timenow;
 					
 					if (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask)
@@ -5075,7 +5078,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
     question->uDNS_info.id = zeroID;
 #endif // UNICAST_DISABLED
 	
-	LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+	//LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 	
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
@@ -5394,7 +5397,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
-	LogOperation("FoundServiceInfo %d %s", AddRecord, GetRRDisplayString_rdb(answer, &answer->rdata->u, m->MsgBuffer));
+	//LogOperation("FoundServiceInfo %d %s", AddRecord, RRDisplayString(m, answer));
 	if (!AddRecord) return;
 	
 	if (answer->rrtype == kDNSType_A)

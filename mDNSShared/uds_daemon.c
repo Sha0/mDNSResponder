@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.102  2004/10/26 06:11:42  cheshire
+Add improved logging to aid in diagnosis of <rdar://problem/3842714> mDNSResponder crashed
+
 Revision 1.101  2004/10/26 04:31:44  cheshire
 Rename CountSubTypes() as ChopSubTypes()
 
@@ -838,7 +841,7 @@ void udsserver_info(mDNS *const m)
 			LogMsgNoIdent("%s%6ld %s%-6s%-6s%s",
 				rr->CRActiveQuestion ? "*" : " ", remain,
 				(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
-				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, GetRRDisplayString(m, rr));
+				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, CRDisplayString(m, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 			}
 		if (m->rrcache_used[slot] != SlotUsed)
@@ -985,6 +988,7 @@ static void connect_callback(void *info)
     rstate->sd = sd;
     //rstate->errfd = errpipe[1];
     
+	LogOperation("Adding FD   %d", rstate->sd);
     if ( mStatus_NoError != udsSupportAddFDToEventLoop( sd, request_callback, rstate))
         return;
     rstate->next = all_requests;
@@ -1173,6 +1177,7 @@ static void handle_query_request(request_state *rstate)
     rstate->termination_context = q;
     rstate->terminate = question_termination_callback;
 
+	LogOperation("DNSServiceQueryRecord(%##s, %s) START", q->qname.c, DNSTypeName(q->qtype));
     result = mDNS_StartQuery(gmDNS, q);
     if (result != mStatus_NoError) LogMsg("ERROR: mDNS_StartQuery: %d", (int)result);
 	
@@ -1281,6 +1286,7 @@ static void handle_resolve_request(request_state *rstate)
     bzero(rstate->resolve_results, sizeof(resolve_result_t));
 
     // ask the questions
+	LogOperation("DNSServiceResolve(%##s) START", srv->question.qname.c);
     err = mDNS_StartQuery(gmDNS, &srv->question);
     if (!err) err = mDNS_StartQuery(gmDNS, &txt->question);
 
@@ -1321,6 +1327,7 @@ static void resolve_termination_callback(void *context)
         return;
         }
     rs = term->rstate;
+	LogOperation("DNSServiceResolve(%##s) STOP", term->txt->question.qname.c);
     
     mDNS_StopQuery(gmDNS, &term->txt->question);
     mDNS_StopQuery(gmDNS, &term->srv->question);
@@ -1345,6 +1352,8 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     request_state *rs = question->QuestionContext;
     resolve_result_t *res = rs->resolve_results;
     (void)m; // Unused
+
+	LogOperation("DNSServiceResolve(%##s, %s) RESULT %s", question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
     
     // This code used to do this trick of just keeping a copy of the pointer to
     // the answer record in the cache, but the unicast query code doesn't currently
@@ -1425,6 +1434,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     size_t len;
     (void)m; // Unused
 
+	LogOperation("DNSServiceQueryRecord(%##s, %s) RESULT %s", question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
     //mDNS_StopQuery(m, question);
     req = question->QuestionContext;
     
@@ -1459,8 +1469,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
 static void question_termination_callback(void *context)
     {
     DNSQuestion *q = context;
-
-
+	LogOperation("DNSServiceQueryRecord(%##s, %s) STOP", q->qname.c, DNSTypeName(q->qtype));
     mDNS_StopQuery(gmDNS, q);  // no need to error check
     freeL("question_termination_callback", q);
     }
@@ -1720,6 +1729,7 @@ static void handle_browse_request(request_state *request)
 	request->termination_context = info;
     request->terminate = browse_termination_callback;
 	
+	LogOperation("DNSServiceBrowse(%##s%s) START", info->regtype.c, domain ? domain : "");
 	if (domain[0])
 		{
 		if (!MakeDomainNameFromDNSNameString(&d, domain)) { err = mStatus_BadParamErr;  goto error; }
@@ -1759,6 +1769,7 @@ static void browse_result_callback(mDNS *const m, DNSQuestion *question, const R
     reply_state *rep;
     mStatus err;
     (void)m; // Unused
+	LogOperation("DNSServiceBrowse(%##s, %s) RESULT %s", question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
         
     req = question->QuestionContext;
 
@@ -1788,6 +1799,7 @@ static void browse_termination_callback(void *context)
 		{
 		ptr = info->browsers;
 		info->browsers = ptr->next;
+		LogOperation("DNSServiceBrowse(%##s) STOP", ptr->q.qname.c);
 		mDNS_StopBrowse(gmDNS, &ptr->q);  // no need to error-check result
 		freeL("browse_termination_callback", ptr);
 		}
@@ -2015,7 +2027,7 @@ static void handle_regservice_request(request_state *request)
 				count+1, srv.c, mDNSVal16(service->port));
 		}
 
-	
+	LogOperation("DNSServiceRegister(%##s, %u) START", srv.c, mDNSVal16(service->port));
 	result = register_service_instance(request, &d);
 	
 	if (!result && !*domain && strcmp(service->type_as_string, "_presence._tcp.") && strcmp(service->type_as_string, "_ichat._tcp."))
@@ -2056,6 +2068,11 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     service_instance *instance = srs->ServiceContext;
     request_state *rs = instance->request;
     (void)m; // Unused
+
+    if (result == mStatus_MemFree)
+		LogOperation("DNSServiceRegister(%##s, %u) DEREGISTERED", srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
+	else
+		LogOperation("DNSServiceRegister(%##s, %u) CALLBACK %d",  srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), result);
     
     if (!rs && (result != mStatus_MemFree && !instance->rename_on_memfree))
         {     
@@ -2343,6 +2360,7 @@ static void regservice_termination_callback(void *context)
 		i = i->next;
 		p->request = NULL;  // clear back pointer
 		// only safe to free memory if registration is not valid, ie deregister fails (which invalidates p)
+		LogOperation("DNSServiceRegister(%##s, %u) STOP", p->srs.RR_SRV.resrec.name.c, mDNSVal16(p->srs.RR_SRV.resrec.rdata->u.srv.port));
 		if (mDNS_DeregisterService(gmDNS, &p->srs)) free_service_instance(p);
 		}
 	info->request->service_registration = NULL; // clear pointer from request back to info
@@ -3171,6 +3189,7 @@ static void abort_request(request_state *rs)
 
     if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
     if (rs->msgbuf) freeL("abort_request", rs->msgbuf);
+	LogOperation("Removing FD %d", rs->sd);
     udsSupportRemoveFDFromEventLoop(rs->sd);
     rs->sd = dnssd_InvalidSocket;
     if (rs->errfd >= 0) dnssd_close(rs->errfd);
