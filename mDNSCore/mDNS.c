@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.113  2003/05/07 00:28:18  cheshire
+<rdar://problem/3250330> Need to make mDNSResponder more defensive against bad clients
+
 Revision 1.112  2003/05/06 00:00:46  cheshire
 <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -667,6 +670,7 @@ char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_A:	return("Addr");
 		case kDNSType_CNAME:return("CNAME");
 		case kDNSType_PTR:	return("PTR");
+		case kDNSType_HINFO:return("HINFO");
 		case kDNSType_TXT:  return("TXT");
 		case kDNSType_AAAA:	return("AAAA");
 		case kDNSType_SRV:	return("SRV");
@@ -831,7 +835,7 @@ mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *
 	{
 	mDNSu8       *      ptr  = name->c + DomainNameLength(name) - 1;	// Find end of current name
 	const mDNSu8 *const lim1 = name->c + MAX_DOMAIN_NAME - 1;			// Limit of how much we can add (not counting final zero)
-	const mDNSu8 *const lim2 = ptr + MAX_DOMAIN_LABEL;
+	const mDNSu8 *const lim2 = ptr + 1 + MAX_DOMAIN_LABEL;
 	const mDNSu8 *const lim  = (lim1 < lim2) ? lim1 : lim2;
 	mDNSu8       *lengthbyte = ptr++;									// Record where the length is going to go
 	
@@ -914,7 +918,7 @@ mDNSexport mDNSu8 *AppendDomainName(domainname *const name, const domainname *co
 	while(src[0])
 		{
 		int i;
-		if (ptr + 1 + src[0] + 1 > lim) return(mDNSNULL);
+		if (ptr + 1 + src[0] > lim) return(mDNSNULL);
 		for (i=0; i<=src[0]; i++) *ptr++ = src[i];
 		*ptr = 0;	// Put the null root label on the end
 		src += i;
@@ -1037,41 +1041,36 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	{
 	int i, len;
 	mDNSu8 *dst = fqdn->c;
-	mDNSu8 *max = fqdn->c + MAX_DOMAIN_NAME;
 	const mDNSu8 *src;
+	const char *errormsg;
 
 	if (name)
 		{
 		src = name->c;									// Put the service name into the domain name
 		len = *src;
-		if (len >= 0x40) { debugf("ConstructServiceName: service name too long"); return(0); }
+		if (len >= 0x40) { errormsg="Service instance name too long"; goto fail; }
 		for (i=0; i<=len; i++) *dst++ = *src++;
 		}
 	
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
-	if (len == 0 || len >= 0x40)  { debugf("ConstructServiceName: Invalid service name"); return(0); }
-	if (dst + 1 + len + 1 >= max) { debugf("ConstructServiceName: service type too long"); return(0); }
+	if (len == 0 || len >= 0x40)  { errormsg="Invalid service application protocol name"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
-	if (len == 0 || len >= 0x40)  { debugf("ConstructServiceName: Invalid service name"); return(0); }
-	if (dst + 1 + len + 1 >= max) { debugf("ConstructServiceName: service type too long"); return(0); }
+	if (len == 0 || len >= 0x40)  { errormsg="Invalid service transport protocol name"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 	
-	if (*src) { debugf("ConstructServiceName: Service type must have only two labels"); return(0); }
-
-	src = domain->c;									// Put the service domain into the domain name
-	while (*src)
-		{
-		len = *src;
-		if (dst + 1 + len + 1 >= max)
-			{ debugf("ConstructServiceName: service domain too long"); return(0); }
-		for (i=0; i<=len; i++) *dst++ = *src++;
-		}
+	if (*src) { errormsg="Service type must have only two labels"; goto fail; }
 	
-	*dst++ = 0;		// Put the null root label on the end
+	*dst = 0;
+	dst = AppendDomainName(fqdn, domain);
+	if (!dst) { errormsg="Service domain too long"; goto fail; }
 	return(dst);
+
+fail:
+	LogMsg("ConstructServiceName: %s: %#s.%##s%##s", errormsg, name->c, type->c, domain->c);
+	return(mDNSNULL);
 	}
 
 mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
@@ -1337,7 +1336,7 @@ mDNSlocal void SetTargetToHostName(const mDNS *const m, ResourceRecord *const rr
 
 		// If we've announced this record, we really should send a goodbye packet for the old rdata before
 		// changing to the new rdata. However, in practice, we only do SetTargetToHostName for unique records,
-		// so when we announce them we'll set the kDNSQClass_CacheFlushBit and clear any stale data that way.
+		// so when we announce them we'll set the kDNSClass_UniqueRRSet and clear any stale data that way.
 		if (rr->AnnounceCount < InitialAnnounceCount && !(rr->RecordType & kDNSRecordTypeUniqueMask))
 			debugf("Have announced shared record %##s at least once: should have sent a goodbye packet before updating", rr->name.c);
 
@@ -1979,7 +1978,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	if (ptr + 10 > end) { debugf("getResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
 	
 	rr->rrtype            = (mDNSu16) ((mDNSu16)ptr[0] <<  8 | ptr[1]);
-	rr->rrclass           = (mDNSu16)(((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSQClass_Mask);
+	rr->rrclass           = (mDNSu16)(((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSClass_Mask);
 	rr->rroriginalttl     = (mDNSu32) ((mDNSu32)ptr[4] << 24 | (mDNSu32)ptr[5] << 16 | (mDNSu32)ptr[6] << 8 | ptr[7]);
 	if (rr->rroriginalttl > 0x70000000UL / mDNSPlatformOneSecond)
 		rr->rroriginalttl = 0x70000000UL / mDNSPlatformOneSecond;
@@ -4178,8 +4177,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
 	question->InterfaceID       = InterfaceID;
-	question->name              = *srv;
-	AppendDomainName(&question->name, domain);
+	if (!ConstructServiceName(&question->name, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 	question->rrtype            = kDNSType_PTR;
 	question->rrclass           = kDNSClass_IN;
 	question->QuestionCallback  = Callback;
@@ -4478,13 +4476,13 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 
 	// Set up the Primary mDNS FQDN
 	m->hostname1.c[0] = 0;
-	AppendDomainLabel(&m->hostname1, &m->hostlabel);
-	AppendLiteralLabelString(&m->hostname1, "local");
+	if (!AppendDomainLabel(&m->hostname1, &m->hostlabel))   LogMsg("ERROR! Cannot create dot-local hostname1");
+	if (!AppendLiteralLabelString(&m->hostname1, "local"))  LogMsg("ERROR! Cannot create dot-local hostname1");
 
 	// Set up the Secondary mDNS FQDN
 	m->hostname2.c[0] = 0;
-	AppendDomainLabel(&m->hostname2, &m->hostlabel);
-	AppendDNSNameString(&m->hostname2, "local.arpa.");
+	if (!AppendDomainLabel(&m->hostname2, &m->hostlabel))   LogMsg("ERROR! Cannot create dot-local hostname2");
+	if (!AppendDNSNameString(&m->hostname2, "local.arpa.")) LogMsg("ERROR! Cannot create dot-local hostname2");
 
 	// Make sure that any SRV records (and the like) that reference our 
 	// host name in their rdata get updated to reference this new host name
