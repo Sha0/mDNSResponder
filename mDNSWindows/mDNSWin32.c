@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.28  2004/03/07 00:26:39  bradley
+Allow non-NULL PlatformSupport ptr when initializing so non-Apple clients can provide their own storage.
+Added count assert when building the wait list to catch underruns/overruns if the code is changed.
+
 Revision 1.27  2004/01/30 02:44:32  bradley
 Added support for IPv6 (v4 & v6, v4-only, v6-only, AAAA over v4, etc.). Added support for DNS-SD
 InterfaceID<->Interface Index mappings. Added support for loopback usage when no other interfaces
@@ -292,10 +296,11 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	ConvertDomainNameToCString( (domainname *) "\003""254\003""169\007in-addr\004arpa" , s);
 	printf( "%s\n", s );
 }
-	// Initialize variables.
+	// Initialize variables. If the PlatformSupport pointer is not null then just assume that a non-Apple client is 
+	// calling mDNS_Init and wants to provide its own storage for the platform-specific data so do not overwrite it.
 	
 	memset( &gMDNSPlatformSupport, 0, sizeof( gMDNSPlatformSupport ) );
-	inMDNS->p								= &gMDNSPlatformSupport;
+	if( !inMDNS->p ) inMDNS->p				= &gMDNSPlatformSupport;
 	inMDNS->p->interfaceListChangedSocket	= kInvalidSocketRef;
 	mDNSPlatformOneSecond 					= 1000;		// Use milliseconds as the quantum of time
 	
@@ -1900,6 +1905,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	{
 		*waitItemPtr++ = ifd->readPendingEvent;
 	}
+	check( (int)( waitItemPtr - waitList ) == waitListCount );
 	
 	*outWaitList 		= waitList;
 	*outWaitListCount	= waitListCount;
