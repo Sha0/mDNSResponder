@@ -56,3 +56,9 @@ struct mDNS_PlatformSupport_struct
 	UInt32 nesting;
 	NetworkInterfaceInfo interface;
 	};
+
+// The client MUST call mDNS_OS9Exec() after completing a series of one or more *unsolicited* mDNS API calls.
+// Note: This only applies to calls made on the client's own initiative. Client calls
+// made within any mDNS callback function MUST NOT be followed with an "execute"
+// call because the core code already handles that on return from the callback function.
+extern void mDNS_OS9Exec(mDNS *const m);

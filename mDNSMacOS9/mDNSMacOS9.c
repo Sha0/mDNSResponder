@@ -214,6 +214,7 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 		case T_DATA:
 			//debugf("T_DATA");
 			while (readpacket(m) == kOTNoError) continue;	// Read packets until we run out
+			mDNS_OS9Exec(m);
 			break;
 
 		case kOTProviderWillClose:
@@ -368,7 +369,7 @@ static pascal void mDNSTimerTask(void *arg)
 	mDNS *const m = (mDNS *const)arg;
 	if (m->p->nesting) DebugStr("\pmDNSTimerTask ERROR! OTEnterNotifier is supposed to suppress timer callbacks too");
 	m->p->nesting++;
-	mDNSCoreTask(m);
+	mDNS_OS9Exec(m);
 	m->p->nesting--;
 #endif
 	}
@@ -436,7 +437,7 @@ mDNSexport void mDNSPlatformIdle(mDNS *const m)
 	if (ONLYSYSTEMTASKevent)
 		{
 		ONLYSYSTEMTASKevent = false;
-		mDNSCoreTask(m);
+		mDNS_OS9Exec(m);
 		}
 #endif
 
@@ -463,8 +464,9 @@ mDNSexport void mDNSPlatformIdle(mDNS *const m)
 
 	}
 
-mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTime)
+mDNSexport void mDNS_OS9Exec(mDNS *const m)
 	{
+	SInt32 NextTaskTime = mDNS_Execute(m);
 	SInt32 interval = NextTaskTime - mDNSPlatformTimeNow();
 	if      (interval < 0)                 interval = 0;
 	else if (interval > 0x7FFFFFFF / 1000) interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
