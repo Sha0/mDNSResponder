@@ -44,6 +44,13 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.315  2003/11/07 03:32:56  cheshire
+<rdar://problem/3472153> mDNSResponder delivers answers in inconsistent order
+This is the real fix. Checkin 1.312 was overly simplistic; Calling GetFreeCacheRR() can sometimes
+purge records from the cache, causing tail pointer *rp to be stale on return. The correct fix is
+to maintain a system-wide tail pointer for each cache slot, and then if neccesary GetFreeCacheRR()
+can update this pointer, so that mDNSCoreReceiveResponse() appends records in the right place.
+
 Revision 1.314  2003/11/07 03:19:49  cheshire
 Minor variable renaming for clarity
 
@@ -4236,6 +4243,8 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
 			rp = &rr->next;
 			}
 		}
+	if (m->rrcache_tail[slot] != rp) debugf("CheckCacheExpiration: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
+	m->rrcache_tail[slot] = rp;
 	m->lock_rrcache = 0;
 	}
 
@@ -4415,6 +4424,8 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 					ReleaseCacheRR(m, rr);
 					}
 				}
+			if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
+			m->rrcache_tail[slot] = rp;
 			}
 		#if MDNS_DEBUGMSGS
 		debugf("Clear unused records; m->rrcache_totalused was %lu; now %lu", oldtotalused, m->rrcache_totalused);
@@ -5561,8 +5572,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// If this is an oversized record with external storage allocated, copy rdata to external storage
 					if (pkt.r.resrec.rdlength > InlineCacheRDSize)
 						mDNSPlatformMemCopy(pkt.r.resrec.rdata, rr->resrec.rdata, sizeofRDataHeader + pkt.r.resrec.rdlength);
-					rr->next = m->rrcache_hash[slot];
-					m->rrcache_hash[slot] = rr;
+					rr->next = mDNSNULL;					// Clear 'next' pointer
+					*(m->rrcache_tail[slot]) = rr;			// Append this record to tail of cache slot list
+					m->rrcache_tail[slot] = &(rr->next);	// Advance tail pointer
 					m->rrcache_used[slot]++;
 					//debugf("Adding RR %##s to cache (%d)", pkt.r.name.c, m->rrcache_used);
 					CacheRecordAdd(m, rr);
@@ -6932,6 +6944,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
 		m->rrcache_hash[slot] = mDNSNULL;
+		m->rrcache_tail[slot] = &m->rrcache_hash[slot];
 		m->rrcache_used[slot] = 0;
 		}
 
@@ -6978,6 +6991,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 
 	rrcache_totalused = m->rrcache_totalused;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		{
 		while (m->rrcache_hash[slot])
 			{
 			CacheRecord *rr = m->rrcache_hash[slot];
@@ -6986,6 +7000,9 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			m->rrcache_used[slot]--;
 			ReleaseCacheRR(m, rr);
 			}
+		// Reset tail pointer back to empty state (not that it really matters on exit, but we'll do it anyway, for the sake of completeness)
+		m->rrcache_tail[slot] = &m->rrcache_hash[slot];
+		}
 	debugf("mDNS_Close: RR Cache was using %ld records, %d active", rrcache_totalused, rrcache_active);
 	if (rrcache_active != m->rrcache_active)
 		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);

@@ -23,6 +23,13 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.116  2003/11/07 03:32:56  cheshire
+<rdar://problem/3472153> mDNSResponder delivers answers in inconsistent order
+This is the real fix. Checkin 1.312 was overly simplistic; Calling GetFreeCacheRR() can sometimes
+purge records from the cache, causing tail pointer *rp to be stale on return. The correct fix is
+to maintain a system-wide tail pointer for each cache slot, and then if neccesary GetFreeCacheRR()
+can update this pointer, so that mDNSCoreReceiveResponse() appends records in the right place.
+
 Revision 1.115  2003/09/23 00:53:54  cheshire
 NumFailedProbes should be unsigned
 
@@ -997,6 +1004,7 @@ struct mDNS_struct
 	mDNSu32 rrcache_report;
 	CacheRecord *rrcache_free;
 	CacheRecord *rrcache_hash[CACHE_HASH_SLOTS];
+	CacheRecord **rrcache_tail[CACHE_HASH_SLOTS];
 	mDNSu32 rrcache_used[CACHE_HASH_SLOTS];
 
 	// Fields below only required for mDNS Responder...
