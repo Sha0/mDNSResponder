@@ -25,21 +25,19 @@
 // Supporting routines to run mDNS on a CFRunLoop platform
 // ***************************************************************************
 
-#include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
-#include "mDNSPlatformFunctions.h"		// Defines the interface to the supporting layer below
-#include "mDNSPlatformEnvironment.h"	// Defines the specific types needed to run mDNS on this platform
-#include "mDNSvsprintf.h"				// Used to implement debugf_();
+#include "mDNSClientAPI.h"           // Defines the interface provided to the client layer above
+#include "mDNSPlatformFunctions.h"   // Defines the interface to the supporting layer below
+#include "mDNSPlatformEnvironment.h" // Defines the specific types needed to run mDNS on this platform
+#include "mDNSvsprintf.h"            // Used to implement debugf_();
 
 #include <stdio.h>
-#include <stdarg.h>						// For va_list support
+#include <stdarg.h>                  // For va_list support
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <sys/uio.h>
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <ifaddrs.h>
-
-#include <SystemConfiguration/SystemConfiguration.h>
 
 // ***************************************************************************
 // Structures
@@ -53,14 +51,14 @@ struct NetworkInterfaceInfo2_struct
 	NetworkInterfaceInfo2 *alias;
 	int socket1;
 	int socket2;
-    CFSocketRef cfsocket1;
-    CFSocketRef cfsocket2;
+	CFSocketRef cfsocket1;
+	CFSocketRef cfsocket2;
 	};
 
 // ***************************************************************************
 // Globals
 
-static CFAbsoluteTime StartTime;	// Temporary solution
+static CFAbsoluteTime StartTime; // Temporary solution
 
 // ***************************************************************************
 // Functions
@@ -68,7 +66,7 @@ static CFAbsoluteTime StartTime;	// Temporary solution
 mDNSexport void debugf_(const char *format, ...)
 	{
 	unsigned char buffer[256];
-    va_list ptr;
+	va_list ptr;
 	va_start(ptr,format);
 	buffer[mDNS_vsprintf(buffer, format, ptr)] = 0;
 	va_end(ptr);
@@ -97,7 +95,6 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 			}
 		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
 		}
-
 
 	return(mStatus_NoError);
 	}
@@ -148,7 +145,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	}
 
 mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *context)
-    {
+	{
 	mDNSIPAddr senderaddr, destaddr, interface;
 	mDNSIPPort senderport, destport;
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)context;
@@ -162,6 +159,8 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	int err;
 	if (type != kCFSocketReadCallBack) debugf("myCFSocketCallBack: Why is type not kCFSocketReadCallBack?");
 	err = myrecvfrom(skt, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, ifname);
+
+	if (err < 0) { debugf("myCFSocketCallBack recvfrom error %d", err); return; }
 
 	senderaddr.NotAnInteger = from.sin_addr.s_addr;
 	senderport.NotAnInteger = from.sin_port;
@@ -179,15 +178,15 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 		debugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s",
 			&senderaddr, &destaddr, &interface, ifname);
 
-	if (err < 0) debugf("myCFSocketCallBack recvfrom error %d", err);
-	else if (err < sizeof(DNSMessageHeader)) debugf("myCFSocketCallBack packet length (%d) too short", err);
-	else mDNSCoreReceive(m, &packet, (char*)&packet + err, senderaddr, senderport, destaddr, destport, interface);
-    }
+	if (err < sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
+	
+	mDNSCoreReceive(m, &packet, (char*)&packet + err, senderaddr, senderport, destaddr, destport, interface);
+	}
 
 mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
-    {
+	{
 	mDNSCoreTask((mDNS *const)info);
-    }
+	}
 
 mDNSlocal void GetUserSpecifiedComputerName(domainlabel *const namelabel)
 	{
@@ -208,24 +207,24 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	struct sockaddr_in listening_sockaddr;
 	CFRunLoopSourceRef rls;
 
-	// Open the socket
-    *s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	// Open the socket...
+	*s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	*c = NULL;
 	if (*s < 0) { perror("socket"); return(*s); }
 	
-	// Share this port number
+	// ... with a shared UDP port
 	err = setsockopt(*s, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
 	if (err < 0) { perror("setsockopt - SO_REUSEPORT"); return(err); }
 
-	// Receive destination addresses
+	// We want to receive destination addresses
 	err = setsockopt(*s, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
 	if (err < 0) { perror("setsockopt - IP_RECVDSTADDR"); return(err); }
 	
-	// Receive interface
+	// We want to receive interface identifiers
 	err = setsockopt(*s, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
 	if (err < 0) { perror("setsockopt - IP_RECVIF"); return(err); }
 	
-	// Add multicast group membership
+	// Add multicast group membership on this interface
 	imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 	imr.imr_interface        = ifa_addr->sin_addr;
 	err = setsockopt(*s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(struct ip_mreq));
@@ -235,10 +234,10 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	err = setsockopt(*s, IPPROTO_IP, IP_MULTICAST_IF, &ifa_addr->sin_addr, sizeof(ifa_addr->sin_addr));
 	if (err < 0) { perror("setsockopt - IP_MULTICAST_IF"); return(err); }
 
-	// And start listening
+	// And start listening for packets
 	listening_sockaddr.sin_family      = AF_INET;
 	listening_sockaddr.sin_port        = port.NotAnInteger;
-	listening_sockaddr.sin_addr.s_addr = 0;		// Want to receive multicasts AND unicasts on this socket
+	listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
 	err = bind(*s, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
 	if (err)
 		{
@@ -247,10 +246,10 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 		return(err);
 		}
 
-    *c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, context);
-    rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-    CFRelease(rls);
+	*c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, context);
+	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+	CFRelease(rls);
 	
 	return(err);
 	}
@@ -284,7 +283,7 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	extern int use_53;
 	mStatus err = 0;
 	struct sockaddr_in *ifa_addr = (struct sockaddr_in *)ifa->ifa_addr;
-    CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
+	CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
 
 	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
 	info->m         = m;
@@ -294,8 +293,8 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	info->alias     = SearchForInterfaceByName(m, ifa->ifa_name);
 	info->socket1   = 0;
 	info->socket2   = 0;
-    info->cfsocket1 = 0;
-    info->cfsocket2 = 0;
+	info->cfsocket1 = 0;
+	info->cfsocket2 = 0;
 
 	mDNS_RegisterInterface(m, &info->ifinfo);
 
@@ -318,10 +317,11 @@ mDNSlocal void ClearInterfaceList(mDNS *const m)
 		{
 		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
 		mDNS_DeregisterInterface(m, &info->ifinfo);
+		if (info->ifa_name   ) free(info->ifa_name);
 		if (info->socket1 > 0) shutdown(info->socket1, 2);
 		if (info->socket2 > 0) shutdown(info->socket2, 2);
-		if (info->cfsocket1) { CFSocketInvalidate(info->cfsocket1); CFRelease(info->cfsocket1); }
-		if (info->cfsocket2) { CFSocketInvalidate(info->cfsocket2); CFRelease(info->cfsocket2); }
+		if (info->cfsocket1  ) { CFSocketInvalidate(info->cfsocket1); CFRelease(info->cfsocket1); }
+		if (info->cfsocket2  ) { CFSocketInvalidate(info->cfsocket2); CFRelease(info->cfsocket2); }
 		free(info);
 		}
 	}
@@ -332,6 +332,18 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	int err = getifaddrs(&ifalist);
 	struct ifaddrs *ifa = ifalist;
 	if (err) return(err);
+
+	// Set up the nice label
+	m->nicelabel.c[0] = 0;
+	GetUserSpecifiedComputerName(&m->nicelabel);
+	if (m->nicelabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->nicelabel);
+
+	// Set up the RFC 1034-compliant label
+	m->hostlabel.c[0] = 0;
+	ConvertUTF8PstringToRFC1034HostLabel(m->nicelabel.c, &m->hostlabel);
+	if (m->hostlabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->hostlabel);
+
+	mDNS_GenerateFQDN(m);
 
 	while (ifa)
 		{
@@ -358,57 +370,102 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	return(err);
 	}
 
+mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
+	{
+	mDNS *const m = (mDNS *const)context;
+	debugf("***   Network Configuration Change   ***");
+	ClearInterfaceList(m);
+	SetupInterfaceList(m);
+	mDNSCoreSleep(m, false);
+	}
+
+mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
+	{
+	mStatus err = -1;
+	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
+	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NetworkChanged, &context);
+	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
+	CFStringRef           key2     = SCDynamicStoreKeyCreateComputerName(NULL);
+	CFStringRef           pattern  = SCDynamicStoreKeyCreateNetworkServiceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
+	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	CFRunLoopSourceRef    rls      = NULL;
+
+	if (!store) { fprintf(stderr, "SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
+	if (!key1 || !key2 || !keys || !pattern || !patterns) goto error;
+
+	CFArrayAppendValue(keys, key1);
+	CFArrayAppendValue(keys, key2);
+	CFArrayAppendValue(patterns, pattern);
+	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
+		{ fprintf(stderr, "SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
+
+	rls = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
+	if (!rls) { fprintf(stderr, "SCDynamicStoreCreateRunLoopSource failed: %s\n", SCErrorString(SCError())); goto error; }
+
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+	m->p->store = store;
+	err = 0;
+	goto exit;
+
+error:
+	if (store)    CFRelease(store);
+
+exit:
+	if (key1)     CFRelease(key1);
+	if (key2)     CFRelease(key2);
+	if (pattern)  CFRelease(pattern);
+	if (keys)     CFRelease(keys);
+	if (patterns) CFRelease(patterns);
+	if (rls)      CFRelease(rls);
+	
+	return(err);
+	}
+
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
-    {
-    CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, m, NULL, NULL, NULL };
+	{
+	mStatus err;
+
+	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, m, NULL, NULL, NULL };
 	StartTime = CFAbsoluteTimeGetCurrent();
 	
-	// Set up the nice label
-	m->nicelabel.c[0] = 0;
-	GetUserSpecifiedComputerName(&m->nicelabel);
-	if (m->nicelabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->nicelabel);
-
-	// Set up the RFC 1034-compliant label
-	m->hostlabel.c[0] = 0;
-	ConvertUTF8PstringToRFC1034HostLabel(m->nicelabel.c, &m->hostlabel);
-	if (m->hostlabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->hostlabel);
-
-    mDNS_GenerateFQDN(m);
-
 	m->p->cftimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 10.0, 10.0, 0, 1,
 											myCFRunLoopTimerCallBack, &myCFRunLoopTimerContext);
-    CFRunLoopAddTimer(CFRunLoopGetCurrent(), m->p->cftimer, kCFRunLoopDefaultMode);
+	CFRunLoopAddTimer(CFRunLoopGetCurrent(), m->p->cftimer, kCFRunLoopDefaultMode);
 
 	SetupInterfaceList(m);
 
-    return(mStatus_NoError);
-    }
+	err = WatchForNetworkChanges(m);
+
+	return(err);
+	}
 
 mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	{
 	mStatus result = mDNSPlatformInit_setup(m);
-	m->mDNSPlatformStatus = result;
-	if (m->Callback) m->Callback(m, mStatus_NoError);
-    return(result);
+	// We don't do asynchronous initialization on OS X, so by the time we get here the setup will already
+	// have succeeded or failed -- so if it succeeded, we should just call mDNSCoreInitComplete() immediately
+	if (result == mStatus_NoError) mDNSCoreInitComplete(m, mStatus_NoError);
+	return(result);
 	}
 
 mDNSexport void mDNSPlatformClose(mDNS *const m)
-    {
-    if (m->p->cftimer)
-    	{
+	{
+	if (m->p->cftimer)
+		{
 	    CFRunLoopTimerInvalidate(m->p->cftimer);
-    	CFRelease(m->p->cftimer);
-    	m->p->cftimer = NULL;
-    	}
+		CFRelease(m->p->cftimer);
+		m->p->cftimer = NULL;
+		}
 	ClearInterfaceList(m);
-    }
+	}
 
 // To Do: Find out how to implement a proper modular time function in CF
 mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTime)
 	{
 	// Due to a bug in CFRunLoopTimers, if you set them to any time in the past, they don't work
 	// Spot the obvious race condition: What defines "past"?
-	CFAbsoluteTime bugfix = CFAbsoluteTimeGetCurrent() + 0.01;		// Add some slop to reduce risk of race condition
+	CFAbsoluteTime bugfix = CFAbsoluteTimeGetCurrent() + 0.01;  // Add some slop to reduce risk of race condition
 	UInt32 x = (UInt32)NextTaskTime;
 	CFAbsoluteTime firetime = StartTime + ((CFAbsoluteTime)x / (CFAbsoluteTime)mDNSPlatformOneSecond);
 	if (firetime < bugfix) firetime = bugfix;
