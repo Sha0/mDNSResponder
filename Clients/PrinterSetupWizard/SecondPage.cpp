@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.7  2004/12/31 07:25:27  shersche
+Tidy up printer management, and fix memory leaks when hitting 'Cancel'
+
 Revision 1.6  2004/12/30 01:24:02  shersche
 <rdar://problem/3906182> Remove references to description key
 Bug #: 3906182
@@ -71,7 +74,8 @@ CSecondPage::CSecondPage()
 	: CPropertyPage(CSecondPage::IDD),
 	m_pdlBrowser( NULL ),
 	m_lprBrowser( NULL ),
-	m_ippBrowser( NULL )
+	m_ippBrowser( NULL ),
+	m_selected( NULL )
 {
 	m_psp.dwFlags &= ~(PSP_HASHELP);
 	m_psp.dwFlags |= PSP_DEFAULT|PSP_USEHEADERTITLE|PSP_USEHEADERSUBTITLE;
@@ -87,30 +91,10 @@ CSecondPage::CSecondPage()
 	LoadPrinterNames();
 }
 
+
 CSecondPage::~CSecondPage()
 {
-	//
-	// rdar://problem/3701837 memory leaks
-	//
-	// Clean up the ServiceRef and printer list on exit
-	//
-	if (m_pdlBrowser != NULL)
-	{
-		DNSServiceRefDeallocate(m_pdlBrowser);
-		m_pdlBrowser = NULL;
-	}
-
-	if (m_lprBrowser != NULL)
-	{
-		DNSServiceRefDeallocate(m_lprBrowser);
-		m_lprBrowser = NULL;
-	}
-
-	if (m_ippBrowser != NULL)
-	{
-		DNSServiceRefDeallocate(m_ippBrowser);
-		m_ippBrowser = NULL;
-	}
+	StopBrowse();
 }
 
 
@@ -181,24 +165,7 @@ CSecondPage::InitBrowseList()
 	//
 	text.LoadString(IDS_NO_RENDEZVOUS_PRINTERS);
 
-	m_emptyListItem = m_browseList.InsertItem( text, 0, 0, NULL, TVI_FIRST );
-	m_browseList.SelectItem( NULL );
-
-	//
-	// this will remove everything else in the list...we might be navigating
-	// back to this window, and the browse list might have changed since
-	// we last displayed it.
-	//
-	if ( m_emptyListItem )
-	{
-		HTREEITEM item = m_browseList.GetNextVisibleItem( m_emptyListItem );
-  
-		while ( item )
-		{
-			m_browseList.DeleteItem( item );
-			item = m_browseList.GetNextVisibleItem( m_emptyListItem );
-		}
-	}
+	LoadTextAndDisableWindow( text );
 
 	//
 	// disable the next button until there's a printer to select
@@ -209,11 +176,6 @@ CSecondPage::InitBrowseList()
 	// disable the printer information box
 	//
 	SetPrinterInformationState( FALSE );
-
-	//
-	// disable the window until there's a printer to select
-	//
-	m_browseList.EnableWindow( FALSE );
 
 exit:
 
@@ -240,17 +202,23 @@ exit:
 OSStatus
 CSecondPage::StopOperation( DNSServiceRef & ref )
 {
-	OSStatus err;
+	OSStatus err = kNoErr;
 
-	m_serviceRefList.remove( ref );
+	if ( ref )
+	{
+		m_serviceRefList.remove( ref );
 
-	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD( ref ), m_hWnd, 0, 0 );
-	require_noerr( err, exit );
+		if ( IsWindow( m_hWnd ) )
+		{
+			err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD( ref ), m_hWnd, 0, 0 );
+			require_noerr( err, exit );
+		}
+
+		DNSServiceRefDeallocate( ref );
+		ref = NULL;
+	}
 
 exit:
-
-	DNSServiceRefDeallocate( ref );
-	ref = NULL;
 
 	return err;
 }
@@ -311,16 +279,6 @@ CSecondPage::StartBrowse()
 
 exit:
 
-	if (err != kNoErr)
-	{
-		CPrinterSetupWizardSheet::WizardException exc;
-
-		exc.text.LoadString(IDS_NO_MDNSRESPONDER_SERVICE_TEXT);
-		exc.caption.LoadString(IDS_NO_MDNSRESPONDER_SERVICE_CAPTION);
-
-		throw(exc);
-	}
-
 	return err;
 }
 
@@ -338,6 +296,20 @@ CSecondPage::StopBrowse()
 
 	err = StopOperation( m_ippBrowser );
 	require_noerr( err, exit );
+
+	while ( m_printers.size() > 0 )
+	{
+		Printer * printer = m_printers.front();
+
+		m_printers.pop_front();
+
+		if ( printer->resolving )
+		{
+			StopResolve( printer );
+		}
+
+		delete printer;
+	}
 
 exit:
 
@@ -437,12 +409,12 @@ CSecondPage::OnSetActive()
 {
 	CPrinterSetupWizardSheet	*	psheet;
 	Printer						*	printer;
-	OSStatus						err;
+	OSStatus						err = kNoErr;
 
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
-	require_quiet( psheet, exit );
+	require_action( psheet, exit, err = kUnknownErr );
 
-	if ( printer = psheet->GetSelectedPrinter() )
+	if ( ( printer = psheet->GetSelectedPrinter() ) != NULL )
 	{
 		psheet->SetSelectedPrinter( NULL );
 		delete printer;
@@ -462,6 +434,28 @@ CSecondPage::OnSetActive()
 
 exit:
 
+	if ( err != kNoErr )
+	{
+		if ( err == kDNSServiceErr_Firewall )
+		{
+			CString text, caption;
+
+			text.LoadString( IDS_FIREWALL );
+			caption.LoadString( IDS_FIREWALL_CAPTION );
+
+			MessageBox(text, caption, MB_OK|MB_ICONEXCLAMATION);
+		}
+		else
+		{
+			CPrinterSetupWizardSheet::WizardException exc;
+			
+			exc.text.LoadString( IDS_NO_MDNSRESPONDER_SERVICE_TEXT );
+			exc.caption.LoadString( IDS_ERROR_CAPTION );
+			
+			throw(exc);
+		}
+	}
+
 	return CPropertyPage::OnSetActive();
 }
 
@@ -469,35 +463,18 @@ exit:
 BOOL
 CSecondPage::OnKillActive()
 {
-	Printer	*	selected = NULL;
-	HTREEITEM	item;
-	DWORD_PTR	data;
-	OSStatus	err;
+	OSStatus err = kNoErr;
 
-	item = m_browseList.GetSelectedItem();
-
-	if ( item )
+	if ( m_selected )
 	{
-		data = m_browseList.GetItemData( item );
-		selected = reinterpret_cast<Printer*>(data);
-	}
+		CPrinterSetupWizardSheet * psheet;
 
-	for ( item = m_browseList.GetChildItem( TVI_ROOT ); item; item = m_browseList.GetNextItem( item, TVGN_NEXT ) )
-	{
-		Printer	* printer;
+		psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
+		require_quiet( psheet, exit );
 
-		data = m_browseList.GetItemData( item );
-		printer = reinterpret_cast<Printer*>(data);
-
-		if ( printer && ( printer == selected ) && ( selected->resolving ) )
-		{
-			StopResolve( printer );
-		}
-		else if ( printer && ( printer != selected ) )
-		{
-			m_browseList.SetItemData( item, NULL );
-			delete printer;
-		}
+		psheet->SetSelectedPrinter( m_selected );
+		m_printers.remove( m_selected );
+		m_selected = NULL;
 	}
 
 	err = StopBrowse();
@@ -975,10 +952,12 @@ CSecondPage::OnAddPrinter(
 	printer->item = m_browseList.InsertItem(printer->displayName);
 
 	m_browseList.SetItemData( printer->item, (DWORD_PTR) printer );
+
+	m_printers.push_back( printer );
 	
 	m_browseList.SortChildren(TVI_ROOT);
 	
-	if ( printer->name == m_selectedPrinter )
+	if ( printer->name == m_selectedName )
 	{
 		m_browseList.SelectItem( printer->item );
 	}
@@ -1087,6 +1066,8 @@ CSecondPage::OnRemovePrinter(
 				m_browseList.Invalidate();
 			}
 
+			m_printers.remove( printer );
+
 			delete printer;
 		}
 	}
@@ -1106,13 +1087,6 @@ CSecondPage::OnResolveService( Service * service )
 	if ( !--service->printer->resolving )
 	{
 		//
-		// reset the cursor
-		//
-
-		psheet->m_active = psheet->m_arrow;
-		SetCursor(psheet->m_active);
-		
-		//
 		// sort the services now.  we want the service that
 		// has the highest priority queue to be first in
 		// the list.
@@ -1121,10 +1095,11 @@ CSecondPage::OnResolveService( Service * service )
 		service->printer->services.sort( OrderServiceFunc );
 
 		//
-		// and tell the sheet that this is the selected
-		// printer
+		// and set it to selected
 		//
-		psheet->SetSelectedPrinter( service->printer );
+
+		m_selected		= service->printer;
+		m_selectedName	= service->printer->name;
 
 		//
 		// and update the printer information box
@@ -1150,6 +1125,15 @@ CSecondPage::OnResolveService( Service * service )
 		}
 
 		m_locationField.SetWindowText( service->location );
+
+		psheet->SetWizardButtons( PSWIZB_BACK|PSWIZB_NEXT );
+
+		//
+		// reset the cursor
+		//
+
+		psheet->m_active = psheet->m_arrow;
+		SetCursor(psheet->m_active);
 	}
 
 exit:
@@ -1207,8 +1191,6 @@ void CSecondPage::OnTvnSelchangedBrowseList(NMHDR *pNMHDR, LRESULT *pResult)
 
 	printer = reinterpret_cast<Printer*>(m_browseList.GetItemData( item ) );
 	require_quiet( printer, exit );
-
-	m_selectedPrinter = printer->name;
 
 	//
 	// this call will trigger a resolve.  When the resolve is complete,
@@ -1325,6 +1307,32 @@ CSecondPage::OrderQueueFunc( const Queue * q1, const Queue * q2 )
 
 
 void
+CSecondPage::LoadTextAndDisableWindow( CString & text )
+{
+	m_emptyListItem = m_browseList.InsertItem( text, 0, 0, NULL, TVI_FIRST );
+	m_browseList.SelectItem( NULL );
+
+	//
+	// this will remove everything else in the list...we might be navigating
+	// back to this window, and the browse list might have changed since
+	// we last displayed it.
+	//
+	if ( m_emptyListItem )
+	{
+		HTREEITEM item = m_browseList.GetNextVisibleItem( m_emptyListItem );
+  
+		while ( item )
+		{
+			m_browseList.DeleteItem( item );
+			item = m_browseList.GetNextVisibleItem( m_emptyListItem );
+		}
+	}
+
+	m_browseList.EnableWindow( FALSE );
+}
+
+
+void
 CSecondPage::SetPrinterInformationState( BOOL state )
 {
 	m_printerInformation.EnableWindow( state );
@@ -1333,3 +1341,5 @@ CSecondPage::SetPrinterInformationState( BOOL state )
 	m_locationLabel.EnableWindow( state );
 	m_locationField.EnableWindow( state );
 }
+
+

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.h,v $
+Revision 1.5  2004/12/31 07:25:27  shersche
+Tidy up printer management, and fix memory leaks when hitting 'Cancel'
+
 Revision 1.4  2004/12/30 01:02:46  shersche
 <rdar://problem/3734478> Add Printer information box that displays description and location information when printer name is selected
 Bug #: 3734478
@@ -182,21 +185,28 @@ private:
 	OrderQueueFunc( const Queue * q1, const Queue * q2 );
 
 	void
+	LoadTextAndDisableWindow( CString & text );
+	
+	void
 	SetPrinterInformationState( BOOL state );
 
 	typedef std::map<CString,CString>	PrinterNameMap;
 	typedef std::list<DNSServiceRef>	ServiceRefList;
+	typedef std::list<Printer*>			Printers;
 
+	
 	PrinterNameMap	m_printerNames;
+	Printers		m_printers;
 	ServiceRefList	m_serviceRefList;
 	DNSServiceRef	m_pdlBrowser;
 	DNSServiceRef	m_lprBrowser;
 	DNSServiceRef	m_ippBrowser;
 
-	std::string		m_selectedPrinter;
-
-	UINT_PTR		m_timer;
+	Printer		*	m_selected;
+	std::string		m_selectedName;
 	
+	UINT_PTR		m_timer;
+
 private:
 
 	CStatic m_printerInformation;
