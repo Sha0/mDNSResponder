@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.11  2004/12/02 01:10:27  cheshire
+Fix to compile cleanly on 64-bit x86
+
 Revision 1.10  2004/11/01 20:36:04  ksekar
 <rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
 
@@ -676,7 +679,7 @@ void md5_block_data_order (MD5_CTX *c, const void *p,int num);
  * Time for some action:-)
  */
 
-int HASH_UPDATE (HASH_CTX *c, const void *data_, mDNSu32 len)
+int HASH_UPDATE (HASH_CTX *c, const void *data_, unsigned long len)
 	{
 	const unsigned char *data=(const unsigned char *)data_;
 	register HASH_LONG * p;
