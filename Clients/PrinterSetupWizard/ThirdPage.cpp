@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.9  2004/06/27 23:08:00  shersche
+code cleanup, make sure EnumPrintDrivers returns non-zero value, ignore comments in inf files
+
 Revision 1.8  2004/06/27 08:06:45  shersche
 Parse [Strings] section of inf file
 
@@ -269,7 +272,18 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 	//
 	while (file.ReadString(s))
 	{
-		if (s.Find('[') == 0)
+		//
+		// check for comment
+		//
+		if (s.Find(';') == 0)
+		{
+			continue;
+		}
+
+		//
+		// check for tag
+		//
+		else if (s.Find('[') == 0)
 		{
 			//
 			// handle any capitalization issues here
@@ -293,19 +307,23 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 			{
 				case ParsingStrings:
 				{
-					int		curPos = 0;
-					CString key = s.Tokenize(L"=",curPos);
-					CString val = s.Tokenize(L"=",curPos);
+					int	curPos = 0;
 
-					//
-					// get rid of all delimiters
-					//
-					val.Remove('"');
+					if (s.GetLength() > 0)
+					{
+						CString key = s.Tokenize(L"=",curPos);
+						CString val = s.Tokenize(L"=",curPos);
 
-					//
-					// and store it
-					//
-					strings[key] = val;
+						//
+						// get rid of all delimiters
+						//
+						val.Remove('"');
+	
+						//
+						// and store it
+						//
+						strings[key] = val;
+					}
 				}
 				break;
 			}
@@ -325,9 +343,17 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 	while (file.ReadString(s))
 	{
 		//
+		// check for comment
+		//
+		if (s.Find(';') == 0)
+		{
+			continue;
+		}
+
+		//
 		// check for tag
 		//
-		if (s.Find('[') == 0)
+		else if (s.Find('[') == 0)
 		{
 			//
 			// handle any capitalization issues here
@@ -515,114 +541,116 @@ exit:
 OSStatus
 CThirdPage::LoadPrintDriverDefs( Manufacturers & manufacturers )
 {
-	BYTE	*	buffer = NULL;
-	DWORD		bytesReceived;
-	DWORD		numPrinters;
-	OSStatus	err;
+	BYTE	*	buffer			=	NULL;
+	DWORD		bytesReceived	=	0;
+	DWORD		numPrinters		=	0;
+	OSStatus	err				=	0;
 	BOOL		ok;
 
 	//
 	// like a lot of win32 calls, we call this first to get the
 	// size of the buffer we need.
 	//
-	ok = EnumPrinterDrivers(NULL, L"all", 6, NULL, 0, &bytesReceived, &numPrinters);
-	err = translate_errno( ok, errno_compat(), kUnknownErr );
-	require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, kUnknownErr);
+	EnumPrinterDrivers(NULL, L"all", 6, NULL, 0, &bytesReceived, &numPrinters);
 
-	try
+	if (bytesReceived > 0)
 	{
-		buffer = new BYTE[bytesReceived];
-	}
-	catch (...)
-	{
-	}
-
-	require_action( buffer, exit, err = kNoMemoryErr );
+		try
+		{
+			buffer = new BYTE[bytesReceived];
+		}
+		catch (...)
+		{
+			buffer = NULL;
+		}
 	
-	//
-	// this call gets the real info
-	//
-	ok = EnumPrinterDrivers(NULL, L"all", 6, buffer, bytesReceived, &bytesReceived, &numPrinters);
-	err = translate_errno( ok, errno_compat(), kUnknownErr );
-	require_noerr( err, exit );
-
-	DRIVER_INFO_6 * info = (DRIVER_INFO_6*) buffer;
-
-	for (DWORD i = 0; i < numPrinters; i++)
-	{
-		Manufacturer	*	manufacturer;
-		Model			*	model;
-		CString				name;
-
+		require_action( buffer, exit, err = kNoMemoryErr );
+		
 		//
-		// skip over anything that doesn't have a manufacturer field.  This
-		// fixes a bug that I noticed that occurred after I installed 
-		// ProComm.  This program add a print driver with no manufacturer
-		// that screwed up this wizard.
+		// this call gets the real info
 		//
-		if (info[i].pszMfgName == NULL)
+		ok = EnumPrinterDrivers(NULL, L"all", 6, buffer, bytesReceived, &bytesReceived, &numPrinters);
+		err = translate_errno( ok, errno_compat(), kUnknownErr );
+		require_noerr( err, exit );
+	
+		DRIVER_INFO_6 * info = (DRIVER_INFO_6*) buffer;
+	
+		for (DWORD i = 0; i < numPrinters; i++)
 		{
-			continue;
-		}
-
-		//
-		// look for manufacturer
-		//
-		Manufacturers::iterator iter;
-
-		//
-		// save the name
-		//
-		name = NormalizeManufacturerName( info[i].pszMfgName );
-
-		iter = manufacturers.find(name);
-
-		if (iter != manufacturers.end())
-		{
-			manufacturer = iter->second;
-		}
-		else
-		{
-			try
+			Manufacturer	*	manufacturer;
+			Model			*	model;
+			CString				name;
+	
+			//
+			// skip over anything that doesn't have a manufacturer field.  This
+			// fixes a bug that I noticed that occurred after I installed 
+			// ProComm.  This program add a print driver with no manufacturer
+			// that screwed up this wizard.
+			//
+			if (info[i].pszMfgName == NULL)
 			{
-				manufacturer = new Manufacturer;
+				continue;
 			}
-			catch (...)
+	
+			//
+			// look for manufacturer
+			//
+			Manufacturers::iterator iter;
+	
+			//
+			// save the name
+			//
+			name = NormalizeManufacturerName( info[i].pszMfgName );
+	
+			iter = manufacturers.find(name);
+	
+			if (iter != manufacturers.end())
 			{
-				manufacturer = NULL;
+				manufacturer = iter->second;
 			}
-
-			require_action( manufacturer, exit, err = kNoMemoryErr );
-
-			manufacturer->name	=	name;
-
-			manufacturers[name]	=	manufacturer;
-		}
-
-		//
-		// now look to see if we have already seen this guy.  this could
-		// happen if we have already installed printers that are described
-		// in ntprint.inf.  the extant drivers will show up in EnumPrinterDrivers
-		// but we have already loaded their info
-		//
-		//
-		if ( MatchModel( manufacturer, ConvertToModelName( info[i].pName ) ) == NULL )
-		{
-			try
+			else
 			{
-				model = new Model;
+				try
+				{
+					manufacturer = new Manufacturer;
+				}
+				catch (...)
+				{
+					manufacturer = NULL;
+				}
+	
+				require_action( manufacturer, exit, err = kNoMemoryErr );
+	
+				manufacturer->name	=	name;
+	
+				manufacturers[name]	=	manufacturer;
 			}
-			catch (...)
+	
+			//
+			// now look to see if we have already seen this guy.  this could
+			// happen if we have already installed printers that are described
+			// in ntprint.inf.  the extant drivers will show up in EnumPrinterDrivers
+			// but we have already loaded their info
+			//
+			//
+			if ( MatchModel( manufacturer, ConvertToModelName( info[i].pName ) ) == NULL )
 			{
-				model = NULL;
+				try
+				{
+					model = new Model;
+				}
+				catch (...)
+				{
+					model = NULL;
+				}
+	
+				require_action( model, exit, err = kNoMemoryErr );
+	
+				model->name				=	info[i].pName;
+				model->driverInstalled	=	true;
+	
+				manufacturer->models.push_back(model);
 			}
-
-			require_action( model, exit, err = kNoMemoryErr );
-
-			model->name				=	info[i].pName;
-			model->driverInstalled	=	true;
-
-			manufacturer->models.push_back(model);
 		}
 	}
 
