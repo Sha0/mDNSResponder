@@ -72,10 +72,13 @@ void resolve_reply(struct sockaddr *interface, struct sockaddr *address, const c
 
 void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *context)
 	{
-	if (errorCode)
-		printf("Got a reply from the server with error %d\n", errorCode);
-	else
-		printf("Got a reply from the server: Name now registered and active\n");
+    printf("Got a reply from the server: ");
+    switch (errorCode)
+        {
+        case kDNSServiceDiscoveryNoError:      printf("Name now registered and active\n"); break;
+        case kDNSServiceDiscoveryNameConflict: printf("Name in use, please choose another\n"); exit(-1);
+        default:                               printf("Error %d\n", errorCode); break;
+        }
 	}
 
 void MyHandleMachMessage(CFMachPortRef port, void *msg, CFIndex size, void *info)
@@ -106,23 +109,30 @@ int main(int argc, char ** argv)
 
 			case 'B':	if (argc < optind+1) goto Fail;
 						dom = (argc < optind+2) ? "" : argv[optind+1];
+                        if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
 						printf("Browsing for %s%s\n", argv[optind+0], dom);
 						client = DNSServiceBrowserCreate(argv[optind+0], dom, browse_reply, nil);
 						break;
 
 			case 'L':	if (argc < optind+2) goto Fail;
 						dom = (argc < optind+3) ? "" : argv[optind+2];
+                        if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
 						printf("Lookup %s.%s%s\n", argv[optind+0], argv[optind+1], dom);
 						client = DNSServiceResolverResolve(argv[optind+0], argv[optind+1], dom, resolve_reply, nil);
 						break;
 
 			case 'R':	if (argc < optind+4) goto Fail;
 						{
+                        char *nam = argv[optind+0];
+                        char *typ = argv[optind+1];
+                        char *dom = argv[optind+2];
 						uint16_t PortAsNumber = atoi(argv[optind+3]);
 						Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
 						char *txt = (argc > optind+4) ? argv[optind+4] : "";
-						printf("Registering Service %s.%s%s port %s %s\n", argv[optind+0], argv[optind+1], argv[optind+2], argv[optind+3], txt);
-						client = DNSServiceRegistrationCreate(argv[optind+0], argv[optind+1], argv[optind+2], registerPort, txt, reg_reply, nil);
+                        if (nam[0] == '.' && nam[1] == 0) nam[0] = 0;	// We allow '.' on the command line as a synonym for empty string
+                        if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
+						printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[optind+3], txt);
+						client = DNSServiceRegistrationCreate(nam, typ, dom, registerPort, txt, reg_reply, nil);
 						break;
 						}
 
