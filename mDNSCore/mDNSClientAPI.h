@@ -74,8 +74,8 @@ typedef unsigned long  mDNSu32;
 // The "NotAnInteger" fields of the unions allow the value to be conveniently passed around in a register
 // for the sake of efficiency, but don't forget -- just because it is in a register doesn't mean it is an
 // integer. Operations like add, multiply, increment, decrement, etc., are undefined for opaque identifiers.
-typedef union { unsigned char b[2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
-typedef union { unsigned char b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
+typedef union { mDNSu8 b[2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
+typedef union { mDNSu8 b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
 
 typedef mDNSOpaque16 mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
 typedef mDNSOpaque32 mDNSIPAddr;		// An IP address is a four-byte opaque identifier (not an integer)
