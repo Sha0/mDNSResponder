@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.178  2005/02/25 19:35:38  ksekar
+<rdar://problem/4023750> Non-local empty string registration failures should not return errors to caller
+
 Revision 1.177  2005/02/25 03:05:41  cheshire
 Change "broken pipe" message to debugf()
 
@@ -810,7 +813,7 @@ static void browse_termination_callback(void *context);
 static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void handle_regservice_request(request_state *request);
 static void regservice_termination_callback(void *context);
-static void process_service_registration(ServiceRecordSet *const srs);
+static void process_service_registration(ServiceRecordSet *const srs, mDNSBool SuppressError);
 static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result);
 static mStatus handle_add_request(request_state *rstate);
 static mStatus handle_update_request(request_state *rstate);
@@ -2321,11 +2324,19 @@ bad_param:
 static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
     {
     mStatus err;
+	mDNSBool SuppressError = mDNSfalse;
     service_instance *instance = srs->ServiceContext;
     (void)m; // Unused
     if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
     if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }
 
+	if (instance->request && instance->request->service_registration)
+		{
+		service_info *info = instance->request->service_registration;
+		if (info->default_domain && !instance->default_local) SuppressError = mDNStrue;
+        // don't send errors up to client for wide-area, empty-string registrations
+		}			
+	
     if (result == mStatus_NoError)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED  ",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
 	else if (result == mStatus_MemFree)
@@ -2346,7 +2357,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
 			srs->RR_TXT.AllowRemoteQuery = mDNStrue;
 			for (e = instance->srs.Extras; e; e = e->next) e->r.AllowRemoteQuery = mDNStrue;
 			}
-        process_service_registration(srs);
+        process_service_registration(srs, SuppressError);
         if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
         	RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
 		return;
@@ -2385,7 +2396,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
 		    request_state *rs = instance->request;
 			if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
-			if (deliver_async_error(rs, reg_service_reply, result) < 0)
+			if (!SuppressError && deliver_async_error(rs, reg_service_reply, result) < 0)
                 {
                 abort_request(rs);
                 unlink_request(rs);
@@ -2399,7 +2410,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
 		if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
         if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
-        if (deliver_async_error(rs, reg_service_reply, result) < 0)
+        if (!SuppressError && deliver_async_error(rs, reg_service_reply, result) < 0)
             {
             abort_request(rs);
             unlink_request(rs);
@@ -2573,7 +2584,7 @@ static void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd)
     if (oldrd != &rr->rdatastorage) freeL("update_callback", oldrd);
     }
     
-static void process_service_registration(ServiceRecordSet *const srs)
+static void process_service_registration(ServiceRecordSet *const srs, mDNSBool SuppressError)
     {
     reply_state *rep;
     transfer_state send_result;
@@ -2585,7 +2596,7 @@ static void process_service_registration(ServiceRecordSet *const srs)
     err = gen_rr_response(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, req, &rep);
     if (err)
         {
-        if (deliver_async_error(req, reg_service_reply, err) < 0)
+        if (SuppressError && deliver_async_error(req, reg_service_reply, err) < 0)
             {
             abort_request(req);
             unlink_request(req);
