@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.104  2004/10/25 21:41:38  ksekar
+<rdar://problem/3852958> wide-area name conflicts can cause crash
+
 Revision 1.103  2004/10/25 19:30:52  ksekar
 <rdar://problem/3827956> Simplify dynamic host name structures
 
@@ -1752,7 +1755,6 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				if (nat->state == NATState_Deleted) { FreeNATInfo(m, nat); info->NATinfo = mDNSNULL; } // deletion copmleted
 				else nat->reg.ServiceRegistration = mDNSNULL;  // allow mapping deletion to continue
 				}
-			unlinkSRS(&m->uDNS_info, srs);
 			info->state = regState_Unregistered;
 			break;
 		case regState_DeregDeferred:
@@ -1813,6 +1815,8 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			return;
 			}				
 		}
+
+	if (info->state == regState_Unregistered) unlinkSRS(&m->uDNS_info, srs);
 
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (InvokeCallback) srs->ServiceCallback(m, srs, err);
@@ -3824,7 +3828,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return mStatus_NoError;		
 		case regState_Unregistered:
-			LogMsg("ERROR: uDNS_DeregisterService - service not registerd");
+			debugf("uDNS_DeregisterService - service not registerd");
 			return mStatus_UnknownErr;
 		case regState_FetchingZoneData:
 		case regState_Pending:

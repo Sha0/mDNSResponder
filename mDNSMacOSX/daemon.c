@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.201  2004/10/25 21:41:39  ksekar
+<rdar://problem/3852958> wide-area name conflicts can cause crash
+
 Revision 1.200  2004/10/22 01:03:55  cheshire
 <rdar://problem/3375328> select() says data is waiting; recvfrom() says there is no data
 Log error message if attempt to remap stdin/stdout/stderr to /dev/null fails
@@ -744,17 +747,20 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		DNSServiceRegistration *x = *r;
 		*r = (*r)->next;
 
-		for (si = x->regs; si; si = si->next)
+		si = x->regs;
+		while (si)
 			{
-			si->autorename = mDNSfalse;
-			if (m && m != x) LogMsg("%5d: DNSServiceRegistration(%##s, %u) STOP; WARNING m %p != x %p", ClientMachPort, si->srs.RR_SRV.resrec.name.c, SRS_PORT(&si->srs), m, x);			
-			else LogOperation("%5d: DNSServiceRegistration(%##s, %u) STOP", ClientMachPort, si->srs.RR_SRV.resrec.name.c, SRS_PORT(&si->srs));
+			ServiceInstance *instance = si;
+			si = si->next;                 
+			instance->autorename = mDNSfalse;
+			if (m && m != x) LogMsg("%5d: DNSServiceRegistration(%##s, %u) STOP; WARNING m %p != x %p", ClientMachPort, instance->srs.RR_SRV.resrec.name.c, SRS_PORT(&instance->srs), m, x);			
+			else LogOperation("%5d: DNSServiceRegistration(%##s, %u) STOP", ClientMachPort, instance->srs.RR_SRV.resrec.name.c, SRS_PORT(&instance->srs));
 
 			// If mDNS_DeregisterService() returns mStatus_NoError, that means that the service was found in the list,
 			// is sending its goodbye packet, and we'll get an mStatus_MemFree message when we can free the memory.
 			// If mDNS_DeregisterService() returns an error, it means that the service had already been removed from
 			// the list, so we should go ahead and free the memory right now
-			if (mDNS_DeregisterService(&mDNSStorage, &si->srs)) FreeServiceInstance(si);
+			if (mDNS_DeregisterService(&mDNSStorage, &instance->srs)) FreeServiceInstance(instance); // FreeServiceInstance invalidates pointer
 			}
 		x->regs = NULL;		
 		freeL("DNSServiceRegistration", x);
