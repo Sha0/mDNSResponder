@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.9  2003/08/14 23:57:46  cheshire
+Report if there is no answer at all from the target host
+
 Revision 1.8  2003/08/14 02:19:55  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -289,7 +292,7 @@ mDNSexport int main(int argc, char **argv)
 		WaitForAnswer(&mDNSStorage, 4);
 		mDNS_StopQuery(&mDNSStorage, &q1);
 		mDNS_StopQuery(&mDNSStorage, &q2);
-		if (StopNow != 1) goto exit;
+		if (StopNow != 1) { mprintf("%##s %s *** No Answer ***\n", q1.qname.c, DNSTypeName(q1.qtype)); goto exit; }
 		}
 	else
 		strcpy(hostname, argv[1]);
