@@ -23,6 +23,9 @@
 ;	Change History (most recent first):
 ;    
 ; $Log: dnssd.def,v $
+; Revision 1.2  2004/07/19 07:43:59  shersche
+; export TXTRecord APIs
+;
 ; Revision 1.1  2004/06/18 03:55:11  rpantos
 ; Move DLL up to main level; additional integration from Scott.
 ;
@@ -53,3 +56,13 @@ EXPORTS
 	DNSServiceRegisterRecord
 	DNSServiceQueryRecord
 	DNSServiceReconfirmRecord
+	TXTRecordCreate
+	TXTRecordDeallocate
+	TXTRecordSetValue
+	TXTRecordRemoveValue
+	TXTRecordContainsKey
+	TXTRecordGetCount
+	TXTRecordGetLength
+	TXTRecordGetBytesPtr
+	TXTRecordGetValuePtr
+	TXTRecordGetItemAtIndex
