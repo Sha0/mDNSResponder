@@ -44,8 +44,16 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.314  2003/11/07 03:19:49  cheshire
+Minor variable renaming for clarity
+
 Revision 1.313  2003/11/07 03:14:49  cheshire
 Previous checkin proved to be overly simplistic; reversing
+
+Revision 1.312  2003/11/03 23:45:15  cheshire
+<rdar://problem/3472153> mDNSResponder delivers answers in inconsistent order
+Build cache lists in FIFO order, not customary C LIFO order
+(Append new elements to tail of cache list, instead of prepending at the head.)
 
 Revision 1.311  2003/10/09 18:00:11  cheshire
 Another compiler warning fix.
@@ -4391,21 +4399,20 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 		mDNSu32 oldtotalused = m->rrcache_totalused;
 		#endif
 		mDNSu32 slot;
-		CacheRecord **rr;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			{
-			rr = &(m->rrcache_hash[slot]);
-			while (*rr)
+			CacheRecord **rp = &(m->rrcache_hash[slot]);
+			while (*rp)
 				{
 				// Records that answer still-active questions are not candidates for deletion
-				if ((*rr)->CRActiveQuestion)
-					rr=&(*rr)->next;
+				if ((*rp)->CRActiveQuestion)
+					rp=&(*rp)->next;
 				else
 					{
-					CacheRecord *r = *rr;
-					*rr = (*rr)->next;			// Cut record from list
+					CacheRecord *rr = *rp;
+					*rp = (*rp)->next;			// Cut record from list
 					m->rrcache_used[slot]--;	// Decrement counts
-					ReleaseCacheRR(m, r);
+					ReleaseCacheRR(m, rr);
 					}
 				}
 			}
@@ -6872,7 +6879,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	CacheRecord *rrcachestorage, mDNSu32 rrcachesize,
 	mDNSBool AdvertiseLocalAddresses, mDNSCallback *Callback, void *Context)
 	{
-	mDNSu32 i;
+	mDNSu32 slot;
 	mDNSs32 timenow;
 	mStatus result = mDNSPlatformTimeInit(&timenow);
 	if (result != mStatus_NoError) return(result);
@@ -6922,10 +6929,10 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->rrcache_report          = 10;
 	m->rrcache_free            = mDNSNULL;
 
-	for (i = 0; i < CACHE_HASH_SLOTS; i++)
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
-		m->rrcache_hash[i] = mDNSNULL;
-		m->rrcache_used[i] = 0;
+		m->rrcache_hash[slot] = mDNSNULL;
+		m->rrcache_used[slot] = 0;
 		}
 
 	mDNS_GrowCache(m, rrcachestorage, rrcachesize);
