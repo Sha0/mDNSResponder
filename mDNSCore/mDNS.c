@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.397  2004/08/25 22:04:25  rpantos
+Fix the standard Windows compile error.
+
 Revision 1.396  2004/08/25 00:37:27  ksekar
 <rdar://problem/3774635>: Cleanup DynDNS hostname registration code
 
@@ -5497,9 +5500,9 @@ mDNSlocal void DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 mDNSexport void mDNS_SetFQDN(mDNS *const m)
 	{
 	domainname newmname;
-	newmname.c[0] = 0;
 	NetworkInterfaceInfo *intf;
 	AuthRecord *rr;
+	newmname.c[0] = 0;
 
 	if (!AppendDomainLabel(&newmname, &m->hostlabel))  { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
 	if (!AppendLiteralLabelString(&newmname, "local")) { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
