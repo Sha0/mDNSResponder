@@ -46,7 +46,7 @@
 				Name="VCLinkerTool"
 				AdditionalOptions="/MACHINE:I386"
 				AdditionalDependencies="ws2_32.lib nafxcwd.lib LIBCMTD.lib"
-				OutputFile=".\Debug/Application.exe"
+				OutputFile="Rendezvous Browser Debug.exe"
 				LinkIncremental="2"
 				SuppressStartupBanner="TRUE"
 				IgnoreDefaultLibraryNames="wsock32.lib;nafxcwd.lib;LIBCMTD.lib"
@@ -115,7 +115,7 @@
 				Name="VCLinkerTool"
 				AdditionalOptions="/MACHINE:I386"
 				AdditionalDependencies="ws2_32.lib nafxcw.lib LIBCMT.lib"
-				OutputFile=".\Release/Application.exe"
+				OutputFile="Rendezvous Browser.exe"
 				LinkIncremental="1"
 				SuppressStartupBanner="TRUE"
 				IgnoreDefaultLibraryNames="wsock32.lib;nafxcw.lib;LIBCMT.lib"
@@ -205,9 +205,6 @@
 		<Filter
 			Name="Resource Files"
 			Filter="ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;rc">
-			<File
-				RelativePath="Resources\Application.ico">
-			</File>
 			<File
 				RelativePath="Resources\Application.rc">
 			</File>
