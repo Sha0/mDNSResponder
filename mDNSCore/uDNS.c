@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.131  2004/12/01 19:59:27  cheshire
+<rdar://problem/3882643> Crash in mDNSPlatformTCPConnect
+If a TCP response has the TC bit set, don't respond by just trying another TCP connection
+
 Revision 1.130  2004/12/01 02:43:23  cheshire
 Don't call StatusCallback if function pointer is null
 
@@ -2062,8 +2066,6 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	
     // unused
-	(void)srcaddr;
-	(void)srcport;
 	(void)dstaddr;
 	(void)dstport;
 	(void)InterfaceID;
@@ -2619,6 +2621,8 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	const mDNSu8 *ptr = msg->data;
 	LLQ_Info *llqInfo;
+
+	if (!srcaddr) { LogMsg("recvLLQResponse: LLQ Responses over TCP not currently supported"); return mDNSfalse; }
 	
 	if (!msg->h.numQuestions) return mDNSfalse;
 
@@ -3325,6 +3329,8 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	uDNS_QuestionInfo *info = &question->uDNS_info;
 	int sd;
 	tcpInfo_t *context;
+	
+	if (!src) { LogMsg("hndlTruncatedAnswer: TCP DNS response had TC bit set: ignoring"); return; }
 
 	context = (tcpInfo_t *)umalloc(sizeof(tcpInfo_t));
 	if (!context) { LogMsg("ERROR: hndlTruncatedAnswer - memallocate failed"); return; }
