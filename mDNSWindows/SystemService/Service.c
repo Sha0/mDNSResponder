@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.32  2005/04/06 01:32:05  shersche
+Remove default route for link-local addressing when another interface comes up with a routable IPv4 address
+
 Revision 1.31  2005/04/06 01:00:11  shersche
 <rdar://problem/4080127> GetFullPathName() should be passed the number of TCHARs in the path buffer, not the size in bytes of the path buffer.
 
@@ -1812,27 +1815,27 @@ SetLLRoute( mDNS * const inMDNS )
 			}
 		}
 
+		row.dwForwardDest		= 0;
+		row.dwForwardIfIndex	= ifIndex;
+		row.dwForwardMask		= 0;
+		row.dwForwardType		= 3;
+		row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
+		row.dwForwardAge		= 0;
+		row.dwForwardPolicy		= 0;
+		row.dwForwardMetric1	= 20;
+		row.dwForwardMetric2	= (DWORD) - 1;
+		row.dwForwardMetric3	= (DWORD) - 1;
+		row.dwForwardMetric4	= (DWORD) - 1;
+		row.dwForwardMetric5	= (DWORD) - 1;
+		
 		if ( numInterfaces == 1 )
 		{
-			//
-			// if so, set up a route to ARP everything
-			//
-			row.dwForwardDest		= 0;
-			row.dwForwardIfIndex	= ifIndex;
-			row.dwForwardMask		= 0;
-			row.dwForwardType		= 3;
-			row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
-			row.dwForwardAge		= 0;
-			row.dwForwardPolicy		= 0;
-			row.dwForwardMetric1	= 20;
-			row.dwForwardMetric2	= (DWORD) - 1;
-			row.dwForwardMetric3	= (DWORD) - 1;
-			row.dwForwardMetric4	= (DWORD) - 1;
-			row.dwForwardMetric5	= (DWORD) - 1;
-	
 			err = CreateIpForwardEntry(&row);
-	
 			require_noerr( err, exit );
+		}
+		else if ( numInterfaces != numLinkLocalInterfaces )
+		{
+			DeleteIpForwardEntry( &row );
 		}
 	}
 
