@@ -611,10 +611,12 @@ int main(int argc, char **argv)
 
 		case 'Q':	{
 					uint16_t rrtype, rrclass;
+					DNSServiceFlags flags = 0;
 					if (argc < optind+1) goto Fail;
 					rrtype = (argc <= optind+1) ? kDNSServiceType_A  : GetRRType(argv[optind+1]);
 					rrclass = (argc <= optind+2) ? kDNSServiceClass_IN : atoi(argv[optind+2]);
-					err = DNSServiceQueryRecord(&client, 0, 0, argv[optind+0], rrtype, rrclass, qr_reply, NULL);
+					if (rrtype == kDNSServiceType_TXT || rrtype == kDNSServiceType_PTR) flags |= kDNSServiceFlagsLongLivedQuery;
+					err = DNSServiceQueryRecord(&client, flags, 0, argv[optind+0], rrtype, rrclass, qr_reply, NULL);
 					break;
 					}
 
