@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.17  2003/10/31 12:16:03  bradley
+Added support for providing the resolved host name to the callback.
+
 Revision 1.16  2003/10/16 09:16:39  bradley
 Unified address copying to fix a problem with IPv6 resolves not being passed up as IPv6.
 
@@ -1370,6 +1373,7 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	char *					txtString;
 	mStatus					err;
 	mDNSBool				release;
+	char					hostName[ MAX_DOMAIN_NAME + 1 ];
 	
 	txtString = NULL;
 	
@@ -1414,6 +1418,8 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	event.data.resolved.flags 							= 0;
 	event.data.resolved.textRecordRaw					= (const void *) inQuery->info->TXTinfo;
 	event.data.resolved.textRecordRawSize				= (DNSCount) inQuery->info->TXTlen;
+	ConvertDomainNameToCString( &inQuery->qAv4.qname, hostName );
+	event.data.resolved.hostName						= hostName;
 	release												= (mDNSBool)( ( objectPtr->flags & kDNSResolverFlagOneShot ) != 0 );
 	objectPtr->callback( objectPtr->callbackContext, objectPtr, kDNSNoErr, &event );
 	

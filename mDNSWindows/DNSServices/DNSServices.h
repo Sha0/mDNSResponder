@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.h,v $
+Revision 1.9  2003/10/31 12:16:03  bradley
+Added support for providing the resolved host name to the callback.
+
 Revision 1.8  2003/08/20 06:44:24  bradley
 Updated to latest internal version of the Rendezvous for Windows code: Added support for interface
 specific registrations; Added support for no-such-service registrations; Added support for host
@@ -648,6 +651,9 @@ enum
 
 	@field		textRecordRawSize
 					Number of bytes in raw TXT record. May be needed if a custom TXT record format is used.
+
+	@field		hostName
+					Host name of the resolved service.
 */
 
 typedef struct	DNSResolverEventResolveData		DNSResolverEventResolveData;
@@ -664,6 +670,7 @@ struct	DNSResolverEventResolveData
 	DNSResolverFlags		flags;
 	const void *			textRecordRaw;
 	DNSCount				textRecordRawSize;
+	const char *			hostName;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
