@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.339  2003/12/13 05:50:33  bradley
+Fixed crash with mDNS_Lock/Unlock being called for the initial GrowCache before the platform
+layer has been initialized. Protect mDNS_reentrancy when completing the core initialization to
+fix a race condition during async initialization. Fixed buffer overrun for 1 byte mDNS_snprintf.
+
 Revision 1.338  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -1224,6 +1229,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 	int c;
 	if (buflen == 0) return(0);
 	buflen--;		// Pre-reserve one space in the buffer for the terminating nul
+	if (buflen == 0) goto exit;
 
 	for (c = *fmt; c != 0; c = *++fmt)
 		{
@@ -5774,9 +5780,8 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 #pragma mark - Startup and Shutdown
 #endif
 
-mDNSexport void mDNS_GrowCache(mDNS *const m, CacheRecord *storage, mDNSu32 numrecords)
+mDNSlocal void mDNS_GrowCache_internal(mDNS *const m, CacheRecord *storage, mDNSu32 numrecords)
 	{
-	mDNS_Lock(m);
 	if (storage && numrecords)
 		{
 		mDNSu32 i;
@@ -5785,6 +5790,12 @@ mDNSexport void mDNS_GrowCache(mDNS *const m, CacheRecord *storage, mDNSu32 numr
 		m->rrcache_free = storage;
 		m->rrcache_size += numrecords;
 		}
+	}
+
+mDNSexport void mDNS_GrowCache(mDNS *const m, CacheRecord *storage, mDNSu32 numrecords)
+	{
+	mDNS_Lock(m);
+	mDNS_GrowCache_internal(m, storage, numrecords);
 	mDNS_Unlock(m);
 	}
 
@@ -5849,7 +5860,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 		m->rrcache_used[slot] = 0;
 		}
 
-	mDNS_GrowCache(m, rrcachestorage, rrcachesize);
+	mDNS_GrowCache_internal(m, rrcachestorage, rrcachesize);
 
 	// Fields below only required for mDNS Responder...
 	m->hostlabel.c[0]          = 0;
@@ -5879,9 +5890,11 @@ mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 	m->mDNSPlatformStatus = result;
 	if (m->MainCallback)
 		{
+		mDNS_Lock(m);
 		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 		m->MainCallback(m, mStatus_NoError);
 		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_Unlock(m);
 		}
 	}
 
