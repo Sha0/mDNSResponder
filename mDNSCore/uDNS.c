@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.136  2004/12/03 07:20:50  ksekar
+<rdar://problem/3674208> Wide-Area: Registration of large TXT record fails
+
 Revision 1.135  2004/12/03 05:18:33  ksekar
 <rdar://problem/3810596> mDNSResponder needs to return more specific TSIG errors
 
@@ -2253,8 +2256,8 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *questi
 	optRD->opt = kDNSOpt_LLQ;
 	optRD->optlen = sizeof(LLQOptData);
 	umemcpy(&optRD->OptData.llq, data, sizeof(LLQOptData));
-	ptr = PutResourceRecordTTL(msg, ptr, &msg->h.numAdditionals, opt, 0);
-	if (!ptr) { LogMsg("ERROR: putLLQ - PutResourceRecordTTL"); return mDNSNULL; }
+	ptr = PutResourceRecordTTLJumbo(msg, ptr, &msg->h.numAdditionals, opt, 0);
+	if (!ptr) { LogMsg("ERROR: putLLQ - PutResourceRecordTTLJumbo"); return mDNSNULL; }
 
 	return ptr;
 	}
@@ -3441,7 +3444,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	  {
 		// KnownUnique means the record must ALREADY exist, as does refresh
 		// prereq: record must exist (put record in prereq section w/ TTL 0)
-	    ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &rr->resrec, 0);
+	    ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &rr->resrec, 0);
 		if (!ptr) goto error;
 	  }
 	else if (rr->resrec.RecordType != kDNSRecordTypeShared)
@@ -3450,7 +3453,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		if (!ptr) goto error;
 		}
 
-	ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec);
+	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl);
 	if (!ptr) goto error;
 
 	if (rr->uDNS_info.lease)
@@ -3587,8 +3590,8 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (srs->uDNS_info.TestForSelfConflict)
 		{
 		// update w/ prereq that records already exist to make sure previous registration was ours
-		if (!(ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0))) goto error;
-		if (!(ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_TXT.resrec, 0))) goto error;
+		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0))) goto error;
+		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_TXT.resrec, 0))) goto error;
 		}
 	
 	else if (srs->uDNS_info.state != regState_Refresh)
@@ -3599,8 +3602,8 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		}
 	
 	//!!!KRS  Need to do bounds checking and use TCP if it won't fit!!!
-	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec))) goto error;
-	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec))) goto error;
+	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec, srs->RR_PTR.resrec.rroriginalttl))) goto error;
+	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) goto error;
 
 	newtarget = GetServiceTarget(u, srv);
 	if (!newtarget)
@@ -3630,7 +3633,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		AssignDomainName(*targetptr, *newtarget);
 		SetNewRData(&srv->resrec, mDNSNULL, 0);
 		}
-	ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srv->resrec);
+	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
 	if (!ptr) goto error;
 	// !!!KRS do subtypes/extras etc.
 
@@ -3928,8 +3931,8 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	
     // prereq: record must exist (put record in prereq section w/ TTL 0)
 	//!!!KRS this just wastes space in packet - should be no-op if record doesn't exist
-	//ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0);
-	//if (!ptr) { LogMsg("ERROR: SendServiceDeregistration - PutResourceRecordTTL"); goto error; }
+	//ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0);
+	//if (!ptr) { LogMsg("ERROR: SendServiceDeregistration - PutResourceRecordTTLJumbo"); goto error; }
 
 	// replace port w/ NAT mapping if necessary
 	if (nat && nat->PublicPort.NotAnInteger)
@@ -4044,7 +4047,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 
 	// change the rdata, add the new record
 	SwapRData(m, rr, mDNSfalse);
-	ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec);
+	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl);
 	SwapRData(m, rr, mDNSfalse);  // swap rdata back to original in case we need to retransmit
 	if (!ptr) goto error;         // (rdata gets changed permanently on success)
 

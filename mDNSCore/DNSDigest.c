@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.12  2004/12/03 07:20:50  ksekar
+<rdar://problem/3674208> Wide-Area: Registration of large TXT record fails
+
 Revision 1.11  2004/12/02 01:10:27  cheshire
 Fix to compile cleanly on 64-bit x86
 
@@ -1440,7 +1443,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	rdata += 6;
 	
 	tsig.resrec.rdlength = (mDNSu16)(rdata - tsig.resrec.rdata->u.data);
-	*end = PutResourceRecordTTL(msg, ptr, numAdditionals, &tsig.resrec, 0);
+	*end = PutResourceRecordTTLJumbo(msg, ptr, numAdditionals, &tsig.resrec, 0);
 	if (!*end) { LogMsg("ERROR: DNSDigest_SignMessage - could not put TSIG"); return mDNSNULL; }
 
 	// update num additionals

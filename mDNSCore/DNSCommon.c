@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.69  2004/12/03 07:20:50  ksekar
+<rdar://problem/3674208> Wide-Area: Registration of large TXT record fails
+
 Revision 1.68  2004/11/24 00:10:43  cheshire
 <rdar://problem/3869241> For unicast operations, verify that service types are legal
 
@@ -1370,16 +1373,10 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 		}
 	}
 
-mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl)
+mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, const mDNSu8 *limit)
 	{
 	mDNSu8 *endofrdata;
 	mDNSu16 actualLength;
-	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;
-
-	// If we have a single large record to put in the packet, then we allow the packet to be up to 9K bytes,
-	// but in the normal case we try to keep the packets below 1500 to avoid IP fragmentation on standard Ethernet
-	if (msg->h.numAnswers || msg->h.numAuthorities || msg->h.numAdditionals)
-		limit = msg->data + NormalMaxDNSMessageData;
 
 	if (rr->RecordType == kDNSRecordTypeUnregistered)
 		{
@@ -1503,7 +1500,7 @@ mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	optRD->opt = kDNSOpt_Lease;
 	optRD->optlen = sizeof(mDNSs32);
 	optRD->OptData.lease = lease;
-	end = PutResourceRecordTTL(msg, end, &msg->h.numAdditionals, opt, 0);
+	end = PutResourceRecordTTLJumbo(msg, end, &msg->h.numAdditionals, opt, 0);
 	if (!end) { LogMsg("ERROR: putUpdateLease - PutResourceRecordTTL"); return mDNSNULL; }
 
 	return end;
