@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.46  2003/04/30 20:39:09  cheshire
+Add comment
+
 Revision 1.45  2003/04/29 00:40:50  cheshire
 Fix compiler warnings
 
@@ -322,10 +325,14 @@ enum
 
 typedef mDNSs32 mStatus;
 
+// RFC 1034/1035 specify that a domain label consists of a length byte plus up to 63 characters
 #define MAX_DOMAIN_LABEL 63
 typedef struct { mDNSu8 c[ 64]; } domainlabel;		// One label: length byte and up to 63 characters
+
+// RFC 1034/1035 specify that a domain name, including length bytes, data bytes, and terminating zero, may be up to 255 bytes long
 #define MAX_DOMAIN_NAME 255
 typedef struct { mDNSu8 c[256]; } domainname;		// Up to 255 bytes of length-prefixed domainlabels
+
 typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 
 // ***************************************************************************
