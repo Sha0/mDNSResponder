@@ -22,6 +22,7 @@
 #define IDR_CHOOSER_DIALOG_MENU         136
 #define IDD_CHOOSER_DIALOG              143
 #define IDD_ABOUT_DIALOG                144
+#define IDD_LOGIN                       145
 #define IDR_CHOOSER_DIALOG_MENU_ACCELERATORS 146
 #define IDC_CHOOSER_LIST                1000
 #define IDC_SERVICE_LIST2               1001
@@ -32,6 +33,9 @@
 #define IDC_ABOUT_APP_VERSION_TEXT      1106
 #define IDC_ABOUT_COPYRIGHT_TEXT        1107
 #define IDC_ABOUT_APP_ICON              1108
+#define IDC_LOGIN_USERNAME_TEXT         1182
+#define IDC_EDIT2                       1183
+#define IDC_LOGIN_PASSWORD_TEXT         1183
 #define ID_FILE_EXIT                    32771
 #define ID_HELP_ABOUT                   32806
 
@@ -41,7 +45,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        164
 #define _APS_NEXT_COMMAND_VALUE         32809
-#define _APS_NEXT_CONTROL_VALUE         1182
+#define _APS_NEXT_CONTROL_VALUE         1185
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

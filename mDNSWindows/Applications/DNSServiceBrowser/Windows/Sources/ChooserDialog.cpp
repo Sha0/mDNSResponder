@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.7  2003/12/25 03:42:04  bradley
+Added login dialog to get username/password when going to FTP sites. Added more services.
+
 Revision 1.6  2003/10/31 12:18:30  bradley
 Added display of the resolved host name. Show separate TXT record entries on separate lines.
 
@@ -82,6 +85,7 @@ Rendezvous Browser for Windows
 
 #include	"Application.h"
 #include	"AboutDialog.h"
+#include	"LoginDialog.h"
 #include	"Resource.h"
 
 #include	"ChooserDialog.h"
@@ -111,20 +115,20 @@ enum
 // Domain List
 	
 #define kDomainListDefaultDomainColumnIndex			0
-#define kDomainListDefaultDomainColumnWidth		 	178 
+#define kDomainListDefaultDomainColumnWidth		 	164 
 	
 // Service List
 	
 #define kServiceListDefaultServiceColumnIndex		0
-#define kServiceListDefaultServiceColumnWidth		178
+#define kServiceListDefaultServiceColumnWidth		164
 	
 // Chooser List
 	
 #define kChooserListDefaultNameColumnIndex			0
-#define kChooserListDefaultNameColumnWidth			200
+#define kChooserListDefaultNameColumnWidth			190
 	
 #define kChooserListDefaultIPColumnIndex			1
-#define kChooserListDefaultIPColumnWidth			126
+#define kChooserListDefaultIPColumnWidth			120
 
 // Windows User Messages
 
@@ -152,20 +156,25 @@ struct	KnownServiceEntry
 
 static const KnownServiceEntry		kKnownServiceTable[] =
 {
-	{ "_airport._tcp.", 	"AirPort Base Station",				"acp://", 	false }, 
-	{ "_afpovertcp._tcp.", 	"AppleShare Server", 				"afp://", 	false },
-	{ "_ftp._tcp.", 		"File Transfer (FTP)", 				"ftp://", 	false }, 
-	{ "_ichat._tcp.", 		"iChat",				 			"ichat://", false }, 
-	{ "_daap._tcp.", 		"iTunes Music Sharing",				"daap://", false }, 
-	{ "_printer._tcp.", 	"Printer (LPD)", 					"ldp://", 	false }, 
-	{ "_eppc._tcp.", 		"Remote AppleEvents", 				"eppc://", 	false }, 
-	{ "_ssh._tcp.", 		"Secure Shell (SSH)", 				"ssh://", 	false }, 
-	{ "_tftp._tcp.", 		"Trivial File Transfer (TFTP)", 	"tftp://", 	false }, 
-	{ "_rfb._tcp.",			"VNC Remote Framebuffer Server",	"vnc://",	false },
-	{ "_http._tcp.", 		"Web Server (HTTP)", 				"http://", 	true  }, 
-	{ "_smb._tcp.", 		"Windows File Sharing", 			"smb://", 	false }, 
-	{ "_xserveraid._tcp.", 	"Xserve RAID",						"xsr://", 	false }, 
-	{ NULL,					NULL,								NULL,		false }, 
+	{ "_airport._tcp.", 		"AirPort Base Station",				"acp://", 		false }, 
+	{ "_afpovertcp._tcp.", 		"AppleShare Server (AFP)", 			"afp://", 		false },
+	{ "_ftp._tcp.", 			"File Transfer (FTP)", 				"ftp://", 		false }, 
+	{ "_ichat._tcp.", 			"iChat",				 			"ichat://",		false }, 
+	{ "_daap._tcp.", 			"iTunes Music Sharing (DAAP)",		"daap://",		false }, 
+	{ "_ptp._tcp.", 			"Picture Transfer (PTP)", 			"ptp://", 		false },
+	{ "_ipp._tcp.", 			"Printer (IPP)", 					"ipp://", 		false },
+	{ "_printer._tcp.", 		"Printer (LPD)", 					"ldp://", 		false }, 
+	{ "_pdl-datastream._tcp.", 	"Printer (PDL)", 					"pdl://", 		false }, 
+	{ "_eppc._tcp.", 			"Remote AppleEvents", 				"eppc://", 		false }, 
+	{ "_ssh._tcp.", 			"Secure Shell (SSH)", 				"ssh://", 		false }, 
+	{ "_telnet._tcp.", 			"Telnet", 							"telnet://", 	false }, 
+	{ "_tftp._tcp.", 			"Trivial File Transfer (TFTP)", 	"tftp://", 		false }, 
+	{ "_rfb._tcp.",				"VNC Remote Frame Buffer",			"vnc://",		false },
+	{ "_webdav._tcp.", 			"WebDAV", 							"webdav://",	false  }, 
+	{ "_http._tcp.", 			"Web Server (HTTP)", 				"http://", 		true  }, 
+	{ "_smb._tcp.", 			"Windows File Sharing (SMB)", 		"smb://", 		false }, 
+	{ "_xserveraid._tcp.", 		"Xserve RAID",						"xsr://", 		false }, 
+	{ NULL,						NULL,								NULL,			false }, 
 };
 
 #if 0
@@ -586,13 +595,43 @@ void	ChooserDialog::OnChooserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 		{
 			const char *		text;
 			
-			// Create a URL representing the service instance. Special case for SMB (no port number).
+			// Create a URL representing the service instance.
 			
 			if( strcmp( service->serviceType, "_smb._tcp." ) == 0 )
 			{
 				// Special case for SMB (no port number).
 				
 				url.Format( "%s%s/", service->urlScheme, (const char *) p->ip.c_str() ); 
+			}
+			else if( strcmp( service->serviceType, "_ftp._tcp." ) == 0 )
+			{
+				// Special case for FTP to get login info.
+
+				LoginDialog		dialog;
+				CString			username;
+				CString			password;
+				
+				if( !dialog.GetLogin( username, password ) )
+				{
+					goto exit;
+				}
+				
+				// Build URL in the following format:
+				//
+				// ftp://[username[:password]@]<ip>
+				
+				url += service->urlScheme;
+				if( username.GetLength() > 0 )
+				{
+					url += username;
+					if( password.GetLength() > 0 )
+					{
+						url += ':';
+						url += password;
+					}
+					url += '@';
+				}
+				url += p->ip.c_str();
 			}
 			else if( strcmp( service->serviceType, "_http._tcp." ) == 0 )
 			{
@@ -620,9 +659,15 @@ void	ChooserDialog::OnChooserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 			
 			// Let the system open the URL in the correct app.
 			
-			ShellExecute( NULL, "open", url, "", "c:\\", SW_SHOWNORMAL );
+			{
+				CWaitCursor		waitCursor;
+				
+				ShellExecute( NULL, "open", url, "", "c:\\", SW_SHOWNORMAL );
+			}
 		}
 	}
+
+exit:
 	*pResult = 0;
 }
 

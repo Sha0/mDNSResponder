@@ -190,6 +190,12 @@
 				RelativePath="Sources\ChooserDialog.h">
 			</File>
 			<File
+				RelativePath=".\Sources\LoginDialog.cpp">
+			</File>
+			<File
+				RelativePath=".\Sources\LoginDialog.h">
+			</File>
+			<File
 				RelativePath="Sources\StdAfx.cpp">
 			</File>
 			<File
