@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.154  2003/05/30 23:38:14  cheshire
+<rdar://problem/3274814> Fix error in IPv6 reverse-mapping PTR records
+Wrote buffer[32] where it should have said buffer[64]
+
 Revision 1.153  2003/05/30 19:10:56  cheshire
 <rdar://problem/3274153> ConstructServiceName needs to be more restrictive
 
@@ -2506,7 +2510,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				verbosedebugf("%##s (%s) %d", rr->name.c, DNSTypeName(rr->rrtype), rr->AnnounceCount);
+				verbosedebugf("Announcing %##s (%s) %d", rr->name.c, DNSTypeName(rr->rrtype), rr->AnnounceCount);
 				}
 			}
 		else if (rr->ImmedAnswer)						// Else, just respond to a single query on single interface:
@@ -4874,7 +4878,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 			buffer[i * 4 + 2] = hexValues[set->ip.ip.v6.b[15 - i] >> 4];
 			buffer[i * 4 + 3] = '.';
 			}
-		mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");
+		mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
 		}
 
 	MakeDomainNameFromDNSNameString(&set->RR_PTR.name, buffer);
