@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.20  2003/10/28 01:13:49  rpantos
+3282283/2: Remove filter when displaying browse results.
+
 Revision 1.19  2003/10/28 01:10:14  rpantos
 3282283/1: Change 'compare' to 'caseInsensitiveCompare' to fix sort order.
 
@@ -440,23 +443,20 @@ void resolve_reply (
 
     //NSLog(@"Received result %@ %@ %@ %d", name, resulttype, domain, type);
 
-    if (([domain isEqualToString:Domain] || [domain isEqualToString:@"local."]) && [resulttype isEqualToString:SrvType]) {
-
-        if (type == DNSServiceBrowserReplyRemoveInstance) {
-            if ([nameKeys containsObject:name]) {
-                [nameKeys removeObject:name];
-            }
+    if (type == DNSServiceBrowserReplyRemoveInstance) {
+        if ([nameKeys containsObject:name]) {
+            [nameKeys removeObject:name];
         }
-        if (type == DNSServiceBrowserReplyAddInstance) {
-            if (![nameKeys containsObject:name]) {
-                [nameKeys addObject:name];
-            }
-        }
-
-		// If not expecting any more data, then reload (redraw) Name TableView with newly found data
-		if ((flags & kDNSServiceDiscoveryMoreRepliesImmediately) == 0)
-			[nameField reloadData];
     }
+    else if (type == DNSServiceBrowserReplyAddInstance) {
+        if (![nameKeys containsObject:name]) {
+            [nameKeys addObject:name];
+        }
+    }
+
+    // If not expecting any more data, then reload (redraw) Name TableView with newly found data
+    if ((flags & kDNSServiceDiscoveryMoreRepliesImmediately) == 0)
+        [nameField reloadData];
     return;
 }
 
