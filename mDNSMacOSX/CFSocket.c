@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.99  2003/08/05 20:13:52  cheshire
+<rdar://problem/3294080> mDNSResponder using IPv6 interfaces before they are ready
+Ignore interfaces with the IN6_IFF_NOTREADY flag set
+
 Revision 1.98  2003/07/20 03:38:51  ksekar
 Bug #: 3320722
 Completed support for Unix-domain socket based API.
@@ -276,6 +280,7 @@ Minor code tidying
 
 #include <netinet/in_systm.h>		// For n_long, required by <netinet/ip.h> below
 #include <netinet/ip.h>				// For IPTOS_LOWDELAY etc.
+#include <netinet6/in6_var.h>		// For IN6_IFF_NOTREADY etc.
 
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
@@ -865,6 +870,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
 	struct ifaddrs *theLoopback = NULL;
 	int err = (ifa != NULL) ? 0 : (errno != 0 ? errno : -1);
+	int InfoSocket              = err ? -1 : socket(AF_INET6, SOCK_DGRAM, 0);
 	if (err) return(err);
 
 	// Set up the nice label
@@ -914,13 +920,28 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) &&
 		    (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_POINTOPOINT))
 			{
-			if (ifa->ifa_flags & IFF_LOOPBACK)
-				theLoopback = ifa;
-			else
+			int	ifru_flags6 = 0;
+			if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 				{
-				AddInterfaceToList(m, ifa);
-				if (ifa->ifa_addr->sa_family == AF_INET)
-					foundav4 = mDNStrue;
+				struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+				struct in6_ifreq ifr6;
+				bzero((char *)&ifr6, sizeof(ifr6));
+				strncpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
+				ifr6.ifr_addr = *sin6;
+				if (ioctl(InfoSocket, SIOCGIFAFLAG_IN6, &ifr6) != -1)
+					ifru_flags6 = ifr6.ifr_ifru.ifru_flags6;
+				verbosedebugf("%s %.16a %04X %04X", ifa->ifa_name, &sin6->sin6_addr, ifa->ifa_flags, ifru_flags6);
+				}
+			if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
+				{
+				if (ifa->ifa_flags & IFF_LOOPBACK)
+					theLoopback = ifa;
+				else
+					{
+					AddInterfaceToList(m, ifa);
+					if (ifa->ifa_addr->sa_family == AF_INET)
+						foundav4 = mDNStrue;
+					}
 				}
 			}
 		ifa = ifa->ifa_next;
@@ -931,6 +952,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	if (!foundav4 && theLoopback)
 		AddInterfaceToList(m, theLoopback);
 
+	if (InfoSocket >= 0) close(InfoSocket);
 	return(err);
 	}
 
