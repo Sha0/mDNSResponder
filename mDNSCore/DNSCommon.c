@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.30  2004/05/26 09:08:04  bradley
+Added cast to correct structure pointer when allocating domain name list element to fix C++ builds.
+
 Revision 1.29  2004/05/18 23:51:25  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -150,7 +153,7 @@ mDNSexport DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig)
 
 	for (ptr = orig; ptr; ptr = ptr->next)
 		{
-		newelem = mDNSPlatformMemAllocate(sizeof(DNameListElem));
+		newelem = (DNameListElem*)mDNSPlatformMemAllocate(sizeof(DNameListElem));
 		if (!newelem) { LogMsg("ERROR: malloc"); return mDNSNULL; }
 		mDNSPlatformStrCopy(ptr->name.c, newelem->name.c);
 		newelem->next = copy;
