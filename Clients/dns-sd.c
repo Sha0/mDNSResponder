@@ -347,8 +347,10 @@ static void HandleEvents(void)
 		result = select(nfds, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv);
 		if (result > 0)
 			{
-			if (client  && FD_ISSET(dns_sd_fd , &readfds)) DNSServiceProcessResult(client );
-			if (client2 && FD_ISSET(dns_sd_fd2, &readfds)) DNSServiceProcessResult(client2);
+			DNSServiceErrorType err = kDNSServiceErr_NoError;
+			if      (client  && FD_ISSET(dns_sd_fd , &readfds)) err = DNSServiceProcessResult(client );
+			else if (client2 && FD_ISSET(dns_sd_fd2, &readfds)) err = DNSServiceProcessResult(client2);
+			if (err) { fprintf(stderr, "DNSServiceProcessResult returned %d", err); stopNow = 1; }
 			}
 		else if (result == 0)
 			myTimerCallBack();
