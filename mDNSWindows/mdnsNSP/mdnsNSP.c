@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.4  2004/07/09 18:03:33  shersche
+removed extraneous DNSServiceQueryRecord call
+
 Revision 1.3  2004/07/07 17:03:49  shersche
 <rdar://problem/3715582> Check for LUP_RETURN_ADDR as well as LUP_RETURN_BLOB in NSPLookupServiceBegin
 Bug #: 3715582
@@ -784,12 +787,14 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 	obj->cancelEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
 	require_action( obj->cancelEvent, exit, err = WSA_NOT_ENOUGH_MEMORY );
 	
-// Start the query.
+	// Start the query.
+
 	err = DNSServiceQueryRecord( &obj->resolver, 0, 0, name, kDNSServiceDNSType_A, kDNSServiceDNSClass_IN, 
 		QueryRecordCallback, obj );
 	require_noerr( err, exit );
 
-// Attach the socket to the event
+	// Attach the socket to the event
+
 	WSAEventSelect(DNSServiceRefSockFD(obj->resolver), obj->dataEvent, FD_READ|FD_CLOSE);
 	
 	obj->waitCount = 0;
@@ -804,12 +809,6 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 	err = QueryCopyQuerySet( obj, inQuerySet, inQuerySetFlags, &obj->querySet, &obj->querySetSize );
 	require_noerr( err, exit );
 	
-	// Start the query.
-	
-	err = DNSServiceQueryRecord( &obj->resolver, 0, 0, name, kDNSServiceDNSType_A, kDNSServiceDNSClass_IN, 
-		QueryRecordCallback, obj );
-	require_noerr( err, exit );
-		
 	// Success!
 	
 	*outRef	= obj;
