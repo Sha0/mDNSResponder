@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.44  2004/02/25 01:25:27  ksekar
+Bug #: <rdar://problem/3569212>: DNSServiceRegisterRecord flags not error-checked
+
 Revision 1.43  2004/02/24 01:46:40  cheshire
 Manually reinstate lost checkin 1.36
 
@@ -340,7 +343,7 @@ static void handle_regrecord_request(request_state *rstate);
 static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result);
 static void connected_registration_termination(void *context);
 static void handle_reconfirm_request(request_state *rstate);
-static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl);
+static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flags);
 static void handle_removerecord_request(request_state *rstate);
 static void reset_connected_rstate(request_state *rstate);
 static int deliver_error(request_state *rstate, mStatus err);
@@ -1511,13 +1514,13 @@ static void handle_regrecord_request(request_state *rstate)
         return;
         }
         
-    rr = read_rr_from_ipc_msg(rstate->msgdata, 1);
+    rr = read_rr_from_ipc_msg(rstate->msgdata, 1, 1);
     if (!rr) 
         {
         deliver_error(rstate, mStatus_BadParamErr);
         return;
         }
-
+	
     rcc = mallocL("hanlde_regrecord_request", sizeof(regrecord_callback_context));
     if (!rcc) goto malloc_error;
     rcc->rstate = rstate;
@@ -1848,7 +1851,7 @@ static void handle_reconfirm_request(request_state *rstate)
     {
     AuthRecord *rr;
 
-    rr = read_rr_from_ipc_msg(rstate->msgdata, 0);
+    rr = read_rr_from_ipc_msg(rstate->msgdata, 0, 1);
     if (!rr) return;
     mDNS_ReconfirmByValue(gmDNS, &rr->resrec);
     abort_request(rstate);
@@ -1873,7 +1876,7 @@ static void reset_connected_rstate(request_state *rstate)
 // returns a resource record (allocated w/ malloc) containing the data found in an IPC message
 // data must be in format flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
 // (ttl only extracted/set if ttl argument is non-zero).  returns NULL for a bad-parameter error
-static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
+static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flags)
     {
     char *rdata, name[256];
     AuthRecord *rr;
@@ -1883,7 +1886,15 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
     int storage_size;
 
     flags = get_flags(&msgbuf);
-    interfaceIndex = get_long(&msgbuf);
+	if (validate_flags &&
+		!((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared) &&
+		!((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique))
+		{
+		LogMsg("ERROR: Bad resource record flags (must be kDNSServiceFlagsShared or kDNSServiceFlagsUnique)");
+		return NULL;
+		}
+	
+	interfaceIndex = get_long(&msgbuf);
     if (get_string(&msgbuf, name, 256) < 0)
         {
         LogMsg("ERROR: read_rr_from_ipc_msg - get_string");
@@ -1912,7 +1923,7 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
         return NULL;
     	}
     rr->resrec.rrtype = type;
-    if ((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared)
+	if ((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared)
         rr->resrec.RecordType = kDNSRecordTypeShared;
     if ((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique)
         rr->resrec.RecordType = kDNSRecordTypeUnique;
