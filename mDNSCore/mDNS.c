@@ -68,6 +68,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.77  2003/01/31 03:35:59  cheshire
+Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+When there were *two* active questions in the list, they were incorrectly
+finding *each other* and *both* being marked as duplicates of another question
+
 Revision 1.76  2003/01/29 02:46:37  cheshire
 Fix for IPv6:
 A physical interface is identified solely by its InterfaceID (not by IP and type).
@@ -1046,6 +1051,9 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 #define TimeToSendThisRecord(RR,time) \
 	((TimeToAnnounceThisRecord(RR,time) || (RR)->SendPriority) && ResourceRecordIsValidAnswer(RR))
 
+#define ActiveQuestion(Q) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf)
+#define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (Q)->LastQTime + (Q)->ThisQInterval - time <= 0)
+
 mDNSlocal mDNSBool SameRData(const mDNSu16 rrtype, const RData *const r1, const RData *const r2)
 	{
 	if (r1->RDLength != r2->RDLength) return(mDNSfalse);
@@ -1160,8 +1168,8 @@ mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 mDNSlocal DNSQuestion *CacheRRActive(const mDNS *const m, ResourceRecord *rr)
 	{
 	DNSQuestion *q;
-	for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
-		if (q->ThisQInterval > 0 && !q->DuplicateOf && ResourceRecordAnswersQuestion(rr, q))
+	for (q = m->Questions; q; q=q->next)		// Scan our list of questions
+		if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(rr, q))
 			return(q);
 	return(mDNSNULL);
 	}
@@ -1996,21 +2004,18 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSs32 timenow)
 mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 	DNSMessage *const response, mDNSu8 *responseptr, const mDNSOpaqueID InterfaceID, const mDNSs32 timenow)
 	{
-	ResourceRecord *rr;
-	mDNSu8 *newptr;
 	int numDereg    = 0;
 	int numAnnounce = 0;
 	int numAnswer   = 0;
-	mDNSs32 minExistingAnnounceInterval = 0;
 
-	if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
-	m->CurrentRecord = m->ResourceRecords;
-	
 	// If we're sleeping, only send deregistrations
 	if (m->SleepState)
 		{
+		if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
+		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
+			mDNSu8 *newptr;
 			ResourceRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
 			if (rr->InterfaceID == InterfaceID &&
@@ -2025,10 +2030,26 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 		}
 	else
 		{
+		// The announcements in the packet may be at different stages of maturity;
+		// One-second interval, two-second interval, four-second interval, and so on.
+		// After we've put in all the announcements that are due, we then consider
+		// whether there are other nearly-due announcements that are worth accelerating.
+		// To be eligible for acceleration, a record MUST NOT be older (further along
+		// its timeline) than the most mature record we've already put in the packet.
+		// In other words, younger records can have their timelines accelerated to catch up
+		// with their elder bretheren; this narrows the age gap and helps them eventually get in sync.
+		// Older records cannot have their timelines accelerated; this would just widen
+		// the gap between them and their younger bretheren and get them even more out of sync.
+		mDNSs32 maxExistingAnnounceInterval = 0;
+		ResourceRecord *rr;
+		mDNSu8 *newptr;
+
 		// 1. Look for deregistrations we need to send
+		if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
+		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
-			ResourceRecord *rr = m->CurrentRecord;
+			rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
 			if (rr->InterfaceID == InterfaceID)
 				{
@@ -2082,8 +2103,8 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 					if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
 					if (newptr || response->h.numAnswers == 0)
 						{
-						if (minExistingAnnounceInterval > rr->NextSendInterval)
-							minExistingAnnounceInterval = rr->NextSendInterval;
+						if (maxExistingAnnounceInterval < rr->NextSendInterval)
+							maxExistingAnnounceInterval = rr->NextSendInterval;
 						rr->SendPriority      = 0;
 						rr->Requester         = zeroAddr;
 						rr->AnnounceCount--;
@@ -2095,15 +2116,15 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 					}
 			}
 	
-		// 2a. Look for additional announcements that are worth accelerating
-		// They must be (a) at least half-way to their next announcement and
+		// 3. Look for additional announcements that are worth accelerating
+		// They must be (a) at least half way to their next announcement and
 		// (b) at an interval equal or less than any of the ones we've already put in
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			{
 			if (rr->InterfaceID == InterfaceID &&
 				rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
 				timenow - (rr->LastSendTime + rr->NextSendInterval/4) >= 0 &&
-				rr->NextSendInterval <= minExistingAnnounceInterval)
+				rr->NextSendInterval <= maxExistingAnnounceInterval)
 					{
 					newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
 					if (newptr)
@@ -2127,7 +2148,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 					}
 			}
 	
-		// 3. Look for answers we need to send
+		// 4. Look for answers we need to send
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->InterfaceID == InterfaceID &&
 				rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
@@ -2150,7 +2171,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 						}
 					}
 	
-		// 4. Add additionals, if there's space
+		// 5. Add additionals, if there's space
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->InterfaceID == InterfaceID &&
 				rr->SendPriority == kDNSSendPriorityAdditional)
@@ -2222,8 +2243,6 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 			}
 	}
 
-#define TimeToSendThisQuestion(Q,time) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf && time - (Q)->NextQTime >= 0)
-
 mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 	{
 	ResourceRecord *rr;
@@ -2241,12 +2260,12 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 			if (timenow - t1 >= 0 || (rr->UnansweredQueries < 1 && timenow - t2 >= 0))
 				{
 				DNSQuestion *q = CacheRRActive(m, rr);
-				if (q) q->NextQTime = timenow;
+				if (q) q->LastQTime = timenow - q->ThisQInterval;
 				}
 			}
 	
 	// 2. Scan our list of questions to see if it's time to send any of them
-	for (q = m->ActiveQuestions; q; q=q->next)
+	for (q = m->Questions; q; q=q->next)
 		if (TimeToSendThisQuestion(q, timenow))
 			return(mDNStrue);
 
@@ -2310,7 +2329,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 // BuildQuestion puts a question into a DNS Query packet and if successful, updates the value of queryptr.
 // It also appends to the list of duplicate suppression records that need to be included,
 // and updates the forcast for the size of the duplicate suppression (answer) section.
-mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, DNSQuestion *q,
+mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, DNSQuestion *q,
 	ResourceRecord ***dups_ptr, mDNSu32 *answerforecast, const mDNSs32 timenow)
 	{
 	const mDNSu8 *const limit = query->data + (query->h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
@@ -2322,7 +2341,7 @@ mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr
 		mDNSu32 forecast = *answerforecast;
 		ResourceRecord *rr;
 		ResourceRecord **d = *dups_ptr;
-		mDNSs32 nst = timenow + q->NextQInterval;
+		mDNSs32 nst = timenow + GetNextQInterval(q->ThisQInterval);
 
 		// If we have a resource record in our cache,
 		// which is not already in the duplicate suppression list
@@ -2360,14 +2379,16 @@ mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr
 			}
 		else
 			{
-			*queryptr       = newptr;		// Update the packet pointer
-			*answerforecast = forecast;		// Update the forecast
-			*dups_ptr       = d;			// Update the dup suppression pointer
-			q->NextQTime     = nst;
-			q->ThisQInterval = q->NextQInterval;
-			q->NextQInterval = GetNextQInterval(q->ThisQInterval);
+			*queryptr        = newptr;			// Update the packet pointer
+			*answerforecast  = forecast;		// Update the forecast
+			*dups_ptr        = d;				// Update the dup suppression pointer
+			q->LastQTime     = timenow;			// Record time query sent
+			q->ThisQInterval = nst - timenow;	// Current interval we're now in; time from now until next query
+			q->RecentAnswers = 0;				// No answers yet for this particular question we've just generated
+			return(mDNStrue);
 			}
 		}
+	return(mDNSfalse);
 	}
 
 // How Standard Queries are generated:
@@ -2388,15 +2409,26 @@ mDNSlocal mDNSu8 *BuildQueryPacketQuestions(mDNS *const m, DNSMessage *query, mD
 	{
 	DNSQuestion *q;
 	
+	// For explanation of this logic, see comments for maxExistingAnnounceInterval
+	mDNSs32 maxExistingQuestionInterval = 0;
+	
 	// See which questions need to go out right now
-	for (q = m->ActiveQuestions; q; q=q->next)
+	for (q = m->Questions; q; q=q->next)
 		if (q->InterfaceID == InterfaceID &&
 			TimeToSendThisQuestion(q, timenow))
-			BuildQuestion(m, query, &queryptr, q, dups_ptr, answerforecast, timenow);
+			{
+			mDNSs32 ThisQInterval = q->ThisQInterval;
+			// If we successfully put the question, update maxExistingQuestionInterval too
+			if (BuildQuestion(m, query, &queryptr, q, dups_ptr, answerforecast, timenow))
+				if (maxExistingQuestionInterval < ThisQInterval)
+					maxExistingQuestionInterval = ThisQInterval;
+			}
 
-	// See which questions are more than half way to their NextSendTime, and send them too, if we have space
-	for (q = m->ActiveQuestions; q; q=q->next)
+	// See if we have any younger questions that are more than half way to their NextSendTime,
+	// and send them too, if we have space
+	for (q = m->Questions; q; q=q->next)
 		if (q->InterfaceID == InterfaceID &&
+			q->ThisQInterval <= maxExistingQuestionInterval &&
 			TimeToSendThisQuestion(q, timenow + q->ThisQInterval/2))
 			BuildQuestion(m, query, &queryptr, q, dups_ptr, answerforecast, timenow);
 
@@ -2409,10 +2441,10 @@ mDNSlocal mDNSu8 *BuildQueryPacketAnswers(DNSMessage *query, mDNSu8 *queryptr,
 	while (*dups_ptr)
 		{
 		ResourceRecord *rr = *dups_ptr;
-		mDNSu32 timesincercvd = (mDNSu32)(timenow - rr->TimeRcvd);
+		mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
 		mDNSu8 *newptr;
 		// Need to update rrremainingttl correctly before we put this cache record in the packet
-		rr->rrremainingttl = rr->rroriginalttl - timesincercvd / mDNSPlatformOneSecond;
+		rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
 		newptr = putResourceRecord(query, queryptr, &query->h.numAnswers, rr, mDNSNULL, 0);
 		if (newptr)
 			{
@@ -2535,31 +2567,10 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 #pragma mark - RR List Management & Task Management
 #endif
 
-// rr is a new ResourceRecord just received into our cache
-// (kDNSRecordTypePacketAnswer/kDNSRecordTypePacketAdditional/kDNSRecordTypePacketUniqueAns/kDNSRecordTypePacketUniqueAdd)
-mDNSlocal void TriggerImmediateQuestions(mDNS *const m, const ResourceRecord *const rr, const mDNSs32 timenow)
-	{
-	// If we just received a new record off the wire that we've never seen before, we want to ask our question again
-	// soon, and keep doing that repeatedly (with duplicate suppression) until we stop getting any more responses
-	mDNSs32 needquery = timenow + mDNSPlatformOneSecond;
-	DNSQuestion *q;
-	for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
-		if (q->ThisQInterval > 0 && !q->DuplicateOf && q->NextQTime - needquery > 0 && ResourceRecordAnswersQuestion(rr, q))
-			{
-			q->NextQTime     = needquery;
-			// As long as responses are still coming in, don't do the exponential backoff
-			q->NextQInterval = q->ThisQInterval;
-			}
-	}
-
 // NOTE: AnswerQuestionWithResourceRecord can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr, const mDNSs32 timenow)
 	{
-	mDNSu32 timesincercvd = (mDNSu32)(timenow - rr->TimeRcvd);
-	if (rr->rroriginalttl <= timesincercvd / mDNSPlatformOneSecond) rr->rrremainingttl = 0;
-	else rr->rrremainingttl = rr->rroriginalttl - timesincercvd / mDNSPlatformOneSecond;
-
 #if MDNS_DEBUGMSGS
 	if (rr->rrremainingttl)
 		{
@@ -2593,25 +2604,44 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 	}
 
 // AnswerLocalQuestions is called from mDNSCoreReceiveResponse,
-// and from TidyRRCache, which is called from mDNSCoreTask and from mDNSCoreReceiveResponse
-// AnswerLocalQuestions is *never* called directly as a result of a client API call
+// and from TidyRRCache, which is called from mDNSCoreTask and from mDNSCoreReceiveResponse.
+// AnswerLocalQuestions is *never* called directly as a result of a client API call.
 // If new questions are created as a result of invoking client callbacks, they will be added to
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
-// rr is a ResourceRecord in our cache
-// (kDNSRecordTypePacketAnswer/kDNSRecordTypePacketAdditional/kDNSRecordTypePacketUniqueAns/kDNSRecordTypePacketUniqueAdd)
-// NOTE: AnswerLocalQuestions calls AnswerQuestionWithResourceRecord which can call a user callback, which may change
-// the record list and/or question list.
+// rr is either a new ResourceRecord just received into our cache,
+// or an existing ResourceRecord that just expired and is being deleted.
+// (kDNSRecordTypePacketAnswer/PacketAdditional/PacketUniqueAns/PacketUniqueAdd)
+// NOTE: AnswerLocalQuestions calls AnswerQuestionWithResourceRecord which can call a user callback,
+// which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr, const mDNSs32 timenow)
 	{
 	if (m->CurrentQuestion) debugf("AnswerLocalQuestions ERROR m->CurrentQuestion already set");
-	m->CurrentQuestion = m->ActiveQuestions;
+	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
 		m->CurrentQuestion = q->next;
 		if (ResourceRecordAnswersQuestion(rr, q))
+			{
+			mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
+			if (rr->rroriginalttl <= SecsSinceRcvd)
+				rr->rrremainingttl = 0;
+			else
+				{
+				rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
+				// If this question is one that's actively sending queries,
+				// and it's received two answers within one second of sending the query packet,
+				// then reset its exponential backoff back to the start
+				if (ActiveQuestion(q) && ++q->RecentAnswers > 1 && timenow - q->LastQTime < mDNSPlatformOneSecond)
+					{
+					debugf("AnswerLocalQuestions: %##s got immediate answer burst; restarting exponential backoff sequence", q->name.c);
+					q->ThisQInterval = mDNSPlatformOneSecond;
+					}
+				}
 			AnswerQuestionWithResourceRecord(m, q, rr, timenow);
+			// MUST NOT touch q again after calling AnswerQuestionWithResourceRecord()
+			}
 		}
 	m->CurrentQuestion = mDNSNULL;
 	}
@@ -2632,7 +2662,13 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m, const mDNSs32 timenow)
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 	for (rr=m->rrcache; rr && m->CurrentQuestion == q; rr=rr->next)
 		if (ResourceRecordAnswersQuestion(rr, q))
+			{
+			mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
+			if (rr->rroriginalttl <= SecsSinceRcvd) rr->rrremainingttl = 0;
+			else rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
 			AnswerQuestionWithResourceRecord(m, q, rr, timenow);
+			// MUST NOT touch q again after calling AnswerQuestionWithResourceRecord()
+			}
 	m->CurrentQuestion = mDNSNULL;
 	m->lock_rrcache = 0;
 	}
@@ -2674,8 +2710,8 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 	
 	while (*rr)
 		{
-		mDNSu32 timesincercvd = (mDNSu32)(timenow - (*rr)->TimeRcvd);
-		if ((*rr)->rroriginalttl > timesincercvd / mDNSPlatformOneSecond)
+		mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - (*rr)->TimeRcvd)) / mDNSPlatformOneSecond;
+		if ((*rr)->rroriginalttl > SecsSinceRcvd)
 			rr=&(*rr)->next;			// If TTL is greater than time elapsed, save this record
 		else
 			{
@@ -2728,10 +2764,9 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 
 		while (*rr)
 			{
-			mDNSs32 timesincercvd = timenow - (*rr)->TimeRcvd;
-
 			// Records we've only just received are not candidates for deletion
-			if (timesincercvd > 0)
+			// Hence, only consider records that are at least one tick old
+			if (timenow - (*rr)->TimeRcvd > 0)
 				{
 				// Work out a weighted age, which is the number of seconds since this record was last used,
 				// divided by the number of times it has been used (we want to keep frequently used records longer).
@@ -2825,10 +2860,10 @@ mDNSlocal void ScheduleNextTask(const mDNS *const m)
 		else
 			{
 			// 5. Scan list of active questions to see if we need to send any queries
-			for (q = m->ActiveQuestions; q; q=q->next)
+			for (q = m->Questions; q; q=q->next)
 				if (TimeToSendThisQuestion(q, nextevent))
 					{
-					nextevent = q->NextQTime;
+					nextevent = q->LastQTime + q->ThisQInterval;
 					msg = "Send Questions";
 					}
 
@@ -2965,12 +3000,13 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 			rr->NextSendTime      = timenow;
 			rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
 			}
-		for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
-			if (q->ThisQInterval > 0 && !q->DuplicateOf)
+
+		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
+			if (ActiveQuestion(q))
 				{
-				q->NextQTime     = timenow;
-				q->ThisQInterval = mDNSPlatformOneSecond;  // MUST be > zero for an active question
-				q->NextQInterval = mDNSPlatformOneSecond;
+				q->LastQTime     = timenow - mDNSPlatformOneSecond/2;
+				q->ThisQInterval = mDNSPlatformOneSecond/2;	// MUST be > zero for an active question
+				q->RecentAnswers = 0;
 				}
 		}
 
@@ -3562,8 +3598,6 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					rr->rdata = &rr->rdatastorage;	// For now, all cache records use local storage
 					rr->next = m->rrcache;
 					m->rrcache = rr;
-					if ((rr->RecordType & kDNSRecordTypeUniqueMask) == 0)
-						TriggerImmediateQuestions(m, rr, timenow);
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
 					AnswerLocalQuestions(m, rr, timenow);
 					}
@@ -3637,9 +3671,12 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
-	for (q = m->ActiveQuestions; q; q=q->next)				// Scan our list of questions
-		if (q              != question              &&		// (*EXCEPT* this question itself)
-			q->InterfaceID == question->InterfaceID &&		// for another question with the same InterfaceID,
+	// Note: A question can only be marked as a duplicate of one that occurs *earlier* in the list.
+	// This prevents circular references, where two questions are each marked as a duplicate of the other.
+	// Accordingly, we break out of the loop when we get to 'question', because there's no point searching
+	// further in the list.
+	for (q = m->Questions; q && q != question; q=q->next)	// Scan our list of questions
+		if (q->InterfaceID == question->InterfaceID &&		// for another question with the same InterfaceID,
 			q->rrtype      == question->rrtype      &&		// type,
 			q->rrclass     == question->rrclass     &&		// class,
 			SameDomainName(&q->name, &question->name))		// and name
@@ -3652,12 +3689,12 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 mDNSlocal void UpdateQuestionDuplicates(const mDNS *const m, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
-	for (q = m->ActiveQuestions; q; q=q->next)	// Scan our list of questions
+	for (q = m->Questions; q; q=q->next)		// Scan our list of questions
 		if (q->DuplicateOf == question)			// To see if any questions were referencing this as their duplicate
 			{
-			q->NextQTime     = question->NextQTime;
+			q->LastQTime     = question->LastQTime;
 			q->ThisQInterval = question->ThisQInterval;
-			q->NextQInterval = question->NextQInterval;
+			q->RecentAnswers = 0;
 			q->DuplicateOf   = FindDuplicateQuestion(m, q);
 			}
 	}
@@ -3668,7 +3705,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		return(mStatus_NoCache);
 	else
 		{
-		DNSQuestion **q = &m->ActiveQuestions;
+		// Note: It important that new questions are appended at the *end* of the list, not prepended at the start
+		DNSQuestion **q = &m->Questions;
 		while (*q && *q != question) q=&(*q)->next;
 
 		if (*q)
@@ -3677,10 +3715,21 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			return(mStatus_AlreadyRegistered);
 			}
 
+		if (question->InterfaceID)		// If this question is referencing a specific interface
+			{
+			NetworkInterfaceInfo *i;	// Then make sure that interface exists
+			for (i=m->HostInterfaces; i; i=i->next) if (i == question->InterfaceID) break;
+			if (!i)
+				{
+				debugf("mDNS_StartQuery_internal: Bogus InterfaceID %X in question", question->InterfaceID);
+				question->InterfaceID = mDNSNULL;
+				}
+			}
+
 		question->next          = mDNSNULL;
-		question->NextQTime     = timenow;
-		question->ThisQInterval = mDNSPlatformOneSecond;  // MUST be > zero for an active question
-		question->NextQInterval = mDNSPlatformOneSecond;
+		question->LastQTime     = timenow - mDNSPlatformOneSecond/2;
+		question->ThisQInterval = mDNSPlatformOneSecond/2;  // MUST be > zero for an active question
+		question->RecentAnswers = 0;
 		question->DuplicateOf   = FindDuplicateQuestion(m, question);
 		*q = question;
 		
@@ -3692,17 +3741,18 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
-	DNSQuestion **q = &m->ActiveQuestions;
+	DNSQuestion **q = &m->Questions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
 	else debugf("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
 		question->name.c, DNSTypeName(question->rrtype));
 
+	// Take care to cut question from list *before* calling UpdateQuestionDuplicates
 	UpdateQuestionDuplicates(m, question);
+	// But don't trash ThisQInterval until afterwards.
 
 	question->next = mDNSNULL;
 	question->ThisQInterval = -1;
-	question->NextQInterval = -1;
 	
 	// If we just deleted the question that AnswerLocalQuestions() is about to look at,
 	// bump its pointer forward one question.
@@ -3717,7 +3767,6 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 		debugf("mDNS_StopQuery_internal: Just deleted a new question that wasn't even answered yet.");
 		m->NewQuestions    = m->NewQuestions->next;
 		}
-	
 	}
 
 mDNSexport mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
@@ -4092,19 +4141,19 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 mDNSlocal void ActivateInterfaceQuestions(mDNS *const m, mDNSOpaqueID InterfaceID, const mDNSs32 timenow)
 	{
 	DNSQuestion *q;
-	for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
-		if (q->InterfaceID == InterfaceID)
+	for (q = m->Questions; q; q=q->next)							// Scan our list of questions
+		if (!q->InterfaceID || q->InterfaceID == InterfaceID)		// If non-specific Q, or Q on this specific interface,
 			{
-			q->NextQTime     = timenow;
-			q->ThisQInterval = mDNSPlatformOneSecond;  // MUST be > zero for an active question
-			q->NextQInterval = mDNSPlatformOneSecond;
+			q->LastQTime     = timenow - mDNSPlatformOneSecond/2;	// Then reactivate this question
+			q->ThisQInterval = mDNSPlatformOneSecond/2;				// MUST be > zero for an active question
+			q->RecentAnswers = 0;
 			}
 	}
 
 mDNSlocal void DeActivateInterfaceQuestions(mDNS *const m, mDNSOpaqueID InterfaceID)
 	{
 	DNSQuestion *q;
-	for (q = m->ActiveQuestions; q; q=q->next)
+	for (q = m->Questions; q; q=q->next)
 		if (q->InterfaceID == InterfaceID)
 			q->ThisQInterval = 0;
 	}
@@ -4556,7 +4605,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->lock_Questions     = 0;
 	m->lock_Records       = 0;
 
-	m->ActiveQuestions    = mDNSNULL;
+	m->Questions          = mDNSNULL;
 	m->NewQuestions       = mDNSNULL;
 	m->CurrentQuestion    = mDNSNULL;
 	m->rrcache_size       = rrcachesize;
@@ -4604,7 +4653,7 @@ extern void mDNS_Close(mDNS *const m)
 	debugf("mDNS_Close: RR Cache now using %d records, %d active", m->rrcache_used, rrcache_active);
 #endif
 
-	m->ActiveQuestions = mDNSNULL;		// We won't be answering any more questions!
+	m->Questions = mDNSNULL;		// We won't be answering any more questions!
 	
 	for (i=m->HostInterfaces; i; i=i->next)
 		if (i->Advertise)

@@ -68,6 +68,11 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.32  2003/01/31 03:35:59  cheshire
+Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+When there were *two* active questions in the list, they were incorrectly
+finding *each other* and *both* being marked as duplicates of another question
+
 Revision 1.31  2003/01/29 02:46:37  cheshire
 Fix for IPv6:
 A physical interface is identified solely by its InterfaceID (not by IP and type).
@@ -456,12 +461,12 @@ typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const Re
 struct DNSQuestion_struct
 	{
 	DNSQuestion          *next;
-	mDNSs32               NextQTime;		// In platform time units
+	mDNSs32               LastQTime;		// In platform time units
 	mDNSs32               ThisQInterval;	// In platform time units
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
-	mDNSs32               NextQInterval;
+	mDNSu32               RecentAnswers;
 	DNSQuestion          *DuplicateOf;
 	mDNSOpaqueID          InterfaceID;	// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	domainname            name;
@@ -520,7 +525,7 @@ struct mDNS_struct
 	mDNSu8 padding;
 
 	// These fields only required for mDNS Searcher...
-	DNSQuestion *ActiveQuestions;	// List of all active questions
+	DNSQuestion *Questions;			// List of all registered questions, active and inactive
 	DNSQuestion *NewQuestions;		// Fresh questions not yet answered from cache
 	DNSQuestion *CurrentQuestion;	// Next question about to be examined in AnswerLocalQuestions()
 	mDNSu32 rrcache_size;
