@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.109  2003/08/19 22:24:10  cheshire
+Comment change
+
 Revision 1.108  2003/08/19 22:20:00  cheshire
 <rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
 More minor refinements
@@ -774,12 +777,12 @@ struct NetworkInterfaceInfo_struct
 										// and/or AAAA records, but there is already an earlier representative for this
 										// physical interface which will be used for the actual sending & receiving
 										// packets (this status may change as interfaces are added and removed)
-	mDNSBool        IPv4Available;		// If InterfaceActive, set if v4 available on this interface
-	mDNSBool        IPv6Available;		// If InterfaceActive, set if v6 available on this interface
+	mDNSBool        IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
+	mDNSBool        IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
 
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
-	AuthRecord RR_A;				// 'A' or 'AAAA' (address) record for our ".local" name
-	AuthRecord RR_PTR;				// PTR (reverse lookup) record
+	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
+	AuthRecord RR_PTR;					// PTR (reverse lookup) record
 	AuthRecord RR_HINFO;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
