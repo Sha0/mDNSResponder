@@ -487,25 +487,28 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 
 mDNSexport void mDNSPlatformClose(mDNS *const m)
 	{
+	ClearInterfaceList(m);
 	if (m->p->cftimer)
 		{
 	    CFRunLoopTimerInvalidate(m->p->cftimer);
 		CFRelease(m->p->cftimer);
 		m->p->cftimer = NULL;
 		}
-	ClearInterfaceList(m);
 	}
 
 // To Do: Find out how to implement a proper modular time function in CF
 mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTime)
 	{
-	// Due to a bug in CFRunLoopTimers, if you set them to any time in the past, they don't work
-	// Spot the obvious race condition: What defines "past"?
-	CFAbsoluteTime bugfix = CFAbsoluteTimeGetCurrent() + 0.01;  // Add some slop to reduce risk of race condition
-	UInt32 x = (UInt32)NextTaskTime;
-	CFAbsoluteTime firetime = StartTime + ((CFAbsoluteTime)x / (CFAbsoluteTime)mDNSPlatformOneSecond);
-	if (firetime < bugfix) firetime = bugfix;
-	CFRunLoopTimerSetNextFireDate(m->p->cftimer, firetime);
+	if (m->p->cftimer)
+		{
+		// Due to a bug in CFRunLoopTimers, if you set them to any time in the past, they don't work
+		// Spot the obvious race condition: What defines "past"?
+		CFAbsoluteTime bugfix = CFAbsoluteTimeGetCurrent() + 0.01;  // Add some slop to reduce risk of race condition
+		UInt32 x = (UInt32)NextTaskTime;
+		CFAbsoluteTime firetime = StartTime + ((CFAbsoluteTime)x / (CFAbsoluteTime)mDNSPlatformOneSecond);
+		if (firetime < bugfix) firetime = bugfix;
+		CFRunLoopTimerSetNextFireDate(m->p->cftimer, firetime);
+		}
 	}
 
 // Locking is a no-op here, because we're CFRunLoop-based, so we can never interrupt ourselves
