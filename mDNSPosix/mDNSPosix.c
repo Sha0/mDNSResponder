@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.17  2003/07/13 01:08:38  cheshire
+There's not much point running mDNS over a point-to-point link; exclude those
+
 Revision 1.16  2003/07/02 21:19:59  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -740,17 +743,8 @@ static int SetupInterfaceList(mDNS *const m)
 #ifdef mDNSIPv6Support
 					  || (i->ifi_addr->sa_family == AF_INET6)
 #endif
-				) &&  (i->ifi_flags & IFF_UP) )
+				) &&  (i->ifi_flags & IFF_UP) && !(i->ifi_flags & IFF_POINTOPOINT) )
 				{
-				// The Mac OS X code also avoids interfaces with the IFF_POINTOPOINT flag set.
-				//  This prevents nuisance phone calls when dial-on-demand is enabled.
-				// I specifically didn't pull in this feature because most UNIX hosts don't
-				// use PPP dial-on-demand.  If you need this you should add the conditional:
-				//
-				//     && !(i->ifi_flags & IFF_POINTOPOINT)
-				//
-				// to the above "if" statement.
-
 				if (i->ifi_flags & IFF_LOOPBACK)
 					{
 					if (firstLoopback == NULL)
