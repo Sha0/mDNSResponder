@@ -22,6 +22,9 @@
     Change History (most recent first):
     
         $Log: ChooserDialog.cpp,v $
+        Revision 1.5  2003/07/13 01:03:55  cheshire
+        Diffs provided by Bob Bradley to provide provide proper display of Unicode names
+
         Revision 1.4  2003/07/02 21:20:06  cheshire
         <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -175,6 +178,8 @@ static void
 		const DNSBrowserEvent *	inEvent );
 
 static char *	DNSNetworkAddressToString( const DNSNetworkAddress *inAddr, char *outString );
+
+static DWORD	UTF8StringToStringObject( const char *inUTF8, CString &inObject );
 
 #if 0
 #pragma mark == Message Map ==
@@ -576,6 +581,7 @@ void ChooserDialog::OnCancel()
 void	ChooserDialog::PopulateServicesList( void )
 {
 	ServiceTypeVector::iterator		i;
+	CString							name;
 	
 	// Add a fixed list of known services.
 	
@@ -598,7 +604,8 @@ void	ChooserDialog::PopulateServicesList( void )
 	
 	for( i = mServiceTypes.begin(); i != mServiceTypes.end(); ++i )
 	{
-		mServiceList.InsertItem( mServiceList.GetItemCount(), ( *i ).description.c_str() );
+		UTF8StringToStringObject( ( *i ).description.c_str(), name );
+		mServiceList.InsertItem( mServiceList.GetItemCount(), name );
 	}
 	
 	// Select the first service type by default.
@@ -617,6 +624,7 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 {
 	int				selectedItem;
 	std::string		name;
+	CString			s;
 	std::string		ip;
 	std::string		ifIP;
 	std::string		text;
@@ -646,7 +654,8 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 	
 	item = (CWnd *) this->GetDlgItem( IDC_INFO_NAME_TEXT );
 	assert( item );
-	item->SetWindowText( name.c_str() );
+	UTF8StringToStringObject( name.c_str(), s );
+	item->SetWindowText( s );
 	
 	// IP
 	
@@ -889,8 +898,11 @@ LONG	ChooserDialog::OnResolve( WPARAM inWParam, LPARAM inLParam )
 	}
 	else
 	{
+		CString		s;
+		
 		mServiceInstances.push_back( *p );
-		mChooserList.InsertItem( n, p->name.c_str() );
+		UTF8StringToStringObject( p->name.c_str(), s );
+		mChooserList.InsertItem( n, s );
 		mChooserList.SetItemText( n, 1, p->ip.c_str() );
 		
 		// If this is the only item, select it.
@@ -1084,13 +1096,9 @@ static void
 
 static char *	DNSNetworkAddressToString( const DNSNetworkAddress *inAddr, char *outString )
 {
-	unsigned int		ip[ 4 ];
+	unsigned char *		ip;
 	
-	ip[ 0 ] = ( inAddr->u.ipv4.address >> 24 ) & 0xFF;
-	ip[ 1 ] = ( inAddr->u.ipv4.address >> 16 ) & 0xFF;
-	ip[ 2 ] = ( inAddr->u.ipv4.address >>  8 ) & 0xFF;
-	ip[ 3 ] = ( inAddr->u.ipv4.address >>  0 ) & 0xFF;
-	
+	ip = (unsigned char *) &inAddr->u.ipv4.address;
 	if( inAddr->u.ipv4.port != kDNSPortInvalid )
 	{
 		sprintf( outString, "%u.%u.%u.%u:%u", ip[ 0 ], ip[ 1 ], ip[ 2 ], ip[ 3 ], inAddr->u.ipv4.port );
@@ -1100,4 +1108,51 @@ static char *	DNSNetworkAddressToString( const DNSNetworkAddress *inAddr, char *
 		sprintf( outString, "%u.%u.%u.%u", ip[ 0 ], ip[ 1 ], ip[ 2 ], ip[ 3 ] );
 	}
 	return( outString );
+}
+
+//===========================================================================================================================
+//	UTF8StringToStringObject
+//===========================================================================================================================
+
+static DWORD	UTF8StringToStringObject( const char *inUTF8, CString &inObject )
+{
+	DWORD		err;
+	int			n;
+	BSTR		unicode;
+	
+	unicode = NULL;
+	
+	n = MultiByteToWideChar( CP_UTF8, 0, inUTF8, -1, NULL, 0 );
+	if( n > 0 )
+	{
+		unicode = (BSTR) malloc( (size_t)( n * sizeof( wchar_t ) ) );
+		if( !unicode )
+		{
+			err = ERROR_INSUFFICIENT_BUFFER;
+			goto exit;
+		}
+
+		n = MultiByteToWideChar( CP_UTF8, 0, inUTF8, -1, unicode, n );
+		try
+		{
+			inObject = unicode;
+		}
+		catch( ... )
+		{
+			err = ERROR_NO_UNICODE_TRANSLATION;
+			goto exit;
+		}
+	}
+	else
+	{
+		inObject = "";
+	}
+	err = 0;
+	
+exit:
+	if( unicode )
+	{
+		free( unicode );
+	}
+	return( err );
 }
