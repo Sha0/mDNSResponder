@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.25  2003/07/18 00:13:23  cheshire
+ * Remove erroneous trailing '\' from TXT record display
+ *
  * Revision 1.24  2003/07/17 17:10:51  cheshire
  * <rdar://problem/3315761> Implement unicast reply request, using top bit of qclass
  * Further work: distinguish between PM and PU
@@ -368,7 +371,7 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 										}
 									}
 								t += 1+t[0];
-								if (t[0]) { *p++ = '\\'; *p++ = ' '; }
+								if (t < rdend && t[0]) { *p++ = '\\'; *p++ = ' '; }
 								}
 							*p++ = 0;
 							n += mprintf("%.*s", MaxWidth - n, buffer);
