@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.13  2004/01/24 05:12:03  cheshire
+<rdar://problem/3534352>: Need separate socket for issuing unicast queries
+
 Revision 1.12  2004/01/23 21:37:08  cheshire
 For consistency, rename multicastSocket to multicastSocket4, and multicastSocketv6 to multicastSocket6
 
@@ -100,8 +103,8 @@ extern int gMDNSPlatformPosixVerboseLevel;
 
 struct mDNS_PlatformSupport_struct
 	{
-    // No additional data required for Posix at this time
-	long dummy[1];	// Some compilers don't like empty structures
+	int unicastSocket4;
+	int unicastSocket6;
 	};
 
 extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m);
