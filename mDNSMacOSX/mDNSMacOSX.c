@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.243  2004/11/29 19:17:29  ksekar
+<rdar://problem/3878195> Unnecessary GetUserSpecifiedDDNSConfig log messages
+
 Revision 1.242  2004/11/29 18:37:38  ksekar
 <rdar://problem/3889341> Buffer overflow in GetConfigOption
 
@@ -1450,7 +1453,7 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
                         !MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
 						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
-					else LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
+					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
 					}
 				}			
 			if (zoneArray)
@@ -1461,7 +1464,7 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
                         !MakeDomainNameFromDNSNameString(zone, buf) || !zone->c[0])
 						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration zone: %s", buf[0] ? buf : "(unknown)");
-					else LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
+					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
 					}
 				}			
 			CFRelease(dict);
