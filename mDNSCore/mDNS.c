@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.517  2005/02/03 00:21:21  cheshire
+Update comments about BIND named and zero-length TXT records
+
 Revision 1.516  2005/01/28 06:06:32  cheshire
 Update comment
 
@@ -159,7 +162,7 @@ Revision 1.483  2004/12/07 23:00:14  ksekar
 Call RecordProbeFailure even if there is no record callback
 
 Revision 1.482  2004/12/07 22:49:06  cheshire
-<rdar://problem/3908850> BIND doesn't like zero-length rdata
+<rdar://problem/3908850> BIND doesn't allow zero-length TXT records
 
 Revision 1.481  2004/12/07 21:26:04  ksekar
 <rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration
@@ -168,7 +171,7 @@ Revision 1.480  2004/12/07 20:42:33  cheshire
 Add explicit context parameter to mDNS_RemoveRecordFromService()
 
 Revision 1.479  2004/12/07 17:50:49  ksekar
-<rdar://problem/3908850> BIND doesn't like zero-length rdata
+<rdar://problem/3908850> BIND doesn't allow zero-length TXT records
 
 Revision 1.478  2004/12/06 21:15:22  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
@@ -2531,8 +2534,9 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	if (!ValidateDomainName(rr->resrec.name))
 		{ LogMsg("Attempt to register record with invalid name: %s", ARDisplayString(m, rr)); return(mStatus_Invalid); }
 
-	// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates with zero-length rdata. It's common for
-	// existing mDNS clients to create empty TXT records, so we silently change those to a TXT record containing a single empty string.
+	// BIND named (name daemon) doesn't allow TXT records with zero-length rdata. This is strictly speaking correct,
+	// since RFC 1035 specifies a TXT record as "One or more <character-string>s", not "Zero or more <character-string>s".
+	// Since some legacy apps try to create zero-length TXT records, we'll silently correct it here.
 	if (rr->resrec.rrtype == kDNSType_TXT && rr->resrec.rdlength == 0) { rr->resrec.rdlength = 1; rr->resrec.rdata->u.txt.c[0] = 0; }
 
 	// Don't do this until *after* we've set rr->resrec.rdlength
@@ -6717,7 +6721,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		{
 		mStatus status;
 		mDNS_Lock(m);
-		// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates with zero-length rdata.
+		// BIND named (name daemon) doesn't allow TXT records with zero-length rdata. This is strictly speaking correct,
+		// since RFC 1035 specifies a TXT record as "One or more <character-string>s", not "Zero or more <character-string>s".
+		// Since some legacy apps try to create zero-length TXT records, we'll silently correct it here.
 		// (We have to duplicate this check here because uDNS_RegisterService() bypasses the usual mDNS_Register_internal() bottleneck)
 		if (!sr->RR_TXT.resrec.rdlength) { sr->RR_TXT.resrec.rdlength = 1; sr->RR_TXT.resrec.rdata->u.txt.c[0] = 0; }
 		status = uDNS_RegisterService(m, sr);
@@ -6757,7 +6763,9 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
 		{
 		mDNS_Lock(m);
-		// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates with zero-length rdata.
+		// BIND named (name daemon) doesn't allow TXT records with zero-length rdata. This is strictly speaking correct,
+		// since RFC 1035 specifies a TXT record as "One or more <character-string>s", not "Zero or more <character-string>s".
+		// Since some legacy apps try to create zero-length TXT records, we'll silently correct it here.
 		// (We have to duplicate this check here because uDNS_AddRecordToService() bypasses the usual mDNS_Register_internal() bottleneck)
 		if (extra->r.resrec.rrtype == kDNSType_TXT && extra->r.resrec.rdlength == 0)
 			{ extra->r.resrec.rdlength = 1; extra->r.resrec.rdata->u.txt.c[0] = 0; }
