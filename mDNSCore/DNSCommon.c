@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.73  2004/12/07 22:49:06  cheshire
+<rdar://problem/3908850> BIND doesn't like zero-length rdata
+
 Revision 1.72  2004/12/06 21:15:20  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -1041,7 +1044,7 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 
 mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 	{
-	RDataBody *rd = &rr->rdata->u;
+	const RDataBody *rd = &rr->rdata->u;
 	const domainname *const name = estimate ? &rr->name : mDNSNULL;
 	switch (rr->rrtype)
 		{
@@ -1066,6 +1069,11 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd)
 	{
 	mDNSu16 len;
+	// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates
+	// with zero-length rdata, so for consistency we don't allow them for mDNS either.
+	// Otherwise we risk having applications that work with mDNS but not with uDNS.
+	if (!rdlength) return(mDNSfalse);
+
 	switch(rrtype)
 		{
 		case kDNSType_A:	return(rdlength == sizeof(mDNSv4Addr));

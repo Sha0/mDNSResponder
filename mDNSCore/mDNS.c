@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.482  2004/12/07 22:49:06  cheshire
+<rdar://problem/3908850> BIND doesn't like zero-length rdata
+
 Revision 1.481  2004/12/07 21:26:04  ksekar
 <rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration
 
@@ -2286,6 +2289,10 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 
 	if (!ValidateDomainName(&rr->resrec.name))
 		{ LogMsg("Attempt to register record with invalid name: %s", ARDisplayString(m, rr)); return(mStatus_Invalid); }
+
+	// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates with zero-length rdata. It's common for
+	// existing mDNS clients to create empty TXT records, so we silently change those to a TXT record containing a single empty string.
+	if (rr->resrec.rrtype == kDNSType_TXT && rr->resrec.rdlength == 0) { rr->resrec.rdlength = 1; rr->resrec.rdata->u.txt.c[0] = 0; }
 
 	// Don't do this until *after* we've set rr->resrec.rdlength
 	if (!ValidateRData(rr->resrec.rrtype, rr->resrec.rdlength, rr->resrec.rdata))
@@ -5797,8 +5804,7 @@ mDNSexport mStatus mDNS_Register(mDNS *const m, AuthRecord *const rr)
 	}
 
 mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newttl,
-	const mDNSu16 newrdlength,
-	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
+	const mDNSu16 newrdlength, RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
 #ifndef UNICAST_DISABLED
 	mDNSBool unicast = !(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->resrec.name));
@@ -6387,12 +6393,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 
 	// 4. Set up the TXT record rdata,
 	// and set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
-	if (txtinfo == mDNSNULL || !txtlen)
-		{
-		// BIND servers don't like zero-length rdata
-		sr->RR_TXT.resrec.rdlength = 1;
-		sr->RR_TXT.resrec.rdata->u.txt.c[0] = 0;
-		}
+	if (txtinfo == mDNSNULL) sr->RR_TXT.resrec.rdlength = 0;
 	else if (txtinfo != sr->RR_TXT.resrec.rdata->u.txt.c)
 		{
 		sr->RR_TXT.resrec.rdlength = txtlen;
@@ -6408,6 +6409,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		{
 		mStatus status;
 		mDNS_Lock(m);
+		// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates with zero-length rdata.
+		// (We have to duplicate this check here because uDNS_RegisterService() bypasses the usual mDNS_Register_internal() bottleneck)
+		if (!sr->RR_TXT.resrec.rdlength) { sr->RR_TXT.resrec.rdlength = 1; sr->RR_TXT.resrec.rdata->u.txt.c[0] = 0; }
 		status = uDNS_RegisterService(m, sr);
 		mDNS_Unlock(m);
 		return(status);
@@ -6445,6 +6449,10 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
 		{
 		mDNS_Lock(m);
+		// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates with zero-length rdata.
+		// (We have to duplicate this check here because uDNS_AddRecordToService() bypasses the usual mDNS_Register_internal() bottleneck)
+		if (extra->r.resrec.rrtype == kDNSType_TXT && extra->r.resrec.rdlength == 0)
+			{ extra->r.resrec.rdlength = 1; extra->r.resrec.rdata->u.txt.c[0] = 0; }
 		status = uDNS_AddRecordToService(m, sr, extra);
 		mDNS_Unlock(m);
 		return status;
