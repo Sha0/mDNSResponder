@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.21  2003/11/20 22:29:56  cheshire
+Don't need to use MAX_ESCAPED_DOMAIN_LABEL for the name part -- that's not escaped
+
 Revision 1.20  2003/11/14 21:27:09  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -907,7 +910,7 @@ mDNSlocal void
 	domainlabel			name;
 	domainname			type;
 	domainname			domain;
-	char				nameString  [ MAX_ESCAPED_DOMAIN_LABEL + 1 ];
+	char				nameString  [ MAX_DOMAIN_LABEL + 1 ];	// Name part is not escaped
 	char				typeString  [ MAX_ESCAPED_DOMAIN_NAME ];
 	char				domainString[ MAX_ESCAPED_DOMAIN_NAME ];
 	DNSBrowserEvent		event;
