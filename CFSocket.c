@@ -531,7 +531,7 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
 	info->ifinfo.Advertise       = mDNS_AdvertiseLocalAddresses;
 	info->m         = m;
-	info->ifa_name  = (char *)malloc(strlen(ifa->ifa_name) + 1);
+	info->ifa_name  = (char *)mallocL("NetworkInterfaceInfo2 name", strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
 	strcpy(info->ifa_name, ifa->ifa_name);
 	info->alias     = SearchForInterfaceByName(m, ifa->ifa_name);
@@ -563,12 +563,12 @@ mDNSlocal void ClearInterfaceList(mDNS *const m)
 		{
 		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
 		mDNS_DeregisterInterface(m, &info->ifinfo);
-		if (info->ifa_name   ) free(info->ifa_name);
+		if (info->ifa_name   ) freeL("NetworkInterfaceInfo2 name", info->ifa_name);
 		if (info->socket1 > 0) shutdown(info->socket1, 2);
 		if (info->socket2 > 0) shutdown(info->socket2, 2);
 		if (info->cfsocket1  ) { CFSocketInvalidate(info->cfsocket1); CFRelease(info->cfsocket1); }
 		if (info->cfsocket2  ) { CFSocketInvalidate(info->cfsocket2); CFRelease(info->cfsocket2); }
-		free(info);
+		freeL("NetworkInterfaceInfo2", info);
 		}
 	}
 
@@ -612,7 +612,7 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 				theLoopback = ifa;
 			else
 				{
-				NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)malloc(sizeof(NetworkInterfaceInfo2));
+				NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)mallocL("NetworkInterfaceInfo2", sizeof(*info));
 				if (!info) debugf("SetupInterfaceList: Out of Memory!");
 				else SetupInterface(m, info, ifa);
 				}
@@ -622,7 +622,7 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 
 	if (!m->HostInterfaces && theLoopback)
 		{
-		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)malloc(sizeof(NetworkInterfaceInfo2));
+		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)mallocL("NetworkInterfaceInfo2", sizeof(*info));
 		if (!info) debugf("SetupInterfaceList: (theLoopback) Out of Memory!");
 		else SetupInterface(m, info, theLoopback);
 		}
