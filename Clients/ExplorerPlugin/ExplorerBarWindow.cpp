@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.20  2005/03/18 02:43:02  shersche
+<rdar://problem/4046443> Use standard IE website icon for 'About Bonjour', only using globe icon if standard icon cannot be loaded
+
 Revision 1.19  2005/03/16 03:46:27  shersche
 <rdar://problem/4045657> Use Bonjour icon for all discovered sites
 
@@ -146,6 +149,10 @@ static char THIS_FILE[] = __FILE__;
 
 #define	kTXTRecordKeyPath				"path"
 
+// IE Icon resource
+
+#define kIEIconResource					32529
+
 
 #if 0
 #pragma mark == Prototypes ==
@@ -208,6 +215,12 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 {
 	AFX_MANAGE_STATE( AfxGetStaticModuleState() );
 	
+	TCHAR			programFilesPath[MAX_PATH];
+	CString			fullPath;
+	BOOL			ieIconLoaded = FALSE;
+	BOOL			ok;
+	HINSTANCE		module = NULL;
+	HICON			icon = NULL;
 	OSStatus		err;
 	CRect			rect;
 	CBitmap			bitmap;
@@ -244,16 +257,48 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 
 	m_serviceRefs.push_back(e->ref);
 
-	m_imageList.Create( 16, 16, ILC_COLORDDB, 2, 0);
+	m_imageList.Create( 16, 16, ILC_MASK | ILC_COLOR16, 2, 0);
+
 	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_LOGO ) ) );
 	m_imageList.Add( &bitmap, (CBitmap*) NULL );
 	bitmap.Detach();
-	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_GLOBE ) ) );
-	m_imageList.Add( &bitmap, (CBitmap*) NULL );
+
+	ok = SHGetSpecialFolderPath( NULL, programFilesPath, CSIDL_PROGRAM_FILES, FALSE );
+
+	if ( ok )
+	{
+		fullPath.Format(L"%s\\Internet Explorer\\iexplore.exe", programFilesPath );
+ 
+		module = LoadLibrary( fullPath );
+
+		if ( module )
+		{
+			icon = (HICON)::LoadImage( module, MAKEINTRESOURCE( kIEIconResource ), IMAGE_ICON, 16, 16, LR_SHARED );
+
+			if ( icon )
+			{
+				m_imageList.Add( icon );
+				ieIconLoaded = TRUE;
+			}
+		}
+	}
+
+	if ( !ieIconLoaded )
+	{
+		bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_GLOBE ) ) );
+		m_imageList.Add( &bitmap, (CBitmap*) NULL );
+		bitmap.Detach();
+	}
 
 	mTree.SetImageList(&m_imageList, TVSIL_NORMAL);
 	
 exit:
+
+	if ( module )
+	{
+		FreeLibrary( module );
+		module = NULL;
+	}
 
 	// Cannot talk to the mDNSResponder service. Show the error message and exit (with kNoErr so they can see it).
 	if ( err )
