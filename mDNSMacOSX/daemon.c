@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.207  2004/11/02 23:58:19  cheshire
+<rdar://problem/2974905> mDNSResponder does not inform user of name collisions
+
 Revision 1.206  2004/10/28 02:40:47  cheshire
 Add log message to confirm receipt of SIGUSR1 (simulate network configuration change event)
 
@@ -440,6 +443,7 @@ Add $Log header
 #include <paths.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <SystemConfiguration/SCPreferencesSetSpecific.h>
 
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
@@ -1537,10 +1541,66 @@ fail:
 	return(err);
 	}
 
+// This updates the text of the field currently labelled "Local Hostname" in the Sharing Prefs Control Panel
+mDNSlocal void RecordUpdatedUserSpecifiedLocalHostName(mDNS *const m)
+	{
+	char oldname[MAX_DOMAIN_LABEL+1];
+	char newname[MAX_DOMAIN_LABEL+1];
+	ConvertDomainLabelToCString(&m->p->userhostlabel, oldname);
+	ConvertDomainLabelToCString(&m->hostlabel,        newname);
+	const CFStringRef      cfnewname = CFStringCreateWithCString(NULL, newname, kCFStringEncodingUTF8);
+	const CFStringRef      f0        = CFStringCreateWithCString(NULL, "This computer’s Local Hostname ", kCFStringEncodingUTF8);
+	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%s.local” ",  kCFStringEncodingUTF8);
+	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%s.local”. ", kCFStringEncodingUTF8);
+	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
+	LogMsg("Updating hostname from %#s.local %#s.local", m->p->userhostlabel.c, m->hostlabel.c);
+	m->p->userhostlabel = m->hostlabel;
+	if (!cfnewname || !f0 || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
+		LogMsg("RecordUpdatedUserSpecifiedLocalHostName: ERROR: Couldn't create SCPreferences session");
+	else
+		{
+		const CFStringRef       s1           = CFStringCreateWithFormat(NULL, NULL, f1, oldname);
+		const CFStringRef       s2           = CFStringCreateWithFormat(NULL, NULL, f2, newname);
+		const CFMutableArrayRef alertMessage = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+		if (!SCPreferencesSetLocalHostName(session, cfnewname) ||
+			!SCPreferencesCommitChanges(session) ||
+			!SCPreferencesApplyChanges(session) || !s1 || !s2 || !alertMessage)
+			LogMsg("RecordUpdatedUserSpecifiedLocalHostName: ERROR: Couldn't update SCPreferences");
+		else
+			{
+			CFArrayAppendValue(alertMessage, f0);
+			CFArrayAppendValue(alertMessage, s1);
+			CFArrayAppendValue(alertMessage, CFSTR("is already in use on this network. "));
+			CFArrayAppendValue(alertMessage, CFSTR("The name has been automatically updated to "));
+			CFArrayAppendValue(alertMessage, s2);
+			CFArrayAppendValue(alertMessage, CFSTR("You can change this name in the Sharing Preference Panel."));
+			CFUserNotificationDisplayNotice(60.0,		// Auto-dismiss after 60 seconds
+				kCFUserNotificationCautionAlertLevel,
+				NULL, NULL, NULL,						// iconURL, soundURL, localizationURL
+				CFSTR("Name Already In Use"),			// alertHeader
+				(CFStringRef)alertMessage, NULL);		// alertMessage, defaultButtonTitle
+			}
+		if (s1)           CFRelease(s1);
+		if (s2)           CFRelease(s2);
+		if (alertMessage) CFRelease(alertMessage);
+		SCPreferencesUnlock(session);
+		}
+	if (cfnewname) CFRelease(cfnewname);
+	if (f0)        CFRelease(f0);
+	if (f1)        CFRelease(f1);
+	if (f2)        CFRelease(f2);
+	if (session)   CFRelease(session);
+	}
+
 mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
 	(void)m; // Unused
-	if (result == mStatus_ConfigChanged)
+	if (result == mStatus_NoError)
+		{
+		if (!SameDomainLabel(m->p->userhostlabel.c, m->hostlabel.c))
+			RecordUpdatedUserSpecifiedLocalHostName(m);
+		}
+	else if (result == mStatus_ConfigChanged)
 		{
 		DNSServiceRegistration *r;
 		for (r = DNSServiceRegistrationList; r; r=r->next)
