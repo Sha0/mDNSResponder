@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.240  2004/11/25 01:29:42  ksekar
+Remove unnecessary log messages
+
 Revision 1.239  2004/11/25 01:27:19  ksekar
 <rdar://problem/3885859> Don't try to advertise link-local IP addresses via dynamic update
 
@@ -1005,8 +1008,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, to.ss_len);
 	if (err < 0)
 		{
-        // Don't report EHOSTDOWN (i.e. ARP failure) or ENETDOWN to unicast destinations
-		if ((errno == EHOSTDOWN || errno == ENETDOWN) && !mDNSAddressIsAllDNSLinkGroup(dst)) return(err);
+        // Don't report EHOSTDOWN (i.e. ARP failure), ENETDOWN, or no route to host for unicast destinations
+		if (!mDNSAddressIsAllDNSLinkGroup(dst) && (errno == EHOSTDOWN || errno == ENETDOWN || errno == EHOSTUNREACH)) return(err);
 		// Don't report EHOSTUNREACH in the first three minutes after boot
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
@@ -2401,7 +2404,12 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 			return;
 			}
 		if (err == errSecItemNotFound) d = (domainname *)(d->c + d->c[0] + 1);
-		else { LogMsg("SetSecretForDomain: SecKeychainFindGenericPassword returned error %d", err); return; }
+		else
+			{
+			if (err == errSecNoSuchKeychain) debugf("SetSecretForDomain: keychain not found");
+			else LogMsg("SetSecretForDomain: SecKeychainFindGenericPassword returned error %d", err);
+			return;
+			}
 		}
 	}
 
