@@ -93,14 +93,27 @@ mDNSexport void LogMsg(const char *format, ...)
 	WriteLogMsg("mDNSResponder", buffer, 0);
 	}
 
-mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
+static void LogMsgWithIdent(const char *ident, const char *format, va_list ptr)
 	{
 	unsigned char buffer[512];
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
+	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
+	}
+
+mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
+	{
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
+	LogMsgWithIdent(ident, format, ptr);
 	va_end(ptr);
-	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
+	}
+
+mDNSexport void LogMsgNoIdent(const char *format, ...)
+	{
+	va_list ptr;
+	va_start(ptr,format);
+	LogMsgWithIdent("", format, ptr);
+	va_end(ptr);
 	}
 
 mDNSexport void	LogInDebugMode( void )

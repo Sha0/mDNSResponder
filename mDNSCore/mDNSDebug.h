@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.16  2003/12/09 01:30:06  rpantos
+Fix usage of ARGS... macros to build properly on Windows.
+
 Revision 1.15  2003/12/08 20:55:26  rpantos
 Move some definitions here from mDNSMacOSX.h.
 
@@ -108,7 +111,7 @@ extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1
 // LogMsg is used even in shipping code, to write truly serious error messages to syslog (or equivalent)
 extern void LogMsg(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 extern void LogMsgIdent(const char *ident, const char *format, ...);
-#define LogMsgNoIdent(args...) LogMsgIdent("", args)
+extern void LogMsgNoIdent(const char *format, ...);
 
 // LogInDebugMode() should be called when running in debug mode.
 extern void	LogInDebugMode( void );
@@ -128,7 +131,13 @@ extern void freeL(char *msg, void *x);
 #if MACOSX_MDNS_MALLOC_DEBUGGING >= 2
 #define LogMalloc LogMsg
 #else
-#define	LogMalloc(ARGS...) ((void)0)
+	#if( defined( __GNUC__ ) )
+		#define	LogMalloc(ARGS...) ((void)0)
+	#elif( defined( __MWERKS__ ) )
+		#define	LogMalloc( ... )
+	#else
+		#define LogMalloc 1 ? ((void)0) : (void)
+	#endif
 #endif
 
 #define LogAllOperations 0
