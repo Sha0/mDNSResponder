@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.261  2003/08/08 19:18:45  cheshire
+<rdar://problem/3271219> Only retrigger questions on platforms with the "PhantomInterfaces" bug
+
 Revision 1.260  2003/08/08 18:55:48  cheshire
 <rdar://problem/3370365> Guard against time going backwards
 
@@ -5856,7 +5859,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	// Therefore, when registering an interface, we want to re-trigger our questions and re-probe our Resource Records,
 	// even if we believe that we previously had an active representative of this interface.
-	if (1 || set->InterfaceActive)
+	if ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || set->InterfaceActive)
 		{
 		DNSQuestion *q;
 		ResourceRecord *rr;
