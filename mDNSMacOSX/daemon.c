@@ -880,9 +880,10 @@ mDNSexport int main(int argc, char **argv)
 		{
 		CFRunLoopRun();
 		debugf("Exiting");
-		destroyBootstrapService();
 		mDNS_Close(&mDNSStorage);
 		}
+
+	destroyBootstrapService();
 
 	return(status);
 	}
