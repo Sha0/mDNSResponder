@@ -84,11 +84,23 @@ enum
 	{
 	mStatus_Waiting           = 1,
 	mStatus_NoError           = 0,
-	mStatus_NoCache           = -1,
-	mStatus_AlreadyRegistered = -2,
-	mStatus_NameConflict      = -3,
-	mStatus_MemFree           = -4,
-	mStatus_Invalid           = -5
+
+	// mDNS Error codes are in the range FFFE FF00 (-65792) to FFFE FFFF (-65537)
+	mStatus_UnknownErr        = -65537,		// 0xFFFE FFFF
+	mStatus_NoSuchNameErr     = -65538,
+	mStatus_NoMemoryErr       = -65539,
+	mStatus_BadParamErr       = -65540,
+	mStatus_BadReferenceErr   = -65541,
+	mStatus_BadStateErr       = -65542,
+	mStatus_BadFlagsErr       = -65543,
+	mStatus_UnsupportedErr    = -65544,
+	mStatus_NotInitializedErr = -65545,
+	mStatus_NoCache           = -65546,
+	mStatus_AlreadyRegistered = -65547,
+	mStatus_NameConflict      = -65548,
+	mStatus_Invalid           = -65549,
+	
+	mStatus_MemFree           = -65792		// 0xFFFE FF00
 	};
 
 typedef mDNSs32 mStatus;
