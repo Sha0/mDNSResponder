@@ -124,12 +124,6 @@
 			RelativePath="DLLMain.c">
 		</File>
 		<File
-			RelativePath="..\..\..\mDNSCore\DNSCommon.c">
-		</File>
-		<File
-			RelativePath="..\..\..\mDNSCore\DNSCommon.h">
-		</File>
-		<File
 			RelativePath="..\..\DNSSD.c">
 		</File>
 		<File
@@ -155,27 +149,6 @@
 		</File>
 		<File
 			RelativePath="..\..\RMxCommon.h">
-		</File>
-		<File
-			RelativePath="..\..\..\mDNSCore\mDNS.c">
-		</File>
-		<File
-			RelativePath="..\..\..\mDNSCore\mDNSClientAPI.h">
-		</File>
-		<File
-			RelativePath="..\..\..\mDNSCore\mDNSDebug.h">
-		</File>
-		<File
-			RelativePath="..\..\mDNSWin32.c">
-		</File>
-		<File
-			RelativePath="..\..\mDNSWin32.h">
-		</File>
-		<File
-			RelativePath="..\..\..\mDNSCore\uDNS.c">
-		</File>
-		<File
-			RelativePath="..\..\..\mDNSCore\uDNS.h">
 		</File>
 	</Files>
 	<Globals>

@@ -20,7 +20,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\..\DNSServices"
+				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\;..\..\..\..\mDNSCore;..\..\..\DNSServices"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;DEBUG=1"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
@@ -101,7 +101,7 @@
 				FavorSizeOrSpeed="2"
 				OmitFramePointers="TRUE"
 				OptimizeForWindowsApplication="FALSE"
-				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\..\DNSServices"
+				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\;..\..\..\..\mDNSCore;..\..\..\DNSServices"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
@@ -229,6 +229,9 @@
 			</File>
 			<File
 				RelativePath="..\..\..\..\mDNSCore\DNSCommon.h">
+			</File>
+			<File
+				RelativePath="..\..\..\..\mDNSCore\DNSDigest.c">
 			</File>
 			<File
 				RelativePath="..\..\..\DNSServices\DNSServices.c">

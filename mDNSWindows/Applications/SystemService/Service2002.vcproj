@@ -131,6 +131,9 @@
 			RelativePath="..\..\..\mDNSCore\DNSCommon.h">
 		</File>
 		<File
+			RelativePath="..\..\..\mDNSCore\DNSDigest.c">
+		</File>
+		<File
 			RelativePath="..\..\DNSSDDirect.c">
 		</File>
 		<File

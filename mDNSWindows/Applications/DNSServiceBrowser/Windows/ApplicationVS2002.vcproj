@@ -115,7 +115,7 @@
 				WarnAsError="TRUE"
 				SuppressStartupBanner="TRUE"
 				Detect64BitPortabilityProblems="TRUE"
-				CompileAs="0"/>
+				CompileAs="2"/>
 			<Tool
 				Name="VCCustomBuildTool"/>
 			<Tool
@@ -215,6 +215,9 @@
 			</File>
 			<File
 				RelativePath="..\..\..\..\mDNSCore\DNSCommon.h">
+			</File>
+			<File
+				RelativePath="..\..\..\..\mDNSCore\DNSDigest.c">
 			</File>
 			<File
 				RelativePath="..\..\..\DNSServices\DNSServices.c">
