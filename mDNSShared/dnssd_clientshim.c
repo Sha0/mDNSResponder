@@ -31,6 +31,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.7  2004/12/10 04:08:43  cheshire
+Added comments about autoname and autorename
+
 Revision 1.6  2004/10/19 21:33:22  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
@@ -87,8 +90,8 @@ typedef struct
 	mDNS_DirectOP_Dispose  *disposefn;
 	DNSServiceRegisterReply callback;
 	void                   *context;
-	mDNSBool                autoname;
-	mDNSBool                autorename;
+	mDNSBool                autoname;		// Set if this name is tied to the Computer Name
+	mDNSBool                autorename;		// Set if we just got a name conflict and now need to automatically pick a new name
 	domainlabel             name;
 	ServiceRecordSet        s;
 	} mDNS_DirectOP_Register;
