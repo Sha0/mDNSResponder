@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.220  2004/10/06 01:44:19  cheshire
+<rdar://problem/3813936> Resolving too quickly sometimes returns stale TXT record
+
 Revision 1.219  2004/10/03 23:18:58  cheshire
 Move address comparison macros from DNSCommon.h to mDNSEmbeddedAPI.h
 
@@ -1557,6 +1560,7 @@ struct DNSQuestion_struct
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	DNSQuestion          *next;
 	mDNSu32               qnamehash;
+	mDNSs32               DelayAnswering;	// Set if we want to defer answering this question until the cache settles
 	mDNSs32               LastQTime;		// Last scheduled transmission of this Q on *all* applicable interfaces
 	mDNSs32               ThisQInterval;	// LastQTime + ThisQInterval is the next scheduled transmission of this Q
 											// ThisQInterval > 0 for an active question;

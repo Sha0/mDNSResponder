@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.440  2004/10/06 01:44:19  cheshire
+<rdar://problem/3813936> Resolving too quickly sometimes returns stale TXT record
+
 Revision 1.439  2004/10/03 23:14:11  cheshire
 Add "mDNSEthAddr" type and "zeroEthAddr" constant
 
@@ -3765,7 +3768,11 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			}
 	
 		// 4. See if we can answer any of our new local questions from the cache
-		for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m);
+		for (i=0; m->NewQuestions && i<1000; i++)
+			{
+			if (m->NewQuestions->DelayAnswering && m->timenow - m->NewQuestions->DelayAnswering < 0) break;
+			AnswerNewQuestion(m);
+			}
 		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
 		
 		for (i=0; m->DiscardLocalOnlyRecords && i<1000; i++) DiscardLocalOnlyRecords(m);
@@ -5049,6 +5056,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		question->next             = mDNSNULL;
 		question->qnamehash        = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
+		question->DelayAnswering   = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
 		question->ThisQInterval    = InitialQuestionInterval * 2;			// MUST be > zero for an active question
 		question->LastQTime        = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
 		question->LastAnswerPktNum = m->PktNum;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.62  2004/10/06 01:44:19  cheshire
+<rdar://problem/3813936> Resolving too quickly sometimes returns stale TXT record
+
 Revision 1.61  2004/09/30 00:24:56  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -1938,7 +1941,11 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	{
 	mDNSs32 e = m->timenow + 0x78000000;
 	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) return(e);
-	if (m->NewQuestions)            return(m->timenow);
+	if (m->NewQuestions)
+		{
+		if (m->NewQuestions->DelayAnswering) e = m->NewQuestions->DelayAnswering;
+		else return(m->timenow);
+		}
 	if (m->NewLocalOnlyQuestions)   return(m->timenow);
 	if (m->NewLocalOnlyRecords)     return(m->timenow);
 	if (m->DiscardLocalOnlyRecords) return(m->timenow);
