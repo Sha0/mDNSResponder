@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.9  2004/11/10 20:38:17  ksekar
+<rdar://problem/3874168> dnsextd: allow a "fudge" in LLQ lease echo
+
 Revision 1.8  2004/11/01 17:48:14  cheshire
 Changed SOA serial number back to signed. RFC 1035 may describe it as "unsigned", but
 it's wrong. The SOA serial is a modular counter, as explained in "DNS & BIND", page
@@ -94,6 +97,7 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 // LLQ Lease bounds (seconds)
 #define LLQ_MIN_LEASE (15 * 60)
 #define LLQ_MAX_LEASE (120 * 60)
+#define LLQ_LEASE_FUDGE 60
 
 // LLQ SOA poll interval (microseconds)
 #define LLQ_MONITOR_ERR_INTERVAL (60 * 1000000)
@@ -1486,15 +1490,17 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 	char rrbuf[80], addrbuf[32];
 	
 	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
+
+	if (memcmp(llq->id, e->id, 8)           ||
+		llq->vers  != kLLQ_Vers             ||
+		llq->llqOp != kLLQOp_Setup          ||
+		llq->err   != LLQErr_NoError        ||
+		llq->lease > e->lease + LLQ_LEASE_FUDGE ||
+		llq->lease < e->lease - LLQ_LEASE_FUDGE)
+		{ Log("Incorrect challenge response from %s", addr); return; }
+
 	if (e->state == Established) VLog("Retransmitting LLQ ack + answers for %##s", e->qname.c);
 	else                         VLog("Delivering LLQ ack + answers for %##s", e->qname.c);  
-	
-	if (llq->vers != kLLQ_Vers ||
-		llq->llqOp != kLLQOp_Setup ||
-		llq->err != LLQErr_NoError ||
-		memcmp(llq->id, e->id, 8) ||
-		llq->lease != e->lease)
-		{ Log("Incorrect challenge response from %s", addr); return; }
 	
 	// format ack + answers
 	ack.src.sin_addr.s_addr = 0; // unused 
