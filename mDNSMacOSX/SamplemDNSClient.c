@@ -71,6 +71,9 @@ static char bigNULL[4096];
 
 static void MyHandleMachMessage(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
+    (void)port;	// Unused
+    (void)size;	// Unused
+    (void)info;	// Unused
 	DNSServiceDiscovery_handleReply(msg);
 	}
 
@@ -101,6 +104,7 @@ static int AddDNSServiceClientToRunLoop(dns_service_discovery_ref client)
 static void regdom_reply(DNSServiceDomainEnumerationReplyResultType resultType, const char *replyDomain,
     DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
+    (void)context; // Unused
 	printf("Recommended Registration Domain %s %s", replyDomain, DomainMsg(resultType));
 	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
@@ -109,6 +113,7 @@ static void regdom_reply(DNSServiceDomainEnumerationReplyResultType resultType, 
 static void browsedom_reply(DNSServiceDomainEnumerationReplyResultType resultType, const char *replyDomain,
     DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
+    (void)context; // Unused
 	printf("Recommended Browsing Domain %s %s", replyDomain, DomainMsg(resultType));
 	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
@@ -118,6 +123,7 @@ static void browse_reply(DNSServiceBrowserReplyResultType resultType,
     const char *replyName, const char *replyType, const char *replyDomain, DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
 	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Found" : "Removed";
+    (void)context; // Unused
 	printf("Service \"%s\", type \"%s\", domain \"%s\" %s", replyName, replyType, replyDomain, op);
 	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
@@ -125,6 +131,8 @@ static void browse_reply(DNSServiceBrowserReplyResultType resultType,
 
 static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, const char *txtRecord, DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
+    (void)interface; // Unused
+    (void)context; // Unused
 	if (address->sa_family != AF_INET)
 		printf("Unknown address family %d\n", address->sa_family);
 	else
@@ -198,6 +206,7 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 
 static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *context)
 	{
+    (void)context; // Unused
     printf("Got a reply from the server: ");
     switch (errorCode)
         {
@@ -279,7 +288,7 @@ int main(int argc, char **argv)
         case 'T':	{
                     Opaque16 registerPort = { { 0x23, 0x45 } };
                     char TXT[512];
-                    int i;
+                    unsigned int i;
                     for (i=0; i<sizeof(TXT)-1; i++)
                         if ((i & 0x1F) == 0x1F) TXT[i] = 1; else TXT[i] = 'A' + (i >> 5);
                     TXT[i] = 0;

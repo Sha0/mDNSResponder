@@ -16,7 +16,7 @@ static const struct mDNSsprintf_format
 	char			sign;		// +, - or space
 	int				fieldWidth;
 	int				precision;
-	} default_format = { 0 };
+	} default_format;
 
 #define BUFLEN			512
 

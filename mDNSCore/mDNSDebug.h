@@ -14,11 +14,11 @@
 extern void debugf_(const char *format, ...);
 #else // If debug breaks are off, use a preprocessor trick to optimize those calls out of the code
 	#if( defined( __GNUC__ ) )
-		#define	debugf( ARGS... )
+		#define	debugf( ARGS... ) ((void)0)
 	#elif( defined( __MWERKS__ ) )
 		#define	debugf( ... )
 	#else
-		#define debugf 1 ? ((void) 0) : (void)
+		#define debugf 1 ? ((void)0) : (void)
 	#endif
 #endif
 
@@ -26,11 +26,11 @@ extern void debugf_(const char *format, ...);
 #define verbosedebugf debugf_
 #else
 	#if( defined( __GNUC__ ) )
-		#define	verbosedebugf( ARGS... )
+		#define	verbosedebugf( ARGS... ) ((void)0)
 	#elif( defined( __MWERKS__ ) )
 		#define	verbosedebugf( ... )
 	#else
-		#define verbosedebugf 1 ? ((void) 0) : (void)
+		#define verbosedebugf 1 ? ((void)0) : (void)
 	#endif
 #endif
 

@@ -40,7 +40,7 @@
 #if LogAllOperations
 #define LogOperation LogMsg
 #else
-#define	LogOperation(ARGS...)
+#define	LogOperation(ARGS...) ((void)0)
 #endif
 
 #include <mach/mach.h>
@@ -312,6 +312,9 @@ mDNSlocal void AbortBlockedClient(mach_port_t c, char *m)
 mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIndex size, void *info)
 	{
 	mach_msg_header_t *msg = (mach_msg_header_t *)voidmsg;
+	(void)unusedport; // Unused
+	(void)size; // Unused
+	(void)info; // Unused
 	if (msg->msgh_id == MACH_NOTIFY_DEAD_NAME)
 		{
 		const mach_dead_name_notification_t *const deathMessage = (mach_dead_name_notification_t *)msg;
@@ -328,7 +331,7 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort)
 	kern_return_t r = mach_port_request_notification(mach_task_self(), ClientMachPort, MACH_NOTIFY_DEAD_NAME, 0,
 													 client_death_port, MACH_MSG_TYPE_MAKE_SEND_ONCE, &prev);
 	// If the port already died while we were thinking about it, then abort the operation right away
-	if (r != KERN_SUCCESS && ClientMachPort != -1)
+	if (r != KERN_SUCCESS && ClientMachPort != (mach_port_t)-1)
 		{
 		LogMsg("%5d: died before we could enable death notification", ClientMachPort);
 		AbortClient(ClientMachPort);
@@ -377,6 +380,7 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	{
 	kern_return_t status;
 	mStatus err;
+	(void)unusedserver; // Unused
 
 	mDNS_DomainType dt1 = regDom ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
 	mDNS_DomainType dt2 = regDom ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
@@ -436,6 +440,7 @@ mDNSlocal void DeliverInstanceTimerCallBack(CFRunLoopTimerRef timer, void *info)
 	{
 	DNSServiceBrowser *b = DNSServiceBrowserList;
 	(void)timer;	// Parameter not used
+	(void)info;		// Unused
 
 	while (b)
 		{
@@ -454,6 +459,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
 	domainlabel name;
 	domainname type, domain;
+	(void)m;		// Unused
 	
 	if (answer->rrtype != kDNSType_PTR)
 		{
@@ -491,6 +497,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	mStatus err;
 	domainname t, d;
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
+	(void)unusedserver;		// Unused
 	if (!x)
 		{
 		LogMsg("%5d: DNSServiceBrowserCreate(%s): No memory!", client, regtype);
@@ -526,6 +533,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	struct sockaddr_in address;
 	char cstring[1024];
 	int i, pstrlen = query->info->TXTinfo[0];
+	(void)m;		// Unused
 
 	//debugf("FoundInstanceInfo %.4a %.4a %##s", &query->info->InterfaceAddr, &query->info->ip, &query->info->name);
 
@@ -576,6 +584,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	domainlabel n;
 	domainname t, d;
 	DNSServiceResolver *x = mallocL("DNSServiceResolver", sizeof(*x));
+	(void)unusedserver;		// Unused
 	if (!x)
 		{
 		LogMsg("%5d: DNSServiceResolverResolve(%s.%s): No memory!", client, name, regtype);
@@ -699,11 +708,12 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	domainname t, d;
 	mDNSIPPort port;
 	unsigned char txtinfo[1024] = "";
-	int data_len = 0;
-	int size = sizeof(RDataBody);
+	unsigned int data_len = 0;
+	unsigned int size = sizeof(RDataBody);
 	unsigned char *pstring = &txtinfo[data_len];
 	char *ptr = txtRecord;
 	DNSServiceRegistration *x;
+	(void)unusedserver;		// Unused
 
 	// The OS X DNSServiceRegistrationCreate() API is defined using a C-string,
 	// but the mDNS_RegisterService() call actually requires a packed block of P-strings.
@@ -771,7 +781,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	mStatus err;
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
 	ExtraResourceRecord *extra;
-	int size = sizeof(RDataBody);
+	unsigned int size = sizeof(RDataBody);
+	(void)unusedserver;		// Unused
 	if (size < data_len)
 		size = data_len;
 	
@@ -807,6 +818,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 
 mDNSlocal void UpdateCallback(mDNS *const m, ResourceRecord *const rr, RData *OldRData)
 	{
+	(void)m;		// Unused
 	if (OldRData != &rr->rdatastorage)
 		freeL("Old RData", OldRData);
 	}
@@ -818,7 +830,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
 	ResourceRecord *rr;
 	RData *newrdata;
-	int size = sizeof(RDataBody);
+	unsigned int size = sizeof(RDataBody);
+	(void)unusedserver;		// Unused
 	if (size < data_len)
 		size = data_len;
 
@@ -872,6 +885,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 	mStatus err;
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
 	ExtraResourceRecord *extra = (ExtraResourceRecord*)reference;
+	(void)unusedserver;		// Unused
 	
 	// Find this registered service
 	while (x && x->ClientMachPort != client) x = x->next;
@@ -905,6 +919,9 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
 	mig_reply_error_t *reply;
 	mach_msg_return_t mr;
 	int               options;
+	(void)port;		// Unused
+	(void)size;		// Unused
+	(void)info;		// Unused
 
 	/* allocate a reply buffer */
 	reply = CFAllocatorAllocate(NULL, provide_DNSServiceDiscoveryRequest_subsystem.maxsize, 0);
@@ -1046,6 +1063,10 @@ mDNSlocal kern_return_t destroyBootstrapService()
 
 mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
+	(void)port;		// Unused
+	(void)msg;		// Unused
+	(void)size;		// Unused
+	(void)info;		// Unused
 /*
 	ResourceRecord *rr;
 	int rrcache_active = 0;
@@ -1079,6 +1100,8 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	CFRunLoopSourceRef e_rls  = CFMachPortCreateRunLoopSource(NULL, e_port, 0);
+	(void)bundleName;		// Unused
+	(void)bundleDir;		// Unused
 	
 	if (status)
 		{
@@ -1120,6 +1143,7 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 
 mDNSlocal void HandleSIG(int signal)
 	{
+	(void)signal;		// Unused
 	debugf("");
 	debugf("HandleSIG");
 	
