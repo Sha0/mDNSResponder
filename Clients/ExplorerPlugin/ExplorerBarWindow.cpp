@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.19  2005/03/16 03:46:27  shersche
+<rdar://problem/4045657> Use Bonjour icon for all discovered sites
+
 Revision 1.18  2005/02/26 01:24:05  shersche
 Remove display lines in tree control
 
@@ -242,10 +245,10 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	m_serviceRefs.push_back(e->ref);
 
 	m_imageList.Create( 16, 16, ILC_COLORDDB, 2, 0);
-	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_GLOBE ) ) );
+	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_LOGO ) ) );
 	m_imageList.Add( &bitmap, (CBitmap*) NULL );
 	bitmap.Detach();
-	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_LOGO ) ) );
+	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_GLOBE ) ) );
 	m_imageList.Add( &bitmap, (CBitmap*) NULL );
 
 	mTree.SetImageList(&m_imageList, TVSIL_NORMAL);
