@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.2  2004/04/15 00:51:28  bradley
+Minor tweaks for Windows and C++ builds. Added casts for signed/unsigned integers and 64-bit pointers.
+Prefix some functions with mDNS to avoid conflicts. Disable benign warnings on Microsoft compilers.
+
 Revision 1.1  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -38,7 +42,13 @@ extern "C" {
 #include "mDNSClientAPI.h"
 #include "DNSCommon.h"
 
-
+// Disable certain benign warnings with Microsoft compilers
+#if(defined(_MSC_VER))
+	// Disable "conditional expression is constant" warning for debug macros.
+	// Otherwise, this generates warnings for the perfectly natural construct "while(1)"
+	// If someone knows a variant way of writing "while(1)" that doesn't generate warning messages, please let us know
+	#pragma warning(disable:4127)
+#endif
 
  // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -524,7 +534,7 @@ void md5_block_data_order (MD5_CTX *c, const void *p,int num);
 
 int HASH_UPDATE (HASH_CTX *c, const void *data_, mDNSu32 len)
 	{
-	const unsigned char *data=data_;
+	const unsigned char *data=(const unsigned char *)data_;
 	register HASH_LONG * p;
 	register unsigned long l;
 	int sw,sc,ew,ec;
@@ -585,7 +595,7 @@ int HASH_UPDATE (HASH_CTX *c, const void *data_, mDNSu32 len)
 			}
 		}
 
-	sw=len/HASH_CBLOCK;
+	sw=(int)(len/HASH_CBLOCK);
 	if (sw > 0)
 		{
 #if defined(HASH_BLOCK_DATA_ORDER_ALIGNED)
@@ -625,9 +635,9 @@ int HASH_UPDATE (HASH_CTX *c, const void *data_, mDNSu32 len)
 	if (len!=0)
 		{
 		p = c->data;
-		c->num = len;
-		ew=len>>2;	/* words to copy */
-		ec=len&0x03;
+		c->num = (int)len;
+		ew=(int)(len>>2);	/* words to copy */
+		ec=(int)(len&0x03);
 		for (; ew; ew--,p++)
 			{
 			HOST_c2l(data,l); *p=l;
@@ -811,7 +821,7 @@ int MD5_Init(MD5_CTX *c)
 #ifndef md5_block_host_order
 void md5_block_host_order (MD5_CTX *c, const void *data, int num)
 	{
-	const mDNSu32 *X=data;
+	const mDNSu32 *X=(const mDNSu32 *)data;
 	register unsigned MD32_REG_T A,B,C,D;
 
 	A=c->A;
@@ -1013,9 +1023,9 @@ static const char Base64[] =
 static const char Pad64 = '=';
 
 
-#define isspace(x) (x == '\t' || x == '\n' || x == '\v' || x == '\f' || x == '\r' || x == ' ')
+#define mDNSisspace(x) (x == '\t' || x == '\n' || x == '\v' || x == '\f' || x == '\r' || x == ' ')
 
-static const char *strchr(const char *s, int c)
+static const char *mDNSstrchr(const char *s, int c)
 	{
 	while (1)
 		{
@@ -1031,7 +1041,7 @@ static const char *strchr(const char *s, int c)
 // it returns the number of data bytes stored at the target, or -1 on error.
 // adapted from BIND sources
 
-mDNSexport mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize)
+mDNSexport mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize)
 	{
 	int tarindex, state, ch;
 	const char *pos;
@@ -1040,13 +1050,13 @@ mDNSexport mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 	tarindex = 0;
 
 	while ((ch = *src++) != '\0') {
-		if (isspace(ch))	/* Skip whitespace anywhere. */
+		if (mDNSisspace(ch))	/* Skip whitespace anywhere. */
 			continue;
 
 		if (ch == Pad64)
 			break;
 
-		pos = strchr(Base64, ch);
+		pos = mDNSstrchr(Base64, ch);
 		if (pos == 0) 		/* A non-base64 character. */
 			return (-1);
 
@@ -1055,7 +1065,7 @@ mDNSexport mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 			if (target) {
 				if ((mDNSu32)tarindex >= targsize)
 					return (-1);
-				target[tarindex] = (pos - Base64) << 2;
+				target[tarindex] = (mDNSu8)((pos - Base64) << 2);
 			}
 			state = 1;
 			break;
@@ -1064,8 +1074,7 @@ mDNSexport mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 				if ((mDNSu32)tarindex + 1 >= targsize)
 					return (-1);
 				target[tarindex]   |=  (pos - Base64) >> 4;
-				target[tarindex+1]  = ((pos - Base64) & 0x0f)
-							<< 4 ;
+				target[tarindex+1]  = (mDNSu8)(((pos - Base64) & 0x0f) << 4);
 			}
 			tarindex++;
 			state = 2;
@@ -1075,8 +1084,7 @@ mDNSexport mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 				if ((mDNSu32)tarindex + 1 >= targsize)
 					return (-1);
 				target[tarindex]   |=  (pos - Base64) >> 2;
-				target[tarindex+1]  = ((pos - Base64) & 0x03)
-							<< 6;
+				target[tarindex+1]  = (mDNSu8)(((pos - Base64) & 0x03) << 6);
 			}
 			tarindex++;
 			state = 3;
@@ -1110,7 +1118,7 @@ mDNSexport mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 		case 2:		/* Valid, means one byte of info */
 			/* Skip any number of spaces. */
 			for ((void)mDNSNULL; ch != '\0'; ch = *src++)
-				if (!isspace(ch))
+				if (!mDNSisspace(ch))
 					break;
 			/* Make sure there is another trailing = sign. */
 			if (ch != Pad64)
@@ -1125,7 +1133,7 @@ mDNSexport mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 			 * whitespace after it?
 			 */
 			for ((void)mDNSNULL; ch != '\0'; ch = *src++)
-				if (!isspace(ch))
+				if (!mDNSisspace(ch))
 					return (-1);
 
 			/*
@@ -1212,7 +1220,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	// Init MD5 context, digest inner key pad and message
     MD5_Init(&c);
     MD5_Update(&c, info->key.ipad, HMAC_LEN);
-	MD5_Update(&c, (mDNSu8 *)msg, *end - (mDNSu8 *)msg);
+	MD5_Update(&c, (mDNSu8 *)msg, (unsigned long)(*end - (mDNSu8 *)msg));
 	   
 	// Construct TSIG RR, digesting variables as apporpriate
 	mDNSPlatformMemZero(&tsig, sizeof(AuthRecord));	
@@ -1240,14 +1248,14 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 
 	// time
 	// get UTC (universal time), convert to 48-bit unsigned in network byte order
-	utc32 = mDNSPlatformUTC();
+	utc32 = (mDNSu32)mDNSPlatformUTC();
 	if (utc32 == (unsigned)-1) { LogMsg("ERROR: DNSDigest_SignMessage - mDNSPlatformUTC returned bad time -1"); return mDNSNULL; }
 	utc48[0] = 0;
 	utc48[1] = 0;
-	utc48[2] = utc32 >> 24;
-	utc48[3] = (utc32 >> 16) & 0xff;
-	utc48[4] = (utc32 >> 8)  & 0xff;
-	utc48[5] = utc32         & 0xff;
+	utc48[2] = (mDNSu8)((utc32 >> 24) & 0xff);
+	utc48[3] = (mDNSu8)((utc32 >> 16) & 0xff);
+	utc48[4] = (mDNSu8)((utc32 >> 8)  & 0xff);
+	utc48[5] = (mDNSu8)( utc32        & 0xff);
 
 	mDNSPlatformMemCopy(utc48, rdata, 6);
 	rdata += 6;              	
@@ -1285,7 +1293,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	((mDNSOpaque16 *)rdata)->NotAnInteger = 0;                            // other data len
 	rdata += sizeof(mDNSOpaque16);
 	
-	tsig.resrec.rdlength = rdata - tsig.resrec.rdata->u.data;
+	tsig.resrec.rdlength = (mDNSu16)(rdata - tsig.resrec.rdata->u.data);
 	*end = PutResourceRecordTTL(msg, ptr, mDNSNULL, &tsig.resrec, 0);
 	if (!*end) { LogMsg("ERROR: DNSDigest_SignMessage - could not put TSIG"); return mDNSNULL; }
 

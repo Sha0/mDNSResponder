@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.28  2004/04/15 00:51:28  bradley
+Minor tweaks for Windows and C++ builds. Added casts for signed/unsigned integers and 64-bit pointers.
+Prefix some functions with mDNS to avoid conflicts. Disable benign warnings on Microsoft compilers.
+
 Revision 1.27  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -296,9 +300,9 @@ mDNSexport mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *
 	{
 	uDNS_AuthInfo *info;
 	mDNSu8 keybuf[1024];
-	int keylen;
+	mDNSs32 keylen;
 	
-	info = umalloc(sizeof(uDNS_AuthInfo) + ssLen);
+	info = (uDNS_AuthInfo*)umalloc(sizeof(uDNS_AuthInfo) + ssLen);
 	if (!info) { LogMsg("ERROR: umalloc"); return mStatus_NoMemoryErr; }
    	ubzero(info, sizeof(uDNS_AuthInfo));
 	ustrcpy(info->zone.c, zone->c);
@@ -306,14 +310,14 @@ mDNSexport mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *
 
 	if (base64)
 		{
-		keylen = DNSDigest_Base64ToBin(sharedSecret, keybuf, 1024);
+		keylen = DNSDigest_Base64ToBin((const char*)sharedSecret, keybuf, 1024);
 		if (keylen < 0)
 			{
 			LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication - could not convert shared secret from base64");
 			ufree(info);
 			return mStatus_UnknownErr;
 			}		
-		DNSDigest_ConstructHMACKey(info, keybuf, keylen);		
+		DNSDigest_ConstructHMACKey(info, keybuf, (mDNSu32)keylen);		
 		}
 	else DNSDigest_ConstructHMACKey(info, sharedSecret, ssLen);
 
@@ -340,7 +344,7 @@ mDNSlocal uDNS_AuthInfo *GetAuthInfoForZone(uDNS_GlobalInfo *u, domainname *zone
 	{
 	uDNS_AuthInfo *ptr;
 	domainname *z;
-	int zoneLen, ptrZoneLen;
+	mDNSu32 zoneLen, ptrZoneLen;
 
 	zoneLen = ustrlen(zone->c);
 	for (ptr = u->AuthInfoList; ptr; ptr = ptr->next)

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.23  2004/04/15 00:51:28  bradley
+Minor tweaks for Windows and C++ builds. Added casts for signed/unsigned integers and 64-bit pointers.
+Prefix some functions with mDNS to avoid conflicts. Disable benign warnings on Microsoft compilers.
+
 Revision 1.22  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -1480,7 +1484,7 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDN
 	msg->h.numQuestions   = numQuestions;
 	msg->h.numAnswers     = numAnswers;
 	msg->h.numAuthorities = numAuthorities;
-	msg->h.numAdditionals = authInfo ? numAdditionals - 1 : numAdditionals;
+	msg->h.numAdditionals = (mDNSu16)(authInfo ? numAdditionals - 1 : numAdditionals);
 	
 	return(status);
 

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.162  2004/04/15 00:51:28  bradley
+Minor tweaks for Windows and C++ builds. Added casts for signed/unsigned integers and 64-bit pointers.
+Prefix some functions with mDNS to avoid conflicts. Disable benign warnings on Microsoft compilers.
+
 Revision 1.161  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -1690,7 +1694,7 @@ extern void mDNS_ClearAuthenticationList(mDNS *m);
 // Routines called by the core, exported by DNSDigest.c
 
 // Convert a base64 encoded key into a binary byte stream
-extern mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize);
+extern mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize);
 	
 // Convert an arbitrary binary key (of any length) into an HMAC key (stored in AuthInfo struct)
 extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32 len);
