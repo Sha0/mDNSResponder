@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.h,v $
+Revision 1.5  2004/07/26 05:47:31  shersche
+use TXTRecord APIs, fix bug in locating service to be removed
+
 Revision 1.4  2004/07/20 06:49:18  shersche
 clean up socket handling code
 
@@ -111,7 +114,7 @@ typedef CArray < ServiceInfo *, ServiceInfo * >		ServiceInfoArray;
 struct	TextRecord
 {
 	uint8_t *		mData;
-	size_t			mSize;
+	uint16_t		mSize;
 	
 	TextRecord( void )
 	{
@@ -127,7 +130,7 @@ struct	TextRecord
 		}
 	}
 	
-	void	GetData( void *outData, size_t *outSize )
+	void	GetData( void *outData, uint16_t *outSize )
 	{
 		if( outData )
 		{
@@ -139,7 +142,7 @@ struct	TextRecord
 		}
 	}
 	
-	OSStatus	SetData( const void *inData, size_t inSize )
+	OSStatus	SetData( const void *inData, uint16_t inSize )
 	{
 		OSStatus		err;
 		uint8_t *		newData;

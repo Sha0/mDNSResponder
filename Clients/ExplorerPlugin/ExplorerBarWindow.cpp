@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.8  2004/07/26 05:47:31  shersche
+use TXTRecord APIs, fix bug in locating service to be removed
+
 Revision 1.7  2004/07/22 16:08:20  shersche
 clean up debug print statements, re-enable code inadvertently commented out
 
@@ -104,8 +107,7 @@ static char THIS_FILE[] = __FILE__;
 
 // TXT records
 
-#define	kTXTRecordKeyPath				"path="
-#define	kTXTRecordKeyPathSize			sizeof_string( kTXTRecordKeyPath )
+#define	kTXTRecordKeyPath				"path"
 
 #if 0
 #pragma mark == Prototypes ==
@@ -355,12 +357,16 @@ ExplorerBarWindow::OnServiceEvent(WPARAM inWParam, LPARAM inLParam)
 			{
 				DNSServiceErrorType err;
 
-				WSASetLastError(0);
-
 				err = DNSServiceProcessResult(ref);
 
-				if ((err != 0) && (WSAGetLastError() != WSAEWOULDBLOCK))
+				if (err != 0)
 				{
+					CString s;
+
+					s.LoadString( IDS_MDNSRESPONDER_NOT_AVAILABLE );
+					mTree.DeleteAllItems();
+					mTree.InsertItem( s, 0, 0, TVI_ROOT, TVI_LAST );
+
 					Stop(ref);
 				}
 
@@ -532,16 +538,20 @@ LONG	ExplorerBarWindow::OnServiceRemove( ServiceInfo * service )
 	
 	cmp = FindServiceArrayIndex( handler->array, *service, index );
 	check( cmp == 0 );
-	if( ( cmp == 0 ) && ( --handler->array[ index ]->refs == 0 ) )
+
+	if( cmp == 0 )
 	{
-		// Found a match remove the item. The index is index + 1 so subtract 1.
-		
+		// Possibly found a match remove the item. The index
+		// is index + 1 so subtract 1.
 		index -= 1;
 		check( index < handler->array.GetSize() );
-		
-		mTree.DeleteItem( handler->array[ index ]->item );
-		delete handler->array[ index ];
-		handler->array.RemoveAt( index );
+
+		if ( --handler->array[ index ]->refs == 0 )
+		{
+			mTree.DeleteItem( handler->array[ index ]->item );
+			delete handler->array[ index ];
+			handler->array.RemoveAt( index );
+		}
 	}
 
 	delete service;
@@ -667,7 +677,7 @@ LONG	ExplorerBarWindow::OnResolve( ResolveInfo * resolve )
 {
 	CString				url;
 	uint8_t *			path;
-	size_t				pathSize;
+	uint8_t				pathSize;
 	char *				pathPrefix;
 	CString				username;
 	CString				password;
@@ -692,30 +702,23 @@ LONG	ExplorerBarWindow::OnResolve( ResolveInfo * resolve )
 	pathPrefix = "";
 	if( strcmp( resolve->handler->type, "_http._tcp" ) == 0 )
 	{
-		resolve->txt.GetData( &path, &pathSize );
-		if( pathSize > 0 )
+		uint8_t	*	txtData;
+		uint16_t	txtLen;	
+
+		resolve->txt.GetData( &txtData, &txtLen );
+
+		path	 = (uint8_t*) TXTRecordGetValuePtr(txtLen, txtData, kTXTRecordKeyPath, &pathSize);
+
+		if (path == NULL)
 		{
-			pathSize = *path++;
-		}
-		if( ( pathSize > kTXTRecordKeyPathSize ) && ( memicmp( path, kTXTRecordKeyPath, kTXTRecordKeyPathSize ) == 0 )  )
-		{
-			path 		+= kTXTRecordKeyPathSize;
-			pathSize	-= kTXTRecordKeyPathSize;
-		}
-		else if( pathSize == 0 )
-		{
-			path 	 	= (uint8_t *) "/";
-			pathSize	= 1;
-		}
-		if( *path != '/' )
-		{
-			pathPrefix = "/";
+			path = (uint8_t*) "";
+			pathSize = 1;
 		}
 	}
 	else
 	{
-		path			= (uint8_t *) "";
-		pathSize		= 1;
+		path		= (uint8_t *) "";
+		pathSize	= 1;
 	}
 
 	// Build the URL in the following format:
