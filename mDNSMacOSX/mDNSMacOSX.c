@@ -2,14 +2,14 @@
  * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
  * compliance with the License. Please obtain a copy of the License at
  * http://www.opensource.apple.com/apsl/ and read it before using this
  * file.
- * 
+ *
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -17,12 +17,15 @@
  * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
  * Please see the License for the specific language governing rights and
  * limitations under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
 
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.123  2004/01/20 03:18:25  cheshire
+Removed "LogMsg("Hey There!");" that evidently got checked in my mistake
+
 Revision 1.122  2003/12/17 20:43:59  cheshire
 <rdar://problem/3496728>: Syslog messages saying "sendto failed"
 
@@ -49,7 +52,7 @@ Revision 1.115  2003/09/10 00:45:55  cheshire
 <rdar://problem/3412328> Don't log "sendto failed" errors during the first two minutes of startup
 
 Revision 1.114  2003/08/27 02:55:13  cheshire
-<rdar://problem/3387910>:	Bug: Don't report mDNSPlatformSendUDP sendto errno 64 (Host is down)
+<rdar://problem/3387910>: Bug: Don't report mDNSPlatformSendUDP sendto errno 64 (Host is down)
 
 Revision 1.113  2003/08/19 22:20:00  cheshire
 <rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
@@ -199,7 +202,7 @@ it should say "%lu", etc.) and improve error logging (use strerror()
 to include textual error message as well as numeric error in log messages).
 
 Revision 1.73  2003/05/21 17:56:29  ksekar
-Bug #: <rdar://problem/3191277>:	mDNSResponder doesn't watch for IPv6 address changes
+Bug #: <rdar://problem/3191277>: mDNSResponder doesn't watch for IPv6 address changes
 
 Revision 1.72  2003/05/14 18:48:41  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
@@ -340,14 +343,14 @@ Minor code tidying
 // For enabling AAAA records over IPv4. Setting this to 0 sends only
 // A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
 // AAAA and A records over both IPv4 and IPv6.
-#define AAAA_OVER_V4	1
+#define AAAA_OVER_V4 1
 
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
-#include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
+#include "mDNSMacOSX.h"             // Defines the specific types needed to run mDNS on this platform
 
 #include <stdio.h>
-#include <unistd.h>					// For select() and close()
-#include <stdarg.h>					// For va_list support
+#include <unistd.h>                 // For select() and close()
+#include <stdarg.h>                 // For va_list support
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <sys/uio.h>
@@ -359,14 +362,14 @@ Minor code tidying
 
 #include <arpa/inet.h>              // for inet_aton
 
-#include <netinet/in.h>				// For IP_RECVTTL
+#include <netinet/in.h>             // For IP_RECVTTL
 #ifndef IP_RECVTTL
-#define IP_RECVTTL 24	/* bool; receive reception TTL w/dgram */
+#define IP_RECVTTL 24               // bool; receive reception TTL w/dgram
 #endif
 
-#include <netinet/in_systm.h>		// For n_long, required by <netinet/ip.h> below
-#include <netinet/ip.h>				// For IPTOS_LOWDELAY etc.
-#include <netinet6/in6_var.h>		// For IN6_IFF_NOTREADY etc.
+#include <netinet/in_systm.h>       // For n_long, required by <netinet/ip.h> below
+#include <netinet/ip.h>             // For IPTOS_LOWDELAY etc.
+#include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
@@ -459,21 +462,21 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
-		struct sockaddr_in*	sin_to = (struct sockaddr_in*)&to;
-		sin_to->sin_len			= sizeof(*sin_to);
-		sin_to->sin_family      = AF_INET;
-		sin_to->sin_port        = dstPort.NotAnInteger;
-		sin_to->sin_addr.s_addr = dst->ip.v4.NotAnInteger;
+		struct sockaddr_in *sin_to = (struct sockaddr_in*)&to;
+		sin_to->sin_len            = sizeof(*sin_to);
+		sin_to->sin_family         = AF_INET;
+		sin_to->sin_port           = dstPort.NotAnInteger;
+		sin_to->sin_addr.s_addr    = dst->ip.v4.NotAnInteger;
 		}
 	else if (dst->type == mDNSAddrType_IPv6)
 		{
-		struct sockaddr_in6* sin6_to = (struct sockaddr_in6*)&to;
-		sin6_to->sin6_len		= sizeof(*sin6_to);
-		sin6_to->sin6_family	= AF_INET6;
-		sin6_to->sin6_port		= dstPort.NotAnInteger;
-		sin6_to->sin6_flowinfo	= 0;
-		sin6_to->sin6_addr		= *(struct in6_addr*)&dst->ip.v6;
-		sin6_to->sin6_scope_id	= info->scope_id;
+		struct sockaddr_in6 *sin6_to = (struct sockaddr_in6*)&to;
+		sin6_to->sin6_len            = sizeof(*sin6_to);
+		sin6_to->sin6_family         = AF_INET6;
+		sin6_to->sin6_port           = dstPort.NotAnInteger;
+		sin6_to->sin6_flowinfo       = 0;
+		sin6_to->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
+		sin6_to->sin6_scope_id       = info->scope_id;
 		}
 	else
 		{
@@ -531,7 +534,7 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	struct cmsghdr *cmPtr;
 	char            ancillary[1024];
 
-	*ttl = 255;			// If kernel fails to provide TTL data (e.g. Jaguar doesn't) then assume the TTL was 255 as it should be
+	*ttl = 255;  // If kernel fails to provide TTL data (e.g. Jaguar doesn't) then assume the TTL was 255 as it should be
 
 	// Set up the message
 	msg.msg_name       = (caddr_t)from;
@@ -615,8 +618,8 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	int err, s1 = -1, skt = CFSocketGetNative(cfs);
 	int count = 0;
 	
-	(void)address;	// Parameter not used
-	(void)data;		// Parameter not used
+	(void)address; // Parameter not used
+	(void)data;    // Parameter not used
 	
 	if (CallBackType != kCFSocketReadCallBack) LogMsg("myCFSocketCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
 
@@ -711,7 +714,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		if (numLogMessages++ < 100)
 			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
-		sleep(1);		// After logging this error, rate limit so we don't flood syslog
+		sleep(1); // After logging this error, rate limit so we don't flood syslog
 		}
 	}
 
@@ -823,7 +826,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		if (err < 0) { LogMsg("setsockopt - IPV6_V6ONLY error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// Add multicast group membership on this interface
-		int	interface_id = if_nametoindex(i->ifa_name);
+		int interface_id = if_nametoindex(i->ifa_name);
 		struct ipv6_mreq i6mr;
 		i6mr.ipv6mr_interface = interface_id;
 		i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
@@ -857,12 +860,12 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		// And start listening for packets
 		struct sockaddr_in6 listening_sockaddr6;
 		bzero(&listening_sockaddr6, sizeof(listening_sockaddr6));
-		listening_sockaddr6.sin6_len		 = sizeof(listening_sockaddr6);
+		listening_sockaddr6.sin6_len         = sizeof(listening_sockaddr6);
 		listening_sockaddr6.sin6_family      = AF_INET6;
 		listening_sockaddr6.sin6_port        = port.NotAnInteger;
-		listening_sockaddr6.sin6_flowinfo	 = 0;
+		listening_sockaddr6.sin6_flowinfo    = 0;
 //		listening_sockaddr6.sin6_addr = IN6ADDR_ANY_INIT; // Want to receive multicasts AND unicasts on this socket
-		listening_sockaddr6.sin6_scope_id	 = 0;
+		listening_sockaddr6.sin6_scope_id    = 0;
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
 		if (err) { LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		}
@@ -926,7 +929,7 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
-	i->ifinfo.TxAndRx     = mDNSfalse;		// For now; will be set up later at the end of UpdateInterfaceList
+	i->ifinfo.TxAndRx     = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 
 	i->next            = mDNSNULL;
 	i->m               = m;
@@ -1014,7 +1017,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 			(ifa->ifa_flags & IFF_MULTICAST) &&
 		    (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_POINTOPOINT))
 			{
-			int	ifru_flags6 = 0;
+			int ifru_flags6 = 0;
 			if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 				{
 				struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
@@ -1041,8 +1044,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		ifa = ifa->ifa_next;
 		}
 
-//	Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
-//	In the interim, we skip loopback interface only if we found at least one v4 interface to use
+//  Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
+//  In the interim, we skip loopback interface only if we found at least one v4 interface to use
 	if (!foundav4 && theLoopback)
 		AddInterfaceToList(m, theLoopback);
 
@@ -1062,7 +1065,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 			if (i->ifinfo.TxAndRx != txrx)
 				{
 				i->ifinfo.TxAndRx = txrx;
-				i->CurrentlyActive = 2;	// State change; need to deregister and reregister this interface
+				i->CurrentlyActive = 2; // State change; need to deregister and reregister this interface
 				}
 			}
 
@@ -1195,102 +1198,94 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 
 
 static mDNSBool DNSConfigInitialized = mDNSfalse;
+
 mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
-    {
+	{
 	mDNS *m = context;
-    CFDictionaryRef	dict;
-    CFStringRef		key, s;
+	CFDictionaryRef dict;
+	CFStringRef     key, s;
 	CFArrayRef      servers;
 	int             i, count;
 	char            addrbuf[32];
-    mDNSv4Addr      saddr;
+	mDNSv4Addr      saddr;
 
-    if (DNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
-    mDNS_DeregisterDNSList(m);  //!!!KRS fixme - we need a list of registerd servers. this wholesale
-    // dereg doesn't work if there's an error and we bail out before registering the new list    
-    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-    if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
-    dict = SCDynamicStoreCopyValue(session, key);
-    CFRelease(key);
-    if (dict)
-        {
-    	servers = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
-	    if (servers)
-	        {
-	        count = CFArrayGetCount(servers);
-	        for (i = 0; i < count; i++)
-	            {
-	            s = CFArrayGetValueAtIndex(servers, i);
-	            if (!s) { LogMsg("ERROR: DNSConfigChanged - CFArrayGetValueAtIndex"); break; }
-	            if (!CFStringGetCString(s, addrbuf, 32, kCFStringEncodingASCII))
-	                {
-	                LogMsg("ERROR: DNSConfigChanged - CFStringGetCString");
-	                break;
-	                }
-	            if (!inet_aton(addrbuf, (struct in_addr *)saddr.b))
-	                {      
-	                LogMsg("ERROR: DNSConfigChanged - invalid address string");
-	                break;
-	                }
-	            mDNS_RegisterDNS(m, &saddr);
-	            }
-        	}
-    	CFRelease(dict);
-        }    
-    }
-    
+	if (DNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
+	mDNS_DeregisterDNSList(m); //!!!KRS fixme - we need a list of registerd servers. this wholesale
+	// dereg doesn't work if there's an error and we bail out before registering the new list
+	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
+	dict = SCDynamicStoreCopyValue(session, key);
+	CFRelease(key);
+	if (dict)
+		{
+		servers = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
+		if (servers)
+			{
+			count = CFArrayGetCount(servers);
+			for (i = 0; i < count; i++)
+				{
+				s = CFArrayGetValueAtIndex(servers, i);
+				if (!s) { LogMsg("ERROR: DNSConfigChanged - CFArrayGetValueAtIndex"); break; }
+				if (!CFStringGetCString(s, addrbuf, 32, kCFStringEncodingASCII))
+					{
+					LogMsg("ERROR: DNSConfigChanged - CFStringGetCString");
+					break;
+					}
+				if (!inet_aton(addrbuf, (struct in_addr *)saddr.b))
+					{
+					LogMsg("ERROR: DNSConfigChanged - invalid address string");
+					break;
+					}
+				mDNS_RegisterDNS(m, &saddr);
+				}
+			}
+		CFRelease(dict);
+		}
+	}
+
 mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)
-    {
-    CFStringRef			    key;
-    CFMutableArrayRef		keyList;
-    CFRunLoopSourceRef		rls;
-    SCDynamicStoreRef 		session;
+	{
+	CFStringRef             key;
+	CFMutableArrayRef       keyList;
+	CFRunLoopSourceRef      rls;
+	SCDynamicStoreRef       session;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 	
-    session = SCDynamicStoreCreate(NULL, CFSTR("trackDNS"), DNSConfigChanged, &context);    
-    if (!session) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
+	session = SCDynamicStoreCreate(NULL, CFSTR("trackDNS"), DNSConfigChanged, &context);
+	if (!session) { LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
 
+	keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	if (!keyList) { LogMsg("ERROR: WatchForDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
 
-    keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-    if (!keyList) {  LogMsg("ERROR: WatchForDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
-    
-    // create a pattern that matches the global DNS dictionary key
-    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-    if (!key) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr;  }
-    
-    CFArrayAppendValue(keyList, key);
-    CFRelease(key);
-    
-    // set the keys for our DynamicStore session
-    SCDynamicStoreSetNotificationKeys(session, keyList, NULL);
-    CFRelease(keyList);
-    
-    // create a CFRunLoopSource for our DynamicStore session
-    rls = SCDynamicStoreCreateRunLoopSource(NULL, session, 0);
-    if (!rls) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreateRunLoopSource");  return mStatus_UnknownErr;  }
-    
-    // add the run loop source to our current run loop 
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-    CFRelease(rls);
-    
+	// create a pattern that matches the global DNS dictionary key
+	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+	if (!key) { LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity"); return mStatus_UnknownErr; }
+
+	CFArrayAppendValue(keyList, key);
+	CFRelease(key);
+
+	// set the keys for our DynamicStore session
+	SCDynamicStoreSetNotificationKeys(session, keyList, NULL);
+	CFRelease(keyList);
+
+	// create a CFRunLoopSource for our DynamicStore session
+	rls = SCDynamicStoreCreateRunLoopSource(NULL, session, 0);
+	if (!rls) { LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreateRunLoopSource");  return mStatus_UnknownErr;  }
+
+	// add the run loop source to our current run loop
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+	CFRelease(rls);
+
 	// get initial configuration
-    DNSConfigChanged(session, NULL, m);
-    DNSConfigInitialized = mDNStrue;
-    return mStatus_NoError;
-    }
-
-
-
-
-
-
-
-
+	DNSConfigChanged(session, NULL, m);
+	DNSConfigInitialized = mDNStrue;
+	return mStatus_NoError;
+	}
 
 mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{
-	(void)store;		// Parameter not used
-	(void)changedKeys;	// Parameter not used
+	(void)store;        // Parameter not used
+	(void)changedKeys;  // Parameter not used
 	debugf("***   Network Configuration Change   ***");
 
 	mDNS *const m = (mDNS *const)context;
@@ -1357,7 +1352,7 @@ exit:
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
 	{
 	mDNS *const m = (mDNS *const)refcon;
-	(void)service;		// Parameter not used
+	(void)service;    // Parameter not used
 	switch(messageType)
 		{
 		case kIOMessageCanSystemPowerOff:     debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");                      break; // E0000240
@@ -1388,7 +1383,7 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
 CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
-CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;		
+CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;
 
 mDNSexport mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 	{
@@ -1445,9 +1440,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return(err);
 	
 	err = WatchForPowerChanges(m);
-    if (err) return err;
-    
-    err = WatchForDNSChanges(m);
+	if (err) return err;
+
+	err = WatchForDNSChanges(m);
 	return(err);
 	}
 
@@ -1455,7 +1450,6 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	{
 	mStatus result = mDNSPlatformInit_setup(m);
 	
-	LogMsg("Hey There!");
 	// We don't do asynchronous initialization on OS X, so by the time we get here the setup will already
 	// have succeeded or failed -- so if it succeeded, we should just call mDNSCoreInitComplete() immediately
 	if (result == mStatus_NoError) mDNSCoreInitComplete(m, mStatus_NoError);
