@@ -21,8 +21,11 @@
  * @APPLE_LICENSE_HEADER_END@
 
     Change History (most recent first):
-    
+
 $Log: DNSCommon.c,v $
+Revision 1.3  2004/01/21 21:16:29  cheshire
+Minor tidy-up: Deleted a bunch of blank lines, trailing spaces, tabs, etc.
+
 Revision 1.2  2003/12/13 05:47:48  bradley
 Made local ptr const to fix error when assigning from const structure. Disable benign conditional
 expression is constant warning when building with Microsoft compilers.
@@ -31,8 +34,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
  */
-
-
 
 #include "DNSCommon.h"
 
@@ -49,7 +50,6 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 #pragma mark -
 #pragma mark - General Utility Functions
 #endif
-
 
 mDNSexport const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf)
 	{
@@ -108,13 +108,12 @@ mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)
 	{
 	static mDNSu32 seed = 0;
 	mDNSu32 mask = 1;
-	
+
 	if (!seed) seed = (mDNSu32)mDNSPlatformTimeNow();
 	while (mask < max) mask = (mask << 1) | 1;
 	do seed = seed * 21 + 1; while ((seed & mask) > max);
 	return (seed & mask);
 	}
-
 
 mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)
 	{
@@ -141,7 +140,6 @@ mDNSexport mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 		default: return(mDNSfalse);
 		}
 	}
-	
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -174,11 +172,10 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
     mDNSu8 l;
     mDNSu8 localDomain[256] = { (char)5, 'l', 'o', 'c', 'a', 'l'};
     const mDNSu8 *p = d->c;
-	
+
     for (l = *p;  p[l+1]; p += l+1, l = *p) ;
     return SameDomainLabel(p, localDomain);
     }
-
 
 mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2)
 	{
@@ -194,10 +191,9 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 		a += 1 + *a;
 		b += 1 + *b;
 		}
-	
+
 	return(mDNStrue);
 	}
-
 
 // Returns length of a domain name INCLUDING the byte for the final null label
 // i.e. for the root label "." it returns one
@@ -253,7 +249,7 @@ mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *
 	const mDNSu8 *const lim2 = ptr + 1 + MAX_DOMAIN_LABEL;
 	const mDNSu8 *const lim  = (lim1 < lim2) ? lim1 : lim2;
 	mDNSu8       *lengthbyte = ptr++;									// Record where the length is going to go
-	
+
 	while (*cstr && ptr < lim) *ptr++ = (mDNSu8)*cstr++;	// Copy the data
 	*lengthbyte = (mDNSu8)(ptr - lengthbyte - 1);			// Fill in the length byte
 	*ptr++ = 0;												// Put the null root label on the end
@@ -401,7 +397,7 @@ mDNSexport char *ConvertDomainNameToCString_withescape(const domainname *const n
 	{
 	const mDNSu8 *src         = name->c;								// Domain name we're reading
 	const mDNSu8 *const max   = name->c + MAX_DOMAIN_NAME;			// Maximum that's valid
-	
+
 	if (*src == 0) *ptr++ = '.';									// Special case: For root, just write a dot
 
 	while (*src)													// While more characters in the domain name
@@ -421,7 +417,6 @@ mDNSexport char *ConvertDomainNameToCString_withescape(const domainname *const n
 // Host names must start with a letter, end with a letter or digit,
 // and have as interior characters only letters, digits, and hyphen.
 // This was subsequently modified in RFC 1123 to allow the first character to be either a letter or a digit
-
 
 mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], domainlabel *const hostlabel)
 	{
@@ -477,7 +472,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 		}
 	else
 		name = (domainlabel*)"";	// Set this up to be non-null, to avoid errors if we have to call LogMsg() below
-	
+
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
 	if (len < 2 || len >= 0x40)  { errormsg="Invalid service application protocol name"; goto fail; }
@@ -494,9 +489,9 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 		(src[4] | 0x20) == 'p'))
 		{ errormsg="Service transport protocol name must be _udp or _tcp"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
-	
+
 	if (*src) { errormsg="Service type must have only two labels"; goto fail; }
-	
+
 	*dst = 0;
 	dst = AppendDomainName(fqdn, domain);
 	if (!dst) { errormsg="Service domain too long"; goto fail; }
@@ -514,12 +509,12 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	const mDNSu8 *src = fqdn->c;
 	const mDNSu8 *max = fqdn->c + MAX_DOMAIN_NAME;
 	mDNSu8 *dst;
-	
+
 	dst = name->c;										// Extract the service name from the domain name
 	len = *src;
 	if (len >= 0x40) { debugf("DeconstructServiceName: service name too long"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
-	
+
 	dst = type->c;										// Extract the service type from the domain name
 	len = *src;
 	if (len >= 0x40) { debugf("DeconstructServiceName: service type too long"); return(mDNSfalse); }
@@ -541,7 +536,7 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 		for (i=0; i<=len; i++) *dst++ = *src++;
 		}
 	*dst++ = 0;		// Put the null root label on the end
-	
+
 	return(mDNStrue);
 	}
 
@@ -550,7 +545,7 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 mDNSexport mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText)
 	{
 	mDNSu16 l = name->c[0];
-	
+
 	if (RichText)
 		{
 		if (l < 4) return mDNSfalse;							// Need at least " (2)"
@@ -603,7 +598,7 @@ mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichT
 	{
 	mDNSu32 divisor = 1, chars = 2;	// Shortest possible RFC1034 name suffix is 3 characters ("-2")
 	if (RichText) chars = 4;		// Shortest possible RichText suffix is 4 characters (" (2)")
-	
+
 	// Truncate trailing spaces from RichText names
 	if (RichText) while (name->c[name->c[0]] == ' ') name->c[0]--;
 
@@ -619,7 +614,7 @@ mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichT
 
 	if (RichText) { name->c[++name->c[0]] = ' '; name->c[++name->c[0]] = '('; }
 	else          { name->c[++name->c[0]] = '-'; }
-	
+
 	while (divisor)
 		{
 		name->c[++name->c[0]] = (mDNSu8)('0' + val / divisor);
@@ -636,7 +631,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 
 	if (LabelContainsSuffix(name, RichText))
 		val = RemoveLabelSuffix(name, RichText);
-		
+
 	// If no existing suffix, start by renaming "Foo" as "Foo (2)" or "Foo-2" as appropriate.
 	// If existing suffix in the range 2-9, increment it.
 	// If we've had ten conflicts already, there are probably too many hosts trying to use the same name,
@@ -644,18 +639,15 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	if      (val == 0) val = 2;
 	else if (val < 10) val++;
 	else               val += 1 + mDNSRandom(99);
-	
+
 	AppendLabelSuffix(name, val, RichText);
-	}	
-	
-	
-	
+	}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Resource Record Utility Functions
 #endif
-
 
 mDNSexport mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const rdb)
 	{
@@ -672,7 +664,6 @@ mDNSexport mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const
 		}
 	return(sum);
 	}
-
 
 mDNSexport mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
@@ -705,7 +696,7 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
 	return(rr->namehash == q->qnamehash && SameDomainName(&rr->name, &q->qname));
 	}
-	
+
 mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 	{
 	RDataBody *rd = &rr->rdata->u;
@@ -747,7 +738,7 @@ mDNSexport const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const 
 	const mDNSu8 *result = end - *domname - 1;
 
 	if (*domname == 0) return(mDNSNULL);	// There's no point trying to match just the root label
-	
+
 	// This loop examines each possible starting position in packet, starting end of the packet and working backwards
 	while (result >= base)
 		{
@@ -804,7 +795,7 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 		{
 		if (*np > MAX_DOMAIN_LABEL)
 			{ LogMsg("Malformed domain name %##s (label more than 63 bytes)", name->c); return(mDNSNULL); }
-		
+
 		// This check correctly allows for the final trailing root label:
 		// e.g.
 		// Suppose our domain name is exactly 255 bytes long, including the final trailing root label.
@@ -898,7 +889,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNS
 	mDNSu8 *endofrdata;
 	mDNSu16 actualLength;
 	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;
-	
+
 	// If we have a single large record to put in the packet, then we allow the packet to be up to 9K bytes,
 	// but in the normal case we try to keep the packets below 1500 to avoid IP fragmentation on standard Ethernet
 	if (msg->h.numAnswers || msg->h.numAuthorities || msg->h.numAdditionals)
@@ -932,8 +923,6 @@ mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNS
 	(*count)++;
 	return(endofrdata);
 	}
-
-
 
 mDNSexport mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl)
 	{
@@ -969,14 +958,12 @@ mDNSexport mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 
 	msg->h.numQuestions++;
 	return(ptr+4);
 	}
-	
-	
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - DNS Message Parsing Functions
 #endif
-
 
 mDNSexport mDNSu32 DomainNameHashValue(const domainname *const name)
 	{
@@ -993,7 +980,6 @@ mDNSexport mDNSu32 DomainNameHashValue(const domainname *const name)
 	return(sum);
 	}
 
-
 mDNSexport void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 rdlength)
 	{
 	domainname *target;
@@ -1009,9 +995,6 @@ mDNSexport void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 r
 	rr->rdatahash  = RDataHashValue(rr->rdlength, &rr->rdata->u);
 	rr->rdnamehash = target ? DomainNameHashValue(target) : 0;
 	}
-
-
-
 
 mDNSexport const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end)
 	{
@@ -1087,18 +1070,18 @@ mDNSexport const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8
 						break;
 			}
 		}
-	
+
 	if (nextbyte) return(nextbyte);
 	else return(ptr);
 	}
 
-mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end)	
+mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end)
 	{
 	mDNSu16 pktrdlength;
 
 	ptr = skipDomainName(msg, ptr, end);
 	if (!ptr) { debugf("skipResourceRecord: Malformed RR name"); return(mDNSNULL); }
-	
+
 	if (ptr + 10 > end) { debugf("skipResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
 	pktrdlength = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
 	ptr += 10;
@@ -1107,9 +1090,7 @@ mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 
 	return(ptr + pktrdlength);
 	}
 
-
-
-mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr, 
+mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr,
     const mDNSu8 * const end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, CacheRecord *rr, RData *RDataStorage)
 	{
 	mDNSu16 pktrdlength;
@@ -1136,7 +1117,7 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 	if (!ptr) { debugf("GetResourceRecord: Malformed RR name"); return(mDNSNULL); }
 
 	if (ptr + 10 > end) { debugf("GetResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
-	
+
 	rr->resrec.rrtype            = (mDNSu16) ((mDNSu16)ptr[0] <<  8 | ptr[1]);
 	rr->resrec.rrclass           = (mDNSu16)(((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSClass_Mask);
 	rr->resrec.rroriginalttl     = (mDNSu32) ((mDNSu32)ptr[4] << 24 | (mDNSu32)ptr[5] << 16 | (mDNSu32)ptr[6] << 8 | ptr[7]);
@@ -1257,7 +1238,7 @@ mDNSexport const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mD
 	for (i = 0; i < msg->h.numAnswers && ptr; i++) ptr = skipResourceRecord(msg, ptr, end);
 	return(ptr);
 	}
-	
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -1273,7 +1254,7 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 	mDNSu16 numAnswers     = msg->h.numAnswers;
 	mDNSu16 numAuthorities = msg->h.numAuthorities;
 	mDNSu16 numAdditionals = msg->h.numAdditionals;
-	
+
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
 	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
 	*ptr++ = (mDNSu8)(numQuestions   >> 8);
@@ -1284,10 +1265,10 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 	*ptr++ = (mDNSu8)(numAuthorities     );
 	*ptr++ = (mDNSu8)(numAdditionals >> 8);
 	*ptr++ = (mDNSu8)(numAdditionals     );
-	
+
 	// Send the packet on the wire
 	status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, srcport, dst, dstport);
-	
+
 	// Put all the integer values back the way they were before we return
 	msg->h.numQuestions   = numQuestions;
 	msg->h.numAnswers     = numAnswers;
@@ -1296,11 +1277,3 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 
 	return(status);
 	}
-				
-	
-	
-	
-	
-	
-	
-	
