@@ -171,7 +171,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 
 mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *context)
 	{
-	mDNSIPAddr senderaddr, destaddr, interface;
+	mDNSIPAddr senderaddr, destaddr;
 	mDNSIPPort senderport, destport;
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)context;
 	int skt = (s == info->cfsocket1) ? info->socket1 : info->socket2;
@@ -180,14 +180,14 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	struct in_addr to;
 	struct sockaddr_in from;
 	size_t fromlen = sizeof(from);
-	char ifname[128] = "";
+	char packetifname[128] = "";
 	int err;
 	
 	(void)address;	// Parameter not used
 	(void)data;		// Parameter not used
 	
 	if (type != kCFSocketReadCallBack) debugf("myCFSocketCallBack: Why is type not kCFSocketReadCallBack?");
-	err = myrecvfrom(skt, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, ifname);
+	err = myrecvfrom(skt, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, packetifname);
 
 	if (err < 0) { debugf("myCFSocketCallBack recvfrom error %d", err); return; }
 
@@ -195,21 +195,26 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	senderport.NotAnInteger = from.sin_port;
 	destaddr.NotAnInteger   = to.s_addr;
 	destport                = (s == info->cfsocket1) ? MulticastDNSPort : UnicastDNSPort;
-	interface               = info->ifinfo.ip;
 
-	if (strcmp(info->ifa_name, ifname))
+	// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
+	// sockets API means that even though this socket has only officially joined the multicast group
+	// on one specific interface, the kernel will still deliver multicast packets to it no matter which
+	// interface they arrive on. According to the official Unix Powers That Be, this is Not A Bug.
+	// To work around this weirdness, we use the IP_RECVIF option to find the name of the interface
+	// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
+	if (strcmp(info->ifa_name, packetifname))
 		{
-		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s (Ignored)",
-			&senderaddr, &destaddr, &interface, ifname);
+		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s (Ignored -- really arrived on interface %s)",
+			&senderaddr, &destaddr, &info->ifinfo.ip, info->ifa_name, packetifname);
 		return;
 		}
 	else
 		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s",
-			&senderaddr, &destaddr, &interface, ifname);
+			&senderaddr, &destaddr, &info->ifinfo.ip, info->ifa_name);
 
 	if (err < sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 	
-	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, destport, interface);
+	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, destport, info->ifinfo.ip);
 	}
 
 mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
