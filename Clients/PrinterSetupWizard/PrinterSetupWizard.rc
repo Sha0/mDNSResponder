@@ -86,8 +86,8 @@ IDR_MAINFRAME           ICON                    "res\\Print.ico"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,51
- PRODUCTVERSION 1,0,0,51
+ FILEVERSION MASTER_PROD_VERS
+ PRODUCTVERSION MASTER_PROD_VERS
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -104,12 +104,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Apple Computer, Inc."
             VALUE "FileDescription", "Rendezvous Printer Wizard"
-            VALUE "FileVersion", "1,0,0,51"
+            VALUE "FileVersion", MASTER_PROD_VERS_STR
             VALUE "InternalName", "RendezvousPrinterWizard.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2003-2004 Apple Computer, Inc."
+            VALUE "LegalCopyright", MASTER_LEGAL_COPYRIGHT
             VALUE "OriginalFilename", "RendezvousPrinterWizard.exe"
-            VALUE "ProductName", "Rendezvous"
-            VALUE "ProductVersion", "1,0,0,51"
+            VALUE "ProductName", MASTER_PROD_NAME
+            VALUE "ProductVersion", MASTER_PROD_VERS_STR
         END
     END
     BLOCK "VarFileInfo"
