@@ -43,6 +43,13 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.223  2003/07/16 00:09:22  cheshire
+Textual cleanup (no change to functionality):
+Construct "((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond)" appears in too many places;
+replace with macro "TicksTTL(rr)"
+Construct "rr->TimeRcvd + ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond)"
+replaced with macro "RRExpireTime(rr)"
+
 Revision 1.222  2003/07/15 23:40:46  cheshire
 Function rename: UpdateDupSuppressInfo() is more accurately called ExpireDupSuppressInfo()
 
@@ -1710,6 +1717,8 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 
 #define TimeToAnnounceThisRecord(RR,time) ((RR)->AnnounceCount && (time) - ((RR)->LastAPTime + (RR)->ThisAPInterval) >= 0)
 #define TimeToSendThisRecord(RR,time) ((TimeToAnnounceThisRecord(RR,time) || (RR)->ImmedAnswer) && ResourceRecordIsValidAnswer(RR))
+#define TicksTTL(RR) ((mDNSs32)(RR)->rroriginalttl * mDNSPlatformOneSecond)
+#define RRExpireTime(RR) ((RR)->TimeRcvd + TicksTTL(RR))
 
 #define MaxUnansweredQueries 4
 
@@ -3052,15 +3061,14 @@ mDNSlocal void SendResponses(mDNS *const m)
 // rr->CRActiveQuestion
 mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 	{
-	mDNSu32 ttl = rr->rroriginalttl * mDNSPlatformOneSecond;
-	rr->NextRequiredQuery = rr->TimeRcvd + (mDNSs32)ttl;
+	rr->NextRequiredQuery = RRExpireTime(rr);
 
 	// If we have an active question, then see if we want to schedule a refresher query for this record.
 	// Usually we expect to do four queries, at 80-84%, 85-89%, 90-94% and then 95-99% of the TTL.
 	if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 		{
-		rr->NextRequiredQuery -= ttl/20 * (MaxUnansweredQueries - rr->UnansweredQueries);
-		rr->NextRequiredQuery += mDNSRandom(ttl/25);
+		rr->NextRequiredQuery -= TicksTTL(rr)/20 * (MaxUnansweredQueries - rr->UnansweredQueries);
+		rr->NextRequiredQuery += mDNSRandom((mDNSu32)TicksTTL(rr)/25);
 		verbosedebugf("SetNextCacheCheckTime: %##s (%s) NextRequiredQuery in %ld sec",
 			rr->name.c, DNSTypeName(rr->rrtype), (rr->NextRequiredQuery - m->timenow) / mDNSPlatformOneSecond);
 		}
@@ -3071,12 +3079,11 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 
 mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, ResourceRecord *const rr, mDNSu32 interval)
 	{
-	mDNSs32 expire = rr->TimeRcvd + ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond);
 	if (interval < (mDNSu32)mDNSPlatformOneSecond * 5)
 		interval = (mDNSu32)mDNSPlatformOneSecond * 5;
 	if (interval > 0x10000000)	// Make sure interval doesn't overflow when we multiply by four below
 		interval = 0x10000000;
-	if (expire - m->timenow > (mDNSs32)interval)
+	if (RRExpireTime(rr) - m->timenow > (mDNSs32)interval)
 		{
 		// Typically, we use an expiry interval of five seconds.
 		// That means we pretend we received it 15 seconds ago with a TTL of 20,
@@ -3087,8 +3094,7 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, ResourceRecord *const r
 		rr->rroriginalttl     = interval * 4 / mDNSPlatformOneSecond;
 		SetNextCacheCheckTime(m, rr);
 		}
-	debugf("mDNS_Reconfirm_internal: %ld ticks to go for %s",	
-		rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond - m->timenow, GetRRDisplayString(m, rr));
+	debugf("mDNS_Reconfirm_internal: %ld ticks to go for %s", RRExpireTime(rr) - m->timenow, GetRRDisplayString(m, rr));
 	return(mStatus_NoError);
 	}
 
@@ -3592,7 +3598,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 		while (*rp)
 			{
 			ResourceRecord *const rr = *rp;
-			mDNSs32 event = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+			mDNSs32 event = RRExpireTime(rr);
 			if (m->timenow - event >= 0)	// If expired, delete it
 				{
 				*rp = rr->next;				// Cut it from the list
@@ -3616,7 +3622,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 					else											// else trigger our question to go out now
 						{
 						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
-						ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
+						ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - TicksTTL(rr)/20);
 						m->NextScheduledQuery = m->timenow;	// And adjust NextScheduledQuery so it will happen
 						// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
 						// which will correctly update m->NextCacheCheck for us
@@ -3637,10 +3643,10 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
-					if (m->timenow + (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond)/25 - rr->NextRequiredQuery >= 0)
+					if (m->timenow + TicksTTL(rr)/25 - rr->NextRequiredQuery >= 0)
 						{
 						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
-						ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
+						ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - TicksTTL(rr)/20);
 						}
 		}
 
@@ -4663,7 +4669,7 @@ exit:
 			// By setting the record to expire in four minutes, we achieve two things:
 			// (a) the 90-95% final expiration queries will be less bunched together
 			// (b) we allow some time for us to witness enough other failed queries that we don't have to do our own
-			mDNSu32 remain = (mDNSu32)(rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond - m->timenow) / 4;
+			mDNSu32 remain = (mDNSu32)(RRExpireTime(rr) - m->timenow) / 4;
 			if (remain > 240 * (mDNSu32)mDNSPlatformOneSecond)
 				remain = 240 * (mDNSu32)mDNSPlatformOneSecond;
 			
