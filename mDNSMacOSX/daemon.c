@@ -91,14 +91,22 @@ struct DNSServiceDomainEnumeration_struct
 	DNSQuestion def;	// Question asking for default domain
 	};
 
+typedef struct DNSServiceBrowserResult_struct DNSServiceBrowserResult;
+struct DNSServiceBrowserResult_struct
+	{
+	DNSServiceBrowserResult *next;
+	int resultType;
+	char name[256], type[256], dom[256];
+	};
+
 typedef struct DNSServiceBrowser_struct DNSServiceBrowser;
 struct DNSServiceBrowser_struct
 	{
 	DNSServiceBrowser *next;
 	mach_port_t ClientMachPort;
 	DNSQuestion q;
-	int resultType;		// Set to -1 if no outstanding reply
-	char name[256], type[256], dom[256];
+	DNSServiceBrowserResult *results;
+	mDNSs32 lastsuccess;
 	};
 
 typedef struct DNSServiceResolver_struct DNSServiceResolver;
@@ -264,6 +272,12 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 			LogMsg("%5d: DNSServiceBrowser(%##s) STOP; WARNING m %X != x %X", ClientMachPort, &x->q.name, m, x);
 		else LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, &x->q.name);
 		mDNS_StopBrowse(&mDNSStorage, &x->q);
+		while (x->results)
+			{
+			DNSServiceBrowserResult *r = x->results;
+			x->results = x->results->next;
+			freeL("DNSServiceBrowserResult", r);
+			}
 		freeL("DNSServiceBrowser", x);
 		return;
 		}
@@ -465,38 +479,11 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 //*************************************************************************************************************
 // Browse for services
 
-// Returns mDNStrue if it successfully delivered the message to the client,
-// or mDNSfalse if the Mach queue overflowed and the client had to be aborted.
-// Note that because the OS X API uses C strings, Rendezvous names containing ASCII NULLs will not work.
-// While these could be escaped for the C API (so ASCII NULL becomes "%00" and '%' becomes "%25")
-// this would require applications to correctly de-escape "%25" back to '%' before displaying,
-// and applications don't do this (because no one told them they should).
-// Conclusion: Don't use ASCII NULLs in your Rendezvous service names.
-mDNSlocal mDNSBool DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFlags flags)
-	{
-	kern_return_t status;
-#if 0
-	LogOperation("%5d: DNSServiceBrowser(%##s) %s %s.%s%s (%s)",
-		x->ClientMachPort, &x->q.name,
-		x->resultType == DNSServiceBrowserReplyAddInstance ? "+" : "-",
-		x->name, x->type, x->dom,
-		(flags & DNSServiceDiscoverReplyFlagsMoreComing) ? "more ..." : "last in this batch");
-#endif
-	status = DNSServiceBrowserReply_rpc(x->ClientMachPort,
-		x->resultType, x->name, x->type, x->dom, flags, MDNS_MM_TIMEOUT);
-	x->resultType = -1;
-	if (status == MACH_SEND_TIMED_OUT)
-		{
-		AbortBlockedClient(x->ClientMachPort, "browse", x);
-		return(mDNSfalse);
-		}
-
-	return(mDNStrue);
-	}
-
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
+	DNSServiceBrowser *browser = (DNSServiceBrowser *)question->Context;
+	DNSServiceBrowserResult **p = &browser->results;
+	DNSServiceBrowserResult *x = mallocL("DNSServiceBrowserResult", sizeof(*x));
 	domainlabel name;
 	domainname type, domain;
 	(void)m;		// Unused
@@ -510,24 +497,23 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	
 	if (!DeconstructServiceName(&answer->rdata->u.name, &name, &type, &domain))
 		{
-		LogMsg("FoundInstance: %##s PTR %##s is not valid NIAS service pointer",
+		LogMsg("FoundInstance: %##s PTR %##s is not valid DNS-SD service pointer",
 			&answer->name, &answer->rdata->u.name);
 		return;
 		}
 
-	// If we have a result already waiting, deliver it to the client now
-	// If DeliverInstance() aborts our client and disposes the DNSServiceBrowser memory, then we bail out here
-	if (x->resultType != -1)
-		if (DeliverInstance(x, DNSServiceDiscoverReplyFlagsMoreComing) == mDNSfalse)
-			return;
-
-	debugf("FoundInstance: %s %##s", answer->rrremainingttl ? "Add" : "Rmv", &answer->rdata->u.name);
+	if (!x) { LogMsg("FoundInstance: Failed to allocate memory for result"); return; }
+	
+	verbosedebugf("FoundInstance: %s %##s", answer->rrremainingttl ? "Add" : "Rmv", &answer->rdata->u.name);
 	ConvertDomainLabelToCString_unescaped(&name, x->name);
 	ConvertDomainNameToCString(&type, x->type);
 	ConvertDomainNameToCString(&domain, x->dom);
 	if (answer->rrremainingttl)
 		 x->resultType = DNSServiceBrowserReplyAddInstance;
 	else x->resultType = DNSServiceBrowserReplyRemoveInstance;
+	x->next = NULL;
+	while (*p) p = &(*p)->next;
+	*p = x;
 	}
 
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -556,7 +542,8 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 			}
 	
 		x->ClientMachPort = client;
-		x->resultType = -1;
+		x->results = NULL;
+		x->lastsuccess = 0;
 		x->next = DNSServiceBrowserList;
 		DNSServiceBrowserList = x;
 	
@@ -1351,7 +1338,7 @@ mDNSexport int main(int argc, char **argv)
 
 			// 2. Deliver any waiting browse messages to clients
 			DNSServiceBrowser *b = DNSServiceBrowserList;
-	
+
 			while (b)
 				{
 				// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
@@ -1359,8 +1346,32 @@ mDNSexport int main(int argc, char **argv)
 				// and that will cause the DNSServiceBrowser object's memory to be freed before it returns
 				DNSServiceBrowser *x = b;
 				b = b->next;
-				if (x->resultType != -1)
-					DeliverInstance(x, 0);
+				if (x->results)			// Try to deliver the list of results
+					{
+					mDNSs32 now = mDNSPlatformTimeNow();
+					while (x->results)
+						{
+						DNSServiceBrowserResult *const r = x->results;
+						DNSServiceDiscoveryReplyFlags flags = (r->next) ? DNSServiceDiscoverReplyFlagsMoreComing : 0;
+						kern_return_t status = DNSServiceBrowserReply_rpc(x->ClientMachPort, r->resultType, r->name, r->type, r->dom, flags, 0);
+						// If we failed to send the mach message, try again in one second
+						if (status == MACH_SEND_TIMED_OUT)
+							{
+							if (nextevent - now > mDNSPlatformOneSecond)
+								nextevent = now + mDNSPlatformOneSecond;
+							break;
+							}
+						else
+							{
+							x->lastsuccess = now;
+							x->results = x->results->next;
+							freeL("DNSServiceBrowserResult", r);
+							}
+						}
+					// If this client hasn't read a single message in the last 60 seconds, abort it
+					if (now - x->lastsuccess >= 60 * mDNSPlatformOneSecond)
+						AbortBlockedClient(x->ClientMachPort, "browse", x);
+					}
 				}
 		
 			// 3. Do a blocking "CFRunLoopRunInMode" until our next wakeup time, or an event occurs
