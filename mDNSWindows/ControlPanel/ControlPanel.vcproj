@@ -66,7 +66,8 @@
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="_DEBUG"
-				Culture="6153"/>
+				Culture="6153"
+				AdditionalIncludeDirectories="../"/>
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
@@ -77,30 +78,32 @@
 			OutputDirectory=".\Release"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
-			UseOfMFC="2"
+			UseOfMFC="1"
 			ATLMinimizesCRunTimeLibraryUsage="FALSE">
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
 				InlineFunctionExpansion="1"
-				AdditionalIncludeDirectories="..;../mDNSCore;../mDNSShared"
-				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL"
+				AdditionalIncludeDirectories="..;../../mDNSCore;../../mDNSShared"
+				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;UNICODE;_UNICODE"
 				StringPooling="TRUE"
-				RuntimeLibrary="2"
+				RuntimeLibrary="0"
 				EnableFunctionLevelLinking="TRUE"
 				UsePrecompiledHeader="0"
 				AssemblerListingLocation=".\Release/"
 				ObjectFile=".\Release/"
 				ProgramDataBaseFileName=".\Release/"
 				WarningLevel="4"
-				SuppressStartupBanner="TRUE"/>
+				SuppressStartupBanner="TRUE"
+				DisableSpecificWarnings="4702"/>
 			<Tool
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
+				AdditionalDependencies="../DLL/Release/dnssd.lib ws2_32.lib"
 				OutputFile="Release/Bonjour.cpl"
 				LinkIncremental="1"
-				SuppressStartupBanner="FALSE"
+				SuppressStartupBanner="TRUE"
 				ModuleDefinitionFile=".\ControlPanel.def"
 				ProgramDatabaseFile=".\Release/ControlPanel.pdb"
 				SubSystem="2"
@@ -123,7 +126,8 @@
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="NDEBUG"
-				Culture="6153"/>
+				Culture="6153"
+				AdditionalIncludeDirectories="../"/>
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
