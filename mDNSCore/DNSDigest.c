@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.5  2004/05/20 18:37:37  cheshire
+Fix compiler warnings
+
 Revision 1.4  2004/04/22 20:28:20  cheshire
 Use existing facility of PutResourceRecordTTL() to update count field for us
 
@@ -311,7 +314,7 @@ void md5_block_data_order (MD5_CTX *c, const void *p,int num);
 #  define ROTATE(a,n)	_lrotl(a,n)
 # elif defined(__MWERKS__)
 #  if defined(__POWERPC__)
-#   define ROTATE(a,n)	__rlwinm(a,n,0,31)
+#   define ROTATE(a,n)	(unsigned MD32_REG_T)__rlwinm((int)a,n,0,31)
 #  elif defined(__MC68K__)
     /* Motorola specific tweak. <appro@fy.chalmers.se> */
 #   define ROTATE(a,n)	( n<24 ? __rol(a,n) : __ror(a,32-n) )
