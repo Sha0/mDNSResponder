@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.378  2004/05/25 17:25:25  cheshire
+Remove extraneous blank lines and white space
+
 Revision 1.377  2004/05/18 23:51:25  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -1266,8 +1269,8 @@ mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF
 mDNSexport const mDNSOpaque16 zeroID = { { 0, 0 } };
 mDNSexport const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
 mDNSexport const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
-mDNSexport const mDNSOpaque16 UpdateReqFlags= { { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Query,                   0 } }; 
-mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response,                0 } };                  
+mDNSexport const mDNSOpaque16 UpdateReqFlags= { { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Query,                   0 } };
+mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response,                0 } };
 #define zeroDomainNamePtr ((domainname*)"")
 
 // Any records bigger than this are considered 'large' records
@@ -1511,7 +1514,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 												if (((j-i) < 7) && (((s[i] >> (7-(j-i))) & 0xFF) == 0xFE)) i = j;
 												}
 											}
-										break;								
+										break;
 								case 1: i = (unsigned char) *s++; break;	// Pascal string
 								case 2: {									// DNS label-sequence name
 										unsigned char *a = (unsigned char *)s;
@@ -1605,7 +1608,6 @@ mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 			m->NextScheduledQuery = (q->LastQTime + q->ThisQInterval);
 	}
 
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -1656,7 +1658,6 @@ mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 #define RRExpireTime(RR) ((RR)->TimeRcvd + TicksTTL(RR))
 
 #define MaxUnansweredQueries 4
-
 
 // SameResourceRecordSignature returns true if two resources records have the same name, type, and class, and may be sent
 // (or were received) on the same interface (i.e. if *both* records specify an interface, then it has to match).
@@ -1722,7 +1723,6 @@ mDNSlocal mDNSBool ShouldSuppressKnownAnswer(const CacheRecord *const ka, const 
 	return(mDNSBool)(ka->resrec.rroriginalttl >= rr->resrec.rroriginalttl / 2);
 	}
 
-
 mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const rr)
 	{
 	if (rr->resrec.RecordType == kDNSRecordTypeUnique)
@@ -1737,7 +1737,6 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 			m->NextScheduledResponse = (rr->LastAPTime + rr->ThisAPInterval);
 		}
 	}
-
 
 mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	{
@@ -2175,10 +2174,6 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	return(mStatus_NoError);
 	}
 
-
-
-
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -2214,7 +2209,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 
 mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
 	{
-	if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0; 
+	if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0;
 	else rr->NextUpdateCredit = (rr->NextUpdateCredit + kUpdateCreditRefreshInterval) | 1;
 	}
 
@@ -3506,7 +3501,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
 	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
-	if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;    
+	if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
 	return(e);
 	}
 
@@ -4666,7 +4661,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	// If we accept and try to process a packet with zero or all-ones source address, that could really mess things up
 	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 
-    if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger && 
+    if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger &&
         (QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
         {
         uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
@@ -4932,7 +4927,7 @@ mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, CacheRecord *const rr)
 mDNSexport mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr)
 	{
 	mStatus status = mStatus_BadReferenceErr;
-	CacheRecord *cr;	
+	CacheRecord *cr;
 	mDNS_Lock(m);
 	cr = FindIdenticalRecordInCache(m, rr);
 	if (cr) status = mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
@@ -5455,8 +5450,8 @@ mDNSlocal void GenerateFQDN(mDNS *const m, const char *domain, mDNSBool local)
 			for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
 			for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
 			}
-		else uDNS_UpdateServiceTargets(m);			
-		}				
+		else uDNS_UpdateServiceTargets(m);
+		}
 		mDNS_Unlock(m);
 	}
 
@@ -5470,7 +5465,6 @@ mDNSexport void mDNS_GenerateGlobalFQDN(mDNS *const m)
     if (!m->uDNS_info.NameRegDomain[0]) return;
     GenerateFQDN(m, m->uDNS_info.NameRegDomain, mDNSfalse);
 	}
-
 
 mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
@@ -5796,8 +5790,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared,   ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, InterfaceID, kDNSType_SRV, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
-	
-	
+
 	// If the client is registering an oversized TXT record,
 	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it
 	if (sr->RR_TXT.resrec.rdata->MaxRDLength < txtlen)
