@@ -612,7 +612,6 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFStringRef           pattern  = SCDynamicStoreKeyCreateNetworkServiceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
 	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-	CFRunLoopSourceRef    rls      = NULL;
 
 	if (!store) { fprintf(stderr, "SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
 	if (!key1 || !key2 || !keys || !pattern || !patterns) goto error;
@@ -623,11 +622,11 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
 		{ fprintf(stderr, "SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
 
-	rls = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
-	if (!rls) { fprintf(stderr, "SCDynamicStoreCreateRunLoopSource failed: %s\n", SCErrorString(SCError())); goto error; }
+	m->p->StoreRLS = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
+	if (!m->p->StoreRLS) { fprintf(stderr, "SCDynamicStoreCreateRunLoopSource failed: %s\n", SCErrorString(SCError())); goto error; }
 
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-	m->p->store = store;
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), m->p->StoreRLS, kCFRunLoopDefaultMode);
+	m->p->Store = store;
 	err = 0;
 	goto exit;
 
@@ -640,7 +639,6 @@ exit:
 	if (pattern)  CFRelease(pattern);
 	if (keys)     CFRelease(keys);
 	if (patterns) CFRelease(patterns);
-	if (rls)      CFRelease(rls);
 	
 	return(err);
 	}
@@ -658,18 +656,17 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemHasPoweredOn: debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break;
 		default:                           debugf("PowerChanged got unknown message %X", messageType); break;                       
 		}
-	IOAllowPowerChange(m->p->powerconnection, (long)messageArgument);
+	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
 	}
 
 mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 	{
 	IONotificationPortRef thePortRef;
-	m->p->powerconnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &m->p->powernotifier);
-	if (m->p->powerconnection)
+	m->p->PowerConnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &m->p->PowerNotifier);
+	if (m->p->PowerConnection)
 		{
-		CFRunLoopSourceRef rls = IONotificationPortGetRunLoopSource(thePortRef);
-		CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-		CFRelease(rls);
+		m->p->PowerRLS = IONotificationPortGetRunLoopSource(thePortRef);
+		CFRunLoopAddSource(CFRunLoopGetCurrent(), m->p->PowerRLS, kCFRunLoopDefaultMode);
 		return(mStatus_NoError);
 		}
 	return(-1);
@@ -682,9 +679,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, m, NULL, NULL, NULL };
 	StartTime = CFAbsoluteTimeGetCurrent();
 	
-	m->p->cftimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 10.0, 10.0, 0, 1,
+	m->p->CFTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 10.0, 10.0, 0, 1,
 											myCFRunLoopTimerCallBack, &myCFRunLoopTimerContext);
-	CFRunLoopAddTimer(CFRunLoopGetCurrent(), m->p->cftimer, kCFRunLoopDefaultMode);
+	CFRunLoopAddTimer(CFRunLoopGetCurrent(), m->p->CFTimer, kCFRunLoopDefaultMode);
 
 	SetupInterfaceList(m);
 
@@ -706,33 +703,41 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 
 mDNSexport void mDNSPlatformClose(mDNS *const m)
 	{
-	if (m->p->powerconnection)
+	if (m->p->PowerConnection)
 		{
-		IODeregisterForSystemPower(&m->p->powernotifier);
-		m->p->powerconnection = NULL;
-		m->p->powernotifier = NULL;
+		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), m->p->PowerRLS, kCFRunLoopDefaultMode);
+		CFRunLoopSourceInvalidate(m->p->PowerRLS);
+		CFRelease(m->p->PowerRLS);
+		IODeregisterForSystemPower(&m->p->PowerNotifier);
+		m->p->PowerConnection = NULL;
+		m->p->PowerNotifier   = NULL;
+		m->p->PowerRLS        = NULL;
 		}
 	
-	if (m->p->store)
+	if (m->p->Store)
 		{
-		CFRelease(m->p->store);
-		m->p->store = NULL;
+		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), m->p->StoreRLS, kCFRunLoopDefaultMode);
+		CFRunLoopSourceInvalidate(m->p->StoreRLS);
+		CFRelease(m->p->StoreRLS);
+		CFRelease(m->p->Store);
+		m->p->Store    = NULL;
+		m->p->StoreRLS = NULL;
 		}
 	
 	ClearInterfaceList(m);
 	
-	if (m->p->cftimer)
+	if (m->p->CFTimer)
 		{
-	    CFRunLoopTimerInvalidate(m->p->cftimer);
-		CFRelease(m->p->cftimer);
-		m->p->cftimer = NULL;
+		CFRunLoopTimerInvalidate(m->p->CFTimer);
+		CFRelease(m->p->CFTimer);
+		m->p->CFTimer = NULL;
 		}
 	}
 
 // To Do: Find out how to implement a proper modular time function in CF
 mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTime)
 	{
-	if (m->p->cftimer)
+	if (m->p->CFTimer)
 		{
 		// Due to a bug in CFRunLoopTimers, if you set them to any time in the past, they don't work
 		// Spot the obvious race condition: What defines "past"?
@@ -740,7 +745,7 @@ mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTim
 		UInt32 x = (UInt32)NextTaskTime;
 		CFAbsoluteTime firetime = StartTime + ((CFAbsoluteTime)x / (CFAbsoluteTime)mDNSPlatformOneSecond);
 		if (firetime < bugfix) firetime = bugfix;
-		CFRunLoopTimerSetNextFireDate(m->p->cftimer, firetime);
+		CFRunLoopTimerSetNextFireDate(m->p->CFTimer, firetime);
 		}
 	}
 
