@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.26  2004/10/28 02:00:35  cheshire
+<rdar://problem/3841770> Call pipeDevDelete when disposing of commandPipe
+
 Revision 1.25  2004/10/16 00:17:01  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -1332,6 +1335,10 @@ mDNSlocal mStatus	TearDownCommandPipe( mDNS * const inMDNS )
 	if( inMDNS->p->commandPipe != ERROR )
 	{
 		close( inMDNS->p->commandPipe );
+#ifdef _WRS_VXWORKS_5_X
+		// pipeDevDelete is not defined in older versions of VxWorks
+		pipeDevDelete( kMDNSPipeName, FALSE );
+#endif
 		inMDNS->p->commandPipe = ERROR;
 	}	
 	return( mStatus_NoError );
