@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.17  2004/05/06 18:42:58  ksekar
+General dns_sd.h API cleanup, including the following radars:
+<rdar://problem/3592068>: Remove flags with zero value
+<rdar://problem/3479569>: Passing in NULL causes a crash.
+
 Revision 1.16  2004/03/12 22:00:37  cheshire
 Added: #include <sys/socket.h>
 
@@ -167,6 +172,8 @@ DNSServiceErrorType DNSServiceResolve
     if (!sdRef) return kDNSServiceErr_BadParam;
     *sdRef = NULL;
     
+	if (!name || !regtype || !domain || !callBack) return kDNSServiceErr_BadParam;
+
     // calculate total message length
     len = sizeof(flags);
     len += sizeof(interfaceIndex);
@@ -925,7 +932,6 @@ static DNSServiceRef connect_to_server(void)
 
 int my_write(int sd, char *buf, int len)
     {
-    //if (send(sd, buf, len, MSG_WAITALL) != len)   return -1;
     while (len)
     	{
     	ssize_t num_written = send(sd, buf, len, 0);
@@ -1028,10 +1034,9 @@ static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start, int reuse_so
 
     if (!reuse_socket)
         {
-	  if (gettimeofday(&time, NULL) < 0) return NULL;
-	  sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(), 
+	    if (gettimeofday(&time, NULL) < 0) return NULL;
+	    sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(), 
 		  (unsigned long)(time.tv_sec & 0xFFF), (unsigned long)(time.tv_usec));
-
         *len += strlen(ctrl_path) + 1;
         }
     

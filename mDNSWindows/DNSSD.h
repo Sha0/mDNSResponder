@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: DNSSD.h,v $
+Revision 1.6  2004/05/06 18:42:58  ksekar
+General dns_sd.h API cleanup, including the following radars:
+<rdar://problem/3592068>: Remove flags with zero value
+<rdar://problem/3479569>: Passing in NULL causes a crash.
+
 Revision 1.5  2004/05/03 10:34:24  bradley
 Implemented preliminary version of the TXTRecord API.
 
@@ -136,28 +141,15 @@ typedef struct _DNSRecordRef_t *		DNSRecordRef;
 					answers immediately available right now at this instant. If more answers become available in 
 					the future they will be delivered as usual.
 
-	@constant	kDNSServiceFlagsFinished
-					When the kDNSServiceFlagsMoreComing flag is not set, no more immediate replies are expected
-					and applications should update their UI. This flag is 0, mean if kDNSServiceFlagsMoreComing is
-					not set, it is finished. See notes for kDNSServiceFlagsMoreComing for details.
-
 	@constant	kDNSServiceFlagsAdd
 					Service or domain has been added during browsing/querying or domain enumeration.
 
 	@constant	kDNSServiceFlagsDefault
 					Default domain has been added during domain enumeration.
 	
-	@constant	kDNSServiceFlagsRemove
-					Service or domain has been removed during browsing/querying or domain enumeration. This flag is 0, 
-					meaning if neither kDNSServiceFlagsAdd nor kDNSServiceFlagsDefault is set, it is a remove.
-
 	@constant	kDNSServiceFlagsNoAutoRename
 					Auto renaming should not be performed. Only valid if a name is explicitly specified when 
 					registering a service (i.e. the default name is not used).
-
-	@constant	kDNSServiceFlagsAutoRename
-					Auto rename if a name conflict occurs when registering non-shared records. This flag is 0, meaning
-					if the kDNSServiceFlagsNoAutoRename flag is not set, auto renaming should not be performed.
 
 	@constant	kDNSServiceFlagsShared
 					Shared flag for registering individual records on a connected DNSServiceRef. Indicates that there 
@@ -180,14 +172,11 @@ enum
 	kDNSServiceFlagsNone				= 0, 
 	
 	kDNSServiceFlagsMoreComing			= ( 1 << 0 ),
-	kDNSServiceFlagsFinished			= 0,	// MoreComing not set means Finished
 	
 	kDNSServiceFlagsAdd					= ( 1 << 1 ),
 	kDNSServiceFlagsDefault				= ( 1 << 2 ),
-	kDNSServiceFlagsRemove				= 0,	// Neither Add nor Default flag set means Remove
 
 	kDNSServiceFlagsNoAutoRename		= ( 1 << 3 ),
-	kDNSServiceFlagsAutoRename			= 0,	// NoAutoRename not set means AutoRename
 
 	kDNSServiceFlagsShared				= ( 1 << 4 ),
 	kDNSServiceFlagsUnique				= ( 1 << 5 ),

@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.46  2004/05/06 18:42:58  ksekar
+General dns_sd.h API cleanup, including the following radars:
+<rdar://problem/3592068>: Remove flags with zero value
+<rdar://problem/3479569>: Passing in NULL causes a crash.
+
 Revision 1.45  2004/03/12 08:49:28  cheshire
 #include <sys/socket.h>
 
@@ -469,7 +474,6 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
             while(req->replies)
                 {
                 if (req->replies->next) req->replies->rhdr->flags |= kDNSServiceFlagsMoreComing;
-                else req->replies->rhdr->flags |= kDNSServiceFlagsFinished;
                 result = send_msg(req->replies);
                 if (result == t_complete)
                     {
@@ -1039,7 +1043,7 @@ static void question_result_callback(mDNS *const m _UNUSED, DNSQuestion *questio
     len += strlen(name) + 1;
     
     rep =  create_reply(query_reply, len, req);
-    rep->rhdr->flags = AddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsRemove;
+    rep->rhdr->flags = AddRecord ? kDNSServiceFlagsAdd : 0;
     rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID);
     rep->rhdr->error = kDNSServiceErr_NoError;
     data = rep->sdata;
@@ -1773,7 +1777,7 @@ static void handle_enum_request(request_state *rstate)
         }
 
     // provide local. as the first domain automatically
-    add_default = kDNSServiceFlagsDefault | kDNSServiceFlagsAdd | kDNSServiceFlagsFinished;
+    add_default = kDNSServiceFlagsDefault | kDNSServiceFlagsAdd;
     reply = format_enumeration_reply(rstate, "local.", add_default, ifi, 0);
     tr = send_msg(reply);
     if (tr == t_error || tr == t_terminated) 
@@ -1801,10 +1805,6 @@ static void enum_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, c
         flags |= kDNSServiceFlagsAdd;
         if (de->type == mDNS_DomainTypeRegistrationDefault || de->type == mDNS_DomainTypeBrowseDefault)
             flags |= kDNSServiceFlagsDefault;
-    	}
-    else
-    	{
-        flags |= kDNSServiceFlagsRemove;
     	}
     ConvertDomainNameToCString(&answer->rdata->u.name, domain);
     reply = format_enumeration_reply(de->rstate, domain, flags, mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID), kDNSServiceErr_NoError);

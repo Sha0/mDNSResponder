@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: SampleUDSClient.c,v $
+Revision 1.10  2004/05/06 18:42:58  ksekar
+General dns_sd.h API cleanup, including the following radars:
+<rdar://problem/3592068>: Remove flags with zero value
+<rdar://problem/3479569>: Passing in NULL causes a crash.
+
 Revision 1.9  2004/01/19 22:40:36  cheshire
 Fix compiler warnings on Linux
 
@@ -276,8 +281,8 @@ static void my_enum_cb( DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t int
     (void)sdRef; // Unused
     (void)context; // Unused
     if (flags == kDNSServiceFlagsAdd) type = "add";
-    else if (flags == kDNSServiceFlagsRemove) type = "remove";
     else if (flags == (kDNSServiceFlagsAdd | kDNSServiceFlagsDefault)) type = "add default";
+    else if (!flags) type = "remove";
     else type = "unknown";
     
     

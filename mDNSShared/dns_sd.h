@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.10  2004/05/06 18:42:58  ksekar
+General dns_sd.h API cleanup, including the following radars:
+<rdar://problem/3592068>: Remove flags with zero value
+<rdar://problem/3479569>: Passing in NULL causes a crash.
+
 Revision 1.9  2004/03/20 05:43:39  cheshire
 Fix contributed by Terry Lambert & Alfred Perlstein:
 On FreeBSD 4.x we need to include <sys/types.h> instead of <stdint.h>
@@ -54,8 +59,8 @@ Update to APSL 2.0
 #ifndef _DNS_SD_H
 #define _DNS_SD_H
 
-#ifdef	__cplusplus
-	extern "C" {
+#ifdef  __cplusplus
+    extern "C" {
 #endif
 
 #if defined(__FreeBSD__) && (__FreeBSD_version < 500000)
@@ -78,47 +83,48 @@ typedef struct _DNSRecordRef_t *DNSRecordRef;
 /* General flags used in functions defined below */
 enum
     {
-    kDNSServiceFlagsMoreComing          = 1,
-    kDNSServiceFlagsFinished            = 0,  /* i.e. bit not set */
+    kDNSServiceFlagsMoreComing          = 0x1,
     /* MoreComing indicates to a callback that at least one more result is
      * queued and will be delivered following immediately after this one.
      * Applications should not update their UI to display browse
      * results when the MoreComing flag is set, because this would
      * result in a great deal of ugly flickering on the screen.
-     * Applications should instead wait until until MoreComing is not set
-     * (i.e. "Finished", for now), and then update their UI.
-     * When MoreComing is not set (i.e. "Finished") that doesn't mean there
-     * will be no more answers EVER, just that there are no more answers
-     * immediately available right now at this instant. If more answers
-     * become available in the future they will be delivered as usual.
+     * Applications should instead wait until until MoreComing is not set,
+     * and then update their UI.
+     * When MoreComing is not set, that doesn't mean there will be no more
+     * answers EVER, just that there are no more answers immediately
+     * available right now at this instant. If more answers become available
+     * in the future they will be delivered as usual.
      */
 
-    kDNSServiceFlagsAdd                 = 2,
-    kDNSServiceFlagsDefault             = 4,
-    kDNSServiceFlagsRemove              = 0,  /* i.e. bit not set */
+    kDNSServiceFlagsAdd                 = 0x2,
+    kDNSServiceFlagsDefault             = 0x4,
     /* Flags for domain enumeration and browse/query reply callbacks.
      * "Default" applies only to enumeration and is only valid in
-     * conjuction with "Add" 
+     * conjuction with "Add".  An enumeration callback with the "Add"
+     * flag NOT set indicates a "Remove", i.e. the domain is no longer
+     * valid.
      */
 
-    kDNSServiceFlagsNoAutoRename        = 8,
-    kDNSServiceFlagsAutoRename          = 0,  /* i.e. bit not set */
+    kDNSServiceFlagsNoAutoRename        = 0x8,
     /* Flag for specifying renaming behavior on name conflict when registering
-     * non-shared records. NoAutorename is only valid if a name is explicitly
-     * specified when registering a service (ie the default name is not used.)
+     * non-shared records. By default, name conflicts are automatically handled
+     * by renaming the service.  NoAutoRename overrides this behavior - with this
+     * flag set, name conflicts will result in a callback.  The NoAutorename flag
+     * is only valid if a name is explicitly specified when registering a service
+     * (ie the default name is not used.)
      */
 
-
-    kDNSServiceFlagsShared              = 16,
-    kDNSServiceFlagsUnique              = 32,
+    kDNSServiceFlagsShared              = 0x10,
+    kDNSServiceFlagsUnique              = 0x20,
     /* Flag for registering individual records on a connected
      * DNSServiceRef.  Shared indicates that there may be multiple records 
      * with this name on the network (e.g. PTR records).  Unique indicates that the
      * record's name is to be unique on the network (e.g. SRV records).
      */
 
-    kDNSServiceFlagsBrowseDomains       = 64,
-    kDNSServiceFlagsRegistrationDomains = 128
+    kDNSServiceFlagsBrowseDomains       = 0x40,
+    kDNSServiceFlagsRegistrationDomains = 0x80
     /* Flags for specifying domain enumeration type in DNSServiceEnumerateDomains.
      * BrowseDomains enumerates domains recommended for browsing, RegistrationDomains
      * enumerates domains recommended for registration.
@@ -256,9 +262,9 @@ void DNSServiceRefDeallocate(DNSServiceRef sdRef);
  * sdRef:           The DNSServiceRef initialized by DNSServiceEnumerateDomains().
  *
  * flags:           Possible values are:
- *                  1 (MoreComing)
- *                  2 (Add/Remove)
- *                  4 (Add Default)
+ *                  kDNSServiceFlagsMoreComing
+ *                  kDNSServiceFlagsAdd
+ *                  kDNSServiceFlagsDefault
  *
  * interfaceIndex:  Specifies the interface on which the domain exists.  (The index for a given 
  *                  interface is determined via the if_nametoindex() family of calls.)  
@@ -289,8 +295,9 @@ typedef void (*DNSServiceDomainEnumReply)
  *                  DNSServiceRefDeallocate() to cancel the enumeration.
  *
  * flags:           Possible values are:
- *                  64 (BrowseDomains) to enumerate domains recommended for browsing.
- *                  128 (RegistrationDomains) to enumerate domains recommended for registration.
+ *                  kDNSServiceFlagsBrowseDomains to enumerate domains recommended for browsing.
+ *                  kDNSServiceFlagsRegistrationDomains to enumerate domains recommended
+ *                  for registration.
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to look for domains.
  *                  (the index for a given interface is determined via the if_nametoindex()
@@ -396,15 +403,7 @@ typedef void (*DNSServiceRegisterReply)
  *                  for ensuring that the appropriate address record exists, or creating it
  *                  via DNSServiceRegisterRecord().
  *
- * notAnIntPort:    The port on which the service accepts connections.
- *                  Note that even though the type of this parameter is declared as 'uint16_t'
- *                  it is actually an opaque 16-bit port identifier, NOT an integer value
- *                  (in the sense that integers are those quantities upon which operations like
- *                  increment, decrement, add, multiply, etc. are defined and have useful meaning).
- *                  To interpret an opaque port identifier as an integer value you need
- *                  to remember that in Internet protocols the first byte is most significant,
- *                  and the last byte is least significant, which may or may not be the native
- *                  representation used by the processor that happens to be running your code.
+ * port:            The port, in network byte order, on which the service accepts connections.
  *                  Pass 0 for a "placeholder" service (i.e. a service that will not be discovered
  *                  by browsing, but will cause a name conflict if another client tries to
  *                  register that same name).  Most clients will not use placeholder services.
@@ -441,7 +440,7 @@ DNSServiceErrorType DNSServiceRegister
     const char                          *regtype,  
     const char                          *domain,       /* may be NULL */
     const char                          *host,         /* may be NULL */
-    uint16_t                            notAnIntPort,
+    uint16_t                            port,
     uint16_t                            txtLen,
     const void                          *txtRecord,    /* may be NULL */
     DNSServiceRegisterReply             callBack,      /* may be NULL */
@@ -571,8 +570,8 @@ DNSServiceErrorType DNSServiceRemoveRecord
  *
  * sdRef:           The DNSServiceRef initialized by DNSServiceBrowse().
  *
- * flags:           Possible values are MoreComing and Add/Remove.  See flag definitions
- *                  for details.
+ * flags:           Possible values are kDNSServiceFlagsMoreComing and kDNSServiceFlagsAdd.
+ *                  See flag definitions for details.
  *
  * interfaceIndex:  The interface on which the service is advertised.  This index should
  *                  be passed to DNSServiceResolve() when resolving the service. 
@@ -685,15 +684,7 @@ DNSServiceErrorType DNSServiceBrowse
  * hosttarget:      The target hostname of the machine providing the service.  This name can 
  *                  be passed to functions like gethostbyname() to identify the host's IP address.
  *
- * notAnIntPort:    The port on which the service accepts connections.
- *                  Note that even though the type of this parameter is declared as 'uint16_t'
- *                  it is actually an opaque 16-bit port identifier, NOT an integer value
- *                  (in the sense that integers are those quantities upon which operations like
- *                  increment, decrement, add, multiply, etc. are defined and have useful meaning).
- *                  To interpret an opaque port identifier as an integer value you need
- *                  to remember that in Internet protocols the first byte is most significant,
- *                  and the last byte is least significant, which may or may not be the native
- *                  representation used by the processor that happens to be running your code.
+ * port:            The port, in network byte order, on which connections are accepted for this service.
  *
  * txtLen:          The length of the txt record, in bytes.
  *
@@ -712,7 +703,7 @@ typedef void (*DNSServiceResolveReply)
     DNSServiceErrorType                 errorCode,
     const char                          *fullname,    
     const char                          *hosttarget,
-    uint16_t                            notAnIntPort,
+    uint16_t                            port,
     uint16_t                            txtLen,
     const char                          *txtRecord,
     void                                *context  
@@ -797,7 +788,7 @@ DNSServiceErrorType DNSServiceResolve
  *
  * fullName:        A pointer to a buffer that where the resulting full domain name is to be written.
  *                  The buffer must be kDNSServiceMaxDomainName (1005) bytes in length to 
- * 		            accommodate the longest legal domain name without buffer overrun.
+ *                  accommodate the longest legal domain name without buffer overrun.
  *
  * service:         The service name - any dots or slashes must NOT be escaped.
  *                  May be NULL (to construct a PTR record name, e.g.
@@ -888,7 +879,8 @@ DNSServiceErrorType DNSServiceCreateConnection(DNSServiceRef *sdRef);
  *                  and deallocate each of their corresponding DNSServiceRecordRefs, call
  *                  DNSServiceRefDealloocate()).
  *
- * flags:           Possible values are Shared/Unique (see flag type definitions for details).
+ * flags:           Possible values are kDNSServiceFlagsShared or kDNSServiceFlagsUnique
+ *                  (see flag type definitions for details).
  * 
  * interfaceIndex:  If non-zero, specifies the interface on which to register the record
  *                  (the index for a given interface is determined via the if_nametoindex()
@@ -948,8 +940,9 @@ DNSServiceErrorType DNSServiceRegisterRecord
  *
  * sdRef:           The DNSServiceRef initialized by DNSServiceQueryRecord().
  * 
- * flags:           Possible values are Finished/MoreComing, and Add/Remove.  The Remove
- *                  flag is set for PTR records with a ttl of 0.
+ * flags:           Possible values are kDNSServiceFlagsMoreComing and
+ *                  kDNSServiceFlagsAdd.  The Add flag is NOT set for PTR records
+ *                  with a ttl of 0, i.e. "Remove" events.
  *
  * interfaceIndex:  The interface on which the query was resolved (the index for a given 
  *                  interface is determined via the if_nametoindex() family of calls).
@@ -1067,8 +1060,8 @@ void DNSServiceReconfirmRecord
     const void                         *rdata
     );
 
-#ifdef	__cplusplus
-	}
+#ifdef  __cplusplus
+    }
 #endif
 
 #endif  // _DNS_SD_H

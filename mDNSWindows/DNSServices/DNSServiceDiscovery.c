@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscovery.c,v $
+Revision 1.6  2004/05/06 18:42:58  ksekar
+General dns_sd.h API cleanup, including the following radars:
+<rdar://problem/3592068>: Remove flags with zero value
+<rdar://problem/3479569>: Passing in NULL causes a crash.
+
 Revision 1.5  2004/01/30 02:56:34  bradley
 Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
 
@@ -438,7 +443,7 @@ DNS_LOCAL void
 			if( callback )
 			{
 				callback( DNSServiceDomainEnumerationReplyAddDomain, inEvent->data.addDomain.domain, 
-						  DNSServiceDiscoverReplyFlagsFinished, obj->context );
+						  0, obj->context );
 			}
 			break;
 		
@@ -448,7 +453,7 @@ DNS_LOCAL void
 			if( callback )
 			{
 				callback( DNSServiceDomainEnumerationReplyAddDomainDefault, inEvent->data.addDefaultDomain.domain, 
-						  DNSServiceDiscoverReplyFlagsFinished, obj->context );
+						  0, obj->context );
 			}
 			break;
 		
@@ -458,7 +463,7 @@ DNS_LOCAL void
 			if( callback )
 			{
 				callback( DNSServiceDomainEnumerationReplyRemoveDomain, inEvent->data.removeDomain.domain, 
-						  DNSServiceDiscoverReplyFlagsFinished, obj->context );
+						  0, obj->context );
 			}
 			break;
 		
@@ -559,7 +564,7 @@ DNS_LOCAL void
 						  inEvent->data.addService.name, 
 						  inEvent->data.addService.type, 
 						  inEvent->data.addService.domain, 
-						  DNSServiceDiscoverReplyFlagsFinished, 
+						  0, 
 						  obj->context );
 			}
 			break;
@@ -576,7 +581,7 @@ DNS_LOCAL void
 						  inEvent->data.removeService.name, 
 						  inEvent->data.removeService.type, 
 						  inEvent->data.removeService.domain, 
-						  DNSServiceDiscoverReplyFlagsFinished, 
+						  0d, 
 						  obj->context );
 			}
 			break;
@@ -679,7 +684,7 @@ DNS_LOCAL void
 			if( callback )
 			{
 				callback( (struct sockaddr *) &interfaceAddr, (struct sockaddr *) &addr, inEvent->data.resolved.textRecord, 
-						  DNSServiceDiscoverReplyFlagsFinished, obj->context );
+						  0, obj->context );
 			}
 			break;
 				

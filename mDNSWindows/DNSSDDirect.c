@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: DNSSDDirect.c,v $
+Revision 1.5  2004/05/06 18:42:58  ksekar
+General dns_sd.h API cleanup, including the following radars:
+<rdar://problem/3592068>: Remove flags with zero value
+<rdar://problem/3479569>: Passing in NULL causes a crash.
+
 Revision 1.4  2004/04/15 06:55:50  bradley
 Changed resolving to manually query for SRV and TXT records instead of using mDNS_StartResolveService.
 This avoids extra A/AAAA record queries and allows local-only resolves to work with normal services.
@@ -553,7 +558,7 @@ DNSServiceErrorType
 	
 	// Call back immediately with "local." since that is always available for all types of browsing.
 	
-	flags = kDNSServiceFlagsDefault | kDNSServiceFlagsAdd | kDNSServiceFlagsFinished;
+	flags = kDNSServiceFlagsDefault | kDNSServiceFlagsAdd;
 	inCallBack( obj, flags, inInterfaceIndex, kDNSServiceErr_NoError, "local.", inContext );
 	
 	// Success!
@@ -619,7 +624,7 @@ DEBUG_LOCAL void
 	obj = (DNSServiceRef) inQuestion->QuestionContext;
 	check( obj );
 	
-	flags = inAddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsRemove;
+	flags = inAddRecord ? kDNSServiceFlagsAdd : 0;
 	if( inAddRecord )
 	{
 		if( inQuestion == &obj->u.domain.defaultQuestion )
@@ -1234,7 +1239,7 @@ DEBUG_LOCAL void
 	obj = (DNSServiceRef) inQuestion->QuestionContext;
 	check( obj );
 
-	flags = inAddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsRemove;
+	flags = inAddRecord ? kDNSServiceFlagsAdd : 0;
 	interfaceIndex = mDNSPlatformInterfaceIndexfromInterfaceID( &gMDNS, inAnswer->InterfaceID );
 	
 	ok = DeconstructServiceName( &inAnswer->rdata->u.name, &name, &type, &domain );
@@ -1783,7 +1788,7 @@ DEBUG_LOCAL void
 	check( obj );
 	check( inAnswer );
 		
-	flags = inAddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsRemove;
+	flags = inAddRecord ? kDNSServiceFlagsAdd : 0;
 	interfaceIndex = mDNSPlatformInterfaceIndexfromInterfaceID( &gMDNS, inAnswer->InterfaceID );
 	ConvertDomainNameToCString( &inAnswer->name, name );
 	obj->u.query.callback( obj, flags, interfaceIndex, kDNSServiceErr_NoError, name, inAnswer->rrtype, inAnswer->rrclass, 
