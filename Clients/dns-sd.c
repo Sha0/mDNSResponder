@@ -488,7 +488,9 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 		ptr += *len;
 		}
 	
-	printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[-1], txt);
+	printf("Registering Service %s.%s%s", nam, typ, dom);
+	if (host && *host) printf(" host %s", host);
+	printf(" port %s %s\n", port, txt);
 	return(DNSServiceRegister(sdRef, 0, 0, nam, typ, dom, host, registerPort.NotAnInteger, ptr-txt, txt, reg_reply, NULL));
 	}
 
