@@ -225,7 +225,7 @@ enum
     kDNSServiceErr_NoAuth              = -65555,
     kDNSServiceErr_NoSuchKey           = -65556,
     kDNSServiceErr_NATTraversal        = -65557,
-    kDNSServiceErr_DblNAT              = -65558,
+    kDNSServiceErr_DoubleNAT           = -65558,
     kDNSServiceErr_BadTime             = -65559
     /* mDNS Error codes are in the range
      * FFFE FF00 (-65792) to FFFE FFFF (-65537) */

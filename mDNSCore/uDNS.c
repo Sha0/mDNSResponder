@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.165  2004/12/18 03:14:22  cheshire
+DblNAT -> DoubleNAT
+
 Revision 1.164  2004/12/17 03:55:40  ksekar
 Don't use -1 as special meaning for expiration timer (it is a valid
 value, and is redundant with our state variables)
@@ -1032,7 +1035,7 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 	if (IsPrivateV4Addr(&addr))
 		{
 		LogMsg("ReceiveNATAddrResponse: Double NAT");
-		err = mStatus_DblNAT;
+		err = mStatus_DoubleNAT;
 		goto end;
 		}
 	
@@ -2046,7 +2049,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				return;
 				}
 		case regState_UpdatePending:
-			// mDNS clients don't expect asyncronoud UpdateRecord errors, so we just log (rare) failures
+			// mDNS clients don't expect asyncronous UpdateRecord errors, so we just log (rare) failures
 			if (err) LogMsg("hndlServiceUpdateReply: error updating TXT record for service %##s", srs->RR_SRV.resrec.name->c);
 			info->state = regState_Registered;
 			SwapRData(m, &srs->RR_TXT, mDNStrue);  // deallocate old rdata
