@@ -221,8 +221,7 @@ mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 
 mDNSlocal void GetUserSpecifiedComputerName(domainlabel *const namelabel)
 	{
-	CFStringEncoding encoding = kCFStringEncodingUTF8;
-	CFStringRef cfs = SCDynamicStoreCopyComputerName(NULL, &encoding);
+	CFStringRef cfs = SCDynamicStoreCopyLocalHostName(NULL);
 	if (cfs)
 		{
 		CFStringGetPascalString(cfs, namelabel->c, sizeof(*namelabel), kCFStringEncodingUTF8);

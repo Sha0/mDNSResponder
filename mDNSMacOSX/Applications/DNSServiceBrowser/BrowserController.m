@@ -404,7 +404,7 @@ void resolve_reply (
 
     //NSLog(@"Received result %@ %@ %@ %d", name, resulttype, domain, type);
     
-    if (([domain isEqualToString:Domain] || [domain isEqualToString:@"local.arpa."]) && [resulttype isEqualToString:SrvType]) {
+    if (([domain isEqualToString:Domain] || [domain isEqualToString:@"local."]) && [resulttype isEqualToString:SrvType]) {
 
         if (type == DNSServiceBrowserReplyRemoveInstance) {
             if ([nameKeys containsObject:name]) {
