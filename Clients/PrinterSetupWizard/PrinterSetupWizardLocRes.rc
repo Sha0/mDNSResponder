@@ -142,7 +142,7 @@ BEGIN
     CONTROL         "",IDC_PRINTER_MANUFACTURER,"SysListView32",LVS_REPORT | 
                     LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_SORTASCENDING | 
                     LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,2,58,105,76
-    ICON            1017,1,0,0,20,27
+    ICON            1017,1,3,5,20,27
     LTEXT           "",IDC_PRINTER_NAME,40,5,173,8
     LTEXT           "The Bonjour Printer Wizard has auto-selected the following printer settings.  To continue installing this printer, click Next.",
                     IDC_PRINTER_SELECTION_TEXT,40,18,243,33
