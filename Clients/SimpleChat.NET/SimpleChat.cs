@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SimpleChat.cs,v $
+Revision 1.2  2004/07/19 22:08:53  shersche
+Fixed rdata->int conversion problem in QueryRecordReply
+
 Revision 1.1  2004/07/19 07:57:08  shersche
 Initial revision
 
@@ -458,7 +461,7 @@ namespace SimpleChat.NET
 		{
 			if (errorCode == DNSService.ErrorCode.NoError)
 			{
-				int bits					= BitConverter.ToInt32(rdata, 0);
+				uint bits					= BitConverter.ToUInt32(rdata, 0);
 				System.Net.IPAddress data	= new System.Net.IPAddress(bits);
 		
 				Invoke(resolveAddressCallback, new Object[]{data});
