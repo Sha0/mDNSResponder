@@ -872,6 +872,10 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
 			}
 		
+		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
+		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
+		// so any attempt to touch rr after this is likely to lead to a crash.
 		if (RecordType == kDNSRecordTypeShared && rr->Callback)
 			rr->Callback(m, rr, mStatus_MemFree);
 		else if (drt == mDNS_Dereg_conflict)
@@ -1717,7 +1721,14 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 		rr->AnnounceCount = DefaultAnnounceCountForRecordType(rr->RecordType);
 		debugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
 		if (!rr->Acknowledged && rr->Callback)	
-			{ rr->Acknowledged = mDNStrue; rr->Callback(m, rr, mStatus_NoError); }
+			{
+			// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+			// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
+			// Right now the only code that calls BuildProbe() is BuildQueryPacketProbes(), and that uses the "m->CurrentRecord"
+			// mechanism to protect against records being deleted out from under it.
+			rr->Acknowledged = mDNStrue;
+			rr->Callback(m, rr, mStatus_NoError);
+			}
 		}
 	else
 		{
@@ -2019,6 +2030,12 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 
 	rr->LastUsed = timenow;
 	rr->UseCount++;
+
+	// CAUTION: MUST NOT do anything more with q after calling q->Callback(), because the client's callback function
+	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
+	// Right now the only routines that call AnswerQuestionWithResourceRecord() are AnswerLocalQuestions() and
+	// AnswerNewQuestion(), and both of them use the "m->CurrentQuestion" mechanism to protect against questions
+	// being deleted out from under them.
 	if (q->Callback) q->Callback(m, q, rr);
 	}
 
@@ -3209,6 +3226,8 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 
 	debugf("FoundServiceInfoTXT: %##s GotADD=%d", &query->info->name, query->GotADD);
 
+	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
+	// callback function is allowed to do anything, including deleting this query and freeing its memory.
 	if (query->Callback && query->GotADD)
 		query->Callback(m, query);
 	}
@@ -3224,9 +3243,6 @@ mDNSlocal void FoundServiceInfoADD(mDNS *const m, DNSQuestion *question, const R
 
 	debugf("FoundServiceInfoADD: %##s GotTXT=%d", &query->info->name, query->GotTXT);
 
-	if (query->Callback && query->GotTXT)
-		query->Callback(m, query);
-
 	// If query->GotTXT is 1 that means we already got a single TXT answer but didn't
 	// deliver it to the client at that time, so no further action is required.
 	// If query->GotTXT is 2 that means we either got more than one TXT answer,
@@ -3237,6 +3253,11 @@ mDNSlocal void FoundServiceInfoADD(mDNS *const m, DNSQuestion *question, const R
 		mDNS_StopQuery_internal(m, &query->qTXT);
 		mDNS_StartQuery_internal(m, &query->qTXT, mDNSPlatformTimeNow());
 		}
+
+	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
+	// callback function is allowed to do anything, including deleting this query and freeing its memory.
+	if (query->Callback && query->GotTXT)
+		query->Callback(m, query);
 	}
 
 // On entry, the client must have set the name and InterfaceAddr fields of the ServiceInfo structure
@@ -3621,6 +3642,8 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 	// then we can now report the NameConflict to the client
 	if (result == mStatus_MemFree && sr->Conflict) result = mStatus_NameConflict;
 
+	// CAUTION: MUST NOT do anything more with sr after calling sr->Callback(), because the client's callback
+	// function is allowed to do anything, including deregistering this service and freeing its memory.
 	if (sr->Callback) sr->Callback(m, sr, result);
 	}
 
