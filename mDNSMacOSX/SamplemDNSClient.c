@@ -101,6 +101,15 @@ static int AddDNSServiceClientToRunLoop(dns_service_discovery_ref client)
 //*************************************************************************************************************
 // Sample callback functions for each of the operation types
 
+static void printtimestamp(void)
+	{
+	struct timeval tv;
+	struct tm tm;
+	gettimeofday(&tv, NULL);
+	localtime_r((time_t*)&tv.tv_sec, &tm);
+	printf("%d:%02d:%02d.%03d  ", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec/1000);
+	}
+
 #define DomainMsg(X) ((X) == DNSServiceDomainEnumerationReplyAddDomain        ? "Added"     :          \
                       (X) == DNSServiceDomainEnumerationReplyAddDomainDefault ? "(Default)" :          \
                       (X) == DNSServiceDomainEnumerationReplyRemoveDomain     ? "Removed"   : "Unknown")
@@ -109,6 +118,7 @@ static void regdom_reply(DNSServiceDomainEnumerationReplyResultType resultType, 
     DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
     (void)context; // Unused
+	printtimestamp();
 	printf("Recommended Registration Domain %s %s", replyDomain, DomainMsg(resultType));
 	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
@@ -118,6 +128,7 @@ static void browsedom_reply(DNSServiceDomainEnumerationReplyResultType resultTyp
     DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
     (void)context; // Unused
+	printtimestamp();
 	printf("Recommended Browsing Domain %s %s", replyDomain, DomainMsg(resultType));
 	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
@@ -129,6 +140,7 @@ static void browse_reply(DNSServiceBrowserReplyResultType resultType,
 	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Add" : "Rmv";
     (void)context; // Unused
 	if (num_printed++ == 0) printf("A/R Flags %-8s %-20s %s\n", "Domain", "Service Type", "Instance Name");
+	printtimestamp();
 	printf("%s%6X %-8s %-20s %s\n", op, flags, replyDomain, replyType, replyName);
 	}
 
@@ -141,11 +153,7 @@ static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, 
 	else
 		{
         const char *src = txtRecord;
-		struct timeval tv;
-		struct tm tm;
-		gettimeofday(&tv, NULL);
-		localtime_r((time_t*)&tv.tv_sec, &tm);
-		printf("%d:%02d:%02d.%06d ", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
+        printtimestamp();
 
         if (address->sa_family == AF_INET)
             {
