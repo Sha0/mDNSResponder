@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.29  2004/12/15 02:11:22  ksekar
+<rdar://problem/3917317> Don't check for Dynamic DNS hostname uniqueness
+
 Revision 1.28  2004/12/06 21:15:22  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -274,6 +277,8 @@ extern mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, const 
 extern mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end);
 
 extern mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr);
+
+extern  mDNSu8 *putDeleteRRSet(DNSMessage *msg, mDNSu8 *ptr, const domainname *name, mDNSu16 rrtype);
 
 extern mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domainname *name);
 	

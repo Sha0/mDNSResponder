@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.159  2004/12/15 02:11:22  ksekar
+<rdar://problem/3917317> Don't check for Dynamic DNS hostname uniqueness
+
 Revision 1.158  2004/12/15 02:04:28  ksekar
 Refinement to previous checkin - we should still return NatTraversal error  when the port mapping fails
 
@@ -1390,22 +1393,6 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		return;
 		}
 	
-	if (result == mStatus_NameConflict && rr->resrec.RecordType == kDNSRecordTypeUnique)
-		{
-		// if we get a name conflict, make sure our name/addr isn't already registered by re-registering
-		debugf("Name in use - retrying as type KnownUnique");
-		rr->resrec.RecordType = kDNSRecordTypeKnownUnique;
-		uDNS_RegisterRecord(m, rr);
-		return;
-		}
-	
-	if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
-		{
-		// we've already tried to re-register.  reset RecordType before returning RR to client
-		if (result == mStatus_NoSuchRecord)  // name is advertised for some other address
-			result = mStatus_NameConflict;
-		}
-	
 	if (result)
 		{
 		// don't unlink or free - we can retry when we get a new address/router
@@ -1513,7 +1500,7 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 			{
 			new = umalloc(sizeof(AuthRecord));
 			if (!new) { LogMsg("ERROR: UpdateHostnameRegistration - malloc"); return; }
-			mDNS_SetupResourceRecord(new, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeUnique, HostnameCallback, i);
+			mDNS_SetupResourceRecord(new, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeKnownUnique, HostnameCallback, i);
 			}
 
 		// setup new record
@@ -1553,7 +1540,7 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 	if (!new || !new->ar) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); goto exit; }
 	new->StatusCallback = StatusCallback;
 	new->StatusContext = StatusContext;
-	mDNS_SetupResourceRecord(new->ar, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeUnique, HostnameCallback, new);	
+	mDNS_SetupResourceRecord(new->ar, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeKnownUnique, HostnameCallback, new);	
 	AppendDomainName(&new->ar->resrec.name, fqdn);
 	new->next = u->Hostnames;
 	u->Hostnames = new;
@@ -3632,13 +3619,13 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	ptr = putZone(&msg, ptr, end, &regInfo->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 	if (!ptr) goto error;
 	
-	if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique || rr->uDNS_info.state == regState_Refresh)
+	if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
 	  {
-		// KnownUnique means the record must ALREADY exist, as does refresh
-		// prereq: record must exist (put record in prereq section w/ TTL 0)
-	    ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &rr->resrec, 0);
-		if (!ptr) goto error;
+	  // KnownUnique: Delete any previous value
+	  ptr = putDeleteRRSet(&msg, ptr, &rr->resrec.name, rr->resrec.rrtype);
+	  if (!ptr) goto error;
 	  }
+
 	else if (rr->resrec.RecordType != kDNSRecordTypeShared)
 		{
 		ptr = putPrereqNameNotInUse(&rr->resrec.name, &msg, ptr, end);
@@ -3780,9 +3767,9 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	
 	if (srs->uDNS_info.TestForSelfConflict)
 		{
-		// update w/ prereq that records already exist to make sure previous registration was ours
+		// update w/ prereq that SRV already exist to make sure previous registration was ours, and delete any stale TXT records
 		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0))) goto error;
-		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_TXT.resrec, 0))) goto error;
+		if (!(ptr = putDeleteRRSet(&msg, ptr, &srs->RR_TXT.resrec.name, srs->RR_TXT.resrec.rrtype)))       goto error;
 		}
 	
 	else if (srs->uDNS_info.state != regState_Refresh)

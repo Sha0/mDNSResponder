@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.75  2004/12/15 02:11:22  ksekar
+<rdar://problem/3917317> Don't check for Dynamic DNS hostname uniqueness
+
 Revision 1.74  2004/12/09 22:49:15  ksekar
 <rdar://problem/3913653> Wide-Area Goodbyes broken
 
@@ -1499,6 +1502,24 @@ mDNSexport mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecor
 	ptr = PutResourceRecordTTLJumbo(msg, ptr, &msg->h.mDNS_numUpdates, rr, 0);
 	rr->rrclass = origclass;
 	return ptr;
+	}
+
+mDNSexport mDNSu8 *putDeleteRRSet(DNSMessage *msg, mDNSu8 *ptr, const domainname *name, mDNSu16 rrtype)
+	{
+	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;;
+	mDNSu16 class = kDNSQClass_ANY;
+	
+	ptr = putDomainNameAsLabels(msg, ptr, limit, name);
+	if (!ptr || ptr + 10 >= limit) return mDNSNULL;	// If we're out-of-space, return mDNSNULL
+	ptr[0] = (mDNSu8)(rrtype  >> 8);
+	ptr[1] = (mDNSu8)(rrtype  &  0xFF);
+	ptr[2] = (mDNSu8)(class >> 8);
+	ptr[3] = (mDNSu8)(class &  0xFF);
+	ptr[4] = ptr[5] = ptr[6] = ptr[7] = 0; // zero ttl
+	ptr[8] = ptr[9] = 0; // zero rdlength/rdata
+
+	msg->h.mDNS_numUpdates++;
+	return ptr + 10;
 	}
 
 // for dynamic updates
