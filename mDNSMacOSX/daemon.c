@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.211  2004/11/23 05:00:41  cheshire
+<rdar://problem/3874629> Name conflict log message should not have ".local" appended
+
 Revision 1.210  2004/11/03 03:45:17  cheshire
 <rdar://problem/3863627> mDNSResponder does not inform user of Computer Name collisions
 
@@ -2235,13 +2238,13 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 			{
 			if (!SameDomainLabel(m->p->usernicelabel.c, m->nicelabel.c))
 				{
-				LogMsg("Updating persistent Computer name from %#s.local %#s.local", m->p->usernicelabel.c, m->nicelabel.c);
+				LogMsg("Updating Computer Name from \"%#s\" to \"%#s\"", m->p->usernicelabel.c, m->nicelabel.c);
 				RecordUpdatedName(m, &m->p->usernicelabel, &m->nicelabel, CFSTR("Computer Name Already In Use"), "This machine’s Computer Name ", "");
 				m->p->NotifyUser = 0;	// Clear m->p->NotifyUser here -- even if the hostlabel has changed too, we don't want to bug the user with *two* alerts
 				}
 			if (!SameDomainLabel(m->p->userhostlabel.c, m->hostlabel.c))
 				{
-				LogMsg("Updating persistent Local Hostname from %#s.local %#s.local", m->p->userhostlabel.c, m->hostlabel.c);
+				LogMsg("Updating Local Hostname from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
 				RecordUpdatedName(m, &m->p->userhostlabel, &m->hostlabel, CFSTR("Local Hostname Already In Use"), "This computer’s Local Hostname ", ".local");
 				}
 			m->p->NotifyUser = 0;
