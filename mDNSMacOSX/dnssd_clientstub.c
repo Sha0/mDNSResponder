@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.10  2003/10/13 23:50:53  ksekar
+Updated dns_sd clientstub files to bring copies in synch with
+top-of-tree Libinfo:  A memory leak in dnssd_clientstub.c is fixed,
+and comments in dns_sd.h are improved.
+
 Revision 1.9  2003/08/15 21:30:39  cheshire
 Bring up to date with LibInfo version
 
@@ -35,6 +40,10 @@ Update to APSL 2.0
  */
 
 #include "dnssd_ipc.h"
+#include <errno.h>
+#include <sys/time.h>
+
+
 
 #define CTL_PATH_PREFIX "/tmp/dnssd_clippath."
 // error socket (if needed) is named "dnssd_clipath.[pid].xxx:n" where xxx are the
@@ -63,7 +72,7 @@ typedef struct _DNSServiceRef_t
     void *app_callback;
     void *app_context;
     uint32_t max_index;  //largest assigned record index - 0 if no additl. recs registered
-    } _DNSServiceRef_t;
+    } _DNSServiceRef_t;			
 
 typedef struct _DNSRecordRef_t
     {
@@ -102,7 +111,8 @@ DNSServiceErrorType DNSServiceProcessResult(DNSServiceRef sdRef)
     if (my_read(sdRef->sockfd, data, hdr.datalen) < 0) 
         return kDNSServiceErr_Unknown;
     sdRef->process_reply(sdRef, &hdr, data);
-    return kDNSServiceErr_Unknown;
+    free(data);
+    return kDNSServiceErr_NoError;
     }
 
 
@@ -116,14 +126,14 @@ void DNSServiceRefDeallocate(DNSServiceRef sdRef)
 
 DNSServiceErrorType DNSServiceResolve
     (
-    DNSServiceRef                       *sdRef,
+    DNSServiceRef                  	*sdRef,
     const DNSServiceFlags               flags,
     const uint32_t                      interfaceIndex,
-    const char                          *name,
-    const char                          *regtype,
-    const char                          *domain,
+    const char                         	*name,
+    const char                         	*regtype,
+    const char                         	*domain,
     const DNSServiceResolveReply        callBack,
-    void                                *context
+    void                               	*context
     )
     {
     char *msg = NULL, *ptr;
@@ -185,7 +195,7 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
     DNSServiceErrorType err;
     char *txtrecord;
     
-    (void)hdr;          //unused
+    (void)hdr; 		//unused
     
     flags = get_flags(&data);
     ifi = get_long(&data);
@@ -204,14 +214,14 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
 
 DNSServiceErrorType DNSServiceQueryRecord
 (
- DNSServiceRef                          *sdRef,
- const DNSServiceFlags                   flags,
- const uint32_t                         interfaceIndex,
- const char                             *name,
- const uint16_t                         rrtype,
- const uint16_t                         rrclass,
- const DNSServiceQueryRecordReply       callBack,
- void                                   *context
+ DNSServiceRef       	         	*sdRef,
+ const DNSServiceFlags		         flags,
+ const uint32_t                      	interfaceIndex,
+ const char                   		*name,
+ const uint16_t                      	rrtype,
+ const uint16_t                      	rrclass,
+ const DNSServiceQueryRecordReply     	callBack,
+ void                               	*context
  )
     {
     char *msg = NULL, *ptr;
@@ -354,7 +364,7 @@ static void handle_browse_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *da
     uint32_t                      interfaceIndex;
     DNSServiceErrorType      errorCode;
     char replyName[256], replyType[256], replyDomain[256];
-        (void)hdr;//Unused
+	(void)hdr;//Unused
 
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
@@ -443,7 +453,7 @@ DNSServiceErrorType DNSServiceRegister
     
 error:
     if (msg) free(msg);
-    if (*sdRef)         { free(*sdRef);  *sdRef = NULL; }
+    if (*sdRef) 	{ free(*sdRef);  *sdRef = NULL; }
     return kDNSServiceErr_Unknown;
     }
 
@@ -454,7 +464,7 @@ static void handle_regservice_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char
     uint32_t interfaceIndex;
     DNSServiceErrorType errorCode;
     char name[256], regtype[256], domain[256];
-        (void)hdr;//Unused
+	(void)hdr;//Unused
 
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
@@ -523,7 +533,7 @@ static void handle_enumeration_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, cha
     uint32_t interfaceIndex;
     DNSServiceErrorType err;
     char domain[256];
-        (void)hdr;//Unused
+	(void)hdr;//Unused
 
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
@@ -567,18 +577,18 @@ static void handle_regrecord_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char 
 
 DNSServiceErrorType DNSServiceRegisterRecord
 (
- const DNSServiceRef                    sdRef,
- DNSRecordRef                           *RecordRef,  
- const DNSServiceFlags                  flags,
- const uint32_t                         interfaceIndex,
- const char                             *fullname,
- const uint16_t                         rrtype,
- const uint16_t                         rrclass,
- const uint16_t                         rdlen,
- const void                             *rdata,
- const uint32_t                         ttl,
- const DNSServiceRegisterRecordReply    callBack,
- void                                   *context
+ const DNSServiceRef            	sdRef,
+ DNSRecordRef                 		*RecordRef,  
+ const DNSServiceFlags      	        flags,
+ const uint32_t                      	interfaceIndex,
+ const char                         	*fullname,
+ const uint16_t                      	rrtype,
+ const uint16_t                      	rrclass,
+ const uint16_t                      	rdlen,
+ const void                         	*rdata,
+ const uint32_t                      	ttl,
+ const DNSServiceRegisterRecordReply  	callBack,
+ void                               	*context
  )
     {
     char *msg = NULL, *ptr;
@@ -631,13 +641,13 @@ error:
 //sdRef returned by DNSServiceRegister()
 DNSServiceErrorType DNSServiceAddRecord
     (
-    const DNSServiceRef                 sdRef,
-    DNSRecordRef                        *RecordRef,
+    const DNSServiceRef	                sdRef,
+    DNSRecordRef			*RecordRef,
     const DNSServiceFlags               flags,
-    const uint16_t                      rrtype,
-    const uint16_t                      rdlen,
-    const void                          *rdata,
-    const uint32_t                      ttl
+    const uint16_t			rrtype,
+    const uint16_t			rdlen,
+    const void				*rdata,
+    const uint32_t			ttl
     )
     {
     ipc_msg_hdr *hdr;
@@ -684,12 +694,12 @@ error:
 //DNSRecordRef returned by DNSServiceRegisterRecord or DNSServiceAddRecord
 DNSServiceErrorType DNSServiceUpdateRecord
     (
-    const DNSServiceRef                 sdRef,
-    DNSRecordRef                        RecordRef,
+    const DNSServiceRef         	sdRef,
+    DNSRecordRef			RecordRef,
     const DNSServiceFlags               flags,
-    const uint16_t                      rdlen,
-    const void                          *rdata,
-    const uint32_t                      ttl
+    const uint16_t			rdlen,
+    const void				*rdata,
+    const uint32_t			ttl
     )
     {
     ipc_msg_hdr *hdr;
@@ -719,7 +729,7 @@ DNSServiceErrorType DNSServiceUpdateRecord
 DNSServiceErrorType DNSServiceRemoveRecord
 (
  const DNSServiceRef            sdRef,
- const DNSRecordRef             RecordRef,
+ const DNSRecordRef            	RecordRef,
  const DNSServiceFlags          flags
  )
     {
@@ -800,12 +810,12 @@ int DNSServiceConstructFullName
         while(*s)
             {
             c = *s++;
-            if (c == '.' || (c == '\\')) *fn++ = '\\';          // escape dot and backslash literals
-            else if (c <= ' ')                                  // escape non-printable characters
+            if (c == '.' || (c == '\\')) *fn++ = '\\';		// escape dot and backslash literals
+            else if (c <= ' ')					// escape non-printable characters
                 {
                 *fn++ = '\\';
-                *fn++ = (char) ('0' + (c / 100));
-                *fn++ = (char) ('0' + (c / 10) % 10);
+		*fn++ = (char) ('0' + (c / 100));
+		*fn++ = (char) ('0' + (c / 10) % 10);
                 c = (u_char)('0' + (c % 10));
                 }
                 *fn++ = c;
@@ -816,7 +826,7 @@ int DNSServiceConstructFullName
     if (!regtype) return -1;
     len = strlen(regtype);
     if (domain_ends_in_dot(regtype)) len--;
-    if (len < 4) return -1;                                     // regtype must end in _udp or _tcp
+    if (len < 4) return -1;					// regtype must end in _udp or _tcp
     if (strncmp((regtype + len - 4), "_tcp", 4) && strncmp((regtype + len - 4), "_udp", 4)) return -1;
     while(*r)
         *fn++ = *r++;                                                                                                                                                                                        
@@ -826,7 +836,7 @@ int DNSServiceConstructFullName
     len = strlen(domain);
     if (!len) return -1;
     while(*d) 
-        *fn++ = *d++;                                           
+        *fn++ = *d++;						
     if (!domain_ends_in_dot(domain)) *fn++ = '.';
     *fn = '\0';
     return 0;
@@ -836,12 +846,12 @@ static int domain_ends_in_dot(const char *dom)
     {
     while(*dom && *(dom + 1))
         {
-        if (*dom == '\\')       // advance past escaped byte sequence
-            {           
+        if (*dom == '\\')	// advance past escaped byte sequence
+            {		
             if (*(dom + 1) >= '0' && *(dom + 1) <= '9') dom += 4;
             else dom += 2;
             }
-        else dom++;             // else read one character
+        else dom++;		// else read one character
         }
         return (*dom == '.');
     }
@@ -858,19 +868,19 @@ static DNSServiceRef connect_to_server(void)
     if (!sdr) return NULL;
 
     if ((sdr->sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
-        {
+  	{
         free(sdr);
         return NULL;
-        }
+  	}
 
     saddr.sun_family = AF_LOCAL;
     strcpy(saddr.sun_path, MDNS_UDS_SERVERPATH);
     if (connect(sdr->sockfd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
-        {
+  	{
         free(sdr);
         return NULL;
-        }
-    return sdr; 
+  	}
+    return sdr;	
     }
 
 
@@ -910,15 +920,15 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
 
         bzero(&caddr, sizeof(caddr));
         caddr.sun_family = AF_LOCAL;
-        caddr.sun_len = sizeof(struct sockaddr_un);
-        path = (char *)msg + sizeof(ipc_msg_hdr);
+	caddr.sun_len = sizeof(struct sockaddr_un);
+	path = (char *)msg + sizeof(ipc_msg_hdr);
         strcpy(caddr.sun_path, path);
         mask = umask(0);
         if (bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr)) < 0)
-          {
-            umask(mask);
+	  {
+	    umask(mask);
             goto cleanup;
-          }
+	  }
         umask(mask);
         listen(listenfd, 1);
         }
@@ -943,7 +953,7 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
         }
 cleanup:
     if (!reuse_sd && listenfd > 0) close(listenfd);
-    if (!reuse_sd && errsd > 0) close(errsd);   
+    if (!reuse_sd && errsd > 0) close(errsd);	
     if (!reuse_sd && path) unlink(path);
     if (msg) free(msg);
     return err;
@@ -971,9 +981,9 @@ static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start, int reuse_so
 
     if (!reuse_socket)
         {
-        if (gettimeofday(&time, NULL) < 0) return NULL;
-        sprintf(ctrl_path, "%s%d-%.3x-%.6u", CTL_PATH_PREFIX, (int)getpid(), 
-                time.tv_sec & 0xFFF, time.tv_usec);
+	  if (gettimeofday(&time, NULL) < 0) return NULL;
+	  sprintf(ctrl_path, "%s%d-%.3x-%.6u", CTL_PATH_PREFIX, (int)getpid(), 
+		  time.tv_sec & 0xFFF, time.tv_usec);
 
         *len += strlen(ctrl_path) + 1;
         }

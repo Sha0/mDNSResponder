@@ -23,12 +23,16 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.4  2003/10/13 23:50:53  ksekar
+Updated dns_sd clientstub files to bring copies in synch with
+top-of-tree Libinfo:  A memory leak in dnssd_clientstub.c is fixed,
+and comments in dns_sd.h are improved.
+
 Revision 1.3  2003/08/12 19:51:51  cheshire
 Update to APSL 2.0
 
 
  */
-
 #ifndef _DNS_SD_H
 #define _DNS_SD_H
 
@@ -175,10 +179,20 @@ DNSServiceErrorType DNSServiceProcessResult(DNSServiceRef sdRef);
  *
  * Terminate a connection with the daemon and free memory associated with the DNSServiceRef.
  * Any services or records registered with this DNSServiceRef will be deregistered. Any
- * Browse, Resolve, or Query operations called with this reference will be terminated.  If the 
- * reference's underlying socket is used in a run loop or select() call, it should be removed BEFORE
- * DNSServiceRefDeallocate() is called, as this function closes the reference's socket. 
+ * Browse, Resolve, or Query operations called with this reference will be terminated.  
  *
+ * Note: If the reference's underlying socket is used in a run loop or select() call, it should 
+ * be removed BEFORE DNSServiceRefDeallocate() is called, as this function closes the reference's 
+ * socket. 
+ *
+ * Note: If the reference was initialized with DNSServiceCreateConnection(), any DNSRecordRefs
+ * created via this reference will be invalidated by this call - the resource records are 
+ * deregistered, and their DNSRecordRefs may not be used in subsequent functions.  Similarly,
+ * if the reference was initialized with DNSServiceRegister, and an extra resource record was
+ * added to the service via DNSServiceAddRecord(), the DNSRecordRef created by the Add() call 
+ * is invalidated when this function is called - the DNSRecordRef may not be used in subsequent
+ * functions.
+ * 
  * Note: This call is to be used only with the DNSServiceRef defined by this API.  It is
  * not compatible with dns_service_discovery_ref objects defined in the legacy Mach-based 
  * DNSServiceDiscovery.h API.
@@ -408,6 +422,8 @@ DNSServiceErrorType DNSServiceRegister
  * 
  * RecordRef:       A pointer to an uninitialized DNSRecordRef.  Upon succesfull completion of this 
  *                  call, this ref may be passed to DNSServiceUpdateRecord() or DNSServiceRemoveRecord().
+ *                  If the above DNSServiceRef is passed to DNSServiceRefDeallocate(), RecordRef is also
+ *                  invalidated and may not be used further.
  *
  * flags:           Currently ignored, reserved for future use.
  *
@@ -610,8 +626,7 @@ DNSServiceErrorType DNSServiceBrowse
  *
  * sdRef:           The DNSServiceRef initialized by DNSServiceResolve().
  *
- * flags:           Possible values are MoreComing and Add/Remove.  See flag definitions
- *                  for details.
+ * flags:           Currently unused, reserved for future use.
  *
  * interfaceIndex:  The interface on which the service was resolved.   
  *
@@ -791,7 +806,9 @@ DNSServiceErrorType DNSServiceCreateConnection(DNSServiceRef *sdRef);
  * sdRef:           The connected DNSServiceRef initialized by
  *                  DNSServiceDiscoveryConnect().
  * 
- * RecordRef:       The DNSRecordRef initialized by DNSServiceRegisterRecord().
+ * RecordRef:       The DNSRecordRef initialized by DNSServiceRegisterRecord().  If the above
+ *                  DNSServiceRef is passed to DNSServiceRefDeallocate(), this DNSRecordRef is
+ *                  invalidated, and may not be used further.
  *
  * flags:           Currently unused, reserved for future use.
  *
