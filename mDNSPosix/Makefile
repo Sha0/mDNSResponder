@@ -9,14 +9,22 @@ else
 ifeq ($(os),linux)
 CFLAGS_OS = -DHAVE_DAEMON -DHAVE_SOCKLEN_T
 else
+ifeq ($(os),netbsd)
+CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_SOCKLEN_T
+else
+ifeq ($(os),freebsd)
+CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_SOCKLEN_T
+else
 ifeq ($(os),openbsd)
 CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_SOCKLEN_T -DHAVE_BROKEN_RECVDSTADDR
 else
 ifeq ($(os),osx)
-CFLAGS_OS = -no-cpp-precomp -Wall -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON
+CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -Wall -no-cpp-precomp
 else
 cantbuild:
 	echo "Error: Must specify target OS on command-line, e.g. \"make os=osx\" or \"make os=linux\""
+endif
+endif
 endif
 endif
 endif
