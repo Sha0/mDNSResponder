@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.23  2005/01/31 23:54:30  shersche
+<rdar://problem/3947508> Start browsing when printer wizard starts. Move browsing logic from CSecondPage object to CPrinterSetupWizardSheet object.
+
 Revision 1.22  2005/01/25 18:49:43  shersche
 Get icon resources from resource DLL
 
@@ -127,7 +130,8 @@ First checked in
 
 // Private Messages
 
-#define WM_PROCESS_EVENT	( WM_USER + 0x100 )
+#define WM_SOCKET_EVENT		( WM_USER + 0x100 )
+#define WM_PROCESS_EVENT	( WM_USER + 0x101 )
 
 
 // CPrinterSetupWizardSheet
@@ -138,7 +142,10 @@ CPrinterSetupWizardSheet::CPrinterSetupWizardSheet(UINT nIDCaption, CWnd* pParen
 	:CPropertySheet(nIDCaption, pParentWnd, iSelectPage),
 	m_selectedPrinter(NULL),
 	m_driverThreadExitCode( 0 ),
-	m_driverThreadFinished( false )
+	m_driverThreadFinished( false ),
+	m_pdlBrowser( NULL ),
+	m_ippBrowser( NULL ),
+	m_lprBrowser( NULL )
 {
 	m_arrow		=	LoadCursor(0, IDC_ARROW);
 	m_wait		=	LoadCursor(0, IDC_APPSTARTING);
@@ -146,15 +153,21 @@ CPrinterSetupWizardSheet::CPrinterSetupWizardSheet(UINT nIDCaption, CWnd* pParen
 	m_self		=	this;
 	
 	Init();
+
+	LoadPrinterNames();
 }
 
 
 CPrinterSetupWizardSheet::~CPrinterSetupWizardSheet()
 {
-	if ( m_selectedPrinter != NULL )
+	Printer * printer;
+
+	while ( m_printers.size() > 0 )
 	{
-		delete m_selectedPrinter;
-		m_selectedPrinter = NULL;
+		printer = m_printers.front();
+		m_printers.pop_front();
+
+		delete printer;
 	}
 
 	m_self = NULL;
@@ -174,6 +187,60 @@ CPrinterSetupWizardSheet::SetSelectedPrinter(Printer * printer)
 
 	m_selectedPrinter = printer;
 }
+
+
+OSStatus
+CPrinterSetupWizardSheet::LoadPrinterNames()
+{
+	PBYTE		buffer	=	NULL;
+	OSStatus	err		= 0;
+
+	//
+	// rdar://problem/3701926 - Printer can't be installed twice
+	//
+	// First thing we want to do is make sure the printer isn't already installed.
+	// If the printer name is found, we'll try and rename it until we
+	// find a unique name
+	//
+	DWORD dwNeeded = 0, dwNumPrinters = 0;
+
+	BOOL ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, NULL, 0, &dwNeeded, &dwNumPrinters);
+	err = translate_errno( ok, errno_compat(), kUnknownErr );
+
+	if ((err == ERROR_INSUFFICIENT_BUFFER) && (dwNeeded > 0))
+	{
+		try
+		{
+			buffer = new unsigned char[dwNeeded];
+		}
+		catch (...)
+		{
+			buffer = NULL;
+		}
+	
+		require_action( buffer, exit, kNoMemoryErr );
+		ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, buffer, dwNeeded, &dwNeeded, &dwNumPrinters);
+		err = translate_errno( ok, errno_compat(), kUnknownErr );
+		require_noerr( err, exit );
+
+		for (DWORD index = 0; index < dwNumPrinters; index++)
+		{
+			PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
+
+			m_printerNames[lppi4->pPrinterName] = lppi4->pPrinterName;
+		}
+	}
+
+exit:
+
+	if (buffer != NULL)
+	{
+		delete [] buffer;
+	}
+
+	return err;
+}
+
 
 
 // ------------------------------------------------------
@@ -436,6 +503,7 @@ exit:
 
 
 BEGIN_MESSAGE_MAP(CPrinterSetupWizardSheet, CPropertySheet)
+ON_MESSAGE( WM_SOCKET_EVENT, OnSocketEvent )
 ON_MESSAGE( WM_PROCESS_EVENT, OnProcessEvent )
 ON_WM_SETCURSOR()
 ON_WM_TIMER()
@@ -468,7 +536,38 @@ BOOL CPrinterSetupWizardSheet::OnCommand(WPARAM wParam, LPARAM lParam)
 //	
 BOOL CPrinterSetupWizardSheet::OnInitDialog()
 {
+	OSStatus err;
+	
 	CPropertySheet::OnInitDialog();
+
+	err = StartBrowse();
+	require_noerr( err, exit );
+
+exit:
+
+	if ( err )
+	{
+		StopBrowse();
+
+		if ( err == kDNSServiceErr_Firewall )
+		{
+			CString text, caption;
+
+			text.LoadString( IDS_FIREWALL );
+			caption.LoadString( IDS_FIREWALL_CAPTION );
+
+			MessageBox(text, caption, MB_OK|MB_ICONEXCLAMATION);
+		}
+		else
+		{
+			CPrinterSetupWizardSheet::WizardException exc;
+			
+			exc.text.LoadString( IDS_NO_MDNSRESPONDER_SERVICE_TEXT );
+			exc.caption.LoadString( IDS_ERROR_CAPTION );
+			
+			throw(exc);
+		}
+	}
 
 	return TRUE;
 }
@@ -532,6 +631,8 @@ CPrinterSetupWizardSheet::OnOK()
 
 		MessageBox(message, caption, MB_OK|MB_ICONEXCLAMATION);
 	}
+
+	StopBrowse();
 }
 
 
@@ -553,6 +654,39 @@ void CPrinterSetupWizardSheet::Init(void)
 	m_psh.hInstance = GetNonLocalizedResources();
 
 	SetWizardMode();
+}
+
+
+LONG
+CPrinterSetupWizardSheet::OnSocketEvent(WPARAM inWParam, LPARAM inLParam)
+{
+	if (WSAGETSELECTERROR(inLParam) && !(HIWORD(inLParam)))
+    {
+		dlog( kDebugLevelError, "OnServiceEvent: window error\n" );
+    }
+    else
+    {
+		SOCKET sock = (SOCKET) inWParam;
+
+		// iterate thru list
+		ServiceRefList::iterator begin = m_serviceRefList.begin();
+		ServiceRefList::iterator end   = m_serviceRefList.end();
+
+		while (begin != end)
+		{
+			DNSServiceRef ref = *begin++;
+
+			check(ref != NULL);
+
+			if ((SOCKET) DNSServiceRefSockFD(ref) == sock)
+			{
+				DNSServiceProcessResult(ref);
+				break;
+			}
+		}
+	}
+
+	return ( 0 );
 }
 
 
@@ -633,3 +767,892 @@ exit:
 
 	return 0;
 }
+
+
+void DNSSD_API
+CPrinterSetupWizardSheet::OnBrowse(
+							DNSServiceRef 			inRef,
+							DNSServiceFlags 		inFlags,
+							uint32_t 				inInterfaceIndex,
+							DNSServiceErrorType 	inErrorCode,
+							const char *			inName,	
+							const char *			inType,	
+							const char *			inDomain,	
+							void *					inContext )
+{
+	DEBUG_UNUSED(inRef);
+
+	CPrinterSetupWizardSheet	*	self;
+	bool							moreComing = (bool) (inFlags & kDNSServiceFlagsMoreComing);
+	CPropertyPage				*	active;
+	Printer						*	printer = NULL;
+	Service						*	service = NULL;
+	OSStatus						err = kNoErr;
+
+	require_noerr( inErrorCode, exit );
+	
+	self = reinterpret_cast <CPrinterSetupWizardSheet*>( inContext );
+	require_quiet( self, exit );
+
+	active = self->GetActivePage();
+	require_quiet( active, exit );
+
+	// Have we seen this printer before?
+
+	printer = self->Lookup( inName );
+
+	if ( printer )
+	{
+		service = printer->LookupService( inType );
+	}
+
+	if ( inFlags & kDNSServiceFlagsAdd )
+	{
+		if (printer == NULL)
+		{
+			// If not, then create a new one
+
+			printer = self->OnAddPrinter( inInterfaceIndex, inName, inType, inDomain, moreComing );
+			require_action( printer, exit, err = kUnknownErr );
+		}
+
+		if ( !service )
+		{
+			err = self->OnAddService( printer, inInterfaceIndex, inName, inType, inDomain );
+			require_noerr( err, exit );
+		}
+		else
+		{
+			service->refs++;
+		}
+	}
+	else if ( printer )
+	{
+		check( service );
+
+		err = self->OnRemoveService( service );
+		require_noerr( err, exit );
+
+		if ( printer->services.size() == 0 )
+		{
+			err = self->OnRemovePrinter( printer, moreComing );
+			require_noerr( err, exit );
+		}
+	}
+
+exit:
+	
+	return;
+}
+
+
+void DNSSD_API
+CPrinterSetupWizardSheet::OnResolve(
+								DNSServiceRef			inRef,
+								DNSServiceFlags			inFlags,
+								uint32_t				inInterfaceIndex,
+								DNSServiceErrorType		inErrorCode,
+								const char *			inFullName,	
+								const char *			inHostName, 
+								uint16_t 				inPort,
+								uint16_t 				inTXTSize,
+								const char *			inTXT,
+								void *					inContext )
+{
+	DEBUG_UNUSED(inFullName);
+	DEBUG_UNUSED(inInterfaceIndex);
+	DEBUG_UNUSED(inFlags);
+	DEBUG_UNUSED(inRef);
+
+	CPrinterSetupWizardSheet	*	self;
+	Service						*	service;
+	Queue						*	q;
+	bool							qtotalDefined = false;
+	uint32_t						qpriority = kDefaultPriority;
+	CString							qname;
+	int								idx;
+	OSStatus						err;
+
+	require_noerr( inErrorCode, exit );
+
+	service = reinterpret_cast<Service*>( inContext );
+	require_quiet( service, exit);
+
+	check( service->refs != 0 );
+
+	self = service->printer->window;
+	require_quiet( self, exit );
+
+	err = self->StopOperation( service->serviceRef );
+	require_noerr( err, exit );
+	
+	//
+	// hold on to the hostname...
+	//
+	err = UTF8StringToStringObject( inHostName, service->hostname );
+	require_noerr( err, exit );
+
+	//
+	// <rdar://problem/3739200> remove the trailing dot on hostname
+	//
+	idx = service->hostname.ReverseFind('.');
+
+	if ((idx > 1) && ((service->hostname.GetLength() - 1) == idx))
+	{
+		service->hostname.Delete(idx, 1);
+	}
+
+	//
+	// hold on to the port
+	//
+	service->portNumber = ntohs(inPort);
+
+	//
+	// parse the text record.
+	//
+
+	err = self->ParseTextRecord( service, inTXTSize, inTXT, qtotalDefined, qname, qpriority );
+	require_noerr( err, exit );
+
+	if ( service->qtotal == 1 )
+	{	
+		//
+		// create a new queue
+		//
+		try
+		{
+			q = new Queue;
+		}
+		catch (...)
+		{
+			q = NULL;
+		}
+
+		require_action( q, exit, err = E_OUTOFMEMORY );
+
+		if ( qtotalDefined )
+		{
+			q->name = qname;
+		}
+
+		q->priority = qpriority;
+		
+		service->queues.push_back( q );
+
+		//
+		// we've completely resolved this service
+		//
+
+		self->OnResolveService( service );
+	}
+	else
+	{
+		//
+		// if qtotal is more than 1, then we need to get additional
+		// text records.  if not, then this service is considered
+		// resolved
+		//
+
+		err = DNSServiceQueryRecord(&service->serviceRef, 0, inInterfaceIndex, inFullName, kDNSServiceType_TXT, kDNSServiceClass_IN, OnQuery, (void*) service );
+		require_noerr( err, exit );
+
+		err = self->StartOperation( service->serviceRef );
+		require_noerr( err, exit );
+	}
+
+exit:
+
+	return;
+}
+
+
+void DNSSD_API
+CPrinterSetupWizardSheet::OnQuery(
+							DNSServiceRef		inRef, 
+							DNSServiceFlags		inFlags, 
+							uint32_t			inInterfaceIndex, 
+							DNSServiceErrorType inErrorCode,
+							const char		*	inFullName, 
+							uint16_t			inRRType, 
+							uint16_t			inRRClass, 
+							uint16_t			inRDLen, 
+							const void		*	inRData, 
+							uint32_t			inTTL, 
+							void			*	inContext)
+{
+	DEBUG_UNUSED( inTTL );
+	DEBUG_UNUSED( inRRClass );
+	DEBUG_UNUSED( inRRType );
+	DEBUG_UNUSED( inFullName );
+	DEBUG_UNUSED( inInterfaceIndex );
+	DEBUG_UNUSED( inRef );
+
+	Service						*	service = NULL;
+	Queue						*	q;
+	CPrinterSetupWizardSheet	*	self;
+	bool							qtotalDefined = false;
+	OSStatus						err = kNoErr;
+
+	require_noerr( inErrorCode, exit );
+
+	service = reinterpret_cast<Service*>( inContext );
+	require_quiet( service, exit);
+
+	self = service->printer->window;
+	require_quiet( self, exit );
+
+	if ( ( inFlags & kDNSServiceFlagsAdd ) && ( inRDLen > 0 ) && ( inRData != NULL ) )
+	{
+		const char * inTXT = ( const char * ) inRData;
+
+		//
+		// create a new queue
+		//
+		try
+		{
+			q = new Queue;
+		}
+		catch (...)
+		{
+			q = NULL;
+		}
+
+		require_action( q, exit, err = E_OUTOFMEMORY );
+
+		err = service->printer->window->ParseTextRecord( service, inRDLen, inTXT, qtotalDefined, q->name, q->priority );
+		require_noerr( err, exit );
+
+		if ( !qtotalDefined )
+		{
+			q->name = L"";
+		}
+
+		//
+		// add this queue
+		//
+
+		service->queues.push_back( q );
+
+		if ( service->queues.size() == service->qtotal )
+		{
+			//
+			// else if moreComing is not set, then we're going
+			// to assume that we're done
+			//
+
+			self->StopOperation( service->serviceRef );
+
+			//
+			// sort the queues
+			//
+
+			service->queues.sort( OrderQueueFunc );
+
+			//
+			// we've completely resolved this service
+			//
+
+			self->OnResolveService( service );
+		}
+	}
+
+exit:
+
+	if ( err && service && ( service->serviceRef != NULL ) )
+	{
+		service->printer->window->StopOperation( service->serviceRef );
+	}
+
+	return;
+}
+
+
+Printer*
+CPrinterSetupWizardSheet::OnAddPrinter(
+								uint32_t 		inInterfaceIndex,
+								const char *	inName,	
+								const char *	inType,	
+								const char *	inDomain,
+								bool			moreComing)
+{
+	Printer	*	printer = NULL;
+	DWORD		printerNameCount;
+	OSStatus	err;
+
+	DEBUG_UNUSED( inInterfaceIndex );
+	DEBUG_UNUSED( inType );
+	DEBUG_UNUSED( inDomain );
+
+	try
+	{
+		printer = new Printer;
+	}
+	catch (...)
+	{
+		printer = NULL;
+	}
+
+	require_action( printer, exit, err = E_OUTOFMEMORY );
+
+	printer->window		=	this;
+	printer->name		=	inName;
+	
+	err = UTF8StringToStringObject(inName, printer->displayName);
+	check_noerr( err );
+	printer->actualName	=	printer->displayName;
+	printer->installed	=	false;
+	printer->deflt		=	false;
+	printer->resolving	=	0;
+
+	// Compare this name against printers that are already installed
+	// to avoid name clashes.  Rename as necessary
+	// to come up with a unique name.
+
+	printerNameCount = 2;
+
+	for (;;)
+	{
+		CPrinterSetupWizardSheet::PrinterNameMap::iterator it;
+
+		it = m_printerNames.find(printer->actualName);
+
+		if (it != m_printerNames.end())
+		{
+			printer->actualName.Format(L"%s (%d)", printer->displayName, printerNameCount);
+		}
+		else
+		{
+			break;
+		}
+
+		printerNameCount++;
+	}
+
+	m_printers.push_back( printer );
+
+	if ( GetActivePage() == &m_pgSecond )
+	{
+		m_pgSecond.OnAddPrinter( printer, moreComing );
+	}
+
+exit:
+
+	return printer;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::OnAddService(
+								Printer		*	printer,
+								uint32_t 		inInterfaceIndex,
+								const char	*	inName,	
+								const char	*	inType,	
+								const char	*	inDomain)
+{
+	Service	*	service = NULL;
+	OSStatus	err     = kNoErr;
+
+	DEBUG_UNUSED( inName );
+	DEBUG_UNUSED( inDomain );
+
+	try
+	{
+		service = new Service;
+	}
+	catch (...)
+	{
+		service = NULL;
+	}
+
+	require_action( service, exit, err = E_OUTOFMEMORY );
+	
+	service->printer	=	printer;
+	service->ifi		=	inInterfaceIndex;
+	service->type		=	inType;
+	service->domain		=	inDomain;
+	service->qtotal		=	1;
+	service->refs		=	1;
+	service->serviceRef	=	NULL;
+
+	printer->services.push_back( service );
+
+	//
+	// if the printer is selected, then we'll want to start a
+	// resolve on this guy
+	//
+
+	if ( printer == m_selectedPrinter )
+	{
+		StartResolve( service );
+	}
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::OnRemovePrinter( Printer * printer, bool moreComing )
+{
+	CPropertyPage	*	active	= GetActivePage();
+	OSStatus			err		= kNoErr;
+
+	if ( active == &m_pgSecond )
+	{
+		m_pgSecond.OnRemovePrinter( printer, moreComing );
+	}
+
+	m_printers.remove( printer );
+
+	if ( m_selectedPrinter == printer )
+	{
+		m_selectedPrinter = NULL;
+
+		if ( ( active == &m_pgThird ) || ( active == &m_pgFourth ) )
+		{
+			CString caption;
+			CString message;
+
+			caption.LoadString( IDS_ERROR_CAPTION );
+			message.LoadString( IDS_PRINTER_UNAVAILABLE );
+
+			MessageBox(message, caption, MB_OK|MB_ICONEXCLAMATION);
+
+			SetActivePage( &m_pgSecond );
+		}
+	}
+
+	delete printer;
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::OnRemoveService( Service * service )
+{
+	OSStatus err = kNoErr;
+
+	if ( service && ( --service->refs == 0 ) )
+	{
+		if ( service->serviceRef != NULL )
+		{
+			err = StopResolve( service );
+			require_noerr( err, exit );
+		}
+
+		service->printer->services.remove( service );
+
+		delete service;
+	}
+
+exit:
+
+	return err;	
+}
+
+
+void
+CPrinterSetupWizardSheet::OnResolveService( Service * service )
+{
+	// Make sure that the active page is page 2
+
+	check( GetActivePage() == &m_pgSecond );
+
+	if ( !--service->printer->resolving )
+	{
+		// sort the services now.  we want the service that
+		// has the highest priority queue to be first in
+		// the list.
+
+		service->printer->services.sort( OrderServiceFunc );
+
+		// Now we can hit next
+
+		SetWizardButtons( PSWIZB_BACK|PSWIZB_NEXT );
+	
+		// Reset the cursor	
+		
+		m_active = m_arrow;
+
+		// And tell page 2 about it
+
+		m_pgSecond.OnResolveService( service );
+	}		
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StartBrowse()
+{
+	OSStatus err;
+
+	//
+	// setup the DNS-SD browsing
+	//
+	err = DNSServiceBrowse( &m_pdlBrowser, 0, 0, kPDLServiceType, NULL, OnBrowse, this );
+	require_noerr( err, exit );
+
+	err = StartOperation( m_pdlBrowser );
+	require_noerr( err, exit );
+
+	err = DNSServiceBrowse( &m_lprBrowser, 0, 0, kLPRServiceType, NULL, OnBrowse, this );
+	require_noerr( err, exit );
+
+	err = StartOperation( m_lprBrowser );
+	require_noerr( err, exit );
+
+	err = DNSServiceBrowse( &m_ippBrowser, 0, 0, kIPPServiceType, NULL, OnBrowse, this );
+	require_noerr( err, exit );
+
+	err = StartOperation( m_ippBrowser );
+	require_noerr( err, exit );
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StopBrowse()
+{
+	OSStatus err;
+
+	err = StopOperation( m_pdlBrowser );
+	require_noerr( err, exit );
+
+	err = StopOperation( m_lprBrowser );
+	require_noerr( err, exit );
+
+	err = StopOperation( m_ippBrowser );
+	require_noerr( err, exit );
+
+	while ( m_printers.size() > 0 )
+	{
+		Printer * printer = m_printers.front();
+
+		m_printers.pop_front();
+
+		if ( printer->resolving )
+		{
+			StopResolve( printer );
+		}
+
+		delete printer;
+	}
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StartResolve( Printer * printer )
+{
+	OSStatus			err = kNoErr;
+	Services::iterator	it;
+
+	check( printer );
+
+	for ( it = printer->services.begin(); it != printer->services.end(); it++ )
+	{
+		if ( (*it)->serviceRef == NULL )
+		{
+			err = StartResolve( *it );
+			require_noerr( err, exit );
+		}
+	}
+
+	m_selectedPrinter = printer;
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StartResolve( Service * service )
+{
+	OSStatus err = kNoErr;
+
+	check( service->serviceRef == NULL );
+
+	//
+	// clean out any queues that were collected during a previous
+	// resolve
+	//
+
+	service->EmptyQueues();
+
+	//
+	// now start the new resolve
+	//
+
+	err = DNSServiceResolve( &service->serviceRef, 0, 0, service->printer->name.c_str(), service->type.c_str(), service->domain.c_str(), (DNSServiceResolveReply) OnResolve, service );
+	require_noerr( err, exit );
+
+	err = StartOperation( service->serviceRef );
+	require_noerr( err, exit );
+
+	//
+	// If we're not currently resolving, then disable the next button
+	// and set the cursor to hourglass
+	//
+
+	if ( !service->printer->resolving )
+	{
+		SetWizardButtons( PSWIZB_BACK );
+
+		m_active = m_wait;
+		SetCursor(m_active);
+	}
+
+	service->printer->resolving++;
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StopResolve(Printer * printer)
+{
+	OSStatus err = kNoErr;
+
+	check( printer );
+
+	Services::iterator it;
+
+	for ( it = printer->services.begin(); it != printer->services.end(); it++ )
+	{
+		if ( (*it)->serviceRef )
+		{
+			err = StopResolve( *it );
+			require_noerr( err, exit );
+		}
+	}
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StopResolve( Service * service )
+{
+	OSStatus err;
+
+	check( service->serviceRef );
+
+	err = StopOperation( service->serviceRef );
+	require_noerr( err, exit );
+
+	service->printer->resolving--;
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StartOperation( DNSServiceRef ref )
+{
+	OSStatus err;
+
+	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(ref), m_hWnd, WM_SOCKET_EVENT, FD_READ|FD_CLOSE);
+	require_noerr( err, exit );
+
+	m_serviceRefList.push_back( ref );
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::StopOperation( DNSServiceRef & ref )
+{
+	OSStatus err = kNoErr;
+
+	if ( ref )
+	{
+		m_serviceRefList.remove( ref );
+
+		if ( IsWindow( m_hWnd ) )
+		{
+			err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD( ref ), m_hWnd, 0, 0 );
+			require_noerr( err, exit );
+		}
+
+		DNSServiceRefDeallocate( ref );
+		ref = NULL;
+	}
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, bool & qtotalDefined, CString & qname, uint32_t & qpriority )
+{
+	bool		rpOnly = true;
+	OSStatus	err = kNoErr;
+	
+	while (inTXTSize)
+	{
+		char buf[256];
+
+		unsigned char num = *inTXT;
+		check( (int) num < inTXTSize );
+
+		if ( num )
+		{
+			memset(buf, 0, sizeof(buf));
+			memcpy(buf, inTXT + 1, num);
+
+			CString elem;
+
+			err = UTF8StringToStringObject( buf, elem );
+			require_noerr( err, exit );
+
+			int curPos = 0;
+
+			CString key = elem.Tokenize(L"=", curPos);
+			CString val = elem.Tokenize(L"=", curPos);
+
+			key.MakeLower();
+
+			if ( key == L"rp" )
+			{
+				qname = val;
+			}
+			else
+			{
+				rpOnly = false;
+
+				if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
+				{
+					service->usb_MFG = val;
+				}
+				else if ((key == L"usb_mdl") || (key == L"usb_model"))
+				{
+					service->usb_MDL = val;
+				}
+				else if (key == L"ty")
+				{
+					service->description = val;
+				}
+				else if (key == L"product")
+				{
+					service->product = val;
+				}
+				else if (key == L"note")
+				{
+					service->location = val;
+				}
+				else if (key == L"qtotal")
+				{
+					service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
+					qtotalDefined = true;
+				}
+				else if (key == L"priority")
+				{
+					qpriority = _ttoi((LPCTSTR) val);
+				}
+			}
+		}
+
+		inTXTSize -= (num + 1);
+		inTXT += (num + 1);
+	}
+
+exit:
+
+	if ( rpOnly )
+	{
+		qtotalDefined = true;
+	}
+
+	return err;
+}
+
+
+Printer*
+CPrinterSetupWizardSheet::Lookup(const char * inName)
+{
+	check( inName );
+
+	Printer			*	printer = NULL;
+	Printers::iterator	it;
+
+	for ( it = m_printers.begin(); it != m_printers.end(); it++ )
+	{
+		if ( (*it)->name == inName )
+		{
+			printer = *it;
+			break;
+		}
+	}
+
+	return printer;
+}
+
+
+bool
+CPrinterSetupWizardSheet::OrderServiceFunc( const Service * a, const Service * b )
+{
+	Queue * q1, * q2;
+
+	q1 = (a->queues.size() > 0) ? a->queues.front() : NULL;
+
+	q2 = (b->queues.size() > 0) ? b->queues.front() : NULL;
+
+	if ( !q1 && !q2 )
+	{
+		return true;
+	}
+	else if ( q1 && !q2 )
+	{
+		return true;
+	}
+	else if ( !q1 && q2 )
+	{
+		return false;
+	}
+	else if ( q1->priority < q2->priority )
+	{
+		return true;
+	}
+	else if ( q1->priority > q2->priority )
+	{
+		return false;
+	}
+	else if ( ( a->type == kPDLServiceType ) || ( ( a->type == kLPRServiceType ) && ( b->type == kIPPServiceType ) ) )
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+
+bool
+CPrinterSetupWizardSheet::OrderQueueFunc( const Queue * q1, const Queue * q2 )
+{
+	return ( q1->priority <= q2->priority ) ? true : false;
+}
+
+
+
