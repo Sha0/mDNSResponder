@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.25  2004/03/15 18:55:38  cheshire
+Comment out debugging message
+
 Revision 1.24  2004/03/12 21:30:26  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -323,7 +326,7 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			else
 			#endif
 			if (result) { LogMsg("T_OPTMGMTCOMPLETE/T_BINDCOMPLETE %d failed %d", m->p->mOTstate, result); mDNSinitComplete(m, result); return; }
-			LogMsg("T_OPTMGMTCOMPLETE/T_BINDCOMPLETE %d", m->p->mOTstate);
+			//LogMsg("T_OPTMGMTCOMPLETE/T_BINDCOMPLETE %d", m->p->mOTstate);
 			switch (++m->p->mOTstate)
 				{
 				case mOT_ReusePort:		m->p->optBlock.b = kReusePortOption;         mDNSOptionManagement(m); break;
