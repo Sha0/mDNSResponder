@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.380  2004/06/05 00:04:26  cheshire
+<rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
+
 Revision 1.379  2004/05/28 23:42:36  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
 
@@ -1287,10 +1290,10 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFl
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
-	"_browse._dns-sd._udp.local.",
-	"_default._browse._dns-sd._udp.local.",
-	"_register._dns-sd._udp.local.",
-	"_default._register._dns-sd._udp.local."
+	"_browse._dns-sd._udp.",
+	"_default._browse._dns-sd._udp.",
+	"_register._dns-sd._udp.",
+	"_default._register._dns-sd._udp."
 	};
 
 // ***************************************************************************
@@ -5185,7 +5188,7 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *que
 	mDNS_Unlock(m);
 	}
 
-mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType,
+mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const domainname *dom,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
 	question->InterfaceID      = InterfaceID;
@@ -5196,6 +5199,8 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->QuestionContext  = Context;
 	if (DomainType > mDNS_DomainTypeRegistrationDefault) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
+	if (!dom) dom = (const domainname *)"\x5local";
+	if (!AppendDomainName(&question->qname, dom)) return(mStatus_BadParamErr);
 	return(mDNS_StartQuery(m, question));
 	}
 

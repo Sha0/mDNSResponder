@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.172  2004/06/05 00:04:26  cheshire
+<rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
+
 Revision 1.171  2004/06/04 08:58:30  ksekar
 <rdar://problem/3668624>: Keychain integration for secure dynamic update
 
@@ -836,8 +839,8 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 		{ AbortBlockedClient(x->ClientMachPort, "local enumeration", x); return(mStatus_UnknownErr); }
 
 	// Do the operation
-	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, mDNSInterface_LocalOnly, FoundDomain, x);
-	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, mDNSInterface_LocalOnly, FoundDomain, x);
+	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, NULL, mDNSInterface_LocalOnly, FoundDomain, x);
+	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, NULL, mDNSInterface_LocalOnly, FoundDomain, x);
 	if (err) { AbortClient(client, x); errormsg = "mDNS_GetDomains"; goto fail; }
 	
 	// Succeeded: Wrap up and return

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSSDDirect.c,v $
+Revision 1.7  2004/06/05 00:04:27  cheshire
+<rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
+
 Revision 1.6  2004/05/08 12:25:50  bradley
 Changed to use symbolic enums to prevent some compilers from treating it as a sign conversion.
 
@@ -549,12 +552,12 @@ DNSServiceErrorType
 	}
 	interfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex( gMDNSPtr, inInterfaceIndex );
 	
-	err = mDNS_GetDomains( gMDNSPtr, &obj->u.domain.question, type, interfaceID, 
+	err = mDNS_GetDomains( gMDNSPtr, &obj->u.domain.question, type, NULL, interfaceID, 
 		DNSServiceEnumerateDomainsCallBack_direct, obj );
 	require_noerr( err, exit );
 	obj->u.domain.questionActive = mDNStrue;
 	
-	err = mDNS_GetDomains( gMDNSPtr, &obj->u.domain.defaultQuestion, defaultType, interfaceID, 
+	err = mDNS_GetDomains( gMDNSPtr, &obj->u.domain.defaultQuestion, defaultType, NULL, interfaceID, 
 		DNSServiceEnumerateDomainsCallBack_direct, obj );
 	require_noerr( err, exit );
 	obj->u.domain.defaultQuestionActive = mDNStrue;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.156  2004/06/05 00:04:26  cheshire
+<rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
+
 Revision 1.155  2004/06/04 08:58:30  ksekar
 <rdar://problem/3668624>: Keychain integration for secure dynamic update
 
@@ -1657,8 +1660,8 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		{
 		if (ptr->flag == -1)  // remove
 			{				
-			mDNS_StopBrowse(m, &ptr->browseQ);
-			mDNS_StopBrowse(m, &ptr->registerQ);			
+			mDNS_StopQuery(m, &ptr->browseQ);
+			mDNS_StopQuery(m, &ptr->registerQ);			
 			// deregister records generated from answers to the query
 			arList = ptr->AuthRecs;
 			ptr->AuthRecs = NULL;
@@ -1682,14 +1685,11 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		
 		if (ptr->flag == 1)  // add
 			{
-			domainname type;
-			if (!MakeDomainNameFromDNSNameString(&type, "_browse._dns-sd._udp")) { LogMsg("ERROR - RegisterNameServers - bad type"); continue; }
-			err = mDNS_StartBrowse(m, &ptr->browseQ, &type, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			if (err) LogMsg("ERROR: RegisterNameServers - StartBrowse, %d", err);
+			err = mDNS_GetDomains(m, &ptr->browseQ, mDNS_DomainTypeBrowse, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			if (err) LogMsg("ERROR: RegisterNameServers - mDNS_DomainTypeBrowse, %d", err);
 
-			if (!MakeDomainNameFromDNSNameString(&type, "_register._dns-sd._udp")) { LogMsg("ERROR - RegisterNameServers - bad type"); continue; }
-			err = mDNS_StartBrowse(m, &ptr->registerQ, &type, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			if (err) LogMsg("ERROR: RegisterNameServers - StartBrowse, %d", err);
+			err = mDNS_GetDomains(m, &ptr->registerQ, mDNS_DomainTypeRegistration, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			if (err) LogMsg("ERROR: RegisterNameServers - mDNS_DomainTypeRegistration, %d", err);
 			ptr->flag = 0;
 			}
 		
@@ -2180,7 +2180,7 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	DNSConfigInitialized = mDNStrue;
 
 	// start query for domains to be used in default (empty string domain) browses
-	err = mDNS_GetDomains(m, &DefBrowseDomainQ, mDNS_DomainTypeBrowse, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
+	err = mDNS_GetDomains(m, &DefBrowseDomainQ, mDNS_DomainTypeBrowse, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
 
 	// provide .local automatically
 	mDNS_SetupResourceRecord(&local, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.55  2004/06/05 00:04:27  cheshire
+<rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
+
 Revision 1.54  2004/06/01 22:22:52  ksekar
 <rdar://problem/3668635>: wide-area default registrations should be in
 .local too
@@ -1977,9 +1980,9 @@ static void handle_enum_request(request_state *rstate)
 	if (!InterfaceID) InterfaceID = mDNSInterface_LocalOnly;
 	
     // make the calls
-    err = mDNS_GetDomains(gmDNS, &all->question, all->type, InterfaceID, enum_result_callback, all);
+    err = mDNS_GetDomains(gmDNS, &all->question, all->type, NULL, InterfaceID, enum_result_callback, all);
     if (err == mStatus_NoError)
-        err = mDNS_GetDomains(gmDNS, &def->question, def->type, InterfaceID, enum_result_callback, def);
+        err = mDNS_GetDomains(gmDNS, &def->question, def->type, NULL, InterfaceID, enum_result_callback, def);
     result = deliver_error(rstate, err);  // send error *before* returning local domain
     
     if (result < 0 || err)

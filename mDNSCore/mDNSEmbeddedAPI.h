@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.177  2004/06/05 00:04:26  cheshire
+<rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
+
 Revision 1.176  2004/06/04 08:58:29  ksekar
 <rdar://problem/3668624>: Keychain integration for secure dynamic update
 
@@ -961,7 +964,7 @@ typedef packedstruct
 	{
 	mDNSu16 opt;
 	mDNSu16 optlen;
-	union { LLQOptData llq; mDNSs32 lease; } OptData;
+	union { LLQOptData llq; mDNSu32 lease; } OptData;
 	} rdataOpt;
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
@@ -1255,7 +1258,7 @@ typedef enum
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,
 	LLQ_Error             = 18,
-	LLQ_Cancelled         = 19,
+	LLQ_Cancelled         = 19
 	} LLQ_State;
 
 typedef struct
@@ -1265,8 +1268,8 @@ typedef struct
     mDNSIPPort servPort;
     DNSQuestion *question;
     mDNSu32 origLease;  // seconds (relative)
-    mDNSu32 retry;  // ticks (absolute)
-    mDNSu32 expire; // ticks (absolute)
+    mDNSs32 retry;  // ticks (absolute)
+    mDNSs32 expire; // ticks (absolute)
     mDNSs16 ntries;
     mDNSu8 id[8];
     mDNSBool deriveRemovesOnResume;
@@ -1297,7 +1300,7 @@ enum
 	LLQErr_FormErr = 3,
 	LLQErr_NoSuchLLQ = 4,
 	LLQErr_BadVers = 5,
-	LLQErr_UnknownErr = 6,
+	LLQErr_UnknownErr = 6
 	};
 
 typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *internalContext);
@@ -1543,7 +1546,7 @@ extern const mDNSOpaque16 UpdateRespFlags;
 // If we're not doing inline functions, then this header needs to have the extern declarations
 #if !defined(mDNSinline)
 extern mDNSu16      mDNSVal16(mDNSOpaque16 x);
-extern mDNSu32      mDNSVal32(mDNSOpaque16 x);
+extern mDNSu32      mDNSVal32(mDNSOpaque32 x);
 extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
 extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 #endif
@@ -1556,8 +1559,8 @@ extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 
 #ifdef mDNSinline
 
-mDNSinline mDNSu16 mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)x.b[0] <<  8 | x.b[1]); }
-mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | x.b[3]); }
+mDNSinline mDNSu16 mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)((mDNSu16)x.b[0] <<  8 | (mDNSu16)x.b[1])); }
+mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return((mDNSu32)((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | (mDNSu32)x.b[3])); }
 
 mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 	{
@@ -1719,7 +1722,8 @@ typedef enum
 	mDNS_DomainTypeRegistrationDefault = 3
 	} mDNS_DomainType;
 
-extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
+extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const domainname *dom,
+								const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopGetDomains mDNS_StopQuery
 extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister

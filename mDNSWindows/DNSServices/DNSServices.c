@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.26  2004/06/05 00:04:27  cheshire
+<rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
+
 Revision 1.25  2004/04/08 09:31:17  bradley
 Renamed local variable to avoid hiding a system global in some libraries.
 
@@ -765,11 +768,11 @@ DNSStatus	DNSBrowserStartDomainSearch( DNSBrowserRef inRef, DNSBrowserFlags inFl
 	
 	// Start the browse operations.
 	
-	err = mDNS_GetDomains( gMDNSPtr, &inRef->domainQuestion, type, mDNSInterface_Any, DNSBrowserPrivateCallBack, inRef );
+	err = mDNS_GetDomains( gMDNSPtr, &inRef->domainQuestion, type, NULL, mDNSInterface_Any, DNSBrowserPrivateCallBack, inRef );
 	require_noerr( err, exit );
 	isDomainBrowsing = mDNStrue;
 	
-	err = mDNS_GetDomains( gMDNSPtr, &inRef->defaultDomainQuestion, defaultType, mDNSInterface_Any, DNSBrowserPrivateCallBack, inRef );
+	err = mDNS_GetDomains( gMDNSPtr, &inRef->defaultDomainQuestion, defaultType, NULL, mDNSInterface_Any, DNSBrowserPrivateCallBack, inRef );
 	require_noerr( err, exit );
 	
 	inRef->domainSearchFlags 	= inFlags;
