@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.35  2004/06/18 18:51:31  cheshire
+# Add (commented out) "-pedantic" for when we want to check for "mixed declarations and code" warnings
+#
 # Revision 1.34  2004/05/25 18:29:33  cheshire
 # Move DNSServiceConstructFullName() from dnssd_clientstub.c to dnssd_clientlib.c,
 # so that it's also accessible to dnssd_clientshim.c (single address space) clients.
@@ -195,7 +198,7 @@ JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
 else
 ifeq ($(os),panther)
-CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp #-pedantic
 LD = libtool
 LDFLAGS = -dynamic -lSystem
 LDSUFFIX = dylib
