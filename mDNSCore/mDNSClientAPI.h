@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.121  2003/11/20 05:01:38  cheshire
+Update comments; add explanation of Advertise/DontAdvertiseLocalAddresses
+
 Revision 1.120  2003/11/14 20:59:08  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -1079,6 +1082,15 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 
 // Every client should call mDNS_Init, passing in storage for the mDNS object, mDNS_PlatformSupport object, and rrcache.
 // The rrcachesize parameter is the size of (i.e. number of entries in) the rrcache array passed in.
+// Most clients use mDNS_Init_AdvertiseLocalAddresses. This causes mDNSCore to automatically
+// create the correct address records for all the hosts interfaces. If you plan to advertise
+// services being offered by the local machine, this is almost always what you want.
+// There are two cases where you might use mDNS_Init_DontAdvertiseLocalAddresses:
+// 1. A client-only device, that browses for services but doesn't advertise any of its own.
+// 2. A proxy-registration service, that advertises services being offered by other machines, and takes
+//    the appropriate steps to manually create the correct address records for those other machines.
+// In principle, a proxy-like registration service could manually create address records for its own machine too,
+// but this would be pointless extra effort when using mDNS_Init_AdvertiseLocalAddresses does that for you.
 // When mDNS has finished setting up the client's callback is called
 // A client can also spin and poll the mDNSPlatformStatus field to see when it changes from mStatus_Waiting to mStatus_NoError
 //
@@ -1093,13 +1105,12 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 // is received containing a record which matches the question, the DNSQuestion's mDNSAnswerCallback function will be called
 // Call mDNS_StopQuery when no more answers are required
 //
-// The mDNS routines are intentionally not thread-safe -- adding locking operations would add overhead that may not
-// be necessary or appropriate on every platform. Instead, code in a pre-emptive environment calling any mDNS routine
-// (except mDNS_Init and mDNS_Close) is responsible for doing the necessary synchronization to ensure that mDNS code is
-// not re-entered. This includes both client software above mDNS, and the platform support code below. For example, if
-// the support code on a particular platform implements timer callbacks at interrupt time, then clients on that platform
-// need to disable interrupts or do similar concurrency control to ensure that the mDNS code is not entered by an
-// interrupt-time timer callback while in the middle of processing a client call.
+// Care should be taken on multi-threaded or interrupt-driven environments.
+// The main mDNS routines call mDNSPlatformLock() on entry and mDNSPlatformUnlock() on exit;
+// each platform layer needs to implement these appropriately for its respective platform.
+// For example, if the support code on a particular platform implements timer callbacks at interrupt time, then
+// mDNSPlatformLock/Unlock need to disable interrupts or do similar concurrency control to ensure that the mDNS
+// code is not entered by an interrupt-time timer callback while in the middle of processing a client call.
 
 extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 								CacheRecord *rrcachestorage, mDNSu32 rrcachesize,
@@ -1107,10 +1118,12 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 								mDNSCallback *Callback, void *Context);
 #define mDNS_Init_NoCache                     mDNSNULL
 #define mDNS_Init_ZeroCacheSize               0
+// See notes above on use of Advertise/DontAdvertiseLocalAddresses
 #define mDNS_Init_AdvertiseLocalAddresses     mDNStrue
 #define mDNS_Init_DontAdvertiseLocalAddresses mDNSfalse
 #define mDNS_Init_NoInitCallback              mDNSNULL
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
+
 extern void    mDNS_GrowCache (mDNS *const m, CacheRecord *storage, mDNSu32 numrecords);
 extern void    mDNS_Close     (mDNS *const m);
 extern mDNSs32 mDNS_Execute   (mDNS *const m);
