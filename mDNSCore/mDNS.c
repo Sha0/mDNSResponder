@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.87  2003/03/11 01:27:20  cheshire
+Reduce debugging messages (reclassify some "debugf" as "verbosedebugf")
+
 Revision 1.86  2003/03/06 20:44:33  cheshire
 Comment tidyup
 
@@ -1358,7 +1361,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 				rr->name.c, DNSTypeName(rr->rrtype));
 		else
 			{
-			debugf("mDNS_Deregister_internal: Deleting record for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
+			verbosedebugf("mDNS_Deregister_internal: Deleting record for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 			rr->RecordType = kDNSRecordTypeUnregistered;
 			}
 
@@ -2322,7 +2325,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 		{
 		rr->RecordType    = kDNSRecordTypeVerified;
 		rr->AnnounceCount = DefaultAnnounceCountForRecordType(rr->RecordType);
-		debugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
+		verbosedebugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
 		if (!rr->Acknowledged && rr->Callback)
 			{
 			// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
@@ -4163,7 +4166,7 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 	switch (result)
 		{
 		case mStatus_NoError:
-			debugf("HostNameCallback: %##s (%s) Name registered",   rr->name.c, DNSTypeName(rr->rrtype));
+			verbosedebugf("HostNameCallback: %##s (%s) Name registered",   rr->name.c, DNSTypeName(rr->rrtype));
 			break;
 		case mStatus_NameConflict:
 			debugf("HostNameCallback: %##s (%s) Name conflict",     rr->name.c, DNSTypeName(rr->rrtype));
