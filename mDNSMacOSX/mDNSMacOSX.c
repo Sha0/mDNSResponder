@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.115  2003/09/10 00:45:55  cheshire
+<rdar://problem/3412328> Don't log "sendto failed" errors during the first two minutes of startup
+
 Revision 1.114  2003/08/27 02:55:13  cheshire
 <rdar://problem/3387910>:	Bug: Don't report mDNSPlatformSendUDP sendto errno 64 (Host is down)
 
@@ -533,6 +536,10 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		{
 		// Don't report EHOSTDOWN (i.e. ARP failure) to unicast destinations
 		if (errno == EHOSTDOWN && !mDNSAddressIsAllDNSLinkGroup(dst)) return(err);
+		// Don't report EHOSTUNREACH in the first two minutes after boot
+		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
+		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
+		if (errno == EHOSTUNREACH && (mDNSu32)(m->timenow) < (mDNSu32)(mDNSPlatformOneSecond * 120)) return(err);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s)",
 			InterfaceID, info->ifa_name, dst->type, dst, (mDNSu16)dstPort.b[0]<<8 | dstPort.b[1], s, err, errno, strerror(errno));
 		return(err);
