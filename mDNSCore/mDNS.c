@@ -88,6 +88,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.145  2003/05/28 20:57:44  cheshire
+<rdar://problem/3271550> mDNSResponder reports "Cannot perform multi-packet
+known-answer suppression ..." This is a known issue caused by a bug in the OS X 10.2
+version of mDNSResponder, so for now we should suppress this warning message.
+
 Revision 1.144  2003/05/28 18:05:12  cheshire
 <rdar://problem/3009899> mDNSResponder allows invalid service registrations
 Fix silly mistake: old logic allowed "TDP" and "UCP" as valid names
@@ -3916,10 +3921,15 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
 						else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4))
 							{
-							if (query->h.flags.b[0] & kDNSFlag0_TC)
-								LogMsg("%##s : Cannot perform multi-packet known-answer suppression from more than one"
-									" client at a time %.4a %.4a (this is benign if it happens only rarely)",
-									rr->name.c, &rr->v4Requester, &srcaddr->ip.v4);
+							// For now we don't report this error.
+							//     Due to a bug in the OS X 10.2 version of mDNSResponder, when a service sends a goodbye packet,
+							//     all those old mDNSResponders respond by sending a query to verify that the service is really gone.
+							//     That flood of near-simultaneous queries then triggers the message below, warning that mDNSResponder
+							//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
+							//if (query->h.flags.b[0] & kDNSFlag0_TC)
+							//	LogMsg("%##s : Cannot perform multi-packet known-answer suppression from more than one"
+							//		" client at a time %.4a %.4a (this is benign if it happens only rarely)",
+							//		rr->name.c, &rr->v4Requester, &srcaddr->ip.v4);
 							rr->v4Requester = onesIPv4Addr;
 							}
 						}
