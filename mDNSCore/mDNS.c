@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.328  2003/11/19 22:06:38  cheshire
+Show log messages when a service or hostname is renamed
+
 Revision 1.327  2003/11/19 22:03:44  cheshire
 Move common "m->NextScheduledResponse = m->timenow" to before "if" statement
 
@@ -2598,10 +2601,12 @@ mDNSlocal void RecordProbeFailure(mDNS *const m, const AuthRecord *const rr)
 	m->NumFailedProbes++;
 	// If we've had ten or more probe failures, rate-limit to one every five seconds
 	// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
-	if (m->NumFailedProbes >= 10) m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
-	if (m->NumFailedProbes >= 16)
-		LogMsg("Name in use: %##s (%s); need to choose another (%d)",
-			rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), m->NumFailedProbes);
+	if (m->NumFailedProbes >= 10)
+		{
+		m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
+		LogMsg("Excessive name conflicts (%d) for %##s (%s); rate limiting in effect",
+			m->NumFailedProbes, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+		}
 	}
 
 mDNSlocal void CompleteRDataUpdate(mDNS *const m, AuthRecord *const rr)
@@ -6416,6 +6421,7 @@ mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		// 3. Generate the FQDNs from the hostlabel,
 		// and make sure all SRV records, etc., are updated to reference our new hostname
 		mDNS_GenerateFQDN(m);
+		LogMsg("Link-Local Host Name %#s.local. already in use; new name %#s.local. selected for this host.", oldlabel.c, m->hostlabel.c);
 		}
 	}
 
@@ -6808,19 +6814,20 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	{
 	// NOTE: Don't need to use mDNS_Lock(m) here, because this code is just using public routines
 	// mDNS_RegisterService() and mDNS_AddRecordToService(), which do the right locking internally.
-	domainlabel name;
+	domainlabel name1, name2;
 	domainname type, domain;
 	domainname *host = mDNSNULL;
 	ExtraResourceRecord *extras = sr->Extras;
 	mStatus err;
 
-	DeconstructServiceName(&sr->RR_SRV.resrec.name, &name, &type, &domain);
+	DeconstructServiceName(&sr->RR_SRV.resrec.name, &name1, &type, &domain);
 	if (!newname)
 		{
-		IncrementLabelSuffix(&name, mDNStrue);
-		newname = &name;
+		name2 = name1;
+		IncrementLabelSuffix(&name2, mDNStrue);
+		newname = &name2;
 		}
-	debugf("Reregistering as %#s", newname->c);
+	LogMsg("Service \"%##s\" renamed to \"%#s\"", sr->RR_SRV.resrec.name.c, newname->c);
 	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->Host.c[0]) host = &sr->Host;
 	
 	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
