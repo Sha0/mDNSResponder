@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.10  2003/04/26 02:32:57  cheshire
+Add extern void LogMsg(const char *format, ...);
+
 Revision 1.9  2002/09/21 20:44:49  zarzycki
 Added APSL info
 
@@ -118,6 +121,9 @@ extern void verbosedebugf_(const char *format, ...);
 		#define verbosedebugf 1 ? ((void)0) : (void)
 	#endif
 #endif
+
+// LogMsg is used even in shipping code, to write truly serious error messages to syslog (or equivalent)
+extern void LogMsg(const char *format, ...);
 
 #ifdef	__cplusplus
 	}
