@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.28  2004/05/20 18:39:06  cheshire
+Fix build broken by addition of mDNSPlatformUTC requirement
+
 Revision 1.27  2004/04/21 02:49:11  cheshire
 To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
 
@@ -676,3 +679,18 @@ mDNSexport void     mDNSPlatformMemFree    (void *mem)                          
 mDNSexport mStatus  mDNSPlatformTimeInit(mDNSs32 *timenow) { *timenow = mDNSPlatformTimeNow(); return(mStatus_NoError); }
 mDNSexport SInt32   mDNSPlatformTimeNow()                                             { return((SInt32)TickCount()); }
 mDNSexport SInt32   mDNSPlatformOneSecond = 60;
+
+mDNSexport mDNSs32	mDNSPlatformUTC(void)
+	{
+	// Classic Mac OS since Midnight, 1st Jan 1904
+	// Standard Unix counts from 1970
+	// This value adjusts for the 66 years and 17 leap-days difference
+	mDNSu32 SecsSince1904;
+	MachineLocation ThisLocation;
+	#define TIME_ADJUST (((1970 - 1904) * 365 + 17) * 24 * 60 * 60)
+	#define ThisLocationGMTdelta ((ThisLocation.u.gmtDelta << 8) >> 8)
+	GetDateTime(&SecsSince1904);
+	ReadLocation(&ThisLocation);
+	return((mDNSs32)(SecsSince1904 - ThisLocationGMTdelta - TIME_ADJUST));
+	return( -1 );
+	}
