@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.118  2003/07/15 21:12:28  cheshire
+ * Added extra debugging checks in validatelists() (not used in final shipping version)
+ *
  * Revision 1.117  2003/07/15 01:55:15  cheshire
  * <rdar://problem/3315777> Need to implement service registration with subtypes
  *
@@ -264,30 +267,40 @@ static void validatelists(mDNS *const m)
 	DNSServiceRegistration      *r;
 	ResourceRecord              *rr;
 	DNSQuestion                 *q;
+	mDNSs32 slot;
 	
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
 		if (e->ClientMachPort == 0 || e->ClientMachPort == (mach_port_t)~0)
-			LogMsg("!!!! DNSServiceDomainEnumerationList %p is garbage (%X) !!!!", e, e->ClientMachPort);
+			LogMsg("!!!! DNSServiceDomainEnumerationList: %p is garbage (%X) !!!!", e, e->ClientMachPort);
 
 	for (b = DNSServiceBrowserList; b; b=b->next)
 		if (b->ClientMachPort == 0 || b->ClientMachPort == (mach_port_t)~0)
-			LogMsg("!!!! DNSServiceBrowserList %p is garbage (%X) !!!!", b, b->ClientMachPort);
+			LogMsg("!!!! DNSServiceBrowserList: %p is garbage (%X) !!!!", b, b->ClientMachPort);
 
 	for (l = DNSServiceResolverList; l; l=l->next)
 		if (l->ClientMachPort == 0 || l->ClientMachPort == (mach_port_t)~0)
-			LogMsg("!!!! DNSServiceResolverList %p is garbage (%X) !!!!", l, l->ClientMachPort);
+			LogMsg("!!!! DNSServiceResolverList: %p is garbage (%X) !!!!", l, l->ClientMachPort);
 
 	for (r = DNSServiceRegistrationList; r; r=r->next)
 		if (r->ClientMachPort == 0 || r->ClientMachPort == (mach_port_t)~0)
-			LogMsg("!!!! DNSServiceRegistrationList %p is garbage (%X) !!!!", r, r->ClientMachPort);
+			LogMsg("!!!! DNSServiceRegistrationList: %p is garbage (%X) !!!!", r, r->ClientMachPort);
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->RecordType == 0 || rr->RecordType == 0xFF)
-			LogMsg("!!!! ResourceRecords %p list is garbage (%X) !!!!", rr, rr->RecordType);
+			LogMsg("!!!! ResourceRecords list: %p is garbage (%X) !!!!", rr, rr->RecordType);
+
+	for (rr = m->DuplicateRecords; rr; rr=rr->next)
+		if (rr->RecordType == 0 || rr->RecordType == 0xFF)
+			LogMsg("!!!! DuplicateRecords list: %p is garbage (%X) !!!!", rr, rr->RecordType);
 
 	for (q = m->Questions; q; q=q->next)
 		if (q->ThisQInterval == (mDNSs32)~0)
-			LogMsg("!!!! Questions %p list is garbage (%lX) !!!!", q, q->ThisQInterval);
+			LogMsg("!!!! Questions list: %p is garbage (%lX) !!!!", q, q->ThisQInterval);
+
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for (rr = mDNSStorage.rrcache_hash[slot]; rr; rr=rr->next)
+			if (rr->RecordType == 0 || rr->RecordType == 0xFF)
+				LogMsg("!!!! Cache slot %lu: %p is garbage (%X) !!!!", slot, rr, rr->RecordType);
 	}
 
 void *mallocL(char *msg, unsigned int size)
