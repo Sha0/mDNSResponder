@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.14  2004/04/09 17:43:04  cheshire
+Make sure to set the TxAndRx field so that duplicate suppression works correctly
+
 Revision 1.13  2004/01/27 20:15:24  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -1035,6 +1038,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inA
 	item->hostSet.ip.type 				= mDNSAddrType_IPv4;
 	item->hostSet.ip.ip.v4.NotAnInteger	= ipv4->sin_addr.s_addr;
 	item->hostSet.Advertise       		= inMDNS->AdvertiseLocalAddresses;
+	item->hostSet.TxAndRx       		= mDNStrue;
 
 	err = mDNS_RegisterInterface( inMDNS, &item->hostSet );
 	require_noerr( err, exit );

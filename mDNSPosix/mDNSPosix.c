@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.42  2004/04/09 17:43:04  cheshire
+Make sure to set the TxAndRx field so that duplicate suppression works correctly
+
 Revision 1.41  2004/02/06 01:19:51  cheshire
 Conditionally exclude IPv6 code unless HAVE_IPV6 is set
 
@@ -811,6 +814,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 		// Set up the fields required by the mDNS core.
 		SockAddrTomDNSAddr(intfAddr, &intf->coreIntf.ip, NULL);
 		intf->coreIntf.Advertise = m->AdvertiseLocalAddresses;
+		intf->coreIntf.TxAndRx   = mDNStrue;
 
 		// Set up the extra fields in PosixNetworkInterface.
 		assert(intf->intfName != NULL);         // intf->intfName already set up above

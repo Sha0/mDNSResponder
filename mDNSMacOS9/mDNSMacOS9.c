@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.26  2004/04/09 17:43:03  cheshire
+Make sure to set the TxAndRx field so that duplicate suppression works correctly
+
 Revision 1.25  2004/03/15 18:55:38  cheshire
 Comment out debugging message
 
@@ -310,10 +313,11 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			if (err) { LogMsg("OTInetGetInterfaceInfo failed %d", err); mDNSinitComplete(m, err); return; }
 
 			// Make our basic standard host resource records (address, PTR, etc.)
+			m->p->interface.InterfaceID           = (mDNSInterfaceID)&m->p->interface;
 			m->p->interface.ip.type               = mDNSAddrType_IPv4;
 			m->p->interface.ip.ip.v4.NotAnInteger = interfaceinfo.fAddress;
 			m->p->interface.Advertise             = m->AdvertiseLocalAddresses;
-			m->p->interface.InterfaceID           = (mDNSInterfaceID)&m->p->interface;
+			m->p->interface.TxAndRx               = mDNStrue;
 			}
 			
 		case T_OPTMGMTCOMPLETE:
