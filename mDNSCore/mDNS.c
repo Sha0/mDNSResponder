@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.362  2004/03/12 08:58:18  cheshire
+Guard against empty TXT records
+
 Revision 1.361  2004/03/09 03:00:46  cheshire
 <rdar://problem/3581961> Don't take lock until after mDNS_Update() has validated that the data is good.
 
@@ -4935,6 +4938,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 
 	query->GotTXT       = mDNStrue;
 	query->info->TXTlen = answer->rdlength;
+	query->info->TXTinfo[0] = 0;		// In case answer->rdlength is zero
 	mDNSPlatformMemCopy(answer->rdata->u.txt.c, query->info->TXTinfo, answer->rdlength);
 
 	verbosedebugf("FoundServiceInfoTXT: %##s GotADD=%d", query->info->name.c, query->GotADD);
