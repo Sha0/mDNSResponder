@@ -1,4 +1,7 @@
 # $Log: Makefile,v $
+# Revision 1.16  2003/12/11 03:03:51  rpantos
+# Clean up mDNSPosix so that it builds on OS X again.
+#
 # Revision 1.15  2003/12/08 20:47:02  rpantos
 # Add support for mDNSResponder on Linux.
 #
@@ -52,6 +55,8 @@ CP = cp
 RM = rm
 LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall
+LDFLAGS = -shared
+LDSUFFIX = so
 
 # Set up diverging paths for debug vs. prod builds
 DEBUG=0
@@ -85,9 +90,15 @@ CFLAGS_OS = -DHAVE_BROKEN_RECVDSTADDR
 else
 ifeq ($(os),jaguar)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
+LD = libtool
+LDFLAGS = -dynamic -lSystem
+LDSUFFIX = dylib
 else
 ifeq ($(os),panther)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp
+LD = libtool
+LDFLAGS = -dynamic -lSystem
+LDSUFFIX = dylib
 else
 cantbuild:
 	@echo "Must specify target OS on command-line: \"make os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris}\""
@@ -140,11 +151,11 @@ $(TARGDIR)/mDNSResponderd: $(DAEMONOBJS)
 
 
 # libmdns target builds the client library
-libmdns: setup $(TARGDIR)/libmdns.so
+libmdns: setup $(TARGDIR)/libmdns.$(LDSUFFIX)
 	@echo "Client library done"
 
-$(TARGDIR)/libmdns.so: $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
-	$(LD) -shared -o $@ $+
+$(TARGDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
+	$(LD) $(LDFLAGS) -o $@ $+
 	$(STRIP) $@
 
 

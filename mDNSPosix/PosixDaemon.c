@@ -181,7 +181,7 @@ static mStatus	MainLoop( mDNS *m)
 
 	mDNSPosixListenForSignalInEventLoop( SIGINT);
 	mDNSPosixListenForSignalInEventLoop( SIGTERM);
-	mDNSPosixListenForSignalInEventLoop( SIGPOLL);
+	mDNSPosixListenForSignalInEventLoop( SIGUSR1);
 	mDNSPosixListenForSignalInEventLoop( SIGPIPE);
 
 	for ( ; ;)
@@ -208,7 +208,7 @@ static mStatus	MainLoop( mDNS *m)
 
 		(void) mDNSPosixRunEventLoopOnce( m, &timeout, &signals, &gotData);
 
-		if ( sigismember( &signals, SIGPOLL))
+		if ( sigismember( &signals, SIGUSR1))
 			DumpStateLog( m);
 		if ( sigismember( &signals, SIGPIPE))	// happens when we try to write to a dead client; death should be detected soon in request_callback() and cleaned up.
 			LogMsg("mDNSResponder received SIGPIPE - ignorinig");

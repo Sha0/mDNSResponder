@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.28  2003/12/11 03:03:51  rpantos
+Clean up mDNSPosix so that it builds on OS X again.
+
 Revision 1.27  2003/12/08 20:47:02  rpantos
 Add support for mDNSResponder on Linux.
 
@@ -143,7 +146,6 @@ First checkin
 #include <sys/uio.h>
 #include <sys/select.h>
 #include <netinet/in.h>
-#include <signal.h>
 
 #include "mDNSUNP.h"
 #include "GenLinkedList.h"
@@ -1098,10 +1100,8 @@ mStatus mDNSPosixListenForSignalInEventLoop( int signum)
 	struct sigaction	action;
 	mStatus				err;
 
+	bzero( &action, sizeof action);		// more portable than member-wise assignment
 	action.sa_handler = NoteSignal;
-	sigemptyset( &action.sa_mask);
-	action.sa_flags = SA_NOMASK;
-	action.sa_restorer = NULL;
 	err = sigaction( signum, &action, (struct sigaction*) NULL);
 	
 	sigaddset( &gEventSignalSet, signum);
@@ -1115,10 +1115,8 @@ mStatus mDNSPosixIgnoreSignalInEventLoop( int signum)
 	struct sigaction	action;
 	mStatus				err;
 
+	bzero( &action, sizeof action);		// more portable than member-wise assignment
 	action.sa_handler = SIG_DFL;
-	sigemptyset( &action.sa_mask);
-	action.sa_flags = SA_NOMASK;
-	action.sa_restorer = NULL;
 	err = sigaction( signum, &action, (struct sigaction*) NULL);
 	
 	sigdelset( &gEventSignalSet, signum);

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.10  2003/12/11 03:03:51  rpantos
+Clean up mDNSPosix so that it builds on OS X again.
+
 Revision 1.9  2003/12/08 20:47:02  rpantos
 Add support for mDNSResponder on Linux.
 
@@ -57,6 +60,7 @@ First checkin
 #ifndef __mDNSUNP_h
 #define __mDNSUNP_h
 
+#include <stdint.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <net/if.h>
