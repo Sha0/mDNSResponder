@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.285  2005/01/22 00:07:54  ksekar
+<rdar://problem/3960546> mDNSResponder should look at all browse domains in SCPreferences
+
 Revision 1.284  2005/01/21 23:07:17  ksekar
 <rdar://problem/3960795> mDNSResponder causes Dial on Demand
 
@@ -938,7 +941,7 @@ static DNameListElem *DefRegList = NULL;       // manually generated list of dom
 static ARListElem *SCPrefBrowseDomains = NULL; // manually generated local-only PTR records for browse domains we get from SCPreferences
 
 static domainname DynDNSRegDomain;             // Default wide-area zone for service registration
-static domainname DynDNSBrowseDomain;          // Default wide-area zone for legacy ("empty string") browses
+static CFArrayRef DynDNSBrowseDomains = NULL;  // Default wide-area zones for legacy ("empty string") browses
 static domainname DynDNSHostname;
 
 static mDNSBool DomainDiscoveryDisabled = mDNSfalse;
@@ -1098,7 +1101,7 @@ mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
 	SCNetworkConnectionFlags flags;
 	SCNetworkReachabilityRef ReachRef = NULL;
 
-	ReachRef = SCNetworkReachabilityCreateWithAddress(kCFAllocatorDefault, addr);
+	ReachRef = SCNetworkReachabilityCreateWithAddress(kCFAllocatorDefault, addr);	
 	if (!ReachRef) { LogMsg("ERROR: RequiresConnection - SCNetworkReachabilityCreateWithAddress"); goto end; }
 	if (!SCNetworkReachabilityGetFlags(ReachRef, &flags)) { LogMsg("ERROR: RequiresConnection - SCNetworkReachabilityGetFlags"); goto end; }
 	result = flags & kSCNetworkFlagsConnectionRequired;
@@ -1611,14 +1614,14 @@ mDNSlocal mDNSBool DDNSSettingEnabled(CFDictionaryRef dict)
 	return val ? mDNStrue : mDNSfalse;
 	}
 
-mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const regDomain, domainname *const browseDomain)
+mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const regDomain, CFArrayRef *const browseDomains)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];
 
 	fqdn->c[0] = 0;
 	regDomain->c[0] = 0;
-	browseDomain->c[0] = 0;
 	buf[0] = 0;
+	*browseDomains = NULL;
 	
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
 	if (store)
@@ -1662,18 +1665,8 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
 			if (browseArray)
 				{
-				CFDictionaryRef browseDict = CFArrayGetValueAtIndex(browseArray, 0);
-				if (browseDict && DDNSSettingEnabled(browseDict))
-					{
-					CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
-					if (name)
-						{
-						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-							!MakeDomainNameFromDNSNameString(browseDomain, buf) || !browseDomain->c[0])
-							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browse domain: %s", buf[0] ? buf : "(unknown)");
-						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browse zone: %s", buf);						
-						}
-					}
+				CFRetain(browseArray);
+				*browseDomains = browseArray;
 				}
 			CFRelease(dict);
 			}
@@ -2730,16 +2723,45 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 		}
 	}
 
+mDNSlocal void SetSCPrefsBrowseDomainsFromCFArray(mDNS *m, CFArrayRef browseDomains, mDNSBool add)
+	{
+	if (browseDomains)
+		{
+		CFIndex count = CFArrayGetCount(browseDomains);
+		CFDictionaryRef browseDict;
+		char buf[MAX_ESCAPED_DOMAIN_NAME];
+		int i;
+		
+		for (i = 0; i < count; i++)
+			{
+			browseDict = (CFDictionaryRef)CFArrayGetValueAtIndex(browseDomains, i);
+			if (browseDict && DDNSSettingEnabled(browseDict))
+				{
+				CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
+				if (name)
+					{
+					domainname BrowseDomain;
+					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) || !MakeDomainNameFromDNSNameString(&BrowseDomain, buf) || !BrowseDomain.c[0])
+						LogMsg("SetSCPrefsBrowseDomainsFromCFArray SCDynamicStore bad DDNS browse domain: %s", buf[0] ? buf : "(unknown)");
+					else { debugf("SetSCPrefsBrowseDomainsFromCFArray: %s", buf); SetSCPrefsBrowseDomain(m, &BrowseDomain, add); }
+					}
+				}
+			}
+		}
+	}
+
+
 mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	{
 	static mDNSBool LegacyNATInitialized = mDNSfalse;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	CFDictionaryRef dict;
 	CFStringRef     key;
-	domainname BrowseDomain, RegDomain, fqdn;
-
+	domainname RegDomain, fqdn;
+	CFArrayRef NewBrowseDomains = NULL;
+	
 	// get fqdn, zone from SCPrefs
-	GetUserSpecifiedDDNSConfig(&fqdn, &RegDomain, &BrowseDomain);
+	GetUserSpecifiedDDNSConfig(&fqdn, &RegDomain, &NewBrowseDomains);
 	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, fqdn.c[0] ? NULL : &fqdn, RegDomain.c[0] ? NULL : &RegDomain, &DomainDiscoveryDisabled);
 
 	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
@@ -2757,13 +2779,19 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 			SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNStrue);
 			}
 		}
-	
-	if (!SameDomainName(&BrowseDomain, &DynDNSBrowseDomain))
+
+    // Add new browse domains to internal list
+	if (NewBrowseDomains) SetSCPrefsBrowseDomainsFromCFArray(m, NewBrowseDomains, mDNStrue);
+
+	// Remove old browse domains from internal list
+	if (DynDNSBrowseDomains) 
 		{
-		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNSfalse);
-		AssignDomainName(&DynDNSBrowseDomain, &BrowseDomain);
-		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNStrue);
+		SetSCPrefsBrowseDomainsFromCFArray(m, DynDNSBrowseDomains, mDNSfalse);
+		CFRelease(DynDNSBrowseDomains);
 		}
+
+	// Replace the old browse domains array with the new array
+	DynDNSBrowseDomains = NewBrowseDomains;
 	
 	if (!SameDomainName(&fqdn, &DynDNSHostname))
 		{
@@ -3244,7 +3272,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return err;
 
 	DynDNSRegDomain.c[0] = '\0';
-	DynDNSBrowseDomain.c[0] = '\0';
 	DynDNSConfigChanged(m);						// Get initial DNS configuration
 
 	InitDNSConfig(m);
