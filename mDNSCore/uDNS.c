@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.146  2004/12/12 23:30:40  ksekar
+<rdar://problem/3916987> Extra RRs not properly unlinked when parent service registration fails
+
 Revision 1.145  2004/12/12 22:56:29  ksekar
 <rdar://problem/3668508> Need to properly handle duplicate long-lived queries
 
@@ -1856,6 +1859,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 	AuthRecord *UpdateR = mDNSNULL;
 	uDNS_RegInfo *info = &srs->uDNS_info;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
+	ExtraResourceRecord **e = &srs->Extras;
 	
 	switch (info->state)
 		{
@@ -1946,35 +1950,42 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			err = mStatus_UnknownErr;
 		}
 
-	if (info->state == regState_Registered) 
+	while (*e)
 		{
-		AuthRecord *e;
-		for (e = m->uDNS_info.RecordRegistrations; e; e = e->next)
-			{
-			if (e->uDNS_info.state == regState_ExtraQueued && SameDomainName(&e->resrec.name, &srs->RR_SRV.resrec.name))
+		uDNS_RegInfo *einfo = &(*e)->r.uDNS_info;
+		if (einfo->state == regState_ExtraQueued)
+			{			
+			if (info->state == regState_Registered && !err)
 				{
-				// extra resource record queued for this service
-				uDNS_RegInfo *einfo = &e->uDNS_info, *sinfo = &srs->uDNS_info;
-				AssignDomainName(einfo->zone, sinfo->zone);
-				einfo->ns = sinfo->ns;
-				einfo->port = sinfo->port;
-				einfo->lease = sinfo->lease;
-				sendRecordRegistration(m, e);
+				// extra resource record queued for this service - copy zone info and register
+				AssignDomainName(einfo->zone, info->zone);
+				einfo->ns = info->ns;
+				einfo->port = info->port;
+				einfo->lease = info->lease;
+				sendRecordRegistration(m, &(*e)->r);
+				e = &(*e)->next;
+				}
+			else if (err && einfo->state != regState_Unregistered)
+				{
+				// unlink extra from list
+				einfo->state = regState_Unregistered;
+				*e = (*e)->next;
 				}
 			}
-
-		srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.		
-		if (srs->RR_TXT.uDNS_info.UpdateQueued) SendRecordUpdate(m, &srs->RR_TXT, &srs->uDNS_info);
-		
-		if (info->TargetChangeDeferred)
-			{
-			info->ClientCallbackDeferred = InvokeCallback;
-			info->DeferredStatus = err;
-			info->state = regState_Refresh;  // this updates the target	   
-			SendServiceRegistration(m, srs);
-			return;
-			}				
+		else e = &(*e)->next;
 		}
+
+	srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.		
+	if (srs->RR_TXT.uDNS_info.UpdateQueued) SendRecordUpdate(m, &srs->RR_TXT, &srs->uDNS_info);
+	
+	if (info->TargetChangeDeferred)
+		{
+		info->ClientCallbackDeferred = InvokeCallback;
+		info->DeferredStatus = err;
+		info->state = regState_Refresh;  // this updates the target	   
+		SendServiceRegistration(m, srs);
+		return;
+		}				
 
 	if (info->state == regState_Unregistered) unlinkSRS(&m->uDNS_info, srs);
 
@@ -3784,6 +3795,10 @@ error:
 mDNSlocal mStatus SetupRecordRegistration(mDNS *m, AuthRecord *rr)
 	{
 	domainname *target = GetRRDomainNameTarget(&rr->resrec);
+	AuthRecord *ptr = m->uDNS_info.RecordRegistrations;
+
+	while (ptr && ptr != rr) ptr = ptr->next;
+	if (ptr) { LogMsg("Error: SetupRecordRegistration - record %##s already in list!", rr->resrec.name.c); return mStatus_AlreadyRegistered; }
 	
 	if (rr->uDNS_info.state == regState_FetchingZoneData ||
 		rr->uDNS_info.state == regState_Pending ||
