@@ -45,6 +45,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.475  2004/11/29 23:13:31  cheshire
+<rdar://problem/3484552> All unique records in a set should have the cache flush bit set
+Additional check: Make sure we don't unnecessarily send packets containing only additionals.
+(This could occur with multi-packet KA lists, if the answer and additionals were marked
+by the query packet, and then the answer were later suppressed in a subsequent KA packet.)
+
 Revision 1.474  2004/11/29 17:18:12  cheshire
 Remove "Unknown DNS packet type" message for update responses
 
@@ -2867,35 +2873,41 @@ mDNSlocal void SendResponses(mDNS *const m)
 			if (rr->ImmedAdditional == intf->InterfaceID)
 				if (ResourceRecordIsValidAnswer(rr))
 					{
-					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
-						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
-					if (newptr) newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, &rr->resrec);
-					if (newptr)
+					// If we have at least one answer already in the packet, then plan to add additionals too
+					mDNSBool SendAdditional = (response.h.numAnswers > 0);
+					
+					// If we're not planning to send any additionals, but this record is a unique one, then
+					// make sure we haven't already sent any other members of its RRSet -- if we have, then they
+					// will have had the cache flush bit set, so now we need to finish the job and send the rest.
+					if (!SendAdditional && (rr->resrec.RecordType & kDNSRecordTypeUniqueMask))
 						{
-						responseptr = newptr;
-						rr->ImmedAdditional = mDNSNULL;
-						rr->RequireGoodbye = mDNStrue;
-						// If we successfully put this additional record in the packet, we record LastMCTime & LastMCInterface.
-						// This matters particularly in the case where we have more than one IPv6 (or IPv4) address, because otherwise,
-						// when we see our own multicast with the cache flush bit set, if we haven't set LastMCTime, then we'll get
-						// all concerned and re-announce our record again to make sure it doesn't get flushed from peer caches.
-						rr->LastMCTime      = m->timenow;
-						rr->LastMCInterface = intf->InterfaceID;
-						}
-					else if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
-						{
-						// If this record is a unique one, and we've already sent at least one other member of the set
-						// (which will have had the cache flush bit set), then we can't neglect sending this one.
 						const AuthRecord *a;
 						for (a = m->ResourceRecords; a; a=a->next)
 							if (a->LastMCTime      == m->timenow &&
 								a->LastMCInterface == intf->InterfaceID &&
-								SameResourceRecordSignature(&a->resrec, &rr->resrec)) break;
-						if (a == mDNSNULL) rr->ImmedAdditional = mDNSNULL;	// None of this set was sent; don't need to send this either
+								SameResourceRecordSignature(&a->resrec, &rr->resrec)) { SendAdditional = mDNStrue; break; }
 						}
-					else
-						rr->ImmedAdditional = mDNSNULL;
-					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
+					if (!SendAdditional)					// If we don't want to send this after all,
+						rr->ImmedAdditional = mDNSNULL;		// then cancel its ImmedAdditional field
+					else if (newptr)						// Else, try to add it if we can
+						{
+						if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
+						newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, &rr->resrec);
+						rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear cache flush bit back to normal state
+						if (newptr)
+							{
+							responseptr = newptr;
+							rr->ImmedAdditional = mDNSNULL;
+							rr->RequireGoodbye = mDNStrue;
+							// If we successfully put this additional record in the packet, we record LastMCTime & LastMCInterface.
+							// This matters particularly in the case where we have more than one IPv6 (or IPv4) address, because otherwise,
+							// when we see our own multicast with the cache flush bit set, if we haven't set LastMCTime, then we'll get
+							// all concerned and re-announce our record again to make sure it doesn't get flushed from peer caches.
+							rr->LastMCTime      = m->timenow;
+							rr->LastMCInterface = intf->InterfaceID;
+							}
+						}
 					}
 	
 		if (response.h.numAnswers > 0 || response.h.numAdditionals)
