@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.155  2005/01/19 03:00:47  cheshire
+Show Add/Rmv in DNSServiceBrowse LogOperation() message
+
 Revision 1.154  2005/01/15 00:56:42  ksekar
 <rdar://problem/3954575> Unicast services don't disappear when logging
 out of VPN
@@ -1870,7 +1873,8 @@ static void browse_result_callback(mDNS *const m, DNSQuestion *question, const R
     reply_state *rep;
     mStatus err;
     (void)m; // Unused
-	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s", req->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
+	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s %s",
+		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
 
     err = gen_rr_response(&answer->rdata->u.name, answer->InterfaceID, req, &rep);
     if (err)
