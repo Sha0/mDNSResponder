@@ -41,11 +41,14 @@
 #define MDNS_UDS_SERVERPATH "/var/run/mDNSResponder" 
 #define LISTENQ 100
 #define TXT_RECORD_INDEX -1	// record index for default text record
-
+#define MAX_CTLPATH 256	    // longest legal control path length
 
 // IPC data encoding constants and types
-
 #define VERSION 1
+#define IPC_FLAGS_NOREPLY 1	// set flag if no asynchronous replies are to be sent to client
+#define IPC_FLAGS_REUSE_SOCKET 2 // set flag if synchronous errors are to be sent via the primary socket
+                                // (if not set, first string in message buffer must be path to error socket
+
 
 typedef enum
     {
@@ -64,9 +67,10 @@ typedef enum
 
 typedef enum
     {
-    enumeration_reply = 10,
+    enumeration_reply = 64,
     reg_service_reply,
     browse_reply,
+    resolve_reply,
     query_reply,
     reg_record_reply
     } reply_op_t;
@@ -79,11 +83,11 @@ typedef struct ipc_msg_hdr_struct ipc_msg_hdr;
 // client application
 
 typedef void (*process_reply_callback)
-(
-DNSServiceDiscoveryRef sdr,
-ipc_msg_hdr *hdr,
-char *msg
-);
+    (
+    DNSServiceRef sdr,
+    ipc_msg_hdr *hdr,
+    char *msg
+    );
 
 // allow 64-bit client to interoperate w/ 32-bit daemon
 typedef union
@@ -93,14 +97,11 @@ typedef union
     } client_context_t;
 
 
-#define MAX_CTLPATH 256
-//!!!KRS it would be cleaner to just put the flags in the header, since they can change after the message is formatted
 typedef struct ipc_msg_hdr_struct
     {
-    uint32_t len;			
-    uint32_t datalen;
     uint32_t version;
-    char ctrl_path[MAX_CTLPATH];     // path to the named (client-side) control socket that receives syncronous error messages
+    uint32_t datalen;
+    uint32_t flags;
     union
     	{
         request_op_t request_op;
@@ -110,7 +111,6 @@ typedef struct ipc_msg_hdr_struct
     int reg_index;                   // identifier for a record registered via DNSServiceRegisterRecord() on a
     // socket connected by DNSServiceConnect().  Must be unique in the scope of the connection, such that and
     // index/socket pair uniquely identifies a record.  (Used to select records for removal by DNSServiceRemoveRecord())
-    
     } ipc_msg_hdr_struct;			
 
 
@@ -123,14 +123,14 @@ typedef struct ipc_msg_hdr_struct
 // it is advanced to point to the next field, or the end of the message
 
 
-void put_flags(const DNSServiceDiscoveryFlags flags, char **ptr);
-DNSServiceDiscoveryFlags get_flags(char **ptr);
+void put_flags(const DNSServiceFlags flags, char **ptr);
+DNSServiceFlags get_flags(char **ptr);
 
 void put_long(const uint32_t l, char **ptr);
 uint32_t get_long(char **ptr);
 
-void put_error_code(const DNSServiceReplyErrorType, char **ptr);
-DNSServiceReplyErrorType get_error_code(char **ptr);
+void put_error_code(const DNSServiceErrorType, char **ptr);
+DNSServiceErrorType get_error_code(char **ptr);
 
 int put_string(const char *str, char **ptr);
 int get_string(char **ptr, char *buffer, int buflen);

@@ -12,8 +12,6 @@
 #define T_SRV 33
 #endif
 
-
-
 // constants
 #define MAX_DOMAIN_LABEL 63
 #define MAX_DOMAIN_NAME 255
@@ -22,8 +20,8 @@
 
 // data structure defs
 typedef struct { u_char c[ 64]; } domainlabel;
-
 typedef struct { u_char c[256]; } domainname;
+
 
 typedef struct 
     { 
@@ -40,34 +38,56 @@ static char *ConvertDomainNameToCString_withescape(const domainname *const name,
 static char *ConvertDomainLabelToCString_withescape(const domainlabel *const label, char *ptr, char esc);
 //static void MyCallbackWrapper(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *i, void *context);
 static void print_rdata(int type, int len, const u_char *rdata);
-static void query_cb(const DNSServiceDiscoveryRef DNSServiceRef, const DNSServiceDiscoveryFlags flags, const u_int32_t interfaceIndex, const DNSServiceReplyErrorType errorCode, const char *name, const u_int16_t rrtype, const u_int16_t rrclass, const u_int16_t rdlen, const char *rdata, const u_int32_t ttl, void                               *context);
-
+static void query_cb(const DNSServiceRef DNSServiceRef, const DNSServiceFlags flags, const u_int32_t interfaceIndex, const DNSServiceErrorType errorCode, const char *name, const u_int16_t rrtype, const u_int16_t rrclass, const u_int16_t rdlen, const void *rdata, const u_int32_t ttl, void *context);
+static void resolve_cb(const DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const char                          *txtRecord, void *context);
 
 // globals
-static DNSServiceDiscoveryRef sdr = NULL;
+static DNSServiceRef sdr = NULL;
 
-
-
-
-int main (int argc, const char * argv[])  {
-    int err;
+int main (int argc, char * argv[])  {
+    int err, t;
+    char *name, *type, *domain;
+    char *txtstring = "My Txt Record";
+    
+    char full[1024];
     
     if (signal(SIGINT, sighdlr) == SIG_ERR)  fprintf(stderr, "ERROR - can't catch interupt!\n");
+    if (argc < 2) exit(1);
 
     if (!strcmp(argv[1], "-query"))
         {
-        if (argc != 4)
+        t = atol(argv[5]);
+        err = DNSServiceConstructFullName(full, argv[2], argv[3], argv[4]);
+        if (err) exit(1);
+        printf("resolving fullname %s type %d\n", full, t);
+        err = DNSServiceQueryRecord(&sdr, 0, 0, full, t, 1, query_cb, NULL);
+        while (1) DNSServiceProcessResult(sdr);
+        }
+
+    if (!strcmp(argv[1], "-regservice"))
+        {
+        if (argc > 2) name = argv[2];
+        else name = NULL;
+        err = DNSServiceRegister(&sdr, 0, 0, name, "_testservice._tcp", NULL, NULL, 123, strlen(txtstring), txtstring, NULL, NULL);
+        if (err) 
             {
-            printf("Usage: uds_test -query [name] [type]\n");
+            printf("DNSServiceRegister returned error %d\n", err);
             exit(1);
             }
-        err = DNSServiceQuery(&sdr, 0, 0, argv[2], (uint16_t)strtol(argv[3], NULL, 10), 1, query_cb, NULL);
-        if (err)
+        while (1) DNSServiceProcessResult(sdr);
+        }
+    if (!strcmp(argv[1], "-resolve"))
+        {
+        name = argv[2];
+        type = argv[3];
+        domain = argv[4];
+        err = DNSServiceResolve(&sdr, 0, 0, name, type, domain, resolve_cb, NULL);
+        if (err) 
             {
-            printf("DNSServiceQuery returned error %d\n", err);
+            printf("DNSServiceResolve returned error %d\n", err);
             exit(1);
             }
-        while (1) DNSServiceDiscoveryProcessResult(sdr);
+        while(1) DNSServiceProcessResult(sdr);
         }
     exit(1);
     }    
@@ -85,12 +105,12 @@ static void MyCallbackWrapper(CFSocketRef sr, CFSocketCallBackType t, CFDataRef 
     (void)dr;
     (void)i;
     
-    DNSServiceDiscoveryRef *sdr = context;
+    DNSServiceRef *sdr = context;
     DNSServiceDiscoveryProcessResult(*sdr);
     }
 */
 
-static void query_cb(const DNSServiceDiscoveryRef DNSServiceRef, const DNSServiceDiscoveryFlags flags, const u_int32_t interfaceIndex, const DNSServiceReplyErrorType errorCode, const char *name, const u_int16_t rrtype, const u_int16_t rrclass, const u_int16_t rdlen, const char *rdata, const u_int32_t ttl, void *context) 
+static void query_cb(const DNSServiceRef DNSServiceRef, const DNSServiceFlags flags, const u_int32_t interfaceIndex, const DNSServiceErrorType errorCode, const char *name, const u_int16_t rrtype, const u_int16_t rrclass, const u_int16_t rdlen, const void *rdata, const u_int32_t ttl, void *context) 
     {
     (void)DNSServiceRef;
     (void)flags;
@@ -108,7 +128,16 @@ static void query_cb(const DNSServiceDiscoveryRef DNSServiceRef, const DNSServic
     print_rdata(rrtype, rdlen, rdata);
     }
  
-
+static void resolve_cb(const DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const char *txtRecord, void *context)
+    {
+    int i;
+    
+    #pragma unused(sdRef, flags, interfaceIndex, errorCode, context, txtRecord)
+    printf("Resolved %s to %s:%d (%d bytes txt data)\n", fullname, hosttarget, port, txtLen);
+    printf("TXT Data:\n");
+    for (i = 0; i < txtLen; i++)
+        if (txtRecord[i] >= ' ') printf("%c", txtRecord[i]);
+    }
 
 
 
@@ -206,7 +235,7 @@ static void sighdlr(int signo)
     assert(signo == SIGINT);
     fprintf(stderr, "Received sigint - deallocating serviceref and exiting\n");
     if (sdr)
-        DNSServiceDiscoveryRefDeallocate(sdr);
+        DNSServiceRefDeallocate(sdr);
     exit(1);
     }
 

@@ -25,20 +25,20 @@
 
  
 
-void put_flags(const DNSServiceDiscoveryFlags flags, char **ptr)
+void put_flags(const DNSServiceFlags flags, char **ptr)
     {
     assert(ptr && *ptr);
-    memcpy(*ptr, &flags, sizeof(DNSServiceDiscoveryFlags));
+    memcpy(*ptr, &flags, sizeof(DNSServiceFlags));
     *ptr += sizeof(flags);
     }
 
-DNSServiceDiscoveryFlags get_flags(char **ptr)
+DNSServiceFlags get_flags(char **ptr)
     {
-    DNSServiceDiscoveryFlags flags;
+    DNSServiceFlags flags;
 	
     assert(ptr && *ptr);
-	flags = *(DNSServiceDiscoveryFlags *)*ptr;
-	*ptr += sizeof(DNSServiceDiscoveryFlags);
+	flags = *(DNSServiceFlags *)*ptr;
+	*ptr += sizeof(DNSServiceFlags);
 	return flags;
     }
 
@@ -60,21 +60,21 @@ uint32_t get_long(char **ptr)
     return l;
     }
 
-void put_error_code(const DNSServiceReplyErrorType error, char **ptr)
+void put_error_code(const DNSServiceErrorType error, char **ptr)
     {
     assert(ptr && *ptr);
 
     memcpy(*ptr, &error, sizeof(error));
-    *ptr += sizeof(DNSServiceReplyErrorType);
+    *ptr += sizeof(DNSServiceErrorType);
     }
 
-DNSServiceReplyErrorType get_error_code(char **ptr)
+DNSServiceErrorType get_error_code(char **ptr)
     {
-    DNSServiceReplyErrorType error;
+    DNSServiceErrorType error;
 	
     assert(ptr && *ptr);
-    error = *(DNSServiceReplyErrorType *)(*ptr);
-    *ptr += sizeof(DNSServiceReplyErrorType);
+    error = *(DNSServiceErrorType *)(*ptr);
+    *ptr += sizeof(DNSServiceErrorType);
     return error;
     }
 
@@ -96,12 +96,10 @@ uint16_t get_short(char **ptr)
     return s;
     }
 
-	
-
-
 
 int put_string(const char *str, char **ptr)
     {
+    if (!str) str = "";
     strcpy(*ptr, str);
     *ptr += strlen(str) + 1;
     return 0;
