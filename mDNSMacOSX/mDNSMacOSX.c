@@ -25,6 +25,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.283  2005/01/19 21:16:16  cheshire
+Make sure when we set NetworkChanged that we don't set it to zero
+
 Revision 1.282  2005/01/19 19:19:21  ksekar
 <rdar://problem/3960191> Need a way to turn off domain discovery
 
@@ -2857,8 +2860,8 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	LogOperation("***   NetworkChanged   *** %d change%s, delay %d", c, c>1?"s":"", delay);
 
 	if (!m->p->NetworkChanged ||
-		m->p->NetworkChanged - (m->timenow + delay) < 0)
-		m->p->NetworkChanged = (m->timenow + delay);
+		m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
+		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
 	
 	if (!m->SuppressSending ||
 		m->SuppressSending - m->p->NetworkChanged < 0)
