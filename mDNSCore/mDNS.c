@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.321  2003/11/14 19:18:34  cheshire
+Move AssignDomainName macro to mDNSClientAPI.h to that client layers can use it too
+
 Revision 1.320  2003/11/13 06:45:04  cheshire
 Fix compiler warning on certain compilers
 
@@ -1135,8 +1138,6 @@ static const char *const mDNS_DomainTypeNames[] =
 	"_default._register._mdns._udp.local."
 	};
 
-#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC).c, (DST).c, DomainNameLength(&(SRC)))
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -2168,8 +2169,8 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 	}
 
 // PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if the
-// authoratative record is in the probing state.  Probes are sent with the wildcard type, so a response of
-// any type should match, even if it is not the type the client plans to use.
+// authoratative record is in the probing state.  We always send probes with the wildcard type kDNSQType_ANY,
+// so a response of any type should match, even if it is not the type the client plans to use.
 mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, const AuthRecord *const authrr)
 	{
 	if (!pktrr)  { LogMsg("PacketRRMatchesSignature ERROR: pktrr is NULL"); return(mDNSfalse); }

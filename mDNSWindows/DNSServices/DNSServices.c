@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.18  2003/11/14 19:18:34  cheshire
+Move AssignDomainName macro to mDNSClientAPI.h to that client layers can use it too
+
 Revision 1.17  2003/10/31 12:16:03  bradley
 Added support for providing the resolved host name to the callback.
 
@@ -294,8 +297,6 @@ struct	DNSHostRegistration
 	#define require_action( assertion, label, action )					do { if( !(assertion) ) { {action;}; goto label; } } while(0)
 	#define require_action_string( assertion, label, action, cstring )	do { if( !(assertion) ) { {action;}; goto label; } } while(0)
 #endif
-
-#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC).c, (DST).c, DomainNameLength(&(SRC)))
 
 #if 0
 #pragma mark == Prototypes ==
