@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.137  2004/04/08 00:59:55  cheshire
+<rdar://problem/3609972> When interface turned off, browse "remove" events delivered with interface index zero
+Unify use of the InterfaceID field, and make code that walks the list respect the CurrentlyActive flag
+
 Revision 1.136  2004/04/07 01:08:57  cheshire
 <rdar://problem/3609972> When interface turned off, browse "remove" events delivered with interface index zero
 
@@ -471,8 +475,8 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS 
 	if (index == (uint32_t)~0) return(mDNSInterface_LocalOnly);
 	if (index)
 		for (i = m->p->InterfaceList; i; i = i->next)
-			if (i->scope_id == index)
-				return(i->ifinfo.InterfaceID);
+			// Don't get tricked by inactive interfaces with no InterfaceID set
+			if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
 	return(mDNSNULL);
 	}
 	
@@ -482,8 +486,8 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 	if (id == mDNSInterface_LocalOnly) return((mDNSu32)~0);
 	if (id)
 		for (i = m->p->InterfaceList; i; i = i->next)
-			if (i->ifinfo.InterfaceID == id)
-				return i->scope_id;
+			// Don't use i->ifinfo.InterfaceID here, because we DO want to find inactive interfaces, which have no InterfaceID set
+			if ((mDNSInterfaceID)i == id) return(i->scope_id);
 	return 0;
 	}
 
@@ -1215,6 +1219,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		if (!(ifa->ifa_flags & IFF_UP))
 			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface not IFF_UP",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
+		if (!(ifa->ifa_flags & IFF_MULTICAST))
+			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface not IFF_MULTICAST",
+				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (ifa->ifa_flags & IFF_POINTOPOINT)
 			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface IFF_POINTOPOINT",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
@@ -1287,7 +1294,7 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, char 
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (!strcmp(i->ifa_name, ifname) &&
+		if (i->CurrentlyActive && !strcmp(i->ifa_name, ifname) &&
 			((AAAA_OVER_V4                                              ) ||
 			 (type == AF_INET  && i->ifinfo.ip.type == mDNSAddrType_IPv4) ||
 			 (type == AF_INET6 && i->ifinfo.ip.type == mDNSAddrType_IPv6) )) return(i);
@@ -1298,9 +1305,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (!i->CurrentlyActive)							// If not active, then just set its InterfaceID to refer to itself
-			i->ifinfo.InterfaceID = (mDNSInterfaceID)i;		// (mDNSPlatformInterfaceIndexfromInterfaceID() requires this)
-		else
+		if (i->CurrentlyActive)
 			{
 			NetworkInterfaceInfo *n = &i->ifinfo;
 			NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
@@ -1314,6 +1319,9 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 	
 			if (!n->InterfaceID)
 				{
+				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
+				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
+				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)alias;
 				mDNS_RegisterInterface(m, n);
 				LogOperation("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
@@ -1389,6 +1397,9 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 				i->ifa_name, i->scope_id, alias, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
 			mDNS_DeregisterInterface(m, &i->ifinfo);
 			i->ifinfo.InterfaceID = mDNSNULL;
+			// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
+			// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
+			// If n->InterfaceID is NOT set, then it's not registered and we should not call mDNS_DeregisterInterface() on it.
 			}
 		}
 
