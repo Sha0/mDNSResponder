@@ -553,6 +553,7 @@
 				6575FC1B022EB76000000109,
 			);
 			buildSettings = {
+				INSTALL_PATH = /usr/local/bin;
 				OTHER_CFLAGS = "-no-cpp-precomp";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
