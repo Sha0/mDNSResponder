@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.449  2004/10/18 22:57:07  cheshire
+<rdar://problem/3711302> Seen in console: Ignored apparent spoof mDNS Response with TTL 1
+
 Revision 1.448  2004/10/16 00:16:59  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -4704,7 +4707,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		{
 		mDNSBool ignoredlots = (++NumPktsIgnored > NumPktsAccepted + 10);
 		if (ignoredlots || NumPktsIgnored <= 10)
-			LogMsg("Ignored apparent spoof mDNS Response from %#-15a:%-5d to %#-15a:%-5d on %p with %2d Q %2d Ans %2d Auth %2d Add",
+			debugf("Ignored apparent spoof mDNS Response from %#-15a:%-5d to %#-15a:%-5d on %p with %2d Q %2d Ans %2d Auth %2d Add",
 				srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 				response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
 		if (ignoredlots)
