@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: makefile,v $
+# Revision 1.3  2004/11/23 08:13:07  shersche
+# Link to the iphlpapi.lib for GetAdaptersInfo
+#
 # Revision 1.2  2004/06/26 20:07:06  rpantos
 # Update to use WinVersRes.h
 #
@@ -125,7 +128,7 @@ $(BUILDDIR)\dns_sd.jar: $(JARCONTENTS)
 
 $(BUILDDIR)\jdns_sd.dll: $(JAVASRC)\JNISupport.c $(OBJDIR)\DNSSD.java.h $(OBJDIR)\jdns_sd.RES
 	$(CC) -Fe$@ $(JAVASRC)\JNISupport.c $(CFLAGS) -I$(OBJDIR) \
-	$(LIBDIR)\DNSSD.lib $(JDK)\lib\jvm.lib ws2_32.lib $(OBJDIR)\jdns_sd.RES
+	$(LIBDIR)\DNSSD.lib $(JDK)\lib\jvm.lib ws2_32.lib iphlpapi.lib $(OBJDIR)\jdns_sd.RES
 
 .SUFFIXES : .java
 {$(JAVASRC)}.java{$(OBJDIR)\com\apple\dnssd}.class:	
