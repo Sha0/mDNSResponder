@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.158  2003/06/02 22:57:09  cheshire
+Minor clarifying changes to comments and log messages;
+IdenticalResourceRecordAnyInterface() is really more accurately called just IdenticalResourceRecord()
+
 Revision 1.157  2003/05/31 00:09:49  cheshire
 <rdar://problem/3274862> Add ability to discover what services are on a network
 
@@ -480,7 +484,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 
 #if(defined(_MSC_VER))
 	// Disable warnings about Microsoft Visual Studio/C++ not understanding "pragma unused"
-    #pragma warning( disable:4068 )
+	#pragma warning( disable:4068 )
 #endif
 
 // ***************************************************************************
@@ -832,7 +836,7 @@ mDNSexport mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt,
 	{
 	mDNSu32 length;
 	
-    va_list ptr;
+	va_list ptr;
 	va_start(ptr,fmt);
 	length = mDNS_vsnprintf(sbuffer, buflen, fmt, ptr);
 	va_end(ptr);
@@ -1511,9 +1515,12 @@ mDNSlocal mDNSs32 HashSlot(const domainname *name)
 	return sum % CACHE_HASH_SLOTS;
 	}
 
-// SameResourceRecordSignature returns true if two resources records have the same interface, name, type, and class.
-// -- i.e. if they would both be given in response to the same question.
-// (TTL and rdata may differ)
+// SameResourceRecordSignature returns true if two resources records have the same name, type, and class, and may be sent
+// (or were received) on the same interface (i.e. if *both* records specify an interface, then it has to match).
+// TTL and rdata may differ.
+// This is used for cache flush management:
+// When sending a unique record, all other records matching "SameResourceRecordSignature" must also be sent
+// When receiving a unique record, all old cache records matching "SameResourceRecordSignature" are flushed
 mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!r1) { LogMsg("SameResourceRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
@@ -1528,9 +1535,9 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 // authoratative record is in the probing state.  Probes are sent with the wildcard type, so a response of 
 // any type should match, even if it is not the type the client plans to use.
 mDNSlocal mDNSBool PacketRRMatchesSignature(const ResourceRecord *const pktrr, const ResourceRecord *const authrr)
-        {
-	if (!pktrr) { LogMsg("SameResourceRecordSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
-	if (!authrr) { LogMsg("SameResourceRecordSignature ERROR: authrr is NULL"); return(mDNSfalse); }
+	{
+	if (!pktrr) { LogMsg("PacketRRMatchesSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
+	if (!authrr) { LogMsg("PacketRRMatchesSignature ERROR: authrr is NULL"); return(mDNSfalse); }
 	if (pktrr->InterfaceID &&
 		authrr->InterfaceID &&
 		pktrr->InterfaceID != authrr->InterfaceID) return(mDNSfalse);
@@ -1538,35 +1545,23 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const ResourceRecord *const pktrr, c
 	return (pktrr->rrclass == authrr->rrclass && SameDomainName(&pktrr->name, &authrr->name));
 	}
 
-// SameResourceRecordSignatureAnyInterface returns true if two resources records have the same name, type, and class.
-// (InterfaceID, TTL and rdata may differ)
-mDNSlocal mDNSBool SameResourceRecordSignatureAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
-	{
-	if (!r1) { LogMsg("SameResourceRecordSignatureAnyInterface ERROR: r1 is NULL"); return(mDNSfalse); }
-	if (!r2) { LogMsg("SameResourceRecordSignatureAnyInterface ERROR: r2 is NULL"); return(mDNSfalse); }
-	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
-	}
-
 // IdenticalResourceRecord returns true if two resources records have
-// the same interface, name, type, class, and identical rdata (TTL may differ)
+// the same name, type, class, and identical rdata (InterfaceID and TTL may differ)
 mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
-	if (!SameResourceRecordSignature(r1, r2)) return(mDNSfalse);
+	if (!r1) { LogMsg("IdenticalResourceRecord ERROR: r1 is NULL"); return(mDNSfalse); }
+	if (!r2) { LogMsg("IdenticalResourceRecord ERROR: r2 is NULL"); return(mDNSfalse); }
+	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass || !SameDomainName(&r1->name, &r2->name)) return(mDNSfalse);
 	return(SameRData(r1->rrtype, r2->rrtype, r1->rdata, r2->rdata));
 	}
 
-// IdenticalResourceRecordAnyInterface returns true if two resources records have
-// the same name, type, class, and identical rdata (InterfaceID and TTL may differ)
-mDNSlocal mDNSBool IdenticalResourceRecordAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
-	{
-	if (!SameResourceRecordSignatureAnyInterface(r1, r2)) return(mDNSfalse);
-	return(SameRData(r1->rrtype, r2->rrtype, r1->rdata, r2->rdata));
-	}
-
-// ResourceRecord *ds is the ResourceRecord from the known answer list in the query
-// This is the information that the requester believes to be correct
-// ResourceRecord *rr is the answer we are proposing to give, if not suppressed
-// This is the information that we believe to be correct
+// ResourceRecord *ks is the ResourceRecord from the known answer list in the query.
+// This is the information that the requester believes to be correct.
+// ResourceRecord *rr is the answer we are proposing to give, if not suppressed.
+// This is the information that we believe to be correct.
+// We've already determined that we plan to give this answer on this interface
+// (either the record is non-specific, or it is specific to this interface)
+// so now we just need to check the name, type, class, rdata and TTL.
 mDNSlocal mDNSBool ShouldSuppressKnownAnswer(const ResourceRecord *const ka, const ResourceRecord *const rr)
 	{
 	// If RR signature is different, or data is different, then don't suppress our answer
@@ -3752,7 +3747,7 @@ mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const Resou
 	const ResourceRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (IdenticalResourceRecordAnyInterface(rr, pktrr))
+		if (IdenticalResourceRecord(rr, pktrr))
 			{
 			while (rr->DependentOn) rr = rr->DependentOn;
 			return(rr);
@@ -3770,7 +3765,7 @@ mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRec
 	const ResourceRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (IdenticalResourceRecordAnyInterface(rr, pktrr))
+		if (IdenticalResourceRecord(rr, pktrr))
 			{
 			while (rr->RRSet && rr != rr->RRSet) rr = rr->RRSet;
 			return(rr);
@@ -3952,8 +3947,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// And see if it suppresses any previously scheduled answers
 		for (rr=m->ResourceRecords; rr; rr=rr->next)
 			{
-			// If we're planning to send this answer on one interface, and only one interface, then allow KA suppression
-			if (rr->ImmedAnswer && rr->ImmedAnswer != mDNSInterfaceMark && ShouldSuppressKnownAnswer(&pktrr, rr))
+			// If we're planning to send this answer on this interface, and only on this interface, then allow KA suppression
+			if (rr->ImmedAnswer == InterfaceID && ShouldSuppressKnownAnswer(&pktrr, rr))
 				{
 				if (srcaddr->type == mDNSAddrType_IPv4)
 					{
@@ -4261,7 +4256,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				{
 				// If we found this exact resource record, refresh its TTL
-				if (IdenticalResourceRecord(&pktrr, rr))
+				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
 					{
 					//debugf("Found RR %##s size %d already in cache", pktrr.name.c, pktrr.rdata->RDLength);
 					rr->TimeRcvd = m->timenow;
@@ -5224,7 +5219,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNS_SetupResourceRecord(&sr->RR_ADV, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeAdvisory, ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared,   ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, InterfaceID, kDNSType_SRV, 60,     kDNSRecordTypeUnique,   ServiceCallback, sr);
- 	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, 60,     kDNSRecordTypeUnique,   ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, 60,     kDNSRecordTypeUnique,   ServiceCallback, sr);
 	
 	// If the client is registering an oversized TXT record,
 	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it
@@ -5293,7 +5288,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	if (ttl == 0) ttl = 60;
 
 	extra->next          = mDNSNULL;
- 	mDNS_SetupResourceRecord(&extra->r, rdata, sr->RR_PTR.InterfaceID, extra->r.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&extra->r, rdata, sr->RR_PTR.InterfaceID, extra->r.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
 	extra->r.name        = sr->RR_SRV.name;
 	extra->r.DependentOn = &sr->RR_SRV;
 	
