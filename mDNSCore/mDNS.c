@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.307  2003/09/09 20:13:30  cheshire
+<rdar://problem/3411105> Don't send a Goodbye record if we never announced it
+Ammend checkin 1.304: Off-by-one error: By this place in the function we've already decremented
+rr->AnnounceCount, so the check needs to be for InitialAnnounceCount-1, not InitialAnnounceCount
+
 Revision 1.306  2003/09/09 03:00:03  cheshire
 <rdar://problem/3413099> Services take a long time to disappear when switching networks.
 Added two constants: kDefaultReconfirmTimeForNoAnswer and kDefaultReconfirmTimeForCableDisconnect
@@ -3406,7 +3411,10 @@ mDNSlocal void SendResponses(mDNS *const m)
 					{
 					RData *OldRData     = rr->resrec.rdata;
 					mDNSu16 oldrdlength = rr->resrec.rdlength;
-					if (ResourceRecordIsValidAnswer(rr) && rr->AnnounceCount < InitialAnnounceCount) // First see if we have to de-register the old data
+					// See if we should send a courtesy "goodbye" the old data before we replace it.
+					// We compare with "InitialAnnounceCount-1" instead of "InitialAnnounceCount" because by the time
+					// we get to this place in this routine we've we've already decremented rr->AnnounceCount
+					if (ResourceRecordIsValidAnswer(rr) && rr->AnnounceCount < InitialAnnounceCount-1)
 						{
 						newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, 0);
 						if (!newptr && response.h.numAnswers) break;
