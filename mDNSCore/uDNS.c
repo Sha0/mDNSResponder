@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.185  2005/02/03 23:48:22  ksekar
+<rdar://problem/3984374> Simultaneous port map requests sometimes fail
+
 Revision 1.184  2005/02/01 19:33:29  ksekar
 <rdar://problem/3985239> Keychain format too restrictive
 
@@ -1262,8 +1265,8 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	if (reply->vers != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto end; }
 	if (reply->opcode != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto end; }
 	if (reply->err.NotAnInteger) { LogMsg("ReceivePortMapReply: received error %d", mDNSVal16(reply->err));  goto end; }
-	if (priv.NotAnInteger != reply->priv.NotAnInteger)
-		{ LogMsg("ReceivePortMapReply: reply private port does not match requested private port");  goto end; }
+	if (priv.NotAnInteger != reply->priv.NotAnInteger) return;  
+		
 
 	lease = (mDNSu32)mDNSVal32(reply->lease);
 	if (lease > 0x70000000UL / mDNSPlatformOneSecond) lease = 0x70000000UL / mDNSPlatformOneSecond;
