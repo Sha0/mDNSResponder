@@ -20,6 +20,9 @@
 .\" @APPLE_LICENSE_HEADER_END@
 .\"
 .\" $Log: mDNS.1,v $
+.\" Revision 1.2  2004/05/18 18:58:29  cheshire
+.\" Refinements from Soren Spies
+.\"
 .\" Revision 1.1  2004/04/22 02:52:53  cheshire
 .\" <rdar://problem/3597463>: mDNSResponder missing man pages: mDNS
 .\"
@@ -46,65 +49,57 @@ The
 command is a network diagnostic tool, much like
 .Xr ping 8 or
 .Xr traceroute 8 .
-However, unlike those tools, it really does no work itself, being just
-a very thin layer that simply calls through to the underlying functions
-provided by the
-.Pa /usr/include/dns_sd.h
-APIs.
+Unlike those tools, most of its functionality is implemented in library
+code that is available to any application. The API that it uses is
+described in
+.Pa /usr/include/dns_sd.h .
 .Pp
 The
 .Nm
-command is
-.Em not
-intended to be used from shell scripts, but only for interactive
-debugging by a human being. Its command-line arguments and output
-format are subject to change, so attempting to invoke it from a shell
-script and then parse the output will be fragile. In addition, the
-inherently asynchronous nature of Multicast DNS Service Discovery does
+command is primarily intended for interactive use.
+Because its command-line arguments and output format are subject to change,
+invoking it from a shell script will generally be fragile. Additionally,
+the asynchronous nature of Multicast DNS Service Discovery does
 not lend itself easily to script-oriented programming. For example,
 calls like "browse" never complete; the action of performing a "browse"
 sets in motion machinery to notify the client whenever instances of
-that service type appear or disappear from the network; these
+that service type appear or disappear from the network. These
 notifications continue to be delivered indefinitely, for minutes,
-hours, or even days later, as services come and go, until the client
+hours, or even days, as services come and go, until the client
 explicitly terminates the call. This style of asynchronous interaction
 works best with applications that are either multi-threaded, or use a
-main event handling loop to receive keystrokes, network data, and other
+main event-handling loop to receive keystrokes, network data, and other
 asynchronous event notifications as they happen.
 .Pp
-.Nm Fl R
-registers (advertises the existence of) a service with name
-.Ar name ,
-type
-.Ar type ,
-in domain
-.Ar domain ,
-listening for incoming TCP connections (or UDP packets) on port number
-.Ar port .
-.Pp
-The
+.Bl -tag -width R
+.It Fl R Ar name type domain port Op Ar key=value ...
+register (advertise) a service in the specified
+.Ar domain 
+with the given
 .Ar name
-can be arbitrary unicode text, including any legal unicode characters
-.Ns ( Em including
-dots, spaces, slashes, colons, etc.), up to 63 UTF-8 bytes long.
+and
+.Ar type
+as listening (on the current machine) on
+.Ar port.
 .Pp
-The
+.Ar name
+can be arbitrary unicode text, containing any legal unicode characters
+(including dots, spaces, slashes, colons, etc. without restriction),
+up to 63 UTF-8 bytes long.
 .Ar type
 must be of the form "_app-proto._tcp" or "_app-proto._udp", where
 "app-proto" is an application protocol name registered at
-.Pa http://www.dns-sd.org/ServiceTypes.html
+.Pa http://www.dns-sd.org/ServiceTypes.html .
 .Pp
-The
 .Ar domain
 is the domain in which to register the service.
 In current implementations, only the local multicast domain "local" is
-supported. In future, registering will be supported in any arbitrary
+supported. In the future, registering will be supported in any arbitrary
 domain that has a working DNS Update server [RFC 2136]. The
 .Ar domain
-"." is a synonym for "pick a sensible default for me", which today
+"." is a synonym for "pick a sensible default" which today
 means "local".
 .Pp
-The
 .Ar port
 is a number from 0 to 65535, and is the TCP or UDP port number upon
 which the service is listening.
@@ -114,25 +109,10 @@ key/value pairs, which are stored in the advertised service's DNS TXT
 record. Allowable keys and values are listed with the service
 registration at
 .Pa http://www.dns-sd.org/ServiceTypes.html .
-.Pp
-For example, to advertise the existence of LPR printing service on port
-515 on this machine, such that it will be discovered by the Mac OS X
-printing software and other mDNS-SD compatible printing clients, use:
-.Pp
-.Dl mDNS -R \&"My Test\&" _printer._tcp. \&. 515 pdl=application/postscript
-.Pp
-You need to actually have LPR service available on port 515, or this is
-not very useful, and will be confusing and annoying to other people on
-the network. Similarly, to advertise a web page being served by an HTTP
-server on port 80 on this machine, such that it will show up in the
-Rendezvous list in Safari and other mDNS-SD compatible Web clients, use:
-.Pp
-.Dl mDNS -R \&"My Test\&" _http._tcp \&. 80 path=/path-to-page.html
-.Pp
-.Nm Fl B
-browses for instances of service type
-.Ar type ,
-in domain
+.It Fl B Ar      type domain
+browse for instances of service
+.Ar type
+in
 .Ar domain .
 .Pp
 For valid 
@@ -141,10 +121,41 @@ see
 .Pa http://www.dns-sd.org/ServiceTypes.html
 as described above. Omitting the
 .Ar domain
-or using "." means "pick a sensible default for me".
+or using "." means "pick a sensible default."
+.It Fl L
+look up and display the information necessary to contact and use the
+named service: the hostname of the machine where that service is
+available, the port number on which the service is listening, and (if
+present) TXT record attributes describing properties of the service.
 .Pp
-For example, to find the advertised web pages on the local network
-(the same list that Safari shows), use:
+Note that in a typical application, browsing happens rarely, while lookup
+(or "resolving") happens every time the service is used. For example, a
+user browses the network to pick a default printer fairly rarely, but once
+a default printer has been picked, that named service is resolved to its
+current IP address and port number every time the user presses Cmd-P to
+print.
+.El
+.Sh EXAMPLES
+.Pp
+To advertise the existence of LPR printing service on port 515 on this
+machine, such that it will be discovered by the Mac OS X printing software
+and other mDNS-SD compatible printing clients, use:
+.Pp
+.Dl mDNS -R \&"My Test\&" _printer._tcp. \&. 515 pdl=application/postscript
+.Pp
+For this registration to be useful, you need to actually have LPR service
+available on port 515. Advertising a service that does not exist is not
+very useful, and will be confusing and annoying to other people on the
+network.
+.Pp
+Similarly, to advertise a web page being served by an HTTP
+server on port 80 on this machine, such that it will show up in the
+Rendezvous list in Safari and other mDNS-SD compatible Web clients, use:
+.Pp
+.Dl mDNS -R \&"My Test\&" _http._tcp \&. 80 path=/path-to-page.html
+.Pp
+To find the advertised web pages on the local network (the same list that
+Safari shows), use:
 .Pp
 .Dl mDNS -B _http._tcp
 .Pp
@@ -153,20 +164,6 @@ example given above to advertise a web page, and you should see the
 "Add" event reported to the "mDNS -B" window. Now press Ctrl-C in the
 "mDNS -R" window and you should see the "Remove" event reported to the
 "mDNS -B" window.
-.Pp
-.Nm Fl L
-does a lookup to obtain the information necessary to contact the named
-service. Every advertised service name has associated with it the
-hostname of the machine where that service is located, the port number
-on which the service is listening on that machine, and optionally
-additional key/value pairs stored in its TXT record.
-.Pp
-Note that in a typical application, browsing is something that is done
-rarely, and lookup (or "resolving") is something that is done every
-time the service is used. For example, a user browses the network to
-pick a new default printer rarely, but once a default printer has been
-picked, that named service is resolved to its current IP address and
-port number every time the user presses Cmd-P to print.
 .Pp
 .Sh FILES
 .Pa /usr/bin/mDNS \" Pathname
