@@ -50,6 +50,7 @@ typedef union { unsigned char b[2]; unsigned short NotAnInteger; } Opaque16;
 
 static char operation;
 static dns_service_discovery_ref client = NULL;
+static int num_printed;
 static char addtest = 0;
 static DNSRecordReference record;
 static char myhinfo9[11] = "\003Mac\006OS 9.2";
@@ -127,7 +128,8 @@ static void browse_reply(DNSServiceBrowserReplyResultType resultType,
 	{
 	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Add" : "Rmv";
     (void)context; // Unused
-	printf("%s %4X %s %s %s\n", op, flags, replyDomain, replyType, replyName);
+	if (num_printed++ == 0) printf("A/R Flags %-8s %-20s %s\n", "Domain", "Service Type", "Instance Name");
+	printf("%s%6X %-8s %-20s %s\n", op, flags, replyDomain, replyType, replyName);
 	}
 
 static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, const char *txtRecord, DNSServiceDiscoveryReplyFlags flags, void *context)
