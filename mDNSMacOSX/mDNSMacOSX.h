@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.7  2003/04/26 02:39:24  cheshire
+Remove extern void LogMsg(const char *format, ...);
+
 Revision 1.6  2003/03/05 21:59:56  cheshire
 Bug #: 3189097 Additional debugging code in mDNSResponder
 
@@ -135,8 +138,6 @@ extern void freeL(char *msg, void *x);
 #else
 #define	LogOperation(ARGS...) ((void)0)
 #endif
-
-extern void LogMsg(const char *format, ...);
 
 #ifdef  __cplusplus
     }
