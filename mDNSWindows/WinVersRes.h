@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.2  2004/06/26 22:24:08  rpantos
+Hey, we're Rendezvous again.
+
 Revision 1.1  2004/06/26 19:17:41  rpantos
 First checked in.
 
