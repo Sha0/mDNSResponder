@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.496  2004/12/16 22:18:26  cheshire
+Make AddressIsLocalSubnet() a little more selective -- ignore point-to-point interfaces
+
 Revision 1.495  2004/12/16 21:27:37  ksekar
 Fixed build failures when compiled with verbose debugging messages
 
@@ -4952,7 +4955,7 @@ mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID Int
 		{
 		if (addr->ip.v4.b[0] == 169 && addr->ip.v4.b[1] == 254) return(mDNStrue);
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID)
+			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID && intf->McastTxRx)
 				if (((intf->ip.ip.v4.NotAnInteger ^ addr->ip.v4.NotAnInteger) & intf->mask.ip.v4.NotAnInteger) == 0)
 					return(mDNStrue);
 		}
@@ -4961,7 +4964,7 @@ mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID Int
 		{
 		if (addr->ip.v6.b[0] == 0xFE && addr->ip.v6.b[1] == 0x80) return(mDNStrue);
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID)
+			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID && intf->McastTxRx)
 				if ((((intf->ip.ip.v6.l[0] ^ addr->ip.v6.l[0]) & intf->mask.ip.v6.l[0]) == 0) &&
 					(((intf->ip.ip.v6.l[1] ^ addr->ip.v6.l[1]) & intf->mask.ip.v6.l[1]) == 0) &&
 					(((intf->ip.ip.v6.l[2] ^ addr->ip.v6.l[2]) & intf->mask.ip.v6.l[2]) == 0) &&
