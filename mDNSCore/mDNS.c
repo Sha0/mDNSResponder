@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.512  2005/01/20 00:37:45  cheshire
+<rdar://problem/3941448> mDNSResponder crashed in mDNSCoreReceiveResponse
+Take care not to recycle records while they are on the CacheFlushRecords list
+
 Revision 1.511  2005/01/19 22:48:53  cheshire
 <rdar://problem/3955355> Handle services with subtypes correctly when doing mDNS_RenameAndReregisterService()
 
@@ -2091,7 +2095,7 @@ mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID Int
 mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
 	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
 	{
-	  mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
+	mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
 	// Don't try to store a TTL bigger than we can represent in platform time units
 	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
 		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
@@ -3960,6 +3964,10 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 
 mDNSlocal void ReleaseCacheEntity(mDNS *const m, CacheEntity *e)
 	{
+#if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
+	unsigned int i;
+	for (i=0; i<sizeof(*e); i++) ((char*)e)[i] = 0xFF;
+#endif
 	e->next = m->rrcache_free;
 	m->rrcache_free = e;
 	m->rrcache_totalused--;
@@ -4193,8 +4201,9 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 				CacheRecord **rp = &(*cp)->members;
 				while (*rp)
 					{
-					// Records that answer still-active questions are not candidates for deletion
-					if ((*rp)->CRActiveQuestion)
+					// Records that answer still-active questions are not candidates for recycling
+					// Records that are currently linked into the CacheFlushRecords list may not be recycled, or we'll crash
+					if ((*rp)->CRActiveQuestion || (*rp)->NextInCFList)
 						rp=&(*rp)->next;
 					else
 						{
@@ -5188,7 +5197,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	{
 	int i;
 	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
-	CacheRecord *CacheFlushRecords = mDNSNULL;
+	CacheRecord *CacheFlushRecords = (CacheRecord*)1;	// "(CacheRecord*)1" is special (non-zero) end-of-list marker
 	CacheRecord **cfp = &CacheFlushRecords;
 
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
@@ -5323,7 +5332,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						{
 						// If this packet record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
 						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList)
-							{ *cfp = rr; cfp = &rr->NextInCFList; }
+							{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 
 						// If this packet record is marked unique, and our previous cached copy was not, then fix it
 						if (!(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))
@@ -5372,7 +5381,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					rr->resrec.rdata = saveptr;				// Restore rr->resrec.rdata after the structure assignment
 					rr->resrec.name  = cg->name;			// And set rr->resrec.name to point into our CacheGroup header
 					if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)
-						{ *cfp = rr; cfp = &rr->NextInCFList; }
+						{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 					// If this is an oversized record with external storage allocated, copy rdata to external storage
 					if (rr->resrec.rdata != (RData*)&rr->rdatastorage && !(m->rec.r.resrec.rdlength > InlineCacheRDSize))
 						LogMsg("rr->resrec.rdata != &rr->rdatastorage but length <= InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
@@ -5399,7 +5408,7 @@ exit:
 
 	// If we've just received one or more records with their cache flush bits set,
 	// then scan that cache slot to see if there are any old stale records we need to flush
-	while (CacheFlushRecords)
+	while (CacheFlushRecords != (CacheRecord*)1)
 		{
 		CacheRecord *r1 = CacheFlushRecords, *r2;
 		const mDNSu32 slot = HashSlot(r1->resrec.name);
