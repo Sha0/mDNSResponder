@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.21  2004/12/03 06:11:34  ksekar
+<rdar://problem/3885059> clean up dnsextd arguments
+
 Revision 1.20  2004/12/01 04:27:28  cheshire
 <rdar://problem/3872803> Darwin patches for Solaris and Suse
 Don't use uint32_t, etc. -- they require stdint.h, which doesn't exist on FreeBSD 4.x, Solaris, etc.
@@ -712,12 +715,9 @@ mDNSlocal int ReadAuthKey(int argc, char *argv[], DaemonInfo *d)
 	auth = malloc(sizeof(*auth));
 	if (!auth) { perror("ReadAuthKey, malloc");  goto error; }
 	auth->next = NULL;
-	if (argc < optind + 2) return -1;  // keyname + zone, secret 
+	if (argc < optind + 1) return -1;  // keyname + secret 
 	if (!MakeDomainNameFromDNSNameString(&auth->keyname, optarg))
 		{ fprintf(stderr, "Bad key name %s", optarg); goto error; }
-	if (!MakeDomainNameFromDNSNameString(&auth->zone, argv[optind++]))
-		{ fprintf(stderr, "Bad zone %s", argv[optind-1]); goto error; }
-
 	keylen = DNSDigest_Base64ToBin(argv[optind++], keybuf, 512);
 	if (keylen < 0)
 		{ fprintf(stderr, "Bad shared secret %s (must be base-64 encoded string)", argv[optind-1]); goto error; }
@@ -742,22 +742,24 @@ mDNSlocal int SetPort(DaemonInfo *d, char *PortAsString)
 	
 mDNSlocal void PrintUsage(void)
 	{
-	fprintf(stderr, "Usage: dnsextd <zone> [-vf] [ -s server ] [-k zone keyname secret] ...\n"
+	fprintf(stderr, "Usage: dnsextd -z <zone> [-vf] [ -s server ] [-k zone keyname secret] ...\n"
 			"Use \"dnsextd -h\" for help\n");
 	}
 
 mDNSlocal void PrintHelp(void)
 	{
+	fprintf(stderr, "\n\n");
 	PrintUsage();
 
-	fprintf(stderr,
-			"dnsextd is a daemon that implements Dynamic DNS Update Leases, including those\n"
-			"used in DNS Service Discovery, on behalf of name servers that do not natively\n"
-			"support Dynamic Update leases.  (See dns-sd.org for more info on DNS Service \n"
-			"Discovery and Update Leases.)\n\n"
+	fprintf(stderr, 
+			"dnsextd is a daemon that implements DNS extensions supporting Dynamic DNS Update Leases\n"
+            "and Long Lived Queries, used in Wide-Area DNS Service Discovery, on behalf of name servers\n"
+			"that do not natively support these extensions.  (See dns-sd.org for more info on DNS Service\n"
+			"Discovery, Update Leases, and Long Lived Queries.)\n\n"
 
-			"The zone specified is the domain for which updates with leases may be issued.\n"
-			"The server the daemon communicates with must be the primary master for this zone.\n\n"
+            "dnsextd requires one argument,the zone, which is the domain for which Update Leases\n"
+            "and Long Lived Queries are to be administered.  dnsextd communicates directly with the\n"
+			"primary master server for this zone.\n\n"
 
 			"The options are as follows:\n\n"
 
@@ -766,13 +768,12 @@ mDNSlocal void PrintHelp(void)
 			"-h    Print help.\n\n"
 
 			"-k    Specify TSIG authentication key for dynamic updates from daemon to name server.\n"
-			"      -k option is followed by the name of the zone the key applies to, the name of\n"
-			"      the key, and the shared secret, as a base64 encoded string.  This option causes\n"
-			"      updates deleting expired records to be signed - it does not affect updates sent\n"
-			"      from clients, which are responsible for signing their own updates.\n\n"
-
+			"      -k option is followed by the name of the key, and the shared secret as a base-64\n"
+            "      encoded string.  This key/secret are used by the daemon to delete resource records\n"
+            "      from the server when leases expire.  Clients are responsible for signing their\n"
+            "      update requests.\n\n"
 			
-			"-s    Specify address (IPv4 address in dotted-decimal notation) of Primary Master\n"
+			"-s    Specify address (IPv4 address in dotted-decimal notation) of the Primary Master\n"
 			"      name server.  Defaults to loopback (127.0.0.1), i.e. daemon and name server\n"
 			"      running on the same machine.\n\n"
 
@@ -788,11 +789,9 @@ mDNSlocal int ProcessArgs(int argc, char *argv[], DaemonInfo *d)
 	int opt;
 
 	if (argc < 2) goto arg_error;
-	if (!MakeDomainNameFromDNSNameString(&d->zone, argv[1])) { fprintf(stderr, "Bad zone %s", argv[1]); goto arg_error; }
-	optind++;
-	
+
 	d->port.NotAnInteger = htons(DAEMON_PORT);  // default, may be overriden by command option
-	while ((opt = getopt(argc, argv, "p:hfvs:k:")) != -1)
+	while ((opt = getopt(argc, argv, "z:p:hfvs:k:")) != -1)
 		{
 		switch(opt)
 			{
@@ -806,9 +805,18 @@ mDNSlocal int ProcessArgs(int argc, char *argv[], DaemonInfo *d)
 				      break;
 			case 'k': if (ReadAuthKey(argc, argv, d) < 0) goto arg_error;
 				      break;
+			case 'z': if (!MakeDomainNameFromDNSNameString(&d->zone, optarg))
+				          {
+						  fprintf(stderr, "Bad zone %s", optarg);
+						  goto arg_error;
+						  }
+ 				      break;
 			default:  goto arg_error;				
 			}
 		}
+		
+	if (!d->zone.c[0]) goto arg_error;  // zone is the only required argument
+	if (d->AuthInfo) AssignDomainName(d->AuthInfo->zone, d->zone); // if we have a shared secret, use it for the entire zone
 	return 0;
 	
 	arg_error:
