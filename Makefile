@@ -16,7 +16,7 @@
 
 include /Developer/Makefiles/pb_makefiles/platform.make
 
-MVERS = "mDNSResponder-99"
+MVERS = "mDNSResponder-100"
 
 install:
 	cd "$(SRCROOT)/mDNSMacOSX"; xcodebuild install     OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT) MVERS=$(MVERS)

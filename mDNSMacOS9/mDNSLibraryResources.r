@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSLibraryResources.r,v $
+Revision 1.27  2005/02/10 21:56:38  cheshire
+mDNSResponder-100
+
 Revision 1.26  2005/02/04 03:25:10  cheshire
 mDNSResponder-99
 
@@ -119,16 +122,16 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 
 resource 'vers' (1, purgeable)
 	{
-   0x01, 0x00, alpha, 99, verUS,
-   "1.0a99",
-   "Multicast DNS & DNS Service Discovery 1.0a99"
+   0x01, 0x00, alpha, 100, verUS,
+   "1.0a100",
+   "Multicast DNS & DNS Service Discovery 1.0a100"
 	};
 
 resource 'vers' (2, purgeable)
 	{
-   0x01, 0x00, alpha, 99, verUS,
-   "1.0a99",
-   "developer.apple.com/darwin/projects/rendezvous/"
+   0x01, 0x00, alpha, 100, verUS,
+   "1.0a100",
+   "developer.apple.com/darwin/projects/bonjour/"
 	};
 
 /* We need to load OT, so make sure the system heap has enough space for it */
