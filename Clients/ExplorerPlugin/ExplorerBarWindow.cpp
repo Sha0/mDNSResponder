@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.21  2005/04/06 01:13:07  shersche
+<rdar://problem/4066195> Use the product icon instead of globe icon for 'About' link.
+
 Revision 1.20  2005/03/18 02:43:02  shersche
 <rdar://problem/4046443> Use standard IE website icon for 'About Bonjour', only using globe icon if standard icon cannot be loaded
 
@@ -215,12 +218,7 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 {
 	AFX_MANAGE_STATE( AfxGetStaticModuleState() );
 	
-	TCHAR			programFilesPath[MAX_PATH];
-	CString			fullPath;
-	BOOL			ieIconLoaded = FALSE;
-	BOOL			ok;
 	HINSTANCE		module = NULL;
-	HICON			icon = NULL;
 	OSStatus		err;
 	CRect			rect;
 	CBitmap			bitmap;
@@ -247,7 +245,7 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	mServiceHandlers.Add( e );
 
 	s.LoadString( IDS_ABOUT );
-	m_about = mTree.InsertItem( s, 1, 1 );
+	m_about = mTree.InsertItem( s, 0, 0 );
 
 	err = DNSServiceBrowse( &e->ref, 0, 0, e->type, NULL, BrowseCallBack, e );
 	require_noerr( err, exit );
@@ -262,33 +260,6 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_LOGO ) ) );
 	m_imageList.Add( &bitmap, (CBitmap*) NULL );
 	bitmap.Detach();
-
-	ok = SHGetSpecialFolderPath( NULL, programFilesPath, CSIDL_PROGRAM_FILES, FALSE );
-
-	if ( ok )
-	{
-		fullPath.Format(L"%s\\Internet Explorer\\iexplore.exe", programFilesPath );
- 
-		module = LoadLibrary( fullPath );
-
-		if ( module )
-		{
-			icon = (HICON)::LoadImage( module, MAKEINTRESOURCE( kIEIconResource ), IMAGE_ICON, 16, 16, LR_SHARED );
-
-			if ( icon )
-			{
-				m_imageList.Add( icon );
-				ieIconLoaded = TRUE;
-			}
-		}
-	}
-
-	if ( !ieIconLoaded )
-	{
-		bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_GLOBE ) ) );
-		m_imageList.Add( &bitmap, (CBitmap*) NULL );
-		bitmap.Detach();
-	}
 
 	mTree.SetImageList(&m_imageList, TVSIL_NORMAL);
 	
