@@ -51,6 +51,7 @@ CConfigPropertySheet::CConfigPropertySheet()
 {
 	AddPage(&m_firstPage);
 	AddPage(&m_secondPage);
+	AddPage(&m_thirdPage);
 
 	InitializeCriticalSection( &m_lock );
 }
@@ -457,20 +458,10 @@ CConfigPropertySheet::BrowseDomainsReply
 
 	if ( flags & kDNSServiceFlagsAdd )
 	{
-		if ( self->GetActivePage() == &self->m_secondPage )
-		{
-			self->m_secondPage.OnAddBrowseDomain( decoded );
-		}
-
 		self->m_browseDomains.push_back( decoded );
 	}
 	else
 	{
-		if ( self->GetActivePage() == &self->m_secondPage )
-		{
-			self->m_secondPage.OnRemoveBrowseDomain( decoded );
-		}
-
 		self->m_browseDomains.remove( decoded );
 	}
 

@@ -30,6 +30,7 @@
 #include "stdafx.h"
 #include "FirstPage.h"
 #include "SecondPage.h"
+#include "ThirdPage.h"
 
 #include <dns_sd.h>
 #include <list>
@@ -55,6 +56,7 @@ protected:
 
 	CFirstPage	m_firstPage;
 	CSecondPage	m_secondPage;
+	CThirdPage m_thirdPage;
 
 	//{{AFX_VIRTUAL(CConfigPropertySheet)
 	//}}AFX_VIRTUAL
