@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.189  2004/09/21 18:17:23  cheshire
+<rdar://problem/3785400> Add version info to mDNSResponder
+
 Revision 1.188  2004/09/20 21:45:27  ksekar
 Mach IPC cleanup
 
@@ -2220,6 +2223,10 @@ mStatus udsSupportRemoveFDFromEventLoop(int fd)
 		}
 	return mStatus_NoSuchNameErr;
 	}
+
+// If mDNSResponder crashes, then this string will be magically included in the automatically-generated crash log
+const char *__crashreporter_info__ = mDNSResponderVersionString;
+asm(".desc ___crashreporter_info__, 0x10");
 
 // For convenience when using the "strings" command, this is the last thing in the file
 mDNSexport const char mDNSResponderVersionString[] = STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
