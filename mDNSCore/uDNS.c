@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.56  2004/07/26 19:14:44  ksekar
+<rdar://problem/3737814>: 8A210: mDNSResponder crashed in startLLQHandshakeCallback
+
 Revision 1.55  2004/07/15 19:01:33  ksekar
 <rdar://problem/3681029>: Check for incorrect time comparisons
 
@@ -1489,17 +1492,9 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqInfo, const AsyncOpResult *result)
 	{
 	LLQ_Info *info = (LLQ_Info *)llqInfo;
-	const zoneData_t *zoneInfo = &result->zoneData;
+	const zoneData_t *zoneInfo = NULL;
 
-	if (err)
-		{
-		LogMsg("ERROR: startLLQHandshakeCallback invoked with error code %d", err);
-		info->state = LLQ_Poll;
-		info->question->LastQTime = 0;  // trigger immediate poll
-		info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
-		return;
-		}
-
+    // check state first to make sure it is OK to touch question object
 	if (info->state == LLQ_Cancelled)
 		{
 		// StopQuery was called while we were getting the zone info
@@ -1509,10 +1504,23 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		return;
 		}
 
+	if (err)
+		{
+		LogMsg("ERROR: startLLQHandshakeCallback invoked with error code %d", err);
+		goto poll;
+		}
+
+	if (!result)
+		{
+		LogMsg("ERROR: startLLQHandshakeCallback invoked with NULL result and no error code");
+		goto poll;
+		}
+	else zoneInfo = &result->zoneData;
+
 	if (info->state != LLQ_GetZoneInfo)
 		{
 		LogMsg("ERROR: startLLQHandshake - bad state %d", info->state);
-		return;
+        goto poll;
 		}
 	
     // cache necessary zone data
@@ -1521,6 +1529,12 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	info->servPort.NotAnInteger = zoneInfo->llqPort.NotAnInteger;
     info->ntries = 0;
 	startLLQHandshake(m, info);
+	return;
+
+	poll:
+	info->state = LLQ_Poll;
+	info->question->LastQTime = 0;  // trigger immediate poll
+	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
 
 mDNSlocal mStatus startLLQ(mDNS *m, DNSQuestion *question)
@@ -2452,15 +2466,20 @@ error:
 mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const AsyncOpResult *result)	
 	{
 	AuthRecord *newRR = (AuthRecord*)authPtr;
-	const zoneData_t *zoneData = &result->zoneData;
+	const zoneData_t *zoneData = NULL;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	AuthRecord *ptr;
 
+	// make sure record is still in list
 	for (ptr = u->RecordRegistrations; ptr; ptr = ptr->next)
 		if (ptr == newRR) break;
 	if (!ptr) { LogMsg("RecordRegistrationCallback - RR no longer in list.  Discarding."); return; }		
-	
+
+	// check error/result
 	if (err) { LogMsg("RecordRegistrationCallback: error %d", err); goto error; }
+	if (!result) { LogMsg("ERROR: RecordRegistrationCallback invoked with NULL result and no error"); goto error;  }
+	else zoneData = &result->zoneData;
+
 	if (newRR->uDNS_info.state == regState_Cancelled)
 		{
 		//!!!KRS we should send a memfree callback here!
@@ -2611,10 +2630,13 @@ error:
 mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const AsyncOpResult *result)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
-	const zoneData_t *zoneData = &result->zoneData;
+	const zoneData_t *zoneData = NULL;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
 	if (err) goto error;
+	if (!result) { LogMsg("ERROR: serviceRegistrationCallback invoked with NULL result and no error");  goto error; }
+	else zoneData = &result->zoneData;
+	
 	if (result->type != zoneDataResult)
 		{
 		LogMsg("ERROR: buildUpdatePacket passed incorrect result type %d", result->type);
