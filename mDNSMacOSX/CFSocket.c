@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.105  2003/08/12 13:44:14  cheshire
+<rdar://problem/3370229> mDNSResponder *VERY* unhappy if time goes backwards
+Use mach_absolute_time() (which is guaranteed to always go forwards, resetting only on reboot)
+instead of gettimeofday() (which can jump back if the user manually changes their time/date)
+
 Revision 1.104  2003/08/12 13:12:07  cheshire
 Textual search/replace: Indicate local functions using "mDNSlocal" instead of "static"
 
@@ -317,6 +322,12 @@ Minor code tidying
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOMessage.h>
+#include <mach/mach_time.h>
+
+// ***************************************************************************
+// Globals
+
+static mDNSu32 clockdivisor = 0;
 
 // ***************************************************************************
 // Functions
@@ -1265,6 +1276,11 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
 
+	struct mach_timebase_info tbi;
+	if (mach_timebase_info(&tbi) != KERN_SUCCESS) return(-1);
+	clockdivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
+	LogMsg("Clock divisor %lu, timenow %ld", clockdivisor, mDNSPlatformTimeNow());
+
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);
@@ -1313,19 +1329,11 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	ClearInactiveInterfaces(m);
 	}
 
-mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
+mDNSexport mDNSs32  mDNSPlatformOneSecond = 1000;
 
 mDNSexport mDNSs32  mDNSPlatformTimeNow(void)
 	{
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	// tv.tv_sec is seconds since 1st January 1970 (GMT, with no adjustment for daylight savings time)
-	// tv.tv_usec is microseconds since the start of this second (i.e. values 0 to 999999)
-	// We use the lower 22 bits of tv.tv_sec for the top 22 bits of our result
-	// and we multiply tv.tv_usec by 16 / 15625 to get a value in the range 0-1023 to go in the bottom 10 bits.
-	// This gives us a proper modular (cyclic) counter that has a resolution of roughly 1ms (actually 1/1024 second)
-	// and correctly cycles every 2^22 seconds (4194304 seconds = approx 48 days).
-	return( (tv.tv_sec << 10) | (tv.tv_usec * 16 / 15625) );
+	return((mDNSs32)(mach_absolute_time() / clockdivisor));
 	}
 
 // Locking is a no-op here, because we're single-threaded with a CFRunLoop, so we can never interrupt ourselves
