@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.20  2004/12/17 01:23:24  shersche
+Bump version to 1.0.0.50
+
 Revision 1.19  2004/12/16 08:09:47  shersche
 Revert version number back to 1.0.0.22
 
@@ -88,9 +91,9 @@ First checked in.
 #define MASTER_PROD_NAME	"Rendezvous"
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		1,0,0,22
-#define MASTER_PROD_VERS_STR	"1,0,0,22"
-#define MASTER_PROD_VERS_STR2	"1.0.0.22"
-#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.0.22"
+#define MASTER_PROD_VERS		1,0,0,50
+#define MASTER_PROD_VERS_STR	"1,0,0,50"
+#define MASTER_PROD_VERS_STR2	"1.0.0.50"
+#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.0.50"
 
 #endif // WINRESVERS_H
