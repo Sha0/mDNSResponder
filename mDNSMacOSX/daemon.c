@@ -524,7 +524,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t unusedserver, mach_port_t client,
-	int type, const char *data, mach_msg_type_number_t data_len, natural_t *reference)
+	int type, const char *data, mach_msg_type_number_t data_len, uint32_t ttl, natural_t *reference)
 	{
 	mStatus err;
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
@@ -561,7 +561,7 @@ mDNSlocal void UpdateCallback(mDNS *const m, ResourceRecord *const rr, RData *Ol
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t unusedserver, mach_port_t client,
-	natural_t reference, int type, const char *data, mach_msg_type_number_t data_len)
+	natural_t reference, const char *data, mach_msg_type_number_t data_len, uint32_t ttl)
 	{
 	mStatus err;
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
@@ -603,8 +603,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	err = mDNS_Update(&mDNSStorage, rr, newrdata, UpdateCallback);
 	if (err)
 		{
-		debugf("Received a request to update the record of type: %d length: %d for reference: %X; failed %d",
-			type, data_len, reference, err);
+		debugf("Received a request to update the record of length: %d for reference: %X; failed %d", data_len, reference, err);
 		return(err);
 		}
 
