@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.204  2004/10/12 03:20:52  ksekar
+<rdar://problem/3835614> Incorrect LogMsg produces garbage on errors
+
 Revision 1.203  2004/10/08 04:29:25  ksekar
 <rdar://problem/3831842> Allow default search domains to be set via hint from DHCP
 
@@ -2101,7 +2104,8 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 													 "%d (mDNS_DomainTypeBrowse)\n"
 													 "%d (mDNS_DomainTypeBrowseDefault)\n"
 													 "%d (mDNS_DomainTypeRegistration)\n"
-													 "%d (mDNS_DomainTypeRegistrationDefault)");		   
+													 "%d (mDNS_DomainTypeRegistrationDefault)",
+													 ptr->domain.c, err1, err2, err3, err4);		   
 			ptr->flag = 0;
 			}
 		
