@@ -255,6 +255,8 @@
 				00AD62BD032D7A1B0CCA2C71,
 				00AD62BE032D7A1D0CCA2C71,
 				0066920A04CC7AA80CCA2C71,
+				FFD41DDB0664169900F0C438,
+				FFD41DDC0664169B00F0C438,
 			);
 			isa = PBXAggregateTarget;
 			name = "Build All";
@@ -506,8 +508,8 @@
 				6575FC1D022EB76000000109,
 				00AD62B8032D799A0CCA2C71,
 				0044D34F04CC73600CCA2C71,
-				DB2CC4540662DD6800335AB3,
 				DB2CC4670662DF5C00335AB3,
+				FFD41DDA0664157900F0C438,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -975,6 +977,7 @@
 				DB2CC4510662DD6800335AB3,
 				DB2CC4520662DD6800335AB3,
 				DB2CC4550662DE1700335AB3,
+				FFD41DDD06641B4200F0C438,
 			);
 			buildSettings = {
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -984,16 +987,14 @@
 				JAVA_ARCHIVE_COMPRESSION = YES;
 				JAVA_ARCHIVE_TYPE = JAR;
 				JAVA_COMPILER_DEBUGGING_SYMBOLS = NO;
-				JAVA_COMPILER_FLAGS = "";
 				JAVA_COMPILER_TARGET_VM_VERSION = 1.2;
 				JAVA_SOURCE_SUBDIR = .;
 				LIBRARY_STYLE = STATIC;
-				OPTIMIZATION_CFLAGS = "";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_LIBTOOL_FLAGS = "";
 				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = dns_sd.jar;
+				PRODUCT_NAME = dns_sd;
 				PURE_JAVA = YES;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
@@ -1006,15 +1007,10 @@
 			name = dns_sd.jar;
 			productInstallPath = /System/Library/Java/Extensions;
 			productName = dns_sd.jar;
-			productReference = DB2CC4540662DD6800335AB3;
-		};
-		DB2CC4540662DD6800335AB3 = {
-			isa = PBXLibraryReference;
-			path = dns_sd.jar;
-			refType = 3;
+			productReference = FFD41DDA0664157900F0C438;
 		};
 		DB2CC4550662DE1700335AB3 = {
-			buildActionMask = 2147483647;
+			buildActionMask = 12;
 			files = (
 			);
 			generatedFileNames = (
@@ -1024,7 +1020,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "javah -force -classpath build/mDNSResponder.build/dns_sd.jar.build/JavaClasses/ -o build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
+			shellScript = "javah -force -classpath build/mDNSResponder.build/dns_sd.jar.build/JavaClasses/ -o build/mDNSResponder.build/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
 		};
 		DB2CC4560662DE4500335AB3 = {
 			fileRef = DB2CC4430662DD1100335AB3;
@@ -1139,7 +1135,7 @@
 				DEBUGGING_SYMBOLS = NO;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
-				HEADER_SEARCH_PATHS = "\"$(SYSTEM_LIBRARY_DIR)/Frameworks/JavaVM.framework/Versions/A/Headers\" build";
+				HEADER_SEARCH_PATHS = "\"$(SYSTEM_LIBRARY_DIR)/Frameworks/JavaVM.framework/Versions/A/Headers\" build/mDNSResponder.build/dns_sd.jar.build";
 				INSTALL_PATH = /usr/lib/java;
 				LIBRARY_STYLE = DYNAMIC;
 				OTHER_CFLAGS = "";
@@ -1152,6 +1148,7 @@
 			};
 			comments = "Platform-specific JNI library that bridges dns_sd.jar to <dns_sd.h>.";
 			dependencies = (
+				FFD41DDF06641BBB00F0C438,
 			);
 			isa = PBXLibraryTarget;
 			name = libjdns_sd.jnilib;
@@ -1360,6 +1357,37 @@
 			isa = PBXBuildFile;
 			settings = {
 			};
+		};
+		FFD41DDA0664157900F0C438 = {
+			includeInIndex = 0;
+			isa = PBXZipArchiveReference;
+			path = dns_sd.jar;
+			refType = 3;
+		};
+		FFD41DDB0664169900F0C438 = {
+			isa = PBXTargetDependency;
+			target = DB2CC4530662DD6800335AB3;
+		};
+		FFD41DDC0664169B00F0C438 = {
+			isa = PBXTargetDependency;
+			target = DB2CC4660662DF5C00335AB3;
+		};
+		FFD41DDD06641B4200F0C438 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "rm build/dns_sd";
+		};
+		FFD41DDF06641BBB00F0C438 = {
+			isa = PBXTargetDependency;
+			target = DB2CC4530662DD6800335AB3;
 		};
 	};
 	rootObject = 08FB7793FE84155DC02AAC07;
