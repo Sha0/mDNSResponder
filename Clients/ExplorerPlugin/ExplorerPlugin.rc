@@ -199,6 +199,7 @@ BEGIN
     IDS_FTP_SITES           "FTP Sites"
     IDS_PRINTERS            "Printers"
     IDS_MDNSRESPONDER_NOT_AVAILABLE "Rendezvous Service Not Available"
+    IDS_FIREWALL            "Check firewall settings"
 END
 
 #endif    // English (U.S.) resources

@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.13  2005/01/06 21:13:09  shersche
+<rdar://problem/3796779> Handle kDNSServiceErr_Firewall return codes
+Bug #: 3796779
+
 Revision 1.12  2004/10/26 00:56:03  cheshire
 Use "#if 0" instead of commenting out code
 
@@ -257,11 +261,20 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 exit:
 
 	// Cannot talk to the mDNSResponder service. Show the error message and exit (with kNoErr so they can see it).
-	if ( err != kNoErr )
+	if ( err )
 	{
-		s.LoadString( IDS_MDNSRESPONDER_NOT_AVAILABLE );
+		if ( err == kDNSServiceErr_Firewall )
+		{
+			s.LoadString( IDS_FIREWALL );
+		}
+		else
+		{
+			s.LoadString( IDS_MDNSRESPONDER_NOT_AVAILABLE );
+		}
+		
 		mTree.DeleteAllItems();
 		mTree.InsertItem( s, 0, 0, TVI_ROOT, TVI_LAST );
+		
 		err = kNoErr;
 	}
 

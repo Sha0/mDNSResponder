@@ -7,6 +7,7 @@
 #define IDS_FTP_SITES                   108
 #define IDS_PRINTERS                    109
 #define IDS_MDNSRESPONDER_NOT_AVAILABLE 110
+#define IDS_FIREWALL                    111
 #define IDB_LOGO                        115
 #define IDI_BUTTON_2K                   115
 #define IDD_ABOUT                       118
