@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.54  2004/06/01 22:22:52  ksekar
+<rdar://problem/3668635>: wide-area default registrations should be in
+.local too
+
 Revision 1.53  2004/05/28 23:42:37  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
 
@@ -203,13 +207,12 @@ typedef struct registered_record_entry
 typedef struct extra_record_entry
     {
     int key;
-    ExtraResourceRecord extra;
     struct extra_record_entry *next;
+    ExtraResourceRecord e;
     } extra_record_entry;
 
 typedef struct registered_service
     {
-    //struct registered_service *next;
     int autoname;
     int renameonconflict;
     int rename_on_memfree;  	// set flag on config change when we deregister original name
@@ -219,7 +222,13 @@ typedef struct registered_service
     AuthRecord *subtypes;
     extra_record_entry *extras;
     } registered_service;
-    
+
+typedef struct
+	{
+    registered_service *local;
+    registered_service *global;
+	} servicepair_t;
+
 typedef struct 
     {
     mStatus err;
@@ -254,7 +263,7 @@ typedef struct request_state
     //!!!KRS toss these pointers in a union
     // registration context associated with this request (null if not applicable)
     registered_record_entry *reg_recs;  // muliple registrations for a connection-oriented request
-    registered_service *service;  // service record set and flags
+    servicepair_t servicepair;
     struct resolve_result_t *resolve_results;
     
     struct request_state *next;
@@ -402,7 +411,7 @@ static void resolve_termination_callback(void *context);
 static int validate_message(request_state *rstate);
 static mStatus remove_extra_rr_from_service(request_state *rstate);
 static mStatus remove_record(request_state *rstate);
-
+static void free_service_registration(registered_service *srv);
 
 // initialization, setup/teardown functions
 
@@ -578,28 +587,31 @@ void udsserver_info(void)
         }
     }
 
+
+static void rename_service(registered_service *srv)
+	{
+    mStatus err;
+	
+	if (srv->autoname && !SameDomainLabel(srv->name.c, gmDNS->nicelabel.c))
+		{
+		srv->rename_on_memfree = 1;
+		err = mDNS_DeregisterService(gmDNS, srv->srs);
+		if (err) LogMsg("ERROR: udsserver_handle_configchange: DeregisterService returned error %d.  Continuing.", err);
+		// error should never occur - safest to log and continue
+		}	
+	}
+
 void udsserver_handle_configchange(void)
     {
-    registered_service *srv;
     request_state *req;
-    mStatus err;
+
     
     for (req = all_requests; req; req = req->next)
         {
-        srv = req->service;
-		if (!req->service) continue;  // only registered services require automatic config change handling.
-        if (srv->autoname && !SameDomainLabel(srv->name.c, gmDNS->nicelabel.c))
-            {
-            srv->rename_on_memfree = 1;
-            err = mDNS_DeregisterService(gmDNS, srv->srs);
-            if (err) LogMsg("ERROR: udsserver_handle_configchange: DeregisterService returned error %d.  Continuing.", err);
-            // error should never occur - safest to log and continue
-            }
-        }
+		if (req->servicepair.local) rename_service(req->servicepair.local);
+		if (req->servicepair.global) rename_service(req->servicepair.global);
+		}
     }
-    
-    
-    
 
 static void connect_callback(void *info _UNUSED)
     {
@@ -1241,6 +1253,59 @@ static void browse_termination_callback(void *context)
 	freeL("browse_termination_callback", t);
 	}
 
+static mStatus register_service(request_state *request, registered_service **srv_ptr, DNSServiceFlags flags,
+	uint16_t txtlen, void *txtdata, mDNSIPPort port, domainlabel *n, char *type_as_string,
+    domainname *t, domainname *d, domainname *h, mDNSBool autoname, int num_subtypes, mDNSInterfaceID InterfaceID)
+	{
+	registered_service *r_srv;
+    int srs_size, i;
+	char *sub;
+	mStatus result;	
+	*srv_ptr = NULL;
+	
+	r_srv = mallocL("handle_regservice_request", sizeof(registered_service));
+    if (!r_srv) goto malloc_error;
+    srs_size = sizeof(ServiceRecordSet) + (sizeof(RDataBody) > txtlen ? 0 : txtlen - sizeof(RDataBody));
+    r_srv->srs = mallocL("handle_regservice_request", srs_size);
+    if (!r_srv->srs) goto malloc_error;
+    if (num_subtypes > 0)
+        {
+        r_srv->subtypes = mallocL("handle_regservice_request", num_subtypes * sizeof(AuthRecord));
+        if (!r_srv->subtypes) goto malloc_error;
+        sub = type_as_string + strlen(type_as_string) + 1;
+        for (i = 0; i < num_subtypes; i++)
+            {
+            if (!MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->resrec.name, sub))
+                {
+				free_service_registration(r_srv);
+                return mStatus_BadParamErr;
+                }
+            sub += strlen(sub) + 1;
+            }
+        }
+    else r_srv->subtypes = NULL;
+    r_srv->request = request;
+    
+    r_srv->extras = NULL;
+    r_srv->autoname = autoname;
+    r_srv->rename_on_memfree = 0;
+    r_srv->renameonconflict = !(flags & kDNSServiceFlagsNoAutoRename);
+	memcpy(r_srv->name.c, n->c, n->c[0]);
+
+    result = mDNS_RegisterService(gmDNS, r_srv->srs, n, t, d, h, port,
+    	txtdata, txtlen, r_srv->subtypes, num_subtypes, InterfaceID, regservice_callback, r_srv);
+
+	if (result)
+		free_service_registration(r_srv);
+	else *srv_ptr = r_srv;
+
+	return result;
+
+malloc_error:
+    my_perror("ERROR: malloc");
+    exit(1);
+	}
+
 
 // service registration
 static void handle_regservice_request(request_state *request)
@@ -1251,19 +1316,15 @@ static void handle_regservice_request(request_state *request)
     uint16_t txtlen;
     mDNSIPPort port;
     void *txtdata;
-    char *ptr;
+    char *ptr, *sub;
     domainlabel n;
-    domainname t, d, h, srv;
-    registered_service *r_srv;
-    int srs_size;
+    domainname d, h, t, srv;
     mStatus result;
     mDNSInterfaceID InterfaceID;
-
-    char *sub, *rtype_ptr;
-    int i, num_subtypes;
+	int num_subtypes;
+    char *rtype_ptr;
     
-    
-    if (request->ts != t_complete)
+	if (request->ts != t_complete)
         {
         LogMsg("ERROR: handle_regservice_request - transfer state != t_complete");
         abort_request(request);
@@ -1287,6 +1348,8 @@ static void handle_regservice_request(request_state *request)
     txtlen = get_short(&ptr);
     txtdata = get_rdata(&ptr, txtlen);
 
+    if (!*regtype || !MakeDomainNameFromDNSNameString(&t, regtype)) goto bad_param;
+
     // count subtypes, replacing commas w/ whitespace
     rtype_ptr = regtype;
     num_subtypes = -1;
@@ -1296,53 +1359,26 @@ static void handle_regservice_request(request_state *request)
     if (!name[0]) n = (gmDNS)->nicelabel;
     else if (!MakeDomainLabelFromLiteralString(&n, name))  
         goto bad_param;
-    if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype)) goto bad_param;
-
-	//!!!KRS if we got a dynamic reg domain from the config file, use it for default (except for iChat)
-	if (!domain[0] && gmDNS->uDNS_info.ServiceRegDomain[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
-		strcpy(domain, gmDNS->uDNS_info.ServiceRegDomain);
 	
     if ((!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) ||
 		(!ConstructServiceName(&srv, &n, &t, &d)))
         goto bad_param;
+
 	if (host[0] && !MakeDomainNameFromDNSNameString(&h, host)) goto bad_param;
 
-    r_srv = mallocL("handle_regservice_request", sizeof(registered_service));
-    if (!r_srv) goto malloc_error;
-    srs_size = sizeof(ServiceRecordSet) + (sizeof(RDataBody) > txtlen ? 0 : txtlen - sizeof(RDataBody));
-    r_srv->srs = mallocL("handle_regservice_request", srs_size);
-    if (!r_srv->srs) goto malloc_error;
-    if (num_subtypes > 0)
-        {
-        r_srv->subtypes = mallocL("handle_regservice_request", num_subtypes * sizeof(AuthRecord));
-        if (!r_srv->subtypes) goto malloc_error;
-        sub = regtype + strlen(regtype) + 1;
-        for (i = 0; i < num_subtypes; i++)
-            {
-            if (!MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->resrec.name, sub))
-                {
-                freeL("handle_regservice_request", r_srv->subtypes);
-                freeL("handle_regservice_request", r_srv);
-                r_srv = NULL;
-                goto bad_param;
-                }
-            sub += strlen(sub) + 1;
-            }
-        }
-    else r_srv->subtypes = NULL;
-    r_srv->request = request;
-    
-    r_srv->extras = NULL;
-    r_srv->autoname = (!name[0]);
-    r_srv->rename_on_memfree = 0;
-    r_srv->renameonconflict = !(flags & kDNSServiceFlagsNoAutoRename);
-    r_srv->name = n;
-    request->termination_context = r_srv;
+	result = register_service(request, &request->servicepair.local, flags, txtlen, txtdata, port, &n,  &regtype[0], &t, &d, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
+
+	//!!!KRS if we got a dynamic reg domain from the config file, use it for default (except for iChat)
+	if (!domain[0] && gmDNS->uDNS_info.ServiceRegDomain[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
+		{
+		MakeDomainNameFromDNSNameString(&d, gmDNS->uDNS_info.ServiceRegDomain);
+		register_service(request, &request->servicepair.global, flags, txtlen, txtdata, port, &n, &regtype[0], &t, &d, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
+		// don't return default global errors - it will confuse legacy clients, and we want .local to still work for them
+		}
+		
+    request->termination_context = &request->servicepair;
     request->terminate = regservice_termination_callback;
-    request->service = r_srv;
     
-    result = mDNS_RegisterService(gmDNS, r_srv->srs, &n, &t, &d, host[0] ? &h : NULL, port,
-    	txtdata, txtlen, r_srv->subtypes, num_subtypes, InterfaceID, regservice_callback, r_srv);
     deliver_error(request, result);
     if (result != mStatus_NoError) 
         {
@@ -1350,22 +1386,19 @@ static void handle_regservice_request(request_state *request)
         unlink_request(request);
         }
     else 
-        {
         reset_connected_rstate(request);  // reset to receive add/remove messages
-        }
+
     return;
 
 bad_param:
     deliver_error(request, mStatus_BadParamErr);
     abort_request(request);
     unlink_request(request);
-return;
-
-malloc_error:
-    my_perror("ERROR: malloc");
-    exit(1);
     }
-    
+
+
+
+
 // service registration callback performs three duties - frees memory for deregistered services,
 // handles name conflicts, and delivers completed registration information to the client (via
 // process_service_registraion())
@@ -1373,7 +1406,6 @@ malloc_error:
 static void regservice_callback(mDNS *const m _UNUSED, ServiceRecordSet *const srs, mStatus result)
     {
     mStatus err;
-    extra_record_entry *extra;
     registered_service *r_srv = srs->ServiceContext;
     request_state *rs = r_srv->request;
     
@@ -1398,16 +1430,7 @@ static void regservice_callback(mDNS *const m _UNUSED, ServiceRecordSet *const s
             }
         else 
             {
-            while (r_srv->extras)
-                {
-                extra = r_srv->extras;
-                r_srv->extras = r_srv->extras->next;
-                freeL("regservice_callback", extra);
-                }
-            freeL("regservice_callback", r_srv->srs);
-            if (r_srv->subtypes) freeL("regservice_callback", r_srv->subtypes);
-            if (r_srv->request) r_srv->request->service = NULL;
-            freeL("regservice_callback", r_srv);
+			free_service_registration(r_srv);
             return;
             }
         }
@@ -1420,12 +1443,8 @@ static void regservice_callback(mDNS *const m _UNUSED, ServiceRecordSet *const s
             }
         else
             {
-            freeL("regservice_callback", r_srv);
-            freeL("regservice_callback", r_srv->srs);
-            if (r_srv->subtypes) freeL("regservice_callback", r_srv->subtypes);
-            if (r_srv->request) r_srv->request->service = NULL;
-            freeL("regservice_callback", r_srv);
-             if (deliver_async_error(rs, reg_service_reply, result) < 0) 
+			free_service_registration(r_srv);
+			if (deliver_async_error(rs, reg_service_reply, result) < 0) 
                 {
                 abort_request(rs);
                 unlink_request(rs);
@@ -1435,7 +1454,7 @@ static void regservice_callback(mDNS *const m _UNUSED, ServiceRecordSet *const s
     	} 
     else 
         {
-        LogMsg("ERROR: unknown result in regservice_callback");
+        LogMsg("ERROR: unknown result in regservice_callback: %d", result);
         if (deliver_async_error(rs, reg_service_reply, result) < 0) 
             {
             abort_request(rs);
@@ -1444,35 +1463,18 @@ static void regservice_callback(mDNS *const m _UNUSED, ServiceRecordSet *const s
         return;
         }
     }
-        
-static void handle_add_request(request_state *rstate)
-    {
+
+static mStatus add_record_to_service(request_state *rstate, registered_service *r_srv, uint16_t rrtype, uint16_t rdlen, char *rdata, uint32_t ttl)
+	{
+	ServiceRecordSet *srs = r_srv->srs;
     ExtraResourceRecord *extra;
     extra_record_entry *ere;
-    uint32_t size, ttl;
-    uint16_t rrtype, rdlen;
-    char *ptr, *rdata;
-    mStatus result;
-    DNSServiceFlags flags;
-    ServiceRecordSet *srs = rstate->service->srs;
-    
-    if (!srs)
-        {
-        LogMsg("ERROR: handle_add_request - no service record set in request state");
-        deliver_error(rstate, mStatus_UnknownErr);
-        return;
-        }
-        
-    ptr = rstate->msgdata;
-    flags = get_flags(&ptr);
-    rrtype = get_short(&ptr);
-    rdlen = get_short(&ptr);
-    rdata = get_rdata(&ptr, rdlen);
-    ttl = get_long(&ptr);
-    
-    if (rdlen > sizeof(RDataBody)) size = rdlen;
+	mStatus result;
+	int size;
+	
+	if (rdlen > sizeof(RDataBody)) size = rdlen;
     else size = sizeof(RDataBody);
-    
+	
     ere = mallocL("hanle_add_request", sizeof(extra_record_entry) - sizeof(RDataBody) + size);
     if (!ere)
         {
@@ -1481,60 +1483,62 @@ static void handle_add_request(request_state *rstate)
         }
         
     bzero(ere, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
-    extra = &ere->extra;
+    extra = &ere->e;
     extra->r.resrec.rrtype = rrtype;
     extra->r.rdatastorage.MaxRDLength = size;
     extra->r.resrec.rdlength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
+
     result =  mDNS_AddRecordToService(gmDNS, srs , extra, &extra->r.rdatastorage, ttl);
-    deliver_error(rstate, result);
-    reset_connected_rstate(rstate);
-    if (result) 
-        {
-        freeL("handle_add_request", rstate->msgbuf);
-        rstate->msgbuf = NULL;
-        freeL("handle_add_request", ere);
-        return;
-        }
+	if (result) { freeL("handle_add_request", ere); return result; }
+
     ere->key = rstate->hdr.reg_index;
-    ere->next = rstate->service->extras;
-    rstate->service->extras = ere;
-    }
-    
-static void handle_update_request(request_state *rstate)
+    ere->next = r_srv->extras;
+    r_srv->extras = ere;
+	return result;
+	}
+
+
+static void handle_add_request(request_state *rstate)
     {
-    registered_record_entry *reptr;
-    AuthRecord *rr;
-    RData *newrd;
-    uint16_t rdlen, rdsize;
-    char *ptr, *rdata;
     uint32_t ttl;
+    uint16_t rrtype, rdlen;
+    char *ptr, *rdata;
     mStatus result;
-    
-    if (rstate->hdr.reg_index == TXT_RECORD_INDEX)
+    DNSServiceFlags flags;
+	registered_service *local, *global;
+
+	local = rstate->servicepair.local;
+	global = rstate->servicepair.global;
+
+	if (!local)
         {
-        if (!rstate->service)
-            {
-            deliver_error(rstate, mStatus_BadParamErr);
-            return;
-            }
-        rr  = &rstate->service->srs->RR_TXT;
-        }
-    else
-        {
-        reptr = rstate->reg_recs;
-        while(reptr && reptr->key != rstate->hdr.reg_index) reptr = reptr->next;
-        if (!reptr) deliver_error(rstate, mStatus_BadReferenceErr); 
-        rr = reptr->rr;
-        }
+        LogMsg("ERROR: handle_add_request - no service registered");
+        deliver_error(rstate, mStatus_UnknownErr);
+        return;
+        }	
 
     ptr = rstate->msgdata;
-    get_flags(&ptr);	// flags unused
+    flags = get_flags(&ptr);
+    rrtype = get_short(&ptr);
     rdlen = get_short(&ptr);
     rdata = get_rdata(&ptr, rdlen);
     ttl = get_long(&ptr);
+    
+	result = add_record_to_service(rstate, local, rrtype, rdlen, rdata, ttl);
+	if (global) add_record_to_service(rstate, global, rrtype, rdlen, rdata, ttl); // don't report global errors to client
+	
+    deliver_error(rstate, result);
+    reset_connected_rstate(rstate);
+    }
 
-    if (rdlen > sizeof(RDataBody)) rdsize = rdlen;
+static mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uint32_t ttl)
+	{	
+	int rdsize;
+	RData *newrd;
+	mStatus result;
+	
+	if (rdlen > sizeof(RDataBody)) rdsize = rdlen;
     else rdsize = sizeof(RDataBody);
     newrd = mallocL("handle_update_request", sizeof(RData) - sizeof(RDataBody) + rdsize);
     if (!newrd)
@@ -1545,6 +1549,78 @@ static void handle_update_request(request_state *rstate)
     newrd->MaxRDLength = rdsize;
     memcpy(&newrd->u, rdata, rdlen);
     result = mDNS_Update(gmDNS, rr, ttl, rdlen, newrd, update_callback);
+	if (result) { LogMsg("ERROR: mDNS_Update - %d", result); freeL("handle_update_request", newrd); }
+	return result;
+	}
+
+static mStatus find_extras_by_key(request_state *rstate, AuthRecord **lRR, AuthRecord **gRR)	
+	{
+	extra_record_entry *e;
+	
+	// find the extra record for the local service
+	for (e = rstate->servicepair.local->extras; e; e = e->next)
+		if (e->key == rstate->hdr.reg_index) break;
+	if (!e) return mStatus_BadReferenceErr;
+
+	*lRR = &e->e.r;
+
+	// find the corresponding global record, if it exists
+	if (rstate->servicepair.global)
+		{
+		for (e = rstate->servicepair.global->extras; e; e = e->next)
+			if (e->key == rstate->hdr.reg_index) break;
+		if (e) *gRR = &e->e.r;
+		else *gRR = NULL;
+		}
+	return mStatus_NoError;
+	}
+
+static void handle_update_request(request_state *rstate)
+    {
+    registered_record_entry *reptr;
+    AuthRecord *lRR, *gRR = NULL;
+    uint16_t rdlen;
+    char *ptr, *rdata;
+    uint32_t ttl;
+    mStatus result;
+	
+    if (rstate->hdr.reg_index == TXT_RECORD_INDEX)
+        {
+		if (!rstate->servicepair.local)
+            {
+            deliver_error(rstate, mStatus_BadParamErr);
+            return;
+            }
+		lRR = &rstate->servicepair.local->srs->RR_TXT;
+		if (rstate->servicepair.global) gRR = &rstate->servicepair.global->srs->RR_TXT;
+        }
+    else
+        {
+		if (rstate->servicepair.local) // registered service
+			{
+			if (find_extras_by_key(rstate, &lRR, &gRR))
+				{ deliver_error(rstate, mStatus_BadReferenceErr); return; }
+			}
+		else
+			{
+			// record created via RegisterRecord			
+			reptr = rstate->reg_recs;
+			while(reptr && reptr->key != rstate->hdr.reg_index) reptr = reptr->next;			
+			if (!reptr) { deliver_error(rstate, mStatus_BadReferenceErr); return; }
+			lRR = reptr->rr;
+			}
+		}
+
+	// get the message data
+	ptr = rstate->msgdata;
+    get_flags(&ptr);	// flags unused
+    rdlen = get_short(&ptr);
+    rdata = get_rdata(&ptr, rdlen);
+    ttl = get_long(&ptr);
+
+	result = update_record(lRR, rdlen, rdata, ttl);
+	if (gRR) update_record(gRR, rdlen, rdata, ttl);  // don't report errors for global registration
+	
     deliver_error(rstate, result);
     reset_connected_rstate(rstate);
     }
@@ -1584,19 +1660,53 @@ static void process_service_registration(ServiceRecordSet *const srs)
     else append_reply(req, rep);
     }
 
+static void free_service_registration(registered_service *srv)
+	{
+	request_state *rstate = srv->request;
+	extra_record_entry *extra;
+	
+	// clear pointers from parent struct
+	if (rstate)
+		{
+		if (rstate->servicepair.local == srv) rstate->servicepair.local = NULL;
+		else if (rstate->servicepair.global == srv) rstate->servicepair.global = NULL;
+		}
+
+	while (srv->extras)
+		{
+		extra = srv->extras;
+		srv->extras = srv->extras->next;
+		if (extra->e.r.resrec.rdata != &extra->e.r.rdatastorage)
+			freeL("free_service_registration", extra->e.r.resrec.rdata);
+		freeL("regservice_callback", extra);
+		}
+	
+	if (srv->subtypes) { freeL("regservice_callback", srv->subtypes); srv->subtypes = NULL; }
+	freeL("regservice_callback", srv->srs);
+	srv->srs = NULL;
+	freeL("regservice_callback", srv);
+	}
+
 static void regservice_termination_callback(void *context)
     {
-    registered_service *srv = context;
+    servicepair_t *pair = context;
 
+	if (!pair->local && !pair->global) { LogMsg("ERROR: regservice_termination_callback called with null services"); return; }
+
+	// clear service pointers to parent request state
+	if (pair->local) pair->local->request = NULL;
+	if (pair->global) pair->global->request = NULL;
+	
     // only safe to free memory if registration is not valid, ie deregister fails
-    if (mDNS_DeregisterService(gmDNS, srv->srs) != mStatus_NoError)
-        {
-        freeL("regservice_callback", srv->srs);
-        if (srv->subtypes) freeL("regservice_callback", srv->subtypes);
-        freeL("regservice_callback", srv);
-        freeL("regservice_termination_callback", srv);
-        }
-    }
+    if (pair->local && mDNS_DeregisterService(gmDNS, pair->local->srs) != mStatus_NoError)
+		free_service_registration(pair->local);
+	if (pair->global && mDNS_DeregisterService(gmDNS, pair->global->srs) != mStatus_NoError)
+		free_service_registration(pair->global);
+
+	// clear pointers to services - they'll get cleaned by MemFree callback
+	pair->local = NULL;
+	pair->global = NULL;	
+	}
 
 
 static void handle_regrecord_request(request_state *rstate)
@@ -1720,7 +1830,7 @@ static void handle_removerecord_request(request_state *rstate)
     ptr = rstate->msgdata;
     get_flags(&ptr);	// flags unused
 
-    if (rstate->service) err = remove_extra_rr_from_service(rstate);
+    if (rstate->servicepair.local) err = remove_extra_rr_from_service(rstate);
     else err = remove_record(rstate);
 
     reset_connected_rstate(rstate);
@@ -1770,28 +1880,37 @@ static mStatus remove_record(request_state *rstate)
     }
 
 
-static mStatus remove_extra_rr_from_service(request_state *rstate)
-    {
-    mStatus err = mStatus_UnknownErr;
-    extra_record_entry *ptr, *prev = NULL;
-    registered_service *serv = rstate->service;
+static mStatus remove_extra(request_state *rstate, registered_service *serv)
+	{
+	mStatus err = mStatus_BadReferenceErr;
+	extra_record_entry *ptr, *prev = NULL;
     
     ptr = serv->extras;
     while (ptr)
-	{
-	if (ptr->key == rstate->hdr.reg_index) // found match
-	    {
-	    if (prev) prev->next = ptr->next;
-	    else serv->extras = ptr->next;
-	    err = mDNS_RemoveRecordFromService(gmDNS, serv->srs, &ptr->extra);
-	    if (err) return err;
-	    freeL("remove_extra_rr_from_service", ptr);
-	    break;
-	    }
-	prev = ptr;
-	ptr = ptr->next;
+		{
+		if (ptr->key == rstate->hdr.reg_index) // found match
+			{
+			if (prev) prev->next = ptr->next;
+			else serv->extras = ptr->next;
+			err = mDNS_RemoveRecordFromService(gmDNS, serv->srs, &ptr->e);
+			if (err) return err;
+			freeL("remove_extra_rr_from_service", ptr);
+			break;
+			}
+		prev = ptr;
+		ptr = ptr->next;
+		}
+	return err;
 	}
-    return err;
+
+static mStatus remove_extra_rr_from_service(request_state *rstate)
+    {
+    mStatus err = mStatus_UnknownErr;
+
+	err = remove_extra(rstate, rstate->servicepair.local);
+	if (rstate->servicepair.global) remove_extra(rstate, rstate->servicepair.global); // don't return error for global
+
+	return err;
     }
 
 
