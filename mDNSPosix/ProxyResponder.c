@@ -67,8 +67,8 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	{
 	char buffer[32];
 	
-	mDNS_SetupResourceRecord(&p->RR_A,   mDNSNULL, zeroIPAddr, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, p);
-	mDNS_SetupResourceRecord(&p->RR_PTR, mDNSNULL, zeroIPAddr, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, HostNameCallback, p);
+	mDNS_SetupResourceRecord(&p->RR_A,   mDNSNULL, mDNSInterface_Any, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, p);
+	mDNS_SetupResourceRecord(&p->RR_PTR, mDNSNULL, mDNSInterface_Any, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, HostNameCallback, p);
 
 	p->RR_A.name.c[0] = 0;
 	AppendDomainLabelToName(&p->RR_A.name, &p->hostlabel);
