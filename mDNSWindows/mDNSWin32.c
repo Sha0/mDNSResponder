@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.64  2004/12/15 06:06:15  shersche
+Fix problem in obtaining IPv6 subnet mask
+
 Revision 1.63  2004/11/23 03:39:47  cheshire
 Let interface name/index mapping capability live directly in JNISupport.c,
 instead of having to call through to the daemon via IPC to get this information.
@@ -364,7 +367,6 @@ mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInter
 
 #if( MDNS_WINDOWS_USE_IPV6_IF_ADDRS )
 	mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs );
-	mDNSlocal int	getifnetmask_ipv6( struct ifaddrs * ifa );
 #endif
 
 #if( !TARGET_OS_WINDOWS_CE )
@@ -2559,6 +2561,7 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 	
 	for( iaa = iaaList; iaa; iaa = iaa->Next )
 	{
+		int									addrIndex;
 		IP_ADAPTER_UNICAST_ADDRESS *		addr;
 
 		if( iaa->IfIndex > 0xFFFFFF )
@@ -2579,8 +2582,16 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 		
 		// Add each address as a separate interface to emulate the way getifaddrs works.
 		
-		for( addr = iaa->FirstUnicastAddress; addr; addr = addr->Next )
+		for( addrIndex = 0, addr = iaa->FirstUnicastAddress; addr; ++addrIndex, addr = addr->Next )
 		{			
+			int						family;
+			int						prefixIndex;
+			IP_ADAPTER_PREFIX *		prefix;
+			ULONG					prefixLength;
+			
+			family = addr->Address.lpSockaddr->sa_family;
+			if( ( family != AF_INET ) && ( family != AF_INET6 ) ) continue;
+			
 			ifa = (struct ifaddrs *) calloc( 1, sizeof( struct ifaddrs ) );
 			require_action( ifa, exit, err = WSAENOBUFS );
 			
@@ -2597,53 +2608,99 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			// Get interface flags.
 			
 			ifa->ifa_flags = 0;
-			if( iaa->OperStatus == IfOperStatusUp )
-			{
-				ifa->ifa_flags |= IFF_UP;
-			}
-			if( iaa->IfType == IF_TYPE_SOFTWARE_LOOPBACK )
-			{
-				ifa->ifa_flags |= IFF_LOOPBACK;
-			}
-			if( !( iaa->Flags & IP_ADAPTER_NO_MULTICAST ) )
-			{
-				ifa->ifa_flags |= IFF_MULTICAST;
-			}
+			if( iaa->OperStatus == IfOperStatusUp ) 		ifa->ifa_flags |= IFF_UP;
+			if( iaa->IfType == IF_TYPE_SOFTWARE_LOOPBACK )	ifa->ifa_flags |= IFF_LOOPBACK;
+			if( !( iaa->Flags & IP_ADAPTER_NO_MULTICAST ) )	ifa->ifa_flags |= IFF_MULTICAST;
 			
 			// Get the interface index. Windows does not have a uniform scheme for IPv4 and IPv6 interface indexes
-			// so the following is a hack to put IPv4 interface indexes in the upper 16-bits and IPv6 interface indexes
-			// in the lower 16-bits. This allows the IPv6 interface index to be usable as an IPv6 scope ID directly.
+			// so the following is a hack to put IPv4 interface indexes in the upper 24-bits and IPv6 interface indexes
+			// in the lower 8-bits. This allows the IPv6 interface index to be usable as an IPv6 scope ID directly.
 			
-			switch( addr->Address.lpSockaddr->sa_family )
+			switch( family )
 			{
-				case AF_INET:
-					ifa->ifa_extra.index = iaa->IfIndex << 8;
-					break;
-					
-				case AF_INET6:
-					ifa->ifa_extra.index = iaa->Ipv6IfIndex;
-					break;
-				
-				default:
-					break;
+				case AF_INET:  ifa->ifa_extra.index = iaa->IfIndex << 8; break;
+				case AF_INET6: ifa->ifa_extra.index = iaa->Ipv6IfIndex;	 break;
+				default: break;
 			}
 			
-			// Get addresses.
+			// Get address.
 			
-			switch( addr->Address.lpSockaddr->sa_family )
+			switch( family )
 			{
 				case AF_INET:
 				case AF_INET6:
 					ifa->ifa_addr = (struct sockaddr *) calloc( 1, (size_t) addr->Address.iSockaddrLength );
 					require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
 					memcpy( ifa->ifa_addr, addr->Address.lpSockaddr, (size_t) addr->Address.iSockaddrLength );
-
-					ifa->ifa_netmask = (struct sockaddr *) calloc( 1, sizeof(struct sockaddr) );
-					require_action( ifa->ifa_netmask, exit, err = WSAENOBUFS );
-					err = getifnetmask_ipv6(ifa);
-					require_noerr(err, exit);
-
 					break;
+				
+				default:
+					break;
+			}
+			check( ifa->ifa_addr );
+			
+			// Get subnet mask (IPv4)/link prefix (IPv6). It is specified as a bit length (e.g. 24 for 255.255.255.0).
+			
+			prefixLength = 0;
+			for( prefixIndex = 0, prefix = iaa->FirstPrefix; prefix; ++prefixIndex, prefix = prefix->Next )
+			{
+				if( prefixIndex == addrIndex )
+				{
+					check_string( prefix->Address.lpSockaddr->sa_family == family, "addr family != netmask family" );
+					prefixLength = prefix->PrefixLength;
+					break;
+				}
+			}
+			switch( family )
+			{
+				case AF_INET:
+				{
+					struct sockaddr_in *		sa4;
+					
+					require_action( prefixLength <= 32, exit, err = ERROR_INVALID_DATA );
+					
+					sa4 = (struct sockaddr_in *) calloc( 1, sizeof( *sa4 ) );
+					require_action( sa4, exit, err = WSAENOBUFS );
+					
+					sa4->sin_family = AF_INET;
+					if( prefixLength == 0 )
+					{
+						dlog( kDebugLevelWarning, DEBUG_NAME "%s: IPv4 netmask 0, defaulting to 255.255.255.255\n", __ROUTINE__ );
+						prefixLength = 32;
+					}
+					sa4->sin_addr.s_addr = htonl( 0xFFFFFFFFU << ( 32 - prefixLength ) );
+					ifa->ifa_netmask = (struct sockaddr *) sa4;
+					break;
+				}
+				
+				case AF_INET6:
+				{
+					struct sockaddr_in6 *		sa6;
+					int							len;
+					int							maskIndex;
+					uint8_t						maskByte;
+					
+					require_action( prefixLength <= 128, exit, err = ERROR_INVALID_DATA );
+					
+					sa6 = (struct sockaddr_in6 *) calloc( 1, sizeof( *sa6 ) );
+					require_action( sa6, exit, err = WSAENOBUFS );
+					sa6->sin6_family = AF_INET6;
+					
+					if( prefixLength == 0 )
+					{
+						dlog( kDebugLevelWarning, DEBUG_NAME "%s: IPv6 link prefix 0, defaulting to /128\n", __ROUTINE__ );
+						prefixLength = 128;
+					}
+					maskIndex = 0;
+					for( len = (int) prefixLength; len > 0; len -= 8 )
+					{
+						if( len >= 8 ) maskByte = 0xFF;
+						else		   maskByte = (uint8_t)( ( 0xFFU << ( 8 - len ) ) & 0xFFU );
+						sa6->sin6_addr.s6_addr[ maskIndex++ ] = maskByte;
+					}
+					ifa->ifa_netmask = (struct sockaddr *) sa6;
+					break;
+				}
 				
 				default:
 					break;
@@ -2672,59 +2729,6 @@ exit:
 	return( (int) err );
 }
 
-mDNSlocal int
-getifnetmask_ipv6( struct ifaddrs * ifa )
-{
-	PMIB_IPADDRTABLE	pIPAddrTable	=	NULL;
-	DWORD				dwSize			=	0;
-	DWORD				dwRetVal;
-	DWORD				i;
-	int					err				=	0;
-
-	// Make an initial call to GetIpAddrTable to get the
-	// necessary size into the dwSize variable
-
-	dwRetVal = GetIpAddrTable(NULL, &dwSize, 0);
-	require_action( dwRetVal == ERROR_INSUFFICIENT_BUFFER, exit, err = WSAENOBUFS );
-
-	pIPAddrTable = (MIB_IPADDRTABLE *) malloc ( dwSize );
-	require_action( pIPAddrTable != NULL, exit, err = WSAENOBUFS );
-
-	// Make a second call to GetIpAddrTable to get the
-	// actual data we want
-
-	dwRetVal = GetIpAddrTable( pIPAddrTable, &dwSize, 0 );
-	require_action(dwRetVal == NO_ERROR, exit, err = WSAENOBUFS);
-
-	// Now try and find the correct IP Address
-
-	for (i = 0; i < pIPAddrTable->dwNumEntries; i++)
-	{
-		struct sockaddr_in sa;
-
-		memset(&sa, 0, sizeof(sa));
-		sa.sin_family = AF_INET;
-		sa.sin_addr.s_addr = pIPAddrTable->table[i].dwAddr;
-
-		if (memcmp(ifa->ifa_addr, &sa, sizeof(sa)) == 0)
-		{
-			// Found the right one, so copy the subnet mask information
-
-			sa.sin_addr.s_addr = pIPAddrTable->table[i].dwMask;
-			memcpy( ifa->ifa_netmask, &sa, sizeof(sa) );
-			break;
-		}
-	}
-
-exit:
-
-	if ( pIPAddrTable != NULL )
-	{
-		free(pIPAddrTable);
-	}
-
-	return err;
-}
 #endif	// MDNS_WINDOWS_USE_IPV6_IF_ADDRS
 
 #if( !TARGET_OS_WINDOWS_CE )
