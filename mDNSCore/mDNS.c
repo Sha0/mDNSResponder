@@ -1731,6 +1731,26 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m, const mDNSs32 timenow)
 	m->lock_rrcache = 0;
 	}
 
+mDNSlocal void FlushCacheRecords(mDNS *const m, mDNSIPAddr InterfaceAddr, const mDNSs32 timenow)
+	{
+	mDNSu32 count = 0;
+	ResourceRecord *rr;
+	for (rr = m->rrcache; rr; rr=rr->next)
+		{
+		if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger)
+			{
+			// If the record's interface matches the one we're flushing,
+			// then pretend we just received a 'goodbye' packet for this record.
+			rr->TimeRcvd          = timenow;
+			rr->UnansweredQueries = 0;
+			rr->rroriginalttl     = 1;
+			count++;
+			}
+		}
+	
+	if (count) debugf("FlushCacheRecords Flushing %d Cache Entries on interface %.4a", count, &InterfaceAddr);
+	}
+
 // TidyRRCache
 // Throw away any cache records that have passed their TTL
 // First we prepare a list of records to delete, and pull them off the rrcache list
@@ -1764,11 +1784,11 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 	if (count) debugf("TidyRRCache Deleting %d Expired Cache Entries", count);
 
 	m->lock_rrcache = 0;
-	
+
 	while (deletelist)
 		{
 		ResourceRecord *r = deletelist;
-		debugf("TidyRRCache Deleted %##s (%s)", r->name.c, DNSTypeName(r->rrtype));
+		debugf("TidyRRCache: Deleted %##s (%s)", r->name.c, DNSTypeName(r->rrtype));
 		deletelist = deletelist->next;
 		AnswerLocalQuestions(m, r, timenow);
 		r->next = m->rrcache_free;	// and move it back to the free list
@@ -2979,7 +2999,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	{
 	NetworkInterfaceInfo *i;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
-	mDNS_Lock(m);
+	const mDNSs32 timenow = mDNS_Lock(m);
 
 	// Find this record in our list
 	while (*p && *p != set) p=&(*p)->next;
@@ -2988,7 +3008,10 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// Unlink this record from our list
 	*p = (*p)->next;
 	set->next = mDNSNULL;
-	
+
+	// Flush any cache entries we received on this interface
+	FlushCacheRecords(m, set->ip, timenow);
+
 	// If we were advertising on this interface, deregister now
 	if (set->Advertise)
 		{
