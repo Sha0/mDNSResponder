@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.127  2003/05/23 01:02:15  ksekar
+Bug #: <rdar://problem/3032577>: mDNSResponder needs to include unique id in default name
+
 Revision 1.126  2003/05/22 02:29:22  cheshire
 <rdar://problem/2984918> SendQueries needs to handle multihoming better
 Complete rewrite of SendQueries. Works much better now :-)
@@ -732,8 +735,10 @@ char *DNSTypeName(mDNSu16 rrtype)
 
 mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 	{
-	static mDNSu32 seed = 1;
+	static mDNSu32 seed = 0;
 	mDNSu32 mask = 1;
+	
+	if (!seed) seed = mDNSPlatformTimeNow();
 	while (mask < max) mask = (mask << 1) | 1;
 	do seed = seed * 21 + 1; while ((seed & mask) > max);
 	return (seed & mask);
@@ -1269,9 +1274,14 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	if (LabelContainsSuffix(name, RichText)) 
 		val = RemoveLabelSuffix(name, RichText);
 		
-	// If existing suffix, increment it, else start by renaming "Foo" as "Foo (2)" or "Foo--2" as appropriate
-	if (val && val < 999999) val++; 
-	else val = 2; 
+	// If existing suffix, increment it, else start by renaming "Foo" as "Foo (2)" or "Foo--2" as appropriate.
+	// After sequentially trying each single-digit suffix, we try a random 2-digit suffix, then 3-digit, then
+	// continue generating random 4-digit integers.
+	if (!val)			val = 2;
+	else if (val < 9)	val++;
+	else if (val < 10)	val = mDNSRandom(89) + 10;
+	else if (val < 100)	val = mDNSRandom(899) + 100;
+	else 			val = mDNSRandom(8999) + 1000;
 	
 	AppendLabelSuffix(name, val, RichText);
 	}	
