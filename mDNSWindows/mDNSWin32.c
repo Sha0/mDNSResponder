@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.44  2004/07/26 05:42:50  shersche
+use "Computer Description" for nicename if available, track dynamic changes to "Computer Description"
+
 Revision 1.43  2004/07/13 21:24:25  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -231,7 +234,8 @@ Multicast DNS platform plugin for Win32
 #define	kWaitListCancelEvent						( WAIT_OBJECT_0 + 0 )
 #define	kWaitListInterfaceListChangedEvent			( WAIT_OBJECT_0 + 1 )
 #define	kWaitListWakeupEvent						( WAIT_OBJECT_0 + 2 )
-#define	kWaitListFixedItemCount						3
+#define kWaitListRegEvent							( WAIT_OBJECT_0 + 3 )
+#define	kWaitListFixedItemCount						4
 
 #if( !TARGET_OS_WINDOWS_CE )
 	static GUID										kWSARecvMsgGUID = WSAID_WSARECVMSG;
@@ -247,6 +251,8 @@ Multicast DNS platform plugin for Win32
 
 mDNSlocal mStatus			SetupSynchronizationObjects( mDNS * const inMDNS );
 mDNSlocal mStatus			TearDownSynchronizationObjects( mDNS * const inMDNS );
+mDNSlocal mStatus			SetupNiceName( mDNS * const inMDNS );
+mDNSlocal mStatus			SetupHostName( mDNS * const inMDNS );
 mDNSlocal mStatus			SetupName( mDNS * const inMDNS );
 mDNSlocal mStatus			SetupInterfaceList( mDNS * const inMDNS );
 mDNSlocal mStatus			TearDownInterfaceList( mDNS * const inMDNS );
@@ -264,6 +270,7 @@ mDNSlocal mStatus 			ProcessingThreadInitialize( mDNS * const inMDNS );
 mDNSlocal mStatus			ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **outWaitList, int *outWaitListCount );
 mDNSlocal void				ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *inIFD, SocketRef inSock );
 mDNSlocal void				ProcessingThreadInterfaceListChanged( mDNS *inMDNS );
+mDNSlocal void				ProcessingThreadRegistryChanged( mDNS * inMDNS );
 
 // Platform Accessors
 
@@ -1018,51 +1025,140 @@ mDNSlocal mStatus	TearDownSynchronizationObjects( mDNS * const inMDNS )
 	return( mStatus_NoError );
 }
 
+
 //===========================================================================================================================
-//	SetupName
+//	SetupNiceName
 //===========================================================================================================================
 
-mDNSlocal mStatus	SetupName( mDNS * const inMDNS )
+mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 {
-	mStatus		err;
+	mStatus		err = 0;
 	char		tempString[ 256 ];
 	
 	check( inMDNS );
 	
 	// Set up the nice name.
-	
 	tempString[ 0 ] = '\0';
-	err = gethostname( tempString, sizeof( tempString ) - 1 );
-	check_translated_errno( err == 0, errno_compat(), kNameErr );
+
+	// First try and open the registry key that contains the computer description value
+	if (inMDNS->p->regKey == NULL)
+	{
+		const char * s = "SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\parameters";
+		err = RegOpenKeyEx( HKEY_LOCAL_MACHINE, s, 0, KEY_ALL_ACCESS|KEY_NOTIFY, &inMDNS->p->regKey);
+		check_translated_errno( err == 0, errno_compat(), kNameErr );
+
+		if (err)
+		{
+			inMDNS->p->regKey = NULL;
+		}
+	}
+
+	// if we opened it...
+	if (inMDNS->p->regKey != NULL)
+	{
+		DWORD type;
+		DWORD valueLen = sizeof(tempString);
+
+		// look for the computer description
+		err = RegQueryValueEx(inMDNS->p->regKey, "srvcomment", 0, &type, (LPBYTE) &tempString, &valueLen);
+		check_translated_errno( err == 0, errno_compat(), kNameErr );
+	}
+
+	// if we can't find it in the registry, then use the hostname of the machine
+	if (err || ( tempString[ 0] == '\0' ) )
+	{
+		err = gethostname( tempString, sizeof( tempString ) - 1 );
+		check_translated_errno( err == 0, errno_compat(), kNameErr );
+	}
+
+	// if we can't get the hostname
 	if( err || ( tempString[ 0 ] == '\0' ) )
 	{
 		// Invalidate name so fall back to a default name.
 		
 		strcpy( tempString, kMDNSDefaultName );
 	}
+
 	tempString[ sizeof( tempString ) - 1 ] = '\0';
 	
 	inMDNS->nicelabel.c[ 0 ] = (mDNSu8) strlen( tempString );
-	memcpy( &inMDNS->nicelabel.c[ 1 ], tempString, inMDNS->nicelabel.c[ 0 ] );
+	memcpy( &inMDNS->nicelabel.c[ 1 ], tempString, inMDNS->nicelabel.c[ 0 ] < MAX_DOMAIN_LABEL ? inMDNS->nicelabel.c[0] : MAX_DOMAIN_LABEL );
+	
+	dlog( kDebugLevelInfo, DEBUG_NAME "nice name \"%.*s\"\n", inMDNS->nicelabel.c[ 0 ], &inMDNS->nicelabel.c[ 1 ] );
+	
+	return( err );
+}
+
+
+//===========================================================================================================================
+//	SetupHostName
+//===========================================================================================================================
+
+mDNSlocal mStatus	SetupHostName( mDNS * const inMDNS )
+{
+	mStatus		err = 0;
+	char		tempString[ 256 ];
+	domainlabel tempLabel;
+	
+	check( inMDNS );
+
+	// Set up the nice name.
+	tempString[ 0 ] = '\0';
+
+	// use the hostname of the machine
+	err = gethostname( tempString, sizeof( tempString ) - 1 );
+	check_translated_errno( err == 0, errno_compat(), kNameErr );
+
+	// if we can't get the hostname
+	if( err || ( tempString[ 0 ] == '\0' ) )
+	{
+		// Invalidate name so fall back to a default name.
+		
+		strcpy( tempString, kMDNSDefaultName );
+	}
+
+	tempString[ sizeof( tempString ) - 1 ] = '\0';
+	tempLabel.c[ 0 ] = (mDNSu8) strlen( tempString );
+	memcpy( &tempLabel.c[ 1 ], tempString, tempLabel.c[ 0 ] < MAX_DOMAIN_LABEL ? tempLabel.c[0] : MAX_DOMAIN_LABEL );
 	
 	// Set up the host name.
 	
-	ConvertUTF8PstringToRFC1034HostLabel( inMDNS->nicelabel.c, &inMDNS->hostlabel );
+	ConvertUTF8PstringToRFC1034HostLabel( tempLabel.c, &inMDNS->hostlabel );
 	if( inMDNS->hostlabel.c[ 0 ] == 0 )
 	{
 		// Nice name has no characters that are representable as an RFC1034 name (e.g. Japanese) so use the default.
 		
 		MakeDomainLabelFromLiteralString( &inMDNS->hostlabel, kMDNSDefaultName );
 	}
-	check( inMDNS->nicelabel.c[ 0 ] != 0 );
+
 	check( inMDNS->hostlabel.c[ 0 ] != 0 );
 	
 	mDNS_GenerateFQDN( inMDNS );
 	
-	dlog( kDebugLevelInfo, DEBUG_NAME "nice name \"%.*s\"\n", inMDNS->nicelabel.c[ 0 ], &inMDNS->nicelabel.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "host name \"%.*s\"\n", inMDNS->hostlabel.c[ 0 ], &inMDNS->hostlabel.c[ 1 ] );
+	
 	return( err );
 }
+
+//===========================================================================================================================
+//	SetupName
+//===========================================================================================================================
+
+mDNSlocal mStatus	SetupName( mDNS * const inMDNS )
+{
+	mStatus		err = 0;
+	
+	check( inMDNS );
+	
+	err = SetupNiceName( inMDNS );
+	check_noerr( err );
+
+	err = SetupHostName( inMDNS );
+	check_noerr( err );
+
+	return err;
+}
+
 
 //===========================================================================================================================
 //	SetupInterfaceList
@@ -1088,7 +1184,7 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	// Tear down any existing interfaces that may be set up.
 	
 	TearDownInterfaceList( inMDNS );
-	
+
 	// Set up the name of this machine.
 	
 	err = SetupName( inMDNS );
@@ -1737,6 +1833,16 @@ mDNSlocal mStatus	SetupNotifications( mDNS * const inMDNS )
 	err = translate_errno( err == 0, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
 
+	inMDNS->p->regEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	err = translate_errno( inMDNS->p->regEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	if (inMDNS->p->regKey != NULL)
+	{
+		err = RegNotifyChangeKeyValue(inMDNS->p->regKey, TRUE, REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->regEvent, TRUE);
+		require_noerr( err, exit );
+	}
+
 exit:
 	if( err )
 	{
@@ -1756,6 +1862,19 @@ mDNSlocal mStatus	TearDownNotifications( mDNS * const inMDNS )
 		close_compat( inMDNS->p->interfaceListChangedSocket );
 		inMDNS->p->interfaceListChangedSocket = kInvalidSocketRef;
 	}
+
+	if ( inMDNS->p->regEvent != NULL )
+	{
+		CloseHandle( inMDNS->p->regEvent );
+		inMDNS->p->regEvent = NULL;
+	}
+
+	if ( inMDNS->p->regKey != NULL )
+	{
+		RegCloseKey( inMDNS->p->regKey );
+		inMDNS->p->regKey = NULL;
+	}
+
 	return( mStatus_NoError );
 }
 
@@ -1911,6 +2030,14 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 				dlog( kDebugLevelChatty - 1, DEBUG_NAME "wakeup for mDNS_Execute\n" );
 				continue;
 			}
+			else if ( result == kWaitListRegEvent )
+			{
+				//
+				// The computer description might have changed
+				//
+				ProcessingThreadRegistryChanged( m );
+				break;
+			}
 			else
 			{
 				int		waitItemIndex;
@@ -2027,6 +2154,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	*waitItemPtr++ = inMDNS->p->cancelEvent;
 	*waitItemPtr++ = inMDNS->p->interfaceListChangedEvent;
 	*waitItemPtr++ = inMDNS->p->wakeupEvent;
+	*waitItemPtr++ = inMDNS->p->regEvent;
 	
 	// Append all the dynamic wait items to the list.
 	
@@ -2200,6 +2328,33 @@ mDNSlocal void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 	
 	mDNSCoreMachineSleep( inMDNS, mDNSfalse );
 }
+
+
+//===========================================================================================================================
+//	ProcessingThreadRegistryChanged
+//===========================================================================================================================
+mDNSlocal void	ProcessingThreadRegistryChanged( mDNS *inMDNS )
+{
+	mStatus		err;
+	
+	dlog( kDebugLevelInfo, DEBUG_NAME "registry has changed\n" );
+	check( inMDNS );
+
+	mDNSPlatformLock( inMDNS );
+
+	// redo the names
+	SetupNiceName( inMDNS );
+	
+	// and reset the event handler
+	if ((inMDNS->p->regKey != NULL) && (inMDNS->p->regEvent))
+	{
+		err = RegNotifyChangeKeyValue(inMDNS->p->regKey, TRUE, REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->regEvent, TRUE);
+		check_noerr( err );
+	}
+
+	mDNSPlatformUnlock( inMDNS );
+}
+
 
 #if 0
 #pragma mark -

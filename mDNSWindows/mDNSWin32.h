@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.15  2004/07/26 05:42:50  shersche
+use "Computer Description" for nicename if available, track dynamic changes to "Computer Description"
+
 Revision 1.14  2004/07/13 21:24:25  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -149,8 +152,10 @@ struct	mDNS_PlatformSupport_struct
 	HANDLE						cancelEvent;
 	HANDLE						quitEvent;
 	HANDLE						interfaceListChangedEvent;
+	HANDLE						regEvent;
 	HANDLE						wakeupEvent;
 	HANDLE						initEvent;
+	HKEY						regKey;
 	mStatus						initStatus;
 	SocketRef					interfaceListChangedSocket;
 	int							interfaceCount;
