@@ -68,7 +68,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.70  2003/01/23 19:00:20  cheshire
+Protect against infinite loops in mDNSCoreTask
+
 Revision 1.69  2003/01/21 22:56:32  jgraessl
+
 Bug #: 3124348  service name changes are not properly handled
 Submitted by: Stuart Cheshire
 Reviewed by: Joshua Graessley
@@ -2865,6 +2869,7 @@ mDNSlocal void mDNS_Unlock(mDNS *const m)
 
 mDNSexport void mDNSCoreTask(mDNS *const m)
 	{
+	int i;
 	const mDNSs32 timenow = mDNS_Lock(m);
 
 	verbosedebugf("mDNSCoreTask");
@@ -2875,7 +2880,8 @@ mDNSexport void mDNSCoreTask(mDNS *const m)
 		m->SuppressProbes = 0;
 
 	// 1. See if we can answer any of our new local questions from the cache
-	while (m->NewQuestions) AnswerNewQuestion(m, timenow);
+	for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m, timenow);
+	if (i >= 1000) debugf("mDNSCoreTask: AnswerNewQuestion exceeded loop limit");
 
 	// 2. See what packets we need to send
 	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState)
@@ -2891,8 +2897,10 @@ mDNSexport void mDNSCoreTask(mDNS *const m)
 		// and we're not suppressing packet generation right now
 		// send our responses, probes, and questions
 		m->SuppressSending = 0;
-		while (HaveResponses(m, timenow)) SendResponses(m, timenow);
-		while (HaveQueries  (m, timenow)) SendQueries  (m, timenow);
+		for (i=0; HaveResponses(m, timenow) && i<1000; i++) SendResponses(m, timenow);
+		if (i >= 1000) debugf("mDNSCoreTask: SendResponses exceeded loop limit");
+		for (i=0; HaveQueries  (m, timenow) && i<1000; i++) SendQueries  (m, timenow);
+		if (i >= 1000) debugf("mDNSCoreTask: SendQueries exceeded loop limit");
 		}
 
 	if (m->rrcache_size) TidyRRCache(m, timenow);
