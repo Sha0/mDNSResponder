@@ -392,7 +392,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	#pragma unused(m)
 	char buffer[256];
 	DNSServiceDomainEnumerationReplyResultType rt;
-	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->Context;
+	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->QuestionContext;
 
 	debugf("FoundDomain: %##s PTR %##s", &answer->name, &answer->rdata->u.name);
 	if (answer->rrtype != kDNSType_PTR) return;
@@ -481,7 +481,7 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	DNSServiceBrowser *browser = (DNSServiceBrowser *)question->Context;
+	DNSServiceBrowser *browser = (DNSServiceBrowser *)question->QuestionContext;
 	DNSServiceBrowserResult **p = &browser->results;
 	DNSServiceBrowserResult *x = mallocL("DNSServiceBrowserResult", sizeof(*x));
 	domainlabel name;
@@ -567,7 +567,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	kern_return_t status;
-	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
+	DNSServiceResolver *x = (DNSServiceResolver *)query->ServiceInfoQueryContext;
 	NetworkInterfaceInfo *ifinfo = (NetworkInterfaceInfo*)query->info->InterfaceID;
 	struct sockaddr_storage interface;
 	struct sockaddr_storage address;
@@ -697,7 +697,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 
 mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result)
 	{
-	DNSServiceRegistration *x = (DNSServiceRegistration*)sr->Context;
+	DNSServiceRegistration *x = (DNSServiceRegistration*)sr->ServiceContext;
 
 	if (result == mStatus_NoError)
 		{
