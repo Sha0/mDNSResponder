@@ -1,15 +1,15 @@
-// Set DEBUGBREAKS to 0 to optimize debugf() calls out of the compiled code
-// Set DEBUGBREAKS to 1 to generate normal debugging messages
-// Set DEBUGBREAKS to 2 to generate verbose debugging messages
-// DEBUGBREAKS is normally set in the project options (or makefile) but can also be set here if desired
+// Set MDNS_DEBUGBREAKS to 0 to optimize debugf() calls out of the compiled code
+// Set MDNS_DEBUGBREAKS to 1 to generate normal debugging messages
+// Set MDNS_DEBUGBREAKS to 2 to generate verbose debugging messages
+// MDNS_DEBUGBREAKS is normally set in the project options (or makefile) but can also be set here if desired
 
-//#define DEBUGBREAKS 2
+//#define MDNS_DEBUGBREAKS 2
 
 #ifdef	__cplusplus
 	extern "C" {
 #endif
 
-#if DEBUGBREAKS
+#if MDNS_DEBUGBREAKS
 #define debugf debugf_
 extern void debugf_(const char *format, ...);
 #else // If debug breaks are off, use a preprocessor trick to optimize those calls out of the code
@@ -22,7 +22,7 @@ extern void debugf_(const char *format, ...);
 	#endif
 #endif
 
-#if DEBUGBREAKS > 1
+#if MDNS_DEBUGBREAKS > 1
 #define verbosedebugf debugf_
 #else
 	#if( defined( __GNUC__ ) )

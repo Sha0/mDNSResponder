@@ -27,7 +27,7 @@
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
 				OPTIMIZATION_CFLAGS = "-O0";
-				OTHER_CFLAGS = "-D__MACOSX__ -DDEBUGBREAKS=1";
+				OTHER_CFLAGS = "-D__MACOSX__ -DMDNS_DEBUGBREAKS=1";
 			};
 			isa = PBXBuildStyle;
 			name = Development;

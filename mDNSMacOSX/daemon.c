@@ -76,7 +76,7 @@ static CFRunLoopTimerRef DeliverInstanceTimer;
 
 static int restarting_via_mach_init = 0;
 
-#if DEBUGBREAKS
+#if MDNS_DEBUGBREAKS
 static int debug_mode = 1;
 #else
 static int debug_mode = 0;
