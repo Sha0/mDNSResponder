@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.22  2004/01/20 01:41:21  rpantos
+# Define USES_NETLINK for Linux builds.
+#
 # Revision 1.21  2003/12/17 00:51:22  cheshire
 # Changed mDNSNetMonitor and mDNSIdentify to link the object files
 # instead of #including the "DNSCommon.c" "uDNS.c" and source files
@@ -114,7 +117,7 @@ ifeq ($(os),solaris)
 CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -lsocket -lnsl
 else
 ifeq ($(os),linux)
-CFLAGS_OS = -DNOT_HAVE_SA_LEN
+CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK
 else
 ifeq ($(os),netbsd)
 CFLAGS_OS =
