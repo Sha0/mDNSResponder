@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.5  2004/06/25 05:06:02  shersche
+Trim whitespace from key/value pairs when parsing inf files
+Submitted by: herscher
+
 Revision 1.4  2004/06/25 02:44:13  shersche
 Tweaked code to handle Xerox Phaser printer identification
 Submitted by: herscher
@@ -317,10 +321,12 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					require_action( manufacturer, exit, err = kNoMemoryErr );
 
 					//
-					// get rid of all delimeters
+					// get rid of all delimiters
 					//
 					key.Remove('%');
 					key.Remove('"');
+					val.TrimLeft();
+					val.TrimRight();
 
 					//
 					// why is there no consistency in inf files?
