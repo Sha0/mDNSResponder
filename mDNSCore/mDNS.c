@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.191  2003/07/02 02:30:51  cheshire
+HashSlot() returns an array index. It can't be negative; hence it should not be signed.
+
 Revision 1.190  2003/06/27 00:03:05  vlubet
 <rdar://problem/3304625> Merge of build failure fix for gcc 3.3
 
@@ -1639,7 +1642,7 @@ mDNSlocal mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr,
 	return(SameDomainName(&rr->name, &q->qname));
 	}
 
-mDNSlocal mDNSs32 HashSlot(const domainname *name)
+mDNSlocal mDNSu32 HashSlot(const domainname *name)
 	{
 	mDNSu16       sum = 0;
 	const mDNSu8 *c;
@@ -3056,7 +3059,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 
 mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name)
 	{
-	mDNSs32 slot;
+	mDNSu32 slot;
 	ResourceRecord *rr;
 	domainname *target;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
@@ -3322,7 +3325,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr)
 	{
-	debugf("AnswerQuestionWithResourceRecord:%4lu %s TTL%6lu %##s (%s)",
+	verbosedebugf("AnswerQuestionWithResourceRecord:%4lu %s TTL%6lu %##s (%s)",
 		q->CurrentAnswers, rr->rrremainingttl ? "Add" : "Rmv", rr->rrremainingttl, rr->name.c, DNSTypeName(rr->rrtype));
 
 	rr->LastUsed = m->timenow;
@@ -3472,7 +3475,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 mDNSlocal void CheckCacheExpiration(mDNS *const m)
 	{
-	mDNSs32 slot;
+	mDNSu32 slot;
 
 	if (m->lock_rrcache) { LogMsg("CheckCacheExpiration ERROR! Cache already locked!"); return; }
 	m->lock_rrcache = 1;
@@ -3540,7 +3543,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 		}
 	else		// Else search for a candidate to recycle
 		{
-		mDNSs32 slot;
+		mDNSu32 slot;
 		ResourceRecord **rr;
 		ResourceRecord **best = mDNSNULL;
 		mDNSs32 bestage = -1;
@@ -3907,7 +3910,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	else
 		{
 		DNSQuestion *q;
-		mDNSs32 slot;
+		mDNSu32 slot;
 
 		// 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
@@ -4702,7 +4705,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// 2. See if we want to add this packet resource record to our cache
 		if (m->rrcache_size)	// Only try to cache answers if we have a cache to put them in
 			{
-			mDNSs32 slot = HashSlot(&pktrr.name);
+			mDNSu32 slot = HashSlot(&pktrr.name);
 			ResourceRecord *rr;
 			// 2a. Check if this packet resource record is already in our cache
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
@@ -4766,7 +4769,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	if (m->rrcache_size)
 		{
 		ResourceRecord *r1, *r2;
-		mDNSs32 slot;
+		mDNSu32 slot;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (r1 = m->rrcache_hash[slot]; r1; r1=r1->next)
 				if (r1->FreshData)
@@ -5573,7 +5576,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			{
 			ResourceRecord *rr;
 			DNSQuestion *q;
-			mDNSs32 slot;
+			mDNSu32 slot;
 			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID %p deregistered; marking questions etc. dormant",
 				set->InterfaceID);
 
@@ -5607,7 +5610,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	if (revalidate)
 		{
-		mDNSs32 slot;
+		mDNSu32 slot;
 		ResourceRecord *rr;
 		m->NextCacheCheck = m->timenow;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
