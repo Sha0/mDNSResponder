@@ -1,4 +1,7 @@
 # $Log: Makefile,v $
+# Revision 1.11  2003/07/14 18:11:54  cheshire
+# Fix stricter compiler warnings
+#
 # Revision 1.10  2003/06/18 05:47:41  cheshire
 # Enable stricter warnings on Jaguar and Panther builds
 #
@@ -25,7 +28,7 @@ ifeq ($(os),solaris)
 CFLAGS_OS = -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_SOCKLEN_T -DHAVE_BROKEN_RECVIF_NAME -lsocket -lnsl
 else
 ifeq ($(os),linux)
-CFLAGS_OS = -DHAVE_DAEMON -DHAVE_SOCKLEN_T
+CFLAGS_OS = -DHAVE_DAEMON -DHAVE_SOCKLEN_T -W -Wall
 else
 ifeq ($(os),netbsd)
 CFLAGS_OS = -DHAVE_SOCKADDR_SA_LEN -DHAVE_DAEMON -DHAVE_SOCKLEN_T

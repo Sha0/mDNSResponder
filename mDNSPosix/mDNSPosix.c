@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.18  2003/07/14 18:11:54  cheshire
+Fix stricter compiler warnings
+
 Revision 1.17  2003/07/13 01:08:38  cheshire
 There's not much point running mDNS over a point-to-point link; exclude those
 
@@ -215,7 +218,9 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 		}
 	}
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Send and Receive
+#endif
 
 // mDNS core calls this routine when it needs to send a packet.
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
@@ -371,7 +376,9 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 			&senderAddr, senderPort, &destAddr, MulticastDNSPort, intf->coreIntf.InterfaceID);
 	}
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Init and Term
+#endif
 
 // On OS X this gets the text of the field labelled "Computer Name" in the Sharing Prefs Control Panel
 // Other platforms can either get the information from the appropriate place,
@@ -442,7 +449,8 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 	static const int kOn = 1;
 	static const int kIntTwoFiveFive = 255;
 	static const unsigned char kByteTwoFiveFive = 255;
-
+	
+	(void) interfaceIndex;	// Unused
 	assert(intfAddr != NULL);
 	assert(sktPtr != NULL);
 	assert(*sktPtr == -1);
@@ -822,7 +830,9 @@ extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m)
 	return PosixErrorToStatus(err);
 	}
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Locking
+#endif
 
 // On the Posix platform, locking is a no-op because we only ever enter
 // mDNS core on the main thread.
@@ -831,17 +841,19 @@ extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m)
 // the platform from reentering mDNS core code.
 mDNSexport void    mDNSPlatformLock   (const mDNS *const m)
 	{
-	#pragma unused(m)
+	(void) m;	// Unused
 	}
 
 // mDNS core calls this routine when it release the lock taken by
 // mDNSPlatformLock and allow the platform to reenter mDNS core code.
 mDNSexport void    mDNSPlatformUnlock (const mDNS *const m)
 	{
-	#pragma unused(m)
+	(void) m;	// Unused
 	}
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Strings
+#endif
 
 // mDNS core calls this routine to copy C strings.
 // On the Posix platform this maps directly to the ANSI C strcpy.

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.9  2003/07/14 18:11:54  cheshire
+Fix stricter compiler warnings
+
 Revision 1.8  2003/07/02 21:19:59  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -91,7 +94,10 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     struct ifconf       ifc;
     struct ifreq        *ifr, ifrcopy;
     struct sockaddr_in  *sinptr;
+    
+#if defined(AF_INET6) && defined(HAVE_IPV6)
     struct sockaddr_in6 *sinptr6;
+#endif
 
     sockfd = -1;
     buf = NULL;

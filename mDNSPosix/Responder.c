@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.11  2003/07/14 18:11:54  cheshire
+Fix stricter compiler warnings
+
 Revision 1.10  2003/07/10 20:27:31  cheshire
 <rdar://problem/3318717> mDNSResponder Posix version is missing a 'b' in the getopt option string
 
@@ -68,14 +71,18 @@ First checkin
 #include <signal.h>
 #include <fcntl.h>
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Globals
+#endif
 
 static mDNS mDNSStorage;       // mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 
 static const char *gProgramName = "mDNSResponderPosix";
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Signals
+#endif
 
 static volatile mDNSBool gReceivedSigUsr1;
 static volatile mDNSBool gReceivedSigHup;
@@ -143,7 +150,9 @@ static void HandleSigQuit(int sigraised)
     exit(0);
 }
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Parameter Checking
+#endif
 
 static mDNSBool CheckThatRichTextHostNameIsUsable(const char *richTextHostName, mDNSBool printExplanation)
     // Checks that richTextHostName is a reasonable host name 
@@ -315,7 +324,9 @@ static mDNSBool CheckThatPortNumberIsUsable(long portNumber, mDNSBool printExpla
     return result;
 }
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Command Line Arguments
+#endif
 
 static const char kDefaultPIDFile[]     = "/var/run/mDNSResponder.pid";
 static const char kDefaultServiceType[] = "_afpovertcp._tcp.";
@@ -452,7 +463,9 @@ static void ParseArguments(int argc, char **argv)
     }
 }
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Registration
+#endif
 
 typedef struct PosixService PosixService;
 
@@ -721,7 +734,9 @@ static void DeregisterOurServices(void)
     }
 }
 
+#if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark **** Main
+#endif
 
 #if !defined(HAVE_DAEMON)
 
