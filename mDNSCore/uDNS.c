@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.189  2005/02/10 21:07:02  ksekar
+Don't goto error in ReceiveNATAddrResponse if we receive a malformatted response
+
 Revision 1.188  2005/02/10 02:02:44  ksekar
 Remove double semi-colon
 
@@ -1095,20 +1098,17 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 		if (len < sizeof(*response))
 			{
 			LogMsg("ReceiveNATAddrResponse: response too short (%d bytes)", len);
-			err = mStatus_NATTraversal;
-			goto end;
+			return mDNSfalse;
 			}
 		if (response->vers != NATMAP_VERS)
 			{
 			LogMsg("ReceiveNATAddrResponse: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);
-			err = mStatus_NATTraversal;
-			goto end;
+			return mDNSfalse;
 			}
 		if (response->opcode != (NATOp_AddrRequest | NATMAP_RESPONSE_MASK))
 			{
 			LogMsg("ReceiveNATAddrResponse: bad response code %d", response->opcode);
-			err = mStatus_NATTraversal;
-			goto end;
+			return mDNSfalse;
 			}
 		if (response->err.NotAnInteger)
 			{ LogMsg("ReceiveAddrResponse: received error %d", mDNSVal16(response->err)); err = mStatus_NATTraversal; goto end; }
