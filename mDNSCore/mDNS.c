@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.459  2004/10/26 22:34:37  cheshire
+<rdar://problem/3468995> Need to protect mDNSResponder from unbounded packet flooding
+
 Revision 1.458  2004/10/26 20:45:28  cheshire
 Show mask in "invalid mask" message
 
@@ -3356,7 +3359,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
 	{
 	rr->DelayDelivery = 0;
-	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion) LogMsg("CacheRecordDeferredAdd ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 		{
@@ -3423,6 +3426,15 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			q->CurrentAnswers++;
 			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
 			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
+			if (q->CurrentAnswers > 4000)
+				{
+				static int msgcount = 0;
+				if (msgcount++ < 10)
+					LogMsg("CacheRecordAdd: %##s (%s) has %d answers; shedding records to resist DOS attack",
+						q->qname.c, DNSTypeName(q->qtype), q->CurrentAnswers);
+				rr->resrec.rroriginalttl = 1;
+				rr->UnansweredQueries = MaxUnansweredQueries;
+				}
 			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
