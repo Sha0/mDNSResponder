@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.13  2004/12/10 05:27:26  cheshire
+<rdar://problem/3909147> Guard against multiple autoname services of the same type on the same machine
+
 Revision 1.12  2004/12/10 04:28:28  cheshire
 <rdar://problem/3914406> User not notified of name changes for services using new UDS API
 
@@ -110,3 +113,4 @@ extern mDNSs32 ChopSubTypes(char *regtype);
 extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 extern int CountExistingRegistrations(domainname *srv, mDNSIPPort port);
 extern void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result);
+extern int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs);

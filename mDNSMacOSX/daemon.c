@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.226  2004/12/10 05:27:26  cheshire
+<rdar://problem/3909147> Guard against multiple autoname services of the same type on the same machine
+
 Revision 1.225  2004/12/10 04:28:29  cheshire
 <rdar://problem/3914406> User not notified of name changes for services using new UDS API
 
@@ -1342,7 +1345,8 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		status = DNSServiceRegistrationReply_rpc(si->ClientMachPort, result, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
 			AbortBlockedClient(si->ClientMachPort, "registration success", si);
-		if (si->autoname) RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
+		if (si->autoname && CountPeerRegistrations(m, srs) == 0)
+			RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
 		}
 
 	else if (result == mStatus_NameConflict)
@@ -1350,11 +1354,16 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		LogOperation("%5d: DNSServiceRegistration(%##s, %u) Name Conflict", si->ClientMachPort, srs->RR_SRV.resrec.name.c, SRS_PORT(srs));
 		// Note: By the time we get the mStatus_NameConflict message, the service is already deregistered
 		// and the memory is free, so we don't have to wait for an mStatus_MemFree message as well.
-		if (si->autoname)
+		if (si->autoname && CountPeerRegistrations(m, srs) == 0)
 			{
 			// On conflict for an autoname service, rename and reregister *all* autoname services
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
 			m->MainCallback(m, mStatus_ConfigChanged);
+			}
+		else if (si->autoname)
+			{
+            mDNS_RenameAndReregisterService(m, srs, mDNSNULL);
+            return;
 			}
 		else
 			{

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.133  2004/12/10 05:27:26  cheshire
+<rdar://problem/3909147> Guard against multiple autoname services of the same type on the same machine
+
 Revision 1.132  2004/12/10 04:28:28  cheshire
 <rdar://problem/3914406> User not notified of name changes for services using new UDS API
 
@@ -445,6 +448,7 @@ static char * win32_strerror(int inErrorCode);
 #include <stdlib.h>
 #include <stdio.h>
 #include "mDNSEmbeddedAPI.h"
+#include "DNSCommon.h"
 #include "uds_daemon.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
@@ -486,12 +490,12 @@ typedef struct registered_record_entry
 typedef struct service_instance
     {
     struct service_instance *next;  
-    int autoname;				// Set if this name is tied to the Computer Name
-    int autorename;				// Set if this client wants us to automatically rename on conflict
-    int rename_on_memfree;  	// Set on config change when we deregister original name
+    mDNSBool autoname;				// Set if this name is tied to the Computer Name
+    mDNSBool autorename;			// Set if this client wants us to automatically rename on conflict
+    mDNSBool rename_on_memfree;  	// Set on config change when we deregister original name
     domainlabel name;
     domainname domain;
-    mDNSBool default_local;		// is this the "local." from an empty-string registration?
+    mDNSBool default_local;			// is this the "local." from an empty-string registration?
     struct request_state *request;
     int sd;
     AuthRecord *subtypes;
@@ -510,8 +514,8 @@ typedef struct
     domainname type;
     mDNSBool default_domain;
     domainname host;
-    mDNSBool autoname;			// Set if this name is tied to the Computer Name
-    mDNSBool autorename;		// Set if this client wants us to automatically rename on conflict
+    mDNSBool autoname;				// Set if this name is tied to the Computer Name
+    mDNSBool autorename;			// Set if this client wants us to automatically rename on conflict
     int num_subtypes;
     mDNSInterfaceID InterfaceID;
     service_instance *instances;
@@ -1865,6 +1869,20 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 		}
 	}
 
+// Count how many other service records we have locally with the same name, but different rdata.
+// For auto-named services, we can have at most one per machine -- if we allowed two auto-named services of
+// the same type on the same machine, we'd get into an infinite autoimmune-response loop of continuous renaming.
+mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs)
+	{
+	int count = 0;
+	ResourceRecord *r = &srs->RR_SRV.resrec;
+	AuthRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(&rr->resrec.name, &r->name) && !SameRData(&rr->resrec, r))
+			count++;
+	return(count);
+	}
+
 mDNSexport int CountExistingRegistrations(domainname *srv, mDNSIPPort port)
 	{
 	int count = 0;
@@ -1901,8 +1919,8 @@ static mStatus register_service_instance(request_state *request, const domainnam
     instance->request           = request;
 	instance->sd                = request->sd;
     instance->autoname          = info->autoname;
-    instance->rename_on_memfree = 0;
     instance->autorename        = info->autorename;
+    instance->rename_on_memfree = 0;
 	instance->name              = info->name;
 	AssignDomainName(instance->domain, *domain);
 	instance->default_local = (info->default_domain && SameDomainName(domain, &localdomain));
@@ -2021,13 +2039,13 @@ static void handle_regservice_request(request_state *request)
     if (!name[0])
 		{
 		service->name = (gmDNS)->nicelabel;
-		service->autoname = mDNStrue;
+		service->autoname       = mDNStrue;
 		}
     else
 		{
 		if (!MakeDomainLabelFromLiteralString(&service->name, name))
 			{ LogMsg("ERROR: handle_regservice_request - name bad %s", name); goto bad_param; }
-		service->autoname = mDNSfalse;
+		service->autoname       = mDNSfalse;
 		}
         	
 	if (*domain)
@@ -2115,7 +2133,8 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     if (result == mStatus_NoError)
 		{
         process_service_registration(srs);
-        if (instance->autoname) RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
+        if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
+        	RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
 		return;
 		}
     else if (result == mStatus_MemFree)
@@ -2136,13 +2155,13 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
         }
     else if (result == mStatus_NameConflict)
     	{
-        if (instance->autoname)
+        if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
         	{
         	// On conflict for an autoname service, rename and reregister *all* autoname services
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
 			m->MainCallback(m, mStatus_ConfigChanged);
         	}
-        else if (instance->autorename)
+        else if (instance->autoname || instance->autorename)
             {
             mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
             return;
