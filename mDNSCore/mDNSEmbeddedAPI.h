@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.211  2004/09/24 20:33:22  cheshire
+Remove unused DNSDigest_MD5 declaration
+
 Revision 1.210  2004/09/23 20:21:07  cheshire
 <rdar://problem/3426876> Refine "immediate answer burst; restarting exponential backoff sequence" logic
 Associate a unique sequence number with each received packet, and only increment the count of recent answer
@@ -2157,9 +2160,6 @@ extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32
 // records in HOST byte order, which is incremented upon successful completion of this routine.  The function returns
 // the new end pointer on success, and NULL on failure.
 extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info);
-
-// MD5 hash function used by the core for signing TSIG records (impemented in DNSDigest.c)
-extern mStatus DNSDigest_MD5(const DNSMessage *msg, mDNSu32 msglen, mDNSOpaque16 *digest);
 
 // ***************************************************************************
 #if 0
