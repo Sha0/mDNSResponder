@@ -39,6 +39,10 @@
 #include <sys/socket.h>
 #include <ifaddrs.h>
 
+#include <IOKit/IOKitLib.h>
+#include <IOKit/IOMessage.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
+
 // ***************************************************************************
 // Structures
 
@@ -286,6 +290,7 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
 
 	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
+	info->ifinfo.Advertise       = mDNStrue;
 	info->m         = m;
 	info->ifa_name  = malloc(strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
@@ -422,6 +427,35 @@ exit:
 	return(err);
 	}
 
+mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
+	{
+	mDNS *const m = (mDNS *const)refcon;
+	debugf("***   Power Change   ***");
+	debugf("PowerChanged got message %X", messageType);
+	switch(messageType)
+		{
+		case kIOMessageSystemWillPowerOff: debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true);  break;
+		case kIOMessageSystemWillSleep:    debugf("PowerChanged got kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break;
+		case kIOMessageSystemHasPoweredOn: debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break;
+		default:                           debugf("PowerChanged got unknown message %X", messageType);                       break;
+		}
+	}
+
+mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
+	{
+	IONotificationPortRef thePortRef;
+	io_object_t notifier;
+	io_connect_t PowerConnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &notifier);
+	if (PowerConnection)
+		{
+		CFRunLoopSourceRef rls = IONotificationPortGetRunLoopSource(thePortRef);
+		CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+		CFRelease(rls);
+		return(mStatus_NoError);
+		}
+	return(-1);
+	}
+
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
@@ -436,7 +470,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	SetupInterfaceList(m);
 
 	err = WatchForNetworkChanges(m);
-
+	if (err) return(err);
+	
+	err = WatchForPowerChanges(m);
 	return(err);
 	}
 
