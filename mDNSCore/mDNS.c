@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.213  2003/07/12 04:25:48  cheshire
+Fix minor signed/unsigned warnings
+
 Revision 1.212  2003/07/12 01:59:11  cheshire
 Minor changes to debugf messages
 
@@ -1461,7 +1464,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 			{
 			// TiVo has already shipped products using a service type that's not strictly legal, so we make a special
 			// exception for that. This exception will be removed once TiVo has had time to update their software.
-			if (!SameDomainLabel(type->c, "\x10_tivo_servemedia"))
+			if (!SameDomainLabel(type->c, (mDNSu8*)"\x10_tivo_servemedia"))
 				{ errormsg="Service application protocol name must contain only letters, digits, and hyphens"; goto fail; }
 			}
 	for (i=0; i<=len; i++) *dst++ = *src++;
@@ -1717,7 +1720,7 @@ mDNSlocal mDNSu32 HashSlot(const domainname *name)
 			   (c[1] >= 'A' && c[1] <= 'Z' ? c[1] + 'a' - 'A' : c[1]);
 		}
 	if (c[0]) sum += ((c[0] >= 'A' && c[0] <= 'Z' ? c[0] + 'a' - 'A' : c[0]) << 8);
-	return sum % CACHE_HASH_SLOTS;
+	return(mDNSu32)(sum % CACHE_HASH_SLOTS);
 	}
 
 // SameResourceRecordSignature returns true if two resources records have the same name, type, and class, and may be sent
@@ -3023,8 +3026,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 // rr->CRActiveQuestion
 mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 	{
-	mDNSs32 ttl = (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-	rr->NextRequiredQuery = rr->TimeRcvd + ttl;
+	mDNSu32 ttl = rr->rroriginalttl * mDNSPlatformOneSecond;
+	rr->NextRequiredQuery = rr->TimeRcvd + (mDNSs32)ttl;
 
 	// If we have an active question, then see if we want to schedule a refresher query for this record.
 	// Usually we expect to do four queries, at 80-84%, 85-89%, 90-94% and then 95-99% of the TTL.
@@ -3040,19 +3043,21 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 		m->NextCacheCheck = rr->NextRequiredQuery;
 	}
 
-mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, ResourceRecord *const rr, mDNSs32 interval)
+mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, ResourceRecord *const rr, mDNSu32 interval)
 	{
 	mDNSs32 expire = rr->TimeRcvd + ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond);
-	if (interval < mDNSPlatformOneSecond * 5)
-		interval = mDNSPlatformOneSecond * 5;
-	if (expire - m->timenow > interval)
+	if (interval < (mDNSu32)mDNSPlatformOneSecond * 5)
+		interval = (mDNSu32)mDNSPlatformOneSecond * 5;
+	if (interval > 0x10000000)	// Make sure interval doesn't overflow when we multiply by four below
+		interval = 0x10000000;
+	if (expire - m->timenow > (mDNSs32)interval)
 		{
 		// Typically, we use an expiry interval of five seconds.
 		// That means we pretend we received it 15 seconds ago with a TTL of 20,
 		// so its 80-85% check will occur at 16-17 seconds (1-2 seconds from now)
 		// and its 90-95% check at 18-19 seconds (3-4 seconds from now).
 		// If neither query elicits a response, the record will expire five seconds from now.
-		rr->TimeRcvd          = m->timenow - interval * 3;
+		rr->TimeRcvd          = m->timenow - (mDNSs32)interval * 3;
 		rr->rroriginalttl     = interval * 4 / mDNSPlatformOneSecond;
 		SetNextCacheCheckTime(m, rr);
 		}
@@ -4618,14 +4623,14 @@ exit:
 			// By setting the record to expire in four minutes, we achieve two things:
 			// (a) the 90-95% final expiration queries will be less bunched together
 			// (b) we allow some time for us to witness enough other failed queries that we don't have to do our own
-			mDNSs32 remain = (rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond - m->timenow) / 4;
-			if (remain > 240 * mDNSPlatformOneSecond)
-				remain = 240 * mDNSPlatformOneSecond;
+			mDNSu32 remain = (mDNSu32)(rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond - m->timenow) / 4;
+			if (remain > 240 * (mDNSu32)mDNSPlatformOneSecond)
+				remain = 240 * (mDNSu32)mDNSPlatformOneSecond;
 			
 			debugf("ProcessQuery: (MPQ) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
 				rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
 
-			if (remain <= 60 * mDNSPlatformOneSecond)
+			if (remain <= 60 * (mDNSu32)mDNSPlatformOneSecond)
 				rr->UnansweredQueries++;	// Treat this as equivalent to one definite unanswered query
 			rr->MPUnansweredQ  = 0;			// Clear MPQ/MPKA statistics
 			rr->MPUnansweredKA = 0;
