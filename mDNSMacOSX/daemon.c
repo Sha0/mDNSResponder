@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.202  2004/10/26 01:29:18  cheshire
+Use "#if 0" instead of commenting out code
+
 Revision 1.201  2004/10/25 21:41:39  ksekar
 <rdar://problem/3852958> wide-area name conflicts can cause crash
 
@@ -1005,11 +1008,12 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 				}
 			else
 				{
+#if 0
 				/*
 				 * By cancelling the browse immediately, we may lose remove events.
 				 * Instead, we allow the browse to run.  If our previous results are no longer valid (e.g. because we
 				 * moved out from behind a firewall) we will get remove events for those names.
-				 *
+				 */
 				 // find the question for this domain
 				 DNSServiceBrowserQuestion *q = ptr->qlist, *prev = NULL;
 				 while (q)
@@ -1026,7 +1030,7 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 					 q = q->next;
 					 }
 				 if (!q) LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
-				 */
+#endif
                  }			
 			}
 		}
@@ -1913,12 +1917,12 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	(void)msg;		// Unused
 	(void)size;		// Unused
 	(void)info;		// Unused
-/*
+#if 0
 	CacheRecord *rr;
 	int rrcache_active = 0;
 	for (rr = mDNSStorage.rrcache; rr; rr=rr->next) if (CacheRRActive(&mDNSStorage, rr)) rrcache_active++;
 	debugf("ExitCallback: RR Cache now using %d records, %d active", mDNSStorage.rrcache_used, rrcache_active);
-*/
+#endif
 
 	LogMsgIdent(mDNSResponderVersionString, "stopping");
 
