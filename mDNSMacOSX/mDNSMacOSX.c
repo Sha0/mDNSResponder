@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.173  2004/08/25 23:35:22  ksekar
+<rdar://problem/3770615>: Error converting shared secret from base-64 to binary
+
 Revision 1.172  2004/08/25 02:01:45  cheshire
 <rdar://problem/3774777> Need to be able to get status of Dynamic DNS Host Name Update
 
@@ -2193,9 +2196,10 @@ mDNSlocal OSStatus GetDomainFromKeychainItem(SecKeychainItemRef item, domainname
 		{ LogMsg("GetDomainFromKeychainItem - bad account name"); goto end; }
 
 	// copy secret for caller
-	*secret = malloc(dataLen);
+	*secret = malloc(dataLen+1);
 	if (!*secret) { LogMsg("ERROR: malloc"); goto end; }
 	memcpy(*secret, data, dataLen);
+	((char *)*secret)[dataLen] = '\0';
 	*secretlen = dataLen;
 
 	end:
