@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: TXTRecord.java,v $
+Revision 1.5  2004/08/25 21:54:36  rpantos
+<rdar://problem/3773973> Fix getValue() for values containing '='.
+
 Revision 1.4  2004/08/04 01:04:50  rpantos
 <rdar://problems/3731579&3731582> Fix set(); add remove() & toString().
 
@@ -238,6 +241,7 @@ public class	TXTRecord
 				{
 					value = new byte[ avLen - aLen - 1];
 					System.arraycopy( fBytes, avStart + aLen + 2, value, 0, avLen - aLen - 1);
+					break;
 				}
 			}
 		}
