@@ -12,6 +12,21 @@
 // routines, or types (which may or may not be present on any given platform).
 // ***************************************************************************
 
+/*
+ * Formatting notes:
+ * This code follows the "Whitesmiths style" C indentation rules. Plenty of discussion
+ * on C indentation can be found on the web, such as <http://www.kafejo.com/komp/1tbs.htm>,
+ * but for the sake of brevity here I will say just this: Curly braces are not syntactially
+ * part of an "if" statement; they are the beginning and ending markers of a compound statement;
+ * therefore common sense dictates that if they are part of a compound statement then they
+ * should be indented to the same level as everything else in that compound statement.
+ * Indenting curly braces at the same level as the "if" implies that curly braces are
+ * part of the "if", which is false. (This is as misleading as people who write "char* x,y;"
+ * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
+ * understand why variable y is not of type "char*" just proves the point that poor code
+ * layout leads people to unfortunate misunderstandings about how the C language really works.)
+ */
+
 #include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"		// Defines the interface required of the supporting layer below
 #include "mDNSsprintf.h"
