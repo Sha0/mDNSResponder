@@ -895,6 +895,3 @@ static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start)
     *data_start = msg + sizeof(ipc_msg_hdr);
     return hdr;
     }
-
-    
-    
