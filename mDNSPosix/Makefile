@@ -20,6 +20,10 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.45  2004/09/22 16:23:41  cheshire
+# Modify installation for compatibility with Gentoo Linux
+# (Thanks to David Black for this information)
+#
 # Revision 1.44  2004/09/17 01:08:53  cheshire
 # Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
 #   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -395,12 +399,16 @@ $(STARTUPSCRIPTDIR)/$(STARTUPSCRIPTNAME): mdnsd.sh $(STARTUPSCRIPTDIR)
 	$(CP) $< $@
 	chmod ugo+x $@
 ifdef RUNLEVELSCRIPTSDIR
+ifeq ($(wildcard $(RUNLEVELSCRIPTSDIR)/runlevels/default), $(RUNLEVELSCRIPTSDIR)/runlevels/default)
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/runlevels/default/mdns
+else
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc2.d/S52mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc3.d/S52mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc4.d/S52mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc5.d/S52mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc0.d/K16mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc6.d/K16mdns
+endif
 endif
 
 $(NSSINSTPATH)/$(NSSLINKNAME): $(NSSINSTPATH)/$(NSSLIBFILE)
