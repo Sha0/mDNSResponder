@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.30  2004/03/11 18:58:29  rpantos
+# Fix Kill /etc/rc scripts so they run at halt & reboot.
+#
 # Revision 1.29  2004/03/04 23:35:41  cheshire
 # Instead of using a dummy target to generate an error message, use "$(error text...)"
 #
@@ -292,10 +295,8 @@ ifdef RUNLEVELSCRIPTSDIR
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc3.d/S52mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc4.d/S52mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc5.d/S52mdns
-	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc2.d/K16mdns
-	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc3.d/K16mdns
-	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc4.d/K16mdns
-	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc5.d/K16mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc0.d/K16mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc6.d/K16mdns
 endif
 
 #############################################################################
