@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.167  2004/05/14 16:39:47  ksekar
+Browse for iChat locally for now.
+
 Revision 1.166  2004/05/13 21:33:52  ksekar
 Clean up non-local registration control via config file.  Force iChat
 registrations to be local for now.
@@ -843,6 +846,10 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	x->next = DNSServiceBrowserList;
 	DNSServiceBrowserList = x;
 
+	//!!!KRS browse locally for ichat
+	if (!domain[0] && (!strcmp(regtype, "_ichat._tcp.") || !strcmp(regtype, "_presence._tcp.")))
+		domain = "local.";
+	
 	if (domain[0])
 		{
 		// Start browser for an explicit domain

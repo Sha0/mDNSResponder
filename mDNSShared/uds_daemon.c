@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.50  2004/05/14 16:39:47  ksekar
+Browse for iChat locally for now.
+
 Revision 1.49  2004/05/13 21:33:52  ksekar
 Clean up non-local registration control via config file.  Force iChat
 registrations to be local for now.
@@ -1129,6 +1132,10 @@ static void handle_browse_request(request_state *request)
     if (interfaceIndex && !InterfaceID) goto bad_param;
 
 	if (!MakeDomainNameFromDNSNameString(&typedn, regtype)) goto bad_param;
+
+	//!!!KRS browse locally for ichat
+	if (!domain[0] && (!strcmp(regtype, "_ichat._tcp.") || !strcmp(regtype, "_presence._tcp.")))
+		strcpy(domain,"local.");
 	
 	if (domain[0])
 		{
