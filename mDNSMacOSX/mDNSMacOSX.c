@@ -82,11 +82,6 @@ struct NetworkInterfaceInfo2_struct
 	};
 
 // ***************************************************************************
-// Globals
-
-static CFAbsoluteTime StartTime; // Temporary solution
-
-// ***************************************************************************
 // Functions
 
 mDNSexport void debugf_(const char *format, ...)
@@ -692,7 +687,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	mStatus err;
 
 	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, m, NULL, NULL, NULL };
-	StartTime = CFAbsoluteTimeGetCurrent();
 	
 	m->p->CFTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 10.0, 10.0, 0, 1,
 											myCFRunLoopTimerCallBack, &myCFRunLoopTimerContext);
@@ -756,9 +750,10 @@ mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTim
 		{
 		// Due to a bug in CFRunLoopTimers, if you set them to any time in the past, they don't work
 		// Spot the obvious race condition: What defines "past"?
-		CFAbsoluteTime bugfix = CFAbsoluteTimeGetCurrent() + 0.01;  // Add some slop to reduce risk of race condition
-		UInt32 x = (UInt32)NextTaskTime;
-		CFAbsoluteTime firetime = StartTime + ((CFAbsoluteTime)x / (CFAbsoluteTime)mDNSPlatformOneSecond);
+		CFAbsoluteTime bugfix   = CFAbsoluteTimeGetCurrent() + 0.001;  // Add some slop to reduce risk of race condition
+		CFAbsoluteTime ticks    = (CFAbsoluteTime)(NextTaskTime - mDNSPlatformTimeNow());
+		CFAbsoluteTime interval = ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
+		CFAbsoluteTime firetime = CFAbsoluteTimeGetCurrent() + interval;
 		if (firetime < bugfix) firetime = bugfix;
 		CFRunLoopTimerSetNextFireDate(m->p->CFTimer, firetime);
 		}
@@ -772,5 +767,18 @@ mDNSexport UInt32  mDNSPlatformStrLen (const void *src)                         
 mDNSexport void    mDNSPlatformMemCopy(const void *src,       void *dst, UInt32 len) { memcpy(dst, src, len); }
 mDNSexport Boolean mDNSPlatformMemSame(const void *src, const void *dst, UInt32 len) { return(memcmp(dst, src, len) == 0); }
 mDNSexport void    mDNSPlatformMemZero(                       void *dst, UInt32 len) { bzero(dst, len); }
-mDNSexport SInt32  mDNSPlatformTimeNow() { return((SInt32)((CFAbsoluteTimeGetCurrent() - StartTime) * (CFAbsoluteTime)mDNSPlatformOneSecond)); }
-mDNSexport SInt32  mDNSPlatformOneSecond = 1000;
+
+mDNSexport SInt32  mDNSPlatformTimeNow()
+	{
+	struct timeval tp;
+	gettimeofday(&tp, NULL);
+	// tp.tv_sec is seconds since 1st January 1970 (GMT, with no adjustment for daylight savings time)
+	// tp.tv_usec is microseconds since the start of this second (i.e. values 0 to 999999)
+	// We use the lower 22 bits of tp.tv_sec for the top 22 bits of our result
+	// and we multiply tp.tv_usec by 16 / 15625 to get a value in the range 0-1023 to go in the bottom 10 bits.
+	// This gives us a proper modular (cyclic) counter that has a resolution of roughly 1ms (actually 1/1024 second)
+	// and correctly cycles every 2^22 seconds (4194304 seconds = approx 48 days).
+	return( (tp.tv_sec << 10) | (tp.tv_usec * 16 / 15625) );
+	}
+
+mDNSexport SInt32  mDNSPlatformOneSecond = 1024;
