@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.76  2004/09/02 06:39:52  cheshire
+Minor textual cleanup for clarity
+
 Revision 1.75  2004/09/02 03:48:47  cheshire
 <rdar://problem/3709039> Disable targeted unicast query support by default
 1. New flag kDNSServiceFlagsAllowRemoteQuery to indicate we want to allow remote queries for this record
@@ -2398,11 +2401,9 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flag
         return NULL;
     	}
     rr->resrec.rrtype = type;
-	if ((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared)
-        rr->resrec.RecordType = kDNSRecordTypeShared;
-    if ((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique)
-        rr->resrec.RecordType = kDNSRecordTypeUnique;
-    if (flags & kDNSServiceFlagsAllowRemoteQuery) rr->AllowRemoteQuery = mDNStrue;
+    if (flags & kDNSServiceFlagsShared          ) rr->resrec.RecordType = kDNSRecordTypeShared;
+    if (flags & kDNSServiceFlagsUnique          ) rr->resrec.RecordType = kDNSRecordTypeUnique;
+    if (flags & kDNSServiceFlagsAllowRemoteQuery) rr->AllowRemoteQuery  = mDNStrue;
     rr->resrec.rrclass = class;
     rr->resrec.rdlength = rdlen;
     rr->resrec.rdata->MaxRDLength = rdlen;
