@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSRecord.java,v $
+Revision 1.2  2004/12/11 03:00:59  rpantos
+<rdar://problem/3907498> Java DNSRecord API should be cleaned up
+
 Revision 1.1  2004/04/30 16:32:34  rpantos
 First checked in.
 
@@ -40,7 +43,27 @@ package	com.apple.dnssd;
 	they are shared between concurrent threads.
 */
 
-abstract public class	DNSRecord
+public interface	DNSRecord
 {
+	/** Update a registered resource record.<P> 
+		The record must either be the primary txt record of a service registered via DNSSD.register(), 
+		or a record added to a registered service via addRecord().<P>
+
+		@param	flags
+					Currently unused, reserved for future use.
+		<P>
+		@param	rData
+					The new rdata to be contained in the updated resource record.
+		<P>
+		@param	ttl
+					The time to live of the updated resource record, in seconds.
+	*/
+	void			update( int flags, byte[] rData, int ttl)
+	throws DNSSDException;
+
+	/** Remove a registered resource record.<P> 
+	*/
+	void			remove()
+	throws DNSSDException;
 }
 

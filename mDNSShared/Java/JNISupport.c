@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.9  2004/12/11 03:01:00  rpantos
+<rdar://problem/3907498> Java DNSRecord API should be cleaned up
+
 Revision 1.8  2004/11/30 23:51:05  cheshire
 Remove double semicolons
 
@@ -570,23 +573,28 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_AddRecord( JNIEnv 
 	return err;
 }
 
-JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_UpdateRecord( JNIEnv *pEnv, jobject pThis, 
-							jobject destObj, jint flags, jbyteArray rData, jint ttl)
+JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSRecord_Update( JNIEnv *pEnv, jobject pThis, 
+														jint flags, jbyteArray rData, jint ttl)
 {
 	jclass					cls = (*pEnv)->GetObjectClass( pEnv, pThis);
-	jfieldID				contextField = (*pEnv)->GetFieldID( pEnv, cls, "fNativeContext", "I");
-	jclass					destCls = (*pEnv)->GetObjectClass( pEnv, destObj);
-	jfieldID				recField = (*pEnv)->GetFieldID( pEnv, destCls, "fRecord", "I");
+	jfieldID				ownerField = (*pEnv)->GetFieldID( pEnv, cls, "fOwner", "Lcom/apple/dnssd/AppleService;");
+	jfieldID				recField = (*pEnv)->GetFieldID( pEnv, cls, "fRecord", "I");
 	OpContext				*pContext = NULL;
 	DNSServiceErrorType		err = kDNSServiceErr_NoError;
 	jbyte					*pBytes;
 	jsize					numBytes;
 	DNSRecordRef			recRef = NULL;
 
-	if ( contextField != 0)
-		pContext = (OpContext*) (*pEnv)->GetIntField( pEnv, pThis, contextField);
+	if ( ownerField != 0)
+	{
+		jobject		ownerObj = (*pEnv)->GetObjectField( pEnv, pThis, ownerField);
+		jclass		ownerClass = (*pEnv)->GetObjectClass( pEnv, ownerObj);
+		jfieldID	contextField = (*pEnv)->GetFieldID( pEnv, ownerClass, "fNativeContext", "I");
+		if ( contextField != 0)
+			pContext = (OpContext*) (*pEnv)->GetIntField( pEnv, ownerObj, contextField);
+	}
 	if ( recField != 0)
-		recRef = (DNSRecordRef) (*pEnv)->GetIntField( pEnv, destObj, recField);
+		recRef = (DNSRecordRef) (*pEnv)->GetIntField( pEnv, pThis, recField);
 	if ( pContext == NULL || pContext->ServiceRef == NULL)
 		return kDNSServiceErr_BadParam;
 
@@ -601,25 +609,29 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_UpdateRecord( JNIE
 	return err;
 }
 
-JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_RemoveRecord( JNIEnv *pEnv, jobject pThis, 
-							jobject destObj, jint flags)
+JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSRecord_Remove( JNIEnv *pEnv, jobject pThis)
 {
 	jclass					cls = (*pEnv)->GetObjectClass( pEnv, pThis);
-	jfieldID				contextField = (*pEnv)->GetFieldID( pEnv, cls, "fNativeContext", "I");
-	jclass					destCls = (*pEnv)->GetObjectClass( pEnv, destObj);
-	jfieldID				recField = (*pEnv)->GetFieldID( pEnv, destCls, "fRecord", "I");
+	jfieldID				ownerField = (*pEnv)->GetFieldID( pEnv, cls, "fOwner", "Lcom/apple/dnssd/AppleService;");
+	jfieldID				recField = (*pEnv)->GetFieldID( pEnv, cls, "fRecord", "I");
 	OpContext				*pContext = NULL;
 	DNSServiceErrorType		err = kDNSServiceErr_NoError;
 	DNSRecordRef			recRef = NULL;
 
-	if ( contextField != 0)
-		pContext = (OpContext*) (*pEnv)->GetIntField( pEnv, pThis, contextField);
+	if ( ownerField != 0)
+	{
+		jobject		ownerObj = (*pEnv)->GetObjectField( pEnv, pThis, ownerField);
+		jclass		ownerClass = (*pEnv)->GetObjectClass( pEnv, ownerObj);
+		jfieldID	contextField = (*pEnv)->GetFieldID( pEnv, ownerClass, "fNativeContext", "I");
+		if ( contextField != 0)
+			pContext = (OpContext*) (*pEnv)->GetIntField( pEnv, ownerObj, contextField);
+	}
 	if ( recField != 0)
-		recRef = (DNSRecordRef) (*pEnv)->GetIntField( pEnv, destObj, recField);
+		recRef = (DNSRecordRef) (*pEnv)->GetIntField( pEnv, pThis, recField);
 	if ( pContext == NULL || pContext->ServiceRef == NULL)
 		return kDNSServiceErr_BadParam;
 
-	err = DNSServiceRemoveRecord( pContext->ServiceRef, recRef, flags);
+	err = DNSServiceRemoveRecord( pContext->ServiceRef, recRef, 0);
 
 	return err;
 }
