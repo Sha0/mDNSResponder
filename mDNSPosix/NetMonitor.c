@@ -33,6 +33,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.18  2003/06/06 20:01:30  cheshire
+ * For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
+ * (Global search-and-replace; no functional change to code execution.)
+ *
  * Revision 1.17  2003/06/06 14:26:50  cheshire
  * Explicitly #include <time.h> for the benefit of certain Linux distributions
  *
@@ -397,7 +401,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			{
 			NumProbes++;
 			DisplayResourceRecord(srcaddr, "(P)", &pktrr);
-			recordstat(&q.name, OP_probe, q.rrtype);
+			recordstat(&q.qname, OP_probe, q.qtype);
 			auth = p2; // Having displayed this update record, adjust auth forward so we don't display the same one again.
 			}
 		else
@@ -405,8 +409,8 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			const char *ptype = "(Q) ";
 			if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumQuestions++;
 			else { NumLegacy++; ptype = "(LQ)"; }
-			mprintf("%#-16a %s %-5s      %##s\n", srcaddr, ptype, DNSTypeName(q.rrtype), q.name.c);
-			recordstat(&q.name, OP_query, q.rrtype);
+			mprintf("%#-16a %s %-5s      %##s\n", srcaddr, ptype, DNSTypeName(q.qtype), q.qname.c);
+			recordstat(&q.qname, OP_query, q.qtype);
 			}
 		}
 
@@ -432,7 +436,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 		DNSQuestion q;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
-		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE Q IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(q.rrtype), q.name.c);
+		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE Q IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(q.qtype), q.qname.c);
 		}
 
 	for (i=0; i<msg->h.numAnswers; i++)
