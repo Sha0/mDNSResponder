@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserController.m,v $
+Revision 1.23  2003/10/28 01:29:15  rpantos
+3282283/4,5: Restructure a bit to make arrow keys work & views behave better.
+
 Revision 1.22  2003/10/28 01:23:27  rpantos
 3282283/11: Bail if mDNS cannot be initialized at startup.
 
@@ -138,14 +141,18 @@ void resolve_reply (
 
     [srvtypeKeys retain];				//Keep arrays in memory until BrowserController closes
     [srvnameKeys retain];				//Keep arrays in memory until BrowserController closes
-    [typeField setDataSource:self];		//Set application fields' data source to BrowserController
-    [typeField sizeLastColumnToFit];		//and set column sizes to use their whole table's width.
-    [nameField setDataSource:self];
+    [typeField sizeLastColumnToFit];    //Set column sizes to use their whole table's width.
     [nameField sizeLastColumnToFit];
-    [domainField setDataSource:self];
     [domainField sizeLastColumnToFit];
+//  (self is specified as the NSTableViews' data source in the nib)
 
     [nameField setDoubleAction:@selector(connect:)];
+
+    // Listen for table selection changes
+    [[NSNotificationCenter defaultCenter]   addObserver:self selector:@selector(notifyTypeSelectionChange:) 
+                                            name:NSTableViewSelectionDidChangeNotification object:typeField];
+    [[NSNotificationCenter defaultCenter]   addObserver:self selector:@selector(notifyNameSelectionChange:) 
+                                            name:NSTableViewSelectionDidChangeNotification object:nameField];
 
     //[srvtypeKeys addObject:@"_ftp._tcp"];	//Add supported protocols and domains to their
     //[srvnameKeys addObject:@"File Transfer (ftp)"];
@@ -235,17 +242,9 @@ void resolve_reply (
 
 - (IBAction)handleTypeClick:(id)sender		//Handle clicks for Type
 {
-    int index=[sender selectedRow];				//Find index of selected row
-    if (index==-1) return;					//Error checking
-    SrvType = [srvtypeKeys objectAtIndex:index];		//Save desired Type
-    SrvName = [srvnameKeys objectAtIndex:index];		//Save desired Type
-
-    [ipAddressField setStringValue:@""];
-    [portField setStringValue:@""];
-    [textField setStringValue:@""];
-
-    [self update:SrvType Domain:Domain];		//If Type and Domain are set, update records
+    // 3282283: No longer used - update happens in notifyTypeSelectionChange
 }
+
 
 - (IBAction)handleDomainClick:(id)sender			//Handle clicks for Domain
 {
@@ -262,7 +261,28 @@ void resolve_reply (
 
 - (IBAction)handleNameClick:(id)sender				//Handle clicks for Name
 {
-    int index=[sender selectedRow];				//Find index of selected row
+    // 3282283: No longer used - update happens in notifyNameSelectionChange
+}
+
+- (void)notifyTypeSelectionChange:(NSNotification*)note
+/* Called when the selection of the Type table changes */
+{
+    int index=[[note object] selectedRow];  //Find index of selected row
+    if (index==-1) return;					//Error checking
+    SrvType = [srvtypeKeys objectAtIndex:index];		//Save desired Type
+    SrvName = [srvnameKeys objectAtIndex:index];		//Save desired Type
+
+    [ipAddressField setStringValue:@""];
+    [portField setStringValue:@""];
+    [textField setStringValue:@""];
+
+    [self update:SrvType Domain:Domain];		//If Type and Domain are set, update records
+}
+
+- (void)notifyNameSelectionChange:(NSNotification*)note
+/* Called when the selection of the Name table changes */
+{
+    int index=[[note object] selectedRow];  //Find index of selected row
     if (index==-1) return;					//Error checking
     Name=[[nameKeys sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)] objectAtIndex:index];			//Save desired name
 

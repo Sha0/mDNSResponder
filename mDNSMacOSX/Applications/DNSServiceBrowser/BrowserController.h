@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserController.h,v $
+Revision 1.8  2003/10/28 01:28:54  rpantos
+3282283/4,5: Restructure a bit to make arrow keys work & views behave better.
+
 Revision 1.7  2003/08/12 19:55:07  cheshire
 Update to APSL 2.0
 
@@ -65,6 +68,8 @@ Update to APSL 2.0
 - (IBAction)handleDomainClick:(id)sender;
 - (IBAction)handleNameClick:(id)sender;
 - (IBAction)handleTypeClick:(id)sender;
+- (void)notifyTypeSelectionChange:(NSNotification*)note;
+- (void)notifyNameSelectionChange:(NSNotification*)note;
 
 - (IBAction)connect:(id)sender;
 
