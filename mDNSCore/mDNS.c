@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.185  2003/06/10 03:52:49  cheshire
+Update comments and debug messages
+
 Revision 1.184  2003/06/10 02:26:39  cheshire
 <rdar://problem/3283516> mDNSResponder needs an mDNS_Reconfirm() function
 Make mDNS_Reconfirm() call mDNS_Lock(), like the other API routines
@@ -3460,7 +3463,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 			if (m->timenow - event >= 0)	// If expired, delete it
 				{
 				*rp = rr->next;				// Cut it from the list
-				verbosedebugf("CheckCacheExpiration: Deleting %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
+				verbosedebugf("CheckCacheExpiration: Deleting %s", GetRRDisplayString(m, rr));
 				CacheRecordRmv(m, rr);
 				m->rrcache_used[slot]--;
 				m->rrcache_totalused--;
@@ -4150,9 +4153,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	{
 	ResourceRecord  *ResponseRecords = mDNSNULL;
 	ResourceRecord **nrp             = &ResponseRecords;
-	ResourceRecord  *ExpectedAnswers = mDNSNULL;
+	ResourceRecord  *ExpectedAnswers = mDNSNULL;			// Records in our cache we expect to see updated
 	ResourceRecord **eap             = &ExpectedAnswers;
-	DNSQuestion     *DupQuestions    = mDNSNULL;
+	DNSQuestion     *DupQuestions    = mDNSNULL;			// Our questions that are identical to questions in this packet
 	DNSQuestion    **dqp             = &DupQuestions;
 	mDNSBool         delayresponse   = mDNSfalse;
 	mDNSBool         HaveAtLeastOneAnswer = mDNSfalse;
@@ -4457,7 +4460,8 @@ exit:
 			q->DupSuppress[1] = q->DupSuppress[0];
 		q->DupSuppress[0].InterfaceID = InterfaceID;
 		q->DupSuppress[0].Time = m->timenow;
-		debugf("ProcessQuery: Expect to suppress Query %##s (%s) on %p", q->qname.c, DNSTypeName(q->qtype), InterfaceID);
+		if (q->LastQTime + q->ThisQInterval/2 - m->timenow < 0)
+			debugf("ProcessQuery: Expect to suppress Query %##s (%s) on %p", q->qname.c, DNSTypeName(q->qtype), InterfaceID);
 		}
 	
 	return(responseptr);
@@ -5600,9 +5604,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 
 	sr->ServiceCallback = Callback;
 	sr->ServiceContext  = Context;
-	sr->Conflict = mDNSfalse;
 	sr->Extras = mDNSNULL;
-
+	sr->Conflict = mDNSfalse;
 	if (host && host->c[0]) sr->Host = *host;
 	else sr->Host.c[0] = 0;
 	
