@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.228  2003/07/16 20:50:27  cheshire
+<rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
+
 Revision 1.227  2003/07/16 05:01:36  cheshire
 Add fields 'LargeAnswers' and 'ExpectUnicastResponse' in preparation for
 <rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
@@ -3125,8 +3128,10 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, ResourceRecord *const r
 mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, DNSQuestion *q,
 	ResourceRecord ***kalistptrptr, mDNSu32 *answerforecast)
 	{
-	const mDNSu8 *const limit = query->data + (query->h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
-	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, q->qclass);
+	mDNSBool ucast = q->LargeAnswers || q->ThisQInterval <= InitialQuestionInterval*2;
+	mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : 0;
+	const mDNSu8 *const limit = query->data + NormalMaxDNSMessageData;
+	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, q->qclass | ucbit);
 	if (!newptr)
 		{
 		debugf("BuildQuestion: No more space in this packet for question %##s", q->qname.c);
@@ -3147,6 +3152,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// If we have a resource record in our cache,
 			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
+				rr->rdata->RDLength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
 				ResourceRecordAnswersQuestion(rr, q) &&						// which answers our question
 				rr->NextRequiredQuery - (m->timenow + q->ThisQInterval) > 0)// and we'll ask at least once again before NextRequiredQuery
 				{
@@ -3170,6 +3176,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		*queryptr        = newptr;				// Update the packet pointer
 		*answerforecast  = forecast;			// Update the forecast
 		*kalistptrptr    = ka;					// Update the known answer list pointer
+		if (ucast) m->ExpectUnicastResponse = m->timenow;
 
 		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// For every resource record in our cache,
 			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
@@ -3364,8 +3371,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->SendRNow == intf->InterfaceID)
 					{
+					mDNSBool ucast = rr->ProbeCount >= DefaultProbeCountForTypeUnique-1;
+					mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : 0;
 					const mDNSu8 *const limit = query.data + ((query.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
-					mDNSu8 *newptr = putQuestion(&query, queryptr, limit, &rr->name, kDNSQType_ANY, rr->rrclass);
+					mDNSu8 *newptr = putQuestion(&query, queryptr, limit, &rr->name, kDNSQType_ANY, rr->rrclass | ucbit);
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->rdestimate;
 					if (newptr && newptr + forecast < limit)
@@ -4123,29 +4132,31 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 #pragma mark - Packet Reception Functions
 #endif
 
-mDNSlocal mDNSBool AddRecordToResponseList(ResourceRecord **nrp,
-	ResourceRecord *rr, const mDNSu8 *answerto, ResourceRecord *additionalto)
+mDNSlocal void AddRecordToResponseList(ResourceRecord ***nrpp, ResourceRecord *rr, ResourceRecord *add)
 	{
-	if (rr->NextResponse == mDNSNULL && nrp != &rr->NextResponse)
+	if (rr->NextResponse == mDNSNULL && *nrpp != &rr->NextResponse)
 		{
-		*nrp = rr;
-		rr->NR_AnswerTo     = answerto;
-		rr->NR_AdditionalTo = additionalto;
-		return(mDNStrue);
+		**nrpp = rr;
+		// NR_AdditionalTo must point to a record with NR_AnswerTo set (and not NR_AdditionalTo)
+		// If 'add' does not meet this requirement, then follow its NR_AdditionalTo pointer to a record that does
+		// The referenced record will definitely be acceptable (by recursive application of this rule)
+		if (add && add->NR_AdditionalTo) add = add->NR_AdditionalTo;
+		rr->NR_AdditionalTo = add;
+		*nrpp = &rr->NextResponse;
 		}
-	else debugf("AddRecordToResponseList: %##s (%s) already in list", rr->name.c, DNSTypeName(rr->rrtype));
-	return(mDNSfalse);
+	debugf("AddRecordToResponseList: %##s (%s) already in list", rr->name.c, DNSTypeName(rr->rrtype));
 	}
 
 #define MustSendRecord(RR) ((RR)->NR_AnswerTo || (RR)->NR_AdditionalTo)
 
 mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const mDNSu8 *const end,
-	const mDNSInterfaceID InterfaceID, DNSMessage *const response, ResourceRecord *ResponseRecords)
+	const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, DNSMessage *const response, ResourceRecord *ResponseRecords)
 	{
 	mDNSu8          *responseptr     = response->data;
 	const mDNSu8    *const limit     = response->data + sizeof(response->data);
 	const mDNSu8    *ptr             = query->data;
 	ResourceRecord  *rr;
+	mDNSu32          maxttl = 0x70000000;
 	int i;
 
 	// Initialize the response fields so we can answer the questions
@@ -4154,24 +4165,28 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	// ***
 	// *** 1. Write out the list of questions we are actually going to answer with this packet
 	// ***
-	for (i=0; i<query->h.numQuestions; i++)						// For each question...
+	if (LegacyQuery)
 		{
-		DNSQuestion q;
-		ptr = getQuestion(query, ptr, end, InterfaceID, &q);	// get the question...
-		if (!ptr) return(mDNSNULL);
-
-		for (rr=ResponseRecords; rr; rr=rr->NextResponse)		// and search our list of proposed answers
+		maxttl = 10;
+		for (i=0; i<query->h.numQuestions; i++)						// For each question...
 			{
-			if (rr->NR_AnswerTo == ptr)							// If we're going to generate a record answering this question
-				{												// then put the question in the question section
-				responseptr = putQuestion(response, responseptr, limit, &q.qname, q.qtype, q.qclass);
-				if (!responseptr) { debugf("GenerateUnicastResponse: Ran out of space for questions!"); return(mDNSNULL); }
-				break;		// break out of the ResponseRecords loop, and go on to the next question
+			DNSQuestion q;
+			ptr = getQuestion(query, ptr, end, InterfaceID, &q);	// get the question...
+			if (!ptr) return(mDNSNULL);
+	
+			for (rr=ResponseRecords; rr; rr=rr->NextResponse)		// and search our list of proposed answers
+				{
+				if (rr->NR_AnswerTo == ptr)							// If we're going to generate a record answering this question
+					{												// then put the question in the question section
+					responseptr = putQuestion(response, responseptr, limit, &q.qname, q.qtype, q.qclass);
+					if (!responseptr) { debugf("GenerateUnicastResponse: Ran out of space for questions!"); return(mDNSNULL); }
+					break;		// break out of the ResponseRecords loop, and go on to the next question
+					}
 				}
 			}
+	
+		if (response->h.numQuestions == 0) { LogMsg("GenerateUnicastResponse: ERROR! Why no questions?"); return(mDNSNULL); }
 		}
-
-	if (response->h.numQuestions == 0) { LogMsg("GenerateUnicastResponse: ERROR! Why no questions?"); return(mDNSNULL); }
 
 	// ***
 	// *** 2. Write Answers
@@ -4179,7 +4194,7 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AnswerTo)
 			{
-			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAnswers, rr, 10);
+			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAnswers, rr, maxttl);
 			if (p) responseptr = p;
 			else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); response->h.flags.b[0] |= kDNSFlag0_TC; }
 			}
@@ -4190,7 +4205,7 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AdditionalTo && !rr->NR_AnswerTo)
 			{
-			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAdditionals, rr, 10);
+			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAdditionals, rr, maxttl);
 			if (p) responseptr = p;
 			else debugf("GenerateUnicastResponse: No more space for additionals");
 			}
@@ -4350,8 +4365,8 @@ mDNSlocal ResourceRecord *FindIdenticalRecordInCache(const mDNS *const m, Resour
 
 // ProcessQuery examines a received query to see if we have any answers to give
 mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
-	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID,
-	DNSMessage *const replyunicast, mDNSBool replymulticast)
+	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, mDNSBool QueryWasMulticast,
+	DNSMessage *const response)
 	{
 	ResourceRecord  *ResponseRecords = mDNSNULL;
 	ResourceRecord **nrp             = &ResponseRecords;
@@ -4360,7 +4375,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	DNSQuestion     *DupQuestions    = mDNSNULL;			// Our questions that are identical to questions in this packet
 	DNSQuestion    **dqp             = &DupQuestions;
 	mDNSBool         delayresponse   = mDNSfalse;
-	mDNSBool         HaveAtLeastOneAnswer = mDNSfalse;
+	mDNSBool         HaveUnicastAnswer = mDNSfalse;
 	const mDNSu8    *ptr             = query->data;
 	mDNSu8          *responseptr     = mDNSNULL;
 	ResourceRecord  *rr, *rr2;
@@ -4374,16 +4389,30 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	for (i=0; i<query->h.numQuestions; i++)						// For each question...
 		{
+		mDNSBool QuestionNeedsMulticastResponse;
 		int NumAnswersForThisQuestion = 0;
 		DNSQuestion pktq, *q;
 		ptr = getQuestion(query, ptr, end, InterfaceID, &pktq);	// get the question...
 		if (!ptr) goto exit;
+
+		// The only queries that *need* a multicast response are:
+		// * Queries sent via multicast
+		// * from port 5353
+		// * that don't have the kDNSQClass_UnicastResponse bit set
+		// These queries need multicast responses because other clients will:
+		// * suppress their own identical questions when they see these questions, and
+		// * expire their cache records if they don't see the expected responses
+		// For other queries, we may still choose to send the occasional multicast response anyway,
+		// to keep our neighbours caches warm, and for ongoing conflict detection.
+		QuestionNeedsMulticastResponse = QueryWasMulticast && !LegacyQuery && !(pktq.qclass & kDNSQClass_UnicastResponse);
+		// Clear the UnicastResponse flag -- don't want to confuse the rest of the code that follows later
+		pktq.qclass &= ~kDNSQClass_UnicastResponse;
 		
 		// Note: We use the m->CurrentRecord mechanism here because calling ResolveSimultaneousProbe
 		// can result in user callbacks which may change the record list and/or question list.
 		// Also note: we just mark potential answer records here, without trying to build the
 		// "ResponseRecords" list, because we don't want to risk user callbacks deleting records
-		//  from that list while we're in the middle of trying to build it.
+		// from that list while we're in the middle of trying to build it.
 		if (m->CurrentRecord) LogMsg("ProcessQuery ERROR m->CurrentRecord already set");
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
@@ -4397,36 +4426,43 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				else if (ResourceRecordIsValidAnswer(rr))
 					{
 					NumAnswersForThisQuestion++;
-					if (!rr->NR_AnswerTo) rr->NR_AnswerTo = ptr;	// Mark as potential answer
+					// Notes:
+					// NR_AnswerTo pointing into query packet means "answer via unicast"
+					//                         (may also choose to do multicast as well)
+					// NR_AnswerTo == ~0 means "definitely answer via multicast" (can't downgrade to unicast later)
+					if (QuestionNeedsMulticastResponse) rr->NR_AnswerTo = (mDNSu8*)~0;
+					else if (!rr->NR_AnswerTo) rr->NR_AnswerTo = ptr;
 					}
 				}
 			}
-		// If we couldn't answer this question, someone else might be able to,
-		// so use random delay on response to reduce collisions
-		if (NumAnswersForThisQuestion == 0) delayresponse = mDNStrue;
 
 		// We only do the following accelerated cache expiration processing and duplicate question suppression processing
 		// for multicast queries with multicast responses.
-		// For legacy queries (multicast query / unicast response) we don't do this because we can't assume we will
-		// necessarily see the reply to this query if the responder in question decides to send it only via unicast
-		if (!replyunicast)
+		// For any query generating a unicast response we don't do this because we can't assume we will see the response
+		if (QuestionNeedsMulticastResponse)
 			{
-			// Make a list indicating which of our own cache records we expect to see updated as a result of this query		
+			// If we couldn't answer this question, someone else might be able to,
+			// so use random delay on response to reduce collisions
+			if (NumAnswersForThisQuestion == 0) delayresponse = mDNStrue;
+
+			// Make a list indicating which of our own cache records we expect to see updated as a result of this query
+			// Note: Records larger than 1K are not habitually multicast, so don't expect those to be updated
 			for (rr = m->rrcache_hash[HashSlot(&pktq.qname)]; rr; rr=rr->next)
-				if (ResourceRecordAnswersQuestion(rr, &pktq) && !rr->NextInKAList && eap != &rr->NextInKAList)
-					{
-					*eap = rr;
-					eap = &rr->NextInKAList;
-					if (rr->MPUnansweredQ == 0 || m->timenow - rr->MPLastUnansweredQT >= mDNSPlatformOneSecond)
+				if (ResourceRecordAnswersQuestion(rr, &pktq) && rr->rdata->RDLength <= SmallRecordLimit)
+					if (!rr->NextInKAList && eap != &rr->NextInKAList)
 						{
-						// Although MPUnansweredQ is only really used for multi-packet query processing,
-						// we increment it for both single-packet and multi-packet queries, so that it stays in sync
-						// with the MPUnansweredKA value, which by necessity is incremented for both query types.
-						rr->MPUnansweredQ++;
-						rr->MPLastUnansweredQT = m->timenow;
-						rr->MPExpectingKA = mDNStrue;
+						*eap = rr;
+						eap = &rr->NextInKAList;
+						if (rr->MPUnansweredQ == 0 || m->timenow - rr->MPLastUnansweredQT >= mDNSPlatformOneSecond)
+							{
+							// Although MPUnansweredQ is only really used for multi-packet query processing,
+							// we increment it for both single-packet and multi-packet queries, so that it stays in sync
+							// with the MPUnansweredKA value, which by necessity is incremented for both query types.
+							rr->MPUnansweredQ++;
+							rr->MPLastUnansweredQT = m->timenow;
+							rr->MPExpectingKA = mDNStrue;
+							}
 						}
-					}
 	
 			// Check if this question is the same as any of mine.
 			// We only do this for non-truncated queries. Right now it would be too complicated to try
@@ -4446,11 +4482,10 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	for (rr = m->ResourceRecords; rr; rr=rr->next)				// Now build our list of potential answers
 		if (rr->NR_AnswerTo)									// If we marked the record...
-			if (AddRecordToResponseList(nrp, rr, rr->NR_AnswerTo, mDNSNULL))	// ... add it to the list
-				{
-				nrp = &rr->NextResponse;
-				if (rr->RecordType == kDNSRecordTypeShared) delayresponse = mDNStrue;
-				}
+			{
+			AddRecordToResponseList(&nrp, rr, mDNSNULL);		// ... add it to the list
+			if (rr->RecordType == kDNSRecordTypeShared) delayresponse = mDNStrue;
+			}
 
 	// ***
 	// *** 3. Add additional records
@@ -4459,22 +4494,19 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		{
 		// (Note: This is an "if", not a "while". If we add a record, we'll find it again
 		// later in the "for" loop, and we will follow further "additional" links then.)
-		if (rr->Additional1 && ResourceRecordIsValidInterfaceAnswer(rr->Additional1, InterfaceID) &&
-			AddRecordToResponseList(nrp, rr->Additional1, mDNSNULL, rr))
-			nrp = &rr->Additional1->NextResponse;
+		if (rr->Additional1 && ResourceRecordIsValidInterfaceAnswer(rr->Additional1, InterfaceID))
+			AddRecordToResponseList(&nrp, rr->Additional1, rr);
 
-		if (rr->Additional2 && ResourceRecordIsValidInterfaceAnswer(rr->Additional2, InterfaceID) &&
-			AddRecordToResponseList(nrp, rr->Additional2, mDNSNULL, rr))
-			nrp = &rr->Additional2->NextResponse;
+		if (rr->Additional2 && ResourceRecordIsValidInterfaceAnswer(rr->Additional2, InterfaceID))
+			AddRecordToResponseList(&nrp, rr->Additional2, rr);
 		
 		// For SRV records, automatically add the Address record(s) for the target host
 		if (rr->rrtype == kDNSType_SRV)
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
 				if (RRIsAddressType(rr2) &&										// For all address records (A/AAAA) ...
 					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
-					SameDomainName(&rr->rdata->u.srv.target, &rr2->name) &&		// ... whose name is the name of the SRV target
-					AddRecordToResponseList(nrp, rr2, mDNSNULL, rr))
-					nrp = &rr2->NextResponse;
+					SameDomainName(&rr->rdata->u.srv.target, &rr2->name))		// ... whose name is the name of the SRV target
+					AddRecordToResponseList(&nrp, rr2, rr);
 		}
 
 	// ***
@@ -4510,40 +4542,37 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				}
 			}
 
-		if (!replyunicast)
+		// See if this Known-Answer suppresses any answers we were expecting for our cache records. We do this always,
+		// even if the TC bit is not set (the TC bit will *not* be set in the *last* packet of a multi-packet KA list).
+		ourcacherr = FindIdenticalRecordInCache(m, &pktrr);
+		if (ourcacherr && ourcacherr->MPExpectingKA && m->timenow - ourcacherr->MPLastUnansweredQT < mDNSPlatformOneSecond)
 			{
-			// See if this Known-Answer suppresses any answers we were expecting for our cache records. We do this always,
-			// even if the TC bit is not set (the TC bit will *not* be set in the *last* packet of a multi-packet KA list).
-			ourcacherr = FindIdenticalRecordInCache(m, &pktrr);
-			if (ourcacherr && ourcacherr->MPExpectingKA && m->timenow - ourcacherr->MPLastUnansweredQT < mDNSPlatformOneSecond)
+			ourcacherr->MPUnansweredKA++;
+			ourcacherr->MPExpectingKA = mDNSfalse;
+			}
+
+		// Having built our ExpectedAnswers list from the questions in this packet, we can definitively
+		// remove from our ExpectedAnswers list any records that are suppressed in the very same packet.
+		// For answers that are suppressed in subsequent KA list packets, we rely on the MPQ/MPKA counting to track them.
+		eap = &ExpectedAnswers;
+		while (*eap)
+			{
+			ResourceRecord *rr = *eap;
+			if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
+				{ *eap = rr->NextInKAList; rr->NextInKAList = mDNSNULL; }
+			else eap = &rr->NextInKAList;
+			}
+		
+		// See if this Known-Answer is a surprise to us. If so, we shouldn't suppress our own query.
+		if (!ourcacherr)
+			{
+			dqp = &DupQuestions;
+			while (*dqp)
 				{
-				ourcacherr->MPUnansweredKA++;
-				ourcacherr->MPExpectingKA = mDNSfalse;
-				}
-	
-			// Having built our ExpectedAnswers list from the questions in this packet, we can definitively
-			// remove from our ExpectedAnswers list any records that are suppressed in the very same packet.
-			// For answers that are suppressed in subsequent KA list packets, we rely on the MPQ/MPKA counting to track them.
-			eap = &ExpectedAnswers;
-			while (*eap)
-				{
-				ResourceRecord *rr = *eap;
-				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
-					{ *eap = rr->NextInKAList; rr->NextInKAList = mDNSNULL; }
-				else eap = &rr->NextInKAList;
-				}
-			
-			// See if this Known-Answer is a surprise to us. If so, we shouldn't suppress our own query.
-			if (!ourcacherr)
-				{
-				dqp = &DupQuestions;
-				while (*dqp)
-					{
-					DNSQuestion *q = *dqp;
-					if (ResourceRecordAnswersQuestion(&pktrr, q))
-						{ *dqp = q->NextInDQList; q->NextInDQList = mDNSNULL; }
-					else dqp = &q->NextInDQList;
-					}
+				DNSQuestion *q = *dqp;
+				if (ResourceRecordAnswersQuestion(&pktrr, q))
+					{ *dqp = q->NextInDQList; q->NextInDQList = mDNSNULL; }
+				else dqp = &q->NextInDQList;
 				}
 			}
 		}
@@ -4560,70 +4589,69 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		{
-		if (rr->NR_AnswerTo)
-			HaveAtLeastOneAnswer = mDNStrue;
-		// For oversized records which we are going to send back to the requester via unicast
-		// anyway, don't waste network bandwidth by also sending them via multicast.
-		// This means we lose passive conflict detection for these oversized records, but
-		// that is a reasonable tradeoff -- these large records usually have an associated
-		// SRV record with the same name which will catch conflicts for us anyway.
-		if (replymulticast && (!replyunicast || rr->rdestimate <= 1024))
+		mDNSBool SendMulticastResponse = mDNSfalse;
+		
+		// If it's been a while since we multicast this, then send a multicast reply for conflict detection, etc.
+		if (m->timenow - (rr->LastAPTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
+		
+		// If the client insists on a multicast reply, then we'd better send one
+		if (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
+		else if (rr->NR_AnswerTo) HaveUnicastAnswer = mDNStrue;
+
+		if (SendMulticastResponse)
 			{
-			if (rr->NR_AnswerTo)
+			// If we're already planning to send this on another interface, just send it on all interfaces
+			if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
 				{
-				// If we're already planning to send this on another interface, just send it on all interfaces
-				if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
+				rr->ImmedAnswer = mDNSInterfaceMark;
+				m->NextResponseTime = m->timenow;
+				debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
+				}
+			else
+				{
+				rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
+				m->NextResponseTime = m->timenow;
+				if (srcaddr->type == mDNSAddrType_IPv4)
 					{
-					rr->ImmedAnswer = mDNSInterfaceMark;
-					m->NextResponseTime = m->timenow;
-					debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
-					}
-				else
-					{
-					rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
-					m->NextResponseTime = m->timenow;
-					if (srcaddr->type == mDNSAddrType_IPv4)
+					if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
+					else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4))
 						{
-						if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
-						else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4))
-							{
-							// For now we don't report this error.
-							//     Due to a bug in the OS X 10.2 version of mDNSResponder, when a service sends a goodbye packet,
-							//     all those old mDNSResponders respond by sending a query to verify that the service is really gone.
-							//     That flood of near-simultaneous queries then triggers the message below, warning that mDNSResponder
-							//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
-							//if (query->h.flags.b[0] & kDNSFlag0_TC)
-							//	LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one"
-							//		" client at a time %.4a %.4a (only bad if it happens more than a few times per minute)",
-							//		rr->name.c, DNSTypeName(rr->rrtype), &rr->v4Requester, &srcaddr->ip.v4);
-							rr->v4Requester = onesIPv4Addr;
-							}
+						// For now we don't report this error.
+						//     Due to a bug in the OS X 10.2 version of mDNSResponder, when a service sends a goodbye packet,
+						//     all those old mDNSResponders respond by sending a query to verify that the service is really gone.
+						//     That flood of near-simultaneous queries then triggers the message below, warning that mDNSResponder
+						//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
+						//if (query->h.flags.b[0] & kDNSFlag0_TC)
+						//	LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one"
+						//		" client at a time %.4a %.4a (only bad if it happens more than a few times per minute)",
+						//		rr->name.c, DNSTypeName(rr->rrtype), &rr->v4Requester, &srcaddr->ip.v4);
+						rr->v4Requester = onesIPv4Addr;
 						}
-					else if (srcaddr->type == mDNSAddrType_IPv6)
+					}
+				else if (srcaddr->type == mDNSAddrType_IPv6)
+					{
+					if (mDNSIPv6AddressIsZero(rr->v6Requester)) { rr->v6RequesterTime = m->timenow; rr->v6Requester = srcaddr->ip.v6; }
+					else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
 						{
-						if (mDNSIPv6AddressIsZero(rr->v6Requester)) { rr->v6RequesterTime = m->timenow; rr->v6Requester = srcaddr->ip.v6; }
-						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
-							{
-							if (query->h.flags.b[0] & kDNSFlag0_TC)
-								LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
-									"client at a time %.16a %ld %.16a "
-									"(Only bad if it happens more than a few times per minute. "
-									"This message will be removed before Panther ships.)",
-									rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
-							rr->v6Requester = onesIPv6Addr;
-							}
+						if (query->h.flags.b[0] & kDNSFlag0_TC)
+							LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
+								"client at a time %.16a %ld %.16a "
+								"(Only bad if it happens more than a few times per minute. "
+								"This message will be removed before Panther ships.)",
+								rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
+						rr->v6Requester = onesIPv6Addr;
 						}
 					}
 				}
-			else if (rr->NR_AdditionalTo)
-				{
-				// Since additional records are an optimization anyway, we only ever send them on one interface at a time
-				// If two clients on different interfaces do queries that invoke the same optional additional answer,
-				// then the earlier client is out of luck
-				rr->ImmedAdditional = InterfaceID;
-				// No need to set m->NextResponseTime here
-				// We'll send these additional records when we send them, or not, as the case may be
-				}
+			}
+		else if (rr->NR_AdditionalTo && rr->NR_AdditionalTo->NR_AnswerTo == (mDNSu8*)~0)
+			{
+			// Since additional records are an optimization anyway, we only ever send them on one interface at a time
+			// If two clients on different interfaces do queries that invoke the same optional additional answer,
+			// then the earlier client is out of luck
+			rr->ImmedAdditional = InterfaceID;
+			// No need to set m->NextResponseTime here
+			// We'll send these additional records when we send them, or not, as the case may be
 			}
 		}
 
@@ -4640,8 +4668,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	// *** 8. If query is from a legacy client, generate a unicast response too
 	// ***
-	if (HaveAtLeastOneAnswer && replyunicast)
-		responseptr = GenerateUnicastResponse(query, end, InterfaceID, replyunicast, ResponseRecords);
+	if (HaveUnicastAnswer)
+		responseptr = GenerateUnicastResponse(query, end, InterfaceID, LegacyQuery, response, ResponseRecords);
 
 exit:
 	// ***
@@ -4731,8 +4759,6 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	{
 	DNSMessage    response;
 	const mDNSu8 *responseend    = mDNSNULL;
-	DNSMessage   *replyunicast   = mDNSNULL;
-	mDNSBool      replymulticast = mDNSfalse;
 	
 	verbosedebugf("Received Query from %#-15a:%d to %#-15a:%d on 0x%.8X with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
 		srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1],
@@ -4743,15 +4769,10 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y" : "ies",
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 	
-	// If this was a unicast query, or it was from an old (non-port-5353) client, then send a unicast response
-	if (!mDNSAddrIsDNSMulticast(dstaddr) || srcport.NotAnInteger != MulticastDNSPort.NotAnInteger)
-		replyunicast = &response;
-	
-	// If this was a multicast query, then we need to send a multicast response
-	if (mDNSAddrIsDNSMulticast(dstaddr)) replymulticast = mDNStrue;
-	
-	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID, replyunicast, replymulticast);
-	if (replyunicast && responseend)
+	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID,
+		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), &response);
+
+	if (responseend)	// If responseend is non-null, that means we built a unicast response packet
 		{
 		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#-15a:%d on %p/%ld",
 			response.h.numQuestions,   response.h.numQuestions   == 1 ? "" : "s",
