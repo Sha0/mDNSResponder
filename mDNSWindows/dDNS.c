@@ -49,9 +49,9 @@ static DNameListElem *DefBrowseList = mDNSNULL;    // cache of answers to above 
 static DNameListElem *DefRegList = mDNSNULL;       // manually generated list of domains where we register for empty string registrations
 static ARListElem *SCPrefBrowseDomains = mDNSNULL; // manually generated local-only PTR records for browse domains we get from SCPreferences
 
-static domainname dDNSRegDomain;             // Default wide-area zone for service registration
-static domainname dDNSBrowseDomain;          // Default wide-area zone for legacy ("empty string") browses
-static domainname dDNSHostname;
+static domainname			dDNSRegDomain;             // Default wide-area zone for service registration
+static DNameListElem	*	dDNSBrowseDomains;         // Default wide-area zone for legacy ("empty string") browses
+static domainname			dDNSHostname;
 
 
 mStatus dDNS_SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
@@ -401,6 +401,8 @@ mDNSlocal mStatus RegisterSearchDomains( mDNS *const m )
 	return mStatus_NoError;
 	}
 
+
+
 // Add or remove a user-specified domain to the list of empty-string browse domains
 // Also register a non-legacy _browse PTR record so that the domain appears in enumeration lists
 mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
@@ -450,19 +452,34 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 		}
 	}
 
+mDNSlocal void SetSCPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, mDNSBool add)
+	{
+	DNameListElem * browseDomain;
+
+	for ( browseDomain = browseDomains; browseDomain; browseDomain = browseDomain->next )
+		{
+			if ( !browseDomain->name.c[0] )
+				{
+				LogMsg("SetSCPrefsBrowseDomains bad DDNS browse domain: %s", browseDomain->name.c[0] ? browseDomain->name.c : "(unknown)");
+				}
+			else
+				{
+				SetSCPrefsBrowseDomain(m, &browseDomain->name, add);
+				}
+		}
+	}
 
 mStatus dDNS_Setup( mDNS *const m )
 	{
 	static mDNSBool LegacyNATInitialized = mDNSfalse;
 	mDNSBool dict = mDNStrue;
 	mDNSAddr ip;
-	mDNSAddr	r;
-	// YO CFDictionaryRef dict;
-	// YO CFStringRef     key;
-	domainname BrowseDomain, RegDomain, fqdn;
+	mDNSAddr r;
+	DNameListElem * BrowseDomains;
+	domainname RegDomain, fqdn;
 	
 	// get fqdn, zone from SCPrefs
-	dDNSPlatformGetConfig(&fqdn, &RegDomain, &BrowseDomain);
+	dDNSPlatformGetConfig(&fqdn, &RegDomain, &BrowseDomains);
 	
 	// YO if (!fqdn.c[0] && !RegDomain.c[0]) ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &fqdn, &RegDomain);
 
@@ -484,12 +501,25 @@ mStatus dDNS_Setup( mDNS *const m )
 		}
 	}
 	
-	if (!SameDomainName(&BrowseDomain, &dDNSBrowseDomain))
-	{
-		if (dDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &dDNSBrowseDomain, mDNSfalse);
-		AssignDomainName(&dDNSBrowseDomain, &BrowseDomain);
-		if (dDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &dDNSBrowseDomain, mDNStrue);
-	}
+	// Add new browse domains to internal list
+	
+	if ( BrowseDomains )
+		{
+		SetSCPrefsBrowseDomains( m, BrowseDomains, mDNStrue );
+		}
+
+	// Remove old browse domains from internal list
+	
+	if ( dDNSBrowseDomains ) 
+		{
+		SetSCPrefsBrowseDomains( m, dDNSBrowseDomains, mDNSfalse );
+		mDNS_FreeDNameList( dDNSBrowseDomains );
+		}
+
+	// Replace the old browse domains array with the new array
+	
+	dDNSBrowseDomains = BrowseDomains;
+
 	
 	if (!SameDomainName(&fqdn, &dDNSHostname))
 		{

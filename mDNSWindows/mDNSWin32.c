@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.80  2005/03/03 21:07:38  shersche
+<rdar://problem/4034460> mDNSResponder doesn't handle multiple browse domains
+
 Revision 1.79  2005/03/03 02:29:00  shersche
 Use the RegNames.h header file for registry key names
 
@@ -1257,7 +1260,7 @@ exit:
 //===========================================================================================================================
 
 void
-dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, domainname *const browseDomain)
+dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
 {
 	char	*	name = NULL;
 	TCHAR		subKeyName[kRegistryMaxKeyLength];
@@ -1268,12 +1271,15 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, doma
 	DWORD		enabled;
 	HKEY		key;
 	HKEY		subKey = NULL;
+	domainname	dname;
 	DWORD		i;
 	OSStatus	err;
 
 	// Initialize
 
-	fqdn->c[0] = regDomain->c[0] = browseDomain->c[0] = 0;
+	fqdn->c[0] = regDomain->c[0] = '\0';
+
+	*browseDomains = NULL;
 	
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSHostNames, &key );
 	require_noerr( err, exit );
@@ -1325,9 +1331,19 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, doma
 
 			if ( !err && ( subKeyName[0] != '\0' ) && enabled )
 			{
-				if ( !MakeDomainNameFromDNSNameString( browseDomain, subKeyName ) || !browseDomain->c[0] )
+				if ( !MakeDomainNameFromDNSNameString( &dname, subKeyName ) || !dname.c[0] )
 				{
 					dlog( kDebugLevelError, "bad DDNS browse domain in registry: %s", subKeyName[0] ? subKeyName : "(unknown)");
+				}
+				else
+				{
+					DNameListElem * browseDomain = (DNameListElem*) malloc( sizeof( DNameListElem ) );
+					require_action( browseDomain, exit, err = mStatus_NoMemoryErr );
+					
+					AssignDomainName(&browseDomain->name, &dname);
+					browseDomain->next = *browseDomains;
+
+					*browseDomains = browseDomain;
 				}
 			}
 
