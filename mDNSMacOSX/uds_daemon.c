@@ -687,7 +687,7 @@ static void handle_regservice_request(request_state *request)
     request->terminate = regservice_termination_callback;
     
 
-    mDNS_RegisterService(mDNSdata, srs, &n, &t, &d, NULL, port, txtdata, txtlen, 0, regservice_callback, request);
+    mDNS_RegisterService(mDNSdata, srs, &n, &t, &d, NULL, port, txtdata, txtlen, 0, NULL, 0, regservice_callback, request);
     //!!!KRS check error here
     return;
 

@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.117  2003/07/15 01:55:15  cheshire
+ * <rdar://problem/3315777> Need to implement service registration with subtypes
+ *
  * Revision 1.116  2003/07/02 21:19:51  cheshire
  * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
  *
@@ -345,6 +348,8 @@ mDNSlocal void FreeDNSServiceRegistration(DNSServiceRegistration *x)
 	if (x->s.RR_TXT.rdata != &x->s.RR_TXT.rdatastorage)
 			freeL("TXT RData", x->s.RR_TXT.rdata);
 
+	if (x->s.SubTypes) freeL("ServiceSubTypes", x->s.SubTypes);
+	
 	freeL("DNSServiceRegistration", x);
 	}
 
@@ -871,6 +876,24 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
 
+	// Check for sub-types after the service type
+	ResourceRecord *SubTypes = mDNSNULL;
+	mDNSu32 i, NumSubTypes = 0;
+	char *comma = regtype;
+	while (*comma && *comma != ',') comma++;
+	if (*comma)					// If we found a comma...
+		{
+		*comma = 0;				// Overwrite the first comma with a nul
+		char *p = comma + 1;	// Start scanning from the next character
+		while (*p)
+			{
+			if ( !(*p && *p != ',')) { errormsg = "Bad Service SubType";  goto badparam; }
+			while (*p && *p != ',') p++;
+			if (*p) *p++ = 0;
+			NumSubTypes++;
+			}
+		}
+
 	// Check other parameters
 	domainlabel n;
 	domainname t, d;
@@ -919,6 +942,18 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	DNSServiceRegistration *x = mallocL("DNSServiceRegistration", sizeof(*x) - sizeof(RDataBody) + size);
 	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
 
+	if (NumSubTypes)
+		{
+		SubTypes = mallocL("ServiceSubTypes", NumSubTypes * sizeof(ResourceRecord));
+		if (!SubTypes) { freeL("DNSServiceRegistration", x); err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
+		for (i = 0; i < NumSubTypes; i++)
+			{
+			comma++;				// Advance over the nul character
+			MakeDomainNameFromDNSNameString(&SubTypes[i].name, comma);
+			while (*comma) comma++;	// Advance comma to point to the next terminating nul
+			}
+		}
+
 	// Set up object, and link into list
 	x->ClientMachPort = client;
 	x->autoname = (!name[0]);
@@ -934,7 +969,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
 	if (port.NotAnInteger) CheckForDuplicateRegistrations(x, &srv, port);
 	err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port,
-		txtinfo, data_len, mDNSInterface_Any, RegCallback, x);
+		txtinfo, data_len, SubTypes, NumSubTypes, mDNSInterface_Any, RegCallback, x);
 	if (err) { AbortClient(client, x); errormsg = "mDNS_RegisterService"; goto fail; }
 
 	// Succeeded: Wrap up and return

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.80  2003/07/15 01:55:12  cheshire
+<rdar://problem/3315777> Need to implement service registration with subtypes
+
 Revision 1.79  2003/07/13 02:28:00  cheshire
 <rdar://problem/3325166> SendResponses didn't all its responses
 Delete all references to RRInterfaceActive -- it's now superfluous
@@ -641,6 +644,8 @@ struct ServiceRecordSet_struct
 	mDNSServiceCallback *ServiceCallback;
 	void                *ServiceContext;
 	ExtraResourceRecord *Extras;	// Optional list of extra ResourceRecords attached to this service registration
+	mDNSu32              NumSubTypes;
+	ResourceRecord      *SubTypes;
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           Host;		// Set if this service record does not use the standard target host name
 	ResourceRecord       RR_ADV;	// e.g. _services._mdns._udp.local. PTR _printer._tcp.local.
@@ -909,6 +914,7 @@ extern void    mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set
 extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
                const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
+               ResourceRecord *SubTypes, mDNSu32 NumSubTypes,
                const mDNSInterfaceID InterfaceID, mDNSServiceCallback Callback, void *Context);
 extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);

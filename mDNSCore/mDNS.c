@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.219  2003/07/15 01:55:12  cheshire
+<rdar://problem/3315777> Need to implement service registration with subtypes
+
 Revision 1.218  2003/07/14 16:26:06  cheshire
 <rdar://problem/3324795> Duplicate query suppression not working right
 Refinement: Don't record DS information for a question in the first quarter second
@@ -5778,9 +5781,18 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 		return;
 		}
 	
-	// If this ServiceRecordSet was forcibly deregistered, and now it's memory is ready for reuse,
-	// then we can now report the NameConflict to the client
-	if (result == mStatus_MemFree && sr->Conflict) result = mStatus_NameConflict;
+	if (result == mStatus_MemFree)
+		{
+		// If the PTR record or any of the subtype PTR record are still in the process of deregistering,
+		// don't pass on the NameConflict/MemFree message until every record is finished cleaning up.
+		mDNSu32 i;
+		if (sr->RR_PTR.RecordType != kDNSRecordTypeUnregistered) return;
+		for (i=0; i<sr->NumSubTypes; i++) if (sr->SubTypes[i].RecordType != kDNSRecordTypeUnregistered) return;
+
+		// If this ServiceRecordSet was forcibly deregistered, and now its memory is ready for reuse,
+		// then we can now report the NameConflict to the client
+		if (sr->Conflict) result = mStatus_NameConflict;
+		}
 
 	// CAUTION: MUST NOT do anything more with sr after calling sr->Callback(), because the client's callback
 	// function is allowed to do anything, including deregistering this service and freeing its memory.
@@ -5799,14 +5811,18 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
 	const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
+	ResourceRecord *SubTypes, mDNSu32 NumSubTypes,
 	const mDNSInterfaceID InterfaceID, mDNSServiceCallback Callback, void *Context)
 	{
 	mStatus err;
+	mDNSu32 i;
 
 	sr->ServiceCallback = Callback;
 	sr->ServiceContext  = Context;
-	sr->Extras = mDNSNULL;
-	sr->Conflict = mDNSfalse;
+	sr->Extras          = mDNSNULL;
+	sr->NumSubTypes     = NumSubTypes;
+	sr->SubTypes        = SubTypes;
+	sr->Conflict        = mDNSfalse;
 	if (host && host->c[0]) sr->Host = *host;
 	else sr->Host.c[0] = 0;
 	
@@ -5837,6 +5853,19 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->RR_PTR.Additional1 = &sr->RR_SRV;
 	sr->RR_PTR.Additional2 = &sr->RR_TXT;
 
+	// 2a. Set up any subtype PTRs to point to our service name
+	// If the client is using subtypes, it is the client's responsibility to have
+	// already set the first label of the record name to the subtype being registered
+	for (i=0; i<NumSubTypes; i++)
+		{
+		domainlabel s = *(domainlabel*)&sr->SubTypes[i].name;
+		mDNS_SetupResourceRecord(&sr->SubTypes[i], mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, ServiceCallback, sr);
+		if (ConstructServiceName(&sr->SubTypes[i].name, &s, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
+		sr->SubTypes[i].rdata->u.name = sr->RR_SRV.name;
+		sr->SubTypes[i].Additional1 = &sr->RR_SRV;
+		sr->SubTypes[i].Additional2 = &sr->RR_TXT;
+		}
+
 	// 3. Set up the SRV record rdata.
 	sr->RR_SRV.rdata->u.srv.priority = 0;
 	sr->RR_SRV.rdata->u.srv.weight   = 0;
@@ -5866,6 +5895,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// the client callback, which is then at liberty to free the ServiceRecordSet memory at will. We need to
 	// make sure we've deregistered all our records and done any other necessary cleanup before that happens.
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_ADV);
+	for (i=0; i<NumSubTypes; i++) if (!err) err = mDNS_Register_internal(m, &sr->SubTypes[i]);
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_PTR);
 	mDNS_Unlock(m);
 
@@ -5928,6 +5958,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	
 	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
 		host, sr->RR_SRV.rdata->u.srv.port, sr->RR_TXT.rdata->u.txt.c, sr->RR_TXT.rdata->RDLength,
+		sr->SubTypes, sr->NumSubTypes,
 		sr->RR_PTR.InterfaceID, sr->ServiceCallback, sr->ServiceContext);
 
 	// mDNS_RegisterService() just reset sr->Extras to NULL.
@@ -5960,6 +5991,7 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 		}
 	else
 		{
+		mDNSu32 i;
 		mStatus status;
 		ExtraResourceRecord *e;
 		mDNS_Lock(m);
@@ -5979,7 +6011,10 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 			mDNS_Deregister_internal(m, &e->r, mDNS_Dereg_repeat);
 			e = e->next;
 			}
-	
+
+		for (i=0; i<sr->NumSubTypes; i++)
+			mDNS_Deregister_internal(m, &sr->SubTypes[i], mDNS_Dereg_normal);
+
 		// Be sure to deregister the PTR last!
 		// Deregistering this record is what triggers the mStatus_MemFree callback to ServiceCallback,
 		// which in turn passes on the mStatus_MemFree (or mStatus_NameConflict) back to the client callback,

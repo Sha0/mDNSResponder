@@ -79,7 +79,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	else
 		txtbuffer[0] = 0;
 
-	mDNS_RegisterService(m, recordset, n, &t, &d, mDNSNULL, port, txtbuffer, (mDNSu16)(1+txtbuffer[0]), mDNSInterface_Any, Callback, mDNSNULL);
+	mDNS_RegisterService(m, recordset, n, &t, &d, mDNSNULL, port, txtbuffer, (mDNSu16)(1+txtbuffer[0]), mDNSNULL, 0, mDNSInterface_Any, Callback, mDNSNULL);
 
 	ConvertDomainNameToCString(&recordset->RR_SRV.name, buffer);
 	printf("Made Service Records for %s\n", buffer);

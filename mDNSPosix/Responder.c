@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.12  2003/07/15 01:55:16  cheshire
+<rdar://problem/3315777> Need to implement service registration with subtypes
+
 Revision 1.11  2003/07/14 18:11:54  cheshire
 Fix stricter compiler warnings
 
@@ -566,6 +569,7 @@ static mStatus RegisterOneService(const char *  richTextHostName,
                 NULL,
                 port, 
                 text, textLen,
+                NULL, 0,
                 mDNSInterface_Any,
                 RegistrationCallback, thisServ);
     }

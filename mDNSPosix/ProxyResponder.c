@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ProxyResponder.c,v $
+ * Revision 1.19  2003/07/15 01:55:16  cheshire
+ * <rdar://problem/3315777> Need to implement service registration with subtypes
+ *
  * Revision 1.18  2003/07/02 21:19:58  cheshire
  * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
  *
@@ -178,7 +181,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 		argv++;
 		}
 	
-	mDNS_RegisterService(m, recordset, &n, &t, &d, host, port, buffer, bptr-buffer, mDNSInterface_Any, ServiceCallback, mDNSNULL);
+	mDNS_RegisterService(m, recordset, &n, &t, &d, host, port, buffer, bptr-buffer, mDNSNULL, 0, mDNSInterface_Any, ServiceCallback, mDNSNULL);
 
 	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.name, buffer);
 	printf("Made Service Records for %s\n", buffer);

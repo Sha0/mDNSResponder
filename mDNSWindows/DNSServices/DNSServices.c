@@ -22,6 +22,9 @@
     Change History (most recent first):
     
         $Log: DNSServices.c,v $
+        Revision 1.11  2003/07/15 01:55:17  cheshire
+        <rdar://problem/3315777> Need to implement service registration with subtypes
+
         Revision 1.10  2003/07/02 21:20:10  cheshire
         <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -1374,7 +1377,7 @@ DNSStatus
 	// Register the service with mDNS.
 	
 	err = mDNS_RegisterService( gMDNSPtr, &objectPtr->set, &name, &type, &domain, mDNSNULL, port, 
-								text, textSize, mDNSInterface_Any, DNSRegistrationPrivateCallBack, objectPtr );
+								text, textSize, mDNSNULL, 0, mDNSInterface_Any, DNSRegistrationPrivateCallBack, objectPtr );
 	require_noerr( err, exit );
 	
 	if( outRef )
