@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.77  2003/07/11 01:32:38  cheshire
+Syntactic cleanup (no change to funcationality): Now that we only have one host name,
+rename field "hostname1" to "hostname", and field "RR_A1" to "RR_A".
+
 Revision 1.76  2003/07/11 01:28:00  cheshire
 <rdar://problem/3161289> No more local.arpa
 
@@ -601,7 +605,7 @@ struct NetworkInterfaceInfo_struct
 										// physical interface which will be used for the actual sending & receiving
 										// packets (this status may change as interfaces are added and removed)
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
-	ResourceRecord RR_A1;				// 'A' or 'AAAA' (address) record for our ".local" name
+	ResourceRecord RR_A;				// 'A' or 'AAAA' (address) record for our ".local" name
 	ResourceRecord RR_PTR;				// PTR (reverse lookup) record
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
@@ -775,7 +779,7 @@ struct mDNS_struct
 	// Fields below only required for mDNS Responder...
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;				// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
-	domainname  hostname1;				// Primary Host Name, e.g. "Foo.local."
+	domainname  hostname;				// Host Name, e.g. "Foo.local."
 	ResourceRecord *ResourceRecords;
 	ResourceRecord *DuplicateRecords;	// Records currently 'on hold' because they are duplicates of existing records
 	ResourceRecord *CurrentRecord;		// Next ResourceRecord about to be examined
