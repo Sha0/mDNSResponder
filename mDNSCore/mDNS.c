@@ -88,6 +88,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.111  2003/05/05 23:42:08  cheshire
+<rdar://problem/3245631> Resolves never succeed
+Was setting "rr->LastAPTime = timenow - rr->LastAPTime"
+instead of  "rr->LastAPTime = timenow - rr->ThisAPInterval"
+
 Revision 1.110  2003/04/30 21:09:59  cheshire
 <rdar://problem/3244727> mDNS_vsprintf needs to be more defensive against invalid domain names
 
@@ -3313,7 +3318,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			if (rr->AnnounceCount < ReannounceCount)
 				rr->AnnounceCount = ReannounceCount;
 			rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
-			rr->LastAPTime        = m->timenow - rr->LastAPTime;
+			rr->LastAPTime        = m->timenow - rr->ThisAPInterval;
 			}
 
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
@@ -3874,7 +3879,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								rr->RecordType     = kDNSRecordTypeUnique;
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
 								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
-								rr->LastAPTime     = m->timenow - rr->LastAPTime;
+								rr->LastAPTime     = m->timenow - rr->ThisAPInterval;
 
 								// We increment NumFailedProbes here to make sure that repeated late conflicts
 								// will also cause us to back off to the slower probing rate
