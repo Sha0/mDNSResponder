@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.479  2004/12/07 17:50:49  ksekar
+<rdar://problem/3908850> BIND doesn't like zero-length rdata
+
 Revision 1.478  2004/12/06 21:15:22  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -6373,7 +6376,12 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 
 	// 4. Set up the TXT record rdata,
 	// and set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
-	if (txtinfo == mDNSNULL) sr->RR_TXT.resrec.rdlength = 0;
+	if (txtinfo == mDNSNULL || !txtlen)
+		{
+		// BIND servers don't like zero-length rdata
+		sr->RR_TXT.resrec.rdlength = 1;
+		sr->RR_TXT.resrec.rdata->u.txt.c[0] = 0;
+		}
 	else if (txtinfo != sr->RR_TXT.resrec.rdata->u.txt.c)
 		{
 		sr->RR_TXT.resrec.rdlength = txtlen;
