@@ -62,8 +62,8 @@ void resolve_reply(struct sockaddr *interface, struct sockaddr *address, char *t
 		struct sockaddr_in *ip = (struct sockaddr_in *)address;
 		union { uint32_t l; u_char b[4]; } addr = { ip->sin_addr.s_addr };
 		union { uint16_t s; u_char b[2]; } port = { ip->sin_port };
-        short PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
-		printf("Service can be reached at %d.%d.%d.%d:%d %s",
+        uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
+		printf("Service can be reached at %d.%d.%d.%d:%u %s",
             addr.b[0], addr.b[1], addr.b[2], addr.b[3], PortAsNumber, txtRecord);
 		if (flags) printf(" Flags: %X", flags);
 		printf("\n");
