@@ -63,6 +63,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib .
 */
 
 #include "dns_sd.h"
+#include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
 #include <string.h>			// For strlen(), strcpy(), bzero()
