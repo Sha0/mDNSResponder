@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.180  2005/01/19 21:01:54  ksekar
+<rdar://problem/3955355> uDNS needs to support subtype registration and browsing
+
 Revision 1.179  2005/01/19 19:15:35  ksekar
 Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
 
@@ -1643,7 +1646,7 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 			{
 			new = umalloc(sizeof(AuthRecord));
 			if (!new) { LogMsg("ERROR: UpdateHostnameRegistration - malloc"); return; }
-			mDNS_SetupResourceRecord(new, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeKnownUnique, HostnameCallback, i);
+			mDNS_SetupResourceRecord(new, mDNSNULL, 0, kDNSType_A, kWideAreaTTL, kDNSRecordTypeKnownUnique, HostnameCallback, i);
 			}
 
 		// setup new record
@@ -3892,6 +3895,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSBool mapped = mDNSfalse;
 	domainname target;
 	AuthRecord *srv = &srs->RR_SRV;
+	mDNSu32 i;
 	
 	if (!rInfo->ns.ip.v4.NotAnInteger) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
@@ -3933,6 +3937,9 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	//!!!KRS  Need to do bounds checking and use TCP if it won't fit!!!
 	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec, srs->RR_PTR.resrec.rroriginalttl))) goto error;
 
+	for (i = 0; i < srs->NumSubTypes; i++)
+		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->SubTypes[i].resrec, srs->SubTypes[i].resrec.rroriginalttl))) goto error;
+	
 	if (rInfo->state == regState_UpdatePending)
 		{
 		// we're updating the txt record - delete old, add new
@@ -3959,7 +3966,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 
 	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
 	if (!ptr) goto error;
-	// !!!KRS do subtypes/extras etc.
 
 	if (srs->uDNS_info.lease)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
@@ -4193,7 +4199,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	
 mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
-    // Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
+	mDNSu32 i;
 	domainname target;
 	uDNS_RegInfo *info = &srs->uDNS_info;
 	ServiceRecordSet **p = &m->uDNS_info.ServiceRegistrations;
@@ -4203,12 +4209,13 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	*p = srs;
 	srs->next = mDNSNULL;
 
-	srs->RR_SRV.resrec.rroriginalttl = 3;
-	srs->RR_TXT.resrec.rroriginalttl = 3;
-	srs->RR_PTR.resrec.rroriginalttl = 3;
-
-	info->lease = mDNStrue;
+	srs->RR_SRV.resrec.rroriginalttl = kWideAreaTTL;
+	srs->RR_TXT.resrec.rroriginalttl = kWideAreaTTL;
+	srs->RR_PTR.resrec.rroriginalttl = kWideAreaTTL;
+	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
 	
+	info->lease = mDNStrue;
+
 	srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
 	if (!GetServiceTarget(&m->uDNS_info, &srs->RR_SRV, &target))
 		{
@@ -4231,7 +4238,8 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mStatus err = mStatus_UnknownErr;
-
+	mDNSu32 i;
+	
 	id = newMessageID(u);
 	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
 	
@@ -4241,7 +4249,10 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		
 	if (!(ptr = putDeleteAllRRSets(&msg, ptr, srs->RR_SRV.resrec.name))) goto error;  // this deletes SRV, TXT, and Extras
 	if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_PTR.resrec))) goto error;
+	for (i = 0; i < srs->NumSubTypes; i++)
+		if (!(ptr = putDeletionRecord(&msg, ptr, &srs->SubTypes[i].resrec))) goto error;
 
+	
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
 	if (err) { LogMsg("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
 

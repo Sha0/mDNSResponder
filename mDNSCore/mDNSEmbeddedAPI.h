@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.274  2005/01/19 21:01:54  ksekar
+<rdar://problem/3955355> uDNS needs to support subtype registration and browsing
+
 Revision 1.273  2005/01/19 19:15:31  ksekar
 Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
 
@@ -1196,8 +1199,13 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // For records containing a hostname (in the name on the left, or in the rdata on the right),
 // like A, AAAA, reverse-mapping PTR, and SRV, we use a two-minute TTL by default, because we don't want
 // them to hang around for too long in the cache if the host in question crashes or otherwise goes away.
+// Wide-area service discovery records have a very short TTL to aviod poluting intermediate caches with
+// dynamic records.  When discovered via Long Lived Queries (with change notifications), resource record
+// TTLs can be safely ignored.
+	
 #define kStandardTTL (3600UL * 100 / 80)
 #define kHostNameTTL 120UL
+#define kWideAreaTTL 3
 
 #define DefaultTTLforRRType(X) (((X) == kDNSType_A || (X) == kDNSType_AAAA || (X) == kDNSType_SRV) ? kHostNameTTL : kStandardTTL)
 
