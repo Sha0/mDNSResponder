@@ -18,9 +18,7 @@
  * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- */
-
-/*
+ *
  * Formatting notes:
  * This code follows the "Whitesmiths style" C indentation rules. Plenty of discussion
  * on C indentation can be found on the web, such as <http://www.kafejo.com/komp/1tbs.htm>,
@@ -33,6 +31,13 @@
  * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
  * understand why variable y is not of type "char*" just proves the point that poor code
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
+ *
+ *  Change History (most recent first):
+ *
+ * $Log: SamplemDNSClient.c,v $
+ * Revision 1.35  2003/07/11 01:57:18  cheshire
+ * Add checkin history header
+ *
  */
 
 #include <libc.h>
