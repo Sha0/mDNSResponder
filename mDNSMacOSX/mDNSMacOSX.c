@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.255  2004/12/10 04:12:54  ksekar
+<rdar://problem/3890764> Need new DefaultBrowseDomain key
+
 Revision 1.254  2004/12/10 01:55:31  ksekar
 <rdar://problem/3899067> Keychain lookups should be in lower case.
 
@@ -835,18 +838,22 @@ typedef struct SearchListElem
 static mDNSu32 clockdivisor = 0;
 
 // for domain enumeration and default browsing/registration
-static SearchListElem *SearchList = NULL;    // where we search for _browse domains
-static DNSQuestion LegacyBrowseDomainQ;      // our local enumeration query for _legacy._browse domains
-static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
-static DNameListElem *DefRegList = NULL;     // manually generated list of domains where we register for empty string registrations
+static SearchListElem *SearchList = NULL;      // where we search for _browse domains
+static DNSQuestion LegacyBrowseDomainQ;        // our local enumeration query for _legacy._browse domains
+static DNameListElem *DefBrowseList = NULL;    // cache of answers to above query (where we search for empty string browses)
+static DNameListElem *DefRegList = NULL;       // manually generated list of domains where we register for empty string registrations
+static ARListElem *SCPrefBrowseDomains = NULL; // manually generated local-only PTR records for browse domains we get from SCPreferences
 
-static domainname DynDNSZone;                // Default wide-area zone for service registration
+static domainname DynDNSRegDomain;             // Default wide-area zone for service registration
+static domainname DynDNSBrowseDomain;          // Default wide-area zone for legacy ("empty string") browses
 static domainname DynDNSHostname;
 
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 #define SYS_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
 
+// Function Prototypes
+mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add);
 
 // ***************************************************************************
 // Functions
@@ -1468,12 +1475,13 @@ mDNSlocal void GetUserSpecifiedLocalHostName(domainlabel *const namelabel)
 		}
 	}
 
-mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const zone)
+mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const regDomain, domainname *const browseDomain)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];
 
 	fqdn->c[0] = 0;
-	zone->c[0] = 0;
+	regDomain->c[0] = 0;
+	browseDomain->c[0] = 0;
 	buf[0] = 0;
 	
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
@@ -1483,7 +1491,8 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 		if (dict)
 			{
 			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("FQDN"));
-			CFArrayRef zoneArray = CFDictionaryGetValue(dict, CFSTR("DefaultRegistrationZone"));
+			CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("DefaultRegistrationDomain"));
+			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("DefaultBrowseDomain"));
 			if (fqdnArray)
 				{
 				CFStringRef name = CFArrayGetValueAtIndex(fqdnArray, 0);
@@ -1495,15 +1504,26 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
 					}
 				}			
-			if (zoneArray)
+			if (regArray)
 				{
-				CFStringRef name = CFArrayGetValueAtIndex(zoneArray, 0);
+				CFStringRef name = CFArrayGetValueAtIndex(regArray, 0);
 				if (name)
 					{
 					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-                        !MakeDomainNameFromDNSNameString(zone, buf) || !zone->c[0])
-						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration zone: %s", buf[0] ? buf : "(unknown)");
+                        !MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
+						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
 					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
+					}
+				}
+			if (browseArray)
+				{
+				CFStringRef name = CFArrayGetValueAtIndex(browseArray, 0);
+				if (name)
+					{
+					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+                        !MakeDomainNameFromDNSNameString(browseDomain, buf) || !browseDomain->c[0])
+						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browse domain: %s", buf[0] ? buf : "(unknown)");
+					else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browse zone: %s", buf);
 					}
 				}			
 			CFRelease(dict);
@@ -2347,9 +2367,8 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		ifa = ifa->ifa_next;
 		}
 
-	// make sure we don't delete the global DynDNS Zone set in the sharing prefs
-	if (DynDNSZone.c[0]) MarkSearchListElem(&DynDNSZone);
-
+	if (DynDNSRegDomain.c[0]) MarkSearchListElem(&DynDNSRegDomain);         // implicitly browse reg domain too (no-op if same as BrowseDomain)
+	
 	// delete elems marked for removal, do queries for elems marked add
 	prev = NULL;
 	ptr = SearchList;
@@ -2470,17 +2489,24 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	CFDictionaryRef dict;
 	CFStringRef     key;
-	domainname zone, fqdn;
+	domainname BrowseDomain, RegDomain, fqdn;
 	
 	// get fqdn, zone from SCPrefs
-	GetUserSpecifiedDDNSConfig(&fqdn, &zone);
-	if (!fqdn.c[0] && !zone.c[0]) ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &fqdn, &zone);
+	GetUserSpecifiedDDNSConfig(&fqdn, &RegDomain, &BrowseDomain);
+	if (!fqdn.c[0] && !RegDomain.c[0]) ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &fqdn, &RegDomain);
+
+	if (!SameDomainName(&BrowseDomain, &DynDNSBrowseDomain))
+		{
+		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNSfalse);
+		AssignDomainName(DynDNSBrowseDomain, BrowseDomain);
+		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNStrue);
+		}
 	
-	if (!SameDomainName(&zone, &DynDNSZone))
+	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
 		{		
-		if (DynDNSZone.c[0]) RemoveDefRegDomain(&DynDNSZone);
-		AssignDomainName(DynDNSZone, zone);		
-		if (DynDNSZone.c[0]) { SetSecretForDomain(m, &zone); AddDefRegDomain(&zone); }
+		if (DynDNSRegDomain.c[0]) RemoveDefRegDomain(&DynDNSRegDomain);
+		AssignDomainName(DynDNSRegDomain, RegDomain);		
+		if (DynDNSRegDomain.c[0]) { SetSecretForDomain(m, &DynDNSRegDomain); AddDefRegDomain(&DynDNSRegDomain); }
 		}
 	
 	if (!SameDomainName(&fqdn, &DynDNSHostname))
@@ -2746,6 +2772,7 @@ mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 	return(err == 0);
 	}
 
+// Callback for the _legacy._browse queries - add answer to list of domains to search for empty-string browses
 mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	DNameListElem *ptr, *prev, *new;
@@ -2785,6 +2812,50 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 		}
 	}
 
+// Add or remove a user-specified domain to the list of empty-string browse domains
+// Also register a non-legacy _browse PTR record so that the domain appears in enumeration lists
+mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
+	{
+	AuthRecord rec;
+	
+	// Create dummy  record pointing to the domain to be added/removed
+	mDNS_SetupResourceRecord(&rec, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
+	AssignDomainName(rec.resrec.rdata->u.name, *d);
+
+	// add/remove the "_legacy" entry
+	MakeDomainNameFromDNSNameString(&rec.resrec.name, "_legacy._browse._dns-sd._udp.local.");
+	FoundDefBrowseDomain(m, &LegacyBrowseDomainQ, &rec.resrec, add);
+
+	if (add)
+		{
+		// allocate/register a non-legacy _browse PTR record
+		ARListElem *ptr = mallocL("ARListElem", sizeof(*ptr));
+		mDNS_SetupResourceRecord(&ptr->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, ptr);
+		MakeDomainNameFromDNSNameString(&ptr->ar.resrec.name, "_browse._dns-sd._udp.local.");
+		AssignDomainName(ptr->ar.resrec.rdata->u.name, *d);
+		mStatus err = mDNS_Register(m, &ptr->ar);
+		if (err)
+			{
+			LogMsg("SetSCPrefsBrowseDomain: mDNS_Register returned error %d", err);
+			freeL("ARListElem", ptr);
+			}
+		else
+			{
+			ptr->next = SCPrefBrowseDomains;
+			SCPrefBrowseDomains = ptr;
+			}
+		}
+	else
+		{
+		ARListElem **remove = &SCPrefBrowseDomains;
+		while (*remove && !SameDomainName(&(*remove)->ar.resrec.rdata->u.name, d)) remove = &(*remove)->next;
+		if (!*remove) { LogMsg("SetSCPrefsBrowseDomain (remove) - domain %##s not found!", d->c); return; }
+		mDNS_Deregister(m, &(*remove)->ar);
+		*remove = (*remove)->next;
+		}
+	}
+
+
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
 // 1) query for _browse._dns-sd._udp.local on LocalOnly interface
 //    (.local manually generated via explicit callback)
@@ -2798,18 +2869,12 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	{
 	mStatus err;
-	AuthRecord local;
 
 	// start query for domains to be used in default (empty string domain) browses
 	err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
 
 	// provide .local automatically
-	mDNS_SetupResourceRecord(&local, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	MakeDomainNameFromDNSNameString(&local.resrec.name, "_legacy._browse._dns-sd._udp.local.");
-	MakeDomainNameFromDNSNameString(&local.resrec.rdata->u.name, "local.");
-	// other fields ignored
-	FoundDefBrowseDomain(m, &LegacyBrowseDomainQ, &local.resrec, 1);
-
+	SetSCPrefsBrowseDomain(m, &localdomain, mDNStrue);
     return mStatus_NoError;
 	}
 
@@ -2871,8 +2936,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = WatchForPowerChanges(m);
 	if (err) return err;
 
-	DynDNSZone.c[0] = '\0';						// Get initial DNS configuration
-	DynDNSConfigChanged(m);
+	DynDNSRegDomain.c[0] = '\0';
+	DynDNSBrowseDomain.c[0] = '\0';
+	DynDNSConfigChanged(m);						// Get initial DNS configuration
 
 	InitDNSConfig(m);
  	return(err);
