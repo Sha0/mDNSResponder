@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SimpleChat.cs,v $
+Revision 1.3  2004/09/11 00:38:58  shersche
+DNSService APIs now expect port in host format
+
 Revision 1.2  2004/07/19 22:08:53  shersche
 Fixed rdata->int conversion problem in QueryRecordReply
 
@@ -426,7 +429,7 @@ namespace SimpleChat.NET
 				data.InterfaceIndex = interfaceIndex;
 				data.FullName		= fullName;
 				data.HostName		= hostName;
-				data.Port			= (ushort) System.Net.IPAddress.NetworkToHostOrder((short) port);
+				data.Port			= port;
 				data.TxtRecord		= txtRecord;
 
 				Invoke(resolveServiceCallback, new Object[]{data});
@@ -665,7 +668,7 @@ namespace SimpleChat.NET
 				//
 				// start the register and browse operations
 				//
-				registrar	=	DNSService.Register(0, 0, System.Environment.UserName, "_p2pchat._udp", null, null, (ushort) System.Net.IPAddress.HostToNetworkOrder((short) localEP.Port), null, new DNSService.RegisterReply(OnRegisterReply));
+				registrar	=	DNSService.Register(0, 0, System.Environment.UserName, "_p2pchat._udp", null, null, (ushort) localEP.Port, null, new DNSService.RegisterReply(OnRegisterReply));
 				browser		=	DNSService.Browse(0, 0, "_p2pchat._udp", null, new DNSService.BrowseReply(OnBrowseReply));			
 			}
 			catch
