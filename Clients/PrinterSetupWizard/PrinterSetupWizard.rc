@@ -128,8 +128,8 @@ FONT 8, "MS Shell Dlg", 0, 0, 0x0
 BEGIN
     LTEXT           "Shared Printers:",IDC_STATIC,3,0,171,8
     CONTROL         "",IDC_BROWSE_LIST,"SysTreeView32",TVS_DISABLEDRAGDROP | 
-                    TVS_SHOWSELALWAYS | TVS_NOSCROLL | TVS_FULLROWSELECT | 
-                    WS_BORDER | WS_TABSTOP,2,11,286,142
+                    TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | WS_BORDER | 
+                    WS_TABSTOP,2,11,286,142
 END
 
 IDD_FIRST_PAGE DIALOGEX 0, 0, 290, 199
