@@ -19,6 +19,7 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+
 // ***************************************************************************
 // Classic Mac (Open Transport) structures
 
