@@ -178,7 +178,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				MVERS = "\"Engineering Build\"";
+				MVERS = 1;
 			};
 			isa = PBXBuildStyle;
 			name = Development;

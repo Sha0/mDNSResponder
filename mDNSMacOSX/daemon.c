@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.104  2003/05/26 00:42:06  cheshire
+ * <rdar://problem/3268876> Temporarily include mDNSResponder version in packets
+ *
  * Revision 1.103  2003/05/23 23:07:44  cheshire
  * <rdar://problem/3268199> Must not write to stderr when running as daemon
  *
@@ -102,7 +105,7 @@
 //*************************************************************************************************************
 // Globals
 
-static const char mDNSResponderVersionString[] = "mDNSResponder " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+static const char mDNSResponderVersionString[];		// Forward declaration for string defined at the end of file
 
 static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
@@ -1452,3 +1455,10 @@ mDNSexport int main(int argc, char **argv)
 
 	return(status);
 	}
+
+// For convenience when using the "strings" command, this is the last thing in the file
+#if mDNSResponderVersion > 1
+static const char mDNSResponderVersionString[] = "mDNSResponder " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+#else
+static const char mDNSResponderVersionString[] = "mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ")";
+#endif

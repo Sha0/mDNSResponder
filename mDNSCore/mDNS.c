@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.131  2003/05/26 00:42:05  cheshire
+<rdar://problem/3268876> Temporarily include mDNSResponder version in packets
+
 Revision 1.130  2003/05/24 16:39:48  cheshire
 <rdar://problem/3268631> SendResponses also needs to handle multihoming better
 
@@ -459,10 +462,16 @@ mDNSexport const mDNSv6Addr AllDNSLinkGroupv6  = { { 0xFF,0x02,0x00,0x00, 0x00,0
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };
 
-static const mDNSOpaque16 zeroID = { { 0, 0 } };
 static const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
 static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
 #define zeroDomainNamePtr ((domainname*)"")
+
+static const mDNSOpaque16 zeroID = { { 0, 0 } };
+#ifdef mDNSResponderVersion
+static const mDNSOpaque16 mDNS_MessageID = { { mDNSResponderVersion >> 8, mDNSResponderVersion & 0xFF } };
+#else
+#define mDNS_MessageID zeroID
+#endif
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
@@ -2413,7 +2422,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		DNSMessage response;
 		mDNSu8 *responseptr = response.data;
 		mDNSu8 *newptr;
-		InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
+		InitializeDNSMessage(&response.h, mDNS_MessageID, ResponseFlags);
 	
 		// First Pass. Look for:
 		// 1. Deregistering records that need to send their goodbye packet
@@ -2501,7 +2510,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		else	// Nothing more to send on this interface; go to next
 			{
 			const NetworkInterfaceInfo *next = GetFirstActiveInterface(intf->next);
-			#if 1
+			#if MDNS_DEBUGMSGS && 0
 			const char *const msg = next ? "SendResponses: Nothing more on %p; moving to %p" : "SendResponses: Nothing more on %p";
 			debugf(msg, intf, next);
 			#endif
@@ -2714,7 +2723,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		ResourceRecord *rr;
 		DNSMessage query;
 		mDNSu8 *queryptr = query.data;
-		InitializeDNSMessage(&query.h, zeroID, QueryFlags);
+		InitializeDNSMessage(&query.h, mDNS_MessageID, QueryFlags);
 		if (KnownAnswerList) debugf("SendQueries: KnownAnswerList set... Will continue from previous packet");
 		if (!KnownAnswerList)
 			{
@@ -2802,7 +2811,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		else	// Nothing more to send on this interface; go to next
 			{
 			const NetworkInterfaceInfo *next = GetFirstActiveInterface(intf->next);
-			#if 1
+			#if MDNS_DEBUGMSGS && 0
 			const char *const msg = next ? "SendQueries: Nothing more on %p; moving to %p" : "SendQueries: Nothing more on %p";
 			debugf(msg, intf, next);
 			#endif
