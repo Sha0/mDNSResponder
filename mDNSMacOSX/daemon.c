@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.119  2003/07/17 19:08:58  cheshire
+ * <rdar://problem/3332153> Remove calls to enable obsolete UDS code
+ *
  * Revision 1.118  2003/07/15 21:12:28  cheshire
  * Added extra debugging checks in validatelists() (not used in final shipping version)
  *
@@ -1342,7 +1345,9 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 
 	debugf("ExitCallback: mDNS_Close");
 	mDNS_Close(&mDNSStorage);
+#if ENABLE_UDS
 	if (udsserver_exit() < 0) LogMsg("ExitCallback: udsserver_exit failed");
+#endif
 	exit(0);
 	}
 
@@ -1475,10 +1480,12 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFRelease(e_rls);
 	CFRelease(i_rls);
 	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
+#if ENABLE_UDS
 	err = udsserver_init();
 	if (err) { LogMsg("Daemon start: udsserver_init failed"); return err; }
 	err = udsserver_add_rl_source();
 	if (err) { LogMsg("Daemon start: udsserver_add_rl_source failed"); return err; }
+#endif
 	return(err);
 	}
 
@@ -1591,8 +1598,10 @@ mDNSexport int main(int argc, char **argv)
 			// 1. Before going into a blocking wait call and letting our process to go sleep,
 			// call mDNSDaemonIdle to allow any deferred work to be completed.
 			mDNSs32 nextevent = mDNSDaemonIdle();
+#if ENABLE_UDS
 			nextevent = udsserver_idle(nextevent);
-			
+#endif
+
 			// 2. Work out how long we expect to sleep before the next scheduled task
 			mDNSs32 ticks = nextevent - mDNSPlatformTimeNow();
 			if (ticks < 1) ticks = 1;
