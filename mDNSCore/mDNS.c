@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.257  2003/08/07 01:41:08  cheshire
+<rdar://problem/3367346> Ignore packets with invalid source address (all zeroes or all ones)
+
 Revision 1.256  2003/08/06 23:25:51  cheshire
 <rdar://problem/3290674> Increase TTL for A/AAAA/SRV from one minute to four
 
@@ -1229,8 +1232,24 @@ mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
+
 #define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zeroIPAddr)
 #define mDNSIPv6AddressIsZero(A) mDNSSameIPv6Address((A), zerov6Addr)
+
+#define mDNSIPv4AddressIsOnes(A) mDNSSameIPv4Address((A), onesIPv4Addr)
+#define mDNSIPv6AddressIsOnes(A) mDNSSameIPv6Address((A), onesIPv6Addr)
+
+#define mDNSAddressIsZero(X) (                                              \
+	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsZero((X)->ip.v4)) || \
+	((X)->type == mDNSAddrType_IPv6 && mDNSIPv6AddressIsZero((X)->ip.v6))    )
+
+#define mDNSAddressIsOnes(X) (                                              \
+	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsOnes((X)->ip.v4)) || \
+	((X)->type == mDNSAddrType_IPv6 && mDNSIPv6AddressIsOnes((X)->ip.v6))    )
+
+#define mDNSAddressIsValid(X) (                                                                                             \
+	((X)->type == mDNSAddrType_IPv4) ? !(mDNSIPv4AddressIsZero((X)->ip.v4) || mDNSIPv4AddressIsOnes((X)->ip.v4)) :          \
+	((X)->type == mDNSAddrType_IPv6) ? !(mDNSIPv6AddressIsZero((X)->ip.v6) || mDNSIPv6AddressIsOnes((X)->ip.v6)) : mDNSfalse)
 
 mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)
 	{
@@ -5079,6 +5098,10 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
 	
 	if (!m) { LogMsg("mDNSCoreReceive ERROR m is NULL"); return; }
+	
+	// We use zero addresses and all-ones addresses at various places in the code to indicate special values like "no address"
+	// If we accept and try to process a packet with zero or all-ones source address, that could really mess things up
+	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 	
 	mDNS_Lock(m);
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
