@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.84  2005/02/03 00:44:38  cheshire
+<rdar://problem/3986663> DNSServiceUpdateRecord returns kDNSServiceErr_Invalid when rdlen=0, rdata=NULL
+
 Revision 1.83  2005/01/27 22:57:55  cheshire
 Fix compile errors on gcc4
 
@@ -55,7 +58,7 @@ Revision 1.74  2004/12/09 22:49:15  ksekar
 <rdar://problem/3913653> Wide-Area Goodbyes broken
 
 Revision 1.73  2004/12/07 22:49:06  cheshire
-<rdar://problem/3908850> BIND doesn't like zero-length rdata
+<rdar://problem/3908850> BIND doesn't allow zero-length TXT records
 
 Revision 1.72  2004/12/06 21:15:20  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
@@ -410,6 +413,9 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 		}
 	}
 
+// Note slight bug: this code uses the rdlength from the ResourceRecord object, to display
+// the rdata from the RDataBody object. Sometimes this could be the wrong length -- but as
+// long as this routine is only used for debugging messages, it probably isn't a big problem.
 mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, char *buffer)
 	{
 	char *ptr = buffer;
@@ -1102,10 +1108,6 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd)
 	{
 	mDNSu16 len;
-	// Some (or perhaps all) versions of BIND named (name daemon) don't allow updates
-	// with zero-length rdata, so for consistency we don't allow them for mDNS either.
-	// Otherwise we risk having applications that work with mDNS but not with uDNS.
-	if (!rdlength) return(mDNSfalse);
 
 	switch(rrtype)
 		{
@@ -1121,12 +1123,14 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 		case kDNSType_MR:	// Same as PTR
 		//case kDNSType_NULL not checked (no specified format, so always valid)
 		//case kDNSType_WKS not checked
-		case kDNSType_PTR:	len = DomainNameLength(&rd->u.name);
+		case kDNSType_PTR:	if (!rdlength) return(mDNSfalse);
+							len = DomainNameLength(&rd->u.name);
 							return(len <= MAX_DOMAIN_NAME && rdlength == len);
 
 		case kDNSType_HINFO:// Same as TXT (roughly)
 		case kDNSType_MINFO:// Same as TXT (roughly)
-		case kDNSType_TXT:  {
+		case kDNSType_TXT:  if (!rdlength) return(mDNSfalse); // TXT record has to be at least one byte (RFC 1035)
+							{
 							const mDNSu8 *ptr = rd->u.txt.c;
 							const mDNSu8 *end = rd->u.txt.c + rdlength;
 							while (ptr < end) ptr += 1 + ptr[0];
@@ -1135,10 +1139,12 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 
 		case kDNSType_AAAA:	return(rdlength == sizeof(mDNSv6Addr));
 
-		case kDNSType_MX:   len = DomainNameLength(&rd->u.mx.exchange);
+		case kDNSType_MX:   if (!rdlength) return(mDNSfalse);
+							len = DomainNameLength(&rd->u.mx.exchange);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 2+len);
 
-		case kDNSType_SRV:	len = DomainNameLength(&rd->u.srv.target);
+		case kDNSType_SRV:	if (!rdlength) return(mDNSfalse);
+							len = DomainNameLength(&rd->u.srv.target);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
 
 		default:			return(mDNStrue);	// Allow all other types without checking

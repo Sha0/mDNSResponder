@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.168  2005/02/03 00:44:37  cheshire
+<rdar://problem/3986663> DNSServiceUpdateRecord returns kDNSServiceErr_Invalid when rdlen=0, rdata=NULL
+
 Revision 1.167  2005/02/02 02:19:32  cheshire
 Add comment explaining why unlink(MDNS_UDS_SERVERPATH); fails
 
@@ -2437,6 +2440,12 @@ static mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uint32
     if (!newrd) FatalError("ERROR: malloc");
     newrd->MaxRDLength = (mDNSu16) rdsize;
     memcpy(&newrd->u, rdata, rdlen);
+
+	// BIND named (name daemon) doesn't allow TXT records with zero-length rdata. This is strictly speaking correct,
+	// since RFC 1035 specifies a TXT record as "One or more <character-string>s", not "Zero or more <character-string>s".
+	// Since some legacy apps try to create zero-length TXT records, we'll silently correct it here.
+	if (rr->resrec.rrtype == kDNSType_TXT && rdlen == 0) { rdlen = 1; newrd->u.txt.c[0] = 0; }
+
     result = mDNS_Update(gmDNS, rr, ttl, rdlen, newrd, update_callback);
 	if (result) { LogMsg("ERROR: mDNS_Update - %ld", result); freeL("handle_update_request", newrd); }
 	return result;

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.246  2005/02/03 00:44:37  cheshire
+<rdar://problem/3986663> DNSServiceUpdateRecord returns kDNSServiceErr_Invalid when rdlen=0, rdata=NULL
+
 Revision 1.245  2005/02/01 19:56:47  ksekar
 Moved LogMsg from daemon.c to uds_daemon.c, cleaned up wording
 
@@ -1849,6 +1852,11 @@ mDNSlocal mStatus UpdateRecord(ServiceRecordSet *srs, mach_port_t client, AuthRe
 	// Fill in new length, and data
 	newrdata->MaxRDLength = size;
 	memcpy(&newrdata->u, data, data_len);
+	
+	// BIND named (name daemon) doesn't allow TXT records with zero-length rdata. This is strictly speaking correct,
+	// since RFC 1035 specifies a TXT record as "One or more <character-string>s", not "Zero or more <character-string>s".
+	// Since some legacy apps try to create zero-length TXT records, we'll silently correct it here.
+	if (rr->resrec.rrtype == kDNSType_TXT && data_len == 0) { data_len = 1; newrdata->u.txt.c[0] = 0; }
 
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistrationUpdateRecord(%##s, new length %d)",
