@@ -116,7 +116,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatu
 		{
 		char buffer1[256], buffer2[256];
 		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer1);
-		mDNS_RenameAndReregisterService(m, sr);
+		mDNS_RenameAndReregisterService(m, sr, mDNSNULL);
 		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer2);
 		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
 		}

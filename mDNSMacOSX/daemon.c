@@ -125,6 +125,8 @@ struct DNSServiceRegistration_struct
 	DNSServiceRegistration *next;
 	mach_port_t ClientMachPort;
 	mDNSBool autoname;
+	mDNSBool autorename;
+	domainlabel name;
 	ServiceRecordSet s;
 	// Don't add any fields after ServiceRecordSet.
 	// This is where the implicit extra space goes if we allocate an oversized ServiceRecordSet object
@@ -285,6 +287,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		{
 		DNSServiceRegistration *x = *r;
 		*r = (*r)->next;
+		x->autorename = mDNSfalse;
 		if (m && m != x)
 			LogMsg("%5d: DNSServiceRegistration(%##s) STOP; WARNING m %X != x %X", ClientMachPort, &x->s.RR_SRV.name, m, x);
 		else LogOperation("%5d: DNSServiceRegistration(%##s) STOP", ClientMachPort, &x->s.RR_SRV.name);
@@ -759,7 +762,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 		// Note: By the time we get the mStatus_NameConflict message, the service is already deregistered
 		// and the memory is free, so we don't have to wait for an mStatus_MemFree message as well.
 		if (x->autoname)
-			mDNS_RenameAndReregisterService(m, sr);
+			mDNS_RenameAndReregisterService(m, sr, mDNSNULL);
 		else
 			{
 			kern_return_t status;
@@ -774,15 +777,25 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 
 	else if (result == mStatus_MemFree)
 		{
-		DNSServiceRegistration **r = &DNSServiceRegistrationList;
-		while (*r && *r != x) r = &(*r)->next;
-		if (*r)
+		if (x->autorename)
 			{
-			debugf("RegCallback: %##s Still in DNSServiceRegistration list; removing now", &sr->RR_SRV.name);
-			*r = (*r)->next;
+			debugf("RegCallback renaming %#s to %#s", &x->name, &mDNSStorage.nicelabel);
+			x->autorename = mDNSfalse;
+			x->name = mDNSStorage.nicelabel;
+			mDNS_RenameAndReregisterService(m, &x->s, &x->name);
 			}
-		LogOperation("%5d: DNSServiceRegistration(%##s) Memory Free", x->ClientMachPort, &sr->RR_SRV.name);
-		FreeDNSServiceRegistration(x);
+		else
+			{
+			DNSServiceRegistration **r = &DNSServiceRegistrationList;
+			while (*r && *r != x) r = &(*r)->next;
+			if (*r)
+				{
+				debugf("RegCallback: %##s Still in DNSServiceRegistration list; removing now", &sr->RR_SRV.name);
+				*r = (*r)->next;
+				}
+			LogOperation("%5d: DNSServiceRegistration(%##s) Memory Free", x->ClientMachPort, &sr->RR_SRV.name);
+			FreeDNSServiceRegistration(x);
+			}
 		}
 	
 	else
@@ -824,7 +837,6 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	else
 		{
 		mStatus err;
-		domainlabel n;
 		domainname t, d;
 		mDNSIPPort port;
 		unsigned char txtinfo[1024] = "";
@@ -872,25 +884,38 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		DNSServiceRegistrationList = x;
 	
 		x->autoname = (*name == 0);
-		if (x->autoname) n = mDNSStorage.nicelabel;
-		else ConvertCStringToDomainLabel(name, &n);
+		x->autorename = mDNSfalse;
+		if (x->autoname) x->name = mDNSStorage.nicelabel;
+		else ConvertCStringToDomainLabel(name, &x->name);
 		ConvertCStringToDomainName(regtype, &t);
 		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 		port.NotAnInteger = notAnIntPort;
 	
-		CheckForDuplicateRegistrations(x, &n, &t, &d);
-		err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtinfo, data_len, RegCallback, x);
+		CheckForDuplicateRegistrations(x, &x->name, &t, &d);
+		err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port, txtinfo, data_len, RegCallback, x);
 	
 		if (err) AbortClient(client, x);
 		else EnableDeathNotificationForClient(client, x);
 	
 		if (err)
 			LogMsg("%5d: DNSServiceRegistration(%#s.%##s%##s) failed %d",
-				client, &n, &t, &d, err);
+				client, &x->name, &t, &d, err);
 		else debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
 	
 		return(err);
 		}
+	}
+	
+void NetworkChanged(void)
+	{
+	DNSServiceRegistration *r;
+	for (r = DNSServiceRegistrationList; r; r=r->next)
+		if (r->autoname && !SameDomainLabel(r->name.c, mDNSStorage.nicelabel.c))
+			{
+			debugf("NetworkChanged renaming %#s to %#s", &r->name, &mDNSStorage.nicelabel);
+			r->autorename = mDNStrue;
+			mDNS_DeregisterService(&mDNSStorage, &r->s);
+			}
 	}
 
 //*************************************************************************************************************
@@ -1239,6 +1264,7 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 
 mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	{
+	extern void (*NotifyClientNetworkChanged)(void);	// Temp fix for catching name changes
 	mStatus            err;
 	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, &mDNSStorage, NULL, NULL, NULL };
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
@@ -1289,6 +1315,8 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFRelease(s_rls);
 	CFRelease(e_rls);
 	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
+
+	NotifyClientNetworkChanged = NetworkChanged;
 
 	return(err);
 	}

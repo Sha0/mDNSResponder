@@ -51,7 +51,7 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
 		}
 
-	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr);
+	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr, mDNSNULL);
 	}
 
 // RegisterService() is a simple wrapper function which takes C string

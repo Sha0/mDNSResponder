@@ -68,7 +68,14 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.66  2003/01/13 23:49:41  jgraessl
+Merged changes for the following fixes in to top of tree:
+3086540  computer name changes not handled properly
+3124348  service name changes are not properly handled
+3124352  announcements sent in pairs, failing chattiness test
+
 Revision 1.65  2002/12/23 22:13:28  jgraessl
+
 Reviewed by: Stuart Cheshire
 Initial IPv6 support for mDNSResponder.
 
@@ -570,7 +577,7 @@ mDNSexport mDNSu16 DomainNameLength(const domainname *const name)
 	return((mDNSu16)(src - name->c + 1));
 	}
 
-mDNSlocal mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
+mDNSexport mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
 	{
 	int i;
 	const int len = *a++;
@@ -973,13 +980,15 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	((RR)->InterfaceID == mDNSInterface_Any || (RR)->InterfaceID == (I)))
 
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
+#define DefaultProbeCountForRecordType(X)      ((X) == kDNSRecordTypeUnique ? DefaultProbeCountForTypeUnique : (mDNSu8)0)
 
 #define DefaultAnnounceCountForTypeShared ((mDNSu8)10)
 #define DefaultAnnounceCountForTypeUnique ((mDNSu8)2)
 
-#define DefaultAnnounceCountForRecordType(X)   ((X) == kDNSRecordTypeShared   ? DefaultAnnounceCountForTypeShared : \
-												(X) == kDNSRecordTypeUnique   ? DefaultAnnounceCountForTypeUnique : \
-												(X) == kDNSRecordTypeVerified ? DefaultAnnounceCountForTypeUnique : (mDNSu8)0)
+#define DefaultAnnounceCountForRecordType(X)   ((X) == kDNSRecordTypeShared      ? DefaultAnnounceCountForTypeShared : \
+												(X) == kDNSRecordTypeUnique      ? DefaultAnnounceCountForTypeUnique : \
+												(X) == kDNSRecordTypeVerified    ? DefaultAnnounceCountForTypeUnique : \
+												(X) == kDNSRecordTypeKnownUnique ? DefaultAnnounceCountForTypeUnique : (mDNSu8)0)
 
 #define DefaultSendIntervalForRecordType(X)    ((X) == kDNSRecordTypeShared   ? mDNSPlatformOneSecond   : \
 												(X) == kDNSRecordTypeUnique   ? mDNSPlatformOneSecond/4 : \
@@ -1118,7 +1127,11 @@ mDNSlocal void SetTargetToHostName(const mDNS *const m, ResourceRecord *const rr
 	
 	// If we're in the middle of probing this record, we need to start again,
 	// because changing its rdata may change the outcome of the tie-breaker.
-	if (rr->RecordType == kDNSRecordTypeUnique) rr->ProbeCount = DefaultProbeCountForTypeUnique;
+	rr->ProbeCount       = DefaultProbeCountForRecordType(rr->RecordType);
+	rr->AnnounceCount    = DefaultAnnounceCountForRecordType(rr->RecordType);
+	rr->NextSendTime     = mDNSPlatformTimeNow();
+	rr->NextSendInterval = DefaultSendIntervalForRecordType(rr->RecordType);
+	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
 	}
 
 mDNSlocal void UpdateHostNameTargets(const mDNS *const m)
@@ -1171,7 +1184,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 
 	// Field Group 2: Transient state for Authoritative Records
 	rr->Acknowledged      = mDNSfalse;
-	rr->ProbeCount        = (rr->RecordType == kDNSRecordTypeUnique) ? DefaultProbeCountForTypeUnique : (mDNSu8)0;
+	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
 	rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->SendPriority      = 0;
@@ -1272,9 +1285,10 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 		// If we have an update queued up which never executed, give the client a chance to free that memory
 		if (rr->NewRData)
 			{
-			RData *n = rr->NewRData;
+			RData *OldRData = rr->rdata;
+			rr->rdata = rr->NewRData;	// Update our rdata
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
+			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
 			}
 		
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
@@ -1934,6 +1948,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 	int numDereg    = 0;
 	int numAnnounce = 0;
 	int numAnswer   = 0;
+	mDNSs32 minExistingAnnounceInterval = 0;
 
 	if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
@@ -2014,12 +2029,46 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 					if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
 					if (newptr || response->h.numAnswers == 0)
 						{
+						if (minExistingAnnounceInterval > rr->NextSendInterval)
+							minExistingAnnounceInterval = rr->NextSendInterval;
 						rr->SendPriority      = 0;
 						rr->Requester         = zeroAddr;
 						rr->AnnounceCount--;
 						rr->NextSendTime     += rr->NextSendInterval;
 						if (rr->NextSendTime - (timenow + rr->NextSendInterval/2) < 0)
 							rr->NextSendTime = (timenow + rr->NextSendInterval/2);
+						rr->NextSendInterval *= 2;
+						}
+					}
+			}
+	
+		// 2a. Look for additional announcements that are worth accelerating
+		// They must be (a) at least half-way to their next announcement and
+		// (b) at an interval equal or less than any of the ones we've already put in
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			{
+			if (rr->InterfaceID == InterfaceID &&
+				rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
+				timenow - (rr->LastSendTime + rr->NextSendInterval/4) >= 0 &&
+				rr->NextSendInterval <= minExistingAnnounceInterval)
+					{
+					newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
+					if (newptr)
+						{
+						numAnnounce++;
+						responseptr = newptr;
+						}
+					// If we were able to put the record, then update the state variables
+					// If we were unable to put the record because it is too large to fit, even though
+					// there are no other answers in the packet, then pretend we succeeded anyway,
+					// or we'll end up in an infinite loop trying to send a record that will never fit
+					if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
+					if (newptr || response->h.numAnswers == 0)
+						{
+						rr->SendPriority      = 0;
+						rr->Requester         = zeroAddr;
+						rr->AnnounceCount--;
+						rr->NextSendTime      = timenow + rr->NextSendInterval;
 						rr->NextSendInterval *= 2;
 						}
 					}
@@ -2872,10 +2921,10 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			{
 			if (rr->RecordType == kDNSRecordTypeVerified) rr->RecordType = kDNSRecordTypeUnique;
-			rr->ProbeCount        = (rr->RecordType == kDNSRecordTypeUnique) ? DefaultProbeCountForTypeUnique : (mDNSu8)0;
+			rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
 			rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
-			rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
 			rr->NextSendTime      = timenow;
+			rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
 			}
 		for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
 			if (!q->DuplicateOf)
@@ -3394,7 +3443,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				else
 					{
 					// else, the packet RR has different rdata -- check to see if this is a conflict
-					if (PacketRRConflict(m, rr, &pktrr))
+					if (pktrr.rroriginalttl > 0 && PacketRRConflict(m, rr, &pktrr))
 						{
 						if (rr->rrtype == kDNSType_SRV)
 							{
@@ -4282,7 +4331,7 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	return(mStatus_NoError);
 	}
 
-mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr)
+mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname)
 	{
 	domainlabel name;
 	domainname type, domain;
@@ -4291,11 +4340,15 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	mStatus err;
 
 	DeconstructServiceName(&sr->RR_SRV.name, &name, &type, &domain);
-	IncrementLabelSuffix(&name, mDNStrue);
-	debugf("Reregistering as %#s", name.c);
+	if (!newname)
+		{
+		IncrementLabelSuffix(&name, mDNStrue);
+		newname = &name;
+		}
+	debugf("Reregistering as %#s", newname->c);
 	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->Host.c[0]) host = &sr->Host;
 	
-	err = mDNS_RegisterService(m, sr, &name, &type, &domain,
+	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
 		host, sr->RR_SRV.rdata->u.srv.port, sr->RR_TXT.rdata->u.txt.c, sr->RR_TXT.rdata->RDLength,
 		sr->Callback, sr->Context);
 

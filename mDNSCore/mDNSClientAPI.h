@@ -68,6 +68,12 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.27  2003/01/13 23:49:42  jgraessl
+Merged changes for the following fixes in to top of tree:
+3086540  computer name changes not handled properly
+3124348  service name changes are not properly handled
+3124352  announcements sent in pairs, failing chattiness test
+
 Revision 1.26  2002/12/23 22:13:28  jgraessl
 
 Reviewed by: Stuart Cheshire
@@ -609,7 +615,7 @@ extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                mDNSServiceCallback Callback, void *Context);
 extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
-extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr);
+extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname);
 extern void    mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
 extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
@@ -648,6 +654,7 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNSu8 D
 // work with DNS's native length-prefixed strings. For convenience in C, the following utility functions
 // are provided for converting between C's null-terminated strings and DNS's length-prefixed strings.
 
+extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
 extern mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2);
 
 extern mDNSu16 DomainNameLength(const domainname *const name);

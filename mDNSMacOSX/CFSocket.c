@@ -22,6 +22,12 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.50  2003/01/13 23:49:44  jgraessl
+Merged changes for the following fixes in to top of tree:
+3086540  computer name changes not handled properly
+3124348  service name changes are not properly handled
+3124352  announcements sent in pairs, failing chattiness test
+
 Revision 1.49  2002/12/23 22:13:30  jgraessl
 
 Reviewed by: Stuart Cheshire
@@ -71,6 +77,8 @@ Minor code tidying
 // A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
 // AAAA and A records over both IPv4 and IPv6.
 #define AAAA_OVER_V4	0
+
+void (*NotifyClientNetworkChanged)(void);
 
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
@@ -667,8 +675,10 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	debugf("***   Network Configuration Change   ***");
 	(void)store;		// Parameter not used
 	(void)changedKeys;	// Parameter not used
+	
 	ClearInterfaceList(m);
 	SetupInterfaceList(m);
+	if (NotifyClientNetworkChanged) NotifyClientNetworkChanged();
 	mDNSCoreSleep(m, false);
 	}
 
