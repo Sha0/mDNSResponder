@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.93  2004/10/08 04:17:25  ksekar
+<rdar://problem/3831819> Don't use DNS extensions if the server does not advertise required SRV record
+
 Revision 1.92  2004/10/08 03:54:35  ksekar
 <rdar://problem/3831802> Refine unicast polling intervals
 
@@ -2320,7 +2323,10 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		LogMsg("ERROR: startLLQHandshake - bad state %d", info->state);
         goto poll;
 		}
-	
+
+	if (!zoneInfo->llqPort.NotAnInteger)
+		{ debugf("LLQ port lookup failed - reverting to polling"); goto poll; }
+		
     // cache necessary zone data
 	info->servAddr.type = zoneInfo->primaryAddr.type;
 	info->servAddr.ip.v4.NotAnInteger = zoneInfo->primaryAddr.ip.v4.NotAnInteger;
@@ -2960,8 +2966,8 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 				return smContinue;
 				}
 			}
-		LogMsg("hndlLookupUpdatePort %s - answer not contained in reply.  Guessing port %d", portName, mDNSVal16(UnicastDNSPort));
-		*port = UnicastDNSPort;
+		debugf("hndlLookupUpdatePort - no answer for type %s", portName);
+		port->NotAnInteger = 0;
 		context->state = foundPort;
 		return smContinue;
 		}
@@ -3212,7 +3218,13 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	AssignDomainName(newRR->uDNS_info.zone, zoneData->zoneName);
     newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
 	newRR->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
-	newRR->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
+	if (zoneData->updatePort.NotAnInteger) newRR->uDNS_info.port = zoneData->updatePort;
+	else
+		{
+		debugf("Update port not advertised via SRV - guessing port 53, no lease option");
+		newRR->uDNS_info.port = UnicastDNSPort;
+		newRR->uDNS_info.lease = mDNSfalse;
+		}
 
 	sendRecordRegistration(m, newRR);
 	return;
@@ -3388,9 +3400,14 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	// cache zone data
 	AssignDomainName(srs->uDNS_info.zone, zoneData->zoneName);
     srs->uDNS_info.ns.type = mDNSAddrType_IPv4;
-	srs->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
-	srs->uDNS_info.port.NotAnInteger = zoneData->updatePort.NotAnInteger;
-
+	srs->uDNS_info.ns = zoneData->primaryAddr;
+	if (zoneData->updatePort.NotAnInteger) srs->uDNS_info.port = zoneData->updatePort;		
+	else
+		{
+		debugf("Update port not advertised via SRV - guessing port 53, no lease option");
+		srs->uDNS_info.port = UnicastDNSPort;
+		srs->uDNS_info.lease = mDNSfalse;
+		}
 	SendServiceRegistration(m, srs);
 	return;
 		
