@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.19  2004/09/14 23:16:09  cheshire
+mDNS_SetFQDNs has been renamed to mDNS_SetFQDN
+
 Revision 1.18  2004/08/14 03:22:42  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -928,7 +931,7 @@ mDNSlocal void	SetupNames( mDNS * const inMDNS )
 	}
 	check( inMDNS->hostlabel.c[ 0 ] > 0 );
 
-	mDNS_SetFQDNs( inMDNS, (domainname*)"" );
+	mDNS_SetFQDN( inMDNS );
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "nice name \"%.*s\"\n", inMDNS->nicelabel.c[ 0 ], &inMDNS->nicelabel.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "host name \"%.*s\"\n", inMDNS->hostlabel.c[ 0 ], &inMDNS->hostlabel.c[ 1 ] );
