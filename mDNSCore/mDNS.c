@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.287  2003/08/20 20:47:18  cheshire
+Fix compiler warning
+
 Revision 1.286  2003/08/20 02:18:51  cheshire
 <rdar://problem/3344098> Cleanup: Review syslog messages
 
@@ -5979,7 +5982,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	rr->UpdateCallback       = Callback;
 	if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
 	if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + mDNSPlatformOneSecond * 60) | 1;
-	if (rr->AnnounceCount > rr->UpdateCredits+1) rr->AnnounceCount = rr->UpdateCredits+1;
+	if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
 	if (rr->UpdateCredits <= 5)
 		{
 		mDNSs32 delay = 1 << (5 - rr->UpdateCredits);
