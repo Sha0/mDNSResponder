@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.224  2003/07/16 04:39:02  cheshire
+Textual cleanup (no change to functionality):
+Construct "c >= 'A' && c <= 'Z'" appears in too many places; replaced with macro "mDNSIsUpperCase(c)"
+
 Revision 1.223  2003/07/16 00:09:22  cheshire
 Textual cleanup (no change to functionality):
 Construct "((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond)" appears in too many places;
@@ -1171,8 +1175,10 @@ mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 #pragma mark - Domain Name Utility Functions
 #endif
 
-#define mdnsIsLetter(X) (((X) >= 'A' && (X) <= 'Z') || ((X) >= 'a' && (X) <= 'z'))
-#define mdnsIsDigit(X) (((X) >= '0' && (X) <= '9'))
+#define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
+#define mDNSIsUpperCase(X) ((X) >= 'A' && (X) <= 'Z')
+#define mDNSIsLowerCase(X) ((X) >= 'a' && (X) <= 'z')
+#define mdnsIsLetter(X)    (mDNSIsUpperCase(X) || mDNSIsLowerCase(X))
 
 mDNSexport mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
 	{
@@ -1187,8 +1193,8 @@ mDNSexport mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
 		{
 		mDNSu8 ac = *a++;
 		mDNSu8 bc = *b++;
-		if (ac >= 'A' && ac <= 'Z') ac += 'a' - 'A';
-		if (bc >= 'A' && bc <= 'Z') bc += 'a' - 'A';
+		if (mDNSIsUpperCase(ac)) ac += 'a' - 'A';
+		if (mDNSIsUpperCase(bc)) bc += 'a' - 'A';
 		if (ac != bc) return(mDNSfalse);
 		}
 	return(mDNStrue);
@@ -1759,10 +1765,10 @@ mDNSlocal mDNSu32 HashSlot(const domainname *name)
 
 	for (c = name->c; c[0] != 0 && c[1] != 0; c += 2)
 		{
-		sum += ((c[0] >= 'A' && c[0] <= 'Z' ? c[0] + 'a' - 'A' : c[0]) << 8) |
-			   (c[1] >= 'A' && c[1] <= 'Z' ? c[1] + 'a' - 'A' : c[1]);
+		sum += ((mDNSIsUpperCase(c[0]) ? c[0] + 'a' - 'A' : c[0]) << 8) |
+				(mDNSIsUpperCase(c[1]) ? c[1] + 'a' - 'A' : c[1]);
 		}
-	if (c[0]) sum += ((c[0] >= 'A' && c[0] <= 'Z' ? c[0] + 'a' - 'A' : c[0]) << 8);
+	if (c[0]) sum += ((mDNSIsUpperCase(c[0]) ? c[0] + 'a' - 'A' : c[0]) << 8);
 	return(mDNSu32)(sum % CACHE_HASH_SLOTS);
 	}
 
