@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.472  2004/11/25 01:28:09  cheshire
+<rdar://problem/3557050> Need to implement random delay for 'QU' unicast replies (and set cache flush bit too)
+
 Revision 1.471  2004/11/25 01:10:13  cheshire
 Move code to add additional records to a subroutine called AddAdditionalsToResponseList()
 
@@ -2213,6 +2216,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->RequireGoodbye    = mDNSfalse;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->ImmedAnswer       = mDNSNULL;
+	rr->ImmedUnicast      = mDNSfalse;
 	rr->ImmedAdditional   = mDNSNULL;
 	rr->SendRNow          = mDNSNULL;
 	rr->v4Requester       = zerov4Addr;
@@ -2394,6 +2398,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 				dup->AnnounceCount   = rr->AnnounceCount;
 				dup->RequireGoodbye  = rr->RequireGoodbye;
 				dup->ImmedAnswer     = rr->ImmedAnswer;
+				dup->ImmedUnicast    = rr->ImmedUnicast;
 				dup->ImmedAdditional = rr->ImmedAdditional;
 				dup->v4Requester     = rr->v4Requester;
 				dup->v6Requester     = rr->v6Requester;
@@ -2534,6 +2539,82 @@ mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseR
 		}
 	}
 
+mDNSlocal void SendDelayedUnicastResponse(mDNS *const m, const mDNSAddr *const dest, const mDNSInterfaceID InterfaceID)
+	{
+	AuthRecord *rr;
+	AuthRecord  *ResponseRecords = mDNSNULL;
+	AuthRecord **nrp             = &ResponseRecords;
+
+	// Make a list of all our records that need to be unicast to this destination
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
+		// If we find we can no longer unicast this answer, clear ImmedUnicast
+		if (rr->ImmedAnswer == mDNSInterfaceMark               ||
+			mDNSSameIPv4Address(rr->v4Requester, onesIPv4Addr) ||
+			mDNSSameIPv6Address(rr->v6Requester, onesIPv6Addr)  )
+			rr->ImmedUnicast = mDNSfalse;
+
+		if (rr->ImmedUnicast && rr->ImmedAnswer == InterfaceID)
+			if ((dest->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->v4Requester, dest->ip.v4)) ||
+				(dest->type == mDNSAddrType_IPv6 && mDNSSameIPv6Address(rr->v6Requester, dest->ip.v6)))
+				{
+				rr->ImmedAnswer  = mDNSNULL;				// Clear the state fields
+				rr->ImmedUnicast = mDNSfalse;
+				rr->v4Requester  = zerov4Addr;
+				rr->v6Requester  = zerov6Addr;
+				if (rr->NextResponse == mDNSNULL && nrp != &rr->NextResponse)	// rr->NR_AnswerTo
+					{ rr->NR_AnswerTo = (mDNSu8*)~0; *nrp = rr; nrp = &rr->NextResponse; }
+				}
+		}
+
+	AddAdditionalsToResponseList(m, ResponseRecords, &nrp, InterfaceID);
+
+	while (ResponseRecords)
+		{
+		DNSMessage response;
+		mDNSu8 *responseptr = response.data;
+		mDNSu8 *newptr;
+		InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
+		
+		// Put answers in the packet
+		while (ResponseRecords && ResponseRecords->NR_AnswerTo)
+			{
+			rr = ResponseRecords;
+			if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+				rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
+			newptr = PutResourceRecord(&response, responseptr, &response.h.numAnswers, &rr->resrec);
+			rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
+			if (!newptr && response.h.numAnswers) break;	// If packet full, send it now
+			if (newptr) responseptr = newptr;
+			ResponseRecords = rr->NextResponse;
+			rr->NextResponse    = mDNSNULL;
+			rr->NR_AnswerTo     = mDNSNULL;
+			rr->NR_AdditionalTo = mDNSNULL;
+			rr->RequireGoodbye  = mDNStrue;
+			}
+		
+		// Add additionals, if there's space
+		while (ResponseRecords && !ResponseRecords->NR_AnswerTo)
+			{
+			rr = ResponseRecords;
+			if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+				rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
+			newptr = PutResourceRecord(&response, responseptr, &response.h.numAdditionals, &rr->resrec);
+			rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
+			
+			if (newptr) responseptr = newptr;
+			if (newptr && response.h.numAnswers) rr->RequireGoodbye = mDNStrue;
+			else if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask) rr->ImmedAnswer = mDNSInterfaceMark;
+			ResponseRecords = rr->NextResponse;
+			rr->NextResponse    = mDNSNULL;
+			rr->NR_AnswerTo     = mDNSNULL;
+			rr->NR_AdditionalTo = mDNSNULL;
+			}
+
+		if (response.h.numAnswers) mDNSSendDNSMessage(m, &response, responseptr, mDNSInterface_Any, dest, MulticastDNSPort, -1, mDNSNULL);
+		}
+	}
+
 mDNSlocal void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	{
 	// Clearing rr->RequireGoodbye signals mDNS_Deregister_internal()
@@ -2599,6 +2680,22 @@ mDNSlocal void SendResponses(mDNS *const m)
 	const NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 
 	m->NextScheduledResponse = m->timenow + 0x78000000;
+
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->ImmedUnicast)
+			{
+			mDNSAddr v4 = { mDNSAddrType_IPv4, {{{0}}} };
+			mDNSAddr v6 = { mDNSAddrType_IPv6, {{{0}}} };
+			v4.ip.v4 = rr->v4Requester;
+			v6.ip.v6 = rr->v6Requester;
+			if (!mDNSIPv4AddressIsZero(rr->v4Requester)) SendDelayedUnicastResponse(m, &v4, rr->ImmedAnswer);
+			if (!mDNSIPv6AddressIsZero(rr->v6Requester)) SendDelayedUnicastResponse(m, &v6, rr->ImmedAnswer);
+			if (rr->ImmedUnicast)
+				{
+				LogMsg("SendResponses: ERROR: rr->ImmedUnicast still set: %s", ARDisplayString(m, rr));
+				rr->ImmedUnicast = mDNSfalse;
+				}
+			}
 
 	// ***
 	// *** 1. Setup: Set the SendRNow and ImmedAnswer fields to indicate which interface(s) the records need to be sent on
@@ -2847,9 +2944,10 @@ mDNSlocal void SendResponses(mDNS *const m)
 				CompleteDeregistration(m, rr);		// Don't touch rr after this
 			else
 				{
-				rr->ImmedAnswer = mDNSNULL;
-				rr->v4Requester = zerov4Addr;
-				rr->v6Requester = zerov6Addr;
+				rr->ImmedAnswer  = mDNSNULL;
+				rr->ImmedUnicast = mDNSfalse;
+				rr->v4Requester  = zerov4Addr;
+				rr->v6Requester  = zerov6Addr;
 				}
 			}
 		}
@@ -4338,9 +4436,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					{
 					NumAnswersForThisQuestion++;
 					// Notes:
-					// NR_AnswerTo pointing into query packet means "answer via unicast"
-					//                         (may also choose to do multicast as well)
-					// NR_AnswerTo == ~0 means "definitely answer via multicast" (can't downgrade to unicast later)
+					// NR_AnswerTo pointing into query packet means "answer via immediate legacy unicast" (may also choose to multicast as well)
+					// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier)
+					// NR_AnswerTo == (mDNSu8*)~0             means "definitely answer via multicast" (can't downgrade to unicast later)
 					if (QuestionNeedsMulticastResponse)
 						{
 						// We only mark this question for sending if it is at least one second since the last time we multicast it
@@ -4350,10 +4448,14 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 							(rr->LastMCInterface != mDNSInterfaceMark && rr->LastMCInterface != InterfaceID))
 							rr->NR_AnswerTo = (mDNSu8*)~0;
 						}
-					else if (!rr->NR_AnswerTo) rr->NR_AnswerTo = ptr;
+					else if (!rr->NR_AnswerTo) rr->NR_AnswerTo = LegacyQuery ? ptr : (mDNSu8*)~1;
 					}
 				}
 			}
+
+		// If we couldn't answer this question, someone else might be able to,
+		// so use random delay on response to reduce collisions
+		if (NumAnswersForThisQuestion == 0) delayresponse = mDNSPlatformOneSecond;	// Divided by 50 = 20ms
 
 		// We only do the following accelerated cache expiration processing and duplicate question suppression processing
 		// for multicast queries with multicast responses.
@@ -4361,9 +4463,6 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		if (QuestionNeedsMulticastResponse)
 			{
 			CacheRecord *rr;
-			// If we couldn't answer this question, someone else might be able to,
-			// so use random delay on response to reduce collisions
-			if (NumAnswersForThisQuestion == 0) delayresponse = mDNSPlatformOneSecond;	// Divided by 50 = 20ms
 
 			// Make a list indicating which of our own cache records we expect to see updated as a result of this query
 			// Note: Records larger than 1K are not habitually multicast, so don't expect those to be updated
@@ -4443,7 +4542,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					}
 				if (mDNSIPv4AddressIsZero(rr->v4Requester) && mDNSIPv6AddressIsZero(rr->v6Requester))
 					{
-					rr->ImmedAnswer = mDNSNULL;
+					rr->ImmedAnswer  = mDNSNULL;
+					rr->ImmedUnicast = mDNSfalse;
 #if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
 					LogMsg("Suppressed after%4d: %s", m->timenow - rr->ImmedAnswerMarkTime, ARDisplayString(m, rr));
 #endif
@@ -4500,16 +4600,18 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		{
 		if (rr->NR_AnswerTo)
 			{
-			mDNSBool SendMulticastResponse = mDNSfalse;
+			mDNSBool SendMulticastResponse = mDNSfalse;		// Send modern multicast response
+			mDNSBool SendUnicastResponse   = mDNSfalse;		// Send modern unicast response (not legacy unicast response)
 			
 			// If it's been a while since we multicast this, then send a multicast response for conflict detection, etc.
 			if (m->timenow - (rr->LastMCTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
 			
 			// If the client insists on a multicast response, then we'd better send one
-			if (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
-			else if (rr->NR_AnswerTo) SendLegacyResponse = mDNStrue;
+			if      (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
+			else if (rr->NR_AnswerTo == (mDNSu8*)~1) SendUnicastResponse   = mDNStrue;
+			else if (rr->NR_AnswerTo)                SendLegacyResponse    = mDNStrue;
 	
-			if (SendMulticastResponse)
+			if (SendMulticastResponse || SendUnicastResponse)
 				{
 #if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
 				rr->ImmedAnswerMarkTime = m->timenow;
@@ -4521,6 +4623,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				else
 					{
 					rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
+					if (SendUnicastResponse) rr->ImmedUnicast = mDNStrue;
 					if (srcaddr->type == mDNSAddrType_IPv4)
 						{
 						if      (mDNSIPv4AddressIsZero(rr->v4Requester))                rr->v4Requester = srcaddr->ip.v4;
@@ -4802,7 +4905,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (pkt.r.resrec.rroriginalttl >= rr->resrec.rroriginalttl/2 || m->SleepState)
 						{
 						// If we were planning to send on this -- and only this -- interface, then we don't need to any more
-						if (rr->ImmedAnswer == InterfaceID) rr->ImmedAnswer = mDNSNULL;
+						if      (rr->ImmedAnswer == InterfaceID) { rr->ImmedAnswer = mDNSNULL; rr->ImmedUnicast = mDNSfalse; }
 						}
 					else
 						{

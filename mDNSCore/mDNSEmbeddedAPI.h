@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.245  2004/11/25 01:28:09  cheshire
+<rdar://problem/3557050> Need to implement random delay for 'QU' unicast replies (and set cache flush bit too)
+
 Revision 1.244  2004/11/24 22:00:59  cheshire
 Move definition of mDNSAddressIsAllDNSLinkGroup() from mDNSMacOSX.c to mDNSEmbeddedAPI.h
 
@@ -1401,6 +1404,7 @@ struct AuthRecord_struct
 	mDNSu8          RequireGoodbye;		// Set if this RR has been announced on the wire and will require a goodbye packet
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
+	mDNSu8          ImmedUnicast;		// Set if we may send our response directly via unicast to the requester
 #if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
 	mDNSs32         ImmedAnswerMarkTime;
 #endif
