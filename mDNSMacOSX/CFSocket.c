@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.168  2004/08/17 03:16:24  ksekar
+Fixed checkin 1.166 - enumeration type changed for wrong invocation of mDNS_GetDomains
+
 Revision 1.167  2004/08/17 00:52:43  ksekar
 Fix config file parse error, make semantics match SCPreferences
 configuration input.
@@ -1758,7 +1761,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		
 		if (ptr->flag == 1)  // add
 			{
-			err = mDNS_GetDomains(m, &ptr->browseQ, mDNS_DomainTypeBrowseDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err = mDNS_GetDomains(m, &ptr->browseQ, mDNS_DomainTypeBrowse, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
 			if (err) LogMsg("ERROR: RegisterNameServers - mDNS_DomainTypeBrowse, %d", err);
 
 			err = mDNS_GetDomains(m, &ptr->registerQ, mDNS_DomainTypeRegistration, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
@@ -2288,7 +2291,7 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	DNSConfigInitialized = mDNStrue;
 
 	// start query for domains to be used in default (empty string domain) browses
-	err = mDNS_GetDomains(m, &DefBrowseDomainQ, mDNS_DomainTypeBrowse, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
+	err = mDNS_GetDomains(m, &DefBrowseDomainQ, mDNS_DomainTypeBrowseDefault, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
 
 	// provide .local automatically
 	mDNS_SetupResourceRecord(&local, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
