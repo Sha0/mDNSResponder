@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.149  2004/12/13 18:10:03  ksekar
+Fixed LogMsg
+
 Revision 1.148  2004/12/13 01:18:04  ksekar
 Fixed unused variable warning for non-debug builds
 
@@ -3944,7 +3947,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) goto error;
 
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForZone(u, &rr->uDNS_info.zone));
-	if (err) LogMsg("ERROR: uDNS_DeregisterRecord - mDNSSendDNSMessage - %ld", err); 
+	if (err) LogMsg("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err); 
 
 	SetRecordRetry(m, rr);
 	rr->uDNS_info.state = regState_DeregPending;
