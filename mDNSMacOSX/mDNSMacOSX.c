@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.162  2004/08/12 22:34:00  cheshire
+All strings should be read as kCFStringEncodingUTF8, not kCFStringEncodingASCII
+
 Revision 1.161  2004/08/11 00:17:46  ksekar
 <rdar://problem/3757662>: 8A227: Need Lighthouse configred machines to
 set default bit for their domains
@@ -1545,7 +1548,7 @@ mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
 		{
 		s = CFArrayGetValueAtIndex(values, i);
 		if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
-		if (!CFStringGetCString(s, buf, 256, kCFStringEncodingASCII))
+		if (!CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8))
 			{
 			LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
 			continue;
@@ -1641,7 +1644,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			{
 			s = CFArrayGetValueAtIndex(values, i);
 			if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
-			if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingASCII))
+			if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
 				{
 				LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
 				continue;
@@ -1745,7 +1748,7 @@ mDNSlocal void RouterChanged(SCDynamicStoreRef session, CFArrayRef changes, void
 	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);		
 	if (router)
 		{
-		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingASCII))
+		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
 			LogMsg("ERROR: RouterChanged - CFStringGetCString");
 		else
 			{
