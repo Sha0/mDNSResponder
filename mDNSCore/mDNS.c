@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.276  2003/08/16 03:39:00  cheshire
+<rdar://problem/3338440> InterfaceID -1 indicates "local only"
+
 Revision 1.275  2003/08/16 02:51:27  cheshire
 <rdar://problem/3366590> mDNSResponder takes too much RPRVT
 Don't try to compute namehash etc, until *after* validating the name
@@ -855,6 +858,8 @@ Change mDNS_AdvertiseLocalAddresses to be a parameter to mDNS_Init()
 Revision 1.56  2002/09/16 19:44:17  cheshire
 Merge in license terms from Quinn's copy, in preparation for Darwin release
 */
+
+#define TEST_LOCALONLY_FOR_EVERYTHING 0
 
 #include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"		// Defines the interface required of the supporting layer below
@@ -2222,10 +2227,16 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	AuthRecord *r;
 	AuthRecord **p = &m->ResourceRecords;
 	AuthRecord **d = &m->DuplicateRecords;
+	AuthRecord **l = &m->LocalOnlyRecords;
+	
+#if TEST_LOCALONLY_FOR_EVERYTHING
+	rr->resrec.InterfaceID = (mDNSInterfaceID)~0;
+#endif
 
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
-	if (*d || *p)
+	while (*l && *l != rr) l=&(*l)->next;
+	if (*d || *p || *l)
 		{
 		LogMsg("Error! Tried to register a AuthRecord %p %##s (%s) that's already in the list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 		return(mStatus_AlreadyRegistered);
@@ -2249,7 +2260,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 			}
 		}
 
-	if (rr->resrec.InterfaceID)				// If this resource record is referencing a specific interface
+	// If this resource record is referencing a specific interface, make sure it exists
+	if (rr->resrec.InterfaceID && rr->resrec.InterfaceID != ((mDNSInterfaceID)~0))
 		{
 		NetworkInterfaceInfo *intf;
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -2321,27 +2333,56 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->resrec.namehash   = DomainNameHashValue(&rr->resrec.name);
 	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
 	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
-
-	// Now that's we've finished building our new record, make sure it's not identical to one we already have
-	for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
 	
-	if (r)
+	if (rr->resrec.InterfaceID == ((mDNSInterfaceID)~0))
 		{
-		debugf("Adding %p %##s (%s) to duplicate list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-		*d = rr;
-		// If the previous copy of this record is already verified unique,
-		// then indicate that we should move this record promptly to kDNSRecordTypeUnique state.
-		// Setting ProbeCount to zero will cause SendQueries() to advance this record to
-		// kDNSRecordTypeVerified state and call the client callback at the next appropriate time.
-		if (rr->resrec.RecordType == kDNSRecordTypeUnique && r->resrec.RecordType == kDNSRecordTypeVerified)
-			rr->ProbeCount = 0;
+		debugf("Adding %p %##s (%s) to LocalOnly list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+		*l = rr;
+		if (!m->NewLocalOnlyRecords) m->NewLocalOnlyRecords = rr;
+		// If this is supposed to be unique, make sure we don't have any name conflicts
+		if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+			{
+			const AuthRecord *s1 = rr->RRSet ? rr->RRSet : rr;
+			for (r = m->LocalOnlyRecords; r; r=r->next)
+				{
+				const AuthRecord *s2 = r->RRSet ? r->RRSet : r;
+				if (s1 != s2 && SameResourceRecordSignature(&r->resrec, &rr->resrec) && !SameRData(&r->resrec, &rr->resrec))
+					break;
+				}
+			if (r)	// If we found a conflict, set DiscardLocalOnlyRecords so we'll deliver the callback
+				{
+				debugf("Name conflict %p %##s (%s)", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+				m->DiscardLocalOnlyRecords = mDNStrue;
+				}
+			else	// else no conflict, so set ProbeCount to zero and update RecordType as appropriate
+				{
+				rr->ProbeCount = 0;
+				if (rr->resrec.RecordType == kDNSRecordTypeUnique) rr->resrec.RecordType = kDNSRecordTypeVerified;
+				}
+			}
 		}
 	else
 		{
-		debugf("Adding %p %##s (%s) to active record list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-		*p = rr;
+		// Now that's we've finished building our new record, make sure it's not identical to one we already have
+		for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
+		
+		if (r)
+			{
+			debugf("Adding %p %##s (%s) to duplicate list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+			*d = rr;
+			// If the previous copy of this record is already verified unique,
+			// then indicate that we should move this record promptly to kDNSRecordTypeUnique state.
+			// Setting ProbeCount to zero will cause SendQueries() to advance this record to
+			// kDNSRecordTypeVerified state and call the client callback at the next appropriate time.
+			if (rr->resrec.RecordType == kDNSRecordTypeUnique && r->resrec.RecordType == kDNSRecordTypeVerified)
+				rr->ProbeCount = 0;
+			}
+		else
+			{
+			debugf("Adding %p %##s (%s) to active record list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+			*p = rr;
+			}
 		}
-
 	return(mStatus_NoError);
 	}
 
@@ -2367,6 +2408,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	{
 	mDNSu8 RecordType = rr->resrec.RecordType;
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
+	if (rr->resrec.InterfaceID == ((mDNSInterfaceID)~0)) p = &m->LocalOnlyRecords;
 	while (*p && *p != rr) p=&(*p)->next;
 
 	if (*p)
@@ -2432,16 +2474,19 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
 		{
 		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-		rr->resrec.RecordType      = kDNSRecordTypeDeregistering;
-		rr->resrec.rroriginalttl   = 0;
-		rr->ImmedAnswer     = mDNSInterfaceMark;
-		m->NextScheduledResponse = m->timenow;
+		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
+		rr->resrec.rroriginalttl = 0;
+		rr->ImmedAnswer          = mDNSInterfaceMark;
+		if (rr->resrec.InterfaceID == ((mDNSInterfaceID)~0))
+			m->DiscardLocalOnlyRecords = mDNStrue;
+		else m->NextScheduledResponse = m->timenow;
 		}
 	else
 		{
 		*p = rr->next;					// Cut this record from the list
 		// If someone is about to look at this, bump the pointer forward
-		if (m->CurrentRecord == rr) m->CurrentRecord = rr->next;
+		if (m->CurrentRecord       == rr) m->CurrentRecord       = rr->next;
+		if (m->NewLocalOnlyRecords == rr) m->NewLocalOnlyRecords = rr->next;
 		rr->next = mDNSNULL;
 
 		if      (RecordType == kDNSRecordTypeUnregistered)
@@ -3936,6 +3981,80 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	m->lock_rrcache = 0;
 	}
 
+mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, mDNSBool AddRecord)
+	{
+	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
+	if (AddRecord) rr->AnnounceCount = InitialAnnounceCount - 1;
+	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+	if (q->QuestionCallback)
+		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
+	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+	}
+
+mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
+	{
+	DNSQuestion *q = m->NewLocalOnlyQuestions;		// Grab the question we're going to answer
+	m->NewLocalOnlyQuestions = q->next;				// Advance NewQuestions to the next (if any)
+
+	debugf("AnswerNewLocalOnlyQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+
+	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
+	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
+
+	m->CurrentRecord = m->LocalOnlyRecords;
+	while (m->CurrentRecord && m->CurrentRecord != m->NewLocalOnlyRecords)
+		{
+		AuthRecord *rr = m->CurrentRecord;
+		m->CurrentRecord = rr->next;
+		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+			{
+			AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
+			// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
+			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
+			}
+		}
+
+	m->CurrentQuestion = mDNSNULL;
+	}
+
+mDNSlocal void AnswerLocalOnlyQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddRecord)
+	{
+	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
+	m->CurrentQuestion = m->LocalOnlyQuestions;
+	while (m->CurrentQuestion && m->CurrentQuestion != m->NewLocalOnlyQuestions)
+		{
+		DNSQuestion *q = m->CurrentQuestion;
+		m->CurrentQuestion = q->next;
+		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+			{
+			debugf("AnswerLocalOnlyQuestions %p %##s (%s) %lu", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), rr->resrec.rroriginalttl);
+			AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, AddRecord);
+			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+			}
+		}
+	m->CurrentQuestion = mDNSNULL;
+	}
+
+mDNSlocal void DiscardLocalOnlyRecords(mDNS *const m)
+	{
+	AuthRecord *rr = m->LocalOnlyRecords;
+	while (rr)
+		{
+		if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
+			{ AnswerLocalOnlyQuestions(m, rr, mDNSfalse); CompleteDeregistration(m, rr); return; }
+		if (rr->ProbeCount) { mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict); return; }
+		rr=rr->next;
+		}
+	m->DiscardLocalOnlyRecords = mDNSfalse;
+	}
+
+mDNSlocal void AnswerForNewLocalOnlyRecords(mDNS *const m)
+	{
+	AuthRecord *rr = m->NewLocalOnlyRecords;
+	m->NewLocalOnlyRecords = m->NewLocalOnlyRecords->next;
+	AnswerLocalOnlyQuestions(m, rr, mDNStrue);
+	}
+
 mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 	{
 	CacheRecord *r = mDNSNULL;
@@ -4079,8 +4198,11 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	{
 	mDNSs32 e = m->timenow + 0x78000000;
 	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) return(e);
-	if (m->NewQuestions)    return(m->timenow);
-	if (m->SuppressSending) return(m->SuppressSending);
+	if (m->NewQuestions)            return(m->timenow);
+	if (m->NewLocalOnlyQuestions)   return(m->timenow);
+	if (m->NewLocalOnlyRecords)     return(m->timenow);
+	if (m->DiscardLocalOnlyRecords) return(m->timenow);
+	if (m->SuppressSending)         return(m->SuppressSending);
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
 	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
@@ -4137,7 +4259,16 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		// 4. See if we can answer any of our new local questions from the cache
 		for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m);
 		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
-	
+		
+		for (i=0; m->DiscardLocalOnlyRecords && i<1000; i++) DiscardLocalOnlyRecords(m);
+		if (i >= 1000) debugf("mDNS_Execute: DiscardLocalOnlyRecords exceeded loop limit");
+
+		for (i=0; m->NewLocalOnlyQuestions && i<1000; i++) AnswerNewLocalOnlyQuestion(m);
+		if (i >= 1000) debugf("mDNS_Execute: AnswerNewLocalOnlyQuestion exceeded loop limit");
+
+		for (i=0; m->NewLocalOnlyRecords && i<1000; i++) AnswerForNewLocalOnlyRecords(m);
+		if (i >= 1000) debugf("mDNS_Execute: AnswerLocalOnlyQuestions exceeded loop limit");
+
 		// 5. See what packets we need to send
 		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) DiscardDeregistrations(m);
 		else if (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0)
@@ -5229,12 +5360,16 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 
 mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
+#if TEST_LOCALONLY_FOR_EVERYTHING
+	question->InterfaceID = (mDNSInterfaceID)~0;
+#endif
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
 	else
 		{
 		// Note: It important that new questions are appended at the *end* of the list, not prepended at the start
 		DNSQuestion **q = &m->Questions;
+		if (question->InterfaceID == ((mDNSInterfaceID)~0)) q = &m->LocalOnlyQuestions;
 		while (*q && *q != question) q=&(*q)->next;
 
 		if (*q)
@@ -5244,7 +5379,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			return(mStatus_AlreadyRegistered);
 			}
 
-		if (question->InterfaceID)		// If this question is referencing a specific interface
+		// If this question is referencing a specific interface, make sure it exists
+		if (question->InterfaceID && question->InterfaceID != ((mDNSInterfaceID)~0))
 			{
 			NetworkInterfaceInfo *intf;
 			for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -5287,11 +5423,15 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question, question->DuplicateOf);
 
 		*q = question;
-		
-		if (!m->NewQuestions)
-			debugf("mDNS_StartQuery_internal: Setting NewQuestions to %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
-		if (!m->NewQuestions) m->NewQuestions = question;
-		SetNextQueryTime(m,question);
+		if (question->InterfaceID == ((mDNSInterfaceID)~0))
+			{
+			if (!m->NewLocalOnlyQuestions) m->NewLocalOnlyQuestions = question;
+			}
+		else
+			{
+			if (!m->NewQuestions) m->NewQuestions = question;
+			SetNextQueryTime(m,question);
+			}
 
 		return(mStatus_NoError);
 		}
@@ -5301,6 +5441,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	{
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
+	if (question->InterfaceID == ((mDNSInterfaceID)~0)) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
 	else
@@ -5347,6 +5488,8 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 			question->qname.c, DNSTypeName(question->qtype));
 		m->NewQuestions = question->next;
 		}
+
+	if (m->NewLocalOnlyQuestions == question) m->NewLocalOnlyQuestions = question->next;
 
 	// Take care not to trash question->next until *after* we've updated m->CurrentQuestion and m->NewQuestions
 	question->next = mDNSNULL;
@@ -6404,6 +6547,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->Questions               = mDNSNULL;
 	m->NewQuestions            = mDNSNULL;
 	m->CurrentQuestion         = mDNSNULL;
+	m->LocalOnlyQuestions      = mDNSNULL;
+	m->NewLocalOnlyQuestions   = mDNSNULL;
 	m->rrcache_size            = 0;
 	m->rrcache_totalused       = 0;
 	m->rrcache_active          = 0;
@@ -6425,6 +6570,10 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->HIHardware.c[0]         = 0;
 	m->HISoftware.c[0]         = 0;
 	m->ResourceRecords         = mDNSNULL;
+ 	m->DuplicateRecords        = mDNSNULL;
+	m->LocalOnlyRecords        = mDNSNULL;
+	m->NewLocalOnlyRecords     = mDNSNULL;
+	m->DiscardLocalOnlyRecords = mDNSfalse;
 	m->CurrentRecord           = mDNSNULL;
 	m->HostInterfaces          = mDNSNULL;
 	m->ProbeFailTime           = 0;

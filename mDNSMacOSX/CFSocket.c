@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.110  2003/08/16 03:39:00  cheshire
+<rdar://problem/3338440> InterfaceID -1 indicates "local only"
+
 Revision 1.109  2003/08/15 02:19:49  cheshire
 <rdar://problem/3375225> syslog messages: myCFSocketCallBack recvfrom skt 6 error -1 errno 35
 Also limit number of messages to at most 100
@@ -426,6 +429,7 @@ mDNSlocal int myIfIndexToName(u_short index, char* name)
 mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index)
 	{
 	NetworkInterfaceInfoOSX *i;
+	if (index == (uint32_t)~0) return((mDNSInterfaceID)~0);
 	if (index)
 		for (i = m->p->InterfaceList; i; i = i->next)
 			if (i->scope_id == index)
@@ -436,6 +440,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS 
 mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
 	{
 	NetworkInterfaceInfoOSX *i;
+	if (id == (mDNSInterfaceID)~0) return((mDNSu32)~0);
 	if (id)
 		for (i = m->p->InterfaceList; i; i = i->next)
 			if (i->ifinfo.InterfaceID == id)

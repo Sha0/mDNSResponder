@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.20  2003/08/16 03:39:01  cheshire
+<rdar://problem/3338440> InterfaceID -1 indicates "local only"
+
 Revision 1.19  2003/08/15 20:16:03  cheshire
 <rdar://problem/3366590> mDNSResponder takes too much RPRVT
 We want to avoid touching the rdata pages, so we don't page them in.
@@ -703,6 +706,8 @@ static void handle_resolve_request(request_state *rstate)
         }
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
+    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    if (interfaceIndex && !InterfaceID) goto bad_param;
     if (get_string(&ptr, name, 256) < 0 ||
         get_string(&ptr, regtype, 256) < 0 ||
         get_string(&ptr, domain, 256) < 0)
@@ -730,14 +735,14 @@ static void handle_resolve_request(request_state *rstate)
     memcpy(&srv->question.qname, &fqdn, MAX_DOMAIN_NAME);
     srv->question.qtype = kDNSType_SRV;
     srv->question.qclass = kDNSClass_IN;
-    srv->question.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    srv->question.InterfaceID = InterfaceID;
 
     txt->question.QuestionContext = rstate;
     txt->question.QuestionCallback = resolve_result_callback;
     memcpy(&txt->question.qname, &fqdn, MAX_DOMAIN_NAME);
     txt->question.qtype = kDNSType_TXT;
     txt->question.qclass = kDNSClass_IN;
-    txt->question.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    txt->question.InterfaceID = InterfaceID;
 
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
@@ -876,6 +881,8 @@ static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi
     {
     DNSQuestion *q;
     mStatus result;
+    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+    if (ifi && !InterfaceID) return(mStatus_BadParamErr);
 
     q = mallocL("do_question", sizeof(DNSQuestion));
     if (!q)
@@ -890,7 +897,7 @@ static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi
     memcpy(&q->qname, name, MAX_DOMAIN_NAME);
     q->qtype = rrtype;
     q->qclass = rrclass;
-    q->InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+    q->InterfaceID = InterfaceID;
 
 
     rstate->termination_context = q;
@@ -986,6 +993,8 @@ static void handle_browse_request(request_state *request)
     freeL("handle_browse_request", request->msgbuf);
     request->msgbuf = NULL;
 
+    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    if (interfaceIndex && !InterfaceID) goto bad_param;
     q->QuestionContext = request;
     q->QuestionCallback = browse_result_callback;
     if (!MakeDomainNameFromDNSNameString(&typedn, regtype) ||
@@ -993,7 +1002,7 @@ static void handle_browse_request(request_state *request)
         goto bad_param;
     request->termination_context = q;
     request->terminate = browse_termination_callback;
-    result = mDNS_StartBrowse(&mDNSStorage, q, &typedn, &domdn, 0, browse_result_callback, request);
+    result = mDNS_StartBrowse(&mDNSStorage, q, &typedn, &domdn, InterfaceID, browse_result_callback, request);
     deliver_error(request, result);
     return;
     
@@ -1067,6 +1076,8 @@ static void handle_regservice_request(request_state *request)
     ptr = request->msgdata;
     flags = get_flags(&ptr);
     ifi = get_long(&ptr);
+    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+    if (ifi && !InterfaceID) goto bad_param;
     if (get_string(&ptr, name, 256) < 0 ||
         get_string(&ptr, regtype, 256) < 0 || 
         get_string(&ptr, domain, 256) < 0 ||
@@ -1125,7 +1136,8 @@ static void handle_regservice_request(request_state *request)
     request->terminate = regservice_termination_callback;
     request->service = r_srv;
     
-    result = mDNS_RegisterService(&mDNSStorage, r_srv->srs, &n, &t, &d, host[0] ? &h : NULL, port, txtdata, txtlen, r_srv->subtypes, num_subtypes, mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi), regservice_callback, r_srv);
+    result = mDNS_RegisterService(&mDNSStorage, r_srv->srs, &n, &t, &d, host[0] ? &h : NULL, port,
+    	txtdata, txtlen, r_srv->subtypes, num_subtypes, InterfaceID, regservice_callback, r_srv);
     deliver_error(request, result);
     if (result != mStatus_NoError) 
         {
@@ -1547,6 +1559,13 @@ static void handle_enum_request(request_state *rstate)
         
     flags = get_flags(&ptr);
     ifi = get_long(&ptr);
+    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+    if (ifi && !InterfaceID)
+    	{
+		deliver_error(rstate, mStatus_BadParamErr);
+		abort_request(rstate);
+		unlink_request(rstate);
+    	}
 
     // allocate context structures
     def = mallocL("hanlde_enum_request", sizeof(domain_enum_t));
@@ -1575,9 +1594,9 @@ static void handle_enum_request(request_state *rstate)
         mDNS_DomainTypeRegistration : mDNS_DomainTypeBrowse;
     
     // make the calls
-    err = mDNS_GetDomains(&mDNSStorage, &all->question, all->type, 0, enum_result_callback, all);
+    err = mDNS_GetDomains(&mDNSStorage, &all->question, all->type, InterfaceID, enum_result_callback, all);
     if (err == mStatus_NoError)
-        err = mDNS_GetDomains(&mDNSStorage, &def->question, def->type, 0, enum_result_callback, def);
+        err = mDNS_GetDomains(&mDNSStorage, &def->question, def->type, InterfaceID, enum_result_callback, def);
     result = deliver_error(rstate, err);  // send error *before* returning local domain
     
     if (result < 0 || err)

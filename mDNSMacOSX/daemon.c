@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.130  2003/08/16 03:39:01  cheshire
+<rdar://problem/3338440> InterfaceID -1 indicates "local only"
+
 Revision 1.129  2003/08/15 20:16:03  cheshire
 <rdar://problem/3366590> mDNSResponder takes too much RPRVT
 We want to avoid touching the rdata pages, so we don't page them in.
@@ -715,6 +718,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->ServiceInfoQueryContext;
 	NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)query->info->InterfaceID;
+	if (query->info->InterfaceID == (mDNSInterfaceID)~0) ifx = mDNSNULL;
 	struct sockaddr_storage interface;
 	struct sockaddr_storage address;
 	char cstring[1024];
@@ -728,7 +732,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	bzero(&interface, sizeof(interface));
 	bzero(&address,   sizeof(address));
 
-	if (ifx->ifinfo.ip.type == mDNSAddrType_IPv4)
+	if (ifx && ifx->ifinfo.ip.type == mDNSAddrType_IPv4)
 		{
 		struct sockaddr_in *sin = (struct sockaddr_in*)&interface;
 		sin->sin_len         = sizeof(*sin);
@@ -736,7 +740,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin->sin_port        = 0;
 		sin->sin_addr.s_addr = ifx->ifinfo.ip.ip.v4.NotAnInteger;
 		}
-	else if (ifx->ifinfo.ip.type == mDNSAddrType_IPv6)
+	else if (ifx && ifx->ifinfo.ip.type == mDNSAddrType_IPv6)
 		{
 		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&interface;
 		sin6->sin6_len       = sizeof(*sin6);
@@ -763,7 +767,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin6->sin6_port          = query->info->port.NotAnInteger;
 		sin6->sin6_flowinfo      = 0;
 		sin6->sin6_addr			 = *(struct in6_addr*)&query->info->ip.ip.v6;
-		sin6->sin6_scope_id      = ifx->scope_id;
+		sin6->sin6_scope_id      = ifx ? ifx->scope_id : 0;
 		}
 
 	// The OS X DNSServiceResolverResolve() API is defined using a C-string,

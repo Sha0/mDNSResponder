@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.102  2003/08/16 03:39:00  cheshire
+<rdar://problem/3338440> InterfaceID -1 indicates "local only"
+
 Revision 1.101  2003/08/15 20:16:02  cheshire
 <rdar://problem/3366590> mDNSResponder takes too much RPRVT
 We want to avoid touching the rdata pages, so we don't page them in.
@@ -915,6 +918,8 @@ struct mDNS_struct
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
 	DNSQuestion *NewQuestions;			// Fresh questions not yet answered from cache
 	DNSQuestion *CurrentQuestion;		// Next question about to be examined in AnswerLocalQuestions()
+	DNSQuestion *LocalOnlyQuestions;	// Questions with InterfaceID set to ~0 ("local only")
+	DNSQuestion *NewLocalOnlyQuestions;	// Fresh local-only questions not yet answered
 	mDNSu32 rrcache_size;				// Total number of available cache entries
 	mDNSu32	rrcache_totalused;			// Number of cache entries currently occupied
 	mDNSu32 rrcache_active;				// Number of cache entries currently occupied by records that answer active questions
@@ -930,8 +935,11 @@ struct mDNS_struct
 	UTF8str255 HIHardware;
 	UTF8str255 HISoftware;
 	AuthRecord *ResourceRecords;
-	AuthRecord *DuplicateRecords;	// Records currently 'on hold' because they are duplicates of existing records
-	AuthRecord *CurrentRecord;		// Next AuthRecord about to be examined
+	AuthRecord *DuplicateRecords;		// Records currently 'on hold' because they are duplicates of existing records
+	AuthRecord *LocalOnlyRecords;		// Local records registered with InterfaceID set to ~0 ("local only")
+	AuthRecord *NewLocalOnlyRecords;	// Fresh local-only records not yet delivered to local-only questions
+	mDNSBool    DiscardLocalOnlyRecords;// Set when we have "remove" events we need to deliver to local-only questions
+	AuthRecord *CurrentRecord;			// Next AuthRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
 	mDNSs32 ProbeFailTime;
 	mDNSs32 NumFailedProbes;
