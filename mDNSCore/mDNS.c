@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.245  2003/08/02 01:56:29  cheshire
+For debugging: log message if we ever get more than one question in a truncated packet
+
 Revision 1.244  2003/08/01 23:55:32  cheshire
 Fix for compiler warnings on Windows, submitted by Bob Bradley
 
@@ -3496,6 +3499,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 		
 		if (queryptr > query.data)
 			{
+			if ((query.h.flags.b[0] & kDNSFlag0_TC) && query.h.numQuestions > 1)
+				LogMsg("SendQueries: Should not have more than one question (%d) in a truncated packet\n", query.h.numQuestions);
 			debugf("SendQueries:   Sending %d Question%s %d Answer%s %d Update%s on %p",
 				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
