@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.34  2004/05/05 18:26:12  ksekar
+Periodically re-transmit questions if the send() fails.  Include
+internal questions in retransmission.
+
 Revision 1.33  2004/05/05 17:40:06  ksekar
 Removed prerequisite from deregistration update - it does not work for
 shared records, and is unnecessary until we have more sophisticated
@@ -1038,7 +1042,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	server = getInitializedDNS(u);
 	if (!server) { LogMsg("ERROR: startQuery - no initialized DNS"); return mStatus_NotInitializedErr; }
 	err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, server, UnicastDNSPort);
-	if (err) { LogMsg("ERROR: startQuery - mDNSSendDNSMessage - %d", err); return err; }
+	if (err) { LogMsg("ERROR: startQuery - mDNSSendDNSMessage - %d (keeping question in list for retransmission", err); } //!!!KRS
 
 	question->LastQTxTime = m->timenow;
     // store the question/id in active question list
@@ -1997,7 +2001,6 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	
 	for (q = u->ActiveQueries; q; q = q->next)
 		{
-		if (q->uDNS_info.internal) continue;  
 		sendtime = q->LastQTxTime + UNICAST_POLL_INTERVAL * mDNSPlatformOneSecond;
 		if (sendtime <= m->timenow)
 			{
@@ -2009,7 +2012,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 					continue;
 					}
 				err = mDNSSendDNSMessage(m, &msg, end, q->InterfaceID, server, UnicastDNSPort);
-				if (err) { LogMsg("ERROR: uDNS_idle - mDNSSendDNSMessage - %d", err); continue; }
+				if (err) { LogMsg("ERROR: uDNS_idle - mDNSSendDNSMessage - %d", err); }
 				q->LastQTxTime = m->timenow;
 			}
 		else if (sendtime < u->nextevent)  u->nextevent = sendtime;
