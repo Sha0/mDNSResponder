@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: DNSSDDirect.c,v $
+Revision 1.4  2004/04/15 06:55:50  bradley
+Changed resolving to manually query for SRV and TXT records instead of using mDNS_StartResolveService.
+This avoids extra A/AAAA record queries and allows local-only resolves to work with normal services.
+
 Revision 1.3  2004/04/15 01:00:05  bradley
 Removed support for automatically querying for A/AAAA records when resolving names. Platforms
 without .local name resolving support will need to manually query for A/AAAA records as needed.
@@ -122,9 +126,12 @@ struct	_DNSServiceRef_t
 		struct	// Resolve
 		{
 			DNSServiceFlags							flags;
-			ServiceInfoQuery						query;
-			ServiceInfo								info;
-			mDNSBool								active;
+			DNSQuestion								srvQuestion;
+			mDNSBool								srvQuestionActive;
+			const ResourceRecord *					srvAnswer;
+			DNSQuestion								txtQuestion;
+			mDNSBool								txtQuestionActive;
+			const ResourceRecord *					txtAnswer;
 			DNSServiceResolveReply					callback;
 			
 		}	resolve;
@@ -213,7 +220,12 @@ DEBUG_LOCAL void
 		mDNSBool						inAddRecord );
 
 DEBUG_LOCAL void	DNSServiceResolveRelease_direct( DNSServiceRef inRef );
-mDNSlocal void		DNSServiceResolveCallBack_direct( mDNS * const inMDNS, ServiceInfoQuery *inQuery );
+DEBUG_LOCAL void
+	DNSServiceResolveCallBack_direct(
+		mDNS * const 					inMDNS, 
+		DNSQuestion *					inQuestion, 
+		const ResourceRecord * const	inAnswer, 
+		mDNSBool 						inAddRecord );
 
 // Service Registration
 
@@ -1262,6 +1274,8 @@ DNSServiceErrorType
 	domainname				type;
 	domainname				domain;
 	domainname				fqdn;
+	mDNSInterfaceID			interfaceID;
+	DNSQuestion *			q;
 	
 	obj = NULL;
 	DNSServiceLock();
@@ -1270,6 +1284,7 @@ DNSServiceErrorType
 	require_action( inFlags == 0, exit, err = kDNSServiceErr_BadFlags );
 	require_action( inName, exit, err = kDNSServiceErr_BadParam );
 	require_action( inType, exit, err = kDNSServiceErr_BadParam );
+	if( !inDomain || ( *inDomain == '\0' ) ) inDomain = "local.";
 	require_action( inCallBack, exit, err = kDNSServiceErr_BadParam );
 	
 	// Convert all the input strings and make sure they are valid.
@@ -1280,38 +1295,54 @@ DNSServiceErrorType
 	ok = MakeDomainNameFromDNSNameString( &type, inType ) != NULL;
 	require_action( ok, exit, err = kDNSServiceErr_BadParam );
 	
-	if( !inDomain || ( *inDomain == '\0' ) )
-	{
-		inDomain = "local.";
-	}
 	ok = MakeDomainNameFromDNSNameString( &domain, inDomain ) != NULL;
 	require_action( ok, exit, err = kDNSServiceErr_BadParam );
 	
 	ok = ConstructServiceName( &fqdn, &name, &type, &domain ) != NULL;
 	require_action( ok, exit, err = kDNSServiceErr_BadParam );
 	
+	interfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex( gMDNSPtr, inInterfaceIndex );
+	
 	// Allocate and initialize the object.
 	
 	obj = (DNSServiceRef) calloc( 1, sizeof( *obj ) );
 	require_action( obj, exit, err = kDNSServiceErr_NoMemory );
-
+	
 	obj->releaseCallBack	= DNSServiceResolveRelease_direct;
 	obj->context 			= inContext;
 	obj->u.resolve.flags	= inFlags;
 	obj->u.resolve.callback	= inCallBack;
 	
-	// Start resolving with mDNS.
+	obj->next 			= gDNSServiceRefList;
+	gDNSServiceRefList	= obj;
 	
-	AssignDomainName( obj->u.resolve.info.name, fqdn );
-	obj->u.resolve.info.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex( gMDNSPtr, inInterfaceIndex );
-
-	obj->next 				= gDNSServiceRefList;
-	gDNSServiceRefList		= obj;
+	// Start the SRV query.
 	
-	err = mDNS_StartResolveService( gMDNSPtr, &obj->u.resolve.query, &obj->u.resolve.info, 
-		DNSServiceResolveCallBack_direct, obj );
+	q					= &obj->u.resolve.srvQuestion;
+	q->InterfaceID 		= interfaceID;
+	AssignDomainName( q->qname, fqdn );
+	q->qtype 			= kDNSType_SRV;
+	q->qclass 			= kDNSClass_IN;
+	q->QuestionCallback = DNSServiceResolveCallBack_direct;
+	q->QuestionContext 	= obj;
+	
+	err = mDNS_StartQuery( gMDNSPtr, q );
 	require_noerr( err, exit );
-	obj->u.resolve.active = mDNStrue;
+	obj->u.resolve.srvQuestionActive = mDNStrue;
+	
+	// Start the TXT query.
+	
+	q					= &obj->u.resolve.txtQuestion;
+	q->InterfaceID 		= interfaceID;
+	AssignDomainName( q->qname, fqdn );
+	q->qtype 			= kDNSType_TXT;
+	q->qclass 			= kDNSClass_IN;
+	q->QuestionCallback = DNSServiceResolveCallBack_direct;
+	q->QuestionContext 	= obj;
+	
+	err = mDNS_StartQuery( gMDNSPtr, q );
+	require_noerr( err, exit );
+	obj->u.resolve.txtQuestionActive = mDNStrue;
 	
 	// Success!
 	
@@ -1333,16 +1364,22 @@ exit:
 
 DEBUG_LOCAL void	DNSServiceResolveRelease_direct( DNSServiceRef inRef )
 {
+	OSStatus		err;
+	
 	check( inRef );
-	
-	dlog( kDebugLevelTrace, DEBUG_NAME "%s: ref=%#p\n", __ROUTINE__, inRef );
-	
-	if( inRef->u.resolve.active )
+		
+	if( inRef->u.resolve.srvQuestionActive )
 	{
-		mDNS_StopResolveService( gMDNSPtr, &inRef->u.resolve.query );
-		dlog( kDebugLevelTrace, DEBUG_NAME "%s: ref=%#p mDNS removed\n", __ROUTINE__, inRef );
+		inRef->u.resolve.srvQuestionActive = mDNSfalse;
+		err = mDNS_StopQuery( gMDNSPtr, &inRef->u.resolve.srvQuestion );
+		check_noerr( err );
 	}
-	
+	if( inRef->u.resolve.txtQuestionActive )
+	{
+		inRef->u.resolve.txtQuestionActive = mDNSfalse;
+		err = mDNS_StopQuery( gMDNSPtr, &inRef->u.resolve.txtQuestion );
+		check_noerr( err );
+	}	
 	free( inRef );
 }
 
@@ -1350,28 +1387,68 @@ DEBUG_LOCAL void	DNSServiceResolveRelease_direct( DNSServiceRef inRef )
 //	DNSServiceResolveCallBack_direct
 //===========================================================================================================================
 
-mDNSlocal void	DNSServiceResolveCallBack_direct( mDNS * const inMDNS, ServiceInfoQuery *inQuery )
+DEBUG_LOCAL void
+	DNSServiceResolveCallBack_direct(
+		mDNS * const 					inMDNS, 
+		DNSQuestion *					inQuestion, 
+		const ResourceRecord * const	inAnswer, 
+		mDNSBool 						inAddRecord )
 {
-	DNSServiceRef		obj;
-	char				fullName[ MAX_ESCAPED_DOMAIN_NAME ];
-	char				hostName[ MAX_ESCAPED_DOMAIN_NAME ];
-	uint16_t			port;
-	uint32_t			interfaceIndex;
+	DNSServiceRef				obj;
+	const ResourceRecord **		answer;
+	uint32_t					ifi;
+	char						fullName[ MAX_ESCAPED_DOMAIN_NAME ];
+	char						hostName[ MAX_ESCAPED_DOMAIN_NAME ];
+	uint16_t					port;
+	const char *				txt;
+	uint16_t					txtSize;
 	
 	DEBUG_UNUSED( inMDNS );
 	
-	dlog( kDebugLevelTrace, DEBUG_NAME "%s\n", __ROUTINE__ );
-	check( inQuery );
-	obj = (DNSServiceRef) inQuery->ServiceInfoQueryContext;
+	check( inQuestion );
+	obj = (DNSServiceRef) inQuestion->QuestionContext;
 	check( obj );
+	check( inAnswer );
 	
-	interfaceIndex = mDNSPlatformInterfaceIndexfromInterfaceID( &gMDNS, inQuery->info->InterfaceID );
-	ConvertDomainNameToCString( &inQuery->info->name, fullName );
-	ConvertDomainNameToCString( &inQuery->qAv4.qname, hostName );
-	port = inQuery->info->port.NotAnInteger;
+	// Select the answer based on the type.
 	
-	obj->u.resolve.callback( obj, 0, interfaceIndex, kDNSServiceErr_NoError, fullName, hostName, port, 
-			inQuery->info->TXTlen, (const char *) inQuery->info->TXTinfo, obj->context );
+	if(      inAnswer->rrtype == kDNSType_SRV ) answer = &obj->u.resolve.srvAnswer;
+	else if( inAnswer->rrtype == kDNSType_TXT ) answer = &obj->u.resolve.txtAnswer;
+	else
+	{
+		dlog( kDebugLevelError, DEBUG_NAME "%s: unexpected rrtype (%d)\n", __ROUTINE__, inAnswer->rrtype );
+		goto exit;
+	}
+	
+	// If the record is being removed, invalidate the previous answer. Otherwise, update with the new answer.
+	
+	if( !inAddRecord )
+	{
+		if( *answer == inAnswer ) *answer = NULL;
+		goto exit;
+	}
+	*answer = inAnswer;
+	
+	// Only deliver the result if we have both answers.
+	
+	if( !obj->u.resolve.srvAnswer || !obj->u.resolve.txtAnswer )
+	{
+		goto exit;
+	}
+	
+	// Convert the results to the appropriate format and call the callback.
+	
+	ifi		= mDNSPlatformInterfaceIndexfromInterfaceID( &gMDNS, obj->u.resolve.srvAnswer->InterfaceID );
+	ConvertDomainNameToCString( &obj->u.resolve.srvAnswer->name, fullName );
+    ConvertDomainNameToCString( &obj->u.resolve.srvAnswer->rdata->u.srv.target, hostName );
+    port	= obj->u.resolve.srvAnswer->rdata->u.srv.port.NotAnInteger;
+    txt		= (const char *) obj->u.resolve.txtAnswer->rdata->u.txt.c;
+    txtSize	= obj->u.resolve.txtAnswer->rdlength;
+    
+	obj->u.resolve.callback( obj, 0, ifi, kDNSServiceErr_NoError, fullName, hostName, port, txtSize, txt, obj->context );
+	
+exit:
+	return;
 }
 
 #if 0
