@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.22  2004/03/19 10:11:09  bradley
+Added AuthRecord * cast from umalloc for C++ builds.
+
 Revision 1.21  2004/03/15 02:03:45  bradley
 Added const to params where needed to match prototypes. Changed SetNewRData calls to use 0 instead
 of -1 for unused size to fix warning. Disable assignment within conditional warnings with Visual C++.
@@ -316,7 +319,7 @@ mDNSexport void uDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *s
    	if (set->uDNS_info.registered)
 		{
 		// copy record, linking copy into list
-		copy = umalloc(sizeof(AuthRecord));
+		copy = (AuthRecord*)umalloc(sizeof(AuthRecord));
 		if (!copy) { LogMsg("ERROR: Malloc"); return; }
 		umemcpy(copy, rr, sizeof(AuthRecord));
 		copy->next = m->uDNS_info.RecordRegistrations;
