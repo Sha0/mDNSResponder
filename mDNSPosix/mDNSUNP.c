@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.13  2003/12/08 20:47:02  rpantos
+Add support for mDNSResponder on Linux.
+
 Revision 1.12  2003/09/02 20:47:13  cheshire
 Fix signed/unsigned warning
 
@@ -292,7 +295,7 @@ free_ifi_info(struct ifi_info *ifihead)
 
 ssize_t 
 recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
-               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp)
+               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp, uint8_t *ttl)
 {
     struct msghdr   msg;
     struct iovec    iov[1];
@@ -304,6 +307,8 @@ recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
       struct cmsghdr    cm;
       char              control[1024];
     } control_un;
+
+	*ttl = 255;			// If kernel fails to provide TTL data then assume the TTL was 255 as it should be
 
     msg.msg_control = control_un.control;
     msg.msg_controllen = sizeof(control_un.control);
@@ -401,6 +406,19 @@ struct in_pktinfo
         }
 #endif
 
+#ifdef  IP_RECVTTL
+        if (cmptr->cmsg_level == IPPROTO_IP &&
+            cmptr->cmsg_type == IP_RECVTTL) {
+			*ttl = *(u_char*)CMSG_DATA(cmptr);
+            continue;
+        }
+        else if (cmptr->cmsg_level == IPPROTO_IP &&
+            cmptr->cmsg_type == IP_TTL) {		// some implementations seem to send IP_TTL instead of IP_RECVTTL
+			*ttl = *(int*)CMSG_DATA(cmptr);
+            continue;
+        }
+#endif
+
 #if defined(IPV6_PKTINFO) && defined(HAVE_IPV6)
         if (cmptr->cmsg_level == IPPROTO_IPV6 && 
             cmptr->cmsg_type == IPV6_PKTINFO) {
@@ -414,6 +432,14 @@ struct in_pktinfo
             sin6->sin6_scope_id = 0;
             sin6->sin6_port     = 0;
 			pktp->ipi_ifindex   = ip6_info->ipi6_ifindex;
+            continue;
+        }
+#endif
+
+#if defined(IPV6_HOPLIMIT) && defined(HAVE_IPV6)
+        if (cmptr->cmsg_level == IPPROTO_IPV6 && 
+            cmptr->cmsg_type == IPV6_HOPLIMIT) {
+			*ttl = *(int*)CMSG_DATA(cmptr);
             continue;
         }
 #endif

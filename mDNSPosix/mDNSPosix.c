@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.27  2003/12/08 20:47:02  rpantos
+Add support for mDNSResponder on Linux.
+
 Revision 1.26  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -131,34 +134,39 @@ First checkin
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <syslog.h>
+#include <stdarg.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/select.h>
 #include <netinet/in.h>
+#include <signal.h>
 
 #include "mDNSUNP.h"
+#include "GenLinkedList.h"
 
 // ***************************************************************************
 // Structures
 
-// PosixNetworkInterface is a record extension of the core NetworkInterfaceInfo
-// type that supports extra fields needed by the Posix platform.
-//
-// IMPORTANT: coreIntf must be the first field in the structure because
-// we cast between pointers to the two different types regularly.
-
-typedef struct PosixNetworkInterface PosixNetworkInterface;
-
-struct PosixNetworkInterface
+// We keep a list of client-supplied event sources in PosixEventSource records 
+struct PosixEventSource
 	{
-	NetworkInterfaceInfo    coreIntf;
-	const char *            intfName;
-	PosixNetworkInterface * aliasIntf;
-	int                     index;
-	int                     multicastSocket;
-	int                     multicastSocketv6;
+	mDNSPosixEventCallback		Callback;
+	void						*Context;
+	int							fd;
+	struct  PosixEventSource	*Next;
 	};
+typedef struct PosixEventSource	PosixEventSource;
+
+// Note that static data is initialized to zero in (modern) C.
+static fd_set			gEventFDs;
+static int				gMaxFD;					// largest fd in gEventFDs
+static GenLinkedList	gEventSources;			// linked list of PosixEventSource's
+static sigset_t			gEventSignalSet;		// Signals which event loop listens for
+static sigset_t			gEventSignals;			// Signals which were received while inside loop
 
 // ***************************************************************************
 // Globals (for debugging)
@@ -171,43 +179,6 @@ static int num_pkts_rejected = 0;
 // Functions
 
 int gMDNSPlatformPosixVerboseLevel = 0;
-
-// Note, this uses mDNS_vsnprintf instead of standard "vsnprintf", because mDNS_vsnprintf knows
-// how to print special data types like IP addresses and length-prefixed domain names
-mDNSexport void debugf_(const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	if (gMDNSPlatformPosixVerboseLevel >= 1)
-		fprintf(stderr, "%s\n", buffer);
-	fflush(stderr);
-	}
-
-mDNSexport void verbosedebugf_(const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	if (gMDNSPlatformPosixVerboseLevel >= 2)
-		fprintf(stderr, "%s\n", buffer);
-	fflush(stderr);
-	}
-
-mDNSexport void LogMsg(const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	fprintf(stderr, "%s\n", buffer);
-	fflush(stderr);
-	}
 
 #define PosixErrorToStatus(errNum) ((errNum) == 0 ? mStatus_NoError : mStatus_UnknownErr)
 
@@ -316,6 +287,7 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 	struct sockaddr_storage from;
 	socklen_t               fromLen;
 	int                     flags;
+	mDNSu8					ttl;
 	mDNSBool                reject;
 
 	assert(m    != NULL);
@@ -324,7 +296,7 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 
 	fromLen = sizeof(from);
 	flags   = 0;
-	packetLen = recvfrom_flags(skt, &packet, sizeof(packet), &flags, (struct sockaddr *) &from, &fromLen, &packetInfo);
+	packetLen = recvfrom_flags(skt, &packet, sizeof(packet), &flags, (struct sockaddr *) &from, &fromLen, &packetInfo, &ttl);
 
 	if (packetLen >= 0)
 		{
@@ -399,20 +371,12 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 
 	if (packetLen >= 0)
 		mDNSCoreReceive(m, &packet, (mDNSu8 *)&packet + packetLen,
-			&senderAddr, senderPort, &destAddr, MulticastDNSPort, intf->coreIntf.InterfaceID, 255);
+			&senderAddr, senderPort, &destAddr, MulticastDNSPort, intf->coreIntf.InterfaceID, ttl);
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Init and Term
 #endif
-
-// On OS X this gets the text of the field labelled "Computer Name" in the Sharing Prefs Control Panel
-// Other platforms can either get the information from the appropriate place,
-// or they can alternatively just require all registering services to provide an explicit name
-mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
-	{
-	MakeDomainLabelFromLiteralString(namelabel, "Fill in Default Service Name Here");
-	}
 
 // This gets the current hostname, truncating it at the first dot if necessary
 mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
@@ -421,6 +385,15 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 	gethostname((char *)(&namelabel->c[1]), MAX_DOMAIN_LABEL);
 	while (len < MAX_DOMAIN_LABEL && namelabel->c[len+1] && namelabel->c[len+1] != '.') len++;
 	namelabel->c[0] = len;
+	}
+
+// On OS X this gets the text of the field labelled "Computer Name" in the Sharing Prefs Control Panel
+// Other platforms can either get the information from the appropriate place,
+// or they can alternatively just require all registering services to provide an explicit name
+mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
+	{
+	// On Unix we have no better name than the host name, so we just use that.
+	GetUserSpecifiedRFC1034ComputerName( namelabel);
 	}
 
 // Searches the interface list looking for the named interface.
@@ -437,6 +410,38 @@ static PosixNetworkInterface *SearchForInterfaceByName(mDNS *const m, const char
 		intf = (PosixNetworkInterface *)(intf->coreIntf.next);
 
 	return intf;
+	}
+
+extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index)
+	{
+	PosixNetworkInterface *intf;
+
+	assert(m != NULL);
+
+	if (index == (uint32_t)~0) 
+		return((mDNSInterfaceID)~0);
+
+	intf = (PosixNetworkInterface*)(m->HostInterfaces);
+	while ( (intf != NULL) && (mDNSu32) intf->index != index) 
+		intf = (PosixNetworkInterface *)(intf->coreIntf.next);
+
+	return (mDNSInterfaceID) intf;
+	}
+	
+mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
+	{
+	PosixNetworkInterface *intf;
+
+	assert(m != NULL);
+
+	if (id == (mDNSInterfaceID)~0) 
+		return((mDNSu32)~0);
+
+	intf = (PosixNetworkInterface*)(m->HostInterfaces);
+	while ( (intf != NULL) && (mDNSInterfaceID) intf != id)
+		intf = (PosixNetworkInterface *)(intf->coreIntf.next);
+
+	return intf ? intf->index : 0;
 	}
 
 // Frees the specified PosixNetworkInterface structure. The underlying
@@ -529,6 +534,13 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 				#warning This platform has no way to get the destination interface information -- will only work for single-homed hosts
 			#endif
 			}
+	#if defined(IP_RECVTTL)									// Linux
+		if (err == 0)
+			{
+			err = setsockopt(*sktPtr, IPPROTO_IP, IP_RECVTTL, &kOn, sizeof(kOn));
+			if (err < 0) { err = errno; perror("setsockopt - IP_RECVTTL"); }
+			}
+	#endif
 
 		// Add multicast group membership on this interface
 		if (err == 0)
@@ -579,15 +591,22 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 		{
 		struct ipv6_mreq imr6;
 		struct sockaddr_in6 bindAddr6;
+	#if defined(IPV6_PKTINFO)
 		if (err == 0)
 			{
-			#if defined(IPV6_PKTINFO)
 				err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_PKTINFO, &kOn, sizeof(kOn));
 				if (err < 0) { err = errno; perror("setsockopt - IPV6_PKTINFO"); }
-			#else
-				#warning This platform has no way to get the destination interface information for IPv6 -- will only work for single-homed hosts
-			#endif
 			}
+	#else
+		#warning This platform has no way to get the destination interface information for IPv6 -- will only work for single-homed hosts
+	#endif
+	#if defined(IPV6_HOPLIMIT)
+		if (err == 0)
+			{
+				err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_HOPLIMIT, &kOn, sizeof(kOn));
+				if (err < 0) { err = errno; perror("setsockopt - IPV6_HOPLIMIT"); }
+			}
+	#endif
 
 		// Add multicast group membership on this interface
 		if (err == 0)
@@ -747,6 +766,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 	return err;
 	}
 
+// Call get_ifi_info() to obtain a list of active interfaces and call SetupOneInterface() on each one.
 static int SetupInterfaceList(mDNS *const m)
 	{
 	mDNSBool        foundav4       = mDNSfalse;
@@ -856,6 +876,7 @@ extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m)
 	return PosixErrorToStatus(err);
 	}
 
+
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Locking
 #endif
@@ -943,7 +964,7 @@ mDNSexport mDNSs32  mDNSPlatformTimeNow()
 	return( (tv.tv_sec << 10) | (tv.tv_usec * 16 / 15625) );
 	}
 
-mDNSexport void mDNSPosixGetFDSet(mDNS *const m, int *nfds, fd_set *readfds, struct timeval *timeout)
+mDNSexport void mDNSPosixGetFDSet(mDNS *m, int *nfds, fd_set *readfds, struct timeval *timeout)
 	{
 	mDNSs32 ticks;
 	struct timeval interval;
@@ -1003,3 +1024,148 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 		info = (PosixNetworkInterface *)(info->coreIntf.next);
 		}
 	}
+
+
+// update gMaxFD
+static void	DetermineMaxEventFD( void )
+	{
+	PosixEventSource	*iSource;
+	
+	gMaxFD = 0;
+	for ( iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+		if ( gMaxFD < iSource->fd)
+			gMaxFD = iSource->fd;
+	}
+
+// Add a file descriptor to the set that mDNSPosixRunEventLoopOnce() listens to.
+mStatus mDNSPosixAddFDToEventLoop( int fd, mDNSPosixEventCallback callback, void *context)
+	{
+	PosixEventSource	*newSource;
+	
+	if ( gEventSources.LinkOffset == 0)
+		InitLinkedList( &gEventSources, offsetof( PosixEventSource, Next));
+
+	if ( fd >= FD_SETSIZE || fd < 0)
+		return mStatus_UnsupportedErr;
+	if ( callback == NULL)
+		return mStatus_BadParamErr;
+
+	newSource = (PosixEventSource*) malloc( sizeof *newSource);
+	if ( NULL == newSource)
+		return mStatus_NoMemoryErr;
+
+	newSource->Callback = callback;
+	newSource->Context = context;
+	newSource->fd = fd;
+
+	AddToTail( &gEventSources, newSource);
+	FD_SET( fd, &gEventFDs);
+
+	DetermineMaxEventFD();
+
+	return mStatus_NoError;
+	}
+
+
+// Remove a file descriptor from the set that mDNSPosixRunEventLoopOnce() listens to.
+mStatus mDNSPosixRemoveFDFromEventLoop( int fd)
+	{
+	PosixEventSource	*iSource;
+	
+	for ( iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+		{
+		if ( fd == iSource->fd)
+			{
+			FD_CLR( fd, &gEventFDs);
+			RemoveFromList( &gEventSources, iSource);
+			free( iSource);
+			DetermineMaxEventFD();
+			return mStatus_NoError;
+			}
+		}
+	return mStatus_NoSuchNameErr;
+	}
+
+// Simply note the received signal in gEventSignals.
+static void	NoteSignal( int signum)
+	{
+	sigaddset( &gEventSignals, signum);
+	}
+
+// Tell the event package to listen for signal and report it in mDNSPosixRunEventLoopOnce().
+mStatus mDNSPosixListenForSignalInEventLoop( int signum)
+	{
+	struct sigaction	action;
+	mStatus				err;
+
+	action.sa_handler = NoteSignal;
+	sigemptyset( &action.sa_mask);
+	action.sa_flags = SA_NOMASK;
+	action.sa_restorer = NULL;
+	err = sigaction( signum, &action, (struct sigaction*) NULL);
+	
+	sigaddset( &gEventSignalSet, signum);
+
+	return err;
+	}
+
+// Tell the event package to stop listening for signal in mDNSPosixRunEventLoopOnce().
+mStatus mDNSPosixIgnoreSignalInEventLoop( int signum)
+	{
+	struct sigaction	action;
+	mStatus				err;
+
+	action.sa_handler = SIG_DFL;
+	sigemptyset( &action.sa_mask);
+	action.sa_flags = SA_NOMASK;
+	action.sa_restorer = NULL;
+	err = sigaction( signum, &action, (struct sigaction*) NULL);
+	
+	sigdelset( &gEventSignalSet, signum);
+
+	return err;
+	}
+
+// Do a single pass through the attendent event sources and dispatch any found to their callbacks.
+// Return as soon as internal timeout expires, or a signal we're listening for is received.
+mStatus mDNSPosixRunEventLoopOnce( mDNS *m, const struct timeval *pTimeout, 
+									sigset_t *pSignalsReceived, mDNSBool *pDataDispatched)
+	{
+	fd_set			listenFDs = gEventFDs;
+	int				fdMax = 0, numReady;
+	struct timeval	timeout = *pTimeout;
+	
+	// Include the sockets that are listening to the wire in our select() set
+	mDNSPosixGetFDSet( m, &fdMax, &listenFDs, &timeout);	// timeout may get modified
+	if ( fdMax < gMaxFD)
+		fdMax = gMaxFD;
+
+	numReady = select( fdMax + 1, &listenFDs, (fd_set*) NULL, (fd_set*) NULL, &timeout);
+
+	// If any data appeared, invoke its callback
+	if ( numReady > 0)
+		{
+		PosixEventSource	*iSource;
+
+		(void) mDNSPosixProcessFDSet( m, &listenFDs);	// call this first to process wire data for clients
+
+		for ( iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+			{
+			if ( FD_ISSET( iSource->fd, &listenFDs))
+				iSource->Callback( iSource->Context);
+			}
+		*pDataDispatched = mDNStrue;
+		}
+	else
+		*pDataDispatched = mDNSfalse;
+
+	(void) sigprocmask( SIG_BLOCK, &gEventSignalSet, (sigset_t*) NULL);
+	*pSignalsReceived = gEventSignals;
+	sigemptyset( &gEventSignals);
+	(void) sigprocmask( SIG_UNBLOCK, &gEventSignalSet, (sigset_t*) NULL);
+
+	return mStatus_NoError;
+	}
+
+
+

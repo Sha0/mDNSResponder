@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.10  2003/12/08 20:47:02  rpantos
+Add support for mDNSResponder on Linux.
+
 Revision 1.9  2003/10/30 19:25:19  cheshire
 Fix warning on certain compilers
 
@@ -67,6 +70,24 @@ First checkin
     extern "C" {
 #endif
 
+// PosixNetworkInterface is a record extension of the core NetworkInterfaceInfo
+// type that supports extra fields needed by the Posix platform.
+//
+// IMPORTANT: coreIntf must be the first field in the structure because
+// we cast between pointers to the two different types regularly.
+
+typedef struct PosixNetworkInterface PosixNetworkInterface;
+
+struct PosixNetworkInterface
+	{
+	NetworkInterfaceInfo    coreIntf;
+	const char *            intfName;
+	PosixNetworkInterface * aliasIntf;
+	int                     index;
+	int                     multicastSocket;
+	int                     multicastSocketv6;
+	};
+
 // This is a global because debugf_() needs to be able to check its value
 extern int gMDNSPlatformPosixVerboseLevel;
 
@@ -85,8 +106,16 @@ extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m);
 // Set timeout->tv_sec to 0x3FFFFFFF if you want to have effectively no timeout
 // After calling mDNSPosixGetFDSet(), call select(nfds, &readfds, NULL, NULL, &timeout); as usual
 // After select() returns, call mDNSPosixProcessFDSet() to let mDNSCore do its work
-extern void mDNSPosixGetFDSet(mDNS *const m, int *nfds, fd_set *readfds, struct timeval *timeout);
+extern void mDNSPosixGetFDSet(mDNS *m, int *nfds, fd_set *readfds, struct timeval *timeout);
 extern void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds);
+
+typedef	void (*mDNSPosixEventCallback)( void *context);
+
+extern mStatus mDNSPosixAddFDToEventLoop( int fd, mDNSPosixEventCallback callback, void *context);
+extern mStatus mDNSPosixRemoveFDFromEventLoop( int fd);
+extern mStatus mDNSPosixListenForSignalInEventLoop( int signum);
+extern mStatus mDNSPosixIgnoreSignalInEventLoop( int signum);
+extern mStatus mDNSPosixRunEventLoopOnce( mDNS *m, const struct timeval *pTimeout, sigset_t *pSignalsReceived, mDNSBool *pDataDispatched);
 
 #ifdef  __cplusplus
     }

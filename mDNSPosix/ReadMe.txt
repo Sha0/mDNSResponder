@@ -72,6 +72,8 @@ o ProxyResponder.c -- Another sample mDNS responder, this one intended
   for creating proxy registrations for other network devices that don't
   have their own mDNS responders.
 
+o Identify.c -- A utility that queries the local domain for info about a host.
+
 o ExampleClientApp.h
 o ExampleClientApp.c -- shared code prioviding the
   "ExampleClientEventLoop" used by Client.c and ProxyResponder.c.

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.25  2003/12/08 20:47:02  rpantos
+Add support for mDNSResponder on Linux.
+
 Revision 1.24  2003/11/14 21:27:09  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -75,6 +78,7 @@ Add "$Log" header
 #include <stdlib.h>			// For exit() etc.
 #include <string.h>			// For strlen() etc.
 #include <unistd.h>			// For select()
+#include <signal.h>			// For SIGINT, SIGTERM
 #include <errno.h>			// For errno, EINTR
 #include <arpa/inet.h>		// For inet_addr()
 #include <netinet/in.h>		// For INADDR_NONE
@@ -272,7 +276,8 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, AuthRecord *const rr, domainname *
 
 mDNSexport int main(int argc, char **argv)
 	{
-	mStatus status;
+	mStatus			status;
+	sigset_t		signals;
 	
 	if (argc < 3) goto usage;
 	
@@ -281,6 +286,9 @@ mDNSexport int main(int argc, char **argv)
 		mDNS_Init_DontAdvertiseLocalAddresses,
 		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (status) { fprintf(stderr, "Daemon start: mDNS_Init failed %ld\n", status); return(status); }
+
+	mDNSPosixListenForSignalInEventLoop(SIGINT);
+	mDNSPosixListenForSignalInEventLoop(SIGTERM);
 
 	if (!strcmp(argv[1], "-"))
 		{
@@ -291,8 +299,6 @@ mDNSexport int main(int argc, char **argv)
 		AppendLiteralLabelString(&proxyhostname, argv[2]);
 		AppendLiteralLabelString(&proxyhostname, "local");
 		RegisterNoSuchService(&mDNSStorage, &proxyrecord, &proxyhostname, argv[3], argv[4], "local.");
-		ExampleClientEventLoop(&mDNSStorage);
-		mDNS_Close(&mDNSStorage);
 		}
 	else
 		{
@@ -318,10 +324,17 @@ mDNSexport int main(int argc, char **argv)
 		if (argc >=6)
 			RegisterService(&mDNSStorage, &proxyservice, argv[3], argv[4], "local.",
 							&proxyhost.RR_A.resrec.name, atoi(argv[5]), argc-6, &argv[6]);
-
-		ExampleClientEventLoop(&mDNSStorage);
-		mDNS_Close(&mDNSStorage);
 		}
+
+	do 
+		{
+		struct timeval	timeout = { 0x3FFFFFFF, 0 };	// wait until SIGINT or SIGTERM
+		mDNSBool		gotSomething;
+		mDNSPosixRunEventLoopOnce(&mDNSStorage, &timeout, &signals, &gotSomething);
+		}
+	while ( !( sigismember( &signals, SIGINT) || sigismember( &signals, SIGTERM)));
+
+	mDNS_Close(&mDNSStorage);
 
 	return(0);
 

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.50  2003/12/08 20:47:02  rpantos
+Add support for mDNSResponder on Linux.
+
 Revision 1.49  2003/10/30 19:38:56  cheshire
 Fix warning on certain compilers
 
@@ -213,6 +216,7 @@ Added NetMonitor.c
 #include <stdlib.h>			// For malloc()
 #include <string.h>			// For bcopy()
 #include <time.h>			// For "struct tm" etc.
+#include <signal.h>			// For SIGINT, SIGTERM
 #include <netdb.h>			// For gethostbyname()
 #include <sys/socket.h>		// For AF_INET, AF_INET6, etc.
 #include <arpa/inet.h>		// For inet_addr()
@@ -794,6 +798,7 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	{
 	struct tm tm;
 	int h, m, s, mul, div, TotPkt;
+	sigset_t signals;
 	
 	mStatus status = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
@@ -802,7 +807,16 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	if (status) return(status);
 
 	gettimeofday(&tv_start, NULL);
-	ExampleClientEventLoop(&mDNSStorage);	// Wait for user to hit Ctrl-C
+	mDNSPosixListenForSignalInEventLoop(SIGINT);
+	mDNSPosixListenForSignalInEventLoop(SIGTERM);
+
+	do 
+		{
+		struct timeval	timeout = { 0x3FFFFFFF, 0 };	// wait until SIGINT or SIGTERM
+		mDNSBool		gotSomething;
+		mDNSPosixRunEventLoopOnce(&mDNSStorage, &timeout, &signals, &gotSomething);
+		}
+	while ( !( sigismember( &signals, SIGINT) || sigismember( &signals, SIGTERM)));
 	
 	// Now display final summary
 	TotPkt = NumPktQ + NumPktL + NumPktR;
@@ -868,9 +882,9 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
-		FilterList *f;
 		struct in_addr s4;
 		struct in6_addr s6;
+		FilterList *f;
 		mDNSAddr a;
 		a.type = mDNSAddrType_IPv4;
 

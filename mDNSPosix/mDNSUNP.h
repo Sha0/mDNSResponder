@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.9  2003/12/08 20:47:02  rpantos
+Add support for mDNSResponder on Linux.
+
 Revision 1.8  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -92,8 +95,14 @@ struct my_in_pktinfo {
     char                    ipi_ifname[IFI_NAME];   /* received interface name  */
 };
 
+/* From the text (Stevens, section 20.2): */
+/* 'As an example of recvmsg we will write a function named recvfrom_flags that */
+/* is similar to recvfrom but also returns: */
+/*	1. the returned msg_flags value, */
+/*	2. the destination addres of the received datagram (from the IP_RECVDSTADDR socket option, and */
+/*	3. the index of the interface on which the datagram was received (the IP_RECVIF socket option).' */
 extern ssize_t recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
-               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp);
+               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp, uint8_t *ttl);
 
 struct ifi_info {
   char    ifi_name[IFI_NAME];   /* interface name, null terminated */
@@ -110,7 +119,14 @@ struct ifi_info {
 
 #define IFI_ALIAS   1           /* ifi_addr is an alias */
 
+/* From the text (Stevens, section 16.6): */
+/* 'Since many programs need to know all the interfaces on a system, we will develop a */
+/* function of our own named get_ifi_info that returns a linked list of structures, one */
+/* for each interface that is currently "up."' */
 extern struct ifi_info  *get_ifi_info(int family, int doaliases);
+
+/* 'The free_ifi_info function, which takes a pointer that was */
+/* returned by get_ifi_info and frees all the dynamic memory.' */
 extern void             free_ifi_info(struct ifi_info *);
 
 #ifdef  __cplusplus

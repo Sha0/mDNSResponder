@@ -1,4 +1,7 @@
 # $Log: Makefile,v $
+# Revision 1.15  2003/12/08 20:47:02  rpantos
+# Add support for mDNSResponder on Linux.
+#
 # Revision 1.14  2003/11/14 20:59:09  cheshire
 # Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 # Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -30,15 +33,46 @@
 # Added NetMonitor.c
 #
 
-# I assume that cc will be in your path. If not, you have to change the following to point to it.
-CC = cc
-CFLAGS_COMMON = -g -I../mDNSCore -I. -DMDNS_DEBUGMSGS=2
+# This Makefile builds an mDNSResponder daemon and a libmdns.so shared library 
+# for Linux. It also builds several example programs for embedded systems.
+#
+# Make with no arguments to build all production targets.
+# 'make DEBUG=1' to build debugging targets.
+# 'make clean' or 'make clean DEBUG=1' to delete prod/debug objects & targets
+# 'sudo make install [DEBUG=1]' to install mDNSResponderd daemon and libmdns.
 
+LIBVERS = 1
+
+COREDIR = ../mDNSCore
+SHAREDDIR = ../mDNSShared
+
+CC = cc
+LD = ld
+CP = cp
+RM = rm
+LN = ln -s -f
+CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall
+
+# Set up diverging paths for debug vs. prod builds
+DEBUG=0
+ifeq ($(DEBUG),1)
+CFLAGS_DEBUG = -g -DMDNS_DEBUGMSGS=2 
+OBJDIR = objects/debug
+TARGDIR = build/debug
+STRIP = echo 
+else
+CFLAGS_DEBUG = -Os -DMDNS_DEBUGMSGS=0 
+OBJDIR = objects/prod
+TARGDIR = build/prod
+STRIP = strip -S 
+endif
+
+# Configure per-OS peculiarities
 ifeq ($(os),solaris)
 CFLAGS_OS =  -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -lsocket -lnsl
 else
 ifeq ($(os),linux)
-CFLAGS_OS = -DNOT_HAVE_SA_LEN -W -Wall
+CFLAGS_OS = -DNOT_HAVE_SA_LEN
 else
 ifeq ($(os),netbsd)
 CFLAGS_OS =
@@ -50,13 +84,13 @@ ifeq ($(os),openbsd)
 CFLAGS_OS = -DHAVE_BROKEN_RECVDSTADDR
 else
 ifeq ($(os),jaguar)
-CFLAGS_OS = -DHAVE_IPV6 -W -Wall -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
 else
 ifeq ($(os),panther)
-CFLAGS_OS = -DHAVE_IPV6 -W -Wall -no-cpp-precomp
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp
 else
 cantbuild:
-	@echo "Error: Must specify target OS on command-line, e.g. \"make os=panther\" or \"make os=jaguar\" or \"make os=linux\""
+	@echo "Must specify target OS on command-line: \"make os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris}\""
 endif
 endif
 endif
@@ -64,60 +98,132 @@ endif
 endif
 endif
 endif
-CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS)
 
-COMMONOBJ = objects/mDNSPosix.c.o objects/mDNSUNP.c.o objects/ExampleClientApp.c.o
+CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS) $(CFLAGS_DEBUG)
 
-HEADERS = Makefile mDNSUNP.h mDNSPosix.h   \
-../mDNSCore/mDNSDebug.h                    \
-../mDNSCore/mDNSClientAPI.h
+all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor
 
-all: setup Client Responder ProxyResponder Identify NetMonitor
+install: setup InstalledDaemon InstalledLib InstalledStartup
 
+
+# 'setup' sets up the build directory structure the way we want
 setup:
 	if test ! -d objects ; then mkdir objects ; fi
 	if test ! -d build   ; then mkdir build   ; fi
+	if test ! -d $(OBJDIR) ; then mkdir $(OBJDIR) ; fi
+	if test ! -d $(TARGDIR)   ; then mkdir $(TARGDIR)   ; fi
 
-Client: setup build/mDNSClientPosix
-	@echo "Client done"
 
-Responder: setup build/mDNSResponderPosix
-	@echo "Responder done"
+# clean removes targets and objects
+clean:
+	if test -d $(OBJDIR) ; then rm -r $(OBJDIR) ; fi
+	if test -d $(TARGDIR)   ; then rm -r $(TARGDIR)   ; fi
 
-ProxyResponder: setup build/mDNSProxyResponderPosix
-	@echo "ProxyResponder done"
-
-Identify: setup build/mDNSIdentify
-	@echo "Identify done"
-
-NetMonitor: setup build/mDNSNetMonitor
-	@echo "NetMonitor done"
 
 # $@ means "The file name of the target of the rule"
 # $< means "The name of the first prerequisite"
 # $+ means "The names of all the prerequisites, with spaces between them, exactly as given"
-# For more magic automatic sariables, see
+# For more magic automatic variables, see
 # <http://www.gnu.org/manual/make-3.80/html_chapter/make_10.html#SEC111>
-build/mDNSClientPosix: $(COMMONOBJ) objects/mDNS.c.o objects/Client.c.o
+
+
+# daemon target builds the daemon
+DAEMONOBJS = $(OBJDIR)/PosixDaemon.c.o $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNS.c.o \
+			$(OBJDIR)/uds_daemon.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o 
+
+Daemon: setup $(TARGDIR)/mDNSResponderd
+	@echo "Responder daemon done"
+
+$(TARGDIR)/mDNSResponderd: $(DAEMONOBJS)
+	$(CC) -o $@ $+
+	$(STRIP) $@
+
+
+# libmdns target builds the client library
+libmdns: setup $(TARGDIR)/libmdns.so
+	@echo "Client library done"
+
+$(TARGDIR)/libmdns.so: $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
+	$(LD) -shared -o $@ $+
+	$(STRIP) $@
+
+
+# The Install targets place built stuff in their proper places
+InstalledDaemon: /usr/sbin/mDNSResponderd
+	@echo $< " installed"
+
+/usr/sbin/mDNSResponderd: $(TARGDIR)/mDNSResponderd
+	$(CP) $(TARGDIR)/mDNSResponderd $@
+
+InstalledLib: /usr/lib/libmdns.so.$(LIBVERS)
+	@echo $< " installed"
+
+/usr/lib/libmdns.so.$(LIBVERS): $(TARGDIR)/libmdns.so
+	$(CP) $(TARGDIR)/libmdns.so $@
+	$(LN) $@ /usr/lib/libmdns.so
+
+InstalledStartup: /etc/init.d/mDNS
+	@echo $< " installed"
+
+/etc/init.d/mDNS: mDNSResponderd.sh
+	$(CP) mDNSResponderd.sh $@
+	chmod ugo+x $@
+	$(LN) $@ /etc/rc2.d/S52mDNS
+	$(LN) $@ /etc/rc3.d/S52mDNS
+	$(LN) $@ /etc/rc4.d/S52mDNS
+	$(LN) $@ /etc/rc5.d/S52mDNS
+	$(LN) $@ /etc/rc2.d/K16mDNS
+	$(LN) $@ /etc/rc3.d/K16mDNS
+	$(LN) $@ /etc/rc4.d/K16mDNS
+	$(LN) $@ /etc/rc5.d/K16mDNS
+
+# The following targets build embedded example programs
+COMMONOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o
+
+Client: setup $(TARGDIR)/mDNSClientPosix
+	@echo "Client done"
+
+Responder: setup $(TARGDIR)/mDNSResponderPosix
+	@echo "Responder done"
+
+ProxyResponder: setup $(TARGDIR)/mDNSProxyResponderPosix
+	@echo "ProxyResponder done"
+
+Identify: setup $(TARGDIR)/mDNSIdentify
+	@echo "Identify done"
+
+NetMonitor: setup $(TARGDIR)/mDNSNetMonitor
+	@echo "NetMonitor done"
+
+$(TARGDIR)/mDNSClientPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/Client.c.o $(OBJDIR)/ExampleClientApp.c.o 
 	$(CC) $+ -o $@
 
-build/mDNSResponderPosix: $(COMMONOBJ) objects/mDNS.c.o objects/Responder.c.o
+$(TARGDIR)/mDNSResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/Responder.c.o
 	$(CC) $+ -o $@
 
-build/mDNSProxyResponderPosix: $(COMMONOBJ) objects/mDNS.c.o objects/ProxyResponder.c.o
+$(TARGDIR)/mDNSProxyResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/ProxyResponder.c.o
 	$(CC) $+ -o $@
 
-build/mDNSIdentify: $(COMMONOBJ) objects/Identify.c.o
+$(TARGDIR)/mDNSIdentify: $(COMMONOBJ) $(OBJDIR)/Identify.c.o
 	$(CC) $+ -o $@
 
-build/mDNSNetMonitor: $(COMMONOBJ) objects/NetMonitor.c.o
+$(TARGDIR)/mDNSNetMonitor: $(COMMONOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@
 
-objects/%.c.o: %.c ../mDNSCore/mDNS.c $(HEADERS)
-	$(CC) -c $(CFLAGS) $< -o $@
 
-objects/mDNS.c.o: ../mDNSCore/mDNS.c $(HEADERS)
-	$(CC) -c $(CFLAGS) $< -o $@
+# implicit rules
+$(OBJDIR)/%.c.o:	%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean:
-	-rm -rf objects build .gdb_history
+$(OBJDIR)/%.c.o:	$(COREDIR)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(OBJDIR)/%.c.o:	$(SHAREDDIR)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(OBJDIR)/%.c.so.o:	%.c
+	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
+
+$(OBJDIR)/%.c.so.o:	$(SHAREDDIR)/%.c
+	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
+
