@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.375  2004/04/26 21:36:25  cheshire
+Only send IPv4 (or v6) multicast when IPv4 (or v6) multicast send/receive
+is indicated as being available on that interface
+
 Revision 1.374  2004/04/21 02:53:26  cheshire
 Typo in debugf statement
 
@@ -2451,8 +2455,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 				numAnnounce,               numAnnounce               == 1 ? "" : "s",
 				numAnswer,                 numAnswer                 == 1 ? "" : "s",
 				response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
-			mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
-			mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
 			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
 			if (++pktcount >= 1000)
 				{ LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
@@ -3008,8 +3012,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
 				query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
-			mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
-			mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
 			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
 			if (++pktcount >= 1000)
 				{ LogMsg("SendQueries exceeded loop limit %d: giving up", pktcount); break; }
