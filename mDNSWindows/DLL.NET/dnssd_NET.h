@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.h,v $
+Revision 1.5  2004/09/16 18:16:27  shersche
+Cleanup to parameter names
+Submitted by: prepin@gmail.com
+
 Revision 1.4  2004/09/13 19:35:57  shersche
 <rdar://problem/3798941> Add Apple.DNSSD namespace to MC++ wrapper class
 <rdar://problem/3798950> Change all instances of unsigned short to int
@@ -259,7 +263,7 @@ namespace Apple
 				ErrorCode		errorCode,
 				String		*	fullname,
 				String		*	hosttarget,
-				int				notAnIntPort,
+				int				port,
 				Byte			txtRecord[]
 				);
 			
@@ -845,7 +849,7 @@ namespace Apple
 			*                  for ensuring that the appropriate address record exists, or creating it
 			*                  via DNSServiceRegisterRecord().
 			*
-			* port:            The port, in network byte order, on which the service accepts connections.
+			* port:            The port, in host byte order, on which the service accepts connections.
 			*                  Pass 0 for a "placeholder" service (i.e. a service that will not be discovered
 			*                  by browsing, but will cause a name conflict if another client tries to
 			*                  register that same name).  Most clients will not use placeholder services.
@@ -876,7 +880,7 @@ namespace Apple
 				String			*	regtype,
 				String			*	domain,
 				String			*	host,
-				int					notAnIntPort,
+				int					port,
 				Byte				txtRecord[],
 				RegisterReply	*	callback
 				);
@@ -1067,7 +1071,7 @@ namespace Apple
 				BrowseReply	*	callback
 				);
 
-			/* DNSServiceResolve()
+			/* ResolveReply() Parameters:
 			*
 			* Resolve a service name discovered via Browse() to a target host name, port number, and
 			* txt record.
@@ -1105,7 +1109,7 @@ namespace Apple
 			* hosttarget:      The target hostname of the machine providing the service.  This name can
 			*                  be passed to functions like gethostbyname() to identify the host's IP address.
 			*
-			* port:            The port, in network byte order, on which connections are accepted for this service.
+			* port:            The port, in host byte order, on which connections are accepted for this service.
 			*
 			* txtRecord:       The service's primary txt record, in standard txt record format.
 			*
