@@ -22,9 +22,8 @@
 
 
 #include "dnssd_ipc.h"
-#include "mDNSClientAPI.h"   // client API and MacOSX.h are for mallocL()
-#include "mDNSMacOSX.h"	
 
+ 
 
 void put_flags(const DNSServiceFlags flags, char **ptr)
     {
@@ -129,18 +128,12 @@ void put_rdata(const int rdlen, const char *rdata, char **ptr)
 
 char *get_rdata(char **ptr, int rdlen)
     {
-    char *buffer;
+    char *rd;
 		
     assert(ptr && *ptr);
-    buffer = mallocL("get_rdata", rdlen);
-    if (!buffer)
-        {
-        perror("ERROR: malloc");
-        return NULL;
-        }
-    memcpy(buffer, *ptr, rdlen);
+    rd = *ptr;
     *ptr += rdlen;
-    return buffer;
+    return rd;
     }
 
 

@@ -117,8 +117,7 @@ typedef struct ipc_msg_hdr_struct
 
 
 // routines to write to and extract data from message buffers.
-// caller responsible for bounds checking.  (get_rdata allocates 
-// buffer with malloc())  
+// caller responsible for bounds checking.  
 // ptr is the address of the pointer to the start of the field.
 // it is advanced to point to the next field, or the end of the message
 
@@ -136,7 +135,8 @@ int put_string(const char *str, char **ptr);
 int get_string(char **ptr, char *buffer, int buflen);
 
 void put_rdata(const int rdlen, const char *rdata, char **ptr);
-char *get_rdata(char **ptr, int rdlen);
+char *get_rdata(char **ptr, int rdlen);  // return value is rdata pointed to by *ptr - 
+                                         // rdata is not copied from buffer.
 
 void put_short(uint16_t s, char **ptr);
 uint16_t get_short(char **ptr);
