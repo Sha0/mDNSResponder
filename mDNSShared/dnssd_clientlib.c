@@ -23,6 +23,11 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.7  2004/06/26 03:16:34  shersche
+clean up warning messages on Win32 platform
+
+Submitted by: herscher
+
 Revision 1.6  2004/06/12 01:09:45  cheshire
 To be callable from the broadest range of clients on Windows (e.g. Visual Basic, C#, etc.)
 API routines have to be declared as "__stdcall", instead of the C default, "__cdecl"
@@ -53,6 +58,11 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 
 #if MDNS_BUILDINGSHAREDLIBRARY || MDNS_BUILDINGSTUBLIBRARY
 #pragma export on
+#endif
+
+#if defined(_WIN32)
+// disable warning "conversion from <data> to uint16_t"
+#pragma warning(disable:4244)
 #endif
 
 /*********************************************************************************************
@@ -88,7 +98,7 @@ static uint8_t *InternalTXTRecordSearch
 	{
 	uint8_t *p = (uint8_t*)txtRecord;
 	uint8_t *e = p + txtLen;
-	*keylen = strlen(key);
+	*keylen = (unsigned long) strlen(key);
 	while (p<e)
 		{
 		uint8_t *x = p;
@@ -139,7 +149,7 @@ int DNSSD_API DNSServiceConstructFullName
 		}
 
 	if (!regtype) return -1;
-	len = strlen(regtype);
+	len = (unsigned long) strlen(regtype);
 	if (DomainEndsInDot(regtype)) len--;
 	if (len < 6) return -1; // regtype must be at least "x._udp" or "x._tcp"
 	if (strncmp((regtype + len - 4), "_tcp", 4) && strncmp((regtype + len - 4), "_udp", 4)) return -1;

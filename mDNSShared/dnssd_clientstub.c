@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.22  2004/06/26 03:16:34  shersche
+clean up warning messages on Win32 platform
+
+Submitted by: herscher
+
 Revision 1.21  2004/06/18 04:53:56  rpantos
 Use platform layer for socket types. Introduce USE_TCP_LOOPBACK. Remove dependency on mDNSClientAPI.h.
 
@@ -81,7 +86,7 @@ Update to APSL 2.0
 
 #include <errno.h>
 #include <stdlib.h>
-#if defined(WIN32)
+#if defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #define MSG_WAITALL 0
@@ -96,7 +101,15 @@ Update to APSL 2.0
 
 #include "dnssd_ipc.h"
 
-#if defined(WIN32)
+#if defined(_WIN32)
+// disable warning: "'type cast' : from data pointer 'void *' to
+// function pointer"
+#pragma warning(disable:4055)
+
+// disable warning: "nonstandard extension, function/data pointer
+// conversion in expression"
+#pragma warning(disable:4152)
+
 static int g_initWinsock = 0;
 #endif
 
@@ -165,7 +178,7 @@ static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse
 
     if (!reuse_socket)
         {
-#if defined(WIN32)
+#if defined(_WIN32)
 		*len += 2;	// Allocate space for two-byte port number
 #else
 		struct timeval time;
@@ -176,7 +189,7 @@ static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse
 #endif
         }
 
-    datalen = *len;
+    datalen = (int) *len;
     *len += sizeof(ipc_msg_hdr);
 
     // write message to buffer
@@ -200,7 +213,7 @@ static DNSServiceRef connect_to_server(void)
 	dnssd_sockaddr_t saddr;
 	DNSServiceRef sdr;
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	if (!g_initWinsock)
 		{
 		WSADATA wsaData;
@@ -1002,7 +1015,7 @@ void DNSSD_API DNSServiceReconfirmRecord
     put_short(rrclass, &ptr);
     put_short(rdlen, &ptr);
     put_rdata(rdlen, rdata, &ptr);
-    my_write(tmp->sockfd, (char *)hdr, len);
+    my_write(tmp->sockfd, (char *)hdr, (int) len);
     DNSServiceRefDeallocate(tmp);
     }
 
