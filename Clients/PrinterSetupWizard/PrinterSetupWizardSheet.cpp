@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.4  2004/06/25 02:26:52  shersche
+Normalize key fields in text record entries
+Submitted by: herscher
+
 Revision 1.3  2004/06/24 20:12:07  shersche
 Remove reference to Rendezvous in source code
 Submitted by: herscher
@@ -761,11 +765,13 @@ CPrinterSetupWizardSheet::OnResolve(
 		CString key = elem.Tokenize(L"=", curPos);
 		CString val = elem.Tokenize(L"=", curPos);
 
-		if ((key == L"usb_MFG") || (key == L"usb_MANUFACTURER"))
+		key.MakeLower();
+
+		if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
 		{
 			printer->usb_MFG = val;
 		}
-		else if ((key == L"usb_MDL") || (key == L"usb_MODEL"))
+		else if ((key == L"usb_mdl") || (key == L"usb_model"))
 		{
 			printer->usb_MDL = val;
 		}
