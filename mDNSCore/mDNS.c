@@ -16,7 +16,7 @@
                 please do not use, install, modify or redistribute this Apple software.
 
                 In consideration of your agreement to abide by the following terms, and subject
-                to these terms, Apple grants you a personal, non-exclusive license, under Apple’s
+                to these terms, Apple grants you a personal, non-exclusive license, under Apple's
                 copyrights in this original Apple software (the "Apple Software"), to use,
                 reproduce, modify and redistribute the Apple Software, with or without
                 modifications, in source and/or binary forms; provided that if you redistribute
@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.58  2002/09/19 04:20:43  cheshire
+Remove high-ascii characters that confuse some systems
+
 Revision 1.57  2002/09/17 01:07:08  cheshire
 Change mDNS_AdvertiseLocalAddresses to be a parameter to mDNS_Init()
 

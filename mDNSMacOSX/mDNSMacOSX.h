@@ -3,9 +3,9 @@
 
     Contains:   Platform-specific definitions required by the mDNS core.
 
-    Written by: Apple Engineering
+    Written by: Stuart Cheshire
 
-    Version:    mDNS Core, 9 Jul 2002
+    Version:    mDNS Core, September 2002
 
     Copyright:  Copyright (c) 2002 by Apple Computer, Inc., All Rights Reserved.
 
@@ -16,7 +16,7 @@
                 please do not use, install, modify or redistribute this Apple software.
 
                 In consideration of your agreement to abide by the following terms, and subject
-                to these terms, Apple grants you a personal, non-exclusive license, under Apple’s
+                to these terms, Apple grants you a personal, non-exclusive license, under Apple's
                 copyrights in this original Apple software (the "Apple Software"), to use,
                 reproduce, modify and redistribute the Apple Software, with or without
                 modifications, in source and/or binary forms; provided that if you redistribute
@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.2  2002/09/19 04:20:44  cheshire
+Remove high-ascii characters that confuse some systems
+
 Revision 1.1  2002/09/17 01:04:09  cheshire
 Defines mDNS_PlatformSupport_struct for OS X
 
