@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.137  2004/12/03 20:40:35  ksekar
+<rdar://problem/3865124> Looping on NAT Traversal error
+
 Revision 1.136  2004/12/03 07:20:50  ksekar
 <rdar://problem/3674208> Wide-Area: Registration of large TXT record fails
 
@@ -877,8 +880,12 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 	mDNSAddr addr; 
 
 	if (n->state != NATState_Request)
-		{ LogMsg("ReceiveNATAddrResponse: bad state %d", n->state);  return; }
-	
+		{
+		LogMsg("ReceiveNATAddrResponse: bad state %d", n->state);
+		err = mStatus_UnknownErr;
+		goto end;
+		}
+		
 	rr = n->reg.RecordRegistration;
 	if (!rr)
 		{
