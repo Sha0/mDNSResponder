@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.350  2004/01/24 23:38:16  cheshire
+Use mDNSVal16() instead of shifting and ORing operations
+
 Revision 1.349  2004/01/23 23:23:14  ksekar
 Added TCP support for truncated unicast messages.
 
@@ -4197,8 +4200,8 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	const mDNSu8 *responseend    = mDNSNULL;
 	
 	verbosedebugf("Received Query from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
-		srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1],
-		dstaddr, (mDNSu16)dstport.b[0]<<8 | dstport.b[1],
+		srcaddr, mDNSVal16(srcport.b[0]),
+		dstaddr, mDNSVal16(dstport.b[0]),
 		InterfaceID,
 		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
 		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
@@ -4214,7 +4217,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 			response.h.numQuestions,   response.h.numQuestions   == 1 ? "" : "s",
 			response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
 			response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s",
-			srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1], InterfaceID, srcaddr->type);
+			srcaddr, mDNSVal16(srcport), InterfaceID, srcaddr->type);
 		mDNSSendDNSMessage(m, &response, responseend, InterfaceID, dstport, srcaddr, srcport);
 		}
 	}
@@ -4811,7 +4814,7 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		if (++query->Answers >= 100)
 			debugf("**** WARNING **** Have given %lu answers for %##s (SRV) %##s %u",
 				query->Answers, query->qSRV.qname.c, answer->rdata->u.srv.target.c,
-				((mDNSu16)answer->rdata->u.srv.port.b[0] << 8) | answer->rdata->u.srv.port.b[1]);
+				mDNSVal16(answer->rdata->u.srv.port));
 		query->ServiceInfoQueryCallback(m, query);
 		}
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
