@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.2  2004/06/24 19:18:07  shersche
+Change RendezvousNSP to mdnsNSP
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:13:44  rpantos
 Move up one level.
 
@@ -239,7 +243,7 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 	switch( inReason )
 	{
 		case DLL_PROCESS_ATTACH:			
-			debug_initialize( kDebugOutputTypeWindowsEventLog, "Rendezvous NSP", inInstance );
+			debug_initialize( kDebugOutputTypeWindowsEventLog, "mDNS NSP", inInstance );
 			debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelInfo );
 			dlog( kDebugLevelTrace, "\n" );
 			dlog( kDebugLevelVerbose, "%s: process attach\n", __ROUTINE__ );
