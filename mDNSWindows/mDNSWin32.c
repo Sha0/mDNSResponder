@@ -23,6 +23,12 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.40  2004/05/26 09:06:07  bradley
+Retry while building the interface list if it returns an error since the two-step process required to
+get the interface list could allow a subsequent interface change to come in that window and change the
+needed size after getting the size, but before getting the list, causing it to return an error.
+Fixed structure name typo in search domain list stuff. Fixed spelling error in global for GAA.
+
 Revision 1.39  2004/05/18 23:51:27  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -307,8 +313,8 @@ mDNSs32								mDNSPlatformOneSecond = 0;
 			PIP_ADAPTER_ADDRESSES 	inAdapter, 
 			PULONG					outBufferSize );
 
-	mDNSlocal HMODULE								gIPHelperLibraryInstance		= NULL;
-	mDNSlocal GetAdaptersAddressesFunctionPtr		gGetAdaptersAddressesFunctonPtr	= NULL;
+	mDNSlocal HMODULE								gIPHelperLibraryInstance			= NULL;
+	mDNSlocal GetAdaptersAddressesFunctionPtr		gGetAdaptersAddressesFunctionPtr	= NULL;
 
 #endif
 
@@ -407,7 +413,7 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 #if( MDNS_WINDOWS_USE_IPV6_IF_ADDRS )
 	if( gIPHelperLibraryInstance )
 	{
-		gGetAdaptersAddressesFunctonPtr = NULL;
+		gGetAdaptersAddressesFunctionPtr = NULL;
 		
 		FreeLibrary( gIPHelperLibraryInstance );
 		gIPHelperLibraryInstance = NULL;
@@ -837,7 +843,7 @@ int	mDNSPlatformWriteTCP( int inSock, const char *inMsg, int inMsgSize )
 
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
 	{
-	static DNameList tmp;
+	static DNameListElem tmp;
 	static int init = 0;
 
 	if (!init)
@@ -2150,9 +2156,9 @@ int	getifaddrs( struct ifaddrs **outAddrs )
 		gIPHelperLibraryInstance = LoadLibrary( TEXT( "Iphlpapi" ) );
 		if( gIPHelperLibraryInstance )
 		{
-			gGetAdaptersAddressesFunctonPtr = 
+			gGetAdaptersAddressesFunctionPtr = 
 				(GetAdaptersAddressesFunctionPtr) GetProcAddress( gIPHelperLibraryInstance, "GetAdaptersAddresses" );
-			if( !gGetAdaptersAddressesFunctonPtr )
+			if( !gGetAdaptersAddressesFunctionPtr )
 			{
 				BOOL		ok;
 				
@@ -2165,7 +2171,7 @@ int	getifaddrs( struct ifaddrs **outAddrs )
 	
 	// Use the new IPv6-capable routine if supported. Otherwise, fall back to the old and compatible IPv4-only code.
 	
-	if( gGetAdaptersAddressesFunctonPtr )
+	if( gGetAdaptersAddressesFunctionPtr )
 	{
 		err = getifaddrs_ipv6( outAddrs );
 		require_noerr( err, exit );
@@ -2200,6 +2206,7 @@ exit:
 mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 {
 	DWORD						err;
+	int							i;
 	DWORD						flags;
 	struct ifaddrs *			head;
 	struct ifaddrs **			next;
@@ -2209,24 +2216,37 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 	size_t						size;
 	struct ifaddrs *			ifa;
 	
-	check( gGetAdaptersAddressesFunctonPtr );
+	check( gGetAdaptersAddressesFunctionPtr );
 	
 	head	= NULL;
 	next	= &head;
 	iaaList	= NULL;
 	
 	// Get the list of interfaces. The first call gets the size and the second call gets the actual data.
+	// This loops to handle the case where the interface changes in the window after getting the size, but before the
+	// second call completes. A limit of 100 retries is enforced to prevent infinite loops if something else is wrong.
 	
 	flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
-	iaaListSize = 0;
-	err = gGetAdaptersAddressesFunctonPtr( AF_UNSPEC, flags, NULL, NULL, &iaaListSize );
-	check( err == ERROR_BUFFER_OVERFLOW );
-	
-	iaaList = (IP_ADAPTER_ADDRESSES *) malloc( iaaListSize );
-	require_action( iaaList, exit, err = ERROR_NOT_ENOUGH_MEMORY );
-	
-	err = gGetAdaptersAddressesFunctonPtr( AF_UNSPEC, flags, NULL, iaaList, &iaaListSize );
-	require_noerr( err, exit );
+	i = 0;
+	for( ;; )
+	{
+		iaaListSize = 0;
+		err = gGetAdaptersAddressesFunctionPtr( AF_UNSPEC, flags, NULL, NULL, &iaaListSize );
+		check( err == ERROR_BUFFER_OVERFLOW );
+		check( iaaListSize >= sizeof( IP_ADAPTER_ADDRESSES ) );
+		
+		iaaList = (IP_ADAPTER_ADDRESSES *) malloc( iaaListSize );
+		require_action( iaaList, exit, err = ERROR_NOT_ENOUGH_MEMORY );
+		
+		err = gGetAdaptersAddressesFunctionPtr( AF_UNSPEC, flags, NULL, iaaList, &iaaListSize );
+		if( err == ERROR_SUCCESS ) break;
+		
+		free( iaaList );
+		iaaList = NULL;
+		++i;
+		require( i < 100, exit );
+		dlog( kDebugLevelWarning, "%s: retrying GetAdaptersAddresses after %d failure(s) (%d %m)\n", __ROUTINE__, i, err, err );
+	}
 	
 	for( iaa = iaaList; iaa; iaa = iaa->Next )
 	{
