@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.29  2004/03/15 02:07:46  bradley
+Changed interface index handling to use the upper 24 bits for IPv4 and the lower 8 bits for IPv6 to
+handle some IPv4 interface indexes that are greater than 16-bit. This is not perfect because Windows
+does not provide a consistent index for IPv4 and IPv6, but it seems to handle the known cases.
+
 Revision 1.28  2004/03/07 00:26:39  bradley
 Allow non-NULL PlatformSupport ptr when initializing so non-Apple clients can provide their own storage.
 Added count assert when building the wait list to catch underruns/overruns if the code is changed.
@@ -289,13 +294,7 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	int			supported;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "platform init\n" );
-
-{
-	char		s[ 256 ];
 	
-	ConvertDomainNameToCString( (domainname *) "\003""254\003""169\007in-addr\004arpa" , s);
-	printf( "%s\n", s );
-}
 	// Initialize variables. If the PlatformSupport pointer is not null then just assume that a non-Apple client is 
 	// calling mDNS_Init and wants to provide its own storage for the platform-specific data so do not overwrite it.
 	
@@ -1983,7 +1982,7 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 				IN_PKTINFO *		ipv4PacketInfo;
 				
 				ipv4PacketInfo = (IN_PKTINFO *) WSA_CMSG_DATA( header );
-				require_action( ipv4PacketInfo->ipi_ifindex == ( inIFD->index >> 16 ), exit, err = kMismatchErr );
+				require_action( ipv4PacketInfo->ipi_ifindex == ( inIFD->index >> 8 ), exit, err = kMismatchErr );
 				
 				dstAddr.type 				= mDNSAddrType_IPv4;
 				dstAddr.ip.v4.NotAnInteger	= ipv4PacketInfo->ipi_addr.s_addr;
@@ -2171,14 +2170,14 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 	for( iaa = iaaList; iaa; iaa = iaa->Next )
 	{
 		IP_ADAPTER_UNICAST_ADDRESS *		addr;
-		
-		if( iaa->IfIndex > 0xFFFF )
+
+		if( iaa->IfIndex > 0xFFFFFF )
 		{
-			dlog( kDebugLevelAlert, DEBUG_NAME "%s: IPv4 index out-of-range (%d)\n", __ROUTINE__, iaa->IfIndex );
+			dlog( kDebugLevelAlert, DEBUG_NAME "%s: IPv4 ifindex out-of-range (0x%08X)\n", __ROUTINE__, iaa->IfIndex );
 		}
-		if( iaa->Ipv6IfIndex > 0xFFFF )
+		if( iaa->Ipv6IfIndex > 0xFF )
 		{
-			dlog( kDebugLevelAlert, DEBUG_NAME "%s: IPv6 index out-of-range (%d)\n", __ROUTINE__, iaa->Ipv6IfIndex );
+			dlog( kDebugLevelAlert, DEBUG_NAME "%s: IPv6 ifindex out-of-range (0x%08X)\n", __ROUTINE__, iaa->Ipv6IfIndex );
 		}
 		
 		// Skip psuedo and tunnel interfaces.
@@ -2228,7 +2227,7 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			switch( addr->Address.lpSockaddr->sa_family )
 			{
 				case AF_INET:
-					ifa->ifa_extra.index = iaa->IfIndex << 16;
+					ifa->ifa_extra.index = iaa->IfIndex << 8;
 					break;
 					
 				case AF_INET6:
@@ -2378,6 +2377,10 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 			default:
 				break;
 		}
+		
+		// Emulate an interface index.
+		
+		ifa->ifa_extra.index = (uint32_t)( i + 1 );
 	}
 	
 	// Success!
