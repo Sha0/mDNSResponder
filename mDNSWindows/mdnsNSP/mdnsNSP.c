@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.7  2005/01/28 23:50:13  shersche
+<rdar://problem/3942551> Implement DllRegisterServer,DllUnregisterServer so mdnsNSP.dll can self-register
+Bug #: 3942551
+
 Revision 1.6  2004/12/06 01:56:53  shersche
 <rdar://problem/3789425> Use the DNS types and classes defined in dns_sd.h
 Bug #: 3789425
@@ -104,7 +108,10 @@ struct	Query
 // DLL Exports
 
 BOOL WINAPI		DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved );
+STDAPI			DllRegisterServer( void );
+STDAPI			DllRegisterServer( void );
 
+	
 // NSP SPIs
 
 int	WSPAPI	NSPCleanup( LPGUID inProviderID );
@@ -195,8 +202,9 @@ DEBUG_LOCAL size_t	QueryCopyQuerySetSize( QueryRef inRef, const WSAQUERYSETW *in
 //===========================================================================================================================
 
 // {B600E6E9-553B-4a19-8696-335E5C896153}
-// GUID		kmdnsNSPGUID = { 0xb600e6e9, 0x553b, 0x4a19, { 0x86, 0x96, 0x33, 0x5e, 0x5c, 0x89, 0x61, 0x53 } };
-
+DEBUG_LOCAL HINSTANCE				gInstance			= NULL;
+DEBUG_LOCAL wchar_t				*	gNSPName			= L"mdnsNSP";
+DEBUG_LOCAL GUID					gNSPGUID			= { 0xb600e6e9, 0x553b, 0x4a19, { 0x86, 0x96, 0x33, 0x5e, 0x5c, 0x89, 0x61, 0x53 } };
 DEBUG_LOCAL LONG					gRefCount			= 0;
 DEBUG_LOCAL CRITICAL_SECTION		gLock;
 DEBUG_LOCAL bool					gLockInitialized 	= false;
@@ -219,6 +227,7 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 	switch( inReason )
 	{
 		case DLL_PROCESS_ATTACH:			
+			gInstance = inInstance;		
 			debug_initialize( kDebugOutputTypeWindowsEventLog, "mDNS NSP", inInstance );
 			debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelInfo );
 			dlog( kDebugLevelTrace, "\n" );
@@ -243,6 +252,63 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 	}
 	return( TRUE );
 }
+
+
+//===========================================================================================================================
+//	DllRegisterServer
+//===========================================================================================================================
+
+STDAPI	DllRegisterServer( void )
+{
+	WSADATA		wsd;
+	WCHAR		path[ MAX_PATH ];
+	HRESULT		err;
+	
+	dlog( kDebugLevelTrace, "DllRegisterServer\n" );
+
+	err = WSAStartup( MAKEWORD( 2, 2 ), &wsd );
+	err = translate_errno( err == 0, errno_compat(), WSAEINVAL );
+	require_noerr( err, exit );
+	
+	err = GetModuleFileNameW( gInstance, path, sizeof( path ) );
+	err = translate_errno( err != 0, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+
+	err = WSCInstallNameSpace( gNSPName, path, NS_DNS, 1, &gNSPGUID );
+	err = translate_errno( err == 0, errno_compat(), WSAEINVAL );
+	require_noerr( err, exit );
+	
+exit:
+
+	WSACleanup();
+	return( err );
+}
+
+//===========================================================================================================================
+//	DllUnregisterServer
+//===========================================================================================================================
+
+STDAPI	DllUnregisterServer( void )
+{
+	WSADATA		wsd;
+	HRESULT err;
+	
+	dlog( kDebugLevelTrace, "DllUnregisterServer\n" );
+	
+	err = WSAStartup( MAKEWORD( 2, 2 ), &wsd );
+	err = translate_errno( err == 0, errno_compat(), WSAEINVAL );
+	require_noerr( err, exit );
+	
+	err = WSCUnInstallNameSpace( &gNSPGUID );
+	err = translate_errno( err == 0, errno_compat(), WSAEINVAL );
+	require_noerr( err, exit );
+		
+exit:
+
+	WSACleanup();
+	return err;
+}
+
 
 //===========================================================================================================================
 //	NSPStartup
