@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.249  2004/12/03 05:18:33  ksekar
+<rdar://problem/3810596> mDNSResponder needs to return more specific TSIG errors
+
 Revision 1.248  2004/12/02 20:03:48  ksekar
 <rdar://problem/3889647> Still publishes wide-area domains even after switching to a local subnet
 
@@ -1070,13 +1073,15 @@ enum
 	mStatus_NATTraversal      = -65557,
 	mStatus_DblNAT            = -65558,
 	mStatus_BadTime           = -65559,
+	mStatus_BadSig            = -65560,     // while we define this per RFC 2845, BIND 9 returns Refused for bad/missing signatures
+	mStatus_BadKey            = -65561,
+	
+	// -65562 to -65786 currently unused; available for allocation
 
 	// tcp connection status
-	mStatus_ConnPending       = -65560,
-	mStatus_ConnFailed        = -65561,
-	mStatus_ConnEstablished   = -65562,
-
-	// -65563 to -65789 currently unused; available for allocation
+	mStatus_ConnPending       = -65787,
+	mStatus_ConnFailed        = -65788,
+	mStatus_ConnEstablished   = -65789,
 
 	// Non-error values:
 	mStatus_GrowCache         = -65790,

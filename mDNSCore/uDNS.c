@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.135  2004/12/03 05:18:33  ksekar
+<rdar://problem/3810596> mDNSResponder needs to return more specific TSIG errors
+
 Revision 1.134  2004/12/02 20:03:49  ksekar
 <rdar://problem/3889647> Still publishes wide-area domains even after switching to a local subnet
 
@@ -1707,39 +1710,98 @@ mDNSlocal void llqResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	pktResponseHndlr(m, msg, end, question, mDNStrue);
 	}
 
-mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode, const DNSMessage *msg)
+mDNSlocal mStatus ParseTSIGError(mDNS *m, const DNSMessage *msg, const mDNSu8 *end, const domainname *displayname)
+	{
+	LargeCacheRecord lcr;
+	const mDNSu8 *ptr;
+	mStatus err = mStatus_NoError;
+	int i;
+	
+	ptr = LocateAdditionals(msg, end);
+	if (!ptr) goto finish;
+	
+	for (i = 0; i < msg->h.numAdditionals; i++)
+		{
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);;
+		if (!ptr) goto finish;
+		if (lcr.r.resrec.rrtype == kDNSType_TSIG)
+			{
+			mDNSu32 macsize;
+		    mDNSu8 *rd = lcr.r.resrec.rdata->u.data;
+			mDNSu8 *rdend = rd + MaximumRDSize;
+			int alglen = DomainNameLength(&lcr.r.resrec.rdata->u.name);
+			
+			if (rd +  alglen > rdend) goto finish;
+			rd += alglen;                                       // algorithm name
+			if (rd + 6 > rdend) goto finish;         
+			rd += 6;                                            // 48-bit timestamp
+			if (rd + sizeof(mDNSOpaque16) > rdend) goto finish;
+			rd += sizeof(mDNSOpaque16);                         // fudge
+			if (rd + sizeof(mDNSOpaque16) > rdend) goto finish;
+			macsize = mDNSVal16(*(mDNSOpaque16 *)rd);
+			rd += sizeof(mDNSOpaque16);                         // MAC size
+			if (rd + macsize > rdend) goto finish;
+			rd += macsize;
+			if (rd + sizeof(mDNSOpaque16) > rdend) goto finish;
+			rd += sizeof(mDNSOpaque16);                         // orig id
+			if (rd + sizeof(mDNSOpaque16) > rdend) goto finish;
+			err = mDNSVal16(*(mDNSOpaque16 *)rd);               // error code
+
+			if (err ==  TSIG_ErrBadSig)      { LogMsg("%##s: bad signature", displayname->c); err = mStatus_BadSig; }
+			else if (err == TSIG_ErrBadKey)  { LogMsg("%##s: bad key", displayname->c);       err = mStatus_BadKey; }
+			else if (err == TSIG_ErrBadTime) { LogMsg("%##s: bad time", displayname->c);      err = mStatus_BadTime; }
+			else if (err)                    { LogMsg("%##s: unknown tsig error %d", err);    err = mStatus_UnknownErr; }
+			goto finish;
+			}
+		}
+			
+	finish:
+	return err;
+	}
+
+mDNSlocal mStatus checkUpdateResult(domainname *displayname, mDNSu8 rcode, mDNS *m, const DNSMessage *msg, const mDNSu8 *end)
 	{	
 	(void)msg;  // currently unused, needed for TSIG errors
 	if (!rcode) return mStatus_NoError;
 	else if (rcode == kDNSFlag1_RC_YXDomain)
 		{
-		LogMsg("Name in use: %##s", name->c);
+		LogMsg("name in use: %##s", displayname->c);
 		return mStatus_NameConflict;
 		}
 	else if (rcode == kDNSFlag1_RC_Refused)
 		{
-		LogMsg("Update %##s refused", name->c);
-		return mStatus_Refused;
+		LogMsg("Update %##s refused", displayname->c);
+		return mStatus_Refused;			
 		}
 	else if (rcode == kDNSFlag1_RC_NXRRSet)
 		{
-		LogMsg("Reregister refused (NXRRSET): %##s", name->c);
+		LogMsg("Reregister refused (NXRRSET): %##s", displayname->c);
 		return mStatus_NoSuchRecord;
 		}
 	else if (rcode == kDNSFlag1_RC_NotAuth)
 		{
-		LogMsg("Permission denied (NOAUTH): %##s", name->c);
-		return mStatus_NoAuth;
+		// TSIG errors should come with FmtErr as per RFC 2845, but BIND 9 sends them with NotAuth so we look here too
+		mStatus tsigerr = ParseTSIGError(m, msg, end, displayname);
+		if (!tsigerr)
+			{
+			LogMsg("Permission denied (NOAUTH): %##s", displayname->c);
+			return mStatus_UnknownErr;
+			}
+		else return tsigerr;
 		}
 	else if (rcode == kDNSFlag1_RC_FmtErr)
 		{
-		LogMsg("Format Error: %##s", name->c);
-		return mStatus_UnknownErr;
-		//!!!KRS need to parse message for TSIG errors
+		mStatus tsigerr = ParseTSIGError(m, msg, end, displayname);
+		if (!tsigerr)
+			{
+			LogMsg("Format Error: %##s", displayname->c);		
+			return mStatus_UnknownErr;
+			}
+		else return tsigerr;
 		}
 	else
 		{
-		LogMsg("Update %##s failed with rcode %d", name->c, rcode);
+		LogMsg("Update %##s failed with rcode %d", displayname->c, rcode);
 		return mStatus_UnknownErr;
 		}
 	}
@@ -2083,7 +2145,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			{
 			if (sptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
-				err = checkUpdateResult(&sptr->RR_SRV.resrec.name, rcode, msg);
+				err = checkUpdateResult(&sptr->RR_SRV.resrec.name, rcode, m, msg, end);
 				if (!err) SetUpdateExpiration(m, msg, end, &sptr->uDNS_info);
 				hndlServiceUpdateReply(m, sptr, err);
 				return;
@@ -2093,7 +2155,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			{
 			if (rptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
-				err = checkUpdateResult(&rptr->resrec.name, rcode, msg);
+				err = checkUpdateResult(&rptr->resrec.name, rcode, m, msg, end);
 				if (!err) SetUpdateExpiration(m, msg, end, &rptr->uDNS_info);				
 				hndlRecordUpdateReply(m, rptr, err);
 				return;

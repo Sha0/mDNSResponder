@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.26  2004/12/03 05:18:33  ksekar
+<rdar://problem/3810596> mDNSResponder needs to return more specific TSIG errors
+
 Revision 1.25  2004/10/26 03:52:02  cheshire
 Update checkin comments
 
@@ -164,6 +167,13 @@ typedef enum
 	kDNSFlag1_RC_NotZone  = 0x0A
 	} DNS_Flags;
 
+typedef enum
+	{
+	TSIG_ErrBadSig  = 16,
+	TSIG_ErrBadKey  = 17,
+	TSIG_ErrBadTime = 18
+	} TSIG_ErrorCode;
+	
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
