@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: SampleUDSClient.c,v $
+Revision 1.8  2003/11/13 19:15:04  cheshire
+Show Add/Rmv flag in "uds_test -query" output
+
 Revision 1.7  2003/08/18 18:50:15  cheshire
 Can now give "-lo" as first parameter, to test "local only" mode
 
@@ -281,7 +284,9 @@ static void query_cb(const DNSServiceRef DNSServiceRef, const DNSServiceFlags fl
         printf("query callback: error==%d\n", errorCode);
         return;
         }
-    printf("query callback - name = %s, rdata=\n", name);
+    if (flags & kDNSServiceFlagsAdd)        printf("Add"); else printf("Rmv");
+    if (flags & kDNSServiceFlagsMoreComing) printf("+");   else printf(" ");
+    printf(" 0x%04X %s rdata ", flags, name);
     print_rdata(rrtype, rdlen, rdata);
     }
  
