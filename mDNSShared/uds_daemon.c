@@ -24,6 +24,11 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.180  2005/03/10 00:13:12  cheshire
+<rdar://problem/4043098> DNSServiceBrowse no longer returning error codes for invalid types
+In handle_browse_request(), mStatus err was being set correctly if an error occurred,
+but the end of the function returned mStatus_NoError intead of err.
+
 Revision 1.179  2005/03/04 02:47:26  ksekar
 <rdar://problem/4026393> SCPreference domains disappear from enumeration when moving out from firewall
 
@@ -1887,7 +1892,7 @@ static void handle_browse_request(request_state *request)
     domainname typedn, d, temp;
     mDNSs32 NumSubTypes;
     char *ptr;
-    mStatus err;
+    mStatus err = mStatus_NoError;
 	DNameListElem *search_domain_list, *sdom;
 	browser_info_t *info = NULL;
 	
@@ -1962,7 +1967,7 @@ static void handle_browse_request(request_state *request)
 		mDNS_FreeDNameList(search_domain_list);
 		}
 		
-	deliver_error(request, mStatus_NoError);
+	deliver_error(request, err);
 	return;
     
 error:
