@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.157  2004/03/19 18:49:10  ksekar
+Increased size check in freeL() to account for LargeCacheRecord
+structs larger than 8k
+
 Revision 1.156  2004/03/19 18:19:19  ksekar
 Fixed daemon.c to compile with malloc debugging turned on.
 
@@ -466,7 +470,7 @@ void freeL(char *msg, void *x)
 		unsigned long *mem = ((unsigned long *)x) - 2;
 		if (mem[0] != 0xDEAD1234)
 			{ LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
-		if (mem[1] > 8000)
+		if (mem[1] > 24000)
 			{ LogMsg("free( %s : %ld @ %p) too big!", msg, mem[1], &mem[2]); return; }
 		LogMalloc("free( %s : %ld @ %p)", msg, mem[1], &mem[2]);
 		//bzero(mem, mem[1]+8);
