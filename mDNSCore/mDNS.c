@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.122  2003/05/21 19:59:04  cheshire
+<rdar://problem/3148431> ER: Tweak responder's default name conflict behavior
+Minor refinements; make sure we don't truncate in the middle of a multi-byte UTF-8 character
+
 Revision 1.121  2003/05/21 17:54:07  ksekar
 Bug #: <rdar://problem/3148431>:	ER: Tweak responder's default name conflict behavior
 New rename behavior - domain name "foo" becomes "foo--2" on conflict, richtext name becomes "foo (2)"
@@ -1141,19 +1145,19 @@ mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool R
 	
 	if (RichText) 
 		{ 
-		if (l < 4) return mDNSfalse;
-		if (name->c[l--] != ')') return mDNSfalse;
-		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;
+		if (l < 4) return mDNSfalse;							// Need at least " (2)"
+		if (name->c[l--] != ')') return mDNSfalse;				// Last char must be ')'
+		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;			// Preceeded by a digit
 		l--;
-		while (mdnsIsDigit(name->c[l])) l--;
+		while (l > 2 && mdnsIsDigit(name->c[l])) l--;			// Strip off digits
 		return (name->c[l] == '(' && name->c[l - 1] == ' ');
 		}
 	else
 		{
-		if (l < 3) return mDNSfalse;
-		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;
+		if (l < 3) return mDNSfalse;							// Need at least "--2"
+		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;			// Last char must be a digit
 		l--;
-		while (mdnsIsDigit(name->c[l])) l--;
+		while (l > 2 && mdnsIsDigit(name->c[l])) l--;			// Strip off digits
 		return (name->c[l] == '-' && name->c[l - 1] == '-');
 		}
 	}
@@ -1177,29 +1181,24 @@ mDNSlocal long RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 // in parentheses (rich text) or following two consecutive hyphens (RFC 1034 domain label).
 mDNSlocal void AppendLabelSuffix(domainlabel *name, long val, mDNSBool RichText)
 	{
-	long divisor = 1, digits = 1;
+	long divisor = 1, chars = 3;	// Shortest possible RFC1034 name suffix is 3 characters ("--2")
+	if (RichText) chars = 4;		// Shortest possible RichText suffix is 4 characters (" (2)")
 	
-	
-	// append " (" (rich text) or "--" (RFC 1034) to name before adding value
-	if (name->c[0] + 1 < MAX_DOMAIN_LABEL)
-	{
-		if (RichText)
-			{
-			name->c[++name->c[0]] = ' ';
-			name->c[++name->c[0]] = '(';
-			}
-		else
-			{
-			name->c[++name->c[0]] = '-';
-			name->c[++name->c[0]] = '-';
-			}
-	}
-	
-	while (val >= divisor * 10)
-		{ divisor *= 10; digits++; }
-	
-	if (name->c[0] > (mDNSu8)(MAX_DOMAIN_LABEL - digits))
-		name->c[0] = (mDNSu8)(MAX_DOMAIN_LABEL - digits);
+	// Truncate trailing spaces from RichText names
+	if (RichText) while (name->c[name->c[0]] == ' ') name->c[0]--;
+
+	while (val >= divisor * 10) { divisor *= 10; chars++; }
+
+	if (name->c[0] > (mDNSu8)(MAX_DOMAIN_LABEL - chars))
+		{
+		name->c[0] = (mDNSu8)(MAX_DOMAIN_LABEL - chars);
+		// If the following character is a UTF-8 continuation character,
+		// we just chopped a multi-byte UTF-8 character in the middle, so strip back to a safe truncation point
+		while (name->c[0] > 0 && (name->c[name->c[0]+1] & 0xC0) == 0x80) name->c[0]--;
+		}
+
+	if (RichText) { name->c[++name->c[0]] = ' '; name->c[++name->c[0]] = '('; }
+	else          { name->c[++name->c[0]] = '-'; name->c[++name->c[0]] = '-'; }
 	
 	while (divisor)
 		{
@@ -1218,7 +1217,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	if (LabelContainsSuffix(name, RichText)) 
 		val = RemoveLabelSuffix(name, RichText);
 		
-	// If existing suffix, increment it, else start by renaming "Foo" as "Foo2"
+	// If existing suffix, increment it, else start by renaming "Foo" as "Foo (2)" or "Foo--2" as appropriate
 	if (val && val < 999999) val++; 
 	else val = 2; 
 	
