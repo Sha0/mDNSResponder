@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.17  2004/01/28 21:14:23  cheshire
+Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)
+
 Revision 1.16  2003/12/09 01:30:06  rpantos
 Fix usage of ARGS... macros to build properly on Windows.
 
@@ -109,12 +112,10 @@ extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1
 #endif
 
 // LogMsg is used even in shipping code, to write truly serious error messages to syslog (or equivalent)
+extern int	mDNS_DebugMode;	// If non-zero, LogMsg() writes to stderr instead of syslog
 extern void LogMsg(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 extern void LogMsgIdent(const char *ident, const char *format, ...);
 extern void LogMsgNoIdent(const char *format, ...);
-
-// LogInDebugMode() should be called when running in debug mode.
-extern void	LogInDebugMode( void );
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.150  2004/01/28 21:14:23  cheshire
+Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)
+
 Revision 1.149  2004/01/28 02:30:08  ksekar
 Added default Search Domains to unicast browsing, controlled via
 Networking sharing prefs pane.  Stopped sending unicast messages on
@@ -296,12 +299,6 @@ static mach_port_t server_priv_port  = MACH_PORT_NULL;
 #define MDNS_MM_TIMEOUT 250
 
 static int restarting_via_mach_init = 0;
-
-#if MDNS_DEBUGMSGS
-int debug_mode = 1;
-#else
-int debug_mode = 0;
-#endif
 
 //*************************************************************************************************************
 // Active client list structures
@@ -1500,7 +1497,7 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	LogMsgIdent(mDNSResponderVersionString, "stopping");
 
 	debugf("ExitCallback: destroyBootstrapService");
-	if (!debug_mode)
+	if (!mDNS_DebugMode)
 		destroyBootstrapService();
 
 	debugf("ExitCallback: Aborting MIG clients");
@@ -1651,7 +1648,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFRelease(s_rls);
 	CFRelease(e_rls);
 	CFRelease(i_rls);
-	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
+	if (mDNS_DebugMode) printf("Service registered with Mach Port %d\n", m_port);
 #if ENABLE_UDS
 	err = udsserver_init(&mDNSStorage);
 	if (err) { LogMsg("Daemon start: udsserver_init failed"); return err; }
@@ -1732,24 +1729,21 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
-		if (!strcmp(argv[i], "-d")) debug_mode = 1;
+		if (!strcmp(argv[i], "-d")) mDNS_DebugMode = mDNStrue;
 		}
-	if ( debug_mode)
-		LogInDebugMode();
 
 	signal(SIGINT,  HandleSIGTERM);		// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIGTERM);
 	signal(SIGINFO, HandleSIGINFO);
 
 	// Register the server with mach_init for automatic restart only during debug mode
-    if (!debug_mode)
+    if (!mDNS_DebugMode)
 		registerBootstrapService();
 
-	if (!debug_mode && !restarting_via_mach_init)
+	if (!mDNS_DebugMode && !restarting_via_mach_init)
 		exit(0); /* mach_init will restart us immediately as a daemon */
 
-	// Unlike deamon(), mach_init does redirect standard file descriptors to /dev/null
-	if (!debug_mode)
+	if (!mDNS_DebugMode)
 		{
 		int fd = open(_PATH_DEVNULL, O_RDWR, 0);
 		if (fd != -1)

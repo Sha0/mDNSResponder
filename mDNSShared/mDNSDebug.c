@@ -28,6 +28,16 @@
 
     Change History (most recent first):
 
+$Log: mDNSDebug.c,v $
+Revision 1.3  2004/01/28 21:14:23  cheshire
+Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)
+
+Revision 1.2  2003/12/09 01:30:40  rpantos
+Fix usage of ARGS... macros to build properly on Windows.
+
+Revision 1.1  2003/12/08 21:11:42;  rpantos
+Changes necessary to support mDNSResponder on Linux.
+
 */
 
 #include "mDNSDebug.h"
@@ -37,8 +47,11 @@
 
 #include "mDNSClientAPI.h"
 
-
-static mDNSBool	gDebugLogging = mDNSfalse;
+#if MDNS_DEBUGMSGS
+mDNSexport int mDNS_DebugMode = mDNStrue;
+#else
+mDNSexport int mDNS_DebugMode = mDNSfalse;
+#endif
 
 // Note, this uses mDNS_vsnprintf instead of standard "vsnprintf", because mDNS_vsnprintf knows
 // how to print special data types like IP addresses and length-prefixed domain names
@@ -70,7 +83,7 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 
 mDNSlocal void WriteLogMsg(const char *ident, const char *buffer, int logoptflags)
 	{
-	if (gDebugLogging)		// In debug mode we write to stderr
+	if (mDNS_DebugMode)	// In debug mode we write to stderr
 		{
 		fprintf(stderr,"%s\n", buffer);
 		fflush(stderr);
@@ -83,6 +96,13 @@ mDNSlocal void WriteLogMsg(const char *ident, const char *buffer, int logoptflag
 		}
 	}
 
+mDNSlocal void LogMsgWithIdent(const char *ident, const char *format, va_list ptr)
+	{
+	unsigned char buffer[512];
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
+	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
+	}
+
 mDNSexport void LogMsg(const char *format, ...)
 	{
 	unsigned char buffer[512];
@@ -91,13 +111,6 @@ mDNSexport void LogMsg(const char *format, ...)
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	WriteLogMsg("mDNSResponder", buffer, 0);
-	}
-
-static void LogMsgWithIdent(const char *ident, const char *format, va_list ptr)
-	{
-	unsigned char buffer[512];
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
 	}
 
 mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
@@ -115,10 +128,3 @@ mDNSexport void LogMsgNoIdent(const char *format, ...)
 	LogMsgWithIdent("", format, ptr);
 	va_end(ptr);
 	}
-
-mDNSexport void	LogInDebugMode( void )
-	{
-	gDebugLogging = mDNStrue;
-	}
-
-

@@ -56,14 +56,6 @@ static CacheRecord gRRCache[RR_CACHE_SIZE];
 
 extern const char mDNSResponderVersionString[];
 
-
-#if MDNS_DEBUGMSGS
-int debug_mode = 1;
-#else
-int debug_mode = 0;
-#endif
-
-
 int		main( int argc, char **argv)
 {
 	mDNS					mDNSRecord;
@@ -114,16 +106,13 @@ static void	ParseCmdLinArgs( int argc, char **argv)
 	{
 		if ( 0 == strcmp( argv[1], "-debug"))
 		{
-			debug_mode = mDNStrue;
+			mDNS_DebugMode = mDNStrue;
 		}
 		else
 			printf( "Usage: mDNSResponder [-debug]\n");
 	}
 
-	if ( debug_mode)
-		LogInDebugMode();
-
-	if ( !debug_mode)
+	if ( !mDNS_DebugMode)
 	{
 		int		result = daemon( 0, 0);
 		
