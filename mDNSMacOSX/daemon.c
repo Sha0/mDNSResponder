@@ -332,6 +332,8 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	char cstring[1024];
 	int i, pstrlen = query->info->TXTinfo[0];
 
+	//debugf("FoundInstanceInfo %.4a %.4a %##s", &query->info->InterfaceAddr, &query->info->ip, &query->info->name);
+
 	if (query->info->TXTlen > sizeof(cstring)) return;
 
 	bzero(&interface, sizeof(interface));
