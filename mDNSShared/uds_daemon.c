@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.174  2005/02/20 01:41:17  cheshire
+Fix compiler signed/unsigned warning
+
 Revision 1.173  2005/02/18 01:26:42  cheshire
 <rdar://problem/4012162> "Could not write data to client after 60 seconds" message could be more helpful
 Log additional information about failed client
@@ -2225,7 +2228,7 @@ static void handle_regservice_request(request_state *request)
 		// If the client is allowing AutoRename, then truncate name to legal length before converting it to a DomainLabel
 		if ((flags & kDNSServiceFlagsNoAutoRename) == 0)
 			{
-			int newlen = TruncateUTF8ToLength(name, mDNSPlatformStrLen(name), MAX_DOMAIN_LABEL);
+			int newlen = TruncateUTF8ToLength((mDNSu8*)name, mDNSPlatformStrLen(name), MAX_DOMAIN_LABEL);
 			name[newlen] = 0;
 			}
 		if (!MakeDomainLabelFromLiteralString(&service->name, name))
