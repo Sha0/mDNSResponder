@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.7  2004/09/11 00:36:40  shersche
+<rdar://problem/3786226> Modified .NET shim code to use host byte order for ports in APIs and callbacks
+Bug #: 3786226
+
 Revision 1.6  2004/09/02 21:20:56  cheshire
 <rdar://problem/3774871> DLL.NET crashes on null record
 
@@ -585,7 +589,7 @@ DNSService::ServiceRef::ServiceRefImpl::ResolveCallback
 			memcpy(p, txtRecord, txtLen);
 		}
 
-		self->m_outer->ResolveDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, ConvertToString(fullname), ConvertToString(hosttarget), notAnIntPort, txtRecordBytes);
+		self->m_outer->ResolveDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, ConvertToString(fullname), ConvertToString(hosttarget), ntohs(notAnIntPort), txtRecordBytes);
 	}	
 }
 
@@ -736,7 +740,7 @@ DNSService::Register
 		v		= (void*) p;
 	}
 
-	int err = DNSServiceRegister(&sdRef->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(), pHost->c_str(), notAnIntPort, len, v, ServiceRef::ServiceRefImpl::RegisterCallback, sdRef->m_impl );
+	int err = DNSServiceRegister(&sdRef->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(), pHost->c_str(), htons(notAnIntPort), len, v, ServiceRef::ServiceRefImpl::RegisterCallback, sdRef->m_impl );
 
 	if (err != 0)
 	{
