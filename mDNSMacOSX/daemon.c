@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.179  2004/06/19 00:02:54  cheshire
+Restore fix for <rdar://problem/3548256> Should not allow empty string for resolve domain
+
 Revision 1.178  2004/06/18 19:10:00  cheshire
 <rdar://problem/3588761> Current method of doing subtypes causes name collisions
 
@@ -1088,13 +1091,6 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	domainname t, d, srv;
 	if (!name[0]    || !MakeDomainLabelFromLiteralString(&n, name))        { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }
-	if (!domain[0])
-		{
-		LogMsg("Resolve calls must explicitly specify a domain parameter."
-			   "Unspecified domains in resolve calls are not compatible with wide-area (non-local) service discovery,"
-			   "and may not be supported in future releases.");
-		domain = "local.";
-		}
 	if (!domain[0]  || !MakeDomainNameFromDNSNameString(&d, domain))       { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
 
