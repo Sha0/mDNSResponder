@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.21  2003/08/18 23:09:57  cheshire
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+
 Revision 1.20  2003/08/12 19:56:27  cheshire
 Update to APSL 2.0
 
@@ -562,15 +565,23 @@ mDNSexport void *  mDNSPlatformMemAllocate(mDNSu32 len) { return(malloc(len)); }
 mDNSexport void    mDNSPlatformMemFree    (void *mem)   { free(mem); }
 
 //===========================================================================================================================
+//	mDNSPlatformTimeInit
+//===========================================================================================================================
+
+mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
+	{
+	// No special setup is required on Windows -- we just use GetTickCount();
+	*timenow = mDNSPlatformTimeNow();
+	return(mStatus_NoError);
+	}
+
+//===========================================================================================================================
 //	mDNSPlatformTimeNow
 //===========================================================================================================================
 
 mDNSs32	mDNSPlatformTimeNow( void )
 {
-	// GetTickCount returns a 32-bit unsigned value. Since this value can exceed the range of a signed 32-bit 
-	// value, the time is mod'd with the maximum signed 32-bit value to return a continuously rolling number.
-	
-	return( (mDNSs32)( GetTickCount() % 0x7FFFFFFFUL ) );
+	return( (mDNSs32)GetTickCount() );
 }
 
 #if 0

@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.24  2003/08/18 23:12:23  cheshire
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+
 Revision 1.23  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -911,6 +914,15 @@ mDNSexport void *  mDNSPlatformMemAllocate(mDNSu32 len) { return(malloc(len)); }
 mDNSexport void    mDNSPlatformMemFree    (void *mem)   { free(mem); }
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
+
+mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
+	{
+	// No special setup is required on Posix -- we just use gettimeofday();
+	// This is not really safe, because gettimeofday can go backwards if the user manually changes the date or time
+	// We should find a better way to do this
+	*timenow = mDNSPlatformTimeNow();
+	return(mStatus_NoError);
+	}
 
 mDNSexport mDNSs32  mDNSPlatformTimeNow()
 	{

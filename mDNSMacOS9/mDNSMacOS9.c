@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.19  2003/08/18 23:09:20  cheshire
+<rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
+
 Revision 1.18  2003/08/12 19:56:24  cheshire
 Update to APSL 2.0
 
@@ -536,5 +539,6 @@ mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, UInt32
 mDNSexport void     mDNSPlatformMemZero(                       void *dst, UInt32 len) { OTMemzero(dst, len); }
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len)                              { return(OTAllocMem(len)); }
 mDNSexport void     mDNSPlatformMemFree    (void *mem)                                { OTFreeMem(mem); }
+mDNSexport mStatus  mDNSPlatformTimeInit(mDNSs32 *timenow) { *timenow = mDNSPlatformTimeNow(); return(mStatus_NoError); }
 mDNSexport SInt32   mDNSPlatformTimeNow()                                             { return((SInt32)TickCount()); }
 mDNSexport SInt32   mDNSPlatformOneSecond = 60;
