@@ -31,7 +31,7 @@ static DNSServiceDiscoveryRef connect_to_server(void);
 DNSServiceReplyErrorType deliver_request(void *msg, DNSServiceDiscoveryRef sdr);
 DNSServiceReplyErrorType deliver_request(void *msg, DNSServiceDiscoveryRef sdr);
 static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start);
-static int my_read(int sd, char *buf, size_t len);
+static int my_read(int sd, char *buf, int len);
 static int my_write(int sd, char *buf, int len);
 // server response handlers
 static void handle_question_response(DNSServiceDiscoveryRef sdr, ipc_msg_hdr *hdr, char *msg);
@@ -241,6 +241,7 @@ static void handle_question_response(DNSServiceDiscoveryRef sdr, ipc_msg_hdr *hd
     char name[256]; 
     uint16_t rrtype, rrclass, rdlen;
     char *rdata;
+	(void)hdr;//Unused
 
     //!!!KRS we should do zero-copy data extraction here using pointers into the message buffer...
     
@@ -326,6 +327,7 @@ static void handle_browse_response(DNSServiceDiscoveryRef sdr, ipc_msg_hdr *hdr,
     uint32_t                      interfaceIndex;
     DNSServiceReplyErrorType      errorCode;
     char replyName[256], replyType[256], replyDomain[256];
+	(void)hdr;//Unused
 
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
@@ -415,6 +417,7 @@ static void handle_regservice_response(DNSServiceDiscoveryRef sdr, ipc_msg_hdr *
     uint32_t interfaceIndex;
     DNSServiceReplyErrorType errorCode;
     char name[256], regtype[256], domain[256];
+	(void)hdr;//Unused
 
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
@@ -436,7 +439,7 @@ DNSServiceReplyErrorType DNSServiceEnumerateDomains
  )
     {
     char *msg = NULL, *ptr;
-    int len, sd;
+    int len;
     ipc_msg_hdr *hdr;
     DNSServiceDiscoveryRef sdr;
     DNSServiceReplyErrorType err;
@@ -448,7 +451,6 @@ DNSServiceReplyErrorType DNSServiceEnumerateDomains
     len = sizeof(DNSServiceDiscoveryFlags);
     len += 2 * sizeof(uint32_t);  // interfaceIndex, registrationDomains
 
-    if (sd < 0) goto error;
     hdr = create_hdr(enumeration_request, &len, &ptr);
     if (!hdr) goto error;
     msg = (void *)hdr;
@@ -487,6 +489,7 @@ static void handle_enumeration_response(DNSServiceDiscoveryRef sdr, ipc_msg_hdr 
     uint32_t interfaceIndex;
     DNSServiceReplyErrorType err;
     char domain[256];
+	(void)hdr;//Unused
 
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
@@ -516,14 +519,13 @@ static void handle_regrecord_response(DNSServiceDiscoveryRef sdr, ipc_msg_hdr *h
     DNSServiceDiscoveryFlags flags;
     uint32_t interfaceIndex;
     DNSServiceReplyErrorType errorCode;
-    DNSRecordRef rref;
+    DNSRecordRef rref = hdr->client_context.context;
     
     if (sdr->op != connection) 
         {
         rref->app_callback(rref->sdr, rref, 0, 0, kDNSServiceDiscoveryErr_Unknown, rref->app_context);
         return;
         }
-    rref = hdr->client_context.context;
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
     errorCode = get_error_code(&data);
@@ -553,7 +555,7 @@ DNSServiceReplyErrorType DNSServiceRegisterRecord
     DNSServiceDiscoveryRef tmp = NULL;
     DNSRecordRef rref = NULL;
     
-    if (!DNSServiceRef || DNSServiceRef->op != connection | DNSServiceRef->sockfd < 0) 
+    if (!DNSServiceRef || DNSServiceRef->op != connection || DNSServiceRef->sockfd < 0) 
         return kDNSServiceDiscoveryErr_BadReference;
     *RecordRef = NULL;
     
@@ -696,6 +698,7 @@ DNSServiceReplyErrorType DNSServiceRemoveRecord
     int len = 0;
     char *ptr;
     DNSServiceReplyErrorType err;
+	(void)flags;//Unused
 
 
     if (!DNSServiceRef || DNSServiceRef->op != connection || DNSServiceRef->sockfd < 0) 
@@ -794,7 +797,7 @@ int my_write(int sd, char *buf, int len)
 
 
 // read len bytes.  return 0 on success, -1 on error
-int my_read(int sd, char *buf, size_t len)
+int my_read(int sd, char *buf, int len)
     {
     if (recv(sd, buf, len, MSG_WAITALL) != len)
     	{
