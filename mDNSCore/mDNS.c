@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.247  2003/08/05 00:56:39  cheshire
+<rdar://problem/3357075> mDNSResponder sending additional records, even after precursor record suppressed
+
 Revision 1.246  2003/08/04 19:20:49  cheshire
 Add kDNSQType_ANY to list in DNSTypeName() so it can be displayed in debugging messages
 
@@ -4562,57 +4565,60 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		{
-		mDNSBool SendMulticastResponse = mDNSfalse;
-		
-		// If it's been a while since we multicast this, then send a multicast reply for conflict detection, etc.
-		if (m->timenow - (rr->LastAPTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
-		
-		// If the client insists on a multicast reply, then we'd better send one
-		if (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
-		else if (rr->NR_AnswerTo) HaveUnicastAnswer = mDNStrue;
-
-		if (SendMulticastResponse)
+		if (rr->NR_AnswerTo)
 			{
-			// If we're already planning to send this on another interface, just send it on all interfaces
-			if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
+			mDNSBool SendMulticastResponse = mDNSfalse;
+			
+			// If it's been a while since we multicast this, then send a multicast reply for conflict detection, etc.
+			if (m->timenow - (rr->LastAPTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
+			
+			// If the client insists on a multicast reply, then we'd better send one
+			if (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
+			else if (rr->NR_AnswerTo) HaveUnicastAnswer = mDNStrue;
+	
+			if (SendMulticastResponse)
 				{
-				rr->ImmedAnswer = mDNSInterfaceMark;
-				m->NextScheduledResponse = m->timenow;
-				debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
-				}
-			else
-				{
-				rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
-				m->NextScheduledResponse = m->timenow;
-				if (srcaddr->type == mDNSAddrType_IPv4)
+				// If we're already planning to send this on another interface, just send it on all interfaces
+				if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
 					{
-					if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
-					else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4))
-						{
-						// For now we don't report this error.
-						//     Due to a bug in the OS X 10.2 version of mDNSResponder, when a service sends a goodbye packet,
-						//     all those old mDNSResponders respond by sending a query to verify that the service is really gone.
-						//     That flood of near-simultaneous queries then triggers the message below, warning that mDNSResponder
-						//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
-						//if (query->h.flags.b[0] & kDNSFlag0_TC)
-						//	LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one"
-						//		" client at a time %.4a %.4a (only bad if it happens more than a few times per minute)",
-						//		rr->name.c, DNSTypeName(rr->rrtype), &rr->v4Requester, &srcaddr->ip.v4);
-						rr->v4Requester = onesIPv4Addr;
-						}
+					rr->ImmedAnswer = mDNSInterfaceMark;
+					m->NextScheduledResponse = m->timenow;
+					debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
 					}
-				else if (srcaddr->type == mDNSAddrType_IPv6)
+				else
 					{
-					if (mDNSIPv6AddressIsZero(rr->v6Requester)) { rr->v6RequesterTime = m->timenow; rr->v6Requester = srcaddr->ip.v6; }
-					else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
+					rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
+					m->NextScheduledResponse = m->timenow;
+					if (srcaddr->type == mDNSAddrType_IPv4)
 						{
-						if (query->h.flags.b[0] & kDNSFlag0_TC)
-							LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
-								"client at a time %.16a %ld %.16a "
-								"(Only bad if it happens more than a few times per minute. "
-								"This message will be removed before Panther ships.)",
-								rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
-						rr->v6Requester = onesIPv6Addr;
+						if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
+						else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4))
+							{
+							// For now we don't report this error.
+							//     Due to a bug in the OS X 10.2 version of mDNSResponder, when a service sends a goodbye packet,
+							//     all those old mDNSResponders respond by sending a query to verify that the service is really gone.
+							//     That flood of near-simultaneous queries then triggers the message below, warning that mDNSResponder
+							//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
+							//if (query->h.flags.b[0] & kDNSFlag0_TC)
+							//	LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one"
+							//		" client at a time %.4a %.4a (only bad if it happens more than a few times per minute)",
+							//		rr->name.c, DNSTypeName(rr->rrtype), &rr->v4Requester, &srcaddr->ip.v4);
+							rr->v4Requester = onesIPv4Addr;
+							}
+						}
+					else if (srcaddr->type == mDNSAddrType_IPv6)
+						{
+						if (mDNSIPv6AddressIsZero(rr->v6Requester)) { rr->v6RequesterTime = m->timenow; rr->v6Requester = srcaddr->ip.v6; }
+						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
+							{
+							if (query->h.flags.b[0] & kDNSFlag0_TC)
+								LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
+									"client at a time %.16a %ld %.16a "
+									"(Only bad if it happens more than a few times per minute. "
+									"This message will be removed before Panther ships.)",
+									rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
+							rr->v6Requester = onesIPv6Addr;
+							}
 						}
 					}
 				}
