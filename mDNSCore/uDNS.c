@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.174  2005/01/14 18:44:28  ksekar
+<rdar://problem/3954609> mDNSResponder is crashing when changing domains
+
 Revision 1.173  2005/01/14 18:34:22  ksekar
 <rdar://problem/3954571> Services registered outside of firewall don't succeed after location change
 
@@ -2012,10 +2015,10 @@ mDNSlocal mStatus ParseTSIGError(mDNS *m, const DNSMessage *msg, const mDNSu8 *e
 			if (rd + sizeof(mDNSOpaque16) > rdend) goto finish;
 			err = mDNSVal16(*(mDNSOpaque16 *)rd);               // error code
 
-			if (err ==  TSIG_ErrBadSig)      { LogMsg("%##s: bad signature", displayname->c); err = mStatus_BadSig; }
-			else if (err == TSIG_ErrBadKey)  { LogMsg("%##s: bad key", displayname->c);       err = mStatus_BadKey; }
-			else if (err == TSIG_ErrBadTime) { LogMsg("%##s: bad time", displayname->c);      err = mStatus_BadTime; }
-			else if (err)                    { LogMsg("%##s: unknown tsig error %d", err);    err = mStatus_UnknownErr; }
+			if (err ==  TSIG_ErrBadSig)      { LogMsg("%##s: bad signature", displayname->c);              err = mStatus_BadSig;     }
+			else if (err == TSIG_ErrBadKey)  { LogMsg("%##s: bad key", displayname->c);                    err = mStatus_BadKey;     }
+			else if (err == TSIG_ErrBadTime) { LogMsg("%##s: bad time", displayname->c);                   err = mStatus_BadTime;    }
+			else if (err)                    { LogMsg("%##s: unknown tsig error %d", displayname->c, err); err = mStatus_UnknownErr; }
 			goto finish;
 			}
 		}

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.153  2005/01/14 18:44:28  ksekar
+<rdar://problem/3954609> mDNSResponder is crashing when changing domains
+
 Revision 1.152  2005/01/13 17:16:38  ksekar
 Back out checkin 1.150 - correct fix is on clientstub side
 
@@ -1926,7 +1929,7 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 				prev = ptr;
 				ptr = ptr->next;
 				}
-			if (!ptr) LogMsg("Requested removal of default domain %##s not in list for sd %s", d->c, r->sd);
+			if (!ptr) LogMsg("Requested removal of default domain %##s not in list for sd %d", d->c, r->sd);
 			}
 		}
 	}
