@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.393  2004/08/13 23:42:52  cheshire
+Removed unused "zeroDomainNamePtr"
+
 Revision 1.392  2004/08/13 23:37:02  cheshire
 Now that we do both uDNS and mDNS, global replace "uDNS_info.hostname" with
 "uDNS_info.UnicastHostname" for clarity
@@ -1316,7 +1319,6 @@ mDNSexport const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFl
 mDNSexport const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
 mDNSexport const mDNSOpaque16 UpdateReqFlags= { { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Query,                   0 } };
 mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response,                0 } };
-#define zeroDomainNamePtr ((domainname*)"")
 
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
