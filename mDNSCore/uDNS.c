@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.127  2004/11/25 01:41:36  ksekar
+Changed unnecessary LogMsgs to debugfs
+
 Revision 1.126  2004/11/23 23:54:17  ksekar
 <rdar://problem/3890318> Wide-Area DNSServiceRegisterRecord() failures
 can crash mDNSResponder
@@ -641,7 +644,7 @@ mDNSexport void mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr)
             }
         if (u->Servers[i].ip.v4.NotAnInteger == dnsAddr->NotAnInteger)
             {
-            LogMsg("ERROR: mDNS_RegisterDNS - DNS already registered");
+            debugf("ERROR: mDNS_RegisterDNS - DNS already registered");
             goto exit;
             }
         }
@@ -3434,7 +3437,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	if (newRR->uDNS_info.state == regState_Cancelled)
 		{
 		//!!!KRS we should send a memfree callback here!
-		LogMsg("Registration of %##s type %d cancelled prior to update",
+		debugf("Registration of %##s type %d cancelled prior to update",
 			   newRR->resrec.name.c, newRR->resrec.rrtype);
 		newRR->uDNS_info.state = regState_Unregistered;
 		unlinkAR(&u->RecordRegistrations, newRR);
