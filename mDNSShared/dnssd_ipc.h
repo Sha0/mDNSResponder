@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.8  2004/06/18 04:56:51  rpantos
+Add layer for platform code
+
 Revision 1.7  2004/06/12 01:08:14  cheshire
 Changes for Windows compatibility
 
@@ -35,9 +38,23 @@ Update to APSL 2.0
 #define DNSSD_IPC_H
 
 #include "dns_sd.h"
+
+
+//
+// Common cross platform services
+//
 #if defined(WIN32)
 #	include <winsock2.h>
-#	include <windows.h>
+#	define dnssd_InvalidSocket	INVALID_SOCKET
+#	define dnssd_EWOULDBLOCK	WSAEWOULDBLOCK
+#	define dnssd_EINTR			WSAEINTR
+#	define MSG_WAITALL 			0
+#	define dnssd_sock_t			SOCKET
+#	define dnssd_sockbuf_t		
+#	define dnssd_close(sock)	closesocket(sock)
+#	define dnssd_errno()		WSAGetLastError()
+#	define ssize_t				int
+#	define getpid				_getpid
 #else
 #	include <sys/types.h>
 #	include <unistd.h>
@@ -46,15 +63,36 @@ Update to APSL 2.0
 #	include <stdio.h>
 #	include <stdlib.h>
 #	include <sys/stat.h>
+#	define dnssd_InvalidSocket	-1
+#	define dnssd_EWOULDBLOCK	EWOULDBLOCK
+#	define dnssd_EINTR			EINTR
+#	define dnssd_EPIPE			EPIPE
+#	define dnssd_sock_t			int
+#	define dnssd_close(sock)	close(sock)
+#	define dnssd_errno()		errno
 #endif
+
+
+#if defined(USE_TCP_LOOPBACK)
+#	define AF_DNSSD				AF_INET
+#	define MDNS_TCP_SERVERADDR	"127.0.0.1"
+#	define MDNS_TCP_SERVERPORT	5533
+#	define LISTENQ				5
+#	define dnssd_sockaddr_t		struct sockaddr_in
+#else
+#	define AF_DNSSD				AF_LOCAL
+#	define MDNS_UDS_SERVERPATH	"/var/run/mDNSResponder"
+#	define LISTENQ				100
+    // longest legal control path length
+#	define MAX_CTLPATH			256	
+#	define dnssd_sockaddr_t		struct sockaddr_un
+#endif
+
 
 //#define UDSDEBUG  // verbose debug output
 
 // General UDS constants
-#define MDNS_UDS_SERVERPATH "/var/run/mDNSResponder"
-#define LISTENQ 100
 #define TXT_RECORD_INDEX -1	// record index for default text record
-#define MAX_CTLPATH 256	    // longest legal control path length
 
 // IPC data encoding constants and types
 #define VERSION 1
@@ -122,6 +160,9 @@ typedef struct ipc_msg_hdr_struct
     // index/socket pair uniquely identifies a record.  (Used to select records for removal by DNSServiceRemoveRecord())
     } ipc_msg_hdr_struct;
 
+
+
+// it is advanced to point to the next field, or the end of the message
 // routines to write to and extract data from message buffers.
 // caller responsible for bounds checking.
 // ptr is the address of the pointer to the start of the field.
