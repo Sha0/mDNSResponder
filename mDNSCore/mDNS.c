@@ -117,7 +117,7 @@ static const char *const mDNS_DomainTypeNames[] =
 #pragma mark - General Utility Functions
 #endif
 
-#if MDNS_DEBUGBREAKS
+#if MDNS_DEBUGMSGS
 mDNSlocal char *DNSTypeName(mDNSu16 rrtype)
 	{
 	switch (rrtype)
@@ -1996,7 +1996,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 	if (rr->rroriginalttl <= timesincercvd / mDNSPlatformOneSecond) rr->rrremainingttl = 0;
 	else rr->rrremainingttl = rr->rroriginalttl - timesincercvd / mDNSPlatformOneSecond;
 
-#if MDNS_DEBUGBREAKS
+#if MDNS_DEBUGMSGS
 	if (rr->rrremainingttl)
 		{
 		if (rr->rrtype == kDNSType_TXT)
@@ -3867,7 +3867,7 @@ extern void mDNS_Close(mDNS *const m)
 	NetworkInterfaceInfo *i;
 	const mDNSs32 timenow = mDNS_Lock(m);
 
-#if MDNS_DEBUGBREAKS
+#if MDNS_DEBUGMSGS
 	ResourceRecord *rr;
 	int rrcache_active = 0;
 	for (rr = m->rrcache; rr; rr=rr->next) if (CacheRRActive(m, rr)) rrcache_active++;
