@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.150  2003/05/29 06:25:45  cheshire
+<rdar://problem/3272218> Need to call CheckCacheExpiration() *before* AnswerNewQuestion()
+
 Revision 1.149  2003/05/29 06:18:39  cheshire
 <rdar://problem/3272217> Split AnswerLocalQuestions into CacheRecordAdd and CacheRecordRmv
 
@@ -3381,39 +3384,17 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		verbosedebugf("mDNS_Execute");
 		if (m->CurrentQuestion) LogMsg("mDNS_Execute: ERROR! m->CurrentQuestion already set");
 
-		// If we're past the probe suppression time, we can clear it
+		// 1. If we're past the probe suppression time, we can clear it
 		if (m->SuppressProbes && m->timenow - m->SuppressProbes >= 0)
 			{ m->SuppressProbes = 0; didwork |= 0x01; }
 
-		// If it's been more than ten seconds since the last probe failure, we can clear the counter
+		// 2. If it's been more than ten seconds since the last probe failure, we can clear the counter
 		if (m->NumFailedProbes && m->timenow - m->ProbeFailTime >= mDNSPlatformOneSecond * 10)
 			{ m->NumFailedProbes = 0; didwork |= 0x02; }
 		
-		// 1. See if we can answer any of our new local questions from the cache
-		for (i=0; m->NewQuestions && i<1000; i++) { AnswerNewQuestion(m); didwork |= 0x04; }
-		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
-	
-		// 2. See what packets we need to send
-		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState)
-			{
-			// If the platform code is currently non-operational,
-			// then we'll just complete deregistrations immediately,
-			// without waiting for the goodbye packet to be sent
-			DiscardDeregistrations(m);
-			didwork |= 0x08;
-			}
-		else if (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0)
-			{
-			// If the platform code is ready, and we're not suppressing packet generation right now
-			// then send our responses, probes, and questions.
-			// We check the cache first, because there might be records close to expiring that trigger questions to refresh them
-			// We send queries next, because there might be final-stage probes that complete their probing here, causing
-			// them to advance to announcing state, and we want those to be included in any announcements we send out.
-			// Finally, we send responses, including the previously mentioned records that just completed probing
-
-			if (m->SuppressSending) didwork |= 0x10;
-			m->SuppressSending = 0;
-
+		// 3. First purge our cache of stale old records
+		// We want to do this before first, before AnswerNewQuestion(), so that
+		// AnswerNewQuestion() only has to deal with real live cache records, not dead expired ones
 			if (m->rrcache_size && m->timenow - m->NextCacheCheck >= 0)
 				{
 				mDNSu32 used = m->rrcache_totalused;
@@ -3427,14 +3408,40 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				if (used == m->rrcache_totalused && m->NextScheduledQuery != m->timenow)
 					{
 					static mDNSs32 lastmsg = 0;
-					if ((mDNSu32)(m->timenow - lastmsg) < (mDNSu32)mDNSPlatformOneSecond)	// Yes, this *is* supposed to be unsigned
-						LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%d); next in %ld ticks (this is benign if it happens only rarely)",
+				if ((mDNSu32)(m->timenow - lastmsg) < (mDNSu32)mDNSPlatformOneSecond/10)	// Yes, this *is* supposed to be unsigned
+					LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%lu); next in %ld ticks (this is benign if it happens only rarely)",
 							(mDNSu32)(m->timenow - lastmsg), m->NextCacheCheck - m->timenow);
 					lastmsg = m->timenow;
 					}
-				didwork |= 0x20;	// Set didwork anyway -- don't need to log two syslog messages
-				}
+			didwork |= 0x04;	// Set didwork anyway -- don't need to log two syslog messages
+			}
+
+		// 4. See if we can answer any of our new local questions from the cache
+		for (i=0; m->NewQuestions && i<1000; i++) { AnswerNewQuestion(m); didwork |= 0x08; }
+		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
 	
+		// 5. See what packets we need to send
+		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState)
+			{
+			// If the platform code is currently non-operational,
+			// then we'll just complete deregistrations immediately,
+			// without waiting for the goodbye packet to be sent
+			DiscardDeregistrations(m);
+			didwork |= 0x10;
+			}
+		else if (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0)
+			{
+			// If the platform code is ready, and we're not suppressing packet generation right now
+			// then send our responses, probes, and questions.
+			// We check the cache first, because there might be records close to expiring that trigger questions to refresh them
+			// We send queries next, because there might be final-stage probes that complete their probing here, causing
+			// them to advance to announcing state, and we want those to be included in any announcements we send out.
+			// Finally, we send responses, including the previously mentioned records that just completed probing
+
+			if (m->SuppressSending) didwork |= 0x20;
+			m->SuppressSending = 0;
+
+			// 6. Send Query packets. This may cause some probing records to advance to announcing state
 			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextProbeTime >= 0) { SendQueries(m); didwork |= 0x40; }
 			if (m->timenow - m->NextScheduledQuery >= 0)
 				{
@@ -3447,6 +3454,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				m->NextProbeTime = m->timenow + mDNSPlatformOneSecond;
 				}
 
+			// 7. Send Response packets, including probing records just advanced to announcing state
 			if (m->timenow - m->NextResponseTime >= 0) { SendResponses(m); didwork |= 0x80; }
 			if (m->timenow - m->NextResponseTime >= 0)
 				{
@@ -3469,10 +3477,10 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			{
 			if (didwork & 0x01) LogMsg("************ mDNS_Execute did SuppressProbes");
 			if (didwork & 0x02) LogMsg("************ mDNS_Execute did NumFailedProbes");
-			if (didwork & 0x04) LogMsg("************ mDNS_Execute did AnswerNewQuestion");
-			if (didwork & 0x08) LogMsg("************ mDNS_Execute did DiscardDeregistrations");
-			if (didwork & 0x10) LogMsg("************ mDNS_Execute did m->SuppressSending = 0");
-			if (didwork & 0x20) LogMsg("************ mDNS_Execute did CheckCacheExpiration");
+			if (didwork & 0x04) LogMsg("************ mDNS_Execute did CheckCacheExpiration");
+			if (didwork & 0x08) LogMsg("************ mDNS_Execute did AnswerNewQuestion");
+			if (didwork & 0x10) LogMsg("************ mDNS_Execute did DiscardDeregistrations");
+			if (didwork & 0x20) LogMsg("************ mDNS_Execute did m->SuppressSending = 0");
 			if (didwork & 0x40) LogMsg("************ mDNS_Execute did SendQueries");
 			if (didwork & 0x80) LogMsg("************ mDNS_Execute did SendResponses");
 			}
