@@ -196,7 +196,6 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	char buffer[256];
 	DNSServiceDomainEnumerationReplyResultType rt;
 	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->Context;
-	kern_return_t status;
 
 	debugf("FoundDomain: %##s PTR %##s", answer->name.c, answer->rdata.name.c);
 	if (answer->rrtype != kDNSType_PTR) return;
@@ -214,14 +213,13 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 
 	ConvertDomainNameToCString(&answer->rdata.name, buffer);
-	status = DNSServiceDomainEnumerationReply_rpc(x->port, rt, buffer, 0, 10);
-	if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "enumeration");
+	if (DNSServiceDomainEnumerationReply_rpc(x->port, rt, buffer, 0, 10) == MACH_SEND_TIMED_OUT)
+		AbortBlockedClient(x->port, "enumeration");
 	}
 
 mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t server, mach_port_t client, int regDom)
 	{
 	mStatus err;
-	kern_return_t status;
 
 	mDNS_DomainType dt1 = regDom ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
 	mDNS_DomainType dt2 = regDom ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
@@ -233,8 +231,7 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	
 	debugf("Client %d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
 	// We always give local. as the initial default browse domain, and then look for more
-	status = DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0, 10);
-	if (status == MACH_SEND_TIMED_OUT)
+	if (DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0, 10) == MACH_SEND_TIMED_OUT)
 		{
 		AbortBlockedClient(x->port, "local enumeration");
 		return(mStatus_UnknownErr);
@@ -255,7 +252,6 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	kern_return_t status;
 	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
 	int resultType = DNSServiceBrowserReplyAddInstance;
 	domainlabel name;
@@ -270,8 +266,8 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	ConvertDomainNameToCString(&domain, c_dom);
 	if (answer->rrremainingttl == 0) resultType = DNSServiceBrowserReplyRemoveInstance;
 	debugf("DNSServiceBrowserReply_rpc sending reply for %s", c_name);
-	status = DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0, 10);
-	if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "browse");
+	if (DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0, 10) == MACH_SEND_TIMED_OUT)
+		AbortBlockedClient(x->port, "browse");
 	}
 
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_t client,
@@ -309,7 +305,6 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
 	struct sockaddr_in interface;
 	struct sockaddr_in address;
-	kern_return_t status;
 
 	interface.sin_len         = sizeof(interface);
 	interface.sin_family      = AF_INET;
@@ -321,8 +316,8 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	address.sin_port          = query->info->port.NotAnInteger;
 	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
 	
-	DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0, 10);
-	if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "resolve");
+	if (DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0, 10) == MACH_SEND_TIMED_OUT)
+		AbortBlockedClient(x->port, "resolve");
 	}
 
 mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_port_t client,
@@ -378,16 +373,15 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 
 	if (result == mStatus_NoError)
 		{
-		kern_return_t status = DNSServiceRegistrationReply_rpc(port, result, 10);
-		if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "registration success");
+		if (DNSServiceRegistrationReply_rpc(port, result, 10) == MACH_SEND_TIMED_OUT)
+			AbortBlockedClient(x->port, "registration success");
 		}
 
 	if (result == mStatus_NameConflict)
 		{
-		kern_return_t status;
 		AbortClient(port);    // This unlinks our DNSServiceRegistration from the list so we can safely free it
-		status = DNSServiceRegistrationReply_rpc(port, result, 10);
-		if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "registration conflict"); // Yes, this IS safe :-)
+		if (DNSServiceRegistrationReply_rpc(port, result, 10) == MACH_SEND_TIMED_OUT)
+			AbortBlockedClient(x->port, "registration conflict"); // Yes, this IS safe :-)
 		free(x);
 		}
 
