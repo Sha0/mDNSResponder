@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.23  2004/06/29 00:48:38  cheshire
+Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions;
+use an explicit while() loop instead.
+
 Revision 1.22  2004/06/26 03:16:34  shersche
 clean up warning messages on Win32 platform
 
@@ -89,7 +93,6 @@ Update to APSL 2.0
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
-#define MSG_WAITALL 0
 #define sockaddr_mdns sockaddr_in
 #define AF_MDNS AF_INET
 #else
@@ -140,8 +143,11 @@ typedef struct _DNSRecordRef_t
 
 // exported functions
 
+// write len bytes.  return 0 on success, -1 on error
 static int my_write(dnssd_sock_t sd, char *buf, int len)
     {
+    // Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions; use an explicit while() loop instead.
+    //if (send(sd, buf, len, MSG_WAITALL) != len)   return -1;
     while (len)
     	{
     	ssize_t num_written = send(sd, buf, len, 0);
@@ -155,7 +161,15 @@ static int my_write(dnssd_sock_t sd, char *buf, int len)
 // read len bytes.  return 0 on success, -1 on error
 static int my_read(dnssd_sock_t sd, char *buf, int len)
     {
-    if (recv(sd, buf, len, MSG_WAITALL) != len)  return -1;
+    // Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions; use an explicit while() loop instead.
+    //if (recv(sd, buf, len, MSG_WAITALL) != len)  return -1;
+    while (len)
+    	{
+    	ssize_t num_read = recv(sd, buf, len, 0);
+    	if (num_read < 0 || num_read > len) return -1;
+    	buf += num_read;
+    	len -= num_read;
+    	}
     return 0;
     }
 
@@ -305,11 +319,8 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
         if (errsd < 0)  goto cleanup;
         }
 
-    len = recv(errsd, &err, sizeof(err), MSG_WAITALL);
-    if (len != sizeof(err))
-        {
+    if (my_read(errsd, (char*)&err, (int)sizeof(err)) < 0)
         err = kDNSServiceErr_Unknown;
-        }
 cleanup:
     if (!reuse_sd && listenfd > 0) dnssd_close(listenfd);
     if (!reuse_sd && errsd > 0) dnssd_close(errsd);
