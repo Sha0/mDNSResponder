@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.31  2003/08/06 02:05:12  cheshire
+ * Add ability to give a list of hosts to monitor
+ *
  * Revision 1.30  2003/08/05 23:56:26  cheshire
  * Update code to compile with the new mDNSCoreReceive() function that requires a TTL
  * (Right now mDNSPosix.c just reports 255 -- we should fix this)
@@ -151,10 +154,11 @@
 
 #include <stdio.h>			// For printf()
 #include <stdlib.h>			// For malloc()
-#include <netinet/in.h>		// For INADDR_NONE
-#include <arpa/inet.h>		// For inet_addr()
-#include <netdb.h>			// For gethostbyname()
 #include <time.h>			// For "struct tm" etc.
+#include <netdb.h>			// For gethostbyname()
+#include <sys/socket.h>		// For AF_INET, AF_INET6, etc.
+#include <arpa/inet.h>		// For inet_addr()
+#include <netinet/in.h>		// For INADDR_NONE
 
 #include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"
@@ -198,6 +202,13 @@ struct ActivityStat_struct
 	int stat[NumStatOps];
 	};
 
+typedef struct FilterList_struct FilterList;
+struct FilterList_struct
+	{
+	FilterList *next;
+	mDNSAddr FilterAddr;
+	};
+
 //*************************************************************************************************************
 // Globals
 
@@ -206,7 +217,7 @@ static mDNS_PlatformSupport PlatformStorage;	// Stores this platform's globals
 
 struct timeval tv_start, tv_end, tv_interval;
 
-static mDNSAddr FilterAddr;
+static FilterList *Filters;
 
 static int NumPktQ;
 static int NumPktL;
@@ -551,6 +562,14 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 		}
 	}
 
+mDNSlocal mDNSBool AddressMatchesFilterList(const mDNSAddr *srcaddr)
+	{
+	FilterList *f;
+	if (!Filters) return(srcaddr->type == mDNSAddrType_IPv4);
+	for (f=Filters; f; f=f->next) if (mDNSSameAddress(srcaddr, &f->FilterAddr)) return(mDNStrue);
+	return(mDNSfalse);
+	}
+
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
@@ -581,15 +600,14 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	
 	// For now we're only interested in monitoring IPv4 traffic.
 	// All IPv6 packets should just be duplicates of the v4 packets.
-	if (srcaddr->type == mDNSAddrType_IPv4)
-		if (FilterAddr.type == 0 || FilterAddr.ip.v4.NotAnInteger == srcaddr->ip.v4.NotAnInteger)
-			{
-			mDNS_Lock(m);
-			if      (QR_OP == StdQ) DisplayQuery   (m, msg, end, srcaddr, srcport, InterfaceID);
-			else if (QR_OP == StdR) DisplayResponse(m, msg, end, srcaddr, srcport, InterfaceID);
-			else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
-			mDNS_Unlock(m);
-			}
+	if (AddressMatchesFilterList(srcaddr))
+		{
+		mDNS_Lock(m);
+		if      (QR_OP == StdQ) DisplayQuery   (m, msg, end, srcaddr, srcport, InterfaceID);
+		else if (QR_OP == StdR) DisplayResponse(m, msg, end, srcaddr, srcport, InterfaceID);
+		else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
+		mDNS_Unlock(m);
+		}
 	}
 
 mDNSlocal mStatus mDNSNetMonitor(void)
@@ -652,22 +670,39 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 
 mDNSexport int main(int argc, char **argv)
 	{
+	int i;
 	mStatus status;
-	if (argc > 2) goto usage;
 	
-	if (argc == 2)
+	for (i=1; i<argc; i++)
 		{
-		FilterAddr.ip.v4.NotAnInteger = inet_addr(argv[1]);
-		if (FilterAddr.ip.v4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
+		struct in_addr s4;
+		struct in6_addr s6;
+		mDNSAddr a;
+		a.type = mDNSAddrType_IPv4;
+
+		if (inet_pton(AF_INET, argv[i], &s4) == 1)
+			a.ip.v4.NotAnInteger = s4.s_addr;
+		else if (inet_pton(AF_INET6, argv[i], &s6) == 1)
 			{
-			struct hostent *h = gethostbyname(argv[1]);
-			if (h) FilterAddr.ip.v4.NotAnInteger = *(long*)h->h_addr;
+			a.type = mDNSAddrType_IPv6;
+			a.ip.v6.l[0] = s6.__u6_addr.__u6_addr32[0];
+			a.ip.v6.l[1] = s6.__u6_addr.__u6_addr32[1];
+			a.ip.v6.l[2] = s6.__u6_addr.__u6_addr32[2];
+			a.ip.v6.l[3] = s6.__u6_addr.__u6_addr32[3];
 			}
-		if (FilterAddr.ip.v4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
-			goto usage;
-		FilterAddr.type = mDNSAddrType_IPv4;
+		else
+			{
+			struct hostent *h = gethostbyname(argv[i]);
+			if (h) a.ip.v4.NotAnInteger = *(long*)h->h_addr;
+			else goto usage;
+			}
+		
+		FilterList *f = malloc(sizeof(*f));
+		f->FilterAddr = a;
+		f->next = Filters;
+		Filters = f;
 		}
-	
+
 	status = mDNSNetMonitor();
 	if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %ld\n", argv[0], status); return(status); }
 	return(0);
