@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.133  2003/08/20 23:39:31  cheshire
+<rdar://problem/3344098> Review syslog messages, and remove as appropriate
+
 Revision 1.132  2003/08/20 01:44:56  cheshire
 Fix errors in LogOperation() calls (only used for debugging)
 
@@ -503,11 +506,11 @@ mDNSlocal void AbortClientWithLogMessage(mach_port_t c, char *reason, char *msg,
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
-	if      (e) LogMsg("%5d: DomainEnumeration(%##s) %s%s",                   c, e->dom.qname.c,     reason, msg);
-	else if (b) LogMsg("%5d: Browser(%##s) %s%s",                             c, b->q.qname.c,       reason, msg);
-	else if (l) LogMsg("%5d: Resolver(%##s) %s%s",                            c, l->i.name.c,        reason, msg);
+	if      (e) LogMsg("%5d: DomainEnumeration(%##s) %s%s",                   c, e->dom.qname.c,            reason, msg);
+	else if (b) LogMsg("%5d: Browser(%##s) %s%s",                             c, b->q.qname.c,              reason, msg);
+	else if (l) LogMsg("%5d: Resolver(%##s) %s%s",                            c, l->i.name.c,               reason, msg);
 	else if (r) LogMsg("%5d: Registration(%##s) %s%s",                        c, r->s.RR_SRV.resrec.name.c, reason, msg);
-	else        LogMsg("%5d: (%s) %s, but no record of client can be found!", c,                     reason, msg);
+	else        LogMsg("%5d: (%s) %s, but no record of client can be found!", c,                            reason, msg);
 
 	AbortClient(c, m);
 	}
@@ -651,7 +654,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	domainname type, domain;
 	if (!DeconstructServiceName(&answer->rdata->u.name, &name, &type, &domain))
 		{
-		LogMsg("FoundInstance: %##s PTR %##s is not valid DNS-SD service pointer",
+		LogMsg("FoundInstance: %##s PTR %##s received from network is not valid DNS-SD service pointer",
 			answer->name.c, answer->rdata->u.name.c);
 		return;
 		}
@@ -919,8 +922,7 @@ mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainn
 			count++;
 
 	if (count > 1)
-		LogMsg("%5d: WARNING! Client application has registered %d identical instances of service %##s port %d. "
-			"(This is legal, and in some cases it is deliberate, but in many cases it indicates an application bug.)",
+		LogMsg("%5d: Client application registered %d identical instances of service %##s port %d.",
 			x->ClientMachPort, count, srv->c, (int)port.b[0] << 8 | port.b[1]);
 	}
 
@@ -1474,7 +1476,7 @@ mDNSlocal void HandleSIGINFO(int signal)
 	header.msgh_size = sizeof(header);
 	header.msgh_id = 0;
 	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
-		{ LogMsg("HandleSIGTERM: mach_msg_send failed; Exiting immediately."); exit(-1); }
+		LogMsg("HandleSIGINFO: mach_msg_send failed; No state log will be generated.");
 	}
 
 mDNSlocal kern_return_t mDNSDaemonInitialize(void)
@@ -1663,7 +1665,7 @@ mDNSexport int main(int argc, char **argv)
 				}
 			}
 
-		LogMsg("CFRunLoopRun Exiting. This is bad.");
+		LogMsg("ERROR: CFRunLoopRun Exiting.");
 		mDNS_Close(&mDNSStorage);
 		}
 

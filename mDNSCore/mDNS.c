@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.288  2003/08/20 23:39:30  cheshire
+<rdar://problem/3344098> Review syslog messages, and remove as appropriate
+
 Revision 1.287  2003/08/20 20:47:18  cheshire
 Fix compiler warning
 
@@ -2064,7 +2067,7 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 // any type should match, even if it is not the type the client plans to use.
 mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, const AuthRecord *const authrr)
 	{
-	if (!pktrr) { LogMsg("PacketRRMatchesSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
+	if (!pktrr)  { LogMsg("PacketRRMatchesSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
 	if (!authrr) { LogMsg("PacketRRMatchesSignature ERROR: authrr is NULL"); return(mDNSfalse); }
 	if (pktrr->resrec.InterfaceID &&
 		authrr->resrec.InterfaceID &&
@@ -5016,34 +5019,13 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					m->NextScheduledResponse = m->timenow;
 					if (srcaddr->type == mDNSAddrType_IPv4)
 						{
-						if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
-						else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4))
-							{
-							// For now we don't report this error.
-							//     Due to a bug in the OS X 10.2 version of mDNSResponder, when a service sends a goodbye packet,
-							//     all those old mDNSResponders respond by sending a query to verify that the service is really gone.
-							//     That flood of near-simultaneous queries then triggers the message below, warning that mDNSResponder
-							//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
-							//if (query->h.flags.b[0] & kDNSFlag0_TC)
-							//	LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one"
-							//		" client at a time %.4a %.4a (only bad if it happens more than a few times per minute)",
-							//		rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), &rr->v4Requester, &srcaddr->ip.v4);
-							rr->v4Requester = onesIPv4Addr;
-							}
+						if      (mDNSIPv4AddressIsZero(rr->v4Requester))                rr->v4Requester = srcaddr->ip.v4;
+						else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4)) rr->v4Requester = onesIPv4Addr;
 						}
 					else if (srcaddr->type == mDNSAddrType_IPv6)
 						{
-						if (mDNSIPv6AddressIsZero(rr->v6Requester)) { rr->v6RequesterTime = m->timenow; rr->v6Requester = srcaddr->ip.v6; }
-						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
-							{
-							if (query->h.flags.b[0] & kDNSFlag0_TC)
-								LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
-									"client at a time %.16a %ld %.16a "
-									"(Only bad if it happens more than a few times per minute. "
-									"This message will be removed before Panther ships.)",
-									rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
-							rr->v6Requester = onesIPv6Addr;
-							}
+						if      (mDNSIPv6AddressIsZero(rr->v6Requester))                rr->v6Requester = srcaddr->ip.v6;
+						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6)) rr->v6Requester = onesIPv6Addr;
 						}
 					}
 				}
@@ -5720,7 +5702,7 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 	else if (query->ServiceInfoQueryCallback && query->GotADD && query->GotTXT && PortChanged)
 		{
 		if (++query->Answers >= 100)
-			LogMsg("**** WARNING **** Have given %lu answers for %##s (SRV) %##s %u",
+			debugf("**** WARNING **** Have given %lu answers for %##s (SRV) %##s %u",
 				query->Answers, query->qSRV.qname.c, answer->rdata->u.srv.target.c,
 				((mDNSu16)answer->rdata->u.srv.port.b[0] << 8) | answer->rdata->u.srv.port.b[1]);
 		query->ServiceInfoQueryCallback(m, query);
@@ -5747,7 +5729,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	if (query->ServiceInfoQueryCallback && query->GotADD)
 		{
 		if (++query->Answers >= 100)
-			LogMsg("**** WARNING **** have given %lu answers for %##s (TXT) %#s...",
+			debugf("**** WARNING **** have given %lu answers for %##s (TXT) %#s...",
 				query->Answers, query->qSRV.qname.c, answer->rdata->u.txt.c);
 		query->ServiceInfoQueryCallback(m, query);
 		}
@@ -5797,9 +5779,9 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 		if (++query->Answers >= 100)
 			{
 			if (answer->rrtype == kDNSType_A)
-				LogMsg("**** WARNING **** have given %lu answers for %##s (A) %.4a",     query->Answers, query->qSRV.qname.c, &answer->rdata->u.ip);
+				debugf("**** WARNING **** have given %lu answers for %##s (A) %.4a",     query->Answers, query->qSRV.qname.c, &answer->rdata->u.ip);
 			else
-				LogMsg("**** WARNING **** have given %lu answers for %##s (AAAA) %.16a", query->Answers, query->qSRV.qname.c, &answer->rdata->u.ipv6);
+				debugf("**** WARNING **** have given %lu answers for %##s (AAAA) %.16a", query->Answers, query->qSRV.qname.c, &answer->rdata->u.ipv6);
 			}
 		query->ServiceInfoQueryCallback(m, query);
 		}

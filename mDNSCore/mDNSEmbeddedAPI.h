@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.110  2003/08/20 23:39:31  cheshire
+<rdar://problem/3344098> Review syslog messages, and remove as appropriate
+
 Revision 1.109  2003/08/19 22:24:10  cheshire
 Comment change
 
@@ -715,7 +718,6 @@ struct AuthRecord_struct
 	mDNSInterfaceID SendRNow;			// The interface this query is being sent on right now
 	mDNSv4Addr      v4Requester;		// Recent v4 query for this record, or all-ones if more than one recent query
 	mDNSv6Addr      v6Requester;		// Recent v6 query for this record, or all-ones if more than one recent query
-	mDNSs32         v6RequesterTime;	// For debugging: Time that v6Requester was set non-zero
 	AuthRecord     *NextResponse;		// Link to the next element in the chain of responses to generate
 	const mDNSu8   *NR_AnswerTo;		// Set if this record was selected by virtue of being a direct answer to a question
 	AuthRecord     *NR_AdditionalTo;	// Set if this record was selected by virtue of being additional to another
