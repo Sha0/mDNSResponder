@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.203  2003/07/10 23:53:41  cheshire
+<rdar://problem/3320079> Hostname conflict naming should not use two hyphens
+
 Revision 1.202  2003/07/04 02:23:20  cheshire
 <rdar://problem/3311955> Responder too aggressive at flushing stale data
 Changed mDNSResponder to require four unanswered queries before purging a record, instead of two.
@@ -1490,8 +1493,8 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	return(mDNStrue);
 	}
 
-// returns true if a rich text label ends in " (n)", or if an RFC 1034
-// name ends in "--n", where n is some digit.
+// Returns true if a rich text label ends in " (nnn)", or if an RFC 1034
+// name ends in "-nnn", where n is some decimal number.
 mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool RichText)
 	{
 	mDNSu16 l = name->c[0];
@@ -1507,11 +1510,11 @@ mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool R
 		}
 	else
 		{
-		if (l < 3) return mDNSfalse;							// Need at least "--2"
+		if (l < 2) return mDNSfalse;							// Need at least "-2"
 		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;			// Last char must be a digit
 		l--;
 		while (l > 2 && mdnsIsDigit(name->c[l])) l--;			// Strip off digits
-		return (name->c[l] == '-' && name->c[l - 1] == '-');
+		return (name->c[l] == '-');
 		}
 	}
 
@@ -1521,12 +1524,24 @@ mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool R
 mDNSlocal mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 	{
 	mDNSu32 val = 0, multiplier = 1;
-		
-	if (RichText) name->c[0]--;  // chop closing parentheses from RT suffix
+
+	// Chop closing parentheses from RichText suffix
+	if (RichText && name->c[0] >= 1 && name->c[name->c[0]] == ')') name->c[0]--;
+
 	// Get any existing numerical suffix off the name
 	while (mdnsIsDigit(name->c[name->c[0]]))
 		{ val += (name->c[name->c[0]] - '0') * multiplier; multiplier *= 10; name->c[0]--; }
-	name->c[0] -= 2;  // chop opening parentheses and whitespace (RT) or double-hyphen (RFC 1034)
+
+	// Chop opening parentheses or dash from suffix
+	if (RichText)
+		{
+		if (name->c[0] >= 2 && name->c[name->c[0]] == '(' && name->c[name->c[0]] == ' ') name->c[0] -= 2;
+		}
+	else
+		{
+		if (name->c[0] >= 1 && name->c[name->c[0]] == '-') name->c[0] -= 1;
+		}
+
 	return(val);
 	}
 
@@ -1534,7 +1549,7 @@ mDNSlocal mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 // in parentheses (rich text) or following two consecutive hyphens (RFC 1034 domain label).
 mDNSlocal void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 	{
-	mDNSu32 divisor = 1, chars = 3;	// Shortest possible RFC1034 name suffix is 3 characters ("--2")
+	mDNSu32 divisor = 1, chars = 2;	// Shortest possible RFC1034 name suffix is 3 characters ("-2")
 	if (RichText) chars = 4;		// Shortest possible RichText suffix is 4 characters (" (2)")
 	
 	// Truncate trailing spaces from RichText names
@@ -1551,7 +1566,7 @@ mDNSlocal void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichTe
 		}
 
 	if (RichText) { name->c[++name->c[0]] = ' '; name->c[++name->c[0]] = '('; }
-	else          { name->c[++name->c[0]] = '-'; name->c[++name->c[0]] = '-'; }
+	else          { name->c[++name->c[0]] = '-'; }
 	
 	while (divisor)
 		{
