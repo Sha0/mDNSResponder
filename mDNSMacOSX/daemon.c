@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.163  2004/05/12 02:03:25  ksekar
+Non-local domains will only be browsed by default, and show up in
+_browse domain enumeration, if they contain an _browse._dns-sd ptr record.
+
 Revision 1.162  2004/04/14 23:09:29  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -748,8 +752,8 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 		{ AbortBlockedClient(x->ClientMachPort, "local enumeration", x); return(mStatus_UnknownErr); }
 
 	// Do the operation
-	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, mDNSInterface_Any, FoundDomain, x);
-	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, mDNSInterface_Any, FoundDomain, x);
+	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, mDNSInterface_LocalOnly, FoundDomain, x);
+	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, mDNSInterface_LocalOnly, FoundDomain, x);
 	if (err) { AbortClient(client, x); errormsg = "mDNS_GetDomains"; goto fail; }
 	
 	// Succeeded: Wrap up and return
@@ -804,7 +808,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	(void)unusedserver;		// Unused
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
-	SearchDomainList *SearchDomains = NULL, *sdPtr;
+	const DNameListElem *SearchDomains = NULL, *sdPtr;
 	DNSServiceBrowserQuestion *qptr;
 	
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
@@ -849,11 +853,10 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 			if (!qptr)  { err = mStatus_UnknownErr; AbortClient(client, x); errormsg = "malloc"; goto fail; }
 			qptr->next = x->qlist;
 			x->qlist = qptr;
-			LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", client, t.c, sdPtr->SearchDomain.c);
-			err = mDNS_StartBrowse(&mDNSStorage, &qptr->q, &t, &sdPtr->SearchDomain, mDNSInterface_Any, FoundInstance, x);
+			LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", client, t.c, sdPtr->name.c);
+			err = mDNS_StartBrowse(&mDNSStorage, &qptr->q, &t, &sdPtr->name, mDNSInterface_Any, FoundInstance, x);
 			if (err) { AbortClient(client, x); errormsg = "mDNS_StartBrowse"; goto fail; }			
-			}
-		FreeSearchDomainList(SearchDomains);
+			}		
 		}
 	// Succeeded: Wrap up and return
 	EnableDeathNotificationForClient(client, x);
@@ -863,7 +866,6 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
-	if (SearchDomains) FreeSearchDomainList(SearchDomains);
 	return(err);
 	}
 

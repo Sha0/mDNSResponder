@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.33  2004/05/12 02:03:25  ksekar
+Non-local domains will only be browsed by default, and show up in
+_browse domain enumeration, if they contain an _browse._dns-sd ptr record.
+
 Revision 1.32  2004/04/21 02:20:47  cheshire
 Rename interface field 'CurrentlyActive' to more descriptive 'Exists'
 
@@ -191,14 +195,15 @@ extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
 
-typedef struct SearchDomainList
+typedef struct DNameListElem
 	{
-    domainname SearchDomain;
-    struct SearchDomainList *next;
-    } SearchDomainList;
-	
-extern SearchDomainList *GetSearchDomainList(void);
-extern void FreeSearchDomainList(SearchDomainList *list);
+    domainname name;
+    struct DNameListElem *next;
+    } DNameListElem;
+
+// get the list of domains to browse by default.  this list should NOT be retained across callbacks,
+//as it may be invalidated.	
+extern const DNameListElem *GetSearchDomainList(void);
 
 
 	

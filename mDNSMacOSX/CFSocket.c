@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.147  2004/05/12 02:03:25  ksekar
+Non-local domains will only be browsed by default, and show up in
+_browse domain enumeration, if they contain an _browse._dns-sd ptr record.
+
 Revision 1.146  2004/04/27 02:49:15  cheshire
 <rdar://problem/3634655>: mDNSResponder leaks sockets on bind() error
 
@@ -451,13 +455,35 @@ Minor code tidying
 #include <IOKit/IOMessage.h>
 #include <mach/mach_time.h>
 
+typedef struct AuthRecordListElem
+	{
+    struct AuthRecordListElem *next;
+    AuthRecord ar;
+	} AuthRecordListElem;
+
+typedef struct SearchListElem
+	{
+    struct SearchListElem *next;
+    domainname domain;
+    int flag;  
+    DNSQuestion q;
+    AuthRecordListElem *AuthRecs;
+	} SearchListElem;
+
+
 // ***************************************************************************
 // Globals
 
 static mDNSu32 clockdivisor = 0;
 static mDNSBool DNSConfigInitialized = mDNSfalse;
 #define MAX_SEARCH_DOMAINS 32
-static domainname *SearchDomains[MAX_SEARCH_DOMAINS];
+
+// for domain enumeration and default browsing
+static SearchListElem *SearchList = NULL;    // where we search for _browse domains
+static DNSQuestion DefBrowseDomainQ;         // our local enumeration query for _browse domains
+static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
+
+
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
 // ***************************************************************************
 // Macros
@@ -1447,139 +1473,189 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	}
 
 
-mDNSexport void FreeSearchDomainList(SearchDomainList *list)
+mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
 	{
-	SearchDomainList *freeptr;
+	int i, count;
+	CFArrayRef values;
+	char            buf[256];
+	mDNSv4Addr      saddr;	
+	CFStringRef s;
 
-	while (list)
-		{
-		freeptr = list;
-		list = list->next;
-		freeL("FreeSearchDomainList", freeptr);
-		}
- 	}
 
-mDNSlocal mStatus AddDomainToList(SearchDomainList **list, domainname *domain)
-	{
-	SearchDomainList *newelem;
-	
-	newelem = mallocL("GetSearchDomainList", sizeof(SearchDomainList));
-	if (!newelem)
+	mDNS_DeregisterDNSList(m); // deregister orig list
+	values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
+	if (!values) return mStatus_NoError;
+
+	count = CFArrayGetCount(values);
+	for (i = 0; i < count; i++)
 		{
-		LogMsg("ERROR: AddDomainToList - malloc");
-		return mStatus_UnknownErr;
+		s = CFArrayGetValueAtIndex(values, i);
+		if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
+		if (!CFStringGetCString(s, buf, 256, kCFStringEncodingASCII))
+			{
+			LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
+			continue;
+			}
+		if (!inet_aton(buf, (struct in_addr *)saddr.b))
+			{
+			LogMsg("ERROR: RegisterNameServers - invalid address string %s", buf);
+			continue;
+			}
+		mDNS_RegisterDNS(m, &saddr);
 		}
-	strcpy(newelem->SearchDomain.c, domain->c);
-	newelem->next = *list;
-	(*list) =  newelem;
 	return mStatus_NoError;
 	}
 
-mDNSexport SearchDomainList *GetSearchDomainList(void)
+mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
-	SearchDomainList *newlist = NULL;
-	int i;
-	domainname local;
-	
-	for (i = 0; i < MAX_SEARCH_DOMAINS; i++)
-		{
-		if (SearchDomains[i])			
-			if (AddDomainToList(&newlist, SearchDomains[i])) goto error;
-		}
-	
-	if (!MakeDomainNameFromDNSNameString(&local, "local.")) goto error;
-	AddDomainToList(&newlist, &local);
-	return newlist;
-
-	error:
-	FreeSearchDomainList(newlist);
-	return NULL;
+	(void)m;  // unused
+	AuthRecordListElem *elem = rr->RecordContext;
+	if (result == mStatus_MemFree) freeL("FreeARElemCallback", elem);
 	}
 
-
-mDNSlocal void SaveSearchDomain(domainname *domain)
+mDNSlocal void FoundBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)	
 	{
-	domainname **searchlist = SearchDomains;
-	int i;
-	
-	for (i = 0; i < MAX_SEARCH_DOMAINS; i++)
+	SearchListElem *slElem = question->QuestionContext;
+	AuthRecordListElem *arElem, *ptr, *prev;
+	mStatus err;
+	if (AddRecord)
 		{
-		if (!searchlist[i]) {
-			searchlist[i] = mallocL("SaveSearchDomain", sizeof(domainname));
-			if (!searchlist[i]) {  LogMsg("ERROR: SaveSearchDomain - malloc");  return; }
-			strcpy(searchlist[i]->c, domain->c);
-			return;
+		arElem = mallocL("FoundBrowseDomain - arElem", sizeof(AuthRecordListElem));
+		if (!arElem) { LogMsg("ERROR: malloc");  return; }
+		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, arElem);
+		MakeDomainNameFromDNSNameString(&arElem->ar.resrec.name, "_browse._dns-sd._udp.local.");
+		strcpy(arElem->ar.resrec.rdata->u.name.c, answer->rdata->u.name.c);
+		err = mDNS_Register(m, &arElem->ar);
+		if (err) { LogMsg("ERROR: FoundBrowseDomain - mDNS_Register returned %d", err); return; }
+		arElem->next = slElem->AuthRecs;
+		slElem->AuthRecs = arElem;
+		}
+	else
+		{
+		ptr = slElem->AuthRecs;
+		prev = NULL;
+		while (ptr)
+			{
+			if (SameDomainName(&ptr->ar.resrec.name, &answer->name) && SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
+				{
+				err = mDNS_Deregister(m, &ptr->ar);				
+				if (err) LogMsg("ERROR: FoundBrowseDomain - mDNS_Deregister returned %d", err);
+				if (prev) prev->next = ptr->next;
+				else slElem->AuthRecs = ptr->next;
+				ptr = ptr->next;
+				}
+			else
+				{
+				prev = ptr;
+				ptr = ptr->next;
+				}
 			}
 		}
-	LogMsg("ERROR: SaveSearchDomain - maximum search domain limit reached");
 	}
 
-mDNSlocal void ClearSearchDomains(void)
-	{
-	int i;
-	domainname **searchlist = SearchDomains;
-
-	for (i = 0;  i < MAX_SEARCH_DOMAINS; i++)
-		{
-		if (searchlist[i])
-			{
-			freeL("ClearSearchList", searchlist[i]);
-			searchlist[i] = NULL;
-			}	
-		}
-	}
-
-
-
-// key must be kSCPropNetDNSServerAddresses or kSCPropNetDNSSearchDomains
-mDNSlocal mStatus RegisterDNSConfig(mDNS *const m, CFDictionaryRef dict, const CFStringRef key)
+mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	{
 	int i, count;
 	CFArrayRef values;
 	domainname domain;
 	char            buf[MAX_ESCAPED_DOMAIN_NAME];
-	mDNSv4Addr      saddr;	
 	CFStringRef s;
+	SearchListElem *new, *ptr, *prev, *freeSLPtr;
+	AuthRecordListElem *arList;
+	mStatus err;
 	
-	values = CFDictionaryGetValue(dict, key);
+	// step 1: mark each elem for removal (-1)
+	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = -1;
+	
+	values = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
 	if (values)
 		{
 		count = CFArrayGetCount(values);
 		for (i = 0; i < count; i++)
 			{
 			s = CFArrayGetValueAtIndex(values, i);
-			if (!s) { LogMsg("ERROR: RegisterDNSConfig - CFArrayGetValueAtIndex"); break; }
+			if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
 			if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingASCII))
 				{
-				LogMsg("ERROR: RegisterDNSConfig - CFStringGetCString");
-				goto error;
-				}
-			if (key == kSCPropNetDNSServerAddresses)
+				LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
+				continue;
+				}		   			
+			if (!MakeDomainNameFromDNSNameString(&domain, buf))
 				{
-				if (!inet_aton(buf, (struct in_addr *)saddr.b))
-					{
-					LogMsg("ERROR: RegisterDNSConfig - invalid address string %s", buf);
-					goto error;
-					}
-				mDNS_RegisterDNS(m, &saddr);
-				}
-			else if (key == kSCPropNetDNSSearchDomains)
+				LogMsg("ERROR: RegisterNameServers - invalid search domain %s", buf);
+				continue;
+				}				
+			// if domain is in list, mark as pre-existent (0)
+			for (ptr = SearchList; ptr; ptr = ptr->next)
+				if (SameDomainName(&ptr->domain, &domain)) { ptr->flag = 0; break; }
+
+			// if domain not in list, add to list, mark as add (1)
+			if (!ptr)
 				{
-				if (!MakeDomainNameFromDNSNameString(&domain, buf))
-					{
-					LogMsg("ERROR: RegisterDNSConfig - invalid search domain %s", buf);
-					goto error;
-					}				
-				SaveSearchDomain(&domain);
+				new = mallocL("RegisterSearchDomains - SearchListElem", sizeof(SearchListElem));
+				if (!new) { LogMsg("ERROR: RegisterSearchDomains - malloc"); return mStatus_UnknownErr; }
+				bzero(new, sizeof(SearchListElem));
+				strcpy(new->domain.c, domain.c);
+				new->flag = 1;  // add
+				new->next = SearchList;
+				SearchList = new;
 				}
-			else { LogMsg("ERROR: RegisterDNSConfig - invalid key %s", key); }			
 			}
 		}
+	// delete elems marked for removal, do queries for elems marked add
+	prev = NULL;
+	ptr = SearchList;
+	while (ptr)
+		{
+		if (ptr->flag == -1)  // remove
+			{				
+			mDNS_StopBrowse(m, &ptr->q);
+			
+			// deregister records generated from answers to the query
+			arList = ptr->AuthRecs;
+			ptr->AuthRecs = NULL;
+			while (arList)
+				{
+				err = mDNS_Deregister(m, &arList->ar);
+				if (err) LogMsg("ERROR: RegisterSearchDomains - mDNS_Deregister returned %d", err);
+				arList = arList->next;
+				}
+			
+			// remove elem from list, delete				
+			if (prev) prev->next = ptr->next;
+				else SearchList = ptr->next;
+			freeSLPtr = ptr;
+				ptr = ptr->next;
+				freeL("RegisterNameServers - freeSLPtr", freeSLPtr);
+				continue;
+			}
+		
+		if (ptr->flag == 1)  // add
+			{
+			domainname type;
+			if (!MakeDomainNameFromDNSNameString(&type, "_browse._dns-sd._udp")) { LogMsg("ERROR - RegisterNameServers - bad type"); continue; }
+			err = mDNS_StartBrowse(m, &ptr->q, &type, &ptr->domain, mDNSInterface_Any, FoundBrowseDomain, ptr);
+			if (err) LogMsg("ERROR: RegisterNameServers - StartBrowse, %d", err);
+			ptr->flag = 0;
+			}
+		
+		if (ptr->flag) { LogMsg("RegisterNameServers - unknown flag %d.  Skipping.", ptr->flag); }
+		
+		prev = ptr;
+		ptr = ptr->next;
+		}		
+	
 	return mStatus_NoError;
-
-	error:
-	return mStatus_UnknownErr;
 	}
+
+// key must be kSCPropNetDNSServerAddresses or kSCPropNetDNSSearchDomains
+mDNSlocal mStatus RegisterDNSConfig(mDNS *const m, CFDictionaryRef dict, const CFStringRef key)
+	{	
+	if (key == kSCPropNetDNSSearchDomains) return RegisterSearchDomains(m, dict);
+	if (key == kSCPropNetDNSServerAddresses) return RegisterNameServers(m, dict);
+	LogMsg("ERROR: RegisterDNSConfig - bad key"); return mStatus_UnknownErr;
+	}
+
 
 mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
 	{
@@ -1591,8 +1667,6 @@ mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, v
 
 	//!!!KRS fixme - we need a list of registerd servers. this wholesale
     // dereg doesn't work if there's an error and we bail out before registering the new list
-	mDNS_DeregisterDNSList(m); 
-	ClearSearchDomains();
 
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
@@ -1865,6 +1939,78 @@ mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	fclose(f);
 	}
 
+mDNSexport const DNameListElem *GetSearchDomainList(void)
+	{
+	return DefBrowseList;
+	}
+
+
+
+mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	DNameListElem *ptr, *prev, *new;
+	(void)m; // unused;
+	(void)question;  // unused
+	if (AddRecord)
+		{
+		new = mallocL("FoundDefBrowseDomain", sizeof(DNameListElem));
+		if (!new) { LogMsg("ERROR: malloc"); return; }
+		strcpy(new->name.c, answer->rdata->u.name.c);
+		new->next = DefBrowseList;
+		DefBrowseList = new;
+		return;
+		}
+	else
+		{
+		ptr = DefBrowseList;
+		prev = NULL;
+		while (ptr)
+			{
+			if (SameDomainName(&ptr->name, &answer->rdata->u.name))
+				{
+				if (prev) prev->next = ptr->next;
+				else DefBrowseList = ptr->next;
+				freeL("FoundDefBrowseDomain", ptr);
+				return;
+				}
+			else ptr = ptr->next;
+			}
+		}    
+	}
+
+
+// Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
+// 1) query for _browse._dns-sd._udp.local on LocalOnly interface
+//    (.local manually generated via explicit callback)
+// 2) for each search domain (from prefs pane), query for _browse._dns-sd._udp.<searchdomain>.
+// 3) for each result from (2), register LocalOnly PTR record_browse._dns-sd._udp.local. -> <result>
+// 4) result above should generate a callback from question in (1).  result added to global list
+// 5) global list delivered to client via GetSearchDomainList()
+// 6) client calls to enumerate domains now go over LocalOnly interface
+//    (!!!KRS may add outgoing interface in addition)
+
+mDNSlocal mStatus InitDNSConfig(mDNS *const m)
+	{
+	mStatus err;
+	AuthRecord local;
+
+	DNSConfigInitialized = mDNStrue;
+
+	// start query for domains to be used in default (empty string domain) browses
+	err = mDNS_GetDomains(m, &DefBrowseDomainQ, mDNS_DomainTypeBrowse, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
+
+	// provide .local automatically
+	mDNS_SetupResourceRecord(&local, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
+	MakeDomainNameFromDNSNameString(&local.resrec.name, "_browse._dns-sd._udp.local.");
+	MakeDomainNameFromDNSNameString(&local.resrec.rdata->u.name, "local.");
+	// other fields ignored
+	FoundDefBrowseDomain(m, &DefBrowseDomainQ, &local.resrec, 1);
+
+    return mStatus_NoError;
+	}
+	
+
+
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
@@ -1894,7 +2040,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	ReadRegDomainFromConfig(m);	
 
-	m->p->unicastsockets.m     = m;
+ 	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;
 	m->p->unicastsockets.sktv4 = -1;
 
@@ -1914,12 +2060,12 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	
 	err = WatchForPowerChanges(m);
 	if (err) return err;
-
-	bzero(SearchDomains, sizeof(domainname *) * MAX_SEARCH_DOMAINS);
+	
 	err = WatchForDNSChanges(m);
-    DNSConfigInitialized = mDNStrue;
-   
-	return(err);
+
+	InitDNSConfig(m);
+
+ 	return(err);
 	}
 
 mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
