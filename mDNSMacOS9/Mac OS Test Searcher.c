@@ -100,7 +100,7 @@ static void PrintServiceInfo(SearcherServices *services)
 // actually needs to contact the service to use it.
 static void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
-	SearcherServices *services = (SearcherServices *)query->Context;
+	SearcherServices *services = (SearcherServices *)query->ServiceInfoQueryContext;
 	linkedServiceInfo *info = (linkedServiceInfo *)(query->info);
 	if (query->info->ip.type == mDNSAddrType_IPv4)
 		{
@@ -116,7 +116,7 @@ static void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
 	#pragma unused (question)
-	SearcherServices *services = (SearcherServices *)question->Context;
+	SearcherServices *services = (SearcherServices *)question->QuestionContext;
 	linkedServiceInfo *info;
 
 	debugf("FoundInstance %##s PTR %##s", answer->name.c, answer->rdata->u.name.c);
@@ -149,7 +149,7 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	{
 	#pragma unused (m)
 	#pragma unused (question)
-	SearcherServices *services = (SearcherServices *)question->Context;
+	SearcherServices *services = (SearcherServices *)question->QuestionContext;
 	linkedServiceInfo *info;
 
 	debugf("FoundDomain %##s PTR %##s", answer->name.c, answer->rdata->u.name.c);

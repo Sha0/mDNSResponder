@@ -88,6 +88,14 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.92  2003/03/27 03:30:55  cheshire
+<rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
+Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
+Fixes:
+1. Make mDNS_DeregisterInterface() safe to call from a callback
+2. Make HostNameCallback() use mDNS_DeadvertiseInterface() instead
+   (it never really needed to deregister the interface at all)
+
 Revision 1.91  2003/03/15 04:40:36  cheshire
 Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
@@ -1209,8 +1217,8 @@ mDNSlocal void SetTargetToHostName(const mDNS *const m, ResourceRecord *const rr
 		case kDNSType_SRV:	rr->rdata->u.srv.target = m->hostname1; break;
 		default: debugf("SetTargetToHostName: Dont' know how to set the target of rrtype %d", rr->rrtype); break;
 		}
-	rr->rdata->RDLength = GetRDLength(rr, mDNSfalse);
-	rr->rdestimate      = GetRDLength(rr, mDNStrue);
+	rr->rdata->RDLength  = GetRDLength(rr, mDNSfalse);
+	rr->rdestimate       = GetRDLength(rr, mDNStrue);
 	
 	// If we're in the middle of probing this record, we need to start again,
 	// because changing its rdata may change the outcome of the tie-breaker.
@@ -1235,7 +1243,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	while (*p && *p != rr) p=&(*p)->next;
 	if (*p)
 		{
-		debugf("Error! Tried to register a ResourceRecord that's already in the list");
+		debugf("Error! Tried to register a ResourceRecord %X %##s that's already in the list", rr, rr->name.c);
 		return(mStatus_AlreadyRegistered);
 		}
 
@@ -1259,9 +1267,10 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 
 	if (rr->InterfaceID)		// If this resource record is referencing a specific interface
 		{
-		NetworkInterfaceInfo *i;	// Then make sure that interface exists
-		for (i=m->HostInterfaces; i; i=i->next) if (i->InterfaceID == rr->InterfaceID) break;
-		if (!i)
+		NetworkInterfaceInfo *intf;	// Then make sure that interface exists
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->InterfaceID == rr->InterfaceID) break;
+		if (!intf)
 			{
 			debugf("mDNS_Register_internal: Bogus InterfaceID %X in resource record", rr->InterfaceID);
 			return(mStatus_BadReferenceErr);
@@ -1345,7 +1354,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 		{
 		// No need to log an error message if we already know this is a potentially repeated deregistration
 		if (drt != mDNS_Dereg_repeat)
-			debugf("mDNS_Deregister_internal: Record %##s (%s) not found in list", rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("mDNS_Deregister_internal: Record %X %##s (%s) not found in list", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		return(mStatus_BadReferenceErr);
 		}
 
@@ -1387,21 +1396,28 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 			RData *OldRData = rr->rdata;
 			rr->rdata = rr->NewRData;	// Update our rdata
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
+			if (rr->UpdateCallback)	
+				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
 			}
 		
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
 		// so any attempt to touch rr after this is likely to lead to a crash.
-		if (RecordType == kDNSRecordTypeShared && rr->Callback)
-			rr->Callback(m, rr, mStatus_MemFree);
+		m->mDNS_busy--; // Decrement mDNS_busy to allow client to legally make mDNS API calls from the callback
+		if (RecordType == kDNSRecordTypeShared)
+			{
+			if (rr->RecordCallback)
+				rr->RecordCallback(m, rr, mStatus_MemFree);
+			}
 		else if (drt == mDNS_Dereg_conflict)
 			{
 			m->SuppressProbes = timenow + mDNSPlatformOneSecond;
 			if (m->SuppressProbes == 0) m->SuppressProbes = 1;
-			if (rr->Callback) rr->Callback(m, rr, mStatus_NameConflict);
+			if (rr->RecordCallback)
+				rr->RecordCallback(m, rr, mStatus_NameConflict);
 			}
+		m->mDNS_busy++; // Reincrement mDNS_busy to block mDNS API calls again
 		}
 	return(mStatus_NoError);
 	}
@@ -1790,8 +1806,8 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->Additional2       = mDNSNULL;
 	rr->DependentOn       = mDNSNULL;
 	rr->RRSet             = mDNSNULL;
-	rr->Callback          = mDNSNULL;
-	rr->Context           = mDNSNULL;
+	rr->RecordCallback    = mDNSNULL;
+	rr->RecordContext     = mDNSNULL;
 	rr->RecordType        = RecordType;
 	rr->HostTarget        = mDNSfalse;
 
@@ -2009,19 +2025,28 @@ mDNSlocal mDNSBool HaveResponses(const mDNS *const m, const mDNSs32 timenow)
 	else
 		{
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			{
+			if (rr->RecordType == kDNSRecordTypeDeregistering)
+				return(mDNStrue);
+
 			if (rr->RRInterfaceActive)
 				{
-				if (rr->RecordType == kDNSRecordTypeDeregistering)
-					return(mDNStrue);
-		
 				if (rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) && timenow - rr->NextSendTime >= 0)
 					return(mDNStrue);
 		
 				if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
 					return(mDNStrue);
 				}
+			}
 		}
 	return(mDNSfalse);
+	}
+
+mDNSlocal void CompleteDeregistration(mDNS *const m, ResourceRecord *rr, mDNSs32 timenow)
+	{
+	rr->RecordType    = kDNSRecordTypeShared;
+	rr->AnnounceCount = DefaultAnnounceCountForTypeShared+1;
+	mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 	}
 
 // NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change
@@ -2038,11 +2063,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSInterfaceID InterfaceID
 		m->CurrentRecord = rr->next;
 		if (rr->RecordType == kDNSRecordTypeDeregistering &&
 			(InterfaceID == mDNSInterface_Any || InterfaceID == rr->InterfaceID))
-			{
-			rr->RecordType    = kDNSRecordTypeShared;
-			rr->AnnounceCount = DefaultAnnounceCountForTypeShared+1;
-			mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
-			}
+				CompleteDeregistration(m, rr, timenow);
 		}
 	}
 
@@ -2102,7 +2123,14 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 			{
 			rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (rr->InterfaceID == InterfaceID)
+
+			// If we have Deregistering records that don't have an active interface any more, go ahead and
+			// complete their deregistration and call the client back so that the client can free the memory
+			if (rr->RecordType == kDNSRecordTypeDeregistering && !rr->RRInterfaceActive)
+				{
+				CompleteDeregistration(m, rr, timenow);
+				}
+			else if (rr->InterfaceID == InterfaceID)
 				{
 				if (rr->NewRData)								// If we have new data for this record
 					{
@@ -2118,16 +2146,15 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 						}
 					rr->rdata = rr->NewRData;	// Update our rdata
 					rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-					if (rr->UpdateCallback) rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
+					if (rr->UpdateCallback)
+						rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
 					}
 				if (rr->RecordType == kDNSRecordTypeDeregistering &&
 					(newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0)))
 					{
 					numDereg++;
 					responseptr = newptr;
-					rr->RecordType    = kDNSRecordTypeShared;
-					rr->AnnounceCount = DefaultAnnounceCountForTypeShared+1;
-					mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
+					CompleteDeregistration(m, rr, timenow);
 					}
 				}
 			}
@@ -2338,14 +2365,16 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 		rr->RecordType    = kDNSRecordTypeVerified;
 		rr->AnnounceCount = DefaultAnnounceCountForRecordType(rr->RecordType);
 		verbosedebugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
-		if (!rr->Acknowledged && rr->Callback)
+		if (!rr->Acknowledged && rr->RecordCallback)
 			{
 			// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 			// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 			// Right now the only code that calls BuildProbe() is BuildQueryPacketProbes(), and that uses the "m->CurrentRecord"
 			// mechanism to protect against records being deleted out from under it.
 			rr->Acknowledged = mDNStrue;
-			rr->Callback(m, rr, mStatus_NoError);
+			m->mDNS_busy--; // Decrement mDNS_busy to allow client to legally make mDNS API calls from the callback
+			rr->RecordCallback(m, rr, mStatus_NoError);
+			m->mDNS_busy++; // Reincrement mDNS_busy to block mDNS API calls again
 			}
 		}
 	else
@@ -2649,7 +2678,10 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 	// Right now the only routines that call AnswerQuestionWithResourceRecord() are AnswerLocalQuestions() and
 	// AnswerNewQuestion(), and both of them use the "m->CurrentQuestion" mechanism to protect against questions
 	// being deleted out from under them.
-	if (q->Callback) q->Callback(m, q, rr);
+	m->mDNS_busy--; // Decrement mDNS_busy to allow client to legally make mDNS API calls from the callback
+	if (q->QuestionCallback)
+		q->QuestionCallback(m, q, rr);
+	m->mDNS_busy++; // Reincrement mDNS_busy to block mDNS API calls again
 	}
 
 // AnswerLocalQuestions is called from mDNSCoreReceiveResponse,
@@ -2899,14 +2931,15 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 			// 6. Scan list of local resource records to see if we have any
 			// deregistrations, probes, announcements, or replies to send
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
+				{
+				if (rr->RecordType == kDNSRecordTypeDeregistering)
+					{
+					nextevent = timenow;
+					msg = "Send Deregistrations";
+					}
 				if (rr->RRInterfaceActive)
 					{
-					if (rr->RecordType == kDNSRecordTypeDeregistering)
-						{
-						nextevent = timenow;
-						msg = "Send Deregistrations";
-						}
-					else if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
+					if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
 						{
 						nextevent = timenow;
 						msg = "Send Answers";
@@ -2922,6 +2955,7 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 						msg = "Send Announcements";
 						}
 					}
+				}
 			}
 		}
 
@@ -2937,14 +2971,14 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 mDNSlocal mDNSs32 mDNS_Lock(mDNS *const m)
 	{
 	mDNSPlatformLock(m);
-	m->mDNS_busy++;
+	if (++m->mDNS_busy != 1) debugf("mDNS_Lock: Locking failure! mDNS_busy (%d) != 1", m->mDNS_busy);
 	return(mDNSPlatformTimeNow());
 	}
 
 mDNSlocal void mDNS_Unlock(mDNS *const m)
 	{
 	m->NextScheduledEvent = 0;
-	m->mDNS_busy--;
+	if (--m->mDNS_busy != 0) debugf("mDNS_Unlock: Locking failure! mDNS_busy (%d) != 0", m->mDNS_busy);
 	mDNSPlatformUnlock(m);
 	}
 
@@ -2958,7 +2992,6 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		{
 		int i;
 		verbosedebugf("mDNS_Execute");
-		if (m->mDNS_busy > 1) debugf("mDNS_Execute: Locking failure! mDNS already busy");
 		if (m->CurrentQuestion) debugf("mDNS_Execute: ERROR! m->CurrentQuestion already set");
 		
 		if (m->SuppressProbes && timenow - m->SuppressProbes >= 0)
@@ -3695,8 +3728,6 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	if (!m) { debugf("mDNSCoreReceive ERROR m is NULL"); return; }
 	
 	mDNS_Lock(m);
-	if (m->mDNS_busy > 1) debugf("mDNSCoreReceive: Locking failure! mDNS already busy");
-
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
 	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end,                   dstaddr,          InterfaceID);
 	else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
@@ -3765,9 +3796,10 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		if (question->InterfaceID)		// If this question is referencing a specific interface
 			{
-			NetworkInterfaceInfo *i;	// Then make sure that interface exists
-			for (i=m->HostInterfaces; i; i=i->next) if (i->InterfaceID == question->InterfaceID) break;
-			if (!i)
+			NetworkInterfaceInfo *intf;	// Then make sure that interface exists
+			for (intf = m->HostInterfaces; intf; intf = intf->next)
+				if (intf->InterfaceID == question->InterfaceID) break;
+			if (!intf)
 				{
 				debugf("mDNS_StartQuery_internal: Bogus InterfaceID %X in question", question->InterfaceID);
 				return(mStatus_BadReferenceErr);
@@ -3863,19 +3895,19 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const domainname *const srv, const domainname *const domain,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
-	question->InterfaceID = InterfaceID;
-	question->name = *srv;
+	question->InterfaceID       = InterfaceID;
+	question->name              = *srv;
 	AppendDomainNameToName(&question->name, domain);
-	question->rrtype    = kDNSType_PTR;
-	question->rrclass   = kDNSClass_IN;
-	question->Callback  = Callback;
-	question->Context   = Context;
+	question->rrtype            = kDNSType_PTR;
+	question->rrclass           = kDNSClass_IN;
+	question->QuestionCallback  = Callback;
+	question->QuestionContext   = Context;
 	return(mDNS_StartQuery(m, question));
 	}
 
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
+	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_SRV) return;
 
@@ -3909,7 +3941,7 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 
 mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
+	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_TXT) return;
 	if (answer->rdata->RDLength > sizeof(query->info->TXTinfo)) return;
@@ -3922,13 +3954,13 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
-	if (query->Callback && query->GotADD)
-		query->Callback(m, query);
+	if (query->ServiceInfoQueryCallback && query->GotADD)
+		query->ServiceInfoQueryCallback(m, query);
 	}
 
 mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
+	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
 	if (answer->rrremainingttl == 0) return;
 	
 	if (answer->rrtype == kDNSType_A)
@@ -3965,8 +3997,8 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
-	if (query->Callback && query->GotTXT)
-		query->Callback(m, query);
+	if (query->ServiceInfoQueryCallback && query->GotTXT)
+		query->ServiceInfoQueryCallback(m, query);
 	}
 
 // On entry, the client must have set the name and InterfaceID fields of the ServiceInfo structure
@@ -3974,50 +4006,50 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 // Each time the Callback is invoked, the remainder of the fields will have been filled in
 // In addition, InterfaceID will be updated to give the interface identifier corresponding to that reply
 mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
-	ServiceInfoQuery *query, ServiceInfo *info, ServiceInfoQueryCallback *Callback, void *Context)
+	ServiceInfoQuery *query, ServiceInfo *info, mDNSServiceInfoQueryCallback *Callback, void *Context)
 	{
 	mStatus status;
 	const mDNSs32 timenow = mDNS_Lock(m);
 
-	query->qSRV.ThisQInterval = -1;		// This question not yet in the question list
-	query->qSRV.InterfaceID   = info->InterfaceID;
-	query->qSRV.name          = info->name;
-	query->qSRV.rrtype        = kDNSType_SRV;
-	query->qSRV.rrclass       = kDNSClass_IN;
-	query->qSRV.Callback      = FoundServiceInfoSRV;
-	query->qSRV.Context       = query;
+	query->qSRV.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qSRV.InterfaceID         = info->InterfaceID;
+	query->qSRV.name                = info->name;
+	query->qSRV.rrtype              = kDNSType_SRV;
+	query->qSRV.rrclass             = kDNSClass_IN;
+	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
+	query->qSRV.QuestionContext     = query;
 
-	query->qTXT.ThisQInterval = -1;		// This question not yet in the question list
-	query->qTXT.InterfaceID   = info->InterfaceID;
-	query->qTXT.name          = info->name;
-	query->qTXT.rrtype        = kDNSType_TXT;
-	query->qTXT.rrclass       = kDNSClass_IN;
-	query->qTXT.Callback      = FoundServiceInfoTXT;
-	query->qTXT.Context       = query;
+	query->qTXT.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qTXT.InterfaceID         = info->InterfaceID;
+	query->qTXT.name                = info->name;
+	query->qTXT.rrtype              = kDNSType_TXT;
+	query->qTXT.rrclass             = kDNSClass_IN;
+	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
+	query->qTXT.QuestionContext     = query;
 
-	query->qAv4.ThisQInterval = -1;		// This question not yet in the question list
-	query->qAv4.InterfaceID   = info->InterfaceID;
-	query->qAv4.name.c[0]     = 0;
-	query->qAv4.rrtype        = kDNSType_A;
-	query->qAv4.rrclass       = kDNSClass_IN;
-	query->qAv4.Callback      = FoundServiceInfo;
-	query->qAv4.Context       = query;
+	query->qAv4.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qAv4.InterfaceID         = info->InterfaceID;
+	query->qAv4.name.c[0]           = 0;
+	query->qAv4.rrtype              = kDNSType_A;
+	query->qAv4.rrclass             = kDNSClass_IN;
+	query->qAv4.QuestionCallback    = FoundServiceInfo;
+	query->qAv4.QuestionContext     = query;
 
-	query->qAv6.ThisQInterval = -1;		// This question not yet in the question list
-	query->qAv6.InterfaceID   = info->InterfaceID;
-	query->qAv6.name.c[0]     = 0;
-	query->qAv6.rrtype        = kDNSType_AAAA;
-	query->qAv6.rrclass       = kDNSClass_IN;
-	query->qAv6.Callback      = FoundServiceInfo;
-	query->qAv6.Context       = query;
+	query->qAv6.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qAv6.InterfaceID         = info->InterfaceID;
+	query->qAv6.name.c[0]           = 0;
+	query->qAv6.rrtype              = kDNSType_AAAA;
+	query->qAv6.rrclass             = kDNSClass_IN;
+	query->qAv6.QuestionCallback    = FoundServiceInfo;
+	query->qAv6.QuestionContext     = query;
 
-	query->GotSRV             = mDNSfalse;
-	query->GotTXT             = mDNSfalse;
-	query->GotADD             = mDNSfalse;
+	query->GotSRV                   = mDNSfalse;
+	query->GotTXT                   = mDNSfalse;
+	query->GotADD                   = mDNSfalse;
 
-	query->info               = info;
-	query->Callback           = Callback;
-	query->Context            = Context;
+	query->info                     = info;
+	query->ServiceInfoQueryCallback = Callback;
+	query->ServiceInfoQueryContext  = Context;
 
 //	info->name      = Must already be set up by client
 //	info->interface = Must already be set up by client
@@ -4046,12 +4078,12 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *que
 mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
-	question->InterfaceID = InterfaceID;
 	ConvertCStringToDomainName(mDNS_DomainTypeNames[DomainType], &question->name);
-	question->rrtype    = kDNSType_PTR;
-	question->rrclass   = kDNSClass_IN;
-	question->Callback  = Callback;
-	question->Context   = Context;
+	question->InterfaceID      = InterfaceID;
+	question->rrtype           = kDNSType_PTR;
+	question->rrclass          = kDNSClass_IN;
+	question->QuestionCallback = Callback;
+	question->QuestionContext  = Context;
 	return(mDNS_StartQuery(m, question));
 	}
 
@@ -4077,8 +4109,8 @@ mDNSexport void mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage
 	rr->Additional2       = mDNSNULL;
 	rr->DependentOn       = mDNSNULL;
 	rr->RRSet             = mDNSNULL;
-	rr->Callback          = Callback;
-	rr->Context           = Context;
+	rr->RecordCallback    = Callback;
+	rr->RecordContext     = Context;
 
 	rr->RecordType        = RecordType;
 	rr->HostTarget        = mDNSfalse;
@@ -4125,7 +4157,8 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 		{
 		RData *n = rr->NewRData;
 		rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-		if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
+		if (rr->UpdateCallback)
+			rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
 		}
 	
 	rr->AnnounceCount    = DefaultAnnounceCountForRecordType(rr->RecordType);
@@ -4169,6 +4202,96 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 	UpdateHostNameTargets(m);
 	}
 
+mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result);
+
+mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
+	{
+	NetworkInterfaceInfo *intf;
+	for (intf = m->HostInterfaces; intf; intf = intf->next)
+		if (intf->Advertise) break;
+	return(intf);
+	}
+
+mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set, const mDNSs32 timenow)
+	{
+	char buffer[256];
+	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
+	if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
+	
+	mDNS_SetupResourceRecord(&set->RR_A1,  mDNSNULL, set->InterfaceID, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
+	mDNS_SetupResourceRecord(&set->RR_A2,  mDNSNULL, set->InterfaceID, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
+	mDNS_SetupResourceRecord(&set->RR_PTR, mDNSNULL, set->InterfaceID, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+
+	// 1. Set up primary Address record to map from primary host name ("foo.local.") to IP address
+	// 2. Set up secondary Address record to map from secondary host name ("foo.local.arpa.") to IP address
+	// 3. Set up reverse-lookup PTR record to map from our address back to our primary host name
+	// Setting HostTarget tells DNS that the target of this PTR is to be automatically kept in sync if our host name changes
+	// Note: This is reverse order compared to a normal dotted-decimal IP address
+	set->RR_A1.name        = m->hostname1;
+	set->RR_A2.name        = m->hostname2;
+	if (set->ip.type == mDNSAddrType_IPv4)
+		{
+		set->RR_A1.rrtype = kDNSType_A;
+		set->RR_A2.rrtype = kDNSType_A;
+		set->RR_A1.rdata->u.ip = set->ip.addr.ipv4;
+		set->RR_A2.rdata->u.ip = set->ip.addr.ipv4;
+		mDNS_sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", set->ip.addr.ipv4.b[3],
+					 set->ip.addr.ipv4.b[2], set->ip.addr.ipv4.b[1], set->ip.addr.ipv4.b[0]);
+		}
+	else if (set->ip.type == mDNSAddrType_IPv6)
+		{
+		int	i;
+		set->RR_A1.rrtype = kDNSType_AAAA;
+		set->RR_A2.rrtype = kDNSType_AAAA;
+		set->RR_A1.rdata->u.ipv6 = set->ip.addr.ipv6;
+		set->RR_A2.rdata->u.ipv6 = set->ip.addr.ipv6;
+		for (i = 0; i < 16; i++)
+			{
+			static const char hexValues[] = "0123456789ABCDEF";
+			buffer[i * 4    ] = hexValues[set->ip.addr.ipv6.b[15 - i] & 0x0F];
+			buffer[i * 4 + 1] = '.';
+			buffer[i * 4 + 2] = hexValues[set->ip.addr.ipv6.b[15 - i] >> 4];
+			buffer[i * 4 + 3] = '.';
+			}
+		mDNS_sprintf(&buffer[i * 4], "ip6.arpa.");
+		}
+
+	ConvertCStringToDomainName(buffer, &set->RR_PTR.name);
+	set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
+
+	set->RR_A1.RRSet = &primary->RR_A1;	// May refer to self
+	set->RR_A2.RRSet = &primary->RR_A2;	// May refer to self
+
+	mDNS_Register_internal(m, &set->RR_A1,  timenow);
+	mDNS_Register_internal(m, &set->RR_A2,  timenow);
+	mDNS_Register_internal(m, &set->RR_PTR, timenow);
+
+	// ... Add an HINFO record, etc.?
+	}
+
+mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set, const mDNSs32 timenow)
+	{
+	NetworkInterfaceInfo *intf;
+	// If we still have address records referring to this one, update them
+	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
+	ResourceRecord *A1 = primary ? &primary->RR_A1 : mDNSNULL;
+	ResourceRecord *A2 = primary ? &primary->RR_A2 : mDNSNULL;
+	for (intf = m->HostInterfaces; intf; intf = intf->next)
+		{
+		if (intf->RR_A1.RRSet == &set->RR_A1) intf->RR_A1.RRSet = A1;
+		if (intf->RR_A2.RRSet == &set->RR_A2) intf->RR_A2.RRSet = A2;
+		}
+
+	// Unregister these records.
+	// When doing the mDNS_Close processing, we first call mDNS_DeadvertiseInterface for each interface, so by the time the platform
+	// support layer gets to call mDNS_DeregisterInterface, the address and PTR records have already been deregistered for it.
+	// Also, in the event of a name conflict, one or more of our records will have been forcibly deregistered.
+	// To avoid unnecessary and misleading warning messages, we check the RecordType before calling mDNS_Deregister_internal().
+	if (set->RR_A1. RecordType) mDNS_Deregister_internal(m, &set->RR_A1,  timenow, mDNS_Dereg_normal);
+	if (set->RR_A2. RecordType) mDNS_Deregister_internal(m, &set->RR_A2,  timenow, mDNS_Dereg_normal);
+	if (set->RR_PTR.RecordType) mDNS_Deregister_internal(m, &set->RR_PTR, timenow, mDNS_Dereg_normal);
+	}
+
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
 	#pragma unused(rr)
@@ -4187,50 +4310,42 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 
 	if (result == mStatus_NameConflict)
 		{
-		NetworkInterfaceInfo *hr = mDNSNULL;
-		NetworkInterfaceInfo **p = &hr;
+		const mDNSs32 timenow = mDNSPlatformTimeNow();
+		NetworkInterfaceInfo *intf;
 		domainlabel oldlabel = m->hostlabel;
 
-		// 1. Deregister all our host sets
-		while (m->HostInterfaces)
-			{
-			NetworkInterfaceInfo *set = m->HostInterfaces;
-			mDNS_DeregisterInterface(m, set);
-			*p = set;
-			p = &set->next;
-			}
+		// 1. Stop advertising our address records on all interfaces
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->Advertise)
+				mDNS_DeadvertiseInterface(m, intf, timenow);
 		
 		// 2. Pick a new name
-		// First give the client callback a chance to pick a new name
-		if (m->Callback) m->Callback(m, mStatus_NameConflict);
-		// If the client callback didn't do it, add (or increment) an index ourselves
+
+		// 2a. First give the client callback a chance to pick a new name
+		if (m->MainCallback)
+			m->MainCallback(m, mStatus_NameConflict);
+
+		// 2b. If the client callback didn't do it, add (or increment) an index ourselves
 		if (SameDomainLabel(m->hostlabel.c, oldlabel.c))
 			IncrementLabelSuffix(&m->hostlabel, mDNSfalse);
+
+		// 2c. Generate the FQDNs from the hostlabel,
+		// and make sure all SRV records, etc., are updated to reference our new hostname
 		mDNS_GenerateFQDN(m);
 		
-		// 3. Re-register all our host sets
-		while (hr)
-			{
-			NetworkInterfaceInfo *set = hr;
-			hr = hr->next;
-			mDNS_RegisterInterface(m, set);
-			}
+		// 3. Re-advertise all our address records on all interfaces
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->Advertise)
+				mDNS_AdvertiseInterface(m, intf, timenow);
 		}
 	}
-
-mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
-	{
-	NetworkInterfaceInfo *i;
-	for (i=m->HostInterfaces; i; i=i->next) if (i->Advertise) break;
-	return(i);
-	}
-
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
-	mDNSBool Active = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	
+	// Assume this interface will be active
+	set->InterfaceActive = mDNStrue;
 	while (*p)
 		{
 		if (*p == set)
@@ -4239,20 +4354,22 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			mDNS_Unlock(m);
 			return(mStatus_AlreadyRegistered);
 			}
+
+		// This InterfaceID is already in the list, so mark this interface inactive for now
 		if ((*p)->InterfaceID == set->InterfaceID)
-			Active = mDNSfalse;
+			set->InterfaceActive = mDNSfalse;
+
 		p=&(*p)->next;
 		}
 
-	set->InterfaceActive = Active;
 	set->next = mDNSNULL;
 	*p = set;
 
-	if (Active)
+	if (set->InterfaceActive)
 		{
 		DNSQuestion *q;
 		ResourceRecord *rr;
-		debugf("mDNS_RegisterInterface: InterfaceID %X not represented in list; marking active for now",
+		verbosedebugf("mDNS_RegisterInterface: InterfaceID %X not represented in list; marking active for now",
 			set->InterfaceID);
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
@@ -4275,87 +4392,14 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				}
 		}
 	else
-		debugf("mDNS_RegisterInterface: InterfaceID %X already represented in list; marking inactive for now",
+		verbosedebugf("mDNS_RegisterInterface: InterfaceID %X already represented in list; marking inactive for now",
 			set->InterfaceID);
 
 	if (set->Advertise)
-		{
-		char buffer[256];
-		NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
-		if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
-		
-		mDNS_SetupResourceRecord(&set->RR_A1,  mDNSNULL, set->InterfaceID, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
-		mDNS_SetupResourceRecord(&set->RR_A2,  mDNSNULL, set->InterfaceID, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
-		mDNS_SetupResourceRecord(&set->RR_PTR, mDNSNULL, set->InterfaceID, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-	
-		// 1. Set up primary Address record to map from primary host name ("foo.local.") to IP address
-		// 2. Set up secondary Address record to map from secondary host name ("foo.local.arpa.") to IP address
-		// 3. Set up reverse-lookup PTR record to map from our address back to our primary host name
-		// Setting HostTarget tells DNS that the target of this PTR is to be automatically kept in sync if our host name changes
-		// Note: This is reverse order compared to a normal dotted-decimal IP address
-		set->RR_A1.name        = m->hostname1;
-		set->RR_A2.name        = m->hostname2;
-		if (set->ip.type == mDNSAddrType_IPv4)
-			{
-			set->RR_A1.rrtype = kDNSType_A;
-			set->RR_A2.rrtype = kDNSType_A;
-			set->RR_A1.rdata->u.ip = set->ip.addr.ipv4;
-			set->RR_A2.rdata->u.ip = set->ip.addr.ipv4;
-			mDNS_sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", set->ip.addr.ipv4.b[3],
-						 set->ip.addr.ipv4.b[2], set->ip.addr.ipv4.b[1], set->ip.addr.ipv4.b[0]);
-			}
-		else if (set->ip.type == mDNSAddrType_IPv6)
-			{
-			int	i;
-			set->RR_A1.rrtype = kDNSType_AAAA;
-			set->RR_A2.rrtype = kDNSType_AAAA;
-			set->RR_A1.rdata->u.ipv6 = set->ip.addr.ipv6;
-			set->RR_A2.rdata->u.ipv6 = set->ip.addr.ipv6;
-			for (i = 0; i < 16; i++)
-				{
-				static const char hexValues[] = "0123456789ABCDEF";
-				buffer[i * 4    ] = hexValues[set->ip.addr.ipv6.b[15 - i] & 0x0F];
-				buffer[i * 4 + 1] = '.';
-				buffer[i * 4 + 2] = hexValues[set->ip.addr.ipv6.b[15 - i] >> 4];
-				buffer[i * 4 + 3] = '.';
-				}
-			mDNS_sprintf(&buffer[i * 4], "ip6.arpa.");
-			}
-	
-		ConvertCStringToDomainName(buffer, &set->RR_PTR.name);
-		set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
-	
-		set->RR_A1.RRSet = &primary->RR_A1;	// May refer to self
-		set->RR_A2.RRSet = &primary->RR_A2;	// May refer to self
-	
-		mDNS_Register_internal(m, &set->RR_A1,  timenow);
-		mDNS_Register_internal(m, &set->RR_A2,  timenow);
-		mDNS_Register_internal(m, &set->RR_PTR, timenow);
-	
-		// ... Add an HINFO record, etc.?
-		}
+		mDNS_AdvertiseInterface(m, set, timenow);
 
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
-	}
-
-mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set, const mDNSs32 timenow)
-	{
-	NetworkInterfaceInfo *i;
-	// If we still have address records referring to this one, update them
-	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
-	ResourceRecord *A1 = primary ? &primary->RR_A1 : mDNSNULL;
-	ResourceRecord *A2 = primary ? &primary->RR_A2 : mDNSNULL;
-	for (i=m->HostInterfaces; i; i=i->next)
-		{
-		if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = A1;
-		if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = A2;
-		}
-
-	// Unregister these records
-	mDNS_Deregister_internal(m, &set->RR_A1,  timenow, mDNS_Dereg_normal);
-	mDNS_Deregister_internal(m, &set->RR_A2,  timenow, mDNS_Dereg_normal);
-	mDNS_Deregister_internal(m, &set->RR_PTR, timenow, mDNS_Dereg_normal);
 	}
 
 // NOTE: mDNS_DeregisterInterface calls mDNS_Deregister_internal which can call a user callback, which may change
@@ -4376,22 +4420,22 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 	if (set->InterfaceActive)
 		{
-		NetworkInterfaceInfo *i;
-		for (i=m->HostInterfaces; i; i=i->next)
-			if (i->InterfaceID == set->InterfaceID)
+		NetworkInterfaceInfo *intf;
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->InterfaceID == set->InterfaceID)
 				break;
-		if (i)
+		if (intf)
 			{
-			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %X exists; making it active",
+			verbosedebugf("mDNS_DeregisterInterface: Another representative of InterfaceID %X exists; making it active",
 				set->InterfaceID);
-			i->InterfaceActive = mDNStrue;
+			intf->InterfaceActive = mDNStrue;
 			}
 		else
 			{
 			mDNSu32 count = 0;
 			ResourceRecord *rr;
 			DNSQuestion *q;
-			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID %X deregistered", set->InterfaceID);
+			verbosedebugf("mDNS_DeregisterInterface: Last representative of InterfaceID %X deregistered", set->InterfaceID);
 
 			// 1. Deactivate any questions specific to this interface
 			for (q = m->Questions; q; q=q->next)
@@ -4410,20 +4454,17 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			if (count) debugf("mDNS_DeregisterInterface: Flushing %d Cache Entries on interface 0x%.4X", count, set->InterfaceID);
 
 			// 3. Deactivate any authoritative records specific to this interface
+			// Any records that are in kDNSRecordTypeDeregistering state will be automatically discarded
+			// when BuildResponse finds that their RRInterfaceActive flag is no longer set
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->InterfaceID == set->InterfaceID)
 					rr->RRInterfaceActive = mDNSfalse;
-			
-			// 4. Any authoritative records in the act of deregistering are now gone
-			DiscardDeregistrations(m, set->InterfaceID, timenow);
 			}
 		}
 
 	// If we were advertising on this interface, deregister now
-	// When doing the mDNS_Close processing, we first call mDNS_DeadvertiseInterface for each interface
-	// so by the time the platform support layer gets to call mDNS_DeregisterInterface,
-	// the address and PTR records have already been deregistered for it
-	if (set->Advertise && set->RR_A1.RecordType) mDNS_DeadvertiseInterface(m, set, timenow);
+	if (set->Advertise)
+		mDNS_DeadvertiseInterface(m, set, timenow);
 
 	mDNS_Unlock(m);
 	}
@@ -4431,7 +4472,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
 	#pragma unused(m)
-	ServiceRecordSet *sr = (ServiceRecordSet *)rr->Context;
+	ServiceRecordSet *sr = (ServiceRecordSet *)rr->RecordContext;
 	switch (result)
 		{
 		case mStatus_NoError:
@@ -4468,7 +4509,8 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 
 	// CAUTION: MUST NOT do anything more with sr after calling sr->Callback(), because the client's callback
 	// function is allowed to do anything, including deregistering this service and freeing its memory.
-	if (sr->Callback) sr->Callback(m, sr, result);
+	if (sr->ServiceCallback)
+		sr->ServiceCallback(m, sr, result);
 	}
 
 // Note:
@@ -4487,8 +4529,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNSs32 timenow;
 	mStatus err;
 
-	sr->Callback = Callback;
-	sr->Context  = Context;
+	sr->ServiceCallback = Callback;
+	sr->ServiceContext  = Context;
 	sr->Conflict = mDNSfalse;
 	if (host && host->c[0]) sr->Host = *host;
 	else sr->Host.c[0] = 0;
@@ -4605,7 +4647,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	
 	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
 		host, sr->RR_SRV.rdata->u.srv.port, sr->RR_TXT.rdata->u.txt.c, sr->RR_TXT.rdata->RDLength,
-		sr->RR_PTR.InterfaceID, sr->Callback, sr->Context);
+		sr->RR_PTR.InterfaceID, sr->ServiceCallback, sr->ServiceContext);
 
 	// mDNS_RegisterService() just reset sr->Extras to NULL.
 	// Fortunately we already grabbed ourselves a copy of this pointer (above), so we can now run
@@ -4696,26 +4738,26 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
-	m->p                  = p;
+	m->p                       = p;
 	m->AdvertiseLocalAddresses = AdvertiseLocalAddresses;
-	m->mDNSPlatformStatus = mStatus_Waiting;
-	m->Callback           = Callback;
-	m->Context            = Context;
+	m->mDNSPlatformStatus      = mStatus_Waiting;
+	m->MainCallback            = Callback;
+	m->MainContext             = Context;
 
-	m->mDNS_busy          = 0;
-	m->NextScheduledEvent = 0;
+	m->mDNS_busy               = 0;
+	m->NextScheduledEvent      = 0;
 
-	m->lock_rrcache       = 0;
-	m->lock_Questions     = 0;
-	m->lock_Records       = 0;
+	m->lock_rrcache            = 0;
+	m->lock_Questions          = 0;
+	m->lock_Records            = 0;
 
-	m->Questions          = mDNSNULL;
-	m->NewQuestions       = mDNSNULL;
-	m->CurrentQuestion    = mDNSNULL;
-	m->rrcache_size       = rrcachesize;
-	m->rrcache_used       = 0;
-	m->rrcache_report     = 10;
-	m->rrcache_free       = rrcachestorage;
+	m->Questions               = mDNSNULL;
+	m->NewQuestions            = mDNSNULL;
+	m->CurrentQuestion         = mDNSNULL;
+	m->rrcache_size            = rrcachesize;
+	m->rrcache_used            = 0;
+	m->rrcache_report          = 10;
+	m->rrcache_free            = rrcachestorage;
 	if (rrcachesize)
 		{
 		for (i=0; i<rrcachesize; i++) rrcachestorage[i].next = &rrcachestorage[i+1];
@@ -4723,14 +4765,14 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 		}
 	m->rrcache = mDNSNULL;
 
-	m->hostlabel.c[0]     = 0;
-	m->nicelabel.c[0]     = 0;
-	m->ResourceRecords    = mDNSNULL;
-	m->CurrentRecord      = mDNSNULL;
-	m->HostInterfaces     = mDNSNULL;
-	m->SuppressSending    = 0;
-	m->SleepState         = mDNSfalse;
-	m->NetChanged         = mDNSfalse;
+	m->hostlabel.c[0]          = 0;
+	m->nicelabel.c[0]          = 0;
+	m->ResourceRecords         = mDNSNULL;
+	m->CurrentRecord           = mDNSNULL;
+	m->HostInterfaces          = mDNSNULL;
+	m->SuppressSending         = 0;
+	m->SleepState              = mDNSfalse;
+	m->NetChanged              = mDNSfalse;
 
 	result = mDNSPlatformInit(m);
 	
@@ -4740,12 +4782,13 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 	{
 	m->mDNSPlatformStatus = result;
-	if (m->Callback) m->Callback(m, mStatus_NoError);
+	if (m->MainCallback)
+		m->MainCallback(m, mStatus_NoError);
 	}
 
 extern void mDNS_Close(mDNS *const m)
 	{
-	NetworkInterfaceInfo *i;
+	NetworkInterfaceInfo *intf;
 	const mDNSs32 timenow = mDNS_Lock(m);
 
 #if MDNS_DEBUGMSGS
@@ -4757,9 +4800,9 @@ extern void mDNS_Close(mDNS *const m)
 
 	m->Questions = mDNSNULL;		// We won't be answering any more questions!
 	
-	for (i=m->HostInterfaces; i; i=i->next)
-		if (i->Advertise)
-			mDNS_DeadvertiseInterface(m, i, timenow);
+	for (intf = m->HostInterfaces; intf; intf = intf->next)
+		if (intf->Advertise)
+			mDNS_DeadvertiseInterface(m, intf, timenow);
 
 	// Make sure there are nothing but deregistering records remaining in the list
 	if (m->CurrentRecord) debugf("mDNS_Close ERROR m->CurrentRecord already set");

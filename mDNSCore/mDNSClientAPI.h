@@ -68,6 +68,14 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.39  2003/03/27 03:30:55  cheshire
+<rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
+Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
+Fixes:
+1. Make mDNS_DeregisterInterface() safe to call from a callback
+2. Make HostNameCallback() use mDNS_DeadvertiseInterface() instead
+   (it never really needed to deregister the interface at all)
+
 Revision 1.38  2003/03/15 04:40:36  cheshire
 Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
@@ -367,7 +375,13 @@ typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 
+// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSRecordCallback
 typedef void mDNSRecordCallback(mDNS *const m, ResourceRecord *const rr, mStatus result);
+
+// Note:
+// Restrictions: An mDNSRecordUpdateCallback may not make any mDNS API calls.
+// The intent of this callback is to allow the client to free memory, if necessary.
+// The internal data structures of the mDNS code may not be in a state where mDNS API calls may be made safely.
 typedef void mDNSRecordUpdateCallback(mDNS *const m, ResourceRecord *const rr, RData *OldRData);
 
 // Fields labelled "AR:" apply to our authoritative records
@@ -384,8 +398,8 @@ struct ResourceRecord_struct
 	ResourceRecord     *Additional2;	// AR: Another additional
 	ResourceRecord     *DependentOn;	// AR: This record depends on another for its uniqueness checking
 	ResourceRecord     *RRSet;			// AR: This unique record is part of an RRSet
-	mDNSRecordCallback *Callback;		// AR: Callback function to call for state changes
-	void               *Context;		// AR: Context parameter for the callback function
+	mDNSRecordCallback *RecordCallback;	// AR: Callback function to call for state changes
+	void               *RecordContext;	// AR: Context parameter for the callback function
 	mDNSu8              RecordType;		// --: See enum above
 	mDNSu8              HostTarget;		// AR: Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 
@@ -462,12 +476,13 @@ struct ExtraResourceRecord_struct
 	// that this extra memory is available, which would result in any fields after the ResourceRecord getting smashed
 	};
 
+// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSServiceCallback
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
 struct ServiceRecordSet_struct
 	{
-	mDNSServiceCallback *Callback;
-	void                *Context;
+	mDNSServiceCallback *ServiceCallback;
+	void                *ServiceContext;
 	ExtraResourceRecord *Extras;	// Optional list of extra ResourceRecords attached to this service registration
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           Host;		// Set if this service record does not use the standard target host name
@@ -483,6 +498,7 @@ struct ServiceRecordSet_struct
 #pragma mark - Question structures
 #endif
 
+// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSQuestionCallback
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
 struct DNSQuestion_struct
 	{
@@ -498,8 +514,8 @@ struct DNSQuestion_struct
 	domainname            name;
 	mDNSu16               rrtype;
 	mDNSu16               rrclass;
-	mDNSQuestionCallback *Callback;
-	void                 *Context;
+	mDNSQuestionCallback *QuestionCallback;
+	void                 *QuestionContext;
 	};
 
 typedef struct
@@ -512,20 +528,21 @@ typedef struct
 	mDNSu8          TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
 
+// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSServiceInfoQueryCallback
 typedef struct ServiceInfoQuery_struct ServiceInfoQuery;
-typedef void ServiceInfoQueryCallback(mDNS *const m, ServiceInfoQuery *query);
+typedef void mDNSServiceInfoQueryCallback(mDNS *const m, ServiceInfoQuery *query);
 struct ServiceInfoQuery_struct
 	{
-	DNSQuestion               qSRV;
-	DNSQuestion               qTXT;
-	DNSQuestion               qAv4;
-	DNSQuestion               qAv6;
-	mDNSu8                    GotSRV;
-	mDNSu8                    GotTXT;
-	mDNSu8                    GotADD;
-	ServiceInfo              *info;
-	ServiceInfoQueryCallback *Callback;
-	void                     *Context;
+	DNSQuestion                   qSRV;
+	DNSQuestion                   qTXT;
+	DNSQuestion                   qAv4;
+	DNSQuestion                   qAv6;
+	mDNSu8                        GotSRV;
+	mDNSu8                        GotTXT;
+	mDNSu8                        GotADD;
+	ServiceInfo                  *info;
+	mDNSServiceInfoQueryCallback *ServiceInfoQueryCallback;
+	void                         *ServiceInfoQueryContext;
 	};
 
 // ***************************************************************************
@@ -540,8 +557,8 @@ struct mDNS_struct
 	mDNS_PlatformSupport *p;		// Pointer to platform-specific data of indeterminite size
 	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
-	mDNSCallback *Callback;
-	void         *Context;
+	mDNSCallback *MainCallback;
+	void         *MainContext;
 
 	mDNSu32 mDNS_busy;				// For debugging: To catch and report locking failures
 	mDNSs32 NextScheduledEvent;
@@ -601,7 +618,7 @@ extern const mDNSAddr   AllDNSLinkGroup_v6;
 
 // Every client should call mDNS_Init, passing in storage for the mDNS object, mDNS_PlatformSupport object, and rrcache.
 // The rrcachesize parameter is the size of (i.e. number of entries in) the rrcache array passed in.
-// When mDNS has finished setting up the initComplete callback is called
+// When mDNS has finished setting up the client's callback is called
 // A client can also spin and poll the mDNSPlatformStatus field to see when it changes from mStatus_Waiting to mStatus_NoError
 //
 // Call mDNS_Close to tidy up before exiting
@@ -699,7 +716,7 @@ extern mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
                const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopBrowse mDNS_StopQuery
 
-extern mStatus mDNS_StartResolveService(mDNS *const m, ServiceInfoQuery *query, ServiceInfo *info, ServiceInfoQueryCallback *Callback, void *Context);
+extern mStatus mDNS_StartResolveService(mDNS *const m, ServiceInfoQuery *query, ServiceInfo *info, mDNSServiceInfoQueryCallback *Callback, void *Context);
 extern void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *query);
 
 typedef enum

@@ -22,6 +22,14 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.61  2003/03/27 03:30:56  cheshire
+<rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
+Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
+Fixes:
+1. Make mDNS_DeregisterInterface() safe to call from a callback
+2. Make HostNameCallback() use mDNS_DeadvertiseInterface() instead
+   (it never really needed to deregister the interface at all)
+
 Revision 1.60  2003/03/15 04:40:38  cheshire
 Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
@@ -630,11 +638,11 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 			err = SetupSocket(ifa, MulticastDNSPort, &alias->sktv4, &alias->cfsv4, &myCFSocketContext);
 		
 		if (err == 0)
-			debugf("SetupInterface: created v4 socket %d for %s, InterfaceID %04X, ip %#a",
-				alias->sktv4, ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+			debugf("SetupInterface: v4 socket%2d %s(%d) Flags %04X InterfaceID %04X %#a",
+				alias->sktv4, ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, info->ifinfo.InterfaceID, &info->ifinfo.ip);
 		else
-			LogMsg("SetupInterface: create v4 socket failed for %s, InterfaceID %04X, ip %#a",
-				ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+			LogMsg("SetupInterface: v4 socket%2d %s(%d) Flags %04X InterfaceID %04X %#a FAILED",
+				alias->sktv4, ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, info->ifinfo.InterfaceID, &info->ifinfo.ip);
 		}
 
 	if (alias->sktv6 == -1 && ifa->ifa_addr->sa_family == AF_INET6)
@@ -644,16 +652,16 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 		err = SetupSocket(ifa, MulticastDNSPort, &alias->sktv6, &alias->cfsv6, &myCFSocketContext);
 		
 		if (err == 0)
-			debugf("SetupInterface: created v6 socket %d for %s, InterfaceID %04X, ip %#a",
-				alias->sktv6, ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+			debugf("SetupInterface: v6 socket%2d %s(%d) Flags %04X InterfaceID %04X %#a",
+				alias->sktv6, ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, info->ifinfo.InterfaceID, &info->ifinfo.ip);
 		else
-			LogMsg("SetupInterface: create v6 socket failed for %s, InterfaceID %04X, ip %#a",
-				ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+			LogMsg("SetupInterface: v6 socket%2d %s(%d) Flags %04X InterfaceID %04X %#a FAILED",
+				alias->sktv6, ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, info->ifinfo.InterfaceID, &info->ifinfo.ip);
 		}
 
 
-	debugf("SetupInterface: %4s(%d) Flags %04X %#a Registered",
-		ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, &info->ifinfo.ip);
+	debugf("SetupInterface: Registered  %s(%d) Flags %04X InterfaceID %04X %#a",
+		ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, info->ifinfo.InterfaceID, &info->ifinfo.ip);
 
 	return(err);
 	}
@@ -760,7 +768,8 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	
 	ClearInterfaceList(m);
 	SetupInterfaceList(m);
-	if (m->Callback) m->Callback(m, mStatus_ConfigChanged);
+	if (m->MainCallback)
+		m->MainCallback(m, mStatus_ConfigChanged);
 	mDNSCoreMachineSleep(m, false);
 	}
 

@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServices.c,v 1.6 2003/03/22 02:57:45 cheshire Exp $
+	$Id: DNSServices.c,v 1.7 2003/03/27 03:30:57 cheshire Exp $
 
 	Contains:	DNS Services implementation.
 	
@@ -68,6 +68,14 @@
     Change History (most recent first):
     
         $Log: DNSServices.c,v $
+        Revision 1.7  2003/03/27 03:30:57  cheshire
+        <rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
+        Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
+        Fixes:
+        1. Make mDNS_DeregisterInterface() safe to call from a callback
+        2. Make HostNameCallback() use mDNS_DeadvertiseInterface() instead
+           (it never really needed to deregister the interface at all)
+
         Revision 1.6  2003/03/22 02:57:45  cheshire
         Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
@@ -334,7 +342,7 @@ DNSStatus	DNSServicesInitialize( DNSFlags inFlags, DNSCount inCacheEntryCount )
 	err = DNSPlatformInitialize( inFlags, inCacheEntryCount, &gMDNSPtr );
 	require_noerr( err, exit );
 	
-	gMDNSPtr->Callback = DNSServicesMDNSCallBack;
+	gMDNSPtr->MainCallback = DNSServicesMDNSCallBack;
 	
 exit:
 	return( err );
@@ -722,7 +730,7 @@ mDNSlocal void
 	
 	// Exit if object is no longer valid. Should never happen.
 	
-	objectPtr = DNSBrowserFindObject( (DNSBrowserRef) inQuestion->Context );
+	objectPtr = DNSBrowserFindObject( (DNSBrowserRef) inQuestion->QuestionContext );
 	require( objectPtr, exit );
 	
 	// Determine what type of callback it is based on the question.
@@ -1166,7 +1174,7 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	
 	// Exit if object is no longer valid. Should never happen.
 	
-	objectPtr = DNSResolverFindObject( (DNSResolverRef) inQuery->Context );
+	objectPtr = DNSResolverFindObject( (DNSResolverRef) inQuery->ServiceInfoQueryContext );
 	require( objectPtr, exit );
 	
 	// Copy the sized buffer of text to a local null terminated string. Older versions of Rendezvous treated the TXT 
@@ -1469,7 +1477,7 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 	
 	// Exit if object is no longer valid. Should never happen.
 	
-	object = (DNSRegistrationRef) inSet->Context;
+	object = (DNSRegistrationRef) inSet->ServiceContext;
 	require( object, exit );
 	
 	// Dispatch based on the status code.

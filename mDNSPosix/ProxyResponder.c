@@ -51,7 +51,7 @@ typedef struct
 
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
-	ProxyHost *f = (ProxyHost*)rr->Context;
+	ProxyHost *f = (ProxyHost*)rr->RecordContext;
 	if (result == mStatus_NoError)
 		debugf("Host name successfully registered: %##s", &rr->name);
 	else
