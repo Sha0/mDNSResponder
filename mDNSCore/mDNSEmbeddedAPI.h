@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.207  2004/09/22 02:34:46  cheshire
+Move definitions of default TTL times from mDNS.c to mDNSEmbeddedAPI.h
+
 Revision 1.206  2004/09/22 00:41:59  cheshire
 Move tcp connection status codes into the legal range allocated for mDNS use
 
@@ -973,6 +976,13 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // It is for domain names, where dots are used as label separators, that proper escaping is vital.
 #define MAX_ESCAPED_DOMAIN_LABEL 254
 #define MAX_ESCAPED_DOMAIN_NAME 1005
+
+// By default, unique records have a TTL of two minutes
+// By default, shared records have a TTL of 75 minutes, so that their 80% cache-renewal query occurs once per hour
+// By default, TXT records have a TTL of 75 minutes, same as shared records, because they tend to be the subject of ongoing monitoring
+#define kDefaultTTLforUnique 120
+#define kDefaultTTLforShared (3600 * 100 / 80)
+#define kDefaultTTLforTXT    (3600 * 100 / 80)
 
 // ***************************************************************************
 #if 0

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.422  2004/09/22 02:34:46  cheshire
+Move definitions of default TTL times from mDNS.c to mDNSEmbeddedAPI.h
+
 Revision 1.421  2004/09/21 23:29:49  cheshire
 <rdar://problem/3680045> DNSServiceResolve should delay sending packets
 
@@ -1418,15 +1421,6 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_QR_Response | kDNSFl
 
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
-
-// By default, unique records have a TTL of two minutes
-#define kDefaultTTLforUnique 120
-
-// By default, shared records have a TTL of 75 minutes, so that their 80% cache-renewal query occurs once per hour
-#define kDefaultTTLforShared (3600 * 100 / 80)
-
-// By default, TXT records have a TTL of 75 minutes, same as shared records, because they tend to be the subject of ongoing monitoring
-#define kDefaultTTLforTXT (3600 * 100 / 80)
 
 #define kMaxUpdateCredits 10
 #define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 50)
