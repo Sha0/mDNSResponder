@@ -44,10 +44,8 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
-Revision 1.312  2003/11/03 23:45:15  cheshire
-<rdar://problem/3472153> mDNSResponder delivers answers in inconsistent order
-Build cache lists in FIFO order, not customary C LIFO order
-(Append new elements to tail of cache list, instead of prepending at the head.)
+Revision 1.313  2003/11/07 03:14:49  cheshire
+Previous checkin proved to be overly simplistic; reversing
 
 Revision 1.311  2003/10/09 18:00:11  cheshire
 Another compiler warning fix.
@@ -5490,11 +5488,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		if (m->rrcache_size)	// Only try to cache answers if we have a cache to put them in
 			{
 			mDNSu32 slot = HashSlot(&pkt.r.resrec.name);
-			CacheRecord **rrp;
+			CacheRecord *rr;
 			// 2a. Check if this packet resource record is already in our cache
-			for (rrp = &m->rrcache_hash[slot]; *rrp; rrp = &(*rrp)->next)
+			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				{
-				CacheRecord *rr = *rrp;
 				// If we found this exact resource record, refresh its TTL
 				if (rr->resrec.InterfaceID == InterfaceID && IdenticalResourceRecord(&pkt.r.resrec, &rr->resrec))
 					{
@@ -5543,9 +5540,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 			// If packet resource record not in our cache, add it now
 			// (unless it is just a deletion of a record we never had, in which case we don't care)
-			if (!*rrp && pkt.r.resrec.rroriginalttl > 0)
+			if (!rr && pkt.r.resrec.rroriginalttl > 0)
 				{
-				CacheRecord *rr = GetFreeCacheRR(m, pkt.r.resrec.rdlength);
+				rr = GetFreeCacheRR(m, pkt.r.resrec.rdlength);
 				if (!rr) debugf("No cache space to add record for %#s", pkt.r.resrec.name.c);
 				else
 					{
@@ -5557,8 +5554,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// If this is an oversized record with external storage allocated, copy rdata to external storage
 					if (pkt.r.resrec.rdlength > InlineCacheRDSize)
 						mDNSPlatformMemCopy(pkt.r.resrec.rdata, rr->resrec.rdata, sizeofRDataHeader + pkt.r.resrec.rdlength);
-					rr->next = mDNSNULL;
-					*rrp = rr;
+					rr->next = m->rrcache_hash[slot];
+					m->rrcache_hash[slot] = rr;
 					m->rrcache_used[slot]++;
 					//debugf("Adding RR %##s to cache (%d)", pkt.r.name.c, m->rrcache_used);
 					CacheRecordAdd(m, rr);
