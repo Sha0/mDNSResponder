@@ -43,6 +43,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.210  2003/07/12 01:43:28  cheshire
+<rdar://problem/3324795> Duplicate query suppression not working right
+The correct cutoff time for duplicate query suppression is timenow less one-half the query interval.
+The code was incorrectly using the last query time plus one-half the query interval.
+This was only correct in the case where query acceleration was not in effect.
+
 Revision 1.209  2003/07/12 01:27:50  cheshire
 <rdar://problem/3320079> Hostname conflict naming should not use two hyphens
 Fix missing "-1" in RemoveLabelSuffix()
@@ -3191,7 +3197,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 
 				// If we recorded a duplicate suppression for this question less than half an interval ago,
 				// then we consider it recent enough that we don't need to do an identical query ourselves.
-				UpdateDupSuppressInfo(q->DupSuppress, q->LastQTime + q->ThisQInterval/2);
+				UpdateDupSuppressInfo(q->DupSuppress, m->timenow - q->ThisQInterval/2);
 
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, treat this as logically a repeat of the last transmission, without advancing the interval
