@@ -1344,15 +1344,14 @@ mDNSexport int main(int argc, char **argv)
 		// (5) then when no more events remain, we go back to (1) to finish off any deferred work and do it all again
 		while (RunLoopStatus == kCFRunLoopRunTimedOut)
 			{
-			mDNSs32 ticks;
 			CFAbsoluteTime interval;
-			DNSServiceBrowser *b;
+
+			// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
+			mDNSs32 ticks, nextevent = mDNS_Execute(&mDNSStorage);
+
+			// 2. Deliver any waiting browse messages to clients
+			DNSServiceBrowser *b = DNSServiceBrowserList;
 	
-			// 2. Call mDNS_Execute() to let mDNSCore do what it needs to do
-			ticks = mDNS_Execute(&mDNSStorage) - mDNSPlatformTimeNow();
-	
-			// 1. Deliver any waiting browse messages to clients
-			b = DNSServiceBrowserList;
 			while (b)
 				{
 				// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
@@ -1367,9 +1366,11 @@ mDNSexport int main(int argc, char **argv)
 			// 3. Do a blocking "CFRunLoopRunInMode" until our next wakeup time, or an event occurs
 			// The 'true' parameter makes it return after handling any event that occurs
 			// This gives us chance to regain control so we can call mDNS_Execute() before sleeping again
+			ticks     = nextevent - mDNSPlatformTimeNow();
+			if (ticks < 1) ticks = 1;
 			debugf("main: Handled %d events; now sleeping for %d ticks", numevents, ticks);
 			numevents = 0;
-			interval = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
+			interval  = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
 			RunLoopStatus = CFRunLoopRunInMode(kCFRunLoopDefaultMode, interval, true);
 
 			// 4. Time to do some work? Handle all remaining events before returning to mDNS_Execute()
