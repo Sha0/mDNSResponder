@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.145  2004/04/21 03:08:03  cheshire
+Rename 'alias' to more descriptive name 'primary'
+
 Revision 1.144  2004/04/21 03:04:35  cheshire
 Minor cleanup for clarity
 
@@ -1326,12 +1329,12 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 		if (i->Exists)
 			{
 			NetworkInterfaceInfo *n = &i->ifinfo;
-			NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
-			if (!alias) alias = i;
+			NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
+			if (!primary) primary = i;	// If first member of this set, it's its own primary
 	
-			if (n->InterfaceID && n->InterfaceID != (mDNSInterfaceID)alias)
+			if (n->InterfaceID && n->InterfaceID != (mDNSInterfaceID)primary)	// Sanity check
 				{
-				LogMsg("SetupActiveInterfaces ERROR! n->InterfaceID %p != alias %p", n->InterfaceID, alias);
+				LogMsg("SetupActiveInterfaces ERROR! n->InterfaceID %p != primary %p", n->InterfaceID, primary);
 				n->InterfaceID = mDNSNULL;
 				}
 	
@@ -1340,28 +1343,28 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
-				n->InterfaceID = (mDNSInterfaceID)alias;
+				n->InterfaceID = (mDNSInterfaceID)primary;
 				mDNS_RegisterInterface(m, n);
 				LogOperation("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
-					i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
+					i->ifa_name, i->scope_id, primary, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 				}
 	
 			if (!n->McastTxRx)
-				debugf("SetupActiveInterfaces: No TX/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, alias, &n->ip);
+				debugf("SetupActiveInterfaces: No Tx/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, primary, &n->ip);
 			else
 				{
-				if (i->sa_family == AF_INET && alias->ss.sktv4 == -1)
+				if (i->sa_family == AF_INET && primary->ss.sktv4 == -1)
 					{
-					mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
-					if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-					else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
+					if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", primary->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
 					}
 			
-				if (i->sa_family == AF_INET6 && alias->ss.sktv6 == -1)
+				if (i->sa_family == AF_INET6 && primary->ss.sktv6 == -1)
 					{
-					mStatus err = SetupSocket(&alias->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
-					if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-					else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
+					if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", primary->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
 					}
 				}
 			}
@@ -1389,7 +1392,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	{
 	// First pass:
 	// If an interface is going away, then deregister this from the mDNSCore.
-	// We also have to deregister it if the alias interface that it's using for its InterfaceID is going away.
+	// We also have to deregister it if the primary interface that it's using for its InterfaceID is going away.
 	// We have to do this because mDNSCore will use that InterfaceID when sending packets, and if the memory
 	// it refers to has gone away we'll crash.
 	// Don't actually close the sockets or free the memory yet: When the last representative of an interface goes away
@@ -1398,17 +1401,18 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
 		// 1. If this interface is no longer active, or it's InterfaceID is changing, deregister it
-		NetworkInterfaceInfoOSX *alias = (NetworkInterfaceInfoOSX *)(i->ifinfo.InterfaceID);
-		if (i->ifinfo.InterfaceID && (!i->Exists || (alias && !alias->Exists) || i->Exists == 2))
-			{
-			LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) InterfaceID %p %#a%s",
-				i->ifa_name, i->scope_id, alias, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
-			mDNS_DeregisterInterface(m, &i->ifinfo);
-			i->ifinfo.InterfaceID = mDNSNULL;
-			// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
-			// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
-			// If n->InterfaceID is NOT set, then it's not registered and we should not call mDNS_DeregisterInterface() on it.
-			}
+		NetworkInterfaceInfoOSX *primary = (NetworkInterfaceInfoOSX *)(i->ifinfo.InterfaceID);
+		if (i->ifinfo.InterfaceID)
+			if (i->Exists == 0 || i->Exists == 2 || (primary && !primary->Exists))
+				{
+				LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) InterfaceID %p %#a%s",
+					i->ifa_name, i->scope_id, primary, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
+				mDNS_DeregisterInterface(m, &i->ifinfo);
+				i->ifinfo.InterfaceID = mDNSNULL;
+				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
+				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
+				// If n->InterfaceID is NOT set, then it's not registered and we should not call mDNS_DeregisterInterface() on it.
+				}
 		}
 
 	// Second pass:
