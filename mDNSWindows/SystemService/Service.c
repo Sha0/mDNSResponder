@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.15  2004/09/15 17:13:33  shersche
+Change Firewall name
+
 Revision 1.14  2004/09/15 09:37:25  shersche
 Add SharedAccess to dependency list, call CheckFirewall after sending status back to SCM
 
@@ -117,7 +120,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #define	DEBUG_NAME					"[Server] "
 #define	kServiceName				"Apple mDNSResponder"
-#define kServiceNameL				L"Apple mDNSResponder"
+#define kServiceFirewallName		L"Rendezvous"
 #define	kServiceDependencies		"Tcpip\0winmgmt\0SharedAccess\0\0"
 #define kServiceManageLLRouting		"ManageLLRouting"
 #define kServiceCacheEntryCount		"CacheEntryCount"
@@ -689,7 +692,7 @@ static OSStatus CheckFirewall()
 				err = translate_errno( size > 0, (OSStatus) GetLastError(), kPathErr );
 				require_noerr( err, exit );
 
-				err = mDNSAddToFirewall(fullPath, kServiceNameL);
+				err = mDNSAddToFirewall(fullPath, kServiceFirewallName);
 				require_noerr( err, exit );
 
 				value = 1;
