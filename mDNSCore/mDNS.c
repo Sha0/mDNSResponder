@@ -68,6 +68,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.72  2003/01/28 01:49:48  cheshire
+Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+FindDuplicateQuestion() was incorrectly finding the question itself in the list,
+and incorrectly marking it as a duplicate (of itself), so that it became inactive.
+
 Revision 1.71  2003/01/28 01:41:44  cheshire
 Bug #: 3153091 Race condition when network change causes bad stuff
 When an interface goes away, interface-specific questions on that interface become orphaned.
@@ -3630,11 +3635,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
-	for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
-		if (q->InterfaceID == question->InterfaceID &&
-			q->rrtype      == question->rrtype      &&
-			q->rrclass     == question->rrclass     &&
-			SameDomainName(&q->name, &question->name)) return(q);
+	for (q = m->ActiveQuestions; q; q=q->next)				// Scan our list of questions
+		if (q              != question              &&		// (*EXCEPT* this question itself)
+			q->InterfaceID == question->InterfaceID &&		// for another question with the same InterfaceID,
+			q->rrtype      == question->rrtype      &&		// type,
+			q->rrclass     == question->rrclass     &&		// class,
+			SameDomainName(&q->name, &question->name))		// and name
+			return(q);
 	return(mDNSNULL);
 	}
 
