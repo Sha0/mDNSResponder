@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.281  2005/02/25 17:47:44  ksekar
+<rdar://problem/4021868> SendServiceRegistration fails on wake from sleep
+
 Revision 1.280  2005/02/25 04:21:00  cheshire
 <rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
 
@@ -1170,8 +1173,8 @@ enum
 	mStatus_BadTime           = -65559,
 	mStatus_BadSig            = -65560,     // while we define this per RFC 2845, BIND 9 returns Refused for bad/missing signatures
 	mStatus_BadKey            = -65561,
-	
-	// -65562 to -65786 currently unused; available for allocation
+	mStatus_TransientErr      = -65562,     // transient failures, e.g. sending packets shortly after a network transition or wake from sleep
+	// -65563 to -65786 currently unused; available for allocation
 
 	// tcp connection status
 	mStatus_ConnPending       = -65787,

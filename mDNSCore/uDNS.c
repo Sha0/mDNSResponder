@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.200  2005/02/25 17:47:45  ksekar
+<rdar://problem/4021868> SendServiceRegistration fails on wake from sleep
+
 Revision 1.199  2005/02/25 04:21:00  cheshire
 <rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
 
@@ -860,12 +863,12 @@ mDNSlocal void SwapRData(mDNS *m, AuthRecord *rr, mDNSBool DeallocOld)
 
 // set retry timestamp for record with exponential backoff
 // (for service record sets, use RR_SRV as representative for time checks
-mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr)
+mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 	{
 	rr->LastAPTime = mDNSPlatformTimeNow(m);
-	if (rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL)   { rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL; return; }
-	if (rr->ThisAPInterval*2 <= MAX_UCAST_POLL_INTERVAL) { rr->ThisAPInterval *= 2;                       return; }
-	if (rr->ThisAPInterval != MAX_UCAST_POLL_INTERVAL)   { rr->ThisAPInterval = MAX_UCAST_POLL_INTERVAL;          }
+	if (SendErr == mStatus_TransientErr || rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL)  rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
+	else if (rr->ThisAPInterval*2 <= MAX_UCAST_POLL_INTERVAL)                              rr->ThisAPInterval *= 2;
+	else if (rr->ThisAPInterval != MAX_UCAST_POLL_INTERVAL)                                rr->ThisAPInterval = MAX_UCAST_POLL_INTERVAL;
 	}
 	
 
@@ -2765,7 +2768,6 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 		return;
 		}
 		
-
 	if (!llq)
 		{
 		llq = &llqBuf;
@@ -3202,9 +3204,9 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 		{
 		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
 		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
+		if (err == mStatus_TransientErr) err = mStatus_NoError;  // don't return transient errors to caller
 		}
-
-	return mStatus_NoError;  // don't return transient errors to caller
+	return err;  
 	}
 	
 mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
@@ -3837,8 +3839,8 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &regInfo->ns, regInfo->port, -1, GetAuthInfoForName(u, rr->resrec.name));
 	if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
-
-	SetRecordRetry(m, rr);
+   
+	SetRecordRetry(m, rr, err);
 	
 	if (regInfo->state != regState_Refresh && regInfo->state != regState_DeregDeferred) regInfo->state = regState_Pending;
 	return;
@@ -4014,12 +4016,12 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	   
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForName(u, srs->RR_SRV.resrec.name));
-	if (err) { debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
+	if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
 
 	if (rInfo->state != regState_Refresh && rInfo->state != regState_DeregDeferred && srs->uDNS_info.state != regState_UpdatePending)
 		rInfo->state = regState_Pending;
 
-	SetRecordRetry(m, &srs->RR_SRV);
+	SetRecordRetry(m, &srs->RR_SRV, err);
 	rInfo->id.NotAnInteger = id.NotAnInteger;
 	if (mapped) srv->resrec.rdata->u.srv.port = privport;
 	return;
@@ -4162,7 +4164,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForName(u, rr->resrec.name));
 	if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
 
-	SetRecordRetry(m, rr);
+	SetRecordRetry(m, rr, err);
 	rr->uDNS_info.state = regState_DeregPending;
 	return;
 
@@ -4296,9 +4298,9 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 
 	
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForName(u, srs->RR_SRV.resrec.name));
-	if (err) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
+	if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
-	SetRecordRetry(m, &srs->RR_SRV);
+	SetRecordRetry(m, &srs->RR_SRV, err);
     info->id.NotAnInteger = id.NotAnInteger;
 	info->state = regState_DeregPending;
  
@@ -4415,8 +4417,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForName(u, rr->resrec.name));
 	if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
-	//!!! Update this when we implement retransmission for services
-	SetRecordRetry(m, rr);
+	SetRecordRetry(m, rr, err);
 	
 	rr->uDNS_info.state = regState_UpdatePending;
 	if (&rr->uDNS_info != info) info->state = regState_UpdatePending; // set parent SRS
@@ -4623,9 +4624,9 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 					else
 						{
 						err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
-						if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); } // surpress syslog messages if we have no network
 						q->LastQTime = timenow;
-						if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;
+						if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
+						else if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;  // don't increase interval if send failed
 						}
 					}
 				}
