@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.152  2004/03/09 02:27:16  cheshire
+Remove erroneous underscore in 'packed_struct' (makes no difference now, but might in future)
+
 Revision 1.151  2004/03/02 03:21:56  cheshire
 <rdar://problem/3549576> Properly support "_services._dns-sd._udp" meta-queries
 
@@ -554,7 +557,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 // Most compilers naturally pack the on-the-wire structures correctly anyway, so a plain "struct" is usually fine.
 // In the event that structures are not packed correctly, mDNS_Init() will detect this and report an error, so the
 // developer will know what's wrong, and can investigate what needs to be done on that compiler to provide proper packing.
-#ifndef packed_struct
+#ifndef packedstruct
  #ifdef __GNUC__
   #define packedstruct struct __attribute__((__packed__))
   #define packedunion  union  __attribute__((__packed__))
