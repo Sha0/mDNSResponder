@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.26  2003/12/08 21:00:46  rpantos
+Changes to support mDNSResponder on Linux.
+
 Revision 1.25  2003/11/08 22:18:29  cheshire
 <rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
 
@@ -156,52 +159,11 @@ struct mDNS_PlatformSupport_struct
     CFRunLoopSourceRef       PowerRLS;
     };
 
-extern void LogMsgIdent(const char *ident, const char *format, ...);
-#define LogMsgNoIdent(args...) LogMsgIdent("", args)
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
-
-// Set this symbol to 1 to do extra debug checks on malloc() and free()
-// Set this symbol to 2 to write a log message for every malloc() and free()
-#define MACOSX_MDNS_MALLOC_DEBUGGING 0
-
-#if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
-extern void *mallocL(char *msg, unsigned int size);
-extern void freeL(char *msg, void *x);
-#else
-#define mallocL(X,Y) malloc(Y)
-#define freeL(X,Y) free(Y)
-#endif
-
-#if MACOSX_MDNS_MALLOC_DEBUGGING >= 2
-#define LogMalloc LogMsg
-#else
-#define	LogMalloc(ARGS...) ((void)0)
-#endif
-
-#define LogAllOperations 0
-
-#if LogAllOperations
-#define LogOperation LogMsg
-#else
-#define	LogOperation debugf
-#endif
-
-#define PORT_AS_NUM(P) (((mDNSu16)(P).b[0]) << 8 | (P).b[1])
-#define SRS_PORT_AS_NUM(S) PORT_AS_NUM((S)->RR_SRV.resrec.rdata->u.srv.port)
-
-// UDS Server <-> daemon crossover routines/globals
-extern mDNS mDNSStorage;            
-extern int udsserver_init(void);
-extern int udsserver_add_rl_source(void);
-extern mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled event time, does idle work,
-                                                   // and returns the updated nextevent time
-extern void udsserver_info(void);
-extern void udsserver_handle_configchange(void);
-extern int udsserver_exit(void);
 
 #ifdef  __cplusplus
     }

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.120  2003/12/08 21:00:46  rpantos
+Changes to support mDNSResponder on Linux.
+
 Revision 1.119  2003/12/03 02:35:15  cheshire
 Also report value of m->timenow when logging sendto() failure
 
@@ -388,70 +391,6 @@ static mDNSu32 clockdivisor = 0;
 
 // ***************************************************************************
 // Functions
-
-// Note, this uses mDNS_vsnprintf instead of standard "vsnprintf", because mDNS_vsnprintf knows
-// how to print special data types like IP addresses and length-prefixed domain names
-#if MDNS_DEBUGMSGS
-mDNSexport void debugf_(const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	fprintf(stderr,"%s\n", buffer);
-	fflush(stderr);
-	}
-#endif
-
-#if MDNS_DEBUGMSGS > 1
-mDNSexport void verbosedebugf_(const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	fprintf(stderr,"%s\n", buffer);
-	fflush(stderr);
-	}
-#endif
-
-mDNSlocal void WriteLogMsg(const char *ident, const char *buffer, int logoptflags)
-	{
-	extern int debug_mode;
-	if (debug_mode)		// In debug_mode we write to stderr
-		{
-		fprintf(stderr,"%s\n", buffer);
-		fflush(stderr);
-		}
-	else				// else, in production mode, we write to syslog
-		{
-		openlog(ident, LOG_CONS | LOG_PERROR | logoptflags, LOG_DAEMON);
-		syslog(LOG_ERR, "%s", buffer);
-		closelog();
-		}
-	}
-
-mDNSexport void LogMsg(const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	WriteLogMsg("mDNSResponder", buffer, 0);
-	}
-
-mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
-	}
 
 mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
 	{

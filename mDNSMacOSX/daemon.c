@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.146  2003/12/08 21:00:46  rpantos
+Changes to support mDNSResponder on Linux.
+
 Revision 1.145  2003/12/05 22:08:07  cheshire
 Update version string to "mDNSResponder-61", including new mechanism to allow dots (e.g. 58.1)
 
@@ -238,6 +241,10 @@ Add $Log header
 #include "mDNSClientAPI.h"			// Defines the interface to the client layer above
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
+#include "uds_daemon.h"				// Interface to the server side implementation of dns_sd.h
+
+#include "GenLinkedList.h"
+
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 #define ENABLE_UDS 1
@@ -250,6 +257,9 @@ Add $Log header
 // To expand "version" to its value before making the string, use STRINGIFY(version) instead
 #define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s 
 #define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
+
+// convenience definition 
+#define	_UNUSED	__attribute__ ((unused))
 
 //*************************************************************************************************************
 // Globals
@@ -1575,10 +1585,8 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFRelease(i_rls);
 	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
 #if ENABLE_UDS
-	err = udsserver_init();
+	err = udsserver_init(&mDNSStorage);
 	if (err) { LogMsg("Daemon start: udsserver_init failed"); return err; }
-	err = udsserver_add_rl_source();
-	if (err) { LogMsg("Daemon start: udsserver_add_rl_source failed"); return err; }
 #endif
 	return(err);
 	}
@@ -1658,6 +1666,8 @@ mDNSexport int main(int argc, char **argv)
 		{
 		if (!strcmp(argv[i], "-d")) debug_mode = 1;
 		}
+	if ( debug_mode)
+		LogInDebugMode();
 
 	signal(SIGINT,  HandleSIGTERM);		// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIGTERM);
@@ -1751,6 +1761,98 @@ mDNSexport int main(int argc, char **argv)
 
 	return(status);
 	}
+
+
+//		uds_daemon.c support routines		/////////////////////////////////////////////
+
+// We keep a list of client-supplied event sources in PosixEventSource records 
+struct CFSocketEventSource
+	{
+	udsEventCallback			Callback;
+	void						*Context;
+	int							fd;
+	struct  CFSocketEventSource	*Next;
+	CFSocketRef					SocketRef;
+	CFRunLoopSourceRef			RLS;
+	};
+typedef struct CFSocketEventSource	CFSocketEventSource;
+
+static GenLinkedList	gEventSources;			// linked list of CFSocketEventSource's
+
+
+static void cf_callback(CFSocketRef s _UNUSED, CFSocketCallBackType t _UNUSED, CFDataRef dr _UNUSED, const void *c _UNUSED, void *i)
+	// Called by CFSocket when data appears on socket
+	{
+	CFSocketEventSource	*source = (CFSocketEventSource*) i;
+	source->Callback( source->Context);
+	}
+
+mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
+	// Arrange things so that callback is called with context when data appears on fd
+	{
+	CFSocketEventSource	*newSource;
+	CFSocketContext cfContext = 	{ 0, NULL, NULL, NULL, NULL 	};
+	
+	if (gEventSources.LinkOffset == 0)
+		InitLinkedList( &gEventSources, offsetof( CFSocketEventSource, Next));
+
+	if (fd >= FD_SETSIZE || fd < 0)
+		return mStatus_UnsupportedErr;
+	if (callback == NULL)
+		return mStatus_BadParamErr;
+
+	newSource = (CFSocketEventSource*) calloc( 1, sizeof *newSource);
+	if (NULL == newSource)
+		return mStatus_NoMemoryErr;
+
+	newSource->Callback = callback;
+	newSource->Context = context;
+	newSource->fd = fd;
+
+	cfContext.info = newSource;
+	if ( NULL != ( newSource->SocketRef = CFSocketCreateWithNative( kCFAllocatorDefault, fd, kCFSocketReadCallBack, 
+																	cf_callback, &cfContext)) &&
+		 NULL != ( newSource->RLS = CFSocketCreateRunLoopSource(kCFAllocatorDefault, newSource->SocketRef, 0)))
+		{
+		CFRunLoopAddSource(CFRunLoopGetCurrent(), newSource->RLS, kCFRunLoopDefaultMode);
+		AddToTail(&gEventSources, newSource);
+		}
+	else
+		{
+		if (newSource->SocketRef)
+			{
+			CFSocketInvalidate(newSource->SocketRef);  // automatically closes socket
+			CFRelease(newSource->SocketRef);
+			}
+		return mStatus_NoMemoryErr;
+		}
+
+	return mStatus_NoError;
+	}
+
+mStatus udsSupportRemoveFDFromEventLoop( int fd)
+	// Reverse what was done in udsSupportAddFDToEventLoop().
+	{
+	CFSocketEventSource	*iSource;
+
+	for ( iSource=(CFSocketEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+		{
+		if ( fd == iSource->fd)
+			{
+			RemoveFromList( &gEventSources, iSource);
+			CFRunLoopRemoveSource(CFRunLoopGetCurrent(), iSource->RLS, kCFRunLoopDefaultMode);
+			CFRunLoopSourceInvalidate(iSource->RLS);
+			CFRelease(iSource->RLS);
+			CFSocketInvalidate(iSource->SocketRef);
+			CFRelease(iSource->SocketRef);
+			free( iSource);
+			return mStatus_NoError;
+			}
+		}
+	return mStatus_NoSuchNameErr;
+	}
+
+
 
 // For convenience when using the "strings" command, this is the last thing in the file
 mDNSexport const char mDNSResponderVersionString[] = STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
