@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.21  2005/03/03 02:29:00  shersche
+Use the RegNames.h header file for registry key names
+
 Revision 1.20  2005/01/25 08:12:52  shersche
 <rdar://problem/3947417> Enable Unicast and add Dynamic DNS support.
 Bug #: 3947417
@@ -262,19 +265,6 @@ int	getifaddrs( struct ifaddrs **outAddrs );
 */
 
 void	freeifaddrs( struct ifaddrs *inAddrs );
-
-
-//---------------------------------------------------------------------------------------------------------------------------
-//	Registry Constants
-//---------------------------------------------------------------------------------------------------------------------------
-
-#define	kServiceName							"Apple mDNSResponder"
-#define kServiceDynDNSBrowseDomains				"BrowseDomains"
-#define kServiceDynDNSHostNames					"HostNames"
-#define kServiceDynDNSRegistrationDomains		"RegistrationDomains"
-#define kServiceDynDNSDomains					"Domains"	// value is comma separated list of domains
-#define kServiceDynDNSEnabled					"Enabled"
-#define kServiceDynDNSStatus					"Status"
 
 
 #ifdef	__cplusplus

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.79  2005/03/03 02:29:00  shersche
+Use the RegNames.h header file for registry key names
+
 Revision 1.78  2005/03/02 04:04:17  shersche
 Support for multiple browse domains
 
@@ -318,6 +321,7 @@ Multicast DNS platform plugin for Win32
 
 #include	"CommonServices.h"
 #include	"DebugServices.h"
+#include	"RegNames.h"
 #include	<dns_sd.h>
 
 #include	<Iphlpapi.h>

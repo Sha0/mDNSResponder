@@ -32,6 +32,7 @@
 #include "SecondPage.h"
 #include "ThirdPage.h"
 
+#include <RegNames.h>
 #include <dns_sd.h>
 #include <list>
 
@@ -131,17 +132,5 @@ private:
 	CRITICAL_SECTION	m_lock;
 };
 
-
-//---------------------------------------------------------------------------------------------------------------------------
-//	Registry Constants
-//---------------------------------------------------------------------------------------------------------------------------
-
-#define	kServiceName							L"Apple mDNSResponder"
-#define kServiceDynDNSBrowseDomains				L"BrowseDomains"
-#define kServiceDynDNSHostNames					L"HostNames"
-#define kServiceDynDNSRegistrationDomains		L"RegistrationDomains"
-#define kServiceDynDNSDomains					L"Domains"	// value is comma separated list of domains
-#define kServiceDynDNSEnabled					L"Enabled"
-#define kServiceDynDNSStatus					L"Status"
 
 #endif
