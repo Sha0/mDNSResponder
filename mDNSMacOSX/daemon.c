@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.158  2004/04/02 21:39:05  cheshire
+Fix errors in comments
+
 Revision 1.157  2004/03/19 18:49:10  ksekar
 Increased size check in freeL() to account for LargeCacheRecord
 structs larger than 8k
@@ -1763,7 +1766,7 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGTERM, HandleSIGTERM);
 	signal(SIGINFO, HandleSIGINFO);
 
-	// Register the server with mach_init for automatic restart only during debug mode
+	// Register the server with mach_init for automatic restart only during normal (non-debug) mode
     if (!mDNS_DebugMode)
 		registerBootstrapService();
 
@@ -1775,7 +1778,7 @@ mDNSexport int main(int argc, char **argv)
 		int fd = open(_PATH_DEVNULL, O_RDWR, 0);
 		if (fd != -1)
 			{
-			// Avoid to unnecessarily duplicate a file descriptor to itself
+			// Avoid unnecessarily duplicating a file descriptor to itself
 			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
 			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
 			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
