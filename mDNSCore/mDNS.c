@@ -496,19 +496,16 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	
 	dst = name->c;										// Extract the service name from the domain name
 	len = *src;
-	if (len >= 0x40)
-		{ debugf("DeconstructServiceName: service name too long"); return(mDNSfalse); }
+	if (len >= 0x40) { debugf("DeconstructServiceName: service name too long"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 	
 	dst = type->c;										// Extract the service type from the domain name
 	len = *src;
-	if (src + 1 + len + 1 >= max)
-		{ debugf("DeconstructServiceName: service type too long"); return(mDNSfalse); }
+	if (len >= 0x40) { debugf("DeconstructServiceName: service type too long"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
-	if (src + 1 + len + 1 >= max)
-		{ debugf("DeconstructServiceName: service type too long"); return(mDNSfalse); }
+	if (len >= 0x40) { debugf("DeconstructServiceName: service type too long"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 	*dst++ = 0;		// Put the null root label on the end of the service type
 
@@ -516,8 +513,10 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	while (*src)
 		{
 		len = *src;
+		if (len >= 0x40)
+			{ debugf("DeconstructServiceName: service domain label too long"); return(mDNSfalse); }
 		if (src + 1 + len + 1 >= max)
-			{ debugf("DeconstructServiceName: service domain too long"); return(0); }
+			{ debugf("DeconstructServiceName: service domain too long"); return(mDNSfalse); }
 		for (i=0; i<=len; i++) *dst++ = *src++;
 		}
 	*dst++ = 0;		// Put the null root label on the end
@@ -1979,7 +1978,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 
 // AnswerLocalQuestions is called from mDNSCoreReceiveResponse,
 // and from TidyRRCache, which is called from mDNSCoreTask and from mDNSCoreReceiveResponse
-// AnswerLocalQuestions is *never* called directly as a result from withing a client API call
+// AnswerLocalQuestions is *never* called directly as a result of a client API call
 // If new questions are created as a result of invoking client callbacks, they will be added to
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is a ResourceRecord in our cache

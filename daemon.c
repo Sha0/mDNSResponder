@@ -50,7 +50,9 @@
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
+//*************************************************************************************************************
 // Globals
+
 static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 500
@@ -58,9 +60,10 @@ static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
 static const char PID_FILE[] = "/var/run/mDNSResponder.pid";
 
 static const char kmDNSBootstrapName[] = "com.apple.mDNSResponder";
-static mach_port_t client_death_port = MACH_PORT_NULL;;
-static mach_port_t exit_m_port       = MACH_PORT_NULL;;
+static mach_port_t client_death_port = MACH_PORT_NULL;
+static mach_port_t exit_m_port       = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
+static CFRunLoopTimerRef DeliverInstanceTimer;
 
 // mDNS Mach Message Timeout, in milliseconds.
 // We need this to be short enough that we don't deadlock the mDNSResponder if a client
@@ -96,6 +99,8 @@ struct DNSServiceBrowser_struct
 	DNSServiceBrowser *next;
 	mach_port_t ClientMachPort;
 	DNSQuestion q;
+	int resultType;		// Set to -1 if no outstanding reply
+	char name[256], type[256], dom[256];
 	};
 
 typedef struct DNSServiceResolver_struct DNSServiceResolver;
@@ -368,26 +373,59 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 //*************************************************************************************************************
 // Browse for services
 
-mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+mDNSlocal void DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFlags flags)
 	{
 	kern_return_t status;
-	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
-	int resultType = DNSServiceBrowserReplyAddInstance;
-	domainlabel name;
-	domainname type, domain;
-	char c_name[256], c_type[256], c_dom[256];
-	
-	if (answer->rrtype != kDNSType_PTR) return;
-	debugf("FoundInstance: %##s", answer->rdata->u.name.c);
-	DeconstructServiceName(&answer->rdata->u.name, &name, &type, &domain);
-	ConvertDomainLabelToCString_unescaped(&name, c_name);
-	ConvertDomainNameToCString(&type, c_type);
-	ConvertDomainNameToCString(&domain, c_dom);
-	if (answer->rrremainingttl == 0) resultType = DNSServiceBrowserReplyRemoveInstance;
-	debugf("DNSServiceBrowserReply_rpc sending reply for %s", c_name);
-	status = DNSServiceBrowserReply_rpc(x->ClientMachPort, resultType, c_name, c_type, c_dom, 0, MDNS_MM_TIMEOUT);
+	const char *const msg = (flags & DNSServiceDiscoverReplyFlagsMoreComing) ? "more coming" : "last in batch";
+	debugf("DNSServiceBrowserReply_rpc sending reply for %s (%s)", x->name, msg);
+	status = DNSServiceBrowserReply_rpc(x->ClientMachPort, x->resultType, x->name, x->type, x->dom, flags, MDNS_MM_TIMEOUT);
+	x->resultType = -1;
 	if (status == MACH_SEND_TIMED_OUT)
 		AbortBlockedClient(x->ClientMachPort, "browse");
+	}
+
+mDNSlocal void DeliverInstanceTimerCallBack(CFRunLoopTimerRef timer, void *info)
+	{
+	DNSServiceBrowser *b;
+	(void)timer;	// Parameter not used
+
+	for (b = DNSServiceBrowserList; b; b=b->next)
+		if (b->resultType != -1)
+			DeliverInstance(b, 0);
+	}
+
+mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+	{
+	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
+	domainlabel name;
+	domainname type, domain;
+	
+	if (answer->rrtype != kDNSType_PTR)
+		{
+		debugf("FoundInstance: Should not be called with rrtype %d (not a PTR record)", answer->rrtype);
+		return;
+		}
+	
+	if (!DeconstructServiceName(&answer->rdata->u.name, &name, &type, &domain))
+		{
+		debugf("FoundInstance: %##s PTR %##s is not valid NIAS service pointer", &answer->name, &answer->rdata->u.name);
+		return;
+		}
+
+	if (x->resultType != -1) DeliverInstance(x, DNSServiceDiscoverReplyFlagsMoreComing);
+
+	debugf("FoundInstance: %##s", answer->rdata->u.name.c);
+	ConvertDomainLabelToCString_unescaped(&name, x->name);
+	ConvertDomainNameToCString(&type, x->type);
+	ConvertDomainNameToCString(&domain, x->dom);
+	if (answer->rrremainingttl)
+		 x->resultType = DNSServiceBrowserReplyAddInstance;
+	else x->resultType = DNSServiceBrowserReplyRemoveInstance;
+
+	// We schedule this timer 1/10 second in the future because CFRunLoop doesn't respect
+	// the relative priority between CFSocket and CFRunLoopTimer, and continues to call
+	// the timer callback even though there are packets waiting to be processed.
+	CFRunLoopTimerSetNextFireDate(DeliverInstanceTimer, CFAbsoluteTimeGetCurrent() + 0.1);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -398,6 +436,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
 	if (!x) { debugf("provide_DNSServiceBrowserCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
 	x->ClientMachPort = client;
+	x->resultType = -1;
 	x->next = DNSServiceBrowserList;
 	DNSServiceBrowserList = x;
 
@@ -958,6 +997,7 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	{
 	mStatus            err;
+	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, &mDNSStorage, NULL, NULL, NULL };
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
 	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
@@ -975,6 +1015,18 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 			LogErrorMessage("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
 		return(status);
 		}
+
+	// Note: Every CFRunLoopTimer has to be created with an initial fire time, and a repeat interval, or it becomes
+	// a one-shot timer and you can't use CFRunLoopTimerSetNextFireDate(timer, when) to schedule subsequent firings.
+	// Here we create it with an initial fire time 24 hours from now, and a repeat interval of 24 hours, with
+	// the intention that we'll actually reschedule it using CFRunLoopTimerSetNextFireDate(timer, when) as necessary.
+	DeliverInstanceTimer = CFRunLoopTimerCreate(kCFAllocatorDefault,
+							CFAbsoluteTimeGetCurrent() + 24.0*60.0*60.0, 24.0*60.0*60.0,
+							0, // no flags
+							9, // low priority execution (after all packets, etc., have been handled).
+							DeliverInstanceTimerCallBack, &myCFRunLoopTimerContext);
+	if (!DeliverInstanceTimer) return(-1);
+	CFRunLoopAddTimer(CFRunLoopGetCurrent(), DeliverInstanceTimer, kCFRunLoopDefaultMode);
 	
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
 	if (err) { LogErrorMessage("Daemon start: mDNS_Init failed %ld", err); return(err); }
