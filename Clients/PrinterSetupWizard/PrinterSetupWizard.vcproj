@@ -68,7 +68,7 @@
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files"
+			OutputDirectory=".\Release\Root\Program Files\Rendezvous"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="1"
 			UseOfMFC="1"

@@ -68,7 +68,7 @@
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\RendezvousPrinterWizard.exe.Resources"
+			OutputDirectory=".\Release\Root\Program Files\Rendezvous\RendezvousPrinterWizard.exe.Resources"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
