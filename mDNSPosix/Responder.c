@@ -66,6 +66,10 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.4  2003/01/28 03:07:46  cheshire
+Add extra parameter to mDNS_RenameAndReregisterService(),
+and add support for specifying a domain other than dot-local.
+
 Revision 1.3  2002/09/21 20:44:53  zarzycki
 Added APSL info
 
@@ -340,6 +344,7 @@ static mDNSBool CheckThatPortNumberIsUsable(long portNumber, mDNSBool printExpla
 
 static const char kDefaultPIDFile[]     = "/var/run/mDNSResponder.pid";
 static const char kDefaultServiceType[] = "_afpovertcp._tcp.";
+static const char kDefaultServiceDomain[] = "local.";
 enum {
     kDefaultPortNumber = 548
 };
@@ -347,7 +352,7 @@ enum {
 static void PrintUsage(char **argv)
 {
     fprintf(stderr, 
-            "Usage: %s [-v level ] [-r] [-n name] [-t type] [-x TXT] [-p port] [-f file] [-d] [-P pidfile]\n", 
+            "Usage: %s [-v level ] [-r] [-n name] [-t type] [-d domain] [-x TXT] [-p port] [-f file] [-b] [-P pidfile]\n", 
             gProgramName);
     fprintf(stderr, "          -v verbose mode, level is a number from 0 to 2\n");
     fprintf(stderr, "             0 = no debugging info (default)\n");
@@ -357,18 +362,20 @@ static void PrintUsage(char **argv)
     fprintf(stderr, "          -r also bind to port 53 (port 5353 is always bound)\n");
     fprintf(stderr, "          -n uses 'name' as the host name (default is none)\n");
     fprintf(stderr, "          -t uses 'type' as the service type (default is '%s')\n", kDefaultServiceType);
+    fprintf(stderr, "          -d uses 'domain' as the service domain (default is '%s')\n", kDefaultServiceDomain);
     fprintf(stderr, "          -x uses 'TXT' as the service TXT record (default is empty)\n");
     fprintf(stderr, "          -p uses 'port' as the port number (default is '%d')\n",  kDefaultPortNumber);
     fprintf(stderr, "          -f reads a service list from 'file'\n");
-    fprintf(stderr, "          -d forces daemon mode\n");
+    fprintf(stderr, "          -b forces daemon (background) mode\n");
     fprintf(stderr, "          -P uses 'pidfile' as the PID file\n");
     fprintf(stderr, "             (default is '%s')\n",  kDefaultPIDFile);
-    fprintf(stderr, "             only meaningful if -d also specified\n");
+    fprintf(stderr, "             only meaningful if -b also specified\n");
 }
 
 static   mDNSBool  gAvoidPort53      = mDNStrue;
 static const char *gRichTextHostName = "";
 static const char *gServiceType      = kDefaultServiceType;
+static const char *gServiceDomain    = kDefaultServiceDomain;
 static mDNSu8      gServiceText[sizeof(RDataBody)];
 static mDNSu16     gServiceTextLen   = 0;
 static        int  gPortNumber       = kDefaultPortNumber;
@@ -394,7 +401,7 @@ static void ParseArguments(int argc, char **argv)
     // Parse command line options using getopt.
     
     do {
-        ch = getopt(argc, argv, "v:rn:x:t:p:f:dP");
+        ch = getopt(argc, argv, "v:rn:t:d:x:p:f:dP");
         if (ch != -1) {
             switch (ch) {
                 case 'v':
@@ -421,6 +428,9 @@ static void ParseArguments(int argc, char **argv)
                         exit(1);
                     }
                     break;
+                case 'd':
+                    gServiceDomain = optarg;
+                    break;
                 case 'x':
                     if ( ! CheckThatServiceTextIsUsable(optarg, mDNStrue, gServiceText, &gServiceTextLen) ) {
                         exit(1);
@@ -435,7 +445,7 @@ static void ParseArguments(int argc, char **argv)
                 case 'f':
                     gServiceFile = optarg;
                     break;
-                case 'd':
+                case 'b':
                     gDaemon = mDNStrue;
                     break;
                 case 'P':
@@ -453,6 +463,7 @@ static void ParseArguments(int argc, char **argv)
     // Check for any left over command line arguments.
     
     if (optind != argc) {
+	    PrintUsage(argv);
         fprintf(stderr, "%s: Unexpected argument '%s'\n", gProgramName, argv[optind]);
         exit(1);
     }
@@ -460,6 +471,7 @@ static void ParseArguments(int argc, char **argv)
     // Check for inconsistency between the arguments.
     
     if ( (gRichTextHostName[0] == 0) && (gServiceFile[0] == 0) ) {
+    	PrintUsage(argv);
         fprintf(stderr, "%s: You must specify a service to register (-n) or a service file (-f).\n", gProgramName);
         exit(1);
     }
@@ -504,7 +516,7 @@ static void RegistrationCallback(mDNS *const m, ServiceRecordSet *const thisRegi
             // Also, what do we do if mDNS_RenameAndReregisterService returns an 
             // error.  Right now I have no place to send that error to.
             
-            status = mDNS_RenameAndReregisterService(m, thisRegistration);
+            status = mDNS_RenameAndReregisterService(m, thisRegistration, mDNSNULL);
             assert(status == mStatus_NoError);
             break;
 
@@ -538,6 +550,7 @@ static int gServiceID = 0;
 
 static mStatus RegisterOneService(const char *  richTextHostName, 
                                   const char *  serviceType, 
+                                  const char *  serviceDomain, 
                                   const mDNSu8  text[],
                                   mDNSu16       textLen,
                                   long          portNumber)
@@ -557,7 +570,7 @@ static mStatus RegisterOneService(const char *  richTextHostName,
     if (status == mStatus_NoError) {
         ConvertCStringToDomainLabel(richTextHostName,  &name);
         ConvertCStringToDomainName(serviceType, &type);
-        ConvertCStringToDomainName("local.", &domain);
+        ConvertCStringToDomainName(serviceDomain, &domain);
         port.b[0] = (portNumber >> 8) & 0x0FF;
         port.b[1] = (portNumber >> 0) & 0x0FF;;
         status = mDNS_RegisterService(&mDNSStorage, &thisServ->coreServ,
@@ -616,6 +629,7 @@ static mStatus RegisterServicesInFile(const char *filePath)
     int         ch;
     char name[256];
     char type[256];
+    const char *dom = kDefaultServiceDomain;
     char rawText[1024];
     mDNSu8  text[sizeof(RDataBody)];
     mDNSu16 textLen;
@@ -644,6 +658,14 @@ static mStatus RegisterServicesInFile(const char *filePath)
                     good = ReadALine(type, sizeof(type), fp);
                 }
                 if (good) {
+                	char *p = type;
+                	while (*p && *p != ' ') p++;
+                	if (*p) {
+                		*p = 0;
+                		dom = p+1;
+                	}
+                }
+                if (good) {
                     good = ReadALine(rawText, sizeof(rawText), fp);
                 }
                 if (good) {
@@ -656,7 +678,7 @@ static mStatus RegisterServicesInFile(const char *filePath)
                             && CheckThatPortNumberIsUsable(atol(port), mDNSfalse);
                 }
                 if (good) {
-                    status = RegisterOneService(name, type, text, textLen, atol(port));
+                    status = RegisterOneService(name, type, dom, text, textLen, atol(port));
                     if (status != mStatus_NoError) {
                         fprintf(stderr, 
                                 "%s: Failed to register service, name = %s, type = %s, port = %s\n", 
@@ -691,6 +713,7 @@ static mStatus RegisterOurServices(void)
     if (gRichTextHostName[0] != 0) {
         status = RegisterOneService(gRichTextHostName, 
                                     gServiceType, 
+                                    gServiceDomain, 
                                     gServiceText, gServiceTextLen, 
                                     gPortNumber);
     }
