@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.121  2004/11/24 04:45:52  cheshire
+Spelling mistake
+
 Revision 1.120  2004/11/24 00:10:44  cheshire
 <rdar://problem/3869241> For unicast operations, verify that service types are legal
 
@@ -2443,7 +2446,7 @@ static void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result)
 	if (!re)
 		{
 		// parent struct alreadt freed by termination callback
-		if (!result) LogMsg("Error: regrecord_callback: succesful registration of orphaned record");
+		if (!result) LogMsg("Error: regrecord_callback: successful registration of orphaned record");
 		else
 			{
 			if (result != mStatus_MemFree) LogMsg("regrecord_callback: error %d received after parent termination", result);
