@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.25  2004/11/22 17:16:20  ksekar
+<rdar://problem/3854298> Unicast services don't disappear when you disable all networking
+
 Revision 1.24  2004/11/19 04:24:08  ksekar
 <rdar://problem/3682609> Security: Enforce a "window" on one-shot wide-area queries
 
@@ -112,6 +115,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	extern "C" {
 #endif
 
+#define RESTART_GOODBYE_DELAY (2 * mDNSPlatformOneSecond) // delay after restarting LLQ before nuking previous known answers (avoids flutter if we restart before we have networking up)
 #define MIN_UCAST_PERIODIC_EXEC (5 * mDNSPlatformOneSecond) 	
 #define INIT_UCAST_POLL_INTERVAL mDNSPlatformOneSecond      // this interval is used after send failures on network transitions
 	                                                        // which typically heal quickly, so we start agressively and exponentially back off

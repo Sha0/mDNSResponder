@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.241  2004/11/22 17:16:19  ksekar
+<rdar://problem/3854298> Unicast services don't disappear when you disable all networking
+
 Revision 1.240  2004/11/19 02:32:43  ksekar
 Wide-Area Security: Add LLQ-ID to events
 
@@ -1579,7 +1582,8 @@ typedef struct
 	mDNSu32 origLease;  // seconds (relative)
 	mDNSs32 retry;  // ticks (absolute)
 	mDNSs32 expire; // ticks (absolute)
-	mDNSs16 ntries;
+    mDNSs32 RestartTime; // ticks (absolute)
+    mDNSs16 ntries;
 	mDNSu8 id[8];
 	mDNSBool deriveRemovesOnResume;
     mDNSBool NATMap;        // does this LLQ use the global LLQ NAT mapping?

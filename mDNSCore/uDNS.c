@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.123  2004/11/22 17:16:20  ksekar
+<rdar://problem/3854298> Unicast services don't disappear when you disable all networking
+
 Revision 1.122  2004/11/19 18:00:34  ksekar
 <rdar://problem/3682646> Security: use random ID for one-shot unicast queries
 
@@ -4159,11 +4162,35 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 
 	if (!server) { debugf("uDNS_Execute - no DNS server"); return nextevent; }	
 
-	for (q = u->ActiveQueries; q; q = q->next)
+	u->CurrentQuery = u->ActiveQueries;
+	while (u->CurrentQuery)
 		{
+		q = u->CurrentQuery;
+
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq->state != LLQ_Poll)
 			{
+			if (llq->state < LLQ_Established)
+				{
+				// if we've been spinning on restart setup, and we have known answers, give goodbyes (they may be re-added later)
+				if (llq->RestartTime + RESTART_GOODBYE_DELAY - timenow < 0 && q->uDNS_info.knownAnswers)
+					{
+					u->CurrentQuery = q;
+					while (q->uDNS_info.knownAnswers)
+						{						
+						CacheRecord *cr = q->uDNS_info.knownAnswers;
+						q->uDNS_info.knownAnswers = q->uDNS_info.knownAnswers->next;
+
+						m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+						q->QuestionCallback(m, q, &cr->resrec, mDNSfalse);
+						m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+						ufree(cr);
+						if (q != u->CurrentQuery) { debugf("CheckQueries - question removed via callback."); break; }
+						}											
+					}
+				}
+			if (q != u->CurrentQuery) continue;
+			
 			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Established)
 				{
 				if (llq->retry - timenow < 0)				
@@ -4173,7 +4200,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 						LogMsg("ERROR: retry timer not set for LLQ %##s in state %d", q->qname.c, llq->state);
 					else if (llq->state == LLQ_Established || llq->state == LLQ_Refresh)
 						sendLLQRefresh(m, q, llq->origLease);
-					else if (llq->state == LLQ_InitialRequest) 
+					else if (llq->state == LLQ_InitialRequest) 						
 						startLLQHandshake(m, llq, mDNSfalse);
 					else if (llq->state == LLQ_SecondaryRequest)
 						sendChallengeResponse(m, q, mDNSNULL);
@@ -4189,19 +4216,18 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 			if (sendtime - timenow < 0)
 				{
 				err = constructQueryMsg(&msg, &end, q);
-				if (err)
+				if (err)  LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %##s", q->qname.c);
+				else
 					{
-					LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %##s",
-						   q->qname.c);
-					continue;
+					err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, server, UnicastDNSPort, -1, mDNSNULL);
+					if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); } // surpress syslog messages if we have no network
+					q->LastQTime = timenow;
+					if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;
 					}
-				err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, server, UnicastDNSPort, -1, mDNSNULL);
-				if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); } // surpress syslog messages if we have no network
-				q->LastQTime = timenow;
-				if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;
 				}
 			else if (sendtime - nextevent < 0) nextevent = sendtime;
 			}
+		u->CurrentQuery = u->CurrentQuery->next;
 		}
 	return nextevent;
 	}
@@ -4374,12 +4400,18 @@ mDNSlocal void RestartQueries(mDNS *m)
 			{
 			if (!llqInfo) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; } 
 			if (llqInfo->state == LLQ_Suspended || llqInfo->state == LLQ_NatMapWait)		
-				{ llqInfo->ntries = -1; llqInfo->deriveRemovesOnResume = mDNStrue; startLLQHandshake(m, llqInfo, mDNStrue); } // we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
+				{
+				llqInfo->RestartTime = timenow;
+				llqInfo->ntries = -1;
+				llqInfo->deriveRemovesOnResume = mDNStrue;
+				startLLQHandshake(m, llqInfo, mDNStrue);  // we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
+				}
 			else if (llqInfo->state == LLQ_SuspendDeferred)
 				llqInfo->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
 			else if (llqInfo->state == LLQ_SuspendedPoll)
 				{
 				// if we were polling, we may have had bad zone data due to firewall, etc. - refetch
+				llqInfo->RestartTime = timenow;
 				llqInfo->ntries = 0;
 				llqInfo->deriveRemovesOnResume = mDNStrue;
 				llqInfo->state = LLQ_GetZoneInfo;
