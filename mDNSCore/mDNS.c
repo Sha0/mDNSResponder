@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.395  2004/08/18 17:21:18  ksekar
+Removed double-call of uDNS_AdvertiseInterface from mDNS_SetFQDNs()
+
 Revision 1.394  2004/08/14 03:22:41  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -5523,7 +5526,7 @@ mDNSexport void mDNS_SetFQDNs(mDNS *const m, const domainname *newuname)
 			if (intf->Advertise)
 				{
 				if (mchanged) AdvertiseInterface(m, intf);
-				if (uchanged) uDNS_AdvertiseInterface(m, intf);
+				else if (uchanged) uDNS_AdvertiseInterface(m, intf); // AdvertiseInterface calls uDNS routine
 				}
 
 		// 3. Make sure that any SRV records (and the like) that reference our
