@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.19  2003/10/28 01:10:14  rpantos
+3282283/1: Change 'compare' to 'caseInsensitiveCompare' to fix sort order.
+
 Revision 1.18  2003/08/12 19:55:07  cheshire
 Update to APSL 2.0
 
@@ -205,7 +208,7 @@ void resolve_reply (
     }
     if (theTableView == nameField)
     {
-        return [[nameKeys sortedArrayUsingSelector:@selector(compare:)] objectAtIndex:rowIndex];
+        return [[nameKeys sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)] objectAtIndex:rowIndex];
     }
     if (theTableView == serviceDisplayTable)
     {
@@ -252,7 +255,7 @@ void resolve_reply (
 {
     int index=[sender selectedRow];				//Find index of selected row
     if (index==-1) return;					//Error checking
-    Name=[[nameKeys sortedArrayUsingSelector:@selector(compare:)] objectAtIndex:index];			//Save desired name
+    Name=[[nameKeys sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)] objectAtIndex:index];			//Save desired name
 
     {
         CFMachPortRef           cfMachPort;
