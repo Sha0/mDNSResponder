@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.222  2003/07/15 23:40:46  cheshire
+Function rename: UpdateDupSuppressInfo() is more accurately called ExpireDupSuppressInfo()
+
 Revision 1.221  2003/07/15 22:17:56  cheshire
 <rdar://problem/3328394> mDNSResponder is not being efficient when doing certain queries
 
@@ -3169,7 +3172,7 @@ mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name)
 	}
 
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
-mDNSlocal void UpdateDupSuppressInfo(DupSuppressInfo ds[DupSuppressInfoSize], mDNSs32 time)
+mDNSlocal void ExpireDupSuppressInfo(DupSuppressInfo ds[DupSuppressInfoSize], mDNSs32 time)
 	{
 	int i;
 	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].Time - time < 0) ds[i].InterfaceID = mDNSNULL;
@@ -3229,7 +3232,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 
 				// If we recorded a duplicate suppression for this question less than half an interval ago,
 				// then we consider it recent enough that we don't need to do an identical query ourselves.
-				UpdateDupSuppressInfo(q->DupSuppress, m->timenow - q->ThisQInterval/2);
+				ExpireDupSuppressInfo(q->DupSuppress, m->timenow - q->ThisQInterval/2);
 
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, treat this as logically a repeat of the last transmission, without advancing the interval
@@ -3613,7 +3616,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 					else											// else trigger our question to go out now
 						{
 						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
-						UpdateDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
+						ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
 						m->NextScheduledQuery = m->timenow;	// And adjust NextScheduledQuery so it will happen
 						// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
 						// which will correctly update m->NextCacheCheck for us
@@ -3636,9 +3639,8 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 				if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 					if (m->timenow + (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond)/25 - rr->NextRequiredQuery >= 0)
 						{
-						debugf("Accelerating %s", GetRRDisplayString(m, rr));
 						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
-						UpdateDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
+						ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - (rr->rroriginalttl * mDNSPlatformOneSecond)/20);
 						}
 		}
 
