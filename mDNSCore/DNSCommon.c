@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.33  2004/06/04 00:16:18  cheshire
+Remove non-portable use of 'inline'
+
 Revision 1.32  2004/06/03 03:09:58  ksekar
 <rdar://problem/3668626>: Garbage Collection for Dynamic Updates
 
@@ -143,9 +146,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	#pragma warning(disable:4127)
 #endif
 
-
-
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -179,9 +179,6 @@ mDNSexport void mDNS_FreeDNameList(DNameListElem *list)
 		mDNSPlatformMemFree(fptr);
 		}
 	}
-
-
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -1055,7 +1052,7 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 	return(mDNSNULL);
 	}
 
-mDNSlocal inline mDNSu8 *putVal16(mDNSu8 *ptr, mDNSu16 val)
+mDNSlocal mDNSu8 *putVal16(mDNSu8 *ptr, mDNSu16 val)
 	{
 	*(mDNSOpaque16 *)ptr = mDNSOpaque16fromIntVal(val);
 	return ptr + sizeof(mDNSOpaque16);
@@ -1103,7 +1100,7 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 	return mDNSNULL;
 	}
 
-mDNSlocal inline mDNSu16 getVal16(const mDNSu8 **ptr)
+mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
 	{	
 	mDNSu16 val = mDNSVal16(*((mDNSOpaque16 *)*ptr));
 	*ptr += sizeof(mDNSOpaque16);
