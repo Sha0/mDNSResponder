@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.7  2004/01/27 20:15:22  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.6  2004/01/24 23:47:17  cheshire
 Use mDNSOpaque16fromIntVal() instead of shifting and masking
 
@@ -364,8 +367,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 
 	if (question->InterfaceID)
         {
-		err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, MulticastDNSPort,
-								 getInitializedDNS(u), UnicastDNSPort);
+		err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
 		if (err) LogMsg("ERROR: mDNSSendDNSMessage - %d", err);
 		}
 	else
@@ -373,8 +375,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 		for (ifi = m->HostInterfaces; ifi; ifi = ifi->next)
             {
             if (!ifi->InterfaceActive || !ifi->IPv4Available) continue;
-			rv = mDNSSendDNSMessage(m, &msg, endPtr, ifi->InterfaceID, MulticastDNSPort,
-									getInitializedDNS(u), UnicastDNSPort);
+			rv = mDNSSendDNSMessage(m, &msg, endPtr, ifi->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
 			if (rv)  { LogMsg("ERROR: mDNSSendDNSMessage - %d", rv);  err = rv; }
     	    }
         }

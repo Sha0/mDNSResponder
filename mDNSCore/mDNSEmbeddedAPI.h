@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.141  2004/01/27 20:15:22  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.140  2004/01/24 23:37:08  cheshire
 At Kiren's suggestion, made functions to convert mDNSOpaque16s to/from integer values
 
@@ -1200,6 +1203,7 @@ extern const mDNSv4Addr      zeroIPAddr;
 extern const mDNSv6Addr      zerov6Addr;
 extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;
+extern const mDNSAddr        zeroAddr;
 
 extern const mDNSInterfaceID mDNSInterface_Any;
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;
@@ -1494,7 +1498,7 @@ typedef packedstruct
 extern mStatus  mDNSPlatformInit        (mDNS *const m);
 extern void     mDNSPlatformClose       (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
 
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);

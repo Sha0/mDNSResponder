@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.38  2004/01/27 20:15:23  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.37  2004/01/24 05:12:03  cheshire
 <rdar://problem/3534352>: Need separate socket for issuing unicast queries
 
@@ -267,7 +270,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 
 // mDNS core calls this routine when it needs to send a packet.
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	int                     err = 0;
 	struct sockaddr_storage to;
@@ -278,7 +281,6 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	assert(msg != NULL);
 	assert(end != NULL);
 	assert( (((char *) end) - ((char *) msg)) > 0 );
-	assert(srcPort.NotAnInteger != 0);     // Nor from a zero source port
 	assert(dstPort.NotAnInteger != 0);     // Nor from a zero source port
 
 	if (dst->type == mDNSAddrType_IPv4)

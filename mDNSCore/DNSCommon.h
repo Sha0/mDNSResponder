@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.6  2004/01/27 20:15:22  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.5  2004/01/24 03:40:56  cheshire
 Move mDNSAddrIsDNSMulticast() from DNSCommon.h to mDNSClientAPI.h so clients can use it
 
@@ -236,7 +239,7 @@ extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8
 #pragma mark - Packet Sending Functions
 #endif
 
-extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
+extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
 extern mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd);
 
 

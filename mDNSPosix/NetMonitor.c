@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.58  2004/01/27 20:15:23  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.57  2004/01/24 23:59:42  cheshire
 Change to use mDNSVal16() instead of shifting and ORing
 
@@ -487,7 +490,7 @@ mDNSlocal void SendUnicastQuery(mDNS *const m, HostEntry *entry, domainname *nam
 	if (entry->NumQueries > 2) target = &AllDNSLinkGroup_v4;
 	else m->ExpectUnicastResponse = m->timenow;
 
-	mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, MulticastDNSPort, target, MulticastDNSPort);
+	mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, target, MulticastDNSPort);
 	}
 
 mDNSlocal void AnalyseHost(mDNS *const m, HostEntry *entry, const mDNSInterfaceID InterfaceID)

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.28  2004/01/27 20:15:23  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.27  2004/01/24 08:46:26  bradley
 Added InterfaceID<->Index platform interfaces since they are now used by all platforms for the DNS-SD APIs.
 
@@ -141,10 +144,6 @@ struct NetworkInterfaceInfoOSX_struct
 	char                    *ifa_name;			// Memory for this is allocated using malloc
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	u_short                  sa_family;
-#if mDNS_AllowPort53
-	int                      skt53;
-	CFSocketRef              cfs53;
-#endif
 	int                      sktv4;
 	CFSocketRef              cfsv4;
 	int                      sktv6;

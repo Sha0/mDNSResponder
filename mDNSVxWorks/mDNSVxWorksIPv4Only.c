@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.13  2004/01/27 20:15:24  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.12  2004/01/24 09:12:37  bradley
 Avoid TOS socket options to workaround a TOS routing problem with VxWorks and multiple interfaces
 when sending unicast responses, which resulted in packets going out the wrong interface.
@@ -450,7 +453,6 @@ mStatus
 		const DNSMessage * const	inMsg, 
 		const mDNSu8 * const		inMsgEnd, 
 		mDNSInterfaceID 			inInterfaceID, 
-		mDNSIPPort					inSrcPort, 
 		const mDNSAddr *			inDstIP, 
 		mDNSIPPort 					inDstPort )
 {
@@ -458,8 +460,6 @@ mStatus
 	MDNSInterfaceItem *		item;
 	struct sockaddr_in		addr;
 	int						n;
-	
-	DEBUG_UNUSED( inSrcPort );
 	
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send UDP\n" );
 	

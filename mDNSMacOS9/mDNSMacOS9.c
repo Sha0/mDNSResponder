@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.22  2004/01/27 20:15:23  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.21  2004/01/24 04:59:16  cheshire
 Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
@@ -113,10 +116,10 @@ mDNSexport void LogMsg(const char *format, ...)
 	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	// Note: If we did multi-homing, we'd have to use the InterfaceID parameter to specify from which interface to send this response
-	#pragma unused(InterfaceID, srcPort)
+	#pragma unused(InterfaceID)
 
 	InetAddress InetDest;
 	TUnitData senddata;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.9  2004/01/27 20:15:22  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.8  2004/01/24 23:24:36  cheshire
 Expanded out the list of local domains to reduce risk of mistakes in future
 
@@ -1276,7 +1279,7 @@ mDNSexport const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mD
 #endif
 
 mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport, int sd, mDNSBool tcp)
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd)
 	{
 	mStatus status;
 	int nsent;
@@ -1287,12 +1290,6 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 	mDNSu16 numAuthorities = msg->h.numAuthorities;
 	mDNSu16 numAdditionals = msg->h.numAdditionals;
 	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
-
-	if (tcp && sd < 0)
-		{
-		LogMsg("sendDNSMessage: attempt to send tcp message over invalid desciptor");
-		return mStatus_UnknownErr;
-		}
 
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
 	*ptr++ = (mDNSu8)(numQuestions   >> 8);
@@ -1306,7 +1303,7 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 
 	// Send the packet on the wire
 
-	if (tcp)
+	if (sd >= 0)
 		{
 		msglen = (mDNSu16)(end - (mDNSu8 *)msg); 
 		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
@@ -1320,7 +1317,7 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 		}
 	else
 		{
-		status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, srcport, dst, dstport);
+		status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, dst, dstport);
 		}
 
 	// Put all the integer values back the way they were before we return
@@ -1339,18 +1336,12 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 				
 mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd)
 	{
-	mDNSIPPort sp, dp;
-
-	sp.NotAnInteger = 0;
-	dp.NotAnInteger = 0;
-	//return sendDNSMessage(m, msg, end, InterfaceID, srcport, dst, dstport, sd, mDNStrue);
-	return sendDNSMessage(m, msg, end, 0, sp, 0, dp, sd, mDNStrue);
+	if (sd < 0) { LogMsg("mDNSSendDNSMessage_tcp: invalid desciptor %d", sd); return mStatus_UnknownErr; }
+	return sendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd);
 	}
 
-
 mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport)
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport)
 	{
-	return sendDNSMessage(m, msg, end, InterfaceID, srcport, dst, dstport, -1, mDNSfalse);
+	return sendDNSMessage(m, msg, end, InterfaceID, dst, dstport, -1);
 	}	
-	

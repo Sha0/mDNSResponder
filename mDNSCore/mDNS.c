@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.351  2004/01/27 20:15:22  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.350  2004/01/24 23:38:16  cheshire
 Use mDNSVal16() instead of shifting and ORing operations
 
@@ -1159,7 +1162,7 @@ mDNSexport const mDNSv4Addr      zeroIPAddr        = { { 0 } };
 mDNSexport const mDNSv6Addr      zerov6Addr        = { { 0 } };
 mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
-mDNSlocal  const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
+mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any        = 0;
 mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly  = (mDNSInterfaceID)-1;
@@ -2358,8 +2361,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 				numAnnounce,               numAnnounce               == 1 ? "" : "s",
 				numAnswer,                 numAnswer                 == 1 ? "" : "s",
 				response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
-			mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v4, MulticastDNSPort);
-			mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v6, MulticastDNSPort);
+			mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
+			mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
 			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
 			if (++pktcount >= 1000)
 				{ LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
@@ -2886,8 +2889,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
 				query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
-			mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v4, MulticastDNSPort);
-			mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v6, MulticastDNSPort);
+			mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
+			mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
 			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
 			if (++pktcount >= 1000)
 				{ LogMsg("SendQueries exceeded loop limit %d: giving up", pktcount); break; }
@@ -4199,10 +4202,19 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	DNSMessage    response;
 	const mDNSu8 *responseend    = mDNSNULL;
 	
+	if (!InterfaceID)
+		{
+		LogMsg("Ignoring Query from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+			srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
+			msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
+			msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+			msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
+			msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		return;
+		}
+	
 	verbosedebugf("Received Query from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
-		srcaddr, mDNSVal16(srcport.b[0]),
-		dstaddr, mDNSVal16(dstport.b[0]),
-		InterfaceID,
+		srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
 		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
@@ -4218,7 +4230,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 			response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
 			response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s",
 			srcaddr, mDNSVal16(srcport), InterfaceID, srcaddr->type);
-		mDNSSendDNSMessage(m, &response, responseend, InterfaceID, dstport, srcaddr, srcport);
+		mDNSSendDNSMessage(m, &response, responseend, InterfaceID, srcaddr, srcport);
 		}
 	}
 

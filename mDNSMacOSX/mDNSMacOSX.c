@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.129  2004/01/27 20:15:23  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+
 Revision 1.128  2004/01/24 23:58:17  cheshire
 Change to use mDNSVal16() instead of shifting and ORing
 
@@ -343,14 +346,6 @@ Minor code tidying
 // Supporting routines to run mDNS on a CFRunLoop platform
 // ***************************************************************************
 
-// Open Transport 2.7.x on Mac OS 9 used to send Multicast DNS queries to UDP port 53,
-// before the Multicast DNS port was changed to 5353. For this reason, the mDNSResponder
-// in earlier versions of Mac OS X 10.2 Jaguar used to set mDNS_AllowPort53 to 1 to allow
-// it to also listen and answer queries on UDP port 53. Now that Transport 2.8 (included in
-// the Classic subsystem of Mac OS X 10.2 Jaguar) has been corrected to issue Multicast DNS
-// queries on UDP port 5353, this backwards-compatibility legacy support is no longer needed.
-#define mDNS_AllowPort53 0
-
 // For debugging, set LIST_ALL_INTERFACES to 1 to display all found interfaces,
 // including ones that mDNSResponder chooses not to use.
 #define LIST_ALL_INTERFACES 0
@@ -466,7 +461,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	#pragma unused(m)
 	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
@@ -499,17 +494,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		return mStatus_BadParamErr;
 		}
 
-	if (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger)
-		{
-		if      (dst->type == mDNSAddrType_IPv4) s = info->sktv4;
-		else if (dst->type == mDNSAddrType_IPv6) s = info->sktv6;
-		else                                     s = -1;
-		}
-#if mDNS_AllowPort53
-	else if (srcPort.NotAnInteger == UnicastDNSPort.NotAnInteger && dst->type == mDNSAddrType_IPv4)
-		s = info->skt53;
-#endif
-	else { LogMsg("Source port %d not allowed", mDNSVal16(srcPort)); return(-1); }
+	if      (dst->type == mDNSAddrType_IPv4) s = info->sktv4;
+	else if (dst->type == mDNSAddrType_IPv6) s = info->sktv6;
+	else                                     s = -1;
 	
 	if (s >= 0)
 		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %X %s/%d to %#a:%d skt %d",
@@ -638,19 +625,12 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	
 	if (CallBackType != kCFSocketReadCallBack) LogMsg("myCFSocketCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
 
-#if mDNS_AllowPort53
-	if      (cfs == info->cfs53) { s1 = info->skt53; destPort = UnicastDNSPort; }
-	else
-#endif
 	if      (cfs == info->cfsv4) s1 = info->sktv4;
 	else if (cfs == info->cfsv6) s1 = info->sktv6;
 
 	if (s1 < 0 || s1 != skt)
 		{
 		LogMsg("myCFSocketCallBack: s1 %d native socket %d, cfs %p", s1, skt, cfs);
-#if mDNS_AllowPort53
-		LogMsg("myCFSocketCallBack: cfs53 %p, skt53 %d", info->cfs53, info->skt53);
-#endif
 		LogMsg("myCFSocketCallBack: cfsv4 %p, sktv4 %d", info->cfsv4, info->sktv4);
 		LogMsg("myCFSocketCallBack: cfsv6 %p, sktv6 %d", info->cfsv6, info->sktv6);
 		}
@@ -1121,10 +1101,6 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->scope_id        = scope_id;
 	i->CurrentlyActive = mDNStrue;
 	i->sa_family       = ifa->ifa_addr->sa_family;
-	#if mDNS_AllowPort53
-	i->skt53 = -1;
-	i->cfs53 = NULL;
-	#endif
 	i->sktv4 = -1;
 	i->cfsv4 = NULL;
 	i->sktv6 = -1;
@@ -1299,9 +1275,6 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			{
 			if (i->sa_family == AF_INET && alias->sktv4 == -1)
 				{
-				#if mDNS_AllowPort53
-				err = SetupSocket(i, UnicastDNSPort, &alias->skt53, &alias->cfs53);
-				#endif
 				if (!err) err = SetupSocket(i, MulticastDNSPort, &alias->sktv4, &alias->cfsv4);
 				if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
 				else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
@@ -1358,11 +1331,6 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		// Note: MUST NOT close the underlying native BSD sockets.
 		// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
 		// because it first has to unhook the sockets from its select() call, before it can safely close them.
-		#if mDNS_AllowPort53
-		if (i->cfs53) { CFSocketInvalidate(i->cfs53); CFRelease(i->cfs53); }
-		i->skt53 = -1;
-		i->cfs53 = NULL;
-		#endif
 		if (i->cfsv4) { CFSocketInvalidate(i->cfsv4); CFRelease(i->cfsv4); }
 		if (i->cfsv6) { CFSocketInvalidate(i->cfsv6); CFRelease(i->cfsv6); }
 		i->sktv4 = i->sktv6 = -1;
