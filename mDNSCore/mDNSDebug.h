@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.19  2004/03/15 18:57:59  cheshire
+Undo last checkin that accidentally made verbose debugging the default for all targets
+
 Revision 1.18  2004/03/13 01:57:33  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -68,10 +71,10 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 // Set MDNS_DEBUGMSGS to 1 to generate normal debugging messages
 // Set MDNS_DEBUGMSGS to 2 to generate verbose debugging messages
 // MDNS_DEBUGMSGS is normally set in the project options (or makefile) but can also be set here if desired
+// (If you edit the file here to turn on MDNS_DEBUGMSGS while you're debugging some code, be careful
+// not to accidentally check-in that change by mistake when you check in your other changes.)
 
-#ifndef MDNS_DEBUGMSGS
-#define MDNS_DEBUGMSGS 2
-#endif
+//#define MDNS_DEBUGMSGS 2
 
 // Set MDNS_CHECK_PRINTF_STYLE_FUNCTIONS to 1 to enable extra GCC compiler warnings
 // Note: You don't normally want to do this, because it generates a bunch of
