@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.78  2005/03/02 04:04:17  shersche
+Support for multiple browse domains
+
 Revision 1.77  2005/02/25 20:02:18  shersche
 <rdar://problem/4022802> Call ProcessingThreadDynDNSConfigChanged() when interface list changes
 
@@ -355,6 +358,7 @@ Multicast DNS platform plugin for Win32
 #define kWaitListDynDNSEvent						( WAIT_OBJECT_0 + 4 )
 #define	kWaitListFixedItemCount						5 + MDNS_WINDOWS_ENABLE_IPV4 + MDNS_WINDOWS_ENABLE_IPV6
 
+#define kRegistryMaxKeyLength						255
 
 #if( !TARGET_OS_WINDOWS_CE )
 	static GUID										kWSARecvMsgGUID = WSAID_WSARECVMSG;
@@ -1252,9 +1256,15 @@ void
 dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, domainname *const browseDomain)
 {
 	char	*	name = NULL;
+	TCHAR		subKeyName[kRegistryMaxKeyLength];
+	DWORD		cSubKeys = 0;
+	DWORD		cbMaxSubKey;
+	DWORD		cchMaxClass;
 	DWORD		dwSize;
 	DWORD		enabled;
 	HKEY		key;
+	HKEY		subKey = NULL;
+	DWORD		i;
 	OSStatus	err;
 
 	// Initialize
@@ -1288,25 +1298,44 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, doma
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSBrowseDomains, &key );
 	require_noerr( err, exit );
 
-	err = RegQueryString( key, "", &name, &dwSize, &enabled );
-	if ( !err && ( name[0] != '\0' ) && enabled )
+	// Get information about this node
+
+    err = RegQueryInfoKey( key, NULL, NULL, NULL, &cSubKeys, &cbMaxSubKey, &cchMaxClass, NULL, NULL, NULL, NULL, NULL );       
+	require_noerr( err, exit );
+
+	for ( i = 0; i < cSubKeys; i++)
 	{
-		if ( !MakeDomainNameFromDNSNameString( browseDomain, name ) || !browseDomain->c[0] )
+		DWORD enabled;
+
+		dwSize = kRegistryMaxKeyLength;
+            
+		err = RegEnumKeyEx( key, i, subKeyName, &dwSize, NULL, NULL, NULL, NULL );
+
+		if ( !err )
 		{
-			dlog( kDebugLevelError, "bad DDNS browse domain in registry: %s", name[0] ? name : "(unknown)");
-		}
+			err = RegOpenKeyEx( key, subKeyName, 0, KEY_READ, &subKey );
+			require_noerr( err, exit );
+
+			dwSize = sizeof( DWORD );
+			err = RegQueryValueEx( subKey, "Enabled", NULL, NULL, (LPBYTE) &enabled, &dwSize );
+
+			if ( !err && ( subKeyName[0] != '\0' ) && enabled )
+			{
+				if ( !MakeDomainNameFromDNSNameString( browseDomain, subKeyName ) || !browseDomain->c[0] )
+				{
+					dlog( kDebugLevelError, "bad DDNS browse domain in registry: %s", subKeyName[0] ? subKeyName : "(unknown)");
+				}
+			}
+
+			RegCloseKey( subKey );
+			subKey = NULL;
+    	}
 	}
 
 	if ( key )
 	{
 		RegCloseKey( key );
 		key = NULL;
-	}
-
-	if ( name )
-	{
-		free( name );
-		name = NULL;
 	}
 
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSRegistrationDomains, &key );
@@ -1322,6 +1351,11 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, doma
 	}
 
 exit:
+
+	if ( subKey )
+	{
+		RegCloseKey( subKey );
+	}
 
 	if ( key )
 	{
