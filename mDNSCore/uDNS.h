@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.23  2004/11/18 18:04:21  ksekar
+Add INIT_REFRESH constant
+
 Revision 1.22  2004/11/15 20:09:24  ksekar
 <rdar://problem/3719050> Wide Area support for Add/Remove record
 
@@ -109,6 +112,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define MIN_UCAST_PERIODIC_EXEC (5 * mDNSPlatformOneSecond) 	
 #define INIT_UCAST_POLL_INTERVAL mDNSPlatformOneSecond      // this interval is used after send failures on network transitions
 	                                                        // which typically heal quickly, so we start agressively and exponentially back off
+#define INIT_REFRESH (1/2)  // refresh leases 1/2 way to expiration
 #define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
 #define UPDATE_PORT_NAME "_dns-update._udp."
 #define LLQ_PORT_NAME "_dns-llq._udp"
