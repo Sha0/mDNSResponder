@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.429  2004/09/24 00:20:21  cheshire
+<rdar://problem/3483349> Any rrtype is a conflict for unique records
+
 Revision 1.428  2004/09/24 00:12:25  cheshire
 Get rid of unused RRUniqueOrKnownUnique(RR)
 
@@ -1832,9 +1835,11 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 	return(mDNSBool)(r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && r1->namehash == r2->namehash && SameDomainName(&r1->name, &r2->name));
 	}
 
-// PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if the
-// authoratative record is in the probing state.  We always send probes with the wildcard type kDNSQType_ANY,
-// so a response of any type should match, even if it is not the type the client plans to use.
+// PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if our
+// authoratative record is unique (as opposed to shared). For unique records, we are supposed to have
+// complete ownership of *all* types for this name, so *any* record type with the same name is a conflict.
+// In addition, when probing we send our questions with the wildcard type kDNSQType_ANY,
+// so a response of any type should match, even if it is not actually the type the client plans to use.
 mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, const AuthRecord *const authrr)
 	{
 	if (!pktrr)  { LogMsg("PacketRRMatchesSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
@@ -1842,7 +1847,7 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, cons
 	if (pktrr->resrec.InterfaceID &&
 		authrr->resrec.InterfaceID &&
 		pktrr->resrec.InterfaceID != authrr->resrec.InterfaceID) return(mDNSfalse);
-	if (authrr->resrec.RecordType != kDNSRecordTypeUnique && pktrr->resrec.rrtype != authrr->resrec.rrtype) return(mDNSfalse);
+	if (!(authrr->resrec.RecordType & kDNSRecordTypeUniqueMask) && pktrr->resrec.rrtype != authrr->resrec.rrtype) return(mDNSfalse);
 	return(mDNSBool)(pktrr->resrec.rrclass == authrr->resrec.rrclass && pktrr->resrec.namehash == authrr->resrec.namehash && SameDomainName(&pktrr->resrec.name, &authrr->resrec.name));
 	}
 
