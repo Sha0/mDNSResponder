@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.8  2003/10/04 04:47:08  bradley
+Changed DNSServiceRegistrationCreate to treat the port in network byte order for end-to-end consistency.
+
 Revision 1.7  2003/08/20 07:06:34  bradley
 Update to APSL 2.0. Updated change history to match other mDNSResponder files.
 
@@ -436,7 +439,7 @@ static int ProcessArgs( int argc, char* argv[] )
 			port 		= atoi( argv[ i++ ] );
 			text 		= argv[ i ];
 			textSize	= strlen( text );
-			if( ( domain[ 0 ] == '.' ) && ( domain[ 1 ] == '\0' ) )
+			if( ( domain[ 0 ] == '\0' ) || ( ( domain[ 0 ] == '.' ) && ( domain[ 1 ] == '\0' ) ) )
 			{
 				domain = "local.";
 			}
@@ -573,13 +576,13 @@ static int ProcessArgs( int argc, char* argv[] )
 			port 		= atoi( argv[ i++ ] );
 			text 		= argv[ i ];
 			textSize	= strlen( text );
-			if( ( domain[ 0 ] == '.' ) && ( domain[ 1 ] == '\0' ) )
+			if( ( domain[ 0 ] == '\0' ) || ( ( domain[ 0 ] == '.' ) && ( domain[ 1 ] == '\0' ) ) )
 			{
 				domain = "local.";
 			}
 			fprintf( stdout, "registering service \"%s.%s.%s\" port %d text \"%s\"\n", name, type, domain, port, text );
 			
-			emulatedRef = DNSServiceRegistrationCreate( name, type, domain, (uint16_t) port, text, 
+			emulatedRef = DNSServiceRegistrationCreate( name, type, domain, (uint16_t) htons( (uint16_t) port ), text, 
 														EmulatedRegistrationCallBack, NULL );
 			require_action_string( emulatedRef, exit, err = kDNSUnknownErr, "create emulated registration failed" );
 		}

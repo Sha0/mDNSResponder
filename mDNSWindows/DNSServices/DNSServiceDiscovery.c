@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscovery.c,v $
+Revision 1.3  2003/10/04 04:47:08  bradley
+Changed DNSServiceRegistrationCreate to treat the port in network byte order for end-to-end consistency.
+
 Revision 1.2  2003/08/20 07:06:34  bradley
 Update to APSL 2.0. Updated change history to match other mDNSResponder files.
 
@@ -179,6 +182,7 @@ dns_service_discovery_ref
 	dns_service_discovery_ref		obj;
 	void *							txt;
 	size_t							txtSize;
+	DNSOpaque16						port;
 	DNSRegistrationRef				registration;
 	
 	result 	= NULL;
@@ -203,7 +207,9 @@ dns_service_discovery_ref
 		require_noerr( err, exit );
 	}
 	
-	err = DNSRegistrationCreate( kDNSRegistrationFlagPreFormattedTextRecord, inName, inType, inDomain, inPort, txt, 
+	port.v8[ 0 ] = (DNSUInt8)( inPort >> 8 );
+	port.v8[ 1 ] = (DNSUInt8)( inPort & 0xFF );
+	err = DNSRegistrationCreate( kDNSRegistrationFlagPreFormattedTextRecord, inName, inType, inDomain, port.v16, txt, 
 								 (DNSCount) txtSize, NULL, NULL, DNSServiceRegistrationPrivateCallBack, obj, &registration );
 	require_noerr( err, exit ); 
 	obj->ref = registration;
