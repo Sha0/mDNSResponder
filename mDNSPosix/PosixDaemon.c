@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.25  2005/01/27 20:01:50  cheshire
+udsSupportRemoveFDFromEventLoop() needs to close the file descriptor as well
+
 Revision 1.24  2005/01/19 19:20:49  ksekar
 <rdar://problem/3960191> Need a way to turn off domain discovery
 
@@ -303,9 +306,10 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	return mDNSPosixAddFDToEventLoop(fd, callback, context);
 	}
 
-mStatus udsSupportRemoveFDFromEventLoop(int fd)
+mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
 	{
 	return mDNSPosixRemoveFDFromEventLoop(fd);
+	close(fd);
 	}
 
 mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
