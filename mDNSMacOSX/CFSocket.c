@@ -31,7 +31,7 @@
 // it to also listen and answer queries on UDP port 53. Now that Transport 2.8 (included in
 // the Classic subsystem of Mac OS X 10.2 Jaguar) has been corrected to issue Multicast DNS
 // queries on UDP port 5353, this backwards-compatibility legacy support is no longer needed.
-#define mDNS_AllowPort53 0
+#define mDNS_AllowPort53 1
 
 // Normally mDNSResponder is advertising local services on all active interfaces.
 // However, should you wish to build a query-only mDNS client, setting mDNS_AdvertiseLocalAddresses
