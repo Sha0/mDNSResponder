@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.70  2004/12/04 02:13:20  cheshire
+Pass proper record type in GetLargeResourceRecord() calls
+
 Revision 1.69  2004/11/30 22:37:01  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -682,7 +685,7 @@ mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query,
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
 		const mDNSu8 *p2 = ptr;
-		ptr = GetLargeResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pkt);
+		ptr = GetLargeResourceRecord(m, query, ptr, end, q->InterfaceID, kDNSRecordTypePacketAuth, pkt);
 		if (!ptr) break;
 		if (ResourceRecordAnswersQuestion(&pkt->r.resrec, q)) return(p2);
 		}
@@ -853,7 +856,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
 		const mDNSu8 *ep = ptr;
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "KNOWN ANSWER"); return; }
 		DisplayResourceRecord(srcaddr, "(KA)", &pkt.r.resrec);
 		
@@ -900,7 +903,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
 		const mDNSu8 *ep = ptr;
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "ANSWER"); return; }
 		if (pkt.r.resrec.rroriginalttl)
 			{
@@ -920,7 +923,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
 		const mDNSu8 *ep = ptr;
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "AUTHORITY"); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n",
 			srcaddr, DNSTypeName(pkt.r.resrec.rrtype), pkt.r.resrec.name.c);
@@ -929,7 +932,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
 		const mDNSu8 *ep = ptr;
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAdd, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "ADDITIONAL"); return; }
 		NumAdditionals++;
 		DisplayResourceRecord(srcaddr, (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pkt.r.resrec);
@@ -949,7 +952,7 @@ mDNSlocal void ProcessUnicastResponse(mDNS *const m, const DNSMessage *const msg
 	for (i=0; i<msg->h.numAnswers + msg->h.numAuthorities + msg->h.numAdditionals; i++)
 		{
 		LargeCacheRecord pkt;
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pkt);
 		if (pkt.r.resrec.rroriginalttl && entry) RecordHostInfo(entry, &pkt.r.resrec);
 		}
 	}
