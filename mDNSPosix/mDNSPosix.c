@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.68  2004/12/18 00:51:52  cheshire
+Use symbolic constant kDNSServiceInterfaceIndexLocalOnly instead of (mDNSu32) ~0
+
 Revision 1.67  2004/12/17 23:37:48  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 (and other repetitive configuration changes)
@@ -625,7 +628,7 @@ extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *con
 
 	assert(m != NULL);
 
-	if (index == (mDNSu32)~0) return(mDNSInterface_LocalOnly);
+	if (index == kDNSServiceInterfaceIndexLocalOnly) return(mDNSInterface_LocalOnly);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
 	while ( (intf != NULL) && (mDNSu32) intf->index != index) 
@@ -640,7 +643,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 
 	assert(m != NULL);
 
-	if (id == mDNSInterface_LocalOnly) return((mDNSu32)~0);
+	if (id == mDNSInterface_LocalOnly) return(kDNSServiceInterfaceIndexLocalOnly);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
 	while ( (intf != NULL) && (mDNSInterfaceID) intf != id)

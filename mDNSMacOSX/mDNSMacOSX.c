@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.267  2004/12/18 00:51:52  cheshire
+Use symbolic constant kDNSServiceInterfaceIndexLocalOnly instead of (mDNSu32) ~0
+
 Revision 1.266  2004/12/17 23:49:38  cheshire
 <rdar://problem/3922754> Computer Name change is slow
 Also treat changes to "Setup:/Network/DynamicDNS" the same way
@@ -1014,7 +1017,7 @@ mDNSlocal int myIfIndexToName(u_short index, char* name)
 mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index)
 	{
 	NetworkInterfaceInfoOSX *i;
-	if (index == (uint32_t)~0) return(mDNSInterface_LocalOnly);
+	if (index == kDNSServiceInterfaceIndexLocalOnly) return(mDNSInterface_LocalOnly);
 	if (index)
 		for (i = m->p->InterfaceList; i; i = i->next)
 			// Don't get tricked by inactive interfaces with no InterfaceID set
@@ -1025,7 +1028,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS 
 mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
 	{
 	NetworkInterfaceInfoOSX *i;
-	if (id == mDNSInterface_LocalOnly) return((mDNSu32)~0);
+	if (id == mDNSInterface_LocalOnly) return(kDNSServiceInterfaceIndexLocalOnly);
 	if (id)
 		for (i = m->p->InterfaceList; i; i = i->next)
 			// Don't use i->ifinfo.InterfaceID here, because we DO want to find inactive interfaces, which have no InterfaceID set

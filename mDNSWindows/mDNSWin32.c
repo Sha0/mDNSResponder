@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.67  2004/12/18 00:51:52  cheshire
+Use symbolic constant kDNSServiceInterfaceIndexLocalOnly instead of (mDNSu32) ~0
+
 Revision 1.66  2004/12/17 23:37:49  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 (and other repetitive configuration changes)
@@ -901,7 +904,7 @@ mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( const mDNS * const in
 	mDNSInterfaceID		id;
 	
 	id = mDNSNULL;
-	if( inIndex == (mDNSu32) ~0 )
+	if( inIndex == kDNSServiceInterfaceIndexLocalOnly )
 	{
 		id = mDNSInterface_LocalOnly;
 	}
@@ -933,7 +936,7 @@ mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( const mDNS * const inMDNS, mD
 	index = 0;
 	if( inID == mDNSInterface_LocalOnly )
 	{
-		index = (mDNSu32) ~0;
+		index = (mDNSu32) kDNSServiceInterfaceIndexLocalOnly;
 	}
 	else if( inID )
 	{
