@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.481  2004/12/07 21:26:04  ksekar
+<rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration
+
 Revision 1.480  2004/12/07 20:42:33  cheshire
 Add explicit context parameter to mDNS_RemoveRecordFromService()
 
@@ -2505,16 +2508,14 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
 		// so any attempt to touch rr after this is likely to lead to a crash.
 		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-		if (RecordType == kDNSRecordTypeShared)
+		if (rr->RecordCallback)
 			{
-			if (rr->RecordCallback)
-				rr->RecordCallback(m, rr, mStatus_MemFree);
-			}
-		else if (drt == mDNS_Dereg_conflict)
-			{
-			RecordProbeFailure(m, rr);
-			if (rr->RecordCallback)
+			if (drt == mDNS_Dereg_conflict)
+				{
+				RecordProbeFailure(m, rr);
 				rr->RecordCallback(m, rr, mStatus_NameConflict);
+				}
+			else rr->RecordCallback(m, rr, mStatus_MemFree);
 			}
 		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 		}
@@ -6045,7 +6046,14 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 		mDNS_SetFQDN(m);
 		LogMsg("Local Hostname %#s.local already in use; will try %#s.local instead", oldlabel.c, m->hostlabel.c);
 		}
-	else LogMsg("mDNS_HostNameCallback: Unknown error %ld for registration of record %s", result,  rr->resrec.name.c);
+	else if (result == mStatus_MemFree)
+		{
+		// .local hostnames do not require goodbyes - we ignore the MemFree (which is sent directly by
+		// mDNS_Deregister_internal), and allow the caller to deallocate immediately following mDNS_DeadvertiseInterface
+		debugf("mDNS_HostNameCallback: MemFree (ignored)");
+		}
+	else
+		LogMsg("mDNS_HostNameCallback: Unknown error %ld for registration of record %s", result,  rr->resrec.name.c);
 	}
 
 mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *active)

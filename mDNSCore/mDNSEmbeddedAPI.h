@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.254  2004/12/07 21:26:04  ksekar
+<rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration
+
 Revision 1.253  2004/12/07 20:42:33  cheshire
 Add explicit context parameter to mDNS_RemoveRecordFromService()
 
@@ -1422,7 +1425,7 @@ struct AuthRecord_struct
 	AuthRecord     *Additional2;		// Another additional
 	AuthRecord     *DependentOn;		// This record depends on another for its uniqueness checking
 	AuthRecord     *RRSet;				// This unique record is part of an RRSet
-	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes
+	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes, and to free memory asynchronously on deregistration
 	void           *RecordContext;		// Context parameter for the callback function
 	mDNSu8          HostTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
@@ -2063,6 +2066,8 @@ mDNSinline mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v)
 // If the resource record type is kDNSRecordTypeUnique (or kDNSknownunique) then if a conflicting resource record is discovered,
 // the resource record's mDNSRecordCallback will be called with error code mStatus_NameConflict. The callback should deregister
 // the record, and may then try registering the record again after picking a new name (e.g. by automatically appending a number).
+// Following deregistration, the RecordCallback will be called with result mStatus_MemFree to signal that it is safe to deallocate
+// the record's storage (memory must be freed asynchronously to allow for goodbye packets and dynamic update deregistration).
 //
 // Call mDNS_StartQuery to initiate a query. mDNS will proceed to issue Multicast DNS query packets, and any time a response
 // is received containing a record which matches the question, the DNSQuestion's mDNSAnswerCallback function will be called

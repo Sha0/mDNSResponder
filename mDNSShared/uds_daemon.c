@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.128  2004/12/07 21:26:05  ksekar
+<rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration
+
 Revision 1.127  2004/12/07 20:42:34  cheshire
 Add explicit context parameter to mDNS_RemoveRecordFromService()
 
@@ -2527,7 +2530,6 @@ static void connected_registration_termination(void *context)
         shared = fptr->rr->resrec.RecordType == kDNSRecordTypeShared;
 		fptr->rr->RecordContext = NULL;
         mDNS_Deregister(gmDNS, fptr->rr);		
-        if (!shared) freeL("connected_registration_termination", fptr->rr); // shared records free'd via callback w/ mStatus_MemFree
         freeL("connected_registration_termination", fptr);
 		}
 	}
@@ -2578,10 +2580,9 @@ static mStatus remove_record(request_state *rstate)
 	shared = e->rr->resrec.RecordType == kDNSRecordTypeShared;
 	e->rr->RecordContext = NULL;
 	err = mDNS_Deregister(gmDNS, e->rr);
-	if (err) LogMsg("ERROR: remove_record, mDNS_Deregister: %ld", err);
-	if (err || !shared)
+	if (err)
 		{
-        // shared records free'd via callback w/ mStatus_MemFree		
+		LogMsg("ERROR: remove_record, mDNS_Deregister: %ld", err);
 		freeL("remove_record", e->rr);
 		freeL("remove_record", e);
 		}
