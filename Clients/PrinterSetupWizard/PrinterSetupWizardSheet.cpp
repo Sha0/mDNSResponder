@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.15  2004/09/11 05:59:06  shersche
+<rdar://problem/3785766> Fix code that generates unique printer names based on currently installed printers
+Bug #: 3785766
+
 Revision 1.14  2004/09/02 01:57:58  cheshire
 <rdar://problem/3783611> Fix incorrect testing of MoreComing flag
 
@@ -673,7 +677,14 @@ CPrinterSetupWizardSheet::OnBrowse(
 			check_noerr( err );
 			printer->actualName	=	printer->displayName;
 
-			for (printerNameCount = 2; printerNameCount < 100; printerNameCount++)
+			//
+			// Compare this name against printers that are already installed
+			// to avoid name clashes.  Rename as necessary
+			// to come up with a unique name.
+			//
+			printerNameCount = 2;
+
+			for (;;)
 			{
 				PrinterNameMap::iterator it;
 
@@ -687,6 +698,8 @@ CPrinterSetupWizardSheet::OnBrowse(
 				{
 					break;
 				}
+
+				printerNameCount++;
 			}
 
 			printer->type		=	inType;
