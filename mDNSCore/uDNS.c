@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.197  2005/02/24 21:56:59  ksekar
+Change LogMsgs to debugfs
+
 Revision 1.196  2005/02/24 21:52:28  ksekar
 <rdar://problem/3922768> Remove "deferred deregistration" logic for hostnames
 
@@ -2473,7 +2476,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			if (qptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
 				if (timenow - (qptr->LastQTime + RESPONSE_WINDOW) > 0)
-					{ LogMsg("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
+					{ debugf("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
 				if (msg->h.flags.b[0] & kDNSFlag0_TC)
 					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
 				else
@@ -4237,7 +4240,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	if (!GetServiceTarget(&m->uDNS_info, &srs->RR_SRV, &target))
 		{
 		// defer registration until we've got a target
-		LogMsg("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
+		debugf("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
 		info->state = regState_NoTarget;
 		return mStatus_NoError;
 		}  
