@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.25  2003/10/22 23:37:49  ksekar
+Bug #: <rdar://problem/3459141>: crash/hang in abort_client
+
 Revision 1.24  2003/10/21 20:59:40  ksekar
 Bug #: <rdar://problem/3335216>: handle blocked clients moreefficiently
 
@@ -407,6 +410,7 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
 	    if (time.tv_sec - req->time_blocked >= MAX_TIME_BLOCKED)
 		{
 		LogMsg("Could not write data to client after %d seconds - aborting connection", MAX_TIME_BLOCKED);
+		abort_request(req);
 		result = t_terminated;
 		}
 	    else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;  // try again in a second
@@ -2175,12 +2179,11 @@ static void abort_request(request_state *rs)
 
     if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
     if (rs->msgbuf) freeL("abort_request", rs->msgbuf);
-    CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rs->rls, kCFRunLoopDefaultMode);
-    CFRunLoopSourceInvalidate(rs->rls);
-    CFRelease(rs->rls);
     CFSocketInvalidate(rs->sr);
     CFRelease(rs->sr);
-    rs->sd = -1;
+    rs->sd = -1;    
+    rs->rls = NULL;	// run loop source automatically removed by CFSocketInvalidate()
+
     if (rs->errfd >= 0) close(rs->errfd);
     rs->errfd = -1;
 
