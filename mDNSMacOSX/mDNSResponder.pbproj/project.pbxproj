@@ -338,6 +338,8 @@
 				00AD62A3032D799A0CCA2C71,
 				6575FC1C022EB76000000109,
 				0044D34804CC73600CCA2C71,
+				DB2CC4530662DD6800335AB3,
+				DB2CC4660662DF5C00335AB3,
 			);
 		};
 		08FB7794FE84155DC02AAC07 = {
@@ -345,6 +347,7 @@
 				08FB7795FE84155DC02AAC07,
 				6575FC1F022EB78C00000109,
 				6575FBFE022EAFA800000109,
+				DB2CC4420662DCE500335AB3,
 				08FB779DFE84155DC02AAC07,
 				19C28FBDFE9D53C911CA2CBB,
 			);
@@ -381,6 +384,7 @@
 				09AB6884FE841BABC02AAC07,
 				65713D46025A293200000109,
 				00CA213D02786FC30CCA2C71,
+				DB2CC4680662DFF500335AB3,
 			);
 			isa = PBXGroup;
 			name = "External Frameworks and Libraries";
@@ -502,6 +506,8 @@
 				6575FC1D022EB76000000109,
 				00AD62B8032D799A0CCA2C71,
 				0044D34F04CC73600CCA2C71,
+				DB2CC4540662DD6800335AB3,
+				DB2CC4670662DF5C00335AB3,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -819,6 +825,363 @@
 //DB2
 //DB3
 //DB4
+		DB2CC4420662DCE500335AB3 = {
+			children = (
+				DB2CC4430662DD1100335AB3,
+				DB2CC4440662DD1100335AB3,
+				DB2CC4450662DD1100335AB3,
+				DB2CC4460662DD1100335AB3,
+				DB2CC4470662DD1100335AB3,
+				DB2CC4480662DD1100335AB3,
+				DB2CC4490662DD1100335AB3,
+				DB2CC44A0662DD1100335AB3,
+				DB2CC44B0662DD1100335AB3,
+				DB2CC44C0662DD1100335AB3,
+				DB2CC44D0662DD1100335AB3,
+				DB2CC44E0662DD1100335AB3,
+				DB2CC44F0662DD1100335AB3,
+			);
+			isa = PBXGroup;
+			name = "Java Support";
+			refType = 4;
+		};
+		DB2CC4430662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = BaseListener.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/BaseListener.java;
+			refType = 0;
+		};
+		DB2CC4440662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = BrowseListener.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/BrowseListener.java;
+			refType = 0;
+		};
+		DB2CC4450662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DNSRecord.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSRecord.java;
+			refType = 0;
+		};
+		DB2CC4460662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DNSSD.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSD.java;
+			refType = 0;
+		};
+		DB2CC4470662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DNSSDException.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSDException.java;
+			refType = 0;
+		};
+		DB2CC4480662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DNSSDRegistration.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSDRegistration.java;
+			refType = 0;
+		};
+		DB2CC4490662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DNSSDService.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSDService.java;
+			refType = 0;
+		};
+		DB2CC44A0662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DomainListener.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/DomainListener.java;
+			refType = 0;
+		};
+		DB2CC44B0662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = JNISupport.c;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/JNISupport.c;
+			refType = 0;
+		};
+		DB2CC44C0662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = QueryListener.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/QueryListener.java;
+			refType = 0;
+		};
+		DB2CC44D0662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = RegisterListener.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/RegisterListener.java;
+			refType = 0;
+		};
+		DB2CC44E0662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = ResolveListener.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/ResolveListener.java;
+			refType = 0;
+		};
+		DB2CC44F0662DD1100335AB3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = TXTRecord.java;
+			path = /Users/roger/mDNSResponder/mDNSShared/Java/TXTRecord.java;
+			refType = 0;
+		};
+		DB2CC4500662DD6800335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+				DB2CC4560662DE4500335AB3,
+				DB2CC4570662DE4600335AB3,
+				DB2CC4580662DE4700335AB3,
+				DB2CC4590662DE4700335AB3,
+				DB2CC45A0662DE4800335AB3,
+				DB2CC45B0662DE4900335AB3,
+				DB2CC45C0662DE4900335AB3,
+				DB2CC45D0662DE4A00335AB3,
+				DB2CC45E0662DE4B00335AB3,
+				DB2CC45F0662DE4C00335AB3,
+				DB2CC4600662DE4C00335AB3,
+				DB2CC4610662DE4D00335AB3,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB2CC4510662DD6800335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXJavaArchiveBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB2CC4520662DD6800335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB2CC4530662DD6800335AB3 = {
+			buildPhases = (
+				DB2CC4500662DD6800335AB3,
+				DB2CC4510662DD6800335AB3,
+				DB2CC4520662DD6800335AB3,
+				DB2CC4550662DE1700335AB3,
+			);
+			buildSettings = {
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				INSTALL_PATH = /System/Library/Java/Extensions;
+				JAVA_ARCHIVE_CLASSES = YES;
+				JAVA_ARCHIVE_COMPRESSION = YES;
+				JAVA_ARCHIVE_TYPE = JAR;
+				JAVA_COMPILER_DEBUGGING_SYMBOLS = NO;
+				JAVA_COMPILER_FLAGS = "";
+				JAVA_COMPILER_TARGET_VM_VERSION = 1.2;
+				JAVA_SOURCE_SUBDIR = .;
+				LIBRARY_STYLE = STATIC;
+				OPTIMIZATION_CFLAGS = "";
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_LIBTOOL_FLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = dns_sd.jar;
+				PURE_JAVA = YES;
+				REZ_EXECUTABLE = YES;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
+			};
+			comments = "Multiplatform .jar file that implements Java interface to DNS-SD";
+			dependencies = (
+			);
+			isa = PBXLibraryTarget;
+			name = dns_sd.jar;
+			productInstallPath = /System/Library/Java/Extensions;
+			productName = dns_sd.jar;
+			productReference = DB2CC4540662DD6800335AB3;
+		};
+		DB2CC4540662DD6800335AB3 = {
+			isa = PBXLibraryReference;
+			path = dns_sd.jar;
+			refType = 3;
+		};
+		DB2CC4550662DE1700335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "javah -force -classpath build/mDNSResponder.build/dns_sd.jar.build/JavaClasses/ -o build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
+		};
+		DB2CC4560662DE4500335AB3 = {
+			fileRef = DB2CC4430662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC4570662DE4600335AB3 = {
+			fileRef = DB2CC4440662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC4580662DE4700335AB3 = {
+			fileRef = DB2CC4450662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC4590662DE4700335AB3 = {
+			fileRef = DB2CC4460662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC45A0662DE4800335AB3 = {
+			fileRef = DB2CC4470662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC45B0662DE4900335AB3 = {
+			fileRef = DB2CC4480662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC45C0662DE4900335AB3 = {
+			fileRef = DB2CC4490662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC45D0662DE4A00335AB3 = {
+			fileRef = DB2CC44A0662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC45E0662DE4B00335AB3 = {
+			fileRef = DB2CC44C0662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC45F0662DE4C00335AB3 = {
+			fileRef = DB2CC44D0662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC4600662DE4C00335AB3 = {
+			fileRef = DB2CC44E0662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC4610662DE4D00335AB3 = {
+			fileRef = DB2CC44F0662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC4620662DF5C00335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXHeadersBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB2CC4630662DF5C00335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+				DB2CC46A0662E00700335AB3,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB2CC4640662DF5C00335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+				DB2CC4690662DFF500335AB3,
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB2CC4650662DF5C00335AB3 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXRezBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB2CC4660662DF5C00335AB3 = {
+			buildPhases = (
+				DB2CC4620662DF5C00335AB3,
+				DB2CC4630662DF5C00335AB3,
+				DB2CC4640662DF5C00335AB3,
+				DB2CC4650662DF5C00335AB3,
+			);
+			buildSettings = {
+				DEBUGGING_SYMBOLS = NO;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				HEADER_SEARCH_PATHS = "\"$(SYSTEM_LIBRARY_DIR)/Frameworks/JavaVM.framework/Versions/A/Headers\" build";
+				INSTALL_PATH = /usr/lib/java;
+				LIBRARY_STYLE = DYNAMIC;
+				OTHER_CFLAGS = "";
+				OTHER_LIBTOOL_FLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = libjdns_sd.jnilib;
+				REZ_EXECUTABLE = YES;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
+			};
+			comments = "Platform-specific JNI library that bridges dns_sd.jar to <dns_sd.h>.";
+			dependencies = (
+			);
+			isa = PBXLibraryTarget;
+			name = libjdns_sd.jnilib;
+			productInstallPath = /usr/lib/java;
+			productName = libjdns_sd.jnilib;
+			productReference = DB2CC4670662DF5C00335AB3;
+		};
+		DB2CC4670662DF5C00335AB3 = {
+			isa = PBXLibraryReference;
+			path = libjdns_sd.jnilib;
+			refType = 3;
+		};
+		DB2CC4680662DFF500335AB3 = {
+			isa = PBXFrameworkReference;
+			name = JavaVM.framework;
+			path = /System/Library/Frameworks/JavaVM.framework;
+			refType = 0;
+		};
+		DB2CC4690662DFF500335AB3 = {
+			fileRef = DB2CC4680662DFF500335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DB2CC46A0662E00700335AB3 = {
+			fileRef = DB2CC44B0662DD1100335AB3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		DBAAFE29057E8F4D0085CAD0 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
