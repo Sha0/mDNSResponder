@@ -20,12 +20,15 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories=".\Resources;..\;..\..\;..\..\DNSServices;..\..\..\mDNSCore"
+				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\DNSServices"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;DEBUG"
-				MinimalRebuild="TRUE"
+				StringPooling="TRUE"
+				MinimalRebuild="FALSE"
 				BasicRuntimeChecks="3"
+				SmallerTypeCheck="FALSE"
 				RuntimeLibrary="1"
 				BufferSecurityCheck="TRUE"
+				EnableFunctionLevelLinking="FALSE"
 				ForceConformanceInForLoopScope="TRUE"
 				RuntimeTypeInfo="TRUE"
 				UsePrecompiledHeader="2"
@@ -35,10 +38,11 @@
 				ObjectFile=".\Debug/"
 				ProgramDataBaseFileName=".\Debug/"
 				BrowseInformation="1"
-				WarningLevel="3"
+				WarningLevel="4"
+				WarnAsError="TRUE"
 				SuppressStartupBanner="TRUE"
 				Detect64BitPortabilityProblems="TRUE"
-				DebugInformationFormat="4"
+				DebugInformationFormat="3"
 				CompileAs="0"/>
 			<Tool
 				Name="VCCustomBuildTool"/>
@@ -47,7 +51,7 @@
 				AdditionalOptions="/MACHINE:I386"
 				AdditionalDependencies="ws2_32.lib nafxcwd.lib LIBCMTD.lib"
 				OutputFile="Rendezvous Browser Debug.exe"
-				LinkIncremental="2"
+				LinkIncremental="1"
 				SuppressStartupBanner="TRUE"
 				IgnoreDefaultLibraryNames="wsock32.lib;nafxcwd.lib;LIBCMTD.lib"
 				GenerateDebugInformation="TRUE"
@@ -91,13 +95,14 @@
 				FavorSizeOrSpeed="2"
 				OmitFramePointers="FALSE"
 				OptimizeForWindowsApplication="FALSE"
-				AdditionalIncludeDirectories=".\Resources;..\;..\..\;..\..\DNSServices;..\..\..\mDNSCore"
+				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\DNSServices"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
 				RuntimeLibrary="0"
 				BufferSecurityCheck="FALSE"
-				EnableFunctionLevelLinking="TRUE"
+				EnableFunctionLevelLinking="FALSE"
+				ForceConformanceInForLoopScope="TRUE"
 				RuntimeTypeInfo="TRUE"
 				UsePrecompiledHeader="2"
 				PrecompiledHeaderThrough="stdafx.h"
@@ -106,8 +111,10 @@
 				ObjectFile=".\Release/"
 				ProgramDataBaseFileName=".\Release/"
 				BrowseInformation="1"
-				WarningLevel="3"
+				WarningLevel="4"
+				WarnAsError="TRUE"
 				SuppressStartupBanner="TRUE"
+				Detect64BitPortabilityProblems="TRUE"
 				CompileAs="0"/>
 			<Tool
 				Name="VCCustomBuildTool"/>
@@ -206,6 +213,9 @@
 			Name="Resource Files"
 			Filter="ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;rc">
 			<File
+				RelativePath="Resources\Application.ico">
+			</File>
+			<File
 				RelativePath="Resources\Application.rc">
 			</File>
 			<File
@@ -220,9 +230,6 @@
 			Filter="">
 			<File
 				RelativePath="..\..\DNSServices\DNSServices.c">
-			</File>
-			<File
-				RelativePath="..\..\DNSServices\DNSServicesWin32.c">
 			</File>
 			<File
 				RelativePath="..\..\..\mDNSCore\mDNS.c">
