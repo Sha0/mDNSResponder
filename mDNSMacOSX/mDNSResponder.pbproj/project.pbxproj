@@ -270,7 +270,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				MVERS = 1;
+				MVERS = "\"mDNSResponder (Engineering Build)\"";
 			};
 			isa = PBXBuildStyle;
 			name = Development;

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.145  2003/12/05 22:08:07  cheshire
+Update version string to "mDNSResponder-61", including new mechanism to allow dots (e.g. 58.1)
+
 Revision 1.144  2003/11/19 23:21:08  ksekar
 Bug #: <rdar://problem/3486646>: config change handler not called for dns-sd services
 
@@ -1750,8 +1753,4 @@ mDNSexport int main(int argc, char **argv)
 	}
 
 // For convenience when using the "strings" command, this is the last thing in the file
-#if mDNSResponderVersion > 1
-mDNSexport const char mDNSResponderVersionString[] = "mDNSResponder-" STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ") ";
-#else
-mDNSexport const char mDNSResponderVersionString[] = "mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ") ";
-#endif
+mDNSexport const char mDNSResponderVersionString[] = STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
