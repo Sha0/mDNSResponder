@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.182  2004/08/13 23:57:59  cheshire
+Get rid of non-portable "_UNUSED"
+
 Revision 1.181  2004/08/11 02:02:26  cheshire
 Remove "mDNS *globalInstance" parameter from udsserver_init();
 Move CheckForDuplicateRegistrations to uds_daemon.c
@@ -374,9 +377,6 @@ Add $Log header
 // To expand "version" to its value before making the string, use STRINGIFY(version) instead
 #define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s 
 #define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
-
-// convenience definition 
-#define	_UNUSED	__attribute__ ((unused))
 
 //*************************************************************************************************************
 // Globals
@@ -2138,9 +2138,13 @@ typedef struct CFSocketEventSource	CFSocketEventSource;
 
 static GenLinkedList	gEventSources;			// linked list of CFSocketEventSource's
 
-static void cf_callback(CFSocketRef s _UNUSED, CFSocketCallBackType t _UNUSED, CFDataRef dr _UNUSED, const void *c _UNUSED, void *i)
+static void cf_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i)
 	// Called by CFSocket when data appears on socket
 	{
+	(void)s; // Unused
+	(void)t; // Unused
+	(void)dr; // Unused
+	(void)c; // Unused
 	CFSocketEventSource	*source = (CFSocketEventSource*) i;
 	source->Callback(source->Context);
 	}
