@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.41  2004/02/03 18:59:02  cheshire
+Change "char *domain" parameter for format_enumeration_reply to "const char *domain"
+
 Revision 1.40  2004/01/28 03:41:00  cheshire
 <rdar://problem/3541946>: Need ability to do targeted queries as well as multicast queries
 
@@ -124,7 +127,6 @@ Update to APSL 2.0
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-
 
 // convenience definition 
 #define	_UNUSED	__attribute__ ((unused))
@@ -321,7 +323,7 @@ static void enum_termination_callback(void *context);
 static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void handle_query_request(request_state *rstate);
 static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi, uint16_t rrtype, int16_t rrclass);
-static reply_state *format_enumeration_reply(request_state *rstate, char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err);
+static reply_state *format_enumeration_reply(request_state *rstate, const char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err);
 static void handle_enum_request(request_state *rstate);
 static void handle_regrecord_request(request_state *rstate);
 static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result);
@@ -1780,7 +1782,7 @@ static void enum_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, c
     return;
     }
 
-static reply_state *format_enumeration_reply(request_state *rstate, char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err)
+static reply_state *format_enumeration_reply(request_state *rstate, const char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err)
     {
     int len;
     reply_state *reply;
