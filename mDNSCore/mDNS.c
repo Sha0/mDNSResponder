@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.135  2003/05/26 04:57:28  cheshire
+<rdar://problem/3268953> Delay queries when there are already answers in the cache; don't overflow packet with too many questions
+
 Revision 1.134  2003/05/26 04:54:54  cheshire
 <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
 Accidentally deleted '%' case from the switch statement
@@ -2598,6 +2601,12 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		debugf("BuildQuestion: No more space in this packet for question %##s", q->name.c);
 		return(mDNSfalse);
 		}
+	else if (newptr + *answerforecast >= limit)
+		{
+		debugf("BuildQuestion: Retracting question %##s new forecast total %lu", q->name.c, newptr + *answerforecast - query->data);
+		query->h.numQuestions--;
+		return(mDNSfalse);
+		}
 	else
 		{
 		mDNSu32 forecast = *answerforecast;
@@ -2624,7 +2633,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 					// then undo that last question and try again next time
 					if (query->h.numQuestions > 1 && newptr + forecast >= limit)
 						{
-						debugf("BuildQuestion retracting question %##s answerforecast %ld", q->name.c, *answerforecast);
+						debugf("BuildQuestion: Retracting question %##s new forecast total %lu", q->name.c, newptr + forecast - query->data);
 						query->h.numQuestions--;
 						ka = *kalistptrptr;		// Go back to where we started and retract these answer records
 						while (*ka) { ResourceRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
@@ -2766,7 +2775,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (q = m->Questions; q; q=q->next)
 				if (q->SendQNow == intf->InterfaceID)
 					{
-					debugf("SendQueries: Putting question for %##s int %ld max %ld", q->name.c, q->ThisQInterval, maxExistingQuestionInterval);
+					debugf("SendQueries: Putting question for %##s at %lu forecast total %lu",
+						q->name.c, queryptr - query.data, queryptr + answerforecast - query.data);
 					// If we successfully put this question, update its SendQNow state
 					if (BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
 						q->SendQNow = (q->InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
@@ -2786,11 +2796,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 						answerforecast = forecast;
 						rr->SendRNow = (rr->InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 						rr->IncludeInProbe = mDNStrue;
-						verbosedebugf("BuildProbe put Question %##s (%s) probecount %d", rr->name.c, DNSTypeName(rr->rrtype), rr->ProbeCount);
+						verbosedebugf("SendQueries: Put Question %##s (%s) probecount %d", rr->name.c, DNSTypeName(rr->rrtype), rr->ProbeCount);
 						}
 					else
 						{
-						debugf("BuildProbe retracting Question %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
+						debugf("SendQueries: Retracting Question %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 						query.h.numQuestions--;
 						}
 					}
@@ -2804,13 +2814,14 @@ mDNSlocal void SendQueries(mDNS *const m)
 			mDNSu8 *newptr = PutResourceRecordTTL(&query, queryptr, &query.h.numAnswers, rr, rr->rroriginalttl - SecsSinceRcvd);
 			if (newptr)
 				{
+				debugf("SendQueries: Put %##s at %lu - %lu", rr->name.c, queryptr - query.data, newptr - query.data);
 				queryptr = newptr;
 				KnownAnswerList = rr->NextInKAList;
 				rr->NextInKAList = mDNSNULL;
 				}
 			else
 				{
-				debugf("BuildQueryPacketAnswers: Put %d answers; No more space for known answers", query.h.numAnswers);
+				debugf("SendQueries: Put %d answers; No more space for known answers", query.h.numAnswers);
 				query.h.flags.b[0] |= kDNSFlag0_TC;
 				break;
 				}
@@ -2822,7 +2833,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				mDNSu8 *newptr = PutResourceRecord(&query, queryptr, &query.h.numAuthorities, rr);
 				rr->IncludeInProbe = mDNSfalse;
 				if (newptr) queryptr = newptr;
-				else LogMsg("BuildQueryPacketUpdates: How did we fail to have space for the Update record %##s (%s)?",
+				else LogMsg("SendQueries: How did we fail to have space for the Update record %##s (%s)?",
 					rr->name.c, DNSTypeName(rr->rrtype));
 				}
 		
@@ -2944,6 +2955,7 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr)
 
 mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	{
+	mDNSu32 NumAnswersGiven = 0;
 	ResourceRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
 	m->NewQuestions = q->next;				// Advance NewQuestions to the next (if any)
@@ -2969,9 +2981,19 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			// Since this question is new, it has not received any answers yet, so there's no point
 			// telling it about records that are going away that it never heard about in the first place.
 			if (rr->rrremainingttl > 0)
+				{
+				NumAnswersGiven++;
+				debugf("Had   answer   for %##s already in our cache", q->name.c);
 				AnswerQuestionWithResourceRecord(m, q, rr);
+				}
 			// MUST NOT touch q again after calling AnswerQuestionWithResourceRecord()
 			}
+	if (NumAnswersGiven == 0)
+		{
+		debugf("Had no answers for %##s already in our cache; sending query packet", q->name.c);
+		q->LastQTime = m->timenow - q->ThisQInterval;
+		m->NextScheduledQuery = m->timenow;
+		}
 	m->CurrentQuestion = mDNSNULL;
 	m->lock_rrcache = 0;
 	}
@@ -4259,9 +4281,13 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				}
 			}
 
+		// Note: In the case where we already have the answer to this question in our cache, that may be all the client
+		// wanted, and they may immediately cancel their question. In this case, sending an actual query on the wire would
+		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
+		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
 		question->next          = mDNSNULL;
 		question->ThisQInterval = mDNSPlatformOneSecond/2;  // MUST be > zero for an active question
-		question->LastQTime     = m->timenow - question->ThisQInterval;
+		question->LastQTime     = m->timenow;
 		question->RecentAnswers = 0;
 		question->DuplicateOf   = FindDuplicateQuestion(m, question);
 		// question->InterfaceID must be already set by caller
@@ -4280,7 +4306,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			debugf("mDNS_StartQuery_internal: Setting NewQuestions to %##s (%s)", question->name.c, DNSTypeName(question->rrtype));
 		if (!m->NewQuestions) m->NewQuestions = question;
 
-		if (ActiveQuestion(question)) m->NextScheduledQuery = m->timenow;
+		SetNextQueryTime(m,question);
 
 		return(mStatus_NoError);
 		}
