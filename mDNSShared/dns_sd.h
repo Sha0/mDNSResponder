@@ -1578,6 +1578,37 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
     const void       **value
     );
 
+#ifdef __APPLE_API_PRIVATE
+// OS X internal functionality
+// 3rd party clients of this API should not depend on future support or availability of this routine
+
+/* DNSServiceSetDefaultDomainForUser()
+ *
+ * Set the default domain for the caller's UID.  Future browse and registration
+ * calls by this user that do not specify an explicit domain will browse and
+ * register in this wide-area domain in addition to .local.  In addition, this
+ * domain will be returned as a Browse domain via domain enumeration calls.
+ * 
+ * Calling this routine more than once for a single user overwrites the previous
+ * domain value.  Pass NULL to clear the default for a user.
+ *
+ * Parameters:
+ *
+ * flags:           Currently unused, reserved for future use.
+ *
+ * domain:          The domain to be used for the caller's UID.
+ *
+ * return value:    Returns kDNSServiceErr_NoError on succeses, otherwise returns
+ *                  an error code indicating the error that occurred
+ */
+
+DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
+    (
+    DNSServiceFlags                    flags,
+    const char                         *domain
+    );	
+	
+#endif //__APPLE_API_PRIVATE
 
 #ifdef  __cplusplus
     }
