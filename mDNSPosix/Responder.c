@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.10  2003/07/10 20:27:31  cheshire
+<rdar://problem/3318717> mDNSResponder Posix version is missing a 'b' in the getopt option string
+
 Revision 1.9  2003/07/02 21:19:59  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -373,7 +376,7 @@ static void ParseArguments(int argc, char **argv)
     // Parse command line options using getopt.
     
     do {
-        ch = getopt(argc, argv, "v:rn:t:d:x:p:f:dP");
+        ch = getopt(argc, argv, "v:rn:t:d:x:p:f:dPb");
         if (ch != -1) {
             switch (ch) {
                 case 'v':
