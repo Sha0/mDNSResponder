@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.2  2004/08/24 23:27:57  cheshire
+Fixes for Linux compatibility:
+Don't use strings.h
+Don't assume SIGINFO
+Don't try to set servaddr.sin_len on platforms that don't have sa_len
+
 Revision 1.1  2004/08/11 00:43:26  ksekar
 <rdar://problem/3722542>: DNS Extension daemon for DNS Update Lease
 
@@ -41,9 +47,12 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <strings.h>
 #include <stdio.h>
 #include <syslog.h>
+#include <string.h>
+#include <sys/time.h>
+#include <time.h>
+#include <errno.h>
 
 //
 // Constants
@@ -57,6 +66,13 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #define LEASETABLE_INIT_NBUCKETS 256    // initial hashtable size (doubles as table fills)
 #define EXPIRATION_INTERVAL 300          // check for expired records every 5 minutes
 #define SRV_TTL 7200                    // TTL For _dns-update SRV records
+
+#ifdef SIGINFO
+#define INFO_SIGNAL SIGINFO
+#else
+#define INFO_SIGNAL SIGUSR1
+#endif
+
 //
 // Data Structures
 // Structs/fields that must be locked for thread safety are explicitly commented
@@ -204,7 +220,9 @@ mDNSlocal int ConnectToServer(DaemonInfo *d)
 	else                 inet_pton(AF_INET, LOOPBACK, &d->saddr);  // use loopback if server not explicitly specified			
 	servaddr.sin_port = htons(NS_PORT);
 	servaddr.sin_family = AF_INET;
+#ifndef NOT_HAVE_SA_LEN
 	servaddr.sin_len = sizeof(servaddr); 
+#endif
 	sd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sd < 0) { LogErr("ConnectToServer", "socket");  return -1; }
 	if (connect(sd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) { LogErr("ConnectToServer", "connect"); return -1; }
@@ -1084,7 +1102,7 @@ mDNSlocal int ListenForUpdates(DaemonInfo *d)
 mDNSlocal void HndlSignal(int sig)
 	{
 	if (sig == SIGTERM || sig == SIGINT ) { terminate = 1; return; }
-	if (sig == SIGINFO)                   { dumptable = 1; return; }
+	if (sig == INFO_SIGNAL)               { dumptable = 1; return; }
 	}
 
 int main(int argc, char *argv[])
@@ -1092,9 +1110,9 @@ int main(int argc, char *argv[])
 	DaemonInfo d;
 	bzero(&d, sizeof(DaemonInfo));
 	
-	if (signal(SIGTERM, HndlSignal) == SIG_ERR) perror("Can't catch SIGTERM");
-	if (signal(SIGINFO, HndlSignal) == SIG_ERR) perror("Can't catch SIGINFO");
-	if (signal(SIGINT, HndlSignal) == SIG_ERR)  perror("Can't catch SIGINT");
+	if (signal(SIGTERM,     HndlSignal) == SIG_ERR) perror("Can't catch SIGTERM");
+	if (signal(INFO_SIGNAL, HndlSignal) == SIG_ERR) perror("Can't catch SIGINFO");
+	if (signal(SIGINT,      HndlSignal) == SIG_ERR) perror("Can't catch SIGINT");
 	
 	if (ProcessArgs(argc, argv, &d) < 0) exit(1);
 
