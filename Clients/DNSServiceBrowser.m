@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.21  2003/10/28 01:19:45  rpantos
+3282283/3,11: Do not put a trailing '.' on service names. Handle PATH for HTTP txtRecords.
+
 Revision 1.20  2003/10/28 01:13:49  rpantos
 3282283/2: Remove filter when displaying browse results.
 
@@ -88,12 +91,12 @@ void resolve_reply (
 {
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
-    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.",          @"_tftp._tcp.",
-												   @"_ssh._tcp.",          @"_telnet._tcp.",
-												   @"_http._tcp.",
-												   @"_printer._tcp.",      @"_ipp._tcp.",
-												   @"_ichat._tcp.",        @"_eppc._tcp.",
-												   @"_afpovertcp._tcp.",   @"_afpovertcp._tcp.",   @"_MacOSXDupSuppress._tcp.", nil];
+    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp",          @"_tftp._tcp",
+												   @"_ssh._tcp",          @"_telnet._tcp",
+												   @"_http._tcp",
+												   @"_printer._tcp",      @"_ipp._tcp",
+												   @"_ichat._tcp",        @"_eppc._tcp",
+												   @"_afpovertcp._tcp",   @"_afpovertcp._tcp",   @"_MacOSXDupSuppress._tcp", nil];
     NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Trivial File Transfer (tftp)",
 	                                               @"Secure Shell (ssh)",  @"Telnet",
 	                                               @"Web Server (http)",
@@ -141,13 +144,13 @@ void resolve_reply (
 
     [nameField setDoubleAction:@selector(connect:)];
 
-    //[srvtypeKeys addObject:@"_ftp._tcp."];	//Add supported protocols and domains to their
+    //[srvtypeKeys addObject:@"_ftp._tcp"];	//Add supported protocols and domains to their
     //[srvnameKeys addObject:@"File Transfer (ftp)"];
-    //[srvtypeKeys addObject:@"_printer._tcp."];		//respective arrays
+    //[srvtypeKeys addObject:@"_printer._tcp"];		//respective arrays
     //[srvnameKeys addObject:@"Printer (lpr)"];
-    //[srvtypeKeys addObject:@"_http._tcp."];		//respective arrays
+    //[srvtypeKeys addObject:@"_http._tcp"];		//respective arrays
     //[srvnameKeys addObject:@"Web Server (http)"];
-    //[srvtypeKeys addObject:@"_afp._tcp."];		//respective arrays
+    //[srvtypeKeys addObject:@"_afp._tcp"];		//respective arrays
     //[srvnameKeys addObject:@"AppleShare Server (afp)"];
 
     [ipAddressField setStringValue:@""];
@@ -485,15 +488,29 @@ void resolve_reply (
 
     if (!ipAddr || !port) return;
 
-    if      ([SrvType isEqualToString:@"_ftp._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_tftp._tcp."])       [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"tftp://%@:%d/",   ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_ssh._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_telnet._tcp."])     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"telnet://%@:%d/", ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_http._tcp."])       [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_printer._tcp."])    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"lpr://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_ipp._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ipp://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_afpovertcp._tcp."]) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_smb._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/",    ipAddr, port]]];
+    if ([SrvType isEqualToString:@"_http._tcp"])
+    {
+        NSString    *pathDelim = @"path=";
+
+        // The DNSServiceDiscovery API seems to only return the first component of the TXT record
+        // If it specifies a path, extract it.
+        if ( [txtRecord length] > [pathDelim length] && 
+             NSOrderedSame == [[txtRecord substringToIndex:[pathDelim length]] caseInsensitiveCompare:pathDelim])
+        {
+            NSString    *path = [txtRecord substringFromIndex:[pathDelim length]];
+            [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d%@", ipAddr, port, path]]];
+        }
+        else
+            [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d", ipAddr, port]]];
+    }
+    else if      ([SrvType isEqualToString:@"_ftp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_tftp._tcp"])       [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"tftp://%@:%d/",   ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_ssh._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_telnet._tcp"])     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"telnet://%@:%d/", ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_printer._tcp"])    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"lpr://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_ipp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ipp://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_afpovertcp._tcp"]) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_smb._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/",    ipAddr, port]]];
 
     return;
 }
@@ -525,10 +542,16 @@ void resolve_reply (
 - (IBAction)addNewService:(id)sender
 {
     // add new entries from the edit fields to the arrays for the defaults
+    NSString  *newType = [serviceTypeField stringValue];
+    NSString  *newName = [serviceNameField stringValue];
 
-    if ([[serviceTypeField stringValue] length] && [[serviceNameField stringValue] length]) {
-        [srvtypeKeys addObject:[serviceTypeField stringValue]];
-        [srvnameKeys addObject:[serviceNameField stringValue]];
+    // 3282283: trim trailing '.' from service type field
+    if ([newType length] && [newType hasSuffix:@"."])
+        newType = [newType substringToIndex:[newType length] - 1];
+
+    if ([newType length] && [newName length]) {
+        [srvtypeKeys addObject:newType];
+        [srvnameKeys addObject:newName];
 
         [[NSUserDefaults standardUserDefaults] setObject:srvtypeKeys forKey:@"SrvTypeKeys"];
         [[NSUserDefaults standardUserDefaults] setObject:srvnameKeys forKey:@"SrvNameKeys"];
@@ -542,3 +565,4 @@ void resolve_reply (
 
 
 @end
+
