@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.198  2004/09/24 23:47:49  cheshire
+Correct comment and error message
+
 Revision 1.197  2004/09/24 23:39:27  cheshire
 <rdar://problem/3733705> Only IPv6 loopback address advertised on laptop w/no networking
 
@@ -1144,13 +1147,10 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	tcpInfo_t *info;
 	CFSocketRef sr;
 
-    // get the CFSocket for the descriptor, if it exists
+    // Get the CFSocket for the descriptor
 	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketNoCallBack, NULL, NULL);
-	if (!sr)
-		{
-		LogMsg("ERROR: mDNSPlatformTCPCloseConnection - attempt to close a socket that was not properly created");
-		return;
-		}
+	if (!sr) { LogMsg("ERROR: mDNSPlatformTCPCloseConnection - CFSocketCreateWithNative returned NULL"); return; }
+
 	CFSocketGetContext(sr, &cfContext);
 	if (!cfContext.info)
 		{
