@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.177  2004/06/16 23:14:46  ksekar
+<rdar://problem/3693816>: mDNS changed behavior incompatibly from Panther -> Tiger.
+
 Revision 1.176  2004/06/11 20:27:42  cheshire
 Rename "SocketRef" as "cfs" to avoid conflict with other plaforms
 
@@ -1074,6 +1077,13 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	domainname t, d, srv;
 	if (!name[0]    || !MakeDomainLabelFromLiteralString(&n, name))        { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }
+	if (!domain[0])
+		{
+		LogMsg("Resolve calls must explicitly specify a domain parameter."
+			   "Unspecified domains in resolve calls are not compatible with wide-area (non-local) service discovery,"
+			   "and may not be supported in future releases.");
+		domain = "local.";
+		}
 	if (!domain[0]  || !MakeDomainNameFromDNSNameString(&d, domain))       { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
 
