@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.224  2004/12/10 00:41:05  cheshire
+Adjust alignment of log messages
+
 Revision 1.223  2004/12/07 20:42:34  cheshire
 Add explicit context parameter to mDNS_RemoveRecordFromService()
 
@@ -2110,7 +2113,7 @@ mDNSlocal void INFOCallback(void)
 		{
 		ServiceInstance *si;
 		for (si = r->regs; si; si = si->next)
-			LogMsgNoIdent("%5d: Mach ServiceInstance %##s %u", si->ClientMachPort, si->srs.RR_SRV.resrec.name.c, mDNSVal16(si->srs.RR_SRV.resrec.rdata->u.srv.port));
+			LogMsgNoIdent("%5d: Mach ServiceInstance     %##s %u", si->ClientMachPort, si->srs.RR_SRV.resrec.name.c, mDNSVal16(si->srs.RR_SRV.resrec.rdata->u.srv.port));
 		}
 
 	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
