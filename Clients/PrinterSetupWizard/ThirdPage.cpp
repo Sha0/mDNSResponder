@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.13  2005/01/06 08:15:45  shersche
+Append queue name to end of LPR port name, correctly build port name when queue name is absent
+
 Revision 1.12  2005/01/05 01:06:12  shersche
 <rdar://problem/3841218> Strip the first substring off the product key if an initial match can't be found with the whole product key.
 Bug #: 3841218
@@ -228,10 +231,23 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufactu
 	if ( service->type == kPDLServiceType )
 	{
 		printer->portName.Format(L"IP_%s.%d", static_cast<LPCTSTR>(service->hostname), service->portNumber);
+		service->protocol = L"Raw";
 	}
 	else if ( service->type == kLPRServiceType )
 	{
-		printer->portName.Format(L"LPR_%s.%d", static_cast<LPCTSTR>(service->hostname), service->portNumber);
+		Queue * q = service->queues.front();
+		check( q );
+
+		if ( q->name.GetLength() > 0 )
+		{
+			printer->portName.Format(L"LPR_%s.%d.%s", static_cast<LPCTSTR>(service->hostname), service->portNumber, static_cast<LPCTSTR>(q->name) );
+		}
+		else
+		{
+			printer->portName.Format(L"LPR_%s.%d", static_cast<LPCTSTR>(service->hostname), service->portNumber);
+		}
+
+		service->protocol = L"LPR";
 	}
 	else if ( service->type == kIPPServiceType )
 	{
@@ -246,6 +262,8 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufactu
 		{
 			printer->portName.Format(L"http://%s:%d/", static_cast<LPCTSTR>(service->hostname), service->portNumber );
 		}
+
+		service->protocol = L"IPP";
 	}
 }
 
