@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: GenLinkedList.c,v $
+Revision 1.3  2004/04/22 21:14:42  cheshire
+Fix comment spelling mistake
+
 Revision 1.2  2004/02/05 07:41:08  cheshire
 Add Log header
 
@@ -82,7 +85,7 @@ void		AddToHead( GenLinkedList *pList, void *elem)
 
 int		RemoveFromList( GenLinkedList *pList, void *elem)
 /* Remove a linked list element from the list. Return 0 if it was not found. */
-/* If the element is removed, it's link will be set to NULL. */
+/* If the element is removed, its link will be set to NULL. */
 {
 void	*iElem, *lastElem;
 
@@ -172,7 +175,7 @@ void		*pNext;
 
 void			DLLRemoveFromList( GenDoubleLinkedList *pList, void *elem)
 /* Remove a linked list element from the list. */
-/* When the element is removed, it's link will be set to NULL. */
+/* When the element is removed, its link will be set to NULL. */
 {
 void		*pNext, *pPrev;
 
@@ -271,7 +274,7 @@ void		OffsetAddToHead( GenLinkedOffsetList *pList, void *elem)
 
 int		OffsetRemoveFromList( GenLinkedOffsetList *pList, void *elem)
 /* Remove a linked list element from the list. Return 0 if it was not found. */
-/* If the element is removed, it's link will be set to NULL. */
+/* If the element is removed, its link will be set to NULL. */
 {
 void	*iElem, *lastElem;
 
