@@ -24,6 +24,10 @@
     IBOutlet id nameColumn;
     IBOutlet id serviceTypeField;
     IBOutlet id serviceNameField;
+
+    IBOutlet id ipAddressField;
+    IBOutlet id portField;
+    IBOutlet id textField;
     
     NSMutableArray *srvtypeKeys;
     NSMutableArray *srvnameKeys;

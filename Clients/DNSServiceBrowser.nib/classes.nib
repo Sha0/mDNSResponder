@@ -17,11 +17,14 @@
                 domainEditField = id; 
                 domainField = id; 
                 domainWindow = id; 
+                ipAddressField = id; 
                 nameColumn = id; 
                 nameField = id; 
+                portField = id; 
                 serviceDisplayTable = id; 
                 serviceNameField = id; 
                 serviceTypeField = id; 
+                textField = id; 
                 typeColumn = id; 
                 typeField = id; 
             }; 

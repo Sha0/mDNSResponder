@@ -11,6 +11,7 @@
 #import "BrowserController.h"
 #import <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
+#include "arpa/inet.h"
 
 void
 MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info )
@@ -27,7 +28,6 @@ void browse_reply (
                    void	*context
                    )
 {
-    printf("Got a reply from the server %d %s %s %s %d\n", resultType, replyName, replyType, replyDomain, flags);
     [[NSApp delegate] updateBrowseWithResult:resultType name:[NSString stringWithUTF8String:replyName] type:[NSString stringWithUTF8String:replyType] domain:[NSString stringWithUTF8String:replyDomain] flags:flags];
     return;
 }
@@ -39,8 +39,6 @@ void enum_reply (
                  void	*context
                  )
 {
-    // printf("Got a reply from the server %d %s %d\n", resultType, replyDomain, flags);
-
     [[NSApp delegate] updateEnumWithResult:resultType domain:[NSString stringWithUTF8String:replyDomain] flags:flags];
 
     return;
@@ -54,10 +52,6 @@ void resolve_reply (
                     void		*context
                     )
 {
-
-    printf("interface length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)interface)->sin_len, ((struct sockaddr_in *)interface)->sin_port, ((struct sockaddr_in *)interface)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)interface)->sin_addr)));
-    printf("address length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)address)->sin_len, ((struct sockaddr_in *)address)->sin_port, ((struct sockaddr_in *)address)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr)));
-
     [[NSApp delegate] resolveClientWithInterface:interface address:address txtRecord:[NSString stringWithUTF8String:txtRecord]];
 
     return;
@@ -115,6 +109,10 @@ void resolve_reply (
     //[srvnameKeys addObject:@"Web Server (http)"];
     //[srvtypeKeys addObject:@"_afp._tcp."];		//respective arrays
     //[srvnameKeys addObject:@"AppleShare Server (afp)"];
+
+    [ipAddressField setStringValue:@""];
+    [portField setStringValue:@""];
+    [textField setStringValue:@""];
 
     [srvtypeKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"]];
     [srvnameKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"]];
@@ -195,7 +193,12 @@ void resolve_reply (
     if (index==-1) return;					//Error checking
     SrvType = [srvtypeKeys objectAtIndex:index];		//Save desired Type
     SrvName = [srvnameKeys objectAtIndex:index];		//Save desired Type
-    if (Domain!=NULL) [self update:SrvType Domain:Domain];	//If Type and Domain are set, update records
+
+    [ipAddressField setStringValue:@""];
+    [portField setStringValue:@""];
+    [textField setStringValue:@""];
+    
+    [self update:SrvType Domain:Domain];		//If Type and Domain are set, update records
 }
 
 - (IBAction)handleDomainClick:(id)sender			//Handle clicks for Domain
@@ -203,6 +206,11 @@ void resolve_reply (
     int index=[sender selectedRow];				//Find index of selected row
     if (index==-1) return;					//Error checking
     Domain = [domainKeys objectAtIndex:index];			//Save desired Domain
+
+    [ipAddressField setStringValue:@""];
+    [portField setStringValue:@""];
+    [textField setStringValue:@""];
+    
     if (SrvType!=NULL) [self update:SrvType Domain:Domain];	//If Type and Domain are set, update records
 }
 
@@ -229,9 +237,9 @@ void resolve_reply (
         // start an enumerator on the local server
         dns_client = DNSServiceResolverResolve
             (
-             [Name UTF8String],
-             [SrvType UTF8String],
-             [Domain UTF8String],
+             (char *)[Name UTF8String],
+             (char *)[SrvType UTF8String],
+             (char *)(Domain?[Domain UTF8String]:""),
              resolve_reply,
              nil
              );
@@ -292,8 +300,14 @@ void resolve_reply (
 
 - (IBAction)update:theType Domain:theDomain;		//The Big Kahuna: Fetch PTR records and update application
 {
-    const char * const DomainC=[theDomain UTF8String];	//Domain in C string format
-    const char * const TypeC=[theType UTF8String];		//Type in C string format
+    const char * DomainC;
+    const char * TypeC=[theType UTF8String];		//Type in C string format
+
+    if (theDomain) {
+        DomainC = [theDomain UTF8String];	//Domain in C string format
+    } else {
+        DomainC = "";
+    }
 
     [nameKeys removeAllObjects];	//Get rid of displayed records if we're going to go get new ones
     [nameField reloadData];		//Reload (redraw) names to show the old data is gone
@@ -316,8 +330,8 @@ void resolve_reply (
         // start an enumerator on the local server
         dns_client = DNSServiceBrowserCreate
             (
-             TypeC,
-             DomainC,
+             (char *)TypeC,
+             (char *)DomainC,
              browse_reply,
              nil
              );
@@ -348,7 +362,6 @@ void resolve_reply (
 - (BOOL)windowShouldClose:(NSWindow *)sender	//Save domains to our domain file when quitting
 {
     [domainField reloadData];
-    //[NSArchiver archiveRootObject:domainKeys toFile:@"domains.dms"];
     return YES;
 }
 
@@ -379,11 +392,17 @@ void resolve_reply (
 
 - (void)updateBrowseWithResult:(int)type name:(NSString *)name type:(NSString *)resulttype domain:(NSString *)domain flags:(int)flags
 {
-    if ([domain isEqualToString:Domain] && [resulttype isEqualToString:SrvType]) {
+    if (([domain isEqualToString:Domain] || [domain isEqualToString:@"local.arpa."]) && [resulttype isEqualToString:SrvType]) {
 
         if (type == DNSServiceBrowserReplyRemoveInstance) {
-            if ([nameKeys containsObject:name]) {
-                [nameKeys removeObject:name];
+            NSEnumerator *nameEnum = [nameKeys objectEnumerator];
+            NSString *aName = nil;
+
+            while (aName = [nameEnum nextObject]) {
+                if ([aName isEqualToString:name]) {
+                    [nameKeys removeObject:name];
+                    break;
+                }
             }
         }
         if (type == DNSServiceBrowserReplyAddInstance) {
@@ -397,13 +416,31 @@ void resolve_reply (
 
 - (void)resolveClientWithInterface:(struct sockaddr *)interface address:(struct sockaddr *)address txtRecord:(NSString *)txtRecord
 {
-    // printf("Got a reply from the server %s, %d\n", txtRecord, flags);
-
-    printf("Length = %d\n", strlen(interface));
-
-    printf("interface length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)interface)->sin_len, ((struct sockaddr_in *)interface)->sin_port, ((struct sockaddr_in *)interface)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)interface)->sin_addr)));
-    printf("address length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)address)->sin_len, ((struct sockaddr_in *)address)->sin_port, ((struct sockaddr_in *)address)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr)));
+    //printf("interface length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)interface)->sin_len, ((struct sockaddr_in *)interface)->sin_port, ((struct sockaddr_in *)interface)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)interface)->sin_addr)));
+    //printf("address length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)address)->sin_len, ((struct sockaddr_in *)address)->sin_port, ((struct sockaddr_in *)address)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr)));
+    NSString *ipAddr = [NSString stringWithCString:inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr))];
+    int port = ((struct sockaddr_in *)address)->sin_port;
+    
+    [ipAddressField setStringValue:ipAddr];
+    [portField setIntValue:port];
+    [textField setStringValue:txtRecord];
+    
+    
     //[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:txtRecord]];
+
+    if ([SrvType isEqualToString:@"_http._tcp."]) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d/", ipAddr, port]]];
+    } else if ([SrvType isEqualToString:@"_ftp._tcp."]) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/", ipAddr, port]]];
+    } else if ([SrvType isEqualToString:@"_ssh._tcp."]) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/", ipAddr, port]]];
+    } else if ([SrvType isEqualToString:@"_telnet._tcp."]) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/", ipAddr, port]]];
+    } else if ([SrvType isEqualToString:@"_afpovertcp._tcp."]) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/", ipAddr, port]]];
+    } else if ([SrvType isEqualToString:@"_smb._tcp."]) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/", ipAddr, port]]];
+    }
     return;
 }
 
