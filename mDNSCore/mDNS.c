@@ -1175,18 +1175,26 @@ mDNSlocal mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg,
 mDNSlocal mDNSBool HaveResponses(const mDNS *const m, const mDNSs32 timenow)
 	{
 	ResourceRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
+	if (m->SleepState)
 		{
-		if (rr->RecordType == kDNSRecordTypeDeregistering)
-			return(mDNStrue);
-
-		if (rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) && timenow - rr->NextSendTime >= 0)
-			return(mDNStrue);
-
-		if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
-			return(mDNStrue);
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->RecordType == kDNSRecordTypeShared && rr->rrremainingttl == 0)
+				return(mDNStrue);
 		}
-
+	else
+		{
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			{
+			if (rr->RecordType == kDNSRecordTypeDeregistering)
+				return(mDNStrue);
+	
+			if (rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) && timenow - rr->NextSendTime >= 0)
+				return(mDNStrue);
+	
+			if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
+				return(mDNStrue);
+			}
+		}
 	return(mDNSfalse);
 	}
 
@@ -1220,70 +1228,90 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 	int numAnnounce = 0;
 	int numAnswer   = 0;
 
-	if (m->CurrentRecord) debugf("SendResponses ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
 	
-	// 1. Look for deregistrations we need to send
-	while (m->CurrentRecord)
+	// If we're sleeping, only send deregistrations
+	if (m->SleepState)
 		{
-		ResourceRecord *rr = m->CurrentRecord;
-		m->CurrentRecord = rr->next;
-		if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
-			rr->RecordType == kDNSRecordTypeDeregistering &&
-			(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+		while (m->CurrentRecord)
 			{
-			numDereg++;
-			responseptr = newptr;
-			rr->RecordType    = kDNSRecordTypeShared;
-			rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
-			mDNS_Deregister_internal(m, rr);
+			ResourceRecord *rr = m->CurrentRecord;
+			m->CurrentRecord = rr->next;
+			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
+				rr->RecordType == kDNSRecordTypeShared && rr->rrremainingttl == 0 &&
+				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+				{
+				numDereg++;
+				responseptr = newptr;
+				rr->rrremainingttl = rr->rroriginalttl;
+				}
 			}
 		}
-	
-	// 2. Look for announcements we are due to send in the next second
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
+	else
 		{
-		if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
-			rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
-			timenow + mDNSPlatformOneSecond - rr->NextSendTime >= 0 &&
-			(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+		// 1. Look for deregistrations we need to send
+		while (m->CurrentRecord)
+			{
+			ResourceRecord *rr = m->CurrentRecord;
+			m->CurrentRecord = rr->next;
+			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
+				rr->RecordType == kDNSRecordTypeDeregistering &&
+				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
 				{
-				numAnnounce++;
+				numDereg++;
 				responseptr = newptr;
-				rr->SendPriority      = 0;
-				rr->Requester         = zeroIPAddr;
-				rr->AnnounceCount--;
-				rr->NextSendTime     += rr->NextSendInterval;
-				if (rr->NextSendTime - (timenow + rr->NextSendInterval/2) < 0)
-					rr->NextSendTime = (timenow + rr->NextSendInterval/2);
-				rr->NextSendInterval *= 2;
+				rr->RecordType    = kDNSRecordTypeShared;
+				rr->AnnounceCount = DefaultAnnounceCountForTypeShared;
+				mDNS_Deregister_internal(m, rr);
 				}
-		}
-
-	// 3. Look for answers we need to send
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
-			rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr) &&
-			(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+			}
+		
+		// 2. Look for announcements we are due to send in the next second
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			{
+			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
+				rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
+				timenow + mDNSPlatformOneSecond - rr->NextSendTime >= 0 &&
+				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+					{
+					numAnnounce++;
+					responseptr = newptr;
+					rr->SendPriority      = 0;
+					rr->Requester         = zeroIPAddr;
+					rr->AnnounceCount--;
+					rr->NextSendTime     += rr->NextSendInterval;
+					if (rr->NextSendTime - (timenow + rr->NextSendInterval/2) < 0)
+						rr->NextSendTime = (timenow + rr->NextSendInterval/2);
+					rr->NextSendInterval *= 2;
+					}
+			}
+	
+		// 3. Look for answers we need to send
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
+				rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr) &&
+				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr)))
+					{
+					numAnswer++;
+					responseptr = newptr;
+					rr->SendPriority = 0;
+					rr->Requester    = zeroIPAddr;
+					}
+	
+		// 4. Add additionals, if there's space
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
+				rr->SendPriority == kDNSSendPriorityAdditional)
 				{
-				numAnswer++;
-				responseptr = newptr;
-				rr->SendPriority = 0;
+				if (ResourceRecordIsValidAnswer(rr) &&
+					(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAdditionals, rr)))
+						responseptr = newptr;
+				rr->SendPriority = 0;	// Clear SendPriority anyway, even if we didn't put the additional in the packet
 				rr->Requester    = zeroIPAddr;
 				}
+		}
 
-	// 4. Add additionals, if there's space
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
-			rr->SendPriority == kDNSSendPriorityAdditional)
-			{
-			if (ResourceRecordIsValidAnswer(rr) &&
-				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAdditionals, rr)))
-					responseptr = newptr;
-			rr->SendPriority = 0;	// Clear SendPriority anyway, even if we didn't put the additional in the packet
-			rr->Requester    = zeroIPAddr;
-			}
-	
 	if (numDereg || numAnnounce || numAnswer || response->h.numAdditionals)
 		debugf("BuildResponse Built %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s",
 			numDereg,                   numDereg                   == 1 ? "" : "s",
@@ -1969,39 +1997,11 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 
 	if (sleepstate)
 		{
-		mDNSBool more = mDNStrue;
-		
 		// First mark all the records we need to deregister
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount < DefaultAnnounceCountForTypeShared)
 				rr->rrremainingttl = 0;
-		
-		do	{
-			DNSMessage response;
-			mDNSu8 *newptr;
-			mDNSu8 *responseptr = response.data;
-			mDNSu8 *limit       = response.data + sizeof(response.data);
-			InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
-			more = mDNSfalse;
-			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				if (rr->rrremainingttl == 0)
-					{
-					newptr = putResourceRecord(&response, responseptr, limit, &response.h.numAnswers, rr);
-					if (!newptr)
-						more = mDNStrue;
-					else
-						{
-						responseptr = newptr;
-						rr->rrremainingttl = rr->rroriginalttl;
-						}
-					}
-			if (response.h.numAnswers)
-				{
-				mDNSSendDNSMessage(m, &response, responseptr, zeroIPAddr, MulticastDNSPort, AllDNSLinkGroup, MulticastDNSPort);
-				debugf("mDNSCoreSleep Sent %d Deregistration%s", response.h.numAnswers, response.h.numAnswers == 1 ? "" : "s");
-				}
-			} while(more);
-		
+		while (HaveResponses(m, timenow)) SendResponses(m, timenow);
 		}
 	else
 		{
