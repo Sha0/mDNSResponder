@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPrefix.h,v $
+Revision 1.2  2004/05/21 01:57:08  cheshire
+Add macros for malloc() and free() so that dnssd_clientlib.c can use them
+
 Revision 1.1  2004/03/12 21:30:26  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -63,4 +66,10 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 #define MDNS_BUILDINGSTUBLIBRARY 1
 #else
 #error Options for this target not found in prefix file
+#endif
+
+// dnssd_clientlib.c assumes malloc() and free(), so we #define them here to be the OT equivalents
+#if MDNS_BUILDINGSHAREDLIBRARY || MDNS_BUILDINGSTUBLIBRARY
+#define malloc(x) OTAllocMem(x)
+#define free(x) OTFreeMem(x)
 #endif
