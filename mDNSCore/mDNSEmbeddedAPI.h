@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.213  2004/09/25 02:24:27  cheshire
+Removed unused rr->UseCount
+
 Revision 1.212  2004/09/24 20:57:39  cheshire
 <rdar://problem/3680902> Eliminate inappropriate casts that cause misaligned-address errors
 
@@ -1340,7 +1343,6 @@ struct CacheRecord_struct
 	mDNSs32         TimeRcvd;			// In platform time units
 	mDNSs32         NextRequiredQuery;	// In platform time units
 	mDNSs32         LastUsed;			// In platform time units
-	mDNSu32         UseCount;			// Number of times this RR has been used to answer a question
 	DNSQuestion    *CRActiveQuestion;	// Points to an active question referencing this answer
 	mDNSu32         UnansweredQueries;	// Number of times we've issued a query for this record without getting an answer
 	mDNSs32         LastUnansweredTime;	// In platform time units; last time we incremented UnansweredQueries

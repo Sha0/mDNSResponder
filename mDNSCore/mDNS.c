@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.433  2004/09/25 02:24:27  cheshire
+Removed unused rr->UseCount
+
 Revision 1.432  2004/09/24 21:35:17  cheshire
 <rdar://problem/3561220> Browses are no longer piggybacking on other browses
 TargetPort and TargetQID are allowed to be undefined if no question->Target is set
@@ -3249,7 +3252,6 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 		q->CurrentAnswers, AddRecord ? "Add" : "Rmv", rr->resrec.rroriginalttl, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 
 	rr->LastUsed = m->timenow;
-	rr->UseCount++;
 	if (ActiveQuestion(q) && rr->CRActiveQuestion != q)
 		{
 		if (!rr->CRActiveQuestion) m->rrcache_active++;	// If not previously active, increment rrcache_active count

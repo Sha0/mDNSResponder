@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.57  2004/09/25 02:24:27  cheshire
+Removed unused rr->UseCount
+
 Revision 1.56  2004/09/24 20:57:39  cheshire
 <rdar://problem/3680902> Eliminate inappropriate casts that cause misaligned-address errors
 
@@ -1622,7 +1625,6 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	rr->TimeRcvd          = m ? m->timenow : 0;
 	rr->NextRequiredQuery = m ? m->timenow : 0;		// Will be updated to the real value when we call SetNextCacheCheckTime()
 	rr->LastUsed          = m ? m->timenow : 0;
-	rr->UseCount          = 0;
 	rr->CRActiveQuestion  = mDNSNULL;
 	rr->UnansweredQueries = 0;
 	rr->LastUnansweredTime= 0;
