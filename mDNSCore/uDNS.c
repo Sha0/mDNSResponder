@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.151  2004/12/13 21:45:08  ksekar
+uDNS_DeregisterService should return NoError if called twice (to follow mDNS behavior expected by daemon layer)
+
 Revision 1.150  2004/12/13 20:42:41  ksekar
 Fixed LogMsg
 
@@ -4144,8 +4147,8 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_DeregPending:
 		case regState_DeregDeferred:
 		case regState_Cancelled:
-			errmsg = "deregistration in process";
-			goto error;
+			debugf("Double deregistration of service %##s", srs->RR_SRV.resrec.name.c);
+			return mStatus_NoError;
 		case regState_NoTarget:
 			unlinkSRS(u, srs);
 			srs->uDNS_info.state = regState_Unregistered;
@@ -4165,7 +4168,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 
 	error:
 	LogMsg("Error, uDNS_DeregisterService: %s", errmsg);
-	return mStatus_UnknownErr;
+	return mStatus_BadReferenceErr;
 	}
 
 // note that the RegInfo will be either for the record, or for the parent ServiceRecordSet
