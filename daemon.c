@@ -556,7 +556,10 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	if (status)
 		{
-		LogErrorMessage("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
+		if (status == 1103)
+			LogErrorMessage("Bootstrap_register failed(): A copy of the daemon is apparently already running");
+		else
+			LogErrorMessage("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
 		return(status);
 		}
 	
