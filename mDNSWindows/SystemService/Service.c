@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.10  2004/08/16 21:45:24  shersche
+Use the full pathname of executable when calling CreateService()
+Submitted by: prepin@zetron.com
+
 Revision 1.9  2004/08/11 01:59:41  cheshire
 Remove "mDNS *globalInstance" parameter from udsserver_init()
 
@@ -416,7 +420,7 @@ static OSStatus	InstallService( const char *inName, const char *inDisplayName, c
 	require_noerr( err, exit );
 	
 	service = CreateService( scm, inName, inDisplayName, SERVICE_ALL_ACCESS, SERVICE_WIN32_SHARE_PROCESS, 
-							 SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, inPath, NULL, NULL, kServiceDependencies, 
+							 SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, fullPath, NULL, NULL, kServiceDependencies, 
 							 NULL, NULL );
 	err = translate_errno( service, (OSStatus) GetLastError(), kDuplicateErr );
 	require_noerr( err, exit );
