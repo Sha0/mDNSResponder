@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.15  2003/05/23 22:39:45  cheshire
+<rdar://problem/3268151> Need to adjust maximum packet size for IPv6
+
 Revision 1.14  2003/04/28 21:54:57  cheshire
 Fix compiler warning
 
@@ -128,12 +131,13 @@ typedef struct
 
 // We can send and receive packets up to 9000 bytes (Ethernet Jumbo Frame size, if that ever becomes widely used)
 // However, in the normal case we try to limit packets to 1500 bytes so that we don't get IP fragmentation on standard Ethernet
-#define AbsoluteMaxDNSMessageData 8960
-#define NormalMaxDNSMessageData 1460
+// 40 (IPv6 header) + 8 (UDP header) + 12 (DNS message header) + 1440 (DNS message body) = 1500 total
+#define AbsoluteMaxDNSMessageData 8940
+#define NormalMaxDNSMessageData 1440
 typedef struct
 	{
 	DNSMessageHeader h;						// Note: Size 12 bytes
-	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 20 (IP) + 8 (UDP) + 12 (header) + 8960 (data) = 9000
+	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 40 (IPv6) + 8 (UDP) + 12 (DNS header) + 8940 (data) = 9000
 	} DNSMessage;
 
 // ***************************************************************************
