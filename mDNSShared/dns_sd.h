@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.12  2004/05/07 21:11:07  ksekar
+API Update: Exposed new core error codes.  Added constants for
+InterfaceIndexAny and InterfaceIndexLocalOnly.  Added flag for
+long-lived unicast queries via DNSServiceQueryRecord.
+
 Revision 1.11  2004/05/07 20:51:18  ksekar
 <rdar://problem/3608226>: dns_sd.h needs to direct developers to
 register their services at <http://www.dns-sd.org/ServiceTypes.html>
@@ -128,11 +133,14 @@ enum
      */
 
     kDNSServiceFlagsBrowseDomains       = 0x40,
-    kDNSServiceFlagsRegistrationDomains = 0x80
+    kDNSServiceFlagsRegistrationDomains = 0x80,
     /* Flags for specifying domain enumeration type in DNSServiceEnumerateDomains.
      * BrowseDomains enumerates domains recommended for browsing, RegistrationDomains
      * enumerates domains recommended for registration.
      */
+
+    kDNSServiceFlagsLongLivedQuery      = 0x100
+    /* Flag for creating a long-lived unicast query for the DNSServiceQueryRecord call. */
     };
 
 /* possible error code values */
@@ -152,7 +160,10 @@ enum
     kDNSServiceErr_NameConflict        = -65548,
     kDNSServiceErr_Invalid             = -65549,
     kDNSServiceErr_Incompatible        = -65551,        /* client library incompatible with daemon */
-    kDNSServiceErr_BadinterfaceIndex   = -65552
+    kDNSServiceErr_BadinterfaceIndex   = -65552,
+    kDNSServiceErr_Refused             = -65553,
+    kDNSServiceErr_NoSuchRecord        = -65554,
+    kDNSServiceErr_NoAuth              = -65555,
     /* mDNS Error codes are in the range
      * FFFE FF00 (-65792) to FFFE FFFF (-65537) */
     };
@@ -160,12 +171,22 @@ enum
 
 /* Maximum length, in bytes, of a domain name represented as an escaped C-String */
 /* including the final trailing dot, and the C-String terminating NULL at the end */
+
 #define kDNSServiceMaxDomainName 1005
 
+/* Constants for specifying an interface index.  Specific interface indexes are
+ * identified via a 32-bit unsigned integer returned by the if_nametoindex()
+ * family of calls
+ */
+    
+#define kDNSServiceInterfaceIndexAny 0
+#define kDNSServiceInterfaceIndexLocalOnly ( (uint32_t) ~0 )
 
+
+    
 typedef uint32_t DNSServiceFlags;
 typedef int32_t DNSServiceErrorType;
-
+    
 
 /*********************************************************************************************
  *
@@ -991,7 +1012,12 @@ typedef void (*DNSServiceQueryRecordReply)
  *
  * sdRef:           A pointer to an uninitialized DNSServiceRef.
  *
- * flags:           Currently unused, reserved for future use.
+ * flags:           Pass kDNSServiceFlagsLongLivedQuery to create a "long-lived" unicast
+ *                  query in a non-local domain.  Without setting this flag, unicast queries
+ *                  will be one-shot - that is, only answers available at the time of the call
+ *                  will be returned.  By setting this flag, answers (including Add and Remove
+ *                  events) that become available after the initial call is made will generate
+ *                  callbacks.  This flag has no effect on link-local multicast queries.
  * 
  * interfaceIndex:  If non-zero, specifies the interface on which to issue the query
  *                  (the index for a given interface is determined via the if_nametoindex()
