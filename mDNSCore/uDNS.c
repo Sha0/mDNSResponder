@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.100  2004/10/20 02:16:41  cheshire
+Improve "could not confirm existence of NS record" error message
+Don't call newRR->RecordCallback if it is NULL
+
 Revision 1.99  2004/10/19 21:33:18  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
@@ -2882,7 +2886,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 	DNSQuestion *query = &context->question;
 	mStatus err;
 	LargeCacheRecord lcr;
-	ResourceRecord *rr = &lcr.r.resrec;
+	const ResourceRecord *const rr = &lcr.r.resrec;
 	const mDNSu8 *ptr;
 	int i;
 		
@@ -2912,7 +2916,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 				return smContinue;  // next routine will examine additionals section of A record				
 				}				
 			}
-		LogMsg("ERROR: could not confirm existence of NS record %##s", context->zone.c);
+		LogMsg("ERROR: could not confirm existence of record %##s NS %##s", context->zone.c, context->ns.c);
 		return smError;
 		}
 	else { LogMsg("ERROR: confirmNS - bad state %d", context->state); return smError; }
@@ -3285,7 +3289,8 @@ error:
 		newRR->uDNS_info.state = regState_Unregistered;
 		}
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-	newRR->RecordCallback(m, newRR, err);
+	if (newRR->RecordCallback)
+		newRR->RecordCallback(m, newRR, err);
 	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	// NOTE: not safe to touch any client structures here
 	}
