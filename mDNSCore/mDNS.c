@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.200  2003/07/03 23:55:26  cheshire
+Minor change to wording of syslog warning messages
+
 Revision 1.199  2003/07/03 23:51:13  cheshire
 <rdar://problem/3315652>:	Lots of "have given xxx answers" syslog warnings
 Added more detailed debugging information
@@ -3780,7 +3783,9 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				{
 				static mDNSs32 lastmsg = 0;
 				if ((mDNSu32)(m->timenow - lastmsg) < (mDNSu32)mDNSPlatformOneSecond/10)	// Yes, this *is* supposed to be unsigned
-					LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%lu); next in %ld ticks (only bad if it happens more than a few times per minute)",
+					LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%lu); next in %ld ticks "
+						"(Only bad if it happens more than a few times per minute. "
+						"This message will be removed before Panther ships.)",
 						(mDNSu32)(m->timenow - lastmsg), m->NextCacheCheck - m->timenow);
 				lastmsg = m->timenow;
 				}
@@ -4263,7 +4268,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						{
 						// Although MPUnansweredQ is only really used for multi-packet query processing,
 						// we increment it for both single-packet and multi-packet queries, so that it stays in sync
-						// with the MPUnansweredKA value, which by necessity is incremented for all both query types.
+						// with the MPUnansweredKA value, which by necessity is incremented for both query types.
 						rr->MPUnansweredQ++;
 						rr->MPLastUnansweredQT = m->timenow;
 						rr->MPExpectingKA = mDNStrue;
@@ -4448,7 +4453,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 							{
 							if (query->h.flags.b[0] & kDNSFlag0_TC)
 								LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
-									"client at a time %.16a %ld %.16a (only bad if it happens more than a few times per minute)",
+									"client at a time %.16a %ld %.16a "
+									"(Only bad if it happens more than a few times per minute. "
+									"This message will be removed before Panther ships.)",
 									rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
 							rr->v6Requester = onesIPv6Addr;
 							}
