@@ -126,7 +126,7 @@ FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     CONTROL         119,IDC_STATIC,"Static",SS_BITMAP | SS_REALSIZEIMAGE,0,0,
                     265,131
-    CONTROL         "Explorer Plugin 1.0.5",IDC_COMPONENT,"Static",SS_SIMPLE | 
+    CONTROL         MASTER_PROD_VERS_STR3,IDC_COMPONENT,"Static",SS_SIMPLE | 
                     WS_GROUP,102,50,122,8
     LTEXT           "Copyright (c) 2004 Apple Computer, Inc. All rights reserved. Apple and the Apple logo are trademarks of Apple Computer, Inc., registered in the U.S. and other countries.",
                     IDC_LEGAL,102,78,121,50,0,WS_EX_RTLREADING
