@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.4  2003/04/18 00:45:21  cheshire
+ * Distinguish announcements (AN) from deletions (DE)
+ *
  * Revision 1.3  2003/04/15 18:26:01  cheshire
  * Added timestamps and help information
  *
@@ -271,10 +274,12 @@ mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, c
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
+		const char *op = "AN";
 		ptr = getResourceRecord(msg, ptr, end, InterfaceID, 0, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
 		NumAnswers++;
-		mprintf("%#-16a (AN) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
+		if (pktrr.rroriginalttl == 0) op = "DE";
+		mprintf("%#-16a (%s) %-5s %##s", srcaddr, op, DNSTypeName(pktrr.rrtype), pktrr.name.c);
 		if (pktrr.rrtype == kDNSType_PTR) mprintf("-> %##s", pktrr.rdata->u.name.c);
 		mprintf("\n");
 		recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
@@ -365,6 +370,7 @@ mDNSexport int main(int argc, char **argv)
 		fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
 		fprintf(stderr, "(AN)           Answer to question (or periodic announcment)\n");
 		fprintf(stderr, "(AD)           Additional record\n");
+		fprintf(stderr, "(DE)           Deletion (record going away)\n");
 		}
 	return(0);
 	}
