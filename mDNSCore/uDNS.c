@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.46  2004/06/09 01:44:30  ksekar
+<rdar://problem/3681378> reworked Cache Record copy code
+
 Revision 1.45  2004/06/08 18:54:47  ksekar
 <rdar://problem/3681378>: mDNSResponder leaks after exploring in Printer Setup Utility
 
@@ -574,16 +577,14 @@ mDNSlocal void removeKnownAnswer(DNSQuestion *question, CacheRecord *rr)
 mDNSlocal void addKnownAnswer(DNSQuestion *question, const CacheRecord *rr)
 	{
 	CacheRecord *newCR = NULL;
-	int rdsize = InlineCacheRDSize;
+	int size;	
 
-	if (rr->resrec.rdlength > InlineCacheRDSize) rdsize = rr->resrec.rdlength;	
-	newCR = (CacheRecord *)umalloc(sizeof(CacheRecord) + rdsize - InlineCacheRDSize);
+	size = sizeof(CacheRecord) + rr->resrec.rdlength - InlineCacheRDSize;
+	newCR = (CacheRecord *)umalloc(size);
 	if (!newCR) { LogMsg("ERROR: addKnownAnswer - malloc"); return; }
-
-	umemcpy(&newCR->resrec, &rr->resrec, sizeof(ResourceRecord));
-	newCR->resrec.rdata = (RData*)&rr->rdatastorage;
-	newCR->resrec.rdata->MaxRDLength = rdsize;
-	umemcpy(newCR->resrec.rdata->u.data, rr->resrec.rdata->u.data, rr->resrec.rdlength);
+	umemcpy(newCR, rr, size);
+	newCR->resrec.rdata = (RData*)&newCR->rdatastorage;
+	newCR->resrec.rdata->MaxRDLength = rr->resrec.rdlength;
 	newCR->next = question->uDNS_info.knownAnswers;
 	question->uDNS_info.knownAnswers = newCR;
 	}
@@ -1009,7 +1010,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			//!!!KRS we should have a hashtable, hashed on message id
 			if (qptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
-				if (msg->h.flags.b[0] & kDNSFlag0_TC)  hndlTruncatedAnswer(qptr, srcaddr, m);
+				if (msg->h.flags.b[0] & kDNSFlag0_TC)
+					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
 				else
 					{
 					u->CurrentQuery = qptr;
@@ -2037,8 +2039,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 		}
 	else { LogMsg("ERROR: confirmNS - bad state %d", context->state); return smError; }
 	}
-		
-	
+
 mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
 	{
 	const mDNSu8 *ptr;
@@ -2101,6 +2102,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 		}
 	else { LogMsg("ERROR: lookupNSAddr - bad state %d", context->state); return smError; }
 	}
+
 
 mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext *context, char *portName, mDNSIPPort *port)
 	{
