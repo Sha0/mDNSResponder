@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.111  2003/08/21 02:21:50  cheshire
+<rdar://problem/3386473> Efficiency: Reduce repeated queries
+
 Revision 1.110  2003/08/20 23:39:31  cheshire
 <rdar://problem/3344098> Review syslog messages, and remove as appropriate
 
@@ -860,6 +863,7 @@ struct DNSQuestion_struct
 	mDNSu32               RecentAnswers;	// Number of answers since the last time we sent this query
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
 	mDNSu32               LargeAnswers;		// Number of answers with rdata > 1024 bytes
+	mDNSu32               UniqueAnswers;	// Number of answers received with kDNSClass_UniqueRRSet bit set
 	DNSQuestion          *DuplicateOf;
 	DNSQuestion          *NextInDQList;
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.289  2003/08/21 02:21:50  cheshire
+<rdar://problem/3386473> Efficiency: Reduce repeated queries
+
 Revision 1.288  2003/08/20 23:39:30  cheshire
 <rdar://problem/3344098> Review syslog messages, and remove as appropriate
 
@@ -3544,6 +3547,25 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 					}
 				}
 
+		// Traffic reduction:
+		// If we already have at least one unique answer in the cache,
+		// OR we have so many shared answers that the KA list is too big to fit in one packet
+		// The we suppress queries number 3 and 5:
+		// Query 1 (immediately;      ThisQInterval =  1 sec; request unicast replies)
+		// Query 2 (after  1 second;  ThisQInterval =  2 sec; send normally)
+		// Query 3 (after  2 seconds; ThisQInterval =  4 sec; may suppress)
+		// Query 4 (after  4 seconds; ThisQInterval =  8 sec; send normally)
+		// Query 5 (after  8 seconds; ThisQInterval = 16 sec; may suppress)
+		// Query 6 (after 16 seconds; ThisQInterval = 32 sec; send normally)
+		if (q->UniqueAnswers || newptr + forecast >= limit)
+			if (q->ThisQInterval == InitialQuestionInterval * 8 || q->ThisQInterval == InitialQuestionInterval * 32)
+				{
+				query->h.numQuestions--;
+				ka = *kalistptrptr;		// Go back to where we started and retract these answer records
+				while (*ka) { CacheRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
+				return(mDNStrue);		// Return true: pretend we succeeded, even though we actually suppressed this question
+				}
+
 		// Success! Update our state pointers, increment UnansweredQueries as appropriate, and return
 		*queryptr        = newptr;				// Update the packet pointer
 		*answerforecast  = forecast;			// Update the forecast
@@ -3951,6 +3973,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			verbosedebugf("CacheRecordAdd %p %##s (%s) %lu", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), rr->resrec.rroriginalttl);
 			q->CurrentAnswers++;
 			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
+			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
 			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
@@ -3983,6 +4006,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 				{
 				q->CurrentAnswers--;
 				if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers--;
+				if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers--;
 				}
 			if (q->CurrentAnswers == 0)
 				{
@@ -4090,6 +4114,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ShouldQueryImmediately = mDNSfalse;
 			q->CurrentAnswers++;
 			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
+			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
 			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
@@ -5314,9 +5339,19 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					rr->TimeRcvd  = m->timenow;
 					
 					// If this record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
-					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+					if (pkt.r.resrec.RecordType & kDNSRecordTypeUniqueMask)
+						{
 						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList)
 							{ *cfp = rr; cfp = &rr->NextInCFList; }
+
+						// If this packet record is marked unique, and our previous cached copy was not, then fix it
+						if (!(rr->resrec.RecordType & kDNSRecordTypeUniqueMask))
+							{
+							DNSQuestion *q;
+							for (q = m->Questions; q; q=q->next) if (ResourceRecordAnswersQuestion(&rr->resrec, q)) q->UniqueAnswers++;
+							rr->resrec.RecordType = pkt.r.resrec.RecordType;
+							}
+						}
 
 					if (pkt.r.resrec.rroriginalttl > 0)
 						{
@@ -5511,6 +5546,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->RecentAnswers  = 0;
 		question->CurrentAnswers = 0;
 		question->LargeAnswers   = 0;
+		question->UniqueAnswers  = 0;
 		question->DuplicateOf    = FindDuplicateQuestion(m, question);
 		question->NextInDQList   = mDNSNULL;
 		for (i=0; i<DupSuppressInfoSize; i++)
