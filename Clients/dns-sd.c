@@ -108,9 +108,55 @@ static volatile int timeOut = LONG_TIME;
 
 static uint16_t GetRRType(const char *s)
 	{
-	if      (!strcasecmp(s, "ptr")) return(kDNSServiceType_PTR);
-	else if (!strcasecmp(s, "srv")) return(kDNSServiceType_SRV);
-	else                         return(atoi(s));
+	if      (!strcasecmp(s, "A"       )) return(kDNSServiceType_A);
+	else if (!strcasecmp(s, "NS"      )) return(kDNSServiceType_NS);
+	else if (!strcasecmp(s, "MD"      )) return(kDNSServiceType_MD);
+	else if (!strcasecmp(s, "MF"      )) return(kDNSServiceType_MF);
+	else if (!strcasecmp(s, "CNAME"   )) return(kDNSServiceType_CNAME);
+	else if (!strcasecmp(s, "SOA"     )) return(kDNSServiceType_SOA);
+	else if (!strcasecmp(s, "MB"      )) return(kDNSServiceType_MB);
+	else if (!strcasecmp(s, "MG"      )) return(kDNSServiceType_MG);
+	else if (!strcasecmp(s, "MR"      )) return(kDNSServiceType_MR);
+	else if (!strcasecmp(s, "NULL"    )) return(kDNSServiceType_NULL);
+	else if (!strcasecmp(s, "WKS"     )) return(kDNSServiceType_WKS);
+	else if (!strcasecmp(s, "PTR"     )) return(kDNSServiceType_PTR);
+	else if (!strcasecmp(s, "HINFO"   )) return(kDNSServiceType_HINFO);
+	else if (!strcasecmp(s, "MINFO"   )) return(kDNSServiceType_MINFO);
+	else if (!strcasecmp(s, "MX"      )) return(kDNSServiceType_MX);
+	else if (!strcasecmp(s, "TXT"     )) return(kDNSServiceType_TXT);
+	else if (!strcasecmp(s, "RP"      )) return(kDNSServiceType_RP);
+	else if (!strcasecmp(s, "AFSDB"   )) return(kDNSServiceType_AFSDB);
+	else if (!strcasecmp(s, "X25"     )) return(kDNSServiceType_X25);
+	else if (!strcasecmp(s, "ISDN"    )) return(kDNSServiceType_ISDN);
+	else if (!strcasecmp(s, "RT"      )) return(kDNSServiceType_RT);
+	else if (!strcasecmp(s, "NSAP"    )) return(kDNSServiceType_NSAP);
+	else if (!strcasecmp(s, "NSAP_PTR")) return(kDNSServiceType_NSAP_PTR);
+	else if (!strcasecmp(s, "SIG"     )) return(kDNSServiceType_SIG);
+	else if (!strcasecmp(s, "KEY"     )) return(kDNSServiceType_KEY);
+	else if (!strcasecmp(s, "PX"      )) return(kDNSServiceType_PX);
+	else if (!strcasecmp(s, "GPOS"    )) return(kDNSServiceType_GPOS);
+	else if (!strcasecmp(s, "AAAA"    )) return(kDNSServiceType_AAAA);
+	else if (!strcasecmp(s, "LOC"     )) return(kDNSServiceType_LOC);
+	else if (!strcasecmp(s, "NXT"     )) return(kDNSServiceType_NXT);
+	else if (!strcasecmp(s, "EID"     )) return(kDNSServiceType_EID);
+	else if (!strcasecmp(s, "NIMLOC"  )) return(kDNSServiceType_NIMLOC);
+	else if (!strcasecmp(s, "SRV"     )) return(kDNSServiceType_SRV);
+	else if (!strcasecmp(s, "ATMA"    )) return(kDNSServiceType_ATMA);
+	else if (!strcasecmp(s, "NAPTR"   )) return(kDNSServiceType_NAPTR);
+	else if (!strcasecmp(s, "KX"      )) return(kDNSServiceType_KX);
+	else if (!strcasecmp(s, "CERT"    )) return(kDNSServiceType_CERT);
+	else if (!strcasecmp(s, "A6"      )) return(kDNSServiceType_A6);
+	else if (!strcasecmp(s, "DNAME"   )) return(kDNSServiceType_DNAME);
+	else if (!strcasecmp(s, "SINK"    )) return(kDNSServiceType_SINK);
+	else if (!strcasecmp(s, "OPT"     )) return(kDNSServiceType_OPT);
+	else if (!strcasecmp(s, "TKEY"    )) return(kDNSServiceType_TKEY);
+	else if (!strcasecmp(s, "TSIG"    )) return(kDNSServiceType_TSIG);
+	else if (!strcasecmp(s, "IXFR"    )) return(kDNSServiceType_IXFR);
+	else if (!strcasecmp(s, "AXFR"    )) return(kDNSServiceType_AXFR);
+	else if (!strcasecmp(s, "MAILB"   )) return(kDNSServiceType_MAILB);
+	else if (!strcasecmp(s, "MAILA"   )) return(kDNSServiceType_MAILA);
+	else if (!strcasecmp(s, "ANY"     )) return(kDNSServiceType_ANY);
+	else                                 return(atoi(s));
 	}
 
 //*************************************************************************************************************
@@ -297,8 +343,11 @@ static void DNSSD_API reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNS
 static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 	{
-	const unsigned char *rd = rdata;
+	const unsigned char *rd  = rdata;
+	const unsigned char *end = rdata + rdlen;
 	char rdb[1000];
+	char *p = rdb;
+	const char * const lim = rdb + sizeof(rdb);
 
 	(void)sdRef;    // Unused
 	(void)flags;    // Unused
@@ -310,7 +359,9 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint3
 	switch (rrtype)
 		{
 		case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
-		default : sprintf(rdb, "Unknown rdata: %d bytes", rdlen);          break;
+		default :	p += snprintf(p, lim-p, "%d bytes%s", rdlen, rdlen ? ":" : "");
+					while (rd < end && p < lim) p += snprintf(p, lim-p, " %02X", *rd++);
+					break;
 		}
 	printf("%-30s%4d%4d  %s\n", fullname, rrtype, rrclass, rdb);
 	}
