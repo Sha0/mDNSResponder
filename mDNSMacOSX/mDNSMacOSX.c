@@ -22,13 +22,16 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.76  2003/05/22 01:26:01  cheshire
+Tidy up log messages
+
 Revision 1.75  2003/05/22 00:07:09  cheshire
 <rdar://problem/3264366> myCFSocketCallBack recvfrom(5) error 1, errno 35
 Extra logging to determine whether there is a bug in CFSocket
 
 Revision 1.74  2003/05/21 20:20:12  cheshire
 Fix warnings (mainly printf format string warnings, like using "%d" where
-it should say "%lud", etc.) and improve error logging (use strerror()
+it should say "%lu", etc.) and improve error logging (use strerror()
 to include textual error message as well as numeric error in log messages).
 
 Revision 1.73  2003/05/21 17:56:29  ksekar
@@ -375,7 +378,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		}
 	if (msg.msg_controllen < (int)sizeof(struct cmsghdr))
 		{
-		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %lud",
+		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %lu",
 			s, msg.msg_controllen, sizeof(struct cmsghdr));
 		return(-1);
 		}
@@ -803,7 +806,6 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, char 
 
 mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 	{
-	debugf("SetupActiveInterfaces");
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
@@ -822,7 +824,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			{
 			n->InterfaceID = (mDNSInterfaceID)alias;
 			mDNS_RegisterInterface(m, n);
-			debugf("SetupActiveInterfaces: Registered  %s(%lud) InterfaceID %p %#a%s",
+			debugf("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
 				i->ifa_name, n->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 			}
 
@@ -832,15 +834,15 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			err = SetupSocket(i, UnicastDNSPort, &alias->skt53, &alias->cfs53);
 			#endif
 			if (!err) err = SetupSocket(i, MulticastDNSPort, &alias->sktv4, &alias->cfsv4);
-			if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lud) InterfaceID %p %#a", alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lud) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
 			}
 	
 		if (i->sa_family == AF_INET6 && alias->sktv6 == -1)
 			{
 			err = SetupSocket(i, MulticastDNSPort, &alias->sktv6, &alias->cfsv6);
-			if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lud) InterfaceID %p %#a", alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lud) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
 			}
 		}
 	}
