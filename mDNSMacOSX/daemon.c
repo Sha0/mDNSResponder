@@ -1230,7 +1230,10 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	if (!DeliverInstanceTimer) return(-1);
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), DeliverInstanceTimer, kCFRunLoopDefaultMode);
 	
-	err = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
+	err = mDNS_Init(&mDNSStorage, &PlatformStorage,
+		rrcachestorage, RR_CACHE_SIZE,
+		mDNS_Init_AdvertiseLocalAddresses,
+		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);
