@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.109  2003/08/15 02:19:49  cheshire
+<rdar://problem/3375225> syslog messages: myCFSocketCallBack recvfrom skt 6 error -1 errno 35
+Also limit number of messages to at most 100
+
 Revision 1.108  2003/08/12 22:24:52  cheshire
 <rdar://problem/3375225> syslog messages: myCFSocketCallBack recvfrom skt 6 error -1 errno 35
 This message indicates a kernel bug, but still we don't want to flood syslog.
@@ -509,7 +513,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	struct sockaddr *const from, size_t *const fromlen, mDNSAddr *dstaddr, char ifname[IF_NAMESIZE], mDNSu8 *ttl)
 	{
-	static int numLogMessages = 0;
+	static unsigned int numLogMessages = 0;
 	struct iovec databuffers = { (char *)buffer, max };
 	struct msghdr   msg;
 	ssize_t         n;
@@ -692,8 +696,10 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			LogMsg("myCFSocketCallBack getsockopt(SO_NREAD) error %d", errno);
 		if (ioctl(s1, FIONREAD, &fionread) == -1)
 			LogMsg("myCFSocketCallBack ioctl(FIONREAD) error %d", errno);
-		LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
-			s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
+		static unsigned int numLogMessages = 0;
+		if (numLogMessages++ < 100)
+			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
+				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
 		sleep(1);		// After logging this error, rate limit so we don't flood syslog
 		}
 	}
