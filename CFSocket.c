@@ -687,14 +687,14 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	(void)service;		// Parameter not used
 	switch(messageType)
 		{
-		case kIOMessageCanSystemPowerOff:     debugf("PowerChanged got kIOMessageCanSystemPowerOff (no action)");               break; // E0000240
-		case kIOMessageSystemWillPowerOff:    debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true);  break; // E0000250
-		case kIOMessageSystemWillNotPowerOff: debugf("PowerChanged got kIOMessageSystemWillNotPowerOff (no action)");           break; // E0000260
-		case kIOMessageCanSystemSleep:        debugf("PowerChanged got kIOMessageCanSystemSleep (no action)");                  break; // E0000270
-		case kIOMessageSystemWillSleep:       debugf("PowerChanged got kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break; // E0000280
-		case kIOMessageSystemWillNotSleep:    debugf("PowerChanged got kIOMessageSystemWillNotSleep (no action)");              break; // E0000290
-		case kIOMessageSystemHasPoweredOn:    debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break; // E0000300
-		default:                              debugf("PowerChanged got unknown message %X", messageType);                       break; // all others
+		case kIOMessageCanSystemPowerOff:     debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");               break; // E0000240
+		case kIOMessageSystemWillPowerOff:    debugf("PowerChanged kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true);  break; // E0000250
+		case kIOMessageSystemWillNotPowerOff: debugf("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");           break; // E0000260
+		case kIOMessageCanSystemSleep:        debugf("PowerChanged kIOMessageCanSystemSleep (no action)");                  break; // E0000270
+		case kIOMessageSystemWillSleep:       debugf("PowerChanged kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break; // E0000280
+		case kIOMessageSystemWillNotSleep:    debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");              break; // E0000290
+		case kIOMessageSystemHasPoweredOn:    debugf("PowerChanged kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break; // E0000300
+		default:                              debugf("PowerChanged unknown message %X", messageType);                       break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
 	}
@@ -778,14 +778,9 @@ mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTim
 	{
 	if (m->p->CFTimer)
 		{
-		// Due to a bug in CFRunLoopTimers, if you set them to any time in the past, they don't work
-		// Spot the obvious race condition: What defines "past"?
-		CFAbsoluteTime bugfix   = CFAbsoluteTimeGetCurrent() + 0.001;  // Add some slop to reduce risk of race condition
 		CFAbsoluteTime ticks    = (CFAbsoluteTime)(NextTaskTime - mDNSPlatformTimeNow());
 		CFAbsoluteTime interval = ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
-		CFAbsoluteTime firetime = CFAbsoluteTimeGetCurrent() + interval;
-		if (firetime < bugfix) firetime = bugfix;
-		CFRunLoopTimerSetNextFireDate(m->p->CFTimer, firetime);
+		CFRunLoopTimerSetNextFireDate(m->p->CFTimer, CFAbsoluteTimeGetCurrent() + interval);
 		}
 	}
 
