@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.9  2004/09/16 18:17:13  shersche
+Use background threads, cleanup to parameter names.
+Submitted by: prepin@gmail.com
+
 Revision 1.8  2004/09/13 19:35:58  shersche
 <rdar://problem/3798941> Add Apple.DNSSD namespace to MC++ wrapper class
 <rdar://problem/3798950> Change all instances of unsigned short to int
@@ -120,7 +124,8 @@ ServiceRef::StartThread()
 	m_impl->SetupEvents();
 
 	m_thread		=	new Thread(new ThreadStart(this, ProcessingThread));
-    m_thread->Name	=	S"DNSService Thread";
+	m_thread->Name	=	S"DNSService Thread";
+	m_thread->IsBackground = true;
 	
 	m_thread->Start();
 }
@@ -251,14 +256,14 @@ ServiceRef::ResolveDispatch
 			ErrorCode		errorCode,
 			String		*	fullname,
 			String		*	hosttarget,
-			int				notAnIntPort,
+			int				port,
 			Byte			txtRecord[]
 			)
 {
 	if ((m_callback != NULL) && (m_impl != NULL))
 	{
 		DNSService::ResolveReply * OnResolveReply = static_cast<DNSService::ResolveReply*>(m_callback);
-		OnResolveReply(this, flags, interfaceIndex, errorCode, fullname, hosttarget, notAnIntPort, txtRecord);
+		OnResolveReply(this, flags, interfaceIndex, errorCode, fullname, hosttarget, port, txtRecord);
 	}
 }
 
@@ -725,7 +730,7 @@ DNSService::Register
 				String			*	regtype,
 				String			*	domain,
 				String			*	host,
-				int					notAnIntPort,
+				int					port,
 				Byte				txtRecord[],
 				RegisterReply	*	callback
 				)
@@ -746,7 +751,7 @@ DNSService::Register
 		v		= (void*) p;
 	}
 
-	int err = DNSServiceRegister(&sdRef->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(), pHost->c_str(), htons(notAnIntPort), len, v, ServiceRef::ServiceRefImpl::RegisterCallback, sdRef->m_impl );
+	int err = DNSServiceRegister(&sdRef->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(), pHost->c_str(), htons(port), len, v, ServiceRef::ServiceRefImpl::RegisterCallback, sdRef->m_impl );
 
 	if (err != 0)
 	{
