@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.262  2003/08/08 19:50:33  cheshire
+<rdar://problem/3370332> Remove "Cache size now xxx" messages
+
 Revision 1.261  2003/08/08 19:18:45  cheshire
 <rdar://problem/3271219> Only retrigger questions on platforms with the "PhantomInterfaces" bug
 
@@ -3914,12 +3917,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 			debugf("Possible denial-of-service attack in progress: m->rrcache_size %lu; m->rrcache_active %lu",
 				m->rrcache_size, m->rrcache_active);
 		else
-			{
-			mDNSu32 oldsize = m->rrcache_size;
 			m->MainCallback(m, mStatus_GrowCache);
-			LogMsg("GetFreeCacheRR: Cache size was %lu; total used %lu; total active %lu; Cache size now %lu",
-				oldsize, m->rrcache_totalused, m->rrcache_active, m->rrcache_size);
-			}
 		}
 	
 	// If we still have no free records, recycle all the records we can.
