@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.159  2003/06/03 03:31:57  cheshire
+<rdar://problem/3277033> False self-conflict when there are duplicate registrations on one machine
+
 Revision 1.158  2003/06/02 22:57:09  cheshire
 Minor clarifying changes to comments and log messages;
 IdenticalResourceRecordAnyInterface() is really more accurately called just IdenticalResourceRecord()
@@ -1338,8 +1341,8 @@ mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool R
 	{
 	mDNSu16 l = name->c[0];
 	
-	if (RichText) 
-		{ 
+	if (RichText)
+		{
 		if (l < 4) return mDNSfalse;							// Need at least " (2)"
 		if (name->c[l--] != ')') return mDNSfalse;				// Last char must be ')'
 		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;			// Preceeded by a digit
@@ -1358,7 +1361,7 @@ mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool R
 	}
 
 // removes an auto-generated suffix (appended on a name collision) from a label.  caller is
-// responsible for ensuring that the label does indeed contain a suffix.  returns the number 
+// responsible for ensuring that the label does indeed contain a suffix.  returns the number
 // from the suffix that was removed.
 mDNSlocal mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 	{
@@ -1366,13 +1369,13 @@ mDNSlocal mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 		
 	if (RichText) name->c[0]--;  // chop closing parentheses from RT suffix
 	// Get any existing numerical suffix off the name
-	while (mdnsIsDigit(name->c[name->c[0]])) 
-		{ val += (name->c[name->c[0]] - '0') * multiplier; multiplier *= 10; name->c[0]--; }	
+	while (mdnsIsDigit(name->c[name->c[0]]))
+		{ val += (name->c[name->c[0]] - '0') * multiplier; multiplier *= 10; name->c[0]--; }
 	name->c[0] -= 2;  // chop opening parentheses and whitespace (RT) or double-hyphen (RFC 1034)
 	return(val);
 	}
 
-// appends a numerical suffix to a label, with the number following a whitespace and enclosed 
+// appends a numerical suffix to a label, with the number following a whitespace and enclosed
 // in parentheses (rich text) or following two consecutive hyphens (RFC 1034 domain label).
 mDNSlocal void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 	{
@@ -1409,7 +1412,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	{
 	mDNSu32 val = 0;
 
-	if (LabelContainsSuffix(name, RichText)) 
+	if (LabelContainsSuffix(name, RichText))
 		val = RemoveLabelSuffix(name, RichText);
 		
 	// If existing suffix, increment it, else start by renaming "Foo" as "Foo (2)" or "Foo--2" as appropriate.
@@ -1422,7 +1425,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	else 			val = mDNSRandom(8999) + 1000;
 	
 	AppendLabelSuffix(name, val, RichText);
-	}	
+	}
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -1532,7 +1535,7 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 	}
 
 // PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if the
-// authoratative record is in the probing state.  Probes are sent with the wildcard type, so a response of 
+// authoratative record is in the probing state.  Probes are sent with the wildcard type, so a response of
 // any type should match, even if it is not the type the client plans to use.
 mDNSlocal mDNSBool PacketRRMatchesSignature(const ResourceRecord *const pktrr, const ResourceRecord *const authrr)
 	{
@@ -1840,7 +1843,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 			RData *OldRData = rr->rdata;
 			rr->rdata = rr->NewRData;	// Update our rdata
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-			if (rr->UpdateCallback)	
+			if (rr->UpdateCallback)
 				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
 			}
 		
@@ -2505,8 +2508,9 @@ mDNSlocal void SendResponses(mDNS *const m)
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if ((rr->RecordType & kDNSRecordTypeUniqueMask) && rr->ImmedAnswer)
 			for (r2 = m->ResourceRecords; r2; r2=r2->next)
-				if (r2->ImmedAnswer != mDNSInterfaceMark && r2->ImmedAnswer != rr->ImmedAnswer && SameResourceRecordSignature(r2, rr))
-					r2->ImmedAnswer = rr->ImmedAnswer;
+				if (ResourceRecordIsValidAnswer(r2))
+					if (r2->ImmedAnswer != mDNSInterfaceMark && r2->ImmedAnswer != rr->ImmedAnswer && SameResourceRecordSignature(r2, rr))
+						r2->ImmedAnswer = rr->ImmedAnswer;
 
 	// Now set SendRNow state appropriately
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -3734,26 +3738,28 @@ mDNSlocal int CompareRData(ResourceRecord *our, ResourceRecord *pkt)
 	return(-1);
 	}
 
-// Find the canonical DependentOn record for this RR received in a packet.
+// See if we have an authoritative record that's identical to this packet record,
+// whose canonical DependentOn record is the specified master record.
 // The DependentOn pointer is typically used for the TXT record of service registrations
 // It indicates that there is no inherent conflict detection for the TXT record
 // -- it depends on the SRV record to resolve name conflicts
-// If we find any identical ResourceRecord in our authoritative list, then follow its DependentOn
-// pointers (if any) to make sure we return the canonical DependentOn record
+// If we find any identical ResourceRecords in our authoritative list, then follow their DependentOn
+// pointer chain (if any) to make sure we reach the canonical DependentOn record
 // If the record has no DependentOn, then just return that record's pointer
 // Returns NULL if we don't have any local RRs that are identical to the one from the packet
-mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const ResourceRecord *const pktrr)
+mDNSlocal mDNSBool MatchDependentOn(const mDNS *const m, const ResourceRecord *const pktrr, const ResourceRecord *const master)
 	{
-	const ResourceRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
+	const ResourceRecord *r1;
+	for (r1 = m->ResourceRecords; r1; r1=r1->next)
 		{
-		if (IdenticalResourceRecord(rr, pktrr))
+		if (IdenticalResourceRecord(r1, pktrr))
 			{
-			while (rr->DependentOn) rr = rr->DependentOn;
-			return(rr);
+			const ResourceRecord *r2 = r1;
+			while (r2->DependentOn) r2 = r2->DependentOn;
+			if (r2 == master) return(mDNStrue);
 			}
 		}
-	return(mDNSNULL);
+	return(mDNSfalse);
 	}
 
 // Find the canonical RRSet pointer for this RR received in a packet.
@@ -3791,7 +3797,7 @@ mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const ResourceRecord *c
 	if (!(our->RecordType & kDNSRecordTypeUniqueMask)) return(mDNSfalse);
 
 	// If a dependent record, not a conflict
-	if (our->DependentOn || FindDependentOn(m, pktrr) == our) return(mDNSfalse);
+	if (our->DependentOn || MatchDependentOn(m, pktrr, our)) return(mDNSfalse);
 
 	// If the pktrr matches a member of ourset, not a conflict
 	if (FindRRSet(m, pktrr) == ourset) return(mDNSfalse);
@@ -4181,13 +4187,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							}
 						else if (rr->rrtype == kDNSType_PTR)
 							{
-							debugf("mDNSCoreReceiveResponse: Our PTR Data %d %##s", rr->rdata->RDLength,   rr->rdata->u.name.c);
-							debugf("mDNSCoreReceiveResponse: Pkt PTR Data %d %##s", pktrr.rdata->RDLength, pktrr.rdata->u.name.c);
+							debugf("mDNSCoreReceiveResponse: Our PTR Len %d Data %##s", rr->rdata->RDLength,   rr->rdata->u.name.c);
+							debugf("mDNSCoreReceiveResponse: Pkt PTR Len %d Data %##s", pktrr.rdata->RDLength, pktrr.rdata->u.name.c);
 							}
 						else if (rr->rrtype == kDNSType_TXT)
 							{
-							debugf("mDNSCoreReceiveResponse: Our TXT Data %d %#s", rr->rdata->RDLength,   rr->rdata->u.txt.c);
-							debugf("mDNSCoreReceiveResponse: Pkt TXT Data %d %#s", pktrr.rdata->RDLength, pktrr.rdata->u.txt.c);
+							debugf("mDNSCoreReceiveResponse: Our TXT Len %d Data %#s", rr->rdata->RDLength,   rr->rdata->u.txt.c);
+							debugf("mDNSCoreReceiveResponse: Pkt TXT Len %d Data %#s", pktrr.rdata->RDLength, pktrr.rdata->u.txt.c);
 							}
 						else if (rr->rrtype == kDNSType_AAAA)
 							{
@@ -4196,8 +4202,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							}
 						else if (rr->rrtype == kDNSType_SRV)
 							{
-							debugf("mDNSCoreReceiveResponse: Our SRV Data %d %##s", rr->rdata->RDLength,   rr->rdata->u.srv.target.c);
-							debugf("mDNSCoreReceiveResponse: Pkt SRV Data %d %##s", pktrr.rdata->RDLength, pktrr.rdata->u.srv.target.c);
+							debugf("mDNSCoreReceiveResponse: Our SRV Len %d Data %##s", rr->rdata->RDLength,   rr->rdata->u.srv.target.c);
+							debugf("mDNSCoreReceiveResponse: Pkt SRV Len %d Data %##s", pktrr.rdata->RDLength, pktrr.rdata->u.srv.target.c);
 							}
 
 						// If this record is marked DependentOn another record for conflict detection purposes,
@@ -4953,7 +4959,7 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
 			if (intf->Advertise) mDNS_AdvertiseInterface(m, intf);
 
-		// 3. Make sure that any SRV records (and the like) that reference our 
+		// 3. Make sure that any SRV records (and the like) that reference our
 		// host name in their rdata get updated to reference this new host name
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->HostTarget) SetTargetToHostName(m, rr);
