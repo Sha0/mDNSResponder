@@ -304,7 +304,7 @@ mDNSlocal void AbortBlockedClient(mach_port_t c, char *m)
 	else if (*b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b[0]->q.name, m);
 	else if (*l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l[0]->i.name, m);
 	else if (*r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r[0]->s.RR_SRV.name, m);
-	else         LogMsg("%5d (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
+	else         LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
 
 	AbortClient(c);
 	}
@@ -328,9 +328,9 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort)
 	kern_return_t r = mach_port_request_notification(mach_task_self(), ClientMachPort, MACH_NOTIFY_DEAD_NAME, 0,
 													 client_death_port, MACH_MSG_TYPE_MAKE_SEND_ONCE, &prev);
 	// If the port already died while we were thinking about it, then abort the operation right away
-	if (r != KERN_SUCCESS)
+	if (r != KERN_SUCCESS && ClientMachPort != -1)
 		{
-		LogMsg("Client %5d died before we could enable death notification", ClientMachPort);
+		LogMsg("%5d: died before we could enable death notification", ClientMachPort);
 		AbortClient(ClientMachPort);
 		}
 	}
