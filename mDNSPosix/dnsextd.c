@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.22  2004/12/03 20:20:29  ksekar
+<rdar://problem/3904149> dnsextd: support delivery of large records via LLQ events
+
 Revision 1.21  2004/12/03 06:11:34  ksekar
 <rdar://problem/3885059> clean up dnsextd arguments
 
@@ -1302,7 +1305,7 @@ mDNSlocal void UpdateAnswerList(DaemonInfo *d, LLQEntry *e, CacheRecord *answers
 	msgID.NotAnInteger = random();
 	InitializeDNSMessage(&response.msg.h, msgID, ResponseFlags);
 	end = putQuestion(&response.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
-	if (!end) { Log("Error: UpdateAnswerList - PutResourceRecordTTL returned NULL"); return; }
+	if (!end) { Log("Error: UpdateAnswerList - putQuestion returned NULL"); return; }
 
 	if (verbose) inet_ntop(AF_INET, &e->cli.sin_addr, addrbuf, 32);
 	// put adds/removes in packet
@@ -1312,7 +1315,7 @@ mDNSlocal void UpdateAnswerList(DaemonInfo *d, LLQEntry *e, CacheRecord *answers
 			{
 			if (verbose) GetRRDisplayString_rdb(&ka->resrec, &ka->resrec.rdata->u, rrbuf);
 			VLog("%s (%s): %s", addrbuf, (mDNSs32)ka->resrec.rroriginalttl < 0 ? "Remove": "Add", rrbuf);				 
-			end = PutResourceRecordTTL(&response.msg, end, &response.msg.h.numAnswers, &ka->resrec, ka->resrec.rroriginalttl);
+			end = PutResourceRecordTTLJumbo(&response.msg, end, &response.msg.h.numAnswers, &ka->resrec, ka->resrec.rroriginalttl);
 			if (!end) { Log("Error: UpdateAnswerList - UpdateAnswerList returned NULL"); return; }
 			}
 		}
@@ -1337,8 +1340,8 @@ mDNSlocal void UpdateAnswerList(DaemonInfo *d, LLQEntry *e, CacheRecord *answers
 		}
 			   
 	FormatLLQOpt(&opt, kLLQOp_Event, e->id, LLQLease(e));
-	end = PutResourceRecordTTL(&response.msg, end, &response.msg.h.numAdditionals, &opt.resrec, 0);
-	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+	end = PutResourceRecordTTLJumbo(&response.msg, end, &response.msg.h.numAdditionals, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 
 	response.len = (int)(end - (mDNSu8 *)&response.msg);
 	if (response.msg.h.numAnswers)
@@ -1530,8 +1533,8 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 	if (!end) { Log("Error: putQuestion"); return; }
 
 	FormatLLQOpt(&opt, kLLQOp_Refresh, e->id, llq->lease ? LLQLease(e) : 0);
-	end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
-	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+	end = PutResourceRecordTTLJumbo(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 
 	ack.len = (int)(end - (mDNSu8 *)&ack.msg);
 	if (SendLLQ(d, &ack, e->cli)) Log("Error: LLQRefresh"); 
@@ -1575,13 +1578,13 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 		{
 		if (verbose) GetRRDisplayString_rdb(&ptr->resrec, &ptr->resrec.rdata->u, rrbuf);
 		VLog("%s Intitial Answer - %s", addr, rrbuf);
-		end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAnswers, &ptr->resrec, 1);
-		if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+		end = PutResourceRecordTTLJumbo(&ack.msg, end, &ack.msg.h.numAnswers, &ptr->resrec, 1);
+		if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 		}
 
 	FormatLLQOpt(&opt, kLLQOp_Setup, e->id, LLQLease(e));
-	end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
-	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+	end = PutResourceRecordTTLJumbo(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 
 	ack.len = (int)(end - (mDNSu8 *)&ack.msg);
 	if (SendLLQ(d, &ack, e->cli)) Log("Error: LLQCompleteHandshake");
@@ -1616,8 +1619,8 @@ mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mD
 	end = putQuestion(&challenge.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
 	if (!end) { Log("Error: putQuestion"); return; }	
 	FormatLLQOpt(&opt, kLLQOp_Setup, e->id, LLQLease(e));
-	end = PutResourceRecordTTL(&challenge.msg, end, &challenge.msg.h.numAdditionals, &opt.resrec, 0);
-	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+	end = PutResourceRecordTTLJumbo(&challenge.msg, end, &challenge.msg.h.numAdditionals, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 	challenge.len = (int)(end - (mDNSu8 *)&challenge.msg);
 	if (SendLLQ(d, &challenge, e->cli)) { Log("Error: LLQSetupChallenge"); return; }
 	e->state = ChallengeSent;
