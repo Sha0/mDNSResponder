@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.488  2004/12/10 19:50:41  cheshire
+<rdar://problem/3915074> Reduce egregious stack space usage
+Reduced SendResponses() stack frame from 9K to 176 bytes
+
 Revision 1.487  2004/12/10 19:39:13  cheshire
 <rdar://problem/3915074> Reduce egregious stack space usage
 Reduced SendQueries() stack frame from 18K to 112 bytes
@@ -2846,10 +2850,9 @@ mDNSlocal void SendResponses(mDNS *const m)
 		int numDereg    = 0;
 		int numAnnounce = 0;
 		int numAnswer   = 0;
-		DNSMessage response;
-		mDNSu8 *responseptr = response.data;
+		mDNSu8 *responseptr = m->omsg.data;
 		mDNSu8 *newptr;
-		InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
+		InitializeDNSMessage(&m->omsg.h, zeroID, ResponseFlags);
 	
 		// First Pass. Look for:
 		// 1. Deregistering records that need to send their goodbye packet
@@ -2864,8 +2867,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 				{
 				if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 					{
-					newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, 0);
-					if (!newptr && response.h.numAnswers) break;
+					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
+					if (!newptr && m->omsg.h.numAnswers) break;
 					numDereg++;
 					responseptr = newptr;
 					}
@@ -2876,8 +2879,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 					// See if we should send a courtesy "goodbye" for the old data before we replace it.
 					if (ResourceRecordIsValidAnswer(rr) && rr->RequireGoodbye)
 						{
-						newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, 0);
-						if (!newptr && response.h.numAnswers) break;
+						newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
+						if (!newptr && m->omsg.h.numAnswers) break;
 						numDereg++;
 						responseptr = newptr;
 						}
@@ -2885,7 +2888,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
-					newptr = PutResourceRecord(&response, responseptr, &response.h.numAnswers, &rr->resrec);
+					newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (newptr) responseptr = newptr;
 					SetNewRData(&rr->resrec, OldRData, oldrdlength);
@@ -2894,9 +2897,9 @@ mDNSlocal void SendResponses(mDNS *const m)
 					{
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
-					newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, m->SleepState ? 0 : rr->resrec.rroriginalttl);
+					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, m->SleepState ? 0 : rr->resrec.rroriginalttl);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
-					if (!newptr && response.h.numAnswers) break;
+					if (!newptr && m->omsg.h.numAnswers) break;
 					rr->RequireGoodbye = !m->SleepState;
 					if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
 					responseptr = newptr;
@@ -2915,7 +2918,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				if (ResourceRecordIsValidAnswer(rr))
 					{
 					// If we have at least one answer already in the packet, then plan to add additionals too
-					mDNSBool SendAdditional = (response.h.numAnswers > 0);
+					mDNSBool SendAdditional = (m->omsg.h.numAnswers > 0);
 					
 					// If we're not planning to send any additionals, but this record is a unique one, then
 					// make sure we haven't already sent any other members of its RRSet -- if we have, then they
@@ -2934,7 +2937,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 						{
 						if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
-						newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, &rr->resrec);
+						newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.numAdditionals, &rr->resrec);
 						rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear cache flush bit back to normal state
 						if (newptr)
 							{
@@ -2951,15 +2954,15 @@ mDNSlocal void SendResponses(mDNS *const m)
 						}
 					}
 	
-		if (response.h.numAnswers > 0 || response.h.numAdditionals)
+		if (m->omsg.h.numAnswers > 0 || m->omsg.h.numAdditionals)
 			{
 			debugf("SendResponses: Sending %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s on %p",
 				numDereg,                  numDereg                  == 1 ? "" : "s",
 				numAnnounce,               numAnnounce               == 1 ? "" : "s",
 				numAnswer,                 numAnswer                 == 1 ? "" : "s",
-				response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
-			if (intf->IPv4Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
-			if (intf->IPv6Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
+				m->omsg.h.numAdditionals, m->omsg.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
 			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+9)/10);
 			if (++pktcount >= 1000) { LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
 			// There might be more things to send on this interface, so go around one more time and try again.
