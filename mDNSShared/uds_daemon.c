@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.109  2004/11/04 03:40:45  cheshire
+More debugging messages
+
 Revision 1.108  2004/11/03 02:25:51  cheshire
 <rdar://problem/3324137> Conflict for Computer Name should update *all* empty string services, not just the one with the conflict
 
@@ -1229,18 +1232,19 @@ static void handle_resolve_request(request_state *rstate)
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
     InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
-    if (interfaceIndex && !InterfaceID) goto bad_param;
+    if (interfaceIndex && !InterfaceID)
+    	{ LogMsg("ERROR: handle_resolve_request - Couldn't find InterfaceID for interfaceIndex %d", interfaceIndex); goto bad_param; }
     if (get_string(&ptr, name, 256) < 0 ||
         get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
         get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
-        goto bad_param;
+    	{ LogMsg("ERROR: handle_resolve_request - Couldn't read name/regtype/domain"); goto bad_param; }
 
     // free memory in rstate since we don't need it anymore
     freeL("handle_resolve_request", rstate->msgbuf);
     rstate->msgbuf = NULL;
         
     if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
-        goto bad_param;
+    	{ LogMsg("ERROR: handle_resolve_request - Couldn't build_domainname_from_strings “%s” “%s” “%s”", name, regtype, domain); goto bad_param; }
 
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
@@ -1949,12 +1953,13 @@ static void handle_regservice_request(request_state *request)
     flags = get_flags(&ptr);
     ifi = get_long(&ptr);
     service->InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
-    if (ifi && !service->InterfaceID) goto bad_param;
+    if (ifi && !service->InterfaceID)
+    	{ LogMsg("ERROR: handle_regservice_request - Couldn't find InterfaceID for interfaceIndex %d", ifi); goto bad_param; }
     if (get_string(&ptr, name, 256) < 0 ||
         get_string(&ptr, service->type_as_string, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
         get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
         get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
-        goto bad_param;
+    	{ LogMsg("ERROR: handle_regservice_request - Couldn't read name/regtype/domain"); goto bad_param; }
         
     service->port.b[0] = *ptr++;
     service->port.b[1] = *ptr++;
@@ -1963,10 +1968,12 @@ static void handle_regservice_request(request_state *request)
 
 	// Check for sub-types after the service type
 	service->num_subtypes = ChopSubTypes(service->type_as_string);	// Note: Modifies regtype string to remove trailing subtypes
-	if (service->num_subtypes < 0) goto bad_param;
+	if (service->num_subtypes < 0)
+    	{ LogMsg("ERROR: handle_regservice_request - ChopSubTypes failed %s", service->type_as_string); goto bad_param; }
 
 	// Don't try to construct "domainname t" until *after* ChopSubTypes has worked its magic
-    if (!*service->type_as_string || !MakeDomainNameFromDNSNameString(&service->type, service->type_as_string)) goto bad_param;
+    if (!*service->type_as_string || !MakeDomainNameFromDNSNameString(&service->type, service->type_as_string))
+    	{ LogMsg("ERROR: handle_regservice_request - service->type_as_string bad %s", service->type_as_string); goto bad_param; }
 
     if (!name[0])
 		{
@@ -1975,14 +1982,16 @@ static void handle_regservice_request(request_state *request)
 		}
     else
 		{
-		if (!MakeDomainLabelFromLiteralString(&service->name, name)) goto bad_param;
+		if (!MakeDomainLabelFromLiteralString(&service->name, name))
+			{ LogMsg("ERROR: handle_regservice_request - name bad %s", name); goto bad_param; }
 		service->autoname = mDNSfalse;
 		}
         	
 	if (*domain)
 		{
 		service->default_domain = mDNSfalse;
-		if (!MakeDomainNameFromDNSNameString(&d, domain)) goto bad_param;
+		if (!MakeDomainNameFromDNSNameString(&d, domain))
+			{ LogMsg("ERROR: handle_regservice_request - domain bad %s", domain); goto bad_param; }
 		}
 	else
 		{
@@ -1990,9 +1999,11 @@ static void handle_regservice_request(request_state *request)
 		MakeDomainNameFromDNSNameString(&d, "local.");
 		}
 	
-	if (!ConstructServiceName(&srv, &service->name, &service->type, &d)) goto bad_param;
+	if (!ConstructServiceName(&srv, &service->name, &service->type, &d))
+		{ LogMsg("ERROR: handle_regservice_request - Couldn't ConstructServiceName from, “%#s” “%##s” “%##s”", service->name.c, service->type.c, d.c); goto bad_param; }
 		
-	if (!MakeDomainNameFromDNSNameString(&service->host, host)) goto bad_param;
+	if (!MakeDomainNameFromDNSNameString(&service->host, host))
+		{ LogMsg("ERROR: handle_regservice_request - host bad %s", host); goto bad_param; }
 	service->autorename = !(flags & kDNSServiceFlagsNoAutoRename);
 	
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
@@ -2031,7 +2042,7 @@ finish:
     return;
 
 bad_param:
-	if (service) freeL("service_info", service);
+	//if (service) freeL("service_info", service);	Don't think we should do this -- abort_request will free it a second time and crash
     deliver_error(request, mStatus_BadParamErr);
     abort_request(request);
     unlink_request(request);
@@ -2342,7 +2353,8 @@ static void regservice_termination_callback(void *context)
     {
 	service_info *info = context;
 	service_instance *i, *p;
-
+	if (!info) { LogMsg("regservice_termination_callback context is NULL"); return; }
+	if (!info->request) { LogMsg("regservice_termination_callback info->request is NULL"); return; }
 	i = info->instances;
 	while (i)
 		{
