@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.40  2004/09/27 23:56:27  cheshire
+Fix infinite loop where mDNSPlatformUnlock() called mDNS_TimeNow(),
+and then mDNS_TimeNow() called mDNSPlatformUnlock()
+
 Revision 1.39  2004/09/21 21:02:54  cheshire
 Set up ifname before calling mDNS_RegisterInterface()
 
@@ -689,7 +693,7 @@ mDNSlocal void ScheduleNextTimerCallback(const mDNS *const m)
 	{
 	if (m->mDNSPlatformStatus == mStatus_NoError)
 		{
-		SInt32 interval = m->NextScheduledEvent - mDNS_TimeNow(m);
+		SInt32 interval = m->NextScheduledEvent - (mDNSPlatformRawTime() + m->timenow_adjust);
 		if      (interval < 1)                 interval = 1;
 		else if (interval > 0x70000000 / 1000) interval = 0x70000000 / mDNSPlatformOneSecond;
 		else                                   interval = (interval * 1000 + mDNSPlatformOneSecond-1)/ mDNSPlatformOneSecond;
