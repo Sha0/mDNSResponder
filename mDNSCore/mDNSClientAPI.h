@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.21  2002/09/17 01:06:35  cheshire
+Change mDNS_AdvertiseLocalAddresses to be a parameter to mDNS_Init()
+
 Revision 1.20  2002/09/16 18:41:41  cheshire
 Merge in license terms from Quinn's copy, in preparation for Darwin release
 
@@ -407,6 +410,7 @@ typedef void mDNSCallback(mDNS *const m, mStatus result);
 struct mDNS_struct
 	{
 	mDNS_PlatformSupport *p;		// Pointer to platform-specific data of indeterminite size
+	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
 	mDNSCallback *Callback;
 	void         *Context;
@@ -431,8 +435,8 @@ struct mDNS_struct
 	// Fields below only required for mDNS Responder...
 	domainlabel nicelabel;			// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;			// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
-	domainname  hostname1;			// Primary Host Name "Foo.local."
-	domainname  hostname2;			// Secondary Host Name "Foo.local.arpa."
+	domainname  hostname1;			// Primary Host Name, e.g. "Foo.local."
+	domainname  hostname2;			// Secondary Host Name, e.g. "Foo.local.arpa."
 	ResourceRecord *ResourceRecords;
 	ResourceRecord *CurrentRecord;	// Next ResourceRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
@@ -487,7 +491,15 @@ extern const mDNSIPAddr AllDNSAdminGroup;
 // interrupt-time timer callback while in the middle of processing a client call.
 
 extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
-								ResourceRecord *rrcachestorage, mDNSu32 rrcachesize, mDNSCallback *Callback, void *Context);
+								ResourceRecord *rrcachestorage, mDNSu32 rrcachesize,
+								mDNSBool AdvertiseLocalAddresses,
+								mDNSCallback *Callback, void *Context);
+#define mDNS_Init_NoCache                     mDNSNULL
+#define mDNS_Init_ZeroCacheSize               0
+#define mDNS_Init_AdvertiseLocalAddresses     mDNStrue
+#define mDNS_Init_DontAdvertiseLocalAddresses mDNSfalse
+#define mDNS_Init_NoInitCallback              mDNSNULL
+#define mDNS_Init_NoInitCallbackContext       mDNSNULL
 extern void    mDNS_Close     (mDNS *const m);
 extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 newttl,

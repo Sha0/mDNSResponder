@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.57  2002/09/17 01:07:08  cheshire
+Change mDNS_AdvertiseLocalAddresses to be a parameter to mDNS_Init()
+
 Revision 1.56  2002/09/16 19:44:17  cheshire
 Merge in license terms from Quinn's copy, in preparation for Darwin release
 
@@ -3893,7 +3896,8 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
 #endif
 
 mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
-	ResourceRecord *rrcachestorage, mDNSu32 rrcachesize, mDNSCallback *Callback, void *Context)
+	ResourceRecord *rrcachestorage, mDNSu32 rrcachesize,
+	mDNSBool AdvertiseLocalAddresses, mDNSCallback *Callback, void *Context)
 	{
 	mStatus result;
 	mDNSu32 i;
@@ -3901,6 +3905,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	if (!rrcachestorage) rrcachesize = 0;
 	
 	m->p                  = p;
+	m->AdvertiseLocalAddresses = AdvertiseLocalAddresses;
 	m->mDNSPlatformStatus = mStatus_Waiting;
 	m->Callback           = Callback;
 	m->Context            = Context;
