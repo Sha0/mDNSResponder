@@ -30,6 +30,7 @@
 #define IDS_NO_MDNSRESPONDER_SERVICE_CAPTION 120
 #define IDS_PRINTER_MATCH_GOOD          121
 #define IDS_PRINTER_MATCH_BAD           122
+#define IDS_PRINTER_MATCH_MAYBE         146
 #define IDS_YES                         123
 #define IDS_NO                          124
 #define IDS_LARGE_FONT                  125

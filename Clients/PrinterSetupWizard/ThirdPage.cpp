@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.18  2005/02/15 07:02:51  shersche
+<rdar://problem/4003724> Display different UI text when generic printer drivers are selected
+
 Revision 1.17  2005/02/08 21:45:06  shersche
 <rdar://problem/3947490> Default to Generic PostScript or PCL if unable to match driver
 
@@ -1027,7 +1030,7 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	}
 	else if ( MatchGeneric( printer, service, &genericManufacturer, &genericModel ) )
 	{
-		text.LoadString(IDS_PRINTER_MATCH_GOOD);
+		text.LoadString(IDS_PRINTER_MATCH_MAYBE);
 		
 		Manufacturers manufacturers;
 
@@ -1222,6 +1225,8 @@ OSStatus CThirdPage::OnInitPage()
 
 	// Load printer icon
 
+
+
 	check( m_printerImage == NULL );
 	
 	m_printerImage = (CStatic*) GetDlgItem( IDR_MANIFEST );
@@ -1268,6 +1273,7 @@ void CThirdPage::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_PRINTER_NAME, m_printerName);
 	DDX_Control(pDX, IDC_DEFAULT_PRINTER, m_defaultPrinterCtrl);
 	DDX_Control(pDX, IDC_PRINTER_SELECTION_TEXT, m_printerSelectionText);
+
 }
 
 
