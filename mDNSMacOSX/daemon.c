@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.173  2004/06/08 17:35:12  cheshire
+<rdar://problem/3683988> Detect and report if mDNSResponder uses too much CPU
+
 Revision 1.172  2004/06/05 00:04:26  cheshire
 <rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
 
@@ -2062,7 +2065,15 @@ mDNSexport int main(int argc, char **argv)
 
 			// 2. Work out how long we expect to sleep before the next scheduled task
 			mDNSs32 ticks = nextevent - mDNSPlatformTimeNow();
-			if (ticks < 1) ticks = 1;
+			static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
+			if (ticks > 1)
+				RepeatedBusy = 0;
+			else
+				{
+				ticks = 1;
+				if (++RepeatedBusy >= mDNSPlatformOneSecond * 10)
+					{ LogMsg("Task Scheduling Error: Continuously busy for the last ten seconds"); RepeatedBusy = 0; }
+				}
 			CFAbsoluteTime interval = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
 					
 			// 3. Now do a blocking "CFRunLoopRunInMode" call so we sleep until
