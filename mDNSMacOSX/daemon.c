@@ -803,22 +803,25 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 			x->ClientMachPort, &sr->RR_SRV.name, result);
 	}
 
-mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainlabel *n, domainname *t, domainname *d)
+mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainname *t, domainname *d, mDNSIPPort port)
 	{
 	int count = 0;
 	ResourceRecord *rr;
+	domainlabel *n = &x->name;
 	domainname srvname;
 	ConstructServiceName(&srvname, n, t, d);
 
 	LogOperation("%5d: DNSServiceRegistration(%##s) START", x->ClientMachPort, &srvname);
 
 	for (rr = mDNSStorage.ResourceRecords; rr; rr=rr->next)
-		if (rr->rrtype == kDNSType_SRV && SameDomainName(&rr->name, &srvname))
+		if (rr->rrtype == kDNSType_SRV &&
+			rr->rdata->u.srv.port.NotAnInteger == port.NotAnInteger &&
+			SameDomainName(&rr->name, &srvname))
 			count++;
 
 	if (count)
-		LogMsg("%5d: WARNING! Bogus client application has now registered %d identical instances of service %##s",
-			x->ClientMachPort, count+1, &srvname);
+		LogMsg("%5d: WARNING! Bogus client application has now registered %d identical instances of service %##s port %d",
+			x->ClientMachPort, count+1, &srvname, (int)port.b[0] << 8 | port.b[1]);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -891,7 +894,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 		port.NotAnInteger = notAnIntPort;
 	
-		CheckForDuplicateRegistrations(x, &x->name, &t, &d);
+		CheckForDuplicateRegistrations(x, &t, &d, port);
 		err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port, txtinfo, data_len, RegCallback, x);
 	
 		if (err) AbortClient(client, x);
