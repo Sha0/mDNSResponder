@@ -31,6 +31,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.3  2004/05/27 06:26:31  cheshire
+Add shim for DNSServiceQueryRecord()
+
 Revision 1.2  2004/05/20 18:41:24  cheshire
 Fix build broken by removal of 'kDNSServiceFlagsRemove' from dns_sd.h
 
@@ -94,6 +97,14 @@ typedef struct
 	DNSQuestion             qSRV;
 	DNSQuestion             qTXT;
 	} mDNS_DirectOP_Resolve;
+
+typedef struct
+	{
+	mDNS_DirectOP_Dispose      *disposefn;
+	DNSServiceQueryRecordReply  callback;
+	void                       *context;
+	DNSQuestion                 q;
+	} mDNS_DirectOP_QueryRecord;
 
 int DNSServiceRefSockFD(DNSServiceRef sdRef)
 	{
@@ -524,9 +535,9 @@ DNSServiceErrorType DNSServiceResolve
 	x->qTXT.QuestionContext     = x;
 
 	err = mDNS_StartQuery(&mDNSStorage, &x->qSRV);
-	if (err) { DNSServiceResolveDispose((mDNS_DirectOP*)x); errormsg = "mDNS_StartQuery_internal qSRV"; goto fail; }
+	if (err) { DNSServiceResolveDispose((mDNS_DirectOP*)x); errormsg = "mDNS_StartQuery qSRV"; goto fail; }
 	err = mDNS_StartQuery(&mDNSStorage, &x->qTXT);
-	if (err) { DNSServiceResolveDispose((mDNS_DirectOP*)x); errormsg = "mDNS_StartQuery_internal qTXT"; goto fail; }
+	if (err) { DNSServiceResolveDispose((mDNS_DirectOP*)x); errormsg = "mDNS_StartQuery qTXT"; goto fail; }
 
 	// Succeeded: Wrap up and return
 	*sdRef = (DNSServiceRef)x;
@@ -588,11 +599,23 @@ DNSServiceErrorType DNSServiceRegisterRecord
 //*************************************************************************************************************
 // DNSServiceQueryRecord
 
-// Not yet implemented, so don't include in stub library
-// We DO include it in the actual Extension, so that if a later client compiled to use this
-// is run against this Extension, it will get a reasonable error code instead of just
-// failing to launch (Strong Link) or calling an unresolved symbol and crashing (Weak Link)
-#if !MDNS_BUILDINGSTUBLIBRARY
+static void DNSServiceQueryRecordDispose(mDNS_DirectOP *op)
+	{
+	mDNS_DirectOP_QueryRecord *x = (mDNS_DirectOP_QueryRecord*)op;
+	if (x->q.ThisQInterval >= 0) mDNS_StopQuery(&mDNSStorage, &x->q);
+	mDNSPlatformMemFree(x);
+	}
+
+mDNSlocal void DNSServiceQueryRecordResponse(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	mDNS_DirectOP_QueryRecord *x = (mDNS_DirectOP_QueryRecord*)question->QuestionContext;
+	char fullname[MAX_ESCAPED_DOMAIN_NAME];
+	(void)m;	// Unused
+	ConvertDomainNameToCString(&answer->name, fullname);
+	x->callback((DNSServiceRef)x, AddRecord ? kDNSServiceFlagsAdd : (DNSServiceFlags)0, 0, kDNSServiceErr_NoError,
+		fullname, answer->rrtype, answer->rrclass, answer->rdlength, answer->rdata->u.data, answer->rroriginalttl, x->context);
+	}
+
 DNSServiceErrorType DNSServiceQueryRecord
 	(
 	DNSServiceRef                       *sdRef,
@@ -605,17 +628,44 @@ DNSServiceErrorType DNSServiceQueryRecord
 	void                                *context  /* may be NULL */
 	)
 	{
-	(void)sdRef;			// Unused
+	mStatus err = mStatus_NoError;
+	const char *errormsg = "Unknown";
+	mDNS_DirectOP_QueryRecord *x;
+
 	(void)flags;			// Unused
 	(void)interfaceIndex;	// Unused
-	(void)fullname;			// Unused
-	(void)rrtype;			// Unused
-	(void)rrclass;			// Unused
-	(void)callback;			// Unused
-	(void)context;			// Unused
-	return(kDNSServiceErr_Unsupported);
+
+	// Allocate memory, and handle failure
+	x = (mDNS_DirectOP_QueryRecord *)mDNSPlatformMemAllocate(sizeof(*x));
+	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
+
+	// Set up object
+	x->disposefn = DNSServiceQueryRecordDispose;
+	x->callback  = callback;
+	x->context   = context;
+
+	x->q.ThisQInterval       = -1;		// So that DNSServiceResolveDispose() knows whether to cancel this question
+	x->q.InterfaceID         = mDNSInterface_Any;
+	x->q.Target              = zeroAddr;
+	MakeDomainNameFromDNSNameString(&x->q.qname, fullname);
+	x->q.qtype               = rrtype;
+	x->q.qclass              = rrclass;
+	x->q.QuestionCallback    = DNSServiceQueryRecordResponse;
+	x->q.QuestionContext     = x;
+
+	err = mDNS_StartQuery(&mDNSStorage, &x->q);
+	if (err) { DNSServiceResolveDispose((mDNS_DirectOP*)x); errormsg = "mDNS_StartQuery"; goto fail; }
+
+	// Succeeded: Wrap up and return
+	*sdRef = (DNSServiceRef)x;
+	return(mStatus_NoError);
+
+badparam:
+	err = mStatus_BadParamErr;
+fail:
+	LogMsg("DNSServiceQueryRecord(\"%s\", %d, %d) failed: %s (%ld)", fullname, rrtype, rrclass, errormsg, err);
+	return(err);
 	}
-#endif
 
 //*************************************************************************************************************
 // DNSServiceReconfirmRecord
