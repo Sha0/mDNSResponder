@@ -1409,6 +1409,7 @@ static void handle_enum_request(request_state *rstate)
     reply_state *reply;  // initial default reply
     transfer_state tr;
     mStatus err;
+    int result;
     
     assert(rstate->ts == t_complete);
     flags = get_flags(&ptr);
@@ -1434,14 +1435,27 @@ static void handle_enum_request(request_state *rstate)
     rstate->termination_context = term;
     rstate->terminate = enum_termination_callback;
     def->question.QuestionContext = def;
-    def->type = (flags & kDNSServiceFlagsRegistrationDomains) ? 		mDNS_DomainTypeRegistrationDefault: mDNS_DomainTypeBrowseDefault;
+    def->type = (flags & kDNSServiceFlagsRegistrationDomains) ? 
+        mDNS_DomainTypeRegistrationDefault: mDNS_DomainTypeBrowseDefault;
     all->question.QuestionContext = all;
     all->type = (flags & kDNSServiceFlagsRegistrationDomains) ? 
         mDNS_DomainTypeRegistration : mDNS_DomainTypeBrowse;
     
+    // make the calls
+    err = mDNS_GetDomains(&mDNSStorage, &all->question, all->type, 0, enum_result_callback, all);
+    if (err == mStatus_NoError)
+        err = mDNS_GetDomains(&mDNSStorage, &def->question, def->type, 0, enum_result_callback, def);
+    result = deliver_error(rstate, err);  // send error *before* returning local domain
+    
+    if (result < 0 || err)
+        {
+        abort_request(rstate);
+        unlink_request(rstate);
+        return;
+        }
 
     // provide local. as the first domain automatically
-    add_default = kDNSServiceFlagsDefault | kDNSServiceFlagsAdd | 				kDNSServiceFlagsFinished;
+    add_default = kDNSServiceFlagsDefault | kDNSServiceFlagsAdd | kDNSServiceFlagsFinished;
     reply = format_enumeration_reply(rstate, "local.", add_default, ifi, 0);
     tr = send_msg(reply);
     if (tr == t_error || tr == t_terminated) 
@@ -1450,15 +1464,10 @@ static void handle_enum_request(request_state *rstate)
         freeL("handle_enum_request", all);
         abort_request(rstate);
         unlink_request(rstate);
+        return;
         }
     if (tr == t_complete) freeL("handle_enum_request", reply);
     if (tr == t_morecoming) append_reply(rstate, reply); // couldn't send whole reply because client is blocked - link into list
-
-    // make the calls
-    err = mDNS_GetDomains(&mDNSStorage, &all->question, all->type, 0, enum_result_callback, all);
-    if (err == mStatus_NoError)
-        err = mDNS_GetDomains(&mDNSStorage, &def->question, def->type, 0, enum_result_callback, def);
-    deliver_error(rstate, err);
     }
 
 static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
