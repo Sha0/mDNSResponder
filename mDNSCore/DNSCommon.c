@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.26  2004/04/22 04:07:01  cheshire
+Fix from Bob Bradley: Don't try to do inline functions on compilers that don't support it
+
 Revision 1.25  2004/04/22 03:05:28  cheshire
 kDNSClass_ANY should be kDNSQClass_ANY
 
@@ -110,10 +113,12 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
  */
 
+// Set mDNS_InstantiateInlines to tell mDNSClientAPI.h to instantiate inline functions, if necessary
+#define mDNS_InstantiateInlines 1
 #include "DNSCommon.h"
 
 // Disable certain benign warnings with Microsoft compilers
-#if(defined(_MSC_VER))
+#if (defined(_MSC_VER))
 	// Disable "conditional expression is constant" warning for debug macros.
 	// Otherwise, this generates warnings for the perfectly natural construct "while(1)"
 	// If someone knows a variant way of writing "while(1)" that doesn't generate warning messages, please let us know
@@ -1431,7 +1436,6 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 #pragma mark -
 #pragma mark - Packet Sending Functions
 #endif
-
 
 mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd, uDNS_AuthInfo *authInfo)

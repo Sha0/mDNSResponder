@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.167  2004/04/22 04:07:01  cheshire
+Fix from Bob Bradley: Don't try to do inline functions on compilers that don't support it
+
 Revision 1.166  2004/04/22 03:15:56  cheshire
 Fix use of "struct __attribute__((__packed__))" so it only applies on GCC >= 2.9
 
@@ -708,16 +711,6 @@ typedef packedunion { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
 typedef mDNSOpaque32  mDNSv4Addr;              // An IP address is a four-byte opaque identifier (not an integer)
 typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identifier (not an integer)
-
-#if(defined(_MSC_VER))
-	#define	mDNSinline	__inline
-#else
-	#define	mDNSinline	inline
-#endif
-
-mDNSlocal mDNSinline mDNSu16      mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
-mDNSlocal mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
-	{ mDNSOpaque16 x; x.b[0] = (mDNSu8)(v >> 8); x.b[1] = (mDNSu8)(v & 0xFF); return(x); }
 
 enum
 	{
@@ -1426,6 +1419,35 @@ extern const mDNSOpaque16 QueryFlags;
 extern const mDNSOpaque16 ResponseFlags;
 extern const mDNSOpaque16 UpdateReqFlags;
 extern const mDNSOpaque16 UpdateRespFlags;	
+
+// ***************************************************************************
+#if 0
+#pragma mark - Inline functions
+#endif
+
+#if (defined(_MSC_VER))
+	#define	mDNSinline static __inline
+#elif ((__GNUC__ > 2) || ((__GNUC__ == 2) && (__GNUC_MINOR__ >= 9)))
+	#define	mDNSinline static inline
+#endif
+
+// If we're not doing inline functions, then this header needs to have the extern declarations
+#if !defined(mDNSinline)
+extern mDNSu16      mDNSVal16(mDNSOpaque16 x);
+extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
+#endif
+
+// If we're compiling the particular C file that instantiates our inlines, then we
+// define "mDNSinline" (to empty string) so that we generate code in the following section
+#if (!defined(mDNSinline) && mDNS_InstantiateInlines)
+#define mDNSinline
+#endif
+
+#ifdef mDNSinline
+mDNSinline mDNSu16      mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
+mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
+	{ mDNSOpaque16 x; x.b[0] = (mDNSu8)(v >> 8); x.b[1] = (mDNSu8)(v & 0xFF); return(x); }
+#endif
 
 // ***************************************************************************
 #if 0
