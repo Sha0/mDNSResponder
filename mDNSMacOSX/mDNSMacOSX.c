@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.271  2004/12/20 23:18:12  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+One more refinement: When an interface with a v6LL address gets a v4 address too, that's not a flap
+
 Revision 1.270  2004/12/20 21:28:14  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 Additional refinements to handle sleep/wake better
@@ -2064,9 +2068,9 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
-				// If i->LastSeen == utc, then this is a brand-new interface, just created
-				// If i->LastSeen != utc, then this is an old interface, previously seen
-				// If the interface is old, but not more than a minute old, then we're in a flapping scenario
+				// If i->LastSeen == utc, then this is a brand-new interface, just created, or an interface that never went away.
+				// If i->LastSeen != utc, then this is an old interface, previously seen, that went away for (utc - i->LastSeen) seconds.
+				// If the interface is an old one that went away and came back in less than a minute, then we're in a flapping scenario.
 				mDNSBool flapping = (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
 				mDNS_RegisterInterface(m, n, flapping ? mDNSPlatformOneSecond * 5 : 0);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
@@ -2102,8 +2106,7 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m, mDNSs32 utc)
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
-		// If this interface used to exist, then we treat it as though we were seeing it until one second ago
-		if (i->Exists) i->LastSeen = utc - 1;
+		if (i->Exists) i->LastSeen = utc;
 		i->Exists = mDNSfalse;
 		}
 	}
@@ -2172,6 +2175,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 		// 3. If no longer active, delete interface from list and free memory
 		if (!i->Exists)
 			{
+			if (i->LastSeen == utc) i->LastSeen = utc - 1;
 			mDNSBool delete = (NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0) && (utc - i->LastSeen >= 60);
 			LogOperation("ClearInactiveInterfaces: %-13s %5s(%lu) %.6a InterfaceID %p %#a/%d Age %d%s", delete ? "Deleting" : "Holding",
 				i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
