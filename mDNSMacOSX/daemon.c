@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.250  2005/02/19 01:25:04  cheshire
+<rdar://problem/4005191> "Local Hostname is already in use..." dialogue shows for only 60 seconds before being removed
+Further refinements
+
 Revision 1.249  2005/02/19 00:28:45  cheshire
 <rdar://problem/4005191> "Local Hostname is already in use..." dialogue shows for only 60 seconds before being removed
 
@@ -1707,34 +1711,23 @@ mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotificat
 mDNSlocal void ShowNameConflictNotification(const mDNS *const m, CFStringRef header, CFStringRef subtext)
 	{
 	CFMutableDictionaryRef dictionary = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-	if (dictionary)
+	if (!dictionary) return;
+	CFDictionarySetValue(dictionary, kCFUserNotificationAlertHeaderKey, header);
+	CFDictionarySetValue(dictionary, kCFUserNotificationAlertMessageKey, subtext);
+
+	if (gNotification)	// If notification already on-screen, update it in place
+		CFUserNotificationUpdate(gNotification, 0, kCFUserNotificationCautionAlertLevel, dictionary);
+	else				// else, we need to create it
 		{
-		CFDictionarySetValue(dictionary, kCFUserNotificationAlertHeaderKey, header);
-		CFDictionarySetValue(dictionary, kCFUserNotificationAlertMessageKey, subtext);
-		if (gNotification)	// If notification already on-screen, update it in place
-			CFUserNotificationUpdate(gNotification, 0, kCFUserNotificationCautionAlertLevel, dictionary);
-		else				// else, we need to create it
-			{
-			SInt32 error;
-			gNotification = CFUserNotificationCreate(NULL, 0, kCFUserNotificationCautionAlertLevel, &error, dictionary);
-			if (gNotification)
-				{
-				gNotificationRLS = CFUserNotificationCreateRunLoopSource(NULL, gNotification, NotificationCallBackDismissed, 0);
-				if (gNotificationRLS)
-					{
-					CFRunLoopAddSource(CFRunLoopGetCurrent(), gNotificationRLS, kCFRunLoopDefaultMode);
-					gNotificationHostLabel = m->p->userhostlabel;
-					gNotificationNiceLabel = m->p->usernicelabel;
-					}
-				else
-					{
-					LogMsg("ShowNameConflictNotification couldn't create RunLoopSource");
-					CFRelease(gNotification);
-					gNotification = NULL;
-					}
-				}
-			}
+		SInt32 error;
+		gNotification = CFUserNotificationCreate(NULL, 0, kCFUserNotificationCautionAlertLevel, &error, dictionary);
+		if (!gNotification) { LogMsg("ShowNameConflictNotification: CFUserNotificationRef"); return; }
+		gNotificationRLS = CFUserNotificationCreateRunLoopSource(NULL, gNotification, NotificationCallBackDismissed, 0);
+		if (!gNotificationRLS) { LogMsg("ShowNameConflictNotification: RLS"); CFRelease(gNotification); gNotification = NULL; return; }
+		CFRunLoopAddSource(CFRunLoopGetCurrent(), gNotificationRLS, kCFRunLoopDefaultMode);
 		}
+	gNotificationHostLabel = m->hostlabel;		// Note: DO want to use m->hostlabel here, not  m->p->userhostlabel
+	gNotificationNiceLabel = m->nicelabel;		// (userhostlabel may not have been out updated just yet)
 	}
 
 // This updates either the text of the field currently labelled "Local Hostname",
@@ -1798,7 +1791,8 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	if (result == mStatus_NoError)	
 		{
 		// Allow three seconds in case we get a Computer Name update too -- don't want to alert the user twice
-		RecordUpdatedNiceLabel(m, mDNSPlatformOneSecond*3);
+		//RecordUpdatedNiceLabel(m, mDNSPlatformOneSecond*3);
+		RecordUpdatedNiceLabel(m, 0);
 		}
 	else if (result == mStatus_ConfigChanged)
 		{
