@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.156  2004/12/15 01:18:57  ksekar
+<rdar://problem/3825979> Call DeregisterService on nat port map failure
+
 Revision 1.155  2004/12/14 21:21:20  ksekar
 <rdar://problem/3825979> NAT-PMP: Update response format to contain "Seconds Since Boot"
 
@@ -1179,12 +1182,8 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 		{
 		LogMsg("NAT Port Mapping: timeout");
 		n->state = NATState_Error;
-		if (!srs) { LLQNatMapComplete(m); return; }
-		FreeNATInfo(m, n);
-		srs->uDNS_info.NATinfo = mDNSNULL;
-		unlinkSRS(&m->uDNS_info, srs);
-		srs->uDNS_info.state = regState_Unregistered;
-		srs->ServiceCallback(m, srs, mStatus_NATTraversal);
+		if (srs) uDNS_DeregisterService(m, srs);
+		else LLQNatMapComplete(m);
 		return;  // note - unsafe to touch srs here
 		}
 
