@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.141  2004/12/16 01:56:21  cheshire
+Improve DNSServiceEnumerateDomains syslog message
+
 Revision 1.140  2004/12/14 03:02:10  ksekar
 <rdar://problem/3919016> Rare race condition can cause crash
 
@@ -936,13 +939,11 @@ void udsserver_info(mDNS *const m)
 
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
-		mDNSu32 SlotUsed = 0;
 		CacheRecord *rr;
 		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 			{
 			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
 			CacheUsed++;
-			SlotUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
 			LogMsgNoIdent("%s%6ld %s%-6s%-6s%s",
 				rr->CRActiveQuestion ? "*" : " ", remain,
@@ -950,8 +951,6 @@ void udsserver_info(mDNS *const m)
 				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, CRDisplayString(m, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 			}
-		if (m->rrcache_used[slot] != SlotUsed)
-			LogMsgNoIdent("Cache use mismatch: rrcache_used[slot] is %lu, true count %lu", m->rrcache_used[slot], SlotUsed);
 		}
 	if (m->rrcache_totalused != CacheUsed)
 		LogMsgNoIdent("Cache use mismatch: rrcache_totalused is %lu, true count %lu", m->rrcache_totalused, CacheUsed);
@@ -2742,7 +2741,9 @@ static void handle_enum_request(request_state *rstate)
 	if (!InterfaceID) InterfaceID = mDNSInterface_LocalOnly;
 	
     // make the calls
-	LogOperation("%3d: DNSServiceEnumerateDomains(%X)", rstate->sd, flags);
+	LogOperation("%3d: DNSServiceEnumerateDomains(%X=%s)", rstate->sd, flags,
+		(flags & kDNSServiceFlagsBrowseDomains      ) ? "kDNSServiceFlagsBrowseDomains" :
+		(flags & kDNSServiceFlagsRegistrationDomains) ? "kDNSServiceFlagsRegistrationDomains" : "<<Unknown>>");
     err = mDNS_GetDomains(gmDNS, &all->question, all->type, NULL, InterfaceID, enum_result_callback, all);
     if (err == mStatus_NoError)
         err = mDNS_GetDomains(gmDNS, &def->question, def->type, NULL, InterfaceID, enum_result_callback, def);
