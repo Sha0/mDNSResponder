@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.114  2004/11/12 18:25:45  shersche
+Tidy up cross platform usleep code fragment.
+
 Revision 1.113  2004/11/12 03:21:41  rpantos
 rdar://problem/3809541 Add DNSSDMapIfIndexToName, DNSSDMapNameToIfIndex.
 
@@ -371,6 +374,7 @@ Update to APSL 2.0
 #if defined(_WIN32)
 #include <process.h>
 #define dnssd_strerror(X)	win32_strerror(X)
+#define usleep(X)				Sleep(((X)+999)/1000)
 static char * win32_strerror(int inErrorCode);
 #else
 #include <fcntl.h>
@@ -868,11 +872,7 @@ void udsserver_info(mDNS *const m)
 				rr->CRActiveQuestion ? "*" : " ", remain,
 				(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, CRDisplayString(m, rr));
-#if defined(_WIN32)
-			Sleep(1);
-#else
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
-#endif
 			}
 		if (m->rrcache_used[slot] != SlotUsed)
 			LogMsgNoIdent("Cache use mismatch: rrcache_used[slot] is %lu, true count %lu", m->rrcache_used[slot], SlotUsed);
