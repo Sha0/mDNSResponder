@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.243  2005/01/27 17:46:58  cheshire
+Added comment about CFSocketInvalidate closing the underlying socket
+
 Revision 1.242  2005/01/27 00:10:58  cheshire
 <rdar://problem/3967867> Name change log messages every time machine boots
 
@@ -2563,7 +2566,7 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 		{
 		if (newSource->cfs)
 			{
-			CFSocketInvalidate(newSource->cfs); // automatically closes socket
+			CFSocketInvalidate(newSource->cfs);		// Note: Also closes the underlying socket
 			CFRelease(newSource->cfs);
 			}
 		return mStatus_NoMemoryErr;
@@ -2572,7 +2575,7 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	return mStatus_NoError;
 	}
 
-mStatus udsSupportRemoveFDFromEventLoop(int fd)
+mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
 	// Reverse what was done in udsSupportAddFDToEventLoop().
 	{
 	CFSocketEventSource	*iSource;
@@ -2585,7 +2588,7 @@ mStatus udsSupportRemoveFDFromEventLoop(int fd)
 			CFRunLoopRemoveSource(CFRunLoopGetCurrent(), iSource->RLS, kCFRunLoopDefaultMode);
 			CFRunLoopSourceInvalidate(iSource->RLS);
 			CFRelease(iSource->RLS);
-			CFSocketInvalidate(iSource->cfs);
+			CFSocketInvalidate(iSource->cfs);		// Note: Also closes the underlying socket
 			CFRelease(iSource->cfs);
 			free(iSource);
 			return mStatus_NoError;

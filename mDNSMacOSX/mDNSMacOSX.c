@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.292  2005/01/27 17:48:38  cheshire
+Added comment about CFSocketInvalidate closing the underlying socket
+
 Revision 1.291  2005/01/27 00:10:58  cheshire
 <rdar://problem/3967867> Name change log messages every time machine boots
 
@@ -1539,7 +1542,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 			}
 		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: %s", strerror(errno));
 		freeL("mDNSPlatformTCPConnect", info);
-		CFSocketInvalidate(sr);
+		CFSocketInvalidate(sr);		// Note: Also closes the underlying socket
 		return mStatus_ConnFailed;
 		}
 	info->connected = 1;
@@ -2246,6 +2249,7 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m, mDNSs32 utc)
 
 mDNSlocal void CloseRunLoopSourceSocket(CFRunLoopSourceRef rls, CFSocketRef cfs)
 	{
+	// Note: CFSocketInvalidate also closes the underlying socket for us
 	// Comments show retain counts (obtained via CFGetRetainCount()) after each call.	   rls 3 cfs 3
 	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);			// rls 2 cfs 3
 	CFRelease(rls);																		// rls ? cfs 3
