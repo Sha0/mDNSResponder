@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.159  2004/04/09 16:37:15  cheshire
+Suggestion from Bob Bradley:
+Move NumCacheRecordsForInterfaceID() to DNSCommon.c so it's available to all platform layers
+
 Revision 1.158  2004/04/02 19:38:33  cheshire
 Update comment about typical RR TTLs
 
@@ -1618,6 +1622,7 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 
 extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg);
 extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(3,4);
+extern mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern char *DNSTypeName(mDNSu16 rrtype);
 extern char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd);
 #define GetRRDisplayString(m, rr) GetRRDisplayString_rdb((m), &(rr)->resrec, &(rr)->resrec.rdata->u)

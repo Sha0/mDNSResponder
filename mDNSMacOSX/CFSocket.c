@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.138  2004/04/09 16:37:16  cheshire
+Suggestion from Bob Bradley:
+Move NumCacheRecordsForInterfaceID() to DNSCommon.c so it's available to all platform layers
+
 Revision 1.137  2004/04/08 00:59:55  cheshire
 <rdar://problem/3609972> When interface turned off, browse "remove" events delivered with interface index zero
 Unify use of the InterfaceID field, and make code that walks the list respect the CurrentlyActive flag
@@ -1367,16 +1371,6 @@ mDNSlocal void CloseSocketSet(CFSocketSet *ss)
 	ss->cfsv4 = ss->cfsv6 = NULL;
 	}
 
-mDNSlocal mDNSu32 NumCacheRecordsForInterfaceID(mDNSInterfaceID id)
-	{
-	mDNSu32 slot, used = 0;
-	CacheRecord *rr;
-	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		for (rr = mDNSStorage.rrcache_hash[slot]; rr; rr=rr->next)
-			if (rr->resrec.InterfaceID == id) used++;
-	return(used);
-	}
-
 mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	{
 	// First pass:
@@ -1413,7 +1407,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		// (We may have previously had both v4 and v6, and we may not need both any more.)
 		CloseSocketSet(&i->ss);
 		// 3. If no longer active, delete interface from list and free memory
-		if (!i->CurrentlyActive && NumCacheRecordsForInterfaceID((mDNSInterfaceID)i) == 0)
+		if (!i->CurrentlyActive && NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0)
 			{
 			debugf("ClearInactiveInterfaces: Deleting      %#a", &i->ifinfo.ip);
 			*p = i->next;

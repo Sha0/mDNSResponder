@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.20  2004/04/09 16:37:15  cheshire
+Suggestion from Bob Bradley:
+Move NumCacheRecordsForInterfaceID() to DNSCommon.c so it's available to all platform layers
+
 Revision 1.19  2004/04/02 19:34:38  cheshire
 Fix broken comment
 
@@ -116,6 +120,16 @@ mDNSexport mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *
 	{
 	const NetworkInterfaceInfo *next = GetFirstActiveInterface(intf->next);
 	if (next) return(next->InterfaceID); else return(mDNSNULL);
+	}
+
+mDNSexport mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterfaceID id)
+	{
+	mDNSu32 slot, used = 0;
+	CacheRecord *rr;
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+			if (rr->resrec.InterfaceID == id) used++;
+	return(used);
 	}
 
 mDNSexport char *DNSTypeName(mDNSu16 rrtype)
