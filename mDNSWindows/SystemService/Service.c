@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.7  2004/07/26 05:35:07  shersche
+ignore non-enet interfaces when setting up link-local routing
+
 Revision 1.6  2004/07/20 06:48:26  shersche
 <rdar://problem/3718122> Allow registry entries to dictate whether to manage link local routing
 Bug #: 3718122
@@ -1607,7 +1610,7 @@ GetRouteDestination(DWORD * ifIndex, DWORD * address)
 		//
 		// if we don't have an interface selected, choose the first one
 		//
-		if (!(*ifIndex) || (pAdapter->Index == (*ifIndex)))
+		if ((pAdapter->Type == MIB_IF_TYPE_ETHERNET) && (!(*ifIndex) || (pAdapter->Index == (*ifIndex))))
 		{
 			*address =	inet_addr( pAdapter->IpAddressList.IpAddress.String );
 			*ifIndex =  pAdapter->Index;
