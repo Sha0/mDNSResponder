@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.199  2004/09/16 21:59:16  cheshire
+For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
+
 Revision 1.198  2004/09/16 21:36:36  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 Changes to add necessary locking calls around unicast DNS operations
@@ -1713,7 +1716,7 @@ struct mDNS_struct
 #endif
 
 extern const mDNSIPPort      zeroIPPort;
-extern const mDNSv4Addr      zeroIPAddr;
+extern const mDNSv4Addr      zerov4Addr;
 extern const mDNSv6Addr      zerov6Addr;
 extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;

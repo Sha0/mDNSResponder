@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.409  2004/09/16 21:59:15  cheshire
+For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
+
 Revision 1.408  2004/09/16 21:36:36  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 Changes to add necessary locking calls around unicast DNS operations
@@ -1346,7 +1349,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #endif
 
 mDNSexport const mDNSIPPort      zeroIPPort        = { { 0 } };
-mDNSexport const mDNSv4Addr      zeroIPAddr        = { { 0 } };
+mDNSexport const mDNSv4Addr      zerov4Addr        = { { 0 } };
 mDNSexport const mDNSv6Addr      zerov6Addr        = { { 0 } };
 mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
@@ -2028,7 +2031,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->ImmedAnswer       = mDNSNULL;
 	rr->ImmedAdditional   = mDNSNULL;
 	rr->SendRNow          = mDNSNULL;
-	rr->v4Requester       = zeroIPAddr;
+	rr->v4Requester       = zerov4Addr;
 	rr->v6Requester       = zerov6Addr;
 	rr->NextResponse      = mDNSNULL;
 	rr->NR_AnswerTo       = mDNSNULL;
@@ -2610,7 +2613,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		else
 			{
 			rr->ImmedAnswer = mDNSNULL;
-			rr->v4Requester = zeroIPAddr;
+			rr->v4Requester = zerov4Addr;
 			rr->v6Requester = zerov6Addr;
 			}
 		}
@@ -4173,7 +4176,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				{
 				if (srcaddr->type == mDNSAddrType_IPv4)
 					{
-					if (mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4)) rr->v4Requester = zeroIPAddr;
+					if (mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4)) rr->v4Requester = zerov4Addr;
 					}
 				else if (srcaddr->type == mDNSAddrType_IPv6)
 					{

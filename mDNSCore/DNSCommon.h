@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.19  2004/09/16 21:59:15  cheshire
+For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
+
 Revision 1.18  2004/09/16 02:29:39  cheshire
 Moved mDNS_Lock/mDNS_Unlock to DNSCommon.c; Added necessary locking around
 uDNS_ReceiveMsg, uDNS_StartQuery, uDNS_UpdateRecord, uDNS_RegisterService
@@ -153,7 +156,7 @@ extern mDNSu32 mDNSRandom(mDNSu32 max);
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
 
-#define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zeroIPAddr)
+#define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zerov4Addr)
 #define mDNSIPv6AddressIsZero(A) mDNSSameIPv6Address((A), zerov6Addr)
 
 #define mDNSIPv4AddressIsOnes(A) mDNSSameIPv4Address((A), onesIPv4Addr)

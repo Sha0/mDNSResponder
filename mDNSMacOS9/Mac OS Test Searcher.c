@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.18  2004/09/16 21:59:16  cheshire
+For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
+
 Revision 1.17  2004/06/10 04:37:27  cheshire
 Add new parameter in mDNS_GetDomains()
 
@@ -153,7 +156,7 @@ static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRe
 	info->i.name          = answer->rdata->u.name;
 	info->i.InterfaceID   = answer->InterfaceID;
 	info->i.ip.type		  = mDNSAddrType_IPv4;
-	info->i.ip.ip.v4      = zeroIPAddr;
+	info->i.ip.ip.v4      = zerov4Addr;
 	info->i.port          = zeroIPPort;
 	info->add             = AddRecord;
 	info->dom             = mDNSfalse;
@@ -186,7 +189,7 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	info->i.name          = answer->rdata->u.name;
 	info->i.InterfaceID   = answer->InterfaceID;
 	info->i.ip.type		  = mDNSAddrType_IPv4;
-	info->i.ip.ip.v4      = zeroIPAddr;
+	info->i.ip.ip.v4      = zerov4Addr;
 	info->i.port          = zeroIPPort;
 	info->add             = AddRecord;
 	info->dom             = mDNStrue;

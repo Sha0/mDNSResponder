@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.36  2004/09/16 21:59:16  cheshire
+For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
+
 Revision 1.35  2004/09/16 00:24:49  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -242,7 +245,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	senderport.NotAnInteger = sender.fPort;
 	
 	destaddr.type = mDNSAddrType_IPv4;
-	destaddr.ip.v4  = zeroIPAddr;
+	destaddr.ip.v4  = zerov4Addr;
 
 	#if OTCARBONAPPLICATION
 	// IP_RCVDSTADDR is known to fail on OS X Carbon, so we'll just assume the packet was probably multicast
