@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.3  2004/11/12 03:23:08  rpantos
+rdar://problem/3809541 implement getIfIndexForName, getNameForIfIndex.
+
 Revision 1.2  2004/05/20 17:43:18  cheshire
 Fix invalid UTF-8 characters in file
 
@@ -597,12 +600,12 @@ class	AppleDNSSD extends DNSSD
 
 	protected String			_getNameForIfIndex( int ifIndex)
 	{
-		return null;		// ••Fix me - RNP
+		return GetNameForIfIndex( ifIndex);
 	}
 
 	protected int				_getIfIndexForName( String ifName)
 	{
-		return 0;		// ••Fix me - RNP
+		return GetIfIndexForName( ifName);
 	}
 
 
@@ -610,6 +613,10 @@ class	AppleDNSSD extends DNSSD
 
 	protected native void	ReconfirmRecord( int flags, int ifIndex, String fullName, int rrtype, 
 										int rrclass, byte[] rdata);
+
+	protected native String	GetNameForIfIndex( int ifIndex);
+
+	protected native int	GetIfIndexForName( String ifName);
 
 	protected static native int	InitLibrary( int callerVersion);
 }

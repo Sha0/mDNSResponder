@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.4  2004/11/12 03:23:09  rpantos
+rdar://problem/3809541 implement getIfIndexForName, getNameForIfIndex.
+
 Revision 1.3  2004/06/18 04:44:17  rpantos
 Adapt to API unification on Windows
 
@@ -759,6 +762,31 @@ JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleDNSSD_ReconfirmRecord( JNIEnv *
 		(*pEnv)->ReleaseByteArrayElements( pEnv, rdata, pBytes, 0);
 
 	SafeReleaseUTFChars( pEnv, fullName, nameStr);
+}
+
+
+JNIEXPORT jstring JNICALL Java_com_apple_dnssd_AppleDNSSD_GetNameForIfIndex( JNIEnv *pEnv, jobject pThis _UNUSED, 
+							jint ifIndex)
+{
+	char					*p, nameBuff[256];
+
+	p = DNSSDMapIfIndexToName( ifIndex, nameBuff, sizeof nameBuff);
+
+	return (*pEnv)->NewStringUTF( pEnv, p);
+}
+
+
+JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSSD_GetIfIndexForName( JNIEnv *pEnv, jobject pThis _UNUSED, 
+							jstring ifName)
+{
+	uint32_t				ifIndex;
+	const char				*nameStr = SafeGetUTFChars( pEnv, ifName);
+
+	ifIndex = DNSSDMapNameToIfIndex( nameStr);
+
+	SafeReleaseUTFChars( pEnv, ifName, nameStr);
+
+	return ifIndex;
 }
 
 
