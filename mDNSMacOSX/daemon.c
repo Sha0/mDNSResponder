@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.218  2004/11/24 20:27:19  cheshire
+Add missing "err" parameter in LogMsg() call
+
 Revision 1.217  2004/11/24 17:55:01  ksekar
 Added log message clarifying <rdar://problem/3869241> For unicast operations, verify that service types are legal
 
@@ -1410,7 +1413,7 @@ mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname
 		}
 	else
 		{
-		LogMsg("Error %d for registration of service in domain %##s", domain->c);
+		LogMsg("Error %d for registration of service in domain %##s", err, domain->c);
 		freeL("ServiceInstance", si);
 		}
 	return err;	
