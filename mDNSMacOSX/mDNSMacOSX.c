@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.218  2004/10/27 02:03:59  cheshire
+Update debugging messages
+
 Revision 1.217  2004/10/26 20:48:21  cheshire
 Improve logging messages
 
@@ -1628,15 +1631,15 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
 		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip) && mDNSSameEthAddress(&bssid, &(*p)->BSSID))
 			{
-			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a", scope_id, &bssid, &ip);
+			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
 			return(*p);
 			}
 
-	debugf("AddInterfaceToList: Making   new   interface %lu %.6a with address %#a", scope_id, &bssid, &ip);
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
-	bzero(i, sizeof(NetworkInterfaceInfoOSX));
+	debugf("AddInterfaceToList: Making   new   interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, i);
 	if (!i) return(mDNSNULL);
+	bzero(i, sizeof(NetworkInterfaceInfoOSX));
 	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
 	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(mDNSNULL); }
 	strcpy(i->ifa_name, ifa->ifa_name);
