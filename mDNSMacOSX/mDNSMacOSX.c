@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.92  2003/07/02 21:19:51  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
+
 Revision 1.91  2003/06/24 01:53:51  cheshire
 Minor update to comments
 

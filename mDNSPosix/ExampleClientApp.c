@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ExampleClientApp.c,v $
+ * Revision 1.8  2003/07/02 21:19:58  cheshire
+ * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
+ *
  * Revision 1.7  2003/06/18 05:48:41  cheshire
  * Fix warnings
  *

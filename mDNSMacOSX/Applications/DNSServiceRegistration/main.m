@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -19,13 +19,6 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-//
-//  main.m
-//  DNS Service Registration
-//
-//  Created by Eric Peyton on Fri Feb 22 2002.
-//  Copyright (c) 2001 __MyCompanyName__. All rights reserved.
-//
 
 #import <Cocoa/Cocoa.h>
 

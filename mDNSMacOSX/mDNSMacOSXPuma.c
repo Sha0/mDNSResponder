@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -18,7 +18,7 @@
  * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
-
+ *
  * This file is not normally used.
  * It can be conditionally compiled in by defining RUN_ON_PUMA_WITHOUT_IFADDRS
  * in CFSocket.c. It is included mainly as sample code for people building
@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSXPuma.c,v $
+Revision 1.3  2003/07/02 21:19:51  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
+
 Revision 1.2  2002/09/21 20:44:51  zarzycki
 Added APSL info
 

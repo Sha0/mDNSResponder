@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -18,15 +18,8 @@
  * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- */
-/*
- *  BrowserController.h
- *  IP Browser
  *
  *  Created by Rod Lopez <rod@apple.com> on Thu Jul 19 2001.
- *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
- *
- *  This is experimental proof-of-concept code. Please excuse the mess.
  */
 
 #import <Cocoa/Cocoa.h>

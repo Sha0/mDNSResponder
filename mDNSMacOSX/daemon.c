@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.116  2003/07/02 21:19:51  cheshire
+ * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
+ *
  * Revision 1.115  2003/07/02 02:41:24  cheshire
  * <rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
  *

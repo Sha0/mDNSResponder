@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -18,7 +18,7 @@
  * under the License.
  *
  * @APPLE_LICENSE_HEADER_END@
-
+ *
  * Formatting notes:
  * This code follows the "Whitesmiths style" C indentation rules. Plenty of discussion
  * on C indentation can be found on the web, such as <http://www.kafejo.com/komp/1tbs.htm>,
@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.16  2003/07/02 21:19:59  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
+
 Revision 1.15  2003/06/18 05:48:41  cheshire
 Fix warnings
 
