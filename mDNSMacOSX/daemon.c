@@ -376,8 +376,8 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 mDNSlocal void DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFlags flags)
 	{
 	kern_return_t status;
-	const char *const msg = (flags & DNSServiceDiscoverReplyFlagsMoreComing) ? "more coming" : "last in batch";
-	debugf("DNSServiceBrowserReply_rpc sending reply for %s (%s)", x->name, msg);
+	debugf("DNSServiceBrowserReply_rpc sending reply for %s (%s)", x->name,
+		(flags & DNSServiceDiscoverReplyFlagsMoreComing) ? "more coming" : "last in batch");
 	status = DNSServiceBrowserReply_rpc(x->ClientMachPort, x->resultType, x->name, x->type, x->dom, flags, MDNS_MM_TIMEOUT);
 	x->resultType = -1;
 	if (status == MACH_SEND_TIMED_OUT)
