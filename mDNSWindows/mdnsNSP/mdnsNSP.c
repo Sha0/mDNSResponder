@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.10  2005/02/23 22:16:07  shersche
+Unregister the NSP before registering to workaround an installer problem during upgrade installs
+
 Revision 1.9  2005/02/01 01:45:55  shersche
 Change mdnsNSP timeout to 2 seconds
 
@@ -306,7 +309,12 @@ STDAPI	DllRegisterServer( void )
 	err = WSAStartup( MAKEWORD( 2, 2 ), &wsd );
 	err = translate_errno( err == 0, errno_compat(), WSAEINVAL );
 	require_noerr( err, exit );
-	
+
+	// Unregister before registering to workaround an installer
+	// problem during upgrade installs.
+
+	WSCUnInstallNameSpace( &gNSPGUID );
+
 	err = GetModuleFileNameW( gInstance, path, sizeof( path ) );
 	err = translate_errno( err != 0, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
