@@ -35,6 +35,10 @@
  *  Change History (most recent first):
  *
  * $Log: SamplemDNSClient.c,v $
+ * Revision 1.37  2003/08/05 20:39:25  cheshire
+ * <rdar://problem/3362184> mDNS buffered std out makes it impossible to use from another tool
+ * Added "setlinebuf(stdout);"
+ *
  * Revision 1.36  2003/07/19 03:23:13  cheshire
  * <rdar://problem/2986147> mDNSResponder needs to receive and cache larger records
  *
@@ -290,6 +294,7 @@ static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *cont
 int main(int argc, char **argv)
 	{
 	char *dom;
+	setlinebuf(stdout);				// Want to see lines as they appear, not block buffered
 
 	if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
     operation = getopt(argc, (char * const *)argv, "EFBLRAUNTM");
