@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.48  2004/05/13 04:13:19  ksekar
+Updated SIGINFO handler for multi-domain browses
+
 Revision 1.47  2004/05/12 22:04:01  ksekar
 Implemented multi-domain browsing by default for uds_daemon.
 
@@ -537,6 +540,7 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
 void udsserver_info(void)
     {
     request_state *req;
+	qlist_t *qlist;
     for (req = all_requests; req; req=req->next)
         {
         void *t = req->termination_context;
@@ -544,7 +548,10 @@ void udsserver_info(void)
         if (req->terminate == regservice_termination_callback)
             LogMsgNoIdent("DNSServiceRegister         %##s %u", ((registered_service *)t)->srs->RR_SRV.resrec.name.c, SRS_PORT(((registered_service *)t)->srs));
         else if (req->terminate == browse_termination_callback)
-            LogMsgNoIdent("DNSServiceBrowse           %##s", ((DNSQuestion *)          t)->qname.c);
+			{
+			for (qlist = ((browse_termination_context *)t)->qlist; qlist; qlist = qlist->next)
+				LogMsgNoIdent("DNSServiceBrowse           %##s", qlist->q.qname.c);
+			}
         else if (req->terminate == resolve_termination_callback)
             LogMsgNoIdent("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->srv->question.qname.c);
         else if (req->terminate == question_termination_callback)
@@ -1163,13 +1170,13 @@ static void handle_browse_request(request_state *request)
 		if (result)
 			{
 			// bail here on error.  questions not yet issued are in no core lists, so they can be deallocated lazily
-			if (search_domain_list != &tmp) mDNSPlatformFreeSearchDomainList(search_domain_list);
+			if (search_domain_list != &tmp) mDNS_FreeDNameList(search_domain_list);
 			deliver_error(request, result);
 			return;
 			}
 		sdom = sdom->next;
 		}
-	if (search_domain_list != &tmp) mDNSPlatformFreeSearchDomainList(search_domain_list);
+	if (search_domain_list != &tmp) mDNS_FreeDNameList(search_domain_list);
 	deliver_error(request, mStatus_NoError);
 	return;
     
@@ -1282,7 +1289,7 @@ static void handle_regservice_request(request_state *request)
     (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) ||
     (!ConstructServiceName(&srv, &n, &t, &d)))
         goto bad_param;
-    if (host[0] && !MakeDomainNameFromDNSNameString(&h, host)) goto bad_param;
+	if (host[0] && !MakeDomainNameFromDNSNameString(&h, host)) goto bad_param;
 
     r_srv = mallocL("handle_regservice_request", sizeof(registered_service));
     if (!r_srv) goto malloc_error;
