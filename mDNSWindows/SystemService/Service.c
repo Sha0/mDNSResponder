@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.12  2004/09/11 21:18:32  shersche
+<rdar://problem/3779502> Add route to ARP everything when a 169.254.x.x address is selected
+Bug #: 3779502
+
 Revision 1.11  2004/09/11 05:39:19  shersche
 <rdar://problem/3780203> Detect power managment state changes, calling mDNSCoreMachineSleep(m, true) on sleep, and mDNSCoreMachineSleep(m, false) on resume
 Bug #: 3780203
@@ -187,7 +191,7 @@ static mStatus		EventSourceFinalize(Win32EventSource * source);
 static void			EventSourceLock();
 static void			EventSourceUnlock();
 static mDNSs32		udsIdle(mDNS * const inMDNS, mDNSs32 interval);
-static void			InterfaceListChanged(mDNS * const inMDNS);
+static void			CoreCallback(mDNS * const inMDNS, mStatus result);
 static void			HostDescriptionChanged(mDNS * const inMDNS);
 static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
 static bool			HaveLLRoute(PMIB_IPFORWARDROW rowExtant);
@@ -1019,7 +1023,6 @@ static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
 	memset( &gPlatformStorage, 0, sizeof gPlatformStorage);
 
 	gPlatformStorage.idleThreadCallback = udsIdle;
-	gPlatformStorage.interfaceListChangedCallback = InterfaceListChanged;
 	gPlatformStorage.hostDescriptionChangedCallback = HostDescriptionChanged;
 
 	InitializeCriticalSection(&gEventSourceLock);
@@ -1028,7 +1031,7 @@ static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
 	err = translate_errno( gStopEvent, errno_compat(), kNoResourcesErr );
 	require_noerr( err, exit );
 
-	err = mDNS_Init( &gMDNSRecord, &gPlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext); 
+	err = mDNS_Init( &gMDNSRecord, &gPlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, CoreCallback, mDNS_Init_NoInitCallbackContext); 
 	require_noerr( err, exit);
 
 	err = udsserver_init();
@@ -1121,13 +1124,16 @@ static void	ServiceSpecificFinalize( int argc, char *argv[] )
 
 
 static void
-InterfaceListChanged(mDNS * const inMDNS)
+CoreCallback(mDNS * const inMDNS, mStatus status)
 {
 	DEBUG_UNUSED( inMDNS );
 
-	if (gServiceManageLLRouting == true)
+	if (status == mStatus_ConfigChanged)
 	{
-		SetLLRoute();
+		if (gServiceManageLLRouting == true)
+		{
+			SetLLRoute();
+		}
 	}
 }
 
@@ -1601,6 +1607,31 @@ SetLLRoute()
 		require_noerr( err, exit );
 	}
 
+	//
+	// see if this address is a link local address
+	//
+	if ((row.dwForwardNextHop & 0xFFFF) == row.dwForwardDest)
+	{
+		//
+		// if so, set up a route to ARP everything
+		//
+		row.dwForwardDest		= 0;
+		row.dwForwardIfIndex	= ifIndex;
+		row.dwForwardMask		= 0;
+		row.dwForwardType		= 3;
+		row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
+		row.dwForwardAge		= 0;
+		row.dwForwardPolicy		= 0;
+		row.dwForwardMetric1	= 1;
+		row.dwForwardMetric2	= (DWORD) - 1;
+		row.dwForwardMetric3	= (DWORD) - 1;
+		row.dwForwardMetric4	= (DWORD) - 1;
+		row.dwForwardMetric5	= (DWORD) - 1;
+
+		err = CreateIpForwardEntry(&row);
+
+		require_noerr( err, exit );
+	}
 exit:
 
 	return ( err );
