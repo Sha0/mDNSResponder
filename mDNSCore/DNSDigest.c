@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.7  2004/08/15 18:36:38  cheshire
+Don't use strcpy() and strlen() on "struct domainname" objects;
+use AssignDomainName() and DomainNameLength() instead
+(A "struct domainname" is a collection of packed pascal strings, not a C string.)
+
 Revision 1.6  2004/06/02 00:17:46  ksekar
 Referenced original OpenSSL license headers in source file description.
 
@@ -1352,11 +1357,10 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	// Construct TSIG RR, digesting variables as apporpriate
 	mDNSPlatformMemZero(&tsig, sizeof(AuthRecord));	
 	mDNS_SetupResourceRecord(&tsig, mDNSNULL, 0, kDNSType_TSIG, 0, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-	rdata = tsig.resrec.rdata->u.data;
 
 	// key name
-	mDNSPlatformStrCopy(info->keyname.c, tsig.resrec.name.c);
-	MD5_Update(&c, info->keyname.c, mDNSPlatformStrLen(info->keyname.c)+1);
+	AssignDomainName(tsig.resrec.name, info->keyname);
+	MD5_Update(&c, info->keyname.c, DomainNameLength(&info->keyname));
 
 	// class
 	tsig.resrec.rrclass = kDNSQClass_ANY;
@@ -1368,9 +1372,9 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	MD5_Update(&c, (mDNSu8 *)&tsig.resrec.rroriginalttl, sizeof(tsig.resrec.rroriginalttl));
 	
 	// alg name
-	mDNSPlatformStrCopy(HMAC_MD5_AlgName.c, rdata);     
-	len = mDNSPlatformStrLen(HMAC_MD5_AlgName.c) + 1;
-	rdata += len;
+	AssignDomainName(tsig.resrec.rdata->u.name, HMAC_MD5_AlgName);
+	len = DomainNameLength(&HMAC_MD5_AlgName);
+	rdata = tsig.resrec.rdata->u.data + len;
 	MD5_Update(&c, HMAC_MD5_AlgName.c, len);
 
 	// time
@@ -1390,7 +1394,8 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 
 	// fudge
 	buf = mDNSOpaque16fromIntVal(300);     // 300 sec is fudge recommended in RFC 2485
-	((mDNSOpaque16 *)rdata)->NotAnInteger = buf.NotAnInteger;
+	rdata[0] = buf.b[0];
+	rdata[1] = buf.b[1];
 	rdata += sizeof(mDNSOpaque16);
 	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));
 
@@ -1409,16 +1414,18 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	MD5_Final(digest, &c);
 
 	// set remaining rdata fields
-	*(mDNSOpaque16 *)rdata = mDNSOpaque16fromIntVal(MD5_LEN);             // MAC size	
+	rdata[0] = (mDNSu8)((MD5_LEN >> 8)  & 0xff);
+	rdata[1] = (mDNSu8)( MD5_LEN        & 0xff);
 	rdata += sizeof(mDNSOpaque16);
 	mDNSPlatformMemCopy(digest, rdata, MD5_LEN);                          // MAC
 	rdata += MD5_LEN;
-	((mDNSOpaque16 *)rdata)->NotAnInteger = msg->h.id.NotAnInteger;       // original ID
-	rdata += sizeof(mDNSOpaque16);
-	((mDNSOpaque16 *)rdata)->NotAnInteger = 0;                            // no error
-	rdata += sizeof(mDNSOpaque16);
-	((mDNSOpaque16 *)rdata)->NotAnInteger = 0;                            // other data len
-	rdata += sizeof(mDNSOpaque16);
+	rdata[0] = msg->h.id.b[0];                                            // original ID
+	rdata[1] = msg->h.id.b[1];
+	rdata[2] = 0;                                                         // no error
+	rdata[3] = 0;
+	rdata[4] = 0;                                                         // other data len
+	rdata[5] = 0;
+	rdata += 6;
 	
 	tsig.resrec.rdlength = (mDNSu16)(rdata - tsig.resrec.rdata->u.data);
 	*end = PutResourceRecordTTL(msg, ptr, numAdditionals, &tsig.resrec, 0);
@@ -1431,7 +1438,6 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 
 	return *end;
 	}
-	
 
 #ifdef __cplusplus
 }
