@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.19  2004/03/12 08:03:14  cheshire
+Update comments
+
 Revision 1.18  2004/01/25 00:00:55  cheshire
 Change to use mDNSOpaque16fromIntVal() instead of shifting and masking
 
@@ -585,7 +588,7 @@ static mStatus RegisterOneService(const char *  richTextHostName,
                 NULL, mDNSOpaque16fromIntVal(portNumber),
                 text, textLen,						// TXT data, length
                 NULL, 0,							// Subtypes
-                mDNSInterface_Any,					// Interace ID
+                mDNSInterface_Any,					// Interface ID
                 RegistrationCallback, thisServ);	// Callback and context
     }
     if (status == mStatus_NoError) {

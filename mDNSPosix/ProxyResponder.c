@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.27  2004/03/12 08:03:14  cheshire
+Update comments
+
 Revision 1.26  2004/01/25 00:00:39  cheshire
 Change to use mDNSOpaque16fromIntVal() instead of shifting and masking
 
@@ -210,7 +213,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 		host, mDNSOpaque16fromIntVal(PortAsNumber),
 		txtbuffer, bptr-txtbuffer,	// TXT data, length
 		mDNSNULL, 0,				// Subtypes
-		mDNSInterface_Any,			// Interace ID
+		mDNSInterface_Any,			// Interface ID
 		ServiceCallback, mDNSNULL);	// Callback and context
 
 	ConvertDomainNameToCString(&recordset->RR_SRV.resrec.name, buffer);
