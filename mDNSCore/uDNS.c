@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.97  2004/10/15 23:00:18  ksekar
+<rdar://problem/3799242> Need to update LLQs on location changes
+
 Revision 1.96  2004/10/12 23:30:44  ksekar
 <rdar://problem/3609944> mDNSResponder needs to follow CNAME referrals
 
@@ -403,6 +406,8 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info);
 mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs);
 mDNSlocal void UpdateServiceTargets(mDNS *const m);
+mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);
+mDNSlocal void RestartQueries(mDNS *m);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -1271,23 +1276,33 @@ exit:
 	mDNS_Unlock(m);
 	}
 
-mDNSexport void mDNS_SetPrimaryIP(mDNS *m, const mDNSAddr *ip)
+mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-
-	if (!ip) { LogMsg("mDNS_SetPrimaryIP passed NULL argument"); return; }
+	mDNSBool AddrChanged, PortChanged;
+	
+	if (!addr) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed NULL argument"); return; }
+	if (addr->type !=mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 address.  Discarding."); return; }
 
 	mDNS_Lock(m);
+
+	AddrChanged = (addr->ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger);
+	PortChanged = (u->PrimaryPort.NotAnInteger != port.NotAnInteger);
+
+#if MDNS_DEBUGMSGS
+	if (!AddrChanged && !PortChanged && u->PrimaryIf != id) debugf("mDNS_SetPrimaryInterfaceInfo: IP/Port unchanged but InterfaceID different!");
+	if (AddrChanged || PortChanged)
+		LogMsg("mDNS_SetPrimaryInterfaceInfo: address changed from %d.%d.%d.%d:%d to %d.%d.%d.%d:%d",
+			   u->PrimaryIP.ip.v4.b[0], u->PrimaryIP.ip.v4.b[1], u->PrimaryIP.ip.v4.b[2], u->PrimaryIP.ip.v4.b[3], mDNSVal16(u->PrimaryPort),
+			   addr->ip.v4.b[0], addr->ip.v4.b[1], addr->ip.v4.b[2], addr->ip.v4.b[3], mDNSVal16(port));
+#endif // MDNS_DEBUGMSGS
+										   	
+	u->PrimaryIP = *addr;
+	u->PrimaryPort = port;
+	u->PrimaryIf = id;      // Note - if ID changes but the address/port do not, we do not update registrations/LLQs
 	
-	if (ip->ip.v4.NotAnInteger == u->PrimaryIP.ip.v4.NotAnInteger)
-		debugf("mDNS_SetPrimaryIP: IP address unchanged");
-	else if (ip->type !=mDNSAddrType_IPv4)
-		debugf("Unsupported (non IPv4) address type passed to mDNS_SetPrimaryIP - ignoring");
-	else
-		{
-		u->PrimaryIP = *ip;
-		UpdateHostnameRegistrations(m);
-		}
+	if (AddrChanged) UpdateHostnameRegistrations(m);
+	if (AddrChanged || PortChanged) { SuspendLLQs(m, mDNSfalse);  RestartQueries(m); }
 
 	mDNS_Unlock(m);
 	}
@@ -1514,8 +1529,11 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			 LogMsg("Question %##s type %d - unexpected answer %##s type %d", question->qname.c, question->qtype, cr->resrec.name.c, cr->resrec.rrtype);
 		}
 	
-	if (llq && (llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume))	
-		{ deriveGoodbyes(m, msg, end,question);  llqInfo->deriveRemovesOnResume = mDNSfalse; }
+	if (!llq || llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume)
+		{
+		deriveGoodbyes(m, msg, end,question);
+		if (llq && llqInfo->deriveRemovesOnResume) llqInfo->deriveRemovesOnResume = mDNSfalse;
+		}
 
 	// our interval may be set lower to recover from failures - now that we have an answer, fully back off retry
 	if (question->ThisQInterval < MAX_UCAST_POLL_INTERVAL) question->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
@@ -2079,7 +2097,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 	
-	err = mDNSSendDNSMessage(m, &msg, end, q->InterfaceID, &info->servAddr, info->servPort);
+	err = mDNSSendDNSMessage(m, &msg, end, m->uDNS_info.PrimaryIf, &info->servAddr, info->servPort);
 	if (err) LogMsg("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
 	if (info->state == LLQ_Established) info->ntries = 1;
@@ -2095,6 +2113,7 @@ mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNS
 	mDNSu8 *ackEnd = ack.data;
 	mStatus err;
 
+	(void)InterfaceID;  // unused
     // invoke response handler
 	m->uDNS_info.CurrentQuery = q;
 	q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context);
@@ -2104,7 +2123,7 @@ mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNS
 	InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
 	ackEnd = putQuestion(&ack, ack.data, ack.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putQuestion");  return; }
-	err = mDNSSendDNSMessage(m, &ack, ackEnd, InterfaceID, srcaddr, srcport); 
+	err = mDNSSendDNSMessage(m, &ack, ackEnd, m->uDNS_info.PrimaryIf, srcaddr, srcport); 
 	if (err) LogMsg("ERROR: recvLLQEvent - mDNSSendDNSMessage returned %ld", err);
     }
 
@@ -2166,7 +2185,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	responsePtr = putLLQ(&response, responsePtr, q, llq, mDNSfalse);
 	if (!responsePtr) { LogMsg("ERROR: sendChallengeResponse - putLLQ"); goto error; }
 	
-	err = mDNSSendDNSMessage(m, &response, responsePtr, q->InterfaceID, &info->servAddr, info->servPort);
+	err = mDNSSendDNSMessage(m, &response, responsePtr, m->uDNS_info.PrimaryIf, &info->servAddr, info->servPort);
 	if (err) LogMsg("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
@@ -2259,7 +2278,7 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 
 	poll:
 	info->state = LLQ_Poll;
-	q->uDNS_info.responseCallback = simpleResponseHndlr;
+	q->uDNS_info.responseCallback = llqResponseHndlr;
 	info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
@@ -2277,11 +2296,11 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	
 	if (info->ntries++ >= kLLQ_MAX_TRIES)
 		{
-		LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s. Will re-try in %d minutes",
-			   kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
-		info->state = LLQ_Retry;
-		info->retry = timenow + (kLLQ_DEF_RETRY * mDNSPlatformOneSecond);
-		// !!!KRS give a callback error in these cases?
+		debugf("startLLQHandshake: %d failed attempts for LLQ %##s.  Polling.", kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
+		info->question->uDNS_info.responseCallback = llqResponseHndlr;
+		info->state = LLQ_Poll;
+		info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
+		info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 		return;
 		}	
 	
@@ -2301,7 +2320,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 		return;
 		}
 
-	err = mDNSSendDNSMessage(m, &msg, end, q->InterfaceID, &info->servAddr, info->servPort);
+	err = mDNSSendDNSMessage(m, &msg, end, m->uDNS_info.PrimaryIf, &info->servAddr, info->servPort);
 	if (err) LogMsg("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
@@ -2358,7 +2377,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	return;
 
 	poll:
-	info->question->uDNS_info.responseCallback = simpleResponseHndlr;
+	info->question->uDNS_info.responseCallback = llqResponseHndlr;
 	info->state = LLQ_Poll;
 	info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
@@ -4116,26 +4135,32 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 #pragma mark - Startup, Shutdown, and Sleep
 #endif
 
+// DeregisterActive causes active LLQs to be removed from the server, e.g. before sleep.  Pass false
+// following a location change, as the server will reject deletions from a source address different
+// from the address on which the LLQ was created.
 
-
-mDNSlocal void SuspendLLQs(mDNS *m)
+mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 	{
 	DNSQuestion *q;
 	LLQ_Info *llq;
 	for (q = m->uDNS_info.ActiveQueries; q; q = q->next)
 		{
 		llq = q->uDNS_info.llq;
-		if (q->LongLived && llq && llq->state < LLQ_Suspended)
+		if (q->LongLived && llq)
 			{
-			if (llq->state == LLQ_Established || llq->state == LLQ_Refresh)
-				sendLLQRefresh(m, q, 0);
-			if (llq->state == LLQ_GetZoneInfo) llq->state = LLQ_SuspendDeferred;  // suspend once we're done getting zone info
-			else llq->state = LLQ_Suspended;
+			if (llq->state < LLQ_Suspended)
+				{
+				if (DeregisterActive && (llq->state == LLQ_Established || llq->state == LLQ_Refresh))
+					sendLLQRefresh(m, q, 0);
+				if (llq->state == LLQ_GetZoneInfo) llq->state = LLQ_SuspendDeferred;  // suspend once we're done getting zone info
+				else llq->state = LLQ_Suspended;
+				}
+			else if (llq->state == LLQ_Poll) llq->state = LLQ_SuspendedPoll;
 			}
 		}
 	}
 
-mDNSlocal void RestartLLQs(mDNS *m)
+mDNSlocal void RestartQueries(mDNS *m)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	DNSQuestion *q;
@@ -4147,13 +4172,23 @@ mDNSlocal void RestartLLQs(mDNS *m)
 		q = u->CurrentQuery;
 		u->CurrentQuery = u->CurrentQuery->next;
 		llqInfo = q->uDNS_info.llq;
-		if (q->LongLived && llqInfo)
+		if (q->LongLived)
 			{
+			if (!llqInfo) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; } 
 			if (llqInfo->state == LLQ_Suspended)		
 				{ llqInfo->ntries = 0; llqInfo->deriveRemovesOnResume = mDNStrue; startLLQHandshake(m, llqInfo); }
 			else if (llqInfo->state == LLQ_SuspendDeferred)
 				llqInfo->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
-            }
+			else if (llqInfo->state == LLQ_SuspendedPoll)
+				{
+				// if we were polling, we may have had bad zone data due to firewall, etc. - refetch
+				llqInfo->ntries = 0;
+				llqInfo->deriveRemovesOnResume = mDNStrue;
+				llqInfo->state = LLQ_GetZoneInfo;
+				startGetZoneData(&q->qname, m, mDNSfalse, mDNStrue, startLLQHandshakeCallback, llqInfo);
+				}
+			}
+		else q->ThisQInterval = INIT_UCAST_POLL_INTERVAL; // trigger immediate poll for non long-lived queries
 		}
 	}
 
@@ -4178,16 +4213,16 @@ mDNSexport void uDNS_Init(mDNS *const m)
 
 mDNSexport void uDNS_Close(mDNS *m)
 	{
-	SuspendLLQs(m);
+	SuspendLLQs(m, mDNStrue);
 	SuspendRecordRegistrations(m);   
 	}
 
 mDNSexport void uDNS_Sleep(mDNS *m)
 	{
-	SuspendLLQs(m);
+	SuspendLLQs(m, mDNStrue);
 	}
 
 mDNSexport void uDNS_Wake(mDNS *m)
 	{
-	RestartLLQs(m);
+	RestartQueries(m);
 	}

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.223  2004/10/15 23:00:17  ksekar
+<rdar://problem/3799242> Need to update LLQs on location changes
+
 Revision 1.222  2004/10/12 02:49:20  ksekar
 <rdar://problem/3831228> Clean up LLQ sleep/wake, error handling
 
@@ -1495,9 +1498,9 @@ typedef enum
 	LLQ_Established       = 4,
 	LLQ_Refresh           = 5,
 	LLQ_Retry             = 6,
-	LLQ_Suspended         = 7,
-	LLQ_SuspendDeferred   = 8,
-		
+	LLQ_Suspended         = 7,   
+	LLQ_SuspendDeferred   = 8, // suspend once we get zone info
+	LLQ_SuspendedPoll     = 9, // suspended from polling state
 	// safe to re-start LLQ before this point
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,
@@ -1551,7 +1554,7 @@ typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDN
 typedef struct
 	{
 	mDNSOpaque16          id;
-	mDNSs32               timestamp;
+    mDNSs32               timestamp;          //!!!KRS can this be removed?
 	mDNSBool              internal;
 	InternalResponseHndlr responseCallback;   // NULL if internal field is false
 	LLQ_Info              *llq;               // NULL for 1-shot queries
@@ -1730,7 +1733,9 @@ typedef struct
 	mDNSAddr         Router;
 	mDNSAddr         PrimaryIP;          // Address of primary interface
 	mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
-	domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
+    mDNSInterfaceID  PrimaryIf;          // ID used to send explicitly on primary interface
+    mDNSIPPort       PrimaryPort;        // Port on primary interface we send/receive on
+    domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
 	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
 	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
 	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
@@ -2191,13 +2196,12 @@ typedef struct uDNS_AuthInfo
 
 extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key, mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
 
-// Hostname Configuration
+// Hostname/Unicast Interface Configuration
 
-// All hostnames advertised point to a single IP address, set via SetPrimaryInterface.  Invoking this routine
-// updates all existing hostnames to point to the new address.
-
-// The current primary interface may be determined via GetPrimaryInterface, which is passed a buffer in which the IP
-// address is written and returns the interface name or NULL if no interface is set.
+// All hostnames advertised point to a single IP address, set via SetPrimaryInterfaceInfo.  Invoking this routine
+// updates all existing hostnames to point to the new address.  In addition, it sets the interface/port used to
+// send LLQ setup messages and receive LLQ events.  Changing the interface address or port causes all currently
+// established LLQs to be updated such that events are sent to the new address/port.
 
 // A hostname is added via AddDynDNSHostDomain, which registers a name of the form <computername>.<hostdomain>. and
 // points to the primary interface's IP address.
@@ -2218,7 +2222,7 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key,
 extern void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *domain, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain);
 extern void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel);
-extern void mDNS_SetPrimaryIP(mDNS *m, const mDNSAddr *ip);
+extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port);
 
 // Routines called by the core, exported by DNSDigest.c
 

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.208  2004/10/15 23:00:18  ksekar
+<rdar://problem/3799242> Need to update LLQs on location changes
+
 Revision 1.207  2004/10/13 22:45:23  cheshire
 <rdar://problem/3438392> Ten-second delay before kIOMessageSystemHasPoweredOn message
 
@@ -852,6 +855,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 
 // NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
 // NOTE: If InterfaceID is non-NULL it means, "send this packet through our port 5353 socket on the specified interface"
+// OR send via our primary v4 unicast socket
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
@@ -1954,7 +1958,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		prev = NULL;
 		while (ptr)
 			{
-			if (SameDomainName(&ptr->ar.resrec.name, &answer->name) && SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
+			if (SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
 				{
 				debugf("Deregistering PTR %s -> %s", ptr->ar.resrec.name.c, ptr->ar.resrec.rdata->u.name.c);
                 dereg = &ptr->ar;
@@ -2133,7 +2137,7 @@ mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatu
 	{
 	(void)m;  // unused
 
-	LogMsg("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
+	debugf("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
 	SetDDNSNameStatus(&rr->resrec.name, result);
 	}
 
@@ -2274,24 +2278,48 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	primary = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
 	if (primary)
 		{
+		struct ifaddrs *ifa = myGetIfAddrs(1);
+
 		if (!CFStringGetCString(primary, buf, 256, kCFStringEncodingUTF8))
-			LogMsg("Could not convert router to CString");
-		else
+			{ LogMsg("Could not convert router to CString"); goto error; }		
+
+		// find primary interface in list
+		while (ifa)
 			{
-			struct ifaddrs *ifa = myGetIfAddrs(1);
-			while (ifa)
+			if (ifa->ifa_addr->sa_family == AF_INET && !strcmp(buf, ifa->ifa_name))
 				{
-				if (ifa->ifa_addr->sa_family == AF_INET && !strcmp(buf, ifa->ifa_name))
+				mDNSAddr ip;
+				struct sockaddr_in saddr;
+				int namelen = sizeof(saddr);
+				NetworkInterfaceInfoOSX *info = &m->p->PrimaryUcastIf;
+				SetupAddr(&ip, ifa->ifa_addr);
+				if (info->ss.sktv4 > -1)
 					{
-					mDNSAddr ip;
-					SetupAddr(&ip, ifa->ifa_addr);
-					mDNS_SetPrimaryIP(m, &ip);
-					break;
+					// socket already initialized - see if bound to current address
+					if (getsockname(info->ss.sktv4, (struct sockaddr *)&saddr, &namelen) < 0) 
+						{ LogMsg("Error: getsockname error %d (%s)", errno, strerror(errno)); goto error; }
+					if (((mDNSv4Addr *)&saddr.sin_addr)->NotAnInteger != ip.ip.v4.NotAnInteger)
+						{
+						// primary addr changed - tear down socket
+						CloseSocketSet(&info->ss);
+						info->ss.sktv4 = -1;
+						}
 					}
-				ifa = ifa->ifa_next;
+					if (info->ss.sktv4 < 0)
+						{
+						// socket uninitialized or changed above
+						if (SetupSocket(&info->ss, zeroIPPort, &ip, AF_INET)) goto error;
+						if (getsockname(info->ss.sktv4, (struct sockaddr *)&saddr, &namelen) < 0)
+							{ LogMsg("Error: getsockname error %d (%s)", errno, strerror(errno)); goto error; }
+						mDNS_SetPrimaryInterfaceInfo(m, (mDNSInterfaceID)info, &ip, *(mDNSIPPort *)&saddr.sin_port);
+						}					
+					break;
 				}
+			ifa = ifa->ifa_next;
 			}
 		}
+
+	error:
 	CFRelease(dict);
 	}
 
@@ -2785,6 +2813,14 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET);
 	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET6);
 
+	bzero(&m->p->PrimaryUcastIf, sizeof(m->p->PrimaryUcastIf));
+	m->p->PrimaryUcastIf.ifa_name = "Primary Unicast Info";
+    m->p->PrimaryUcastIf.ss.m     = m;
+	m->p->PrimaryUcastIf.ss.info  = NULL;
+	m->p->PrimaryUcastIf.ss.sktv4 = m->p->PrimaryUcastIf.ss.sktv6 = -1;
+	m->p->PrimaryUcastIf.ss.cfsv4 = m->p->PrimaryUcastIf.ss.cfsv6 = NULL;
+	m->p->PrimaryUcastIf.ss.rlsv4 = m->p->PrimaryUcastIf.ss.rlsv6 = NULL;
+	
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.43  2004/10/15 23:00:18  ksekar
+<rdar://problem/3799242> Need to update LLQs on location changes
+
 Revision 1.42  2004/10/04 05:56:04  cheshire
 <rdar://problem/3824730> mDNSResponder doesn't respond to certain AirPort changes
 
@@ -218,6 +221,7 @@ struct mDNS_PlatformSupport_struct
     {
     NetworkInterfaceInfoOSX *InterfaceList;
     CFSocketSet              unicastsockets;
+    NetworkInterfaceInfoOSX  PrimaryUcastIf;    // NetworkInterfaceInfoOSX wrapper around v4 unicast socket bound to primary v4 address
     domainlabel              userhostlabel;
     SCDynamicStoreRef        Store;
     CFRunLoopSourceRef       StoreRLS;

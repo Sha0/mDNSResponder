@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.198  2004/10/15 23:00:18  ksekar
+<rdar://problem/3799242> Need to update LLQs on location changes
+
 Revision 1.197  2004/10/12 23:38:59  ksekar
 <rdar://problem/3837065> remove unnecessary log message
 
@@ -957,7 +960,7 @@ mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainnam
 	for (ptr = browser->qlist; ptr; ptr = ptr->next)
 		{
 		if (SameDomainName(&ptr->q.qname, d))
-			{ LogMsg("Domain %##s already contained in browser", d->c); return mStatus_AlreadyRegistered; }
+			{ debugf("Domain %##s already contained in browser", d->c); return mStatus_AlreadyRegistered; }
 		}
 	
 	question = mallocL("DNSServiceBrowserQuestion", sizeof(DNSServiceBrowserQuestion));
@@ -983,27 +986,33 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 			if (add)
 				{
 				mStatus err = AddDomainToBrowser(ptr, d);
-				if (err) LogMsg("Default browse in domain %##s for client %5d failed. Continuing", d, ptr->ClientMachPort);
+				if (err && err != mStatus_AlreadyRegistered) LogMsg("Default browse in domain %##s for client %5d failed. Continuing", d, ptr->ClientMachPort);
 				}
 			else
 				{
-				// find the question for this domain
-				DNSServiceBrowserQuestion *q = ptr->qlist, *prev = NULL;
-				while (q)
-					{
-					if (SameDomainName(&q->domain, d))
-						{
-						if (prev) prev->next = q->next;
-						else ptr->qlist = q->next;
-						mDNS_StopBrowse(&mDNSStorage, &q->q);
-						freeL("DNSServiceBrowserQuestion", q);
-						break;
-						}
-					prev = q;
-					q = q->next;
-					}
-				if (!q) LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
-				}
+				/*
+				 * By cancelling the browse immediately, we may lose remove events.
+				 * Instead, we allow the browse to run.  If our previous results are no longer valid (e.g. because we
+				 * moved out from behind a firewall) we will get remove events for those names.
+				 *
+				 // find the question for this domain
+				 DNSServiceBrowserQuestion *q = ptr->qlist, *prev = NULL;
+				 while (q)
+					 {
+					 if (SameDomainName(&q->domain, d))
+						 {
+						 if (prev) prev->next = q->next;
+						 else ptr->qlist = q->next;
+						 mDNS_StopBrowse(&mDNSStorage, &q->q);
+						 freeL("DNSServiceBrowserQuestion", q);
+						 break;
+						 }
+					 prev = q;
+					 q = q->next;
+					 }
+				 if (!q) LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
+				 */
+                 }			
 			}
 		}
 	}
