@@ -849,92 +849,92 @@
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = BaseListener.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/BaseListener.java;
-			refType = 0;
+			path = ../mDNSShared/Java/BaseListener.java;
+			refType = 2;
 		};
 		DB2CC4440662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = BrowseListener.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/BrowseListener.java;
-			refType = 0;
+			path = ../mDNSShared/Java/BrowseListener.java;
+			refType = 2;
 		};
 		DB2CC4450662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = DNSRecord.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSRecord.java;
-			refType = 0;
+			path = ../mDNSShared/Java/DNSRecord.java;
+			refType = 2;
 		};
 		DB2CC4460662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = DNSSD.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSD.java;
-			refType = 0;
+			path = ../mDNSShared/Java/DNSSD.java;
+			refType = 2;
 		};
 		DB2CC4470662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = DNSSDException.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSDException.java;
-			refType = 0;
+			path = ../mDNSShared/Java/DNSSDException.java;
+			refType = 2;
 		};
 		DB2CC4480662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = DNSSDRegistration.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSDRegistration.java;
-			refType = 0;
+			path = ../mDNSShared/Java/DNSSDRegistration.java;
+			refType = 2;
 		};
 		DB2CC4490662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = DNSSDService.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/DNSSDService.java;
-			refType = 0;
+			path = ../mDNSShared/Java/DNSSDService.java;
+			refType = 2;
 		};
 		DB2CC44A0662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = DomainListener.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/DomainListener.java;
-			refType = 0;
+			path = ../mDNSShared/Java/DomainListener.java;
+			refType = 2;
 		};
 		DB2CC44B0662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = JNISupport.c;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/JNISupport.c;
-			refType = 0;
+			path = ../mDNSShared/Java/JNISupport.c;
+			refType = 2;
 		};
 		DB2CC44C0662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = QueryListener.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/QueryListener.java;
-			refType = 0;
+			path = ../mDNSShared/Java/QueryListener.java;
+			refType = 2;
 		};
 		DB2CC44D0662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = RegisterListener.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/RegisterListener.java;
-			refType = 0;
+			path = ../mDNSShared/Java/RegisterListener.java;
+			refType = 2;
 		};
 		DB2CC44E0662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = ResolveListener.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/ResolveListener.java;
-			refType = 0;
+			path = ../mDNSShared/Java/ResolveListener.java;
+			refType = 2;
 		};
 		DB2CC44F0662DD1100335AB3 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = TXTRecord.java;
-			path = /Users/roger/mDNSResponder/mDNSShared/Java/TXTRecord.java;
-			refType = 0;
+			path = ../mDNSShared/Java/TXTRecord.java;
+			refType = 2;
 		};
 		DB2CC4500662DD6800335AB3 = {
 			buildActionMask = 2147483647;
