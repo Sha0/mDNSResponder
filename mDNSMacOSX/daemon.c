@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.135  2003/09/23 01:34:02  cheshire
+In SIGINFO state log, show remaining TTL on cache records, and port number on ServiceRegistrations
+
 Revision 1.134  2003/08/21 20:01:37  cheshire
 <rdar://problem/3387941> Traffic reduction: Detect long-lived Resolve() calls, and report them in syslog
 
@@ -1440,6 +1443,7 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	mDNSs32 slot;
 	CacheRecord *rr;
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
+	mDNSs32 now = mDNSPlatformTimeNow();
 
 	LogMsg("%s ---- BEGIN STATE LOG ----", mDNSResponderVersionString);
 
@@ -1448,7 +1452,8 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 			{
 			CacheUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
-			LogMsg("%s %-5s%-6s%s", rr->CRActiveQuestion ? "Active:  " : "Inactive:", DNSTypeName(rr->resrec.rrtype),
+			mDNSu32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
+			LogMsg("%s%6lu %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfoOSX *)rr->resrec.InterfaceID)->ifa_name, GetRRDisplayString(&mDNSStorage, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 			}
@@ -1468,7 +1473,10 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 		LogMsg("%5d: ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
 
 	for (r = DNSServiceRegistrationList; r; r=r->next)
-		LogMsg("%5d: ServiceRegistration %##s", r->ClientMachPort, r->s.RR_SRV.resrec.name.c);
+		{
+		mDNSu16 portnum = (mDNSu16)(r->s.RR_SRV.resrec.rdata->u.srv.port.b[0]) << 8 | r->s.RR_SRV.resrec.rdata->u.srv.port.b[1];
+		LogMsg("%5d: ServiceRegistration %##s %u", r->ClientMachPort, r->s.RR_SRV.resrec.name.c, portnum);
+		}
 
 	udsserver_info();
 
