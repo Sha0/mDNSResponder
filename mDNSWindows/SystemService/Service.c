@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.20  2004/10/14 21:44:05  shersche
+<rdar://problem/3838237> Fix a race condition between the socket thread and the main processing thread that resulted in the socket thread accessing a previously deleted Win32EventSource object.
+Bug #: 3838237
+
 Revision 1.19  2004/10/12 17:59:55  shersche
 <rdar://problem/3718122> Disable routing table modifications when Nortel VPN adapter is active
 Bug #: 3718122
@@ -1271,32 +1275,65 @@ HostDescriptionChanged(mDNS * const inMDNS)
 mDNSlocal unsigned WINAPI
 udsSocketThread(LPVOID inParam)
 {
-	Win32EventSource	*	source = (Win32EventSource*) inParam;
+	Win32EventSource	*	source		=	(Win32EventSource*) inParam;
+	DWORD					threadID	=	GetCurrentThreadId();
+	DWORD					waitCount;
+	HANDLE					waitList[2];
 	bool					safeToClose;
-	mStatus					err    = 0;
+	bool					done;
+	bool					locked		= false;
+	mStatus					err			= 0;
 
-	while (!(source->flags & EventSourceFinalized))
+	waitCount	= source->waitCount;
+	waitList[0] = source->waitList[0];
+	waitList[1] = source->waitList[1];
+	done		= (bool) (source->flags & EventSourceFinalized);
+
+	while (!done)
 	{
 		DWORD result;
 
-		result = WaitForMultipleObjects(source->waitCount, source->waitList, FALSE, INFINITE);
+		result = WaitForMultipleObjects(waitCount, waitList, FALSE, INFINITE);
 		
+		mDNSPlatformLock(&gMDNSRecord);
+		locked = true;
+
+		// <rdar://problem/3838237>
+		//
+		// Look up the source by the thread id.  This will ensure that the 
+		// source is still extant.  It could already have been deleted
+		// by the processing thread.
+		//
+
+		EventSourceLock();
+
+		for (source = gEventSources.Head; source; source = source->next)
+		{
+			if (source->threadID == threadID)
+			{
+				break;
+			}
+		}
+
+		EventSourceUnlock();
+		
+		if (source == NULL)
+		{
+			goto exit;
+		}
+
 		//
 		// socket event
 		//
 		if (result == WAIT_OBJECT_0)
 		{
-			mDNSPlatformLock(&gMDNSRecord);
 			source->callback(source->context);
-			mDNSPlatformUnlock(&gMDNSRecord);
 		}
 		//
 		// close event
 		//
 		else if (result == WAIT_OBJECT_0 + 1)
 		{
-			mDNSPlatformLock(&gMDNSRecord);
-
 			//
 			// this is a bit of a hack.  we want to clean up the internal data structures
 			// so we'll go in here and it will clean up for us
@@ -1304,15 +1341,19 @@ udsSocketThread(LPVOID inParam)
 			shutdown(source->sock, 2);
 			source->callback(source->context);
 
-			mDNSPlatformUnlock(&gMDNSRecord);
-
 			break;
 		}
 		else
 		{
 			// Unexpected wait result.
 			dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
+			goto exit;
 		}
+
+		done   = (bool) (source->flags & EventSourceFinalized);
+		
+		mDNSPlatformUnlock(&gMDNSRecord);
+		locked = false;
 	}
 
 	EventSourceLock();
@@ -1323,6 +1364,13 @@ udsSocketThread(LPVOID inParam)
 	if( safeToClose )
 	{
 		EventSourceFinalize( source );
+	}
+
+exit:
+
+	if ( locked )
+	{
+		mDNSPlatformUnlock(&gMDNSRecord);
 	}
 
 	_endthreadex_compat( (unsigned) err );
@@ -1515,11 +1563,11 @@ EventSourceFinalize(Win32EventSource * source)
 	EventSourceUnlock();
 	locked = false;
 	
-	// Wait for the thread to exit. Give up after 10 seconds to handle a hung thread.
+	// Wait for the thread to exit. Give up after 3 seconds to handle a hung thread.
 	
 	if( source->threadHandle && ( threadID != source->threadID ) )
 	{
-		result = WaitForSingleObject( source->threadHandle, 10 * 1000 );
+		result = WaitForSingleObject( source->threadHandle, 3 * 1000 );
 		check_translated_errno( result == WAIT_OBJECT_0, (OSStatus) GetLastError(), result );
 	}
 	
