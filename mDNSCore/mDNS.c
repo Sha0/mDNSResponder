@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.382  2004/06/08 04:59:40  cheshire
+Tidy up wording -- log messages are already prefixed with "mDNSResponder", so don't need to repeat it
+
 Revision 1.381  2004/06/05 00:57:30  cheshire
 Remove incorrect LogMsg()
 
@@ -3654,7 +3657,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	mDNS_Lock(m);
 
 	m->SleepState = sleepstate;
-	LogMsg("mDNSResponder %s at %ld", sleepstate ? "Sleeping" : "Waking", m->timenow);
+	LogMsg("%s at %ld", sleepstate ? "Sleeping" : "Waking", m->timenow);
 
 	if (sleepstate)
 		{

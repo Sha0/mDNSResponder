@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.10  2004/06/08 04:59:40  cheshire
+Tidy up wording -- log messages are already prefixed with "mDNSResponder", so don't need to repeat it
+
 Revision 1.9  2004/05/29 00:14:20  rpantos
 <rdar://problem/3508093> Runtime check to disable prod mdnsd on OS X.
 
@@ -235,7 +238,7 @@ static mStatus	MainLoop( mDNS *m)
 		if ( sigismember( &signals, SIGUSR1))
 			DumpStateLog( m);
 		if ( sigismember( &signals, SIGPIPE))	// happens when we try to write to a dead client; death should be detected soon in request_callback() and cleaned up.
-			LogMsg("mDNSResponder received SIGPIPE - ignorinig");
+			LogMsg("Received SIGPIPE - ignoring");
 		if ( sigismember( &signals, SIGINT) || sigismember( &signals, SIGTERM))
 			break;
 	}
