@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.119  2003/05/16 01:34:10  cheshire
+Fix some warnings
+
 Revision 1.118  2003/05/14 18:48:40  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 More minor refinements:
@@ -554,15 +557,9 @@ conv:	switch (c)	//  perform appropriate conversion
 							w = (unsigned short *)&ip->addr.ipv6;
 							switch (ip->type)
 								{
-								case mDNSAddrType_IPv4:
-									F.precision = 4;
-									break;
-								case mDNSAddrType_IPv6:
-									F.precision = 16;
-									break;
-								default:
-									F.precision = 0;
-									break;
+								case mDNSAddrType_IPv4: F.precision =  4; break;
+								case mDNSAddrType_IPv6: F.precision = 16; break;
+								default:                F.precision =  0; break;
 								}
 							}
 						switch (F.precision)
@@ -662,7 +659,7 @@ conv:	switch (c)	//  perform appropriate conversion
 done: return(nwritten);
 	}
 
-int mDNS_sprintf(char *sbuffer, const char *fmt, ...)
+mDNSexport int mDNS_sprintf(char *sbuffer, const char *fmt, ...)
 	{
 	int	length;
 	
@@ -951,7 +948,7 @@ mDNSexport mDNSu8 *AppendDomainName(domainname *const name, const domainname *co
 mDNSexport mDNSBool MakeDomainLabelFromLiteralString(domainlabel *const label, const char *cstr)
 	{
 	mDNSu8       *      ptr   = label->c + 1;						// Where we're putting it
-	const mDNSu8 *const limit = ptr + MAX_DOMAIN_LABEL;				// The maximum we can put
+	const mDNSu8 *const limit = label->c + 1 + MAX_DOMAIN_LABEL;	// The maximum we can put
 	while (*cstr && ptr < limit) *ptr++ = (mDNSu8)*cstr++;			// Copy the label
 	label->c[0] = (mDNSu8)(ptr - label->c - 1);						// Set the length byte
 	return(*cstr == 0);												// Return mDNStrue if we successfully consumed all input
@@ -964,7 +961,7 @@ mDNSexport mDNSBool MakeDomainLabelFromLiteralString(domainlabel *const label, c
 // in the domainname bufer (i.e., the next byte after the terminating zero).
 // If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
 // MakeDomainNameFromDNSNameString returns mDNSNULL.
-mDNSexport mDNSu8 *MakeDomainNameFromDNSNameString(domainname *name, const char *cstr)
+mDNSexport mDNSu8 *MakeDomainNameFromDNSNameString(domainname *const name, const char *cstr)
 	{
 	name->c[0] = 0;									// Make an empty domain name
 	return(AppendDNSNameString(name, cstr));		// And then add this string to it
@@ -1208,7 +1205,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	((TimeToAnnounceThisRecord(RR,time) || (RR)->SendPriority >= (level)) && ResourceRecordIsValidAnswer(RR))
 
 #define ActiveQuestion(Q) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf)
-#define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (Q)->LastQTime + (Q)->ThisQInterval - (time) <= 0)
+#define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (time) - ((Q)->LastQTime + (Q)->ThisQInterval) >= 0)
 
 mDNSlocal mDNSBool SameRData(const mDNSu16 rrtype, const RData *const r1, const RData *const r2)
 	{
@@ -1390,7 +1387,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	while (*p && *p != rr) p=&(*p)->next;
 	if (*p)
 		{
-		debugf("Error! Tried to register a ResourceRecord %X %##s that's already in the list", rr, rr->name.c);
+		debugf("Error! Tried to register a ResourceRecord %p %##s that's already in the list", rr, rr->name.c);
 		return(mStatus_AlreadyRegistered);
 		}
 
@@ -1419,7 +1416,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 			if (intf->InterfaceID == rr->InterfaceID) break;
 		if (!intf)
 			{
-			debugf("mDNS_Register_internal: Bogus InterfaceID %X in resource record", rr->InterfaceID);
+			debugf("mDNS_Register_internal: Bogus InterfaceID %p in resource record", rr->InterfaceID);
 			return(mStatus_BadReferenceErr);
 			}
 		}
@@ -1505,7 +1502,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 		{
 		// No need to log an error message if we already know this is a potentially repeated deregistration
 		if (drt != mDNS_Dereg_repeat)
-			debugf("mDNS_Deregister_internal: Record %X %##s (%s) not found in list", rr, rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("mDNS_Deregister_internal: Record %p %##s (%s) not found in list", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		return(mStatus_BadReferenceErr);
 		}
 
@@ -2434,7 +2431,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			else               responseptr = BuildResponse     (m, &response, baselimit, intf->InterfaceID);
 			if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
 				{
-				debugf("SendResponses Sending %d Answer%s, %d Additional%s on %X",
+				debugf("SendResponses Sending %d Answer%s, %d Additional%s on %p",
 					response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
 					response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
 				mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v4, MulticastDNSPort);
@@ -2539,7 +2536,10 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 	const mDNSu8 *const limit = query->data + (query->h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->name, q->rrtype, q->rrclass);
 	if (!newptr)
-		debugf("BuildQuestion: No more space for queries");
+		{
+		debugf("BuildQuestion: No more space in this packet for question %##s", q->name.c);
+		return(mDNSfalse);
+		}
 	else
 		{
 		mDNSu32 forecast = *answerforecast;
@@ -2576,7 +2576,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		// then undo that last question and try again next time
 		if (query->h.numQuestions > 1 && newptr + forecast >= limit)
 			{
-			debugf("BuildQuestion retracting question %##s answerforecast %d", q->name.c, *answerforecast);
+			debugf("BuildQuestion retracting question %##s answerforecast %ld", q->name.c, *answerforecast);
 			query->h.numQuestions--;
 			d = *dups_ptr;		// Go back to where we started and retract these answer records
 			while (*d) { ResourceRecord *rr = *d; *d = mDNSNULL; d = &rr->NextDupSuppress; }
@@ -2699,7 +2699,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketUpdates(mDNS *const m, DNSMessage *query, mDNS
 				queryptr = newptr;
 			else
 				{
-				debugf("BuildQueryPacketUpdates: How did we fail to have space for the Update record %##s (%s)?",
+				LogMsg("BuildQueryPacketUpdates: How did we fail to have space for the Update record %##s (%s)?",
 					rr->name.c, DNSTypeName(rr->rrtype));
 				break;
 				}
@@ -2966,7 +2966,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 		m->rrcache_totalused++;
 		if (m->rrcache_totalused >= m->rrcache_report)
 			{
-			debugf("RR Cache now using %d records", m->rrcache_totalused);
+			debugf("RR Cache now using %ld records", m->rrcache_totalused);
 			m->rrcache_report *= 2;
 			}
 		}
@@ -3016,7 +3016,10 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, ResourceRecord *rr)
 	{
 	// Make sure we mark this record as thoroughly expired -- we don't ever want to give
-	// a positive answer using an expired record (e.g. from an interface that has gone away)
+	// a positive answer using an expired record (e.g. from an interface that has gone away).
+	// We don't want to clear CRActiveQuestion here, because that would leave the record subject to
+	// summary deletion without giving the proper callback to any questions that are monitoring it.
+	// By setting UnansweredQueries to 2 we ensure it won't trigger any further expiration queries.
 	rr->TimeRcvd          = m->timenow - mDNSPlatformOneSecond * 60;
 	rr->UnansweredQueries = 2;
 	rr->rroriginalttl     = 0;
@@ -3121,20 +3124,20 @@ mDNSlocal void mDNS_Lock(mDNS *const m)
 	// If that client callback does mDNS API calls, mDNS_reentrancy and mDNS_busy will both be one
 	// If mDNS_busy != mDNS_reentrancy that's a bad sign
 	if (m->mDNS_busy != m->mDNS_reentrancy)
-		LogMsg("mDNS_Lock: Locking failure! mDNS_busy (%d) != mDNS_reentrancy (%d)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("mDNS_Lock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	// If this is an initial entry into the mDNSCore code, set m->timenow
 	// else, if this is a re-entrant entry into the mDNSCore code, m->timenow should already be set
 	if (m->mDNS_busy == 0)
 		{
 		if (m->timenow)
-			LogMsg("mDNS_Lock: m->timenow already set (%d/%d)", m->timenow, mDNSPlatformTimeNow() - m->timenow);
+			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNSPlatformTimeNow() - m->timenow);
 		m->timenow = mDNSPlatformTimeNow();
 		if (m->timenow == 0) m->timenow = 1;
 		}
 	else if (m->timenow == 0)
 		{
-		LogMsg("mDNS_Lock: m->mDNS_busy is %d but m->timenow not set", m->mDNS_busy);
+		LogMsg("mDNS_Lock: m->mDNS_busy is %ld but m->timenow not set", m->mDNS_busy);
 		m->timenow = mDNSPlatformTimeNow();
 		if (m->timenow == 0) m->timenow = 1;
 		}
@@ -3150,7 +3153,7 @@ mDNSlocal void mDNS_Unlock_(mDNS *const m, mDNSBool clearNextScheduledEvent)
 	
 	// Check for locking failures
 	if (m->mDNS_busy != m->mDNS_reentrancy)
-		LogMsg("mDNS_Unlock: Locking failure! mDNS_busy (%d) != mDNS_reentrancy (%d)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("mDNS_Unlock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	// If this is a final exit from the mDNSCore code, clear m->timenow
 	if (m->mDNS_busy == 0)
@@ -3186,8 +3189,6 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 
 	mDNS_Lock(m);
 
-	// If we don't know when the next event is, or we know that the next event is already due,
-	// then process our work lists now
 	if (m->timenow - m->NextScheduledEvent >= 0)
 		{
 		int i, didwork = 0;
@@ -3243,7 +3244,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		if (!didwork)	// If we did no work, find out if we should have done
 			{
 			if (gNextEventScheduledAt && m->timenow - m->NextScheduledEvent >= 0)
-				LogMsg("************ mDNS_Execute had no work to do (Task was \"%s\" scheduled %d ticks ago for %d ticks ago)",
+				LogMsg("************ mDNS_Execute had no work to do (Task was \"%s\" scheduled %ld ticks ago for %ld ticks ago)",
 					gNextEventMsg, m->timenow - gNextEventScheduledAt, m->timenow - m->NextScheduledEvent);
 			}
 		else if (m->timenow - m->NextScheduledEvent < 0)		// Should not have had anything to do
@@ -3263,7 +3264,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		m->NextScheduledEvent = ScheduleNextTask(m);
 		// If our NextScheduledEvent time hasn't changed, or it is in the past, log an error message
 		if (m->NextScheduledEvent == oldNextEvent || m->NextScheduledEvent - m->timenow <= 0)
-			LogMsg("************ mDNSCoreTask next task \"%s\" %d ticks from last one, %d ticks from now",
+			LogMsg("************ mDNSCoreTask next task \"%s\" %ld ticks from last one, %ld ticks from now",
 				gNextEventMsg, m->NextScheduledEvent - oldNextEvent, m->NextScheduledEvent - m->timenow);
 		gNextEventScheduledAt = mDNSPlatformTimeNow();
 		}
@@ -3807,7 +3808,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID, replyunicast, replymulticast);
 	if (replyunicast && responseend)
 		{
-		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#a:%d on %X/%d",
+		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#a:%d on %p/%d",
 			replyunicast->h.numQuestions,   replyunicast->h.numQuestions   == 1 ? "" : "s",
 			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
 			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s",
@@ -4116,7 +4117,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				if (intf->InterfaceID == question->InterfaceID) break;
 			if (!intf)
 				{
-				debugf("mDNS_StartQuery_internal: Bogus InterfaceID %X in question", question->InterfaceID);
+				debugf("mDNS_StartQuery_internal: Bogus InterfaceID %p in question", question->InterfaceID);
 				return(mStatus_BadReferenceErr);
 				}
 			}
@@ -4127,11 +4128,12 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->RecentAnswers = 0;
 		question->DuplicateOf   = FindDuplicateQuestion(m, question);
 		if (!question->DuplicateOf)
-			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %X (%X) started",
+			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p (%p) started",
 				question->name.c, DNSTypeName(question->rrtype), question->InterfaceID, question);
 		else
-			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %X (%X) duplicate of (%X)",
+			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p (%p) duplicate of (%p)",
 				question->name.c, DNSTypeName(question->rrtype), question->InterfaceID, question, question->DuplicateOf);
+
 		*q = question;
 		
 		if (!m->NewQuestions)
@@ -4622,13 +4624,13 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 	switch (result)
 		{
 		case mStatus_NoError:
-			debugf("HostNameCallback: %##s (%s) Name registered",   rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("HostNameCallback: %##s (%s) Name registered",    rr->name.c, DNSTypeName(rr->rrtype));
 			break;
 		case mStatus_NameConflict:
-			debugf("HostNameCallback: %##s (%s) Name conflict",     rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("HostNameCallback: %##s (%s) Name conflict",      rr->name.c, DNSTypeName(rr->rrtype));
 			break;
 		default:
-			debugf("HostNameCallback: %##s (%s) Unknown result %d", rr->name.c, DNSTypeName(rr->rrtype), result);
+			debugf("HostNameCallback: %##s (%s) Unknown result %ld", rr->name.c, DNSTypeName(rr->rrtype), result);
 			break;
 		}
 
@@ -4836,7 +4838,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 			break;
 
 		default:
-			debugf("ServiceCallback: %##s (%s) Unknown Result %d", rr->name.c, DNSTypeName(rr->rrtype), result);
+			debugf("ServiceCallback: %##s (%s) Unknown Result %ld", rr->name.c, DNSTypeName(rr->rrtype), result);
 			break;
 		}
 
@@ -5148,7 +5150,7 @@ extern void mDNS_Close(mDNS *const m)
 	mDNSs32	slot;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next) if (rr->CRActiveQuestion) rrcache_active++;
-	debugf("mDNS_Close: RR Cache now using %d records, %d active", m->rrcache_totalused, rrcache_active);
+	debugf("mDNS_Close: RR Cache now using %ld records, %d active", m->rrcache_totalused, rrcache_active);
 	}
 #endif
 
