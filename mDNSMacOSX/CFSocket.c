@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.102  2003/08/06 00:14:52  cheshire
+<rdar://problem/3330324> Need to check IP TTL on responses
+Also add corresponding checks in the IPv6 code path
+
 Revision 1.101  2003/08/05 22:20:16  cheshire
 <rdar://problem/3330324> Need to check IP TTL on responses
 
@@ -544,6 +548,10 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 			dstaddr->ip.v6 = *(mDNSv6Addr*)&ip6_info->ipi6_addr;
 			myIfIndexToName(ip6_info->ipi6_ifindex, ifname);
 			}
+		if (cmPtr->cmsg_level == IPPROTO_IPV6 && cmPtr->cmsg_type == IPV6_HOPLIMIT)
+			{
+			*ttl = *(int*)CMSG_DATA(cmPtr);
+			}
 		}
 
 	return(n);
@@ -757,6 +765,10 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		// We want to receive destination addresses and receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
 		if (err < 0) { LogMsg("setsockopt - IPV6_PKTINFO error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		
+		// We want to receive packet hop count value so we can check it
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_HOPLIMIT, &on, sizeof(on));
+		if (err < 0) { LogMsg("setsockopt - IPV6_HOPLIMIT error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// We want to receive only IPv6 packets, without this option, we may
 		// get IPv4 addresses as mapped addresses.
