@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.104  2003/08/12 13:12:07  cheshire
+Textual search/replace: Indicate local functions using "mDNSlocal" instead of "static"
+
 Revision 1.103  2003/08/08 18:36:04  cheshire
 <rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
 
@@ -368,9 +371,9 @@ mDNSexport void LogMsg(const char *format, ...)
 		}
 	}
 
-static struct ifaddrs* myGetIfAddrs(int refresh)
+mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
 	{
-	static struct ifaddrs	*ifa = NULL;
+	static struct ifaddrs *ifa = NULL;
 	
 	if (refresh && ifa)
 		{
@@ -383,7 +386,7 @@ static struct ifaddrs* myGetIfAddrs(int refresh)
 	return ifa;
 	}
 
-static int myIfIndexToName(u_short index, char* name)
+mDNSlocal int myIfIndexToName(u_short index, char* name)
 	{
 	struct ifaddrs *ifa;
 	for (ifa = myGetIfAddrs(0); ifa; ifa = ifa->ifa_next)
@@ -480,7 +483,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	return(mStatus_NoError);
 	}
 
-static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
+mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	struct sockaddr *const from, size_t *const fromlen, mDNSAddr *dstaddr, char ifname[IF_NAMESIZE], mDNSu8 *ttl)
 	{
 	static int numLogMessages = 0;
