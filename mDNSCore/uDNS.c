@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.182  2005/01/25 18:55:05  ksekar
+Shortened log message
+
 Revision 1.181  2005/01/25 02:17:32  cheshire
 <rdar://problem/3971263> Don't use query ID zero in uDNS queries
 
@@ -4224,7 +4227,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	if (!GetServiceTarget(&m->uDNS_info, &srs->RR_SRV, &target))
 		{
 		// defer registration until we've got a target
-		LogMsg("uDNS_RegisterService - no target available for service %##s.  Defering registration", srs->RR_SRV.resrec.name->c);
+		LogMsg("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
 		info->state = regState_NoTarget;
 		return mStatus_NoError;
 		}  
