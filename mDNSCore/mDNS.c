@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.229  2003/07/17 17:35:04  cheshire
+<rdar://problem/3325583> Rate-limit responses, to guard against packet flooding
+
 Revision 1.228  2003/07/16 20:50:27  cheshire
 <rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
 
@@ -1890,6 +1893,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, ResourceRecord *const rr)
 	{
 	// Back-date LastAPTime to make it appear that the next announcement/probe is due immediately
 	rr->LastAPTime = m->timenow - rr->ThisAPInterval;
+	rr->LastMCTime = m->timenow;
 	
 	if (rr->RecordType == kDNSRecordTypeUnique)
 		{
@@ -2620,6 +2624,7 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->ThisAPInterval    = 0;
 	rr->LastAPTime        = 0;
+	rr->LastMCTime        = 0;
 	rr->NewRData          = mDNSNULL;
 	rr->UpdateCallback    = mDNSNULL;
 
@@ -2906,6 +2911,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			{
 			rr->SendRNow = !intf ? mDNSNULL : (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional if sending as answer
+			rr->LastMCTime      = m->timenow;
 			// If we're announcing this record, and it's at least half-way to its ordained time, then consider this announcement done
 			if (TimeToAnnounceThisRecord(rr, m->timenow + rr->ThisAPInterval/2))
 				{
@@ -2919,6 +2925,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			{
 			rr->SendRNow = rr->ImmedAnswer;				// Just respond on that interface
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional too
+			rr->LastMCTime      = m->timenow;
 			}
 		SetNextAnnounceProbeTime(m, rr);
 		}
@@ -4430,7 +4437,13 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					// NR_AnswerTo pointing into query packet means "answer via unicast"
 					//                         (may also choose to do multicast as well)
 					// NR_AnswerTo == ~0 means "definitely answer via multicast" (can't downgrade to unicast later)
-					if (QuestionNeedsMulticastResponse) rr->NR_AnswerTo = (mDNSu8*)~0;
+					if (QuestionNeedsMulticastResponse)
+						{
+						// We only mark this question for sending if it is at least one second since the last time we multicast it.
+						// This is to guard against the case where someone blasts us with queries as fast as they can.
+						if (m->timenow - (rr->LastMCTime + mDNSPlatformOneSecond) >= 0)
+							rr->NR_AnswerTo = (mDNSu8*)~0;
+						}
 					else if (!rr->NR_AnswerTo) rr->NR_AnswerTo = ptr;
 					}
 				}

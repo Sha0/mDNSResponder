@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.82  2003/07/17 17:35:04  cheshire
+<rdar://problem/3325583> Rate-limit responses, to guard against packet flooding
+
 Revision 1.81  2003/07/16 05:01:36  cheshire
 Add fields 'LargeAnswers' and 'ExpectUnicastResponse' in preparation for
 <rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
@@ -575,6 +578,7 @@ struct ResourceRecord_struct
 	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another
 	mDNSs32         ThisAPInterval;		// AR: In platform time units: Current interval for announce/probe
 	mDNSs32         LastAPTime;			// AR: In platform time units: Last time we sent announcement/probe
+	mDNSs32         LastMCTime;			// AR: Last time we multicast this record (used to guard against packet-storm attacks)
 	RData          *NewRData;			// AR: Set if we are updating this record with new rdata
 	mDNSRecordUpdateCallback *UpdateCallback;
 
