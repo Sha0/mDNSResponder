@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.221  2004/11/30 03:24:04  cheshire
+<rdar://problem/3854544> Defer processing network configuration changes until configuration has stabilized
+
 Revision 1.220  2004/11/29 23:34:31  cheshire
 On platforms with coarse time resolutions, ORing time values with one to ensure they are non-zero
 is crude, and effectively halves the time resolution. The more selective NonZeroTime() function
@@ -2145,7 +2148,7 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 		case SIGTERM:	ExitCallback(m->msgh_id); break;
 		case SIGINFO:	INFOCallback(); break;
 		case SIGUSR1:	LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
-						mDNSMacOSXNetworkChanged(NULL, NULL, &mDNSStorage); break;
+						mDNSMacOSXNetworkChanged(&mDNSStorage); break;
 		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id); break;
 		}
 	}
@@ -2278,6 +2281,18 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 		else
 			if (nextevent - m->p->NotifyUser > 0)
 				nextevent = m->p->NotifyUser;
+		}
+
+	if (m->p->NetworkChanged)
+		{
+		if (m->p->NetworkChanged - now < 0)
+			{
+			m->p->NetworkChanged = 0;
+			mDNSMacOSXNetworkChanged(m);
+			}
+		else
+			if (nextevent - m->p->NetworkChanged > 0)
+				nextevent = m->p->NetworkChanged;
 		}
 
 	return(nextevent);

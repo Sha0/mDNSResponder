@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.47  2004/11/30 03:24:03  cheshire
+<rdar://problem/3854544> Defer processing network configuration changes until configuration has stabilized
+
 Revision 1.46  2004/11/03 03:45:16  cheshire
 <rdar://problem/3863627> mDNSResponder does not inform user of Computer Name collisions
 
@@ -234,6 +237,7 @@ struct mDNS_PlatformSupport_struct
     domainlabel              userhostlabel;
     domainlabel              usernicelabel;
     mDNSs32                  NotifyUser;
+    mDNSs32                  NetworkChanged;
     SCDynamicStoreRef        Store;
     CFRunLoopSourceRef       StoreRLS;
     io_connect_t             PowerConnection;
@@ -241,7 +245,7 @@ struct mDNS_PlatformSupport_struct
     CFRunLoopSourceRef       PowerRLS;
     };
 
-extern void mDNSMacOSXNetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context);
+extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.245  2004/11/30 03:24:04  cheshire
+<rdar://problem/3854544> Defer processing network configuration changes until configuration has stabilized
+
 Revision 1.244  2004/11/30 02:59:35  cheshire
 For debugging diagnostics, added identifying strings in SCDynamicStoreCreate() calls
 
@@ -2421,23 +2424,13 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 		}
 	}
 
-mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef store, CFArrayRef changes, void *context)
+mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	{
-	static mDNSBool DynDNSConfigInitialized = mDNSfalse;
 	static mDNSBool LegacyNATInitialized = mDNSfalse;
-
-	mDNS *m = context;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	CFDictionaryRef dict;
 	CFStringRef     key;
-	CFStringRef router, primary;
-	char buf[256];
 	domainname zone, fqdn;
-	mDNSAddr r;
-	
-	if (DynDNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
-	DynDNSConfigInitialized = mDNStrue;  // set flag once we have initial configuration
-
 	// get fqdn, zone from SCPrefs
 	GetUserSpecifiedDDNSConfig(&fqdn, &zone);
 	if (!fqdn.c[0] && !zone.c[0]) ReadDDNSSettingsFromConfFile(m, &fqdn, &zone);
@@ -2462,8 +2455,11 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef store, CFArrayRef changes, 
 		}
 			
     // get DNS settings
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
+	if (!store) return;
+	
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
+	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity"); CFRelease(store); return;  }
 	dict = SCDynamicStoreCopyValue(store, key);
 	CFRelease(key);
 
@@ -2477,16 +2473,19 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef store, CFArrayRef changes, 
 
 	// get IPv4 settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
+	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity"); CFRelease(store); return;  }
 	dict = SCDynamicStoreCopyValue(store, key);
 	CFRelease(key);
+	CFRelease(store);
 	if (!dict)
 		{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL); return; } // lost v4
 
 	// handle router changes
+	mDNSAddr r;
+	char buf[256];
 	r.type = mDNSAddrType_IPv4;
 	r.ip.v4.NotAnInteger = 0;
-	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
+	CFStringRef router = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
 	if (router)
 		{
 		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
@@ -2495,7 +2494,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef store, CFArrayRef changes, 
 		}
 
 	// handle primary interface changes
-	primary = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
+	CFStringRef primary = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
 	if (primary)
 		{
 		struct ifaddrs *ifa = myGetIfAddrs(1);
@@ -2534,31 +2533,39 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef store, CFArrayRef changes, 
 	CFRelease(dict);
 	}
 
-mDNSexport void mDNSMacOSXNetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
+mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	{
-	int nDeletions = 0, nAdditions = 0;
-	(void)store;        // Parameter not used
-	(void)changedKeys;  // Parameter not used
 	LogOperation("***   Network Configuration Change   ***");
-
-	mDNS *const m = (mDNS *const)context;
-	
 	MarkAllInterfacesInactive(m);
 	UpdateInterfaceList(m);
-	nDeletions = ClearInactiveInterfaces(m);
-	nAdditions = SetupActiveInterfaces(m);
+	int nDeletions = ClearInactiveInterfaces(m);
+	int nAdditions = SetupActiveInterfaces(m);
 	if (nDeletions || nAdditions) mDNS_UpdateLLQs(m);
-	DynDNSConfigChanged(store, changedKeys, context);
+	DynDNSConfigChanged(m);
 	
 	if (m->MainCallback)
 		m->MainCallback(m, mStatus_ConfigChanged);
+	}
+
+mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
+	{
+	(void)store;        // Parameter not used
+	(void)changedKeys;  // Parameter not used
+	LogOperation("***   NetworkChanged   ***");
+	mDNS *const m = (mDNS *const)context;
+	mDNS_Lock(m);
+	m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
+	if (!m->SuppressSending ||
+		m->SuppressSending - m->p->NetworkChanged < 0)
+		m->SuppressSending = m->p->NetworkChanged;
+	mDNS_Unlock(m);
 	}
 
 mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	{
 	mStatus err = -1;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
-	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:WatchForNetworkChanges"), mDNSMacOSXNetworkChanged, &context);
+	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:WatchForNetworkChanges"), NetworkChanged, &context);
 	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
 	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
@@ -2628,11 +2635,11 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 												// Just to be safe, also make sure our interface list is fully up to date, in case we
 												// haven't yet received the System Configuration Framework "network changed" event that
 												// we expect to receive some time shortly after the kIOMessageSystemWillPowerOn message
-												mDNSMacOSXNetworkChanged(NULL, NULL, m);												break; // E0000300
+												mDNSMacOSXNetworkChanged(m);															break; // E0000300
 		case kIOMessageSystemWillRestart:		debugf("PowerChanged kIOMessageSystemWillRestart (no action)");							break; // E0000310
 		case kIOMessageSystemWillPowerOn:		debugf("PowerChanged kIOMessageSystemWillPowerOn");
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
-												mDNSMacOSXNetworkChanged(NULL, NULL, m); mDNSCoreMachineSleep(m, false);                break; // E0000320
+												mDNSMacOSXNetworkChanged(m); mDNSCoreMachineSleep(m, false);							break; // E0000320
 		default:								debugf("PowerChanged unknown message %X", messageType);									break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
@@ -2827,7 +2834,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return err;
 
 	DynDNSZone.c[0] = '\0';						// Get initial DNS configuration
-	DynDNSConfigChanged(m->p->Store, NULL, m);
+	DynDNSConfigChanged(m);
 
 	InitDNSConfig(m);
  	return(err);
