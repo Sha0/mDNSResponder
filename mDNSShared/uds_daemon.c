@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.135  2004/12/10 20:46:37  cheshire
+Change LogOperation message to debugf
+
 Revision 1.134  2004/12/10 13:19:37  cheshire
 Add verbosedebugf() logging message in CountPeerRegistrations()
 
@@ -815,8 +818,8 @@ int udsserver_init(void)
 		if (setrlimit(RLIMIT_NOFILE, &newfds) < 0) my_perror("ERROR: Unable to set maximum file descriptor limit");
 
 	if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0) { my_perror("ERROR: Unable to get file descriptor limit"); return 0; }
-	LogOperation("maxfds.rlim_max %d", (long)maxfds.rlim_max);
-	LogOperation("maxfds.rlim_cur %d", (long)maxfds.rlim_cur);
+	debugf("maxfds.rlim_max %d", (long)maxfds.rlim_max);
+	debugf("maxfds.rlim_cur %d", (long)maxfds.rlim_cur);
 	}
 #endif
 	
