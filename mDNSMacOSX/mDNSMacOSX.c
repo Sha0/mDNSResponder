@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.217  2004/10/26 20:48:21  cheshire
+Improve logging messages
+
 Revision 1.216  2004/10/26 01:02:37  cheshire
 Update comment
 
@@ -651,7 +654,6 @@ Minor code tidying
 #include "../mDNSShared/uds_daemon.h" // Defines communication interface from platform layer up to UDS daemon
 
 #include <stdio.h>
-#include <unistd.h>                 // For select() and close()
 #include <stdarg.h>                 // For va_list support
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -1271,6 +1273,8 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	tcpInfo_t *info;
 	CFSocketRef sr;
 
+	if (sd < 3) LogMsg("mDNSPlatformTCPCloseConnection: ERROR sd %d < 3", sd);
+
     // Get the CFSocket for the descriptor
 	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketNoCallBack, NULL, NULL);
 	if (!sr) { LogMsg("ERROR: mDNSPlatformTCPCloseConnection - CFSocketCreateWithNative returned NULL"); return; }
@@ -1680,7 +1684,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	struct ifaddrs *v4Loopback  = NULL;
 	struct ifaddrs *v6Loopback  = NULL;
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
-	if (InfoSocket < 3) LogMsg("UpdateInterfaceList: socket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
+	if (InfoSocket < 3) LogMsg("UpdateInterfaceList: InfoSocket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
 	if (m->SleepState) ifa = NULL;
 
 	// Set up the nice label
@@ -1829,8 +1833,8 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
 				mDNS_RegisterInterface(m, n);
-				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a%s",
-					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, n->InterfaceActive ? " (Primary)" : "");
+				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%#a%s",
+					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, &n->mask, n->InterfaceActive ? " (Primary)" : "");
 				}
 	
 			if (!n->McastTxRx)
