@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.201  2005/02/26 03:04:13  cheshire
+<rdar://problem/4017292> Should not indicate successful dynamic update if no network connection
+Don't try to do updates to root name server. This ensures status dot turns red if user
+enters a bad host name such as just "fred" instead of a properly fully-qualified name.
+
 Revision 1.200  2005/02/25 17:47:45  ksekar
 <rdar://problem/4021868> SendServiceRegistration fails on wake from sleep
 
@@ -3624,21 +3629,6 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 	if (context->state == lookupPort)  // we've already issued the query
 		{
 		if (!msg) { LogMsg("ERROR: hndlLookupUpdatePort - NULL message"); return smError; }
-
-		// If we got NXDomain error, update status from 1 (in progress) to mStatus_NoSuchNameErr (failed)
-		if (msg->h.flags.b[1] & kDNSFlag1_RC)
-			{
-			debugf("lookupDNSPort error %d", (msg->h.flags.b[1] & kDNSFlag1_RC));
-			ptr = msg->data;
-			for (i = 0; i < msg->h.numQuestions; i++)
-				{
-				DNSQuestion q;
-				ptr = getQuestion(msg, ptr, end, 0, &q);
-				if (SameDomainName(&q.qname, &context->question.qname))
-					{ context->callback(mStatus_NoSuchNameErr, context->m, context->callbackInfo, mDNSNULL); break; }
-				}
-			}
-
 		ptr = LocateAnswers(msg, end);
 		for (i = 0; i < msg->h.numAnswers; i++)
 			{
@@ -3898,6 +3888,17 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 		goto error;
 		}
 	
+	// Don't try to do updates to the root name server.
+	// We might be tempted also to block updates to any single-label name server (e.g. com, edu, net, etc.) but some
+	// organizations use their own private pseudo-TLD, like ".home", etc, and we don't want to block that.
+	if (zoneData->zoneName.c[0] == 0)
+		{
+		LogMsg("ERROR: Only name server claiming responsibility for \"%##s\" is \"%##s\"!",
+			newRR->resrec.name->c, zoneData->zoneName.c);
+		err = mStatus_NoSuchNameErr;
+		goto error;
+		}
+
 	// cache zone data
 	AssignDomainName(&newRR->uDNS_info.zone, &zoneData->zoneName);
     newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
