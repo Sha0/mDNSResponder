@@ -13,6 +13,7 @@
 		};
 		00AD62A3032D799A0CCA2C71 = {
 			buildPhases = (
+				FFF7174A07614A8600E10551,
 				00AD62A4032D799A0CCA2C71,
 				00AD62AC032D799A0CCA2C71,
 				00AD62B3032D799A0CCA2C71,
@@ -311,6 +312,7 @@
 		};
 		08FB779FFE84155DC02AAC07 = {
 			buildPhases = (
+				FF37BE9207614059003C0420,
 				08FB77A0FE84155DC02AAC07,
 				08FB77A1FE84155DC02AAC07,
 				08FB77A3FE84155DC02AAC07,
@@ -1582,6 +1584,19 @@
 			isa = PBXTargetDependency;
 			target = FF25792906C9A70800376F7B;
 		};
+		FF37BE9207614059003C0420 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -e /usr/local/lib/libdnsinfo.a ]\nthen\nrm -f \"${OBJROOT}/libdnsinfo.a\"\nelse\ntouch ${OBJROOT}/empty.c\ncc ${OBJROOT}/empty.c -c -o \"${OBJROOT}/libdnsinfo.a\"\nrm -f ${OBJROOT}/empty.c\nfi";
+		};
 		FF485D5105632E0000130380 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
@@ -1683,6 +1698,19 @@
 			isa = PBXBuildFile;
 			settings = {
 			};
+		};
+		FFF7174A07614A8600E10551 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -e /usr/local/lib/libdnsinfo.a ]\nthen\nrm -f \"${OBJROOT}/libdnsinfo.a\"\nelse\ntouch ${OBJROOT}/empty.c\ncc ${OBJROOT}/empty.c -c -o \"${OBJROOT}/libdnsinfo.a\"\nrm -f ${OBJROOT}/empty.c\nfi";
 		};
 	};
 	rootObject = 08FB7793FE84155DC02AAC07;
