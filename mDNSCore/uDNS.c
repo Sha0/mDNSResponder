@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.24  2004/04/08 09:41:40  bradley
+Added const to AuthRecord in deadvertiseIfCallback to match callback typedef.
+
 Revision 1.23  2004/03/24 00:29:45  ksekar
 Make it safe to call StopQuery in a unicast question callback
 
@@ -302,7 +305,7 @@ mDNSlocal void hostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	mDNS_HostNameCallback(m, rr, result);	
 	}
 
-mDNSlocal void deadvertiseIfCallback(mDNS *const m, AuthRecord *rr, mStatus err)
+mDNSlocal void deadvertiseIfCallback(mDNS *const m, AuthRecord *const rr, mStatus err)
 	{
 	(void)m; // unused
 	
