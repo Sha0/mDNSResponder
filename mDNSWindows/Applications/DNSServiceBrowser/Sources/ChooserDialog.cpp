@@ -1,5 +1,5 @@
 /*
-	$Id: ChooserDialog.cpp,v 1.1 2002/09/20 06:12:52 bradley Exp $
+	$Id: ChooserDialog.cpp,v 1.2 2002/09/20 08:39:21 bradley Exp $
 
 	Contains:	Rendezvous Browser for Windows.
 	
@@ -47,6 +47,10 @@
     Change History (most recent first):
     
         $Log: ChooserDialog.cpp,v $
+        Revision 1.2  2002/09/20 08:39:21  bradley
+        Make sure each resolved item matches the selected service type to handle resolved that may have
+        been queued up on the Windows Message Loop. Reduce column to fit when scrollbar is present.
+
         Revision 1.1  2002/09/20 06:12:52  bradley
         Rendezvous Browser for Windows
 
@@ -106,7 +110,7 @@ enum
 // Chooser List
 	
 #define kChooserListDefaultNameColumnIndex			0
-#define kChooserListDefaultNameColumnWidth			176
+#define kChooserListDefaultNameColumnWidth			162
 	
 #define kChooserListDefaultIPColumnIndex			1
 #define kChooserListDefaultIPColumnWidth			126
@@ -854,6 +858,7 @@ LONG	ChooserDialog::OnResolve( WPARAM inWParam, LPARAM inLParam )
 {
 	ServiceInstanceInfo *						p;
 	std::auto_ptr < ServiceInstanceInfo >		pAutoPtr;
+	int											selectedType;
 	int											n;
 	int											i;
 	bool										found;
@@ -864,6 +869,19 @@ LONG	ChooserDialog::OnResolve( WPARAM inWParam, LPARAM inLParam )
 	p = reinterpret_cast <ServiceInstanceInfo *> ( inLParam );
 	pAutoPtr.reset( p );
 	
+	// Make sure it is for an item of the correct type. This handles any resolves that may have been queued up.
+	
+	selectedType = mServiceList.GetNextItem( -1, LVNI_SELECTED );
+	assert( selectedType >= 0 );
+	if( selectedType >= 0 )
+	{
+		assert( selectedType <= (int) mServiceTypes.size() );
+		if( p->type != mServiceTypes[ selectedType ].serviceType )
+		{
+			goto exit;
+		}
+	}
+	
 	// Search to see if we know about this service instance. If so, update its info. Otherwise, add it to the list.
 	
 	found = false;
@@ -873,7 +891,7 @@ LONG	ChooserDialog::OnResolve( WPARAM inWParam, LPARAM inLParam )
 		ServiceInstanceInfo *		q;
 		
 		// If the name, type, domain, and interface matches, treat it as the same service instance.
-		
+				
 		q = &mServiceInstances[ i ];
 		if( ( p->name 	== q->name ) 	&& 
 			( p->type 	== q->type ) 	&& 
@@ -902,6 +920,8 @@ LONG	ChooserDialog::OnResolve( WPARAM inWParam, LPARAM inLParam )
 		}
 	}
 	UpdateInfoDisplay();
+
+exit:
 	return( 0 );
 }
 
@@ -914,7 +934,11 @@ void	ChooserDialog::StartBrowsing( const char *inType, const char *inDomain )
 	DNSStatus		err;
 	
 	assert( mServiceInstances.empty() );
+	assert( mChooserList.GetItemCount() == 0 );
 	assert( !mIsServiceBrowsing );
+	
+	mChooserList.DeleteAllItems();
+	mServiceInstances.clear();
 	
 	mIsServiceBrowsing = true;
 	err = DNSBrowserStartServiceSearch( mBrowser, kDNSBrowserFlagAutoResolve, inType, inDomain );
@@ -926,7 +950,7 @@ void	ChooserDialog::StartBrowsing( const char *inType, const char *inDomain )
 //===========================================================================================================================
 
 void	ChooserDialog::StopBrowsing( void )
-{	
+{
 	// If searching, stop.
 	
 	if( mIsServiceBrowsing )
@@ -940,8 +964,10 @@ void	ChooserDialog::StopBrowsing( void )
 	
 	// Remove all service instances.
 	
-	mChooserList.DeleteAllItems();	
+	mChooserList.DeleteAllItems();
+	assert( mChooserList.GetItemCount() == 0 );
 	mServiceInstances.clear();
+	assert( mServiceInstances.empty() );
 	UpdateInfoDisplay();
 }
 
