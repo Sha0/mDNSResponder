@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.21  2004/11/11 20:14:55  ksekar
+<rdar://problem/3719574> Wide-Area registrations not deregistered on sleep
+
 Revision 1.20  2004/10/16 00:16:59  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -114,9 +117,9 @@ extern mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalInfo 
 extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 	
 extern void uDNS_Init(mDNS *m);
-extern void uDNS_Close(mDNS *m);
 extern void uDNS_Sleep(mDNS *m);
 extern void uDNS_Wake(mDNS *m);
+#define uDNS_Close uDNS_Sleep
 	
 // uDNS_UpdateRecord
 // following fields must be set, and the update validated, upon entry.

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.111  2004/11/11 20:14:55  ksekar
+<rdar://problem/3719574> Wide-Area registrations not deregistered on sleep
+
 Revision 1.110  2004/11/10 23:53:53  ksekar
 Remove no longer relevant comment
 
@@ -4273,19 +4276,95 @@ mDNSexport void mDNS_UpdateLLQs(mDNS *m)
 	mDNS_Unlock(m);
 	}
 
+// simplest sleep logic - rather than having sleep states that must be dealt with explicitly in all parts of
+// the code, we simply send a deregistration, and put the service in Refresh state, with a timeout far enough
+// in the future that we'll sleep (or the sleep will be cancelled) before it is retransmitted.  Then to wake,
+// we just move up the timers.
 
-//!!!KRS implement me for real
-mDNSlocal void SuspendRecordRegistrations(mDNS *m)
+
+
+mDNSlocal void SleepRecordRegistrations(mDNS *m)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-	AuthRecord *rr;
+	DNSMessage msg;
+	AuthRecord *rr = m->uDNS_info.RecordRegistrations;
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 
-	for (rr = u->RecordRegistrations; rr; rr = rr->next)
-		{
-		uDNS_DeregisterRecord(m, rr);
+	while (rr)
+		{		
+		if (rr->uDNS_info.state == regState_Registered ||
+			rr->uDNS_info.state == regState_Refresh)
+			{
+			mDNSu8 *ptr = msg.data, *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
+			InitializeDNSMessage(&msg.h, newMessageID(&m->uDNS_info), UpdateReqFlags);
+			
+			// construct deletion update
+			ptr = putZone(&msg, ptr, end, &rr->uDNS_info.zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
+			if (!ptr) { LogMsg("Error: SleepRecordRegistrations - could not put zone"); return; }			
+			ptr = putDeletionRecord(&msg, ptr, &rr->resrec);
+			if (!ptr) {  LogMsg("Error: SleepRecordRegistrations - could not put deletion record"); return; }
+
+			mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForZone(&m->uDNS_info, &rr->uDNS_info.zone));
+			rr->uDNS_info.state = regState_Refresh;
+			rr->LastAPTime = timenow;
+			rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;
+			}
+		rr = rr->next;
 		}
 	}
 
+mDNSlocal void WakeRecordRegistrations(mDNS *m)
+	{
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
+	AuthRecord *rr = m->uDNS_info.RecordRegistrations;
+
+	while (rr)
+		{
+		if (rr->uDNS_info.state == regState_Refresh)
+			{
+			// trigger slightly delayed refresh (we usually get this message before kernel is ready to send packets)
+			rr->LastAPTime = timenow;
+			rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
+			}
+		rr = rr->next;
+		}
+	}
+
+mDNSlocal void SleepServiceRegistrations(mDNS *m)
+	{
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
+	ServiceRecordSet *srs = m->uDNS_info.ServiceRegistrations;
+	while(srs)
+		{
+		if (srs->uDNS_info.state == regState_Registered ||
+			srs->uDNS_info.state == regState_Refresh)
+			{
+			mDNSOpaque16 origid  = srs->uDNS_info.id;
+			srs->uDNS_info.state = regState_DeregPending;  // state expected by SendDereg()
+			SendServiceDeregistration(m, srs);
+			srs->uDNS_info.id = origid;
+			srs->uDNS_info.state = regState_Refresh;			
+			srs->RR_SRV.LastAPTime = timenow;
+			srs->RR_SRV.ThisAPInterval = 300 * mDNSPlatformOneSecond;
+			}
+		srs = srs->next;
+		}
+	}
+
+mDNSlocal void WakeServiceRegistrations(mDNS *m)
+	{
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
+	ServiceRecordSet *srs = m->uDNS_info.ServiceRegistrations;
+	while(srs)
+		{
+		if (srs->uDNS_info.state == regState_Refresh)
+			{
+			// trigger slightly delayed refresh (we usually get this message before kernel is ready to send packets)
+			srs->RR_SRV.LastAPTime = timenow;
+			srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
+			}
+		srs = srs->next;
+		}
+	}
 
 mDNSexport void uDNS_Init(mDNS *const m)
 	{
@@ -4293,18 +4372,16 @@ mDNSexport void uDNS_Init(mDNS *const m)
 	m->uDNS_info.nextevent = m->timenow_last + 0x78000000;
 	}
 
-mDNSexport void uDNS_Close(mDNS *m)
-	{
-	SuspendLLQs(m, mDNStrue);
-	SuspendRecordRegistrations(m);   
-	}
-
 mDNSexport void uDNS_Sleep(mDNS *m)
 	{
 	SuspendLLQs(m, mDNStrue);
+	SleepServiceRegistrations(m);
+	SleepRecordRegistrations(m);
 	}
 
 mDNSexport void uDNS_Wake(mDNS *m)
 	{
 	RestartQueries(m);
+	WakeServiceRegistrations(m);
+	WakeRecordRegistrations(m);
 	}
