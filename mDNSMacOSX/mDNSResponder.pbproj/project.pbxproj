@@ -28,7 +28,7 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = "-W -Wall -Wno-four-char-constants -Wno-unknown-pragmas";
+				WARNING_CFLAGS = "-W -Wall -Wmissing-prototypes -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
 			);
@@ -150,7 +150,6 @@
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = "Build All";
 				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
 				00AD62BC032D7A160CCA2C71,
@@ -178,19 +177,9 @@
 			buildRules = (
 			);
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
 			};
 			isa = PBXBuildStyle;
 			name = Development;
-		};
-		00B2AB0D032D7B220CCA2C71 = {
-			buildRules = (
-			);
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-			};
-			isa = PBXBuildStyle;
-			name = Deployment;
 		};
 		00CA213D02786FC30CCA2C71 = {
 			isa = PBXFrameworkReference;
@@ -226,7 +215,6 @@
 		08FB7793FE84155DC02AAC07 = {
 			buildStyles = (
 				00B2AB0C032D7B220CCA2C71,
-				00B2AB0D032D7B220CCA2C71,
 			);
 			isa = PBXProject;
 			mainGroup = 08FB7794FE84155DC02AAC07;
@@ -294,7 +282,7 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = "-W -Wall -Wno-four-char-constants -Wno-unknown-pragmas";
+				WARNING_CFLAGS = "-W -Wall -Wmissing-prototypes -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
 			);
@@ -563,7 +551,7 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = "-W -Wall -Wno-four-char-constants -Wno-unknown-pragmas";
+				WARNING_CFLAGS = "-W -Wall -Wmissing-prototypes -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
 			);
