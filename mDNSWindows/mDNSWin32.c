@@ -23,6 +23,17 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.22  2003/08/20 06:21:25  bradley
+Updated to latest internal version of the Rendezvous for Windows platform plugin: Added support
+for Windows CE/PocketPC 2003; re-did interface-related code to emulate getifaddrs/freeifaddrs for
+restricting usage to only active, multicast-capable, and non-point-to-point interfaces and to ease
+the addition of IPv6 support in the future; Changed init code to serialize thread initialization to
+enable ThreadID improvement to wakeup notification; Define platform support structure locally to
+allow portable mDNS_Init usage; Removed dependence on modified mDNSCore: define interface ID<->name
+structures/prototypes locally; Changed to use _beginthreadex()/_endthreadex() on non-Windows CE
+platforms (re-mapped to CreateThread on Window CE) to avoid a leak in the Microsoft C runtime;
+Added IPv4/IPv6 string<->address conversion routines; Cleaned up some code and added HeaderDoc.
+
 Revision 1.21  2003/08/18 23:09:57  cheshire
 <rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
 
@@ -91,30 +102,31 @@ Multicast DNS platform plugin for Win32
 
 */
 
-#if 0
-#pragma mark == Preprocessor ==
-#endif
-
-//===========================================================================================================================
-//	Preprocessor
-//===========================================================================================================================
-
 #if( defined( _MSC_VER ) )
-	#pragma warning( disable:4068 )		// Disable "unknown pragma" warning for "pragma unused".
 	#pragma warning( disable:4127 )		// Disable "conditional expression is constant" warning for debug macros.
 #endif
 
-#define	WIN32_WINDOWS		0x0401		// Needed to use waitable timers.
-#define	_WIN32_WINDOWS		0x0401		// Needed to use waitable timers.
-#define	WIN32_LEAN_AND_MEAN				// Needed to avoid redefinitions by Windows interfaces.
+#if( !defined( WIN32_LEAN_AND_MEAN ) )
+	#define	WIN32_LEAN_AND_MEAN			// Needed to avoid redefinitions by Windows interfaces.
+#endif
 
+#include	<stdarg.h>
+#include	<stddef.h>
 #include	<stdio.h>
 #include	<stdlib.h>
 #include	<string.h>
 
+#include	<windows.h>
 #include	<winsock2.h>
 #include	<Ws2tcpip.h>
-#include	<windows.h>
+
+#if( !defined( _WIN32_WCE ) )			// Windows CE does not have process.h.
+	#include	<process.h>
+#endif
+
+#if( DEBUG )
+	#define	mDNSlocal
+#endif
 
 #include	"mDNSClientAPI.h"
 #include	"mDNSPlatformFunctions.h"
@@ -137,24 +149,13 @@ Multicast DNS platform plugin for Win32
 
 #define	kMDNSDefaultName						"My Computer"
 
-#define	kFileTimeUnitsPerMillisecond			10000				// 100 nanosecond units. 1,000,000,000 / 100 / 1,000 = 1,000
-#define	kThreadCleanupTimeout					( 10 * 1000 )		// 10 seconds
+#define	kWinSockMajorMin						2
+#define	kWinSockMinorMin						2
 
-#define	kWaitListCancelEvent					WAIT_OBJECT_0
+#define	kWaitListCancelEvent					( WAIT_OBJECT_0 + 0 )
 #define	kWaitListInterfaceListChangedEvent		( WAIT_OBJECT_0 + 1 )
 #define	kWaitListWakeupEvent					( WAIT_OBJECT_0 + 2 )
 #define	kWaitListFixedItemCount					3
-
-#if 0
-#pragma mark == Types ==
-#endif
-
-//===========================================================================================================================
-//	Types
-//===========================================================================================================================
-
-typedef struct	sockaddr 		SocketAddress;
-typedef struct	sockaddr_in		SocketAddressInet;
 
 #if 0
 #pragma mark == Macros - Debug ==
@@ -165,20 +166,25 @@ typedef struct	sockaddr_in		SocketAddressInet;
 //===========================================================================================================================
 
 #define MDNS_UNUSED( X )		(void)( X )
-enum
-{
-	kDebugLevelChatty			= 100, 
-	kDebugLevelVerbose			= 500, 
-	kDebugLevelInfo 			= 1000, 
-	kDebugLevelRareInfo			= 2000, 
-	kDebugLevelAllowedError		= 3000, 
-	kDebugLevelAssert 			= 4000, 
-	kDebugLevelRequire			= 5000, 
-	kDebugLevelError			= 6000, 
-	kDebugLevelCriticalError	= 7000, 
-	kDebugLevelTragic			= 8000, 
-	kDebugLevelAny				= 0x7FFFFFFF
-};
+
+#define kDebugLevelMask				0x0000FFFFL
+#define kDebugLevelChatty			100L
+#define kDebugLevelVerbose			500L
+#define kDebugLevelTrace 			800L
+#define kDebugLevelInfo 			1000L
+#define kDebugLevelRareInfo			2000L
+#define kDebugLevelNotice			3000L
+#define kDebugLevelWarning			4000L
+#define kDebugLevelAllowedError		5000L
+#define kDebugLevelAssert 			6000L
+#define kDebugLevelRequire			7000L
+#define kDebugLevelError			8000L
+#define kDebugLevelCritical			9000L
+#define kDebugLevelCriticalError	kDebugLevelCritical		// DEPRECATED
+#define kDebugLevelAlert			10000L
+#define kDebugLevelEmergency		11000L
+#define kDebugLevelTragic			12000L
+#define kDebugLevelAny				0x0000FFFFL
 
 #if( defined( __MWERKS__ ) || defined( __GNUC__ ) )
 	#define	__ROUTINE__		__FUNCTION__
@@ -190,13 +196,13 @@ enum
 
 #if( MDNS_DEBUGMSGS )
 	#define	debug_print_assert( ASSERT_STRING, FILENAME, LINE_NUMBER, FUNCTION )										\
-		DebugPrintAssert( MDNS_DEBUG_SIGNATURE, 0, ( ASSERT_STRING ), NULL, ( FILENAME ), ( LINE_NUMBER ), ( FUNCTION ) )
+		mDNSPlatformPrintAssert( MDNS_DEBUG_SIGNATURE, 0, ( ASSERT_STRING ), NULL, ( FILENAME ), ( LINE_NUMBER ), ( FUNCTION ) )
 	
 	#define	debug_print_assert_err( ERR, ASSERT_STRING, ERROR_STRING, FILENAME, LINE_NUMBER, FUNCTION )					\
-		DebugPrintAssert( MDNS_DEBUG_SIGNATURE, ( ERR ), ( ASSERT_STRING ), ( ERROR_STRING ), 							\
+		mDNSPlatformPrintAssert( MDNS_DEBUG_SIGNATURE, ( ERR ), ( ASSERT_STRING ), ( ERROR_STRING ), 							\
 						  ( FILENAME ), ( LINE_NUMBER ), ( FUNCTION ) )
 	
-	#define	dlog		DebugLog
+	#define	dlog		mDNSPlatformDebugLog
 #else
 	#define	debug_print_assert( ASSERT_STRING, FILENAME, LINE_NUMBER, FUNCTION )
 	
@@ -332,6 +338,18 @@ enum
 #define	close_compat( X )		closesocket( X )
 #define	errno_compat()			WSAGetLastError()
 
+// _beginthreadex and _endthreadex are not supported on Windows CE 2.1 or later (the C runtime issues with leaking 
+// resources have apparently been resolved and they seem to have just ripped out support for the API) so map it to 
+// CreateThread on Windows CE.
+
+#if( defined( _WIN32_WCE ) )
+	#define	_beginthreadex( SECURITY_PTR, STACK_SIZE, START_ADDRESS, ARG_LIST, FLAGS, THREAD_ID_PTR )		\
+		CreateThread( SECURITY_PTR, STACK_SIZE, (LPTHREAD_START_ROUTINE) START_ADDRESS, ARG_LIST, FLAGS, 	\
+					  (LPDWORD) THREAD_ID_PTR )
+	
+	#define	_endthreadex( RESULT )
+#endif
+
 #if 0
 #pragma mark == Prototypes ==
 #endif
@@ -340,43 +358,60 @@ enum
 //	Prototypes
 //===========================================================================================================================
 
-#if MDNS_DEBUGMSGS
-static void 		DebugLog( unsigned long inLevel, const char *inFormat, ... );
-static void			DebugPrintAssert( const char *		inSignature, 
-									  long				inError, 
-									  const char *		inAssertionString, 
-									  const char *		inErrorString, 
-									  const char *		inFileName, 
-									  unsigned long		inLineNumber, 
-									  const char *		inFunction );
+#if( MDNS_DEBUGMSGS )
+	mDNSlocal void 			mDNSPlatformDebugLog( unsigned long inLevel, const char *inFormat, ... );
+	mDNSlocal void
+		mDNSPlatformPrintAssert( 
+			const char *		inSignature, 
+			long				inError, 
+			const char *		inAssertionString, 
+			const char *		inErrorString, 
+			const char *		inFileName, 
+			unsigned long		inLineNumber, 
+			const char *		inFunction );
 #endif
 
-static mStatus		Setup( mDNS * const inMDNS );
-static mStatus		TearDown( mDNS * const inMDNS );
-static mStatus		SetupSynchronizationObjects( mDNS * const inMDNS );
-static mStatus		TearDownSynchronizationObjects( mDNS * const inMDNS );
-static mStatus		SetupName( mDNS * const inMDNS );
+mDNSlocal mStatus			SetupSynchronizationObjects( mDNS * const inMDNS );
+mDNSlocal mStatus			TearDownSynchronizationObjects( mDNS * const inMDNS );
+mDNSlocal mStatus			SetupName( mDNS * const inMDNS );
+mDNSlocal mStatus			SetupInterfaceList( mDNS * const inMDNS );
+mDNSlocal mStatus			TearDownInterfaceList( mDNS * const inMDNS );
+mDNSlocal mStatus			SetupInterface( mDNS * const inMDNS, const struct sockaddr_in *inAddress, mDNSInterfaceData **outIFD );
+mDNSlocal mStatus			TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inIFD );
+mDNSlocal mStatus			SetupSocket( mDNS * const 				inMDNS, 
+										 const struct sockaddr_in *	inAddress, 
+										 mDNSIPPort 				inPort, 
+										 SocketRef *				outSocketRef  );
+mDNSlocal mStatus			SetupNotifications( mDNS * const inMDNS );
+mDNSlocal mStatus			TearDownNotifications( mDNS * const inMDNS );
 
-static mStatus		SetupInterfaceList( mDNS * const inMDNS );
-static mStatus		TearDownInterfaceList( mDNS * const inMDNS );
-static mStatus		SetupInterface( mDNS * const inMDNS, const SocketAddressInet *inAddress, mDNSInterfaceInfo **outInfoPtr );
-static mStatus		TearDownInterface( mDNS * const inMDNS, mDNSInterfaceInfo *inInfoPtr );
-static mStatus		SetupSocket( mDNS * const 				inMDNS, 
-								 const SocketAddressInet *	inAddress, 
-								 mDNSIPPort 				inPort, 
-								 SocketRef *				outSocketRef  );
-static mStatus		SetupNotifications( mDNS * const inMDNS );
-static mStatus		TearDownNotifications( mDNS * const inMDNS );
+mDNSlocal mStatus			SetupThread( mDNS * const inMDNS );
+mDNSlocal mStatus			TearDownThread( const mDNS * const inMDNS );
+mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam );
+mDNSlocal mStatus 			ProcessingThreadInitialize( mDNS * const inMDNS );
+mDNSlocal mStatus			ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **outWaitList, int *outWaitListCount );
+mDNSlocal void				ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *inIFD, SocketRef inSocketRef );
+mDNSlocal void				ProcessingThreadInterfaceListChanged( mDNS *inMDNS );
 
-static mStatus		SetupThread( mDNS *const inMDNS );
-static mStatus		TearDownThread( const mDNS *const inMDNS );
-static DWORD WINAPI	ProcessingThread( LPVOID inParam );
-static mStatus		ProcessingThreadSetupWaitList( mDNS *const inMDNS, HANDLE **outWaitList, int *outWaitListCount );
-static void			ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceInfo *inInfoPtr, SocketRef inSocketRef );
-static void			ProcessingThreadInterfaceListChanged( mDNS *inMDNS );
+// Platform Accessors
 
-static int			GetIndexedInterface( int inIndex, const void *inInterfaceListBuffer, SocketAddressInet *outAddr );
-static int			GetRawInterfaceList( void *outBuffer, size_t *outBufferSize );
+#ifdef	__cplusplus
+	extern "C" {
+#endif
+
+typedef struct mDNSPlatformInterfaceInfo	mDNSPlatformInterfaceInfo;
+struct	mDNSPlatformInterfaceInfo
+{
+	const char *		name;
+	mDNSAddr			ip;
+};
+
+mDNSexport mStatus	mDNSPlatformInterfaceNameToID( mDNS * const inMDNS, const char *inName, mDNSInterfaceID *outID );
+mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInterfaceID inID, mDNSPlatformInterfaceInfo *outInfo );
+
+#ifdef	__cplusplus
+	}
+#endif
 
 #if 0
 #pragma mark == Globals ==
@@ -386,9 +421,12 @@ static int			GetRawInterfaceList( void *outBuffer, size_t *outBufferSize );
 //	Globals
 //===========================================================================================================================
 
-static mDNS *		gMDNSPtr				= NULL;
+mDNSlocal mDNS_PlatformSupport		gMDNSPlatformSupport;
+mDNSs32								mDNSPlatformOneSecond = 0;
 
-mDNSs32				mDNSPlatformOneSecond	= 0;
+#if( MDNS_DEBUGMSGS )
+	mDNSlocal unsigned long			gDebugLevel = kDebugLevelInfo + 1;
+#endif
 
 #if 0
 #pragma mark -
@@ -402,21 +440,41 @@ mDNSs32				mDNSPlatformOneSecond	= 0;
 mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 {
 	mStatus		err;
+	WSADATA		wsaData;
+	int			supported;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "platform init\n" );
 	
+	// Initialize variables.
+	
+	memset( &gMDNSPlatformSupport, 0, sizeof( gMDNSPlatformSupport ) );
+	inMDNS->p									= &gMDNSPlatformSupport;
+	inMDNS->p->interfaceListChangedSocketRef	= kInvalidSocketRef;
+	mDNSPlatformOneSecond 						= 1000;		// Use milliseconds as the quantum of time.
+	
 	// Set everything up.
 	
-	err = Setup( inMDNS );
+	err = WSAStartup( MAKEWORD( kWinSockMajorMin, kWinSockMinorMin ), &wsaData );
 	require_noerr( err, exit );
 	
-	// Success.
+	supported = ( ( LOBYTE( wsaData.wVersion ) == kWinSockMajorMin ) && ( HIBYTE( wsaData.wVersion ) == kWinSockMinorMin ) );
+	require_action( supported, exit, err = mStatus_UnsupportedErr );
+		
+	err = SetupSynchronizationObjects( inMDNS );
+	require_noerr( err, exit );
 	
-	gMDNSPtr = inMDNS;
-	err = mStatus_NoError;
+	err = SetupThread( inMDNS );
+	require_noerr( err, exit );
+	
+	// Success!
+	
+	mDNSCoreInitComplete( inMDNS, err );
 	
 exit:
-	mDNSCoreInitComplete( inMDNS, err );
+	if( err )
+	{
+		mDNSPlatformClose( inMDNS );
+	}
 	dlog( kDebugLevelVerbose, DEBUG_NAME "platform init done (err=%ld)\n", err );
 	return( err );
 }
@@ -430,61 +488,78 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 	mStatus		err;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "platform close\n" );
-	
 	check( inMDNS );
 	
-	// Tear everything down.
-	
-	gMDNSPtr = NULL;
-	err = TearDown( inMDNS );
+	// Tear everything down in reverse order to how it was set up.
+		
+	err = TearDownThread( inMDNS );
 	check_noerr( err );
 	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "platform close done\n" );
+	err = TearDownInterfaceList( inMDNS );
+	check_noerr( err );
+		
+	err = TearDownSynchronizationObjects( inMDNS );
+	check_noerr( err );
+	
+	WSACleanup();
+	
+	dlog( kDebugLevelVerbose, DEBUG_NAME "platform close done (err=%ld)\n", err );
 }
 
 //===========================================================================================================================
 //	mDNSPlatformSendUDP
 //===========================================================================================================================
 
-mStatus	mDNSPlatformSendUDP( const mDNS * const			inMDNS, 
-							 const DNSMessage * const	inMsg, 
-							 const mDNSu8 * const		inMsgEnd, 
-							 mDNSInterfaceID 			inInterfaceID, 
-							 mDNSIPPort					inSrcPort, 
-							 const mDNSAddr *			inDstIP, 
-							 mDNSIPPort 				inDstPort )
+mStatus
+	mDNSPlatformSendUDP( 
+		const mDNS * const			inMDNS, 
+		const DNSMessage * const	inMsg, 
+		const mDNSu8 * const		inMsgEnd, 
+		mDNSInterfaceID 			inInterfaceID, 
+		mDNSIPPort					inSrcPort, 
+		const mDNSAddr *			inDstIP, 
+		mDNSIPPort 					inDstPort )
 {
 	mStatus					err;
-	mDNSInterfaceInfo *		infoPtr = (mDNSInterfaceInfo *)inInterfaceID;
-	SocketAddressInet		addr;
+	mDNSInterfaceData *		ifd;
+	struct sockaddr_in		addr;
 	int						n;
 	
 	MDNS_UNUSED( inSrcPort );
-	
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send UDP\n" );
+	
+	// Check parameters.
+	
 	check( inMDNS );
 	check( inMsg );
 	check( inMsgEnd );
+	check( inInterfaceID );
+	check( inDstIP );
+	if( inDstIP->type != mDNSAddrType_IPv4 )
+	{
+		err = mStatus_BadParamErr;
+		goto exit;
+	}
 	
-	if (inDstIP->type != mDNSAddrType_IPv4) return mStatus_BadParamErr;
-
 	// Send the packet.
 	
-	check( IsValidSocket( infoPtr->multicastSocketRef ) );
+	ifd = (mDNSInterfaceData *) inInterfaceID;
+	check( IsValidSocket( ifd->multicastSocketRef ) );
 	
 	addr.sin_family 		= AF_INET;
 	addr.sin_port 			= inDstPort.NotAnInteger;
 	addr.sin_addr.s_addr 	= inDstIP->ip.v4.NotAnInteger;
 
 	n = (int)( inMsgEnd - ( (const mDNSu8 * const) inMsg ) );
-	n = sendto( infoPtr->multicastSocketRef, (char *) inMsg, n, 0, ( SocketAddress * ) &addr, sizeof( addr ) );
+	n = sendto( ifd->multicastSocketRef, (char *) inMsg, n, 0, (struct sockaddr *) &addr, sizeof( addr ) );
 	check_errno( n, errno_compat() );
 	
-	infoPtr->sendErrorCounter 		+= ( n < 0 );
-	infoPtr->sendMulticastCounter 	+= ( inDstPort.NotAnInteger == MulticastDNSPort.NotAnInteger );
-	infoPtr->sendUnicastCounter 	+= ( inDstPort.NotAnInteger != MulticastDNSPort.NotAnInteger );
+	ifd->sendErrorCounter 		+= ( n < 0 );
+	ifd->sendMulticastCounter 	+= ( inDstPort.NotAnInteger == MulticastDNSPort.NotAnInteger );
+	ifd->sendUnicastCounter 	+= ( inDstPort.NotAnInteger != MulticastDNSPort.NotAnInteger );
 	err = mStatus_NoError;
-	
+
+exit:
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send UDP done\n" );
 	return( err );
 }
@@ -493,7 +568,7 @@ mStatus	mDNSPlatformSendUDP( const mDNS * const			inMDNS,
 //	mDNSPlatformLock
 //===========================================================================================================================
 
-void	mDNSPlatformLock( const mDNS *const inMDNS )
+void	mDNSPlatformLock( const mDNS * const inMDNS )
 {
 	EnterCriticalSection( &inMDNS->p->lock );
 }
@@ -502,13 +577,30 @@ void	mDNSPlatformLock( const mDNS *const inMDNS )
 //	mDNSPlatformUnlock
 //===========================================================================================================================
 
-void	mDNSPlatformUnlock( const mDNS *const inMDNS )
+void	mDNSPlatformUnlock( const mDNS * const inMDNS )
 {
+	check( inMDNS );
+	check( inMDNS->p );
+	check( inMDNS->p->threadID );
+	
 	// When an API routine is called, "m->NextScheduledEvent" is reset to "timenow" before calling mDNSPlatformUnlock()
 	// Since our main mDNS_Execute() loop is on a different thread, we need to wake up that thread to:
 	// (a) handle immediate work (if any) resulting from this API call
 	// (b) calculate the next sleep time between now and the next interesting event
-	if (inMDNS->NextScheduledEvent - inMDNS->p->nextWakeupTime < 0) SetEvent( inMDNS->p->wakeupEvent );
+	
+	if( ( mDNSPlatformTimeNow() - inMDNS->NextScheduledEvent ) >= 0 )
+	{
+		// We only need to case a wakeup event when called from a task other than the mDNS task since if we are 
+		// called from mDNS task, we'll loop back and call mDNS_Execute. This avoids filling up the command queue.
+		
+		if( GetCurrentThreadId() != inMDNS->p->threadID )
+		{
+			BOOL		wasSet;
+			
+			wasSet = SetEvent( inMDNS->p->wakeupEvent );
+			check( wasSet );
+		}
+	}
 	LeaveCriticalSection( &inMDNS->p->lock );
 }
 
@@ -518,7 +610,9 @@ void	mDNSPlatformUnlock( const mDNS *const inMDNS )
 
 mDNSu32	mDNSPlatformStrLen( const void *inSrc )
 {
-	return( ( mDNSu32 ) strlen( (const char *) inSrc ) );
+	check( inSrc );
+	
+	return( (mDNSu32) strlen( (const char *) inSrc ) );
 }
 
 //===========================================================================================================================
@@ -527,7 +621,10 @@ mDNSu32	mDNSPlatformStrLen( const void *inSrc )
 
 void	mDNSPlatformStrCopy( const void *inSrc, void *inDst )
 {
-	strcpy( inDst, inSrc );
+	check( inSrc );
+	check( inDst );
+	
+	strcpy( (char *) inDst, (const char*) inSrc );
 }
 
 //===========================================================================================================================
@@ -536,6 +633,9 @@ void	mDNSPlatformStrCopy( const void *inSrc, void *inDst )
 
 void	mDNSPlatformMemCopy( const void *inSrc, void *inDst, mDNSu32 inSize )
 {
+	check( inSrc );
+	check( inDst );
+	
 	memcpy( inDst, inSrc, inSize );
 }
 
@@ -545,6 +645,9 @@ void	mDNSPlatformMemCopy( const void *inSrc, void *inDst, mDNSu32 inSize )
 
 mDNSBool	mDNSPlatformMemSame( const void *inSrc, const void *inDst, mDNSu32 inSize )
 {
+	check( inSrc );
+	check( inDst );
+	
 	return( (mDNSBool)( memcmp( inSrc, inDst, inSize ) == 0 ) );
 }
 
@@ -554,26 +657,51 @@ mDNSBool	mDNSPlatformMemSame( const void *inSrc, const void *inDst, mDNSu32 inSi
 
 void	mDNSPlatformMemZero( void *inDst, mDNSu32 inSize )
 {
+	check( inDst );
+	
 	memset( inDst, 0, inSize );
 }
 
 //===========================================================================================================================
-//	Allocate & Free
+//	mDNSPlatformMemAllocate
 //===========================================================================================================================
 
-mDNSexport void *  mDNSPlatformMemAllocate(mDNSu32 len) { return(malloc(len)); }
-mDNSexport void    mDNSPlatformMemFree    (void *mem)   { free(mem); }
+mDNSexport void *	mDNSPlatformMemAllocate( mDNSu32 inSize )
+{
+	void *		mem;
+	
+	check( inSize > 0 );
+	
+	mem = malloc( inSize );
+	check( mem );
+	
+	return( mem );
+}
+
+//===========================================================================================================================
+//	mDNSPlatformMemFree
+//===========================================================================================================================
+
+mDNSexport void	mDNSPlatformMemFree( void *inMem )
+{
+	check( inMem );
+	
+	free( inMem );
+}
 
 //===========================================================================================================================
 //	mDNSPlatformTimeInit
 //===========================================================================================================================
 
-mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
-	{
-	// No special setup is required on Windows -- we just use GetTickCount();
-	*timenow = mDNSPlatformTimeNow();
-	return(mStatus_NoError);
-	}
+mDNSexport mStatus	mDNSPlatformTimeInit( mDNSs32 *outTimeNow )
+{
+	check( outTimeNow );
+	
+	// No special setup is required on Windows -- we just use GetTickCount().
+	
+	*outTimeNow = mDNSPlatformTimeNow();
+	return( mStatus_NoError );
+}
 
 //===========================================================================================================================
 //	mDNSPlatformTimeNow
@@ -581,32 +709,99 @@ mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
 
 mDNSs32	mDNSPlatformTimeNow( void )
 {
-	return( (mDNSs32)GetTickCount() );
+	return( (mDNSs32) GetTickCount() );
+}
+
+//===========================================================================================================================
+//	mDNSPlatformInterfaceNameToID
+//===========================================================================================================================
+
+mStatus	mDNSPlatformInterfaceNameToID( mDNS * const inMDNS, const char *inName, mDNSInterfaceID *outID )
+{
+	mStatus					err;
+	mDNSInterfaceData *		ifd;
+	
+	check( inMDNS );
+	check( inMDNS->p );
+	check( inName );
+	
+	// Search for an interface with the specified name,
+	
+	for( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
+	{
+		if( strcmp( ifd->name, inName ) == 0 )
+		{
+			break;
+		}
+	}
+	require_action_quiet( ifd, exit, err = mStatus_NoSuchNameErr );
+	
+	// Success!
+	
+	if( outID )
+	{
+		*outID = (mDNSInterfaceID) ifd;
+	}
+	err = mStatus_NoError;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	mDNSPlatformInterfaceIDToInfo
+//===========================================================================================================================
+
+mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInterfaceID inID, mDNSPlatformInterfaceInfo *outInfo )
+{
+	mStatus					err;
+	mDNSInterfaceData *		ifd;
+	
+	check( inMDNS );
+	check( inID );
+	check( outInfo );
+	
+	// Search for an interface with the specified ID,
+	
+	for( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
+	{
+		if( ifd == (mDNSInterfaceData *) inID )
+		{
+			break;
+		}
+	}
+	require_action_quiet( ifd, exit, err = mStatus_NoSuchNameErr );
+	
+	// Success!
+	
+	outInfo->name 	= ifd->name;
+	outInfo->ip 	= ifd->hostSet.ip;
+	err 			= mStatus_NoError;
+	
+exit:
+	return( err );
 }
 
 #if 0
 #pragma mark -
 #endif
 
-#if( MDNS_DEBUGMSGS )
 //===========================================================================================================================
 //	debugf_
 //===========================================================================================================================
 
-#if MDNS_DEBUGMSGS
-void debugf_( const char *format, ... )
+#if( MDNS_DEBUGMSGS )
+void debugf_( const char *inFormat, ... )
 {
 	char		buffer[ 512 ];
     va_list		args;
-    int			length;
+    mDNSu32		length;
 	
-	va_start( args, format );
-	length = mDNS_vsnprintf( buffer, sizeof(buffer), format, args );
+	va_start( args, inFormat );
+	length = mDNS_vsnprintf( buffer, sizeof( buffer ), inFormat, args );
 	va_end( args );
-	buffer[ length ] = '\0';
 	
-	fprintf( stderr, "%s\n", buffer );
-	fflush( stderr );
+	dlog( kDebugLevelInfo, "%s\n", buffer );
 }
 #endif
 
@@ -614,50 +809,69 @@ void debugf_( const char *format, ... )
 //	verbosedebugf_
 //===========================================================================================================================
 
-#if MDNS_DEBUGMSGS > 1
-void verbosedebugf_( const char *format, ... )
+#if( MDNS_DEBUGMSGS > 1 )
+void verbosedebugf_( const char *inFormat, ... )
 {
 	char		buffer[ 512 ];
     va_list		args;
-    int			length;
+    mDNSu32		length;
 	
-	va_start( args, format );
-	length = mDNS_vsnprintf( buffer, sizeof(buffer), format, args );
+	va_start( args, inFormat );
+	length = mDNS_vsnprintf( buffer, sizeof( buffer ), inFormat, args );
 	va_end( args );
-	buffer[ length ] = '\0';
 	
-	fprintf( stderr, "%s\n", buffer );
-	fflush( stderr );
+	dlog( kDebugLevelVerbose, "%s\n", buffer );
 }
 #endif
 
 //===========================================================================================================================
-//	DebugLog
+//	LogMsg
 //===========================================================================================================================
 
-static void DebugLog( unsigned long inLevel, const char *inFormat, ... )
+void LogMsg( const char *inFormat, ... )
 {
-	va_list		args;
+	char		buffer[ 512 ];
+    va_list		args;
+    mDNSu32		length;
 	
-	MDNS_UNUSED( inLevel );
-	 
 	va_start( args, inFormat );
-	vfprintf( stderr, inFormat, args );
-	fflush( stderr );
+	length = mDNS_vsnprintf( buffer, sizeof( buffer ), inFormat, args );
 	va_end( args );
+	
+	dlog( kDebugLevelWarning, "%s\n", buffer );
+}
+
+#if( MDNS_DEBUGMSGS )
+//===========================================================================================================================
+//	mDNSPlatformDebugLog
+//===========================================================================================================================
+
+mDNSlocal void mDNSPlatformDebugLog( unsigned long inLevel, const char *inFormat, ... )
+{
+	if( inLevel >= gDebugLevel )
+	{
+		va_list		args;
+		
+		va_start( args, inFormat );
+		vfprintf( stderr, inFormat, args );
+		fflush( stderr );
+		va_end( args );
+	}
 }
 
 //===========================================================================================================================
-//	DebugPrintAssert
+//	mDNSPlatformPrintAssert
 //===========================================================================================================================
 
-static void	DebugPrintAssert( const char *		inSignature, 
-							  long				inError, 
-							  const char *		inAssertionString, 
-							  const char *		inErrorString, 
-							  const char *		inFileName, 
-							  unsigned long		inLineNumber, 
-							  const char *		inFunction )
+mDNSlocal void
+	mDNSPlatformPrintAssert( 
+		const char *		inSignature, 
+		long				inError, 
+		const char *		inAssertionString, 
+		const char *		inErrorString, 
+		const char *		inFileName, 
+		unsigned long		inLineNumber, 
+		const char *		inFunction )
 {
 	char *		dataPtr;
 	char		buffer[ 512 ];
@@ -705,106 +919,16 @@ static void	DebugPrintAssert( const char *		inSignature,
 }
 #endif	// MDNS_DEBUGMSGS
 
-//===========================================================================================================================
-//	verbosedebugf_
-//===========================================================================================================================
-
-void LogMsg( const char *format, ... )
-{
-	char		buffer[ 512 ];
-    va_list		args;
-    int			length;
-	
-	va_start( args, format );
-	length = mDNS_vsnprintf( buffer, sizeof(buffer), format, args );
-	va_end( args );
-	buffer[ length ] = '\0';
-	
-	fprintf( stderr, "%s\n", buffer );
-	fflush( stderr );
-}
-
 #if 0
 #pragma mark -
 #pragma mark == Platform Internals  ==
 #endif
 
 //===========================================================================================================================
-//	Setup
-//===========================================================================================================================
-
-static mStatus	Setup( mDNS * const inMDNS )
-{
-	mStatus		err;
-	WSADATA		wsaData;
-	int			supported;
-	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up\n" );
-	
-	// Initialize variables.
-	
-	inMDNS->p->interfaceListChangedSocketRef	= kInvalidSocketRef;
-	mDNSPlatformOneSecond 						= 1000;
-	
-	// Set everything up.
-	
-	err = WSAStartup( MAKEWORD( 2, 0 ), &wsaData );
-	require_noerr( err, exit );
-	
-	supported = ( ( LOBYTE( wsaData.wVersion ) == 2 ) && ( HIBYTE( wsaData.wVersion ) == 0 ) );
-	require_action( supported, exit, err = mStatus_UnsupportedErr );
-	
-	err = SetupSynchronizationObjects( inMDNS );
-	require_noerr( err, exit );
-		
-	err = SetupInterfaceList( inMDNS );
-	require_noerr( err, exit );
-	
-	err = SetupThread( inMDNS );
-	require_noerr( err, exit );
-	
-exit:
-	if( err )
-	{
-		TearDown( inMDNS );
-	}
-	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up done (err=%ld)\n", err );
-	return( err );
-}
-
-//===========================================================================================================================
-//	TearDown
-//===========================================================================================================================
-
-static mStatus	TearDown( mDNS * const inMDNS )
-{
-	mStatus		err;
-	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down\n" );
-	check( inMDNS );
-	
-	// Tear everything down in reverse order to how it was set up.
-	
-	err = TearDownThread( inMDNS );
-	check_noerr( err );
-	
-	err = TearDownInterfaceList( inMDNS );
-	check_noerr( err );
-	
-	err = TearDownSynchronizationObjects( inMDNS );
-	check_noerr( err );
-	
-	WSACleanup();
-	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down done (err=%ld)\n", err );
-	return( err );
-}
-
-//===========================================================================================================================
 //	SetupSynchronizationObjects
 //===========================================================================================================================
 
-static mStatus	SetupSynchronizationObjects( mDNS * const inMDNS )
+mDNSlocal mStatus	SetupSynchronizationObjects( mDNS * const inMDNS )
 {
 	mStatus		err;
 	
@@ -840,7 +964,7 @@ exit:
 //	TearDownSynchronizationObjects
 //===========================================================================================================================
 
-static mStatus	TearDownSynchronizationObjects( mDNS * const inMDNS )
+mDNSlocal mStatus	TearDownSynchronizationObjects( mDNS * const inMDNS )
 {
 	mStatus		err;
 	
@@ -881,10 +1005,12 @@ static mStatus	TearDownSynchronizationObjects( mDNS * const inMDNS )
 //	SetupName
 //===========================================================================================================================
 
-static mStatus	SetupName( mDNS * const inMDNS )
+mDNSlocal mStatus	SetupName( mDNS * const inMDNS )
 {
 	mStatus		err;
 	char		tempString[ 256 ];
+	
+	check( inMDNS );
 	
 	// Get the name of this machine.
 	
@@ -920,27 +1046,26 @@ static mStatus	SetupName( mDNS * const inMDNS )
 	return( err );
 }
 
-#if 0
-#pragma mark -
-#endif
-
 //===========================================================================================================================
 //	SetupInterfaceList
 //===========================================================================================================================
 
-static mStatus	SetupInterfaceList( mDNS * const inMDNS )
+mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 {
 	mStatus						err;
-	mDNSInterfaceInfo **		nextPtr;
-	mDNSInterfaceInfo *			infoPtr;
-	void *						interfaceListBuffer;
-	int							i;
-	SocketAddressInet			addr;
+	mDNSInterfaceData **		next;
+	mDNSInterfaceData *			ifd;
+	struct ifaddrs *			addrs;
+	struct ifaddrs *			p;
+	struct ifaddrs *			loopback;
+	u_int						flagMask;
+	u_int						flagTest;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up interface list\n" );
 	check( inMDNS );
+	check( inMDNS->p );
 	
-	interfaceListBuffer = NULL;
+	addrs = NULL;
 	
 	// Tear down any existing interfaces that may be set up.
 	
@@ -956,23 +1081,35 @@ static mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	err = SetupNotifications( inMDNS );
 	check_noerr( err );
 	
-	// Get the list of interfaces and set up each one.
+	// Set up each interface that is active, multicast-capable, and not the loopback interface or point-to-point.
 	
-	inMDNS->p->interfaceCount = 0;
-	inMDNS->p->interfaceList = NULL;
-	nextPtr	= &inMDNS->p->interfaceList;
+	flagMask = IFF_UP | IFF_MULTICAST | IFF_LOOPBACK | IFF_POINTTOPOINT;
+	flagTest = IFF_UP | IFF_MULTICAST;
 	
-	err = GetRawInterfaceList( &interfaceListBuffer, NULL );
+	loopback = NULL;
+	next = &inMDNS->p->interfaceList;
+	
+	err = getifaddrs( &addrs );
 	require_noerr( err, exit );
 	
-	for( i = 1; GetIndexedInterface( i, interfaceListBuffer, &addr ) == 0; ++i )
+	for( p = addrs; p; p = p->ifa_next )
 	{
-		err = SetupInterface( inMDNS, &addr, &infoPtr );
-		require_noerr( err, exit );
-		
-		*nextPtr = infoPtr;
-		nextPtr = &infoPtr->next;
-		++inMDNS->p->interfaceCount;
+		if( ( p->ifa_flags & flagMask ) == flagTest )
+		{
+			if( !p->ifa_addr || ( p->ifa_addr->sa_family != AF_INET ) )		// $$$ TO DO: Update for IPv6.
+			{
+				continue;
+			}
+			
+			err = SetupInterface( inMDNS, (struct sockaddr_in *) p->ifa_addr, &ifd );
+			require_noerr( err, exit );
+			
+			strcpy( ifd->name, p->ifa_name );
+			
+			*next = ifd;
+			next = &ifd->next;
+			++inMDNS->p->interfaceCount;
+		}
 	}
 	
 exit:
@@ -980,9 +1117,9 @@ exit:
 	{
 		TearDownInterfaceList( inMDNS );
 	}
-	if( interfaceListBuffer )
+	if( addrs )
 	{
-		free( interfaceListBuffer );
+		freeifaddrs( addrs );
 	}
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up interface list done (err=%ld)\n", err );
 	return( err );
@@ -992,13 +1129,14 @@ exit:
 //	TearDownInterfaceList
 //===========================================================================================================================
 
-static mStatus	TearDownInterfaceList( mDNS * const inMDNS )
+mDNSlocal mStatus	TearDownInterfaceList( mDNS * const inMDNS )
 {
 	mStatus					err;
-	mDNSInterfaceInfo *		infoPtr;
+	mDNSInterfaceData *		ifd;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down interface list\n" );
 	check( inMDNS );
+	check( inMDNS->p );
 	
 	// Tear down interface list change notifications.
 	
@@ -1009,11 +1147,12 @@ static mStatus	TearDownInterfaceList( mDNS * const inMDNS )
 	
 	while( inMDNS->p->interfaceList )
 	{
-		infoPtr = inMDNS->p->interfaceList;
-		inMDNS->p->interfaceList = infoPtr->next;
+		ifd = inMDNS->p->interfaceList;
+		inMDNS->p->interfaceList = ifd->next;
 		
-		TearDownInterface( inMDNS, infoPtr );
+		TearDownInterface( inMDNS, ifd );
 	}
+	inMDNS->p->interfaceCount = 0;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down interface list done\n" );
 	return( mStatus_NoError );
@@ -1023,23 +1162,24 @@ static mStatus	TearDownInterfaceList( mDNS * const inMDNS )
 //	SetupInterface
 //===========================================================================================================================
 
-static mStatus	SetupInterface( mDNS * const inMDNS, const SocketAddressInet *inAddress, mDNSInterfaceInfo **outInfoPtr )
+mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct sockaddr_in *inAddress, mDNSInterfaceData **outIFD )
 {
 	mStatus					err;
-	mDNSInterfaceInfo *		infoPtr;
+	mDNSInterfaceData *		ifd;
 	SocketRef				socketRef;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up interface\n" );
 	check( inMDNS );
+	check( inMDNS->p );
 	check( inAddress );
-	check( outInfoPtr );
+	check( outIFD );
 	
 	// Allocate memory for the info item.
 	
-	infoPtr = (mDNSInterfaceInfo *) calloc( 1, sizeof( *infoPtr ) );
-	require_action( infoPtr, exit, err = mStatus_NoMemoryErr );
-	infoPtr->multicastSocketRef = kInvalidSocketRef;
-	infoPtr->unicastSocketRef 	= kInvalidSocketRef;
+	ifd = (mDNSInterfaceData *) calloc( 1, sizeof( *ifd ) );
+	require_action( ifd, exit, err = mStatus_NoMemoryErr );
+	ifd->multicastSocketRef = kInvalidSocketRef;
+	ifd->unicastSocketRef 	= kInvalidSocketRef;
 	
 	///
 	/// Set up multicast portion of interface.
@@ -1049,14 +1189,14 @@ static mStatus	SetupInterface( mDNS * const inMDNS, const SocketAddressInet *inA
 	
 	err = SetupSocket( inMDNS, inAddress, MulticastDNSPort, &socketRef );
 	require_noerr( err, exit );
-	infoPtr->multicastSocketRef = socketRef;
+	ifd->multicastSocketRef = socketRef;
 	
 	// Set up the read pending event and associate it so we can block until data is available for this socket.
 	
-	infoPtr->multicastReadPendingEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
-	require_action( infoPtr->multicastReadPendingEvent, exit, err = mStatus_NoMemoryErr );
+	ifd->multicastReadPendingEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	require_action( ifd->multicastReadPendingEvent, exit, err = mStatus_NoMemoryErr );
 	
-	err = WSAEventSelect( infoPtr->multicastSocketRef, infoPtr->multicastReadPendingEvent, FD_READ );
+	err = WSAEventSelect( ifd->multicastSocketRef, ifd->multicastReadPendingEvent, FD_READ );
 	require_noerr( err, exit );
 	
 	///
@@ -1067,56 +1207,42 @@ static mStatus	SetupInterface( mDNS * const inMDNS, const SocketAddressInet *inA
 	
 	err = SetupSocket( inMDNS, inAddress, UnicastDNSPort, &socketRef );
 	require_noerr( err, exit );
-	infoPtr->unicastSocketRef = socketRef;
+	ifd->unicastSocketRef = socketRef;
 	
 	// Set up the read pending event and associate it so we can block until data is available for this socket.
 	
-	infoPtr->unicastReadPendingEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
-	require_action( infoPtr->unicastReadPendingEvent, exit, err = mStatus_NoMemoryErr );
+	ifd->unicastReadPendingEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	require_action( ifd->unicastReadPendingEvent, exit, err = mStatus_NoMemoryErr );
 	
-	err = WSAEventSelect( infoPtr->unicastSocketRef, infoPtr->unicastReadPendingEvent, FD_READ );
+	err = WSAEventSelect( ifd->unicastSocketRef, ifd->unicastReadPendingEvent, FD_READ );
 	require_noerr( err, exit );
 	
 	// Register this interface with mDNS.
 	
-	infoPtr->hostSet.InterfaceID           = (mDNSInterfaceID)infoPtr;
-	infoPtr->hostSet.ip.type               = mDNSAddrType_IPv4;
-	infoPtr->hostSet.ip.ip.v4.NotAnInteger = inAddress->sin_addr.s_addr;
-	infoPtr->hostSet.Advertise             = inMDNS->p->advertise;
-	err = mDNS_RegisterInterface( inMDNS, &infoPtr->hostSet );
-	require_noerr( err, exit );
+	ifd->hostSet.InterfaceID 			= (mDNSInterfaceID) ifd;
+	ifd->hostSet.ip.type 				= mDNSAddrType_IPv4;
+	ifd->hostSet.ip.ip.v4.NotAnInteger 	= inAddress->sin_addr.s_addr;
+	ifd->hostSet.Advertise       		= inMDNS->AdvertiseLocalAddresses;
 	
-	dlog( kDebugLevelInfo, DEBUG_NAME "Registered IP address: %d.%d.%d.%d\n", 
-		  infoPtr->hostSet.ip.ip.v4.b[ 0 ],
-		  infoPtr->hostSet.ip.ip.v4.b[ 1 ],
-		  infoPtr->hostSet.ip.ip.v4.b[ 2 ],
-		  infoPtr->hostSet.ip.ip.v4.b[ 3 ] );
+	err = mDNS_RegisterInterface( inMDNS, &ifd->hostSet );
+	require_noerr( err, exit );
+	ifd->hostRegistered = mDNStrue;
+	
+	dlog( kDebugLevelInfo, DEBUG_NAME "Registered IP address: %u.%u.%u.%u\n", 
+		  ifd->hostSet.ip.ip.v4.b[ 0 ], 
+		  ifd->hostSet.ip.ip.v4.b[ 1 ], 
+		  ifd->hostSet.ip.ip.v4.b[ 2 ], 
+		  ifd->hostSet.ip.ip.v4.b[ 3 ] );
 	
 	// Success!
 	
-	*outInfoPtr = infoPtr;
-	infoPtr = NULL;
+	*outIFD = ifd;
+	ifd = NULL;
 	
 exit:
-	if( infoPtr )
+	if( ifd )
 	{
-		if( infoPtr->multicastReadPendingEvent )
-		{
-			CloseHandle( infoPtr->multicastReadPendingEvent );
-		}
-		if( IsValidSocket( infoPtr->multicastSocketRef ) )
-		{
-			close_compat( infoPtr->multicastSocketRef );
-		}
-		if( infoPtr->unicastReadPendingEvent )
-		{
-			CloseHandle( infoPtr->unicastReadPendingEvent );
-		}
-		if( IsValidSocket( infoPtr->unicastSocketRef ) )
-		{
-			close_compat( infoPtr->unicastSocketRef );
-		}
-		free( infoPtr );
+		TearDownInterface( inMDNS, ifd );
 	}
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up interface done (err=%ld)\n", err );
 	return( err );
@@ -1126,33 +1252,37 @@ exit:
 //	TearDownInterface
 //===========================================================================================================================
 
-static mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceInfo *inInfoPtr )
+mDNSlocal mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inIFD )
 {
 	SocketRef		socketRef;
 	
 	check( inMDNS );
-	check( inInfoPtr );
+	check( inIFD );
 	
 	// Deregister this interface with mDNS.
 	
-	dlog( kDebugLevelInfo, DEBUG_NAME "Deregistering IP address: %d.%d.%d.%d\n", 
-		  inInfoPtr->hostSet.ip.ip.v4.b[ 0 ],
-		  inInfoPtr->hostSet.ip.ip.v4.b[ 1 ],
-		  inInfoPtr->hostSet.ip.ip.v4.b[ 2 ],
-		  inInfoPtr->hostSet.ip.ip.v4.b[ 3 ] );
+	dlog( kDebugLevelInfo, DEBUG_NAME "Deregistering IP address: %u.%u.%u.%u\n", 
+		  inIFD->hostSet.ip.ip.v4.b[ 0 ],
+		  inIFD->hostSet.ip.ip.v4.b[ 1 ],
+		  inIFD->hostSet.ip.ip.v4.b[ 2 ],
+		  inIFD->hostSet.ip.ip.v4.b[ 3 ] );
 	
-	mDNS_DeregisterInterface( inMDNS, &inInfoPtr->hostSet );
+	if( inIFD->hostRegistered )
+	{
+		inIFD->hostRegistered = mDNSfalse;
+		mDNS_DeregisterInterface( inMDNS, &inIFD->hostSet );
+	}
 	
 	// Tear down the multicast socket.
 	
-	if( inInfoPtr->multicastReadPendingEvent )
+	if( inIFD->multicastReadPendingEvent )
 	{
-		CloseHandle( inInfoPtr->multicastReadPendingEvent );
-		inInfoPtr->multicastReadPendingEvent = 0;
+		CloseHandle( inIFD->multicastReadPendingEvent );
+		inIFD->multicastReadPendingEvent = 0;
 	}
 	
-	socketRef = inInfoPtr->multicastSocketRef;
-	inInfoPtr->multicastSocketRef = kInvalidSocketRef;
+	socketRef = inIFD->multicastSocketRef;
+	inIFD->multicastSocketRef = kInvalidSocketRef;
 	if( IsValidSocket( socketRef ) )
 	{
 		dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down multicast socket %d\n", socketRef );
@@ -1161,14 +1291,14 @@ static mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceInfo *inInfo
 	
 	// Tear down the unicast socket.
 	
-	if( inInfoPtr->unicastReadPendingEvent )
+	if( inIFD->unicastReadPendingEvent )
 	{
-		CloseHandle( inInfoPtr->unicastReadPendingEvent );
-		inInfoPtr->unicastReadPendingEvent = 0;
+		CloseHandle( inIFD->unicastReadPendingEvent );
+		inIFD->unicastReadPendingEvent = 0;
 	}
 	
-	socketRef = inInfoPtr->unicastSocketRef;
-	inInfoPtr->unicastSocketRef = kInvalidSocketRef;
+	socketRef = inIFD->unicastSocketRef;
+	inIFD->unicastSocketRef = kInvalidSocketRef;
 	if( IsValidSocket( socketRef ) )
 	{
 		dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down unicast socket %d\n", socketRef );
@@ -1177,7 +1307,7 @@ static mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceInfo *inInfo
 	
 	// Free the memory used by the interface info.
 	
-	free( inInfoPtr );	
+	free( inIFD );	
 	return( mStatus_NoError );
 }
 
@@ -1185,16 +1315,18 @@ static mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceInfo *inInfo
 //	SetupSocket
 //===========================================================================================================================
 
-static mStatus	SetupSocket( mDNS * const 				inMDNS, 
-							 const SocketAddressInet *	inAddress, 
-							 mDNSIPPort 				inPort, 
-							 SocketRef *				outSocketRef  )
+mDNSlocal mStatus
+	SetupSocket( 
+		mDNS * const 				inMDNS, 
+		const struct sockaddr_in *	inAddress, 
+		mDNSIPPort 					inPort, 
+		SocketRef *					outSocketRef  )
 {
 	mStatus					err;
 	SocketRef				socketRef;
 	int						option;
 	struct ip_mreq			mreq;
-	SocketAddressInet		addr;
+	struct sockaddr_in		addr;
 	mDNSv4Addr				ip;
 	
 	MDNS_UNUSED( inMDNS );
@@ -1205,7 +1337,7 @@ static mStatus	SetupSocket( mDNS * const 				inMDNS,
 	
 	// Set up a UDP socket. 
 	
-	socketRef = socket( AF_INET, SOCK_DGRAM, 0 );
+	socketRef = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
 	require_action( IsValidSocket( socketRef ), exit, err = mStatus_NoMemoryErr );
 	
 	// Turn on reuse address option so multiple servers can listen for Multicast DNS packets.
@@ -1216,12 +1348,12 @@ static mStatus	SetupSocket( mDNS * const 				inMDNS,
 	
 	// Bind to the specified port (53 for unicast or 5353 for multicast).
 	
-	ip.NotAnInteger = inAddress->sin_addr.s_addr;
+	ip.NotAnInteger 		= inAddress->sin_addr.s_addr;
 	memset( &addr, 0, sizeof( addr ) );
 	addr.sin_family 		= AF_INET;
 	addr.sin_port 			= inPort.NotAnInteger;
 	addr.sin_addr.s_addr 	= ip.NotAnInteger;
-	err = bind( socketRef, ( SocketAddress * ) &addr, sizeof( addr ) );
+	err = bind( socketRef, (struct sockaddr *) &addr, sizeof( addr ) );
 	if( err && ( inPort.NotAnInteger == UnicastDNSPort.NotAnInteger ) )
 	{
 		// Some systems prevent code without root permissions from binding to the DNS port so ignore this 
@@ -1246,7 +1378,7 @@ static mStatus	SetupSocket( mDNS * const 				inMDNS,
 	addr.sin_addr.s_addr = ip.NotAnInteger;
 	err = setsockopt( socketRef, IPPROTO_IP, IP_MULTICAST_IF, (char *) &addr.sin_addr, sizeof( addr.sin_addr ) );
 	check_errno( err, errno_compat() );
-		
+	
 	// Set the TTL of outgoing unicast packets to 255 (helps against spoofing).
 		
 	option = 255;
@@ -1258,7 +1390,7 @@ static mStatus	SetupSocket( mDNS * const 				inMDNS,
 	option = 255;
 	err = setsockopt( socketRef, IPPROTO_IP, IP_MULTICAST_TTL, (char *) &option, sizeof( option ) );
 	check_errno( err, errno_compat() );
-	
+		
 	// Success!
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up socket done (%u.%u.%u.%u:%u, %d)\n", 
@@ -1280,7 +1412,7 @@ exit:
 //	SetupNotifications
 //===========================================================================================================================
 
-static mStatus	SetupNotifications( mDNS * const inMDNS )
+mDNSlocal mStatus	SetupNotifications( mDNS * const inMDNS )
 {
 	mStatus				err;
 	SocketRef			socketRef;
@@ -1291,7 +1423,7 @@ static mStatus	SetupNotifications( mDNS * const inMDNS )
 	
 	// Register to listen for address list changes.
 	
-	socketRef = socket( AF_INET, SOCK_DGRAM, 0 );
+	socketRef = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
 	require_action( IsValidSocket( socketRef ), exit, err = mStatus_NoMemoryErr );
 	inMDNS->p->interfaceListChangedSocketRef = socketRef;
 	
@@ -1325,7 +1457,7 @@ exit:
 //	TearDownNotifications
 //===========================================================================================================================
 
-static mStatus	TearDownNotifications( mDNS * const inMDNS )
+mDNSlocal mStatus	TearDownNotifications( mDNS * const inMDNS )
 {
 	SocketRef		socketRef;
 	
@@ -1346,21 +1478,39 @@ static mStatus	TearDownNotifications( mDNS * const inMDNS )
 //	SetupThread
 //===========================================================================================================================
 
-static mStatus	SetupThread( mDNS *const inMDNS )
+mDNSlocal mStatus	SetupThread( mDNS * const inMDNS )
 {
-	mStatus		err;
-	DWORD		threadID;
+	mStatus			err;
+	HANDLE			threadHandle;
+	unsigned		threadID;
+	DWORD			result;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up thread\n" );
-		
-	// Create the thread and start it running.
 	
-	inMDNS->p->thread = CreateThread( NULL, 0, ProcessingThread, inMDNS, 0, &threadID );
-	require_action( inMDNS->p->thread, exit, err = mStatus_NoMemoryErr );
+	// To avoid a race condition with the thread ID needed by the unlocking code, we need to make sure the
+	// thread has fully initialized. To do this, we create the thread then wait for it to signal it is ready.
 	
-	err = mStatus_NoError;
+	inMDNS->p->initEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	require_action( inMDNS->p->initEvent, exit, err = mStatus_NoMemoryErr );
+	inMDNS->p->initStatus = mStatus_Invalid;
+	
+	// Create thread with _beginthreadex() instead of CreateThread() to avoid memory leaks when using static run-time 
+	// libraries. See <http://msdn.microsoft.com/library/default.asp?url=/library/en-us/dllproc/base/createthread.asp>.
+	
+	threadHandle = (HANDLE) _beginthreadex( NULL, 0, ProcessingThread, inMDNS, 0, &threadID );
+	require_action( threadHandle, exit, err = mStatus_NoMemoryErr );
+	
+	result = WaitForSingleObject( inMDNS->p->initEvent, INFINITE );
+	require_action( result == WAIT_OBJECT_0, exit, err = mStatus_UnknownErr );
+	err = inMDNS->p->initStatus;
+	require_noerr( err, exit );
 	
 exit:
+	if( inMDNS->p->initEvent )
+	{
+		CloseHandle( inMDNS->p->initEvent );
+		inMDNS->p->initEvent = 0;
+	}
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up thread done (err=%ld)\n", err );
 	return( err );
 }
@@ -1369,21 +1519,23 @@ exit:
 //	TearDownThread
 //===========================================================================================================================
 
-static mStatus	TearDownThread( const mDNS *const inMDNS )
+mDNSlocal mStatus	TearDownThread( const mDNS * const inMDNS )
 {
-	BOOL		result;
+	DWORD		result;
 	
 	// Signal the cancel event to cause the thread to exit. Then wait for the quit event to be signal indicating it did 
-	// exit. If the quit event is not signal in 10 seconds, just give up and close anyway sinec the thread is probably hung.
+	// exit. If the quit event is not signal in 5 seconds, just give up and close anyway sinec the thread is probably hung.
 	
 	if( inMDNS->p->cancelEvent )
 	{
-		result = SetEvent( inMDNS->p->cancelEvent );
-		check( result );
+		BOOL		wasSet;
+		
+		wasSet = SetEvent( inMDNS->p->cancelEvent );
+		check( wasSet );
 		
 		if( inMDNS->p->quitEvent )
 		{
-			result = WaitForSingleObject( inMDNS->p->quitEvent, kThreadCleanupTimeout );
+			result = WaitForSingleObject( inMDNS->p->quitEvent, 5 * 1000 );
 			check( result == WAIT_OBJECT_0 );
 		}
 	}
@@ -1394,80 +1546,73 @@ static mStatus	TearDownThread( const mDNS *const inMDNS )
 //	ProcessingThread
 //===========================================================================================================================
 
-static DWORD	WINAPI ProcessingThread( LPVOID inParam )
+mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 {
-	mDNS *			mdnsPtr;
+	mDNS *			m;
 	int				done;
 	mStatus			err;
 	HANDLE *		waitList;
 	int				waitListCount;
 	DWORD			result;
+	BOOL			wasSet;
 	
 	check( inParam );
-	mdnsPtr	= (mDNS *) inParam;
-	done 	= 0;
+		
+	m = (mDNS *) inParam;
+	err = ProcessingThreadInitialize( m );
+	require_noerr( err, exit );
 	
+	done = 0;
 	while( !done )
 	{
 		// Set up the list of objects we'll be waiting on.
 		
 		waitList 		= NULL;
 		waitListCount	= 0;
-		err = ProcessingThreadSetupWaitList( mdnsPtr, &waitList, &waitListCount );
+		err = ProcessingThreadSetupWaitList( m, &waitList, &waitListCount );
 		require_noerr( err, exit );
 		
-		// Main mDNS processing loop.
+		// Main processing loop.
 		
 		for( ;; )
 		{
-			// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
-			// Notes:
-			// At the end of mDNS_Execute() (or any other API call) mDNSCore calls our mDNSPlatformUnlock() routine.
-			// In that routine, we check to see if we need to do a wakeupEvent.
-			// We need to do a wakeupEvent in the following case:
-			// - if this thread has gone to sleep in WaitForMultipleObjects(), and is not going to wake up in time
-			//   to handle the next required event indicated by mdnsPtr->NextScheduledEvent;
-			// To make this work we do the following:
-			// 1. Before mDNS_Execute(), we set WakeupTime to timenow (this effectively prevents wakeups)
-			// 2. At the end of mDNS_Execute(), when mDNSPlatformUnlock() is called,
-			//    we find we don't need to do a wakeup, because NextScheduledEvent is in the future
-			// 3. After mDNS_Execute(), we set WakeupTime to a long time in the future.
-			// After this point, if any other thread runs and makes an API call, it will see that it needs to trigger a wakeup
-			// We can now safely read NextScheduledEvent and set our sleep interval
-			// (if another thread runs while we're doing that, it will trigger a wakeup)
-			// Having calculated our sleep interval, we can now adjust nextWakeupTime to the correct accurate value and sleep
-			mDNSs32 timenow, interval;
-			mdnsPtr->p->nextWakeupTime = mDNSPlatformTimeNow();	// Disable wakeups
-			mDNS_Execute(mdnsPtr);								// (Some time may elapse while we're doing this)
-			timenow = mDNSPlatformTimeNow();					// Record time when mDNS_Execute() is complete
-			mdnsPtr->p->nextWakeupTime = timenow + 0x70000000;	// Re-enable wakeups
-			interval = mdnsPtr->NextScheduledEvent - timenow;	// Read value of NextScheduledEvent and set sleep interval accordingly
-			mdnsPtr->p->nextWakeupTime = timenow + interval;	// Adjust nextWakeupTime to the accurate expected wakeup time
-			if      (interval < 0)                 interval = 0;
-			else if (interval > 0x7FFFFFFF / 1000) interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
-			else                                   interval = interval * 1000 / mDNSPlatformOneSecond;
-
-			// Wait until something occurs (e.g. cancel, timer, or incoming packet).
+			// Give the mDNS core a chance to do its work and determine next event time.
 			
-			result = WaitForMultipleObjects( waitListCount, waitList, FALSE, interval );
-			if( result == kWaitListCancelEvent )
+			mDNSs32 interval = mDNS_Execute(m) - mDNSPlatformTimeNow();
+			if      (interval < 0)						interval = 0;
+			else if (interval > (0x7FFFFFFF / 1000))	interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
+			else										interval = (interval * 1000) / mDNSPlatformOneSecond;
+			
+			// Wait until something occurs (e.g. cancel, incoming packet, or timeout).
+			
+			result = WaitForMultipleObjects( (DWORD) waitListCount, waitList, FALSE, (DWORD) interval );
+			if( result == WAIT_TIMEOUT )
+			{
+				// Next task timeout occurred. Loop back up to give mDNS core a chance to work.
+				
+				dlog( kDebugLevelChatty - 1, DEBUG_NAME "timeout\n" );
+				continue;
+			}
+			else if( result == kWaitListCancelEvent )
 			{
 				// Cancel event. Set the done flag and break to exit.
 				
-				dlog( kDebugLevelChatty, DEBUG_NAME "canceling...\n" );
+				dlog( kDebugLevelVerbose, DEBUG_NAME "canceling...\n" );
 				done = 1;
 				break;
 			}
 			else if( result == kWaitListInterfaceListChangedEvent )
 			{
-				// Interface list changed event.
+				// Interface list changed event. Break out of the inner loop to re-setup the wait list.
 				
-				ProcessingThreadInterfaceListChanged( mdnsPtr );
+				ProcessingThreadInterfaceListChanged( m );
 				break;
 			}
 			else if( result == kWaitListWakeupEvent )
 			{
-				// Another thread did an mDNSCore API call.
+				// Wakeup event due to an mDNS API call. Loop back to call mDNS_Execute.
+				
+				dlog( kDebugLevelChatty - 1, DEBUG_NAME "wakeup\n" );
 				continue;
 			}
 			else
@@ -1476,28 +1621,28 @@ static DWORD	WINAPI ProcessingThread( LPVOID inParam )
 				
 				// Socket data available event. Determine which socket and process the packet.
 				
-				dlog( kDebugLevelChatty, DEBUG_NAME "socket data available\n" );
-				waitItemIndex = ( (int) result ) - WAIT_OBJECT_0;
+				waitItemIndex = (int)( ( (int) result ) - WAIT_OBJECT_0 );
+				dlog( kDebugLevelChatty, DEBUG_NAME "socket data available on socket index %d\n", waitItemIndex );
 				check( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) );
 				if( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) )
 				{
 					HANDLE					signaledObject;
 					int						n;
-					mDNSInterfaceInfo *		infoPtr;
+					mDNSInterfaceData *		ifd;
 					
 					signaledObject = waitList[ waitItemIndex ];
 					
 					n = 0;
-					for( infoPtr = mdnsPtr->p->interfaceList; infoPtr; infoPtr = infoPtr->next )
+					for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
 					{
-						if( infoPtr->multicastReadPendingEvent == signaledObject )
+						if( ifd->multicastReadPendingEvent == signaledObject )
 						{
-							ProcessingThreadProcessPacket( mdnsPtr, infoPtr, infoPtr->multicastSocketRef );
+							ProcessingThreadProcessPacket( m, ifd, ifd->multicastSocketRef );
 							++n;
 						}
-						if( infoPtr->unicastReadPendingEvent == signaledObject )
+						if( ifd->unicastReadPendingEvent == signaledObject )
 						{
-							ProcessingThreadProcessPacket( mdnsPtr, infoPtr, infoPtr->unicastSocketRef );
+							ProcessingThreadProcessPacket( m, ifd, ifd->unicastSocketRef );
 							++n;
 						}
 					}
@@ -1525,25 +1670,57 @@ static DWORD	WINAPI ProcessingThread( LPVOID inParam )
 	// Signal the quit event to indicate that the thread is finished.
 
 exit:
-	result = SetEvent( mdnsPtr->p->quitEvent );
-	check( result );
+	wasSet = SetEvent( m->p->quitEvent );
+	check( wasSet );
+
+	// Call _endthreadex() explicitly instead of just exiting normally to avoid memory leaks when using static run-time
+	// libraries. See <http://msdn.microsoft.com/library/default.asp?url=/library/en-us/dllproc/base/createthread.asp>.
+	
+	_endthreadex( 0 );
 	return( 0 );
+}
+
+//===========================================================================================================================
+//	ProcessingThreadInitialize
+//===========================================================================================================================
+
+mDNSlocal mStatus ProcessingThreadInitialize( mDNS * const inMDNS )
+{
+	mStatus		err;
+	BOOL		wasSet;
+	
+	inMDNS->p->threadID = GetCurrentThreadId();
+	
+	err = SetupInterfaceList( inMDNS );
+	require_noerr( err, exit );
+	
+exit:
+	if( err )
+	{
+		TearDownInterfaceList( inMDNS );
+	}
+	inMDNS->p->initStatus = err;
+	wasSet = SetEvent( inMDNS->p->initEvent );
+	check( wasSet );
+	
+	return( err );
 }
 
 //===========================================================================================================================
 //	ProcessingThreadSetupWaitList
 //===========================================================================================================================
 
-static mStatus	ProcessingThreadSetupWaitList( mDNS *const inMDNS, HANDLE **outWaitList, int *outWaitListCount )
+mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **outWaitList, int *outWaitListCount )
 {
 	mStatus					err;
 	int						waitListCount;
 	HANDLE *				waitList;
 	HANDLE *				waitItemPtr;
-	mDNSInterfaceInfo *		infoPtr;
+	mDNSInterfaceData *		ifd;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "thread setting up wait list\n" );
 	check( inMDNS );
+	check( inMDNS->p );
 	check( outWaitList );
 	check( outWaitListCount );
 	
@@ -1562,18 +1739,19 @@ static mStatus	ProcessingThreadSetupWaitList( mDNS *const inMDNS, HANDLE **outWa
 	
 	// Append all the dynamic wait items to the list.
 	
-	for( infoPtr = inMDNS->p->interfaceList; infoPtr; infoPtr = infoPtr->next )
+	for( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
 	{
-		*waitItemPtr++ = infoPtr->multicastReadPendingEvent;
-		*waitItemPtr++ = infoPtr->unicastReadPendingEvent;
+		*waitItemPtr++ = ifd->multicastReadPendingEvent;
+		*waitItemPtr++ = ifd->unicastReadPendingEvent;
 	}
 	
 	*outWaitList 		= waitList;
 	*outWaitListCount	= waitListCount;
+	waitList			= NULL;
 	err					= mStatus_NoError;
 	
 exit:
-	if( err && waitList )
+	if( waitList )
 	{
 		free( waitList );
 	}
@@ -1585,11 +1763,12 @@ exit:
 //	ProcessingThreadProcessPacket
 //===========================================================================================================================
 
-static void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceInfo *inInfoPtr, SocketRef inSocketRef )
+mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *inIFD, SocketRef inSocketRef )
 {
 	int						n;
+	mDNSBool				isMulticast;
 	DNSMessage				packet;
-	SocketAddressInet		addr;
+	struct sockaddr_in		addr;
 	int						addrSize;
 	mDNSu8 *				packetEndPtr;
 	mDNSAddr				srcAddr;
@@ -1597,10 +1776,12 @@ static void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceInfo *inIn
 	mDNSAddr				dstAddr;
 	mDNSIPPort				dstPort;
 	
+	isMulticast = (mDNSBool)( inSocketRef == inIFD->multicastSocketRef );
+	
 	// Receive the packet.
 	
 	addrSize = sizeof( addr );
-	n = recvfrom( inSocketRef, (char *) &packet, sizeof( packet ), 0, ( SocketAddress * ) &addr, &addrSize );
+	n = recvfrom( inSocketRef, (char *) &packet, sizeof( packet ), 0, (struct sockaddr *) &addr, &addrSize );
 	check( n >= 0 );
 	if( n >= 0 )
 	{
@@ -1610,35 +1791,41 @@ static void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceInfo *inIn
 		srcAddr.ip.v4.NotAnInteger 	= addr.sin_addr.s_addr;
 		srcPort.NotAnInteger		= addr.sin_port;
 		dstAddr.type				= mDNSAddrType_IPv4;
-		dstAddr.ip.v4				= ( inSocketRef == inInfoPtr->multicastSocketRef ) ? AllDNSLinkGroup  : inInfoPtr->hostSet.ip.ip.v4;
-		dstPort						= ( inSocketRef == inInfoPtr->multicastSocketRef ) ? MulticastDNSPort : UnicastDNSPort;
+		dstAddr.ip.v4				= isMulticast ? AllDNSLinkGroup  : inIFD->hostSet.ip.ip.v4;
+		dstPort						= isMulticast ? MulticastDNSPort : UnicastDNSPort;
 		
 		dlog( kDebugLevelChatty, DEBUG_NAME "packet received\n" );
 		dlog( kDebugLevelChatty, DEBUG_NAME "    size      = %d\n", n );
-		dlog( kDebugLevelChatty, DEBUG_NAME "    src       = %d.%d.%d.%d:%d\n", 
-			  srcAddr.ip.v4.b[ 0 ], srcAddr.ip.v4.b[ 1 ], srcAddr.ip.v4.b[ 2 ], srcAddr.ip.v4.b[ 3 ], ntohs( srcPort.NotAnInteger ) );
-		dlog( kDebugLevelChatty, DEBUG_NAME "    dst       = %d.%d.%d.%d:%d\n", 
-			  dstAddr.ip.v4.b[ 0 ], dstAddr.ip.v4.b[ 1 ], dstAddr.ip.v4.b[ 2 ], dstAddr.ip.v4.b[ 3 ], ntohs( dstPort.NotAnInteger ) );
+		dlog( kDebugLevelChatty, DEBUG_NAME "    src       = %u.%u.%u.%u:%u\n", 
+			  srcAddr.ip.v4.b[ 0 ], srcAddr.ip.v4.b[ 1 ], srcAddr.ip.v4.b[ 2 ], srcAddr.ip.v4.b[ 3 ], 
+			  ntohs( srcPort.NotAnInteger ) );
+		dlog( kDebugLevelChatty, DEBUG_NAME "    dst       = %u.%u.%u.%u:%u\n", 
+			  dstAddr.ip.v4.b[ 0 ], dstAddr.ip.v4.b[ 1 ], dstAddr.ip.v4.b[ 2 ], dstAddr.ip.v4.b[ 3 ], 
+			  ntohs( dstPort.NotAnInteger ) );
+		dlog( kDebugLevelChatty, DEBUG_NAME "    interface = %u.%u.%u.%u\n", 
+			  inIFD->hostSet.ip.ip.v4.b[ 0 ], inIFD->hostSet.ip.ip.v4.b[ 1 ], 
+			  inIFD->hostSet.ip.ip.v4.b[ 2 ], inIFD->hostSet.ip.ip.v4.b[ 3 ] );
+	
 		dlog( kDebugLevelChatty, DEBUG_NAME "--\n" );
 		
 		// Dispatch the packet to mDNS.
 		
 		packetEndPtr = ( (mDNSu8 *) &packet ) + n;
-		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inInfoPtr->hostSet.InterfaceID, 255 );
+		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inIFD->hostSet.InterfaceID, 255 );
 	}
 	
 	// Update counters.
 	
-	inInfoPtr->recvMulticastCounter += ( inSocketRef == inInfoPtr->multicastSocketRef );
-	inInfoPtr->recvUnicastCounter 	+= ( inSocketRef == inInfoPtr->unicastSocketRef );
-	inInfoPtr->recvErrorCounter 	+= ( n < 0 );
+	inIFD->recvMulticastCounter += isMulticast;
+	inIFD->recvUnicastCounter 	+= !isMulticast;
+	inIFD->recvErrorCounter 	+= ( n < 0 );
 }
 
 //===========================================================================================================================
 //	ProcessingThreadInterfaceListChanged
 //===========================================================================================================================
 
-static void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
+mDNSlocal void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 {
 	mStatus		err;
 	
@@ -1657,6 +1844,13 @@ static void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 		
 	mDNSPlatformUnlock( inMDNS );
 	
+	// Inform clients of the change.
+	
+	if( inMDNS->MainCallback )
+	{
+		inMDNS->MainCallback( inMDNS, mStatus_ConfigChanged );
+	}
+	
 	// Force mDNS to update.
 	
 	mDNSCoreMachineSleep( inMDNS, mDNSfalse );
@@ -1667,85 +1861,407 @@ static void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 #pragma mark == Utilities ==
 #endif
 
+#if( defined( _WIN32_WCE ) )
 //===========================================================================================================================
-//	GetIndexedInterface
+//	getifaddrs
 //===========================================================================================================================
 
-static int	GetIndexedInterface( int inIndex, const void *inInterfaceListBuffer, SocketAddressInet *outAddr )
+int	getifaddrs( struct ifaddrs **outAddrs )
 {
 	int							err;
-	SOCKET_ADDRESS_LIST *		listPtr;
-	SocketAddressInet *			addrPtr;
-	
-	// Make sure the index is valid.
-	
-	check( inInterfaceListBuffer );
-	listPtr = (SOCKET_ADDRESS_LIST *) inInterfaceListBuffer;
-	require_action( inIndex > 0, exit, err = mStatus_BadParamErr );
-	require_action_quiet( inIndex <= listPtr->iAddressCount, exit, err = mStatus_BadParamErr );
-	
-	// Make sure the address is valid.
-	
-	addrPtr = (SocketAddressInet *) listPtr->Address[ inIndex - 1 ].lpSockaddr;
-	require_action( addrPtr, exit, err = mStatus_BadParamErr );
-	require_action( addrPtr->sin_family == AF_INET, exit, err = mStatus_BadParamErr );
-	
-	*outAddr = *addrPtr;
-	err = 0;
-	
-exit:
-	return( err );
-}
+	SocketRef					sock;
+	DWORD						size;
+	void *						buffer;
+	SOCKET_ADDRESS_LIST *		addressList;
+	struct ifaddrs *			head;
+	struct ifaddrs **			next;
+	struct ifaddrs *			ifa;
+	int							n;
+	int							i;
 
-//===========================================================================================================================
-//	GetRawInterfaceList
-//===========================================================================================================================
-
-static int	GetRawInterfaceList( void *outBuffer, size_t *outBufferSize )
-{
-	int				err;
-	SocketRef		socketRef;
-	DWORD			size;
-	void *			buffer;
-	
-	socketRef 	= kInvalidSocketRef;
-	buffer 		= NULL;
+	sock 	= kInvalidSocketRef;
+	buffer	= NULL;
+	head	= NULL;
+	next	= &head;
 	
 	// Open a temporary socket because one is needed to use WSAIoctl (we'll close it before exiting this function).
 	
-	socketRef = socket( AF_INET, SOCK_DGRAM, 0 );
-	require_action( IsValidSocket( socketRef ), exit, err = mStatus_NoMemoryErr );
+	sock = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+	require_action( IsValidSocket( sock ), exit, err = mStatus_NoMemoryErr );
 	
 	// Call WSAIoctl with SIO_ADDRESS_LIST_QUERY and pass a null buffer. This call will fail, but the size needed to 
 	// for the request will be filled in. Once we know the size, allocate a buffer to hold the entire list.
+	//
+	// NOTE: Due to a bug in Windows CE, the size returned by WSAIoctl is not enough so double it as a workaround.
 	
 	size = 0;
-	WSAIoctl( socketRef, SIO_ADDRESS_LIST_QUERY, NULL, 0, NULL, 0, &size, NULL, NULL );
+	WSAIoctl( sock, SIO_ADDRESS_LIST_QUERY, NULL, 0, NULL, 0, &size, NULL, NULL );
 	require_action( size > 0, exit, err = -1 );
+	size *= 2;
 	
 	buffer = malloc( size );
 	require_action( buffer, exit, err = -1 );
 	
 	// We now know the size of the list and have a buffer to hold so call WSAIoctl again to get it.
 	
-	err = WSAIoctl( socketRef, SIO_ADDRESS_LIST_QUERY, NULL, 0, buffer, size, &size, NULL, NULL );
+	err = WSAIoctl( sock, SIO_ADDRESS_LIST_QUERY, NULL, 0, buffer, size, &size, NULL, NULL );
 	require_noerr( err, exit );
+	addressList = (SOCKET_ADDRESS_LIST *) buffer;
 	
-	*( (void **) outBuffer ) = buffer;
-	if( outBufferSize )
+	// Process the raw interface list and build a linked list of interfaces.
+	//
+	// NOTE: Due to a bug in Windows CE, the iAddressCount field is always 0 so use 1 in that case.
+	
+	n = addressList->iAddressCount;
+	if( n == 0 )
 	{
-		*outBufferSize = size;
+		n = 1;
 	}
-	buffer = NULL;
+	for( i = 0; i < n; ++i )
+	{
+		ifa = (struct ifaddrs *) calloc( 1, sizeof( struct ifaddrs ) );
+		require_action( ifa, exit, err = WSAENOBUFS );
+		
+		*next = ifa;
+		next  = &ifa->ifa_next;
+		
+		// Fetch the name. $$$ TO DO: Get the real name of the interface.
+		
+		ifa->ifa_name = (char *) malloc( 16 );
+		require_action( ifa->ifa_name, exit, err = WSAENOBUFS );
+		sprintf( ifa->ifa_name, "%d", i + 1 );
+		
+		// Fetch flags. Note: SIO_ADDRESS_LIST_QUERY does not report flags so just fake IFF_UP and IFF_MULTICAST.
+		
+		ifa->ifa_flags = IFF_UP | IFF_MULTICAST;
+		
+		// Fetch addresses.
+		
+		switch( addressList->Address[ i ].lpSockaddr->sa_family )
+		{
+			case AF_INET:
+			{
+				struct sockaddr_in *		sinptr4;
+				
+				sinptr4 = (struct sockaddr_in *) addressList->Address[ i ].lpSockaddr;
+				ifa->ifa_addr = (struct sockaddr *) calloc( 1, sizeof( *sinptr4 ) );
+				require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
+				memcpy( ifa->ifa_addr, sinptr4, sizeof( *sinptr4 ) );
+				break;
+			}
+			
+			default:
+				break;
+		}
+	}
+	
+	// Success!
+	
+	if( outAddrs )
+	{
+		*outAddrs = head;
+		head = NULL;
+	}
+	err = 0;
 	
 exit:
-	if( IsValidSocket( socketRef ) )
+	if( head )
 	{
-		close_compat( socketRef );
+		freeifaddrs( head );
 	}
 	if( buffer )
 	{
 		free( buffer );
 	}
+	if( sock != INVALID_SOCKET )
+	{
+		closesocket( sock );
+	}
 	return( err );
 }
+#endif	// defined( _WIN32_WCE ) )
+
+#if( !defined( _WIN32_WCE ) )
+//===========================================================================================================================
+//	getifaddrs
+//===========================================================================================================================
+
+int	getifaddrs( struct ifaddrs **outAddrs )
+{
+	int								err;
+	SOCKET							sock;
+	DWORD							size;
+	DWORD							actualSize;
+	INTERFACE_INFO *				buffer;
+	INTERFACE_INFO *				tempBuffer;
+	INTERFACE_INFO *				ifInfo;
+	int								n;
+	int								i;
+	struct ifaddrs *				head;
+	struct ifaddrs **				next;
+	struct ifaddrs *				ifa;
+	struct sockaddr_in *			sinptr4;
+	struct sockaddr_in6_old *		sinptr6;
+	struct sockaddr *				sa;
+	
+	sock	= INVALID_SOCKET;
+	buffer	= NULL;
+	head	= NULL;
+	next	= &head;
+	
+	// Get the interface list. WSAIoctl is called with SIO_GET_INTERFACE_LIST, but since this does not provide a 
+	// way to determine the size of the interface list beforehand, we have to start with an initial size guess and
+	// call WSAIoctl repeatedly with increasing buffer sizes until it succeeds. Limit this to 100 tries for safety.
+	
+	sock = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+	require_action( sock != INVALID_SOCKET, exit, err = WSAEMFILE );
+	
+	n = 0;
+	size = 16 * sizeof( INTERFACE_INFO );
+	for( ;; )
+	{
+		tempBuffer = (INTERFACE_INFO *) realloc( buffer, size );
+		require_action( tempBuffer, exit, err = WSAENOBUFS );
+		buffer = tempBuffer;
+		
+		err = WSAIoctl( sock, SIO_GET_INTERFACE_LIST, NULL, 0, buffer, size, &actualSize, NULL, NULL );
+		if( err == 0 )
+		{
+			break;
+		}
+		
+		++n;
+		require_action( n < 100, exit, err = WSAEADDRNOTAVAIL );
+		
+		size += ( 16 * sizeof( INTERFACE_INFO ) );
+	}
+	check( actualSize <= size );
+	check( ( actualSize % sizeof( INTERFACE_INFO ) ) == 0 );
+	n = (int)( actualSize / sizeof( INTERFACE_INFO ) );
+	
+	// Process the raw interface list and build a linked list of interfaces.
+	
+	for( i = 0; i < n; ++i )
+	{
+		ifInfo = &buffer[ i ];
+		
+		ifa = (struct ifaddrs *) calloc( 1, sizeof( struct ifaddrs ) );
+		require_action( ifa, exit, err = WSAENOBUFS );
+		
+		*next = ifa;
+		next  = &ifa->ifa_next;
+		
+		// Fetch the name. $$$ TO DO: Get the real name of the interface.
+		
+		ifa->ifa_name = (char *) malloc( 16 );
+		require_action( ifa->ifa_name, exit, err = WSAENOBUFS );
+		sprintf( ifa->ifa_name, "%d", i + 1 );
+		
+		// Fetch interface flags.
+		
+		ifa->ifa_flags = (u_int) ifInfo->iiFlags;
+		
+		// Fetch addresses.
+		
+		switch( ifInfo->iiAddress.Address.sa_family )
+		{
+			case AF_INET:
+				sinptr4 = &ifInfo->iiAddress.AddressIn;
+				ifa->ifa_addr = (struct sockaddr *) calloc( 1, sizeof( *sinptr4 ) );
+				require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
+				memcpy( ifa->ifa_addr, sinptr4, sizeof( *sinptr4 ) );
+			
+				if( ifInfo->iiNetmask.Address.sa_family == AF_INET )
+				{
+					sinptr4 = &ifInfo->iiNetmask.AddressIn;
+					ifa->ifa_netmask = (struct sockaddr *) calloc( 1, sizeof( *sinptr4 ) );
+					require_action( ifa->ifa_netmask, exit, err = WSAENOBUFS );
+					memcpy( ifa->ifa_netmask, sinptr4, sizeof( *sinptr4 ) );
+				}
+				
+				if( ifInfo->iiBroadcastAddress.Address.sa_family == AF_INET )
+				{
+					sinptr4 = &ifInfo->iiBroadcastAddress.AddressIn;
+					ifa->ifa_broadaddr = (struct sockaddr *) calloc( 1, sizeof( *sinptr4 ) );
+					require_action( ifa->ifa_broadaddr, exit, err = WSAENOBUFS );
+					memcpy( ifa->ifa_broadaddr, sinptr4, sizeof( *sinptr4 ) );
+				}
+				break;
+			
+			case AF_INET6:
+				sinptr6 = &ifInfo->iiAddress.AddressIn6;
+				ifa->ifa_addr = (struct sockaddr *) calloc( 1, sizeof( *sinptr6 ) );
+				require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
+				memcpy( ifa->ifa_addr, sinptr6, sizeof( *sinptr6 ) );
+				break;
+			
+			default:
+				sa = &ifInfo->iiAddress.Address;
+				ifa->ifa_addr = (struct sockaddr *) calloc( 1, sizeof( *sa ) );
+				require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
+				memcpy( ifa->ifa_addr, sa, sizeof( *sa ) );
+				break;
+		}
+	}
+	
+	// Success!
+	
+	if( outAddrs )
+	{
+		*outAddrs = head;
+		head = NULL;
+	}
+	err = 0;
+	
+exit:
+	if( head )
+	{
+		freeifaddrs( head );
+	}
+	if( buffer )
+	{
+		free( buffer );
+	}
+	if( sock != INVALID_SOCKET )
+	{
+		closesocket( sock );
+	}
+	return( err );
+}
+#endif	// !defined( _WIN32_WCE ) )
+
+//===========================================================================================================================
+//	freeifaddrs
+//===========================================================================================================================
+
+void	freeifaddrs( struct ifaddrs *inAddrs )
+{
+	struct ifaddrs *		p;
+	struct ifaddrs *		q;
+	
+	// Free each piece of the structure. Set to null after freeing to handle macro-aliased fields.
+	
+	for( p = inAddrs; p; p = q )
+	{
+		q = p->ifa_next;
+		
+		if( p->ifa_name )
+		{
+			free( p->ifa_name );
+			p->ifa_name = NULL;
+		}
+		if( p->ifa_addr )
+		{
+			free( p->ifa_addr );
+			p->ifa_addr = NULL;
+		}
+		if( p->ifa_netmask )
+		{
+			free( p->ifa_netmask );
+			p->ifa_netmask = NULL;
+		}
+		if( p->ifa_broadaddr )
+		{
+			free( p->ifa_broadaddr );
+			p->ifa_broadaddr = NULL;
+		}
+		if( p->ifa_dstaddr )
+		{
+			free( p->ifa_dstaddr );
+			p->ifa_dstaddr = NULL;
+		}
+		if( p->ifa_data )
+		{
+			free( p->ifa_data );
+			p->ifa_data = NULL;
+		}
+		free( p );
+	}
+}
+
+#if( !defined( _WIN32_WCE ) )
+//===========================================================================================================================
+//	sock_pton
+//===========================================================================================================================
+
+int	sock_pton( const char *inString, int inFamily, void *outAddr, size_t inAddrSize, size_t *outAddrSize )
+{
+	int		err;
+	int		size;
+	
+	if( inAddrSize == 0 )
+	{
+		if( inFamily == AF_INET )
+		{
+			inAddrSize = sizeof( struct sockaddr_in );
+		}
+		else if( inFamily == AF_INET6 )
+		{
+			inAddrSize = sizeof( struct sockaddr_in6 );
+		}
+		else
+		{
+			err = WSAEAFNOSUPPORT;
+			goto exit;
+		}
+	}
+	size = (int) inAddrSize;
+	
+	err = WSAStringToAddressA( (char *) inString, inFamily, NULL, (LPSOCKADDR) outAddr, &size );
+	if( err != 0 ) goto exit;
+	
+	if( outAddrSize )
+	{
+		*outAddrSize = (size_t) size;
+	}
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	sock_ntop
+//===========================================================================================================================
+
+char *	sock_ntop( const void *inAddr, size_t inAddrSize, char *inBuffer, size_t inBufferSize )
+{
+	DWORD		size;
+	int			err;
+	DWORD		stringSize;
+	
+	if( inAddrSize == 0 )
+	{
+		const struct sockaddr *		addr;
+		
+		addr = (const struct sockaddr *) inAddr;
+		if( addr->sa_family == AF_INET )
+		{
+			size = sizeof( struct sockaddr_in );
+		}
+		else if( addr->sa_family == AF_INET6 )
+		{
+			size = sizeof( struct sockaddr_in6 );
+		}
+		else
+		{
+			WSASetLastError( WSAEAFNOSUPPORT );
+			inBuffer = NULL;
+			goto exit;
+		}
+	}
+	else
+	{
+		size = (DWORD) inAddrSize;
+	}
+	
+	stringSize = (DWORD) inBufferSize;
+	err = WSAAddressToStringA( (LPSOCKADDR) inAddr, size, NULL, inBuffer, &stringSize );
+	if( err )
+	{
+		inBuffer = NULL;
+	}
+	
+exit:
+	return( inBuffer );
+}
+#endif	// !defined( _WIN32_WCE )
