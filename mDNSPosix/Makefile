@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.25  2004/02/05 20:00:22  cheshire
+# Define mdnsd's PID file to be /var/run/mdnsd.pid on Posix builds
+#
 # Revision 1.24  2004/02/05 01:00:01  rpantos
 # Fix some issues that turned up when building for FreeBSD.
 #
@@ -108,7 +111,7 @@ LD = ld
 CP = cp
 RM = rm
 LN = ln -s -f
-CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall
+CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\"
 LDFLAGS = -shared
 LDSUFFIX = so
 
@@ -300,4 +303,3 @@ $(OBJDIR)/%.c.so.o:	%.c
 
 $(OBJDIR)/%.c.so.o:	$(SHAREDDIR)/%.c
 	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
-
