@@ -3111,6 +3111,10 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 	AppendDomainLabelToName(&m->hostname2, &m->hostlabel);
 	AppendStringLabelToName(&m->hostname2, "local");
 	AppendStringLabelToName(&m->hostname2, "arpa");
+
+	// Make sure that any SRV records (and the like) that reference our 
+	// host name in their rdata get updated to reference this new host name
+	UpdateHostNameTargets(m);
 	}
 
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
@@ -3145,7 +3149,6 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 		if (SameDomainLabel(m->hostlabel.c, oldlabel.c))
 			IncrementLabelSuffix(&m->hostlabel, mDNSfalse);
 		mDNS_GenerateFQDN(m);
-		UpdateHostNameTargets(m);
 		
 		// 3. Re-register all our host sets
 		while (hr)
