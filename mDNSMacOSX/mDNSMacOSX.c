@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.299  2005/02/15 02:46:53  cheshire
+<rdar://problem/3967876> Don't log ENETUNREACH errors for unicast destinations
+
 Revision 1.298  2005/02/10 00:41:59  cheshire
 Fix compiler warning
 
@@ -1229,7 +1232,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	if (err < 0)
 		{
         // Don't report EHOSTDOWN (i.e. ARP failure), ENETDOWN, or no route to host for unicast destinations
-		if (!mDNSAddressIsAllDNSLinkGroup(dst) && (errno == EHOSTDOWN || errno == ENETDOWN || errno == EHOSTUNREACH)) return(err);
+		if (!mDNSAddressIsAllDNSLinkGroup(dst))
+			if (errno == EHOSTDOWN || errno == ENETDOWN || errno == EHOSTUNREACH || errno == ENETUNREACH) return(err);
 		// Don't report EHOSTUNREACH in the first three minutes after boot
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
