@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.45  2004/08/15 18:26:00  cheshire
+Don't use strcpy() on "struct domainname" objects; use AssignDomainName() instead
+(A "struct domainname" is a collection of packed pascal strings, not a C string.)
+
 Revision 1.44  2004/08/13 23:46:58  cheshire
 "asyncronous" -> "asynchronous"
 
@@ -199,7 +203,7 @@ mDNSexport DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig)
 		{
 		newelem = (DNameListElem*)mDNSPlatformMemAllocate(sizeof(DNameListElem));
 		if (!newelem) { LogMsg("ERROR: malloc"); return mDNSNULL; }
-		mDNSPlatformStrCopy(ptr->name.c, newelem->name.c);
+		AssignDomainName(newelem->name, ptr->name);
 		newelem->next = copy;
 		copy = newelem;
 		}
@@ -1364,7 +1368,7 @@ mDNSexport mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNS
 	AuthRecord prereq;
 
 	mDNSPlatformMemZero(&prereq, sizeof(AuthRecord));
-	mDNSPlatformStrCopy(name->c, prereq.resrec.name.c);
+	AssignDomainName(prereq.resrec.name, *name);
 	prereq.resrec.rrtype = kDNSQType_ANY;
 	prereq.resrec.rrclass = kDNSClass_NONE;
 	ptr = putEmptyResourceRecord(msg, ptr, end, &msg->h.mDNS_numPrereqs, &prereq);
