@@ -68,6 +68,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib .
 #include <string.h>			// For strlen(), strcpy(), bzero()
 #include <errno.h>          // For errno, EINTR
 #include <time.h>
+#include <arpa/inet.h>
 
 #ifdef _WIN32
 #include <process.h>
@@ -140,7 +141,8 @@ static void printtimestamp(void)
 static void DNSSD_API regdom_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
-	(void)ifIndex;    // Unused
+	(void)sdRef;        // Unused
+	(void)ifIndex;      // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
 	printtimestamp();
@@ -153,7 +155,7 @@ static void DNSSD_API browsedom_reply(DNSServiceRef client, DNSServiceFlags flag
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
 	(void)client;       // Unused
-	(void)ifIndex;    // Unused
+	(void)ifIndex;      // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
 	printtimestamp();
@@ -182,8 +184,9 @@ static void DNSSD_API resolve_reply(DNSServiceRef client, DNSServiceFlags flags,
 	uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
 
 	(void)client;       // Unused
-	(void)ifIndex;    // Unused
+	(void)ifIndex;      // Unused
 	(void)errorCode;    // Unused
+	(void)txtLen;       // Unused
 	(void)context;      // Unused
 
 	printtimestamp();
@@ -222,7 +225,7 @@ static void DNSSD_API resolve_reply(DNSServiceRef client, DNSServiceFlags flags,
 
 static void myTimerCallBack(void)
 	{
-	DNSServiceErrorType err;
+	DNSServiceErrorType err = kDNSServiceErr_Unknown;
 
 	switch (operation)
 		{
@@ -291,11 +294,19 @@ static void DNSSD_API reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNS
 	if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
 	}
 
-void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 	{
 	const unsigned char *rd = rdata;
 	char rdb[1000];
+
+	(void)sdRef;    // Unused
+	(void)flags;    // Unused
+	(void)ifIndex;  // Unused
+	(void)errorCode;// Unused
+	(void)ttl;      // Unused
+	(void)context;  // Unused
+
 	switch (rrtype)
 		{
 		case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
@@ -349,7 +360,7 @@ static void HandleEvents(void)
 		}
 	}
 
-int	getfirstoption( int argc, char **argv, const char *optstr, int *pOptInd)
+static int getfirstoption( int argc, char **argv, const char *optstr, int *pOptInd)
 // Return the recognized option in optstr and the option index of the next arg.
 #if NOT_HAVE_GETOPT
 	{
@@ -377,6 +388,11 @@ static void MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record,
     DNSServiceErrorType errorCode, void * context)
 	{
 	char *name = (char *)context;
+	
+	(void)service;	// Unused
+	(void)record;	// Unused
+	(void)flags;	// Unused
+	
 	printf("Got a reply for %s: ", name);
 	switch (errorCode)
 		{
@@ -388,7 +404,7 @@ static void MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record,
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
 	{
-	in_addr_t addr = inet_addr(host);
+	in_addr_t addr = inet_addr(ip);
 	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
 	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
 	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, kDNSServiceInterfaceIndexAny, host,
