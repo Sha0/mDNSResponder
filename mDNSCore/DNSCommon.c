@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.37  2004/06/18 20:25:42  cheshire
+<rdar://problem/3488547> Add a syslog message if someone tries to use "local.arpa".
+
 Revision 1.36  2004/06/18 19:09:59  cheshire
 <rdar://problem/3588761> Current method of doing subtypes causes name collisions
 
@@ -683,6 +686,8 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	*dst = 0;
 	if (!domain->c[0]) { errormsg="Service domain must be non-empty"; goto fail; }
+	if (SameDomainName(domain, (domainname*)"\x05" "local" "\x04" "arpa"))
+		{ errormsg="Illegal domain \"local.arpa.\" Use \"local.\" (or empty string)"; goto fail; }
 	dst = AppendDomainName(fqdn, domain);
 	if (!dst) { errormsg="Service domain too long"; goto fail; }
 	return(dst);
