@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.54  2004/06/22 02:10:53  ksekar
+<rdar://problem/3705433>: Lighthouse failure causes packet flood to DNS
+
 Revision 1.53  2004/06/17 20:49:09  ksekar
 <rdar://problem/3690436>: mDNSResponder crash while location cycling
 
@@ -1489,6 +1492,8 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		{
 		LogMsg("ERROR: startLLQHandshakeCallback invoked with error code %d", err);
 		info->state = LLQ_Poll;
+		info->question->LastQTime = 0;  // trigger immediate poll
+		info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 		return;
 		}
 
