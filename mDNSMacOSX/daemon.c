@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.239  2005/01/20 00:25:01  cheshire
+Improve validatelists() log message generation
+
 Revision 1.238  2005/01/19 19:15:35  ksekar
 Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
 
@@ -723,7 +726,8 @@ static void validatelists(mDNS *const m)
 		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
 			LogMsg("!!!! ResourceRecords list: %p is garbage (%X) !!!!", rr, rr->resrec.RecordType);
 		if (rr->resrec.name != &rr->namestorage)
-			LogMsg("!!!! ResourceRecords list: %p name %##s does not point to namestorage %##s", rr, rr->resrec.name->c, rr->namestorage.c);
+			LogMsg("!!!! ResourceRecords list: %p name %p does not point to namestorage %p %##s",
+				rr, rr->resrec.name->c, rr->namestorage.c, rr->namestorage.c);
 		}
 
 	for (rr = m->DuplicateRecords; rr; rr=rr->next)
