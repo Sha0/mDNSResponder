@@ -149,7 +149,7 @@ BEGIN
                     IDC_PRINTER_SELECTION_TEXT,40,23,243,26
     CONTROL         "Use this printer as the default printer",
                     IDC_DEFAULT_PRINTER,"Button",BS_AUTOCHECKBOX | 
-                    WS_TABSTOP,3,142,224,10
+                    WS_TABSTOP,3,142,140,10
     PUSHBUTTON      "Have Disk...",IDC_HAVE_DISK,238,140,50,14
 END
 
