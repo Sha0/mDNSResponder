@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.5  2004/09/16 00:50:54  cheshire
+Don't use MSG_WAITALL -- it returns "Invalid argument" on some Linux versions
+
 Revision 1.4  2004/09/14 23:27:48  cheshire
 Fix compile errors
 
@@ -262,6 +265,26 @@ mDNSlocal int SendTCPMsg(int sd, PktMsg *pkt)
 	return MySend(sd, &pkt->msg, pkt->len);
 	}
 
+// Receive len bytes, waiting until we have all of them.
+// Returns number of bytes read (which should always be the number asked for).
+static int my_recv(const int sd, void *const buf, const int len)
+    {
+    // Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions;
+    // use an explicit while() loop instead.
+    // Also, don't try to do '+=' arithmetic on the original "void *" pointer --
+    // arithmetic on "void *" pointers is compiler-dependent.
+    int remaining = len;
+    char *ptr = (char *)buf;
+    while (remaining)
+    	{
+    	ssize_t num_read = recv(sd, ptr, remaining, 0);
+    	if ((num_read == 0) || (num_read < 0) || (num_read > remaining)) return -1;
+    	ptr       += num_read;
+    	remaining -= num_read;
+    	}
+    return(len);
+    }
+
 // Return a DNS Message (allocated with malloc) read off of a TCP socket, or NULL on failure
 // PktMsg returned contains sufficient extra storage for a Lease OPT RR
 mDNSlocal PktMsg *ReadTCPMsg(int sd)
@@ -271,7 +294,7 @@ mDNSlocal PktMsg *ReadTCPMsg(int sd)
 	PktMsg *pkt = NULL;
 	int srclen;
 	
-	nread = recv(sd, &msglen, sizeof(msglen), MSG_WAITALL);
+	nread = my_recv(sd, &msglen, sizeof(msglen));
 	if (nread < 0) { LogErr("TCPRequestForkFn", "recv"); goto error; }
 	if (nread != sizeof(msglen)) { Log("Could not read length field of message"); goto error; }	
 
@@ -286,7 +309,7 @@ mDNSlocal PktMsg *ReadTCPMsg(int sd)
 	srclen = sizeof(pkt->src);
 	if (getpeername(sd, (struct sockaddr *)&pkt->src, &srclen) ||
 		srclen != sizeof(pkt->src)) { LogErr("ReadTCPMsg", "getpeername"); bzero(&pkt->src, sizeof(pkt->src)); }
-	nread = recv(sd, &pkt->msg, msglen, MSG_WAITALL);
+	nread = my_recv(sd, &pkt->msg, msglen);
 	if (nread < 0) { LogErr("TCPRequestForkFn", "recv"); goto error; }
 	if (nread != msglen) { Log("Could not read entire message"); goto error; }
 	if (pkt->len < sizeof(DNSMessageHeader))
