@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.156  2003/05/30 23:56:49  cheshire
+<rdar://problem/3274847> Crash after error in mDNS_RegisterService()
+Need to set "sr->Extras = mDNSNULL" before returning
+
 Revision 1.155  2003/05/30 23:48:00  cheshire
 <rdar://problem/3274832> Announcements not properly grouped
 Due to inconsistent setting of rr->LastAPTime at different places in the
@@ -5210,6 +5214,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->ServiceCallback = Callback;
 	sr->ServiceContext  = Context;
 	sr->Conflict = mDNSfalse;
+	sr->Extras = mDNSNULL;
+
 	if (host && host->c[0]) sr->Host = *host;
 	else sr->Host.c[0] = 0;
 	
@@ -5251,9 +5257,6 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		mDNSPlatformMemCopy(txtinfo, sr->RR_TXT.rdata->u.txt.c, txtlen);
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
-
-	// 4. We have no Extras yet
-	sr->Extras = mDNSNULL;
 
 	mDNS_Lock(m);
 	err = mDNS_Register_internal(m, &sr->RR_SRV);
