@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.138  2004/12/06 01:45:54  ksekar
+Correct wording in LogMsg
+
 Revision 1.137  2004/12/03 20:40:35  ksekar
 <rdar://problem/3865124> Looping on NAT Traversal error
 
@@ -1869,7 +1872,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			info->OrigTarget.c[0] = '\0';  // if we were updating the target, clear the original target
 			break;
 		case regState_DeregPending:
-			if (err) LogMsg("Error %ld for refresh of service %##s", err, srs->RR_SRV.resrec.name.c);
+			if (err) LogMsg("Error %ld for deregistration of service %##s", err, srs->RR_SRV.resrec.name.c);
 			err = mStatus_MemFree;
 			InvokeCallback = mDNStrue;
 			if (nat)
