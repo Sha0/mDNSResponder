@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.246  2004/12/01 01:51:34  cheshire
+Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
+
 Revision 1.245  2004/11/30 03:24:04  cheshire
 <rdar://problem/3854544> Defer processing network configuration changes until configuration has stabilized
 
@@ -741,6 +744,7 @@ Minor code tidying
 #include "DNSCommon.h"
 #include "mDNSMacOSX.h"               // Defines the specific types needed to run mDNS on this platform
 #include "../mDNSShared/uds_daemon.h" // Defines communication interface from platform layer up to UDS daemon
+#include "PlatformCommon.h"
 
 #include <stdio.h>
 #include <stdarg.h>                 // For va_list support
@@ -2322,71 +2326,6 @@ mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatu
 	SetDDNSNameStatus(&rr->resrec.name, result);
 	}
 
-// dst must be at least MAX_ESCAPED_DOMAIN_NAME bytes, and option must be less than 20 bytes in length
-mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
-	{
-	char buf[1024];
-	int len;
-
-	len = strlen(option);
-	if (len + MAX_ESCAPED_DOMAIN_NAME > 1024) { LogMsg("GetConfigOption: option %s too long", option); return mDNSfalse; }
-	fseek(f, 0, SEEK_SET);  // set position to beginning of stream
-	while (fgets(buf, 1024, f))
-		{
-		if (!strncmp(buf, option, len))
-			{
-			strncpy(dst, buf + len + 1, MAX_ESCAPED_DOMAIN_NAME-1);
-			if (dst[MAX_ESCAPED_DOMAIN_NAME-1]) dst[MAX_ESCAPED_DOMAIN_NAME-1] = '\0';
-			len = strlen(dst);
-			if ( len && dst[len-1] == '\n') dst[len-1] = '\0';  // chop newline
-			return mDNStrue;
-			}
-		}
-	debugf("Option %s not set", option);
-	return mDNSfalse;
-	}
-
-mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m, domainname *hostname, domainname *domain)
-	{
-	char zone[MAX_ESCAPED_DOMAIN_NAME], fqdn[MAX_ESCAPED_DOMAIN_NAME];
-	char secret[MAX_ESCAPED_DOMAIN_NAME];
-	int slen;
-	mStatus err;
-	FILE *f = NULL;
-	
-	secret[0] = 0;
-    hostname->c[0] = 0;
-    domain->c[0] = 0;
-	f = fopen(CONFIG_FILE, "r");
-	if (f)
-		{
-		if (GetConfigOption(fqdn, "hostname", f) && !MakeDomainNameFromDNSNameString(hostname, fqdn)) goto badf;
-		if (GetConfigOption(zone, "zone", f) && !MakeDomainNameFromDNSNameString(domain, zone)) goto badf;
-		GetConfigOption(secret, "secret-64", f);  // failure means no authentication	   
-		fclose(f);
-		f = NULL;
-		}
-	else
-		{
-		if (errno != ENOENT) LogMsg("ERROR: Config file exists, but cannot be opened.");
-		return;
-		}
-
-	if (secret[0])
-		{
-		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
-		slen = strlen(secret);
-		err = mDNS_SetSecretForZone(m, domain, domain, secret, slen, mDNStrue);
-		if (err) LogMsg("ERROR: mDNS_SetSecretForZone returned %d for domain %##s", err, DynDNSZone.c);
-		}
-
-	return;
-
-	badf:
-	LogMsg("ERROR: malformatted config file");
-	if (f) fclose(f);	
-	}
-
 mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	{
 	OSStatus err = 0;
@@ -2433,7 +2372,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	domainname zone, fqdn;
 	// get fqdn, zone from SCPrefs
 	GetUserSpecifiedDDNSConfig(&fqdn, &zone);
-	if (!fqdn.c[0] && !zone.c[0]) ReadDDNSSettingsFromConfFile(m, &fqdn, &zone);
+	if (!fqdn.c[0] && !zone.c[0]) ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &fqdn, &zone);
 	
 	if (!SameDomainName(&zone, &DynDNSZone))
 		{		
