@@ -12,6 +12,8 @@
 #define IDR_CONTEXT_MENU                120
 #define IDD_LOGIN                       145
 #define IDC_ABOUT_BACKGROUND				146
+#define IDS_ABOUT                       147
+#define IDS_ABOUT_URL                   148
 #define IDC_COMPONENT                   1001
 #define IDC_LEGAL                       1002
 #define IDC_LOGIN_USERNAME_TEXT         1182
