@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.301  2003/09/04 22:51:13  cheshire
+<rdar://problem/3398213> Group probes and goodbyes better
+
 Revision 1.300  2003/09/03 02:40:37  cheshire
 <rdar://problem/3404842> mDNSResponder complains about '_'s
 Underscores are not supposed to be legal in standard DNS names, but IANA appears
@@ -2189,35 +2192,41 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 
 mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	{
-	// Back-date LastAPTime to make it appear that the next announcement/probe is due immediately and set LastMCTime to
-	// now, to inhibit multicast responses (no need to send additional multicast responses when we're announcing anyway)
+	// To allow us to aggregate probes when a group of services are registered together,
+	// the first probe is delayed 1/4 second. This means the common-case behaviour is:
+	// 1/4 second wait; probe
+	// 1/4 second wait; probe
+	// 1/4 second wait; probe
+	// 1/4 second wait; announce (i.e. service is normally announced exactly one second after being registered)
+
+	// If we have no probe suppression time set, or it is in the past, set it now
+	if (m->SuppressProbes == 0 || m->SuppressProbes - m->timenow < 0)
+		{
+		m->SuppressProbes = (m->timenow + DefaultProbeIntervalForTypeUnique) | 1;
+		// If we already have a probe sheduled to go out sooner, then use that time to get better aggregation
+		if (m->SuppressProbes - m->NextScheduledProbe >= 0)
+			m->SuppressProbes = m->NextScheduledProbe;
+		}
+	
 	// We announce to flush stale data from other caches. It is a reasonable assumption that any
 	// old stale copies will probably have the same TTL we're using, so announcing longer than
 	// this serves no purpose -- any stale copies of that record will have expired by then anyway.
 	rr->AnnounceUntil   = m->timenow + TicksTTL(rr);
-	rr->LastAPTime      = m->timenow - rr->ThisAPInterval;
+	rr->LastAPTime      = m->SuppressProbes - rr->ThisAPInterval;
+	// Set LastMCTime to now, to inhibit multicast responses
+	// (no need to send additional multicast responses when we're announcing anyway)
 	rr->LastMCTime      = m->timenow;
 	rr->LastMCInterface = mDNSInterfaceMark;
 	
-	if (rr->resrec.RecordType == kDNSRecordTypeUnique)
-		{
-		// If this is a record that's going to probe, check SuppressProbes
-		if (m->SuppressProbes && m->SuppressProbes - m->timenow > 0)
-			rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
-		}
-	else
-		{
-		// If this is a record type that's not going to probe, then delay its first announcement so that it will go out
-		// synchronized with the first announcement for the other records that *are* probing.
-		// This is a minor performance tweak that helps keep groups of related records synchronized together.
-		// The addition of "rr->ThisAPInterval / 4" is to make sure that this announcement is not scheduled to go out
-		// *before* the probing is complete. When the probing is complete and those records begin to
-		// announce, these records will also be picked up and accelerated, because they will be considered to be
-		// more than half-way to their scheduled announcement time.
-		// Ignoring timing jitter, they will be exactly 3/4 of the way to their scheduled announcement time.
-		// Anything between 50% and 100% would work, so aiming for 75% gives us the best safety margin in case of timing jitter.
-		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 4;
-		}
+	// If this is a record type that's not going to probe, then delay its first announcement so that
+	// it will go out synchronized with the first announcement for the other records that *are* probing.
+	// This is a minor performance tweak that helps keep groups of related records synchronized together.
+	// The addition of "rr->ThisAPInterval / 2" is to make sure that, in the event that any of the probes are
+	// delayed by a few milliseconds, this announcement does not inadvertently go out *before* the probing is complete.
+	// When the probing is complete and those records begin to announce, these records will also be picked up and accelerated,
+	// because they will meet the criterion of being at least half-way to their scheduled announcement time.
+	if (rr->resrec.RecordType != kDNSRecordTypeUnique)
+		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 2;
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -2597,7 +2606,11 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		rr->ImmedAnswer          = mDNSInterfaceMark;
 		if (rr->resrec.InterfaceID == ((mDNSInterfaceID)~0))
 			m->DiscardLocalOnlyRecords = mDNStrue;
-		else m->NextScheduledResponse = m->timenow;
+		else
+			{
+			if (m->NextScheduledResponse - (m->timenow + mDNSPlatformOneSecond/10) >= 0)
+				m->NextScheduledResponse = (m->timenow + mDNSPlatformOneSecond/10);
+			}
 		}
 	else
 		{
@@ -5617,7 +5630,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->next           = mDNSNULL;
 		question->qnamehash      = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
 		question->ThisQInterval  = InitialQuestionInterval * 2;				// MUST be > zero for an active question
-		question->LastQTime      = m->timenow - m->RandomQueryDelay;	// Avoid inter-machine synchronization
+		question->LastQTime      = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
 		question->RecentAnswers  = 0;
 		question->CurrentAnswers = 0;
 		question->LargeAnswers   = 0;
