@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.236  2005/01/19 03:16:38  cheshire
+<rdar://problem/3961051> CPU Spin in mDNSResponder
+Improve detail of "Task Scheduling Error" diagnostic messages
+
 Revision 1.235  2005/01/15 00:56:41  ksekar
 <rdar://problem/3954575> Unicast services don't disappear when logging
 out of VPN
@@ -536,7 +540,7 @@ Add $Log header
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
 
-#include "mDNSEmbeddedAPI.h"			// Defines the interface to the client layer above
+#include "DNSCommon.h"
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
 #include "uds_daemon.h"				// Interface to the server side implementation of dns_sd.h
@@ -2340,6 +2344,38 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	return(nextevent);
 	}
 
+mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
+	{
+	mDNS_Lock(m);
+
+	LogMsg("Task Scheduling Error: Continuously busy for more than a second");
+	
+	if (m->NewQuestions && (!m->NewQuestions->DelayAnswering || m->timenow - m->NewQuestions->DelayAnswering >= 0))
+		LogMsg("Task Scheduling Error: NewQuestion %##s (%s)",
+			m->NewQuestions->qname.c, DNSTypeName(m->NewQuestions->qtype));
+	if (m->NewLocalOnlyQuestions)
+		LogMsg("Task Scheduling Error: NewLocalOnlyQuestions %##s (%s)",
+			m->NewLocalOnlyQuestions->qname.c, DNSTypeName(m->NewLocalOnlyQuestions->qtype));
+	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords))
+		LogMsg("Task Scheduling Error: NewLocalRecords %s", ARDisplayString(m, m->NewLocalRecords));
+	if (m->SuppressSending && m->timenow - m->SuppressSending >= 0)
+		LogMsg("Task Scheduling Error: m->SuppressSending %d",       m->timenow - m->SuppressSending);
+#ifndef UNICAST_DISABLED
+	if (m->timenow - m->uDNS_info.nextevent   >= 0)
+		LogMsg("Task Scheduling Error: m->uDNS_info.nextevent %d",   m->timenow - m->uDNS_info.nextevent);
+#endif
+	if (m->timenow - m->NextCacheCheck        >= 0)
+		LogMsg("Task Scheduling Error: m->NextCacheCheck %d",        m->timenow - m->NextCacheCheck);
+	if (m->timenow - m->NextScheduledQuery    >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledQuery %d",    m->timenow - m->NextScheduledQuery);
+	if (m->timenow - m->NextScheduledProbe    >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledProbe %d",    m->timenow - m->NextScheduledProbe);
+	if (m->timenow - m->NextScheduledResponse >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledResponse %d", m->timenow - m->NextScheduledResponse);
+
+	mDNS_Unlock(&mDNSStorage);
+	}
+
 mDNSexport int main(int argc, char **argv)
 	{
 	int i;
@@ -2415,8 +2451,7 @@ mDNSexport int main(int argc, char **argv)
 			else
 				{
 				ticks = 1;
-				if (++RepeatedBusy >= mDNSPlatformOneSecond * 10)
-					{ LogMsg("Task Scheduling Error: Continuously busy for the last ten seconds"); RepeatedBusy = 0; }
+				if (++RepeatedBusy >= mDNSPlatformOneSecond) { ShowTaskSchedulingError(&mDNSStorage); RepeatedBusy = 0; }
 				}
 			CFAbsoluteTime interval = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
 
