@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.70  2003/06/07 04:50:53  cheshire
+<rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
+
 Revision 1.69  2003/06/07 04:22:17  cheshire
 Add MsgBuffer for error log and debug messages
 
@@ -588,6 +591,9 @@ struct ResourceRecord_struct
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
 	DNSQuestion    *CRActiveQuestion;	// CR: Points to an active question referencing this answer
 	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
+	mDNSs32         LastUnansweredTime;	// CR: In platform time units; last time we incremented UnansweredQueries
+	mDNSu32         UnansweredTCQ;		// CR: Number of times we've seen a query for this record in a TC query packet
+	mDNSu32         UnansweredTCKA;		// CR: Number of times we've seen this record in the KA list of a TC query packet
 	mDNSBool        FreshData;			// CR: Set if this is a record we just received
 
 	// Field Group 4: The actual information pertaining to this resource record

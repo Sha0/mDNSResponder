@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.177  2003/06/07 04:50:53  cheshire
+<rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
+
 Revision 1.176  2003/06/07 04:33:26  cheshire
 <rdar://problem/3283540> When query produces zero results, call mDNS_Reconfirm() on any antecedent records
 Minor change: Increment/decrement logic for q->CurrentAnswers should be in
@@ -1863,6 +1866,9 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->UseCount          = 0;			// Not strictly relevant for a local record
 	rr->CRActiveQuestion  = mDNSNULL;	// Not strictly relevant for a local record
 	rr->UnansweredQueries = 0;			// Not strictly relevant for a local record
+	rr->LastUnansweredTime= 0;			// Not strictly relevant for a local record
+	rr->UnansweredTCQ     = 0;			// Not strictly relevant for a local record
+	rr->UnansweredTCKA    = 0;			// Not strictly relevant for a local record
 	rr->FreshData         = mDNSfalse;	// Not strictly relevant for a local record
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -2438,6 +2444,9 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->UseCount          = 0;
 	rr->CRActiveQuestion  = mDNSNULL;
 	rr->UnansweredQueries = 0;
+	rr->LastUnansweredTime= 0;
+	rr->UnansweredTCQ     = 0;
+	rr->UnansweredTCKA    = 0;
 	rr->FreshData         = mDNStrue;
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -3840,6 +3849,8 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 				rr->TimeRcvd          = m->timenow;
 				rr->rroriginalttl     = 5;
 				rr->UnansweredQueries = 0;
+				rr->UnansweredTCQ     = 0;
+				rr->UnansweredTCKA    = 0;
 				SetNextCacheCheckTime(m, rr);
 				}
 
@@ -4089,6 +4100,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	{
 	ResourceRecord  *ResponseRecords = mDNSNULL;
 	ResourceRecord **nrp             = &ResponseRecords;
+	ResourceRecord  *ExpectedAnswers = mDNSNULL;
+	ResourceRecord **eap             = &ExpectedAnswers;
 	mDNSBool         delayresponse   = mDNSfalse;
 	mDNSBool         HaveAtLeastOneAnswer = mDNSfalse;
 	const mDNSu8    *ptr             = query->data;
@@ -4134,6 +4147,11 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// If we couldn't answer this question, someone else might be able to,
 		// so use random delay on response to reduce collisions
 		if (NumAnswersForThisQuestion == 0) delayresponse = mDNStrue;
+
+		// Make a list indicating which of our own cache records we expect to see updated as a result of this query		
+		for (rr = m->rrcache_hash[HashSlot(&q.qname)]; rr; rr=rr->next)
+			if (ResourceRecordAnswersQuestion(rr, &q) && !rr->NextInKAList && eap != &rr->NextInKAList)
+				{ *eap = rr; eap = &rr->NextInKAList; }
 		}
 
 	// ***
@@ -4202,6 +4220,25 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					if (mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6)) rr->v6Requester = zerov6Addr;
 					}
 				if (mDNSIPv4AddressIsZero(rr->v4Requester) && mDNSIPv6AddressIsZero(rr->v6Requester)) rr->ImmedAnswer = mDNSNULL;
+				}
+			}
+
+		// See if it suppresses any answers we were expecting for our cache records
+		if (query->h.flags.b[0] & kDNSFlag0_TC)
+			{
+			for (rr = m->rrcache_hash[HashSlot(&pktrr.name)]; rr; rr=rr->next)
+				if (IdenticalResourceRecord(&pktrr, rr))
+					rr->UnansweredTCKA++;
+			}
+		else
+			{
+			eap = &ExpectedAnswers;
+			while (*eap)
+				{
+				ResourceRecord *rr = *eap;
+				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
+					{ *eap = rr->NextInKAList; rr->NextInKAList = mDNSNULL; }
+				else eap = &rr->NextInKAList;
 				}
 			}
 		}
@@ -4310,6 +4347,29 @@ exit:
 		rr->NextResponse    = mDNSNULL;
 		rr->NR_AnswerTo     = mDNSNULL;
 		rr->NR_AdditionalTo = mDNSNULL;
+		}
+	
+	while (ExpectedAnswers)
+		{
+		rr = ExpectedAnswers;
+		ExpectedAnswers = rr->NextInKAList;
+		rr->NextInKAList = mDNSNULL;
+		if (query->h.flags.b[0] & kDNSFlag0_TC)
+			rr->UnansweredTCQ++;
+		else
+			{
+			if (rr->UnansweredQueries == 0 || m->timenow - rr->LastUnansweredTime > mDNSPlatformOneSecond)
+				rr->UnansweredQueries++;
+			rr->LastUnansweredTime = m->timenow;
+			}
+
+		// We multiply TCQ by 3 and TCKA by four, to allow for possible packet loss
+		// of up to 25% of the additional KA packets
+		if (rr->UnansweredQueries >= 4 || rr->UnansweredTCQ * 3 > rr->UnansweredTCKA * 4 + 6)
+			{
+			debugf("ProcessQuery: mDNS_Reconfirm() for %s", GetRRDisplayString(m, rr));
+			mDNS_Reconfirm(m, rr);
+			}
 		}
 	
 	return(responseptr);
@@ -4508,6 +4568,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						{
 						rr->rroriginalttl = pktrr.rroriginalttl;
 						rr->UnansweredQueries = 0;
+						rr->UnansweredTCQ     = 0;
+						rr->UnansweredTCKA    = 0;
 						}
 					else
 						{
@@ -5393,6 +5455,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 					rr->TimeRcvd          = m->timenow;
 					rr->rroriginalttl     = 5;
 					rr->UnansweredQueries = 0;
+					rr->UnansweredTCQ     = 0;
+					rr->UnansweredTCKA    = 0;
 					SetNextCacheCheckTime(m, rr);
 					}
 		}
