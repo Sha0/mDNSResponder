@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.199  2004/09/24 23:54:55  cheshire
+<rdar://problem/3787102> Don't use kCFSocketCloseOnInvalidate
+
 Revision 1.198  2004/09/24 23:47:49  cheshire
 Correct comment and error message
 
@@ -1059,7 +1062,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 	tcpInfo_t *info;
 	CFSocketRef sr;
 	CFRunLoopSourceRef rls;
-	CFOptionFlags srFlags;
 	
 	(void)InterfaceID;	//!!!KRS use this if non-zero!!!
 
@@ -1103,10 +1105,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 		return mStatus_UnknownErr;
 		}
 
-	// prevent closing of native socket
-	srFlags = CFSocketGetSocketFlags(sr);
-	CFSocketSetSocketFlags(sr, srFlags & (~kCFSocketCloseOnInvalidate));
-	
 	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, sr, 0);
 	if (!rls)
 		{
@@ -1161,9 +1159,12 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	CFRelease(sr);  // this only releases the copy we allocated with CreateWithNative above
 	
 	info = cfContext.info;
+
+	// Note: MUST NOT close the underlying native BSD socket.
+	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
+	// because it first has to unhook the sockets from its select() call, before it can safely close them.
 	CFSocketInvalidate(sr);
 	CFRelease(sr);
-	close(sd);
 	freeL("mDNSPlatformTCPCloseConnection", info);
 	}
 
