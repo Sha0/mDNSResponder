@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.136  2003/09/23 02:07:25  cheshire
+Include port number in DNSServiceRegistration START/STOP messages
+
 Revision 1.135  2003/09/23 01:34:02  cheshire
 In SIGINFO state log, show remaining TTL on cache records, and port number on ServiceRegistrations
 
@@ -218,6 +221,9 @@ Add $Log header
 // To expand "version" to its value before making the string, use STRINGIFY(version) instead
 #define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s 
 #define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
+
+#define PORT_AS_NUM(P) (((mDNSu16)(P).b[0]) << 8 | (P).b[1])
+#define SRS_PORT_AS_NUM(S) PORT_AS_NUM((S)->RR_SRV.resrec.rdata->u.srv.port)
 
 //*************************************************************************************************************
 // Globals
@@ -487,8 +493,8 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		*r = (*r)->next;
 		x->autorename = mDNSfalse;
 		if (m && m != x)
-			LogMsg("%5d: DNSServiceRegistration(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->s.RR_SRV.resrec.name.c, m, x);
-		else LogOperation("%5d: DNSServiceRegistration(%##s) STOP", ClientMachPort, x->s.RR_SRV.resrec.name.c);
+			LogMsg("%5d: DNSServiceRegistration(%##s, %u) STOP; WARNING m %p != x %p", ClientMachPort, x->s.RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(&x->s), m, x);
+		else LogOperation("%5d: DNSServiceRegistration(%##s, %u) STOP", ClientMachPort, x->s.RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(&x->s));
 		// If mDNS_DeregisterService() returns mStatus_NoError, that means that the service was found in the list,
 		// is sending its goodbye packet, and we'll get an mStatus_MemFree message when we can free the memory.
 		// If mDNS_DeregisterService() returns an error, it means that the service had already been removed from
@@ -803,8 +809,8 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		}
 	cstring[i-1] = 0;		// Put the terminating NULL on the end
 	
-	LogOperation("%5d: DNSServiceResolver(%##s) -> %#a:%d", x->ClientMachPort,
-		x->i.name.c, &query->info->ip, (int)query->info->port.b[0] << 8 | query->info->port.b[1]);
+	LogOperation("%5d: DNSServiceResolver(%##s) -> %#a:%u", x->ClientMachPort,
+		x->i.name.c, &query->info->ip, PORT_AS_NUM(query->info->port));
 	status = DNSServiceResolverReply_rpc(x->ClientMachPort,
 		(char*)&interface, (char*)&address, cstring, 0, MDNS_MM_TIMEOUT);
 	if (status == MACH_SEND_TIMED_OUT)
@@ -871,7 +877,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 	if (result == mStatus_NoError)
 		{
 		kern_return_t status;
-		LogOperation("%5d: DNSServiceRegistration(%##s) Name Registered", x->ClientMachPort, sr->RR_SRV.resrec.name.c);
+		LogOperation("%5d: DNSServiceRegistration(%##s, %u) Name Registered", x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(sr));
 		status = DNSServiceRegistrationReply_rpc(x->ClientMachPort, result, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
 			AbortBlockedClient(x->ClientMachPort, "registration success", x);
@@ -879,7 +885,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 
 	else if (result == mStatus_NameConflict)
 		{
-		LogOperation("%5d: DNSServiceRegistration(%##s) Name Conflict", x->ClientMachPort, sr->RR_SRV.resrec.name.c);
+		LogOperation("%5d: DNSServiceRegistration(%##s, %u) Name Conflict", x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(sr));
 		// Note: By the time we get the mStatus_NameConflict message, the service is already deregistered
 		// and the memory is free, so we don't have to wait for an mStatus_MemFree message as well.
 		if (x->autoname)
@@ -913,14 +919,14 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 				LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", sr->RR_SRV.resrec.name.c);
 				*r = (*r)->next;
 				}
-			LogOperation("%5d: DNSServiceRegistration(%##s) Memory Free", x->ClientMachPort, sr->RR_SRV.resrec.name.c);
+			LogOperation("%5d: DNSServiceRegistration(%##s, %u) Memory Free", x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(sr));
 			FreeDNSServiceRegistration(x);
 			}
 		}
 	
 	else
-		LogMsg("%5d: DNSServiceRegistration(%##s) Unknown Result %ld",
-			x->ClientMachPort, sr->RR_SRV.resrec.name.c, result);
+		LogMsg("%5d: DNSServiceRegistration(%##s, %u) Unknown Result %ld",
+			x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(sr), result);
 	}
 
 mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainname *srv, mDNSIPPort port)
@@ -934,8 +940,8 @@ mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainn
 			count++;
 
 	if (count > 1)
-		LogMsg("%5d: Client application registered %d identical instances of service %##s port %d.",
-			x->ClientMachPort, count, srv->c, (int)port.b[0] << 8 | port.b[1]);
+		LogMsg("%5d: Client application registered %d identical instances of service %##s port %u.",
+			x->ClientMachPort, count, srv->c, PORT_AS_NUM(port));
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -1035,7 +1041,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	DNSServiceRegistrationList = x;
 
 	// Do the operation
-	LogOperation("%5d: DNSServiceRegistration(\"%s\", \"%s\", \"%s\") START", x->ClientMachPort, name, regtype, domain);
+	LogOperation("%5d: DNSServiceRegistration(\"%s\", \"%s\", \"%s\", %u) START",
+		x->ClientMachPort, name, regtype, domain, PORT_AS_NUM(port));
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
 	// a port number of zero. When two instances of the protected client are allowed to run on one
 	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
@@ -1473,10 +1480,7 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 		LogMsg("%5d: ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
 
 	for (r = DNSServiceRegistrationList; r; r=r->next)
-		{
-		mDNSu16 portnum = (mDNSu16)(r->s.RR_SRV.resrec.rdata->u.srv.port.b[0]) << 8 | r->s.RR_SRV.resrec.rdata->u.srv.port.b[1];
-		LogMsg("%5d: ServiceRegistration %##s %u", r->ClientMachPort, r->s.RR_SRV.resrec.name.c, portnum);
-		}
+		LogMsg("%5d: ServiceRegistration %##s %u", r->ClientMachPort, r->s.RR_SRV.resrec.name.c, PORT_AS_NUM(r->s.RR_SRV.resrec.rdata->u.srv.port));
 
 	udsserver_info();
 
