@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.150  2004/12/13 20:42:41  ksekar
+Fixed LogMsg
+
 Revision 1.149  2004/12/13 18:10:03  ksekar
 Fixed LogMsg
 
@@ -4161,7 +4164,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		}
 
 	error:
-	LogMsg("Error, uDNS_DeregisterRecord: %s", errmsg);
+	LogMsg("Error, uDNS_DeregisterService: %s", errmsg);
 	return mStatus_UnknownErr;
 	}
 
