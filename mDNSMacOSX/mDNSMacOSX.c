@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.286  2005/01/25 02:02:37  cheshire
+<rdar://problem/3970673> mDNSResponder leaks
+GetSearchDomains() was not calling dns_configuration_free().
+
 Revision 1.285  2005/01/22 00:07:54  ksekar
 <rdar://problem/3960546> mDNSResponder should look at all browse domains in SCPreferences
 
@@ -2529,6 +2533,7 @@ mDNSlocal mStatus GetSearchDomains(void)
 
 		for (i = 0; i < resolv->n_search; i++) MarkSearchListElem(resolv->search[i]);
 		if (resolv->domain) MarkSearchListElem(resolv->domain);
+		dns_configuration_free(config);
 #endif
 		}
 	return err;
