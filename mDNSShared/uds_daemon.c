@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.163  2005/01/28 01:39:16  cheshire
+Include file descriptor number in "broken pipe" message
+
 Revision 1.162  2005/01/27 23:59:20  cheshire
 Remove extraneous LogMsg
 
@@ -3176,7 +3179,7 @@ static int send_msg(reply_state *rs)
 #if !defined(PLATFORM_NO_EPIPE)
             if (dnssd_errno() == EPIPE)
             	{
-                LogMsg("broken pipe - cleanup should be handled by run-loop read wakeup");
+                LogMsg("%3d: broken pipe - cleanup will be handled by run-loop read wakeup", rs->sd);
                 rs->ts = t_terminated;
                 rs->request->ts = t_terminated;
                 return t_terminated;
