@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Responder.c,v $
+Revision 1.20  2004/02/09 23:23:32  cheshire
+Advertise "IL 2\4th Floor.apple.com." as another test "browse domain"
+
 Revision 1.19  2004/01/24 23:55:15  cheshire
 Change to use mDNSOpaque16fromIntVal/mDNSVal16 instead of shifting and masking
 
@@ -53,7 +56,7 @@ Update to APSL 2.0
 static mDNS m;
 static mDNS_PlatformSupport p;
 static ServiceRecordSet p1, p2, afp, http, njp;
-static AuthRecord browsedomain;
+static AuthRecord browsedomain1, browsedomain2;
 
 // This sample code just calls mDNS_RenameAndReregisterService to automatically pick a new
 // unique name for the service. For a device such as a printer, this may be appropriate.
@@ -186,7 +189,8 @@ mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	//RegisterService(m, &njp, 80, "NJP/", &m->nicelabel, "_njp._tcp.", "local.");
 
 	// Advertise that apple.com. is available for browsing
-	mDNS_AdvertiseDomains(m, &browsedomain, mDNS_DomainTypeBrowse, mDNSInterface_Any, "IL 2\\4th Floor.apple.com.");
+	mDNS_AdvertiseDomains(m, &browsedomain1, mDNS_DomainTypeBrowse, mDNSInterface_Any, "apple.com.");
+	mDNS_AdvertiseDomains(m, &browsedomain2, mDNS_DomainTypeBrowse, mDNSInterface_Any, "IL 2\\4th Floor.apple.com.");
 
 	return(kOTNoError);
 	}
