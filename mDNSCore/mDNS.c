@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.242  2003/07/25 01:18:41  cheshire
+Fix memory leak on shutdown in mDNS_Close() (detected in Windows version)
+
 Revision 1.241  2003/07/23 21:03:42  cheshire
 Only show "Found record..." debugf message in verbose mode
 
@@ -6199,16 +6202,24 @@ extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 extern void mDNS_Close(mDNS *const m)
 	{
 	mDNSu32 rrcache_active = 0;
-	ResourceRecord *rr;
+	mDNSu32 rrcache_totalused = 0
 	mDNSu32 slot;
 	NetworkInterfaceInfo *intf;
 	mDNS_Lock(m);
 
 	m->mDNS_shutdown = mDNStrue;
 
+	rrcache_totalused = m->rrcache_totalused;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next) if (rr->CRActiveQuestion) rrcache_active++;
-	debugf("mDNS_Close: RR Cache now using %ld records, %d active", m->rrcache_totalused, rrcache_active);
+		while (m->rrcache_hash[slot])
+			{
+			ResourceRecord *rr = m->rrcache_hash[slot];
+			m->rrcache_hash[slot] = rr->next;
+			if (rr->CRActiveQuestion) rrcache_active++;
+			m->rrcache_used[slot]--;
+			ReleaseCacheRR(m, rr);
+			}
+	debugf("mDNS_Close: RR Cache was using %ld records, %d active", rrcache_totalused, rrcache_active);
 	if (rrcache_active != m->rrcache_active)
 		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
 
