@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.469  2004/11/24 04:50:39  cheshire
+Minor tidying
+
 Revision 1.468  2004/11/24 01:47:07  cheshire
 <rdar://problem/3780207> DNSServiceRegisterRecord should call CallBack on success.
 
@@ -2762,9 +2765,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 				response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
 			if (intf->IPv4Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
 			if (intf->IPv6Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
-			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
-			if (++pktcount >= 1000)
-				{ LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
+			if (!m->SuppressSending) m->SuppressSending = (m->timenow + (mDNSPlatformOneSecond+9)/10) | 1;	// OR with one to ensure non-zero
+			if (++pktcount >= 1000) { LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
 			// There might be more things to send on this interface, so go around one more time and try again.
 			}
 		else	// Nothing more to send on this interface; go to next
@@ -4257,7 +4259,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	DNSQuestion     *DupQuestions    = mDNSNULL;			// Our questions that are identical to questions in this packet
 	DNSQuestion    **dqp             = &DupQuestions;
 	mDNSs32          delayresponse   = 0;
-	mDNSBool         HaveUnicastAnswer = mDNSfalse;
+	mDNSBool         SendLegacyResponse = mDNSfalse;
 	const mDNSu8    *ptr             = query->data;
 	mDNSu8          *responseptr     = mDNSNULL;
 	AuthRecord  *rr, *rr2;
@@ -4493,7 +4495,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			
 			// If the client insists on a multicast response, then we'd better send one
 			if (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
-			else if (rr->NR_AnswerTo) HaveUnicastAnswer = mDNStrue;
+			else if (rr->NR_AnswerTo) SendLegacyResponse = mDNStrue;
 	
 			if (SendMulticastResponse)
 				{
@@ -4574,7 +4576,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	// *** 8. If query is from a legacy client, or from a new client requesting a unicast reply, then generate a unicast response too
 	// ***
-	if (HaveUnicastAnswer)
+	if (SendLegacyResponse)
 		responseptr = GenerateUnicastResponse(query, end, InterfaceID, LegacyQuery, response, ResponseRecords);
 
 exit:
@@ -4980,7 +4982,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID)
 	{
-	DNSMessage  *msg  = mDNSNULL;	
+	DNSMessage  *msg  = (DNSMessage *)pkt;
 	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	mDNSu8 QR_OP;
@@ -4999,7 +5001,6 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		}
 #endif		
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
-	msg = (DNSMessage *)pkt;
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
 	ptr = (mDNSu8 *)&msg->h.numQuestions;
