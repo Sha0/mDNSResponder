@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.330  2003/11/19 22:28:50  cheshire
+Increment/Decrement mDNS_reentrancy around calls to m->MainCallback()
+to allow client to make mDNS calls (specifically the call to mDNS_GrowCache())
+
 Revision 1.329  2003/11/19 22:19:24  cheshire
 Show log message when ignoring packets with bad TTL.
 This is to help diagnose problems on Linux versions that may not report the TTL reliably.
@@ -4430,7 +4434,11 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 			debugf("Possible denial-of-service attack in progress: m->rrcache_size %lu; m->rrcache_active %lu",
 				m->rrcache_size, m->rrcache_active);
 		else
+			{
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			m->MainCallback(m, mStatus_GrowCache);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+			}
 		}
 	
 	// If we still have no free records, recycle all the records we can.
@@ -6414,7 +6422,11 @@ mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		{
 		// Notify the client that the host name is successfully registered
 		if (m->MainCallback)
+			{
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			m->MainCallback(m, result);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+			}
 		}
 	else if (result == mStatus_NameConflict)
 		{
@@ -6422,7 +6434,11 @@ mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 
 		// 1. First give the client callback a chance to pick a new name
 		if (m->MainCallback)
+			{
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			m->MainCallback(m, mStatus_NameConflict);
+			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+			}
 
 		// 2. If the client callback didn't do it, add (or increment) an index ourselves
 		if (SameDomainLabel(m->hostlabel.c, oldlabel.c))
@@ -7050,7 +7066,11 @@ mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 	{
 	m->mDNSPlatformStatus = result;
 	if (m->MainCallback)
+		{
+		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 		m->MainCallback(m, mStatus_NoError);
+		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		}
 	}
 
 mDNSexport void mDNS_Close(mDNS *const m)
