@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.151  2003/05/29 06:35:42  cheshire
+<rdar://problem/3272221> mDNSCoreReceiveResponse() purging wrong record
+
 Revision 1.150  2003/05/29 06:25:45  cheshire
 <rdar://problem/3272218> Need to call CheckCacheExpiration() *before* AnswerNewQuestion()
 
@@ -2838,7 +2841,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (q = m->Questions; q; q=q->next)
 				if (q->SendQNow == intf->InterfaceID)
 					{
-					verbosedebugf("SendQueries: Putting question for %##s at %lu forecast total %lu",
+					verbosedebugf("SendQueries:   Putting question for %##s at %lu forecast total %lu",
 						q->name.c, queryptr - query.data, queryptr + answerforecast - query.data);
 					// If we successfully put this question, update its SendQNow state
 					if (BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
@@ -2859,7 +2862,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 						answerforecast = forecast;
 						rr->SendRNow = (rr->InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 						rr->IncludeInProbe = mDNStrue;
-						verbosedebugf("SendQueries: Put Question %##s (%s) probecount %d", rr->name.c, DNSTypeName(rr->rrtype), rr->ProbeCount);
+						verbosedebugf("SendQueries:   Put Question %##s (%s) probecount %d", rr->name.c, DNSTypeName(rr->rrtype), rr->ProbeCount);
 						}
 					else
 						{
@@ -2887,7 +2890,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				// If we ran out of space and we have more than one question in the packet, that's an error --
 				// we shouldn't have put more than one question if there was a risk of us running out of space.
 				if (query.h.numQuestions > 1)
-					LogMsg("SendQueries: Put %d answers; No more space for known answers", query.h.numAnswers);
+					LogMsg("SendQueries:   Put %d answers; No more space for known answers", query.h.numAnswers);
 				query.h.flags.b[0] |= kDNSFlag0_TC;
 				break;
 				}
@@ -2899,7 +2902,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				mDNSu8 *newptr = PutResourceRecord(&query, queryptr, &query.h.numAuthorities, rr);
 				rr->IncludeInProbe = mDNSfalse;
 				if (newptr) queryptr = newptr;
-				else LogMsg("SendQueries: How did we fail to have space for the Update record %##s (%s)?",
+				else LogMsg("SendQueries:   How did we fail to have space for the Update record %##s (%s)?",
 					rr->name.c, DNSTypeName(rr->rrtype));
 				}
 		
@@ -2920,7 +2923,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			const NetworkInterfaceInfo *next = GetFirstActiveInterface(intf->next);
 			#if MDNS_DEBUGMSGS && 0
-			const char *const msg = next ? "SendQueries: Nothing more on %p; moving to %p" : "SendQueries: Nothing more on %p";
+			const char *const msg = next ? "SendQueries:   Nothing more on %p; moving to %p" : "SendQueries:   Nothing more on %p";
 			debugf(msg, intf, next);
 			#endif
 			intf = next;
@@ -3071,7 +3074,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				continue;	// Go to next one in loop
 				}
 
-				NumAnswersGiven++;
+			NumAnswersGiven++;
 			// Must do this debugging message *before* calling AnswerQuestionWithResourceRecord
 			if (NumAnswersGiven == 1)
 				debugf("Had   answer   for %##s (%s) already in our cache", q->name.c, DNSTypeName(q->rrtype));
@@ -3395,24 +3398,24 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		// 3. First purge our cache of stale old records
 		// We want to do this before first, before AnswerNewQuestion(), so that
 		// AnswerNewQuestion() only has to deal with real live cache records, not dead expired ones
-			if (m->rrcache_size && m->timenow - m->NextCacheCheck >= 0)
+		if (m->rrcache_size && m->timenow - m->NextCacheCheck >= 0)
+			{
+			mDNSu32 used = m->rrcache_totalused;
+			// Adjust NextScheduledQuery so that we can tell if CheckCacheExpiration triggers a query
+			if (m->NextScheduledQuery == m->timenow)
+				m->NextScheduledQuery = m->timenow-1;
+			CheckCacheExpiration(m);
+			// If the rrcache_totalused is unchanged, AND no immediate queries were generated, then CheckCacheExpiration did nothing.
+			// This can happen legitimately -- e.g. we were expecting a record to expire in 10 seconds, but then we get a response that
+			// revives it. If it happens a repeatedly in a tight loop though, that's a sign that the NextCacheCheck logic is broken.
+			if (used == m->rrcache_totalused && m->NextScheduledQuery != m->timenow)
 				{
-				mDNSu32 used = m->rrcache_totalused;
-				// Adjust NextScheduledQuery so that we can tell if CheckCacheExpiration triggers a query
-				if (m->NextScheduledQuery == m->timenow)
-					m->NextScheduledQuery = m->timenow-1;
-				CheckCacheExpiration(m);
-				// If the rrcache_totalused is unchanged, AND no immediate queries were generated, then CheckCacheExpiration did nothing.
-				// This can happen legitimately -- e.g. we were expecting a record to expire in 10 seconds, but then we get a response that
-				// revives it. If it happens a repeatedly in a tight loop though, that's a sign that the NextCacheCheck logic is broken.
-				if (used == m->rrcache_totalused && m->NextScheduledQuery != m->timenow)
-					{
-					static mDNSs32 lastmsg = 0;
+				static mDNSs32 lastmsg = 0;
 				if ((mDNSu32)(m->timenow - lastmsg) < (mDNSu32)mDNSPlatformOneSecond/10)	// Yes, this *is* supposed to be unsigned
 					LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%lu); next in %ld ticks (this is benign if it happens only rarely)",
-							(mDNSu32)(m->timenow - lastmsg), m->NextCacheCheck - m->timenow);
-					lastmsg = m->timenow;
-					}
+						(mDNSu32)(m->timenow - lastmsg), m->NextCacheCheck - m->timenow);
+				lastmsg = m->timenow;
+				}
 			didwork |= 0x04;	// Set didwork anyway -- don't need to log two syslog messages
 			}
 
@@ -4278,17 +4281,20 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// and purge them if they are more than one second old.
 	if (m->rrcache_size)
 		{
-		ResourceRecord *rr, *r;
+		ResourceRecord *r1, *r2;
 		mDNSs32 slot;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
-				if (rr->NewData)
+			for (r1 = m->rrcache_hash[slot]; r1; r1=r1->next)
+				if (r1->NewData)
 					{
-					rr->NewData = mDNSfalse;
-					if (rr->RecordType & kDNSRecordTypeUniqueMask)
-						for (r = m->rrcache_hash[slot]; r; r=r->next)
-							if (SameResourceRecordSignature(rr, r) && m->timenow - r->TimeRcvd > mDNSPlatformOneSecond)
-								PurgeCacheResourceRecord(m, rr);
+					r1->NewData = mDNSfalse;
+					if (r1->RecordType & kDNSRecordTypeUniqueMask)
+						for (r2 = m->rrcache_hash[slot]; r2; r2=r2->next)
+							if (SameResourceRecordSignature(r1, r2) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)
+								{
+								verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->name.c, DNSTypeName(r2->rrtype));
+								PurgeCacheResourceRecord(m, r2);
+								}
 					}
 		}
 	}
@@ -4460,7 +4466,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 		m->CurrentQuestion = question->next;
 		}
 
-	if (m->NewQuestions    == question)
+	if (m->NewQuestions == question)
 		{
 		debugf("mDNS_StopQuery_internal: Just deleted a new question that wasn't even answered yet: %##s (%s)",
 			question->name.c, DNSTypeName(question->rrtype));
