@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.59  2003/05/29 06:11:35  cheshire
+<rdar://problem/3272214>:	Report if there appear to be too many "Resolve" callbacks
+
 Revision 1.58  2003/05/29 05:48:06  cheshire
 Minor fix for when generating printf warnings: mDNS_snprintf arguments are now 3,4
 
@@ -624,6 +627,7 @@ struct ServiceInfoQuery_struct
 	mDNSu8                        GotSRV;
 	mDNSu8                        GotTXT;
 	mDNSu8                        GotADD;
+	mDNSu32                       Answers;
 	ServiceInfo                  *info;
 	mDNSServiceInfoQueryCallback *ServiceInfoQueryCallback;
 	void                         *ServiceInfoQueryContext;

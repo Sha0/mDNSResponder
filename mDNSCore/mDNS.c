@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.148  2003/05/29 06:11:34  cheshire
+<rdar://problem/3272214>:	Report if there appear to be too many "Resolve" callbacks
+
 Revision 1.147  2003/05/29 06:01:18  cheshire
 Change some debugf() calls to LogMsg() calls to help with debugging
 
@@ -4494,7 +4497,11 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
 	else if (query->ServiceInfoQueryCallback && query->GotADD && query->GotTXT && PortChanged)
+		{
+		if (++query->Answers >= 100)
+			LogMsg("**** WARNING **** Have given %lu answers for %##s (SRV)", query->Answers, query->qSRV.name.c);
 		query->ServiceInfoQueryCallback(m, query);
+		}
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
 	}
@@ -4515,7 +4522,11 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
 	if (query->ServiceInfoQueryCallback && query->GotADD)
+		{
+		if (++query->Answers >= 100)
+			LogMsg("**** WARNING **** have given %lu answers for %##s (TXT)", query->Answers, query->qSRV.name.c);
 		query->ServiceInfoQueryCallback(m, query);
+		}
 	}
 
 mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
@@ -4558,7 +4569,12 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
 	if (query->ServiceInfoQueryCallback && query->GotTXT)
+		{
+		if (++query->Answers >= 100)
+			LogMsg("**** WARNING **** have given %lu answers for %##s (%s)",
+				query->Answers, query->qSRV.name.c, (answer->rrtype == kDNSType_A) ? "A" : "AAAA");
 		query->ServiceInfoQueryCallback(m, query);
+		}
 	}
 
 // On entry, the client must have set the name and InterfaceID fields of the ServiceInfo structure
@@ -4606,6 +4622,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->GotSRV                   = mDNSfalse;
 	query->GotTXT                   = mDNSfalse;
 	query->GotADD                   = mDNSfalse;
+	query->Answers                  = 0;
 
 	query->info                     = info;
 	query->ServiceInfoQueryCallback = Callback;
