@@ -564,7 +564,7 @@
 			);
 			buildSettings = {
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				INSTALL_PATH = /usr/local/bin;
+				INSTALL_PATH = /usr/bin;
 				OTHER_CFLAGS = "-no-cpp-precomp -DmDNSResponderVersion=$(MVERS)";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -578,7 +578,7 @@
 			);
 			isa = PBXToolTarget;
 			name = "mDNS Command-Line tool";
-			productInstallPath = /usr/local/bin;
+			productInstallPath = /usr/bin;
 			productName = "Sample mDNS Client";
 			productReference = 6575FC1D022EB76000000109;
 			shouldUseHeadermap = 0;
