@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.19  2004/04/02 19:34:38  cheshire
+Fix broken comment
+
 Revision 1.18  2004/03/30 06:45:00  cheshire
 Compiler warning fixes from Don Woodward at Roku Labs
 
@@ -675,7 +678,7 @@ mDNSexport mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 // in parentheses (rich text) or following two consecutive hyphens (RFC 1034 domain label).
 mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 	{
-	mDNSu32 divisor = 1, chars = 2;	// Shortest possible RFC1034 name suffix is 3 characters ("-2")
+	mDNSu32 divisor = 1, chars = 2;	// Shortest possible RFC1034 name suffix is 2 characters ("-2")
 	if (RichText) chars = 4;		// Shortest possible RichText suffix is 4 characters (" (2)")
 
 	// Truncate trailing spaces from RichText names
