@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.188  2005/02/10 02:02:44  ksekar
+Remove double semi-colon
+
 Revision 1.187  2005/02/09 23:28:01  ksekar
 <rdar://problem/3984374> NAT-PMP response callback should return a
 boolean indicating if the packet matched the request
@@ -2415,7 +2418,7 @@ mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-	NATTraversalInfo *ptr = u->NATTraversals;;
+	NATTraversalInfo *ptr = u->NATTraversals;
 	NATOp_t op;
 	
 	// check length, version, opcode
