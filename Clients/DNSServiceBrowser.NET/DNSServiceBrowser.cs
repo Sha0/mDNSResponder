@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServiceBrowser.cs,v $
+Revision 1.2  2004/07/22 23:15:25  shersche
+Fix service names for teleport, tftp, and bootps
+
 Revision 1.1  2004/07/19 07:54:24  shersche
 Initial revision
 
@@ -166,7 +169,7 @@ namespace DNSServiceBrowser_NET
 				"_auth._tcp",
 				"_beep._tcp",
 				"_bfagent._tcp",
-				"_bootps._tcp",
+				"_bootps._udp",
 				"_bousg._tcp",
 				"_bsqdea._tcp",
 				"_cheat._tcp",
@@ -282,9 +285,9 @@ namespace DNSServiceBrowser_NET
 				"_sxqdea._tcp",
 				"_sybase-tds._tcp",
 				"_teamlist._tcp",
-				"_teleport._tcp",
+				"_teleport._udp",
 				"_telnet._tcp",
-				"_tftp._tcp",
+				"_tftp._udp",
 				"_ticonnectmgr._tcp",
 				"_tinavigator._tcp",
 				"_tryst._tcp",
