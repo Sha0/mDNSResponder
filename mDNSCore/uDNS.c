@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.74  2004/09/02 17:49:04  ksekar
+<rdar://problem/3785135>: 8A246: mDNSResponder crash while logging on restart
+Fixed incorrect conversions, changed %s to %##s for all domain names.
+
 Revision 1.73  2004/09/02 01:39:40  cheshire
 For better readability, follow consistent convention that QR bit comes first, followed by OP bits
 
@@ -367,7 +371,7 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 mDNSlocal void LinkActiveQuestion(uDNS_GlobalInfo *u, DNSQuestion *q)
 	{
 	if (uDNS_IsActiveQuery(q, u))
-		{ LogMsg("LinkActiveQuestion - %s (%d) already in list!", q->qname.c, q->qtype); return; }
+		{ LogMsg("LinkActiveQuestion - %##s (%d) already in list!", q->qname.c, q->qtype); return; }
 	
 	q->next = u->ActiveQueries;
 	u->ActiveQueries = q;
@@ -839,7 +843,7 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	
 	if (DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp")) op = NATOp_MapTCP;
 	else if (DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_udp")) op = NATOp_MapUDP;
-	else { LogMsg("StartNATPortMap: could not determine transport protocol of service %s", &srs->RR_SRV.resrec.name.c); goto error; }
+	else { LogMsg("StartNATPortMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name.c); goto error; }
 
 	info = AllocNATInfo(u, op, ReceivePortMapReply);
 	srs->uDNS_info.NATinfo = info;
@@ -998,7 +1002,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, uDNS_HostnameInfo *h)
 	else 
 	  {
 	  mDNSu8 *ip = m->uDNS_info.PrimaryIP.ip.v4.b;
-	  LogMsg("Advertising %s IP %d.%d.%d.%d", h->ar->resrec.name.c, ip[0], ip[1], ip[2], ip[3]);
+	  LogMsg("Advertising %##s IP %d.%d.%d.%d", h->ar->resrec.name.c, ip[0], ip[1], ip[2], ip[3]);
 	  uDNS_RegisterRecord(m, h->ar); 
 	  }
 	}
@@ -1200,7 +1204,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 		ka = question->uDNS_info.knownAnswers;
 		while (ka)
 			{
-			debugf("deriving goodbye for %s", ka->resrec.name.c);
+			debugf("deriving goodbye for %##s", ka->resrec.name.c);
 			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
 			if (question != m->uDNS_info.CurrentQuery)
 				{
@@ -1243,7 +1247,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			// record is in KA list but not answer list - remove from KA list
 			if (prev) prev->next = ka->next;
 			else question->uDNS_info.knownAnswers = ka->next;
-			debugf("deriving goodbye for %s", ka->resrec.name.c);
+			debugf("deriving goodbye for %##s", ka->resrec.name.c);
 			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
 			if (question != m->uDNS_info.CurrentQuery)
 				{
@@ -1268,7 +1272,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 	return;
 	
 	pkt_error:
-	LogMsg("ERROR: deriveGoodbyes - received malformed response to query for %s (%d)",
+	LogMsg("ERROR: deriveGoodbyes - received malformed response to query for %##s (%d)",
 		   question->qname.c, question->qtype);
 	return;
 
@@ -1312,7 +1316,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			}			
 		else
 			{
-			LogMsg("unexpected answer: %s", cr->resrec.name.c);
+			LogMsg("unexpected answer: %##s", cr->resrec.name.c);
 			}
 		}
 	if (llq && (llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume))	
@@ -1322,7 +1326,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	return;
 
 	pkt_error:
-	LogMsg("ERROR: pktResponseHndlr - received malformed response to query for %s (%d)",
+	LogMsg("ERROR: pktResponseHndlr - received malformed response to query for %##s (%d)",
 		   question->qname.c, question->qtype);
 	return;
 	}
@@ -1366,33 +1370,33 @@ mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode, const DNSMes
 	if (!rcode) return mStatus_NoError;
 	else if (rcode == kDNSFlag1_RC_YXDomain)
 		{
-		LogMsg("Name in use: %s", name->c);
+		LogMsg("Name in use: %##s", name->c);
 		return mStatus_NameConflict;
 		}
 	else if (rcode == kDNSFlag1_RC_Refused)
 		{
-		LogMsg("Update %s refused", name->c);
+		LogMsg("Update %##s refused", name->c);
 		return mStatus_Refused;
 		}
 	else if (rcode == kDNSFlag1_RC_NXRRSet)
 		{
-		LogMsg("Reregister refusted (NXRRSET): %s", name->c);
+		LogMsg("Reregister refusted (NXRRSET): %##s", name->c);
 		return mStatus_NoSuchRecord;
 		}
 	else if (rcode == kDNSFlag1_RC_NotAuth)
 		{
-		LogMsg("Permission denied (NOAUTH): %s", name->c);
+		LogMsg("Permission denied (NOAUTH): %##s", name->c);
 		return mStatus_NoAuth;
 		}
 	else if (rcode == kDNSFlag1_RC_FmtErr)
 		{
-		LogMsg("Format Error: %s", name->c);
+		LogMsg("Format Error: %##s", name->c);
 		return mStatus_UnknownErr;
 		//!!!KRS need to parse message for TSIG errors
 		}
 	else
 		{
-		LogMsg("Update %s failed with rcode %d", name->c, rcode);
+		LogMsg("Update %##s failed with rcode %d", name->c, rcode);
 		return mStatus_UnknownErr;
 		}
 	}
@@ -1410,7 +1414,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				{
 				if (srs->uDNS_info.lease && err == mStatus_UnknownErr)
 					{
-					LogMsg("Re-trying update of service %s without lease option", srs->RR_SRV.resrec.name.c);
+					LogMsg("Re-trying update of service %##s without lease option", srs->RR_SRV.resrec.name.c);
 					srs->uDNS_info.lease = mDNSfalse;
 					srs->uDNS_info.expire = -1;
 					SendServiceRegistration(m, srs);
@@ -1418,7 +1422,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 					}
 				else
 					{
-					LogMsg("hndlServiceUpdateReply: Error %d returned for registration of %s",
+					LogMsg("hndlServiceUpdateReply: Error %d returned for registration of %##s",
 						   err, srs->RR_SRV.resrec.name.c);
 					srs->uDNS_info.state = regState_Unregistered;
 					break;
@@ -1431,15 +1435,15 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				break;
 				}				
 		case regState_DeregPending:
-			if (err) LogMsg("hndlServiceUpdateReply: Error %d returned for dereg of %s",
+			if (err) LogMsg("hndlServiceUpdateReply: Error %d returned for dereg of %##s",
 							err, srs->RR_SRV.resrec.name.c);
 			else err = mStatus_MemFree;
 			InvokeCallback = mDNStrue;
 			break;
 		case regState_DeregDeferred:
-			if (err) LogMsg("hndlServiceUpdateReply: Error %d received prior to deferred derigstration of %s",
+			if (err) LogMsg("hndlServiceUpdateReply: Error %d received prior to deferred derigstration of %##s",
 							err, srs->RR_SRV.resrec.name.c);
-			LogMsg("Performing deferred deregistration of %s", srs->RR_SRV.resrec.name.c);
+			LogMsg("Performing deferred deregistration of %##s", srs->RR_SRV.resrec.name.c);
 			uDNS_DeregisterService(m, srs);
 			return;			
 		case regState_TargetChangeDeferred:
@@ -1468,7 +1472,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 						}
 				if (!e)
 					{
-					LogMsg("ServiceRecordSet for %s in regState_UpdatePending with no corresponding records in UpdatePending state",
+					LogMsg("ServiceRecordSet for %##s in regState_UpdatePending with no corresponding records in UpdatePending state",
 						   srs->RR_SRV.resrec.name.c);
 					srs->uDNS_info.state = regState_Registered;
 					break;
@@ -1482,7 +1486,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			else SwapRData(m, UpdateR, mDNStrue);
 			break;			
 		default:
-			LogMsg("hndlServiceUpdateReply called for service %s in unexpected state %d with error %d.  Unlinking.",
+			LogMsg("hndlServiceUpdateReply called for service %##s in unexpected state %d with error %d.  Unlinking.",
 				   srs->RR_SRV.resrec.name.c, srs->uDNS_info.state, err);
 			err = mStatus_UnknownErr;
 		}
@@ -1518,8 +1522,8 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 	
 	if (rr->uDNS_info.state == regState_DeregPending)
 		{					
-		debugf("Received reply for deregister record %s type %d", rr->resrec.name.c, rr->resrec.rrtype);
-		if (err) LogMsg("ERROR: Deregistration of record %s type %s failed with error %d",
+		debugf("Received reply for deregister record %##s type %d", rr->resrec.name.c, rr->resrec.rrtype);
+		if (err) LogMsg("ERROR: Deregistration of record %##s type %d failed with error %d",
 						rr->resrec.name.c, rr->resrec.rrtype, err);
 		else err = mStatus_MemFree;
 		if (unlinkAR(&m->uDNS_info.RecordRegistrations, rr))
@@ -1533,13 +1537,13 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 		{
 		if (err)
 			{
-			LogMsg("Cancelling deferred deregistration record %s type %d due to registration error %d",
+			LogMsg("Cancelling deferred deregistration record %##s type %d due to registration error %d",
 				   rr->resrec.name.c, rr->resrec.rrtype, err);
 			unlinkAR(&m->uDNS_info.RecordRegistrations, rr);
 			rr->uDNS_info.state = regState_Unregistered;
 			return;
 			}
-		LogMsg("Calling deferred deregistration of record %s type %d",
+		LogMsg("Calling deferred deregistration of record %##s type %d",
 			   rr->resrec.name.c, rr->resrec.rrtype);
 		rr->uDNS_info.state = regState_Registered;
 		uDNS_DeregisterRecord(m, rr);					
@@ -1552,14 +1556,14 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 			{
 			if (rr->uDNS_info.lease && err == mStatus_UnknownErr)
 				{
-				LogMsg("Re-trying update of record %s without lease option", rr->resrec.name.c);
+				LogMsg("Re-trying update of record %##s without lease option", rr->resrec.name.c);
 				rr->uDNS_info.lease = mDNSfalse;
 				rr->uDNS_info.expire = -1;
 				sendRecordRegistration(m, rr);
 				return;
 				}
 			
-			LogMsg("Registration of record %s type %d failed with error %d",
+			LogMsg("Registration of record %##s type %d failed with error %d",
 				   rr->resrec.name.c, rr->resrec.rrtype, err);
 			unlinkAR(&u->RecordRegistrations, rr); 
 			rr->uDNS_info.state = regState_Unregistered;
@@ -1579,7 +1583,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 			}
 		}
 	
-	LogMsg("Received unexpected response for record %s type %d, in state %d, with response error %d",
+	LogMsg("Received unexpected response for record %##s type %d, in state %d, with response error %d",
 		   rr->resrec.name.c, rr->resrec.rrtype, rr->uDNS_info.state, err);
 	}
 
@@ -1856,7 +1860,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	if ((info->state == LLQ_Refresh && info->ntries >= kLLQ_MAX_TRIES) ||
 		info->expire - timenow < 0)
 		{
-		LogMsg("Unable to refresh LLQ %s - will retry in %s minutes", q->qname.c, kLLQ_DEF_RETRY/60);
+		LogMsg("Unable to refresh LLQ %##s - will retry in %d minutes", q->qname.c, kLLQ_DEF_RETRY/60);
 		info->state = LLQ_Retry;
 		info->retry = mDNSPlatformTimeNow() + kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
 		info->deriveRemovesOnResume = mDNStrue;
@@ -1981,27 +1985,27 @@ mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *e
 		{
 		case LLQErr_NoError: break;
 		case LLQErr_ServFull:
-			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %s.  Retry in %d sec", q->qname.c, llq->lease);
+			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s.  Retry in %d sec", q->qname.c, llq->lease);
 			info->retry = timenow + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
 			info->state = LLQ_Retry;
 			simpleResponseHndlr(m, pktMsg, end, q, mDNSNULL);  // get available answers
 			info->deriveRemovesOnResume = mDNStrue;
 		case LLQErr_Static:
 			info->state = LLQ_Static;
-			LogMsg("LLQ %s: static", q->qname.c);
+			LogMsg("LLQ %##s: static", q->qname.c);
 			simpleResponseHndlr(m, pktMsg, end, q, mDNSNULL);
 			return;
 		case LLQErr_FormErr:
-			LogMsg("ERROR: hndlRequestChallenge - received FormErr from server for LLQ %s", q->qname.c);
+			LogMsg("ERROR: hndlRequestChallenge - received FormErr from server for LLQ %##s", q->qname.c);
 			goto error;
 		case LLQErr_BadVers:
 			LogMsg("ERROR: hndlRequestChallenge - received BadVers from server");
 			goto error;
 		case LLQErr_UnknownErr:
-			LogMsg("ERROR: hndlRequestChallenge - received UnknownErr from server for LLQ %s", q->qname.c);
+			LogMsg("ERROR: hndlRequestChallenge - received UnknownErr from server for LLQ %##s", q->qname.c);
 			goto error;
 		default:
-			LogMsg("ERROR: hndlRequestChallenge - received invalid error %d for LLQ %s", llq->err, q->qname.c);
+			LogMsg("ERROR: hndlRequestChallenge - received invalid error %d for LLQ %##s", llq->err, q->qname.c);
 			goto error;
 		}
 
@@ -2039,7 +2043,7 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 	
 	if (rcode && rcode != kDNSFlag1_RC_NXDomain)
 		{
-		LogMsg("LLQ Setup for %s failed with rcode %d.  Reverting to polling mode", q->qname.c, rcode);
+		LogMsg("LLQ Setup for %##s failed with rcode %d.  Reverting to polling mode", q->qname.c, rcode);
 		info->state = LLQ_Poll;
 		q->uDNS_info.responseCallback = simpleResponseHndlr;
 		q->LastQTime = mDNSPlatformTimeNow();
@@ -2050,7 +2054,7 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 	ptr = getQuestion(pktMsg, ptr, end, 0, &pktQuestion);
 	if (!ptr) { LogMsg("ERROR: recvSetupResponse - getQuestion"); goto error; }
 	if (!SameDomainName(&q->qname, &pktQuestion.qname))
-		{ LogMsg("ERROR: recvSetupResponse - mismatched question in response for llq setup %s", q->qname.c);   goto error; }
+		{ LogMsg("ERROR: recvSetupResponse - mismatched question in response for llq setup %##s", q->qname.c);   goto error; }
 
 	if (!getLLQAtIndex(m, pktMsg, end, &llq, 0)) { LogMsg("ERROR: recvSetupResponse - GetLLQAtIndex"); goto error; }
 	if (llq.llqOp != kLLQOp_Setup) { LogMsg("ERROR: recvSetupResponse - bad op %d", llq.llqOp); goto error; } 
@@ -2244,7 +2248,7 @@ mDNSexport mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalI
 		if (q == question)
 			{
 			if (!question->uDNS_info.id.NotAnInteger || question->InterfaceID || IsLocalDomain(&question->qname))
-				LogMsg("Warning: Question %s in Active Unicast Query list with id %d, interfaceID %x",
+				LogMsg("Warning: Question %##s in Active Unicast Query list with id %d, interfaceID %x",
 					   question->qname.c, question->uDNS_info.id.NotAnInteger, question->InterfaceID);
 			return mDNStrue;
 			}
@@ -2316,7 +2320,7 @@ mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
         prev = qptr;
 		qptr = qptr->next;
         }
-    LogMsg("uDNS_StopQuery: no such active query (%s)", question->qname.c);
+    LogMsg("uDNS_StopQuery: no such active query (%##s)", question->qname.c);
     return mStatus_UnknownErr;
     }
 
@@ -2331,7 +2335,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     //!!!KRS we should check if the question is already in our acivequestion list
 	if (!ValidateDomainName(&question->qname))
 		{
-		LogMsg("Attempt to start query with invalid qname %##s %s", question->qname.c, DNSTypeName(question->qtype));
+		LogMsg("Attempt to start query with invalid qname %##s %##s", question->qname.c, DNSTypeName(question->qtype));
 		return mStatus_Invalid;
 		}
 		
@@ -2621,7 +2625,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     if (context->state != init && !context->curSOA->c[0])
         {
         // we've gone down to the root and have not found an SOA  
-        LogMsg("ERROR: hndlLookupSOA - recursed to root label of %s without finding SOA", 
+        LogMsg("ERROR: hndlLookupSOA - recursed to root label of %##s without finding SOA", 
                 context->origName.c);
 		return smError;
         }
@@ -2686,7 +2690,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 				return smContinue;  // next routine will examine additionals section of A record				
 				}				
 			}
-		LogMsg("ERROR: could not confirm existence of NS record %s", context->zone.c);
+		LogMsg("ERROR: could not confirm existence of NS record %##s", context->zone.c);
 		return smError;
 		}
 	else { LogMsg("ERROR: confirmNS - bad state %d", context->state); return smError; }
@@ -2789,7 +2793,7 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 				return smContinue;
 				}
 			}
-		LogMsg("hndlLookupUpdatePort %s - answer not contained in reply.  Guessing port %d", portName, UnicastDNSPort);
+		LogMsg("hndlLookupUpdatePort %s - answer not contained in reply.  Guessing port %d", portName, mDNSVal16(UnicastDNSPort));
 		*port = UnicastDNSPort;
 		context->state = foundPort;
 		return smContinue;
@@ -3017,7 +3021,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	if (newRR->uDNS_info.state == regState_Cancelled)
 		{
 		//!!!KRS we should send a memfree callback here!
-		LogMsg("Registration of %s type %d cancelled prior to update",
+		LogMsg("Registration of %##s type %d cancelled prior to update",
 			   newRR->resrec.name.c, newRR->resrec.rrtype);
 		newRR->uDNS_info.state = regState_Unregistered;
 		unlinkAR(&u->RecordRegistrations, newRR);
@@ -3186,7 +3190,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	
 	if (srs->RR_SRV.resrec.rrclass != zoneData->zoneClass)
 		{
-		LogMsg("Service %s - class does not match zone", srs->RR_SRV.resrec.name.c);
+		LogMsg("Service %##s - class does not match zone", srs->RR_SRV.resrec.name.c);
 		goto error;
 		}
 	// cache zone data
@@ -3214,7 +3218,7 @@ mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
 		rr->uDNS_info.state == regState_Pending ||
 		rr->uDNS_info.state ==  regState_Registered)
 		{
-		LogMsg("Requested double-registration of physical record %s type %s",
+		LogMsg("Requested double-registration of physical record %##s type %d",
 			   rr->resrec.name.c, rr->resrec.rrtype);
 		return mStatus_AlreadyRegistered;
 		}
@@ -3275,21 +3279,21 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 			return mStatus_NoError;
 		case regState_Pending:
 			rr->uDNS_info.state = regState_DeregDeferred;
-			LogMsg("Deferring deregistration of record %s until registration completes", rr->resrec.name.c);
+			LogMsg("Deferring deregistration of record %##s until registration completes", rr->resrec.name.c);
 			return mStatus_NoError;
 		case regState_Registered:			
 		case regState_DeregPending:
 			break;
 		case regState_Cancelled:
-			LogMsg("Double deregistration of record %s type %d",
+			LogMsg("Double deregistration of record %##s type %d",
 				   rr->resrec.name.c, rr->resrec.rrtype);
 			return mStatus_UnknownErr;
 		case regState_Unregistered:
-			LogMsg("Requested deregistration of unregistered record %s type %d",
+			LogMsg("Requested deregistration of unregistered record %##s type %d",
 				   rr->resrec.name.c, rr->resrec.rrtype);
 			return mStatus_UnknownErr;
 		default:
-			LogMsg("ERROR: uDNS_DeregisterRecord called for record %s type %d with unknown state %d", 
+			LogMsg("ERROR: uDNS_DeregisterRecord called for record %##s type %d with unknown state %d", 
 				   rr->resrec.name.c, rr->resrec.rrtype, rr->uDNS_info.state);
 			return mStatus_UnknownErr;
 		}
@@ -3638,7 +3642,7 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 		}
 
 	unreg_error:
-	LogMsg("Requested update of record %s type %d, part of service not currently registered",
+	LogMsg("Requested update of record %##s type %d, part of service not currently registered",
 		   rr->resrec.name.c, rr->resrec.rrtype);
 	return mStatus_Invalid;
 	}
@@ -3701,7 +3705,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 					{
 					// sanity check to avoid packet flood bugs
 					if (!llq->retry) 
-						LogMsg("ERROR: retry timer not set for LLQ %s in state %d", q->qname.c, llq->state);
+						LogMsg("ERROR: retry timer not set for LLQ %##s in state %d", q->qname.c, llq->state);
 					else if (llq->state == LLQ_Established || llq->state == LLQ_Refresh)
 						sendLLQRefresh(m, q, llq->origLease);
 					else if (llq->state == LLQ_InitialRequest) 
@@ -3722,7 +3726,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 				err = constructQueryMsg(&msg, &end, q);
 				if (err)
 					{
-					LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %s",
+					LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %##s",
 						   q->qname.c);
 					continue;
 					}
@@ -3763,7 +3767,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 		    {		    
 		    if (rInfo->expire - timenow < 0)
 		        {
-		        debugf("refreshing record %s", rr->resrec.name.c);
+		        debugf("refreshing record %##s", rr->resrec.name.c);
 		        rInfo->state = regState_Refresh;
 		        sendRecordRegistration(m, rr);
 		        }
@@ -3789,7 +3793,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 		    {		    
 		    if (rInfo->expire - timenow < 0)
 		        {	
-			    debugf("refreshing service %s", srs->RR_SRV.resrec.name.c);
+			    debugf("refreshing service %##s", srs->RR_SRV.resrec.name.c);
 			    rInfo->state = regState_Refresh;
 			    SendServiceRegistration(m, srs);
 		        }
