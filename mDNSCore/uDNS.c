@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.130  2004/12/01 02:43:23  cheshire
+Don't call StatusCallback if function pointer is null
+
 Revision 1.129  2004/11/30 23:51:06  cheshire
 Remove double semicolons
 
@@ -1328,7 +1331,8 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		if (!hi) { ufree(rr); return; }
 		if (hi->ar->uDNS_info.state != regState_Unregistered) LogMsg("Error: HostnameCallback invoked with error code for record not in regState_Unregistered!");
 		(const void *)rr->RecordContext = hi->StatusContext;
-		hi->StatusCallback(m, rr, result); // client may NOT make API calls here
+		if (hi->StatusCallback)
+			hi->StatusCallback(m, rr, result); // client may NOT make API calls here
 		rr->RecordContext = (void *)hi;
 		return;
 		}
@@ -1344,7 +1348,8 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	if (!hi) { LogMsg("HostnameCallback invoked with orphaned address record"); return; }
 	LogMsg("Registered hostname %##s IP %d.%d.%d.%d", rr->resrec.name.c, ip[0], ip[1], ip[2], ip[3]);	
 	(const void *)rr->RecordContext = hi->StatusContext;
-	hi->StatusCallback(m, rr, result);
+	if (hi->StatusCallback)
+		hi->StatusCallback(m, rr, result); // client may NOT make API calls here
 	rr->RecordContext = (void *)hi;
 	}
 
