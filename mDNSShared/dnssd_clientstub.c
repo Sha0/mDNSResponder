@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.16  2004/03/12 22:00:37  cheshire
+Added: #include <sys/socket.h>
+
 Revision 1.15  2004/01/20 18:36:29  ksekar
 Propagated Libinfo fix for <rdar://problem/3483971>: SU:
 DNSServiceUpdateRecord() doesn't allow you to update the TXT record
@@ -61,7 +64,7 @@ Update to APSL 2.0
 #include "dnssd_ipc.h"
 #include <errno.h>
 #include <sys/time.h>
-
+#include <sys/socket.h>
 
 
 #define CTL_PATH_PREFIX "/tmp/dnssd_clippath."
