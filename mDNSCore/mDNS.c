@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.299  2003/09/03 02:33:09  cheshire
+<rdar://problem/3404795> CacheRecordRmv ERROR
+Don't update m->NewQuestions until *after* CheckCacheExpiration();
+
 Revision 1.298  2003/09/03 01:47:01  cheshire
 <rdar://problem/3319418> Rendezvous services always in a state of flux
 Change mDNS_Reconfirm_internal() minimum timeout from 5 seconds to 45-60 seconds
@@ -4129,11 +4133,11 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	CacheRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
 	mDNSu32 slot = HashSlot(&q->qname);
-	m->NewQuestions = q->next;				// Advance NewQuestions to the next (if any)
 
 	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
 	CheckCacheExpiration(m, slot);
+	m->NewQuestions = q->next;				// Advance NewQuestions to the next *after* calling CheckCacheExpiration();
 
 	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
 	// This should be safe, because calling the client's question callback may cause the
