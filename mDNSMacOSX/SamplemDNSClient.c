@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.43  2004/02/03 22:07:50  cheshire
+<rdar://problem/3548184>: Widen columns to display non-local domains better
+
 Revision 1.42  2003/12/03 11:39:17  cheshire
 <rdar://problem/3468977> Browse output misaligned in mDNS command-line tool
 (Also fix it to add leading space when the hours part of the time is only one digit)
@@ -169,9 +172,9 @@ static void browse_reply(DNSServiceBrowserReplyResultType resultType,
 	{
 	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Add" : "Rmv";
     (void)context; // Unused
-	if (num_printed++ == 0) printf("Timestamp     A/R Flags %-8s %-20s %s\n", "Domain", "Service Type", "Instance Name");
+	if (num_printed++ == 0) printf("Timestamp     A/R Flags %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
-	printf("%s%6X %-8s %-20s %s\n", op, flags, replyDomain, replyType, replyName);
+	printf("%s%6X %-24s %-24s %s\n", op, flags, replyDomain, replyType, replyName);
 	}
 
 static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, const char *txtRecord, DNSServiceDiscoveryReplyFlags flags, void *context)
