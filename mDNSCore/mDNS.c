@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.183  2003/06/09 18:53:13  cheshire
+Simplify some debugf() statements (replaced block of 25 lines with 2 lines)
+
 Revision 1.182  2003/06/09 18:38:42  cheshire
 <rdar://problem/3285082> Need to be more tolerant when there are mDNS proxies on the network
 Only issue a correction if the TTL in the proxy packet is less than half the correct value.
@@ -3477,8 +3480,8 @@ mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, ResourceRecord *const rr)
 		rr->rroriginalttl     = 20;
 		SetNextCacheCheckTime(m, rr);
 		}
-	debugf("mDNS_Reconfirm: %##s (%s) %ld seconds to go", rr->name.c, DNSTypeName(rr->rrtype),
-		rr->rroriginalttl - (m->timenow - rr->TimeRcvd) / mDNSPlatformOneSecond);
+	debugf("mDNS_Reconfirm: %ld seconds to go for %s",
+		rr->rroriginalttl - (m->timenow - rr->TimeRcvd) / mDNSPlatformOneSecond, GetRRDisplayString(m, rr));
 	return(mStatus_NoError);
 	}
 
@@ -4563,31 +4566,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// else, the packet RR has different rdata -- check to see if this is a conflict
 					if (pktrr.rroriginalttl > 0 && PacketRRConflict(m, rr, &pktrr))
 						{
-						if (rr->rrtype == kDNSType_A)
-							{
-							debugf("mDNSCoreReceiveResponse: Our A Data %.4a", &rr->rdata->u.ip);
-							debugf("mDNSCoreReceiveResponse: Pkt A Data %.4a", &pktrr.rdata->u.ip);
-							}
-						else if (rr->rrtype == kDNSType_PTR)
-							{
-							debugf("mDNSCoreReceiveResponse: Our PTR Len %d Data %##s", rr->rdata->RDLength,   rr->rdata->u.name.c);
-							debugf("mDNSCoreReceiveResponse: Pkt PTR Len %d Data %##s", pktrr.rdata->RDLength, pktrr.rdata->u.name.c);
-							}
-						else if (rr->rrtype == kDNSType_TXT)
-							{
-							debugf("mDNSCoreReceiveResponse: Our TXT Len %d Data %#s", rr->rdata->RDLength,   rr->rdata->u.txt.c);
-							debugf("mDNSCoreReceiveResponse: Pkt TXT Len %d Data %#s", pktrr.rdata->RDLength, pktrr.rdata->u.txt.c);
-							}
-						else if (rr->rrtype == kDNSType_AAAA)
-							{
-							debugf("mDNSCoreReceiveResponse: Our AAAA Data %.16a", &rr->rdata->u.ipv6);
-							debugf("mDNSCoreReceiveResponse: Pkt AAAA Data %.16a", &pktrr.rdata->u.ipv6);
-							}
-						else if (rr->rrtype == kDNSType_SRV)
-							{
-							debugf("mDNSCoreReceiveResponse: Our SRV Len %d Data %##s", rr->rdata->RDLength,   rr->rdata->u.srv.target.c);
-							debugf("mDNSCoreReceiveResponse: Pkt SRV Len %d Data %##s", pktrr.rdata->RDLength, pktrr.rdata->u.srv.target.c);
-							}
+						debugf("mDNSCoreReceiveResponse: Our Record: %s", GetRRDisplayString(m, rr));
+						debugf("mDNSCoreReceiveResponse: Pkt Record: %s", GetRRDisplayString(m, &pktrr));
 
 						// If this record is marked DependentOn another record for conflict detection purposes,
 						// then *that* record has to be bumped back to probing state to resolve the conflict
