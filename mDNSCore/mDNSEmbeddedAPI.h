@@ -189,15 +189,20 @@ typedef void mDNSRecordCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 struct ResourceRecord_struct
 	{
 	ResourceRecord     *next;			// --: Next in list
+	mDNSu32            maxrdlength;		// Amount of storage allocated for rdata (usually sizeof(rdata))
+	
+	// Field Group 1: Persistent metadata for Authoritative Records
 	ResourceRecord     *Additional1;	// AR: Recommended additional record to include in response
 	ResourceRecord     *Additional2;	// AR: Another additional
 	ResourceRecord     *DependentOn;	// AR: This record depends on another for its uniqueness checking
 	ResourceRecord     *RRSet;			// AR: This unique record is part of an RRSet
 	mDNSRecordCallback *Callback;		// AR: Callback function to call for state changes
 	void               *Context;		// AR: Context parameter for the callback function
+	mDNSu8              RecordType;		// --: See enum above
+	mDNSu8              HostTarget;		// AR: Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 
-	mDNSu8          RecordType;			// --: See enum above
-	mDNSu8          Acknowledged;		// AR: Set if we've given the 
+	// Field Group 2: Transient state for Authoritative Records
+	mDNSu8          Acknowledged;		// AR: Set if we've given the success callback to the client
 	mDNSu8          ProbeCount;			// AR: Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// AR: Number of announcements remaining (kDNSRecordTypeShared)
 	mDNSu8          IncludeInProbe;		// AR: Set if this RR is being put into a probe right now
@@ -210,8 +215,8 @@ struct ResourceRecord_struct
 	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another
 	mDNSs32         NextSendTime;		// AR: In platform time units
 	mDNSs32         NextSendInterval;	// AR: In platform time units
-	mDNSBool        HostTarget;			// AR: Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 
+	// Field Group 3: Transient state for Cache Records
 	ResourceRecord *NextDupSuppress;	// CR: Link to the next element in the chain of duplicate suppression answers to send
 	mDNSs32         TimeRcvd;			// CR: In platform time units
 	mDNSs32         LastUsed;			// CR: In platform time units
@@ -219,14 +224,15 @@ struct ResourceRecord_struct
 	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
 	mDNSBool        Active;				// CR: Set if there is currently a question referencing this answer
 
+	// Field Group 4: The actual information pertaining to this resource record
 	mDNSIPAddr      InterfaceAddr;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)
 	domainname      name;				// --: All the rest are used both in our authoritative records and in cache records
 	mDNSu16         rrtype;
 	mDNSu16         rrclass;
 	mDNSu32         rroriginalttl;		// In seconds.
 	mDNSu32         rrremainingttl;		// In seconds. Always set to correct value before calling question callback.
-	mDNSu32         rdlength;			// Raw uncompressed size of the resource data
-	mDNSu32         rdestimate;			// Upper bound on size of rdata after name compression
+	mDNSu16         rdlength;			// Raw uncompressed size of the resource data
+	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
 	RData           rdata;
 	};
 
@@ -243,6 +249,13 @@ struct NetworkInterfaceInfo_struct
 	ResourceRecord RR_PTR;			// PTR (reverse lookup) record
 	};
 
+typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
+struct ExtraResourceRecord_struct
+	{
+	ExtraResourceRecord *next;
+	ResourceRecord r;
+	};
+
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
 struct ServiceRecordSet_struct
@@ -250,10 +263,11 @@ struct ServiceRecordSet_struct
 	mDNSServiceCallback *Callback;
 	void                *Context;
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
-	domainname           host;		// Set if this service record does not use the standard target host name
+	domainname           Host;		// Set if this service record does not use the standard target host name
+	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.      PTR Name._printer._tcp.local.
 	ResourceRecord       RR_SRV;	// e.g. Name._printer._tcp.local. SRV 0 0 port target
 	ResourceRecord       RR_TXT;	// e.g. Name._printer._tcp.local. TXT PrintQueueName
-	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.      PTR Name._printer._tcp.local.
+	ExtraResourceRecord *Extras;
 	};
 
 // ***************************************************************************
@@ -283,12 +297,11 @@ struct DNSQuestion_struct
 typedef struct
 	{
 	domainname name;
-	mDNSIPAddr InterfaceAddr;	// Local (source) IP Interface (needed for scoped addresses such as link-local)
-	mDNSIPAddr ip;				// Remote (destination) IP address where this service can be accessed
-	mDNSIPPort port;			// Port where this service can be accessed
-	mDNSu8     got_ip;
-	mDNSu8     got_txt;
-	UTF8str255 txtinfo;			// Additional demultiplexing information (e.g. LPR queue name)
+	mDNSIPAddr InterfaceAddr;		// Local (source) IP Interface (needed for scoped addresses such as link-local)
+	mDNSIPAddr ip;					// Remote (destination) IP address where this service can be accessed
+	mDNSIPPort port;				// Port where this service can be accessed
+	mDNSu16    TXTlen;
+	mDNSu8     TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
 
 typedef struct ServiceInfoQuery_struct ServiceInfoQuery;
@@ -298,6 +311,9 @@ struct ServiceInfoQuery_struct
 	DNSQuestion               qSRV;
 	DNSQuestion               qTXT;
 	DNSQuestion               qADD;
+	mDNSu8                    GotSRV;
+	mDNSu8                    GotTXT;
+	mDNSu8                    GotADD;
 	ServiceInfo              *info;
 	ServiceInfoQueryCallback *Callback;
 	void                     *Context;
@@ -398,6 +414,7 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 								ResourceRecord *rrcachestorage, mDNSu32 rrcachesize, mDNSCallback *Callback, void *Context);
 extern void    mDNS_Close     (mDNS *const m);
 extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
+extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 rdlength, const mDNSu8 *rdata);
 extern void    mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
@@ -434,8 +451,10 @@ extern void    mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set
 
 extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
-               const domainname *const host, mDNSIPPort port, const char txtinfo[],
+               const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
                mDNSServiceCallback Callback, void *Context);
+extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
+extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr);
 extern void    mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
