@@ -1,4 +1,7 @@
 # $Log: Makefile,v $
+# Revision 1.7  2003/04/16 02:11:37  cheshire
+# Remove unnecessary $(CFLAGS) from linking rules
+#
 # Revision 1.6  2003/04/04 01:37:14  cheshire
 # Added NetMonitor.c
 #
@@ -62,16 +65,16 @@ NetMonitor: setup build/mDNSNetMonitor
 	echo "NetMonitor done"
 
 build/mDNSClientPosix: $(COMMONOBJ) objects/mDNS.c.o objects/Client.c.o
-	$(CC) $(CFLAGS) $+ -o $@
+	$(CC) $+ -o $@
 
 build/mDNSResponderPosix: $(COMMONOBJ) objects/mDNS.c.o objects/Responder.c.o
-	$(CC) $(CFLAGS) $+ -o $@
+	$(CC) $+ -o $@
 
 build/mDNSProxyResponderPosix: $(COMMONOBJ) objects/mDNS.c.o objects/ProxyResponder.c.o
-	$(CC) $(CFLAGS) $+ -o $@
+	$(CC) $+ -o $@
 
 build/mDNSNetMonitor: $(COMMONOBJ) objects/NetMonitor.c.o
-	$(CC) $(CFLAGS) $+ -o $@
+	$(CC) $+ -o $@
 
 objects/%.c.o: %.c $(HEADERS)
 	$(CC) -c $(CFLAGS) $< -o $@
