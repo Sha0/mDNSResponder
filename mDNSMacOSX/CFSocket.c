@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.84  2003/05/27 22:29:40  cheshire
+Remove out-dated comment
+
 Revision 1.83  2003/05/26 03:21:29  cheshire
 Tidy up address structure naming:
 mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
@@ -955,11 +958,6 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	(void)store;		// Parameter not used
 	(void)changedKeys;	// Parameter not used
 	debugf("***   Network Configuration Change   ***");
-
-	// When changing location, SC seems to tell us it has torn down the interfaces
-	// and then a second later, tell us it has put them back again
-	// For now we'll just sleep a few seconds
-	//sleep(5);
 
 	mDNS *const m = (mDNS *const)context;
 	MarkAllInterfacesInactive(m);
