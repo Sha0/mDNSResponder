@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.13  2005/03/29 19:42:47  shersche
+Do label check before checking etc/hosts file
+
 Revision 1.12  2005/03/21 00:42:45  shersche
 <rdar://problem/4021486> Fix build warnings on Win32 platform
 
@@ -607,21 +610,11 @@ DEBUG_LOCAL int WSPAPI
 	else
 	{
 		const char	*	replyDomain;
+		char			translated[ kDNSServiceMaxDomainName ];
+		int				n;
 		int				labels		= 0;
 		const char	*	label[128];
 		char			text[64];
-
-		// <rdar://problem/3936771>
-		//
-		// Check to see if the name of this host is in the hosts table. If so,
-		// don't try and resolve it
-		
-		char	translated[ kDNSServiceMaxDomainName ];
-		int		n;
-
-		n = WideCharToMultiByte( CP_UTF8, 0, name, -1, translated, sizeof( translated ), NULL, NULL );
-		require_action( n > 0, exit, err = WSASERVICE_NOT_FOUND );
-		require_action( InHostsTable( translated ) == FALSE, exit, err = WSASERVICE_NOT_FOUND );
 
 		// <rdar://problem/4050633>
 
@@ -636,6 +629,15 @@ DEBUG_LOCAL int WSPAPI
 		}
 
 		require_action( labels == 2, exit, err = WSASERVICE_NOT_FOUND );
+
+		// <rdar://problem/3936771>
+		//
+		// Check to see if the name of this host is in the hosts table. If so,
+		// don't try and resolve it
+		
+		n = WideCharToMultiByte( CP_UTF8, 0, name, -1, translated, sizeof( translated ), NULL, NULL );
+		require_action( n > 0, exit, err = WSASERVICE_NOT_FOUND );
+		require_action( InHostsTable( translated ) == FALSE, exit, err = WSASERVICE_NOT_FOUND );
 	}
 
 	// The name ends in .local ( and isn't in the hosts table ), .0.8.e.f.ip6.arpa, or .254.169.in-addr.arpa so start the resolve operation. Lazy initialize DNS-SD if needed.
