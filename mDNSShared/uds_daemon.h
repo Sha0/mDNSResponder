@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.4  2004/06/12 00:51:58  cheshire
+Changes for Windows compatibility
+
 Revision 1.3  2004/01/25 00:03:21  cheshire
 Change to use mDNSVal16() instead of private PORT_AS_NUM() macro
 
@@ -63,5 +66,11 @@ extern int udsserver_exit(void);	// should be called prior to app exit
 
 typedef	void (*udsEventCallback)(void *context);
 
-extern mStatus udsSupportAddFDToEventLoop( int fd, udsEventCallback callback, void *context);
-extern mStatus udsSupportRemoveFDFromEventLoop( int fd);
+#if (WIN32)
+#define SocketRef SOCKET
+#else
+#define SocketRef int
+#endif
+
+extern mStatus udsSupportAddFDToEventLoop(SocketRef fd, udsEventCallback callback, void *context);
+extern mStatus udsSupportRemoveFDFromEventLoop(SocketRef fd);
