@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.6  2004/07/20 06:48:26  shersche
+<rdar://problem/3718122> Allow registry entries to dictate whether to manage link local routing
+Bug #: 3718122
+
 Revision 1.5  2004/07/09 19:08:07  shersche
 <rdar://problem/3713762> ServiceSetupEventLogging() errors are handled gracefully
 Bug #: 3713762
@@ -82,6 +86,8 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #define	DEBUG_NAME					"[Server] "
 #define	kServiceName				"Apple mDNSResponder"
 #define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
+#define kServiceManageLLRouting		"ManageLLRouting"
+#define kServiceCacheEntryCount		"CacheEntryCount"
 #define	kDNSServiceCacheEntryCountDefault	512
 
 #define RR_CACHE_SIZE 500
@@ -141,7 +147,9 @@ static void			Usage( void );
 static BOOL WINAPI	ConsoleControlHandler( DWORD inControlEvent );
 static OSStatus		InstallService( const char *inName, const char *inDisplayName, const char *inDescription, const char *inPath );
 static OSStatus		RemoveService( const char *inName );
-static OSStatus		SetServiceParameters( SC_HANDLE inSCM, const char *inServiceName, const char *inDescription );
+static OSStatus		SetServiceParameters();
+static OSStatus		GetServiceParameters();
+static OSStatus		SetServiceInfo( SC_HANDLE inSCM, const char *inServiceName, const char *inDescription );
 static void			ReportStatus( int inType, const char *inFormat, ... );
 static OSStatus		RunDirect( int argc, char *argv[] );
 
@@ -191,6 +199,7 @@ DEBUG_LOCAL SERVICE_STATUS_HANDLE		gServiceStatusHandle 	= NULL;
 DEBUG_LOCAL HANDLE						gServiceEventSource		= NULL;
 DEBUG_LOCAL bool						gServiceAllowRemote		= false;
 DEBUG_LOCAL int							gServiceCacheEntryCount	= 0;	// 0 means to use the DNS-SD default.
+DEBUG_LOCAL bool						gServiceManageLLRouting = true;
 DEBUG_LOCAL int							gWaitCount				= 0;
 DEBUG_LOCAL HANDLE					*	gWaitList				= NULL;
 DEBUG_LOCAL HANDLE						gStopEvent				= NULL;
@@ -405,13 +414,16 @@ static OSStatus	InstallService( const char *inName, const char *inDisplayName, c
 							 NULL, NULL );
 	err = translate_errno( service, (OSStatus) GetLastError(), kDuplicateErr );
 	require_noerr( err, exit );
+
+	err = SetServiceParameters();
+	check_noerr( err );
 	
 	if( inDescription )
 	{
-		err = SetServiceParameters( scm, inName, inDescription );
+		err = SetServiceInfo( scm, inName, inDescription );
 		check_noerr( err );
 	}
-	
+
 	ok = StartService( service, 0, NULL );
 	err = translate_errno( ok, (OSStatus) GetLastError(), kInUseErr );
 	require_noerr( err, exit );
@@ -487,11 +499,108 @@ exit:
 	return( err );
 }
 
+
+
 //===========================================================================================================================
 //	SetServiceParameters
 //===========================================================================================================================
 
-static OSStatus	SetServiceParameters( SC_HANDLE inSCM, const char *inServiceName, const char *inDescription )
+static OSStatus SetServiceParameters()
+{
+	DWORD 			value;
+	DWORD			valueLen = sizeof(DWORD);
+	DWORD			type;
+	const char	*	s;
+	OSStatus		err;
+	HKEY			key;
+
+	key = NULL;
+
+	//
+	// Add/Open Parameters section under service entry in registry
+	//
+	s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+	require_noerr( err, exit );
+	
+	//
+	// If the value isn't already there, then we create it
+	//
+	err = RegQueryValueEx(key, kServiceManageLLRouting, 0, &type, (LPBYTE) &value, &valueLen);
+
+	if (err != ERROR_SUCCESS)
+	{
+		value = 1;
+
+		err = RegSetValueEx( key, kServiceManageLLRouting, 0, REG_DWORD, (const LPBYTE) &value, sizeof(DWORD) );
+		require_noerr( err, exit );
+	}
+
+exit:
+
+	if ( key )
+	{
+		RegCloseKey( key );
+	}
+
+	return( err );
+}
+
+
+
+//===========================================================================================================================
+//	GetServiceParameters
+//===========================================================================================================================
+
+static OSStatus GetServiceParameters()
+{
+	DWORD 			value;
+	DWORD			valueLen;
+	DWORD			type;
+	const char	*	s;
+	OSStatus		err;
+	HKEY			key;
+
+	key = NULL;
+
+	//
+	// Add/Open Parameters section under service entry in registry
+	//
+	s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+	require_noerr( err, exit );
+	
+	valueLen = sizeof(DWORD);
+	err = RegQueryValueEx(key, kServiceManageLLRouting, 0, &type, (LPBYTE) &value, &valueLen);
+	if (err == ERROR_SUCCESS)
+	{
+		gServiceManageLLRouting = (value) ? true : false;
+	}
+
+	valueLen = sizeof(DWORD);
+	err = RegQueryValueEx(key, kServiceCacheEntryCount, 0, &type, (LPBYTE) &value, &valueLen);
+	if (err == ERROR_SUCCESS)
+	{
+		gServiceCacheEntryCount = value;
+	}
+
+exit:
+
+	if ( key )
+	{
+		RegCloseKey( key );
+	}
+
+	return( err );
+}
+
+
+
+//===========================================================================================================================
+//	SetServiceInfo
+//===========================================================================================================================
+
+static OSStatus	SetServiceInfo( SC_HANDLE inSCM, const char *inServiceName, const char *inDescription )
 {
 	OSStatus				err;
 	SC_LOCK					lock;
@@ -604,7 +713,7 @@ static OSStatus	RunDirect( int argc, char *argv[] )
 	BOOL			initialized;
 	
 	initialized = FALSE;
-	
+
 	err = ServiceSpecificInitialize( argc, argv );
 	require_noerr( err, exit );
 	initialized = TRUE;
@@ -642,6 +751,9 @@ static void WINAPI ServiceMain( DWORD argc, LPSTR argv[] )
 	
 	err = ServiceSetupEventLogging();
 	check_noerr( err );
+
+	err = GetServiceParameters();
+	check_noerr( err );
 	
 	// Initialize the service status and register the service control handler with the name of the service.
 	
@@ -661,7 +773,7 @@ static void WINAPI ServiceMain( DWORD argc, LPSTR argv[] )
 			
 	desc[ 0 ] = '\0';
 	LoadStringA( GetModuleHandle( NULL ), IDS_SERVICE_DESCRIPTION, desc, sizeof( desc ) );
-	err = SetServiceParameters( NULL, kServiceName, desc );
+	err = SetServiceInfo( NULL, kServiceName, desc );
 	check_noerr( err );
 	
 	// Mark the service as starting.
@@ -885,7 +997,10 @@ static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
 	//
 	// set a route to link local addresses (169.254.0.0)
 	//
-	SetLLRoute();
+	if (gServiceManageLLRouting == true)
+	{
+		SetLLRoute();
+	}
 
 exit:
 	if( err != kNoErr )
@@ -970,7 +1085,10 @@ InterfaceListChanged(mDNS * const inMDNS)
 {
 	DEBUG_UNUSED( inMDNS );
 
-	SetLLRoute();
+	if (gServiceManageLLRouting == true)
+	{
+		SetLLRoute();
+	}
 }
 
 
