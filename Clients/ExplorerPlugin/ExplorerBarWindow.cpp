@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.16  2005/02/08 23:31:06  shersche
+Move "About ..." item underneath WebSites, change icons for discovered sites and "About ..." item
+
 Revision 1.15  2005/01/27 22:38:27  shersche
 add About item to tree list
 
@@ -208,9 +211,6 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	mTree.Create( WS_TABSTOP | WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | TVS_NOHSCROLL , rect, this, 
 		IDC_EXPLORER_TREE );
 	
-	s.LoadString( IDS_ABOUT );
-	m_about = mTree.InsertItem( s, 0, 0 );
-
 	ServiceHandlerEntry *		e;
 	
 	// Web Site Handler
@@ -229,7 +229,9 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	s.LoadString( IDS_WEB_SITES );
 	e->treeItem = mTree.InsertItem( s, 1, 1 );
 	mTree.Expand( e->treeItem, TVE_EXPAND );
-	
+	s.LoadString( IDS_ABOUT );
+	m_about = mTree.InsertItem( s, 1, 1, e->treeItem );
+
 	err = DNSServiceBrowse( &e->ref, 0, 0, e->type, NULL, BrowseCallBack, e );
 	require_noerr( err, exit );
 
@@ -551,9 +553,9 @@ LONG	ExplorerBarWindow::OnServiceAdd( ServiceInfo * service )
 		
 		// Insert the new item in sorted order.
 		
-		afterItem = ( index > 0 ) ? handler->array[ index - 1 ]->item : TVI_FIRST;
+		afterItem = ( index > 0 ) ? handler->array[ index - 1 ]->item : m_about;
 		handler->array.InsertAt( index, service );
-		service->item = mTree.InsertItem( service->displayName, 1, 1, handler->treeItem, afterItem );
+		service->item = mTree.InsertItem( service->displayName, 0, 0, handler->treeItem, afterItem );
 		mTree.SetItemData( service->item, (DWORD_PTR) service );
 		
 		// Make sure the item is visible if this is the first time a service was added.
