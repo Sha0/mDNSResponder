@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.128  2004/11/25 01:48:30  ksekar
+<rdar://problem/3878991> Logging into VPN does not trigger registration of address record
+
 Revision 1.127  2004/11/25 01:41:36  ksekar
 Changed unnecessary LogMsgs to debugfs
 
@@ -1286,7 +1289,6 @@ mDNSlocal const domainname *GetServiceTarget(uDNS_GlobalInfo *u, AuthRecord *srv
 
 mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
-	void *tmpContext;
 	uDNS_HostnameInfo *hi = (uDNS_HostnameInfo *)rr->RecordContext;
 	mDNSu8 *ip = rr->resrec.rdata->u.ipv4.b;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
@@ -1318,24 +1320,13 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	
 	if (result)
 		{
-		// unlink name, deliver error, free memory
-		uDNS_HostnameInfo *ptr, *prev = mDNSNULL;
+		// don't unlink or free - we can retry when we get a new address/router
 		LogMsg("HostnameCallback: Error %ld for registration of %##s IP %d.%d.%d.%d", result, rr->resrec.name.c, ip[0], ip[1], ip[2], ip[3]);
 		if (!hi) { ufree(rr); return; }
-		for (ptr = u->Hostnames; ptr; ptr = ptr->next)
-			{
-			if (ptr == hi)
-				{
-				if (prev) prev->next = ptr->next;             // unlink from list
-				else u->Hostnames = ptr->next;						
-				(const void *)rr->RecordContext = hi->StatusContext;
-				hi->StatusCallback(m, rr, result);
-				ufree(hi->ar);
-				ufree(hi);
-				return;
-				}
-			}
-		LogMsg("hostname %##s no longer in list", rr->resrec.name.c);
+		if (hi->ar->uDNS_info.state != regState_Unregistered) LogMsg("Error: HostnameCallback invoked with error code for record not in regState_Unregistered!");
+		(const void *)rr->RecordContext = hi->StatusContext;
+		hi->StatusCallback(m, rr, result); // client may NOT make API calls here
+		rr->RecordContext = (void *)hi;
 		return;
 		}
 
@@ -1349,10 +1340,9 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	// Deliver success to client
 	if (!hi) { LogMsg("HostnameCallback invoked with orphaned address record"); return; }
 	LogMsg("Registered hostname %##s IP %d.%d.%d.%d", rr->resrec.name.c, ip[0], ip[1], ip[2], ip[3]);	
-	tmpContext = rr->RecordContext;
 	(const void *)rr->RecordContext = hi->StatusContext;
 	hi->StatusCallback(m, rr, result);
-	rr->RecordContext = tmpContext;
+	rr->RecordContext = (void *)hi;
 	}
 
 // register record or begin NAT traversal
@@ -1443,23 +1433,22 @@ exit:
 mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-	uDNS_HostnameInfo *ptr, *prev = mDNSNULL;
+	uDNS_HostnameInfo **ptr = &u->Hostnames;
 
 	mDNS_Lock(m);
 
-	for (ptr = u->Hostnames; ptr; ptr = ptr->next)
+	while (*ptr && !SameDomainName(fqdn, &(*ptr)->ar->resrec.name)) ptr = &(*ptr)->next;
+	if (!*ptr) LogMsg("mDNS_RemoveDynDNSHostName: no such domainname %##s", fqdn->c);		
+	else
 		{
-		if (SameDomainName(fqdn, &ptr->ar->resrec.name))
-			{
-			if (prev) prev->next = ptr->next;             // unlink from list
-			else u->Hostnames = ptr->next;
-			uDNS_DeregisterRecord(m, ptr->ar);           // deregister the record
-			goto exit;
-			}
-		prev = ptr;			
+		uDNS_HostnameInfo *hi = *ptr;
+		*ptr = (*ptr)->next; // unlink
+		hi->ar->RecordContext = mDNSNULL; // about to free wrapper struct		
+		if (hi->ar->uDNS_info.state != regState_Unregistered) uDNS_DeregisterRecord(m, hi->ar);
+		else { ufree(hi->ar); hi->ar = mDNSNULL; }
+		ufree(hi);
 		}
-	LogMsg("mDNS_RemoveDynDNSHostName: no such domainname %##s", fqdn->c);
-exit:
+	
 	mDNS_Unlock(m);
 	}
 
