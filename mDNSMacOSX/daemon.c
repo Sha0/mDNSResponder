@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.249  2005/02/19 00:28:45  cheshire
+<rdar://problem/4005191> "Local Hostname is already in use..." dialogue shows for only 60 seconds before being removed
+
 Revision 1.248  2005/02/19 00:18:34  cheshire
 Confusing variable name -- alertMessage should be called alertHeader
 
@@ -1682,6 +1685,58 @@ fail:
 	return(err);
 	}
 
+mDNSlocal CFUserNotificationRef gNotification    = NULL;
+mDNSlocal CFRunLoopSourceRef    gNotificationRLS = NULL;
+mDNSlocal domainlabel           gNotificationHostLabel;
+mDNSlocal domainlabel           gNotificationNiceLabel;
+
+mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotification, CFOptionFlags responseFlags)
+	{
+	(void)responseFlags;	// Unused
+	if (userNotification != gNotification) LogMsg("NotificationCallBackDismissed: Wrong CFUserNotificationRef");
+	if (gNotificationRLS)
+		{
+		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), gNotificationRLS, kCFRunLoopDefaultMode);
+		CFRelease(gNotificationRLS);
+		gNotificationRLS = NULL;
+		CFRelease(gNotification);
+		gNotification = NULL;
+		}
+	}
+
+mDNSlocal void ShowNameConflictNotification(const mDNS *const m, CFStringRef header, CFStringRef subtext)
+	{
+	CFMutableDictionaryRef dictionary = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	if (dictionary)
+		{
+		CFDictionarySetValue(dictionary, kCFUserNotificationAlertHeaderKey, header);
+		CFDictionarySetValue(dictionary, kCFUserNotificationAlertMessageKey, subtext);
+		if (gNotification)	// If notification already on-screen, update it in place
+			CFUserNotificationUpdate(gNotification, 0, kCFUserNotificationCautionAlertLevel, dictionary);
+		else				// else, we need to create it
+			{
+			SInt32 error;
+			gNotification = CFUserNotificationCreate(NULL, 0, kCFUserNotificationCautionAlertLevel, &error, dictionary);
+			if (gNotification)
+				{
+				gNotificationRLS = CFUserNotificationCreateRunLoopSource(NULL, gNotification, NotificationCallBackDismissed, 0);
+				if (gNotificationRLS)
+					{
+					CFRunLoopAddSource(CFRunLoopGetCurrent(), gNotificationRLS, kCFRunLoopDefaultMode);
+					gNotificationHostLabel = m->p->userhostlabel;
+					gNotificationNiceLabel = m->p->usernicelabel;
+					}
+				else
+					{
+					LogMsg("ShowNameConflictNotification couldn't create RunLoopSource");
+					CFRelease(gNotification);
+					gNotification = NULL;
+					}
+				}
+			}
+		}
+	}
+
 // This updates either the text of the field currently labelled "Local Hostname",
 // or the text of the field currently labelled "Computer Name"
 // in the Sharing Prefs Control Panel
@@ -1722,10 +1777,7 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlab
 			CFStringAppend(alertHeader, CFSTR(" is already in use on this network.  The name has been changed to "));
 			CFStringAppend(alertHeader, s2);
 			CFStringAppend(alertHeader, CFSTR(" automatically."));
-			CFUserNotificationDisplayNotice(60.0,			// Auto-dismiss after 60 seconds
-				kCFUserNotificationCautionAlertLevel,
-				NULL, NULL, NULL,							// iconURL, soundURL, localizationURL
-				(CFStringRef)alertHeader, subtext, NULL);	// alertHeader, alertMessage, defaultButtonTitle
+			ShowNameConflictNotification(m, alertHeader, subtext);
 			}
 		if (s0)          CFRelease(s0);
 		if (s1)          CFRelease(s1);
@@ -1750,6 +1802,13 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		}
 	else if (result == mStatus_ConfigChanged)
 		{
+		// If we're showing a name conflict notification, and the user has manually edited
+		// the name to remedy the conflict, we should now remove the notification window.
+		if (gNotificationRLS)
+			if (!SameDomainLabel(m->p->userhostlabel.c, gNotificationHostLabel.c) ||
+				!SameDomainLabel(m->p->usernicelabel.c, gNotificationNiceLabel.c))
+				CFUserNotificationCancel(gNotification);
+
 		DNSServiceRegistration *r;
 		for (r = DNSServiceRegistrationList; r; r=r->next)
 			if (r->autoname)
