@@ -43,6 +43,13 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.218  2003/07/14 16:26:06  cheshire
+<rdar://problem/3324795> Duplicate query suppression not working right
+Refinement: Don't record DS information for a question in the first quarter second
+right after we send it -- in the case where a question happens to be accelerated by
+the maximum allowed amount, we don't want it to then be suppressed because the previous
+time *we* sent that question falls (just) within the valid duplicate suppression window.
+
 Revision 1.217  2003/07/13 04:43:53  cheshire
 <rdar://problem/3325169> Services on multiple interfaces not always resolving
 Minor refinement: No need to make address query broader than the original SRV query that provoked it
@@ -4370,7 +4377,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			// can't guarantee to receive all of the Known Answer packets that go with a particular query.
 			if (!(query->h.flags.b[0] & kDNSFlag0_TC))
 				for (q = m->Questions; q; q=q->next)
-					if (ActiveQuestion(q))
+					if (ActiveQuestion(q) && m->timenow - q->LastQTime > mDNSPlatformOneSecond / 4)
 						if (!q->InterfaceID || q->InterfaceID == InterfaceID)
 							if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && SameDomainName(&q->qname, &pktq.qname))
 								{ *dqp = q; dqp = &q->NextInDQList; }
