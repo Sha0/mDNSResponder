@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SimpleChat.cs,v $
+Revision 1.5  2004/09/13 19:37:42  shersche
+Change code to reflect namespace and type changes to dnssd.NET library
+
 Revision 1.4  2004/09/11 05:42:56  shersche
 don't reset SelectedIndex in OnRemove
 
@@ -48,6 +51,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Data;
 using System.Text;
+using Apple.DNSSD;
 
 namespace SimpleChat.NET
 {
@@ -68,7 +72,7 @@ namespace SimpleChat.NET
 		public String		Type;
 		public String		Domain;
 		public IPAddress	Address;
-		public ushort		Port;
+		public int			Port;
 
 		public override String
 		ToString()
@@ -116,7 +120,7 @@ namespace SimpleChat.NET
 		public int		InterfaceIndex;
 		public String	FullName;
 		public String	HostName;
-		public ushort	Port;
+		public int		Port;
 		public Byte[]	TxtRecord;
 
 		public override String
@@ -163,9 +167,9 @@ namespace SimpleChat.NET
 		private System.Windows.Forms.TextBox textBox2;
 		private System.Windows.Forms.Button button1;
 		private System.Windows.Forms.Label label1;
-		private DNSService.ServiceRef registrar = null;
-		private DNSService.ServiceRef browser = null;
-		private DNSService.ServiceRef resolver = null;
+		private ServiceRef registrar = null;
+		private ServiceRef browser = null;
+		private ServiceRef resolver = null;
 		private String					myName;
 		/// <summary>
 		/// Required designer variable.
@@ -341,14 +345,14 @@ namespace SimpleChat.NET
 		private void
 		OnRegisterReply
 					(
-					DNSService.ServiceRef	sdRef,
-					DNSService.ServiceFlags	flags,
-					DNSService.ErrorCode	errorCode,
-					String					name,
-					String					regtype,
-					String					domain)
+					ServiceRef		sdRef,
+					ServiceFlags	flags,
+					ErrorCode		errorCode,
+					String			name,
+					String			regtype,
+					String			domain)
 		{
-			if (errorCode == DNSService.ErrorCode.NoError)
+			if (errorCode == ErrorCode.NoError)
 			{
 				Invoke(registerServiceCallback, new Object[]{name});
 			}
@@ -370,15 +374,15 @@ namespace SimpleChat.NET
 		private void
 		OnBrowseReply
 					(
-					DNSService.ServiceRef	sdRef,
-					DNSService.ServiceFlags flags,
-					int						interfaceIndex,
-					DNSService.ErrorCode	errorCode,
-					String					name,
-					String					type,
-					String					domain)
+					ServiceRef		sdRef,
+					ServiceFlags	flags,
+					int				interfaceIndex,
+					ErrorCode		errorCode,
+					String			name,
+					String			type,
+					String			domain)
 		{
-			if (errorCode == DNSService.ErrorCode.NoError)
+			if (errorCode == ErrorCode.NoError)
 			{
 				PeerData peer = new PeerData();
 
@@ -388,11 +392,11 @@ namespace SimpleChat.NET
 				peer.Domain = domain;
 				peer.Address = null;
 
-				if ((flags & DNSService.ServiceFlags.Add) != 0)
+				if ((flags & ServiceFlags.Add) != 0)
 				{
 					Invoke(addPeerCallback, new Object[]{peer});
 				}
-				else if ((flags == 0) || ((flags & DNSService.ServiceFlags.MoreComing) != 0))
+				else if ((flags == 0) || ((flags & ServiceFlags.MoreComing) != 0))
 				{
 					Invoke(removePeerCallback, new Object[]{peer});
 				}
@@ -414,17 +418,17 @@ namespace SimpleChat.NET
 		private void
 		OnResolveReply
 			(
-			DNSService.ServiceRef	sdRef,
-			DNSService.ServiceFlags flags,
-			int						interfaceIndex,
-			DNSService.ErrorCode	errorCode,
-			String					fullName,
-			String					hostName,
-			ushort					port,
-			Byte[]					txtRecord
+			ServiceRef		sdRef,
+			ServiceFlags	flags,
+			int				interfaceIndex,
+			ErrorCode		errorCode,
+			String			fullName,
+			String			hostName,
+			int				port,
+			Byte[]			txtRecord
 			)
 		{
-			if (errorCode == DNSService.ErrorCode.NoError)
+			if (errorCode == ErrorCode.NoError)
 			{
 				ResolveData data = new ResolveData();
 
@@ -453,18 +457,18 @@ namespace SimpleChat.NET
 		private void
 		OnQueryRecordReply
 			(
-			DNSService.ServiceRef	sdRef,
-			DNSService.ServiceFlags	flags,
-			int						interfaceIndex,
-			DNSService.ErrorCode	errorCode,	
-			String					fullName,
-			int						rrtype,
-			int						rrclass,
-			Byte[]					rdata,
-			int						ttl
+			ServiceRef		sdRef,
+			ServiceFlags	flags,
+			int				interfaceIndex,
+			ErrorCode		errorCode,	
+			String			fullName,
+			int				rrtype,
+			int				rrclass,
+			Byte[]			rdata,
+			int				ttl
 			)
 		{
-			if (errorCode == DNSService.ErrorCode.NoError)
+			if (errorCode == ErrorCode.NoError)
 			{
 				uint bits					= BitConverter.ToUInt32(rdata, 0);
 				System.Net.IPAddress data	= new System.Net.IPAddress(bits);
@@ -670,7 +674,7 @@ namespace SimpleChat.NET
 				//
 				// start the register and browse operations
 				//
-				registrar	=	DNSService.Register(0, 0, System.Environment.UserName, "_p2pchat._udp", null, null, (ushort) localEP.Port, null, new DNSService.RegisterReply(OnRegisterReply));
+				registrar	=	DNSService.Register(0, 0, System.Environment.UserName, "_p2pchat._udp", null, null, localEP.Port, null, new DNSService.RegisterReply(OnRegisterReply));
 				browser		=	DNSService.Browse(0, 0, "_p2pchat._udp", null, new DNSService.BrowseReply(OnBrowseReply));			
 			}
 			catch
