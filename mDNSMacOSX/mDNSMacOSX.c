@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.256  2004/12/10 04:35:43  cheshire
+<rdar://problem/3907233> Show "Note: Compiled without Apple-specific split DNS support" only once
+
 Revision 1.255  2004/12/10 04:12:54  ksekar
 <rdar://problem/3890764> Need new DefaultBrowseDomain key
 
@@ -2113,8 +2116,9 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 	{
 #ifndef MAC_OS_X_VERSION_10_4
+	static int MessageShown = 0;
 	(void)m;
-	LogMsg("Note: Compiled without Apple-specific split DNS support");
+	if (!MessageShown) { MessageShown = 1; LogMsg("Note: Compiled without Apple-specific split DNS support"); }
     return mStatus_UnsupportedErr;
 #else
 	int i;
