@@ -49,10 +49,15 @@ static void browse_cb(DNSServiceRef sdr, DNSServiceFlags flags, uint32_t ifi, DN
 // globals
 static DNSServiceRef sdr = NULL;
 
+static void regservice_cb(DNSServiceRef sdRef, DNSServiceFlags flags, DNSServiceErrorType errorCode, const char *name, const char *regtype, const char *domain, void *context)
+	{
+	#pragma unused (sdRef, flags, errorCode, context)
+	printf("regservice_cb %s %s %s\n", name, regtype, domain);
+	}
+
 int main (int argc, char * argv[])  {
     int err, t, i;
     char *name, *type, *domain;
-    char *txtstring = "My Txt Record";
     DNSServiceFlags flags;
     DNSRecordRef recordrefs[10];
     char host[256];
@@ -146,9 +151,12 @@ int main (int argc, char * argv[])  {
 
     if (!strcmp(argv[1], "-regservice"))
         {
+        char *regtype = "_http._tcp";
+		char txtstring[] = "\x0DMy Txt Record";
         if (argc > 2) name = argv[2];
         else name = NULL;
-        err = DNSServiceRegister(&sdr, 0, 0, name, "_testservice._tcp", NULL, NULL, 123, strlen(txtstring), txtstring, NULL, NULL);
+        if (argc > 3) regtype = argv[3];
+        err = DNSServiceRegister(&sdr, 0, 0, name, regtype, "local.", NULL, 123, sizeof(txtstring)-1, txtstring, regservice_cb, NULL);
         if (err) 
             {
             printf("DNSServiceRegister returned error %d\n", err);
