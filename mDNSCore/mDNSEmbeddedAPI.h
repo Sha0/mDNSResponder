@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.139  2004/01/24 08:46:26  bradley
+Added InterfaceID<->Index platform interfaces since they are now used by all platforms for the DNS-SD APIs.
+
 Revision 1.138  2004/01/24 04:59:15  cheshire
 Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
@@ -1498,10 +1501,15 @@ extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
 extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 
+// Platform support modules should provide the following functions to map between opaque interface IDs
+// and interface indexes in order to support the DNS-SD API. If your target platform does not support 
+// multiple interfaces and/or does not support the DNS-SD API, these functions can be empty.
+extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
+extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 
 // Every platform support module must provide the following functions if it is to support unicats DNS
 // and Dynamic Update.
-// All TCP socket operations implemented by the platform layerMUST NOT BLOCK.
+// All TCP socket operations implemented by the platform layer MUST NOT BLOCK.
 // mDNSPlatformTCPConnect initiates a TCP connection with a peer, adding the socket descriptor to the
 // main event loop.  The return value indicates whether the connection succeeded, failed, or is pending
 // (i.e. the call would block.)  On return, the descriptor parameter is set to point to the connected socket.

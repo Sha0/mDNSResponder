@@ -56,7 +56,3 @@ typedef	void (*udsEventCallback)(void *context);
 
 extern mStatus udsSupportAddFDToEventLoop( int fd, udsEventCallback callback, void *context);
 extern mStatus udsSupportRemoveFDFromEventLoop( int fd);
-
-extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
-extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
-

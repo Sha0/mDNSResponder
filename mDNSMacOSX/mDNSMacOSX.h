@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.27  2004/01/24 08:46:26  bradley
+Added InterfaceID<->Index platform interfaces since they are now used by all platforms for the DNS-SD APIs.
+
 Revision 1.26  2003/12/08 21:00:46  rpantos
 Changes to support mDNSResponder on Linux.
 
@@ -159,8 +162,6 @@ struct mDNS_PlatformSupport_struct
     CFRunLoopSourceRef       PowerRLS;
     };
 
-extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
-extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
