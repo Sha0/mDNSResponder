@@ -35,6 +35,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.98  2003/05/20 00:33:07  cheshire
+ * <rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
+ * SIGHUP now writes state summary to syslog
+ *
  * Revision 1.97  2003/05/08 00:19:08  cheshire
  * <rdar://problem/3250330> Forgot to set "err = mStatus_BadParamErr" in a couple of places
  *
@@ -92,6 +96,7 @@ static const char PID_FILE[] = "/var/run/mDNSResponder.pid";
 static const char kmDNSBootstrapName[] = "com.apple.mDNSResponder";
 static mach_port_t client_death_port = MACH_PORT_NULL;
 static mach_port_t exit_m_port       = MACH_PORT_NULL;
+static mach_port_t hup_m_port        = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
 
 // mDNS Mach Message Timeout, in milliseconds.
@@ -1210,17 +1215,76 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	exit(0);
 	}
 
+// Send a mach_msg to ourselves (since that is signal safe) telling us to cleanup and exit
+mDNSlocal void HandleSIGTERM(int signal)
+	{
+	(void)signal;		// Unused
+	debugf("");
+	debugf("SIGINT/SIGTERM");
+	mach_msg_header_t header;
+	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
+	header.msgh_remote_port = exit_m_port;
+	header.msgh_local_port = MACH_PORT_NULL;
+	header.msgh_size = sizeof(header);
+	header.msgh_id = 0;
+	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
+		{ LogMsg("HandleSIGTERM: mach_msg_send failed; Exiting immediately."); exit(-1); }
+	}
+
+mDNSlocal void HUPCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+	{
+	(void)port;		// Unused
+	(void)msg;		// Unused
+	(void)size;		// Unused
+	(void)info;		// Unused
+	DNSServiceDomainEnumeration *e;
+	DNSServiceBrowser           *b;
+	DNSServiceResolver          *l;
+	DNSServiceRegistration      *r;
+
+	LogMsg("%s ---- BEGIN STATE LOG ----", mDNSResponderVersionString);
+
+	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
+		LogMsg("%5d: DomainEnumeration   %##s", e->ClientMachPort, e->dom.name.c);
+
+	for (b = DNSServiceBrowserList; b; b=b->next)
+		LogMsg("%5d: ServiceBrowse       %##s", b->ClientMachPort, b->q.name.c);
+
+	for (l = DNSServiceResolverList; l; l=l->next)
+		LogMsg("%5d: ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
+
+	for (r = DNSServiceRegistrationList; r; r=r->next)
+		LogMsg("%5d: ServiceRegistration %##s", r->ClientMachPort, r->s.RR_SRV.name.c);
+
+	LogMsg("%s ----  END STATE LOG  ----", mDNSResponderVersionString);
+	}
+
+mDNSlocal void HandleSIGHUP(int signal)
+	{
+	(void)signal;		// Unused
+	mach_msg_header_t header;
+	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
+	header.msgh_remote_port = hup_m_port;
+	header.msgh_local_port = MACH_PORT_NULL;
+	header.msgh_size = sizeof(header);
+	header.msgh_id = 0;
+	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
+		{ LogMsg("HandleSIGTERM: mach_msg_send failed; Exiting immediately."); exit(-1); }
+	}
+
 mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	{
 	mStatus            err;
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
 	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
+	CFMachPortRef      h_port = CFMachPortCreate(NULL, HUPCallback, NULL, NULL);
 	mach_port_t        m_port = CFMachPortGetPort(s_port);
 	kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	CFRunLoopSourceRef e_rls  = CFMachPortCreateRunLoopSource(NULL, e_port, 0);
+	CFRunLoopSourceRef h_rls  = CFMachPortCreateRunLoopSource(NULL, h_port, 0);
 	(void)bundleName;		// Unused
 	(void)bundleDir;		// Unused
 	
@@ -1241,35 +1305,19 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 
 	client_death_port = CFMachPortGetPort(d_port);
 	exit_m_port = CFMachPortGetPort(e_port);
+	hup_m_port  = CFMachPortGetPort(h_port);
 
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), e_rls, kCFRunLoopDefaultMode);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), h_rls, kCFRunLoopDefaultMode);
 	CFRelease(d_rls);
 	CFRelease(s_rls);
 	CFRelease(e_rls);
+	CFRelease(h_rls);
 	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
 
 	return(err);
-	}
-
-mDNSlocal void HandleSIG(int signal)
-	{
-	(void)signal;		// Unused
-	debugf("");
-	debugf("HandleSIG");
-	
-	// Send a mach_msg to ourselves (since that is signal safe) telling us to cleanup and exit
-	mach_msg_return_t msg_result;
-	mach_msg_header_t header;
-
-	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
-	header.msgh_remote_port = exit_m_port;
-	header.msgh_local_port = MACH_PORT_NULL;
-	header.msgh_size = sizeof(header);
-	header.msgh_id = 0;
-
-	msg_result = mach_msg_send(&header);
 	}
 
 mDNSexport int main(int argc, char **argv)
@@ -1283,8 +1331,9 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcmp(argv[i], "-d")) debug_mode = 1;
 		}
 
-	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
-	signal(SIGTERM, HandleSIG);
+	signal(SIGINT,  HandleSIGTERM);		// SIGINT is what you get for a Ctrl-C
+	signal(SIGTERM, HandleSIGTERM);
+	signal(SIGHUP,  HandleSIGHUP);
 
 	// Register the server with mach_init for automatic restart only during debug mode
     if (!debug_mode)
