@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSLibraryResources.r,v $
+Revision 1.22  2005/01/10 16:33:26  ksekar
+Update version string to 1.0a93
+
 Revision 1.21  2004/12/23 23:50:59  ksekar
 Update version string to 1.0a92
 
@@ -105,14 +108,14 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 resource 'vers' (1, purgeable)
 	{
    0x01, 0x00, alpha, 92, verUS,
-   "1.0a92",
-   "Multicast DNS & DNS Service Discovery 1.0a92"
+   "1.0a93",
+   "Multicast DNS & DNS Service Discovery 1.0a93"
 	};
 
 resource 'vers' (2, purgeable)
 	{
    0x01, 0x00, alpha, 92, verUS,
-   "1.0a92",
+   "1.0a93",
    "developer.apple.com/darwin/projects/rendezvous/"
 	};
 
