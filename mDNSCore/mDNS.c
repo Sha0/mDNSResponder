@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.230  2003/07/17 18:16:54  cheshire
+<rdar://problem/3319418> Rendezvous services always in a state of flux
+In preparation for working on this, made some debugf messages a little more selective
+
 Revision 1.229  2003/07/17 17:35:04  cheshire
 <rdar://problem/3325583> Rate-limit responses, to guard against packet flooding
 
@@ -4710,17 +4714,20 @@ exit:
 				{
 				rr->UnansweredQueries++;
 				rr->LastUnansweredTime = m->timenow;
-				debugf("ProcessQuery: (!TC) UAQ %lu MPQ %lu MPKA %lu %s",
-					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+				if (rr->UnansweredQueries > 1)
+					debugf("ProcessQuery: (!TC) UAQ %lu MPQ %lu MPKA %lu %s",
+						rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
 				SetNextCacheCheckTime(m, rr);
 				}
 
-		// If we've seen two definite queries for this record,
+		// If we've seen multiple unanswered queries for this record,
 		// then mark it to expire in five seconds if we don't get a response by then.
 		if (rr->UnansweredQueries >= MaxUnansweredQueries)
 			{
-			debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
-				rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+			// Only show debugging message if this record was not about to expire anyway
+			if (RRExpireTime(rr) - m->timenow > 4 * mDNSPlatformOneSecond)
+				debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
+					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
 			mDNS_Reconfirm_internal(m, rr, 0);
 			}
 		// Make a guess, based on the multi-packet query / known answer counts, whether we think we
@@ -4738,8 +4745,10 @@ exit:
 			if (remain > 240 * (mDNSu32)mDNSPlatformOneSecond)
 				remain = 240 * (mDNSu32)mDNSPlatformOneSecond;
 			
-			debugf("ProcessQuery: (MPQ) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
-				rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+			// Only show debugging message if this record was not about to expire anyway
+			if (RRExpireTime(rr) - m->timenow > 4 * mDNSPlatformOneSecond)
+				debugf("ProcessQuery: (MPQ) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
+					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
 
 			if (remain <= 60 * (mDNSu32)mDNSPlatformOneSecond)
 				rr->UnansweredQueries++;	// Treat this as equivalent to one definite unanswered query
