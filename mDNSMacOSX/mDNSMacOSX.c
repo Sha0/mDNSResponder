@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.222  2004/10/28 03:36:34  cheshire
+<rdar://problem/3856535> Share the same port for both multicast and unicast receiving
+
 Revision 1.221  2004/10/28 03:24:41  cheshire
 Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
 
@@ -1113,24 +1116,30 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			return;
 			}
 
-		// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
-		// sockets API means that even though this socket has only officially joined the multicast group
-		// on one specific interface, the kernel will still deliver multicast packets to it no matter which
-		// interface they arrive on. According to the official Unix Powers That Be, this is Not A Bug.
-		// To work around this weirdness, we use the IP_RECVIF option to find the name of the interface
-		// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
-		if (!ss->info)
-			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on unicast socket", &senderAddr, &destAddr);
-		else if (!strcmp(ss->info->ifa_name, packetifname))
-			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s",
-				&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
-		else
+		if (mDNSAddrIsDNSMulticast(&destAddr))
 			{
-			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
-				&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name, packetifname);
-			return;
+			// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
+			// sockets API means that even though this socket has only officially joined the multicast group
+			// on one specific interface, the kernel will still deliver multicast packets to it no matter which
+			// interface they arrive on. According to the official Unix Powers That Be, this is Not A Bug.
+			// To work around this weirdness, we use the IP_RECVIF option to find the name of the interface
+			// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
+			if (!ss->info)
+				{
+				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on unicast socket (Ignored)", &senderAddr, &destAddr);
+				return;
+				}
+			else if (!strcmp(ss->info->ifa_name, packetifname))
+				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s",
+					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
+			else
+				{
+				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
+					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name, packetifname);
+				return;
+				}
 			}
-		
+
 		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID);
 		}
 
@@ -1430,7 +1439,7 @@ mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
 
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
-mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *ifaddr, u_short sa_family)
+mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, u_short sa_family)
 	{
 	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
 	CFSocketRef *c        = (sa_family == AF_INET) ? &cp->cfsv4 : &cp->cfsv6;
@@ -1439,6 +1448,8 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 	const int twofivefive = 255;
 	mStatus err = mStatus_NoError;
 	char *errstr = mDNSNULL;
+
+	mDNSIPPort port = (mcast | m->CanReceiveUnicastOn5353) ? MulticastDNSPort : zeroIPPort;
 
 	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
 	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %p is already set", *c); return(-1); }
@@ -1466,7 +1477,7 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
 		
 		// Add multicast group membership on this interface, if it's for multicast receiving
-		if (port.NotAnInteger)
+		if (mcast)
 			{
 			struct in_addr addr = { ifaddr->ip.v4.NotAnInteger };
 			struct ip_mreq imr;
@@ -1516,7 +1527,7 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
 		if (err < 0) { errstr = "setsockopt - IPV6_V6ONLY"; goto fail; }
 		
-		if (port.NotAnInteger)
+		if (mcast)
 			{
 			// Add multicast group membership on this interface, if it's for multicast receiving
 			int interface_id = if_nametoindex(cp->info->ifa_name);
@@ -1871,14 +1882,14 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				{
 				if (i->sa_family == AF_INET && primary->ss.sktv4 == -1)
 					{
-					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
+					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, AF_INET);
 					if (err == 0) debugf("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a",          primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					else          LogMsg("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					}
 			
 				if (i->sa_family == AF_INET6 && primary->ss.sktv6 == -1)
 					{
-					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
+					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, AF_INET6);
 					if (err == 0) debugf("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a",          primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					else          LogMsg("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					}
@@ -2881,8 +2892,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->unicastsockets.cfsv4 = m->p->unicastsockets.cfsv6 = NULL;
 	m->p->unicastsockets.rlsv4 = m->p->unicastsockets.rlsv6 = NULL;
 	
-	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET);
-	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET6);
+	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, AF_INET);
+	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, AF_INET6);
 
 	struct sockaddr_in s4;
 	struct sockaddr_in6 s6;
