@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.133  2004/02/02 22:46:56  cheshire
+Move "CFRelease(dict);" inside the "if (dict)" check
+
 Revision 1.132  2004/01/28 02:30:08  ksekar
 Added default Search Domains to unicast browsing, controlled via
 Networking sharing prefs pane.  Stopped sending unicast messages on
@@ -1540,8 +1543,8 @@ mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, v
 		{
 		RegisterDNSConfig(m, dict, kSCPropNetDNSServerAddresses);
 		RegisterDNSConfig(m, dict, kSCPropNetDNSSearchDomains);		
+		CFRelease(dict);
 		}		
-	CFRelease(dict);
 	}
 
 mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)	
