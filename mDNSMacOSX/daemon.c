@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.231  2004/12/17 04:13:38  cheshire
+Removed debugging check
+
 Revision 1.230  2004/12/17 04:09:30  cheshire
 <rdar://problem/3191011> Switch mDNSResponder to launchd
 
@@ -2346,8 +2349,6 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
 	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
-
-	LogMsgIdent(mDNSResponderVersionString, "starting via %s", started_via_launchdaemon ? "launchdaemon" : "Startup Item");
 
 	// Register the server with mach_init for automatic restart only during normal (non-debug) mode
     if (!mDNS_DebugMode && !started_via_launchdaemon)
