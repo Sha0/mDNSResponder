@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserApp.java,v $
+Revision 1.3  2004/05/26 01:41:58  cheshire
+Pass proper flags to DNSSD.enumerateDomains
+
 Revision 1.2  2004/04/30 21:53:34  rpantos
 Change line endings for CVS.
 
@@ -68,7 +71,7 @@ class	BrowserApp implements ListSelectionListener, ResolveListener
 		serviceList = new BrowserListModel();
 
 		try {
-			domainBrowser = DNSSD.enumerateDomains( 0, 0, domainList);
+			domainBrowser = DNSSD.enumerateDomains( DNSSD.BROWSE_DOMAINS, 0, domainList);
 
 			servicesBrowser = DNSSD.browse( 0, 0, "_services._mdns._udp.", "", servicesList);
 			serviceBrowser = null;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSDUnitTest.java,v $
+Revision 1.3  2004/05/26 01:41:58  cheshire
+Pass proper flags to DNSSD.enumerateDomains
+
 Revision 1.2  2004/04/30 21:53:34  rpantos
 Change line endings for CVS.
 
@@ -226,7 +229,7 @@ class	DomainTest extends TermReporter implements DomainListener
 	public		DomainTest()
 	{
 		try {
-			DNSSD.enumerateDomains( 0, 0, this);
+			DNSSD.enumerateDomains( DNSSD.BROWSE_DOMAINS, 0, this);
 		} catch( Exception e) { e.printStackTrace(); }
 	}
 
