@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.176  2004/06/11 20:27:42  cheshire
+Rename "SocketRef" as "cfs" to avoid conflict with other plaforms
+
 Revision 1.175  2004/06/10 20:23:21  cheshire
 Also list interfaces in SIGINFO output
 
@@ -2138,7 +2141,7 @@ struct CFSocketEventSource
 	void						*Context;
 	int							fd;
 	struct  CFSocketEventSource	*Next;
-	CFSocketRef					SocketRef;
+	CFSocketRef					cfs;
 	CFRunLoopSourceRef			RLS;
 	};
 typedef struct CFSocketEventSource	CFSocketEventSource;
@@ -2175,19 +2178,19 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	newSource->fd = fd;
 
 	cfContext.info = newSource;
-	if ( NULL != (newSource->SocketRef = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack, 
+	if ( NULL != (newSource->cfs = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack, 
 																	cf_callback, &cfContext)) &&
-		 NULL != (newSource->RLS = CFSocketCreateRunLoopSource(kCFAllocatorDefault, newSource->SocketRef, 0)))
+		 NULL != (newSource->RLS = CFSocketCreateRunLoopSource(kCFAllocatorDefault, newSource->cfs, 0)))
 		{
 		CFRunLoopAddSource(CFRunLoopGetCurrent(), newSource->RLS, kCFRunLoopDefaultMode);
 		AddToTail(&gEventSources, newSource);
 		}
 	else
 		{
-		if (newSource->SocketRef)
+		if (newSource->cfs)
 			{
-			CFSocketInvalidate(newSource->SocketRef);  // automatically closes socket
-			CFRelease(newSource->SocketRef);
+			CFSocketInvalidate(newSource->cfs);  // automatically closes socket
+			CFRelease(newSource->cfs);
 			}
 		return mStatus_NoMemoryErr;
 		}
@@ -2208,8 +2211,8 @@ mStatus udsSupportRemoveFDFromEventLoop(int fd)
 			CFRunLoopRemoveSource(CFRunLoopGetCurrent(), iSource->RLS, kCFRunLoopDefaultMode);
 			CFRunLoopSourceInvalidate(iSource->RLS);
 			CFRelease(iSource->RLS);
-			CFSocketInvalidate(iSource->SocketRef);
-			CFRelease(iSource->SocketRef);
+			CFSocketInvalidate(iSource->cfs);
+			CFRelease(iSource->cfs);
 			free(iSource);
 			return mStatus_NoError;
 			}
