@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.8  2005/02/08 18:53:33  shersche
+Remove qtotalDefined parameter from ParseTextRecord()
+
 Revision 1.7  2005/01/31 23:54:29  shersche
 <rdar://problem/3947508> Start browsing when printer wizard starts. Move browsing logic from CSecondPage object to CPrinterSetupWizardSheet object.
 
@@ -238,7 +241,7 @@ private:
 	StopResolve( Service * service );
 
 	OSStatus
-	ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, bool & qtotalDefined, CString & qname, uint32_t & qpriority );
+	ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, CString & qname, uint32_t & qpriority );
 
 	OSStatus
 	LoadPrinterNames();
