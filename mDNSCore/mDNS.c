@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.340  2003/12/16 02:31:37  cheshire
+Minor update to comments
+
 Revision 1.339  2003/12/13 05:50:33  bradley
 Fixed crash with mDNS_Lock/Unlock being called for the initial GrowCache before the platform
 layer has been initialized. Protect mDNS_reentrancy when completing the core initialization to
@@ -4102,7 +4105,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 8. If query is from a legacy client, generate a unicast response too
+	// *** 8. If query is from a legacy client, or from a new client requesting a unicast reply, then generate a unicast response too
 	// ***
 	if (HaveUnicastAnswer)
 		responseptr = GenerateUnicastResponse(query, end, InterfaceID, LegacyQuery, response, ResponseRecords);
@@ -5503,7 +5506,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 
 // Note:
 // Name is first label of domain name (any dots in the name are actual dots, not label separators)
-// Type is service type (e.g. "_printer._tcp.")
+// Type is service type (e.g. "_ipp._tcp.")
 // Domain is fully qualified domain name (i.e. ending with a null label)
 // We always register a TXT, even if it is empty (so that clients are not
 // left waiting forever looking for a nonexistent record.)
