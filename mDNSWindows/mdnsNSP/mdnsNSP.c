@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.9  2005/02/01 01:45:55  shersche
+Change mdnsNSP timeout to 2 seconds
+
 Revision 1.8  2005/01/31 23:27:25  shersche
 <rdar://problem/3936771> Don't try and resolve .local hostnames that are referenced in the hosts file
 
@@ -662,7 +665,7 @@ DEBUG_LOCAL int WSPAPI
 	// Wait for data or a cancel. Release the lock while waiting. This is safe because we've retained the query.
 
 	NSPUnlock();
-	waitResult = WaitForMultipleObjects( obj->waitCount, obj->waitHandles, FALSE, 5 * 1000 );
+	waitResult = WaitForMultipleObjects( obj->waitCount, obj->waitHandles, FALSE, 2 * 1000 );
 	NSPLock();
 	require_action_quiet( waitResult != ( WAIT_OBJECT_0 + 1 ), exit, err = WSA_E_CANCELLED );
 	err = translate_errno( waitResult == WAIT_OBJECT_0, (OSStatus) GetLastError(), WSASERVICE_NOT_FOUND );
