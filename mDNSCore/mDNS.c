@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.502  2004/12/20 18:04:08  cheshire
+<rdar://problem/3923098> For now, don't put standard wide-area unicast responses in our main cache
+
 Revision 1.501  2004/12/19 23:50:18  cheshire
 <rdar://problem/3751638> kDNSServiceInterfaceIndexLocalOnly should return all local records
 Don't show "No active interface to send" messages for kDNSServiceInterfaceIndexLocalOnly services
@@ -5131,8 +5134,14 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
 	if (!mDNSAddrIsDNSMulticast(dstaddr))
+		{
 		if (!AddressIsLocalSubnet(m, InterfaceID, srcaddr) || (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2))
 			return;
+		// For now we don't put standard wide-area unicast responses in our main cache
+		// (Later we should fix this and cache all known results in a unified manner.)
+		if (response->h.id.NotAnInteger != 0 || srcport.NotAnInteger != MulticastDNSPort.NotAnInteger)
+			return;
+		}
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
