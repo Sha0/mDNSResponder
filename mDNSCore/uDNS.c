@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.78  2004/09/15 01:16:57  ksekar
+<rdar://problem/3797598> mDNSResponder printing too many messages
+
 Revision 1.77  2004/09/14 23:27:47  cheshire
 Fix compile errors
 
@@ -3153,9 +3156,19 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec))) goto error;
 
 	newtarget = GetServiceTarget(u, srv);
-	if (!newtarget) { LogMsg("Couldn't get target for service %##s", srv->resrec.name.c); return; }
+	if (!newtarget)
+		{
+		debugf("Couldn't get target for service %##s", srv->resrec.name.c);
+		rInfo->state = regState_NoTarget;		
+		return;
+		}	
 	targetptr = GetRRDomainNameTarget(&srv->resrec);
-	if (!targetptr) { LogMsg("Couldn't get target location for srv %##s", srv->resrec.name.c); return; }	
+	if (!targetptr)
+		{
+		// this should never happen
+		LogMsg("Couldn't get target location for srv %##s", srv->resrec.name.c);
+		goto error;
+		}	
 	if (rInfo->OrigTarget.c[0] && !SameDomainName(&rInfo->OrigTarget, newtarget))
 		{
 		// if we're changing targets, delete old target
@@ -3847,8 +3860,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - timenow < 0)
 				{
-				//debugf("Retransmit service %##s", srs->RR_SRV.resrec.name.c);
-				LogMsg("Retransmit service %##s", srs->RR_SRV.resrec.name.c);
+				debugf("Retransmit service %##s", srs->RR_SRV.resrec.name.c);
 				if (rInfo->state == regState_DeregPending) SendServiceDeregistration(m, srs);
 				else                                       SendServiceRegistration(m, srs);
 				}
