@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.24  2005/02/08 23:32:24  shersche
+Bump to 1.0.0.54
+
 Revision 1.23  2005/02/02 02:08:28  shersche
 Bump to version 1.0.0.53
 
@@ -100,10 +103,10 @@ First checked in.
 #define MASTER_PROD_NAME	"Rendezvous"
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		1,0,0,53
-#define MASTER_PROD_VERS_STR	"1,0,0,53"
-#define MASTER_PROD_VERS_STR2	"1.0.0.53"
-#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.0.53"
+#define MASTER_PROD_VERS		1,0,0,54
+#define MASTER_PROD_VERS_STR	"1,0,0,54"
+#define MASTER_PROD_VERS_STR2	"1.0.0.54"
+#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.0.54"
 
 // Define the legal copyright
 #define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2005 Apple Computer, Inc."
