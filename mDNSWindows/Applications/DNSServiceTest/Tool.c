@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.11  2004/01/30 03:04:32  bradley
+Updated for latest changes to mDNSWindows.
+
 Revision 1.10  2003/10/31 12:18:31  bradley
 Added display of the resolved host name. Show separate TXT record entries on separate lines.
 
