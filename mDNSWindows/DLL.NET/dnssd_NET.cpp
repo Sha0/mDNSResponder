@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.8  2004/09/13 19:35:58  shersche
+<rdar://problem/3798941> Add Apple.DNSSD namespace to MC++ wrapper class
+<rdar://problem/3798950> Change all instances of unsigned short to int
+Bug #: 3798941, 3798950
+
 Revision 1.7  2004/09/11 00:36:40  shersche
 <rdar://problem/3786226> Modified .NET shim code to use host byte order for ports in APIs and callbacks
 Bug #: 3786226
@@ -60,6 +65,7 @@ Initial revision
 using namespace System::Net::Sockets;
 using namespace System::Diagnostics;
 using namespace Apple;
+using namespace Apple::DNSSD;
 
 
 //===========================================================================================================================
@@ -86,7 +92,7 @@ ConvertToString(const char * utf8String)
 // It manages the DNSServiceRef, and implements processing the
 // result
 //
-DNSService::ServiceRef::ServiceRef(Object * callback)
+ServiceRef::ServiceRef(Object * callback)
 :
 	m_bDisposed(false),
 	m_callback(callback),
@@ -96,7 +102,7 @@ DNSService::ServiceRef::ServiceRef(Object * callback)
 }
 
 
-DNSService::ServiceRef::~ServiceRef()
+ServiceRef::~ServiceRef()
 {
 }
 
@@ -107,7 +113,7 @@ DNSService::ServiceRef::~ServiceRef()
 // Starts the main processing thread
 //
 void
-DNSService::ServiceRef::StartThread()
+ServiceRef::StartThread()
 {
 	check( m_impl != NULL );
 
@@ -127,7 +133,7 @@ DNSService::ServiceRef::StartThread()
 // make a ProcessingThread method that forwards to the impl
 //
 void
-DNSService::ServiceRef::ProcessingThread()
+ServiceRef::ProcessingThread()
 {
 	m_impl->ProcessingThread();
 }
@@ -139,7 +145,7 @@ DNSService::ServiceRef::ProcessingThread()
 // Calls impl-Dispose().  This ultimately will call DNSServiceRefDeallocate()
 //
 void
-DNSService::ServiceRef::Dispose()
+ServiceRef::Dispose()
 {
 	check(m_impl != NULL);
 	check(m_bDisposed == false);
@@ -169,7 +175,7 @@ DNSService::ServiceRef::Dispose()
 // Dispatch a reply to the delegate.
 //
 void
-DNSService::ServiceRef::EnumerateDomainsDispatch
+ServiceRef::EnumerateDomainsDispatch
 						(
 						ServiceFlags	flags,
 						int				interfaceIndex,
@@ -179,7 +185,7 @@ DNSService::ServiceRef::EnumerateDomainsDispatch
 {
 	if ((m_callback != NULL) && (m_impl != NULL))
 	{
-		EnumerateDomainsReply * OnEnumerateDomainsReply = static_cast<EnumerateDomainsReply*>(m_callback);
+		DNSService::EnumerateDomainsReply * OnEnumerateDomainsReply = static_cast<DNSService::EnumerateDomainsReply*>(m_callback);
 		OnEnumerateDomainsReply(this, flags, interfaceIndex, errorCode, replyDomain);
 	}
 }
@@ -191,7 +197,7 @@ DNSService::ServiceRef::EnumerateDomainsDispatch
 // Dispatch a reply to the delegate.
 //
 void
-DNSService::ServiceRef::RegisterDispatch
+ServiceRef::RegisterDispatch
 				(
 				ServiceFlags	flags,
 				ErrorCode		errorCode,
@@ -202,7 +208,7 @@ DNSService::ServiceRef::RegisterDispatch
 {
 	if ((m_callback != NULL) && (m_impl != NULL))
 	{
-		RegisterReply * OnRegisterReply = static_cast<RegisterReply*>(m_callback);
+		DNSService::RegisterReply * OnRegisterReply = static_cast<DNSService::RegisterReply*>(m_callback);
 		OnRegisterReply(this, flags, errorCode, name, regtype, domain);
 	}
 }
@@ -214,7 +220,7 @@ DNSService::ServiceRef::RegisterDispatch
 // Dispatch a reply to the delegate.
 //
 void
-DNSService::ServiceRef::BrowseDispatch
+ServiceRef::BrowseDispatch
 			(
 			ServiceFlags	flags,
 			int				interfaceIndex,
@@ -226,7 +232,7 @@ DNSService::ServiceRef::BrowseDispatch
 {
 	if ((m_callback != NULL) && (m_impl != NULL))
 	{
-		BrowseReply * OnBrowseReply = static_cast<BrowseReply*>(m_callback);
+		DNSService::BrowseReply * OnBrowseReply = static_cast<DNSService::BrowseReply*>(m_callback);
 		OnBrowseReply(this, flags, interfaceIndex, errorCode, serviceName, regtype, replyDomain);
 	}
 }
@@ -238,20 +244,20 @@ DNSService::ServiceRef::BrowseDispatch
 // Dispatch a reply to the delegate.
 //
 void
-DNSService::ServiceRef::ResolveDispatch
+ServiceRef::ResolveDispatch
 			(
 			ServiceFlags	flags,
 			int				interfaceIndex,
 			ErrorCode		errorCode,
 			String		*	fullname,
 			String		*	hosttarget,
-			unsigned short	notAnIntPort,
+			int				notAnIntPort,
 			Byte			txtRecord[]
 			)
 {
 	if ((m_callback != NULL) && (m_impl != NULL))
 	{
-		ResolveReply * OnResolveReply = static_cast<ResolveReply*>(m_callback);
+		DNSService::ResolveReply * OnResolveReply = static_cast<DNSService::ResolveReply*>(m_callback);
 		OnResolveReply(this, flags, interfaceIndex, errorCode, fullname, hosttarget, notAnIntPort, txtRecord);
 	}
 }
@@ -263,7 +269,7 @@ DNSService::ServiceRef::ResolveDispatch
 // Dispatch a reply to the delegate.
 //
 void
-DNSService::ServiceRef::RegisterRecordDispatch
+ServiceRef::RegisterRecordDispatch
 				(
 				ServiceFlags	flags,
 				ErrorCode		errorCode,
@@ -272,7 +278,7 @@ DNSService::ServiceRef::RegisterRecordDispatch
 {
 	if ((m_callback != NULL) && (m_impl != NULL))
 	{
-		RegisterRecordReply * OnRegisterRecordReply = static_cast<RegisterRecordReply*>(m_callback);
+		DNSService::RegisterRecordReply * OnRegisterRecordReply = static_cast<DNSService::RegisterRecordReply*>(m_callback);
 		OnRegisterRecordReply(this, flags, errorCode, record);
 	}
 }
@@ -284,7 +290,7 @@ DNSService::ServiceRef::RegisterRecordDispatch
 // Dispatch a reply to the delegate.
 //
 void
-DNSService::ServiceRef::QueryRecordDispatch
+ServiceRef::QueryRecordDispatch
 					(
 					ServiceFlags	flags,
 					int				interfaceIndex,
@@ -298,7 +304,7 @@ DNSService::ServiceRef::QueryRecordDispatch
 {
 	if ((m_callback != NULL) && (m_impl != NULL))
 	{
-		QueryRecordReply * OnQueryRecordReply = static_cast<QueryRecordReply*>(m_callback);
+		DNSService::QueryRecordReply * OnQueryRecordReply = static_cast<DNSService::QueryRecordReply*>(m_callback);
 		OnQueryRecordReply(this, flags, interfaceIndex, errorCode, fullname, rrtype, rrclass, rdata, ttl);
 	}
 }
@@ -311,7 +317,7 @@ DNSService::ServiceRef::QueryRecordDispatch
 // class in a gcroot handle.  This satisfies the garbage collector as
 // the outer class is a managed type
 //
-DNSService::ServiceRef::ServiceRefImpl::ServiceRefImpl(ServiceRef * outer)
+ServiceRef::ServiceRefImpl::ServiceRefImpl(ServiceRef * outer)
 :
 	m_socketEvent(NULL),
 	m_stopEvent(NULL),
@@ -328,7 +334,7 @@ DNSService::ServiceRef::ServiceRefImpl::ServiceRefImpl(ServiceRef * outer)
 //
 // Deallocate all resources associated with the ServiceRefImpl
 //
-DNSService::ServiceRef::ServiceRefImpl::~ServiceRefImpl()
+ServiceRef::ServiceRefImpl::~ServiceRefImpl()
 {
 	if (m_socketEvent != NULL)
 	{
@@ -357,7 +363,7 @@ DNSService::ServiceRef::ServiceRefImpl::~ServiceRefImpl()
 // of DNSService Events
 //
 void
-DNSService::ServiceRef::ServiceRefImpl::SetupEvents()
+ServiceRef::ServiceRefImpl::SetupEvents()
 {
 	check(m_ref != NULL);
 
@@ -394,7 +400,7 @@ DNSService::ServiceRef::ServiceRefImpl::SetupEvents()
 // for stop events
 //
 void
-DNSService::ServiceRef::ServiceRefImpl::ProcessingThread()
+ServiceRef::ServiceRefImpl::ProcessingThread()
 {
 	check( m_socketEvent != NULL );
 	check( m_stopEvent != NULL );
@@ -442,7 +448,7 @@ DNSService::ServiceRef::ServiceRefImpl::ProcessingThread()
 // Calls DNSServiceRefDeallocate()
 //
 void
-DNSService::ServiceRef::ServiceRefImpl::Dispose()
+ServiceRef::ServiceRefImpl::Dispose()
 {
 	OSStatus	err;
 	BOOL		ok;
@@ -467,7 +473,7 @@ exit:
 // This is the callback from dnssd.dll.  We pass this up to our outer, managed type
 //
 void DNSSD_API
-DNSService::ServiceRef::ServiceRefImpl::EnumerateDomainsCallback
+ServiceRef::ServiceRefImpl::EnumerateDomainsCallback
 											(
 											DNSServiceRef			sdRef,
 											DNSServiceFlags			flags,
@@ -495,7 +501,7 @@ DNSService::ServiceRef::ServiceRefImpl::EnumerateDomainsCallback
 // This is the callback from dnssd.dll.  We pass this up to our outer, managed type
 //
 void DNSSD_API
-DNSService::ServiceRef::ServiceRefImpl::RegisterCallback
+ServiceRef::ServiceRefImpl::RegisterCallback
 							(
 							DNSServiceRef			sdRef,
 							DNSServiceFlags			flags,
@@ -524,7 +530,7 @@ DNSService::ServiceRef::ServiceRefImpl::RegisterCallback
 // This is the callback from dnssd.dll.  We pass this up to our outer, managed type
 //
 void DNSSD_API
-DNSService::ServiceRef::ServiceRefImpl::BrowseCallback
+ServiceRef::ServiceRefImpl::BrowseCallback
 							(
 							DNSServiceRef			sdRef,
    							DNSServiceFlags			flags,
@@ -554,7 +560,7 @@ DNSService::ServiceRef::ServiceRefImpl::BrowseCallback
 // This is the callback from dnssd.dll.  We pass this up to our outer, managed type
 //
 void DNSSD_API
-DNSService::ServiceRef::ServiceRefImpl::ResolveCallback
+ServiceRef::ServiceRefImpl::ResolveCallback
 							(
 							DNSServiceRef			sdRef,
 							DNSServiceFlags			flags,
@@ -600,7 +606,7 @@ DNSService::ServiceRef::ServiceRefImpl::ResolveCallback
 // This is the callback from dnssd.dll.  We pass this up to our outer, managed type
 //
 void DNSSD_API
-DNSService::ServiceRef::ServiceRefImpl::RegisterRecordCallback
+ServiceRef::ServiceRefImpl::RegisterRecordCallback
 								(
 								DNSServiceRef		sdRef,
 								DNSRecordRef		rrRef,
@@ -636,7 +642,7 @@ DNSService::ServiceRef::ServiceRefImpl::RegisterRecordCallback
 // This is the callback from dnssd.dll.  We pass this up to our outer, managed type
 //
 void DNSSD_API
-DNSService::ServiceRef::ServiceRefImpl::QueryRecordCallback
+ServiceRef::ServiceRefImpl::QueryRecordCallback
 								(
 								DNSServiceRef			DNSServiceRef,
 								DNSServiceFlags			flags,
@@ -679,7 +685,7 @@ DNSService::ServiceRef::ServiceRefImpl::QueryRecordCallback
  * initialized ServiceRef on success, throws an exception
  * on failure.
  */
-DNSService::ServiceRef*
+ServiceRef*
 DNSService::EnumerateDomains
 		(
 		int							flags,
@@ -710,7 +716,7 @@ DNSService::EnumerateDomains
  * initialized ServiceRef on success, throws an exception
  * on failure.
  */
-DNSService::ServiceRef*
+ServiceRef*
 DNSService::Register
 				(
 				int					flags,
@@ -719,7 +725,7 @@ DNSService::Register
 				String			*	regtype,
 				String			*	domain,
 				String			*	host,
-				unsigned short		notAnIntPort,
+				int					notAnIntPort,
 				Byte				txtRecord[],
 				RegisterReply	*	callback
 				)
@@ -760,7 +766,7 @@ DNSService::Register
  * initialized ServiceRef on success, throws an exception
  * on failure.
  */
-DNSService::RecordRef*
+RecordRef*
 DNSService::AddRecord
 				(
 				ServiceRef	*	sdRef,
@@ -862,7 +868,7 @@ DNSService::RemoveRecord
  * initialized ServiceRef on success, throws an exception
  * on failure.
  */
-DNSService::ServiceRef*
+ServiceRef*
 DNSService::Browse
 	(
 	int				flags,
@@ -896,7 +902,7 @@ DNSService::Browse
  * initialized ServiceRef on success, throws an exception
  * on failure.
  */
-DNSService::ServiceRef*
+ServiceRef*
 DNSService::Resolve
 	(
 	int					flags,
@@ -932,7 +938,7 @@ DNSService::Resolve
  * initialized ServiceRef on success, throws an exception
  * on failure.
  */
-DNSService::ServiceRef*
+ServiceRef*
 DNSService::CreateConnection
 			(
 			RegisterRecordReply * callback
@@ -961,7 +967,7 @@ DNSService::CreateConnection
  * on failure.
  */
 
-DNSService::RecordRef*
+RecordRef*
 DNSService::RegisterRecord
 			(
 			ServiceRef			*	sdRef,
@@ -1005,7 +1011,7 @@ DNSService::RegisterRecord
  * initialized ServiceRef on success, throws an exception
  * on failure.
  */
-DNSService::ServiceRef*
+ServiceRef*
 DNSService::QueryRecord
 		(
 		ServiceFlags			flags,
@@ -1068,7 +1074,7 @@ DNSService::ReconfirmRecord
 
 
 void
-DNSService::TextRecord::SetValue
+TextRecord::SetValue
 		(
 		String	*	key,
 		Byte		value[]            /* may be NULL */
@@ -1097,7 +1103,7 @@ DNSService::TextRecord::SetValue
 
 
 void
-DNSService::TextRecord::RemoveValue
+TextRecord::RemoveValue
 		(
 		String	*	key
 		)
@@ -1114,8 +1120,8 @@ DNSService::TextRecord::RemoveValue
 }
 
 
-unsigned short
-DNSService::TextRecord::GetLength
+int
+TextRecord::GetLength
 		(
 		)
 {
@@ -1124,15 +1130,15 @@ DNSService::TextRecord::GetLength
 
 
 Byte
-DNSService::TextRecord::GetBytes
+TextRecord::GetBytes
 		(
 		) __gc[]
 {
 	const void	*	noGCBytes = NULL;
 	Byte			gcBytes[] = NULL;		
 
-	noGCBytes			=	TXTRecordGetBytesPtr(&m_impl->m_ref);
-	unsigned short len	=	GetLength();
+	noGCBytes		=	TXTRecordGetBytesPtr(&m_impl->m_ref);
+	int			len	=	GetLength();
 
 	if (noGCBytes && len)
 	{
@@ -1146,7 +1152,7 @@ DNSService::TextRecord::GetBytes
 
 
 bool
-DNSService::TextRecord::ContainsKey
+TextRecord::ContainsKey
 		(
 		Byte		txtRecord[],
 		String	*	key
@@ -1160,7 +1166,7 @@ DNSService::TextRecord::ContainsKey
 
 
 Byte
-DNSService::TextRecord::GetValueBytes
+TextRecord::GetValueBytes
 		(
 		Byte		txtRecord[],
 		String	*	key
@@ -1186,8 +1192,8 @@ DNSService::TextRecord::GetValueBytes
 }
 
 
-unsigned short
-DNSService::TextRecord::GetCount
+int
+TextRecord::GetCount
 		(
 		Byte txtRecord[]
 		)
@@ -1199,10 +1205,10 @@ DNSService::TextRecord::GetCount
 
 
 Byte
-DNSService::TextRecord::GetItemAtIndex
+TextRecord::GetItemAtIndex
 		(
 		Byte				txtRecord[],
-		unsigned short		index,
+		int					index,
 		[Out] String	**	key
 		) __gc[]
 {
@@ -1241,7 +1247,7 @@ DNSService::TextRecord::GetItemAtIndex
 //
 // Constructs an exception with an error code
 //
-DNSService::DNSServiceException::DNSServiceException
+DNSServiceException::DNSServiceException
 				(
 				int _err
 				)
@@ -1256,7 +1262,7 @@ DNSService::DNSServiceException::DNSServiceException
 // an inner exception is thrown, caught, and then a new exception
 // is thrown in it's place
 //
-DNSService::DNSServiceException::DNSServiceException
+DNSServiceException::DNSServiceException
 				(	
 				String				*	message,
 				System::Exception	*	innerException
