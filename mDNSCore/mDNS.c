@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.283  2003/08/19 22:16:27  cheshire
+Minor fix: Add missing "mDNS_Unlock(m);" in mDNS_DeregisterInterface() error case.
+
 Revision 1.282  2003/08/19 06:48:25  cheshire
 <rdar://problem/3376552> Guard against excessive record updates
 Each record starts with 10 UpdateCredits.
@@ -6252,7 +6255,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 	// Find this record in our list
 	while (*p && *p != set) p=&(*p)->next;
-	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); return; }
+	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); mDNS_Unlock(m); return; }
 
 	// Unlink this record from our list
 	*p = (*p)->next;
