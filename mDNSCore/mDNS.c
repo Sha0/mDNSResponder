@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.294  2003/08/27 02:30:22  cheshire
+<rdar://problem/3395909> Traffic Reduction: Inefficiencies in DNSServiceResolverResolve()
+One more change: "query->GotTXT" is now a straightforward bi-state boolean again
+
 Revision 1.293  2003/08/27 02:25:31  cheshire
 <rdar://problem/3395909> Traffic Reduction: Inefficiencies in DNSServiceResolverResolve()
 
@@ -5799,7 +5803,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	if (answer->rrtype != kDNSType_TXT) return;
 	if (answer->rdlength > sizeof(query->info->TXTinfo)) return;
 
-	query->GotTXT       = (mDNSu8)(1 + (query->GotTXT || query->GotADD));
+	query->GotTXT       = mDNStrue;
 	query->info->TXTlen = answer->rdlength;
 	mDNSPlatformMemCopy(answer->rdata->u.txt.c, query->info->TXTinfo, answer->rdlength);
 
