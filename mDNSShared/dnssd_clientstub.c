@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.21  2004/06/18 04:53:56  rpantos
+Use platform layer for socket types. Introduce USE_TCP_LOOPBACK. Remove dependency on mDNSClientAPI.h.
+
 Revision 1.20  2004/06/12 00:50:22  cheshire
 Changes for Windows compatibility
 
@@ -77,6 +80,7 @@ Update to APSL 2.0
  */
 
 #include <errno.h>
+#include <stdlib.h>
 #if defined(WIN32)
 #include <winsock2.h>
 #include <windows.h>
@@ -92,6 +96,11 @@ Update to APSL 2.0
 
 #include "dnssd_ipc.h"
 
+#if defined(WIN32)
+static int g_initWinsock = 0;
+#endif
+
+
 #define CTL_PATH_PREFIX "/tmp/dnssd_clippath."
 // error socket (if needed) is named "dnssd_clipath.[pid].xxx:n" where xxx are the
 // last 3 digits of the time (in seconds) and n is the 6-digit microsecond time
@@ -99,7 +108,7 @@ Update to APSL 2.0
 // general utility functions
 typedef struct _DNSServiceRef_t
     {
-    int sockfd;  // connected socket between client and daemon
+    dnssd_sock_t sockfd;  // connected socket between client and daemon
     int op;      // request/reply_op_t
     process_reply_callback process_reply;
     void *app_callback;
@@ -118,7 +127,7 @@ typedef struct _DNSRecordRef_t
 
 // exported functions
 
-static int my_write(int sd, char *buf, int len)
+static int my_write(dnssd_sock_t sd, char *buf, int len)
     {
     while (len)
     	{
@@ -131,7 +140,7 @@ static int my_write(int sd, char *buf, int len)
     }
 
 // read len bytes.  return 0 on success, -1 on error
-static int my_read(int sd, char *buf, int len)
+static int my_read(dnssd_sock_t sd, char *buf, int len)
     {
     if (recv(sd, buf, len, MSG_WAITALL) != len)  return -1;
     return 0;
@@ -188,17 +197,32 @@ static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse
     // return a connected service ref (deallocate with DNSServiceRefDeallocate)
 static DNSServiceRef connect_to_server(void)
     {
-	struct sockaddr_mdns saddr;
-	DNSServiceRef sdr = malloc(sizeof(_DNSServiceRef_t));
-	if (!sdr) return(NULL);
-	sdr->sockfd = socket(AF_MDNS, SOCK_STREAM, 0);
+	dnssd_sockaddr_t saddr;
+	DNSServiceRef sdr;
+
 #if defined(WIN32)
-	if (sdr->sockfd == INVALID_SOCKET) { free(sdr); return NULL; }
-	saddr.sin_family	=	AF_INET;
-	saddr.sin_addr.s_addr	=	inet_addr("127.0.0.1");
-	saddr.sin_port		=	htons(5533);
+	if (!g_initWinsock)
+		{
+		WSADATA wsaData;
+		DNSServiceErrorType err;
+		
+		g_initWinsock = 1;
+
+		err = WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
+
+		if (err != 0) return NULL;
+		}
+#endif
+
+	sdr = malloc(sizeof(_DNSServiceRef_t));
+	if (!sdr) return(NULL);
+	sdr->sockfd = socket(AF_DNSSD, SOCK_STREAM, 0);
+	if (sdr->sockfd == dnssd_InvalidSocket) { free(sdr); return NULL; }
+#if defined(USE_TCP_LOOPBACK)
+	saddr.sin_family		=	AF_INET;
+	saddr.sin_addr.s_addr	=	inet_addr(MDNS_TCP_SERVERADDR);
+	saddr.sin_port			=	htons(MDNS_TCP_SERVERPORT);
 #else
-	if (sdr->sockfd < 0) { free(sdr); return NULL; }
 	saddr.sun_family = AF_LOCAL;
 	strcpy(saddr.sun_path, MDNS_UDS_SERVERPATH);
 #endif
@@ -209,9 +233,10 @@ static DNSServiceRef connect_to_server(void)
 static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
     {
     ipc_msg_hdr *hdr = msg;
-    struct sockaddr_mdns caddr, daddr;  // (client and daemon address structs)
+    dnssd_sockaddr_t caddr, daddr;  // (client and daemon address structs)
     char *data = (char *)msg + sizeof(ipc_msg_hdr);
-    int listenfd = -1, errsd = -1, ret, len = sizeof(caddr);
+    dnssd_sock_t listenfd = dnssd_InvalidSocket, errsd = dnssd_InvalidSocket;
+	int ret, len = sizeof(caddr);
     DNSServiceErrorType err = kDNSServiceErr_Unknown;
 
     if (!hdr || sdr->sockfd < 0) return kDNSServiceErr_Unknown;
@@ -219,23 +244,23 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 	if (!reuse_sd)
 		{
         // setup temporary error socket
-        if ((listenfd = socket(AF_MDNS, SOCK_STREAM, 0)) < 0)
+        if ((listenfd = socket(AF_DNSSD, SOCK_STREAM, 0)) < 0)
             goto cleanup;
         bzero(&caddr, sizeof(caddr));
 
-#if defined(WIN32)
+#if defined(USE_TCP_LOOPBACK)
 			{
-			mDNSOpaque16 port;
+			uint16_t port;
 			caddr.sin_family      = AF_INET;
 			caddr.sin_port        = 0;
-			caddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+			caddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
 			ret = bind(listenfd, (struct sockaddr*) &caddr, sizeof(caddr));
 			if (ret < 0) goto cleanup;
 			if (getsockname(listenfd, (struct sockaddr*) &caddr, &len) < 0) goto cleanup;
 			listen(listenfd, 1);
-			port.NotAnInteger = caddr.sin_port;
-			data[0] = port.b[0];
-			data[1] = port.b[1];
+			port = caddr.sin_port;
+			data[0] = (char)(port >> 8);
+			data[1] = (char)(port & 0x00FF);
 			}
 #else
 			{
@@ -273,9 +298,11 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
         err = kDNSServiceErr_Unknown;
         }
 cleanup:
-    if (!reuse_sd && listenfd > 0) close(listenfd);
-    if (!reuse_sd && errsd > 0) close(errsd);
+    if (!reuse_sd && listenfd > 0) dnssd_close(listenfd);
+    if (!reuse_sd && errsd > 0) dnssd_close(errsd);
+#if !defined(USE_TCP_LOOPBACK)
     if (!reuse_sd && data) unlink(data);
+#endif
     if (msg) free(msg);
     return err;
     }
@@ -283,7 +310,7 @@ cleanup:
 int DNSSD_API DNSServiceRefSockFD(DNSServiceRef sdRef)
     {
     if (!sdRef) return -1;
-    return sdRef->sockfd;
+    return (int) sdRef->sockfd;
     }
 
 // handle reply from server, calling application client callback.  If there is no reply
@@ -312,7 +339,7 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef)
     {
     if (!sdRef) return;
-    if (sdRef->sockfd > 0) close(sdRef->sockfd);
+    if (sdRef->sockfd > 0) dnssd_close(sdRef->sockfd);
     free(sdRef);
     }
 
