@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.344  2004/01/21 21:53:18  cheshire
+<rdar://problem/3448144>: Don't try to receive unicast responses if we're not the first to bind to the UDP port
+
 Revision 1.343  2003/12/23 00:07:47  cheshire
 Make port number in debug message be five-character field, left justified
 
@@ -2489,7 +2492,7 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, 
 mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, DNSQuestion *q,
 	CacheRecord ***kalistptrptr, mDNSu32 *answerforecast)
 	{
-	mDNSBool ucast = q->LargeAnswers || q->ThisQInterval <= InitialQuestionInterval*2;
+	mDNSBool ucast = (q->LargeAnswers || q->ThisQInterval <= InitialQuestionInterval*2) && m->CanReceiveUnicast;
 	mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
 	const mDNSu8 *const limit = query->data + NormalMaxDNSMessageData;
 	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, (mDNSu16)(q->qclass | ucbit));
@@ -2840,7 +2843,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->SendRNow == intf->InterfaceID)
 					{
-					mDNSBool ucast = rr->ProbeCount >= DefaultProbeCountForTypeUnique-1;
+					mDNSBool ucast = (rr->ProbeCount >= DefaultProbeCountForTypeUnique-1) && m->CanReceiveUnicast;
 					mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
 					const mDNSu8 *const limit = query.data + ((query.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 					mDNSu8 *newptr = putQuestion(&query, queryptr, limit, &rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
@@ -5827,6 +5830,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	
 	m->p                       = p;
 	m->KnownBugs               = 0;
+	m->CanReceiveUnicast       = mDNSfalse;		// Assume we can't receive unicasts, unless platform layer tells us otherwise
 	m->AdvertiseLocalAddresses = AdvertiseLocalAddresses;
 	m->mDNSPlatformStatus      = mStatus_Waiting;
 	m->MainCallback            = Callback;

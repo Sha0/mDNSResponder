@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.124  2004/01/21 21:53:19  cheshire
+<rdar://problem/3448144>: Don't try to receive unicast responses if we're not the first to bind to the UDP port
+
 Revision 1.123  2004/01/20 03:18:25  cheshire
 Removed "LogMsg("Hey There!");" that evidently got checked in my mistake
 
@@ -1405,6 +1408,24 @@ mDNSexport mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 	return(major);
 	}
 
+// Test to see if we're the first client running on UDP port 5353, by trying to bind to 5353 without using SO_REUSEPORT.
+// If we fail, someone else got here first. That's not a big problem; we can share the port for multicast responses --
+// we just need to be aware that we shouldn't expect to successfully receive unicast UDP responses.
+mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
+	{
+	int err;
+	int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	struct sockaddr_in s5353;
+	s5353.sin_family      = AF_INET;
+	s5353.sin_port        = MulticastDNSPort.NotAnInteger;
+	s5353.sin_addr.s_addr = 0;
+	err = bind(s, (struct sockaddr *)&s5353, sizeof(s5353));
+	close(s);
+	if (err) debugf("No unicast UDP responses");
+	else     debugf("Unicast UDP responses okay");
+	return(err == 0);
+	}
+
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
@@ -1419,7 +1440,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		HINFO_HWstring = HINFO_HWstring_buffer;
 
 	char HINFO_SWstring[256] = "";
-	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs = mDNS_KnownBug_PhantomInterfaces;
+	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
+	if (mDNSPlatformInit_ReceiveUnicast())               m->CanReceiveUnicast = mDNStrue;
 
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
 	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.131  2004/01/21 21:53:18  cheshire
+<rdar://problem/3448144>: Don't try to receive unicast responses if we're not the first to bind to the UDP port
+
 Revision 1.130  2003/12/14 05:05:29  cheshire
 Add comments explaining mDNS_Init_NoCache and mDNS_Init_ZeroCacheSize
 
@@ -1071,6 +1074,7 @@ struct mDNS_struct
 
 	mDNS_PlatformSupport *p;			// Pointer to platform-specific data of indeterminite size
 	mDNSu32  KnownBugs;
+	mDNSBool CanReceiveUnicast;
 	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
 	mDNSCallback *MainCallback;
