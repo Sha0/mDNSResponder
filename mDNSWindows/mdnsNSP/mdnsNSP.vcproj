@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="Windows-1252"?>
+<?xml version="1.0" encoding = "Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-        Version="7.00"
+	Version="7.00"
 	Name="mdnsNSP"
 	ProjectGUID="{F4F15529-F0EB-402F-8662-73C5797EE557}"
 	Keyword="Win32Proj">
@@ -59,13 +59,7 @@
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
-				Name="VCXMLDataGeneratorTool"/>
-			<Tool
 				Name="VCWebDeploymentTool"/>
-			<Tool
-				Name="VCManagedWrapperGeneratorTool"/>
-			<Tool
-				Name="VCAuxiliaryManagedWrapperGeneratorTool"/>
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
@@ -76,12 +70,18 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				AdditionalIncludeDirectories=".;../;../../mDNSShared"
-				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;NSP_EXPORTS;WIN32_LEAN_AND_MEAN"
+				PreprocessorDefinitions="WIN32;_WINDOWS;_USRDLL;NSP_EXPORTS;WIN32_LEAN_AND_MEAN"
+				StringPooling="TRUE"
+				MinimalRebuild="TRUE"
+				ExceptionHandling="FALSE"
+				BasicRuntimeChecks="0"
+				SmallerTypeCheck="FALSE"
 				RuntimeLibrary="2"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
 				Detect64BitPortabilityProblems="TRUE"
-				DebugInformationFormat="3"/>
+				DebugInformationFormat="3"
+				CallingConvention="2"/>
 			<Tool
 				Name="VCCustomBuildTool"/>
 			<Tool
@@ -89,6 +89,7 @@
 				AdditionalDependencies="../DLL/Release/dnssd.lib ws2_32.lib iphlpapi.lib"
 				OutputFile="$(OutDir)/mdnsNSP.dll"
 				LinkIncremental="1"
+				ModuleDefinitionFile="mdnsNSP.def"
 				GenerateDebugInformation="TRUE"
 				SubSystem="2"
 				OptimizeReferences="0"
@@ -108,17 +109,9 @@
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
-				Name="VCXMLDataGeneratorTool"/>
-			<Tool
 				Name="VCWebDeploymentTool"/>
-			<Tool
-				Name="VCManagedWrapperGeneratorTool"/>
-			<Tool
-				Name="VCAuxiliaryManagedWrapperGeneratorTool"/>
 		</Configuration>
 	</Configurations>
-	<References>
-	</References>
 	<Files>
 		<Filter
 			Name="Source Files"
