@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.270  2004/12/20 21:28:14  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+Additional refinements to handle sleep/wake better
+
 Revision 1.269  2004/12/20 20:48:11  cheshire
 Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xxx) or later
 
@@ -2060,7 +2064,10 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
-				mDNSBool flapping = (utc - i->LastSeen > 0);
+				// If i->LastSeen == utc, then this is a brand-new interface, just created
+				// If i->LastSeen != utc, then this is an old interface, previously seen
+				// If the interface is old, but not more than a minute old, then we're in a flapping scenario
+				mDNSBool flapping = (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
 				mDNS_RegisterInterface(m, n, flapping ? mDNSPlatformOneSecond * 5 : 0);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
 				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s",
@@ -2095,7 +2102,8 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m, mDNSs32 utc)
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
-		if (i->Exists) i->LastSeen = utc;
+		// If this interface used to exist, then we treat it as though we were seeing it until one second ago
+		if (i->Exists) i->LastSeen = utc - 1;
 		i->Exists = mDNSfalse;
 		}
 	}
@@ -2162,14 +2170,14 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 		// (We may have previously had both v4 and v6, and we may not need both any more.)
 		CloseSocketSet(&i->ss);
 		// 3. If no longer active, delete interface from list and free memory
-		if (!i->Exists && NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0)
+		if (!i->Exists)
 			{
-			LogOperation("ClearInactiveInterfaces: %-13s %5s(%lu) %.6a InterfaceID %p %#a/%d %d%s",
-				(utc - i->LastSeen >= 60) ? "Deleting" : "Holding",
+			mDNSBool delete = (NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0) && (utc - i->LastSeen >= 60);
+			LogOperation("ClearInactiveInterfaces: %-13s %5s(%lu) %.6a InterfaceID %p %#a/%d Age %d%s", delete ? "Deleting" : "Holding",
 				i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 				&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), utc - i->LastSeen,
 				i->ifinfo.InterfaceActive ? " (Primary)" : "");
-			if (utc - i->LastSeen >= 60)
+			if (delete)
 				{
 				*p = i->next;
 				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
@@ -2792,10 +2800,12 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	switch(messageType)
 		{
 		case kIOMessageCanSystemPowerOff:		debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");							break; // E0000240
-		case kIOMessageSystemWillPowerOff:		debugf("PowerChanged kIOMessageSystemWillPowerOff"); mDNSCoreMachineSleep(m, true);		break; // E0000250
+		case kIOMessageSystemWillPowerOff:		debugf("PowerChanged kIOMessageSystemWillPowerOff");
+												mDNSCoreMachineSleep(m, true); mDNSMacOSXNetworkChanged(m);								break; // E0000250
 		case kIOMessageSystemWillNotPowerOff:	debugf("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");						break; // E0000260
 		case kIOMessageCanSystemSleep:			debugf("PowerChanged kIOMessageCanSystemSleep (no action)");							break; // E0000270
-		case kIOMessageSystemWillSleep:			debugf("PowerChanged kIOMessageSystemWillSleep");	 mDNSCoreMachineSleep(m, true);		break; // E0000280
+		case kIOMessageSystemWillSleep:			debugf("PowerChanged kIOMessageSystemWillSleep");
+												mDNSCoreMachineSleep(m, true); mDNSMacOSXNetworkChanged(m);								break; // E0000280
 		case kIOMessageSystemWillNotSleep:		debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");						break; // E0000290
 		case kIOMessageSystemHasPoweredOn:		debugf("PowerChanged kIOMessageSystemHasPoweredOn");
 												// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
