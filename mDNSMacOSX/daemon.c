@@ -93,6 +93,7 @@ typedef struct DNSServiceRegistration_struct DNSServiceRegistration;
 struct DNSServiceRegistration_struct
 	{
 	DNSServiceRegistration *next;
+	mDNSBool autoname;
 	ServiceRecordSet s;
 	mach_port_t port;
 	};
@@ -283,8 +284,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server,
 
 	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
-	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
-	else ConvertCStringToDomainName("local.", &d);
+	ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 
 	debugf("Client %d: provide_DNSServiceBrowserCreate_rpc", client);
 	debugf("Client %d: Browse for Services: %##s%##s", client, &t, &d);
@@ -335,8 +335,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t serve
 	ConvertCStringToDomainLabel(name, &n);
 	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
-	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
-	else ConvertCStringToDomainName("local.", &d);
+	ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 	ConstructServiceName(&x->i.name, &n, &t, &d);
 	x->i.InterfaceAddr = zeroIPAddr;
 
@@ -379,10 +378,17 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 
 	if (result == mStatus_NameConflict)
 		{
-		AbortClient(port);    // This unlinks our DNSServiceRegistration from the list so we can safely free it
-		if (DNSServiceRegistrationReply_rpc(port, result, 10) == MACH_SEND_TIMED_OUT)
-			AbortBlockedClient(x->port, "registration conflict"); // Yes, this IS safe :-)
-		free(x);
+		// Note: By the time we get the mStatus_NameConflict message, the service is already deregistered
+		// and the memory is free, so we don't have to wait for an mStatus_MemFree message as well.
+		if (x->autoname)
+			mDNS_RenameAndReregisterService(m, sr);
+		else
+			{
+			AbortClient(port);    // This unlinks our DNSServiceRegistration from the list so we can safely free it
+			if (DNSServiceRegistrationReply_rpc(port, result, 10) == MACH_SEND_TIMED_OUT)
+				AbortBlockedClient(x->port, "registration conflict"); // Yes, this IS safe :-)
+			free(x);
+			}
 		}
 
 	if (result == mStatus_MemFree)
@@ -405,12 +411,12 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	x->next = DNSServiceRegistrationList;
 	DNSServiceRegistrationList = x;
 
-	if (*name && *name != '.') ConvertCStringToDomainLabel(name, &n);
-	else n = mDNSStorage.nicelabel;
+	x->autoname = (*name == 0);
+	if (x->autoname) n = mDNSStorage.nicelabel;
+	else ConvertCStringToDomainLabel(name, &n);
 	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
-	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
-	else ConvertCStringToDomainName("local.", &d);
+	ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 	port.NotAnInteger = notAnIntPort;
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);

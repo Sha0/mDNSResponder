@@ -219,7 +219,20 @@ mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 	mDNSCoreTask((mDNS *const)info);
 	}
 
-mDNSlocal void GetUserSpecifiedComputerName(domainlabel *const namelabel)
+// This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
+mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
+	{
+	CFStringEncoding encoding = kCFStringEncodingUTF8;
+	CFStringRef cfs = SCDynamicStoreCopyComputerName(NULL, &encoding);
+	if (cfs)
+		{
+		CFStringGetPascalString(cfs, namelabel->c, sizeof(*namelabel), kCFStringEncodingUTF8);
+		CFRelease(cfs);
+		}
+	}
+
+// This gets the text of the field currently labelled "Rendezvous Name" in the Sharing Prefs Control Panel
+mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 	{
 	CFStringRef cfs = SCDynamicStoreCopyLocalHostName(NULL);
 	if (cfs)
@@ -555,12 +568,12 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 
 	// Set up the nice label
 	m->nicelabel.c[0] = 0;
-	GetUserSpecifiedComputerName(&m->nicelabel);
+	GetUserSpecifiedFriendlyComputerName(&m->nicelabel);
 	if (m->nicelabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->nicelabel);
 
 	// Set up the RFC 1034-compliant label
 	m->hostlabel.c[0] = 0;
-	ConvertUTF8PstringToRFC1034HostLabel(m->nicelabel.c, &m->hostlabel);
+	GetUserSpecifiedRFC1034ComputerName(&m->hostlabel);
 	if (m->hostlabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->hostlabel);
 
 	mDNS_GenerateFQDN(m);
@@ -607,16 +620,18 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NetworkChanged, &context);
 	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	CFStringRef           key2     = SCDynamicStoreKeyCreateHostNames(NULL);
+	CFStringRef           key2     = SCDynamicStoreKeyCreateComputerName(NULL);
+	CFStringRef           key3     = SCDynamicStoreKeyCreateHostNames(NULL);
 	CFStringRef           pattern  = SCDynamicStoreKeyCreateNetworkServiceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
 	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
 	if (!store) { fprintf(stderr, "SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
-	if (!key1 || !key2 || !keys || !pattern || !patterns) goto error;
+	if (!key1 || !key2 || !key3 || !keys || !pattern || !patterns) goto error;
 
 	CFArrayAppendValue(keys, key1);
 	CFArrayAppendValue(keys, key2);
+	CFArrayAppendValue(keys, key3);
 	CFArrayAppendValue(patterns, pattern);
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
 		{ fprintf(stderr, "SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
@@ -635,6 +650,7 @@ error:
 exit:
 	if (key1)     CFRelease(key1);
 	if (key2)     CFRelease(key2);
+	if (key3)     CFRelease(key3);
 	if (pattern)  CFRelease(pattern);
 	if (keys)     CFRelease(keys);
 	if (patterns) CFRelease(patterns);
