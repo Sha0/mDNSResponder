@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.69  2003/06/07 04:22:17  cheshire
+Add MsgBuffer for error log and debug messages
+
 Revision 1.68  2003/06/07 01:46:38  cheshire
 <rdar://problem/3283540> When query produces zero results, call mDNS_Reconfirm() on any antecedent records
 
@@ -729,6 +732,7 @@ struct mDNS_struct
 	mDNSu8 lock_Questions;
 	mDNSu8 lock_Records;
 	mDNSu8 padding;
+	char MsgBuffer[80];					// Temp storage used while building error log messages
 
 	// Task Scheduling variables
 	mDNSs32  timenow;					// The time that this particular activation of the mDNS code started
