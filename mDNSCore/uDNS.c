@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.113  2004/11/13 02:29:52  ksekar
+<rdar://problem/3878386> LLQ refreshes not reliable
+
 Revision 1.112  2004/11/11 20:45:14  ksekar
 <rdar://problem/3876052> self-conflict test not compatible with some BIND servers
 
@@ -2167,7 +2170,7 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	if (pktData.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData.err); return; }
 
 	qInfo->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond);
-	qInfo->retry = qInfo->expire + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond * 3/4);
+	qInfo->retry = qInfo->expire - ((mDNSs32)pktData.lease * mDNSPlatformOneSecond * 1/2);
  
 	qInfo->origLease = pktData.lease;
 	qInfo->state = LLQ_Established;	
@@ -2243,7 +2246,7 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 	if (llq->err) { LogMsg("hndlChallengeResponseAck - received error %d from server", llq->err); goto error; }
 	if (!sameID(info->id, llq->id)) { LogMsg("hndlChallengeResponseAck - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
 	info->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
-	info->retry = info->expire + ((mDNSs32)llq->lease * mDNSPlatformOneSecond * 3/4);
+	info->retry = info->expire - ((mDNSs32)llq->lease * mDNSPlatformOneSecond * 1/2);
  
 	info->origLease = llq->lease;
 	info->state = LLQ_Established;	
