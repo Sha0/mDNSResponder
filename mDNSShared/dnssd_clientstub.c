@@ -28,6 +28,10 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.47  2005/03/31 02:19:56  cheshire
+<rdar://problem/4021486> Fix build warnings
+Reviewed by: Scott Herscher
+
 Revision 1.46  2005/03/21 00:39:31  shersche
 <rdar://problem/4021486> Fix build warnings on Win32 platform
 
@@ -269,12 +273,13 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
     char *msg = NULL;
     ipc_msg_hdr *hdr;
     int datalen;
+#if !defined(USE_TCP_LOOPBACK)
     char ctrl_path[256];
+#endif
 
     if (!reuse_socket)
         {
 #if defined(USE_TCP_LOOPBACK)
-		ctrl_path[0];	// Unused
 		*len += 2;	// Allocate space for two-byte port number
 #else
 		struct timeval time;

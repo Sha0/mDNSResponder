@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.206  2005/03/31 02:19:55  cheshire
+<rdar://problem/4021486> Fix build warnings
+Reviewed by: Scott Herscher
+
 Revision 1.205  2005/03/21 00:33:51  shersche
 <rdar://problem/4021486> Fix build warnings on Win32 platform
 
@@ -3957,7 +3961,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	AuthRecord *srv = &srs->RR_SRV;
 	mDNSu32 i;
 	
-	ubzero(&privport, sizeof(privport));
+	privport = zeroIPPort;
 	
 	if (!rInfo->ns.ip.v4.NotAnInteger) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
@@ -4954,20 +4958,20 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 		}
 	}
 
-mDNSexport void uDNS_Init(mDNS * m)
+mDNSexport void uDNS_Init(mDNS *const m)
 	{
 	mDNSPlatformMemZero(&m->uDNS_info, sizeof(uDNS_GlobalInfo));
 	m->uDNS_info.nextevent = m->timenow_last + 0x78000000;
 	}
 
-mDNSexport void uDNS_Sleep(mDNS *m)
+mDNSexport void uDNS_Sleep(mDNS *const m)
 	{
 	SuspendLLQs(m, mDNStrue);
 	SleepServiceRegistrations(m);
 	SleepRecordRegistrations(m);
 	}
 
-mDNSexport void uDNS_Wake(mDNS *m)
+mDNSexport void uDNS_Wake(mDNS *const m)
 	{
 	RestartQueries(m);
 	WakeServiceRegistrations(m);
