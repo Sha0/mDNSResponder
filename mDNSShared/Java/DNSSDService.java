@@ -23,9 +23,11 @@
     Change History (most recent first):
 
 $Log: DNSSDService.java,v $
+Revision 1.2  2004/04/30 21:48:27  rpantos
+Change line endings for CVS.
+
 Revision 1.1  2004/04/30 16:32:34  rpantos
 First checked in.
-
 
  */
 
