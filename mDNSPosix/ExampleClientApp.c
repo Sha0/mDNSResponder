@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ExampleClientApp.c,v $
+ * Revision 1.7  2003/06/18 05:48:41  cheshire
+ * Fix warnings
+ *
  * Revision 1.6  2003/03/31 22:44:36  cheshire
  * Add log header
  *
@@ -45,6 +48,7 @@ static volatile mDNSBool StopNow;
 
 mDNSlocal void HandleSIG(int signal)
 	{
+	(void)signal;	// Unused
 	debugf("");
 	debugf("HandleSIG");
 	StopNow = mDNStrue;

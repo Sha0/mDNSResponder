@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.6  2003/06/18 05:48:41  cheshire
+Fix warnings
+
 Revision 1.5  2003/05/06 00:00:50  cheshire
 <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -117,6 +120,9 @@ static void BrowseCallback(mDNS *const m, DNSQuestion *question, const ResourceR
     char domainC[256];
     const char *state;
 
+	(void)m;		// Unused
+	(void)question;	// Unused
+
     assert(answer->rrtype == kDNSType_PTR);
 
     DeconstructServiceName(&answer->rdata->u.name, &name, &type, &domain);
@@ -163,7 +169,7 @@ static mDNSBool CheckThatServiceTypeIsUsable(const char *serviceType, mDNSBool p
 
 static const char kDefaultServiceType[] = "_afpovertcp._tcp.";
 
-static void PrintUsage(char **argv)
+static void PrintUsage()
 {
     fprintf(stderr, 
             "Usage: %s [-v level] [-t type]\n", 
@@ -215,7 +221,7 @@ static void ParseArguments(int argc, char **argv)
                     break;
                 case '?':
                 default:
-                    PrintUsage(argv);
+                    PrintUsage();
                     exit(1);
                     break;
             }

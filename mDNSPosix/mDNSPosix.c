@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.15  2003/06/18 05:48:41  cheshire
+Fix warnings
+
 Revision 1.14  2003/05/26 03:21:30  cheshire
 Tidy up address structure naming:
 mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
@@ -351,7 +354,7 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 			}
 		}
 
-	if (packetLen >= 0 && packetLen < sizeof(DNSMessageHeader))
+	if (packetLen >= 0 && packetLen < (ssize_t)sizeof(DNSMessageHeader))
 		{
 		debugf("SocketDataReady packet length (%d) too short", packetLen);
 		packetLen = -1;
@@ -629,7 +632,7 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 
 // Creates a PosixNetworkInterface for the interface whose IP address is
 // intfAddr and whose name is intfName and registers it with mDNS core.
-static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName, int index)
+static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName)
 	{
 	int err = 0;
 	PosixNetworkInterface *intf;
@@ -752,7 +755,7 @@ static int SetupInterfaceList(mDNS *const m)
 					}
 				else
 					{
-					if (SetupOneInterface(m, i->ifi_addr, i->ifi_name, i->ifi_index) == 0)
+					if (SetupOneInterface(m, i->ifi_addr, i->ifi_name) == 0)
 						if (i->ifi_addr->sa_family == AF_INET)
 							foundav4 = mDNStrue;
 					}
@@ -766,7 +769,7 @@ static int SetupInterfaceList(mDNS *const m)
 		// In the interim, we skip loopback interface only if we found at least one v4 interface to use
 		// if ( (m->HostInterfaces == NULL) && (firstLoopback != NULL) )
 		if ( !foundav4 && firstLoopback )
-			(void) SetupOneInterface(m, firstLoopback->ifi_addr, firstLoopback->ifi_name, firstLoopback->ifi_index);
+			(void) SetupOneInterface(m, firstLoopback->ifi_addr, firstLoopback->ifi_name);
 		}
 
 	// Clean up.

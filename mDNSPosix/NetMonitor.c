@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.21  2003/06/18 05:48:41  cheshire
+ * Fix warnings
+ *
  * Revision 1.20  2003/06/06 22:18:22  cheshire
  * Add extra space in Q output to line it up with RR output
  *
@@ -482,6 +485,8 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, const mDNSInterfaceID InterfaceID)
 	{
+	(void)dstaddr;	// Unused
+	(void)dstport;	// Unused
 	// For now we're only interested in monitoring IPv4 traffic.
 	// All IPv6 packets should just be duplicates of the v4 packets.
 	if (srcaddr->type == mDNSAddrType_IPv4)

@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.8  2003/06/18 05:48:41  cheshire
+Fix warnings
+
 Revision 1.7  2003/05/06 00:00:50  cheshire
 <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -359,7 +362,7 @@ enum {
     kDefaultPortNumber = 548
 };
 
-static void PrintUsage(char **argv)
+static void PrintUsage()
 {
     fprintf(stderr, 
             "Usage: %s [-v level ] [-r] [-n name] [-t type] [-d domain] [-x TXT] [-p port] [-f file] [-b] [-P pidfile]\n", 
@@ -463,7 +466,7 @@ static void ParseArguments(int argc, char **argv)
                     break;
                 case '?':
                 default:
-                    PrintUsage(argv);
+                    PrintUsage();
                     exit(1);
                     break;
             }
@@ -473,7 +476,7 @@ static void ParseArguments(int argc, char **argv)
     // Check for any left over command line arguments.
     
     if (optind != argc) {
-	    PrintUsage(argv);
+	    PrintUsage();
         fprintf(stderr, "%s: Unexpected argument '%s'\n", gProgramName, argv[optind]);
         exit(1);
     }
@@ -481,7 +484,7 @@ static void ParseArguments(int argc, char **argv)
     // Check for inconsistency between the arguments.
     
     if ( (gRichTextHostName[0] == 0) && (gServiceFile[0] == 0) ) {
-    	PrintUsage(argv);
+    	PrintUsage();
         fprintf(stderr, "%s: You must specify a service to register (-n) or a service file (-f).\n", gProgramName);
         exit(1);
     }
