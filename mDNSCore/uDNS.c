@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.116  2004/11/16 01:41:47  ksekar
+Fixed typo in debugf
+
 Revision 1.115  2004/11/15 20:09:24  ksekar
 <rdar://problem/3719050> Wide Area support for Add/Remove record
 
@@ -3875,7 +3878,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			return mStatus_NoError;		
 		case regState_Unregistered:
-			debugf("uDNS_DeregisterService - service not registerd");
+			debugf("uDNS_DeregisterService - service not registered");
 			return mStatus_UnknownErr;
 		case regState_FetchingZoneData:
 		case regState_Pending:
