@@ -68,6 +68,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.42  2003/04/15 20:58:31  jgraessl
+
+Bug #: 3229014
+Added a hash to lookup records in the cache.
+
 Revision 1.41  2003/04/15 18:09:13  jgraessl
 
 Bug #: 3228892
@@ -563,6 +568,8 @@ struct ServiceInfoQuery_struct
 
 typedef void mDNSCallback(mDNS *const m, mStatus result);
 
+#define CACHE_HASH_SLOTS	37
+
 struct mDNS_struct
 	{
 	mDNS_PlatformSupport *p;		// Pointer to platform-specific data of indeterminite size
@@ -584,10 +591,11 @@ struct mDNS_struct
 	DNSQuestion *NewQuestions;		// Fresh questions not yet answered from cache
 	DNSQuestion *CurrentQuestion;	// Next question about to be examined in AnswerLocalQuestions()
 	mDNSu32 rrcache_size;
-	mDNSu32 rrcache_used;
+	mDNSu32 rrcache_used[CACHE_HASH_SLOTS];
+	mDNSu32	rrcache_totalused;
 	mDNSu32 rrcache_report;
 	ResourceRecord *rrcache_free;
-	ResourceRecord *rrcache;
+	ResourceRecord *rrcache_hash[CACHE_HASH_SLOTS];
 
 	// Fields below only required for mDNS Responder...
 	domainlabel nicelabel;			// Rich text label encoded using canonically precomposed UTF-8
