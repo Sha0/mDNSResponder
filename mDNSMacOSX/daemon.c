@@ -79,20 +79,7 @@ static int debug_mode = 0;
 #endif
 
 //*************************************************************************************************************
-// General Utility Functions
-
-void LogErrorMessage(const char *format, ...)
-	{
-	va_list ap;
-	va_start(ap, format);
-	openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
-	vsyslog(LOG_ERR, format, ap);
-	closelog();
-	va_end(ap);
-	}
-
-//*************************************************************************************************************
-// Client Death Detection
+// Active client list structures
 
 typedef struct DNSServiceDomainEnumeration_struct DNSServiceDomainEnumeration;
 struct DNSServiceDomainEnumeration_struct
@@ -135,6 +122,22 @@ static DNSServiceDomainEnumeration *DNSServiceDomainEnumerationList = NULL;
 static DNSServiceBrowser           *DNSServiceBrowserList           = NULL;
 static DNSServiceResolver          *DNSServiceResolverList          = NULL;
 static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
+
+//*************************************************************************************************************
+// General Utility Functions
+
+void LogErrorMessage(const char *format, ...)
+	{
+	va_list ap;
+	va_start(ap, format);
+	openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
+	vsyslog(LOG_ERR, format, ap);
+	closelog();
+	va_end(ap);
+	}
+
+//*************************************************************************************************************
+// Client Death Detection
 
 mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 	{
