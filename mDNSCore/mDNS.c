@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.439  2004/10/03 23:14:11  cheshire
+Add "mDNSEthAddr" type and "zeroEthAddr" constant
+
 Revision 1.438  2004/09/29 23:07:04  cheshire
 Patch from Pavel Repin to fix compile error on Windows
 
@@ -1445,6 +1448,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 mDNSexport const mDNSIPPort      zeroIPPort        = { { 0 } };
 mDNSexport const mDNSv4Addr      zerov4Addr        = { { 0 } };
 mDNSexport const mDNSv6Addr      zerov6Addr        = { { 0 } };
+mDNSexport const mDNSEthAddr     zeroEthAddr       = { { 0 } };
 mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
 mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };

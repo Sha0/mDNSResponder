@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.218  2004/10/03 23:14:12  cheshire
+Add "mDNSEthAddr" type and "zeroEthAddr" constant
+
 Revision 1.217  2004/09/30 00:24:56  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -907,13 +910,15 @@ typedef struct mDNSInterfaceID_dummystruct { void *dummy; } *mDNSInterfaceID;
 // less than, add, multiply, increment, decrement, etc., are undefined for opaque identifiers,
 // and if you make the mistake of trying to do those using the NotAnInteger field, then you'll
 // find you get code that doesn't work consistently on big-endian and little-endian machines.
-typedef packedunion { mDNSu8 b[2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
-typedef packedunion { mDNSu8 b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
+typedef packedunion { mDNSu8 b[ 2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
+typedef packedunion { mDNSu8 b[ 4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
+typedef packedunion { mDNSu8 b[ 6]; mDNSu16 w[3]; mDNSu32 l[1]; } mDNSOpaque48;
 typedef packedunion { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
-typedef mDNSOpaque32  mDNSv4Addr;              // An IP address is a four-byte opaque identifier (not an integer)
+typedef mDNSOpaque32  mDNSv4Addr;		// An IP address is a four-byte opaque identifier (not an integer)
 typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identifier (not an integer)
+typedef mDNSOpaque48  mDNSEthAddr;		// An Ethernet address is a six-byte opaque identifier (not an integer)
 
 enum
 	{
@@ -1803,6 +1808,7 @@ struct mDNS_struct
 extern const mDNSIPPort      zeroIPPort;
 extern const mDNSv4Addr      zerov4Addr;
 extern const mDNSv6Addr      zerov6Addr;
+extern const mDNSEthAddr     zeroEthAddr;
 extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;
 extern const mDNSAddr        zeroAddr;
