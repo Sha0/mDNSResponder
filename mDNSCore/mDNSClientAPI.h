@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.94  2003/08/09 00:35:29  cheshire
+
+
 Revision 1.93  2003/08/08 18:55:48  cheshire
 <rdar://problem/3370365> Guard against time going backwards
 
@@ -640,7 +643,8 @@ struct ResourceRecord_struct
 	mDNSs32         MPLastUnansweredQT;	// CR: Multi-packet query handling: Last time we incremented MPUnansweredQ
 	mDNSu32         MPUnansweredKA;		// CR: Multi-packet query handling: Number of times we've seen this record in a KA list
 	mDNSBool        MPExpectingKA;		// CR: Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
-	mDNSBool        FreshData;			// CR: Set if this is a record we just received
+mDNSBool        FreshData;
+	ResourceRecord *NextInCFList;		// CR: Set if this is in the list of records we just received with the cache flush bit set
 
 	// Field Group 4: The actual information pertaining to this resource record
 	mDNSInterfaceID InterfaceID;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)
