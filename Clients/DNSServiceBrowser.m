@@ -9,7 +9,6 @@
  */
 
 #import "BrowserController.h"
-#import <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 #include "arpa/inet.h"
 
@@ -76,6 +75,9 @@ void resolve_reply (
 - (id)init
 {
     [self registerDefaults];
+
+    browse_client = nil;
+    
     return [super init];
 }
 
@@ -197,7 +199,7 @@ void resolve_reply (
     [ipAddressField setStringValue:@""];
     [portField setStringValue:@""];
     [textField setStringValue:@""];
-    
+
     [self update:SrvType Domain:Domain];		//If Type and Domain are set, update records
 }
 
@@ -312,12 +314,17 @@ void resolve_reply (
     [nameKeys removeAllObjects];	//Get rid of displayed records if we're going to go get new ones
     [nameField reloadData];		//Reload (redraw) names to show the old data is gone
 
+    // get rid of the previous browser if one exists
+    if (browse_client) {
+        DNSServiceDiscoveryDeallocate(browse_client);
+        browse_client = nil;
+    }
+    
     // now create a browser to return the values for the nameField ...
     {
         CFMachPortRef           cfMachPort;
         CFMachPortContext       context;
         Boolean                 shouldFreeInfo;
-        dns_service_discovery_ref 	dns_client;
         mach_port_t			port;
         CFRunLoopSourceRef		rls;
 
@@ -328,7 +335,7 @@ void resolve_reply (
         context.copyDescription 	    = NULL;
 
         // start an enumerator on the local server
-        dns_client = DNSServiceBrowserCreate
+        browse_client = DNSServiceBrowserCreate
             (
              (char *)TypeC,
              (char *)DomainC,
@@ -336,7 +343,7 @@ void resolve_reply (
              nil
              );
 
-        port = DNSServiceDiscoveryMachPort(dns_client);
+        port = DNSServiceDiscoveryMachPort(browse_client);
 
         if (port) {
             cfMachPort = CFMachPortCreateWithPort ( kCFAllocatorDefault, port, ( CFMachPortCallBack ) MyHandleMachMessage,&context,&shouldFreeInfo );

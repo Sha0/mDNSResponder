@@ -9,7 +9,7 @@
  */
 
 #import <Cocoa/Cocoa.h>
-#import <Foundation/NSString.h>
+#import <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 #include <netinet/in.h>
 
@@ -37,6 +37,9 @@
     NSString *SrvType;
     NSString *SrvName;
     NSString *Name;
+
+    dns_service_discovery_ref 	browse_client;
+
 }
 
 - (IBAction)handleDomainClick:(id)sender;
