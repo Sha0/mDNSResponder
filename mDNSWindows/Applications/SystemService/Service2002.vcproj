@@ -20,7 +20,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="..\..\..\mDNSCore;..\..\..\mDNSWindows"
-				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;DEBUG=1;MDNS_DEBUGMSGS=0"
+				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;DEBUG=1;MDNS_DEBUGMSGS=0;DNS_SD_CLIENT_ENABLED=0"
 				StringPooling="TRUE"
 				MinimalRebuild="TRUE"
 				ExceptionHandling="FALSE"
@@ -77,7 +77,7 @@
 				FavorSizeOrSpeed="2"
 				OmitFramePointers="TRUE"
 				AdditionalIncludeDirectories="..\..\..\mDNSCore;..\..\..\mDNSWindows"
-				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;DNS_SD_CLIENT_ENABLED=0"
 				StringPooling="TRUE"
 				ExceptionHandling="FALSE"
 				RuntimeLibrary="0"
@@ -132,6 +132,12 @@
 		</File>
 		<File
 			RelativePath="..\..\..\mDNSCore\DNSDigest.c">
+		</File>
+		<File
+			RelativePath="..\..\DNSSD.c">
+		</File>
+		<File
+			RelativePath="..\..\DNSSD.h">
 		</File>
 		<File
 			RelativePath="..\..\DNSSDDirect.c">
