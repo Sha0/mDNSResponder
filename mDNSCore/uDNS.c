@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.110  2004/11/10 23:53:53  ksekar
+Remove no longer relevant comment
+
 Revision 1.109  2004/11/10 20:40:53  ksekar
 <rdar://problem/3868216> LLQ mobility fragile on non-primary interface
 
@@ -4113,7 +4116,6 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 	return nextevent;
 	}
 
-//!!!KRS need to implement service retransmissions!
 mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 	{
 	ServiceRecordSet *s = m->uDNS_info.ServiceRegistrations;
