@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.101  2003/08/05 22:20:16  cheshire
+<rdar://problem/3330324> Need to check IP TTL on responses
+
 Revision 1.100  2003/08/05 21:18:50  cheshire
 <rdar://problem/3363185> mDNSResponder should ignore 6to4
 Only use interfaces that are marked as multicast-capable (IFF_MULTICAST)
@@ -282,6 +285,11 @@ Minor code tidying
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
+#include <netinet/in.h>				// For IP_RECVTTL
+#ifndef IP_RECVTTL
+#define IP_RECVTTL 24	/* bool; receive reception TTL w/dgram */
+#endif
+
 #include <netinet/in_systm.h>		// For n_long, required by <netinet/ip.h> below
 #include <netinet/ip.h>				// For IPTOS_LOWDELAY etc.
 #include <netinet6/in6_var.h>		// For IN6_IFF_NOTREADY etc.
@@ -465,7 +473,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	}
 
 static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
-	struct sockaddr *const from, size_t *const fromlen, mDNSAddr *dstaddr, char ifname[IF_NAMESIZE])
+	struct sockaddr *const from, size_t *const fromlen, mDNSAddr *dstaddr, char ifname[IF_NAMESIZE], mDNSu8 *ttl)
 	{
 	static int numLogMessages = 0;
 	struct iovec databuffers = { (char *)buffer, max };
@@ -473,6 +481,8 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	ssize_t         n;
 	struct cmsghdr *cmPtr;
 	char            ancillary[1024];
+
+	*ttl = 255;			// If kernel fails to provide TTL data (e.g. Jaguar doesn't) then assume the TTL was 255 as it should be
 
 	// Set up the message
 	msg.msg_name       = (caddr_t)from;
@@ -523,6 +533,10 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 				// debugf("IP_RECVIF sdl_index %d, sdl_data %s len %d", sdl->sdl_index, ifname, sdl->sdl_nlen);
 				}
 			}
+		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVTTL)
+			{
+			*ttl = *(u_char*)CMSG_DATA(cmPtr);
+			}
 		if (cmPtr->cmsg_level == IPPROTO_IPV6 && cmPtr->cmsg_type == IPV6_PKTINFO)
 			{
 			struct in6_pktinfo *ip6_info = (struct in6_pktinfo*)CMSG_DATA(cmPtr);
@@ -570,7 +584,8 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		LogMsg("myCFSocketCallBack: cfsv6 %p, sktv6 %d", info->cfsv6, info->sktv6);
 		}
 
-	while ((err = myrecvfrom(s1, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname)) >= 0)
+	mDNSu8 ttl;
+	while ((err = myrecvfrom(s1, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname, &ttl)) >= 0)
 		{
 		count++;
 		if (from.ss_family == AF_INET)
@@ -592,7 +607,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			LogMsg("myCFSocketCallBack from is unknown address family %d", from.ss_family);
 			return;
 			}
-		
+
 		// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
 		// sockets API means that even though this socket has only officially joined the multicast group
 		// on one specific interface, the kernel will still deliver multicast packets to it no matter which
@@ -611,7 +626,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		
 		if (err < (int)sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 		
-		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, info->ifinfo.InterfaceID);
+		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, info->ifinfo.InterfaceID, ttl);
 		}
 
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
@@ -692,6 +707,10 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		
 		// We want to receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
+		if (err < 0) { LogMsg("setsockopt - IP_RECVIF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		
+		// We want to receive packet TTL value so we can check it
+		err = setsockopt(skt, IPPROTO_IP, IP_RECVTTL, &on, sizeof(on));
 		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
 		
 		// Add multicast group membership on this interface

@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.248  2003/08/05 22:20:15  cheshire
+<rdar://problem/3330324> Need to check IP TTL on responses
+
 Revision 1.247  2003/08/05 00:56:39  cheshire
 <rdar://problem/3357075> mDNSResponder sending additional records, even after precursor record suppressed
 
@@ -4771,7 +4774,8 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
-	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID)
+	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSAddr *dstaddr,
+	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	int i;
 	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
@@ -4783,12 +4787,19 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 	(void)srcaddr;	// Currently used only for display in debugging message
 
-	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
-		srcaddr, dstaddr, InterfaceID,
+	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p TTL %d with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+		srcaddr, dstaddr, InterfaceID, ttl,
 		response->h.numQuestions,   response->h.numQuestions   == 1 ? "" : "s",
 		response->h.numAnswers,     response->h.numAnswers     == 1 ? "" : "s",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y" : "ies",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
+
+	// TTL should be 255
+	// In the case of overlayed subnets that aren't using RFC 3442, some packets may incorrectly go to
+	// the router first and then come back with a TTL of 254, so we allow that too.
+	// Anything lower than that is a pretty good sign of an off-net spoofing attack
+	if (ttl < 254)
+		{ debugf("** Ignored apparent spoof mDNS response packet addressed to %#-15a with TTL %d **", dstaddr, ttl); return; }
 
 	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
 	if (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)mDNSPlatformOneSecond)
@@ -4966,7 +4977,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
-	const mDNSInterfaceID InterfaceID)
+	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	const mDNSu8 StdQ  = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 StdR  = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
@@ -4983,7 +4994,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	
 	mDNS_Lock(m);
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr,          dstaddr,          InterfaceID);
+	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr,          dstaddr,          InterfaceID, ttl);
 	else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
 
 	// Packet reception often causes a change to the task list:

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.19  2003/08/05 22:20:15  cheshire
+<rdar://problem/3330324> Need to check IP TTL on responses
+
 Revision 1.18  2003/07/22 23:57:20  cheshire
 Move platform-layer function prototypes from mDNSClientAPI.h to mDNSPlatformFunctions.h where they belong
 
@@ -161,7 +164,7 @@ extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
-								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
+								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
 #ifdef	__cplusplus
