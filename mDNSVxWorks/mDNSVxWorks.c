@@ -27,6 +27,12 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.18  2004/08/14 03:22:42  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.17  2004/07/29 19:26:03  ksekar
 Plaform-level changes for NATPMP support
 
@@ -922,7 +928,7 @@ mDNSlocal void	SetupNames( mDNS * const inMDNS )
 	}
 	check( inMDNS->hostlabel.c[ 0 ] > 0 );
 
-	mDNS_GenerateFQDN( inMDNS );
+	mDNS_SetFQDNs( inMDNS, (domainname*)"" );
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "nice name \"%.*s\"\n", inMDNS->nicelabel.c[ 0 ], &inMDNS->nicelabel.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "host name \"%.*s\"\n", inMDNS->hostlabel.c[ 0 ], &inMDNS->hostlabel.c[ 1 ] );

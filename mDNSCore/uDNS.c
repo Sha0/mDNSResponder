@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.68  2004/08/14 03:22:41  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.67  2004/08/13 23:46:58  cheshire
 "asyncronous" -> "asynchronous"
 
@@ -497,18 +503,12 @@ mDNSexport void mDNS_ClearAuthenticationList(mDNS *m)
 mDNSlocal uDNS_AuthInfo *GetAuthInfoForZone(const uDNS_GlobalInfo *u, const domainname *zone)
 	{
 	uDNS_AuthInfo *ptr;
-	domainname *z;
-	mDNSu32 zoneLen, ptrZoneLen;
-
-	zoneLen = DomainNameLength(zone);
-	for (ptr = u->AuthInfoList; ptr; ptr = ptr->next)
+	while (zone->c[0])
 		{
-		z = &ptr->zone;
-		ptrZoneLen = DomainNameLength(z);
-		if (zoneLen < ptrZoneLen) continue;
-		// return info if zone ends in info->zone
-		if (mDNSPlatformMemSame(z->c, zone->c + (zoneLen - ptrZoneLen), ptrZoneLen)) return ptr;
-		}	   	  
+		for (ptr = u->AuthInfoList; ptr; ptr = ptr->next)
+			if (SameDomainName(&ptr->zone, zone)) return(ptr);
+		zone = (const domainname *)(zone->c + 1 + zone->c[0]);
+		}
 	return mDNSNULL;
 	}	
 	
@@ -1682,7 +1682,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	
 	if (info->ntries++ == kLLQ_MAX_TRIES)
 		{
-		LogMsg("sendChallengeResponse: %d failed attempts for LLQ %s. Will re-try in %d minutes",
+		LogMsg("sendChallengeResponse: %d failed attempts for LLQ %##s. Will re-try in %d minutes",
 			   kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
 		info->state = LLQ_Retry;
 		info->retry = timenow + (kLLQ_DEF_RETRY * mDNSPlatformOneSecond);
@@ -1825,7 +1825,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	
 	if (info->ntries++ == kLLQ_MAX_TRIES)
 		{
-		LogMsg("startLLQHandshake: %d failed attempts for LLQ %s. Will re-try in %d minutes",
+		LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s. Will re-try in %d minutes",
 			   kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
 		info->state = LLQ_Retry;
 		info->retry = timenow + (kLLQ_DEF_RETRY * mDNSPlatformOneSecond);
@@ -3184,10 +3184,10 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	ubzero(&srs->uDNS_info, sizeof(uDNS_RegInfo));
-	if (!*m->uDNS_info.NameRegDomain)
+	if (!m->uDNS_info.UnicastHostname.c[0])
 		{
 		LogMsg("ERROR: uDNS_RegisterService - cannot register unicast service "
-			   "without setting the NameRegDomain via mDNSResponder.conf");
+			   "without setting the UnicastHostname via mDNSResponder.conf");
 		srs->uDNS_info.state = regState_Unregistered;
 		return mStatus_UnknownErr;
 		}

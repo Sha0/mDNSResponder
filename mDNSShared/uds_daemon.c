@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.72  2004/08/14 03:22:42  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.71  2004/08/11 04:21:21  rpantos
 Fix Windows build.
 
@@ -1597,10 +1603,9 @@ static void handle_regservice_request(request_state *request)
 	result = register_service(request, &request->servicepair.local, flags, txtlen, txtdata, port, &n,  &regtype[0], &t, &d, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
 
 	//!!!KRS if we got a dynamic reg domain from the config file, use it for default (except for iChat)
-	if (!domain[0] && gmDNS->uDNS_info.ServiceRegDomain[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
+	if (!domain[0] && gmDNS->uDNS_info.ServiceRegDomain.c[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
 		{
-		MakeDomainNameFromDNSNameString(&d, gmDNS->uDNS_info.ServiceRegDomain);
-		register_service(request, &request->servicepair.global, flags, txtlen, txtdata, port, &n, &regtype[0], &t, &d, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
+		register_service(request, &request->servicepair.global, flags, txtlen, txtdata, port, &n, &regtype[0], &t, &gmDNS->uDNS_info.ServiceRegDomain, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
 		// don't return default global errors - it will confuse legacy clients, and we want .local to still work for them
 		}
 		

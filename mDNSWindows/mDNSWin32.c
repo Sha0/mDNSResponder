@@ -23,6 +23,12 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.48  2004/08/14 03:22:43  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.47  2004/08/06 17:33:02  shersche
 <rdar://problem/3753797> Put correct length of string in first byte of nicelabel
 Bug #: 3753797
@@ -1144,7 +1150,7 @@ mDNSlocal mStatus	SetupHostName( mDNS * const inMDNS )
 
 	check( inMDNS->hostlabel.c[ 0 ] != 0 );
 	
-	mDNS_GenerateFQDN( inMDNS );
+	mDNS_SetFQDNs( inMDNS, (domainname*)"" );
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "host name \"%.*s\"\n", inMDNS->hostlabel.c[ 0 ], &inMDNS->hostlabel.c[ 1 ] );
 	

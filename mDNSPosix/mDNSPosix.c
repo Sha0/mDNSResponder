@@ -36,6 +36,12 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.51  2004/08/14 03:22:42  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.50  2004/08/11 01:20:20  cheshire
 Declare private local functions using "mDNSlocal"
 
@@ -1235,7 +1241,7 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	GetUserSpecifiedRFC1034ComputerName(&m->hostlabel);
 	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
 
-	mDNS_GenerateFQDN(m);
+	mDNS_SetFQDNs(m, (domainname*)"");
 
 	sa.sa_family = AF_INET;
 	m->p->unicastSocket4 = -1;

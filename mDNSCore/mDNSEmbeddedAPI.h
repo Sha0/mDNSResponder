@@ -60,6 +60,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.189  2004/08/14 03:22:41  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.188  2004/08/13 23:46:58  cheshire
 "asyncronous" -> "asynchronous"
 
@@ -1562,13 +1568,7 @@ typedef struct
     mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list
     mDNSAddr         Router;
     domainname       UnicastHostname;           // global name for dynamic registration of address records
-    char             NameRegDomain[MAX_ESCAPED_DOMAIN_NAME];
-                                         // domain in which above hostname is registered
-                                         // currently set by the platform layer at startup
-                                         // do not set if services / address records are not to be globally registered to an update server
-                                         // !!!KRS this must go away once we can learn the reg domain from the network or prefs
-    char             ServiceRegDomain[MAX_ESCAPED_DOMAIN_NAME];
-                                         // if set, all services that don't explicitly specify a domain upon registration will be
+    domainname       ServiceRegDomain;   // if set, all services that don't explicitly specify a domain upon registration will be
                                          // registered in this domain.  if not set, .local will be used by default
     struct uDNS_AuthInfo *AuthInfoList;  // list of domains required authentication for updates.  !!!KRS this shoudl be a hashtable
     } uDNS_GlobalInfo;
@@ -2115,14 +2115,8 @@ extern void mDNS_FreeDNameList(DNameListElem *list);
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
-// mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())
-// and then again on each subsequent change of the dot-local host name.
-//
-// !!!KRS
-// mDNS_GenerateGlobalFQDN() is called to register a domain name via Dynamic DNS update.  It should be
-// called on startup (after acquiring an IP address and DNS server) and on each change to the machine name
-// or registration domain.  The domain parameter is the domain in which the address record is to be registered,
-// e.g. "mycompany.com".  The full name is formed by appending this domain to the machine's host label.
+// mDNS_SetFQDNs() is called once on startup (typically from mDNSPlatformInit())
+// and then again on each subsequent change of the host name.
 //
 // mDNS_RegisterInterface() is used by the platform support layer to inform mDNSCore of what
 // physical and/or logical interfaces are available for sending and receiving packets.
@@ -2154,8 +2148,7 @@ extern void mDNS_FreeDNameList(DNameListElem *list);
 // (This refers to heavyweight laptop-style sleep/wake that disables network access,
 // not lightweight second-by-second CPU power management modes.)
 
-extern void     mDNS_GenerateFQDN(mDNS *const m);
-extern  void    mDNS_GenerateGlobalFQDN(mDNS *const m);
+extern void     mDNS_SetFQDNs(mDNS *const m, const domainname *newuname);
 extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);

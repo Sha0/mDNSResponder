@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.163  2004/08/14 03:22:42  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.162  2004/08/12 22:34:00  cheshire
 All strings should be read as kCFStringEncodingUTF8, not kCFStringEncodingASCII
 
@@ -1058,6 +1064,36 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 		}
 	}
 
+mDNSlocal void GetUserSpecifiedDDNSName(domainname *const dname)
+	{
+	dname->c[0] = 0;
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NULL, NULL);
+	if (store)
+		{
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
+		if (dict)
+			{
+			CFArrayRef array = CFDictionaryGetValue(dict, CFSTR("FQDN"));
+			if (array)
+				{
+				CFStringRef name = CFArrayGetValueAtIndex(array, 0);
+				if (name)
+					{
+					char uname[MAX_ESCAPED_DOMAIN_NAME];
+					CFStringGetCString(name, uname, sizeof(uname), kCFStringEncodingUTF8);
+					LogMsg("GetUserSpecifiedDDNSName SCDynamicStore DDNS host name: %s", uname);
+					if (!MakeDomainNameFromDNSNameString(dname, uname) || !dname->c[0])
+						LogMsg("GetUserSpecifiedDDNSName SCDynamicStore bad DDNS host name: %s", uname);
+					CFRelease(name);
+					}
+				CFRelease(array);
+				}
+			CFRelease(dict);
+			}
+		CFRelease(store);
+		}
+	}
+
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
 mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *ifaddr, u_short sa_family)
@@ -1305,17 +1341,20 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	hostlabel.c[0] = 0;
 	GetUserSpecifiedRFC1034ComputerName(&hostlabel);
 	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, "Macintosh");
+
+	domainname newddnsname;
+	GetUserSpecifiedDDNSName(&newddnsname);
+
 	// If the user has changed their dot-local host name since the last time we checked, then update our local copy.
 	// If the user has not changed their dot-local host name, then leave ours alone (m->hostlabel may have gone through
 	// repeated conflict resolution to get to its current value, and if we reset it, we'll have to go through all that again.)
-	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c))
+	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c) && SameDomainName(&m->uDNS_info.UnicastHostname, &newddnsname))
 		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
 	else
 		{
 		debugf("Updating m->hostlabel to %#s", hostlabel.c);
 		m->p->userhostlabel = m->hostlabel = hostlabel;
-		mDNS_GenerateFQDN(m);
-		if (mDNS_DNSRegistered(m)) mDNS_GenerateGlobalFQDN(m);
+		mDNS_SetFQDNs(m, &newddnsname);
 		}
 
 	while (ifa)
@@ -1781,7 +1820,7 @@ mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, v
 		RegisterDNSConfig(m, dict, kSCPropNetDNSSearchDomains);		
 		CFRelease(dict);
 		}		
-	if (mDNS_DNSRegistered(m)) mDNS_GenerateGlobalFQDN(m);
+	mDNS_SetFQDNs(m, &m->uDNS_info.UnicastHostname);
 	// no-op if label & domain are unchanged
 	}
 
@@ -1855,6 +1894,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
 	CFStringRef           key4     = SCDynamicStoreKeyCreateHostNames(NULL);
+	CFStringRef           key5     = CFSTR("Setup:/Network/DynamicDNS");
 	CFStringRef           pattern1 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
 	CFStringRef           pattern2 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
 
@@ -1862,12 +1902,13 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
 	if (!store) { LogMsg("SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
-	if (!key1 || !key2 || !key3 || !key4 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
+	if (!key1 || !key2 || !key3 || !key4 || !key5 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
 
 	CFArrayAppendValue(keys, key1);
 	CFArrayAppendValue(keys, key2);
 	CFArrayAppendValue(keys, key3);
 	CFArrayAppendValue(keys, key4);
+	CFArrayAppendValue(keys, key5);
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
@@ -1889,6 +1930,7 @@ exit:
 	if (key2)     CFRelease(key2);
 	if (key3)     CFRelease(key3);
 	if (key4)     CFRelease(key4);
+	// key5 doesn't need to be released
 	if (pattern1) CFRelease(pattern1);
 	if (pattern2) CFRelease(pattern2);
 	if (keys)     CFRelease(keys);
@@ -1966,13 +2008,9 @@ mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
 		{ LogMsg("InitAuthInfo - bad account name"); return; }
 	
 	mDNS_UpdateDomainRequiresAuthentication(m, &zone, &zone, data, dataLen, mDNStrue);
-	if(m->uDNS_info.NameRegDomain) { debugf("Overwriting config file options with KeyChain values"); }
+	if (m->uDNS_info.UnicastHostname.c[0]) { debugf("Overwriting config file options with KeyChain values"); }
 	
-	if (!ConvertDomainNameToCString(&zone, m->uDNS_info.NameRegDomain) ||
-		!ConvertDomainNameToCString(&zone, m->uDNS_info.ServiceRegDomain))
-		{ LogMsg("Couldn't set keychain username in uDNS global info"); }
-	
-	mDNS_GenerateGlobalFQDN(m);
+	mDNS_SetFQDNs(m, &m->uDNS_info.UnicastHostname);
 	// normally we'd query the zone for _register/_browse domains, but to reduce server load we manually generate the records
 
 	haveSecInfo = mDNStrue;
@@ -2091,7 +2129,6 @@ mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
 	return(err == 0);
 	}
 
-
 //!!!KRS this should be less order-dependent as we support more configuration options
 mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	{
@@ -2111,63 +2148,67 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	return mDNSfalse;
 	}
 	
-
-	
 mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	{
-	FILE *f;
 	uDNS_GlobalInfo *u = &m->uDNS_info;;
-	char key[MAX_ESCAPED_DOMAIN_NAME];
-	domainname key_d, name_d, service_d;
+	char key[MAX_ESCAPED_DOMAIN_NAME], uname[MAX_ESCAPED_DOMAIN_NAME], ServiceRegDomain[MAX_ESCAPED_DOMAIN_NAME];
+	domainname key_d, newhostname;
 	char secret[1024];
 	int slen;
 	mStatus err;
 
     // read registration domain (for dynamic updates) from config file
     // !!!KRS these must go away once we can learn the reg domain from the network or prefs	
-	if (m->uDNS_info.NameRegDomain[0] || m->uDNS_info.ServiceRegDomain[0])
+	if (m->uDNS_info.UnicastHostname.c[0])
 		{ debugf("Options from config already set via keychain. Ignoring config file."); return; }
-	
-	f = fopen(CONFIG_FILE, "r");
-	if (!f)
+
+	FILE *f = fopen(CONFIG_FILE, "r");
+	if (f)
 		{
-		if (errno != ENOENT)  LogMsg("ERROR: Config file exists, but cannot be opened.");
-		return;
+		if (!GetConfigOption(uname, "name", f)) goto end;
+		if (!GetConfigOption(ServiceRegDomain, "service-reg", f)) goto end;
+		if (!GetConfigOption(key, "key-name", f)) goto end;
+		if (!GetConfigOption(secret, "secret-64", f)) { LogMsg("ERROR: config file contains key without secret"); goto end; }
+	
+		if (!MakeDomainNameFromDNSNameString(&newhostname, uname))
+			{ LogMsg("ERROR: config file contains bad service hostname %s", uname); uname[0] = '\0'; }	
+	
+		if (!MakeDomainNameFromDNSNameString(&u->ServiceRegDomain, ServiceRegDomain))
+			{ LogMsg("ERROR: config file contains bad service reg domain %s", ServiceRegDomain); ServiceRegDomain[0] = '\0'; }	
+	
+		if (!MakeDomainNameFromDNSNameString(&key_d, key))
+			{ LogMsg("ERROR: config file contains bad key %s", key); key[0] = '\0'; }
+	
+		if (key[0])
+			{
+			slen = strlen(secret);
+			if (u->ServiceRegDomain.c[0]) 
+				{
+				err = mDNS_UpdateDomainRequiresAuthentication(m, &u->ServiceRegDomain, &key_d, secret, slen, mDNStrue);
+				if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain %#s", err, &u->ServiceRegDomain);
+				}
+			if (newhostname.c[0])
+				{
+				err = mDNS_UpdateDomainRequiresAuthentication(m, &newhostname, &key_d, secret, slen, mDNStrue);
+				if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain %#s", err, &newhostname);
+				}
+			}
+		end:
+		fclose(f);
+		}
+	else
+		{
+		if (errno != ENOENT) LogMsg("ERROR: Config file exists, but cannot be opened.");
+		GetUserSpecifiedDDNSName(&newhostname);
+		if (newhostname.c[0])
+			{
+			AssignDomainName(u->ServiceRegDomain, *(domainname*)(newhostname.c + 1 + newhostname.c[0]));
+			// !!!SDC In future will need to get the key and key name from keychain
+			LogMsg("ReadRegDomainFromConfig ServiceRegDomain: %##s", u->ServiceRegDomain.c);
+			}
 		}
 
-	if (!GetConfigOption(u->NameRegDomain, "name-reg", f)) goto end;
-	if (!GetConfigOption(u->ServiceRegDomain, "service-reg", f)) goto end;
-	if (!GetConfigOption(key, "key-name", f)) goto end;
-	if (!GetConfigOption(secret, "secret-64", f)) { LogMsg("ERROR: config file contains key without secret"); goto end; }
-
-	// we don't actually need this in domain-name format - just convert it to error check
-	if (!MakeDomainNameFromDNSNameString(&service_d, u->ServiceRegDomain))
-		{ LogMsg("ERROR: config file contains bad service reg domain %s", u->ServiceRegDomain); u->ServiceRegDomain[0] = '\0'; }	
-
-	if (!MakeDomainNameFromDNSNameString(&name_d, u->NameRegDomain))
-		{ LogMsg("ERROR: config file contains bad name reg domain %s", u->NameRegDomain); u->NameRegDomain[0] = '\0'; }	
-
-	if (!MakeDomainNameFromDNSNameString(&key_d, key))
-		{ LogMsg("ERROR: config file contains bad key %s", key); key[0] = '\0'; }
-
-	if (key[0])
-		{
-		slen = strlen(secret);
-		if (u->ServiceRegDomain[0]) 
-			{
-			err = mDNS_UpdateDomainRequiresAuthentication(m, &service_d, &key_d, secret, slen, mDNStrue);
-			if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain ", err, u->ServiceRegDomain);
-			}
-		if (u->NameRegDomain[0])
-			{
-			err = mDNS_UpdateDomainRequiresAuthentication(m, &name_d, &key_d, secret, slen, mDNStrue);
-			if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain ", err, u->NameRegDomain);
-			}
-		}
-	
-	end:
-	fclose(f);
-	mDNS_GenerateGlobalFQDN(m);  // no-op if we didn't get a config
+	mDNS_SetFQDNs(m, &newhostname);  // no-op if we didn't get a config
 	}
 
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
@@ -2309,8 +2350,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	
 	InitDNSConfig(m);
 
-	m->uDNS_info.ServiceRegDomain[0] = '\0';
-	m->uDNS_info.NameRegDomain[0] = '\0';
+	m->uDNS_info.UnicastHostname.c[0] = '\0';
+	m->uDNS_info.ServiceRegDomain.c[0] = '\0';
 	InitAuthInfo(m);
 	ReadRegDomainFromConfig(m);	
 	

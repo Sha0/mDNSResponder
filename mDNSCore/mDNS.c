@@ -44,6 +44,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.394  2004/08/14 03:22:41  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.393  2004/08/13 23:42:52  cheshire
 Removed unused "zeroDomainNamePtr"
 
@@ -5483,55 +5489,54 @@ mDNSlocal void DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (set->RR_HINFO.resrec.RecordType) mDNS_Deregister_internal(m, &set->RR_HINFO, mDNS_Dereg_normal);
 	}
 
-mDNSlocal void GenerateFQDN(mDNS *const m, const char *domain, mDNSBool local)
+mDNSexport void mDNS_SetFQDNs(mDNS *const m, const domainname *newuname)
 	{
-	domainname newname;
-	mDNS_Lock(m);
+	mDNSBool mchanged, uchanged;
+	domainname newmname;
+	newmname.c[0] = 0;
 
-	newname.c[0] = 0;
-	if (!AppendDomainLabel(&newname, &m->hostlabel))  LogMsg("ERROR: GenerateFQDN:  Cannot create hostname");
-	if (!AppendDNSNameString(&newname, domain)) LogMsg("ERROR: GenerateFQDN:  Cannot create hostname");
-		
-	if ((local && !SameDomainName(&m->MulticastHostname, &newname)) ||
-		(!local && !SameDomainName(&m->uDNS_info.UnicastHostname, &newname)))
+	if (!AppendDomainLabel(&newmname, &m->hostlabel))  { LogMsg("ERROR: mDNS_SetFQDNs: Cannot create MulticastHostname"); return; }
+	if (!AppendLiteralLabelString(&newmname, "local")) { LogMsg("ERROR: mDNS_SetFQDNs: Cannot create MulticastHostname"); return; }
+
+	mDNS_Lock(m);
+	
+	mchanged = !SameDomainName(&m->MulticastHostname, &newmname);
+	uchanged = !SameDomainName(&m->uDNS_info.UnicastHostname, newuname);
+	
+	if (mchanged || uchanged)
 		{
 		NetworkInterfaceInfo *intf;
 		AuthRecord *rr;
-
-		if (local) m->MulticastHostname = newname;
-		else       m->uDNS_info.UnicastHostname = newname;
+		AssignDomainName(m->MulticastHostname, newmname);
+		AssignDomainName(m->uDNS_info.UnicastHostname, *newuname);
 
 		// 1. Stop advertising our address records on all interfaces
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
 			if (intf->Advertise)
-				local ? DeadvertiseInterface(m, intf) : uDNS_DeadvertiseInterface(m, intf);
+				{
+				if (mchanged) DeadvertiseInterface(m, intf);
+				if (uchanged) uDNS_DeadvertiseInterface(m, intf);
+				}
 
 		// 2. Start advertising our address records using the new name
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
 			if (intf->Advertise)
-				local ? AdvertiseInterface(m, intf) : uDNS_AdvertiseInterface(m, intf);
+				{
+				if (mchanged) AdvertiseInterface(m, intf);
+				if (uchanged) uDNS_AdvertiseInterface(m, intf);
+				}
 
 		// 3. Make sure that any SRV records (and the like) that reference our
 		// host name in their rdata get updated to reference this new host name
-		if (local)
+		if (mchanged)
 			{
 			for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
 			for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
 			}
-		else uDNS_UpdateServiceTargets(m);
+		if (uchanged) uDNS_UpdateServiceTargets(m);
 		}
-		mDNS_Unlock(m);
-	}
 
-mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
-	{
-	GenerateFQDN(m, "local.", mDNStrue);
-	}
-
-mDNSexport void mDNS_GenerateGlobalFQDN(mDNS *const m)
-	{
-    if (!m->uDNS_info.NameRegDomain[0]) return;
-    GenerateFQDN(m, m->uDNS_info.NameRegDomain, mDNSfalse);
+	mDNS_Unlock(m);
 	}
 
 mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
@@ -5560,7 +5565,8 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 	else if (result == mStatus_NameConflict)
 		{
 		domainlabel oldlabel = m->hostlabel;
-		mDNSBool local = (IsLocalDomain(&rr->resrec.name) || rr->resrec.InterfaceID);
+		domainname  newuname;
+
 		// 1. First give the client callback a chance to pick a new name
 		if (m->MainCallback)
 			{
@@ -5575,19 +5581,11 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 		
 		// 3. Generate the FQDNs from the hostlabel,
 		// and make sure all SRV records, etc., are updated to reference our new hostname
-		if (!local)
-			{
-			//!!!KRS clean this up
-			char regdomain[MAX_ESCAPED_DOMAIN_NAME];
-			ConvertDomainNameToCString_unescaped((domainname *)(rr->resrec.name.c + rr->resrec.name.c[0] + 1), regdomain);
-			mDNS_GenerateGlobalFQDN(m);
-			LogMsg("Host Name %s.%s already in use; new name %s.%s selected for this host", oldlabel.c, regdomain, m->hostlabel.c, regdomain);
-			}
-		else
-			{
-			mDNS_GenerateFQDN(m);
-			LogMsg("Link-Local Host Name %#s.local. already in use; new name %#s.local. selected for this host.", oldlabel.c, m->hostlabel.c);
-			}
+		newuname.c[0] = 0;
+		AppendDomainLabel(&newuname, &m->hostlabel);
+		AppendDomainName(&newuname, (domainname*)(m->uDNS_info.UnicastHostname.c + 1 + m->uDNS_info.UnicastHostname.c[0]));
+		mDNS_SetFQDNs(m, &newuname);
+		LogMsg("Host Name %#s already in use; new name %#s selected for this host.", oldlabel.c, m->hostlabel.c);
 		}
 	else LogMsg("mDNS_HostNameCallback: Unknown error %d for registration of record %s", result,  rr->resrec.name.c);
 	}

@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.31  2004/08/14 03:22:42  cheshire
+<rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
+Add GetUserSpecifiedDDNSName() routine
+Convert ServiceRegDomain to domainname instead of C string
+Replace mDNS_GenerateFQDN/mDNS_GenerateGlobalFQDN with mDNS_SetFQDNs
+
 Revision 1.30  2004/07/29 19:26:03  ksekar
 Plaform-level changes for NAT-PMP support
 
@@ -572,7 +578,7 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	ConvertUTF8PstringToRFC1034HostLabel(m->nicelabel.c, &m->hostlabel);
 	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
 
-	mDNS_GenerateFQDN(m);
+	mDNS_SetFQDNs(m, (domainname*)"");
 
 	// When it's finished mDNSOpenEndpoint asynchronously calls mDNSinitComplete() and then mDNS_RegisterInterface()
 	CallmDNSNotifierUPP = NewOTNotifyUPP(CallmDNSNotifier);
