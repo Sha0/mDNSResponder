@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.61  2004/06/19 00:09:39  cheshire
+Remove unused strsep() implementation
+
 Revision 1.60  2004/06/18 19:10:00  cheshire
 <rdar://problem/3588761> Current method of doing subtypes causes name collisions
 
@@ -434,10 +437,6 @@ static mStatus remove_extra_rr_from_service(request_state *rstate);
 static mStatus remove_record(request_state *rstate);
 static void free_service_registration(registered_service *srv);
 static uint32_t dnssd_htonl(uint32_t l);
-
-#if defined(PLATFORM_NO_STRSEP)
-static char * strsep (char **stringp, const char *delim);
-#endif
 
 // initialization, setup/teardown functions
 
@@ -2797,46 +2796,3 @@ static uint32_t dnssd_htonl(uint32_t l)
 
 	return ret;
 	}
-
-
-#if defined(PLATFORM_NO_STRSEP)
-static char * strsep (char **stringp, const char *delim)
-	{
-	char *begin, *end;
- 
-	begin = *stringp;
-	if (begin == NULL) return NULL;
- 
-	/*
-	 * A frequent case is when the delimiter string contains only one
-	 * character.  Here we don't need to call the expensive `strpbrk'
-	 * function and instead work using `strchr'.
-	 */
-	if (delim[0] == '\0' || delim[1] == '\0')
-    	{
-		char ch = delim[0];
- 
-		if (ch == '\0') end = NULL;
-		else
-        	{
-			if (*begin == ch) end = begin;
-			else end = strchr (begin + 1, ch);
-			}  
-		}
-	else
-		/* Find the end of the token.  */
-		end = strpbrk (begin, delim);
- 
-	if (end)
-		{
-		/* Terminate the token and set *STRINGP past NUL character.  */
-		*end++ = '\0';
-		*stringp = end;
-		}
-	else
-		/* No more delimiters; this is the last token.  */
-		*stringp = NULL;
- 
-	return begin;
-	}
-#endif
