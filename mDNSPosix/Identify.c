@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: Identify.c,v $
+ * Revision 1.6  2003/08/06 01:46:18  cheshire
+ * Distinguish no answer from partial answer
+ *
  * Revision 1.5  2003/08/05 23:56:26  cheshire
  * Update code to compile with the new mDNSCoreReceive() function that requires a TTL
  * (Right now mDNSPosix.c just reports 255 -- we should fix this)
@@ -288,13 +291,15 @@ mDNSexport int main(int argc, char **argv)
 		printf("HINFO Hardware: %s\n", hardware);
 		printf("HINFO Software: %s\n", software);
 		}
-	else
+	else if (NumAnswers)
 		{
 		printf("Host has no HINFO record; Best guess is ");
 		if (id.b[1]) printf("mDNSResponder-%d\n", id.b[1]);
 		else if (NumAAAA) printf("very early Panther build (mDNSResponder-33 or earlier)\n");
 		else printf("Jaguar version of mDNSResponder with no IPv6 support\n");
 		}
+	else
+		printf("Incorrect dot-local hostname, address, or no mDNSResponder running on that machine\n");
 
 exit:
 	mDNS_Close(&mDNSStorage);
