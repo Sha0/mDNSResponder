@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.263  2004/12/17 05:25:46  cheshire
+<rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
+
 Revision 1.262  2004/12/17 04:48:32  cheshire
 <rdar://problem/3922754> Computer Name change is slow
 
@@ -2247,7 +2250,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	SearchListElem *slElem = question->QuestionContext;
 	ARListElem *arElem, *ptr, *prev;
     AuthRecord *dereg;
-	char *name;
+	const char *name;
 	mStatus err;
 	
 	if (AddRecord)
@@ -2255,14 +2258,15 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		arElem = mallocL("FoundDomain - arElem", sizeof(ARListElem));
 		if (!arElem) { LogMsg("ERROR: malloc");  return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, arElem);
-		if      (question == &slElem->BrowseQ)       name = "_browse._dns-sd._udp.local.";
-		else if (question == &slElem->DefBrowseQ)    name = "_default._browse._dns-sd._udp.local.";
-		else if (question == &slElem->LegacyBrowseQ) name = "_legacy._browse._dns-sd._udp.local.";
-		else if (question == &slElem->RegisterQ)     name = "_register._dns-sd._udp.local.";
-		else if (question == &slElem->DefRegisterQ)  name = "_default._register._dns-sd._udp.local.";
+		if      (question == &slElem->BrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
+		else if (question == &slElem->DefBrowseQ)    name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault];
+		else if (question == &slElem->LegacyBrowseQ) name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseLegacy];
+		else if (question == &slElem->RegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistration];
+		else if (question == &slElem->DefRegisterQ)  name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
 		else { LogMsg("FoundDomain - unknown question"); return; }
 		
 		MakeDomainNameFromDNSNameString(arElem->ar.resrec.name, name);
+		AppendDNSNameString            (arElem->ar.resrec.name, "local");
 		AssignDomainName(&arElem->ar.resrec.rdata->u.name, &answer->rdata->u.name);
 		err = mDNS_Register(m, &arElem->ar);
 		if (err)
@@ -2872,7 +2876,8 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 	AssignDomainName(&rec.resrec.rdata->u.name, d);
 
 	// add/remove the "_legacy" entry
-	MakeDomainNameFromDNSNameString(rec.resrec.name, "_legacy._browse._dns-sd._udp.local.");
+	MakeDomainNameFromDNSNameString(rec.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeBrowseLegacy]);
+	AppendDNSNameString            (rec.resrec.name, "local");
 	FoundDefBrowseDomain(m, &LegacyBrowseDomainQ, &rec.resrec, add);
 
 	if (add)
@@ -2880,7 +2885,8 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 		// allocate/register a non-legacy _browse PTR record
 		ARListElem *ptr = mallocL("ARListElem", sizeof(*ptr));
 		mDNS_SetupResourceRecord(&ptr->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, ptr);
-		MakeDomainNameFromDNSNameString(ptr->ar.resrec.name, "_browse._dns-sd._udp.local.");
+		MakeDomainNameFromDNSNameString(ptr->ar.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeBrowse]);
+		AppendDNSNameString            (ptr->ar.resrec.name, "local");
 		AssignDomainName(&ptr->ar.resrec.rdata->u.name, d);
 		mStatus err = mDNS_Register(m, &ptr->ar);
 		if (err)
@@ -2906,10 +2912,10 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 
 
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
-// 1) query for _browse._dns-sd._udp.local on LocalOnly interface
+// 1) query for b._dns-sd._udp.local on LocalOnly interface
 //    (.local manually generated via explicit callback)
-// 2) for each search domain (from prefs pane), query for _browse._dns-sd._udp.<searchdomain>.
-// 3) for each result from (2), register LocalOnly PTR record_browse._dns-sd._udp.local. -> <result>
+// 2) for each search domain (from prefs pane), query for b._dns-sd._udp.<searchdomain>.
+// 3) for each result from (2), register LocalOnly PTR record b._dns-sd._udp.local. -> <result>
 // 4) result above should generate a callback from question in (1).  result added to global list
 // 5) global list delivered to client via GetSearchDomainList()
 // 6) client calls to enumerate domains now go over LocalOnly interface

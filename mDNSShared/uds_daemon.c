@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.146  2004/12/17 05:25:47  cheshire
+<rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
+
 Revision 1.145  2004/12/16 21:39:46  cheshire
 Include CacheGroup objects in CacheUsed count
 
@@ -1669,7 +1672,8 @@ static void handle_setdomain_request(request_state *request)
 		default_browse_list_t *newelem = malloc(sizeof(default_browse_list_t));
 		if (!newelem) { LogMsg("ERROR: malloc"); err = mStatus_NoMemoryErr; goto end; }
 		mDNS_SetupResourceRecord(&newelem->ptr_rec, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, free_defdomain, newelem);
-		MakeDomainNameFromDNSNameString(&newelem->ptr_rec.resrec.name, "_default._browse._dns-sd._udp.local.");
+		MakeDomainNameFromDNSNameString(&newelem->ptr_rec.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault]);
+		AppendDNSNameString            (&newelem->ptr_rec.resrec.name, "local");
  		AssignDomainName(&newelem->ptr_rec.resrec.rdata->u.name, &domain);
 		newelem->uid = xuc.cr_uid;
 		err = mDNS_Register(gmDNS, &newelem->ptr_rec);

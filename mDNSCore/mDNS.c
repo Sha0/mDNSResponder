@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.498  2004/12/17 05:25:46  cheshire
+<rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
+
 Revision 1.497  2004/12/17 03:20:58  cheshire
 <rdar://problem/3925168> Don't send unicast replies we know will be ignored
 
@@ -1671,13 +1674,13 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_QR_Response | kDNSFl
 #define kMaxUpdateCredits 10
 #define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 6)
 
-static const char *const mDNS_DomainTypeNames[] =
+mDNSexport const char *const mDNS_DomainTypeNames[] =
 	{
-	"_browse._dns-sd._udp.",
-	"_default._browse._dns-sd._udp.",
-	"_register._dns-sd._udp.",
-	"_default._register._dns-sd._udp.",
-	"_legacy._browse._dns-sd._udp."
+	 "b._dns-sd._udp.",		// Browse
+	"db._dns-sd._udp.",		// Default Browse
+	"lb._dns-sd._udp.",		// Legacy Browse
+	 "r._dns-sd._udp.",		// Registration
+	"dr._dns-sd._udp."		// Default Registration
 	};
 
 #ifdef UNICAST_DISABLED
@@ -5922,7 +5925,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->ForceMCast       = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
-	if (DomainType > mDNS_DomainTypeBrowseLegacy) return(mStatus_BadParamErr);
+	if (DomainType > mDNS_DomainTypeMax) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
 	if (!dom) dom = &localdomain;
 	if (!AppendDomainName(&question->qname, dom)) return(mStatus_BadParamErr);

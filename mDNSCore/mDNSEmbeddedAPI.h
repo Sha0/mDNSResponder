@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.264  2004/12/17 05:25:46  cheshire
+<rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
+
 Revision 1.263  2004/12/16 20:40:25  cheshire
 Fix compile warnings
 
@@ -2261,10 +2264,14 @@ typedef enum
 	{
 	mDNS_DomainTypeBrowse              = 0,
 	mDNS_DomainTypeBrowseDefault       = 1,
-	mDNS_DomainTypeRegistration        = 2,
-	mDNS_DomainTypeRegistrationDefault = 3,
-	mDNS_DomainTypeBrowseLegacy        = 4
+	mDNS_DomainTypeBrowseLegacy        = 2,
+	mDNS_DomainTypeRegistration        = 3,
+	mDNS_DomainTypeRegistrationDefault = 4,
+	
+	mDNS_DomainTypeMax = 4
 	} mDNS_DomainType;
+
+extern const char *const mDNS_DomainTypeNames[];
 
 extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const domainname *dom,
 								const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
