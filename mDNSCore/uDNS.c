@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.108  2004/11/01 20:36:16  ksekar
+<rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
+
 Revision 1.107  2004/10/26 06:11:41  cheshire
 Add improved logging to aid in diagnosis of <rdar://problem/3842714> mDNSResponder crashed
 
@@ -663,7 +666,7 @@ mDNSlocal void DeleteAuthInfoForZone(uDNS_GlobalInfo *u, const domainname *zone)
 		}
 	}
 
-mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key, mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64)
+mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64)
 	{
 	uDNS_AuthInfo *info;
 	mDNSu8 keybuf[1024];

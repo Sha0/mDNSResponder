@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.226  2004/11/01 20:36:19  ksekar
+<rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
+
 Revision 1.225  2004/10/28 19:03:04  cheshire
 Remove \n from LogMsg() calls
 
@@ -728,16 +731,6 @@ typedef struct SearchListElem
     ARListElem *AuthRecs;
 	} SearchListElem;
 
-// information for a domain we learn about via the keychain
-typedef struct KeychainDomain
-	{
-    struct KeychainDomain *next;
-    domainname domain;             // the zone we register hostnames in
-    int flag;                      // temporary marker for list intersection computation
-    AuthRecord *browse;            // _default._browse ptr record
-    AuthRecord *reg;               // _default._register record
-	} KeychainDomain;
-
 // ***************************************************************************
 // Globals
 
@@ -757,13 +750,9 @@ static mDNSBool LegacyNATInitialized = mDNSfalse;
 static domainname DynDNSZone;                // Default wide-area zone for service registration
 static domainname DynDNSHostname;
 
-static KeychainDomain *KeychainHostDomains = NULL;  // List of domains in which we register hostnames that we learn from the system keychain
-
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
-#define LH_KEYCHAIN_DESC "Lighthouse Shared Secret"
-#define LH_KEYCHAIN_SERVICE "Lighthouse"
+#define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 #define SYS_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
-#define LH_SUFFIX "members.mac.com."
 
 // ***************************************************************************
 // Macros
@@ -2320,6 +2309,38 @@ mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
 	if (f) fclose(f);	
 	}
 
+mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
+	{
+	OSStatus err = 0;
+	SecKeychainRef SysKeychain = NULL;
+	SecKeychainItemRef KeychainItem;
+	char dstring[MAX_ESCAPED_DOMAIN_NAME];
+	mDNSu32 secretlen;
+	void *secret = NULL;
+	const domainname *d = domain;
+	int dlen;
+	
+	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &SysKeychain);
+	if (err) { LogMsg("SetSecretForDomain: couldn't open system keychain (error %d)", err); return; }
+	// find longest-match key ("account") name, excluding last label (e.g. excluding ".com")
+	while (d->c[0] && *(d->c + d->c[0] + 1))
+		{
+		if (!ConvertDomainNameToCString(d, dstring)) { LogMsg("SetSecretForDomain: bad domain %##s", d->c); return; }	
+		dlen = strlen(dstring);
+		if (dstring[dlen-1] == '.') { dstring[dlen-1] = '\0'; dlen--; }  // chop trailing dot
+		err = SecKeychainFindGenericPassword(SysKeychain, strlen(DYNDNS_KEYCHAIN_SERVICE), DYNDNS_KEYCHAIN_SERVICE, dlen, dstring, &secretlen, &secret, &KeychainItem);
+		if (!err)
+			{
+			debugf("Setting shared secret for zone %s with key %##s", dstring, d->c);
+			mDNS_SetSecretForZone(m, d, d, secret, secretlen, mDNStrue);
+			free(secret);
+			return;
+			}
+		if (err == errSecItemNotFound) d = (domainname *)(d->c + d->c[0] + 1);
+		else { LogMsg("SetSecretForDomain: SecKeychainFindGenericPassword returned error %d", err); return; }
+		}
+	}
+
 mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
 	{
 	static mDNSBool DynDNSConfigInitialized = mDNSfalse;
@@ -2337,10 +2358,10 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	// get fqdn, zone from SCPrefs
 	GetUserSpecifiedDDNSConfig(&fqdn, &zone);
 	if (!SameDomainName(&zone, &DynDNSZone))
-		{
+		{		
 		if (DynDNSZone.c[0]) RemoveDefRegDomain(&DynDNSZone);
-		AssignDomainName(DynDNSZone, zone);
-		if (DynDNSZone.c[0]) AddDefRegDomain(&zone);
+		AssignDomainName(DynDNSZone, zone);		
+		if (DynDNSZone.c[0]) { SetSecretForDomain(m, &zone); AddDefRegDomain(&zone); }
 		}
 	
 	if (!SameDomainName(&fqdn, &DynDNSHostname))
@@ -2349,13 +2370,14 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 		AssignDomainName(DynDNSHostname, fqdn);
 		if (DynDNSHostname.c[0])
 			{
+			SetSecretForDomain(m, &fqdn); // no-op if "zone" secret, above, is to be used for hostname
 			mDNS_AddDynDNSHostName(m, &DynDNSHostname, SCPrefsDynDNSCallback, NULL);
 			SetDDNSNameStatus(&DynDNSHostname, 1);
 			}
 		}
 		
 	if (!DynDNSZone.c[0] && !DynDNSHostname.c[0]) ReadDDNSSettingsFromConfFile(m);
-
+	
     // get DNS settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
@@ -2529,234 +2551,6 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 	return(-1);
 	}
 
-mDNSlocal void DynDNSRegCallback(mDNS *m, AuthRecord *rr, mStatus result)
-	{
-	(void)m;
-	LogMsg("DynDNSRegCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
-	//!!!KRS this is where we deliver status to the prefs pane
-	}
-
-// caller must free secret (allocated via malloc()) if call is successful
-mDNSlocal OSStatus GetDomainFromKeychainItem(SecKeychainItemRef item, domainname *zone, mDNSu32 *secretlen, void **secret)
-	{
-	OSStatus err = 0;
-	mDNSu32 infoTag = kSecAccountItemAttr;
-	mDNSu32 infoFmt = 0; // string
-    SecKeychainAttributeInfo info;
-	SecKeychainAttributeList *authAttrList = NULL;
-	void *data;
-	mDNSu32 dataLen;
-	char accountName[MAX_ESCAPED_DOMAIN_NAME];
-
-    info.count = 1;
-	info.tag = &infoTag;
-	info.format = &infoFmt;
-	
-	err = SecKeychainItemCopyAttributesAndData(item, &info, NULL, &authAttrList, &dataLen, &data);
-	if (err) { LogMsg("SecKeychainItemCopyAttributesAndData returned error %d", err); goto end; }
-
-	// copy account name
-	if (!authAttrList->count || authAttrList->attr->tag != kSecAccountItemAttr)
-	    { LogMsg("Received bad authAttrList"); goto end; }
-	if (authAttrList->attr->length + strlen(LH_SUFFIX) > MAX_ESCAPED_DOMAIN_NAME)
-		{ LogMsg("Account name too long (%d bytes)", authAttrList->attr->length); goto end; }
-	memcpy(accountName, authAttrList->attr->data, authAttrList->attr->length);
-	accountName[authAttrList->attr->length] = '\0';
-
-	// construct zone (accountname.members.mac.com.)
-	zone->c[0] = '\0';
-    if (!AppendLiteralLabelString(zone, accountName) ||
-		!AppendDNSNameString(zone, LH_SUFFIX))
-		{ LogMsg("GetDomainFromKeychainItem - bad account name"); goto end; }
-
-	// copy secret for caller
-	*secret = malloc(dataLen+1);
-	if (!*secret) { LogMsg("ERROR: malloc"); goto end; }
-	memcpy(*secret, data, dataLen);
-	((char *)*secret)[dataLen] = '\0';
-	*secretlen = dataLen;
-
-	end:
-	if (authAttrList) SecKeychainItemFreeContent(authAttrList, data);
-	return err;
-	}
-
-// return the .Mac keychain items.  caller must release returned value
-mDNSlocal SecKeychainSearchRef GetKeychainItems(void)
-	{
-	OSStatus err;
-	
-	SecKeychainSearchRef searchRef = NULL;
-	SecKeychainRef sysKeychain = NULL;
-	SecKeychainAttribute searchAttrs[] = { { kSecDescriptionItemAttr, strlen(LH_KEYCHAIN_DESC), LH_KEYCHAIN_DESC },
-									  { kSecServiceItemAttr, strlen(LH_KEYCHAIN_SERVICE), LH_KEYCHAIN_SERVICE } };
-	SecKeychainAttributeList searchList = { sizeof(searchAttrs) / sizeof(*searchAttrs), searchAttrs };
-
-	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &sysKeychain);
-	if (err) { LogMsg("ERROR: GetKeychainItems - couldn't open system keychain - %d", err); goto end; }
-	err = SecKeychainSetDomainDefault(kSecPreferencesDomainSystem, sysKeychain);
-	if (err) { LogMsg("ERROR: GetKeychainItems - couldn't set domain default for system keychain - %d", err); goto end; }
-	
-	err = SecKeychainSearchCreateFromAttributes(sysKeychain, kSecGenericPasswordItemClass, &searchList, &searchRef);
-	if (err) { LogMsg("ERROR: GetKeychainItems - SecKeychainSearchCreateFromAttributes %d", err); goto end; }
-
-	end:
-	if (sysKeychain) CFRelease(sysKeychain);
-	return searchRef;
-	}
-
-// free memory for the _browse and _register records we create from keychain items
-mDNSlocal void KeychainEnumRRCallback(mDNS *m, AuthRecord *rr, mStatus result)
-	{
-	(void)m;  // unused
-	if (result == mStatus_MemFree) free(rr);
-	else LogMsg("Unexpected KeychainEnumRRCallback for domain %##s with result %d", rr->resrec.rdata->u.name.c, result);
-	}
-
-// register hostnames and _browse/_register records for all new host domains found in keychain
-mDNSlocal void AddKeychainHostDomains(mDNS *m)
-	{
-	SecKeychainSearchRef KeychainItems;
-	SecKeychainItemRef item;
-
-	KeychainItems = GetKeychainItems();
-	if (!KeychainItems) return;
-	while (!SecKeychainSearchCopyNext(KeychainItems, &item))
-		{
-		KeychainDomain *ptr, *new;
-		domainname zone;
-		mDNSu32 secretlen;
-		void *secret = NULL;
-		mStatus regErr;
-		
-		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;
-
-		// check if domain is already in our list
-		for (ptr = KeychainHostDomains; ptr; ptr = ptr->next)
-			if (SameDomainName(&ptr->domain, &zone)) break;
-
-		if (!ptr)
-			{
-			// item not in our list
-			new = malloc(sizeof(*new));
-			if (!new) { LogMsg("ERROR: malloc"); return; }
-			AssignDomainName(new->domain, zone);
-			new->flag = 0;
-
-			// normally we'd query the zone for _register/_browse domains,
-			//but to reduce server load we manually generate the records
-			new->browse = malloc(sizeof(AuthRecord));
-			new->reg = malloc(sizeof(AuthRecord));
-			if (!new->browse || !new->reg) { LogMsg("ERROR: malloc"); return; }
-			AddDefRegDomain(&zone);
-			
-			// set up _browses
-			mDNS_SetupResourceRecord(new->browse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, KeychainEnumRRCallback, mDNSNULL);
-			MakeDomainNameFromDNSNameString(&new->browse->resrec.name, "_default._browse._dns-sd._udp.local.");
-			AssignDomainName(new->browse->resrec.rdata->u.name, new->domain );
-			regErr = mDNS_Register(m, new->browse);
-			if (regErr)
-				{
-				LogMsg("Registration of local-only browse domain %##s failed with error %d", new->domain.c, regErr);
-				free(new->browse);
-				new->browse = NULL;
-				}
-			
-			// set up _register
-			mDNS_SetupResourceRecord(new->reg, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, KeychainEnumRRCallback, mDNSNULL);
-			MakeDomainNameFromDNSNameString(&new->reg->resrec.name, "_register._dns-sd._udp.local.");
-			AssignDomainName(new->reg->resrec.rdata->u.name, new->domain);
-			regErr = mDNS_Register(m, new->reg);
-			if (regErr)
-				{
-				LogMsg("Registration of local-only reg domain %##s failed with error %d", new->domain.c, regErr);
-				free(new->reg);
-				new->reg = NULL;
-				}
-			new->next = KeychainHostDomains;
-			KeychainHostDomains = new;
-			
-			mDNS_SetSecretForZone(m, &zone, &zone, secret, secretlen, mDNStrue);
-			mDNS_AddDynDNSHostName(m, &zone, DynDNSRegCallback, NULL);
-			}
-
-		if (secret) free(secret);
-		CFRelease(item);
-		}
-	}
-
-// deregister hostnames and _browse/_register records for all zones no longer in keychain
-mDNSlocal void RemoveKeychainDomains(mDNS *m)
-	{
-	SecKeychainSearchRef KeychainItems;
-	SecKeychainItemRef item;
-	KeychainDomain *ptr, *prev, *tmp;
-	
-	KeychainItems = GetKeychainItems();
-	if (!KeychainItems) return;
-
-	// flag all zones for deletion
-	for (ptr = KeychainHostDomains; ptr; ptr = ptr->next)
-		ptr->flag = 1;
-
-	// clear flag for zones still in keychain
-	while (!SecKeychainSearchCopyNext(KeychainItems, &item))
-		{
-		domainname zone;
-		mDNSu32 secretlen;
-		void *secret;
-		
-		if (GetDomainFromKeychainItem(item, &zone, &secretlen, &secret)) continue;
-		free(secret);
-		secret = NULL;
-		
-		for (ptr = KeychainHostDomains; ptr; ptr = ptr->next)
-			if (SameDomainName(&ptr->domain, &zone))
-				{
-				ptr->flag = 0;  // clear deletion marker
-				break;
-				}
-		if (!ptr) LogMsg("Keychain zone %##s not in list!", zone.c);
-		}
-
-	// delete all zones with flag still set
-	prev = NULL;
-	ptr = KeychainHostDomains;
-	while (ptr)
-		{
-		if (ptr->flag) 	// delete
-			{
-			RemoveDefRegDomain(&ptr->domain);
-			mDNS_Deregister(m, ptr->reg);
-			mDNS_Deregister(m, ptr->browse);
-			mDNS_RemoveDynDNSHostName(m, &ptr->domain);
-			mDNS_SetSecretForZone(m, &ptr->domain, NULL, NULL, 0, mDNSfalse);
-			if (prev) prev->next = ptr->next;
-			else KeychainHostDomains = ptr->next;
-			tmp = ptr;
-			ptr = ptr->next;
-			free(tmp);
-			}
-		else
-			{
-			prev = ptr;
-			ptr = ptr->next;
-			}
-		}
-	
-	}
-
-mDNSlocal OSStatus KeychainCallback(SecKeychainEvent event, SecKeychainCallbackInfo *info, void *context)
-	{
-	(void)info; // unused
-
-	debugf("SecKeychainAddCallback received event %d", event);
-	if (event == kSecAddEvent) AddKeychainHostDomains((mDNS *)context);
-	else if (event == kSecDeleteEvent) RemoveKeychainDomains((mDNS *)context);
-	else LogMsg("Received unexpected event %d from keychain callback", event);
-	return 0;
-	}
-
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
 CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
@@ -2877,8 +2671,7 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
-	OSStatus keyerr;
-	
+
    	m->hostlabel.c[0]        = 0;
 	
 	char *HINFO_HWstring = "Macintosh";
@@ -2935,13 +2728,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	DynDNSConfigChanged(m->p->Store, NULL, m);
 
 	InitDNSConfig(m);
-	//m->uDNS_info.ServiceRegDomain.c[0] = '\0';
-
-	// get initial keychain configuration, set up callbacks for changes
-	AddKeychainHostDomains(m);
-    keyerr = SecKeychainAddCallback(KeychainCallback, kSecAddEventMask | kSecDeleteEventMask, m);
-	if (keyerr) { LogMsg("SecKeychainAddCallback returned error %d", err); }
-
  	return(err);
 	}
 

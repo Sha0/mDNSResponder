@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.10  2004/11/01 20:36:04  ksekar
+<rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
+
 Revision 1.9  2004/10/26 09:00:12  cheshire
 Save a few bytes by creating HMAC_MD5_AlgName as a C string instead of a 256-byte object
 
@@ -1312,7 +1315,7 @@ mDNSexport mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu3
 #define HMAC_MD5_AlgName (*(const domainname*) "\010" "hmac-md5" "\007" "sig-alg" "\003" "reg" "\003" "int")
 
 // Adapted from Appendix, RFC 2104
-mDNSexport void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32 len)		
+mDNSexport void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, const mDNSu8 *key, mDNSu32 len)		
 	{
 	MD5_CTX k;
 	mDNSu8 buf[MD5_LEN];

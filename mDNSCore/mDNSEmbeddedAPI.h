@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.236  2004/11/01 20:36:11  ksekar
+<rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
+
 Revision 1.235  2004/11/01 17:48:14  cheshire
 Changed SOA serial number back to signed. RFC 1035 may describe it as "unsigned", but
 it's wrong. The SOA serial is a modular counter, as explained in "DNS & BIND", page
@@ -2247,7 +2250,7 @@ typedef struct uDNS_AuthInfo
 // Calling this routine multiple times for a zone replaces previously entered values.  Call with a NULL key
 // to dissable authentication for the zone.
 
-extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key, mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
+extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
 
 // Hostname/Unicast Interface Configuration
 
@@ -2278,7 +2281,7 @@ extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mD
 extern mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize);
 
 // Convert an arbitrary binary key (of any length) into an HMAC key (stored in AuthInfo struct)
-extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32 len);
+extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, const mDNSu8 *key, mDNSu32 len);
 
 // sign a DNS message.  The message must be compete, with all values in network byte order.  end points to the end
 // of the message, and is modified by this routine.  numAdditionals is a pointer to the number of additional
