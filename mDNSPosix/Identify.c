@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.26  2004/08/24 21:55:07  cheshire
+Don't try to build IPv6 code on systems that don't have IPv6
+
 Revision 1.25  2004/07/20 23:42:37  cheshire
 Update to use only "_services._dns-sd._udp.local." meta-query for service enumeration
 
@@ -348,7 +351,9 @@ mDNSexport int main(int argc, char **argv)
 	int this_arg = 1;
 	mStatus status;
 	struct in_addr s4;
+#if HAVE_IPV6
 	struct in6_addr s6;
+#endif
 	char buffer[256];
 	DNSQuestion q;
 
@@ -387,6 +392,7 @@ mDNSexport int main(int argc, char **argv)
 			DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback);
 			if (StopNow == 2) break;
 			}
+#if HAVE_IPV6
 		else if (inet_pton(AF_INET6, arg, &s6) == 1)
 			{
 			int i;
@@ -405,6 +411,7 @@ mDNSexport int main(int argc, char **argv)
 			DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback);
 			if (StopNow == 2) break;
 			}
+#endif
 		else
 			strcpy(hostname, arg);
 	
