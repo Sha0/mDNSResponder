@@ -77,6 +77,36 @@ kern_return_t DNSServiceResolverResolve_rpc
     DNSCString domain
 );
 
+extern
+kern_return_t DNSServiceRegistrationAddRecord_rpc
+(
+    mach_port_t server,
+    mach_port_t client,
+    int type,
+    record_data_t data,
+    mach_msg_type_number_t record_dataCnt,
+    natural_t *reference
+);
+
+extern
+int DNSServiceRegistrationUpdateRecord_rpc
+(
+    mach_port_t server,
+    mach_port_t client,
+    natural_t reference,
+    int type,
+    record_data_t data,
+    mach_msg_type_number_t record_dataCnt
+);
+
+extern
+kern_return_t DNSServiceRegistrationRemoveRecord_rpc
+(
+    mach_port_t server,
+    mach_port_t client,
+    natural_t reference
+);
+
 struct a_requests {
     struct a_requests		*next;
     mach_port_t				client_port;
@@ -114,7 +144,7 @@ mach_port_t DNSServiceDiscoveryLookupServer(void)
     return sndPort;
 }
 
-dns_service_discovery_ref DNSServiceBrowserCreate (char *regtype, char *domain, DNSServiceBrowserReply callBack,void *context)
+dns_service_discovery_ref DNSServiceBrowserCreate (const char *regtype, const char *domain, DNSServiceBrowserReply callBack,void *context)
 {
     mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
     mach_port_t clientPort;
@@ -146,7 +176,7 @@ dns_service_discovery_ref DNSServiceBrowserCreate (char *regtype, char *domain, 
     request->context = context;
     request->callout.browserCallback = callBack;
 
-    result = DNSServiceBrowserCreate_rpc(serverPort, clientPort, regtype, domain);
+    result = DNSServiceBrowserCreate_rpc(serverPort, clientPort, (char *)regtype, (char *)domain);
 
     if (result != KERN_SUCCESS) {
         printf("There was an error creating a browser, %s\n", mach_error_string(result));
@@ -215,7 +245,7 @@ dns_service_discovery_ref DNSServiceDomainEnumerationCreate (int registrationDom
 /* Service Registration */
 
 dns_service_discovery_ref DNSServiceRegistrationCreate
-(char *name, char *regtype, char *domain, Opaque16 port, char *txtRecord, DNSServiceRegistrationReply callBack, void *context)
+(const char *name, const char *regtype, const char *domain, Opaque16 port, const char *txtRecord, DNSServiceRegistrationReply callBack, void *context)
 {
     mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
     mach_port_t clientPort;
@@ -246,7 +276,7 @@ dns_service_discovery_ref DNSServiceRegistrationCreate
     request->context = context;
     request->callout.regCallback = callBack;
 
-    result = DNSServiceRegistrationCreate_rpc(serverPort, clientPort, name, regtype, domain, (int)(port.NotAnInteger), txtRecord);
+    result = DNSServiceRegistrationCreate_rpc(serverPort, clientPort, (char *)name, (char *)regtype, (char *)domain, (int)(port.NotAnInteger), (char *)txtRecord);
 
     if (result != KERN_SUCCESS) {
         printf("There was an error creating a resolve, %s\n", mach_error_string(result));
@@ -264,7 +294,7 @@ dns_service_discovery_ref DNSServiceRegistrationCreate
 
 /* Resolver requests */
 
-dns_service_discovery_ref DNSServiceResolverResolve(char *name, char *regtype, char *domain, DNSServiceResolverReply callBack, void *context)
+dns_service_discovery_ref DNSServiceResolverResolve(const char *name, const char *regtype, const char *domain, DNSServiceResolverReply callBack, void *context)
 {
     mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
     mach_port_t clientPort;
@@ -295,7 +325,7 @@ dns_service_discovery_ref DNSServiceResolverResolve(char *name, char *regtype, c
     request->context = context;
     request->callout.resolveCallback = callBack;
 
-    DNSServiceResolverResolve_rpc(serverPort, clientPort, name, regtype, domain);
+    DNSServiceResolverResolve_rpc(serverPort, clientPort, (char *)name, (char *)regtype, (char *)domain);
 
     pthread_mutex_lock(&a_requests_lock);
     request->next = a_requests;
@@ -303,6 +333,84 @@ dns_service_discovery_ref DNSServiceResolverResolve(char *name, char *regtype, c
     pthread_mutex_unlock(&a_requests_lock);
 
     return return_t;
+}
+
+DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref ref, uint16_t rrtype, uint16_t rdlen, const char *rdata)
+{
+    mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
+    mach_port_t clientPort;
+    natural_t reference = 0;
+    kern_return_t result = KERN_SUCCESS;
+
+    if (!serverPort) {
+        return kDNSServiceDiscoveryUnknownErr;
+    }
+
+    clientPort = DNSServiceDiscoveryMachPort(ref);
+
+    if (!clientPort) {
+        return kDNSServiceDiscoveryUnknownErr;
+    }
+
+    result = DNSServiceRegistrationAddRecord_rpc(serverPort, clientPort, rrtype, (record_data_t)rdata, rdlen, &reference);
+
+    if (result != KERN_SUCCESS) {
+        printf("The result of the registration was not successful.  Error %d, result %s\n", result, mach_error_string(result));
+    }
+    
+    return reference;
+}
+
+DNSServiceRegistrationReplyErrorType DNSServiceRegistrationUpdateRecord(dns_service_discovery_ref ref, DNSRecordReference reference, uint16_t rrtype, uint16_t rdlen, const char *rdata)
+{
+    mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
+    mach_port_t clientPort;
+    kern_return_t result = KERN_SUCCESS;
+
+    if (!serverPort) {
+        return kDNSServiceDiscoveryUnknownErr;
+    }
+
+    clientPort = DNSServiceDiscoveryMachPort(ref);
+
+    if (!clientPort) {
+        return kDNSServiceDiscoveryUnknownErr;
+    }
+
+    result = DNSServiceRegistrationUpdateRecord_rpc(serverPort, clientPort, (natural_t)reference, rrtype, (record_data_t)rdata, rdlen);
+    if (result != KERN_SUCCESS) {
+        printf("The result of the registration was not successful.  Error %d, result %s\n", result, mach_error_string(result));
+        return result;
+    }
+
+    return kDNSServiceDiscoveryNoError;
+}
+
+
+DNSServiceRegistrationReplyErrorType DNSServiceRegistrationRemoveRecord(dns_service_discovery_ref ref, DNSRecordReference reference)
+{
+    mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
+    mach_port_t clientPort;
+    kern_return_t result = KERN_SUCCESS;
+
+    if (!serverPort) {
+        return kDNSServiceDiscoveryUnknownErr;
+    }
+
+    clientPort = DNSServiceDiscoveryMachPort(ref);
+
+    if (!clientPort) {
+        return kDNSServiceDiscoveryUnknownErr;
+    }
+
+    result = DNSServiceRegistrationRemoveRecord_rpc(serverPort, clientPort, (natural_t)reference);
+
+    if (result != KERN_SUCCESS) {
+        printf("The result of the registration was not successful.  Error %d, result %s\n", result, mach_error_string(result));
+        return result;
+    }
+
+    return kDNSServiceDiscoveryNoError;
 }
 
 void DNSServiceDiscovery_handleReply(void *replyMsg)
@@ -360,6 +468,8 @@ void DNSServiceDiscoveryDeallocate(dns_service_discovery_ref dnsServiceDiscovery
         free(request);
         
         mach_port_destroy(mach_task_self(), dnsServiceDiscovery->port);
+
+        free(dnsServiceDiscovery);
     }
     return;
 }
@@ -371,7 +481,7 @@ kern_return_t internal_DNSServiceDomainEnumerationReply_rpc
     mach_port_t reply,
     int resultType,
     DNSCString replyDomain,
-    int flags
+    DNSServiceDiscoveryReplyFlags flags
 )
 {
     struct a_requests	*request;
@@ -408,7 +518,7 @@ kern_return_t internal_DNSServiceBrowserReply_rpc
     DNSCString replyName,
     DNSCString replyType,
     DNSCString replyDomain,
-    int flags
+    DNSServiceDiscoveryReplyFlags flags
 )
 {
     struct a_requests	*request;
@@ -475,7 +585,7 @@ kern_return_t internal_DNSServiceResolverReply_rpc
     sockaddr_t interface,
     sockaddr_t address,
     DNSCString txtRecord,
-    int flags
+    DNSServiceDiscoveryReplyFlags flags
 )
 {
     struct sockaddr  *interface_storage = NULL;

@@ -27,10 +27,13 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/cdefs.h>
 
 #include <netinet/in.h>
 
-typedef union { unsigned char b[2]; u_int16_t NotAnInteger; } Opaque16;
+__BEGIN_DECLS
+
+typedef union { uint8_t b[2]; uint16_t NotAnInteger; } Opaque16;
 
 /* Opaque internal data type */
 typedef struct _dns_service_discovery_t * dns_service_discovery_ref;
@@ -44,7 +47,7 @@ enum {
 
 
 /* possible error code values */
-enum
+typedef enum
 {
     kDNSServiceDiscoveryWaiting     = 1,
     kDNSServiceDiscoveryNoError     = 0,
@@ -64,7 +67,10 @@ enum
     kDNSServiceDiscoveryNameConflict      = -65548,
     kDNSServiceDiscoveryInvalid           = -65549,
     kDNSServiceDiscoveryMemFree           = -65792        // 0xFFFE FF00
-};
+} DNSServiceRegistrationReplyErrorType;
+
+typedef uint32_t DNSRecordReference;
+
 
 /*!
 @function DNSServiceResolver_handleReply
@@ -79,8 +85,8 @@ void DNSServiceDiscovery_handleReply(void *replyMsg);
 /* Service Registration */
 
 typedef void (*DNSServiceRegistrationReply) (
-    int 		errorCode,
-    void		*context
+    DNSServiceRegistrationReplyErrorType 		errorCode,
+    void										*context
 );
 
 /*!
@@ -98,11 +104,11 @@ typedef void (*DNSServiceRegistrationReply) (
 */
 dns_service_discovery_ref DNSServiceRegistrationCreate
 (
-    char 		*name,
-    char 		*regtype,
-    char 		*domain,
+    const char 		*name,
+    const char 		*regtype,
+    const char 		*domain,
     Opaque16		port,
-    char 		*txtRecord,
+    const char 		*txtRecord,
     DNSServiceRegistrationReply callBack,
     void		*context
 );
@@ -117,11 +123,17 @@ typedef enum
     DNSServiceDomainEnumerationReplyRemoveDomain,			// Domain has been removed from network
 } DNSServiceDomainEnumerationReplyResultType;
 
+typedef enum
+{
+    DNSServiceDiscoverReplyFlagsFinished,
+    DNSServiceDiscoverReplyFlagsMoreComing,
+} DNSServiceDiscoveryReplyFlags;
+
 typedef void (*DNSServiceDomainEnumerationReply) (
-    int 		resultType,		// One of DNSServiceDomainEnumerationReplyResultType
-    char  		*replyDomain,
-    int 		flags,			// DNS Service Discovery reply flags information
-    void		*context		
+    DNSServiceDomainEnumerationReplyResultType 			resultType,		// One of DNSServiceDomainEnumerationReplyResultType
+    const char  						*replyDomain,
+    DNSServiceDiscoveryReplyFlags 		flags,			// DNS Service Discovery reply flags information
+    void								*context		
 );
 
 /*!
@@ -153,12 +165,12 @@ typedef enum
 } DNSServiceBrowserReplyResultType;
 
 typedef void (*DNSServiceBrowserReply) (
-    int 		resultType,		// One of DNSServiceBrowserReplyResultType
-    char  		*replyName,
-    char  		*replyType,
-    char  		*replyDomain,
-    int 		flags,			// DNS Service Discovery reply flags information
-    void		*context
+    DNSServiceBrowserReplyResultType 			resultType,		// One of DNSServiceBrowserReplyResultType
+    const char  	*replyName,
+    const char  	*replyType,
+    const char  	*replyDomain,
+    DNSServiceDiscoveryReplyFlags 				flags,			// DNS Service Discovery reply flags information
+    void			*context
 );
 
 /*!
@@ -172,8 +184,8 @@ typedef void (*DNSServiceBrowserReply) (
 */
 dns_service_discovery_ref DNSServiceBrowserCreate
 (
-    char 		*regtype,
-    char 		*domain,
+    const char 		*regtype,
+    const char 		*domain,
     DNSServiceBrowserReply	callBack,
     void		*context
 );
@@ -184,9 +196,9 @@ dns_service_discovery_ref DNSServiceBrowserCreate
 typedef void (*DNSServiceResolverReply) (
     struct sockaddr 	*interface,		// Needed for scoped addresses like link-local
     struct sockaddr 	*address,
-    char 		*txtRecord,
-    int 		flags,			// DNS Service Discovery reply flags information
-    void		*context
+    const char 			*txtRecord,
+    DNSServiceDiscoveryReplyFlags 				flags,			// DNS Service Discovery reply flags information
+    void				*context
 );
 
 /*!
@@ -204,9 +216,9 @@ typedef void (*DNSServiceResolverReply) (
 
 dns_service_discovery_ref DNSServiceResolverResolve
 (
-    char 		*name,
-    char 		*regtype,
-    char 		*domain,
+    const char 		*name,
+    const char 		*regtype,
+    const char 		*domain,
     DNSServiceResolverReply callBack,
     void		*context
 );
@@ -233,5 +245,44 @@ mach_port_t DNSServiceDiscoveryMachPort(dns_service_discovery_ref dnsServiceDisc
     @result void
 */
 void DNSServiceDiscoveryDeallocate(dns_service_discovery_ref dnsServiceDiscovery);
+
+/***************************************************************************/
+/* Registration updating */
+
+
+/*!
+    @function DNSServiceRegistrationAddRecord
+    @description Request that the mDNS Responder add the DNS Record of a specific type
+    @param dnsServiceDiscovery A dns_service_discovery_ref as returned from a DNSServiceRegistrationCreate call
+    @param rrtype A standard DNS Resource Record Type, from http://www.iana.org/assignments/dns-parameters
+    @param rdlen Length of the data
+    @param rdata Opaque binary Resource Record data, up to 64 kB.
+    @result DNSRecordReference An opaque reference that can be passed to the update and remove record calls.  If an error occurs, this value will be zero or negative
+*/
+DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref dnsServiceDiscovery, uint16_t rrtype, uint16_t rdlen, const char *rdata);
+
+/*!
+    @function DNSServiceRegistrationAddRecord
+    @description Request that the mDNS Responder add the DNS Record of a specific type
+    @param dnsServiceDiscovery A dns_service_discovery_ref as returned from a DNSServiceRegistrationCreate call
+    @param dnsRecordReference A dnsRecordReference as returned from a DNSServiceRegistrationAddRecord call
+    @param rrtype A standard DNS Resource Record Type, from http://www.iana.org/assignments/dns-parameters
+    @param rdlen Length of the data
+    @param rdata Opaque binary Resource Record data, up to 64 kB.
+    @result DNSServiceRegistrationReplyErrorType If an error occurs, this value will be non zero
+*/
+DNSServiceRegistrationReplyErrorType DNSServiceRegistrationUpdateRecord(dns_service_discovery_ref ref, DNSRecordReference reference, uint16_t rrtype, uint16_t rdlen, const char *rdata);
+
+/*!
+    @function DNSServiceRegistrationRemoveRecord
+    @description Request that the mDNS Responder remove the DNS Record(s) of a specific type
+    @param dnsServiceDiscovery A dns_service_discovery_ref as returned from a DNSServiceRegistrationCreate call
+    @param dnsRecordReference A dnsRecordReference as returned from a DNSServiceRegistrationAddRecord call
+    @result DNSServiceRegistrationReplyErrorType If an error occurs, this value will be non zero
+*/
+DNSServiceRegistrationReplyErrorType DNSServiceRegistrationRemoveRecord(dns_service_discovery_ref ref, DNSRecordReference reference);
+
+
+__END_DECLS
 
 #endif	/* __DNS_SERVICE_DISCOVERY_H */
