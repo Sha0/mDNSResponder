@@ -68,6 +68,12 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.35  2003/02/21 02:47:54  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Several places in the code were calling CacheRRActive(), which searched the entire
+question list every time, to see if this cache resource record answers any question.
+Instead, we now have a field "CRActiveQuestion" in the resource record structure
+
 Revision 1.34  2003/02/21 01:54:08  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
@@ -346,7 +352,7 @@ typedef struct
 
 typedef struct ResourceRecord_struct ResourceRecord;
 typedef struct ResourceRecord_struct *ResourceRecordPtr;
-
+typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 
@@ -396,8 +402,8 @@ struct ResourceRecord_struct
 	mDNSs32         TimeRcvd;			// CR: In platform time units
 	mDNSs32         LastUsed;			// CR: In platform time units
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
+	DNSQuestion    *CRActiveQuestion;	// CR: Points to a questions referencing this answer
 	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
-	mDNSBool        CRActive;			// CR: Set if there is currently a question referencing this answer
 	mDNSBool        NewData;			// CR: Set if this is a record we just received
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -466,7 +472,6 @@ struct ServiceRecordSet_struct
 #pragma mark - Question structures
 #endif
 
-typedef struct DNSQuestion_struct DNSQuestion;
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
 struct DNSQuestion_struct
 	{

@@ -68,6 +68,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.80  2003/02/21 02:47:53  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Several places in the code were calling CacheRRActive(), which searched the entire
+question list every time, to see if this cache resource record answers any question.
+Instead, we now have a field "CRActiveQuestion" in the resource record structure
+
 Revision 1.79  2003/02/21 01:54:07  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
@@ -1166,22 +1172,6 @@ mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		}
 	}
 
-// rr is a ResourceRecord in our cache
-// (kDNSRecordTypePacketAnswer/PacketAdditional/PacketUniqueAns/PacketUniqueAdd)
-// Returns pointer to the first active question (if any) referencing this cached ResourceRecord
-// Note: This needs some more thought:
-// There may be more than one active question for any given resource record:
-// There may be an active interface-specific question, and a non-specific question
-// There may be an rrtype-specific question, and qtype=any question
-mDNSlocal DNSQuestion *CacheRRActive(const mDNS *const m, ResourceRecord *rr)
-	{
-	DNSQuestion *q;
-	for (q = m->Questions; q; q=q->next)		// Scan our list of questions
-		if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(rr, q))
-			return(q);
-	return(mDNSNULL);
-	}
-
 mDNSlocal void SetTargetToHostName(const mDNS *const m, ResourceRecord *const rr)
 	{
 	switch (rr->rrtype)
@@ -1285,8 +1275,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->TimeRcvd          = 0;			// Not strictly relevant for a local record
 	rr->LastUsed          = 0;			// Not strictly relevant for a local record
 	rr->UseCount          = 0;			// Not strictly relevant for a local record
+	rr->CRActiveQuestion  = mDNSNULL;	// Not strictly relevant for a local record
 	rr->UnansweredQueries = 0;			// Not strictly relevant for a local record
-	rr->CRActive          = mDNSfalse;	// Not strictly relevant for a local record
 	rr->NewData           = mDNSfalse;	// Not strictly relevant for a local record
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -1789,8 +1779,8 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->TimeRcvd          = timenow;
 	rr->LastUsed          = timenow;
 	rr->UseCount          = 0;
+	rr->CRActiveQuestion  = mDNSNULL;
 	rr->UnansweredQueries = 0;
-	rr->CRActive          = mDNSfalse;
 	rr->NewData           = mDNStrue;
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -2273,7 +2263,7 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 
 	// 1. See if we've got any cache records in danger of expiring
 	for (rr = m->rrcache; rr; rr=rr->next)
-		if (rr->UnansweredQueries < 2)
+		if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
 			{
 			mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
 			mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
@@ -2282,8 +2272,7 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 
 			if (timenow - t1 >= 0 || (rr->UnansweredQueries < 1 && timenow - t2 >= 0))
 				{
-				DNSQuestion *q = CacheRRActive(m, rr);
-				if (q) q->LastQTime = timenow - q->ThisQInterval;
+				rr->CRActiveQuestion->LastQTime = timenow - rr->CRActiveQuestion->ThisQInterval;
 				}
 			}
 	
@@ -2617,6 +2606,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 
 	rr->LastUsed = timenow;
 	rr->UseCount++;
+	rr->CRActiveQuestion = q;
 
 	// CAUTION: MUST NOT do anything more with q after calling q->Callback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -2676,7 +2666,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m, const mDNSs32 timenow)
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
 	m->NewQuestions = q->next;				// Advance NewQuestions to the next (if any)
 
-	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", &q->name, DNSTypeName(q->rrtype));
+	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->name.c, DNSTypeName(q->rrtype));
 
 	if (m->lock_rrcache) debugf("AnswerNewQuestion ERROR! Cache already locked!");
 	// This should be safe, because calling the client's question callback may cause the
@@ -2782,7 +2772,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 				if (rtype == kDNSRecordTypePacketAnswer) age /= 2;		// Keep answer records longer than additionals
 
 				// Records that answer still-active questions are not candidates for deletion
-				if (bestage < age && !CacheRRActive(m, *rr)) { best = rr; bestage = age; }
+				if (bestage < age && !(*rr)->CRActiveQuestion) { best = rr; bestage = age; }
 				}
 
 			rr=&(*rr)->next;
@@ -2836,12 +2826,12 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 			mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
 			mDNSs32 t1 = t0 - onetenth;
 			mDNSs32 t2 = t1 - onetenth;
-			if (rr->UnansweredQueries < 1 && nextevent - t2 > 0 && CacheRRActive(m, rr))
+			if (rr->CRActiveQuestion && rr->UnansweredQueries < 1 && nextevent - t2 > 0)
 				{
 				nextevent = t2;
 				msg = "Penultimate Query";
 				}
-			else if (rr->UnansweredQueries < 2 && nextevent - t1 > 0 && CacheRRActive(m, rr))
+			else if (rr->CRActiveQuestion && rr->UnansweredQueries < 2 && nextevent - t1 > 0)
 				{
 				nextevent = t1;
 				msg = "Final Expiration Query";
@@ -3750,14 +3740,14 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->DuplicateOf   = FindDuplicateQuestion(m, question);
 		if (!question->DuplicateOf)
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %X (%X) started",
-				&question->name, DNSTypeName(question->rrtype), question->InterfaceID, question);
+				question->name.c, DNSTypeName(question->rrtype), question->InterfaceID, question);
 		else
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %X (%X) duplicate of (%X)",
-				&question->name, DNSTypeName(question->rrtype), question->InterfaceID, question, question->DuplicateOf);
+				question->name.c, DNSTypeName(question->rrtype), question->InterfaceID, question, question->DuplicateOf);
 		*q = question;
 		
 		if (!m->NewQuestions)
-			debugf("mDNS_StartQuery_internal: Setting NewQuestions %##s (%s)", &question->name, DNSTypeName(question->rrtype));
+			debugf("mDNS_StartQuery_internal: Setting NewQuestions %##s (%s)", question->name.c, DNSTypeName(question->rrtype));
 		if (!m->NewQuestions) m->NewQuestions = question;
 
 		return(mStatus_NoError);
@@ -3766,6 +3756,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
+	ResourceRecord *rr;
 	DNSQuestion **q = &m->Questions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
@@ -3776,7 +3767,22 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 	UpdateQuestionDuplicates(m, question);
 	// But don't trash ThisQInterval until afterwards.
 	question->ThisQInterval = -1;
-	
+
+	// If there are any cache records referencing this as their active question, then see if any other
+	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
+	for (rr = m->rrcache; rr; rr=rr->next)
+		{
+		if (rr->CRActiveQuestion == question)
+			{
+			DNSQuestion *q;
+			for (q = m->Questions; q; q=q->next)		// Scan our list of questions
+				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(rr, q))
+					break;
+			debugf("mDNS_StopQuery_internal: Cache RR %##s setting CRActiveQuestion to %X", rr->name.c, q);
+			rr->CRActiveQuestion = q;
+			}
+		}
+
 	// If we just deleted the question that AnswerLocalQuestions() is about to look at,
 	// bump its pointer forward one question.
 	if (m->CurrentQuestion == question)
@@ -3871,7 +3877,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	query->info->TXTlen = answer->rdata->RDLength;
 	mDNSPlatformMemCopy(answer->rdata->u.txt.c, query->info->TXTinfo, answer->rdata->RDLength);
 
-	debugf("FoundServiceInfoTXT: %##s GotADD=%d", &query->info->name, query->GotADD);
+	debugf("FoundServiceInfoTXT: %##s GotADD=%d", query->info->name.c, query->GotADD);
 
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
@@ -3903,7 +3909,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 		return;
 		}
 
-	debugf("FoundServiceInfo: v%d %##s GotTXT=%d", query->info->ip.type, &query->info->name, query->GotTXT);
+	debugf("FoundServiceInfo: v%d %##s GotTXT=%d", query->info->ip.type, query->info->name.c, query->GotTXT);
 
 	// If query->GotTXT is 1 that means we already got a single TXT answer but didn't
 	// deliver it to the client at that time, so no further action is required.
@@ -4703,7 +4709,7 @@ extern void mDNS_Close(mDNS *const m)
 #if MDNS_DEBUGMSGS
 	ResourceRecord *rr;
 	int rrcache_active = 0;
-	for (rr = m->rrcache; rr; rr=rr->next) if (CacheRRActive(m, rr)) rrcache_active++;
+	for (rr = m->rrcache; rr; rr=rr->next) if (rr->CRActiveQuestion) rrcache_active++;
 	debugf("mDNS_Close: RR Cache now using %d records, %d active", m->rrcache_used, rrcache_active);
 #endif
 
