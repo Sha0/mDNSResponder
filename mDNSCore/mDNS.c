@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.337  2003/12/01 21:46:05  cheshire
+mDNS_StartQuery returns mStatus_BadInterfaceErr if the specified interface does not exist
+
 Revision 1.336  2003/12/01 21:26:19  cheshire
 Guard against zero-length sbuffer in mDNS_vsnprintf()
 
@@ -5796,7 +5799,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			if (!intf)
 				{
 				debugf("mDNS_StartQuery_internal: Question %##s InterfaceID %p not found", question->qname.c, question->InterfaceID);
-				return(mStatus_BadReferenceErr);
+				return(mStatus_BadInterfaceErr);
 				}
 			}
 
