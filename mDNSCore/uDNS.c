@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.178  2005/01/17 23:47:58  cheshire
+<rdar://problem/3904954> Wide-area services not found on little-endian
+
 Revision 1.177  2005/01/17 23:41:26  cheshire
 Fix compile errors
 
@@ -3728,8 +3731,14 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 		info->nread += n;
 		if (info->nread == info->replylen)
 			{
-			// finished reading message
-			uDNS_ReceiveMsg(m, &info->reply, ((mDNSu8 *)&info->reply) + info->replylen, mDNSNULL, zeroIPPort, mDNSNULL, zeroIPPort, question->InterfaceID);
+			// Finished reading message; convert the integer parts which are in IETF byte-order (MSB first, LSB second)
+			DNSMessage *msg = &info->reply;
+			mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
+			msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);
+			msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] << 8 | ptr[3]);
+			msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] << 8 | ptr[5]);
+			msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] << 8 | ptr[7]);
+			uDNS_ReceiveMsg(m, msg, (mDNSu8 *)msg + info->replylen, mDNSNULL, zeroIPPort, mDNSNULL, zeroIPPort, question->InterfaceID);
 			mDNSPlatformTCPCloseConnection(sd);
 			ufree(info);
 			}
