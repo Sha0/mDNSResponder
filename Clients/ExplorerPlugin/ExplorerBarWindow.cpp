@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.17  2005/02/25 19:57:30  shersche
+<rdar://problem/4023323> Remove FTP browsing from plugin
+
 Revision 1.16  2005/02/08 23:31:06  shersche
 Move "About ..." item underneath WebSites, change icons for discovered sites and "About ..." item
 
@@ -220,17 +223,12 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	e->type				= "_http._tcp";
 	e->urlScheme		= "http://";
 	e->ref				= NULL;
-	e->treeItem			= NULL;
-	e->treeFirst		= true;
 	e->obj				= this;
 	e->needsLogin		= false;
 	mServiceHandlers.Add( e );
-	
-	s.LoadString( IDS_WEB_SITES );
-	e->treeItem = mTree.InsertItem( s, 1, 1 );
-	mTree.Expand( e->treeItem, TVE_EXPAND );
+
 	s.LoadString( IDS_ABOUT );
-	m_about = mTree.InsertItem( s, 1, 1, e->treeItem );
+	m_about = mTree.InsertItem( s, 1, 1 );
 
 	err = DNSServiceBrowse( &e->ref, 0, 0, e->type, NULL, BrowseCallBack, e );
 	require_noerr( err, exit );
@@ -238,32 +236,7 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(e->ref), m_hWnd, WM_PRIVATE_SERVICE_EVENT, FD_READ|FD_CLOSE);
 	require_noerr( err, exit );
 
-	m_serviceRefs.push_back(e->ref); 
-
-	// FTP Site Handler
-	
-	e = new ServiceHandlerEntry;
-	check( e );
-	e->type				= "_ftp._tcp";
-	e->urlScheme		= "ftp://";
-	e->ref				= NULL;
-	e->treeItem			= NULL;
-	e->treeFirst		= true;
-	e->obj				= this;
-	e->needsLogin		= true;
-	mServiceHandlers.Add( e );
-	
-	s.LoadString( IDS_FTP_SITES );
-	e->treeItem = mTree.InsertItem( s, 1, 1 );
-	mTree.Expand( e->treeItem, TVE_EXPAND );
-	
-	err = DNSServiceBrowse( &e->ref, 0, 0, e->type, NULL, BrowseCallBack, e );
-	require_noerr( err, exit );
-
-	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(e->ref), m_hWnd, WM_PRIVATE_SERVICE_EVENT, FD_READ|FD_CLOSE);
-	require_noerr( err, exit );
-
-	m_serviceRefs.push_back(e->ref); 
+	m_serviceRefs.push_back(e->ref);
 
 	m_imageList.Create( 16, 16, ILC_COLORDDB, 2, 0);
 	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_GLOBE ) ) );
@@ -555,16 +528,8 @@ LONG	ExplorerBarWindow::OnServiceAdd( ServiceInfo * service )
 		
 		afterItem = ( index > 0 ) ? handler->array[ index - 1 ]->item : m_about;
 		handler->array.InsertAt( index, service );
-		service->item = mTree.InsertItem( service->displayName, 0, 0, handler->treeItem, afterItem );
+		service->item = mTree.InsertItem( service->displayName, 0, 0, NULL, afterItem );
 		mTree.SetItemData( service->item, (DWORD_PTR) service );
-		
-		// Make sure the item is visible if this is the first time a service was added.
-	
-		if( handler->treeFirst )
-		{
-			handler->treeFirst = false;
-			mTree.EnsureVisible( service->item );
-		}
 	}
 	return( 0 );
 }

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.h,v $
+Revision 1.7  2005/02/25 19:57:30  shersche
+<rdar://problem/4023323> Remove FTP browsing from plugin
+
 Revision 1.6  2005/01/27 22:27:03  shersche
 Add m_about member for "About ..." tree item
 
@@ -186,8 +189,6 @@ struct	ServiceHandlerEntry
 	const char *			urlScheme;
 	DNSServiceRef			ref;
 	ServiceInfoArray		array;
-	HTREEITEM				treeItem;
-	bool					treeFirst;
 	ExplorerBarWindow *		obj;
 	bool					needsLogin;
 	
@@ -196,8 +197,6 @@ struct	ServiceHandlerEntry
 		type		= NULL;
 		urlScheme	= NULL;
 		ref 		= NULL;
-		treeItem	= NULL;
-		treeFirst	= true;
 		obj			= NULL;
 		needsLogin	= false;
 	}
