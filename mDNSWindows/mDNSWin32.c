@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.31  2004/04/09 00:40:46  bradley
+Re-enable IPv6 support, AAAA records over IPv4, and IPv4 routable IPv6 exclusion support.
+
 Revision 1.30  2004/04/09 00:33:58  bradley
 Turn on Multicast flag for interfaces to tell mDNSCore that the interfaces are multicast capable.
 
@@ -172,9 +175,9 @@ Multicast DNS platform plugin for Win32
 
 #define	MDNS_WINDOWS_USE_IPV6_IF_ADDRS				1
 #define	MDNS_WINDOWS_ENABLE_IPV4					1
-#define	MDNS_WINDOWS_ENABLE_IPV6					0
-#define	MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6		0
-#define	MDNS_WINDOWS_AAAA_OVER_IPV4					0
+#define	MDNS_WINDOWS_ENABLE_IPV6					1
+#define	MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6		1
+#define	MDNS_WINDOWS_AAAA_OVER_IPV4					1
 
 #define	kMDNSDefaultName							"My Computer"
 
