@@ -50,7 +50,14 @@
 				PreprocessorDefinitions="_DEBUG"
 				MkTypLibCompatible="FALSE"/>
 			<Tool
-				Name="VCPostBuildEventTool"/>
+				Name="VCPostBuildEventTool"
+				Description="Copying To Build Tree..."
+				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
+IF EXIST %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot; GOTO COPY
+mkdir %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;
+:COPY
+copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;
+:END"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
@@ -107,7 +114,14 @@
 				PreprocessorDefinitions="NDEBUG"
 				MkTypLibCompatible="FALSE"/>
 			<Tool
-				Name="VCPostBuildEventTool"/>
+				Name="VCPostBuildEventTool"
+				Description="Copying To Build Tree..."
+				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
+IF EXIST %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot; GOTO COPY
+mkdir %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;
+:COPY
+copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;
+:END"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
