@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.250  2004/12/04 02:12:45  cheshire
+<rdar://problem/3517236> mDNSResponder puts LargeCacheRecord on the stack
+
 Revision 1.249  2004/12/03 05:18:33  ksekar
 <rdar://problem/3810596> mDNSResponder needs to return more specific TSIG errors
 
@@ -1229,13 +1232,15 @@ enum
 	kDNSRecordTypeUniqueMask       = (kDNSRecordTypeUnique | kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique),
 	kDNSRecordTypeActiveMask       = (kDNSRecordTypeAdvisory | kDNSRecordTypeShared | kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique),
 
-	kDNSRecordTypePacketAdd        = 0x80,	// Received in the Additional Section of a DNS Response
-	kDNSRecordTypePacketAddUnique  = 0xA0,	// Received in the Additional Section of a DNS Response with kDNSClass_UniqueRRSet set
-	kDNSRecordTypePacketAns        = 0xC0,	// Received in the Answer Section of a DNS Response
-	kDNSRecordTypePacketAnsUnique  = 0xE0,	// Received in the Answer Section of a DNS Response with kDNSClass_UniqueRRSet set
+	kDNSRecordTypePacketAdd        = 0x80,	// Received in the Additional  Section of a DNS Response
+	kDNSRecordTypePacketAddUnique  = 0x90,	// Received in the Additional  Section of a DNS Response with kDNSClass_UniqueRRSet set
+	kDNSRecordTypePacketAuth       = 0xA0,	// Received in the Authorities Section of a DNS Response
+	kDNSRecordTypePacketAuthUnique = 0xB0,	// Received in the Authorities Section of a DNS Response with kDNSClass_UniqueRRSet set
+	kDNSRecordTypePacketAns        = 0xC0,	// Received in the Answer      Section of a DNS Response
+	kDNSRecordTypePacketAnsUnique  = 0xD0,	// Received in the Answer      Section of a DNS Response with kDNSClass_UniqueRRSet set
 
-	kDNSRecordTypePacketAnsMask    = 0x40,	// True for PacketAns       and PacketAnsUnique
-	kDNSRecordTypePacketUniqueMask = 0x20	// True for PacketAddUnique and PacketAnsUnique
+	kDNSRecordTypePacketAnsMask    = 0x40,	// True for PacketAns and    PacketAnsUnique
+	kDNSRecordTypePacketUniqueMask = 0x10	// True for PacketAddUnique, PacketAnsUnique, PacketAuthUnique
 	};
 
 typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target;   } rdataSRV;
@@ -1923,6 +1928,11 @@ struct mDNS_struct
 
 	// unicast-specific data
 	uDNS_GlobalInfo uDNS_info;
+
+	// Fixed storage, to avoid creating large objects on the stack
+	DNSMessage imsg;		// Incoming message received from wire
+	DNSMessage omsg;		// Outgoing message we're building
+	LargeCacheRecord rec;	// Resource Record extracted from received message
 	};
 
 // ***************************************************************************

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.71  2004/12/04 02:12:45  cheshire
+<rdar://problem/3517236> mDNSResponder puts LargeCacheRecord on the stack
+
 Revision 1.70  2004/12/03 19:52:44  ksekar
 Use PutResourceRecordTTLJumbo for putDeletionRecord()
 
@@ -1645,6 +1648,9 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	{
 	CacheRecord *rr = &largecr->r;
 	mDNSu16 pktrdlength;
+	
+	if (largecr == &m->rec && rr->resrec.RecordType)
+		LogMsg("GetLargeResourceRecord: m->rec appears to be already in use");
 
 	rr->next              = mDNSNULL;
 	rr->resrec.RecordType = RecordType;
@@ -1685,6 +1691,8 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 	rr->resrec.rdata = (RData*)&rr->rdatastorage;
 	rr->resrec.rdata->MaxRDLength = MaximumRDSize;
+
+	if (!RecordType) LogMsg("GetLargeResourceRecord: No RecordType for %##s", rr->resrec.name.c);
 
 	switch (rr->resrec.rrtype)
 		{
