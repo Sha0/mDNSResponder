@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.195  2005/02/22 17:53:08  ksekar
+Changed successful NAT Traversals from LogMsg to LogOperation
+
 Revision 1.194  2005/02/15 18:38:03  ksekar
 <rdar://problem/3967876> change expected/redundant log messages to debugfs.
 
@@ -1152,7 +1155,7 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 			}
 		return mDNStrue;
 		}
-	else LogMsg("Received public IP address %d.%d.%d.%d from NAT.", addr.ip.v4.b[0], addr.ip.v4.b[1], addr.ip.v4.b[2], addr.ip.v4.b[3]);
+	else LogOperation("Received public IP address %d.%d.%d.%d from NAT.", addr.ip.v4.b[0], addr.ip.v4.b[1], addr.ip.v4.b[2], addr.ip.v4.b[3]);
 	rr->resrec.rdata->u.ipv4 = addr.ip.v4;  // replace rdata w/ public address
 	uDNS_RegisterRecord(m, rr);
 	return mDNStrue;
@@ -1310,7 +1313,7 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 		return mDNStrue;  // note - unsafe to touch srs here
 		}
 
-	LogMsg("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
+	LogOperation("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
 	if (!srs) { LLQNatMapComplete(m); return mDNStrue; }
 
 	if (srs->uDNS_info.ns.ip.v4.NotAnInteger) SendServiceRegistration(m, srs);  // non-zero server address means we already have necessary zone data to send update
