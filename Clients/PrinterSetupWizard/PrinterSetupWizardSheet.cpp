@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.8  2004/06/27 08:04:51  shersche
+copy selected printer to prevent printer being deleted out from under
+
 Revision 1.7  2004/06/26 23:27:12  shersche
 support for installing multiple printers of the same name
 
@@ -111,6 +114,7 @@ CPrinterSetupWizardSheet::~CPrinterSetupWizardSheet()
 	if (m_pdlBrowser != NULL)
 	{
 		DNSServiceRefDeallocate(m_pdlBrowser);
+		m_pdlBrowser = NULL;
 	}
 
 	while (m_printerList.size() > 0)
@@ -120,6 +124,11 @@ CPrinterSetupWizardSheet::~CPrinterSetupWizardSheet()
 		m_printerList.pop_front();
 
 		delete printer;
+	}
+
+	if (m_selectedPrinter != NULL)
+	{
+		delete m_selectedPrinter;
 	}
 }
 
@@ -161,6 +170,7 @@ CPrinterSetupWizardSheet::RemoveEventHandler(EventHandler * handler)
 }
 
 
+
 // ------------------------------------------------------
 // SetSelectedPrinter
 //
@@ -187,15 +197,35 @@ CPrinterSetupWizardSheet::SetSelectedPrinter(Printer * printer)
 			require_noerr(err, exit);
 		}
 
+		delete m_selectedPrinter;
 		m_selectedPrinter = NULL;
 	}
 
 	check( m_selectedPrinter == NULL );
 
-	err = StartResolve(printer);
-	require_noerr(err, exit);
+	try
+	{
+		m_selectedPrinter = new Printer;
+	}
+	catch (...)
+	{
+		m_selectedPrinter = NULL;
+	}
 
-	m_selectedPrinter = printer;
+	require_action( m_selectedPrinter, exit, err = E_OUTOFMEMORY );
+
+	m_selectedPrinter->window		=	printer->window;
+	m_selectedPrinter->ifi			=	printer->ifi;
+	m_selectedPrinter->name			=	printer->name;
+	m_selectedPrinter->actualName	=	printer->actualName;
+	m_selectedPrinter->type			=	printer->type;
+	m_selectedPrinter->domain		=	printer->domain;
+	m_selectedPrinter->installed	=	printer->installed;
+	m_selectedPrinter->deflt		=	printer->deflt;
+	m_selectedPrinter->refs			=	1;
+			
+	err = StartResolve(m_selectedPrinter);
+	require_noerr(err, exit);
 
 exit:
 
