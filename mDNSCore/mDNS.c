@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.189  2003/06/11 19:24:03  cheshire
+<rdar://problem/3287141> Crash in SendQueries/SendResponses when no active interfaces
+Slight refinement to previous checkin
+
 Revision 1.188  2003/06/10 20:33:28  cheshire
 <rdar://problem/3287141> Crash in SendQueries/SendResponses when no active interfaces
 
@@ -1746,7 +1750,7 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const ResourceRecord *con
 
 mDNSlocal void InitializeLastAPTime(mDNS *const m, ResourceRecord *const rr)
 	{
-	// Back-date LastAPTime to make it appear that the next annoucement/probe is due immediately
+	// Back-date LastAPTime to make it appear that the next announcement/probe is due immediately
 	rr->LastAPTime = m->timenow - rr->ThisAPInterval;
 	
 	if (rr->RecordType == kDNSRecordTypeUnique)
@@ -2756,16 +2760,16 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// Now set SendRNow state appropriately
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (!rr->RRInterfaceActive || !intf)			// Interface inactive:
+		if (!rr->RRInterfaceActive)						// Interface inactive:
 			{
 			rr->ImmedAnswer     = mDNSNULL;				// Can't send this record
 			rr->ImmedAdditional = mDNSNULL;
 			}
 		else if (rr->ImmedAnswer == mDNSInterfaceMark)	// Sending this record on all appropriate interfaces
 			{
-			rr->SendRNow = (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
+			rr->SendRNow = !intf ? mDNSNULL : (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional if sending as answer
-			// If we're announcing this record, and it's at least half-way to its ordained time, then consider this annoucement done
+			// If we're announcing this record, and it's at least half-way to its ordained time, then consider this announcement done
 			if (TimeToAnnounceThisRecord(rr, m->timenow + rr->ThisAPInterval/2))
 				{
 				rr->AnnounceCount--;
