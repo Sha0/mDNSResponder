@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.11  2004/09/11 05:39:19  shersche
+<rdar://problem/3780203> Detect power managment state changes, calling mDNSCoreMachineSleep(m, true) on sleep, and mDNSCoreMachineSleep(m, false) on resume
+Bug #: 3780203
+
 Revision 1.10  2004/08/16 21:45:24  shersche
 Use the full pathname of executable when calling CreateService()
 Submitted by: prepin@zetron.com
@@ -170,7 +174,7 @@ static OSStatus		RunDirect( int argc, char *argv[] );
 
 static void WINAPI	ServiceMain( DWORD argc, LPSTR argv[] );
 static OSStatus		ServiceSetupEventLogging( void );
-static void WINAPI	ServiceControlHandler( DWORD inControl );
+static DWORD WINAPI	ServiceControlHandler( DWORD inControl, DWORD inEventType, LPVOID inEventData, LPVOID inContext );
 
 static OSStatus		ServiceRun( int argc, char *argv[] );
 static void			ServiceStop( void );
@@ -776,13 +780,13 @@ static void WINAPI ServiceMain( DWORD argc, LPSTR argv[] )
 	
 	gServiceStatus.dwServiceType 				= SERVICE_WIN32_SHARE_PROCESS;
 	gServiceStatus.dwCurrentState 				= 0;
-	gServiceStatus.dwControlsAccepted 			= SERVICE_ACCEPT_STOP;
+	gServiceStatus.dwControlsAccepted 			= SERVICE_ACCEPT_STOP|SERVICE_ACCEPT_POWEREVENT;
 	gServiceStatus.dwWin32ExitCode 				= NO_ERROR;
 	gServiceStatus.dwServiceSpecificExitCode 	= NO_ERROR;
 	gServiceStatus.dwCheckPoint 				= 0;
 	gServiceStatus.dwWaitHint 					= 0;
 	
-	gServiceStatusHandle = RegisterServiceCtrlHandler( argv[ 0 ], ServiceControlHandler );
+	gServiceStatusHandle = RegisterServiceCtrlHandlerEx( argv[ 0 ], ServiceControlHandler, NULL );
 	err = translate_errno( gServiceStatusHandle, (OSStatus) GetLastError(), kInUseErr );
 	require_noerr( err, exit );
 	
@@ -794,7 +798,7 @@ static void WINAPI ServiceMain( DWORD argc, LPSTR argv[] )
 	check_noerr( err );
 	
 	// Mark the service as starting.
-	
+
 	gServiceStatus.dwCurrentState 	= SERVICE_START_PENDING;
 	gServiceStatus.dwCheckPoint	 	= 0;
 	gServiceStatus.dwWaitHint 		= 5000;	// 5 seconds
@@ -886,10 +890,13 @@ exit:
 //	ServiceControlHandler
 //===========================================================================================================================
 
-static void WINAPI	ServiceControlHandler( DWORD inControl )
+static DWORD WINAPI	ServiceControlHandler( DWORD inControl, DWORD inEventType, LPVOID inEventData, LPVOID inContext )
 {
 	BOOL		setStatus;
 	BOOL		ok;
+
+	DEBUG_UNUSED( inEventData );
+	DEBUG_UNUSED( inContext );
 	
 	setStatus = TRUE;
 	switch( inControl )
@@ -901,6 +908,19 @@ static void WINAPI	ServiceControlHandler( DWORD inControl )
 			setStatus = FALSE;
 			break;
 		
+		case SERVICE_CONTROL_POWEREVENT:
+
+			if (inEventType == PBT_APMSUSPEND)
+			{
+				mDNSCoreMachineSleep(&gMDNSRecord, TRUE);
+			}
+			else if (inEventType == PBT_APMRESUMESUSPEND)
+			{
+				mDNSCoreMachineSleep(&gMDNSRecord, FALSE);
+			}
+		
+			break;
+
 		default:
 			dlog( kDebugLevelNotice, DEBUG_NAME "ServiceControlHandler: event (0x%08X)\n", inControl );
 			break;
@@ -911,6 +931,8 @@ static void WINAPI	ServiceControlHandler( DWORD inControl )
 		ok = SetServiceStatus( gServiceStatusHandle, &gServiceStatus );
 		check_translated_errno( ok, GetLastError(), kUnknownErr );
 	}
+
+	return NO_ERROR;
 }
 
 //===========================================================================================================================
