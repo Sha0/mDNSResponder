@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.10  2004/04/23 01:19:41  bradley
+Changed TXT record new line delimiter from \n to \r\n so it works now that it is an edit text.
+
 Revision 1.9  2004/03/07 05:51:04  bradley
 Updated service type list table to include all service types from dns-sd.org as of 2004-03-06.
 Added separate Service Type and Service Description columns so both are show in the window.
@@ -875,6 +878,7 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 	std::string					ip;
 	std::string					ifIP;
 	std::string					text;
+	std::string					textNewLines;
 	std::string					hostName;
 	CWnd *						item;
 	std::string::iterator		i;
@@ -936,10 +940,14 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 	{
 		if( *i == '\1' )
 		{
-			*i = '\n';
+			textNewLines += "\r\n";
+		}
+		else
+		{
+			textNewLines += *i;
 		}
 	}
-	UTF8StringToStringObject( text.c_str(), s );
+	UTF8StringToStringObject( textNewLines.c_str(), s );
 	item->SetWindowText( s );
 }
 
