@@ -242,6 +242,7 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	{
 	mStatus err;
 	const int on = 1;
+	const int twofivefive = 255;
 	struct ip_mreq imr;
 	struct sockaddr_in listening_sockaddr;
 	CFRunLoopSourceRef rls;
@@ -272,6 +273,14 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	// Specify outgoing interface too
 	err = setsockopt(*s, IPPROTO_IP, IP_MULTICAST_IF, &ifa_addr->sin_addr, sizeof(ifa_addr->sin_addr));
 	if (err < 0) { perror("setsockopt - IP_MULTICAST_IF"); return(err); }
+
+	// Send unicast packets with TTL 255
+	err = setsockopt(*s, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
+	if (err < 0) { perror("setsockopt - IP_TTL"); return(err); }
+
+	// And multicast packets with TTL 255 too
+	err = setsockopt(*s, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
+	if (err < 0) { perror("setsockopt - IP_MULTICAST_TTL"); return(err); }
 
 	// And start listening for packets
 	listening_sockaddr.sin_family      = AF_INET;
