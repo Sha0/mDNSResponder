@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.54  2003/12/17 01:06:39  cheshire
+Also show host name along with HINFO data
+
 Revision 1.53  2003/12/17 00:51:22  cheshire
 Changed mDNSNetMonitor and mDNSIdentify to link the object files
 instead of #including the "DNSCommon.c" "uDNS.c" and source files
@@ -336,6 +339,7 @@ typedef struct
 	unsigned long pkts[HostPkt_NumTypes];
 	unsigned long totalops;
 	unsigned long stat[OP_NumTypes];
+	domainname hostname;
 	UTF8str255 HIHardware;
 	UTF8str255 HISoftware;
 	} HostEntry;
@@ -386,6 +390,7 @@ mDNSlocal HostEntry *AddHost(const mDNSAddr *addr, HostList* list)
 	for (i=0; i<HostPkt_NumTypes; i++) entry->pkts[i] = 0;
 	entry->totalops = 0;
 	for (i=0; i<OP_NumTypes;      i++) entry->stat[i] = 0;
+	entry->hostname.c[0] = 0;
 	entry->HIHardware.c[0] = 0;
 	entry->HISoftware.c[0] = 0;
 
@@ -428,7 +433,8 @@ mDNSlocal void ShowSortedHostList(HostList *list, int max)
 			HostEntryTotalPackets(e), e->pkts[HostPkt_Q], e->pkts[HostPkt_L], e->pkts[HostPkt_R]);
 		if (e->pkts[HostPkt_B]) mprintf("Bad: %8lu", e->pkts[HostPkt_B]);
 		mprintf("\n");
-		if (e->HIHardware.c[0] || e->HISoftware.c[0]) mprintf("%#s %#s\n", e->HIHardware.c, e->HISoftware.c);
+		if (e->hostname.c[0] || e->HIHardware.c[0] || e->HISoftware.c[0])
+			mprintf("%##s -> %#s %#s\n", e->hostname.c, e->HIHardware.c, e->HISoftware.c);
 		}
 	}
 
@@ -738,6 +744,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 				mDNSu8 *sw = hw + 1 + (mDNSu32)hw[0];
 				if (sw + 1 + sw[0] <= rdend)
 					{
+					AssignDomainName(entry->hostname, pkt.r.resrec.name);
 					mDNSPlatformMemCopy(hw, entry->HIHardware.c, 1 + (mDNSu32)hw[0]);
 					mDNSPlatformMemCopy(sw, entry->HISoftware.c, 1 + (mDNSu32)sw[0]);
 					}
