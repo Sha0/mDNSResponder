@@ -457,7 +457,14 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 //*************************************************************************************************************
 // Browse for services
 
-mDNSlocal void DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFlags flags)
+// Returns mDNStrue if it successfully delivered the message to the client,
+// or mDNSfalse if the Mach queue overflowed and the client had to be aborted.
+// Note that because the OS X API uses C strings, Rendezvous names containing ASCII NULLs will not work.
+// While these could be escaped for the C API (so ASCII NULL becomes "%00" and '%' becomes "%25")
+// this would require applications to correctly de-escape "%25" back to '%' before displaying,
+// and applications don't do this (because no one told them they should).
+// Conclusion: Don't use ASCII NULLs in your Rendezvous service names.
+mDNSlocal mDNSBool DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFlags flags)
 	{
 	kern_return_t status;
 #if 0
@@ -471,7 +478,12 @@ mDNSlocal void DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFla
 		x->resultType, x->name, x->type, x->dom, flags, MDNS_MM_TIMEOUT);
 	x->resultType = -1;
 	if (status == MACH_SEND_TIMED_OUT)
+		{
 		AbortBlockedClient(x->ClientMachPort, "browse", x);
+		return(mDNSfalse);
+		}
+
+	return(mDNStrue);
 	}
 
 mDNSlocal void DeliverInstanceTimerCallBack(CFRunLoopTimerRef timer, void *info)
@@ -513,7 +525,11 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 		return;
 		}
 
-	if (x->resultType != -1) DeliverInstance(x, DNSServiceDiscoverReplyFlagsMoreComing);
+	// If we have a result already waiting, deliver it to the client now
+	// If DeliverInstance() aborts our client and disposes the DNSServiceBrowser memory, then we bail out here
+	if (x->resultType != -1)
+		if (DeliverInstance(x, DNSServiceDiscoverReplyFlagsMoreComing) == mDNSfalse)
+			return;
 
 	debugf("FoundInstance: %##s", &answer->rdata->u.name);
 	ConvertDomainLabelToCString_unescaped(&name, x->name);
