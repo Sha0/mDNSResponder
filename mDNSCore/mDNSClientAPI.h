@@ -68,6 +68,14 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.50  2003/05/14 07:08:36  cheshire
+<rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
+Previously, when there was any network configuration change, mDNSResponder
+would tear down the entire list of active interfaces and start again.
+That was very disruptive, and caused the entire cache to be flushed,
+and caused lots of extra network traffic. Now it only removes interfaces
+that have really gone, and only adds new ones that weren't there before.
+
 Revision 1.49  2003/05/07 01:49:36  cheshire
 Remove "const" in ConstructServiceName prototype
 
@@ -499,12 +507,12 @@ struct NetworkInterfaceInfo_struct
 	mDNSInterfaceID InterfaceID;
 	mDNSAddr        ip;
 	mDNSu32         scope_id;
+	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
 	mDNSBool        InterfaceActive;	// Set InterfaceActive true if interface is sending & receiving packets
 										// Set InterfaceActive false if interface is here to represent an address with A and/or AAAA records,
 										// but there is already an earlier representative for this physical interface
 										// which will be used for the actual sending & receiving packets
 										// (this status may change as interfaces are added and removed)
-	mDNSBool       Advertise;			// Set Advertise to false if you are only searching on this interface
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
 	ResourceRecord RR_A1;				// 'A' or 'AAAA' (address) record for our ".local" name
 	ResourceRecord RR_A2;				// 'A' or 'AAAA' record for our ".local.arpa" name
@@ -851,6 +859,7 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 #pragma mark - Other utility functions
 #endif
 
+extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern int mDNS_sprintf(char *sbuffer, const char *fmt, ...);
 extern int mDNS_vsprintf(char *sbuffer, const char *fmt, va_list arg);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);

@@ -88,6 +88,14 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.117  2003/05/14 07:08:36  cheshire
+<rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
+Previously, when there was any network configuration change, mDNSResponder
+would tear down the entire list of active interfaces and start again.
+That was very disruptive, and caused the entire cache to be flushed,
+and caused lots of extra network traffic. Now it only removes interfaces
+that have really gone, and only adds new ones that weren't there before.
+
 Revision 1.116  2003/05/14 06:51:56  cheshire
 <rdar://problem/3027144> Rendezvous doesn't refresh server info if changed during sleep
 
@@ -701,28 +709,20 @@ mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 	return (seed & mask);
 	}
 
-mDNSlocal mDNSBool mDNSAddrsMatch(const mDNSAddr *ip1, const mDNSAddr *ip2)
+mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)
 	{
-	mDNSBool result = mDNSfalse;
-	if (ip1->type != ip2->type) return mDNSfalse;
-	
-	switch (ip1->type)
+	if (ip1->type == ip2->type)
 		{
-		case mDNSAddrType_IPv4:
-			result = ip1->addr.ipv4.NotAnInteger == ip2->addr.ipv4.NotAnInteger ? mDNStrue : mDNSfalse;
-			break;
-
-		case mDNSAddrType_IPv6:
-			if (ip1->addr.ipv6.l[0] == ip2->addr.ipv6.l[0] &&
-				ip1->addr.ipv6.l[1] == ip2->addr.ipv6.l[1] &&
-				ip1->addr.ipv6.l[2] == ip2->addr.ipv6.l[2] &&
-				ip1->addr.ipv6.l[3] == ip2->addr.ipv6.l[3])
-				result = mDNStrue;
-			else result = mDNSfalse;
-			break;
+		switch (ip1->type)
+			{
+			case mDNSAddrType_IPv4 : return(ip1->addr.ipv4.NotAnInteger == ip2->addr.ipv4.NotAnInteger);
+			case mDNSAddrType_IPv6 : return(ip1->addr.ipv6.l[0] == ip2->addr.ipv6.l[0] &&
+											ip1->addr.ipv6.l[1] == ip2->addr.ipv6.l[1] &&
+											ip1->addr.ipv6.l[2] == ip2->addr.ipv6.l[2] &&
+											ip1->addr.ipv6.l[3] == ip2->addr.ipv6.l[3]);
+			}
 		}
-
-	return result;
+	return(mDNSfalse);
 	}
 
 mDNSlocal mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
@@ -3682,7 +3682,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			{
 			// If this record has been requested by exactly one client, and that client is
 			// the same one sending this query, then allow inter-packet duplicate suppression
-			if (mDNSAddrsMatch(&rr->Requester, srcaddr))
+			if (mDNSSameAddress(&rr->Requester, srcaddr))
 				if (SuppressDuplicate(&pktrr, rr))
 					{
 					rr->SendPriority = 0;

@@ -68,6 +68,14 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.8  2003/05/14 07:08:37  cheshire
+<rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
+Previously, when there was any network configuration change, mDNSResponder
+would tear down the entire list of active interfaces and start again.
+That was very disruptive, and caused the entire cache to be flushed,
+and caused lots of extra network traffic. Now it only removes interfaces
+that have really gone, and only adds new ones that weren't there before.
+
 Revision 1.7  2003/04/26 02:39:24  cheshire
 Remove extern void LogMsg(const char *format, ...);
 
@@ -104,13 +112,33 @@ Defines mDNS_PlatformSupport_struct for OS X
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;
+struct NetworkInterfaceInfoOSX_struct
+	{
+	NetworkInterfaceInfo     ifinfo;	// MUST be the first element in this structure
+	NetworkInterfaceInfoOSX *next;
+	mDNS                    *m;
+	mDNSBool                 CurrentlyActive;
+	char                    *ifa_name;					// Memory for this is allocated using malloc
+	u_short                  sa_family;
+#if mDNS_AllowPort53
+	int                      skt53;
+	CFSocketRef              cfs53;
+#endif
+	int                      sktv4;
+	CFSocketRef              cfsv4;
+	int                      sktv6;
+	CFSocketRef	             cfsv6;
+	};
+
 struct mDNS_PlatformSupport_struct
     {
-    SCDynamicStoreRef  Store;
-    CFRunLoopSourceRef StoreRLS;
-    io_connect_t       PowerConnection;
-    io_object_t        PowerNotifier;
-    CFRunLoopSourceRef PowerRLS;
+    NetworkInterfaceInfoOSX *InterfaceList;
+    SCDynamicStoreRef        Store;
+    CFRunLoopSourceRef       StoreRLS;
+    io_connect_t             PowerConnection;
+    io_object_t              PowerNotifier;
+    CFRunLoopSourceRef       PowerRLS;
     };
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
