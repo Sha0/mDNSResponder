@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.4  2004/07/26 06:19:05  shersche
+Treat byte arrays of zero-length as null arrays
+
 Revision 1.3  2004/07/19 16:08:56  shersche
 fix problems in UTF8/Unicode string translations
 
@@ -720,7 +723,7 @@ DNSService::Register
 	Byte __pin	*	p		=	NULL;
 	void		*	v		=	NULL;
 
-	if (txtRecord != NULL)
+	if ((txtRecord != NULL) && (txtRecord->Length > 0))
 	{
 		len		= txtRecord->Length;
 		p		= &txtRecord[0];
@@ -757,12 +760,20 @@ DNSService::AddRecord
 				int				ttl
 				)
 {
-	Byte __pin	*	p = &rdata[0];
-	void		*	v = (void*) p;
+	int				len		=	0;
+	Byte __pin	*	p		=	NULL;
+	void		*	v		=	NULL;
+
+	if ((rdata != NULL) && (rdata->Length > 0))
+	{
+		len = rdata->Length;
+		p	= &rdata[0];
+		v	= (void*) p;
+	}
 
 	RecordRef * record = new RecordRef;
 
-	int err = DNSServiceAddRecord(sdRef->m_impl->m_ref, &record->m_impl->m_ref, flags, rrtype, rdata->Length, v, ttl);
+	int err = DNSServiceAddRecord(sdRef->m_impl->m_ref, &record->m_impl->m_ref, flags, rrtype, len, v, ttl);
 
 	if (err != 0)
 	{
@@ -790,10 +801,18 @@ DNSService::UpdateRecord
 				int				ttl
 				)
 {
-	Byte __pin	* p = &rdata[0];
-	void		* v = (void*) p;
+	int				len		=	0;
+	Byte __pin	*	p		=	NULL;
+	void		*	v		=	NULL;
 
-	int err = DNSServiceUpdateRecord(sdRef->m_impl->m_ref, record->m_impl->m_ref, flags, rdata->Length, v, ttl);
+	if ((rdata != NULL) && (rdata->Length > 0))
+	{
+		len	= rdata->Length;
+		p	= &rdata[0];
+		v	= (void*) p;
+	}
+
+	int err = DNSServiceUpdateRecord(sdRef->m_impl->m_ref, record->m_impl->m_ref, flags, len, v, ttl);
 
 	if (err != 0)
 	{
@@ -946,12 +965,20 @@ DNSService::RegisterRecord
 			)
 {
 	RecordRef	*	record	= new RecordRef;
-	Byte __pin	*	p		= &rdata[0];
-	void		*	v		= (void*) p;
+	int				len		= 0;
+	Byte __pin	*	p		= NULL;
+	void		*	v		= NULL;
 
 	PString * pFullname = new PString(fullname);
 
-	int err = DNSServiceRegisterRecord(sdRef->m_impl->m_ref, &record->m_impl->m_ref, flags, interfaceIndex, pFullname->c_str(), rrtype, rrclass, rdata->Length, v, ttl, (DNSServiceRegisterRecordReply) ServiceRef::ServiceRefImpl::RegisterRecordCallback, sdRef->m_impl);
+	if ((rdata != NULL) && (rdata->Length > 0))
+	{
+		len		= rdata->Length;
+		p		= &rdata[0];
+		v		= (void*) p;
+	}
+
+	int err = DNSServiceRegisterRecord(sdRef->m_impl->m_ref, &record->m_impl->m_ref, flags, interfaceIndex, pFullname->c_str(), rrtype, rrclass, len, v, ttl, (DNSServiceRegisterRecordReply) ServiceRef::ServiceRefImpl::RegisterRecordCallback, sdRef->m_impl);
 
 	if (err != 0)
 	{
@@ -1013,12 +1040,20 @@ DNSService::ReconfirmRecord
 		Byte			rdata[]
 		)
 {
-	Byte __pin	*	p	= &rdata[0];
-	void		*	v	= (void*) p;
+	int				len	= 0;
+	Byte __pin	*	p	= NULL;
+	void		*	v	= NULL;
 
 	PString * pFullname = new PString(fullname);
 
-	DNSServiceReconfirmRecord(flags, interfaceIndex, pFullname->c_str(), rrtype, rrclass, rdata->Length, v);
+	if ((rdata != NULL) && (rdata->Length > 0))
+	{
+		len	= rdata->Length;
+		p	= &rdata[0];
+		v	= (void*) p;
+	}
+
+	DNSServiceReconfirmRecord(flags, interfaceIndex, pFullname->c_str(), rrtype, rrclass, len, v);
 }
 
 
