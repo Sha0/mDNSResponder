@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.471  2004/11/25 01:10:13  cheshire
+Move code to add additional records to a subroutine called AddAdditionalsToResponseList()
+
 Revision 1.470  2004/11/24 21:54:44  cheshire
 <rdar://problem/3894475> mDNSCore not receiving unicast responses properly
 
@@ -2492,6 +2495,45 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 #pragma mark - Packet Sending Functions
 #endif
 
+mDNSlocal void AddRecordToResponseList(AuthRecord ***nrpp, AuthRecord *rr, AuthRecord *add)
+	{
+	if (rr->NextResponse == mDNSNULL && *nrpp != &rr->NextResponse)
+		{
+		**nrpp = rr;
+		// NR_AdditionalTo must point to a record with NR_AnswerTo set (and not NR_AdditionalTo)
+		// If 'add' does not meet this requirement, then follow its NR_AdditionalTo pointer to a record that does
+		// The referenced record will definitely be acceptable (by recursive application of this rule)
+		if (add && add->NR_AdditionalTo) add = add->NR_AdditionalTo;
+		rr->NR_AdditionalTo = add;
+		*nrpp = &rr->NextResponse;
+		}
+	debugf("AddRecordToResponseList: %##s (%s) already in list", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+	}
+
+mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseRecords, AuthRecord ***nrpp, const mDNSInterfaceID InterfaceID)
+	{
+	AuthRecord  *rr, *rr2;
+	for (rr=ResponseRecords; rr; rr=rr->NextResponse)			// For each record we plan to put
+		{
+		// (Note: This is an "if", not a "while". If we add a record, we'll find it again
+		// later in the "for" loop, and we will follow further "additional" links then.)
+		if (rr->Additional1 && ResourceRecordIsValidInterfaceAnswer(rr->Additional1, InterfaceID))
+			AddRecordToResponseList(nrpp, rr->Additional1, rr);
+
+		if (rr->Additional2 && ResourceRecordIsValidInterfaceAnswer(rr->Additional2, InterfaceID))
+			AddRecordToResponseList(nrpp, rr->Additional2, rr);
+		
+		// For SRV records, automatically add the Address record(s) for the target host
+		if (rr->resrec.rrtype == kDNSType_SRV)
+			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
+				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
+					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
+					rr->resrec.rdnamehash == rr2->resrec.namehash &&			// ... whose name is the name of the SRV target
+					SameDomainName(&rr->resrec.rdata->u.srv.target, &rr2->resrec.name))
+					AddRecordToResponseList(nrpp, rr2, rr);
+		}
+	}
+
 mDNSlocal void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	{
 	// Clearing rr->RequireGoodbye signals mDNS_Deregister_internal()
@@ -4019,21 +4061,6 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 #pragma mark - Packet Reception Functions
 #endif
 
-mDNSlocal void AddRecordToResponseList(AuthRecord ***nrpp, AuthRecord *rr, AuthRecord *add)
-	{
-	if (rr->NextResponse == mDNSNULL && *nrpp != &rr->NextResponse)
-		{
-		**nrpp = rr;
-		// NR_AdditionalTo must point to a record with NR_AnswerTo set (and not NR_AdditionalTo)
-		// If 'add' does not meet this requirement, then follow its NR_AdditionalTo pointer to a record that does
-		// The referenced record will definitely be acceptable (by recursive application of this rule)
-		if (add && add->NR_AdditionalTo) add = add->NR_AdditionalTo;
-		rr->NR_AdditionalTo = add;
-		*nrpp = &rr->NextResponse;
-		}
-	debugf("AddRecordToResponseList: %##s (%s) already in list", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-	}
-
 #define MustSendRecord(RR) ((RR)->NR_AnswerTo || (RR)->NR_AdditionalTo)
 
 mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const mDNSu8 *const end,
@@ -4255,17 +4282,17 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, mDNSBool QueryWasMulticast, mDNSBool QueryWasLocalUnicast,
 	DNSMessage *const response)
 	{
-	AuthRecord  *ResponseRecords = mDNSNULL;
-	AuthRecord **nrp             = &ResponseRecords;
-	CacheRecord  *ExpectedAnswers = mDNSNULL;			// Records in our cache we expect to see updated
-	CacheRecord **eap             = &ExpectedAnswers;
-	DNSQuestion     *DupQuestions    = mDNSNULL;			// Our questions that are identical to questions in this packet
-	DNSQuestion    **dqp             = &DupQuestions;
-	mDNSs32          delayresponse   = 0;
-	mDNSBool         SendLegacyResponse = mDNSfalse;
-	const mDNSu8    *ptr             = query->data;
-	mDNSu8          *responseptr     = mDNSNULL;
-	AuthRecord  *rr, *rr2;
+	AuthRecord   *ResponseRecords    = mDNSNULL;
+	AuthRecord  **nrp                = &ResponseRecords;
+	CacheRecord  *ExpectedAnswers    = mDNSNULL;			// Records in our cache we expect to see updated
+	CacheRecord **eap                = &ExpectedAnswers;
+	DNSQuestion  *DupQuestions       = mDNSNULL;			// Our questions that are identical to questions in this packet
+	DNSQuestion **dqp                = &DupQuestions;
+	mDNSs32       delayresponse      = 0;
+	mDNSBool      SendLegacyResponse = mDNSfalse;
+	const mDNSu8 *ptr                = query->data;
+	mDNSu8       *responseptr        = mDNSNULL;
+	AuthRecord   *rr;
 	int i;
 
 	// ***
@@ -4381,25 +4408,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	// *** 3. Add additional records
 	// ***
-	for (rr=ResponseRecords; rr; rr=rr->NextResponse)			// For each record we plan to put
-		{
-		// (Note: This is an "if", not a "while". If we add a record, we'll find it again
-		// later in the "for" loop, and we will follow further "additional" links then.)
-		if (rr->Additional1 && ResourceRecordIsValidInterfaceAnswer(rr->Additional1, InterfaceID))
-			AddRecordToResponseList(&nrp, rr->Additional1, rr);
-
-		if (rr->Additional2 && ResourceRecordIsValidInterfaceAnswer(rr->Additional2, InterfaceID))
-			AddRecordToResponseList(&nrp, rr->Additional2, rr);
-		
-		// For SRV records, automatically add the Address record(s) for the target host
-		if (rr->resrec.rrtype == kDNSType_SRV)
-			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
-				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
-					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
-					rr->resrec.rdnamehash == rr2->resrec.namehash &&			// ... whose name is the name of the SRV target
-					SameDomainName(&rr->resrec.rdata->u.srv.target, &rr2->resrec.name))
-					AddRecordToResponseList(&nrp, rr2, rr);
-		}
+	AddAdditionalsToResponseList(m, ResponseRecords, &nrp, InterfaceID);
 
 	// ***
 	// *** 4. Parse Answer Section and cancel any records disallowed by Known-Answer list
@@ -4508,10 +4517,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				m->NextScheduledResponse = m->timenow;
 				// If we're already planning to send this on another interface, just send it on all interfaces
 				if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
-					{
 					rr->ImmedAnswer = mDNSInterfaceMark;
-					debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-					}
 				else
 					{
 					rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
