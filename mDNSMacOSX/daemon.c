@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.165  2004/05/13 04:54:20  ksekar
+Unified list copy/free code.  Added symetric list for
+
 Revision 1.164  2004/05/12 22:03:08  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
 from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
@@ -866,14 +869,14 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		}
 	// Succeeded: Wrap up and return
 	EnableDeathNotificationForClient(client, x);
-	mDNSPlatformFreeSearchDomainList(SearchDomains);
+	mDNS_FreeDNameList(SearchDomains);
 	return(mStatus_NoError);
 	
 	badparam:
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
-	if (SearchDomains) mDNSPlatformFreeSearchDomainList(SearchDomains);
+	if (SearchDomains) mDNS_FreeDNameList(SearchDomains);
 	return(err);
 	}
 

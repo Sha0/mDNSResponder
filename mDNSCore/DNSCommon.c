@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.28  2004/05/13 04:54:20  ksekar
+Unified list copy/free code.  Added symetric list for
+
 Revision 1.27  2004/04/22 20:29:07  cheshire
 Log error message if no count field passed to PutResourceRecordTTL()
 
@@ -127,6 +130,46 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 	// If someone knows a variant way of writing "while(1)" that doesn't generate warning messages, please let us know
 	#pragma warning(disable:4127)
 #endif
+
+
+
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - DNameList copy/deallocation routines 
+#endif
+
+mDNSexport DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig)
+	{
+	DNameListElem *copy = mDNSNULL, *newelem;
+	const DNameListElem *ptr;
+
+	for (ptr = orig; ptr; ptr = ptr->next)
+		{
+		newelem = mDNSPlatformMemAllocate(sizeof(DNameListElem));
+		if (!newelem) { LogMsg("ERROR: malloc"); return mDNSNULL; }
+		mDNSPlatformStrCopy(ptr->name.c, newelem->name.c);
+		newelem->next = copy;
+		copy = newelem;
+		}
+	return copy;
+	}
+
+mDNSexport void mDNS_FreeDNameList(DNameListElem *list)
+	{
+	DNameListElem *fptr;
+
+	while (list)
+		{
+		fptr = list;
+		list = list->next;
+		mDNSPlatformMemFree(fptr);
+		}
+	}
+
+
+
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK

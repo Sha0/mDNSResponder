@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.46  2004/05/13 04:54:20  ksekar
+Unified list copy/free code.  Added symetric list for
+
 Revision 1.45  2004/05/12 22:03:09  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
 from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
@@ -489,27 +492,17 @@ mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
 
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
 	{
-	DNameListElem *new;
+	static DNameListElem tmp;
+	static mDNSBool init = mDNSfalse;
 
-	new = mallocL("GetSearchDomainList", sizeof(DNameListElem));
-	if (!new) { LogMsg("ERROR: malloc"); return NULL; }
-	MakeDomainNameFromDNSNameString(&new->name, "local");
-	new->next = NULL;
-	return new;
-	}
-
-mDNSexport void mDNSPlatformFreeSearchDomainList(DNameListElem *list)
-	{
-	DNameListElem *fptr;
-
-	while (list)
+	if (!init)
 		{
-		fptr = list;
-		list = list->next;
-		freeL("FreeSearchDomainList", fptr);
+		MakeDomainNameFromDNSNameString(&tmp.name, "local.");
+		tmp.next = NULL;
+		init = mDNStrue;
 		}
+	return mDNS_CopyDNameList(&tmp);
 	}
-
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Init and Term

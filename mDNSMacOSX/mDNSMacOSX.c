@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.150  2004/05/13 04:54:20  ksekar
+Unified list copy/free code.  Added symetric list for
+
 Revision 1.149  2004/05/13 03:55:14  ksekar
 Fixed list traversal bug in FoundDefSearchDomain.
 
@@ -1953,32 +1956,24 @@ mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
 	{
-	DNameListElem *copy = NULL, *ptr, *new;
-
-	for (ptr = DefBrowseList; ptr; ptr = ptr->next)
-		{
-		new = mallocL("mDNSPlatformGetSearchDomainList", sizeof(DNameListElem));
-		if (!new) { LogMsg("ERROR: malloc"); return NULL; }
-		strcpy(new->name.c, ptr->name.c);
-		new->next = copy;
-		copy = new;
-		}
-	return copy;
+	return mDNS_CopyDNameList(DefBrowseList);
 	}
 
-mDNSexport void mDNSPlatformFreeSearchDomainList(DNameListElem *list)
+mDNSexport DNameListElem *mDNSPlatformGetRegDomainList(void)
 	{
-	DNameListElem *fptr;
+	static DNameListElem tmp;
+	static mDNSBool init = mDNSfalse;
 
-	while (list)
+	if (!init)
 		{
-		fptr = list;
-		list = list->next;
-		freeL("mDNSPlatformFreeSearchDomainList", fptr);
+		MakeDomainNameFromDNSNameString(&tmp.name, "local.");
+		tmp.next = NULL;
+		init = mDNStrue;
 		}
+	return mDNS_CopyDNameList(&tmp);
 	}
 
-
+	
 mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	DNameListElem *ptr, *prev, *new;

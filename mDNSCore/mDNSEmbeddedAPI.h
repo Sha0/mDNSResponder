@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.169  2004/05/13 04:54:20  ksekar
+Unified list copy/free code.  Added symetric list for
+
 Revision 1.168  2004/05/12 22:03:09  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
 from mDNSMacOSX.h to mDNSEmbeddedAPI.h), implemented to return "local"
@@ -1821,19 +1824,26 @@ extern void mDNSPlatformTCPCloseConnection(int sd);
 extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
 extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 
-// Platforms supporting unicast browsing must implement this function for the daemon layer to get the list of
-// domains to browse in by default, e.g. when the application client does not specify a domain.  The function
-// returns a copy of the list which may be deallocated via the FreeSearchDomainList call.
-
+// Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
+// in browse/registration calls must implement these routines to get the "default" browse/registration list.
+// The Get() functions must return a linked list of DNameListElem structs, allocated via mDNSPlatformMemAllocate.
+// Platforms may implement the Get() calls via the mDNS_CopyDNameList() helper routine.
+// Callers should free lists obtained via the Get() calls with th mDNS_FreeDNameList routine, provided by the core.
+	
 typedef struct DNameListElem
 	{
     domainname name;
     struct DNameListElem *next;
     } DNameListElem;
 
-extern	DNameListElem *mDNSPlatformGetSearchDomainList(void);	
-extern void mDNSPlatformFreeSearchDomainList(DNameListElem *list);
+extern DNameListElem *mDNSPlatformGetSearchDomainList(void);	
+extern DNameListElem *mDNSPlatformGetRegDomainList(void);
+
+// Helper functions provided by the core
+extern DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig);
+extern void mDNS_FreeDNameList(DNameListElem *list);
 	
+
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())
