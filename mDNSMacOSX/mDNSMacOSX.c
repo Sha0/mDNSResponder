@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.94  2003/07/03 00:51:54  cheshire
+<rdar://problem/3287213> When select() and recvmgs() disagree, get more info from kernel about the socket state
+
 Revision 1.93  2003/07/03 00:09:14  cheshire
 <rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
 Additional refinement suggested by Josh: Use info->scope_id instead of if_nametoindex(info->ifa_name);
@@ -254,6 +257,7 @@ Minor code tidying
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 
 #include <netinet/in_systm.h>		// For n_long, required by <netinet/ip.h> below
 #include <netinet/ip.h>				// For IPTOS_LOWDELAY etc.
@@ -581,6 +585,13 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		// Something is busted here.
 		// CFSocket says there is a packet, but myrecvfrom says there is not.
 		// Try calling select() to get another opinion.
+		// Find out about other socket parameter that can help understand why select() says the socket is ready for read
+		// All of this is racy, as data may have arrived after the call to select()
+		int save_errno = errno;
+		int so_error = -1;
+		int so_nread = -1;
+		int fionread = -1;
+		int solen = sizeof(int);
 		fd_set readfds;
 		FD_ZERO(&readfds);
 		FD_SET(s1, &readfds);
@@ -588,8 +599,15 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		timeout.tv_sec  = 0;
 		timeout.tv_usec = 0;
 		int selectresult = select(s1+1, &readfds, NULL, NULL, &timeout);
-		LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) selectresult %d (There are %spackets waiting)",
-			s1, err, errno, strerror(errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ");
+		if (getsockopt(s1, SOL_SOCKET, SO_ERROR, &so_error, &solen) == -1)
+			LogMsg("myCFSocketCallBack getsockopt(SO_ERROR) error %d", errno);
+		if (getsockopt(s1, SOL_SOCKET, SO_NREAD, &so_nread, &solen) == -1)
+			LogMsg("myCFSocketCallBack getsockopt(SO_NREAD) error %d", errno);
+		if (ioctl(s1, FIONREAD, &fionread) == -1)
+			LogMsg("myCFSocketCallBack ioctl(FIONREAD) error %d", errno);
+		LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
+			s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
+
 		}
 	}
 
