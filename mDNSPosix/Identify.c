@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.18  2004/01/27 19:06:51  cheshire
+Remove workaround for WWDC 2003 bug; no one has run that buggy build for a long time
+
 Revision 1.17  2004/01/22 03:57:00  cheshire
 Use the new meta-interface mDNSInterface_ForceMCast. This restores mDNSIdentify's
 ability to use multicast queries with non-link-local target addresses, like 17.x.x.x.
@@ -259,7 +262,7 @@ mDNSlocal int DoQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQuestionCa
 		WaitForAnswer(&mDNSStorage, 4);
 		mDNS_StopQuery(&mDNSStorage, q);
 		if (StopNow == 0 && NumAnswers == 0)
-			printf("%s %s *** No Answer ***\n", qname, DNSTypeName(qtype));
+			mprintf("%##s %s *** No Answer ***\n", q->qname.c, DNSTypeName(q->qtype));
 		}
 	return(StopNow);
 	}
@@ -311,7 +314,6 @@ mDNSexport int main(int argc, char **argv)
 			}
 		else if (inet_pton(AF_INET6, arg, &s6) == 1)
 			{
-			DNSQuestion q1, q2;
 			int i;
 			mDNSu8 *p = (mDNSu8 *)&s6;
 			for (i = 0; i < 16; i++)
@@ -323,15 +325,7 @@ mDNSexport int main(int argc, char **argv)
 				buffer[i * 4 + 3] = '.';
 				}
 			mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
-			MakeDomainNameFromDNSNameString(&q1.qname, buffer);
-			mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");	// Workaround for WWDC bug
-			MakeDomainNameFromDNSNameString(&q2.qname, buffer);
-			StartQuery(&q1, NULL, kDNSType_PTR, NameCallback);
-			StartQuery(&q2, NULL, kDNSType_PTR, NameCallback);
-			WaitForAnswer(&mDNSStorage, 4);
-			mDNS_StopQuery(&mDNSStorage, &q1);
-			mDNS_StopQuery(&mDNSStorage, &q2);
-			if (StopNow != 1) { mprintf("%##s %s *** No Answer ***\n", q1.qname.c, DNSTypeName(q1.qtype)); continue; }
+			if (DoQuery(&q, buffer, kDNSType_PTR, NameCallback) != 1) continue;
 			}
 		else
 			strcpy(hostname, arg);
