@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.252  2004/12/07 01:32:42  cheshire
+Don't log dns_configuration_copy() failure when running on 10.3
+
 Revision 1.251  2004/12/06 22:30:31  cheshire
 Added debugging log message
 
@@ -2090,7 +2093,13 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 	int i;
 	dns_config_t *config = dns_configuration_copy();
 
-	if (!config) { LogMsg("Error: dns_configuration_copy returned NULL"); return mStatus_UnknownErr; }
+	if (!config)
+		{
+		// When running on 10.3 (build 7xxx) and earlier, we don't expect dns_configuration_copy() to succeed
+		if (mDNSMacOSXSystemBuildNumber(NULL) < 8) return mStatus_UnsupportedErr;
+		LogMsg("RegisterSplitDNS: Error: dns_configuration_copy returned NULL");
+		return mStatus_UnknownErr;
+		}
 	mDNS_DeleteDNSServers(m);
 
 	LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
@@ -2164,6 +2173,7 @@ mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
 			LogMsg("ERROR: RegisterNameServers - invalid address string %s", buf);
 			continue;
 			}
+		LogOperation("RegisterNameServers: Adding %#a", &saddr);
 		mDNS_AddDNSServer(m, &saddr, NULL);
 		}
 	return mStatus_NoError;
@@ -2281,15 +2291,15 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			for (i = 0; i < count; i++)
 				{
 				s = CFArrayGetValueAtIndex(searchdomains, i);
-				if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
+				if (!s) { LogMsg("ERROR: RegisterSearchDomains - CFArrayGetValueAtIndex"); break; }
 				if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
 					{
-					LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
+					LogMsg("ERROR: RegisterSearchDomains - CFStringGetCString");
 					continue;
 					}
 				if (!MakeDomainNameFromDNSNameString(&domain, buf))
 					{
-					LogMsg("ERROR: RegisterNameServers - invalid search domain %s", buf);
+					LogMsg("ERROR: RegisterSearchDomains - invalid search domain %s", buf);
 					continue;
 					}
 				MarkSearchListElem(&domain);
@@ -2301,9 +2311,9 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			if (CFStringGetCString(dname, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
 				{
 				if (MakeDomainNameFromDNSNameString(&domain, buf)) MarkSearchListElem(&domain);
-				else LogMsg("ERROR: RegisterNameServers - invalid domain %s", buf);
+				else LogMsg("ERROR: RegisterSearchDomains - invalid domain %s", buf);
 				}
-			else LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
+			else LogMsg("ERROR: RegisterSearchDomains - CFStringGetCString");
 			}
 		}
 	
@@ -2361,7 +2371,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			else SearchList = ptr->next;
 			freeSLPtr = ptr;
 			ptr = ptr->next;
-			freeL("RegisterNameServers - freeSLPtr", freeSLPtr);
+			freeL("RegisterSearchDomains - freeSLPtr", freeSLPtr);
 			continue;
 			}
 		
@@ -2382,7 +2392,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			ptr->flag = 0;
 			}
 		
-		if (ptr->flag) { LogMsg("RegisterNameServers - unknown flag %d.  Skipping.", ptr->flag); }
+		if (ptr->flag) { LogMsg("RegisterSearchDomains - unknown flag %d.  Skipping.", ptr->flag); }
 		
 		prev = ptr;
 		ptr = ptr->next;
@@ -2673,7 +2683,7 @@ CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;
 
-mDNSexport mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
+mDNSexport int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 	{
 	int major = 0, minor = 0;
 	char letter = 0, prodname[256]="Mac OS X", prodvers[256]="", buildver[256]="?";
