@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.141  2004/04/21 02:20:47  cheshire
+Rename interface field 'CurrentlyActive' to more descriptive 'Exists'
+
 Revision 1.140  2004/04/14 23:09:29  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -35,7 +38,7 @@ Move NumCacheRecordsForInterfaceID() to DNSCommon.c so it's available to all pla
 
 Revision 1.137  2004/04/08 00:59:55  cheshire
 <rdar://problem/3609972> When interface turned off, browse "remove" events delivered with interface index zero
-Unify use of the InterfaceID field, and make code that walks the list respect the CurrentlyActive flag
+Unify use of the InterfaceID field, and make code that walks the list respect the 'Exists' flag
 
 Revision 1.136  2004/04/07 01:08:57  cheshire
 <rdar://problem/3609972> When interface turned off, browse "remove" events delivered with interface index zero
@@ -1136,7 +1139,7 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip))
 			{
 			debugf("AddInterfaceToList: Found existing interface %u with address %#a", scope_id, &ip);
-			(*p)->CurrentlyActive = mDNStrue;
+			(*p)->Exists = mDNStrue;
 			return(0);
 			}
 
@@ -1154,7 +1157,7 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->ifinfo.TxAndRx     = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 	
 	i->next            = mDNSNULL;
-	i->CurrentlyActive = mDNStrue;
+	i->Exists          = mDNStrue;
 	i->scope_id        = scope_id;
 	i->sa_family       = ifa->ifa_addr->sa_family;
 	i->Multicast       = (ifa->ifa_flags & IFF_MULTICAST) && !(ifa->ifa_flags & IFF_POINTOPOINT);
@@ -1174,7 +1177,7 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->CurrentlyActive && i->scope_id == scope_id && i->ifinfo.ip.type == mDNSAddrType_IPv4)
+		if (i->Exists && i->scope_id == scope_id && i->ifinfo.ip.type == mDNSAddrType_IPv4)
 			if (!(i->ifinfo.ip.ip.v4.b[0] == 169 && i->ifinfo.ip.ip.v4.b[1] == 254))
 				return(i);
 	return(mDNSNULL);
@@ -1282,13 +1285,13 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	// so we are willing to make that sacrifice.
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->CurrentlyActive)
+		if (i->Exists)
 			{
 			mDNSBool txrx = i->Multicast && ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
 			if (i->ifinfo.TxAndRx != txrx)
 				{
 				i->ifinfo.TxAndRx = txrx;
-				i->CurrentlyActive = 2; // State change; need to deregister and reregister this interface
+				i->Exists = 2; // State change; need to deregister and reregister this interface
 				}
 			}
 
@@ -1300,7 +1303,7 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, char 
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->CurrentlyActive && !strcmp(i->ifa_name, ifname) &&
+		if (i->Exists && !strcmp(i->ifa_name, ifname) &&
 			((AAAA_OVER_V4                                              ) ||
 			 (type == AF_INET  && i->ifinfo.ip.type == mDNSAddrType_IPv4) ||
 			 (type == AF_INET6 && i->ifinfo.ip.type == mDNSAddrType_IPv6) )) return(i);
@@ -1311,7 +1314,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->CurrentlyActive)
+		if (i->Exists)
 			{
 			NetworkInterfaceInfo *n = &i->ifinfo;
 			NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
@@ -1359,7 +1362,7 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		i->CurrentlyActive = mDNSfalse;
+		i->Exists = mDNSfalse;
 	}
 
 mDNSlocal void CloseSocketSet(CFSocketSet *ss)
@@ -1387,7 +1390,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		{
 		// 1. If this interface is no longer active, or it's InterfaceID is changing, deregister it
 		NetworkInterfaceInfoOSX *alias = (NetworkInterfaceInfoOSX *)(i->ifinfo.InterfaceID);
-		if (i->ifinfo.InterfaceID && (!i->CurrentlyActive || (alias && !alias->CurrentlyActive) || i->CurrentlyActive == 2))
+		if (i->ifinfo.InterfaceID && (!i->Exists || (alias && !alias->Exists) || i->Exists == 2))
 			{
 			LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) InterfaceID %p %#a%s",
 				i->ifa_name, i->scope_id, alias, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
@@ -1409,7 +1412,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		// (We may have previously had both v4 and v6, and we may not need both any more.)
 		CloseSocketSet(&i->ss);
 		// 3. If no longer active, delete interface from list and free memory
-		if (!i->CurrentlyActive && NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0)
+		if (!i->Exists && NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0)
 			{
 			debugf("ClearInactiveInterfaces: Deleting      %#a", &i->ifinfo.ip);
 			*p = i->next;
