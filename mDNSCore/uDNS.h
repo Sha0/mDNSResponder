@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.27  2004/11/23 04:06:50  cheshire
+Get rid of floating point constant -- in a small embedded device, bringing in all
+the floating point libraries just to halve an integer value is a bit too heavyweight.
+
 Revision 1.26  2004/11/22 17:49:15  ksekar
 Changed INIT_REFRESH from fraction to decimal
 
@@ -122,7 +126,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define MIN_UCAST_PERIODIC_EXEC (5 * mDNSPlatformOneSecond) 	
 #define INIT_UCAST_POLL_INTERVAL mDNSPlatformOneSecond      // this interval is used after send failures on network transitions
 	                                                        // which typically heal quickly, so we start agressively and exponentially back off
-#define INIT_REFRESH (0.5)  // refresh leases 1/2 way to expiration
 #define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)        // require server responses within one minute of request
 #define UPDATE_PORT_NAME "_dns-update._udp."

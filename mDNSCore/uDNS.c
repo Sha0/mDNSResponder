@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.124  2004/11/23 04:06:51  cheshire
+Get rid of floating point constant -- in a small embedded device, bringing in all
+the floating point libraries just to halve an integer value is a bit too heavyweight.
+
 Revision 1.123  2004/11/22 17:16:20  ksekar
 <rdar://problem/3854298> Unicast services don't disappear when you disable all networking
 
@@ -1012,7 +1016,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	NATErr_t err;
 	ServiceRecordSet *srs;
 	mDNSIPPort priv, pktpriv, pub;
-	mDNSOpaque32 lease;
+	mDNSu32 lease;
 	mDNSBool deletion;
 	
 	if (n->state != NATState_Request && n->state != NATState_Refresh)
@@ -1079,11 +1083,10 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	pub.b[0]  = pkt[6];
 	pub.b[1]  = pkt[7];
 
-	lease.b[0] = pkt[8];
-	lease.b[1] = pkt[9];
-	lease.b[2] = pkt[10];
-	lease.b[3] = pkt[11];
-		
+	lease = (mDNSu32) ((mDNSu32)pkt[8] << 24 | (mDNSu32)pkt[9] << 16 | (mDNSu32)pkt[10] << 8 | pkt[11]);
+	if (lease > 0x70000000UL / mDNSPlatformOneSecond)
+		lease = 0x70000000UL / mDNSPlatformOneSecond;
+
 	if (priv.NotAnInteger != pktpriv.NotAnInteger)
 		{ LogMsg("ReceivePortMapReply: reply private port does not match requested private port");  goto end; }
 	
@@ -1092,7 +1095,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
       	// !!!KRS we need to update the SRV here!
 	n->PublicPort = pub;
 
-	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)mDNSVal32(lease) * mDNSPlatformOneSecond * INIT_REFRESH);  // retry half way to expiration
+	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)lease * mDNSPlatformOneSecond/2);  // retry half way to expiration
 	
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return; }
 	n->state = NATState_Established;
@@ -2209,7 +2212,7 @@ mDNSlocal mDNSBool getLLQAtIndex(mDNS *m, DNSMessage *msg, const mDNSu8 *end, LL
 		{ ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr); if (!ptr) return mDNSfalse; if (lcr.r.resrec.rrtype == kDNSType_OPT) break; }		
 	if (lcr.r.resrec.rrtype != kDNSType_OPT) return mDNSfalse;
 	if (lcr.r.resrec.rdlength < (index + 1) * LLQ_OPT_SIZE) return mDNSfalse;  // rdata too small 
-	umemcpy(llq, (mDNSu8 *)&lcr.r.resrec.rdata->u.opt.OptData.llq + (index * sizeof(LLQOptData)), sizeof(LLQOptData));
+	umemcpy(llq, (mDNSu8 *)&lcr.r.resrec.rdata->u.opt.OptData.llq + (index * sizeof(LLQOptData)), sizeof(LLQOptData));	// !!! Should convert to host byte order?
 	return mDNStrue;
 	}
 
@@ -2225,7 +2228,7 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	if (pktData.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData.err); return; }
 
 	qInfo->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond);
-	qInfo->retry = qInfo->expire - ((mDNSs32)pktData.lease * mDNSPlatformOneSecond * INIT_REFRESH);
+	qInfo->retry = qInfo->expire - ((mDNSs32)pktData.lease * mDNSPlatformOneSecond/2);
  
 	qInfo->origLease = pktData.lease;
 	qInfo->state = LLQ_Established;	
@@ -2269,7 +2272,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	else info->ntries++;
 	info->state = LLQ_Refresh;
 	q->LastQTime = timenow;
-	info->retry = (info->expire - q->LastQTime) * INIT_REFRESH;	
+	info->retry = (info->expire - q->LastQTime) / 2;	
 	}
 
 mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, mDNSInterfaceID InterfaceID)
@@ -2309,7 +2312,7 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 	if (llq->err) { LogMsg("hndlChallengeResponseAck - received error %d from server", llq->err); goto error; }
 	if (!sameID(info->id, llq->id)) { LogMsg("hndlChallengeResponseAck - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
 	info->expire = mDNSPlatformTimeNow(m) + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
-	info->retry = info->expire - ((mDNSs32)llq->lease * mDNSPlatformOneSecond * INIT_REFRESH);
+	info->retry = info->expire - ((mDNSs32)llq->lease * mDNSPlatformOneSecond / 2);
  
 	info->origLease = llq->lease;
 	info->state = LLQ_Established;	
