@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.115  2003/05/14 06:44:31  cheshire
+Improve debugging message
+
 Revision 1.114  2003/05/07 01:47:03  cheshire
 <rdar://problem/3250330> Also protect against NULL domainlabels
 
@@ -3780,9 +3783,11 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID, replyunicast, replymulticast);
 	if (replyunicast && responseend)
 		{
-		debugf("Unicast Response: %d Answer%s, %d Additional%s on %X/%d",
+		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#a:%d on %X/%d",
+			replyunicast->h.numQuestions,   replyunicast->h.numQuestions   == 1 ? "" : "s",
 			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
-			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s", InterfaceID, srcaddr->type);
+			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s",
+			&srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1], InterfaceID, srcaddr->type);
 		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceID, dstport, srcaddr, srcport);
 		}
 	}
