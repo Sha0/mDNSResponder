@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.225  2004/12/10 04:28:29  cheshire
+<rdar://problem/3914406> User not notified of name changes for services using new UDS API
+
 Revision 1.224  2004/12/10 00:41:05  cheshire
 Adjust alignment of log messages
 
@@ -600,8 +603,8 @@ typedef struct ServiceInstance
 	{
     struct ServiceInstance *next;
 	mach_port_t ClientMachPort;
-    mDNSBool autorename;
-    mDNSBool autoname;
+    mDNSBool autoname;			// Set if this name is tied to the Computer Name
+    mDNSBool autorename;		// Set if we just got a name conflict and now need to automatically pick a new name
     domainlabel name;
     domainname domain;
     ServiceRecordSet srs;
@@ -1323,6 +1326,11 @@ fail:
 //*************************************************************************************************************
 // Registration
 
+mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
+	{
+	m->p->NotifyUser = NonZeroTime(m->timenow + delay);
+	}
+
 mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
 	{
 	ServiceInstance *si = (ServiceInstance*)srs->ServiceContext;
@@ -1334,7 +1342,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		status = DNSServiceRegistrationReply_rpc(si->ClientMachPort, result, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
 			AbortBlockedClient(si->ClientMachPort, "registration success", si);
-		if (si->autoname) m->p->NotifyUser = NonZeroTime(m->timenow);
+		if (si->autoname) RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
 		}
 
 	else if (result == mStatus_NameConflict)
@@ -1346,7 +1354,6 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 			{
 			// On conflict for an autoname service, rename and reregister *all* autoname services
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
-			m->p->NotifyUser = NonZeroTime(m->timenow + mDNSPlatformOneSecond*5);
 			m->MainCallback(m, mStatus_ConfigChanged);
 			}
 		else
@@ -1656,7 +1663,10 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
 	(void)m; // Unused
 	if (result == mStatus_NoError)	
-		m->p->NotifyUser = NonZeroTime(m->timenow + mDNSPlatformOneSecond*3);
+		{
+		// Allow three seconds in case we get a Computer Name update too -- don't want to alert the user twice
+		RecordUpdatedNiceLabel(m, mDNSPlatformOneSecond*3);
+		}
 	else if (result == mStatus_ConfigChanged)
 		{
 		DNSServiceRegistration *r;

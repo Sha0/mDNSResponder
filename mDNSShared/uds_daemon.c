@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.132  2004/12/10 04:28:28  cheshire
+<rdar://problem/3914406> User not notified of name changes for services using new UDS API
+
 Revision 1.131  2004/12/10 02:09:25  cheshire
 <rdar://problem/3898376> Modify default TTLs
 
@@ -483,12 +486,12 @@ typedef struct registered_record_entry
 typedef struct service_instance
     {
     struct service_instance *next;  
-    int autoname;
-    int renameonconflict;
-    int rename_on_memfree;  	// set flag on config change when we deregister original name
+    int autoname;				// Set if this name is tied to the Computer Name
+    int autorename;				// Set if this client wants us to automatically rename on conflict
+    int rename_on_memfree;  	// Set on config change when we deregister original name
     domainlabel name;
     domainname domain;
-    mDNSBool default_local;    // is this the "local." from an empty-string registration?
+    mDNSBool default_local;		// is this the "local." from an empty-string registration?
     struct request_state *request;
     int sd;
     AuthRecord *subtypes;
@@ -507,8 +510,8 @@ typedef struct
     domainname type;
     mDNSBool default_domain;
     domainname host;
-    mDNSBool autoname;
-    mDNSBool autorename;
+    mDNSBool autoname;			// Set if this name is tied to the Computer Name
+    mDNSBool autorename;		// Set if this client wants us to automatically rename on conflict
     int num_subtypes;
     mDNSInterfaceID InterfaceID;
     service_instance *instances;
@@ -1899,7 +1902,7 @@ static mStatus register_service_instance(request_state *request, const domainnam
 	instance->sd                = request->sd;
     instance->autoname          = info->autoname;
     instance->rename_on_memfree = 0;
-    instance->renameonconflict  = info->autorename;
+    instance->autorename        = info->autorename;
 	instance->name              = info->name;
 	AssignDomainName(instance->domain, *domain);
 	instance->default_local = (info->default_domain && SameDomainName(domain, &localdomain));
@@ -2112,6 +2115,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     if (result == mStatus_NoError)
 		{
         process_service_registration(srs);
+        if (instance->autoname) RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
 		return;
 		}
     else if (result == mStatus_MemFree)
@@ -2138,7 +2142,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
 			m->MainCallback(m, mStatus_ConfigChanged);
         	}
-        else if (instance->renameonconflict)
+        else if (instance->autorename)
             {
             mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
             return;

@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.12  2004/12/10 04:28:28  cheshire
+<rdar://problem/3914406> User not notified of name changes for services using new UDS API
+
 Revision 1.11  2004/12/06 21:15:23  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -97,6 +100,9 @@ typedef	void (*udsEventCallback)(void *context);
 extern mStatus udsSupportAddFDToEventLoop(dnssd_sock_t fd, udsEventCallback callback, void *context);
 extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd);
 
+// RecordUpdatedNiceLabel() can be a no-op on platforms that don't care about updating the machine's
+// global default service name (was OS X calls the "Computer Name") in response to name conflicts.
+extern void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay);
 
 // Globals and functions defined in uds_daemon.c and also shared with the old "daemon.c" on OS X
 extern mDNS mDNSStorage;
