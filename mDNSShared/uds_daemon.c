@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.118  2004/11/23 22:33:01  cheshire
+<rdar://problem/3654910> Remove temporary workaround code for iChat
+
 Revision 1.117  2004/11/23 20:23:10  ksekar
 Fixed LogOperation that causes crash on connected service deregistrations
 
@@ -1698,10 +1701,6 @@ static void handle_browse_request(request_state *request)
 
     if (!AppendDNSNameString(&typedn, regtype)) { err = mStatus_BadParamErr;  goto error; }
 
-	//!!!KRS browse locally for ichat
-	if (!domain[0] && (!strcmp(regtype, "_ichat._tcp.") || !strcmp(regtype, "_presence._tcp.")))
-		strcpy(domain,"local.");
-
 	// allocate and set up browser info
 	info = mallocL("browser_info_t", sizeof(*info));
 	if (!info) { err = mStatus_NoMemoryErr; goto error; }
@@ -2024,7 +2023,7 @@ static void handle_regservice_request(request_state *request)
 	LogOperation("%3d: DNSServiceRegister(%##s, %u) START", request->sd, srv.c, mDNSVal16(service->port));
 	result = register_service_instance(request, &d);
 	
-	if (!result && !*domain && strcmp(service->type_as_string, "_presence._tcp.") && strcmp(service->type_as_string, "_ichat._tcp."))
+	if (!result && !*domain)
 		{
 		DNameListElem *ptr, *def_domains = mDNSPlatformGetRegDomainList();
 		for (ptr = def_domains; ptr; ptr = ptr->next)

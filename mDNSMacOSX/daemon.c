@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.215  2004/11/23 22:33:01  cheshire
+<rdar://problem/3654910> Remove temporary workaround code for iChat
+
 Revision 1.214  2004/11/23 22:13:59  cheshire
 <rdar://problem/3886293> Subtype advertising broken for Mach API
 
@@ -1114,10 +1117,6 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	x->next = DNSServiceBrowserList;
 	DNSServiceBrowserList = x;
 
-	//!!!KRS browse locally for ichat
-	if (!domain[0] && (!strcmp(regtype, "_ichat._tcp.") || !strcmp(regtype, "_presence._tcp.")))
-		domain = "local.";
-
 	if (domain[0])
 		{
 		// Start browser for an explicit domain
@@ -1270,10 +1269,6 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	x->i.InterfaceID = mDNSInterface_Any;
 	x->i.name = srv;
 	x->ReportTime = (mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond) | 1;
-	// Don't report errors for old iChat ("_ichat._tcp") service.
-	// New iChat ("_presence._tcp") uses DNSServiceQueryRecord() (from /usr/include/dns_sd.h) instead,
-	// and so should other applications that have valid reasons to be doing ongoing record monitoring.
-	if (SameDomainLabel(t.c, (mDNSu8*)"\x6_ichat")) x->ReportTime = 0;
 	x->next = DNSServiceResolverList;
 	DNSServiceResolverList = x;
 
@@ -1474,8 +1469,6 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (!name[0]) n = mDNSStorage.nicelabel;
 	else if (!MakeDomainLabelFromLiteralString(&n, name))                  { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }
-	if (!*domain && (!strcmp(regtype, "_presence._tcp.") || !strcmp(regtype, "_ichat._tcp.")))
-		domain = "local."; // block iChat until we have AddRecord support for wide area
 	if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
 
