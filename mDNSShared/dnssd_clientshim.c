@@ -31,6 +31,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.2  2004/05/20 18:41:24  cheshire
+Fix build broken by removal of 'kDNSServiceFlagsRemove' from dns_sd.h
+
 Revision 1.1  2004/03/12 21:30:29  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -356,7 +359,7 @@ static void DNSServiceBrowseDispose(mDNS_DirectOP *op)
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
-	DNSServiceFlags flags = AddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsRemove;
+	DNSServiceFlags flags = AddRecord ? kDNSServiceFlagsAdd : (DNSServiceFlags)0;
 	domainlabel name;
 	domainname type, domain;
 	char cname[MAX_DOMAIN_LABEL+1];			// Unescaped name: up to 63 bytes plus C-string terminating NULL.
