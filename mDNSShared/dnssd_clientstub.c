@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.24  2004/07/20 06:46:21  shersche
+<rdar://problem/3730123> fix endless loop in my_read() if recv returns 0
+Bug #: 3730123
+
 Revision 1.23  2004/06/29 00:48:38  cheshire
 Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions;
 use an explicit while() loop instead.
@@ -166,7 +170,7 @@ static int my_read(dnssd_sock_t sd, char *buf, int len)
     while (len)
     	{
     	ssize_t num_read = recv(sd, buf, len, 0);
-    	if (num_read < 0 || num_read > len) return -1;
+    	if ((num_read == 0) || (num_read < 0) || (num_read > len)) return -1;
     	buf += num_read;
     	len -= num_read;
     	}
