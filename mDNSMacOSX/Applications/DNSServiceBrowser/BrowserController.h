@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserController.h,v $
+Revision 1.10  2003/10/29 05:17:26  rpantos
+Checkpoint: transition from DNSServiceDiscovery.h to dns_sd.h
+
 Revision 1.9  2003/10/28 02:25:26  rpantos
 3282283/9,10: Cancel pending resolve when focus changes or service disappears.
 
@@ -38,6 +41,8 @@ Update to APSL 2.0
 #import <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 #include <netinet/in.h>
+#include "dns_sd.h"
+
 
 @interface BrowserController : NSObject
 {
@@ -64,8 +69,9 @@ Update to APSL 2.0
     NSString *SrvName;
     NSString *Name;
 
-    dns_service_discovery_ref 	browse_client;
-    dns_service_discovery_ref 	resolve_client;
+	DNSServiceRef				fDomainBrowser;
+	DNSServiceRef				fServiceBrowser;
+	DNSServiceRef				fServiceResolver;
 
 }
 
@@ -85,9 +91,11 @@ Update to APSL 2.0
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication;
 - (IBAction)loadDomains:(id)sender;
 
-- (void)updateBrowseWithResult:(int)type name:(NSString *)name type:(NSString *)resulttype domain:(NSString *)domain flags:(int)flags;
-- (void)updateEnumWithResult:(int)resultType domain:(NSString *)domain flags:(int)flags;
+- (void)updateBrowseWithResult:(DNSServiceFlags)flags name:(NSString *)name type:(NSString *)resulttype domain:(NSString *)domain;
+- (void)updateEnumWithResult:(DNSServiceFlags)flags domain:(NSString *)domain;
 - (void)resolveClientWithInterface:(struct sockaddr *)interface address:(struct sockaddr *)address txtRecord:(NSString *)txtRecord;
+- (void)resolveClientWitHost:(NSString *)host port:(uint16_t)port interfaceIndex:(uint32_t)interface txtRecord:(const char*)txtRecord txtLen:(uint16_t)txtLen;
+
 
 - (void)_cancelPendingResolve;
 
