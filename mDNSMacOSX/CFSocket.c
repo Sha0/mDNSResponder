@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.177  2004/09/15 01:16:29  cheshire
+<rdar://problem/3387020> mDNSResponder should notify user of kernel flaw
+
 Revision 1.176  2004/09/14 23:42:36  cheshire
 <rdar://problem/3801296> Need to seed random number generator from platform-layer data
 
@@ -614,6 +617,27 @@ static KeychainDomain *KeychainHostDomains = NULL;  // List of domains in which 
 // ***************************************************************************
 // Functions
 
+mDNSlocal void NotifyOfElusiveBug(mDNS *const m, const char *title, mDNSu32 radarid, const char *msg)
+	{
+	NetworkInterfaceInfoOSX *i;
+	static int notifyCount = 0;
+	
+	// Determine if we're at Apple (17.*.*.*)
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && i->ifinfo.ip.ip.v4.b[0] == 17)
+			break;
+
+	// Send a notification to the user to contact coreos-networking
+	if (i && notifyCount == 0)
+		{
+		notifyCount++;
+		CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
+		CFStringRef alertFormat  = CFSTR("Congratulations, you've reproduced an elusive bug. Please contact the owner of <rdar://problem/%d>. %s");
+		CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, alertFormat, radarid, msg);
+		CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
+		}
+	}
+
 mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
 	{
 	static struct ifaddrs *ifa = NULL;
@@ -918,6 +942,10 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		if (numLogMessages++ < 100)
 			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
+		if (numLogMessages > 5)
+			NotifyOfElusiveBug(m, "Flaw in Kernel", 3375328, "You can also send email to coreos-networking@group.apple.com. "
+				"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
+
 		sleep(1);		// After logging this error, rate limit so we don't flood syslog
 		} 
 	}
