@@ -35,6 +35,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.19  2003/07/19 03:15:16  cheshire
+Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
+and add the obvious trivial implementations to each platform support layer
+
 Revision 1.18  2003/07/14 18:11:54  cheshire
 Fix stricter compiler warnings
 
@@ -889,6 +893,9 @@ mDNSexport void    mDNSPlatformMemZero(                       void *dst, mDNSu32
 	{
 	memset(dst, 0, len);
 	}
+
+mDNSexport void *  mDNSPlatformMemAllocate(mDNSu32 len) { return(malloc(len)); }
+mDNSexport void    mDNSPlatformMemFree    (void *mem)   { free(mem); }
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
 

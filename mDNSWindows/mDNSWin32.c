@@ -22,6 +22,10 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.16  2003/07/19 03:15:16  cheshire
+        Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
+        and add the obvious trivial implementations to each platform support layer
+
         Revision 1.15  2003/07/02 21:20:04  cheshire
         <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -534,6 +538,13 @@ void	mDNSPlatformMemZero( void *inDst, mDNSu32 inSize )
 {
 	memset( inDst, 0, inSize );
 }
+
+//===========================================================================================================================
+//	Allocate & Free
+//===========================================================================================================================
+
+mDNSexport void *  mDNSPlatformMemAllocate(mDNSu32 len) { return(malloc(len)); }
+mDNSexport void    mDNSPlatformMemFree    (void *mem)   { free(mem); }
 
 //===========================================================================================================================
 //	mDNSPlatformTimeNow

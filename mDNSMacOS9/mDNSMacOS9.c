@@ -526,5 +526,7 @@ mDNSexport UInt32  mDNSPlatformStrLen (const void *src)                         
 mDNSexport void    mDNSPlatformMemCopy(const void *src,       void *dst, UInt32 len) { OTMemcpy(dst, src, len); }
 mDNSexport Boolean mDNSPlatformMemSame(const void *src, const void *dst, UInt32 len) { return(OTMemcmp(dst, src, len)); }
 mDNSexport void    mDNSPlatformMemZero(                       void *dst, UInt32 len) { OTMemzero(dst, len); }
+mDNSexport void *  mDNSPlatformMemAllocate(mDNSu32 len)                              { return(OTAllocMem(len)); }
+mDNSexport void    mDNSPlatformMemFree    (void *mem)                                { OTFreeMem(mem); }
 mDNSexport SInt32  mDNSPlatformTimeNow()                                             { return((SInt32)TickCount()); }
 mDNSexport SInt32  mDNSPlatformOneSecond = 60;

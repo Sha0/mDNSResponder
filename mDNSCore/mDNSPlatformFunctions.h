@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.17  2003/07/19 03:15:15  cheshire
+Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
+and add the obvious trivial implementations to each platform support layer
+
 Revision 1.16  2003/07/02 21:19:46  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -100,7 +104,13 @@ typedef struct
 // ***************************************************************************
 // Functions
 
-// Every platform support module must provide the following functions
+// Every platform support module must provide the following functions.
+// Note: mDNSPlatformMemAllocate/mDNSPlatformMemFree are only required for handling oversized resource records.
+// If your target platform has a well-defined specialized application, and you know that all the records it uses
+// are StandardRDSize or less, then you can just make a simple mDNSPlatformMemAllocate() stub that always returns
+// NULL. StandardRDSize is a compile-time constant, which is set by default to 264. If you need to handle records
+// a little larger than this and you don't want to have to implement run-time allocation and freeing, then you
+// can raise the value of this constant to a suitable value (at the expense of increased memory usage).
 extern mStatus  mDNSPlatformInit   (mDNS *const m);
 extern void     mDNSPlatformClose  (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
@@ -109,11 +119,13 @@ extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);
 
-extern void     mDNSPlatformStrCopy(const void *src,       void *dst);
-extern mDNSu32  mDNSPlatformStrLen (const void *src);
-extern void     mDNSPlatformMemCopy(const void *src,       void *dst, mDNSu32 len);
-extern mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, mDNSu32 len);
-extern void     mDNSPlatformMemZero(                       void *dst, mDNSu32 len);
+extern void     mDNSPlatformStrCopy     (const void *src,       void *dst);
+extern mDNSu32  mDNSPlatformStrLen      (const void *src);
+extern void     mDNSPlatformMemCopy     (const void *src,       void *dst, mDNSu32 len);
+extern mDNSBool mDNSPlatformMemSame     (const void *src, const void *dst, mDNSu32 len);
+extern void     mDNSPlatformMemZero     (                       void *dst, mDNSu32 len);
+extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
+extern void     mDNSPlatformMemFree     (void *mem);
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);

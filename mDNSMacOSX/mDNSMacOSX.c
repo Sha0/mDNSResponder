@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.97  2003/07/19 03:15:16  cheshire
+Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
+and add the obvious trivial implementations to each platform support layer
+
 Revision 1.96  2003/07/18 00:30:00  cheshire
 <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
 
@@ -1219,3 +1223,5 @@ mDNSexport mDNSu32  mDNSPlatformStrLen (const void *src)                        
 mDNSexport void     mDNSPlatformMemCopy(const void *src,       void *dst, mDNSu32 len) { memcpy(dst, src, len); }
 mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, mDNSu32 len) { return(memcmp(dst, src, len) == 0); }
 mDNSexport void     mDNSPlatformMemZero(                       void *dst, mDNSu32 len) { bzero(dst, len); }
+mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len) { return(mallocL("mDNSPlatformMemAllocate", len)); }
+mDNSexport void     mDNSPlatformMemFree    (void *mem)   { freeL("mDNSPlatformMemFree", mem); }
