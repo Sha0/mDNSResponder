@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.491  2004/12/11 01:52:11  cheshire
+<rdar://problem/3785820> Support kDNSServiceFlagsAllowRemoteQuery for registering services too
+
 Revision 1.490  2004/12/10 20:06:25  cheshire
 <rdar://problem/3915074> Reduce egregious stack space usage
 Reduced SendDelayedUnicastResponse() stack frame from 9K to 112 bytes
@@ -4880,9 +4883,9 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	mDNSu8    *responseend = mDNSNULL;
 	mDNSBool   QueryWasLocalUnicast = !mDNSAddrIsDNSMulticast(dstaddr) && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	
-	if (!InterfaceID)
+	if (!InterfaceID && mDNSAddrIsDNSMulticast(dstaddr))
 		{
-		LogMsg("Ignoring Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		LogMsg("Ignoring Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s (Multicast, but no InterfaceID)",
 			srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 			msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
 			msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
@@ -5928,6 +5931,11 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	mDNS_SetupResourceRecord(&set->RR_PTR,   mDNSNULL, set->InterfaceID, kDNSType_PTR,   kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	mDNS_SetupResourceRecord(&set->RR_HINFO, mDNSNULL, set->InterfaceID, kDNSType_HINFO, kHostNameTTL, kDNSRecordTypeUnique,      mDNSNULL, mDNSNULL);
 
+#if ANSWER_REMOTE_HOSTNAME_QUERIES
+	set->RR_A    .AllowRemoteQuery  = mDNStrue;
+	set->RR_PTR  .AllowRemoteQuery  = mDNStrue;
+	set->RR_HINFO.AllowRemoteQuery  = mDNStrue;
+#endif
 	// 1. Set up Address record to map from host name ("foo.local.") to IP address
 	// 2. Set up reverse-lookup PTR record to map from our address back to our host name
 	AssignDomainName(set->RR_A.resrec.name, m->MulticastHostname);
@@ -6022,7 +6030,7 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 
 	// 2. Start advertising our address records using the new name
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
-		if (intf->Advertise) { AdvertiseInterface(m, intf); }
+		if (intf->Advertise) AdvertiseInterface(m, intf);
 
 	// 3. Make sure that any SRV records (and the like) that reference our
 	// host name in their rdata get updated to reference this new host name

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.136  2004/12/11 01:52:10  cheshire
+<rdar://problem/3785820> Support kDNSServiceFlagsAllowRemoteQuery for registering services too
+
 Revision 1.135  2004/12/10 20:46:37  cheshire
 Change LogOperation message to debugf
 
@@ -498,6 +501,7 @@ typedef struct service_instance
     struct service_instance *next;  
     mDNSBool autoname;				// Set if this name is tied to the Computer Name
     mDNSBool autorename;			// Set if this client wants us to automatically rename on conflict
+    mDNSBool allowremotequery;		// Respond to unicast queries from outside the local link?
     mDNSBool rename_on_memfree;  	// Set on config change when we deregister original name
     domainlabel name;
     domainname domain;
@@ -522,6 +526,7 @@ typedef struct
     domainname host;
     mDNSBool autoname;				// Set if this name is tied to the Computer Name
     mDNSBool autorename;			// Set if this client wants us to automatically rename on conflict
+    mDNSBool allowremotequery;		// Respond to unicast queries from outside the local link?
     int num_subtypes;
     mDNSInterfaceID InterfaceID;
     service_instance *instances;
@@ -1927,6 +1932,7 @@ static mStatus register_service_instance(request_state *request, const domainnam
 	instance->sd                = request->sd;
     instance->autoname          = info->autoname;
     instance->autorename        = info->autorename;
+    instance->allowremotequery  = info->allowremotequery;
     instance->rename_on_memfree = 0;
 	instance->name              = info->name;
 	AssignDomainName(instance->domain, *domain);
@@ -2046,13 +2052,13 @@ static void handle_regservice_request(request_state *request)
     if (!name[0])
 		{
 		service->name = (gmDNS)->nicelabel;
-		service->autoname       = mDNStrue;
+		service->autoname = mDNStrue;
 		}
     else
 		{
 		if (!MakeDomainLabelFromLiteralString(&service->name, name))
 			{ LogMsg("ERROR: handle_regservice_request - name bad %s", name); goto bad_param; }
-		service->autoname       = mDNSfalse;
+		service->autoname = mDNSfalse;
 		}
         	
 	if (*domain)
@@ -2072,7 +2078,8 @@ static void handle_regservice_request(request_state *request)
 		
 	if (!MakeDomainNameFromDNSNameString(&service->host, host))
 		{ LogMsg("ERROR: handle_regservice_request - host bad %s", host); goto bad_param; }
-	service->autorename = !(flags & kDNSServiceFlagsNoAutoRename);
+	service->autorename       = (flags & kDNSServiceFlagsNoAutoRename    ) == 0;
+	service->allowremotequery = (flags & kDNSServiceFlagsAllowRemoteQuery) != 0;
 	
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
 	// a port number of zero. When two instances of the protected client are allowed to run on one
@@ -2139,6 +2146,13 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
 
     if (result == mStatus_NoError)
 		{
+		if (instance->allowremotequery)
+			{
+			srs->RR_ADV.AllowRemoteQuery = mDNStrue;
+			srs->RR_PTR.AllowRemoteQuery = mDNStrue;
+			srs->RR_SRV.AllowRemoteQuery = mDNStrue;
+			srs->RR_TXT.AllowRemoteQuery = mDNStrue;
+			}
         process_service_registration(srs);
         if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
         	RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
