@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.14  2003/11/14 21:27:09  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.13  2003/08/14 02:19:54  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -75,7 +79,7 @@ static void PrintServiceInfo(SearcherServices *services)
 
 		if (ls->dom)
 			{
-			char c_dom[256];
+			char c_dom[MAX_ESCAPED_DOMAIN_NAME];
 			ConvertDomainNameToCString(&s->name, c_dom);
 			if (ls->add) printf("%-55s available for browsing\n", c_dom);
 			else         printf("%-55s no longer available for browsing\n", c_dom);
@@ -85,8 +89,7 @@ static void PrintServiceInfo(SearcherServices *services)
 			domainlabel name;
 			domainname type, domain;
 			UInt16 port = (UInt16)((UInt16)s->port.b[0] << 8 | s->port.b[1]);
-			char c_name[64], c_type[256], c_dom[256], c_ip[20];
-			
+			char c_name[MAX_DOMAIN_LABEL+1], c_type[MAX_ESCAPED_DOMAIN_NAME], c_dom[MAX_ESCAPED_DOMAIN_NAME], c_ip[20];
 			DeconstructServiceName(&s->name, &name, &type, &domain);
 			ConvertDomainLabelToCString_unescaped(&name, c_name);
 			ConvertDomainNameToCString(&type, c_type);

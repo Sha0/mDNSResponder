@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.20  2003/11/14 21:27:09  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.19  2003/11/14 20:59:10  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -903,9 +907,9 @@ mDNSlocal void
 	domainlabel			name;
 	domainname			type;
 	domainname			domain;
-	char				nameString[ 256 ];
-	char				typeString[ 256 ];
-	char				domainString[ 256 ];
+	char				nameString  [ MAX_ESCAPED_DOMAIN_LABEL + 1 ];
+	char				typeString  [ MAX_ESCAPED_DOMAIN_NAME ];
+	char				domainString[ MAX_ESCAPED_DOMAIN_NAME ];
 	DNSBrowserEvent		event;
 	mStatus				err;
 	
@@ -1377,7 +1381,7 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	char *					txtString;
 	mStatus					err;
 	mDNSBool				release;
-	char					hostName[ MAX_DOMAIN_NAME + 1 ];
+	char					hostName[ MAX_ESCAPED_DOMAIN_NAME ];
 	
 	txtString = NULL;
 	

@@ -27,6 +27,10 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.10  2003/11/14 21:27:09  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.9  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -2016,7 +2020,7 @@ void	mDNSShowRecords( void )
 	MDNSInterfaceItem *		item;
 	int						n;
 	AuthRecord *			record;
-	char					name[ 512 ];
+	char					name[ MAX_ESCAPED_DOMAIN_NAME ];
 	
 	printf( "\n-- mDNS resource records --\n" );
 	n = 1;

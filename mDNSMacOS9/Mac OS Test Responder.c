@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Responder.c,v $
+Revision 1.18  2003/11/14 21:27:08  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.17  2003/08/14 02:19:54  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -74,7 +78,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	mDNSIPPort port;
 	domainname t;
 	domainname d;
-	char buffer[512];
+	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	UInt8 txtbuffer[512];
 
 	port.b[0] = (UInt8)(PortAsNumber >> 8);
@@ -151,7 +155,7 @@ mDNSlocal OSStatus CreateProxyRegistrationForRealService(mDNS *m, UInt16 PortAsN
 // Done once on startup, and then again every time our address changes
 mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	{
-	char buffer[256];
+	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	mDNSv4Addr ip = m->HostInterfaces->ip.ip.v4;
 	
 	ConvertDomainNameToCString(&m->hostname, buffer);

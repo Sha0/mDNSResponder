@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.24  2003/11/14 21:27:09  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.23  2003/10/30 19:39:28  cheshire
 Fix warnings on certain compilers
 
@@ -154,17 +158,17 @@ mDNSlocal void ServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatu
 
 	if (result == mStatus_NoError)
 		{
-		char buffer[256];
-		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.resrec.name, buffer);
+		char buffer[MAX_ESCAPED_DOMAIN_NAME];
+		ConvertDomainNameToCString(&sr->RR_SRV.resrec.name, buffer);
 		printf("Service %s now registered and active\n", buffer);
 		}
 
 	if (result == mStatus_NameConflict)
 		{
-		char buffer1[256], buffer2[256];
-		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.resrec.name, buffer1);
+		char buffer1[MAX_ESCAPED_DOMAIN_NAME], buffer2[MAX_ESCAPED_DOMAIN_NAME];
+		ConvertDomainNameToCString(&sr->RR_SRV.resrec.name, buffer1);
 		mDNS_RenameAndReregisterService(m, sr, mDNSNULL);
-		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.resrec.name, buffer2);
+		ConvertDomainNameToCString(&sr->RR_SRV.resrec.name, buffer2);
 		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
 		}
 	}
@@ -179,7 +183,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	domainname t, d;
 	mDNSIPPort port;
 	unsigned char txtbuffer[1024], *bptr = txtbuffer;
-	char buffer[1024];
+	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 
 	MakeDomainLabelFromLiteralString(&n, name);
 	MakeDomainNameFromDNSNameString(&t, type);
@@ -205,7 +209,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 		mDNSInterface_Any,			// Interace ID
 		ServiceCallback, mDNSNULL);	// Callback and context
 
-	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.resrec.name, buffer);
+	ConvertDomainNameToCString(&recordset->RR_SRV.resrec.name, buffer);
 	printf("Made Service Records for %s\n", buffer);
 	}
 
@@ -230,8 +234,8 @@ mDNSlocal void NoSuchServiceCallback(mDNS *const m, AuthRecord *const rr, mStatu
 
 	if (result == mStatus_NoError)
 		{
-		char buffer[256];
-		ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer);
+		char buffer[MAX_ESCAPED_DOMAIN_NAME];
+		ConvertDomainNameToCString(&rr->resrec.name, buffer);
 		printf("Non-existence assertion %s now registered and active\n", buffer);
 		}
 
@@ -239,12 +243,12 @@ mDNSlocal void NoSuchServiceCallback(mDNS *const m, AuthRecord *const rr, mStatu
 		{
 		domainlabel n;
 		domainname t, d;
-		char buffer1[256], buffer2[256];
-		ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer1);
+		char buffer1[MAX_ESCAPED_DOMAIN_NAME], buffer2[MAX_ESCAPED_DOMAIN_NAME];
+		ConvertDomainNameToCString(&rr->resrec.name, buffer1);
 		DeconstructServiceName(&rr->resrec.name, &n, &t, &d);
 		IncrementLabelSuffix(&n, mDNStrue);
 		mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, proxyhostname, mDNSInterface_Any, NoSuchServiceCallback, mDNSNULL);
-		ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer2);
+		ConvertDomainNameToCString(&rr->resrec.name, buffer2);
 		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
 		}
 	}
@@ -254,12 +258,12 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, AuthRecord *const rr, domainname *
 	{
 	domainlabel n;
 	domainname t, d;
-	char buffer[256];
+	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	MakeDomainLabelFromLiteralString(&n, name);
 	MakeDomainNameFromDNSNameString(&t, type);
 	MakeDomainNameFromDNSNameString(&d, domain);
 	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, proxyhostname, mDNSInterface_Any, NoSuchServiceCallback, proxyhostname);
-	ConvertDomainNameToCString_unescaped(&rr->resrec.name, buffer);
+	ConvertDomainNameToCString(&rr->resrec.name, buffer);
 	printf("Made Non-existence Record for %s\n", buffer);
 	}
 

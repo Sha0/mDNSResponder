@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.12  2003/11/14 21:27:09  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.11  2003/10/30 19:26:38  cheshire
 Fix warnings on certain compilers
 
@@ -109,7 +113,7 @@ static CacheRecord gRRCache[RR_CACHE_SIZE];
 
 static volatile int StopNow;	// 0 means running, 1 means stop because we got an answer, 2 means stop because of Ctrl-C
 static volatile int NumAnswers, NumAddr, NumAAAA, NumHINFO;
-static char hostname[256], hardware[256], software[256];
+static char hostname[MAX_ESCAPED_DOMAIN_NAME], hardware[256], software[256];
 static mDNSOpaque16 lastid, id;
 
 //*************************************************************************************************************
