@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.145  2004/12/12 22:56:29  ksekar
+<rdar://problem/3668508> Need to properly handle duplicate long-lived queries
+
 Revision 1.144  2004/12/11 20:55:29  ksekar
 <rdar://problem/3916479> Clean up registration state machines
 
@@ -2399,7 +2402,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	info->retry = (info->expire - q->LastQTime) / 2;	
 	}
 
-mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, mDNSInterfaceID InterfaceID)
+mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, mDNSInterfaceID InterfaceID)
 	{
 	DNSMessage ack;
 	mDNSu8 *ackEnd = ack.data;
@@ -2409,23 +2412,24 @@ mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNS
 	(void)InterfaceID;  // unused
 
     // find Opt RR, verify correct ID
-	if (!getLLQAtIndex(m, msg, end, &opt, 0)) { LogMsg("Error: recvLLQEvent - getLLQAtIndex failed"); return; }
-	if (opt.llqOp != kLLQOp_Event) { LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return; }
-	if (!q->uDNS_info.llq) { LogMsg("Error: recvLLQEvent - question onject does not contain LLQ metadata"); return; }
-	if (!sameID(opt.id, q->uDNS_info.llq->id)) { LogMsg("recvLLQEvent - incorrect ID. Discarding"); return; }
+	if (!getLLQAtIndex(m, msg, end, &opt, 0)) { debugf("Pkt does not contain LLQ Opt"); return mDNSfalse; }
+	if (opt.llqOp != kLLQOp_Event) { LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return mDNSfalse; }
+	if (!q->uDNS_info.llq) { LogMsg("Error: recvLLQEvent - question onject does not contain LLQ metadata"); return mDNSfalse; }
+	if (!sameID(opt.id, q->uDNS_info.llq->id)) { LogMsg("recvLLQEvent - incorrect ID. Discarding"); return mDNSfalse; }
 
     // invoke response handler
 	m->uDNS_info.CurrentQuery = q;
 	q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context);
-	if (m->uDNS_info.CurrentQuery != q) return;
+	if (m->uDNS_info.CurrentQuery != q) return mDNStrue;
 	
     //  format and send ack
 	InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
 	ackEnd = putQuestion(&ack, ack.data, ack.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
-	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putQuestion");  return; }
+	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putQuestion");  return mDNSfalse; }
 	err = mDNSSendDNSMessage(m, &ack, ackEnd, mDNSInterface_Any, srcaddr, srcport, -1, mDNSNULL); 
 	if (err) LogMsg("ERROR: recvLLQEvent - mDNSSendDNSMessage returned %ld", err);
-    }
+	return mDNStrue;
+	}
 
 
 
@@ -2763,16 +2767,17 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 			{
 			u->CurrentQuery = q;
 			if (llqInfo->state == LLQ_Established || (llqInfo->state == LLQ_Refresh && msg->h.numAnswers))			
-				{ recvLLQEvent(m, q, msg, end, srcaddr, srcport, InterfaceID); return mDNStrue; }
-			else if (msg->h.id.NotAnInteger != q->uDNS_info.id.NotAnInteger)
-				{ q = q->next; continue; }
-			else if (llqInfo->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers)
-				{ recvRefreshReply(m, msg, end, q); return mDNStrue; }
-			if ((llqInfo->state == LLQ_InitialRequest || llqInfo->state == LLQ_SecondaryRequest)
-				&& !mDNSSameAddress(srcaddr, &llqInfo->servAddr))
-				{ LogMsg("LLQ Handshake - src address incorrect"); return mDNStrue; }
-			else if (llqInfo->state < LLQ_Static)
-				{ q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context); return mDNStrue; }			
+				{ if (recvLLQEvent(m, q, msg, end, srcaddr, srcport, InterfaceID)) return mDNStrue; }
+			else if (msg->h.id.NotAnInteger == q->uDNS_info.id.NotAnInteger)
+				{
+				if (llqInfo->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers)
+					{ recvRefreshReply(m, msg, end, q); return mDNStrue; }
+				if (llqInfo->state < LLQ_Static)
+					{
+					if ((llqInfo->state != LLQ_InitialRequest && llqInfo->state != LLQ_SecondaryRequest) || mDNSSameAddress(srcaddr, &llqInfo->servAddr))
+						{ q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context); return mDNStrue; }
+					}
+				}
 			}
 		q = q->next;
 		}
