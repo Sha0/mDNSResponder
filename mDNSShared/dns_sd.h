@@ -599,7 +599,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
  *
  * rdata:           The raw rdata to be contained in the added resource record.
  *
- * ttl:             The time to live of the resource record, in seconds.
+ * ttl:             The time to live of the resource record, in seconds.  Pass 0 to use a default value.
  *
  * return value:    Returns kDNSServiceErr_NoError on success, otherwise returns an
  *                  error code indicating the error that occurred (the RecordRef is not initialized).
@@ -1016,7 +1016,7 @@ DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
  *
  * rdata:           A pointer to the raw rdata, as it is to appear in the DNS record.
  *
- * ttl:             The time to live of the resource record, in seconds.
+ * ttl:             The time to live of the resource record, in seconds.  Pass 0 to use a default value.
  *
  * callBack:        The function to be called when a result is found, or if the call
  *                  asynchronously fails (e.g. because of a name conflict.)

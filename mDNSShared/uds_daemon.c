@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.94  2004/09/22 18:27:06  ksekar
+<rdar://problem/3811427> allow DNSServiceAddRecord to pass zero to get
+default record TTL
+
 Revision 1.93  2004/09/22 02:39:44  cheshire
 <rdar://problem/3810757> Allow DNSServiceRegisterRecord to pass zero to get default record TTL
 
@@ -1992,7 +1996,15 @@ static void handle_add_request(request_state *rstate)
     rdlen = get_short(&ptr);
     rdata = get_rdata(&ptr, rdlen);
     ttl = get_long(&ptr);
-    
+
+    if (!ttl)
+		{
+		if      (rrtype == kDNSType_TXT)         ttl = kDefaultTTLforTXT;
+		else if (flags & kDNSServiceFlagsShared) ttl = kDefaultTTLforShared;
+		else if (flags & kDNSServiceFlagsUnique) ttl = kDefaultTTLforUnique;
+		else { LogMsg("Don't know how to get default ttl for record.  Using default for Unique"); ttl = kDefaultTTLforUnique; }
+		}
+	
 	result = add_record_to_service(rstate, local, rrtype, rdlen, rdata, ttl);
 	if (global) add_record_to_service(rstate, global, rrtype, rdlen, rdata, ttl); // don't report global errors to client
 	
