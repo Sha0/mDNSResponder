@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.171  2004/08/25 01:04:42  cheshire
+Don't need to CFRelease name and array
+
 Revision 1.170  2004/08/25 00:37:28  ksekar
 <rdar://problem/3774635>: Cleanup DynDNS hostname registration code
 
@@ -1119,9 +1122,7 @@ mDNSlocal void GetUserSpecifiedDDNSZone(domainname *const dname)
                         !MakeDomainNameFromDNSNameString(dname, uname) || !dname->c[0])
 						LogMsg("GetUserSpecifiedDDNSName SCDynamicStore bad DDNS host name: %s", uname[0] ? uname : "(unknown)");
 					else LogMsg("GetUserSpecifiedDDNSName SCDynamicStore DDNS host name: %s", uname);						
-					CFRelease(name);
 					}
-				CFRelease(array);
 				}
 			CFRelease(dict);
 			}
