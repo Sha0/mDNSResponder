@@ -42,6 +42,10 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.2  2005/02/08 01:32:05  cheshire
+Add trimCharactersFromDomain routine to strip leading and trailing
+white space and punctuation from user-entered fields.
+
 Revision 1.1  2005/02/05 01:59:19  cheshire
 Add Preference Pane to facilitate testing of DDNS & wide-area features
 
@@ -602,13 +606,21 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 }
 
 
+- (NSString *)trimCharactersFromDomain:(NSString *)domain
+{
+	NSMutableCharacterSet * trimSet = [[[NSCharacterSet whitespaceCharacterSet] mutableCopy] autorelease];
+	[trimSet formUnionWithCharacterSet:[NSCharacterSet punctuationCharacterSet]];
+	return [domain stringByTrimmingCharactersInSet:trimSet];	
+}
+
+
 - (void)addBrowseDomainSheetDidEnd:(NSWindow *)sheet returnCode:(int)returnCode contextInfo:(void *)contextInfo
 {
     [sheet orderOut:self];
     [self enableControls];
     
     if (returnCode == NSOKButton) {
-		NSString *newBrowseDomainString = [[[browseDomainsComboBox stringValue] copy] autorelease];
+		NSString * newBrowseDomainString = [self trimCharactersFromDomain:[browseDomainsComboBox stringValue]];
 		NSMutableDictionary *newBrowseDomainDict;
 		
 		if (browseDomainsArray == nil) browseDomainsArray = [[NSMutableArray alloc] initWithCapacity:0];
@@ -993,26 +1005,19 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     BOOL          regSecretWasSet               = NO;
     BOOL          hostSecretWasSet              = NO;
     OSStatus      err                           = noErr;
-    
-    // Remove trailing dots from domain names.
-    if ([hostNameString hasSuffix:@"."])
-        hostNameString = [hostNameString substringToIndex:[hostNameString length] -1];
-    
-    if ([browseDomainString hasSuffix:@"."])
-        browseDomainString = [browseDomainString substringToIndex:[browseDomainString length] -1];
-    
-    if ([regDomainString hasSuffix:@"."])
-        regDomainString = [regDomainString substringToIndex:[regDomainString length] -1];
-    
-    if ([tempHostNameSharedSecretName hasSuffix:@"."])
-        tempHostNameSharedSecretName = [tempHostNameSharedSecretName substringToIndex:[hostNameSharedSecretName length] -1];
-    
-    if ([tempRegSharedSecretName hasSuffix:@"."])
-        tempRegSharedSecretName = [tempRegSharedSecretName substringToIndex:[regSharedSecretName length] -1];
+
+	hostNameString                = [self trimCharactersFromDomain:hostNameString];
+	browseDomainString            = [self trimCharactersFromDomain:browseDomainString];
+	regDomainString               = [self trimCharactersFromDomain:regDomainString];
+	tempHostNameSharedSecretName  = [self trimCharactersFromDomain:tempHostNameSharedSecretName];
+	tempRegSharedSecretName       = [self trimCharactersFromDomain:tempRegSharedSecretName];
+	
+	[hostName setStringValue:hostNameString];
+	[regDomainsComboBox setStringValue:regDomainString];
     
     // Convert Shared Secret account names to lowercase.
     tempHostNameSharedSecretName = [tempHostNameSharedSecretName lowercaseString];
-    tempRegSharedSecretName = [tempRegSharedSecretName lowercaseString];
+    tempRegSharedSecretName      = [tempRegSharedSecretName lowercaseString];
     
     // Save hostname shared secret.
     if ([hostNameSharedSecretName length] > 0 && ([hostNameSharedSecretValue length] > 0)) {

@@ -42,6 +42,10 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.h,v $
+Revision 1.2  2005/02/08 01:32:05  cheshire
+Add trimCharactersFromDomain routine to strip leading and trailing
+white space and punctuation from user-entered fields.
+
 Revision 1.1  2005/02/05 01:59:19  cheshire
 Add Preference Pane to facilitate testing of DDNS & wide-area features
 
@@ -157,6 +161,7 @@ typedef struct MyDNSServiceState {
 - (NSData *)dataForDomain:(NSString *)domainName isEnabled:(BOOL)enabled;
 - (NSData *)dataForSharedSecret:(NSString *)secret domain:(NSString *)domainName key:(NSString *)keyName;
 - (BOOL)domainAlreadyInList:(NSString *)domainString;
+- (NSString *)trimCharactersFromDomain:(NSString *)domain;
 
 
 // Delegate methods
