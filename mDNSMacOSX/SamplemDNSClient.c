@@ -83,6 +83,7 @@ void MyHandleMachMessage(CFMachPortRef port, void *msg, CFIndex size, void *info
 int main(int argc, char ** argv)
 	{
 	char ch;
+	char *dom;
 	dns_service_discovery_ref client = NULL;
 	mach_port_t               port   = NULL;
 
@@ -100,14 +101,16 @@ int main(int argc, char ** argv)
 						client = DNSServiceDomainEnumerationCreate(0, browsedom_reply, nil);
 						break;
 
-			case 'B':	if (argc < optind+2) goto Fail;
-						printf("Browsing for %s%s\n", argv[optind+0], argv[optind+1]);
-						client = DNSServiceBrowserCreate(argv[optind+0], argv[optind+1], browse_reply, nil);
+			case 'B':	if (argc < optind+1) goto Fail;
+						dom = (argc < optind+2) ? "" : argv[optind+1];
+						printf("Browsing for %s%s\n", argv[optind+0], dom);
+						client = DNSServiceBrowserCreate(argv[optind+0], dom, browse_reply, nil);
 						break;
 
-			case 'L':	if (argc < optind+3) goto Fail;
-						printf("Lookup %s.%s%s\n", argv[optind+0], argv[optind+1], argv[optind+2]);
-						client = DNSServiceResolverResolve(argv[optind+0], argv[optind+1], argv[optind+2], resolve_reply, nil);
+			case 'L':	if (argc < optind+2) goto Fail;
+						dom = (argc < optind+3) ? "" : argv[optind+2];
+						printf("Lookup %s.%s%s\n", argv[optind+0], argv[optind+1], dom);
+						client = DNSServiceResolverResolve(argv[optind+0], argv[optind+1], dom, resolve_reply, nil);
 						break;
 
 			case 'R':	if (argc < optind+4) goto Fail;
