@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.198  2005/02/25 02:35:22  cheshire
+<rdar://problem/4017292> Should not indicate successful dynamic update if no network connection
+If we get NXDomain error looking for the _dns-update._udp record,
+update status from 1 (in progress) to mStatus_NoSuchNameErr (failed)
+
 Revision 1.197  2005/02/24 21:56:59  ksekar
 Change LogMsgs to debugfs
 
@@ -3614,6 +3619,21 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 	if (context->state == lookupPort)  // we've already issued the query
 		{
 		if (!msg) { LogMsg("ERROR: hndlLookupUpdatePort - NULL message"); return smError; }
+
+		// If we got NXDomain error, update status from 1 (in progress) to mStatus_NoSuchNameErr (failed)
+		if (msg->h.flags.b[1] & kDNSFlag1_RC)
+			{
+			debugf("lookupDNSPort error %d", (msg->h.flags.b[1] & kDNSFlag1_RC));
+			ptr = msg->data;
+			for (i = 0; i < msg->h.numQuestions; i++)
+				{
+				DNSQuestion q;
+				ptr = getQuestion(msg, ptr, end, 0, &q);
+				if (SameDomainName(&q.qname, &context->question.qname))
+					{ context->callback(mStatus_NoSuchNameErr, context->m, context->callbackInfo, mDNSNULL); break; }
+				}
+			}
+
 		ptr = LocateAnswers(msg, end);
 		for (i = 0; i < msg->h.numAnswers; i++)
 			{
