@@ -141,6 +141,10 @@ int main(int argc, char ** argv)
 			}
 		}
 	CFRunLoopRun();
+    
+    // Be sure to deallocate the dns_service_discovery_ref when you're finished
+    DNSServiceDiscoveryDeallocate(client);
+    
 Exit:
 	return 0;
 
