@@ -137,7 +137,7 @@ STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Rendezvous Printer Wizard"
 FONT 8, "MS Shell Dlg", 0, 0, 0x0
 BEGIN
-    LTEXT           "Welcome to the Rendezvous Printer Setup Wizard",
+    LTEXT           "Welcome to the Rendezvous Printer Wizard",
                     IDC_GREETING,114,7,171,46
     LTEXT           "To continue, click Next.",IDC_STATIC,115,188,143,8
     LTEXT           "This wizard helps you connect to a shared printer using Rendezvous.  Be sure your printer is powered up, and connected to your network.",
@@ -149,7 +149,7 @@ END
 IDD_THIRD_PAGE DIALOGEX 0, 0, 290, 154
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | 
     WS_SYSMENU
-CAPTION "Rendezvous Printer Setup Wizard"
+CAPTION "Rendezvous Printer Wizard"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     CONTROL         "",IDC_PRINTER_MODEL,"SysListView32",LVS_REPORT | 
@@ -291,7 +291,7 @@ BEGIN
     IDS_GREETING            "Welcome to the Rendezvous Printer Wizard"
     IDS_BROWSE_TITLE        "Browse for Rendezvous Printers"
     IDS_BROWSE_SUBTITLE     "When the list of printers appears, select the one you want to use."
-    IDS_CAPTION             "Rendezvous Printer Setup Wizard"
+    IDS_CAPTION             "Rendezvous Printer Wizard"
     IDS_GOODBYE_GOOD1       "You have successfully completed the Rendezvous Printer Wizard.  The printer has the following settings:"
     IDS_SEARCHING           "Searching for printers..."
     IDS_GOODBYTE_GOOD2      "To close this wizard, click Finish."
