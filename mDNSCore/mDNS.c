@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.268  2003/08/12 15:01:10  cheshire
+Add comments
+
 Revision 1.267  2003/08/12 14:59:27  cheshire
 <rdar://problem/3374490> Rate-limiting blocks some legitimate responses
 When setting LastMCTime also record LastMCInterface. When checking LastMCTime to determine
@@ -2042,8 +2045,8 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, ResourceRecord *const rr)
 	{
 	// Back-date LastAPTime to make it appear that the next announcement/probe is due immediately and set LastMCTime to
 	// now, to inhibit multicast responses (no need to send additional multicast responses when we're announcing anyway)
-	rr->LastAPTime = m->timenow - rr->ThisAPInterval;
-	rr->LastMCTime = m->timenow;
+	rr->LastAPTime      = m->timenow - rr->ThisAPInterval;
+	rr->LastMCTime      = m->timenow;
 	rr->LastMCInterface = mDNSInterfaceMark;
 	
 	if (rr->RecordType == kDNSRecordTypeUnique)
@@ -2233,6 +2236,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
 	InitializeLastAPTime(m, rr);
+//	rr->LastMCTime        = Set for us in InitializeLastAPTime()
+//	rr->LastMCInterface   = Set for us in InitializeLastAPTime()
 	rr->NewRData          = mDNSNULL;
 	rr->UpdateCallback    = mDNSNULL;
 
