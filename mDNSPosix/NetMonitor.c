@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.28  2003/07/29 22:51:08  cheshire
+ * Added hexdump for packets we can't decode, so we can find out *why* we couldn't decode them
+ *
  * Revision 1.27  2003/07/29 22:48:04  cheshire
  * Completed support for decoding packets containing oversized resource records
  *
@@ -409,6 +412,27 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 	mprintf("\n");
 	}
 
+mDNSlocal void HexDump(const mDNSu8 *ptr, const mDNSu8 *const end)
+	{
+	while (ptr < end)
+		{
+		int i;
+		for (i=0; i<16; i++)
+			if (&ptr[i] < end) mprintf("%02X ", ptr[i]);
+			else mprintf("   ");
+		for (i=0; i<16; i++)
+			if (&ptr[i] < end) mprintf("%c", ptr[i] <= ' ' || ptr[i] >= 126 ? '.' : ptr[i]);
+		ptr += 16;
+		mprintf("\n");
+		}
+	}
+
+mDNSlocal void DisplayError(const mDNSAddr *srcaddr, const mDNSu8 *ptr, const mDNSu8 *const end, char *msg)
+	{
+	mprintf("%#-16a **** ERROR: FAILED TO READ %s **** \n", srcaddr, msg);
+	HexDump(ptr, end);
+	}
+
 mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
@@ -424,8 +448,9 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		{
 		DNSQuestion q;
 		mDNSu8 *p2;
+		const mDNSu8 *ep = ptr;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
+		if (!ptr) { DisplayError(srcaddr, ep, end, "QUESTION"); return; }
 		mDNSu16 ucbit = q.qclass & kDNSQClass_UnicastResponse;
 		q.qclass &= ~kDNSQClass_UnicastResponse;
 		p2 = (mDNSu8 *)FindUpdate(m, msg, auth, end, &q, &pkt);
@@ -452,8 +477,9 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
+		const mDNSu8 *ep = ptr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ KNOWN ANSWER **** \n", srcaddr); return; }
+		if (!ptr) { DisplayError(srcaddr, ep, end, "KNOWN ANSWER"); return; }
 		DisplayResourceRecord(srcaddr, "(KA)", &pkt.r);
 		}
 	}
@@ -470,15 +496,17 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
 		DNSQuestion q;
+		const mDNSu8 *ep = ptr;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
+		if (!ptr) { DisplayError(srcaddr, ep, end, "QUESTION"); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE Q IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(q.qtype), q.qname.c);
 		}
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
+		const mDNSu8 *ep = ptr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr); return; }
+		if (!ptr) { DisplayError(srcaddr, ep, end, "ANSWER"); return; }
 		if (pkt.r.rroriginalttl)
 			{
 			NumAnswers++;
@@ -495,15 +523,17 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
+		const mDNSu8 *ep = ptr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ AUTHORITY **** \n", srcaddr); return; }
+		if (!ptr) { DisplayError(srcaddr, ep, end, "AUTHORITY"); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(pkt.r.rrtype), pkt.r.name.c);
 		}
 
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
+		const mDNSu8 *ep = ptr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr); return; }
+		if (!ptr) { DisplayError(srcaddr, ep, end, "ADDITIONAL"); return; }
 		NumAdditionals++;
 		DisplayResourceRecord(srcaddr, (pkt.r.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pkt.r);
 		}
