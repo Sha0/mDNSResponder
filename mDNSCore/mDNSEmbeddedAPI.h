@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.203  2004/09/21 20:58:22  cheshire
+Add ifname field to NetworkInterfaceInfo_struct
+
 Revision 1.202  2004/09/17 00:46:34  cheshire
 mDNS_TimeNow should take const mDNS parameter
 
@@ -1340,6 +1343,7 @@ struct NetworkInterfaceInfo_struct
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
 	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
+	char            ifname[16];
 	mDNSBool        Advertise;			// False if you are only searching on this interface
 	mDNSBool        McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	};
