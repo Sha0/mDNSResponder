@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.425  2004/09/23 20:14:38  cheshire
+Rename "question->RecentAnswers" to "question->RecentAnswerPkts"
+
 Revision 1.424  2004/09/23 00:58:36  cheshire
 <rdar://problem/3781269> Rate limiting interferes with updating TXT records
 
@@ -2972,11 +2975,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 				InitializeDNSMessage(&query.h, q->TargetQID, QueryFlags);
 				qptr = putQuestion(&query, qptr, limit, &q->qname, q->qtype, q->qclass);
 				mDNSSendDNSMessage(m, &query, qptr, mDNSInterface_Any, &q->Target, q->TargetPort);
-				q->ThisQInterval *= 2;
-				q->LastQTime     = m->timenow;
-				q->LastQTxTime   = m->timenow;
-				q->RecentAnswers = 0;
-				q->SendQNow      = mDNSNULL;
+				q->ThisQInterval   *= 2;
+				q->LastQTime        = m->timenow;
+				q->LastQTxTime      = m->timenow;
+				q->RecentAnswerPkts = 0;
+				q->SendQNow         = mDNSNULL;
 				m->ExpectUnicastResponse = m->timenow;
 				}
 	
@@ -3024,8 +3027,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 				// then we consider it recent enough that we don't need to do an identical query ourselves.
 				ExpireDupSuppressInfo(q->DupSuppress, m->timenow - q->ThisQInterval/2);
 
-				q->LastQTxTime   = m->timenow;
-				q->RecentAnswers = 0;
+				q->LastQTxTime      = m->timenow;
+				q->RecentAnswerPkts = 0;
 				}
 			// For all questions (not just the ones we're sending) check what the next scheduled event will be
 			SetNextQueryTime(m,q);
@@ -3264,7 +3267,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			// We must be at least at the eight-second interval to do this. If we're at the four-second interval, or less,
 			// there's not much benefit accelerating because we will anyway send another query within a few seconds.
 			// The first reset query is sent out randomized over the next four seconds to reduce possible synchronization between machines.
-			if (ActiveQuestion(q) && ++q->RecentAnswers >= 10 &&
+			if (ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
 				q->ThisQInterval > InitialQuestionInterval*16 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 				{
 				LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
@@ -3781,9 +3784,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
 			if (ActiveQuestion(q))
 				{
-				q->ThisQInterval = InitialQuestionInterval;	// MUST be > zero for an active question
-				q->LastQTime     = m->timenow - q->ThisQInterval;
-				q->RecentAnswers = 0;
+				q->ThisQInterval    = InitialQuestionInterval;	// MUST be > zero for an active question
+				q->LastQTime        = m->timenow - q->ThisQInterval;
+				q->RecentAnswerPkts = 0;
 				ExpireDupSuppressInfo(q->DupSuppress, m->timenow);
 				m->NextScheduledQuery = m->timenow;
 				}
@@ -4843,11 +4846,11 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 	for (q = m->Questions; q; q=q->next)		// Scan our list of questions
 		if (q->DuplicateOf == question)			// To see if any questions were referencing this as their duplicate
 			{
-			q->ThisQInterval = question->ThisQInterval;
-			q->LastQTime     = question->LastQTime;
-			q->RecentAnswers = 0;
-			q->DuplicateOf   = FindDuplicateQuestion(m, q);
-			q->LastQTxTime   = question->LastQTxTime;
+			q->ThisQInterval    = question->ThisQInterval;
+			q->LastQTime        = question->LastQTime;
+			q->RecentAnswerPkts = 0;
+			q->DuplicateOf      = FindDuplicateQuestion(m, q);
+			q->LastQTxTime      = question->LastQTxTime;
 			SetNextQueryTime(m,q);
 			}
 	}
@@ -4926,22 +4929,22 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		if (!m->RandomQueryDelay) m->RandomQueryDelay = 1 + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
 
-		question->next           = mDNSNULL;
-		question->qnamehash      = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
-		question->ThisQInterval  = InitialQuestionInterval * 2;				// MUST be > zero for an active question
-		question->LastQTime      = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
-		question->RecentAnswers  = 0;
-		question->CurrentAnswers = 0;
-		question->LargeAnswers   = 0;
-		question->UniqueAnswers  = 0;
-		question->DuplicateOf    = FindDuplicateQuestion(m, question);
-		question->NextInDQList   = mDNSNULL;
+		question->next             = mDNSNULL;
+		question->qnamehash        = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
+		question->ThisQInterval    = InitialQuestionInterval * 2;			// MUST be > zero for an active question
+		question->LastQTime        = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
+		question->RecentAnswerPkts = 0;
+		question->CurrentAnswers   = 0;
+		question->LargeAnswers     = 0;
+		question->UniqueAnswers    = 0;
+		question->DuplicateOf      = FindDuplicateQuestion(m, question);
+		question->NextInDQList     = mDNSNULL;
 		for (i=0; i<DupSuppressInfoSize; i++)
 			question->DupSuppress[i].InterfaceID = mDNSNULL;
 		// question->InterfaceID must be already set by caller
-		question->SendQNow       = mDNSNULL;
-		question->SendOnAll      = mDNSfalse;
-		question->LastQTxTime    = m->timenow;
+		question->SendQNow         = mDNSNULL;
+		question->SendOnAll        = mDNSfalse;
+		question->LastQTxTime      = m->timenow;
 
 		if (!question->DuplicateOf)
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p %d (%p) started",
@@ -5730,9 +5733,9 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
-				q->ThisQInterval = InitialQuestionInterval;				// MUST be > zero for an active question
-				q->LastQTime     = m->timenow - q->ThisQInterval;
-				q->RecentAnswers = 0;
+				q->ThisQInterval    = InitialQuestionInterval;			// MUST be > zero for an active question
+				q->LastQTime        = m->timenow - q->ThisQInterval;
+				q->RecentAnswerPkts = 0;
 				if (ActiveQuestion(q)) m->NextScheduledQuery = m->timenow;
 				}
 		

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.209  2004/09/23 20:14:39  cheshire
+Rename "question->RecentAnswers" to "question->RecentAnswerPkts"
+
 Revision 1.208  2004/09/23 00:50:53  cheshire
 <rdar://problem/3419452> Don't send a (DE) if a service is unregistered after wake from sleep
 
@@ -1514,7 +1517,7 @@ struct DNSQuestion_struct
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
-	mDNSu32               RecentAnswers;	// Number of answers since the last time we sent this query
+	mDNSu32               RecentAnswerPkts;	// Number of answers since the last time we sent this query
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
 	mDNSu32               LargeAnswers;		// Number of answers with rdata > 1024 bytes
 	mDNSu32               UniqueAnswers;	// Number of answers received with kDNSClass_UniqueRRSet bit set
