@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.256  2003/08/06 23:25:51  cheshire
+<rdar://problem/3290674> Increase TTL for A/AAAA/SRV from one minute to four
+
 Revision 1.255  2003/08/06 23:22:50  cheshire
 Add symbolic constants: kDefaultTTLforUnique (one minute) and kDefaultTTLforShared (two hours)
 
@@ -880,7 +883,7 @@ static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
 
-#define kDefaultTTLforUnique 60
+#define kDefaultTTLforUnique 240
 #define kDefaultTTLforShared (2*3600)
 
 static const char *const mDNS_DomainTypeNames[] =
