@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.26  2004/01/25 00:00:39  cheshire
+Change to use mDNSOpaque16fromIntVal() instead of shifting and masking
+
 Revision 1.25  2003/12/08 20:47:02  rpantos
 Add support for mDNSResponder on Linux.
 
@@ -185,15 +188,12 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	{
 	domainlabel n;
 	domainname t, d;
-	mDNSIPPort port;
 	unsigned char txtbuffer[1024], *bptr = txtbuffer;
 	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 
 	MakeDomainLabelFromLiteralString(&n, name);
 	MakeDomainNameFromDNSNameString(&t, type);
 	MakeDomainNameFromDNSNameString(&d, domain);
-	port.b[0] = (mDNSu8)(PortAsNumber >> 8);
-	port.b[1] = (mDNSu8)(PortAsNumber     );
 	while (argc)
 		{
 		int len = strlen(argv[0]);
@@ -207,7 +207,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	
 	mDNS_RegisterService(m, recordset,
 		&n, &t, &d,					// Name, type, domain
-		host, port,					// Host and port
+		host, mDNSOpaque16fromIntVal(PortAsNumber),
 		txtbuffer, bptr-txtbuffer,	// TXT data, length
 		mDNSNULL, 0,				// Subtypes
 		mDNSInterface_Any,			// Interace ID

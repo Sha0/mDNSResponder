@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.23  2004/01/24 23:57:29  cheshire
+Change to use mDNSOpaque16fromIntVal() instead of shifting and masking
+
 Revision 1.22  2003/12/17 21:12:15  bradley
 <rdar://problem/3491823>: Use the default .local domain when registering with an empty domain.
 
@@ -1568,7 +1571,6 @@ DNSStatus
 	domainlabel				name;
 	domainname				type;
 	domainname				domain;
-	mDNSIPPort				port;
 	mDNSu8					textRecord[ 256 ];
 	const mDNSu8 *			textRecordPtr;
 	domainname *			host;
@@ -1662,8 +1664,6 @@ DNSStatus
 	}
 	MakeDomainNameFromDNSNameString( &type, inType );
 	MakeDomainNameFromDNSNameString( &domain, inDomain );
-	port.b[ 0 ] = ( mDNSu8 )( inPort >> 8 );
-	port.b[ 1 ] = ( mDNSu8 )( inPort >> 0 );
 	
 	// Set up the host name (if not using the default).
 	
@@ -1677,7 +1677,7 @@ DNSStatus
 		
 	// Register the service with mDNS.
 	
-	err = mDNS_RegisterService( gMDNSPtr, &objectPtr->set, &name, &type, &domain, host, port, textRecordPtr, 
+	err = mDNS_RegisterService( gMDNSPtr, &objectPtr->set, &name, &type, &domain, host, mDNSOpaque16fromIntVal(inPort), textRecordPtr, 
 								(mDNSu16) inTextRecordSize, NULL, 0, interfaceID, 
 								DNSRegistrationPrivateCallBack, objectPtr );
 	require_noerr( err, exit );

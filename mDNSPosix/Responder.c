@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.18  2004/01/25 00:00:55  cheshire
+Change to use mDNSOpaque16fromIntVal() instead of shifting and masking
+
 Revision 1.17  2003/12/11 19:11:55  cheshire
 Fix compiler warning
 
@@ -564,7 +567,6 @@ static mStatus RegisterOneService(const char *  richTextHostName,
 {
     mStatus             status;
     PosixService *      thisServ;
-    mDNSOpaque16        port;
     domainlabel         name;
     domainname          type;
     domainname          domain;
@@ -578,11 +580,9 @@ static mStatus RegisterOneService(const char *  richTextHostName,
         MakeDomainLabelFromLiteralString(&name,  richTextHostName);
         MakeDomainNameFromDNSNameString(&type, serviceType);
         MakeDomainNameFromDNSNameString(&domain, serviceDomain);
-        port.b[0] = (portNumber >> 8) & 0x0FF;
-        port.b[1] = (portNumber >> 0) & 0x0FF;;
         status = mDNS_RegisterService(&mDNSStorage, &thisServ->coreServ,
                 &name, &type, &domain,				// Name, type, domain
-                NULL, port, 						// Host and port
+                NULL, mDNSOpaque16fromIntVal(portNumber),
                 text, textLen,						// TXT data, length
                 NULL, 0,							// Subtypes
                 mDNSInterface_Any,					// Interace ID
