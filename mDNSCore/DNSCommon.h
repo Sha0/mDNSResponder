@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.15  2004/08/10 23:19:14  ksekar
+<rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
+Moved routines/constants to allow extern access for garbage collection daemon
+
 Revision 1.14  2004/05/28 23:42:36  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
 
@@ -194,7 +198,8 @@ extern mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *
 
 extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
 
-
+extern mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2);
+	
 extern mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
 
 #define GetRRDomainNameTarget(RR) (                                                                          \
@@ -226,6 +231,14 @@ extern mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mD
 extern mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, mDNSu16 *count, const AuthRecord *rr);
 
 extern mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass);
+
+extern mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, const domainname *zone, mDNSOpaque16 zoneClass);
+
+extern mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end);
+
+extern mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr);
+
+extern mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSs32 lease);
 	
 #define PutResourceRecord(MSG, P, C, RR) PutResourceRecordTTL((MSG), (P), (C), (RR), (RR)->rroriginalttl)
 

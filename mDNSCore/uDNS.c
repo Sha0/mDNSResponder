@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.62  2004/08/10 23:19:14  ksekar
+<rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
+Moved routines/constants to allow extern access for garbage collection daemon
+
 Revision 1.61  2004/07/30 17:40:06  ksekar
 <rdar://problem/3739115>: TXT Record updates not available for wide-area services
 
@@ -871,20 +875,12 @@ mDNSexport void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set
 #pragma mark - Incoming Message Processing
 #endif
 
-mDNSlocal mDNSBool sameResourceRecord(ResourceRecord *r1, ResourceRecord *r2)
-	{
-	return (r1->namehash == r2->namehash &&
-			r1->rrtype == r2->rrtype && 
-			SameDomainName(&r1->name, &r2->name) &&
-			SameRData(r1, r2));
-	}
-
 mDNSlocal mDNSBool kaListContainsAnswer(DNSQuestion *question, CacheRecord *rr)
 	{
 	CacheRecord *ptr;
 
 	for (ptr = question->uDNS_info.knownAnswers; ptr; ptr = ptr->next)
-		if (sameResourceRecord(&ptr->resrec, &rr->resrec)) return mDNStrue;
+		if (SameResourceRecord(&ptr->resrec, &rr->resrec)) return mDNStrue;
 
 	return mDNSfalse;
 	}
@@ -896,7 +892,7 @@ mDNSlocal void removeKnownAnswer(DNSQuestion *question, CacheRecord *rr)
 
 	for (ptr = question->uDNS_info.knownAnswers; ptr; ptr = ptr->next)
 		{
-		if (sameResourceRecord(&ptr->resrec, &rr->resrec))
+		if (SameResourceRecord(&ptr->resrec, &rr->resrec))
 			{
 			if (prev) prev->next = ptr->next;
 			else question->uDNS_info.knownAnswers = ptr->next;
@@ -979,7 +975,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 	while (ka)
 		{
 		for (cr = answers; cr; cr = cr->next)
-			{ if (sameResourceRecord(&ka->resrec, &cr->resrec)) break; }
+			{ if (SameResourceRecord(&ka->resrec, &cr->resrec)) break; }
 		if (!cr)
 			{
 			// record is in KA list but not answer list - remove from KA list
@@ -2700,68 +2696,6 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 #endif
 
 
-mDNSlocal mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, const domainname *zone, mDNSOpaque16 zoneClass)
-	{
-	ptr = putDomainNameAsLabels(msg, ptr, limit, zone);
-	if (!ptr || ptr + 4 > limit) return NULL;		// If we're out-of-space, return NULL
-	((mDNSOpaque16 *)ptr)->NotAnInteger = kDNSType_SOA;
-	ptr += 2;
-	((mDNSOpaque16 *)ptr)->NotAnInteger = zoneClass.NotAnInteger;
-	ptr += 2;
-	msg->h.mDNS_numZones++;
-	return ptr;
-	}
-
-
-
-mDNSlocal mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end)
-	{
-	AuthRecord prereq;
-
-	ubzero(&prereq, sizeof(AuthRecord));
-	ustrcpy(prereq.resrec.name.c, name->c);
-	prereq.resrec.rrtype = kDNSQType_ANY;
-	prereq.resrec.rrclass = kDNSClass_NONE;
-	ptr = putEmptyResourceRecord(msg, ptr, end, &msg->h.mDNS_numPrereqs, &prereq);
-	return ptr;
-	}
-
-mDNSlocal mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr)
-	{
-	mDNSu16 origclass;
-	// deletion: specify record w/ TTL 0, class NONE
-
-	origclass = rr->rrclass;
-	rr->rrclass = kDNSClass_NONE;
-	ptr = PutResourceRecordTTL(msg, ptr, &msg->h.mDNS_numUpdates, rr, 0);
-	rr->rrclass = origclass;
-	return ptr;
-	}
-
-mDNSlocal mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end)
-	{
-	AuthRecord rr;
-	ResourceRecord *opt = &rr.resrec; 
-	rdataOpt *optRD;
-
-	ubzero(&rr, sizeof(AuthRecord));
-	opt->rdata = &rr.rdatastorage;
-	
-	opt->RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
-	opt->rrtype = kDNSType_OPT;
-	opt->rdlength = LEASE_OPT_SIZE;
-	opt->rdestimate = LEASE_OPT_SIZE;
-
-	optRD = &rr.resrec.rdata->u.opt;
-	optRD->opt = kDNSOpt_Lease;
-	optRD->optlen = sizeof(mDNSs32);
-	optRD->OptData.lease = kUpdate_DefLease;
-	end = PutResourceRecordTTL(msg, end, &msg->h.numAdditionals, opt, 0);
-	if (!end) { LogMsg("ERROR: putUpdateLease - PutResourceRecordTTL"); return NULL; }
-
-	return end;
-
-	}
 
 mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	{
@@ -2799,7 +2733,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	if (!ptr) goto error;
 
 	if (rr->uDNS_info.lease)
-		ptr = putUpdateLease(&msg, ptr);
+		ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease);
 	   
 	rr->uDNS_info.expire = -1;
 	
@@ -2982,7 +2916,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	// !!!KRS do subtypes/extras etc.
 
 	if (srs->uDNS_info.lease)
-		ptr = putUpdateLease(&msg, ptr);
+		ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease);
 	   
 	srs->uDNS_info.expire = -1;
 
@@ -3395,7 +3329,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	SwapRData(m, rr, mDNSfalse);  // swap rdata back to original in case we need to retransmit
 	if (!ptr) goto error;         // (rdata gets changed permanently on success)
 
-	if (info->lease) ptr = putUpdateLease(&msg, ptr);
+	if (info->lease) ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease);
 	
 	// don't report send errors - retransmission will occurr if necessary
 	authInfo = GetAuthInfoForZone(u, &info->zone);

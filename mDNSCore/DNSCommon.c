@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.42  2004/08/10 23:19:14  ksekar
+<rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
+Moved routines/constants to allow extern access for garbage collection daemon
+
 Revision 1.41  2004/08/10 01:10:01  cheshire
 <rdar://problem/3588761> Current method of doing subtypes causes name collisions
 Minor revision from Roger Pantos
@@ -256,24 +260,24 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 		}
 	}
 
-mDNSexport char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd)
+mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, char *buffer)
 	{
-	char *ptr = m->MsgBuffer;
-	mDNSu32 length = mDNS_snprintf(m->MsgBuffer, 79, "%4d %##s %s ", rr->rdlength, rr->name.c, DNSTypeName(rr->rrtype));
+	char *ptr = buffer;
+	mDNSu32 length = mDNS_snprintf(buffer, 79, "%4d %##s %s ", rr->rdlength, rr->name.c, DNSTypeName(rr->rrtype));
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.4a", &rd->ip);         break;
+		case kDNSType_A:	mDNS_snprintf(buffer+length, 79-length, "%.4a", &rd->ip);         break;
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rd->name);       break;
+		case kDNSType_PTR:	mDNS_snprintf(buffer+length, 79-length, "%##s", &rd->name);       break;
 		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
-		case kDNSType_TXT:  mDNS_snprintf(m->MsgBuffer+length, 79-length, "%#s", rd->txt.c);        break;
-		case kDNSType_AAAA:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.16a", &rd->ipv6);      break;
-		case kDNSType_SRV:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rd->srv.target); break;
-		default:			mDNS_snprintf(m->MsgBuffer+length, 79-length, "RDLen %d: %s",
+		case kDNSType_TXT:  mDNS_snprintf(buffer+length, 79-length, "%#s", rd->txt.c);        break;
+		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, 79-length, "%.16a", &rd->ipv6);      break;
+		case kDNSType_SRV:	mDNS_snprintf(buffer+length, 79-length, "%##s", &rd->srv.target); break;
+		default:			mDNS_snprintf(buffer+length, 79-length, "RDLen %d: %s",
 								rr->rdlength, rd->data);  break;
 		}
-	for (ptr = m->MsgBuffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
-	return(m->MsgBuffer);
+	for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
+	return(buffer);
 	}
 
 mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)
@@ -903,6 +907,14 @@ mDNSexport mDNSBool SameRData(const ResourceRecord *const r1, const ResourceReco
 		}
 	}
 
+mDNSexport mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2)
+	{
+	return (r1->namehash == r2->namehash &&
+			r1->rrtype == r2->rrtype && 
+			SameDomainName(&r1->name, &r2->name) &&
+			SameRData(r1, r2));
+	}
+
 mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q)
 	{
 	if (rr->InterfaceID &&
@@ -1326,6 +1338,70 @@ mDNSexport mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 
 	return(ptr+4);
 	}
 
+// for dynamic updates
+mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, const domainname *zone, mDNSOpaque16 zoneClass)
+	{
+	ptr = putDomainNameAsLabels(msg, ptr, limit, zone);
+	if (!ptr || ptr + 4 > limit) return mDNSNULL;		// If we're out-of-space, return NULL
+	((mDNSOpaque16 *)ptr)->NotAnInteger = kDNSType_SOA;
+	ptr += 2;
+	((mDNSOpaque16 *)ptr)->NotAnInteger = zoneClass.NotAnInteger;
+	ptr += 2;
+	msg->h.mDNS_numZones++;
+	return ptr;
+	}
+
+// for dynamic updates
+mDNSexport mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end)
+	{
+	AuthRecord prereq;
+
+	mDNSPlatformMemZero(&prereq, sizeof(AuthRecord));
+	mDNSPlatformStrCopy(prereq.resrec.name.c, name->c);
+	prereq.resrec.rrtype = kDNSQType_ANY;
+	prereq.resrec.rrclass = kDNSClass_NONE;
+	ptr = putEmptyResourceRecord(msg, ptr, end, &msg->h.mDNS_numPrereqs, &prereq);
+	return ptr;
+	}
+
+// for dynamic updates
+mDNSexport mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr)
+	{
+	mDNSu16 origclass;
+	// deletion: specify record w/ TTL 0, class NONE
+
+	origclass = rr->rrclass;
+	rr->rrclass = kDNSClass_NONE;
+	ptr = PutResourceRecordTTL(msg, ptr, &msg->h.mDNS_numUpdates, rr, 0);
+	rr->rrclass = origclass;
+	return ptr;
+	}
+
+// for dynamic updates
+mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSs32 lease)
+	{
+	AuthRecord rr;
+	ResourceRecord *opt = &rr.resrec; 
+	rdataOpt *optRD;
+
+	mDNSPlatformMemZero(&rr, sizeof(AuthRecord));
+	opt->rdata = &rr.rdatastorage;
+	
+	opt->RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
+	opt->rrtype = kDNSType_OPT;
+	opt->rdlength = LEASE_OPT_SIZE;
+	opt->rdestimate = LEASE_OPT_SIZE;
+
+	optRD = &rr.resrec.rdata->u.opt;
+	optRD->opt = kDNSOpt_Lease;
+	optRD->optlen = sizeof(mDNSs32);
+	optRD->OptData.lease = lease;
+	end = PutResourceRecordTTL(msg, end, &msg->h.numAdditionals, opt, 0);
+	if (!end) { LogMsg("ERROR: putUpdateLease - PutResourceRecordTTL"); return mDNSNULL; }
+
+	return end;
+	}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -1466,9 +1542,9 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 	rr->resrec.RecordType = RecordType;
 
 	rr->NextInKAList      = mDNSNULL;
-	rr->TimeRcvd          = m->timenow;
-	rr->NextRequiredQuery = m->timenow;		// Will be updated to the real value when we call SetNextCacheCheckTime()
-	rr->LastUsed          = m->timenow;
+	rr->TimeRcvd          = m ? m->timenow : 0;
+	rr->NextRequiredQuery = m ? m->timenow : 0;		// Will be updated to the real value when we call SetNextCacheCheckTime()
+	rr->LastUsed          = m ? m->timenow : 0;
 	rr->UseCount          = 0;
 	rr->CRActiveQuestion  = mDNSNULL;
 	rr->UnansweredQueries = 0;

@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.389  2004/08/10 23:19:14  ksekar
+<rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
+Moved routines/constants to allow extern access for garbage collection daemon
+
 Revision 1.388  2004/07/30 17:40:06  ksekar
 <rdar://problem/3739115>: TXT Record updates not available for wide-area services
 
@@ -5300,7 +5304,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	mDNSBool unicast = (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name));
 	
 	if (!ValidateRData(rr->resrec.rrtype, newrdlength, newrdata))
-		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(m, &rr->resrec, &newrdata->u)); return(mStatus_Invalid); }
+		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(&rr->resrec, &newrdata->u, m->MsgBuffer)); return(mStatus_Invalid); }
 
 	mDNS_Lock(m);
 
