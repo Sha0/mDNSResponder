@@ -284,6 +284,7 @@
 				DBAAFE2C057E8F660085CAD0,
 				FF0E0B5D065ADC7600FE4D9C,
 				FF485D5105632E0000130380,
+				FFF4F63A06CFE4DD00459EFD,
 				7F18A9F60587CEF6001880B3,
 				7F18A9F70587CEF6001880B3,
 				FF25794606C9A8BF00376F7B,
@@ -314,7 +315,6 @@
 				08FB77A3FE84155DC02AAC07,
 				08FB77A5FE84155DC02AAC07,
 				FF5A0AE705632EA600743C27,
-				FF0E0B5C065ADC3800FE4D9C,
 			);
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -602,6 +602,7 @@
 				6575FC19022EB76000000109,
 				6575FC1A022EB76000000109,
 				6575FC1B022EB76000000109,
+				FFF4F63C06CFE53300459EFD,
 			);
 			buildSettings = {
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -676,14 +677,14 @@
 //7F3
 //7F4
 		7F18A9F60587CEF6001880B3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSCommon.c;
 			path = ../mDNSCore/DNSCommon.c;
 			refType = 2;
 		};
 		7F18A9F70587CEF6001880B3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = uDNS.c;
 			path = ../mDNSCore/uDNS.c;
@@ -714,7 +715,7 @@
 			};
 		};
 		7F461DB5062DBF2900672BF3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSDigest.c;
 			path = ../mDNSCore/DNSDigest.c;
@@ -781,91 +782,91 @@
 			refType = 4;
 		};
 		DB2CC4430662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = BaseListener.java;
 			path = ../mDNSShared/Java/BaseListener.java;
 			refType = 2;
 		};
 		DB2CC4440662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = BrowseListener.java;
 			path = ../mDNSShared/Java/BrowseListener.java;
 			refType = 2;
 		};
 		DB2CC4450662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSRecord.java;
 			path = ../mDNSShared/Java/DNSRecord.java;
 			refType = 2;
 		};
 		DB2CC4460662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSSD.java;
 			path = ../mDNSShared/Java/DNSSD.java;
 			refType = 2;
 		};
 		DB2CC4470662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSSDException.java;
 			path = ../mDNSShared/Java/DNSSDException.java;
 			refType = 2;
 		};
 		DB2CC4480662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSSDRegistration.java;
 			path = ../mDNSShared/Java/DNSSDRegistration.java;
 			refType = 2;
 		};
 		DB2CC4490662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSSDService.java;
 			path = ../mDNSShared/Java/DNSSDService.java;
 			refType = 2;
 		};
 		DB2CC44A0662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DomainListener.java;
 			path = ../mDNSShared/Java/DomainListener.java;
 			refType = 2;
 		};
 		DB2CC44B0662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = JNISupport.c;
 			path = ../mDNSShared/Java/JNISupport.c;
 			refType = 2;
 		};
 		DB2CC44C0662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = QueryListener.java;
 			path = ../mDNSShared/Java/QueryListener.java;
 			refType = 2;
 		};
 		DB2CC44D0662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = RegisterListener.java;
 			path = ../mDNSShared/Java/RegisterListener.java;
 			refType = 2;
 		};
 		DB2CC44E0662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = ResolveListener.java;
 			path = ../mDNSShared/Java/ResolveListener.java;
 			refType = 2;
 		};
 		DB2CC44F0662DD1100335AB3 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = TXTRecord.java;
 			path = ../mDNSShared/Java/TXTRecord.java;
@@ -1113,7 +1114,7 @@
 			};
 		};
 		DBAAFE29057E8F4D0085CAD0 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = mDNSDebug.c;
 			path = ../mDNSShared/mDNSDebug.c;
@@ -1132,7 +1133,7 @@
 			};
 		};
 		DBAAFE2C057E8F660085CAD0 = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = GenLinkedList.c;
 			path = ../mDNSShared/GenLinkedList.c;
@@ -1245,28 +1246,12 @@
 //FF2
 //FF3
 //FF4
-		FF0E0B5C065ADC3800FE4D9C = {
-			buildActionMask = 8;
-			dstPath = /usr/share/man/man1;
-			dstSubfolderSpec = 0;
-			files = (
-				FF0E0B5E065ADCA400FE4D9C,
-			);
-			isa = PBXCopyFilesBuildPhase;
-			runOnlyForDeploymentPostprocessing = 1;
-		};
 		FF0E0B5D065ADC7600FE4D9C = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = mDNS.1;
 			path = ../mDNSShared/mDNS.1;
 			refType = 2;
-		};
-		FF0E0B5E065ADCA400FE4D9C = {
-			fileRef = FF0E0B5D065ADC7600FE4D9C;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 		FF25792906C9A70800376F7B = {
 			buildPhases = (
@@ -1275,7 +1260,6 @@
 				FF25793A06C9A70800376F7B,
 				FF25793F06C9A70800376F7B,
 				FF25794006C9A70800376F7B,
-				FF25794206C9A70800376F7B,
 			);
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -1396,32 +1380,10 @@
 			dstPath = /usr/share/man/man8;
 			dstSubfolderSpec = 0;
 			files = (
-				FF25794106C9A70800376F7B,
+				FFF4F63B06CFE4DD00459EFD,
 			);
 			isa = PBXCopyFilesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 1;
-		};
-		FF25794106C9A70800376F7B = {
-			fileRef = FF485D5105632E0000130380;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		FF25794206C9A70800376F7B = {
-			buildActionMask = 8;
-			dstPath = /usr/share/man/man1;
-			dstSubfolderSpec = 0;
-			files = (
-				FF25794306C9A70800376F7B,
-			);
-			isa = PBXCopyFilesBuildPhase;
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		FF25794306C9A70800376F7B = {
-			fileRef = FF0E0B5D065ADC7600FE4D9C;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 		FF25794406C9A70800376F7B = {
 			isa = PBXExecutableFileReference;
@@ -1542,6 +1504,35 @@
 		FFD41DDF06641BBB00F0C438 = {
 			isa = PBXTargetDependency;
 			target = DB2CC4530662DD6800335AB3;
+		};
+		FFF4F63A06CFE4DD00459EFD = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = dnsextd.8;
+			path = ../mDNSShared/dnsextd.8;
+			refType = 2;
+		};
+		FFF4F63B06CFE4DD00459EFD = {
+			fileRef = FFF4F63A06CFE4DD00459EFD;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FFF4F63C06CFE53300459EFD = {
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man1;
+			dstSubfolderSpec = 0;
+			files = (
+				FFF4F63D06CFE54300459EFD,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		FFF4F63D06CFE54300459EFD = {
+			fileRef = FF0E0B5D065ADC7600FE4D9C;
+			isa = PBXBuildFile;
+			settings = {
+			};
 		};
 	};
 	rootObject = 08FB7793FE84155DC02AAC07;
