@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.29  2003/01/28 05:23:43  cheshire
+Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+Add 'Active' flag for interfaces
+
 Revision 1.28  2003/01/28 01:35:56  cheshire
 Revise comment about ThisQInterval to reflect new semantics
 
@@ -191,8 +195,13 @@ typedef mDNSOpaque16 mDNSIPPort;		// An IP port is a two-byte opaque identifier 
 typedef mDNSOpaque32 mDNSIPAddr;		// An IP address is a four-byte opaque identifier (not an integer)
 typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identifier (not an integer)
 
-enum { mDNSAddrType_None = 0, mDNSAddrType_IPv4 = 1,
-	   mDNSAddrType_IPv6 = 2, mDNSAddrType_Any  = 0xffffffff };
+enum
+	{
+	mDNSAddrType_None = 0,
+	mDNSAddrType_IPv4 = 4,
+	mDNSAddrType_IPv6 = 6,
+	mDNSAddrType_Any  = 0xffffffff
+	};
 
 typedef struct
 	{
@@ -389,6 +398,11 @@ struct NetworkInterfaceInfo_struct
 	mDNSOpaqueID   InterfaceID;
 	mDNSAddr       ip;
 	mDNSu32        scope_id;
+	mDNSBool       Active;			// Set Active true if interface is sending & receiving packets
+									// Set Active false if interface is here to represent an address with A and/or AAAA records,
+									// but there is already an earlier representative for this physical interface
+									// which will be used for the actual sending & receiving packets
+									// (this status may change as interfaces are added and removed)
 	mDNSBool       Advertise;		// Set Advertise to false if you are only searching on this interface
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
 	ResourceRecord RR_A1;			// 'A' or 'AAAA' (address) record for our ".local" name

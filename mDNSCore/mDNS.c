@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.74  2003/01/28 05:26:25  cheshire
+Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+Add 'Active' flag for interfaces
+
 Revision 1.73  2003/01/28 03:45:12  cheshire
 Fixed missing "not" in "!mDNSAddrIsDNSMulticast(dstaddr)"
 
@@ -521,6 +525,7 @@ char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_CNAME:return("CNAME");
 		case kDNSType_PTR:	return("PTR");
 		case kDNSType_TXT:  return("TXT");
+		case kDNSType_AAAA:	return("AAAA");
 		case kDNSType_SRV:	return("SRV");
 		default:			{
 							static char buffer[16];
@@ -2188,30 +2193,31 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 	baseheader = response.h;
 
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
-		{
-		// Restore the header to the counts for the generic records
-		response.h = baseheader;
-		// Now add any records specific to this interface
-		responseptr = BuildResponse(m, &response, baselimit, intf->InterfaceID, timenow);
-		if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
+		if (intf->Active)
 			{
-			mDNSAddr dest;
-			if (intf->ip.type == mDNSAddrType_IPv4)
+			// Restore the header to the counts for the generic records
+			response.h = baseheader;
+			// Now add any records specific to this interface
+			responseptr = BuildResponse(m, &response, baselimit, intf->InterfaceID, timenow);
+			if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
 				{
-				dest.type = mDNSAddrType_IPv4;
-				dest.addr.ipv4 = AllDNSLinkGroup;
+				mDNSAddr dest;
+				if (intf->ip.type == mDNSAddrType_IPv4)
+					{
+					dest.type = mDNSAddrType_IPv4;
+					dest.addr.ipv4 = AllDNSLinkGroup;
+					}
+				else if (intf->ip.type == mDNSAddrType_IPv6)
+					{
+					dest.type = mDNSAddrType_IPv6;
+					dest.addr.ipv6 = AllDNSLinkGroupv6;
+					}
+				debugf("SendResponses Sending %d Answer%s, %d Additional%s on %X/%d",
+					response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
+					response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID, dest.type);
+				mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &dest, MulticastDNSPort);
 				}
-			else if (intf->ip.type == mDNSAddrType_IPv6)
-				{
-				dest.type = mDNSAddrType_IPv6;
-				dest.addr.ipv6 = AllDNSLinkGroupv6;
-				}
-			mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &dest, MulticastDNSPort);
-			debugf("SendResponses Sent %d Answer%s, %d Additional%s on %X",
-				response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
-				response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", &intf->InterfaceID);
 			}
-		}
 	}
 
 #define TimeToSendThisQuestion(Q,time) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf && time - (Q)->NextQTime >= 0)
@@ -2485,48 +2491,49 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 		if (NextDupSuppress) debugf("SendQueries: NextDupSuppress still set... Will continue in next packet");
 
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			{
-			ResourceRecord *NextDupSuppress2 = mDNSNULL;
-			do
+			if (intf->Active)
 				{
-				// Restore the header to the counts for the generic records
-				mDNSu8 *queryptr = baselimit;
-				query.h = baseheader;
-				// Now add any records specific to this interface, if we can
-				if (query.h.numAnswers == 0 && query.h.numAuthorities == 0 && !NextDupSuppress)
+				ResourceRecord *NextDupSuppress2 = mDNSNULL;
+				do
 					{
-					if (!NextDupSuppress2)
+					// Restore the header to the counts for the generic records
+					mDNSu8 *queryptr = baselimit;
+					query.h = baseheader;
+					// Now add any records specific to this interface, if we can
+					if (query.h.numAnswers == 0 && query.h.numAuthorities == 0 && !NextDupSuppress)
 						{
-						ResourceRecord **dups2 = &NextDupSuppress2;
-						mDNSu32 answerforecast2 = 0;
-						queryptr = BuildQueryPacketQuestions(m, &query, queryptr, &dups2, &answerforecast2, intf->InterfaceID, timenow);
-						queryptr = BuildQueryPacketProbes(m, &query, queryptr, &answerforecast2, intf->InterfaceID, timenow);
+						if (!NextDupSuppress2)
+							{
+							ResourceRecord **dups2 = &NextDupSuppress2;
+							mDNSu32 answerforecast2 = 0;
+							queryptr = BuildQueryPacketQuestions(m, &query, queryptr, &dups2, &answerforecast2, intf->InterfaceID, timenow);
+							queryptr = BuildQueryPacketProbes(m, &query, queryptr, &answerforecast2, intf->InterfaceID, timenow);
+							}
+						queryptr = BuildQueryPacketAnswers(&query, queryptr, &NextDupSuppress2, timenow);
+						queryptr = BuildQueryPacketUpdates(m, &query, queryptr);
 						}
-					queryptr = BuildQueryPacketAnswers(&query, queryptr, &NextDupSuppress2, timenow);
-					queryptr = BuildQueryPacketUpdates(m, &query, queryptr);
-					}
-	
-				if (queryptr > query.data)
-					{
-					mDNSAddr dest;
-					if (intf->ip.type == mDNSAddrType_IPv4)
+		
+					if (queryptr > query.data)
 						{
-						dest.type = mDNSAddrType_IPv4;
-						dest.addr.ipv4 = AllDNSLinkGroup;
+						mDNSAddr dest;
+						if (intf->ip.type == mDNSAddrType_IPv4)
+							{
+							dest.type = mDNSAddrType_IPv4;
+							dest.addr.ipv4 = AllDNSLinkGroup;
+							}
+						else if (intf->ip.type == mDNSAddrType_IPv6)
+							{
+							dest.type = mDNSAddrType_IPv6;
+							dest.addr.ipv6 = AllDNSLinkGroupv6;
+							}
+						debugf("SendQueries Sending %d Question%s %d Answer%s %d Update%s on %X/%d",
+							query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
+							query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
+							query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID, dest.type);
+						mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, MulticastDNSPort, &dest, MulticastDNSPort);
 						}
-					else if (intf->ip.type == mDNSAddrType_IPv6)
-						{
-						dest.type = mDNSAddrType_IPv6;
-						dest.addr.ipv6 = AllDNSLinkGroupv6;
-						}
-					mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, MulticastDNSPort, &dest, MulticastDNSPort);
-					debugf("SendQueries Sent %d Question%s %d Answer%s %d Update%s on %X",
-						query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
-						query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
-						query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", &intf->InterfaceID);
-					}
-				} while (NextDupSuppress2);
-			}
+					} while (NextDupSuppress2);
+				}
 		} while (NextDupSuppress);
 	}
 
@@ -3419,10 +3426,10 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID, replyunicast, replymulticast, timenow);
 	if (replyunicast && responseend)
 		{
-		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceID, dstport, srcaddr, srcport);
-		verbosedebugf("Unicast Response: %d Answer%s, %d Additional%s on %.8X",
+		verbosedebugf("Unicast Response: %d Answer%s, %d Additional%s on %X/%d",
 			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
-			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s", InterfaceID);
+			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s", InterfaceID, srcaddr->type);
+		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceID, dstport, srcaddr, srcport);
 		}
 	}
 
@@ -4120,6 +4127,7 @@ mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
+	mDNSBool Active = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	
 	while (*p)
@@ -4130,14 +4138,21 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			mDNS_Unlock(m);
 			return(mStatus_AlreadyRegistered);
 			}
-		if ((*p)->InterfaceID == set->InterfaceID)
-			{
-			debugf("Error! Tried to register a NetworkInterfaceInfo InterfaceID that's already in the list");
-			mDNS_Unlock(m);
-			return(mStatus_AlreadyRegistered);
-			}
+		if ((*p)->InterfaceID == set->InterfaceID && (*p)->ip.type == set->ip.type)
+			Active = mDNSfalse;
 		p=&(*p)->next;
 		}
+
+	set->Active = Active;
+	if (Active)
+		{
+		debugf("mDNS_RegisterInterface: InterfaceID/type %X/%d not represented in list; marking active for now",
+			set->InterfaceID, set->ip.type);
+		ActivateInterfaceQuestions(m, set->InterfaceID, timenow);
+		}
+	else
+		debugf("mDNS_RegisterInterface: InterfaceID/type %X/%d already represented in list; marking inactive for now",
+			set->InterfaceID, set->ip.type);
 
 	if (set->Advertise)
 		{
@@ -4196,8 +4211,6 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		// ... Add an HINFO record, etc.?
 		}
 
-	ActivateInterfaceQuestions(m, set->InterfaceID, timenow);
-
 	set->next = mDNSNULL;
 	*p = set;
 	mDNS_Unlock(m);
@@ -4242,7 +4255,25 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// Flush any cache entries we received on this interface
 	FlushCacheRecords(m, set->InterfaceID, timenow);
 
-	DeActivateInterfaceQuestions(m, set->InterfaceID);
+	if (set->Active)
+		{
+		NetworkInterfaceInfo *i;
+		for (i=m->HostInterfaces; i; i=i->next)
+			if (i->InterfaceID == set->InterfaceID && i->ip.type == set->ip.type)
+				break;
+		if (i)
+			{
+			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID/type %X/%d exists; making it active",
+				set->InterfaceID, set->ip.type);
+			i->Active = mDNStrue;
+			}
+		else
+			{
+			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID/type %X/%d deregistered; deactivating questions",
+				set->InterfaceID, set->ip.type);
+			DeActivateInterfaceQuestions(m, set->InterfaceID);
+			}
+		}
 
 	// If we were advertising on this interface, deregister now
 	// When doing the mDNS_Close processing, we first call mDNS_DeadvertiseInterface for each interface
