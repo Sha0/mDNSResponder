@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.125  2003/08/08 18:36:04  cheshire
+ * <rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
+ *
  * Revision 1.124  2003/07/25 18:28:23  cheshire
  * Minor fix to error messages in syslog: Display string parameters with quotes
  *
@@ -123,7 +126,8 @@
  *
  * Revision 1.100  2003/05/21 21:02:24  ksekar
  * Bug #: <rdar://problem/3247035>: Service should be prefixed
- * Changed kmDNSBootstrapName to "com.apple.mDNSResponderRestart" since we're changing the main Mach message port to "com.apple.mDNSResponder.
+ * Changed kmDNSBootstrapName to "com.apple.mDNSResponderRestart" since we're changing the main
+ * Mach message port to "com.apple.mDNSResponder.
  *
  * Revision 1.99  2003/05/21 17:33:49  cheshire
  * Fix warnings (mainly printf format string warnings, like using "%d" where it should say "%lu", etc.)
@@ -169,10 +173,6 @@
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 #define ENABLE_UDS 1
-#define REMOVE_THIS_BEFORE_PANTHER_SHIPS 1
-#if REMOVE_THIS_BEFORE_PANTHER_SHIPS
-#include </System/Library/Frameworks/CoreFoundation.framework/Versions/A/PrivateHeaders/CFPriv.h>
-#endif
 
 //*************************************************************************************************************
 // Macros
@@ -186,10 +186,7 @@
 //*************************************************************************************************************
 // Globals
 
-static const char mDNSResponderVersionString[];		// Forward declaration for string defined at the end of file
-
 mDNSexport mDNS mDNSStorage;
-mDNSexport char HINFO_SWstring[256];
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 64
 static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
@@ -1455,23 +1452,8 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
 	CFMachPortRef      i_port = CFMachPortCreate(NULL, INFOCallback, NULL, NULL);
 	mach_port_t        m_port = CFMachPortGetPort(s_port);
-
-#if REMOVE_THIS_BEFORE_PANTHER_SHIPS
-	int major, minor;
-	char buffer[256], letter, *MachServerName;
-	CFDictionaryRef vers = _CFCopySystemVersionDictionary();
-	CFStringRef cfstr = CFDictionaryGetValue(vers, _kCFSystemVersionBuildVersionKey);
-	CFStringGetCString(cfstr, buffer, sizeof(buffer), kCFStringEncodingUTF8);
-	sprintf(HINFO_SWstring, "Mac OS X %s, %s", buffer, mDNSResponderVersionString);
-	sscanf(buffer, "%d%c%d", &major, &letter, &minor);
-	if (major < 7 || (major == 7 && letter == 'A' && minor < 162))
-		MachServerName = "DNSServiceDiscoveryServer";
-	else
-		MachServerName = "com.apple.mDNSResponder";		// In Panther 7A162 we changed the name
+	char *MachServerName = mDNSMacOSXSystemBuildNumber(NULL) < 7 ? "DNSServiceDiscoveryServer" : "com.apple.mDNSResponder";
 	kern_return_t      status = bootstrap_register(bootstrap_port, MachServerName, m_port);
-#else
-	kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
-#endif
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	CFRunLoopSourceRef e_rls  = CFMachPortCreateRunLoopSource(NULL, e_port, 0);
@@ -1659,7 +1641,7 @@ mDNSexport int main(int argc, char **argv)
 
 // For convenience when using the "strings" command, this is the last thing in the file
 #if mDNSResponderVersion > 1
-static const char mDNSResponderVersionString[] = "mDNSResponder " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+mDNSexport const char mDNSResponderVersionString[] = "mDNSResponder-" STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
 #else
-static const char mDNSResponderVersionString[] = "mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ")";
+mDNSexport const char mDNSResponderVersionString[] = "mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ")";
 #endif

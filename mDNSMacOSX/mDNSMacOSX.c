@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.103  2003/08/08 18:36:04  cheshire
+<rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
+
 Revision 1.102  2003/08/06 00:14:52  cheshire
 <rdar://problem/3330324> Need to check IP TTL on responses
 Also add corresponding checks in the IPv6 code path
@@ -286,6 +289,7 @@ Minor code tidying
 #include <sys/uio.h>
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/sysctl.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
@@ -1207,13 +1211,47 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 	return(-1);
 	}
 
+CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
+CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
+CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
+CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;		
+
+mDNSexport mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
+	{
+	int major = 0, minor = 0;
+	char letter = 0, prodname[256]="Mac OS X", prodvers[256]="", buildver[256]="?";
+	CFDictionaryRef vers = _CFCopySystemVersionDictionary();
+	if (vers)
+		{
+		CFStringRef cfprodname = CFDictionaryGetValue(vers, _kCFSystemVersionProductNameKey);
+		CFStringRef cfprodvers = CFDictionaryGetValue(vers, _kCFSystemVersionProductVersionKey);
+		CFStringRef cfbuildver = CFDictionaryGetValue(vers, _kCFSystemVersionBuildVersionKey);
+		if (cfprodname) CFStringGetCString(cfprodname, prodname, sizeof(prodname), kCFStringEncodingUTF8);
+		if (cfprodvers) CFStringGetCString(cfprodvers, prodvers, sizeof(prodvers), kCFStringEncodingUTF8);
+		if (cfbuildver) CFStringGetCString(cfbuildver, buildver, sizeof(buildver), kCFStringEncodingUTF8);
+		sscanf(buildver, "%d%c%d", &major, &letter, &minor);
+		CFRelease(vers);
+		}
+	if (HINFO_SWstring) mDNS_snprintf(HINFO_SWstring, 256, "%s %s (%s), %s", prodname, prodvers, buildver, mDNSResponderVersionString);
+	return(major);
+	}
+
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
 
 	m->hostlabel.c[0]        = 0;
-	
-	static const char HINFO_HWstring[] = "Macintosh";
+
+	char *HINFO_HWstring = "Macintosh";
+	char HINFO_HWstring_buffer[256];
+	int    get_model[2] = { CTL_HW, HW_MODEL };
+	size_t len_model = sizeof(HINFO_HWstring_buffer);
+	if (sysctl(get_model, 2, HINFO_HWstring_buffer, &len_model, NULL, 0) == 0)
+		HINFO_HWstring = HINFO_HWstring_buffer;
+
+	char HINFO_SWstring[256] = "";
+	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs = mDNS_KnownBug_PhantomInterfaces;
+
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
 	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);
 	if (hlen + slen < 254)
@@ -1223,7 +1261,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_HWstring, &m->HIHardware.c[1], hlen);
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
-	
+
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);

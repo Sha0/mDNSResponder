@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.16  2003/08/08 18:36:04  cheshire
+<rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
+
 Revision 1.15  2003/08/05 00:32:28  cheshire
 <rdar://problem/3326712> Time to turn off MACOSX_MDNS_MALLOC_DEBUGGING
 
@@ -125,9 +128,9 @@ struct mDNS_PlatformSupport_struct
 
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
+extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
-extern char HINFO_SWstring[];
-
+extern const char mDNSResponderVersionString[];
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()
@@ -167,7 +170,5 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled event ti
                                             // and returns the updated nextevent time
 void udsserver_handle_configchange(void);
 int udsserver_exit(void);
-
-
 
 #endif

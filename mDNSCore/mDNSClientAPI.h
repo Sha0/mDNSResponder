@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.92  2003/08/08 18:36:04  cheshire
+<rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
+
 Revision 1.91  2003/08/06 21:33:39  cheshire
 Fix compiler warnings on PocketPC 2003 (Windows CE)
 
@@ -802,6 +805,11 @@ typedef void mDNSCallback(mDNS *const m, mStatus result);
 
 #define CACHE_HASH_SLOTS	37
 
+enum
+	{
+	mDNS_KnownBug_PhantomInterfaces = 1
+	};
+
 struct mDNS_struct
 	{
 	// Internal state fields. These hold the main internal state of mDNSCore;
@@ -810,6 +818,7 @@ struct mDNS_struct
 	// all required data is passed as parameters to that function.
 
 	mDNS_PlatformSupport *p;			// Pointer to platform-specific data of indeterminite size
+	mDNSu32  KnownBugs;
 	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
 	mDNSCallback *MainCallback;

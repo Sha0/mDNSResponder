@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.259  2003/08/08 18:36:04  cheshire
+<rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
+
 Revision 1.258  2003/08/08 16:22:05  cheshire
 <rdar://problem/3335473> Need to check validity of TXT (and other) records
 Remove unneeded LogMsg
@@ -5882,7 +5885,13 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
-	mDNSBool revalidate = mDNStrue;
+	
+	mDNSBool revalidate = mDNSfalse;
+	// If this platform has the "phantom interfaces" known bug (e.g. Jaguar), we have to revalidate records every
+	// time an interface goes away. Otherwise, when you disconnect the Ethernet cable, the system reports that it
+	// still has an IPv6 address, and if we don't revalidate those records don't get deleted in a timely fashion.
+	if (m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) revalidate = mDNStrue;
+
 	mDNS_Lock(m);
 
 	// Find this record in our list
@@ -6280,6 +6289,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	if (!rrcachestorage) rrcachesize = 0;
 	
 	m->p                       = p;
+	m->KnownBugs               = 0;
 	m->AdvertiseLocalAddresses = AdvertiseLocalAddresses;
 	m->mDNSPlatformStatus      = mStatus_Waiting;
 	m->MainCallback            = Callback;
