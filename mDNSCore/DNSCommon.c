@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.12  2004/02/03 22:37:10  cheshire
+Delete unused (commented-out) code
+
 Revision 1.11  2004/02/03 22:35:34  cheshire
 <rdar://problem/3548256>: Should not allow empty string for resolve domain
 
@@ -524,7 +527,6 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
-	//if (len == 0 || len >= 0x40)  { errormsg="Invalid service transport protocol name"; goto fail; }
 	if (!(len == 4 && src[1] == '_' &&
 		(((src[2] | 0x20) == 'u' && (src[3] | 0x20) == 'd') || ((src[2] | 0x20) == 't' && (src[3] | 0x20) == 'c')) &&
 		(src[4] | 0x20) == 'p'))
