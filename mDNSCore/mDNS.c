@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.456  2004/10/26 06:21:42  cheshire
+Adjust mask validity check to allow an all-ones mask (for IPv6 ::1 loopback address)
+
 Revision 1.455  2004/10/26 06:11:40  cheshire
 Add improved logging to aid in diagnosis of <rdar://problem/3842714> mDNSResponder crashed
 
@@ -5885,7 +5888,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 
-	if (!mDNSAddressIsValid(&set->mask))
+	if (!mDNSAddressIsValidNonZero(&set->mask))
 		{ LogMsg("Error! Tried to register a NetworkInterfaceInfo with invalid mask"); return(mStatus_Invalid); }
 
 	mDNS_Lock(m);
