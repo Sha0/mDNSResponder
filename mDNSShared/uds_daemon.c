@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.78  2004/09/15 21:44:20  cheshire
+<rdar://problem/3681031> Randomize initial timenow_adjust value in mDNS_Init
+Show time value in log to help diagnose errors
+
 Revision 1.77  2004/09/15 00:19:18  cheshire
 <rdar://problem/3785823> read_rr_from_ipc_msg should use mDNS_SetupResourceRecord()
 
@@ -698,7 +702,7 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
 void udsserver_info(void)
     {
     request_state *req;
-	qlist_t *qlist;
+	mDNSs32 timenow;
     for (req = all_requests; req; req=req->next)
         {
         void *t = req->termination_context;
@@ -707,6 +711,7 @@ void udsserver_info(void)
             LogMsgNoIdent("DNSServiceRegister         %##s %u", ((registered_service *)t)->srs->RR_SRV.resrec.name.c, SRS_PORT(((registered_service *)t)->srs));
         else if (req->terminate == browse_termination_callback)
 			{
+			qlist_t *qlist;
 			for (qlist = ((browse_termination_context *)t)->qlist; qlist; qlist = qlist->next)
 				LogMsgNoIdent("DNSServiceBrowse           %##s", qlist->q.qname.c);
 			}
@@ -717,7 +722,8 @@ void udsserver_info(void)
         else if (req->terminate == enum_termination_callback)
             LogMsgNoIdent("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
         }
-    LogMsgNoIdent("Timenow %10lu", mDNSPlatformTimeNow());
+    timenow = mDNSPlatformTimeNow() + mDNSStorage.timenow_adjust;
+    LogMsgNoIdent("Timenow 0x%08X (%d)", timenow, timenow);
     }
 
 

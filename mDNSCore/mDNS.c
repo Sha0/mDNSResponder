@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.404  2004/09/15 21:44:11  cheshire
+<rdar://problem/3681031> Randomize initial timenow_adjust value in mDNS_Init
+Show time value in log to help diagnose errors
+
 Revision 1.403  2004/09/15 00:46:32  ksekar
 Changed debugf to verbosedebugf in CheckCacheExpiration
 
@@ -6215,6 +6219,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	mStatus result = mDNSPlatformTimeInit(&timenow);
 	if (result != mStatus_NoError) return(result);
 	timenow += timenow_adjust;
+	LogMsg("Starting time value 0x%08X (%d)", timenow, timenow);
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
