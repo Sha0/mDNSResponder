@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.64  2004/06/15 02:39:47  cheshire
+When displaying error message, only show command name, not entire path
+
 Revision 1.63  2004/05/18 23:51:26  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -1079,6 +1082,7 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 
 mDNSexport int main(int argc, char **argv)
 	{
+	const char *progname = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
 	int i;
 	mStatus status;
 	
@@ -1113,12 +1117,12 @@ mDNSexport int main(int argc, char **argv)
 		}
 
 	status = mDNSNetMonitor();
-	if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %ld\n", argv[0], status); return(status); }
+	if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %ld\n", progname, status); return(status); }
 	return(0);
 
 usage:
 	fprintf(stderr, "\nmDNS traffic monitor\n");
-	fprintf(stderr, "Usage: %s (<host>)\n", argv[0]);
+	fprintf(stderr, "Usage: %s (<host>)\n", progname);
 	fprintf(stderr, "Optional <host> parameter displays only packets from that host\n");
 
 	fprintf(stderr, "\nPer-packet header output:\n");

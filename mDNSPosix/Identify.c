@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.24  2004/06/15 02:39:47  cheshire
+When displaying error message, only show command name, not entire path
+
 Revision 1.23  2004/05/18 23:51:26  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -338,6 +341,7 @@ mDNSlocal void HandleSIG(int signal)
 
 mDNSexport int main(int argc, char **argv)
 	{
+	const char *progname = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
 	int this_arg = 1;
 	mStatus status;
 	struct in_addr s4;
@@ -434,6 +438,6 @@ mDNSexport int main(int argc, char **argv)
 	return(0);
 
 usage:
-	fprintf(stderr, "%s <dot-local hostname> or <IPv4 address> or <IPv6 address> ...\n", argv[0]);
+	fprintf(stderr, "%s <dot-local hostname> or <IPv4 address> or <IPv6 address> ...\n", progname);
 	return(-1);
 	}
