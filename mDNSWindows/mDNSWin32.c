@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.33  2004/04/14 23:09:29  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.32  2004/04/09 17:40:26  cheshire
 Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
 
@@ -605,6 +608,11 @@ mDNSexport mStatus	mDNSPlatformTimeInit( mDNSs32 *outTimeNow )
 mDNSs32	mDNSPlatformTimeNow( void )
 {
 	return( (mDNSs32) GetTickCount() );
+}
+
+mDNSexport mDNSs32 mDNSPlatformUTC(void)
+{
+ return -1;
 }
 
 //===========================================================================================================================

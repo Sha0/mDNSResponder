@@ -158,6 +158,7 @@
 				DBAAFE2E057E8F660085CAD0,
 				7F18A9FA0587CEF6001880B3,
 				7F18A9FB0587CEF6001880B3,
+				7F461DB7062DBF2900672BF3,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -353,6 +354,7 @@
 		};
 		08FB7795FE84155DC02AAC07 = {
 			children = (
+				7F461DB5062DBF2900672BF3,
 				F525E72804AA167501F1CF4D,
 				F5E11B5A04A28126019798ED,
 				F5E11B5B04A28126019798ED,
@@ -438,6 +440,7 @@
 				DBAAFE2D057E8F660085CAD0,
 				7F18A9F80587CEF6001880B3,
 				7F18A9F90587CEF6001880B3,
+				7F461DB6062DBF2900672BF3,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -781,6 +784,25 @@
 		};
 		7F18A9FB0587CEF6001880B3 = {
 			fileRef = 7F18A9F70587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F461DB5062DBF2900672BF3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DNSDigest.c;
+			path = ../mDNSCore/DNSDigest.c;
+			refType = 2;
+		};
+		7F461DB6062DBF2900672BF3 = {
+			fileRef = 7F461DB5062DBF2900672BF3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F461DB7062DBF2900672BF3 = {
+			fileRef = 7F461DB5062DBF2900672BF3;
 			isa = PBXBuildFile;
 			settings = {
 			};

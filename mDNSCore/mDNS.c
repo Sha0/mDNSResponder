@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.371  2004/04/14 23:09:28  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.370  2004/04/09 17:40:26  cheshire
 Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
 
@@ -2526,6 +2529,12 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 
 mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, mDNSu32 interval)
 	{
+	if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name))
+		{
+		LogMsg("mDNS_Reconfirm_internal: Not implemented for unicast DNS");
+		return mStatus_UnsupportedErr;
+		}
+
 	if (interval < kMinimumReconfirmTime)
 		interval = kMinimumReconfirmTime;
 	if (interval > 0x10000000)	// Make sure interval doesn't overflow when we multiply by four below
@@ -4326,7 +4335,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	const mDNSInterfaceID InterfaceID)
 	{
 	DNSMessage    response;
-	const mDNSu8 *responseend    = mDNSNULL;
+	mDNSu8 *responseend    = mDNSNULL;
 	
 	if (!InterfaceID)
 		{
@@ -4894,7 +4903,7 @@ mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, CacheRecord *const rr)
 mDNSexport mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr)
 	{
 	mStatus status = mStatus_BadReferenceErr;
-	CacheRecord *cr;
+	CacheRecord *cr;	
 	mDNS_Lock(m);
 	cr = FindIdenticalRecordInCache(m, rr);
 	if (cr) status = mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
@@ -5209,6 +5218,13 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	const mDNSu16 newrdlength,
 	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
+	
+	if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name))
+		{
+		LogMsg("mDNS_Update: Not implemented for unicast DNS");
+		return mStatus_UnsupportedErr;
+		}
+
 	if (!ValidateRData(rr->resrec.rrtype, newrdlength, newrdata))
 		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(m, &rr->resrec, &newrdata->u)); return(mStatus_Invalid); }
 
@@ -5422,8 +5438,8 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 
 mDNSexport void mDNS_GenerateGlobalFQDN(mDNS *const m)
 	{
-    if (!m->uDNS_info.regdomain[0]) return;
-    GenerateFQDN(m, m->uDNS_info.regdomain, mDNSfalse);
+    if (!m->uDNS_info.NameRegDomain[0]) return;
+    GenerateFQDN(m, m->uDNS_info.NameRegDomain, mDNSfalse);
 	}
 
 
@@ -5797,7 +5813,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 
 	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
 	if (sr->Host.c[0]) AssignDomainName(sr->RR_SRV.resrec.rdata->u.srv.target, sr->Host);
-	else sr->RR_SRV.HostTarget = mDNStrue;
+	else { sr->RR_SRV.HostTarget = mDNStrue; sr->RR_SRV.resrec.rdata->u.srv.target.c[0] = '\0'; }
 
 	// 4. Set up the TXT record rdata,
 	// and set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
@@ -5838,6 +5854,13 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	{
 	ExtraResourceRecord **e;
 	mStatus status;
+
+	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+		{
+		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
+		return mStatus_UnsupportedErr;
+		}
+
 	mDNS_Lock(m);
 	e = &sr->Extras;
 	while (*e) e = &(*e)->next;
@@ -5862,6 +5885,13 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	{
 	ExtraResourceRecord **e;
 	mStatus status;
+
+	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+		{
+		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
+		return mStatus_UnsupportedErr;
+		}
+
 	mDNS_Lock(m);
 	e = &sr->Extras;
 	while (*e && *e != extra) e = &(*e)->next;

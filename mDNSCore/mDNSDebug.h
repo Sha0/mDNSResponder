@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.20  2004/04/14 23:09:28  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.19  2004/03/15 18:57:59  cheshire
 Undo last checkin that accidentally made verbose debugging the default for all targets
 
@@ -127,7 +130,7 @@ extern void LogMsgNoIdent(const char *format, ...);
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()
-#define MACOSX_MDNS_MALLOC_DEBUGGING 0
+#define MACOSX_MDNS_MALLOC_DEBUGGING 1
 
 #if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 extern void *mallocL(char *msg, unsigned int size);

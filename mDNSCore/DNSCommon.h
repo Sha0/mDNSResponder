@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.11  2004/04/14 23:09:28  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.10  2004/03/13 01:57:33  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -262,9 +265,12 @@ extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8
 #pragma mark - Packet Sending Functions
 #endif
 
-extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
-extern mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd);
-
+extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
+extern mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd);
+extern mStatus mDNSSendSignedDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
+    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_AuthInfo *authInfo);
+extern mStatus mDNSSendSignedDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd, uDNS_AuthInfo *authInfo);
+	
 #ifdef	__cplusplus
 	}
 #endif

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.27  2004/04/14 23:09:28  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.26  2004/04/14 19:36:05  ksekar
 Fixed memory corruption error in deriveGoodbyes.
 
@@ -139,11 +142,14 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, mDNS *m);
 
-#define ustrcpy(d,s) mDNSPlatformStrCopy(s,d)       // use strcpy(2) param ordering
-#define umalloc(x) mDNSPlatformMemAllocate(x)       // short hands for common routines
-#define ufree(x) mDNSPlatformMemFree(x)
-#define ubzero(x,y) mDNSPlatformMemZero(x,y)
-#define umemcpy(x, y, l) mDNSPlatformMemCopy(y, x, l)  // uses memcpy(2) arg ordering
+#define ustrcpy(d,s)       mDNSPlatformStrCopy(s,d)       // use strcpy(2) param ordering
+#define ustrlen(s)         mDNSPlatformStrLen(s)
+#define umalloc(x)         mDNSPlatformMemAllocate(x)       // short hands for common routines
+#define ufree(x)           mDNSPlatformMemFree(x)
+#define ubzero(x,y)        mDNSPlatformMemZero(x,y)
+#define umemcpy(x, y, l)   mDNSPlatformMemCopy(y, x, l)  // uses memcpy(2) arg ordering
+
+
 // Asyncronous operation types
 
 typedef enum
@@ -205,11 +211,6 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 	LogMsg("ERROR: unlinkAR - no such active record");
 	return mStatus_UnknownErr;
 	}
-
-
-
-
-
 
 
 // ***************************************************************************
@@ -282,8 +283,86 @@ mDNSexport mDNSBool mDNS_DNSRegistered(mDNS *const m)
 	for (i = 0; i < 32; i++) if (m->uDNS_info.Servers[i].ip.v4.NotAnInteger) return mDNStrue;
 	return mDNSfalse;
 	}
-		
-  
+	   
+
+ // ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - authorization management
+#endif
+
+
+mDNSexport mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *zone, domainname *key,
+    mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64)
+	{
+	uDNS_AuthInfo *info;
+	mDNSu8 keybuf[1024];
+	int keylen;
+	
+	info = umalloc(sizeof(uDNS_AuthInfo) + ssLen);
+	if (!info) { LogMsg("ERROR: umalloc"); return mStatus_NoMemoryErr; }
+   	ubzero(info, sizeof(uDNS_AuthInfo));
+	ustrcpy(info->zone.c, zone->c);
+	ustrcpy(info->keyname.c, key->c);
+
+	if (base64)
+		{
+		keylen = DNSDigest_Base64ToBin(sharedSecret, keybuf, 1024);
+		if (keylen < 0)
+			{
+			LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication - could not convert shared secret from base64");
+			ufree(info);
+			return mStatus_UnknownErr;
+			}		
+		DNSDigest_ConstructHMACKey(info, keybuf, keylen);		
+		}
+	else DNSDigest_ConstructHMACKey(info, sharedSecret, ssLen);
+
+    // link into list
+	// !!!KRS this should be a hashtable since we must check if updates are required on each registration
+	info->next = m->uDNS_info.AuthInfoList;
+	m->uDNS_info.AuthInfoList = info;
+	return mStatus_NoError;
+	}
+
+mDNSexport void mDNS_ClearAuthenticationList(mDNS *m)
+	{
+	uDNS_AuthInfo *fptr, *ptr = m->uDNS_info.AuthInfoList;
+	
+	while (ptr)
+		{
+		fptr = ptr;
+		ptr = ptr->next;
+		ufree(fptr);
+		}
+	}
+
+mDNSlocal uDNS_AuthInfo *GetAuthInfoForZone(uDNS_GlobalInfo *u, domainname *zone)
+	{
+	uDNS_AuthInfo *ptr;
+	domainname *z;
+	int zoneLen, ptrZoneLen;
+
+	zoneLen = ustrlen(zone->c);
+	for (ptr = u->AuthInfoList; ptr; ptr = ptr->next)
+		{
+		z = &ptr->zone;
+		ptrZoneLen = ustrlen(z->c);
+		if (zoneLen < ptrZoneLen) continue;
+		// return info if zone ends in info->zone
+		if (mDNSPlatformMemSame(z->c, zone->c + (zoneLen - ptrZoneLen), ptrZoneLen)) return ptr;
+		}	   	  
+	return NULL;
+	}	
+	
+
+
+
+ // ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - host name and interface management
+#endif
+
+
 mDNSlocal void hostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	// note that the rr is already unlinked if result is non-zero
@@ -311,6 +390,7 @@ mDNSlocal void hostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	mDNS_HostNameCallback(m, rr, result);	
 	}
 
+
 mDNSlocal void deadvertiseIfCallback(mDNS *const m, AuthRecord *const rr, mStatus err)
 	{
 	(void)m; // unused
@@ -318,8 +398,8 @@ mDNSlocal void deadvertiseIfCallback(mDNS *const m, AuthRecord *const rr, mStatu
 	if (err == mStatus_MemFree) ufree(rr);
 	else LogMsg("deadvertiseIfCallback - error %s for record %s", err, rr->resrec.name.c);
 	}
-
-mDNSexport void uDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
+ 
+ mDNSexport void uDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	AuthRecord *copy;
 	AuthRecord *rr = &set->uDNS_info.RR_A;
@@ -610,8 +690,9 @@ mDNSlocal void unlinkSRS(uDNS_GlobalInfo *u, ServiceRecordSet *srs)
 	}
 
 
-mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode)
+mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode, const DNSMessage *msg)
 	{
+	(void)msg;  // currently unused, needed for TSIG errors
 	if (!rcode) return mStatus_NoError;
 	else if (rcode == kDNSFlag1_RC_YXDomain)
 		{
@@ -628,9 +709,20 @@ mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode)
 		LogMsg("Reregister refusted (NXRRSET): %s", name->c);
 		return mStatus_NoSuchRecord;
 		}
+	else if (rcode == kDNSFlag1_RC_NotAuth)
+		{
+		LogMsg("Permission denied (NOAUTH): %s", name->c);
+		return mStatus_NoAuth;
+		}
+	else if (rcode == kDNSFlag1_RC_FmtErr)
+		{
+		LogMsg("Format Error: %s", name->c);
+		return mStatus_UnknownErr;
+		//!!!KRS need to parse message for TSIG errors
+		}
 	else
 		{
-		LogMsg("Update %s failed with rcode %d", name->c);
+		LogMsg("Update %s failed with rcode %d", name->c, rcode);
 		return mStatus_UnknownErr;
 		}
 	}
@@ -785,7 +877,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			{
 			if (sptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
-				err = checkUpdateResult(&sptr->RR_SRV.resrec.name, rcode);
+				err = checkUpdateResult(&sptr->RR_SRV.resrec.name, rcode, msg);
 				hndlServiceUpdateReply(m, sptr, err);
 				return;
 				}
@@ -794,7 +886,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			{
 			if (rptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
-				err = checkUpdateResult(&rptr->resrec.name, rcode);
+				err = checkUpdateResult(&rptr->resrec.name, rcode, msg);
 				hndlRecordUpdateReply(m, rptr, err);
 				return;
 				}
@@ -1418,6 +1510,7 @@ mDNSlocal void sendRecordRegistration(mStatus err, mDNS *const m, void *authPtr,
 	zoneData_t *zoneData = &result->zoneData;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSOpaque16 id;
+	uDNS_AuthInfo *authInfo;
 	
 	if (err) goto error;
 	if (newRR->uDNS_info.state == regState_Cancelled)
@@ -1467,9 +1560,17 @@ mDNSlocal void sendRecordRegistration(mStatus err, mDNS *const m, void *authPtr,
 	ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &newRR->resrec);
 	if (!ptr) goto error;
 
-	err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
-	if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %d", err); goto error; }
-
+	authInfo = GetAuthInfoForZone(u, &zoneData->zoneName);
+	if (authInfo)
+		{
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort, authInfo);
+		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
+		}
+	else
+		{
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
+		if (err) { LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %d", err); goto error; }
+		}
 	// cache zone data
 	ustrcpy(newRR->uDNS_info.zone.c, zoneData->zoneName.c);
     newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
@@ -1526,6 +1627,7 @@ mDNSlocal void sendServiceRegistration(mStatus err, mDNS *const m, void *srsPtr,
 	zoneData_t *zoneData = &result->zoneData;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSOpaque16 id;
+	uDNS_AuthInfo *authInfo;
 	
 	if (err) goto error;
 	if (result->type != zoneDataResult)
@@ -1569,9 +1671,18 @@ mDNSlocal void sendServiceRegistration(mStatus err, mDNS *const m, void *srsPtr,
 	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_SRV.resrec))) goto error;
 	if (!(ptr = PutResourceRecord(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec))) goto error;
     // !!!KRS do subtypes/extras etc.
-	
-	err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
-	if (err) { LogMsg("ERROR: sendServiceRegistration - mDNSSendDNSMessage - %d", err); goto error; }
+
+	authInfo = GetAuthInfoForZone(u, &zoneData->zoneName);
+	if (authInfo)
+		{
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort, authInfo);
+		if (err) { LogMsg("ERROR: sendServiceRegistration - mDNSSendSignedDNSMessage - %d", err); goto error; }
+		}
+	else
+		{
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &zoneData->primaryAddr, UnicastDNSPort);
+		if (err) { LogMsg("ERROR: sendServiceRegistration - mDNSSendDNSMessage - %d", err); goto error; }
+		}
 
 	// cache zone data
 	ustrcpy(srs->uDNS_info.zone.c, zoneData->zoneName.c);
@@ -1677,6 +1788,7 @@ mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
 	rr->uDNS_info.state = regState_FetchingZoneData;
 	rr->next = m->uDNS_info.RecordRegistrations;
 	m->uDNS_info.RecordRegistrations = rr;
+
 	return startGetZoneData(&rr->resrec.name, m, sendRecordRegistration, rr);
 	}
 
@@ -1689,7 +1801,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mStatus err;
-	
+	uDNS_AuthInfo *authInfo;
 	switch (rr->uDNS_info.state)
 		{
 		case regState_FetchingZoneData:
@@ -1727,11 +1839,18 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	if (!ptr) goto error;
 
 	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) goto error;
-	
-	err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, UnicastDNSPort);
-	if (err) { LogMsg("ERROR: uDNS_DeregisterRecord - mDNSSendDNSMessage - %d", err); goto error; }
-	//!!!KRS race condition: if we send the dereg, and lose the response, and re-send we could overwrite someone else's update
-	// extreme edge case - worth using TCP for?
+
+	authInfo = GetAuthInfoForZone(u, &rr->uDNS_info.zone);
+	if (authInfo)
+		{
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, UnicastDNSPort, authInfo);
+		if (err) { LogMsg("ERROR: uDNS_DeregiserRecord - mDNSSendSignedDNSMessage - %d", err); goto error; }
+		}
+	else
+		{
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, UnicastDNSPort);
+		if (err) { LogMsg("ERROR: uDNS_DeregisterRecord - mDNSSendDNSMessage - %d", err); goto error; }
+		}
 	
 	return mStatus_NoError;
 
@@ -1747,10 +1866,10 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 
 mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
-	if (!*m->uDNS_info.regdomain)
+	if (!*m->uDNS_info.NameRegDomain)
 		{
 		LogMsg("ERROR: uDNS_RegisterService - cannot register unicast service "
-			   "without setting the regdomain via mDNSResponder.conf");
+			   "without setting the NameRegDomain via mDNSResponder.conf");
 		srs->uDNS_info.state = regState_Unregistered;
 		return mStatus_UnknownErr;
 		}
@@ -1774,6 +1893,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mStatus err = mStatus_UnknownErr;
+	uDNS_AuthInfo *authInfo;
 	
 	//!!!KRS make sure we're doing the right thing w/ memfree
 	
@@ -1811,10 +1931,19 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	//if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_ADV.resrec))) goto error;
 	//!!!KRS  need to handle extras/subtypes etc
 
-	
-	err = mDNSSendDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, UnicastDNSPort);
-	if (err) { LogMsg("ERROR: uDNS_DeregisterService - mDNSSendDNSMessage - %d", err); goto error; }
 
+	authInfo = GetAuthInfoForZone(u, &srs->uDNS_info.zone);
+	if (authInfo)
+		{
+		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, UnicastDNSPort, authInfo);
+		if (err) { LogMsg("ERROR: uDNS_DeregiserService - mDNSSendSignedDNSMessage - %d", err); goto error; }
+		}
+	else
+		{
+		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &srs->uDNS_info.ns, UnicastDNSPort);
+		if (err) { LogMsg("ERROR: uDNS_DeregisterService - mDNSSendDNSMessage - %d", err); goto error; }
+		}
+	
 	return mStatus_NoError;
 
 	error:

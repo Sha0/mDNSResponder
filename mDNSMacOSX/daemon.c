@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.162  2004/04/14 23:09:29  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.161  2004/04/07 01:20:04  cheshire
 Hash slot value should be unsigned
 
@@ -1116,7 +1119,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	else if (!MakeDomainLabelFromLiteralString(&n, name))                  { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }	
 
-	if (!*domain && mDNSStorage.uDNS_info.defaultRegDomain[0]) domain= mDNSStorage.uDNS_info.defaultRegDomain;
+	if (!*domain && mDNSStorage.uDNS_info.ServiceRegDomain[0]) domain= mDNSStorage.uDNS_info.ServiceRegDomain;
 	else if (!*domain) domain = "local.";		
 	if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }

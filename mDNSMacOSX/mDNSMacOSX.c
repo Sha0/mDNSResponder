@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.140  2004/04/14 23:09:29  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.139  2004/04/09 17:40:26  cheshire
 Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
 
@@ -404,7 +407,7 @@ Minor code tidying
 #include <sys/sysctl.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-
+#include <time.h>                   // platform support for UTC time
 #include <arpa/inet.h>              // for inet_aton
 
 #include <netinet/in.h>             // For IP_RECVTTL
@@ -1761,7 +1764,7 @@ mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
 
 
 //!!!KRS this should be less order-dependent as we support more configuration options
-mDNSlocal mDNSBool SetConfigOption(char *dst, const char *option, FILE *f)
+mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	{
 	char buf[1024];
 	int len;
@@ -1784,11 +1787,17 @@ mDNSlocal mDNSBool SetConfigOption(char *dst, const char *option, FILE *f)
 mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	{
 	FILE *f;
+	uDNS_GlobalInfo *u = &m->uDNS_info;;
+	char key[MAX_ESCAPED_DOMAIN_NAME];
+	domainname key_d, name_d, service_d;
+	char secret[1024];
+	int slen;
+	mStatus err;
 	
     // read registration domain (for dynamic updates) from config file
     // !!!KRS these must go away once we can learn the reg domain from the network or prefs	
-	m->uDNS_info.regdomain[0] = '\0';
-	m->uDNS_info.defaultRegDomain[0] = '\0';
+	m->uDNS_info.NameRegDomain[0] = '\0';
+	m->uDNS_info.ServiceRegDomain[0] = '\0';
 	
 	f = fopen(CONFIG_FILE, "r");
 	if (!f)
@@ -1796,8 +1805,38 @@ mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 		if (errno != ENOENT)  LogMsg("ERROR: Config file exists, but cannot be opened.");
 		return;
 		}
-	SetConfigOption(m->uDNS_info.regdomain, "regdomain", f);
-	SetConfigOption(m->uDNS_info.defaultRegDomain, "defaultreg", f);
+
+	if (!GetConfigOption(u->NameRegDomain, "name-reg", f)) goto end;
+	if (!GetConfigOption(u->ServiceRegDomain, "service-reg", f)) goto end;
+	if (!GetConfigOption(key, "key-name", f)) goto end;
+	if (!GetConfigOption(secret, "secret-64", f)) { LogMsg("ERROR: config file contains key without secret"); goto end; }
+
+	// we don't actually need this in domain-name format - just convert it to error check
+	if (!MakeDomainNameFromDNSNameString(&service_d, u->ServiceRegDomain))
+		{ LogMsg("ERROR: config file contains bad service reg domain %s", u->ServiceRegDomain); u->ServiceRegDomain[0] = '\0'; }	
+
+	if (!MakeDomainNameFromDNSNameString(&name_d, u->NameRegDomain))
+		{ LogMsg("ERROR: config file contains bad name reg domain %s", u->NameRegDomain); u->NameRegDomain[0] = '\0'; }	
+
+	if (!MakeDomainNameFromDNSNameString(&key_d, key))
+		{ LogMsg("ERROR: config file contains bad key %s", key); key[0] = '\0'; }
+
+	if (key[0])
+		{
+		slen = strlen(secret);
+		if (u->ServiceRegDomain[0]) 
+			{
+			err = mDNS_UpdateDomainRequiresAuthentication(m, &service_d, &key_d, secret, slen, mDNStrue);
+			if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain ", err, u->ServiceRegDomain);
+			}
+		if (u->NameRegDomain[0])
+			{
+			err = mDNS_UpdateDomainRequiresAuthentication(m, &name_d, &key_d, secret, slen, mDNStrue);
+			if (err) LogMsg("ERROR: mDNS_UpdateDomainRequiresAuthentication returned %d for domain ", err, u->NameRegDomain);
+			}
+		}
+	
+	end:
 	fclose(f);
 	}
 
@@ -1930,6 +1969,11 @@ mDNSexport mDNSs32  mDNSPlatformTimeNow(void)
 	{
 	if (clockdivisor == 0) { LogMsg("mDNSPlatformTimeNow called before mDNSPlatformTimeInit"); return(0); }
 	return((mDNSs32)(mach_absolute_time() / clockdivisor));
+	}
+
+mDNSexport mDNSs32 mDNSPlatformUTC(void)
+	{
+	return time(NULL);
 	}
 
 // Locking is a no-op here, because we're single-threaded with a CFRunLoop, so we can never interrupt ourselves

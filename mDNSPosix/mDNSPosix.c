@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.43  2004/04/14 23:09:29  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.42  2004/04/09 17:43:04  cheshire
 Make sure to set the TxAndRx field so that duplicate suppression works correctly
 
@@ -188,6 +191,7 @@ First checkin
 #include <sys/uio.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#include <time.h>                   // platform support for UTC time
 
 #if USES_NETLINK
 #include <asm/types.h>
@@ -1328,6 +1332,11 @@ mDNSexport mDNSs32  mDNSPlatformTimeNow()
 	// This gives us a proper modular (cyclic) counter that has a resolution of roughly 1ms (actually 1/1024 second)
 	// and correctly cycles every 2^22 seconds (4194304 seconds = approx 48 days).
 	return( (tv.tv_sec << 10) | (tv.tv_usec * 16 / 15625) );
+	}
+
+mDNSexport mDNSs32 mDNSPlatformUTC(void)
+	{
+	return time(NULL);
 	}
 
 mDNSlocal void mDNSPosixAddToFDSet(int *nfds, fd_set *readfds, int s)

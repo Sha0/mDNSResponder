@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.161  2004/04/14 23:09:28  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.160  2004/04/09 17:40:26  cheshire
 Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
 
@@ -604,11 +607,11 @@ typedef enum							// From RFC 1035
 	kDNSClass_CH               = 3,		// CHAOS
 	kDNSClass_HS               = 4,		// Hesiod
 	kDNSClass_NONE             = 254,	// Used in DNS UPDATE [RFC 2136]
-
+	kDNSClass_ANY              = 255,	// Used in TSIG records, and in queries for "all classes"
+	
 	kDNSClass_Mask             = 0x7FFF,// Multicast DNS uses the bottom 15 bits to identify the record class...
 	kDNSClass_UniqueRRSet      = 0x8000,// ... and the top bit indicates that all other cached records are now invalid
 
-	kDNSQClass_ANY             = 255,	// Not a DNS class, but a DNS query class, meaning "all classes"
 	kDNSQClass_UnicastResponse = 0x8000	// Top bit set in a question means "unicast response acceptable"
 	} DNS_ClassValues;
 
@@ -633,7 +636,7 @@ typedef enum				// From RFC 1035
 
 	kDNSType_AAAA = 28,		// 28 IPv6 address
 	kDNSType_SRV = 33,		// 33 Service record
-
+	kDNSType_TSIG = 250,    // 250 Transaction Signature
 	kDNSQType_ANY = 255		// Not a DNS type, but a DNS query type, meaning "all types"
 	} DNS_TypeValues;
 
@@ -745,7 +748,8 @@ enum
 	mStatus_BadInterfaceErr   = -65552,
 	mStatus_Refused           = -65553,
 	mStatus_NoSuchRecord      = -65554,
-	// -65555 - -65789 currently unused
+    mStatus_NoAuth            = -65555,
+	// -65556 - -65789 currently unused
 
 	// Non-error values:
 	mStatus_GrowCache         = -65790,
@@ -904,7 +908,7 @@ typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domain
 typedef packedstruct { mDNSu16 preference;                                domainname exchange; } rdataMX;
 typedef packedstruct { domainname mname; domainname rname; mDNSOpaque32 serial; mDNSOpaque32 refresh;
                        mDNSOpaque32 retry; mDNSOpaque32 expire; mDNSOpaque32 min;              } rdataSOA;
-	
+
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
 #define StandardAuthRDSize 264
@@ -997,6 +1001,7 @@ typedef struct
     domainname   zone;  // the zone that is updated
     mDNSAddr     ns;    // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
     mDNSBool     add;   // !!!KRS this should really be an enumerated state
+    struct uDNS_AuthInfo *AuthInfo;  // authentication info (may be null)
 	} uDNS_RegInfo;
 
 	
@@ -1269,7 +1274,7 @@ enum
 	{
 	mDNS_KnownBug_PhantomInterfaces = 1
 	};
-
+	
 typedef struct 
     {
     mDNSs32          nextevent;
@@ -1282,14 +1287,15 @@ typedef struct
     mDNSu16          NextMessageID;
     mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
     domainname       hostname;           // global name for dynamic registration of address records
-    char             regdomain[MAX_ESCAPED_DOMAIN_NAME];
+    char             NameRegDomain[MAX_ESCAPED_DOMAIN_NAME];
                                          // domain in which above hostname is registered
                                          // currently set by the platform layer at startup
                                          // do not set if services / address records are not to be globally registered to an update server
                                          // !!!KRS this must go away once we can learn the reg domain from the network or prefs
-    char       defaultRegDomain[MAX_ESCAPED_DOMAIN_NAME];
+    char             ServiceRegDomain[MAX_ESCAPED_DOMAIN_NAME];
                                          // if set, all services that don't explicitly specify a domain upon registration will be
                                          // registered in this domain.  if not set, .local will be used by default
+    struct uDNS_AuthInfo *AuthInfoList;  // list of domains required authentication for updates.  !!!KRS this shoudl be a hashtable
     } uDNS_GlobalInfo;  
 
 struct mDNS_struct
@@ -1481,7 +1487,7 @@ extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
 
 extern mDNSs32  mDNSPlatformOneSecond;
 extern mDNSs32  mDNSPlatformTimeNow(void);
-
+	
 // ***************************************************************************
 #if 0
 #pragma mark - General utility and helper functions
@@ -1631,6 +1637,73 @@ extern char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDa
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 
+
+// ***************************************************************************
+#if 0
+#pragma mark - Authentication Support
+#endif
+
+#define HMAC_LEN    64
+#define HMAC_IPAD   0x36
+#define HMAC_OPAD   0x5c
+#define MD5_LEN     16
+
+// padded keys for inned/outer hash rounds
+typedef struct
+	{
+    mDNSu8 ipad[HMAC_LEN];
+    mDNSu8 opad[HMAC_LEN];
+   	} HMAC_Key;
+	
+// Internal data structure to maintain authentication information for an update domain	
+typedef struct uDNS_AuthInfo
+	{
+    domainname zone;
+    domainname keyname;
+    HMAC_Key key;
+    struct uDNS_AuthInfo *next;
+	} uDNS_AuthInfo;
+
+	
+// Platform Support for computing MD5
+// mDNSPlatformUTC returns the time, in seconds, since Jan 1st 1970 UTC and is required for generating TSIG records
+
+extern mDNSs32  mDNSPlatformUTC(void);
+
+// Client Calls
+// mDNS_UpdateDomainRequiresAuthentication tells the core to authenticate (via TSIG with an HMAC_MD5 hash)
+// when dynamically updating a given zone (and its subdomains).  The key used in authentication must be in
+// domain name format.  The shared secret must be a base64 encoded string with the base64 parameter set to
+// true, or binary data with the base64 parameter set to false.  The length is the size of the secret in
+// bytes.  (A minimum size of 16 bytes (128 bits) is recommended for an MD5 hash as per RFC 2485).
+//	The This routine is normally called once for each secure domain at startup, though it can be called at any time.
+
+// mDNS_ClearAuthenticationList clears from the core's internal structures all domains previously passed to
+// mDNS_UpdateDomainRequiresAuthentication.  
+
+extern mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *zone, domainname *key,
+    mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
+
+extern void mDNS_ClearAuthenticationList(mDNS *m);
+
+
+// Routines called by the core, exported by DNSDigest.c
+
+// Convert a base64 encoded key into a binary byte stream
+extern mDNSu32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize);
+	
+// Convert an arbitrary binary key (of any length) into an HMAC key (stored in AuthInfo struct)
+extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32 len);
+
+// sign a DNS message.  The message must be compete, with all values in network byte order.  end points to the end
+// of the message, and is modified by this routine.  numAdditionals is a pointer to the number of additional
+// records in HOST byte order, which is incremented upon successful completion of this routine.  The function returns
+// the new end pointer on success, and NULL on failure.
+extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info);
+	
+// MD5 hash function used by the core for signing TSIG records (impemented in DNSDigest.c)	
+extern mStatus DNSDigest_MD5(const DNSMessage *msg, mDNSu32 msglen, mDNSOpaque16 *digest);
+	
 // ***************************************************************************
 #if 0
 #pragma mark - PlatformSupport interface
@@ -1647,7 +1720,7 @@ extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 // mDNSPlatformSendUDP() sends one UDP packet
 // When a packet is received, the PlatformSupport code calls mDNSCoreReceive()
 // mDNSPlatformClose() tidies up on exit
-// Note: mDNSPlatformMemAllocate/mDNSPlatformMemFree are only required for handling oversized resource records.
+// Note: mDNSPlatformMemAllocate/mDNSPlatformMemFree are only required for handling oversized resource records and unicast DNS.
 // If your target platform has a well-defined specialized application, and you know that all the records it uses
 // are InlineCacheRDSize or less, then you can just make a simple mDNSPlatformMemAllocate() stub that always returns
 // NULL. InlineCacheRDSize is a compile-time constant, which is set by default to 64. If you need to handle records
@@ -1669,7 +1742,7 @@ extern void     mDNSPlatformMemZero     (                       void *dst, mDNSu
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
 extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
-
+	
 // Platform support modules should provide the following functions to map between opaque interface IDs
 // and interface indexes in order to support the DNS-SD API. If your target platform does not support 
 // multiple interfaces and/or does not support the DNS-SD API, these functions can be empty.
@@ -1698,7 +1771,7 @@ extern mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport,
 extern void mDNSPlatformTCPCloseConnection(int sd);
 extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
 extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
-
+	
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())

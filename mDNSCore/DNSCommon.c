@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.22  2004/04/14 23:09:28  ksekar
+Support for TSIG signed dynamic updates.
+
 Revision 1.21  2004/04/09 16:47:28  cheshire
 <rdar://problem/3617655>: mDNSResponder escape handling inconsistent with BIND
 
@@ -791,7 +794,7 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
-	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+	if (                                rr->rrclass != q->qclass && q->qclass != kDNSClass_ANY)  return(mDNSfalse);
 	return(rr->namehash == q->qnamehash && SameDomainName(&rr->name, &q->qname));
 	}
 
@@ -980,6 +983,8 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 
 mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr)
 	{
+	mDNSBool unknownRData = mDNStrue;
+
 	switch (rr->rrtype)
 		{
 		case kDNSType_A:	if (rr->rdlength != 4)
@@ -1020,8 +1025,9 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rr->rdata->u.srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.srv.target));
 
+		case kDNSType_TSIG: unknownRData = mDNSfalse;
 		default:			if (ptr + rr->rdlength > limit) return(mDNSNULL);
-							debugf("putRData: Warning! Writing resource type %d as raw data", rr->rrtype);
+			                if (unknownRData) debugf("putRData: Warning! Writing resource type %d as raw data", rr->rrtype);
 							mDNSPlatformMemCopy(rr->rdata->u.data, ptr, rr->rdlength);
 							return(ptr + rr->rdlength);
 		}
@@ -1063,7 +1069,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNS
 	ptr[8] = (mDNSu8)(actualLength >> 8);
 	ptr[9] = (mDNSu8)(actualLength &  0xFF);
 
-	(*count)++;
+	if (count) (*count)++;
 	return(endofrdata);
 	}
 
@@ -1421,8 +1427,9 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 #pragma mark - Packet Sending Functions
 #endif
 
-mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd)
+
+mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
+    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd, uDNS_AuthInfo *authInfo)
 	{
 	mStatus status;
 	int nsent;
@@ -1444,6 +1451,12 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 	*ptr++ = (mDNSu8)(numAdditionals >> 8);
 	*ptr++ = (mDNSu8)(numAdditionals &  0xFF);
 
+	if (authInfo)
+		{
+		end = DNSDigest_SignMessage(msg, &end, &numAdditionals, authInfo);
+		if (!end) return mStatus_UnknownErr;
+		}
+		   		
 	// Send the packet on the wire
 
 	if (sd >= 0)
@@ -1467,8 +1480,8 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 	msg->h.numQuestions   = numQuestions;
 	msg->h.numAnswers     = numAnswers;
 	msg->h.numAuthorities = numAuthorities;
-	msg->h.numAdditionals = numAdditionals;
-
+	msg->h.numAdditionals = authInfo ? numAdditionals - 1 : numAdditionals;
+	
 	return(status);
 
 	tcp_error:
@@ -1477,14 +1490,26 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 
 	}
 				
-mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd)
+mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd)
 	{
 	if (sd < 0) { LogMsg("mDNSSendDNSMessage_tcp: invalid desciptor %d", sd); return mStatus_UnknownErr; }
-	return sendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd);
+	return sendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, mDNSNULL);
 	}
 
-mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
+mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport)
 	{
-	return sendDNSMessage(m, msg, end, InterfaceID, dst, dstport, -1);
+	return sendDNSMessage(m, msg, end, InterfaceID, dst, dstport, -1, mDNSNULL);
 	}	
+
+mDNSexport mStatus mDNSSendSignedDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end,
+    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_AuthInfo *authInfo)
+	{
+	return sendDNSMessage(m, msg, end, InterfaceID, dst, dstport, -1, authInfo);
+	}
+
+mDNSexport mStatus mDNSSendSignedDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd, uDNS_AuthInfo *authInfo)
+	{
+	if (sd < 0) { LogMsg("mDNSSendDNSMessage_tcp: invalid desciptor %d", sd); return mStatus_UnknownErr; }
+	return sendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, authInfo);
+	}
