@@ -23,9 +23,8 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
-Revision 1.36  2003/12/04 23:40:57  cheshire
-<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
-Fix some more code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+Revision 1.37  2003/12/08 21:11:42  rpantos
+Changes necessary to support mDNSResponder on Linux.
 
 Revision 1.35  2003/12/03 19:10:22  ksekar
 Bug #: <rdar://problem/3498644>: malloc'd data not zero'd
@@ -107,15 +106,19 @@ Update to APSL 2.0
  */
 
 #include "mDNSClientAPI.h"
-#include "mDNSMacOSX.h"
+#include "uds_daemon.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 
+
+// convenience definition 
+#define	_UNUSED	__attribute__ ((unused))
 // Types and Data Structures
 // ----------------------------------------------------------------------
 
@@ -168,8 +171,6 @@ typedef struct
 typedef struct request_state
     {
     // connection structures
-    CFRunLoopSourceRef rls;
-    CFSocketRef sr;		
     int sd;	
     int errfd;		
                                 
@@ -274,6 +275,7 @@ typedef struct
 
 
 // globals
+static mDNS *gmDNS = NULL;
 static int listenfd = -1;  
 static request_state *all_requests = NULL;  
 //!!!KRS we should keep a separate list containing only the requests that need to be examined
@@ -286,11 +288,11 @@ static request_state *all_requests = NULL;
 #define MSG_PAD_BYTES 5       // pad message buffer (read from client) with n zero'd bytes to guarantee
                               // n get_string() calls w/o buffer overrun    
 // private function prototypes
-static void connect_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
+static void connect_callback(void *info);
 static int read_msg(request_state *rs);
 static int send_msg(reply_state *rs);
 static void abort_request(request_state *rs);
-static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
+static void request_callback(void *info);
 static void handle_resolve_request(request_state *rstate);
 static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void question_termination_callback(void *context);
@@ -335,18 +337,24 @@ static mStatus remove_record(request_state *rstate);
 
 // initialization, setup/teardown functions
 
-int udsserver_init(void)  
+int udsserver_init( mDNS *globalInstance)  
     {
     mode_t mask;
     struct sockaddr_un laddr;
     struct rlimit maxfds;
 
+    if ( !globalInstance)
+        goto error;
+	gmDNS = globalInstance;
     if ((listenfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
-            goto error;
+        goto error;
     unlink(MDNS_UDS_SERVERPATH);  //OK if this fails
     bzero(&laddr, sizeof(laddr));
     laddr.sun_family = AF_LOCAL;
+#ifndef NOT_HAVE_SA_LEN		// According to Stevens (section 3.2), there is no portable way to 
+							// determine whether sa_len is defined on a particular platform. 
     laddr.sun_len = sizeof(struct sockaddr_un);
+#endif
     strcpy(laddr.sun_path, MDNS_UDS_SERVERPATH);
     mask = umask(0);
     if (bind(listenfd, (struct sockaddr *)&laddr, sizeof(laddr)) < 0)
@@ -360,6 +368,11 @@ int udsserver_init(void)
         }
     listen(listenfd, LISTENQ);
     
+    if (mStatus_NoError != udsSupportAddFDToEventLoop(listenfd, connect_callback, (void *) NULL))
+        {
+        my_perror("ERROR: could not add listen socket to event loop");
+        goto error;
+        }
     
     // set maximum file descriptor to 1024
     if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0)
@@ -390,27 +403,6 @@ int udsserver_exit(void)
     return 0;
     }
 
-
-// add the named socket as a runloop source
-int udsserver_add_rl_source(void)
-    {
-    CFSocketContext context = 	{ 0, NULL, NULL, NULL, NULL };
-    CFSocketRef sr = CFSocketCreateWithNative(kCFAllocatorDefault, listenfd, kCFSocketReadCallBack, connect_callback, &context);
-    if (!sr)
-        {
-        debugf("ERROR: udsserver_add_rl_source - CFSocketCreateWithNative");
-        return -1;
-    	}
-    CFRunLoopSourceRef rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, sr, 0);
-  
-    if (!rls)
-    	{
-        debugf("ERROR: udsserver_add_rl_source - CFSocketCreateRunLoopSource");
-        return -1;
-    	}
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-    return 0;
-    }
 
 mDNSs32 udsserver_idle(mDNSs32 nextevent)
     {
@@ -507,10 +499,10 @@ void udsserver_handle_configchange(void)
         {
         srv = req->service;
 		if (!req->service) continue;  // only registered services require automatic config change handling.
-        if (srv->autoname && !SameDomainLabel(srv->name.c, mDNSStorage.nicelabel.c))
+        if (srv->autoname && !SameDomainLabel(srv->name.c, gmDNS->nicelabel.c))
             {
             srv->rename_on_memfree = 1;
-            err = mDNS_DeregisterService(&mDNSStorage, srv->srs);
+            err = mDNS_DeregisterService(gmDNS, srv->srs);
             if (err) LogMsg("ERROR: udsserver_handle_configchange: DeregisterService returned error %d.  Continuing.", err);
             // error should never occur - safest to log and continue
             }
@@ -520,18 +512,13 @@ void udsserver_handle_configchange(void)
     
     
 
-// accept a connection on the named socket, adding the new descriptor to the runloop and passing the error
-// descriptor to the client
-static void connect_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i)
+static void connect_callback(void *info _UNUSED)
     {
     int sd, clilen, optval;
     struct sockaddr_un cliaddr;
-    CFSocketContext context = 	{ 0, NULL, NULL, NULL, NULL 	};
     request_state *rstate;
 //    int errpipe[2];
     
-    #pragma unused(s, t, dr, c, i)
-
     clilen = sizeof(cliaddr);
     sd = accept(listenfd, (struct sockaddr *)&cliaddr, &clilen);
 
@@ -542,12 +529,15 @@ static void connect_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr
         return;
     	}
     optval = 1;
+#ifdef SO_NOSIGPIPE
+	// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
     if (setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
     	{
         my_perror("ERROR: setsockopt - SOL_NOSIGPIPE - aborting client");  
         close(sd);
         return;
     	}
+#endif
 
     if (fcntl(sd, F_SETFL, O_NONBLOCK) < 0)
     	{
@@ -591,57 +581,21 @@ static void connect_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr
     rstate->sd = sd;
     //rstate->errfd = errpipe[1];
     
-    //now create CFSocket wrapper and add to run loop
-    context.info = rstate;
-    rstate->sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketReadCallBack, request_callback, &context);
-    if (!rstate->sr)
-    	{
-        debugf("ERROR: connect_callback - CFSocketCreateWithNative");
-        freeL("connect_callback", rstate);
-        close(sd);
+    if ( mStatus_NoError != udsSupportAddFDToEventLoop( sd, request_callback, rstate))
         return;
-    	}
-    rstate->rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, rstate->sr, 0);
-    if (!rstate->rls)
-    	{
-        debugf("ERROR: connect_callback - CFSocketCreateRunLoopSource");
-        CFSocketInvalidate(rstate->sr);  // automatically closes socket
-        CFRelease(rstate->sr);
-        freeL("connect_callback", rstate);
-        return;
-    	}
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), rstate->rls, kCFRunLoopDefaultMode);
-    if (!CFRunLoopContainsSource(CFRunLoopGetCurrent(), rstate->rls, kCFRunLoopDefaultMode))
-        {
-        LogMsg("ERROR: connect_callback, CFRunLoopAddSource");
-        abort_request(rstate);
-        return;
-        }
     rstate->next = all_requests;
     all_requests = rstate;
     }
 
 
-// main client request handling routine.  reads request and calls the appropriate request-specific
 // handler
-static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *context, void *info)
+static void request_callback(void *info)
     {
     request_state *rstate = info;
     transfer_state result;
     struct sockaddr_un cliaddr;
     char ctrl_path[MAX_CTLPATH];
     
-    #pragma unused(sr, t, dr, context)
-
-    int native = CFSocketGetNative(sr);
-    if (native != rstate->sd)
-        {
-        LogMsg("ERROR: request_callback - CFSocket's native descriptor does not match rstate member descriptor.");
-        abort_request(rstate);
-        unlink_request(rstate);
-        return;
-        }
-
     result = read_msg(rstate);
     if (result == t_morecoming)
     	{
@@ -786,7 +740,8 @@ static void handle_resolve_request(request_state *rstate)
     {
     DNSServiceFlags flags;
     uint32_t interfaceIndex;
-    char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];  
+    mDNSInterfaceID InterfaceID;
+    char name[256], regtype[256], domain[256];  
     char *ptr;  // message data pointer
     domainname fqdn;
     resolve_t *srv, *txt;
@@ -812,11 +767,11 @@ static void handle_resolve_request(request_state *rstate)
         }
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
-    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (interfaceIndex && !InterfaceID) goto bad_param;
     if (get_string(&ptr, name, 256) < 0 ||
-        get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
-        get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
+        get_string(&ptr, regtype, 256) < 0 ||
+        get_string(&ptr, domain, 256) < 0)
         goto bad_param;
 
     // free memory in rstate since we don't need it anymore
@@ -865,8 +820,8 @@ static void handle_resolve_request(request_state *rstate)
     bzero(rstate->resolve_results, sizeof(resolve_result_t));
 
     // ask the questions
-    err = mDNS_StartQuery(&mDNSStorage, &srv->question);
-    if (!err) err = mDNS_StartQuery(&mDNSStorage, &txt->question);
+    err = mDNS_StartQuery(gmDNS, &srv->question);
+    if (!err) err = mDNS_StartQuery(gmDNS, &txt->question);
 
     if (err)
         {
@@ -906,8 +861,8 @@ static void resolve_termination_callback(void *context)
         }
     rs = term->rstate;
     
-    mDNS_StopQuery(&mDNSStorage, &term->txt->question);
-    mDNS_StopQuery(&mDNSStorage, &term->srv->question);
+    mDNS_StopQuery(gmDNS, &term->txt->question);
+    mDNS_StopQuery(gmDNS, &term->srv->question);
     
     freeL("resolve_termination_callback", term->txt);
     freeL("resolve_termination_callback", term->srv);
@@ -919,7 +874,7 @@ static void resolve_termination_callback(void *context)
     
     
 
-static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void resolve_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 {
     int len = 0;
     char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
@@ -928,7 +883,6 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     reply_state *rep;
     request_state *rs = question->QuestionContext;
     resolve_result_t *res = rs->resolve_results;
-    #pragma unused(m)
     
 	if (!AddRecord)
 		{
@@ -957,7 +911,7 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     // allocate/init reply header
     rep =  create_reply(resolve_reply, len, rs);
     rep->rhdr->flags = 0;
-    rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID);
+    rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID);
     rep->rhdr->error = kDNSServiceErr_NoError;
     data = rep->sdata;
     
@@ -987,7 +941,7 @@ static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi
     {
     DNSQuestion *q;
     mStatus result;
-    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
     if (ifi && !InterfaceID) return(mStatus_BadParamErr);
 
     q = mallocL("do_question", sizeof(DNSQuestion));
@@ -1009,13 +963,13 @@ static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi
     rstate->termination_context = q;
     rstate->terminate = question_termination_callback;
 
-    result = mDNS_StartQuery(&mDNSStorage, q);
+    result = mDNS_StartQuery(gmDNS, q);
     if (result != mStatus_NoError) LogMsg("ERROR: mDNS_StartQuery: %d", (int)result);
     return result;
     }
     
 // what gets called when a resolve is completed and we need to send the data back to the client
-static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void question_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char *data;
     char name[MAX_ESCAPED_DOMAIN_NAME];
@@ -1023,7 +977,6 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     reply_state *rep;
     int len;
 
-    #pragma unused(m)
     //mDNS_StopQuery(m, question);
     req = question->QuestionContext;
     
@@ -1038,7 +991,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     
     rep =  create_reply(query_reply, len, req);
     rep->rhdr->flags = AddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsRemove;
-    rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID);
+    rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID);
     rep->rhdr->error = kDNSServiceErr_NoError;
     data = rep->sdata;
     
@@ -1058,7 +1011,7 @@ static void question_termination_callback(void *context)
     DNSQuestion *q = context;
 
 
-    mDNS_StopQuery(&mDNSStorage, q);  // no need to error check
+    mDNS_StopQuery(gmDNS, q);  // no need to error check
     freeL("question_termination_callback", q);
     }
 
@@ -1067,7 +1020,8 @@ static void handle_browse_request(request_state *request)
     {
     DNSServiceFlags flags;
     uint32_t interfaceIndex;
-    char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
+    mDNSInterfaceID InterfaceID;
+    char regtype[256], domain[256];
     DNSQuestion *q;
     domainname typedn, domdn;
     char *ptr;
@@ -1092,14 +1046,14 @@ static void handle_browse_request(request_state *request)
     ptr = request->msgdata;
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
-    if (get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
-        get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
+    if (get_string(&ptr, regtype, 256) < 0 || 
+        get_string(&ptr, domain, 256) < 0)
         goto bad_param;
         
     freeL("handle_browse_request", request->msgbuf);
     request->msgbuf = NULL;
 
-    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (interfaceIndex && !InterfaceID) goto bad_param;
     q->QuestionContext = request;
     q->QuestionCallback = browse_result_callback;
@@ -1108,7 +1062,7 @@ static void handle_browse_request(request_state *request)
         goto bad_param;
     request->termination_context = q;
     request->terminate = browse_termination_callback;
-    result = mDNS_StartBrowse(&mDNSStorage, q, &typedn, &domdn, InterfaceID, browse_result_callback, request);
+    result = mDNS_StartBrowse(gmDNS, q, &typedn, &domdn, InterfaceID, browse_result_callback, request);
     deliver_error(request, result);
     return;
     
@@ -1118,13 +1072,12 @@ bad_param:
     unlink_request(request);
     }
 
-static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void browse_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     request_state *req;
     reply_state *rep;
     mStatus err;
         
-    #pragma unused(m)
     req = question->QuestionContext;
 
     err = gen_rr_response(&answer->rdata->u.name, answer->InterfaceID, req, &rep);
@@ -1146,7 +1099,7 @@ static void browse_termination_callback(void *context)
     {
     DNSQuestion *q = context;
 
-    mDNS_StopBrowse(&mDNSStorage, q);  // no need to error-check result
+    mDNS_StopBrowse(gmDNS, q);  // no need to error-check result
     freeL("browse_termination_callback", q);
     }
 
@@ -1155,7 +1108,7 @@ static void handle_regservice_request(request_state *request)
     {
     DNSServiceFlags flags;
     uint32_t ifi;
-    char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME], host[MAX_ESCAPED_DOMAIN_NAME];
+    char name[256], regtype[256], domain[256], host[256];
     uint16_t txtlen;
     mDNSIPPort port;
     void *txtdata;
@@ -1165,6 +1118,7 @@ static void handle_regservice_request(request_state *request)
     registered_service *r_srv;
     int srs_size;
     mStatus result;
+    mDNSInterfaceID InterfaceID;
 
     char *sub, *rtype_ptr;
     int i, num_subtypes;
@@ -1182,12 +1136,12 @@ static void handle_regservice_request(request_state *request)
     ptr = request->msgdata;
     flags = get_flags(&ptr);
     ifi = get_long(&ptr);
-    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+    InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
     if (ifi && !InterfaceID) goto bad_param;
     if (get_string(&ptr, name, 256) < 0 ||
-        get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
-        get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
-        get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
+        get_string(&ptr, regtype, 256) < 0 || 
+        get_string(&ptr, domain, 256) < 0 ||
+        get_string(&ptr, host, 256) < 0)
         goto bad_param;
         
     port.NotAnInteger = get_short(&ptr);
@@ -1200,7 +1154,7 @@ static void handle_regservice_request(request_state *request)
     while((sub = strsep(&rtype_ptr, ",")))
         if (*sub) num_subtypes++;
         
-    if (!name[0]) n = (&mDNSStorage)->nicelabel;
+    if (!name[0]) n = (gmDNS)->nicelabel;
     else if (!MakeDomainLabelFromLiteralString(&n, name))  
         goto bad_param;
     if ((!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype)) ||
@@ -1243,7 +1197,7 @@ static void handle_regservice_request(request_state *request)
     request->terminate = regservice_termination_callback;
     request->service = r_srv;
     
-    result = mDNS_RegisterService(&mDNSStorage, r_srv->srs, &n, &t, &d, host[0] ? &h : NULL, port,
+    result = mDNS_RegisterService(gmDNS, r_srv->srs, &n, &t, &d, host[0] ? &h : NULL, port,
     	txtdata, txtlen, r_srv->subtypes, num_subtypes, InterfaceID, regservice_callback, r_srv);
     deliver_error(request, result);
     if (result != mStatus_NoError) 
@@ -1272,14 +1226,12 @@ malloc_error:
 // handles name conflicts, and delivers completed registration information to the client (via
 // process_service_registraion())
 
-static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
+static void regservice_callback(mDNS *const m _UNUSED, ServiceRecordSet *const srs, mStatus result)
     {
     mStatus err;
     extra_record_entry *extra;
     registered_service *r_srv = srs->ServiceContext;
     request_state *rs = r_srv->request;
-
-    #pragma unused(m)
     
     if (!rs && (result != mStatus_MemFree && !r_srv->rename_on_memfree))
         {     
@@ -1295,8 +1247,8 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
         if (r_srv->rename_on_memfree)
             {
             r_srv->rename_on_memfree = 0;
-            r_srv->name = mDNSStorage.nicelabel;
-            err = mDNS_RenameAndReregisterService(&mDNSStorage, srs, &r_srv->name);
+            r_srv->name = gmDNS->nicelabel;
+            err = mDNS_RenameAndReregisterService(gmDNS, srs, &r_srv->name);
             if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %d", err);
             // error should never happen - safest to log and continue
             }
@@ -1319,7 +1271,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     	{
         if (r_srv->autoname || r_srv->renameonconflict)
             {
-            mDNS_RenameAndReregisterService(&mDNSStorage, srs, mDNSNULL);
+            mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
             return;
             }
         else
@@ -1390,7 +1342,7 @@ static void handle_add_request(request_state *rstate)
     extra->r.rdatastorage.MaxRDLength = size;
     extra->r.resrec.rdlength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
-    result =  mDNS_AddRecordToService(&mDNSStorage, srs , extra, &extra->r.rdatastorage, ttl);
+    result =  mDNS_AddRecordToService(gmDNS, srs , extra, &extra->r.rdatastorage, ttl);
     deliver_error(rstate, result);
     reset_connected_rstate(rstate);
     if (result) 
@@ -1448,15 +1400,13 @@ static void handle_update_request(request_state *rstate)
         }
     newrd->MaxRDLength = rdsize;
     memcpy(&newrd->u, rdata, rdlen);
-    result = mDNS_Update(&mDNSStorage, rr, ttl, rdlen, newrd, update_callback);
+    result = mDNS_Update(gmDNS, rr, ttl, rdlen, newrd, update_callback);
     deliver_error(rstate, result);
     reset_connected_rstate(rstate);
     }
     
-static void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd)
-    {
-    #pragma unused(m)
-    
+static void update_callback(mDNS *const m _UNUSED, AuthRecord *const rr, RData *oldrd)
+    {    
     if (oldrd != &rr->rdatastorage) freeL("update_callback", oldrd);
     }
     
@@ -1495,7 +1445,7 @@ static void regservice_termination_callback(void *context)
     registered_service *srv = context;
 
     // only safe to free memory if registration is not valid, ie deregister fails
-    if (mDNS_DeregisterService(&mDNSStorage, srv->srs) != mStatus_NoError)
+    if (mDNS_DeregisterService(gmDNS, srv->srs) != mStatus_NoError)
         {
         freeL("regservice_callback", srv->srs);
         if (srv->subtypes) freeL("regservice_callback", srv->subtypes);
@@ -1548,7 +1498,7 @@ static void handle_regrecord_request(request_state *rstate)
         rstate->termination_context = rstate;
     	}
     
-    result = mDNS_Register(&mDNSStorage, rr);
+    result = mDNS_Register(gmDNS, rr);
     deliver_error(rstate, result); 
     reset_connected_rstate(rstate);
     return;
@@ -1558,14 +1508,13 @@ malloc_error:
     return;
     }
 
-static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result)
+static void regrecord_callback(mDNS *const m _UNUSED, AuthRecord *const rr, mStatus result)
     {
     regrecord_callback_context *rcc = rr->RecordContext;
     int len;
     reply_state *reply;
     transfer_state ts;
 
-    #pragma unused(m)
     if (result == mStatus_MemFree) 	
         { 
         freeL("regrecord_callback", rcc);
@@ -1573,7 +1522,6 @@ static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus resu
         freeL("regrecord_callback", rr);
         return; 
         }
-    
 
     // format result, add to the list for the request, including the client context in the header
     len = sizeof(DNSServiceFlags);
@@ -1583,7 +1531,7 @@ static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus resu
     reply = create_reply(reg_record_reply, len, rcc->rstate);
     reply->mhdr->client_context = rcc->client_context;
     reply->rhdr->flags = 0;
-    reply->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID);
+    reply->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID);
     reply->rhdr->error = result;
 
     ts = send_msg(reply);
@@ -1605,7 +1553,7 @@ static void connected_registration_termination(void *context)
         fptr = ptr;
         ptr = ptr->next;
         shared = fptr->rr->resrec.RecordType == kDNSRecordTypeShared;
-        mDNS_Deregister(&mDNSStorage, fptr->rr);
+        mDNS_Deregister(gmDNS, fptr->rr);
         if (!shared)
             // shared records free'd via callback w/ mStatus_MemFree
             {
@@ -1654,7 +1602,7 @@ static mStatus remove_record(request_state *rstate)
             if (prev) prev->next = reptr->next;
             else rstate->reg_recs = reptr->next;
             shared = reptr->rr->resrec.RecordType == kDNSRecordTypeShared;
-            err  = mDNS_Deregister(&mDNSStorage, reptr->rr);
+            err  = mDNS_Deregister(gmDNS, reptr->rr);
 	        if (err) 
 	            {
 	            LogMsg("ERROR: remove_record, mDNS_Deregister: %d", err);
@@ -1691,7 +1639,7 @@ static mStatus remove_extra_rr_from_service(request_state *rstate)
 	    {
 	    if (prev) prev->next = ptr->next;
 	    else serv->extras = ptr->next;
-	    err = mDNS_RemoveRecordFromService(&mDNSStorage, serv->srs, &ptr->extra);
+	    err = mDNS_RemoveRecordFromService(gmDNS, serv->srs, &ptr->extra);
 	    if (err) return err;
 	    freeL("remove_extra_rr_from_service", ptr);
 	    break;
@@ -1709,6 +1657,7 @@ static void handle_enum_request(request_state *rstate)
     {
     DNSServiceFlags flags, add_default;
     uint32_t ifi;
+    mDNSInterfaceID InterfaceID;
     char *ptr = rstate->msgdata;
     domain_enum_t *def, *all;
     enum_termination_t *term;
@@ -1727,7 +1676,7 @@ static void handle_enum_request(request_state *rstate)
         
     flags = get_flags(&ptr);
     ifi = get_long(&ptr);
-    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+    InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
     if (ifi && !InterfaceID)
     	{
 		deliver_error(rstate, mStatus_BadParamErr);
@@ -1762,9 +1711,9 @@ static void handle_enum_request(request_state *rstate)
         mDNS_DomainTypeRegistration : mDNS_DomainTypeBrowse;
     
     // make the calls
-    err = mDNS_GetDomains(&mDNSStorage, &all->question, all->type, InterfaceID, enum_result_callback, all);
+    err = mDNS_GetDomains(gmDNS, &all->question, all->type, InterfaceID, enum_result_callback, all);
     if (err == mStatus_NoError)
-        err = mDNS_GetDomains(&mDNSStorage, &def->question, def->type, InterfaceID, enum_result_callback, def);
+        err = mDNS_GetDomains(gmDNS, &def->question, def->type, InterfaceID, enum_result_callback, def);
     result = deliver_error(rstate, err);  // send error *before* returning local domain
     
     if (result < 0 || err)
@@ -1790,14 +1739,13 @@ static void handle_enum_request(request_state *rstate)
     if (tr == t_morecoming) append_reply(rstate, reply); // couldn't send whole reply because client is blocked - link into list
     }
 
-static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void enum_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char domain[MAX_ESCAPED_DOMAIN_NAME];
     domain_enum_t *de = question->QuestionContext;
     DNSServiceFlags flags = 0;
     reply_state *reply;
 
-    #pragma unused(m)
     if (answer->rrtype != kDNSType_PTR) return;
     if (AddRecord)
     	{
@@ -1810,7 +1758,7 @@ static void enum_result_callback(mDNS *const m, DNSQuestion *question, const Res
         flags |= kDNSServiceFlagsRemove;
     	}
     ConvertDomainNameToCString(&answer->rdata->u.name, domain);
-    reply = format_enumeration_reply(de->rstate, domain, flags, mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID), kDNSServiceErr_NoError);
+    reply = format_enumeration_reply(de->rstate, domain, flags, mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID), kDNSServiceErr_NoError);
     if (!reply)
     	{
         LogMsg("ERROR: enum_result_callback, format_enumeration_reply");
@@ -1845,7 +1793,7 @@ static reply_state *format_enumeration_reply(request_state *rstate, char *domain
 static void enum_termination_callback(void *context)
     {
     enum_termination_t *t = context;
-    mDNS *coredata = &mDNSStorage;
+    mDNS *coredata = gmDNS;
 
     mDNS_StopGetDomains(coredata, &t->all->question);
     mDNS_StopGetDomains(coredata, &t->def->question);
@@ -1861,7 +1809,7 @@ static void handle_reconfirm_request(request_state *rstate)
 
     rr = read_rr_from_ipc_msg(rstate->msgdata, 0);
     if (!rr) return;
-    mDNS_ReconfirmByValue(&mDNSStorage, &rr->resrec);
+    mDNS_ReconfirmByValue(gmDNS, &rr->resrec);
     abort_request(rstate);
     unlink_request(rstate);
     freeL("handle_reconfirm_request", rr);
@@ -1915,7 +1863,7 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
         }
     bzero(rr, sizeof(AuthRecord));  // ok if oversized rdata not zero'd
     rr->resrec.rdata = &rr->rdatastorage;
-    rr->resrec.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    rr->resrec.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (!MakeDomainNameFromDNSNameString(&rr->resrec.name, name))
     	{
         LogMsg("ERROR: bad name: %s", name);
@@ -1973,7 +1921,7 @@ static mStatus gen_rr_response(domainname *servicename, mDNSInterfaceID id, requ
     
     *rep = create_reply(query_reply, len, request);
     (*rep)->rhdr->flags = 0;
-    (*rep)->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id);
+    (*rep)->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, id);
     (*rep)->rhdr->error = kDNSServiceErr_NoError;    
     data = (*rep)->sdata;
     
@@ -2299,11 +2247,8 @@ static void abort_request(request_state *rs)
 
     if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
     if (rs->msgbuf) freeL("abort_request", rs->msgbuf);
-    CFSocketInvalidate(rs->sr);
-    CFRelease(rs->sr);
-    rs->sd = -1;    
-    rs->rls = NULL;	// run loop source automatically removed by CFSocketInvalidate()
-
+    udsSupportRemoveFDFromEventLoop(rs->sd);
+    rs->sd = -1;
     if (rs->errfd >= 0) close(rs->errfd);
     rs->errfd = -1;
 

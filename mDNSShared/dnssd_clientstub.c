@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.11  2003/12/08 21:11:42  rpantos
+Changes necessary to support mDNSResponder on Linux.
+
 Revision 1.10  2003/10/13 23:50:53  ksekar
 Updated dns_sd clientstub files to bring copies in synch with
 top-of-tree Libinfo:  A memory leak in dnssd_clientstub.c is fixed,
@@ -287,7 +290,8 @@ static void handle_query_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *dat
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
     errorCode = get_error_code(&data);
-    (get_string(&data, name, 256) < 0);
+//    (get_string(&data, name, 256) < 0);	FIXME: ask Kiren about this
+    get_string(&data, name, 256);
     rrtype = get_short(&data);
     rrclass = get_short(&data);
     rdlen = get_short(&data);
@@ -920,8 +924,11 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
 
         bzero(&caddr, sizeof(caddr));
         caddr.sun_family = AF_LOCAL;
-	caddr.sun_len = sizeof(struct sockaddr_un);
-	path = (char *)msg + sizeof(ipc_msg_hdr);
+#ifndef NOT_HAVE_SA_LEN		// According to Stevens (section 3.2), there is no portable way to 
+							// determine whether sa_len is defined on a particular platform. 
+		caddr.sun_len = sizeof(struct sockaddr_un);
+#endif
+		path = (char *)msg + sizeof(ipc_msg_hdr);
         strcpy(caddr.sun_path, path);
         mask = umask(0);
         if (bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr)) < 0)
