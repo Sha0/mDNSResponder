@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.2  2004/01/21 21:12:23  cheshire
+Add missing newline at end of file to make Unix tools happier
+
 Revision 1.1  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -33,8 +36,6 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 #define __DNSCOMMON_H_
 
 #include "mDNSClientAPI.h"
-
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
