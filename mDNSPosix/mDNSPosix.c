@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.50  2004/08/11 01:20:20  cheshire
+Declare private local functions using "mDNSlocal"
+
 Revision 1.49  2004/07/26 22:49:31  ksekar
 <rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
 
@@ -268,7 +271,7 @@ int gMDNSPlatformPosixVerboseLevel = 0;
 
 #define PosixErrorToStatus(errNum) ((errNum) == 0 ? mStatus_NoError : mStatus_UnknownErr)
 
-static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr, mDNSIPPort *ipPort)
+mDNSlocal void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr, mDNSIPPort *ipPort)
 	{
 	switch (sa->sa_family)
 		{
@@ -366,7 +369,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	}
 
 // This routine is called when the main loop detects that data is available on a socket.
-static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
+mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 	{
 	mDNSAddr   senderAddr, destAddr;
 	mDNSIPPort senderPort;
@@ -535,7 +538,7 @@ mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel
 
 // Searches the interface list looking for the named interface.
 // Returns a pointer to if it found, or NULL otherwise.
-static PosixNetworkInterface *SearchForInterfaceByName(mDNS *const m, const char *intfName)
+mDNSlocal PosixNetworkInterface *SearchForInterfaceByName(mDNS *const m, const char *intfName)
 	{
 	PosixNetworkInterface *intf;
 
@@ -581,7 +584,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 
 // Frees the specified PosixNetworkInterface structure. The underlying
 // interface must have already been deregistered with the mDNS core.
-static void FreePosixNetworkInterface(PosixNetworkInterface *intf)
+mDNSlocal void FreePosixNetworkInterface(PosixNetworkInterface *intf)
 	{
 	assert(intf != NULL);
 	if (intf->intfName != NULL)        free((void *)intf->intfName);
@@ -593,7 +596,7 @@ static void FreePosixNetworkInterface(PosixNetworkInterface *intf)
 	}
 
 // Grab the first interface, deregister it, free it, and repeat until done.
-static void ClearInterfaceList(mDNS *const m)
+mDNSlocal void ClearInterfaceList(mDNS *const m)
 	{
 	assert(m != NULL);
 
@@ -612,7 +615,7 @@ static void ClearInterfaceList(mDNS *const m)
 // Sets up a send/receive socket.
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
-static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interfaceIndex, int *sktPtr)
+mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interfaceIndex, int *sktPtr)
 	{
 	int err = 0;
 	static const int kOn = 1;
@@ -831,7 +834,7 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 
 // Creates a PosixNetworkInterface for the interface whose IP address is
 // intfAddr and whose name is intfName and registers it with mDNS core.
-static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName, int intfIndex)
+mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName, int intfIndex)
 	{
 	int err = 0;
 	PosixNetworkInterface *intf;
@@ -910,7 +913,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 	}
 
 // Call get_ifi_info() to obtain a list of active interfaces and call SetupOneInterface() on each one.
-static int SetupInterfaceList(mDNS *const m)
+mDNSlocal int SetupInterfaceList(mDNS *const m)
 	{
 	mDNSBool        foundav4       = mDNSfalse;
 	int             err            = 0;
@@ -976,7 +979,7 @@ static int SetupInterfaceList(mDNS *const m)
 // See <http://www.faqs.org/rfcs/rfc3549.html> for a description of NetLink
 
 // Open a socket that will receive interface change notifications
-mStatus		OpenIfNotifySocket( int *pFD)
+mDNSlocal mStatus OpenIfNotifySocket( int *pFD)
 	{
 	mStatus					err = mStatus_NoError;
 	struct sockaddr_nl		snl;
@@ -1004,7 +1007,7 @@ mStatus		OpenIfNotifySocket( int *pFD)
 	}
 
 #if MDNS_DEBUGMSGS
-static void		PrintNetLinkMsg( const struct nlmsghdr *pNLMsg)
+mDNSlocal void		PrintNetLinkMsg( const struct nlmsghdr *pNLMsg)
 	{
 	const char *kNLMsgTypes[] = { "", "NLMSG_NOOP", "NLMSG_ERROR", "NLMSG_DONE", "NLMSG_OVERRUN" };
 	const char *kNLRtMsgTypes[] = { "RTM_NEWLINK", "RTM_DELLINK", "RTM_GETLINK", "RTM_NEWADDR", "RTM_DELADDR", "RTM_GETADDR" };
@@ -1030,7 +1033,7 @@ static void		PrintNetLinkMsg( const struct nlmsghdr *pNLMsg)
 	}
 #endif
 
-static uint32_t		ProcessRoutingNotification( int sd)
+mDNSlocal uint32_t		ProcessRoutingNotification( int sd)
 // Read through the messages on sd and if any indicate that any interface records should
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
@@ -1093,7 +1096,7 @@ static uint32_t		ProcessRoutingNotification( int sd)
 #else // USES_NETLINK
 
 // Open a socket that will receive interface change notifications
-mStatus		OpenIfNotifySocket( int *pFD)
+mDNSlocal mStatus OpenIfNotifySocket( int *pFD)
 	{
 	*pFD = socket( AF_ROUTE, SOCK_RAW, 0);
 
@@ -1107,7 +1110,7 @@ mStatus		OpenIfNotifySocket( int *pFD)
 	}
 
 #if MDNS_DEBUGMSGS
-static void		PrintRoutingSocketMsg( const struct ifa_msghdr *pRSMsg)
+mDNSlocal void		PrintRoutingSocketMsg( const struct ifa_msghdr *pRSMsg)
 	{
 	const char *kRSMsgTypes[] = { "", "RTM_ADD", "RTM_DELETE", "RTM_CHANGE", "RTM_GET", "RTM_LOSING",
 					"RTM_REDIRECT", "RTM_MISS", "RTM_LOCK", "RTM_OLDADD", "RTM_OLDDEL", "RTM_RESOLVE", 
@@ -1119,7 +1122,7 @@ static void		PrintRoutingSocketMsg( const struct ifa_msghdr *pRSMsg)
 	}
 #endif
 
-static uint32_t		ProcessRoutingNotification( int sd)
+mDNSlocal uint32_t		ProcessRoutingNotification( int sd)
 // Read through the messages on sd and if any indicate that any interface records should
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
@@ -1152,7 +1155,7 @@ static uint32_t		ProcessRoutingNotification( int sd)
 #endif // USES_NETLINK
 
 // Called when data appears on interface change notification socket
-static void InterfaceChangeCallback( void *context)
+mDNSlocal void InterfaceChangeCallback( void *context)
 	{
 	IfChangeRec		*pChgRec = (IfChangeRec*) context;
 	fd_set			readFDs;
@@ -1176,7 +1179,7 @@ static void InterfaceChangeCallback( void *context)
 	}
 
 // Register with either a Routing Socket or RtNetLink to listen for interface changes.
-static mStatus WatchForInterfaceChange(mDNS *const m)
+mDNSlocal mStatus WatchForInterfaceChange(mDNS *const m)
 	{
 	mStatus		err;
 	IfChangeRec	*pChgRec;
@@ -1458,7 +1461,7 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 	}
 
 // update gMaxFD
-static void	DetermineMaxEventFD( void )
+mDNSlocal void	DetermineMaxEventFD( void )
 	{
 	PosixEventSource	*iSource;
 	
@@ -1517,7 +1520,7 @@ mStatus mDNSPosixRemoveFDFromEventLoop( int fd)
 	}
 
 // Simply note the received signal in gEventSignals.
-static void	NoteSignal( int signum)
+mDNSlocal void	NoteSignal( int signum)
 	{
 	sigaddset( &gEventSignals, signum);
 	}
