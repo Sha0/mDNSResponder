@@ -46,6 +46,7 @@
 
 #include "mDNSClientAPI.h"				// Defines the interface to the client layer above
 #include "mDNSPlatformEnvironment.h"	// Defines the specific types needed to run mDNS on this platform
+#include "mDNSsprintf.h"
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
@@ -171,9 +172,12 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 	while (*r && (*r)->ClientMachPort != ClientMachPort) r = &(*r)->next;
 	if (*r)
 		{
+		char name[256];
 		DNSServiceRegistration *x = *r;
 		*r = (*r)->next;
-		debugf("Aborting DNSServiceRegistration %d", ClientMachPort);
+		mDNS_sprintf(name, "%##s", &x->s.RR_SRV.name);
+		debugf("Client %5d deregistering Service Record Set \"%s\"", x->ClientMachPort, name);
+		LogErrorMessage("Client %5d deregistering Service Record Set \"%s\"", x->ClientMachPort, name);
 		mDNS_DeregisterService(&mDNSStorage, &x->s);
 		// Note that we don't do the "free(x);" here -- wait for the mStatus_MemFree message
 		return;
@@ -182,7 +186,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 
 mDNSlocal void AbortBlockedClient(mach_port_t ClientMachPort, char *msg)
 	{
-	LogErrorMessage("Client %d stopped accepting Mach messages and has been disconnected from its %s reply",
+	LogErrorMessage("Client %5d stopped accepting Mach messages and has been disconnected from its %s reply",
 		ClientMachPort, msg);
 	AbortClient(ClientMachPort);
 	}
@@ -194,6 +198,7 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIn
 		{
 		const mach_dead_name_notification_t *const deathMessage = (mach_dead_name_notification_t *)msg;
 		debugf("Client on port %d died or deallocated", deathMessage->not_port);
+		LogErrorMessage("Client %5d died or deallocated", deathMessage->not_port);
 		AbortClient(deathMessage->not_port);
 
 		/* Deallocate the send right that came in the dead name notification */
@@ -207,7 +212,11 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort)
 	kern_return_t r = mach_port_request_notification(mach_task_self(), ClientMachPort, MACH_NOTIFY_DEAD_NAME, 0,
 													 client_death_port, MACH_MSG_TYPE_MAKE_SEND_ONCE, &prev);
 	// If the port already died while we were thinking about it, then abort the operation right away
-	if (r != KERN_SUCCESS) AbortClient(ClientMachPort);
+	if (r != KERN_SUCCESS)
+		{
+		LogErrorMessage("Client %5d died before we could enable death notification", ClientMachPort);
+		AbortClient(ClientMachPort);
+		}
 	}
 
 //*************************************************************************************************************
@@ -460,6 +469,32 @@ mDNSlocal void RegistrationCallback(mDNS *const m, ServiceRecordSet *const sr, m
 		}
 	}
 
+mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainlabel *n, domainname *t, domainname *d)
+	{
+	char name[256];
+	int count = 0;
+	ResourceRecord *rr;
+	domainname srvname;
+	ConstructServiceName(&srvname, n, t, d);
+	mDNS_sprintf(name, "%##s", &srvname);
+
+	for (rr = mDNSStorage.ResourceRecords; rr; rr=rr->next)
+		if (rr->rrtype == kDNSType_SRV && SameDomainName(&rr->name, &srvname))
+			count++;
+
+	if (count)
+		{
+		debugf("Client %5d   registering Service Record Set \"%##s\"; WARNING! now have %d instances",
+			x->ClientMachPort, &srvname, count+1);
+		LogErrorMessage("Client %5d   registering Service Record Set \"%s\"; WARNING! now have %d instances",
+			x->ClientMachPort, name, count, count+1);
+		}
+	else
+		{
+		LogErrorMessage("Client %5d   registering Service Record Set \"%s\"", x->ClientMachPort, name);
+		}
+	}
+
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
 	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
 	{
@@ -514,6 +549,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
 	debugf("Client %d: Register Service: %#s.%##s%##s %d %.30s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
+	CheckForDuplicateRegistrations(x, &n, &t, &d);
 	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtinfo, data_len, RegistrationCallback, x);
 
 	if (err) AbortClient(client);
