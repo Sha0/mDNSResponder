@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.325  2003/11/17 20:41:44  cheshire
+Fix some missing mDNS_Lock(m)/mDNS_Unlock(m) calls.
+
 Revision 1.324  2003/11/17 20:36:32  cheshire
 Function rename: Remove "mDNS_" prefix from AdvertiseInterface() and
 DeadvertiseInterface() -- they're internal private routines, not API routines.
@@ -6746,8 +6749,10 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl)
 	{
-	mStatus result = mStatus_UnknownErr;
-	ExtraResourceRecord **e = &sr->Extras;
+	ExtraResourceRecord **e;
+	mStatus status;
+	mDNS_Lock(m);
+	e = &sr->Extras;
 	while (*e) e = &(*e)->next;
 
 	// If TTL is unspecified, make it the same as the service's TXT and SRV default
@@ -6760,29 +6765,38 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	
 	debugf("mDNS_AddRecordToService adding record to %##s", extra->r.resrec.name.c);
 	
-	result = mDNS_Register(m, &extra->r);
-	if (!result) *e = extra;
-	return result;
+	status = mDNS_Register_internal(m, &extra->r);
+	if (status == mStatus_NoError) *e = extra;
+	mDNS_Unlock(m);
+	return(status);
 	}
 
 mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra)
 	{
-	ExtraResourceRecord **e = &sr->Extras;
+	ExtraResourceRecord **e;
+	mStatus status;
+	mDNS_Lock(m);
+	e = &sr->Extras;
 	while (*e && *e != extra) e = &(*e)->next;
 	if (!*e)
 		{
 		debugf("mDNS_RemoveRecordFromService failed to remove record from %##s", extra->r.resrec.name.c);
-		return(mStatus_BadReferenceErr);
+		status = mStatus_BadReferenceErr;
 		}
-
-	debugf("mDNS_RemoveRecordFromService removing record from %##s", extra->r.resrec.name.c);
-	
-	*e = (*e)->next;
-	return(mDNS_Deregister(m, &extra->r));
+	else
+		{
+		debugf("mDNS_RemoveRecordFromService removing record from %##s", extra->r.resrec.name.c);
+		*e = (*e)->next;
+		status = mDNS_Deregister_internal(m, &extra->r, mDNS_Dereg_normal);
+		}
+	mDNS_Unlock(m);
+	return(status);
 	}
 
 mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname)
 	{
+	// NOTE: Don't need to use mDNS_Lock(m) here, because this code is just using public routines
+	// mDNS_RegisterService() and mDNS_AddRecordToService(), which do the right locking internally.
 	domainlabel name;
 	domainname type, domain;
 	domainname *host = mDNSNULL;
@@ -6907,6 +6921,7 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 
 mDNSexport void mDNS_GrowCache(mDNS *const m, CacheRecord *storage, mDNSu32 numrecords)
 	{
+	mDNS_Lock(m);
 	if (storage && numrecords)
 		{
 		mDNSu32 i;
@@ -6915,6 +6930,7 @@ mDNSexport void mDNS_GrowCache(mDNS *const m, CacheRecord *storage, mDNSu32 numr
 		m->rrcache_free = storage;
 		m->rrcache_size += numrecords;
 		}
+	mDNS_Unlock(m);
 	}
 
 mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
