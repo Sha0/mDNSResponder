@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.11  2004/05/07 20:51:18  ksekar
+<rdar://problem/3608226>: dns_sd.h needs to direct developers to
+register their services at <http://www.dns-sd.org/ServiceTypes.html>
+
 Revision 1.10  2004/05/06 18:42:58  ksekar
 General dns_sd.h API cleanup, including the following radars:
 <rdar://problem/3592068>: Remove flags with zero value
@@ -391,6 +395,7 @@ typedef void (*DNSServiceRegisterReply)
  *
  * regtype:         The service type followed by the protocol, separated by a dot 
  *                  (e.g. "_ftp._tcp").  The transport protocol must be "_tcp" or "_udp".
+ *                  New service types should be registered at htp://www.dns-sd.org/ServiceTypes.html.
  *
  * domain:          If non-NULL, specifies the domain on which to advertise the service.
  *                  Most applications will not specify a domain, instead automatically 
