@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.211  2003/07/12 01:47:01  cheshire
+<rdar://problem/3324495> After name conflict, appended number should be higher than previous number
+
 Revision 1.210  2003/07/12 01:43:28  cheshire
 <rdar://problem/3324795> Duplicate query suppression not working right
 The correct cutoff time for duplicate query suppression is timenow less one-half the query interval.
@@ -1611,14 +1614,13 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	if (LabelContainsSuffix(name, RichText))
 		val = RemoveLabelSuffix(name, RichText);
 		
-	// If existing suffix, increment it, else start by renaming "Foo" as "Foo (2)" or "Foo--2" as appropriate.
-	// After sequentially trying each single-digit suffix, we try a random 2-digit suffix, then 3-digit, then
-	// continue generating random 4-digit integers.
-	if      (val ==  0) val = 2;
-	else if (val <   9) val++;
-	else if (val <  10) val = mDNSRandom(89) + 10;
-	else if (val < 100) val = mDNSRandom(899) + 100;
-	else                val = mDNSRandom(8999) + 1000;
+	// If no existing suffix, start by renaming "Foo" as "Foo (2)" or "Foo-2" as appropriate.
+	// If existing suffix in the range 2-9, increment it.
+	// If we've had ten conflicts already, there are probably too many hosts trying to use the same name,
+	// so add a random increment to improve the chances of finding an available name next time.
+	if      (val == 0) val = 2;
+	else if (val < 10) val++;
+	else               val += 1 + mDNSRandom(99);
 	
 	AppendLabelSuffix(name, val, RichText);
 	}
