@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.252  2003/08/06 20:35:47  cheshire
+Enhance debugging routine GetRRDisplayString() so it can also be used to display
+other RDataBody objects, not just the one currently attached the given ResourceRecord
+
 Revision 1.251  2003/08/06 19:07:34  cheshire
 <rdar://problem/3366251> mDNSResponder not inhibiting multicast responses as much as it should
 Was checking LastAPTime instead of LastMCTime
@@ -1174,26 +1178,27 @@ char *DNSTypeName(mDNSu16 rrtype)
 		}
 	}
 
-extern char *GetRRDisplayString(mDNS *const m, const ResourceRecord *rr);		// See comment for DNSTypeName
-char *GetRRDisplayString(mDNS *const m, const ResourceRecord *rr)
+extern char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd);		// See comment for DNSTypeName
+char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd)
 	{
 	char *ptr = m->MsgBuffer;
 	mDNSu32 length = mDNS_snprintf(m->MsgBuffer, 79, "%##s %s ", rr->name.c, DNSTypeName(rr->rrtype));
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.4a", &rr->rdata->u.ip);         break;
+		case kDNSType_A:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.4a", &rd->ip);         break;
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rr->rdata->u.name);       break;
+		case kDNSType_PTR:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rd->name);       break;
 		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
-		case kDNSType_TXT:  mDNS_snprintf(m->MsgBuffer+length, 79-length, "%#s", rr->rdata->u.txt.c);        break;
-		case kDNSType_AAAA:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.16a", &rr->rdata->u.ipv6);      break;
-		case kDNSType_SRV:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rr->rdata->u.srv.target); break;
+		case kDNSType_TXT:  mDNS_snprintf(m->MsgBuffer+length, 79-length, "%#s", rd->txt.c);        break;
+		case kDNSType_AAAA:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.16a", &rd->ipv6);      break;
+		case kDNSType_SRV:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rd->srv.target); break;
 		default:			mDNS_snprintf(m->MsgBuffer+length, 79-length, "RDLen %d: %s",
-								rr->rdata->RDLength, rr->rdata->u.data);  break;
+								rr->rdata->RDLength, rd->data);  break;
 		}
 	for (ptr = m->MsgBuffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
 	return(m->MsgBuffer);
 	}
+#define GetRRDisplayString(m, rr) GetRRDisplayString_rdb((m), rr, &(rr)->rdata->u)
 
 mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 	{
@@ -2140,6 +2145,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 //	rr->rrclass           = already set in mDNS_SetupResourceRecord
 //	rr->rroriginalttl     = already set in mDNS_SetupResourceRecord
 //	rr->rrremainingttl    = already set in mDNS_SetupResourceRecord
+//	rr->rdata             = MUST be set by client, unless record type is CNAME or PTR and rr->HostTarget is set
 
 	if (rr->HostTarget)
 		{
@@ -2152,7 +2158,6 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 		rr->rdata->RDLength = GetRDLength(rr, mDNSfalse);
 		rr->rdestimate      = GetRDLength(rr, mDNStrue);
 		}
-//	rr->rdata             = MUST be set by client
 
 	// Now that's we've finished building our new record, make sure it's not identical to one we already have
 	for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
