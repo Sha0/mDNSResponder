@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.5  2003/10/16 09:21:56  bradley
+Ignore non-IPv4 resolves until mDNS on Windows supports IPv6.
+
 Revision 1.4  2003/10/10 03:41:29  bradley
 Changed HTTP double-click handling to work with or without the path= prefix in the TXT record.
 
@@ -1097,29 +1100,30 @@ static void
 			// Resolves
 			
 			case kDNSBrowserEventTypeResolved:
-			{
-				ServiceInstanceInfo *						serviceInstance;
-				std::auto_ptr < ServiceInstanceInfo >		serviceInstanceAutoPtr;
-				char										s[ 32 ];
-				
-				serviceInstance = new ServiceInstanceInfo;
-				serviceInstanceAutoPtr.reset( serviceInstance );
-				
-				serviceInstance->name 	= inEvent->data.resolved->name;
-				serviceInstance->type 	= inEvent->data.resolved->type;
-				serviceInstance->domain = inEvent->data.resolved->domain;
-				serviceInstance->ip		= DNSNetworkAddressToString( &inEvent->data.resolved->address, s );
-				serviceInstance->ifIP	= DNSNetworkAddressToString( &inEvent->data.resolved->interfaceIP, s );
-				serviceInstance->text 	= inEvent->data.resolved->textRecord;
-				
-				posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_RESOLVE, 0, (LPARAM) serviceInstance );
-				assert( posted );
-				if( posted )
+				if( inEvent->data.resolved->address.addressType == kDNSNetworkAddressTypeIPv4  )
 				{
-					serviceInstanceAutoPtr.release();
+					ServiceInstanceInfo *						serviceInstance;
+					std::auto_ptr < ServiceInstanceInfo >		serviceInstanceAutoPtr;
+					char										s[ 32 ];
+					
+					serviceInstance = new ServiceInstanceInfo;
+					serviceInstanceAutoPtr.reset( serviceInstance );
+					
+					serviceInstance->name 	= inEvent->data.resolved->name;
+					serviceInstance->type 	= inEvent->data.resolved->type;
+					serviceInstance->domain = inEvent->data.resolved->domain;
+					serviceInstance->ip		= DNSNetworkAddressToString( &inEvent->data.resolved->address, s );
+					serviceInstance->ifIP	= DNSNetworkAddressToString( &inEvent->data.resolved->interfaceIP, s );
+					serviceInstance->text 	= inEvent->data.resolved->textRecord;
+					
+					posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_RESOLVE, 0, (LPARAM) serviceInstance );
+					assert( posted );
+					if( posted )
+					{
+						serviceInstanceAutoPtr.release();
+					}
 				}
 				break;
-			}
 			
 			default:
 				break;

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: BrowserDialog.cpp,v $
+Revision 1.4  2003/10/16 09:21:56  bradley
+Ignore non-IPv4 resolves until mDNS on Windows supports IPv6.
+
 Revision 1.3  2003/10/14 03:28:50  bradley
 Insert services in sorted order to make them easier to find. Defer service adds/removes to the main
 thread to avoid potential problems with multi-threaded MFC message map access. Added some asserts.
@@ -220,34 +223,35 @@ void
 	switch( inEvent->type )
 	{
 		case kDNSBrowserEventTypeResolved:
-		{
-			char		ip[ 64 ];
-
-			sprintf( ip, "%u.%u.%u.%u:%u", 
-				inEvent->data.resolved->address.u.ipv4.addr.v8[ 0 ], 
-				inEvent->data.resolved->address.u.ipv4.addr.v8[ 1 ], 
-				inEvent->data.resolved->address.u.ipv4.addr.v8[ 2 ], 
-				inEvent->data.resolved->address.u.ipv4.addr.v8[ 3 ], 
-				( inEvent->data.resolved->address.u.ipv4.port.v8[ 0 ] << 8 ) | 
-				  inEvent->data.resolved->address.u.ipv4.port.v8[ 1 ] );
-			
-			entry = new BrowserEntry;
-			ASSERT( entry );
-			if( entry )
+			if( inEvent->data.resolved->address.addressType == kDNSNetworkAddressTypeIPv4  )
 			{
-				UTF8StringToStringObject( inEvent->data.resolved->name, entry->name );
-				UTF8StringToStringObject( ip, entry->ip );
-				UTF8StringToStringObject( inEvent->data.resolved->textRecord, entry->text );
+				char		ip[ 64 ];
+
+				sprintf( ip, "%u.%u.%u.%u:%u", 
+					inEvent->data.resolved->address.u.ipv4.addr.v8[ 0 ], 
+					inEvent->data.resolved->address.u.ipv4.addr.v8[ 1 ], 
+					inEvent->data.resolved->address.u.ipv4.addr.v8[ 2 ], 
+					inEvent->data.resolved->address.u.ipv4.addr.v8[ 3 ], 
+					( inEvent->data.resolved->address.u.ipv4.port.v8[ 0 ] << 8 ) | 
+					  inEvent->data.resolved->address.u.ipv4.port.v8[ 1 ] );
 				
-				posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_SERVICE_ADD, 0, (LPARAM) entry );
-				ASSERT( posted );
-				if( !posted )
+				entry = new BrowserEntry;
+				ASSERT( entry );
+				if( entry )
 				{
-					delete entry;
+					UTF8StringToStringObject( inEvent->data.resolved->name, entry->name );
+					UTF8StringToStringObject( ip, entry->ip );
+					UTF8StringToStringObject( inEvent->data.resolved->textRecord, entry->text );
+					
+					posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_SERVICE_ADD, 0, (LPARAM) entry );
+					ASSERT( posted );
+					if( !posted )
+					{
+						delete entry;
+					}
 				}
 			}
 			break;
-		}
 
 		case kDNSBrowserEventTypeRemoveService:
 			entry = new BrowserEntry;
