@@ -20,6 +20,11 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.40  2004/07/08 21:45:55  cheshire
+# Make nss_mdns only build on Linux. We can add it to other targets (Solaris,
+# FreeBSD, etc., as we verify them). In particular, NSS is NOT supported on
+# OS X, so including it for "os=jaguar" or "os=panther" broke those builds.
+#
 # Revision 1.39  2004/06/29 03:34:28  cheshire
 # Add 'dot-local' Name Service Switch support from Andrew White at NICTA
 #
@@ -192,6 +197,8 @@ else
 ifeq ($(os),linux)
 CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK
 JAVACFLAGS_OS += -I$(JDK)/include/linux
+OPTIONALTARG = nss_mdns
+OPTINSTALL   = InstalledNSS
 else
 
 ifeq ($(os),netbsd)
@@ -287,9 +294,9 @@ CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS) $(CFLAGS_DEBUG)
 
 #############################################################################
 
-all: setup Daemon libmdns nss_mdns Client Responder ProxyResponder Identify NetMonitor
+all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor $(OPTIONALTARG)
 
-install: setup InstalledDaemon InstalledLib InstalledStartup InstalledNSS InstalledManPages
+install: setup InstalledDaemon InstalledLib InstalledStartup InstalledManPages $(OPTINSTALL)
 
 # 'setup' sets up the build directory structure the way we want
 setup:
@@ -347,10 +354,10 @@ InstalledLib: $(INSTBASE)/lib/libmdns.$(LDSUFFIX).$(LIBVERS) $(INSTBASE)/include
 InstalledStartup: $(STARTUPSCRIPTDIR)/$(STARTUPSCRIPTNAME)
 	@echo $+ " installed"
 
-InstalledNSS: $(NSSINSTPATH)/$(NSSLINKNAME) /etc/nss_mdns.conf
+InstalledNSS: $(NSSINSTPATH)/$(NSSLINKNAME) /etc/nss_mdns.conf $(MANPATH)/man5/nss_mdns.conf.5 $(MANPATH)/man8/libnss_mdns.8
 	@echo $+ " installed"
 
-InstalledManPages: $(MANPATH)/man5/nss_mdns.conf.5 $(MANPATH)/man8/libnss_mdns.8 $(MANPATH)/man8/mdnsd.8
+InstalledManPages: $(MANPATH)/man8/mdnsd.8
 	@echo $+ " installed"
 
 $(INSTBASE)/sbin/mdnsd: $(BUILDDIR)/mdnsd
