@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.73  2005/02/01 19:35:43  ksekar
+Removed obsolete arguments from mDNS_SetSecretForZone
+
 Revision 1.72  2005/02/01 01:38:53  shersche
 Handle null DynDNS configuration more gracefully
 
@@ -1288,7 +1291,7 @@ dDNSPlatformSetSecretForDomain( mDNS *m, const domainname * domain )
 	err = ConvertLsaStringToUTF8( secret, &converted );
 	require_noerr( err, exit );
 
-	mDNS_SetSecretForZone( m, d, d, converted, (mDNSu32) strlen( converted ) + 1, mDNStrue );
+	mDNS_SetSecretForZone( m, d, d, converted );
 
 exit:
 
