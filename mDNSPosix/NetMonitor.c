@@ -33,6 +33,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.24  2003/07/17 17:10:51  cheshire
+ * <rdar://problem/3315761> Implement unicast reply request, using top bit of qclass
+ * Further work: distinguish between PM and PU
+ *
  * Revision 1.23  2003/07/16 22:20:23  cheshire
  * <rdar://problem/3315761> Implement unicast reply request, using top bit of qclass
  * Made mDNSNetMonitor distinguish between QM and QU in its logging output
@@ -412,23 +416,21 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		DNSQuestion q;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
+		mDNSu16 ucbit = q.qclass & kDNSQClass_UnicastResponse;
+		q.qclass &= ~kDNSQClass_UnicastResponse;
 		p2 = FindUpdate(m, msg, auth, end, &q, &pktrr);
 		if (p2)
 			{
 			NumProbes++;
-			DisplayResourceRecord(srcaddr, "(P)", &pktrr);
+			DisplayResourceRecord(srcaddr, ucbit ? "(PU)" : "(PM)", &pktrr);
 			recordstat(&q.qname, OP_probe, q.qtype);
 			auth = p2; // Having displayed this update record, adjust auth forward so we don't display the same one again.
 			}
 		else
 			{
-			const char *ptype = "(QM) ";
-			if (srcport.NotAnInteger != MulticastDNSPort.NotAnInteger) { NumLegacy++; ptype = "(LQ)"; }
-			else
-				{
-				NumQuestions++;
-				if (q.qclass & kDNSQClass_UnicastResponse) ptype = "(QU)";
-				}
+			const char *ptype = ucbit ? "(QU)" : "(QM)";
+			if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumQuestions++;
+			else { NumLegacy++; ptype = "(LQ)"; }
 			mprintf("%#-16a %-5s %-5s      %##s\n", srcaddr, ptype, DNSTypeName(q.qtype), q.qname.c);
 			recordstat(&q.qname, OP_query, q.qtype);
 			}
@@ -614,7 +616,8 @@ usage:
 	fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet\n");
 
 	fprintf(stderr, "\nPer-record display:\n");
-	fprintf(stderr, "(P)            Probe Question (new service starting)\n");
+	fprintf(stderr, "(PM)           Probe Question (new service starting), requesting multicast response\n");
+	fprintf(stderr, "(PU)           Probe Question (new service starting), requesting unicast response\n");
 	fprintf(stderr, "(DE)           Deletion/Goodbye (service going away)\n");
 	fprintf(stderr, "(LQ)           Legacy Query Question\n");
 	fprintf(stderr, "(QM)           Query Question, requesting multicast response\n");
