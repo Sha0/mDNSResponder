@@ -35,6 +35,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.101  2003/05/22 00:26:55  cheshire
+ * <rdar://problem/3239284> DNSServiceRegistrationCreate() should return error on dup
+ * Modify error message to explain that this is technically legal, but may indicate a bug.
+ *
  * Revision 1.100  2003/05/21 21:02:24  ksekar
  * Bug #: <rdar://problem/3247035>: Service should be prefixed
  * Changed kmDNSBootstrapName to "com.apple.mDNSResponderRestart" since we're changing the main Mach message port to "com.apple.mDNSResponder.
@@ -780,7 +784,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 
 mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainname *srv, mDNSIPPort port)
 	{
-	int count = 0;
+	int count = 1;			// Start with the one we're planning to register, then see if there are any more
 	ResourceRecord *rr;
 	for (rr = mDNSStorage.ResourceRecords; rr; rr=rr->next)
 		if (rr->rrtype == kDNSType_SRV &&
@@ -788,9 +792,10 @@ mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainn
 			SameDomainName(&rr->name, srv))
 			count++;
 
-	if (count)
-		LogMsg("%5d: WARNING! Bogus client application has now registered %d identical instances of service %##s port %d",
-			x->ClientMachPort, count+1, srv->c, (int)port.b[0] << 8 | port.b[1]);
+	if (count > 1)
+		LogMsg("%5d: WARNING! Client application has registered %d identical instances of service %##s port %d. "
+			"(This is legal, and in some cases it is deliberate, but in many cases it indicates an application bug.)",
+			x->ClientMachPort, count, srv->c, (int)port.b[0] << 8 | port.b[1]);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
