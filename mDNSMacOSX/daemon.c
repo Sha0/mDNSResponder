@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.251  2005/02/21 21:31:24  ksekar
+<rdar://problem/4015162> changed LogMsg to debugf
+
 Revision 1.250  2005/02/19 01:25:04  cheshire
 <rdar://problem/4005191> "Local Hostname is already in use..." dialogue shows for only 60 seconds before being removed
 Further refinements
@@ -1557,7 +1560,7 @@ mDNSexport void DefaultRegDomainChanged(const domainname *d, mDNSBool add)
 					prev = si;
 					si = si->next;
 					}
-				if (!si) LogMsg("Requested removal of default domain %##s not in client %5d's list", d, reg->ClientMachPort);
+				if (!si) debugf("Requested removal of default domain %##s not in client %5d's list", d, reg->ClientMachPort); // normal if registration failed
 				}					
 			}
 		}

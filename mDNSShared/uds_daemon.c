@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.175  2005/02/21 21:31:25  ksekar
+<rdar://problem/4015162> changed LogMsg to debugf
+
 Revision 1.174  2005/02/20 01:41:17  cheshire
 Fix compiler signed/unsigned warning
 
@@ -2156,7 +2159,7 @@ mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBo
 				prev = si;
 				si = si->next;
 				}
-			if (!si)  LogMsg("udsserver_default_reg_domain_changed - domain %##s not registered", d->c);
+			if (!si) debugf("udsserver_default_reg_domain_changed - domain %##s not registered", d->c); // normal if registration failed
 			}
 		}
 	}
