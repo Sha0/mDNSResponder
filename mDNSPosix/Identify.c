@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.19  2004/01/28 03:49:30  cheshire
+Enhanced mDNSIdentify to make use of new targeted-query capability
+
 Revision 1.18  2004/01/27 19:06:51  cheshire
 Remove workaround for WWDC 2003 bug; no one has run that buggy build for a long time
 
@@ -238,10 +241,12 @@ mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
 		}
 	}
 
-mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQuestionCallback callback)
+mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, const mDNSAddr *target, mDNSQuestionCallback callback)
 	{
 	if (qname) MakeDomainNameFromDNSNameString(&q->qname, qname);
-
+	q->Target           = target ? *target : zeroAddr;
+	q->TargetPort       = MulticastDNSPort;
+	q->TargetQID        = zeroID;
 	q->InterfaceID      = mDNSInterface_ForceMCast;
 	q->qtype            = qtype;
 	q->qclass           = kDNSClass_IN;
@@ -252,18 +257,28 @@ mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQue
 	return(mDNS_StartQuery(&mDNSStorage, q));
 	}
 
-mDNSlocal int DoQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQuestionCallback callback)
+mDNSlocal void DoOneQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, const mDNSAddr *target, mDNSQuestionCallback callback)
 	{
-	mStatus status = StartQuery(q, qname, qtype, callback);
+	mStatus status = StartQuery(q, qname, qtype, target, callback);
 	if (status != mStatus_NoError)
 		StopNow = 2;
 	else
 		{
 		WaitForAnswer(&mDNSStorage, 4);
 		mDNS_StopQuery(&mDNSStorage, q);
-		if (StopNow == 0 && NumAnswers == 0)
-			mprintf("%##s %s *** No Answer ***\n", q->qname.c, DNSTypeName(q->qtype));
 		}
+	}
+
+mDNSlocal int DoQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, const mDNSAddr *target, mDNSQuestionCallback callback)
+	{
+	DoOneQuery(q, qname, qtype, target, callback);
+	if (StopNow == 0 && target && target->type)
+		{
+		mprintf("%##s %s Trying multicast\n", q->qname.c, DNSTypeName(q->qtype));
+		DoOneQuery(q, qname, qtype, NULL, callback);
+		}
+	if (StopNow == 0 && NumAnswers == 0)
+		mprintf("%##s %s *** No Answer ***\n", q->qname.c, DNSTypeName(q->qtype));
 	return(StopNow);
 	}
 
@@ -283,6 +298,7 @@ mDNSexport int main(int argc, char **argv)
 	struct in6_addr s6;
 	char buffer[256];
 	DNSQuestion q;
+	mDNSAddr target = zeroAddr;
 
 	if (argc < 2) goto usage;
 	
@@ -310,7 +326,9 @@ mDNSexport int main(int argc, char **argv)
 			mDNSu8 *p = (mDNSu8 *)&s4;
 			mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p[3], p[2], p[1], p[0]);
 			printf("%s\n", buffer);
-			if (DoQuery(&q, buffer, kDNSType_PTR, NameCallback) != 1) continue;
+			target.type = mDNSAddrType_IPv4;
+			target.ip.v4.NotAnInteger = s4.s_addr;
+			if (DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback) != 1) continue;
 			}
 		else if (inet_pton(AF_INET6, arg, &s6) == 1)
 			{
@@ -325,13 +343,15 @@ mDNSexport int main(int argc, char **argv)
 				buffer[i * 4 + 3] = '.';
 				}
 			mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
-			if (DoQuery(&q, buffer, kDNSType_PTR, NameCallback) != 1) continue;
+			target.type = mDNSAddrType_IPv6;
+			bcopy(&s6, &target.ip.v6, sizeof(target.ip.v6));
+			if (DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback) != 1) continue;
 			}
 		else
 			strcpy(hostname, arg);
 	
 		// Now we have the host name; get its A, AAAA, and HINFO
-		if (DoQuery(&q, hostname, kDNSQType_ANY, InfoCallback) == 2) continue;	// Interrupted with Ctrl-C
+		if (DoQuery(&q, hostname, kDNSQType_ANY, &target, InfoCallback) == 2) continue;	// Interrupted with Ctrl-C
 	
 		if (hardware[0] || software[0])
 			{
