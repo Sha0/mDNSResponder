@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.51  2003/01/28 05:11:23  cheshire
+Fixed backwards comparison in SearchForInterfaceByName
+
 Revision 1.50  2003/01/13 23:49:44  jgraessl
 Merged changes for the following fixes in to top of tree:
 3086540  computer name changes not handled properly
@@ -166,7 +169,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		struct sockaddr_in*	sin_to = (struct sockaddr_in*)&to;
 		sin_to->sin_len			= sizeof(*sin_to);
 		sin_to->sin_family      = AF_INET;
-		sin_to->sin_port        = dstPort.      NotAnInteger;
+		sin_to->sin_port        = dstPort.NotAnInteger;
 		sin_to->sin_addr.s_addr = dst->addr.ipv4.NotAnInteger;
 		}
 	else if (dst->type == mDNSAddrType_IPv6)
@@ -185,11 +188,11 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		return mStatus_BadParamErr;
 		}
 
-	debugf("mDNSPlatformSendUDP: sending on InterfaceID %04X", InterfaceID);
+	debugf("mDNSPlatformSendUDP: sending on InterfaceID %X/%d", InterfaceID, dst->type);
 
 	if (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger)
 		{
-		if   (dst->type == mDNSAddrType_IPv4) s = info->socket;
+		if (dst->type == mDNSAddrType_IPv4) s = info->socket;
 		else s = info->v6socket;
 		}
 #if mDNS_AllowPort53
@@ -499,9 +502,11 @@ mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByName(mDNS *const m, char *i
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
 	while (info)
 		{
-		if (!strcmp(info->ifa_name, ifname) && ((AAAA_OVER_V4) ||
-			 (type == AF_INET6 && info->ifinfo.ip.type == mDNSAddrType_IPv4) ||
-			 (type == AF_INET  && info->ifinfo.ip.type == mDNSAddrType_IPv6))) return(info);
+		if (!strcmp(info->ifa_name, ifname) &&
+			((AAAA_OVER_V4                                                 ) ||
+			 (type == AF_INET  && info->ifinfo.ip.type == mDNSAddrType_IPv4) ||
+			 (type == AF_INET6 && info->ifinfo.ip.type == mDNSAddrType_IPv6) ))
+			 return(info);
 		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
 		}
 	return(NULL);
