@@ -445,7 +445,7 @@ void resolve_reply (
     } else if ([SrvType isEqualToString:@"_afpovertcp._tcp."]) {
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/", ipAddr, port]]];
     } else if ([SrvType isEqualToString:@"_smb._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/", ipAddr, port]]];
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@/", ipAddr]]];
     }
     return;
 }

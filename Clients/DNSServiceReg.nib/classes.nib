@@ -2,7 +2,12 @@
     IBClasses = (
         {CLASS = FirstResponder; LANGUAGE = ObjC; SUPERCLASS = NSObject; }, 
         {
-            ACTIONS = {addNewService = id; registerService = id; removeSelected = id; }; 
+            ACTIONS = {
+                addNewService = id; 
+                registerService = id; 
+                removeSelected = id; 
+                unregisterService = id; 
+            }; 
             CLASS = RegistrationController; 
             LANGUAGE = ObjC; 
             OUTLETS = {

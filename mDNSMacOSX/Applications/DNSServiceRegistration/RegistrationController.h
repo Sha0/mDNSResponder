@@ -23,10 +23,12 @@
     NSMutableArray		*srvportKeys;
     NSMutableArray		*srvdomainKeys;
     NSMutableArray		*srvtextKeys;
-    
-    
+
+    NSMutableDictionary		*registeredDict;
 }
+
 - (IBAction)registerService:(id)sender;
+- (IBAction)unregisterService:(id)sender;
 
 - (IBAction)addNewService:(id)sender;
 - (IBAction)removeSelected:(id)sender;

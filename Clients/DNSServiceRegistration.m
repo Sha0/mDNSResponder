@@ -47,6 +47,7 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
     srvdomainKeys = [[NSMutableArray array] retain];
     srvtextKeys = [[NSMutableArray array] retain];
 
+    registeredDict = [[NSMutableDictionary alloc] init];
     
     [self registerDefaults];
     return [super init];
@@ -111,12 +112,26 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
         rls = CFMachPortCreateRunLoopSource(NULL, cfMachPort, 0);
         CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
         CFRelease(rls);
+        [registeredDict setObject:[NSNumber numberWithUnsignedInt:dns_client] forKey:[srvtypeKeys objectAtIndex:selectedRow]];
     } else {
         printf("Could not obtain client port\n");
     }
     
 }
 
+- (IBAction)unregisterService:(id)sender
+{
+    int selectedRow = [serviceDisplayTable selectedRow];
+    NSString *key = [srvtypeKeys objectAtIndex:selectedRow];
+
+    NSNumber *refPtr = [registeredDict objectForKey:key];
+    dns_service_discovery_ref ref = [refPtr unsignedIntValue];
+
+    if (ref) {
+        DNSServiceDiscoveryDeallocate(ref);
+        [registeredDict removeObjectForKey:key];
+    }
+}
 
 -(void)tableView:(NSTableView *)theTableView setObjectValue:(id)object forTableColumn:(NSTableColumn *)tableColumn row:(int)row
 {

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 36;
+	objectVersion = 38;
 	objects = {
 		080E96DCFE201CFB7F000001 = {
 			fileRef = 29B97318FDCFA39411CA2CEA;
@@ -69,6 +69,7 @@
 			children = (
 				29B97325FDCFA39411CA2CEA,
 				29B97324FDCFA39411CA2CEA,
+				65DD378E028194AE000001D1,
 			);
 			isa = PBXGroup;
 			name = "Other Frameworks";
@@ -236,8 +237,8 @@
 			productName = "DNS Service Registration";
 			productReference = 17587328FF379C6511CA2CBB;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist SYSTEM \"file://localhost/System/Library/DTDs/PropertyList.dtd\">
-<plist version=\"0.9\">
+<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
@@ -360,6 +361,12 @@
 			isa = PBXBuildFile;
 			settings = {
 			};
+		};
+		65DD378E028194AE000001D1 = {
+			isa = PBXFrameworkReference;
+			name = CoreFoundation.framework;
+			path = /System/Library/Frameworks/CoreFoundation.framework;
+			refType = 0;
 		};
 	};
 	rootObject = 29B97313FDCFA39411CA2CEA;
