@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.520  2005/02/16 01:14:11  cheshire
+Convert RR Cache LogOperation() calls to debugf()
+
 Revision 1.519  2005/02/15 01:57:20  cheshire
 When setting "q->LastQTxTime = m->timenow", must also clear q->RecentAnswerPkts to zero
 
@@ -4263,7 +4266,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 		m->rrcache_free = e->next;
 		if (++m->rrcache_totalused >= m->rrcache_report)
 			{
-			LogOperation("RR Cache now using %ld objects", m->rrcache_totalused);
+			debugf("RR Cache now using %ld objects", m->rrcache_totalused);
 			if (m->rrcache_report < 100) m->rrcache_report += 10;
 			else                         m->rrcache_report += 100;
 			}
@@ -6973,7 +6976,7 @@ mDNSlocal void mDNS_GrowCache_internal(mDNS *const m, CacheEntity *storage, mDNS
 	if (storage && numrecords)
 		{
 		mDNSu32 i;
-		LogOperation("Adding cache storage for %d more records (%d bytes)", numrecords, numrecords*sizeof(CacheEntity));
+		debugf("Adding cache storage for %d more records (%d bytes)", numrecords, numrecords*sizeof(CacheEntity));
 		for (i=0; i<numrecords; i++) storage[i].next = &storage[i+1];
 		storage[numrecords-1].next = m->rrcache_free;
 		m->rrcache_free = storage;
