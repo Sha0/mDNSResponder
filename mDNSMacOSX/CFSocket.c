@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.108  2003/08/12 22:24:52  cheshire
+<rdar://problem/3375225> syslog messages: myCFSocketCallBack recvfrom skt 6 error -1 errno 35
+This message indicates a kernel bug, but still we don't want to flood syslog.
+Do a sleep(1) after writing this log message, to limit the rate.
+
 Revision 1.107  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -689,7 +694,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			LogMsg("myCFSocketCallBack ioctl(FIONREAD) error %d", errno);
 		LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 			s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
-
+		sleep(1);		// After logging this error, rate limit so we don't flood syslog
 		}
 	}
 
