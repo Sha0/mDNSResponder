@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.86  2003/07/20 03:52:02  ksekar
+Bug #: <rdar://problem/3320722>: Feature: New Rendezvous APIs (#7875) (mDNSResponder component)
+Added error type for incompatibility between daemon and client versions
+
 Revision 1.85  2003/07/19 03:23:13  cheshire
 <rdar://problem/2986147> mDNSResponder needs to receive and cache larger records
 
@@ -417,7 +421,7 @@ enum
 	mStatus_NameConflict      = -65548,
 	mStatus_Invalid           = -65549,
 	mStatus_GrowCache         = -65550,
-
+	mStatus_Incompatible      = -65551,
 	mStatus_ConfigChanged     = -65791,
 	mStatus_MemFree           = -65792		// 0xFFFE FF00
 	};
