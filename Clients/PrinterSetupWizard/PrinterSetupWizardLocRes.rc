@@ -79,11 +79,11 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 IDD_ABOUTBOX DIALOGEX 0, 0, 235, 55
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | 
     WS_SYSMENU
-CAPTION "About Printer Setup Wizard"
+CAPTION "About Printer Wizard"
 FONT 8, "MS Shell Dlg", 0, 0, 0x1
 BEGIN
     ICON            128,IDC_STATIC,11,17,20,20
-    LTEXT           "Printer Setup Wizard Version 1.0",IDC_STATIC,40,10,119,
+    LTEXT           "Printer Wizard Version 1.0",IDC_STATIC,40,10,119,
                     8,SS_NOPREFIX
     LTEXT           "Copyright (C) 2002",IDC_STATIC,40,25,119,8
     DEFPUSHBUTTON   "OK",IDOK,178,7,50,16,WS_GROUP
@@ -93,7 +93,7 @@ IDD_PRINTERSETUPWIZARD_DIALOG DIALOGEX 0, 0, 320, 200
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | 
     WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
-CAPTION "Printer Setup Wizard"
+CAPTION "Bonjour Printer Wizard"
 FONT 8, "MS Shell Dlg", 0, 0, 0x1
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,263,7,50,16
@@ -123,12 +123,11 @@ STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Bonjour Printer Wizard"
 FONT 8, "MS Shell Dlg", 0, 0, 0x0
 BEGIN
-    LTEXT           "Welcome to the Bonjour Printer Setup Wizard",
+    LTEXT           "Welcome to the Bonjour Printer Wizard",
                     IDC_GREETING,114,7,171,46
     LTEXT           "Click next to continue.",IDC_STATIC,115,188,143,8
     LTEXT           "This wizard helps you connect to a shared printer using Bonjour.  Make sure your printer is turned on and connected to your network.",
-                    IDC_STATIC,146,60,139,62
-    ICON            "",IDC_INFO,118,60,20,20,SS_REALSIZEIMAGE
+                    IDC_STATIC,114,60,171,62
 END
 
 IDD_THIRD_PAGE DIALOGEX 0, 0, 290, 154
@@ -161,7 +160,7 @@ BEGIN
     LTEXT           "Completing the Bonjour Printer Wizard",IDC_GOODBYE,
                     116,7,171,27
     LTEXT           "You have successfully completed the Bonjour Printer Wizard.  The printer has the following settings:",
-                    IDC_STATIC,116,42,158,31
+                    IDC_STATIC,116,42,171,31
     LTEXT           "Name:",IDC_STATIC,116,78,22,8
     LTEXT           "Manufacturer:",IDC_STATIC,116,91,47,8
     LTEXT           "Model:",IDC_STATIC,116,104,22,8
@@ -236,9 +235,9 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDS_ABOUTBOX            "&About Printer Setup Wizard..."
-    IDS_GOODBYE             "Completing the Bonjour Printer Setup Wizard."
-    IDS_GREETING            "Welcome to the Bonjour Printer Setup Wizard"
+    IDS_ABOUTBOX            "&About Bonjour Printer Wizard..."
+    IDS_GOODBYE             "Completing the Bonjour Printer Wizard."
+    IDS_GREETING            "Welcome to the Bonjour Printer Wizard"
     IDS_BROWSE_TITLE        "Browse for Bonjour Printers"
     IDS_BROWSE_SUBTITLE     "Select the printer you want to use from the list below."
     IDS_CAPTION             "Bonjour Printer Wizard"
