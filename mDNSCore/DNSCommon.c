@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.74  2004/12/09 22:49:15  ksekar
+<rdar://problem/3913653> Wide-Area Goodbyes broken
+
 Revision 1.73  2004/12/07 22:49:06  cheshire
 <rdar://problem/3908850> BIND doesn't like zero-length rdata
 
@@ -1514,6 +1517,7 @@ mDNSexport mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domain
 	ptr[4] = ptr[5] = ptr[6] = ptr[7] = 0; // zero ttl
 	ptr[8] = ptr[9] = 0; // zero rdlength/rdata
 
+	msg->h.mDNS_numUpdates++;
 	return ptr + 10;
 	}
 
