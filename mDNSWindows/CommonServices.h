@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.2  2004/03/07 05:53:39  bradley
+Fixed NumVersion extraction macros. Updated error code mappings to match latest internal version.
+
 Revision 1.1  2004/01/30 02:25:59  bradley
 Common Services and portability support for various platforms.
 
@@ -507,6 +510,14 @@ Common Services and portability support for various platforms.
 	#define	_endthreadex_compat					_endthreadex
 #endif
 
+// The C99 "inline" keyword is not supported by Microsoft compilers, but they do support __inline so map it when needed.
+
+#if( defined( _MSC_VER ) )
+	#define	inline_compat		__inline
+#else
+	#define	inline_compat		inline
+#endif
+
 #if 0
 #pragma mark == Macros ==
 #endif
@@ -958,8 +969,12 @@ Common Services and portability support for various platforms.
 	@constant	kOpenErr					-6755 Could not open file, pipe, device, etc.
 	@constant	kTypeErr					-6756 Incorrect or incompatible type (e.g. file, data, etc.).
 	@constant	kSkipErr					-6757 Items should be or was skipped.
-	@constant	kNoAckErr					-6758 Not acknowledged.
+	@constant	kNoAckErr					-6758 No acknowledge.
 	@constant	kCollisionErr				-6759 Collision occurred (e.g. two on bus at same time).
+	@constant	kBackoffErr					-6760 Backoff in progress and operation intentionally failed.
+	@constant	kNoAddressAckErr			-6761 No acknowledge of address.
+	@constant	kBusyErr					-6762 Cannot perform because something is busy.
+	@constant	kNoSpaceErr					-6763 Not enough space to perform operation.
 */
 
 #if( TARGET_LANGUAGE_C_LIKE )
@@ -1035,6 +1050,10 @@ Common Services and portability support for various platforms.
 #define	kSkipErr					-6757
 #define	kNoAckErr					-6758
 #define	kCollisionErr				-6759
+#define	kBackoffErr					-6760
+#define	kNoAddressAckErr			-6761
+#define	kBusyErr					-6762
+#define	kNoSpaceErr					-6763
 
 #define kGenericErrorEnd			-6779	// Last generic error code (inclusive)
 
@@ -1122,13 +1141,28 @@ Common Services and portability support for various platforms.
 	  ( ( ( MINOR )  & 0x0F ) << 20 ) |						\
 	  ( ( ( BUGFIX ) & 0x0F ) << 16 ) |						\
 	  ( ( ( STAGE )  & 0xFF ) <<  8 ) |						\
-	  ( ( ( REV )    & 0xFF ) <<  8 ) )
+	  ( ( ( REV )    & 0xFF )       ) )
 
-#define	NumVersionExtractMajor( VERSION )		( (uint8_t)( ( ( VERSION ) >> 24 ) & 0xFF ) )
-#define	NumVersionExtractMinor( VERSION )		( (uint8_t)( ( ( VERSION ) >> 24 ) & 0xFF ) )
-#define	NumVersionExtractBugFix( VERSION )		( (uint8_t)( ( ( VERSION ) >> 20 ) & 0x0F ) )
-#define	NumVersionExtractStage( VERSION )		( (uint8_t)( ( ( VERSION ) >> 16 ) & 0x0F ) )
-#define	NumVersionExtractRevision( VERSION )	( (uint8_t)( ( ( VERSION ) >>  8 ) & 0xFF ) )
+#define	NumVersionExtractMajor( VERSION )				( (uint8_t)( ( ( VERSION ) >> 24 ) & 0xFF ) )
+#define	NumVersionExtractMinorAndBugFix( VERSION )		( (uint8_t)( ( ( VERSION ) >> 16 ) & 0xFF ) )
+#define	NumVersionExtractMinor( VERSION )				( (uint8_t)( ( ( VERSION ) >> 20 ) & 0x0F ) )
+#define	NumVersionExtractBugFix( VERSION )				( (uint8_t)( ( ( VERSION ) >> 16 ) & 0x0F ) )
+#define	NumVersionExtractStage( VERSION )				( (uint8_t)( ( ( VERSION ) >>  8 ) & 0xFF ) )
+#define	NumVersionExtractRevision( VERSION )			( (uint8_t)(   ( VERSION )         & 0xFF ) )
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	NumVersionCompare
+
+	@abstract	Compares two NumVersion values and returns the following values:
+	
+		left < right -> -1
+		left > right ->  1
+		left = right ->  0
+*/
+
+#if( TARGET_LANGUAGE_C_LIKE )
+	int	NumVersionCompare( uint32_t inLeft, uint32_t inRight );
+#endif
 
 #if 0
 #pragma mark == Binary Constants ==
@@ -1436,6 +1470,22 @@ Common Services and portability support for various platforms.
 #define HEX_DIGIT_11111101					FD
 #define HEX_DIGIT_11111110					FE
 #define HEX_DIGIT_11111111					FF
+
+#if 0
+#pragma mark == Debugging ==
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	CommonServicesTest
+
+	@abstract	Unit test.
+*/
+
+#if( DEBUG )
+	#if( TARGET_LANGUAGE_C_LIKE )
+		OSStatus	CommonServicesTest( void );
+	#endif
+#endif
 
 #ifdef	__cplusplus
 	}
