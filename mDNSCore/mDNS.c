@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.173  2003/06/07 01:22:13  cheshire
+<rdar://problem/3283516> mDNSResponder needs an mDNS_Reconfirm() function
+
 Revision 1.172  2003/06/07 00:59:42  cheshire
 <rdar://problem/3283454> Need some randomness to spread queries on the network
 
@@ -174,7 +177,7 @@ Revision 1.149  2003/05/29 06:18:39  cheshire
 <rdar://problem/3272217> Split AnswerLocalQuestions into CacheRecordAdd and CacheRecordRmv
 
 Revision 1.148  2003/05/29 06:11:34  cheshire
-<rdar://problem/3272214>:	Report if there appear to be too many "Resolve" callbacks
+<rdar://problem/3272214> Report if there appear to be too many "Resolve" callbacks
 
 Revision 1.147  2003/05/29 06:01:18  cheshire
 Change some debugf() calls to LogMsg() calls to help with debugging
@@ -269,7 +272,7 @@ Revision 1.122  2003/05/21 19:59:04  cheshire
 Minor refinements; make sure we don't truncate in the middle of a multi-byte UTF-8 character
 
 Revision 1.121  2003/05/21 17:54:07  ksekar
-Bug #: <rdar://problem/3148431>:	ER: Tweak responder's default name conflict behavior
+Bug #: <rdar://problem/3148431> ER: Tweak responder's default name conflict behavior
 New rename behavior - domain name "foo" becomes "foo--2" on conflict, richtext name becomes "foo (2)"
 
 Revision 1.120  2003/05/19 22:14:14  ksekar
@@ -356,7 +359,7 @@ Added code to keep track of when the next cache item will expire so we can
 call TidyRRCache only when necessary.
 
 Revision 1.98  2003/04/03 03:43:55  cheshire
-<rdar://problem/3216837>:	Off-by-one error in probe rate limiting
+<rdar://problem/3216837> Off-by-one error in probe rate limiting
 
 Revision 1.97  2003/04/02 01:48:17  cheshire
 <rdar://problem/3212360> mDNSResponder sometimes suffers false self-conflicts when it sees its own packets
@@ -548,7 +551,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 	// of parentheses, this signals to the compiler that you really intended an assignment and no warning is necessary.
 	// The Microsoft compiler doesn't understand this convention, so in the absense of any other way to signal
 	// to the compiler that the assignment is intentional, we have to just turn this warning off completely.
-	#pragma warning(disable:4706)		
+	#pragma warning(disable:4706)
 #endif
 
 // ***************************************************************************
@@ -607,7 +610,7 @@ mDNSexport const mDNSv4Addr      zeroIPAddr        = { { 0 } };
 mDNSexport const mDNSv6Addr      zerov6Addr        = { { 0 } };
 mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
-mDNSlocal  const mDNSAddr	     zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
+mDNSlocal  const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any = { 0 };
 mDNSlocal  const mDNSInterfaceID mDNSInterfaceMark = { (mDNSInterfaceID)~0 };
@@ -617,7 +620,7 @@ mDNSlocal  const mDNSInterfaceID mDNSInterfaceMark = { (mDNSInterfaceID)~0 };
 mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
 mDNSexport const mDNSIPPort MulticastDNSPort   = { { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF } };
 mDNSexport const mDNSv4Addr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
-mDNSexport const mDNSv4Addr	AllDNSLinkGroup    = { { 224,   0,   0, 251 } };
+mDNSexport const mDNSv4Addr AllDNSLinkGroup    = { { 224,   0,   0, 251 } };
 mDNSexport const mDNSv6Addr AllDNSLinkGroupv6  = { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };
@@ -649,16 +652,16 @@ static const char *const mDNS_DomainTypeNames[] =
 
 static const struct mDNSprintf_format
 	{
-	unsigned 		leftJustify : 1;
-	unsigned 		forceSign : 1;
-	unsigned 		zeroPad : 1;
-	unsigned 		havePrecision : 1;
-	unsigned 		hSize : 1;
-	unsigned 		lSize : 1;
-	char	 		altForm;
-	char			sign;		// +, - or space
-	unsigned int	fieldWidth;
-	unsigned int	precision;
+	unsigned      leftJustify : 1;
+	unsigned      forceSign : 1;
+	unsigned      zeroPad : 1;
+	unsigned      havePrecision : 1;
+	unsigned      hSize : 1;
+	unsigned      lSize : 1;
+	char          altForm;
+	char          sign;		// +, - or space
+	unsigned int  fieldWidth;
+	unsigned int  precision;
 	} mDNSprintf_format_default;
 
 mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg)
@@ -690,11 +693,11 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 			while (1)	//  decode flags
 				{
 				c = *++fmt;
-				if      (c == '-')	F.leftJustify = 1;
-				else if (c == '+')	F.forceSign = 1;
-				else if (c == ' ')	F.sign = ' ';
-				else if (c == '#')	F.altForm++;
-				else if (c == '0')	F.zeroPad = 1;
+				if      (c == '-') F.leftJustify = 1;
+				else if (c == '+') F.forceSign = 1;
+				else if (c == ' ') F.sign = ' ';
+				else if (c == '#') F.altForm++;
+				else if (c == '0') F.zeroPad = 1;
 				else break;
 				}
 	
@@ -924,13 +927,13 @@ char *DNSTypeName(mDNSu16 rrtype)
 	{
 	switch (rrtype)
 		{
-		case kDNSType_A:	return("Addr");
+		case kDNSType_A:    return("Addr");
 		case kDNSType_CNAME:return("CNAME");
-		case kDNSType_PTR:	return("PTR");
+		case kDNSType_PTR:  return("PTR");
 		case kDNSType_HINFO:return("HINFO");
 		case kDNSType_TXT:  return("TXT");
-		case kDNSType_AAAA:	return("AAAA");
-		case kDNSType_SRV:	return("SRV");
+		case kDNSType_AAAA: return("AAAA");
+		case kDNSType_SRV:  return("SRV");
 		default:			{
 							static char buffer[16];
 							mDNS_snprintf(buffer, sizeof(buffer), "(%d)", rrtype);
@@ -1471,11 +1474,11 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	// If existing suffix, increment it, else start by renaming "Foo" as "Foo (2)" or "Foo--2" as appropriate.
 	// After sequentially trying each single-digit suffix, we try a random 2-digit suffix, then 3-digit, then
 	// continue generating random 4-digit integers.
-	if      (val ==  0)	val = 2;
-	else if (val <   9)	val++;
-	else if (val <  10)	val = mDNSRandom(89) + 10;
-	else if (val < 100)	val = mDNSRandom(899) + 100;
-	else 			val = mDNSRandom(8999) + 1000;
+	if      (val ==  0) val = 2;
+	else if (val <   9) val++;
+	else if (val <  10) val = mDNSRandom(89) + 10;
+	else if (val < 100) val = mDNSRandom(899) + 100;
+	else                val = mDNSRandom(8999) + 1000;
 	
 	AppendLabelSuffix(name, val, RichText);
 	}
@@ -1559,8 +1562,8 @@ mDNSlocal mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr,
 
 mDNSlocal mDNSs32 HashSlot(const domainname *name)
 	{
-	mDNSu16	sum = 0;
-	const mDNSu8	*c;
+	mDNSu16       sum = 0;
+	const mDNSu8 *c;
 
 	for (c = name->c; c[0] != 0 && c[1] != 0; c += 2)
 		{
@@ -3325,7 +3328,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 mDNSlocal void CheckCacheExpiration(mDNS *const m)
 	{
-	mDNSs32	slot;
+	mDNSs32 slot;
 
 	if (m->lock_rrcache) { LogMsg("CheckCacheExpiration ERROR! Cache already locked!"); return; }
 	m->lock_rrcache = 1;
@@ -3372,6 +3375,24 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 	m->lock_rrcache = 0;
 	}
 
+mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, ResourceRecord *const rr)
+	{
+	mDNSs32 expire = rr->TimeRcvd + ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond);
+	if (expire - m->timenow > mDNSPlatformOneSecond * 5)
+		{
+		// If this record has more than five seconds to live, pretend we received it 15 seconds ago with a TTL of 20.
+		// That means its 80-85% check will occur at 16-17 seconds (1-2 seconds from now)
+		// and its 90-95% check at 18-19 seconds (3-4 seconds from now).
+		// If neither query elicits a response, the record will expire five seconds from now.
+		rr->TimeRcvd          = m->timenow - mDNSPlatformOneSecond * 15;
+		rr->rroriginalttl     = 20;
+		SetNextCacheCheckTime(m, rr);
+		}
+	debugf("mDNS_Reconfirm: %##s (%s) %ld seconds to go", rr->name.c, DNSTypeName(rr->rrtype),
+		rr->rroriginalttl - (m->timenow - rr->TimeRcvd) / mDNSPlatformOneSecond);
+	return(mStatus_NoError);
+	}
+
 mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 	{
 	ResourceRecord *r = m->rrcache_free;
@@ -3395,7 +3416,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 		ResourceRecord **rr;
 		ResourceRecord **best = mDNSNULL;
 		mDNSs32 bestage = -1;
-		mDNSs32	bestslot = -1;
+		mDNSs32 bestslot = -1;
 
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			{
@@ -3758,7 +3779,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	else
 		{
 		DNSQuestion *q;
-		mDNSs32	slot;
+		mDNSs32 slot;
 
 		// 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
@@ -4335,7 +4356,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			ResourceRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
 			if (PacketRRMatchesSignature(&pktrr, rr))		// If interface, name, type (if verified) and class match...
-				{	
+				{
 				// ... check to see if rdata is identical
 				if (SameRData(pktrr.rrtype, rr->rrtype, pktrr.rdata, rr->rdata))
 					{
@@ -4432,7 +4453,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// 2. See if we want to add this packet resource record to our cache
 		if (m->rrcache_size)	// Only try to cache answers if we have a cache to put them in
 			{
-			mDNSs32	slot = HashSlot(&pktrr.name);
+			mDNSs32 slot = HashSlot(&pktrr.name);
 			ResourceRecord *rr;
 			// 2a. Check if this packet resource record is already in our cache
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
@@ -5065,7 +5086,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		}
 	else if (set->ip.type == mDNSAddrType_IPv6)
 		{
-		int	i;
+		int i;
 		set->RR_A1.rrtype = kDNSType_AAAA;
 		set->RR_A2.rrtype = kDNSType_AAAA;
 		set->RR_A1.rdata->u.ipv6 = set->ip.ip.v6;
@@ -5320,7 +5341,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	if (revalidate)
 		{
-		mDNSs32	slot;
+		mDNSs32 slot;
 		ResourceRecord *rr;
 		m->NextCacheCheck = m->timenow;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
@@ -5713,7 +5734,7 @@ extern void mDNS_Close(mDNS *const m)
 	{
 	ResourceRecord *rr;
 	int rrcache_active = 0;
-	mDNSs32	slot;
+	mDNSs32 slot;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next) if (rr->CRActiveQuestion) rrcache_active++;
 	debugf("mDNS_Close: RR Cache now using %ld records, %d active", m->rrcache_totalused, rrcache_active);

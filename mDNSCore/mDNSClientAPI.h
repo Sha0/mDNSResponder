@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.67  2003/06/07 01:22:14  cheshire
+<rdar://problem/3283516> mDNSResponder needs an mDNS_Reconfirm() function
+
 Revision 1.66  2003/06/07 00:59:43  cheshire
 <rdar://problem/3283454> Need some randomness to spread queries on the network
 
@@ -822,12 +825,15 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
 extern void    mDNS_Close     (mDNS *const m);
 extern mDNSs32 mDNS_Execute   (mDNS *const m);
+
 extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 newttl,
 								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern mStatus mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
+
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
+extern mStatus mDNS_Reconfirm (mDNS *const m, ResourceRecord *const cacherr);
 
 // ***************************************************************************
 #if 0
