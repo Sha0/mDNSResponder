@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: AssemblyInfo.cpp,v $
+Revision 1.3  2004/07/14 19:54:57  shersche
+use version file to get version numbers
+
 Revision 1.2  2004/07/14 15:42:47  shersche
 remove entries for strong authentication
 
@@ -33,6 +36,7 @@ Initial revision
  */
     
 #include "stdafx.h"
+#include "WinVersRes.h"
 
 using namespace System::Reflection;
 using namespace System::Runtime::CompilerServices;
@@ -62,5 +66,5 @@ using namespace System::Runtime::CompilerServices;
 // You can specify all the value or you can default the Revision and Build Numbers 
 // by using the '*' as shown below:
 
-[assembly:AssemblyVersionAttribute("1.0.0.8")];
+[assembly:AssemblyVersionAttribute(MASTER_PROD_VERS_STR2)];
 
