@@ -920,7 +920,7 @@ static void handle_browse_request(request_state *request)
     q->QuestionContext = request;
     q->QuestionCallback = browse_result_callback;
     if (!MakeDomainNameFromDNSNameString(&typedn, regtype) ||
-        !MakeDomainNameFromDNSNameString(&domdn, domain))
+        !MakeDomainNameFromDNSNameString(&domdn, domain[0] ? domain : "local."))
         goto bad_param;
     request->termination_context = q;
     request->terminate = browse_termination_callback;
