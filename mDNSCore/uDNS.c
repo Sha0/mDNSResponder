@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.171  2005/01/10 04:52:49  ksekar
+Changed LogMsg to debugf
+
 Revision 1.170  2005/01/08 00:50:05  ksekar
 Fixed spelling mistake in log msg
 
@@ -4210,8 +4213,8 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	switch (srs->uDNS_info.state)
 		{
 		case regState_Unregistered:
-			errmsg = "service not registered";
-			goto error;
+			debugf("uDNS_DeregisterService - service %##s not registered", srs->RR_SRV.resrec.name->c);
+			return mStatus_BadReferenceErr;
 		case regState_FetchingZoneData:
 			// let the async op complete, then terminate
 			srs->uDNS_info.state = regState_Cancelled;
