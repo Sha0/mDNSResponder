@@ -590,17 +590,20 @@ mDNSlocal mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr,
 	return(SameDomainName(&rr->name, &q->name));
 	}
 
-// SameResourceRecordSignature returns true if two resources records have the same name, type, and class.
+// SameResourceRecordSignature returns true if two resources records have the same interface, name, type, and class.
 // -- i.e. if they would both be given in response to the same question.
 // (TTL and rdata may differ)
 mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!r1) { debugf("SameResourceRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
 	if (!r2) { debugf("SameResourceRecordSignature ERROR: r2 is NULL"); return(mDNSfalse); }
+	if (r1->InterfaceAddr.NotAnInteger &&
+		r2->InterfaceAddr.NotAnInteger &&
+		r1->InterfaceAddr.NotAnInteger != r2->InterfaceAddr.NotAnInteger) return(mDNSfalse);
 	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
 	}
 
-// IdenticalResourceRecord returns true if two resources records have the same name, type, class, and identical rdata
+// IdenticalResourceRecord returns true if two resources records have the same interface, name, type, class, and identical rdata
 // (TTL may differ)
 mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
@@ -2380,6 +2383,13 @@ mDNSlocal int CompareRData(ResourceRecord *pkt, ResourceRecord *our)
 	return(-1);
 	}
 
+// Find the canonical DependentOn record for this RR received in a packet.
+// The DependentOn pointer is typically used for the TXT record of service registrations
+// It indicates that there is no inherent conflict detection for the TXT record -- it depends on the SRV record to resolve name conflicts
+// If we find any identical ResourceRecord in our authoritative list, then follow its DependentOn
+// pointers (if any) to make sure we return the canonical DependentOn record
+// If the record has no DependentOn, then just return that record's pointer
+// Returns NULL if we don't have any local RRs that are identical to the one from the packet
 mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const ResourceRecord *const pktrr)
 	{
 	const ResourceRecord *rr;
@@ -2396,7 +2406,8 @@ mDNSlocal const ResourceRecord *FindDependentOn(const mDNS *const m, const Resou
 
 // Find the canonical RRSet pointer for this RR received in a packet.
 // If we find any identical ResourceRecord in our authoritative list, then follow its RRSet
-// pointers to make sure we return the canonical member of this name/type/class
+// pointers (if any) to make sure we return the canonical member of this name/type/class
+// Returns NULL if we don't have any local RRs that are identical to the one from the packet
 mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRecord *const pktrr)
 	{
 	const ResourceRecord *rr;
@@ -2411,6 +2422,15 @@ mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRec
 	return(mDNSNULL);
 	}
 
+// PacketRRConflict is called when we've received an RR (pktrr) which has the same name
+// as one of our records (our) but different rdata.
+// 1. If our record is not a type that's supposed to be unique, we don't care.
+// 2a. If our record is marked as dependent on some other record for conflict detection, ignore this one.
+// 2b. If the packet rr exactly matches one of our other RRs, and *that* record's DependentOn pointer
+//     points to our record, ignore this conflict (e.g. the packet record matches one of our
+//     TXT records, and that record is marked as dependent on 'our', its SRV record).
+// 3. If we have some *other* RR that exactly matches the one from the packet, and that record and our record
+//    are members of the same RRSet, then this is not a conflict.
 mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const ResourceRecord *const our, const ResourceRecord *const pktrr)
 	{
 	const ResourceRecord *ourset = our->RRSet ? our->RRSet : our;
@@ -2432,7 +2452,7 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
 		ResourceRecord pktrr;
-		ptr = getResourceRecord(query, ptr, end, zeroIPAddr, 0, 0, &pktrr, mDNSNULL);
+		ptr = getResourceRecord(query, ptr, end, q->InterfaceAddr, 0, 0, &pktrr, mDNSNULL);
 		if (!ptr) break;
 		if (ResourceRecordAnswersQuestion(&pktrr, q))
 			{
@@ -2732,7 +2752,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 			{
 			ResourceRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (SameResourceRecordSignature(&pktrr, rr))		// If name, type and class match...
+			if (SameResourceRecordSignature(&pktrr, rr))		// If interface, name, type and class match...
 				{												// ... check to see if rdata is identical
 				if (SameRData(pktrr.rrtype, pktrr.rdata, rr->rdata))
 					{
@@ -3015,15 +3035,15 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 	// If this is our first answer, then set the GotSRV flag and start the address query
 	if (!query->GotSRV)
 		{
-		query->GotSRV        = mDNStrue;
-		query->qADD.name     = answer->rdata->u.srv.target;
+		query->GotSRV             = mDNStrue;
+		query->qADD.name          = answer->rdata->u.srv.target;
 		mDNS_StartQuery_internal(m, &query->qADD, mDNSPlatformTimeNow());
 		}
 	// If this is not our first answer, only re-issue the address query if the target host name has changed
 	else if (!SameDomainName(&query->qADD.name, &answer->rdata->u.srv.target))
 		{
 		mDNS_StopQuery_internal(m, &query->qADD);
-		query->qADD.name = answer->rdata->u.srv.target;
+		query->qADD.name          = answer->rdata->u.srv.target;
 		mDNS_StartQuery_internal(m, &query->qADD, mDNSPlatformTimeNow());
 		}
 
@@ -3056,12 +3076,17 @@ mDNSlocal void FoundServiceInfoADD(mDNS *const m, DNSQuestion *question, const R
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_A) return;
 	query->GotADD   = mDNStrue;
-	query->info->ip = answer->rdata->u.ip;
+	query->info->InterfaceAddr = answer->InterfaceAddr;
+	query->info->ip            = answer->rdata->u.ip;
 	
 	if (query->Callback && query->GotTXT)
 		query->Callback(m, query);
 	}
 
+// On entry, the client must have set the name and InterfaceAddr fields of the ServiceInfo structure
+// If the query is not interface-specific, then InterfaceAddr may be zero
+// Each time the Callback is invoked, the remainder of the fields will have been filled in
+// In addition, InterfaceAddr will be updated to give the interface address corresponding to that reply
 mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	ServiceInfoQuery *query, ServiceInfo *info, ServiceInfoQueryCallback *Callback, void *Context)
 	{
