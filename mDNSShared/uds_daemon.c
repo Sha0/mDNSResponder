@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.40  2004/01/28 03:41:00  cheshire
+<rdar://problem/3541946>: Need ability to do targeted queries as well as multicast queries
+
 Revision 1.39  2004/01/25 00:03:21  cheshire
 Change to use mDNSVal16() instead of private PORT_AS_NUM() macro
 
@@ -803,6 +806,7 @@ static void handle_resolve_request(request_state *rstate)
     srv->question.qtype = kDNSType_SRV;
     srv->question.qclass = kDNSClass_IN;
     srv->question.InterfaceID = InterfaceID;
+    srv->question.Target      = zeroAddr;
 
     txt->question.QuestionContext = rstate;
     txt->question.QuestionCallback = resolve_result_callback;
@@ -810,6 +814,7 @@ static void handle_resolve_request(request_state *rstate)
     txt->question.qtype = kDNSType_TXT;
     txt->question.qclass = kDNSClass_IN;
     txt->question.InterfaceID = InterfaceID;
+    txt->question.Target      = zeroAddr;
 
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
@@ -964,7 +969,7 @@ static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi
     q->qtype = rrtype;
     q->qclass = rrclass;
     q->InterfaceID = InterfaceID;
-
+    q->Target      = zeroAddr;
 
     rstate->termination_context = q;
     rstate->terminate = question_termination_callback;

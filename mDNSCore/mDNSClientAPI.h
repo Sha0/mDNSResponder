@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.143  2004/01/28 03:41:00  cheshire
+<rdar://problem/3541946>: Need ability to do targeted queries as well as multicast queries
+
 Revision 1.142  2004/01/28 02:30:07  ksekar
 Added default Search Domains to unicast browsing, controlled via
 Networking sharing prefs pane.  Stopped sending unicast messages on
@@ -1051,6 +1054,9 @@ struct DNSQuestion_struct
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
+	mDNSAddr              Target;			// Non-zero if you want to direct queries to a specific unicast target address
+	mDNSIPPort            TargetPort;		// Must be set if Target is set
+	mDNSOpaque16          TargetQID;		// Must be set if Target is set
 	domainname            qname;
 	mDNSu16               qtype;
 	mDNSu16               qclass;

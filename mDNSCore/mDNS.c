@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.353  2004/01/28 03:41:00  cheshire
+<rdar://problem/3541946>: Need ability to do targeted queries as well as multicast queries
+
 Revision 1.352  2004/01/28 02:30:07  ksekar
 Added default Search Domains to unicast browsing, controlled via
 Networking sharing prefs pane.  Stopped sending unicast messages on
@@ -2691,13 +2694,32 @@ mDNSlocal void SendQueries(mDNS *const m)
 						{
 						q = rr->CRActiveQuestion;
 						ExpireDupSuppressInfoOnInterface(q->DupSuppress, m->timenow - TicksTTL(rr)/20, rr->resrec.InterfaceID);
-						if      (q->SendQNow == mDNSNULL)               q->SendQNow = rr->resrec.InterfaceID;
+						if (q->Target.type) q->SendQNow = mDNSInterfaceMark;	// If unicast query, mark it
+						else if (q->SendQNow == mDNSNULL)               q->SendQNow = rr->resrec.InterfaceID;
 						else if (q->SendQNow != rr->resrec.InterfaceID) q->SendQNow = mDNSInterfaceMark;
 						}
 
+		// Scan our list of questions to see which unicast queries need to be sent
+		for (q = m->Questions; q; q=q->next)
+			if (q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
+				{
+				DNSMessage query;
+				mDNSu8       *qptr        = query.data;
+				const mDNSu8 *const limit = query.data + sizeof(query.data);
+				InitializeDNSMessage(&query.h, q->TargetQID, QueryFlags);
+				qptr = putQuestion(&query, qptr, limit, &q->qname, q->qtype, q->qclass);
+				mDNSSendDNSMessage(m, &query, qptr, mDNSInterface_Any, &q->Target, q->TargetPort);
+				q->ThisQInterval *= 2;
+				q->LastQTime     = m->timenow;
+				q->LastQTxTime   = m->timenow;
+				q->RecentAnswers = 0;
+				q->SendQNow      = mDNSNULL;
+				m->ExpectUnicastResponse = m->timenow;
+				}
+	
 		// Scan our list of questions to see which ones we're definitely going to send
 		for (q = m->Questions; q; q=q->next)
-			if (TimeToSendThisQuestion(q, m->timenow))
+			if (!q->Target.type && TimeToSendThisQuestion(q, m->timenow))
 				{
 				q->SendQNow = mDNSInterfaceMark;		// Mark this question for sending on all interfaces
 				if (maxExistingQuestionInterval < q->ThisQInterval)
@@ -2709,7 +2731,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// (b) to update the state variables for all the questions we're going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (q->SendQNow || (ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q)))
+			if (q->SendQNow ||
+				(!q->Target.type && ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q)))
 				{
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, treat this as logically a repeat of the last transmission, without advancing the interval
@@ -3920,7 +3943,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			// can't guarantee to receive all of the Known Answer packets that go with a particular query.
 			if (!(query->h.flags.b[0] & kDNSFlag0_TC))
 				for (q = m->Questions; q; q=q->next)
-					if (ActiveQuestion(q) && m->timenow - q->LastQTxTime > mDNSPlatformOneSecond / 4)
+					if (!q->Target.type && ActiveQuestion(q) && m->timenow - q->LastQTxTime > mDNSPlatformOneSecond / 4)
 						if (!q->InterfaceID || q->InterfaceID == InterfaceID)
 							if (q->NextInDQList == mDNSNULL && dqp != &q->NextInDQList)
 								if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && q->qnamehash == pktq.qnamehash && SameDomainName(&q->qname, &pktq.qname))
@@ -4532,6 +4555,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 #pragma mark - Searcher Functions
 #endif
 
+#define SameQTarget(A,B) (mDNSSameAddress(&(A)->Target, &(B)->Target) && (A)->TargetPort.NotAnInteger == (B)->TargetPort.NotAnInteger)
+
 mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
@@ -4541,6 +4566,7 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 	// further in the list.
 	for (q = m->Questions; q && q != question; q=q->next)		// Scan our list of questions
 		if (q->InterfaceID == question->InterfaceID &&			// for another question with the same InterfaceID,
+			SameQTarget(q, question)                &&			// and same unicast/multicast target settings
 			q->qtype       == question->qtype       &&			// type,
 			q->qclass      == question->qclass      &&			// class,
 			q->qnamehash   == question->qnamehash   &&
@@ -4566,11 +4592,21 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 			}
 	}
 
+#define ValidQuestionTarget(Q) (((Q)->Target.type == mDNSAddrType_IPv4 || (Q)->Target.type == mDNSAddrType_IPv6) && \
+	((Q)->TargetPort.NotAnInteger == UnicastDNSPort.NotAnInteger || (Q)->TargetPort.NotAnInteger == MulticastDNSPort.NotAnInteger))
+
 mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
 #if TEST_LOCALONLY_FOR_EVERYTHING
 	question->InterfaceID = mDNSInterface_LocalOnly;
 #endif
+
+	if (question->Target.type && !ValidQuestionTarget(question))
+		{
+		LogMsg("Warning! Target.type = %d port = %u (Client forgot to initialize before calling mDNS_StartQuery?)",
+			question->Target.type, mDNSVal16(question->TargetPort));
+		question->Target.type = mDNSAddrType_None;
+		}
 
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast query on that interface, even for unicast domains.
@@ -4769,12 +4805,12 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const domainname *const srv, const domainname *const domain,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
-	question->ThisQInterval     = -1;				// Indicate that query is not yet active
-	question->InterfaceID       = InterfaceID;
-	question->qtype             = kDNSType_PTR;
-	question->qclass            = kDNSClass_IN;
-	question->QuestionCallback  = Callback;
-	question->QuestionContext   = Context;
+	question->InterfaceID      = InterfaceID;
+	question->Target           = zeroAddr;
+	question->qtype            = kDNSType_PTR;
+	question->qclass           = kDNSClass_IN;
+	question->QuestionCallback = Callback;
+	question->QuestionContext  = Context;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 	return(mDNS_StartQuery(m, question));
 	}
@@ -4913,32 +4949,36 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	mStatus status;
 	mDNS_Lock(m);
 
-	query->qSRV.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qSRV.ThisQInterval       = -1;		// So that mDNS_StopResolveService() knows whether to cancel this question
 	query->qSRV.InterfaceID         = info->InterfaceID;
+	query->qSRV.Target              = zeroAddr;
 	AssignDomainName(query->qSRV.qname, info->name);
 	query->qSRV.qtype               = kDNSType_SRV;
 	query->qSRV.qclass              = kDNSClass_IN;
 	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
 	query->qSRV.QuestionContext     = query;
 
-	query->qTXT.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qTXT.ThisQInterval       = -1;		// So that mDNS_StopResolveService() knows whether to cancel this question
 	query->qTXT.InterfaceID         = info->InterfaceID;
+	query->qTXT.Target              = zeroAddr;
 	AssignDomainName(query->qTXT.qname, info->name);
 	query->qTXT.qtype               = kDNSType_TXT;
 	query->qTXT.qclass              = kDNSClass_IN;
 	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
 	query->qTXT.QuestionContext     = query;
 
-	query->qAv4.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qAv4.ThisQInterval       = -1;		// So that mDNS_StopResolveService() knows whether to cancel this question
 	query->qAv4.InterfaceID         = info->InterfaceID;
+	query->qAv4.Target              = zeroAddr;
 	query->qAv4.qname.c[0]          = 0;
 	query->qAv4.qtype               = kDNSType_A;
 	query->qAv4.qclass              = kDNSClass_IN;
 	query->qAv4.QuestionCallback    = FoundServiceInfo;
 	query->qAv4.QuestionContext     = query;
 
-	query->qAv6.ThisQInterval       = -1;		// This question not yet in the question list
+	query->qAv6.ThisQInterval       = -1;		// So that mDNS_StopResolveService() knows whether to cancel this question
 	query->qAv6.InterfaceID         = info->InterfaceID;
+	query->qAv6.Target              = zeroAddr;
 	query->qAv6.qname.c[0]          = 0;
 	query->qAv6.qtype               = kDNSType_AAAA;
 	query->qAv6.qclass              = kDNSClass_IN;
@@ -4985,12 +5025,14 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *que
 mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
-	MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType]);
 	question->InterfaceID      = InterfaceID;
+	question->Target           = zeroAddr;
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
+	if (DomainType > mDNS_DomainTypeRegistrationDefault) return(mStatus_BadParamErr);
+	if (!MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
 	return(mDNS_StartQuery(m, question));
 	}
 
