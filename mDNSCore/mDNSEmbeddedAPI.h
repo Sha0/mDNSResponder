@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.255  2004/12/07 22:48:37  cheshire
+Tidying
+
 Revision 1.254  2004/12/07 21:26:04  ksekar
 <rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration
 
@@ -2099,8 +2102,7 @@ extern mDNSs32 mDNS_Execute   (mDNS *const m);
 
 extern mStatus mDNS_Register  (mDNS *const m, AuthRecord *const rr);
 extern mStatus mDNS_Update    (mDNS *const m, AuthRecord *const rr, mDNSu32 newttl,
-								const mDNSu16 newrdlength,
-								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
+								const mDNSu16 newrdlength, RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr);
 
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
