@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.52  2003/12/17 00:21:51  cheshire
+If we received one, display host's HINFO record in final summary
+
 Revision 1.51  2003/12/13 03:05:28  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -331,6 +334,8 @@ typedef struct
 	unsigned long pkts[HostPkt_NumTypes];
 	unsigned long totalops;
 	unsigned long stat[OP_NumTypes];
+	UTF8str255 HIHardware;
+	UTF8str255 HISoftware;
 	} HostEntry;
 
 #define HostEntryTotalPackets(H) ((H)->pkts[HostPkt_Q] + (H)->pkts[HostPkt_L] + (H)->pkts[HostPkt_R] + (H)->pkts[HostPkt_B])
@@ -359,8 +364,9 @@ mDNSlocal HostEntry *FindHost(const mDNSAddr *addr, HostList* list)
 	return NULL;
 	}
 	
-mDNSlocal HostEntry *AddHost(HostList* list)
+mDNSlocal HostEntry *AddHost(const mDNSAddr *addr, HostList* list)
 	{
+	int i;
 	HostEntry *entry;
 	if (list->num >= list->max)
 		{
@@ -371,7 +377,16 @@ mDNSlocal HostEntry *AddHost(HostList* list)
 		list->max = newMax;
 		list->hosts = newHosts;
 		}
+
 	entry = list->hosts + list->num++;
+
+	entry->addr = *addr;
+	for (i=0; i<HostPkt_NumTypes; i++) entry->pkts[i] = 0;
+	entry->totalops = 0;
+	for (i=0; i<OP_NumTypes;      i++) entry->stat[i] = 0;
+	entry->HIHardware.c[0] = 0;
+	entry->HISoftware.c[0] = 0;
+
 	return(entry);
 	}
 
@@ -382,16 +397,8 @@ mDNSlocal HostEntry *GotPacketFromHost(const mDNSAddr *addr, HostPkt_Type t)
 		{
 		HostList *list = (addr->type == mDNSAddrType_IPv4) ? &IPv4HostList : &IPv6HostList;
 		HostEntry *entry = FindHost(addr, list);
-		if (!entry)
-			{
-			int i;
-			entry = AddHost(list);
-			if (!entry) return(NULL);
-			entry->addr = *addr;
-			for (i=0; i<HostPkt_NumTypes; i++) entry->pkts[i] = 0;
-			entry->totalops = 0;
-			for (i=0; i<OP_NumTypes;      i++) entry->stat[i] = 0;
-			}
+		if (!entry) entry = AddHost(addr, list);
+		if (!entry) return(NULL);
 		entry->pkts[t]++;
 		return(entry);
 		}
@@ -419,6 +426,7 @@ mDNSlocal void ShowSortedHostList(HostList *list, int max)
 			HostEntryTotalPackets(e), e->pkts[HostPkt_Q], e->pkts[HostPkt_L], e->pkts[HostPkt_R]);
 		if (e->pkts[HostPkt_B]) mprintf("Bad: %8lu", e->pkts[HostPkt_B]);
 		mprintf("\n");
+		if (e->HIHardware.c[0] || e->HISoftware.c[0]) mprintf("%#s %#s\n", e->HIHardware.c, e->HISoftware.c);
 		}
 	}
 
@@ -720,6 +728,18 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 			NumAnswers++;
 			DisplayResourceRecord(srcaddr, (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AN)" : "(AN+)", &pkt.r.resrec);
 			recordstat(entry, &pkt.r.resrec.name, OP_answer, pkt.r.resrec.rrtype);
+			if (pkt.r.resrec.rrtype == kDNSType_HINFO)
+				{
+				RDataBody *rd = &pkt.r.resrec.rdata->u;
+				mDNSu8 *rdend = (mDNSu8 *)rd + pkt.r.resrec.rdlength;
+				mDNSu8 *hw = rd->txt.c;
+				mDNSu8 *sw = hw + 1 + (mDNSu32)hw[0];
+				if (sw + 1 + sw[0] <= rdend)
+					{
+					mDNSPlatformMemCopy(hw, entry->HIHardware.c, 1 + (mDNSu32)hw[0]);
+					mDNSPlatformMemCopy(sw, entry->HISoftware.c, 1 + (mDNSu32)sw[0]);
+					}
+				}
 			}
 		else
 			{
