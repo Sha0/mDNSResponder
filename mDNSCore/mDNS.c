@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.470  2004/11/24 21:54:44  cheshire
+<rdar://problem/3894475> mDNSCore not receiving unicast responses properly
+
 Revision 1.469  2004/11/24 04:50:39  cheshire
 Minor tidying
 
@@ -5015,19 +5018,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	// If we accept and try to process a packet with zero or all-ones source address, that could really mess things up
 	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 
-#ifndef UNICAST_DISABLED	
-	if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroupv4.NotAnInteger &&
-		(QR_OP == StdR || QR_OP == UpdateR ))
-		{
-		mDNS_Lock(m);
-		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-		mDNS_Unlock(m);
-		return;
-		}
-#endif	
-	
 	mDNS_Lock(m);
 	m->PktNum++;
+#ifndef UNICAST_DISABLED
+	if (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdateR))
+		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
+		// Note: mDNSCore also needs to get access to received unicast responses
+#endif	
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
 	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
 	else LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",

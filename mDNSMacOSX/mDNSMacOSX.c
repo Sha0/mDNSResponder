@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.237  2004/11/24 21:54:44  cheshire
+<rdar://problem/3894475> mDNSCore not receiving unicast responses properly
+
 Revision 1.236  2004/11/23 03:39:46  cheshire
 Let interface name/index mapping capability live directly in JNISupport.c,
 instead of having to call through to the daemon via IPC to get this information.
@@ -1109,7 +1112,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	mDNSIPPort senderPort, destPort = MulticastDNSPort;
 	const CFSocketSet *ss = (const CFSocketSet *)context;
 	mDNS *const m = ss->m;
-	const mDNSInterfaceID InterfaceID = ss->info ? ss->info->ifinfo.InterfaceID : mDNSNULL;
+	mDNSInterfaceID InterfaceID = ss->info ? ss->info->ifinfo.InterfaceID : mDNSNULL;
 	DNSMessage packet;
 	struct sockaddr_storage from;
 	size_t fromlen = sizeof(from);
@@ -1179,6 +1182,14 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name, packetifname);
 				return;
 				}
+			}
+		else
+			{
+			// Note: For unicast packets, try to find the matching mDNSCore interface object 
+			// (though we may not be able to, for unicast packets received over something like a PPP link)
+			NetworkInterfaceInfo *intf = m->HostInterfaces;
+			while (intf && strcmp(intf->ifname, packetifname)) intf = intf->next;
+			if (intf) InterfaceID = intf->InterfaceID;
 			}
 
 		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID);
