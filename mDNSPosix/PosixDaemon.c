@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.22  2004/12/10 13:12:08  cheshire
+Create no-op function RecordUpdatedNiceLabel(), required by uds_daemon.c
+
 Revision 1.21  2004/12/01 20:57:20  ksekar
 <rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
 
@@ -297,6 +300,13 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 mStatus udsSupportRemoveFDFromEventLoop(int fd)
 	{
 	return mDNSPosixRemoveFDFromEventLoop(fd);
+	}
+
+mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
+	{
+	(void)m;
+	(void)delay;
+	// No-op, for now
 	}
 
 #if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
