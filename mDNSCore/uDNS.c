@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.71  2004/08/27 17:51:53  ksekar
+Replaced unnecessary LogMsg with debugf.
+
 Revision 1.70  2004/08/25 00:37:27  ksekar
 <rdar://problem/3774635>: Cleanup DynDNS hostname registration code
 
@@ -1117,7 +1120,7 @@ mDNSexport void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 
 	if (!u->hostlabel.c[0]) { u->hostlabel = *hostlabel; return; }  // initialization
-	if (SameDomainLabel(u->hostlabel.c, hostlabel->c)) { LogMsg("mDNS_SetDynDNSComputerName: hostlabel unchanged"); return; }
+	if (SameDomainLabel(u->hostlabel.c, hostlabel->c)) { debugf("mDNS_SetDynDNSComputerName: hostlabel unchanged"); return; }
 	u->hostlabel = *hostlabel;
 	UpdateHostnameRegistrations(m);	
 	UpdateServiceTargets(m);   //!!!KRS this gets done for us for empty-string registrations - how do we tell when we need to do it?
