@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.102  2003/04/17 03:06:28  cheshire
+Bug #: <rdar://problem/3231321> No need to query again when a service goes away
+Set UnansweredQueries to 2 when receiving a "goodbye" packet
+
 Revision 1.101  2003/04/15 20:58:31  jgraessl
 Bug #: 3229014
 Added a hash to lookup records in the cache.
@@ -3755,12 +3759,22 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					{
 					//debugf("Found RR %##s size %d already in cache", pktrr.name.c, pktrr.rdata->RDLength);
 					rr->TimeRcvd = timenow;
-					rr->UnansweredQueries = 0;
 					rr->NewData = mDNStrue;
-					// If we're deleting a record, push it out one second into the future
-					// to give other hosts on the network a chance to protest
-					if (pktrr.rroriginalttl == 0) rr->rroriginalttl = 1;
-					else rr->rroriginalttl = pktrr.rroriginalttl;
+					if (pktrr.rroriginalttl > 0)
+						{
+						rr->rroriginalttl = pktrr.rroriginalttl;
+						rr->UnansweredQueries = 0;
+						}
+					else
+						{
+						// If the packet TTL is zero, that means we're deleting this record.
+						// To give other hosts on the network a chance to protest, we push the deletion
+						// out one second into the future. Also, we set UnansweredQueries to 2.
+						// Otherwise, we'll do final queries for this record at 80% and 90% of its apparent
+						// lifetime (800ms and 900ms from now) which is a pointless waste of network bandwidth.
+						rr->rroriginalttl = 1;
+						rr->UnansweredQueries = 2;
+						}
 					if ((m->NextCacheTidyTime - timenow) > (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond))
 						m->NextCacheTidyTime = timenow + rr->rroriginalttl * mDNSPlatformOneSecond;
 					break;
