@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.29  2004/04/15 20:03:13  ksekar
+Clarified log message when pulling bad resource records off packet.
+
 Revision 1.28  2004/04/15 00:51:28  bradley
 Minor tweaks for Windows and C++ builds. Added casts for signed/unsigned integers and 64-bit pointers.
 Prefix some functions with mDNS to avoid conflicts. Disable benign warnings on Microsoft compilers.
@@ -1216,7 +1219,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 		for (i = 0; i < msg->h.numAnswers; i++)
 			{
 			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
-			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  return smError; }
+			if (!ptr) { LogMsg("ERROR: hndlLookupSOA, Answers - GetLargeResourceRecord returned NULL");  return smError; }
 			if (rr->rrtype == kDNSType_SOA && SameDomainName(context->curSOA, &rr->name))
 				{
 				processSOA(context, rr);
@@ -1228,7 +1231,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 		for (i = 0; i < msg->h.numAuthorities; i++)
 			{
 			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr); ///!!!KRS using type PacketAns for auth
-			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  return smError; }		 		
+			if (!ptr) { LogMsg("ERROR: hndlLookupSOA, Authority - GetLargeResourceRecord returned NULL");  return smError; }		 		
 			if (rr->rrtype == kDNSType_SOA)
 				{
 				processSOA(context, rr);
@@ -1296,7 +1299,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 		for (i = 0; i < msg->h.numAnswers; i++)
 			{
 			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
-			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  return smError; }
+			if (!ptr) { LogMsg("ERROR: confirmNS, Answers - GetLargeResourceRecord returned NULL");  return smError; }
 			if (rr->rrtype == kDNSType_NS &&
 				SameDomainName(&context->zone, &rr->name) && SameDomainName(&context->ns, &rr->rdata->u.name))
 				{
@@ -1335,7 +1338,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 			for (i = 0; i < msg->h.numAdditionals; i++)
 				{
 				ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
-				if (!ptr) { LogMsg("ERROR: lookupNSAddr - GetLargeResourceRecord returned NULL"); break; }
+				if (!ptr) { LogMsg("ERROR: lookupNSAddr, Additionals - GetLargeResourceRecord returned NULL"); break; }
 				if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, &rr->name))
 					{
 					context->addr.NotAnInteger = rr->rdata->u.ip.NotAnInteger;
