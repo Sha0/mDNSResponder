@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.47  2003/09/05 18:49:57  cheshire
+Add total packet size to display
+
 Revision 1.46  2003/09/05 02:33:48  cheshire
 Set output to be line buffered, so you can redirect to a file and "tail -f" the file in another window
 
@@ -505,14 +508,14 @@ mDNSlocal void DisplayTimestamp(void)
 	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
 	}
 
-mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *srcaddr, mDNSIPPort srcport)
+mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport)
 	{
 	const char *const ptype =   (msg->h.flags.b[0] & kDNSFlag0_QR_Response)             ? "-R- " :
 								(srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? "-Q- " : "-LQ-";
 
 	DisplayTimestamp();
-	mprintf("%#-16a %s             Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
-		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
+	mprintf("%#-16a %s             Q:%3d  Ans:%3d  Auth:%3d  Add:%3d  Size:%5d bytes",
+		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals, end - (mDNSu8 *)msg);
 
 	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", ((mDNSu16)msg->h.id.b[0])<<8 | msg->h.id.b[1]);
 
@@ -620,7 +623,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	HostEntry *entry = GotPacketFromHost(srcaddr, MQ ? HostPkt_Q : HostPkt_L);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, srcaddr, srcport);
+	DisplayPacketHeader(msg, end, srcaddr, srcport);
 	if (MQ) NumPktQ++; else NumPktL++;
 
 	for (i=0; i<msg->h.numQuestions; i++)
@@ -681,7 +684,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	HostEntry *entry = GotPacketFromHost(srcaddr, HostPkt_R);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, srcaddr, srcport);
+	DisplayPacketHeader(msg, end, srcaddr, srcport);
 	NumPktR++;
 
 	for (i=0; i<msg->h.numQuestions; i++)
