@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.96  2003/08/12 13:57:04  cheshire
+<rdar://problem/3323817> Improve cache performance
+Changed the number of hash table slots from 37 to 499
+
 Revision 1.95  2003/08/09 00:55:02  cheshire
 <rdar://problem/3366553> mDNSResponder is taking 20-30% of the CPU
 Don't scan the whole cache after every packet.
@@ -813,7 +817,7 @@ struct ServiceInfoQuery_struct
 
 typedef void mDNSCallback(mDNS *const m, mStatus result);
 
-#define CACHE_HASH_SLOTS	37
+#define CACHE_HASH_SLOTS 499
 
 enum
 	{
