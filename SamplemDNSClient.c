@@ -5,7 +5,7 @@
  *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
-                                                               * "License").  You may not use this file except in compliance with the
+ * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
  *
@@ -20,70 +20,82 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <ctype.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/param.h>
-#include <mach/mach.h>
-#include <net/if_types.h>
 #include <libc.h>
-#include <mach/mach_error.h>
-#include <mach/message.h>
-#include <servers/bootstrap.h>
-#include <mach/mach_error.h>
-#include <pthread.h>
-#include <assert.h>
-
-#include <SystemConfiguration/SystemConfiguration.h>
-#include <SystemConfiguration/SCDPlugin.h>
-#include <SystemConfiguration/SCPrivate.h>	// for SCLog()
-
 #include <CoreFoundation/CoreFoundation.h>
-
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
+
+void regdom_reply(int resultType, char *replyDomain, int flags, void *context)
+	{
+    char *msg = (resultType == DNSServiceDomainEnumerationReplyAddDomain)        ? "Added" :
+                (resultType == DNSServiceDomainEnumerationReplyAddDomainDefault) ? "(Default)" :
+                (resultType == DNSServiceDomainEnumerationReplyRemoveDomain)     ? "Removed" : "Unknown";
+    printf("Recommended Registration Domain %s %s", replyDomain, msg);
+	if (flags) printf(" Flags: %X", flags);
+	printf("\n");
+	}
+
+void browsedom_reply(int resultType, char *replyDomain, int flags, void *context)
+	{
+    char *msg = (resultType == DNSServiceDomainEnumerationReplyAddDomain)        ? "Added" :
+                (resultType == DNSServiceDomainEnumerationReplyAddDomainDefault) ? "(Default)" :
+                (resultType == DNSServiceDomainEnumerationReplyRemoveDomain)     ? "Removed" : "Unknown";
+    printf("Recommended Browsing Domain %s %s", replyDomain, msg);
+	if (flags) printf("flags: %X", flags);
+	printf("\n");
+	}
+
+void browse_reply(int resultType, char *replyName, char *replyType, char *replyDomain, int 	flags, void	*context)
+	{
+	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Found" : "Removed";
+	printf("Service \"%s\", type \"%s\", domain \"%s\" %s", replyName, replyType, replyDomain, op);
+	if (flags) printf(" Flags: %X", flags);
+	printf("\n");
+	}
+
+void resolve_reply(struct sockaddr *interface, struct sockaddr *address, char *txtRecord, int flags, void *context)
+	{
+    printf("resolve_reply interface %p, address %p\n", interface, address);
+	if (0 && address->sa_family != AF_INET)
+		printf("Unknown address family %d\n", address->sa_family);
+	else
+		{
+		struct sockaddr_in *ip = (struct sockaddr_in *)address;
+		union { uint32_t l; u_char b[4]; } addr = { ip->sin_addr.s_addr };
+		union { uint16_t s; u_char b[2]; } port = { ip->sin_port };
+        short PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
+		printf("Service can be reached at %d.%d.%d.%d:%d %s",
+            addr.b[0], addr.b[1], addr.b[2], addr.b[3], PortAsNumber, txtRecord);
+		if (flags) printf(" Flags: %X", flags);
+		printf("\n");
+        // For this demo code we just get one answer and exit
+        // A real application might wait to see if there are more addresses coming
+        exit(0);
+		}
+	}
+
+void reg_reply(int errorCode, void *context)
+{
+    if (errorCode)
+        printf("Got a reply from the server with error %d\n", errorCode);
+    else
+        printf("Got a reply from the server: Name now registered and active\n");
+}
 
 void MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info )
 {
     DNSServiceDiscovery_handleReply(msg);
 }
 
-void reg_reply(int errorCode, void *context)
-{
-    printf("Got a reply from the server with error %d\n", errorCode);
-}
-
-void browse_reply(int resultType, char *replyName, char *replyType, char *replyDomain, int 	flags, void	*context)
-{
-    printf("Got a reply from the server %d %s %s %s %d\n", resultType, replyName, replyType, replyDomain, flags);
-}
-
-void enum_reply(int resultType, char *replyDomain, int flags, void *context)
-{
-	char *def = "";
-	if (resultType == DNSServiceDomainEnumerationReplyAddDomainDefault) def = "(default)";
-    printf("Got a reply from the server %d %s %d %s\n", resultType, replyDomain, flags, def);
-}
-
-void resolve_reply(struct sockaddr *interface, struct sockaddr *address, char *txtRecord, int flags, void *context)
-{
-    printf("Got a reply from the server %s, %d\n", txtRecord, flags);
-    //printf("interface length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)interface)->sin_len, ((struct sockaddr_in *)interface)->sin_port, ((struct sockaddr_in *)interface)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)interface)->sin_addr)));
-    //printf("address length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)address)->sin_len, ((struct sockaddr_in *)address)->sin_port, ((struct sockaddr_in *)address)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr)));
-}
-
-int
-main(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     CFMachPortRef           cfMachPort;
     CFMachPortContext       context;
     Boolean                 shouldFreeInfo;
-
     char            ch;
     mach_port_t port;
     dns_service_discovery_ref 	dns_client;
+
+    if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
 
     context.version                 = 1;
     context.info                    = 0;
@@ -91,31 +103,17 @@ main(int argc, char ** argv)
     context.release                 = NULL;
     context.copyDescription 	    = NULL;
     
-    if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
-
     while ((ch = getopt(argc, (char * const *)argv, "ERFBL")) != -1)
     {
-        CFRunLoopSourceRef	rls;
-
         switch (ch) {
 
-            case 'E':	dns_client =  DNSServiceDomainEnumerationCreate(1, enum_reply, nil); break;
-
-            case 'R':	{
-						char 	*demux = "";
-						Opaque16	registerPort;
-						UInt16 portasnum;
-						if (argc < optind+4) goto Fail;
-						if (argc > optind+4) demux = argv[optind+4];
-						printf("Registering Service %s.%s%s port %s %s\n", argv[optind+0], argv[optind+1], argv[optind+2], argv[optind+3], demux);
-						portasnum = atoi(argv[optind+3]);
-						registerPort.b[0] = portasnum >> 8;
-						registerPort.b[1] = portasnum & 0xFF;
-						dns_client = DNSServiceRegistrationCreate(argv[optind+0], argv[optind+1], argv[optind+2], registerPort, demux, reg_reply, nil);
+            case 'E':	dns_client =  DNSServiceDomainEnumerationCreate(1, regdom_reply, nil);
+						printf("Looking for recommended registration domains:\n");
 						break;
-						}
 
-            case 'F':	dns_client =  DNSServiceDomainEnumerationCreate(0, enum_reply, nil); break;
+            case 'F':	dns_client =  DNSServiceDomainEnumerationCreate(0, browsedom_reply, nil);
+						printf("Looking for recommended browsing domains:\n");
+						break;
 
             case 'B':	if (argc < optind+2) goto Fail;
 						printf("Browsing for %s%s\n", argv[optind+0], argv[optind+1]);
@@ -127,17 +125,27 @@ main(int argc, char ** argv)
 						dns_client = DNSServiceResolverResolve(argv[optind+0], argv[optind+1], argv[optind+2], resolve_reply, nil);
 						break;
 
+            case 'R':	{
+						char 	*demux = "";
+						Opaque16 registerPort;
+						if (argc < optind+4) goto Fail;
+						if (argc > optind+4) demux = argv[optind+4];
+						printf("Registering Service %s.%s%s port %s %s\n", argv[optind+0], argv[optind+1], argv[optind+2], argv[optind+3], demux);
+						registerPort.b[0] = atoi(argv[optind+3]) >> 8;
+						registerPort.b[1] = atoi(argv[optind+3]) & 0xFF;
+						dns_client = DNSServiceRegistrationCreate(argv[optind+0], argv[optind+1], argv[optind+2], registerPort, demux, reg_reply, nil);
+						break;
+						}
+
             default:
                 goto Exit;
         }
         port = DNSServiceDiscoveryMachPort(dns_client);
 
         if (port) {
-
-            printf("port is %d\n", port);
-
+			CFRunLoopSourceRef	rls;
+            printf("Talking to DNS SD Daemon at Mach port %d\n", port);
             cfMachPort = CFMachPortCreateWithPort ( kCFAllocatorDefault, port, ( CFMachPortCallBack ) MyHandleMachMessage,&context,&shouldFreeInfo );
-
             /* Create and add a run loop source for the port */
             rls = CFMachPortCreateRunLoopSource(NULL, cfMachPort, 0);
             CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
@@ -147,19 +155,15 @@ main(int argc, char ** argv)
             goto Exit;
         }
     }
-
     CFRunLoopRun();
-
 Exit:
-
     return 0;
 
 Fail:
-	fprintf(stderr, "%s -E                                       (Enumerate recommended registration domains) \n", argv[0]);
-	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <Demux> (Register a Service)\n", argv[0]);
-	fprintf(stderr, "%s -F                                       (Enumerate recommended browsing domains)\n", argv[0]);
-	fprintf(stderr, "%s -B        <Type> <Domain>                (Browse for Services Instances -- not yet implemented)\n", argv[0]);
-	fprintf(stderr, "%s -L <Name> <Type> <Domain>                (Look Up a Service Instance)\n", argv[0]);
+	fprintf(stderr, "%s -E             (Enumerate recommended registration domains)\n", argv[0]);
+	fprintf(stderr, "%s -F                 (Enumerate recommended browsing domains)\n", argv[0]);
+	fprintf(stderr, "%s -B        <Type> <Domain>   (Browse for Services Instances)\n", argv[0]);
+	fprintf(stderr, "%s -L <Name> <Type> <Domain>      (Look Up a Service Instance)\n", argv[0]);
+	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> (Register a Service)\n", argv[0]);
     return 0;
 }
-
