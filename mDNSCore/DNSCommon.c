@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.81  2004/12/18 03:13:45  cheshire
+<rdar://problem/3751638> kDNSServiceInterfaceIndexLocalOnly should return all local records
+
 Revision 1.80  2004/12/16 21:46:43  cheshire
 Add DNSTypeName case for kDNSType_SOA
 
@@ -1056,7 +1059,7 @@ mDNSexport mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2)
 mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q)
 	{
 	if (rr->InterfaceID &&
-		q ->InterfaceID &&
+		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
@@ -2015,8 +2018,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 		else return(m->timenow);
 		}
 	if (m->NewLocalOnlyQuestions)   return(m->timenow);
-	if (m->NewLocalOnlyRecords)     return(m->timenow);
-	if (m->DiscardLocalOnlyRecords) return(m->timenow);
+	if (m->NewLocalRecords)         return(m->timenow);
 	if (m->SuppressSending)         return(m->SuppressSending);
 #ifndef UNICAST_DISABLED
 	if (e - m->uDNS_info.nextevent   > 0) e = m->uDNS_info.nextevent;

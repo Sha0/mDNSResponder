@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.266  2004/12/18 03:13:45  cheshire
+<rdar://problem/3751638> kDNSServiceInterfaceIndexLocalOnly should return all local records
+
 Revision 1.265  2004/12/17 23:37:45  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 (and other repetitive configuration changes)
@@ -1120,7 +1123,7 @@ enum
 	mStatus_NoAuth            = -65555,
 	mStatus_NoSuchKey         = -65556,
 	mStatus_NATTraversal      = -65557,
-	mStatus_DblNAT            = -65558,
+	mStatus_DoubleNAT         = -65558,
 	mStatus_BadTime           = -65559,
 	mStatus_BadSig            = -65560,     // while we define this per RFC 2845, BIND 9 returns Refused for bad/missing signatures
 	mStatus_BadKey            = -65561,
@@ -1476,6 +1479,7 @@ struct AuthRecord_struct
 	mDNSu8          ProbeCount;			// Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
 	mDNSu8          RequireGoodbye;		// Set if this RR has been announced on the wire and will require a goodbye packet
+	mDNSu8          LocalAnswer;		// Set if this RR has been delivered to LocalOnly questions
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 	mDNSu8          ImmedUnicast;		// Set if we may send our response directly via unicast to the requester
@@ -2019,9 +2023,7 @@ struct mDNS_struct
 	UTF8str255  HISoftware;
 	AuthRecord *ResourceRecords;
 	AuthRecord *DuplicateRecords;		// Records currently 'on hold' because they are duplicates of existing records
-	AuthRecord *LocalOnlyRecords;		// Local records registered with InterfaceID set to mDNSInterface_LocalOnly
-	AuthRecord *NewLocalOnlyRecords;	// Fresh local-only records not yet delivered to local-only questions
-	mDNSBool    DiscardLocalOnlyRecords;// Set when we have "remove" events we need to deliver to local-only questions
+	AuthRecord *NewLocalRecords;		// Fresh local-only records not yet delivered to local-only questions
 	AuthRecord *CurrentRecord;			// Next AuthRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
 	mDNSs32 ProbeFailTime;
@@ -2056,7 +2058,7 @@ extern const mDNSv6Addr      onesIPv6Addr;
 extern const mDNSAddr        zeroAddr;
 
 extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
-extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// (mDNSInterfaceID)-1;
+extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      MulticastDNSPort;
