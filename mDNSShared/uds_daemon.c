@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.91  2004/09/22 02:25:43  cheshire
+Fix spelling errors
+
 Revision 1.90  2004/09/21 23:40:12  ksekar
 <rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
 
@@ -2191,7 +2194,7 @@ static void handle_regrecord_request(request_state *rstate)
         return;
         }
 	
-    rcc = mallocL("hanlde_regrecord_request", sizeof(regrecord_callback_context));
+    rcc = mallocL("handle_regrecord_request", sizeof(regrecord_callback_context));
     if (!rcc) goto malloc_error;
     rcc->rstate = rstate;
     rcc->client_context = rstate->hdr.client_context;
@@ -2199,7 +2202,7 @@ static void handle_regrecord_request(request_state *rstate)
     rr->RecordCallback = regrecord_callback;
 
     // allocate registration entry, link into list
-    re = mallocL("hanlde_regrecord_request", sizeof(registered_record_entry));
+    re = mallocL("handle_regrecord_request", sizeof(registered_record_entry));
     if (!re) goto malloc_error;
     re->key = rstate->hdr.reg_index;
     re->rr = rr;
@@ -2409,7 +2412,7 @@ static void handle_enum_request(request_state *rstate)
     	}
 
     // allocate context structures
-    def = mallocL("hanlde_enum_request", sizeof(domain_enum_t));
+    def = mallocL("handle_enum_request", sizeof(domain_enum_t));
     all = mallocL("handle_enum_request", sizeof(domain_enum_t));
     term = mallocL("handle_enum_request", sizeof(enum_termination_t));
     if (!def || !all || !term)
