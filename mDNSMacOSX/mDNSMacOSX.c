@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.269  2004/12/20 20:48:11  cheshire
+Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xxx) or later
+
 Revision 1.268  2004/12/18 03:19:04  cheshire
 Show netmask in error log
 
@@ -3131,7 +3134,9 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 		LogMsg("mDNSPlatformRawTime: this_mach_absolute_time %08X%08X", this_mach_absolute_time);
 		// Update last_mach_absolute_time *before* calling NotifyOfElusiveBug()
 		last_mach_absolute_time = this_mach_absolute_time;
-		NotifyOfElusiveBug("mach_absolute_time went backwards!", 3438376, "");
+		// Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xxx) or later
+		if (mDNSMacOSXSystemBuildNumber(NULL) >= 8)
+			NotifyOfElusiveBug("mach_absolute_time went backwards!", 3438376, "");
 		}
 	last_mach_absolute_time = this_mach_absolute_time;
 
