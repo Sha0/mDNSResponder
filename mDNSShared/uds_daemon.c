@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.157  2005/01/21 02:20:39  cheshire
+Fix mistake in LogOperation() format string
+
 Revision 1.156  2005/01/19 19:15:36  ksekar
 Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
 
@@ -2685,7 +2688,7 @@ static void handle_removerecord_request(request_state *rstate)
     else
 		{
 		service_instance *i;
-		LogOperation("%3d: DNSServiceRemoveRecord(%##s, %s)", rstate->sd,
+		LogOperation("%3d: DNSServiceRemoveRecord(%##s)", rstate->sd,
 			(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name->c : NULL);
 		for (i = srvinfo->instances; i; i = i->next)
 			{
