@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.17  2003/06/06 14:26:50  cheshire
+ * Explicitly #include <time.h> for the benefit of certain Linux distributions
+ *
  * Revision 1.16  2003/05/29 21:56:36  cheshire
  * More improvements:
  * Distinguish modern multicast queries from legacy multicast queries
@@ -108,6 +111,7 @@
 #include <netinet/in.h>		// For INADDR_NONE
 #include <arpa/inet.h>		// For inet_addr()
 #include <netdb.h>			// For gethostbyname()
+#include <time.h>			// For "struct tm" etc.
 
 #include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"
