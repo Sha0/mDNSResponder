@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: makefile,v $
+# Revision 1.2  2004/06/26 20:07:06  rpantos
+# Update to use WinVersRes.h
+#
 # Revision 1.1  2004/06/18 04:12:05  rpantos
 # Move up one level. Integration changes for Scott.
 #
@@ -52,6 +55,7 @@ SHAREDDIR = ..\..\mDNSShared
 JDK = \javasdk
 
 CC = cl
+RC = rc
 LD = ld
 CP = copy
 RM = del /Q
@@ -119,9 +123,9 @@ JARCONTENTS =	$(OBJDIR)\com\apple\dnssd\DNSSDService.class \
 $(BUILDDIR)\dns_sd.jar: $(JARCONTENTS)
 	$(JAR) -cf $@ -C $(OBJDIR) com
 
-$(BUILDDIR)\jdns_sd.dll: $(JAVASRC)\JNISupport.c $(OBJDIR)\DNSSD.java.h
+$(BUILDDIR)\jdns_sd.dll: $(JAVASRC)\JNISupport.c $(OBJDIR)\DNSSD.java.h $(OBJDIR)\jdns_sd.RES
 	$(CC) -Fe$@ $(JAVASRC)\JNISupport.c $(CFLAGS) -I$(OBJDIR) \
-	$(LIBDIR)\DNSSD.lib $(JDK)\lib\jvm.lib ws2_32.lib
+	$(LIBDIR)\DNSSD.lib $(JDK)\lib\jvm.lib ws2_32.lib $(OBJDIR)\jdns_sd.RES
 
 .SUFFIXES : .java
 {$(JAVASRC)}.java{$(OBJDIR)\com\apple\dnssd}.class:	
@@ -134,4 +138,7 @@ $(OBJDIR)\DNSSD.java.h: $(OBJDIR)\com\apple\dnssd\DNSSD.class
 		com.apple.dnssd.AppleRegistration \
 		com.apple.dnssd.AppleQuery \
 		com.apple.dnssd.AppleService 
+
+$(OBJDIR)\jdns_sd.RES: jdns_sd.rc
+	$(RC) /fo $@ $?
 
