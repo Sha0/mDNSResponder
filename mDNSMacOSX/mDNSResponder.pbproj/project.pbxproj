@@ -88,8 +88,9 @@
 		004EFB9604CC78130CCA2C71 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
-			path = dnssd_clientstub.c;
-			refType = 2;
+			name = dnssd_clientstub.c;
+			path = /Users/roger/mDNSResponder/mDNSShared/dnssd_clientstub.c;
+			refType = 0;
 		};
 		0066920A04CC7AA80CCA2C71 = {
 			isa = PBXTargetDependency;
@@ -153,6 +154,8 @@
 				F5E11B5E04A28126019798ED,
 				F525E72B04AA167A01F1CF4D,
 				00AD62B1032D799A0CCA2C71,
+				DBAAFE2B057E8F4D0085CAD0,
+				DBAAFE2E057E8F660085CAD0,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -356,7 +359,9 @@
 				6575FBEB022EAF7200000109,
 				654BE64F02B63B93000001D1,
 				654BE65002B63B93000001D1,
+				DBAAFE29057E8F4D0085CAD0,
 				000753D303367C1C0CCA2C71,
+				DBAAFE2C057E8F660085CAD0,
 				FF485D5105632E0000130380,
 			);
 			isa = PBXGroup;
@@ -425,6 +430,8 @@
 				F5E11B5C04A28126019798ED,
 				F525E72904AA167501F1CF4D,
 				6575FBEE022EAF7200000109,
+				DBAAFE2A057E8F4D0085CAD0,
+				DBAAFE2D057E8F660085CAD0,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -729,6 +736,54 @@
 //652
 //653
 //654
+//DB0
+//DB1
+//DB2
+//DB3
+//DB4
+		DBAAFE29057E8F4D0085CAD0 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = mDNSDebug.c;
+			path = /Users/roger/mDNSResponder/mDNSShared/mDNSDebug.c;
+			refType = 0;
+		};
+		DBAAFE2A057E8F4D0085CAD0 = {
+			fileRef = DBAAFE29057E8F4D0085CAD0;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DBAAFE2B057E8F4D0085CAD0 = {
+			fileRef = DBAAFE29057E8F4D0085CAD0;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DBAAFE2C057E8F660085CAD0 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = GenLinkedList.c;
+			path = /Users/roger/mDNSResponder/mDNSShared/GenLinkedList.c;
+			refType = 0;
+		};
+		DBAAFE2D057E8F660085CAD0 = {
+			fileRef = DBAAFE2C057E8F660085CAD0;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		DBAAFE2E057E8F660085CAD0 = {
+			fileRef = DBAAFE2C057E8F660085CAD0;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+//DB0
+//DB1
+//DB2
+//DB3
+//DB4
 //F50
 //F51
 //F52
@@ -755,8 +810,9 @@
 		F525E72804AA167501F1CF4D = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
-			path = uds_daemon.c;
-			refType = 4;
+			name = uds_daemon.c;
+			path = /Users/roger/mDNSResponder/mDNSShared/uds_daemon.c;
+			refType = 0;
 		};
 		F525E72904AA167501F1CF4D = {
 			fileRef = F525E72804AA167501F1CF4D;
@@ -773,14 +829,16 @@
 		F5E11B5A04A28126019798ED = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
-			path = dnssd_ipc.c;
-			refType = 4;
+			name = dnssd_ipc.c;
+			path = /Users/roger/mDNSResponder/mDNSShared/dnssd_ipc.c;
+			refType = 0;
 		};
 		F5E11B5B04A28126019798ED = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
-			path = dnssd_ipc.h;
-			refType = 4;
+			name = dnssd_ipc.h;
+			path = /Users/roger/mDNSResponder/mDNSShared/dnssd_ipc.h;
+			refType = 0;
 		};
 		F5E11B5C04A28126019798ED = {
 			fileRef = F5E11B5A04A28126019798ED;
