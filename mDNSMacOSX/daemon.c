@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.233  2004/12/18 00:53:46  cheshire
+Use symbolic constant mDNSInterface_LocalOnly instead of (mDNSInterfaceID)~0
+
 Revision 1.232  2004/12/17 23:37:48  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 (and other repetitive configuration changes)
@@ -1224,12 +1227,12 @@ fail:
 //*************************************************************************************************************
 // Resolve Service Info
 	
-	mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
+mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->ServiceInfoQueryContext;
 	NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)query->info->InterfaceID;
-	if (query->info->InterfaceID == (mDNSInterfaceID)~0) ifx = mDNSNULL;
+	if (query->info->InterfaceID == mDNSInterface_LocalOnly) ifx = mDNSNULL;
 	struct sockaddr_storage interface;
 	struct sockaddr_storage address;
 	char cstring[1024];
