@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.105  2004/10/28 19:07:19  cheshire
+Add some more debugging checks and improved LogOperation() messages
+
 Revision 1.104  2004/10/26 18:53:15  cheshire
 Avoid unused variable warning
 
@@ -402,6 +405,7 @@ typedef struct service_instance
     domainname domain;
     mDNSBool default_local;    // is this the "local." from an empty-string registration?
     struct request_state *request;
+    int sd;
     AuthRecord *subtypes;
     ServiceRecordSet srs; // note - must be last field in struct 
     } service_instance;
@@ -1877,12 +1881,12 @@ static mStatus register_service_instance(request_state *request, const domainnam
 	instance->subtypes = AllocateSubTypes(info->num_subtypes, info->type_as_string);
 	if (info->num_subtypes && !instance->subtypes)
 		{ free_service_instance(instance); instance = NULL; goto malloc_error; }
-    instance->request = request;
-    
-    instance->autoname = info->autoname;
+    instance->request           = request;
+	instance->sd                = request->sd;
+    instance->autoname          = info->autoname;
     instance->rename_on_memfree = 0;
-    instance->renameonconflict = info->autorename;
-	instance->name = info->name;
+    instance->renameonconflict  = info->autorename;
+	instance->name              = info->name;
 	AssignDomainName(instance->domain, *domain);
 	instance->default_local = (info->default_domain && SameDomainName(domain, &localdomain));
     result = mDNS_RegisterService(gmDNS, &instance->srs, &instance->name, &info->type, domain, info->host.c[0] ? &info->host : NULL, info->port,
@@ -2071,20 +2075,18 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     {
     mStatus err;
     service_instance *instance = srs->ServiceContext;
-    request_state *rs = instance->request;
     (void)m; // Unused
+    if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
+    if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }
 
-    if (result == mStatus_MemFree)
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) DEREGISTERED", rs->sd, srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
+    if (result == mStatus_NoError)
+		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED  ",  instance->sd, srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
+	else if (result == mStatus_MemFree)
+		LogOperation("%3d: DNSServiceRegister(%##s, %u) DEREGISTERED",  instance->sd, srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
+	else if (result == mStatus_NameConflict)
+		LogOperation("%3d: DNSServiceRegister(%##s, %u) NAME CONFLICT", instance->sd, srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
 	else
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) CALLBACK %d",  rs->sd, srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), result);
-    
-    if (!rs && (result != mStatus_MemFree && !instance->rename_on_memfree))
-        {     
-        // error should never happen - safest to log and continue
-        LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer\n", result);
-        return;
-        }
+		LogOperation("%3d: DNSServiceRegister(%##s, %u) CALLBACK %d",   instance->sd, srs->RR_SRV.resrec.name.c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), result);
 
     if (result == mStatus_NoError)
 		{
@@ -2116,6 +2118,8 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
             }
         else
             {
+		    request_state *rs = instance->request;
+			if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
 			if (deliver_async_error(rs, reg_service_reply, result) < 0) 
                 {
@@ -2127,6 +2131,8 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     	} 
     else 
         {
+		request_state *rs = instance->request;
+		if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
         if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
         if (deliver_async_error(rs, reg_service_reply, result) < 0) 
