@@ -165,7 +165,7 @@ static void validatelists(mDNS *const m)
 			LogMsg("!!!! ResourceRecords %X list is garbage (%X) !!!!", rr, rr->RecordType);
 
 	for (q = m->Questions; q; q=q->next)
-		if (q->ThisQInterval == 0 || q->ThisQInterval == (mDNSs32)~0)
+		if (q->ThisQInterval == (mDNSs32)~0)
 			LogMsg("!!!! Questions %X list is garbage (%X) !!!!", q, q->ThisQInterval);
 	}
 
@@ -182,7 +182,8 @@ void *mallocL(char *msg, unsigned int size)
 		LogMalloc("malloc( %s : %d ) = %X", msg, size, &mem[2]);
 		mem[0] = 0xDEAD1234;
 		mem[1] = size;
-		bzero(&mem[2], size);
+		//bzero(&mem[2], size);
+		memset(&mem[2], 0xFF, size);
 		validatelists(&mDNSStorage);
 		return(&mem[2]);
 		}
