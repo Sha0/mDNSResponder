@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.162  2004/12/17 01:29:11  ksekar
+<rdar://problem/3920598> Questions can go deaf on location changes
+
 Revision 1.161  2004/12/16 20:42:02  cheshire
 Fix compiler warnings
 
@@ -1462,8 +1465,6 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	DNSQuestion *q = &m->uDNS_info.ReverseMap;
 	mDNSu8 *ip = m->uDNS_info.PrimaryIP.ip.v4.b;
 	mStatus err;
-
-	ubzero(q, sizeof(*q));
 	
 	if (m->uDNS_info.ReverseMapActive)
 		{
@@ -1472,6 +1473,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 		}
 
 	if (!m->uDNS_info.PrimaryIP.ip.v4.NotAnInteger) return;
+	ubzero(q, sizeof(*q));
 	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
     if (!MakeDomainNameFromDNSNameString(&q->qname, buf)) { LogMsg("Error: GetStaticHostname - bad name %s", buf); return; }
 
