@@ -1,4 +1,7 @@
 # $Log: Makefile,v $
+# Revision 1.17  2003/12/11 03:16:49  rpantos
+# One more change for OS X build: make install work a little better.
+#
 # Revision 1.16  2003/12/11 03:03:51  rpantos
 # Clean up mDNSPosix so that it builds on OS X again.
 #
@@ -166,12 +169,12 @@ InstalledDaemon: /usr/sbin/mDNSResponderd
 /usr/sbin/mDNSResponderd: $(TARGDIR)/mDNSResponderd
 	$(CP) $(TARGDIR)/mDNSResponderd $@
 
-InstalledLib: /usr/lib/libmdns.so.$(LIBVERS)
+InstalledLib: /usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS)
 	@echo $< " installed"
 
-/usr/lib/libmdns.so.$(LIBVERS): $(TARGDIR)/libmdns.so
-	$(CP) $(TARGDIR)/libmdns.so $@
-	$(LN) $@ /usr/lib/libmdns.so
+/usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS): $(TARGDIR)/libmdns.$(LDSUFFIX)
+	$(CP) $(TARGDIR)/libmdns.$(LDSUFFIX) $@
+	$(LN) $@ /usr/lib/libmdns.$(LDSUFFIX)
 
 InstalledStartup: /etc/init.d/mDNS
 	@echo $< " installed"
