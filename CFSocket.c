@@ -25,7 +25,17 @@
 // Supporting routines to run mDNS on a CFRunLoop platform
 // ***************************************************************************
 
-int mDNS_UsePort53 = 1;
+// Open Transport 2.7.x on Mac OS 9 used to send Multicast DNS queries to UDP port 53,
+// before the Multicast DNS port was changed to 5353. For this reason, the mDNSResponder
+// in earlier versions of Mac OS X 10.2 Jaguar used to set mDNS_AllowPort53 to 1 to allow
+// it to also listen and answer queries on UDP port 53. Now that Transport 2.8 (included in
+// the Classic subsystem of Mac OS X 10.2 Jaguar) has been corrected to issue Multicast DNS
+// queries on UDP port 5353, this backwards-compatibility legacy support is no longer needed.
+#define mDNS_AllowPort53 0
+
+// Normally mDNSResponder is advertising local services on all active interfaces.
+// However, should you wish to build a query-only mDNS client, setting mDNS_AdvertiseLocalAddresses
+// to zero will cause CFSocket.c to not set the Advertise flag in its mDNS_RegisterInterface calls.
 int mDNS_AdvertiseLocalAddresses = 1;
 
 #include "mDNSClientAPI.h"           // Defines the interface provided to the client layer above
@@ -75,10 +85,12 @@ struct NetworkInterfaceInfo2_struct
 	mDNS *m;
 	char *ifa_name;
 	NetworkInterfaceInfo2 *alias;
-	int socket1;
-	int socket2;
-	CFSocketRef cfsocket1;
-	CFSocketRef cfsocket2;
+	int socket;
+	CFSocketRef cfsocket;
+#if mDNS_AllowPort53
+	int socket53;
+	CFSocketRef cfsocket53;
+#endif
 	};
 
 // ***************************************************************************
@@ -111,8 +123,10 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		if (info->ifinfo.ip.NotAnInteger == src.NotAnInteger)
 			{
 			int s, err;
-			if      (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) s = info->socket1;
-			else if (srcport.NotAnInteger == UnicastDNSPort.NotAnInteger  ) s = info->socket2;
+			if      (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) s = info->socket;
+#if mDNS_AllowPort53
+			else if (srcport.NotAnInteger == UnicastDNSPort.NotAnInteger  ) s = info->socket53;
+#endif
 			else { debugf("Source port %d not allowed", (mDNSu16)srcport.b[0]<<8 | srcport.b[1]); return(-1); }
 			err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, sizeof(to));
 			if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
@@ -172,9 +186,8 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *context)
 	{
 	mDNSIPAddr senderaddr, destaddr;
-	mDNSIPPort senderport, destport;
+	mDNSIPPort senderport;
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)context;
-	int skt = (s == info->cfsocket1) ? info->socket1 : info->socket2;
 	mDNS *const m = info->m;
 	DNSMessage packet;
 	struct in_addr to;
@@ -187,14 +200,18 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	(void)data;		// Parameter not used
 	
 	if (type != kCFSocketReadCallBack) debugf("myCFSocketCallBack: Why is type not kCFSocketReadCallBack?");
-	err = myrecvfrom(skt, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, packetifname);
+#if mDNS_AllowPort53
+	if (s == info->cfsocket53)
+		err = myrecvfrom(info->socket53, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, packetifname);
+	else
+#endif
+	err = myrecvfrom(info->socket, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, packetifname);
 
 	if (err < 0) { debugf("myCFSocketCallBack recvfrom error %d", err); return; }
 
 	senderaddr.NotAnInteger = from.sin_addr.s_addr;
 	senderport.NotAnInteger = from.sin_port;
 	destaddr.NotAnInteger   = to.s_addr;
-	destport                = (s == info->cfsocket1) ? MulticastDNSPort : UnicastDNSPort;
 
 	// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
 	// sockets API means that even though this socket has only officially joined the multicast group
@@ -214,7 +231,12 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 
 	if (err < sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 	
-	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, destport, info->ifinfo.ip);
+#if mDNS_AllowPort53
+	if (s == info->cfsocket53)
+		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, UnicastDNSPort, info->ifinfo.ip);
+	else
+#endif
+	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, MulticastDNSPort, info->ifinfo.ip);
 	}
 
 mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
@@ -535,10 +557,12 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	if (!info->ifa_name) return(-1);
 	strcpy(info->ifa_name, ifa->ifa_name);
 	info->alias     = SearchForInterfaceByName(m, ifa->ifa_name);
-	info->socket1   = 0;
-	info->socket2   = 0;
-	info->cfsocket1 = 0;
-	info->cfsocket2 = 0;
+	info->socket    = 0;
+	info->cfsocket  = 0;
+#if mDNS_AllowPort53
+	info->socket53   = 0;
+	info->cfsocket53 = 0;
+#endif
 
 	mDNS_RegisterInterface(m, &info->ifinfo);
 
@@ -546,10 +570,11 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 		debugf("SetupInterface: %s Flags %04X %.4a is an alias of %.4a",
 			ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip, &info->alias->ifinfo.ip);
 
-	if (mDNS_UsePort53)
-		err = SetupSocket(ifa_addr, UnicastDNSPort,   &info->socket2, &info->cfsocket2, &myCFSocketContext);
+#if mDNS_AllowPort53
+	err = SetupSocket(ifa_addr, UnicastDNSPort,   &info->socket53, &info->cfsocket53, &myCFSocketContext);
+#endif
 	if (!err)
-		err = SetupSocket(ifa_addr, MulticastDNSPort, &info->socket1, &info->cfsocket1, &myCFSocketContext);
+		err = SetupSocket(ifa_addr, MulticastDNSPort, &info->socket, &info->cfsocket, &myCFSocketContext);
 
 	debugf("SetupInterface: %s Flags %04X %.4a Registered",
 		ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip);
@@ -563,11 +588,13 @@ mDNSlocal void ClearInterfaceList(mDNS *const m)
 		{
 		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
 		mDNS_DeregisterInterface(m, &info->ifinfo);
-		if (info->ifa_name   ) freeL("NetworkInterfaceInfo2 name", info->ifa_name);
-		if (info->socket1 > 0) shutdown(info->socket1, 2);
-		if (info->socket2 > 0) shutdown(info->socket2, 2);
-		if (info->cfsocket1  ) { CFSocketInvalidate(info->cfsocket1); CFRelease(info->cfsocket1); }
-		if (info->cfsocket2  ) { CFSocketInvalidate(info->cfsocket2); CFRelease(info->cfsocket2); }
+		if (info->ifa_name  ) freeL("NetworkInterfaceInfo2 name", info->ifa_name);
+		if (info->socket > 0) shutdown(info->socket, 2);
+		if (info->cfsocket) { CFSocketInvalidate(info->cfsocket); CFRelease(info->cfsocket); }
+#if mDNS_AllowPort53
+		if (info->socket53 > 0) shutdown(info->socket53, 2);
+		if (info->cfsocket53) { CFSocketInvalidate(info->cfsocket53); CFRelease(info->cfsocket53); }
+#endif
 		freeL("NetworkInterfaceInfo2", info);
 		}
 	}

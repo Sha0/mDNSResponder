@@ -1019,9 +1019,7 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
-		extern int mDNS_UsePort53;
 		if (!strcmp(argv[i], "-d")) debug_mode = 1;
-		if (!strcmp(argv[i], "-no53")) mDNS_UsePort53 = 0;
 		}
 
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
