@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.11  2003/05/26 00:48:13  cheshire
+ * If mDNS packet contains a non-zero message ID, then display it.
+ *
  * Revision 1.10  2003/05/22 01:10:32  cheshire
  * Indicate when the TC bit is set on a query packet
  *
@@ -235,7 +238,7 @@ mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query,
 	int i;
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
-		ptr = getResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pktrr, mDNSNULL);
+		ptr = GetResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pktrr, mDNSNULL);
 		if (!ptr) break;
 		if (ResourceRecordAnswersQuestion(pktrr, q)) return(ptr);
 		}
@@ -249,6 +252,24 @@ mDNSlocal void DisplayTimestamp(void)
 	gettimeofday(&tv, NULL);
 	localtime_r((time_t*)&tv.tv_sec, &tm);
 	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
+	}
+
+mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *srcaddr)
+	{
+	const char *const ptype = (msg->h.flags.b[0] & kDNSFlag0_QR_Response) ? "R" : "Q";
+
+	DisplayTimestamp();
+	mprintf("%#-16a -%s-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
+		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
+
+	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", ((mDNSu16)msg->h.id.b[0])<<8 | msg->h.id.b[1]);
+
+	if (msg->h.flags.b[0] & kDNSFlag0_TC)
+		{
+		if (msg->h.flags.b[0] & kDNSFlag0_QR_Response) mprintf("   Truncated");
+		else                                           mprintf("   Truncated (KA list continues in next packet)");
+		}
+	mprintf("\n");
 	}
 
 mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *const op, const ResourceRecord *const pktrr)
@@ -278,12 +299,9 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	const mDNSu8 *ptr = msg->data;
 	const mDNSu8 *auth = LocateAuthorities(msg, end);
 	const mDNSu8 *p2;
-	const char *const tcmsg = (msg->h.flags.b[0] & kDNSFlag0_TC) ? "   Truncated (KA list continues in next packet)" : "";
 	ResourceRecord pktrr;
 
-	DisplayTimestamp();
-	mprintf("%#-16a -Q-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d%s\n",
-		srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals, tcmsg);
+	DisplayPacketHeader(msg, srcaddr);
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -308,7 +326,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
-		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ KNOWN ANSWER **** \n", srcaddr); return; }
 		DisplayResourceRecord(srcaddr, "(KA)", &pktrr);
 		}
@@ -320,8 +338,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	const mDNSu8 *ptr = msg->data;
 	ResourceRecord pktrr;
 
-	DisplayTimestamp();
-	mprintf("%#-16a -R-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d\n", srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
+	DisplayPacketHeader(msg, srcaddr);
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -333,7 +350,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
-		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr); return; }
 		if (pktrr.rroriginalttl)
 			{
@@ -351,14 +368,14 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
-		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ AUTHORITY **** \n", srcaddr); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
 		}
 
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
-		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr); return; }
 		NumAdditionals++;
 		DisplayResourceRecord(srcaddr, "(AD)", &pktrr);
