@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.26  2003/11/07 19:35:20  rpantos
+3282283/6: Display multiple IP addresses. Connect using host rather than IP addr.
+
 Revision 1.25  2003/10/29 05:16:54  rpantos
 Checkpoint: transition from DNSServiceDiscovery.h to dns_sd.h
 
@@ -51,7 +54,27 @@ Update to APSL 2.0
 
 #import "BrowserController.h"
 
-#include "arpa/inet.h"
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <nameser.h>
+#include <sys/select.h>
+
+
+// The ServiceController manages cleanup of DNSServiceRef & runloop info for an outstanding request
+@interface ServiceController : NSObject
+{
+	DNSServiceRef			fServiceRef;
+	CFSocketRef				fSocketRef;
+	CFRunLoopSourceRef		fRunloopSrc;
+}
+
+- (id) initWithServiceRef:(DNSServiceRef) ref;
+- (boolean_t) addToCurrentRunLoop;
+- (DNSServiceRef) serviceRef;
+- (void) dealloc;
+
+@end // interface ServiceController
+
 
 static void	ProcessSockData( CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *info)
 // CFRunloop callback that notifies dns_sd when new data appears on a DNSServiceRef's socket.
@@ -100,6 +123,17 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
 	}
 }
 
+static void	QueryRecordReply( DNSServiceRef DNSServiceRef, DNSServiceFlags flags, uint32_t interfaceIndex, 
+								DNSServiceErrorType errorCode, const char *fullname, uint16_t rrtype, uint16_t rrclass, 
+								uint16_t rdlen, const void *rdata, uint32_t ttl, void *context )
+// DNSServiceQueryRecord callback used to look up IP addresses.
+{
+	BrowserController   *pBrowser = (BrowserController*) context;
+
+	[pBrowser updateAddress:rrtype addr:rdata addrLen:rdlen host:fullname interfaceIndex:interfaceIndex 
+						more:((flags & kDNSServiceFlagsMoreComing) != 0)];
+}
+
 
 @implementation BrowserController		//Begin implementation of BrowserController methods
 
@@ -134,6 +168,7 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
 	fDomainBrowser = nil;
     fServiceBrowser = nil;
 	fServiceResolver = nil;
+	fAddressResolver = nil;
 
     return [super init];
 }
@@ -175,9 +210,7 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
     //[srvtypeKeys addObject:@"_afp._tcp"];		//respective arrays
     //[srvnameKeys addObject:@"AppleShare Server (afp)"];
 
-    [ipAddressField setStringValue:@""];
-    [portField setStringValue:@""];
-    [textField setStringValue:@""];
+	[self _clearResolvedInfo];
 
     [srvtypeKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"]];
     [srvnameKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"]];
@@ -290,54 +323,37 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
 - (void)notifyNameSelectionChange:(NSNotification*)note
 /* Called when the selection of the Name table changes */
 {
-    DNSServiceErrorType err = kDNSServiceErr_NoError;
     int index=[[note object] selectedRow];  //Find index of selected row
 
     [self _cancelPendingResolve];           // Cancel any pending Resolve for any table selection change
 
-    if (index==-1) return;					//Error checking
+    if (index==-1) {
+		Name = nil;		// Name may no longer point to a list member
+		return;
+	}
     Name=[[nameKeys sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)] objectAtIndex:index];			//Save desired name
 
-	[ipAddressField setStringValue:@"?"];
-	[portField setStringValue:@"?"];
-	[textField setStringValue:@"?"];
+	[self _clearResolvedInfo];
 
-	err = DNSServiceResolve ( &fServiceResolver, (DNSServiceFlags) 0, 0, (char *)[Name UTF8String], (char *)[SrvType UTF8String], 
+	DNSServiceRef		serviceRef;
+	DNSServiceErrorType err;
+	err = DNSServiceResolve ( &serviceRef, (DNSServiceFlags) 0, 0, (char *)[Name UTF8String], (char *)[SrvType UTF8String], 
 							(char *)(Domain?[Domain UTF8String]:""), ServiceResolveReply, self);
 	if ( kDNSServiceErr_NoError == err) {
-		CFSocketRef				socketRef;
-		CFSocketContext			ctx = { 1, (void*) fServiceResolver, nil, nil, nil };
-        CFRunLoopSourceRef		rls = nil;
-
-		socketRef = CFSocketCreateWithNative( kCFAllocatorDefault, DNSServiceRefSockFD( fServiceResolver), 
-											kCFSocketReadCallBack, ProcessSockData, &ctx);
-		if ( socketRef != nil)
-			rls = CFSocketCreateRunLoopSource( kCFAllocatorDefault, socketRef, 1);
-		if ( rls != nil)
-            CFRunLoopAddSource( CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-		else
-            printf("Could not listen to runloop socket\n");
+		fServiceResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
+		[fServiceResolver addToCurrentRunLoop];
 	}
 }
 
 - (IBAction)loadDomains:(id)sender
 {
     DNSServiceErrorType err;
+	DNSServiceRef		serviceRef;
 
-	err = DNSServiceEnumerateDomains( &fDomainBrowser, kDNSServiceFlagsBrowseDomains, 0, DomainEnumReply, self);
+	err = DNSServiceEnumerateDomains( &serviceRef, kDNSServiceFlagsBrowseDomains, 0, DomainEnumReply, self);
 	if ( kDNSServiceErr_NoError == err) {
-		CFSocketRef				socketRef;
-		CFSocketContext			ctx = { 1, (void*) fDomainBrowser, nil, nil, nil };
-        CFRunLoopSourceRef		rls = nil;
-
-		socketRef = CFSocketCreateWithNative( kCFAllocatorDefault, DNSServiceRefSockFD( fDomainBrowser), 
-											kCFSocketReadCallBack, ProcessSockData, &ctx);
-		if ( socketRef != nil)
-			rls = CFSocketCreateRunLoopSource( kCFAllocatorDefault, socketRef, 1);
-		if ( rls != nil)
-            CFRunLoopAddSource( CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-		else
-            printf("Could not listen to runloop socket\n");
+		fDomainBrowser = [[ServiceController alloc] initWithServiceRef:serviceRef];
+		[fDomainBrowser addToCurrentRunLoop];
 	}
    else {
         NSAlert *alert = [NSAlert alertWithMessageText:@"Rendezvous could not be initialized!"
@@ -367,25 +383,16 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
 
     // get rid of the previous browser if one exists
     if ( fServiceBrowser != nil) {
-        DNSServiceRefDeallocate( fServiceBrowser);
+		[fServiceBrowser release];
         fServiceBrowser = nil;
     }
 
     // now create a browser to return the values for the nameField ...
-	err = DNSServiceBrowse( &fServiceBrowser, (DNSServiceFlags) 0, 0, TypeC, DomainC, ServiceBrowseReply, self);
+	DNSServiceRef		serviceRef;
+	err = DNSServiceBrowse( &serviceRef, (DNSServiceFlags) 0, 0, TypeC, DomainC, ServiceBrowseReply, self);
 	if ( kDNSServiceErr_NoError == err) {
-		CFSocketRef				socketRef;
-		CFSocketContext			ctx = { 1, (void*) fServiceBrowser, nil, nil, nil };
-        CFRunLoopSourceRef		rls = nil;
-
-		socketRef = CFSocketCreateWithNative( kCFAllocatorDefault, DNSServiceRefSockFD( fServiceBrowser), 
-											kCFSocketReadCallBack, ProcessSockData, &ctx);
-		if ( socketRef != nil)
-			rls = CFSocketCreateRunLoopSource( kCFAllocatorDefault, socketRef, 1);
-		if ( rls != nil)
-            CFRunLoopAddSource( CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-		else
-            printf("Could not listen to runloop socket\n");
+		fServiceBrowser = [[ServiceController alloc] initWithServiceRef:serviceRef];
+		[fServiceBrowser addToCurrentRunLoop];
 	}
 }
 
@@ -423,8 +430,7 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
 
 	// Terminate the enumeration once the last domain is delivered.
 	if ( ( flags & kDNSServiceFlagsMoreComing) == 0) {
-		DNSServiceRefDeallocate( fDomainBrowser);
-// ¥¥FIXME: Must clean up runloop here, too!
+		[fDomainBrowser release];
 		fDomainBrowser = nil;
 	}
 
@@ -463,77 +469,121 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
     return;
 }
 
-- (void)resolveClientWithInterface:(struct sockaddr *)interface address:(struct sockaddr *)address txtRecord:(NSString *)txtRecord
-{
-	if (address->sa_family != AF_INET) return; // For now we only handle IPv4
-    //printf("interface length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)interface)->sin_len, ((struct sockaddr_in *)interface)->sin_port, ((struct sockaddr_in *)interface)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)interface)->sin_addr)));
-    //printf("address length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)address)->sin_len, ((struct sockaddr_in *)address)->sin_port, ((struct sockaddr_in *)address)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr)));
-    NSString *ipAddr = [NSString stringWithCString:inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr))];
-    int port = ((struct sockaddr_in *)address)->sin_port;
-
-    [ipAddressField setStringValue:ipAddr];
-    [portField setIntValue:port];
-    [textField setStringValue:txtRecord];
-
-    return;
-}
-
 - (void)resolveClientWitHost:(NSString *)host port:(uint16_t)port interfaceIndex:(uint32_t)interface 
 							txtRecord:(const char*)txtRecord txtLen:(uint16_t)txtLen
 /* Display resolved information about the selected service. */
 {
-	ByteCount   index, subStrLen;
-	char		*readableText;
+	DNSServiceErrorType err;
+	DNSServiceRef		serviceRef;
 
-    [ipAddressField setStringValue:host];
+	// Start an async lookup for IPv4 & IPv6 addresses
+	if ( fAddressResolver != nil) {
+		[fAddressResolver release];
+		fAddressResolver = nil;
+	}
+	err = DNSServiceQueryRecord( &serviceRef, (DNSServiceFlags) 0, interface, [host UTF8String], 
+								ns_t_a, ns_c_in, QueryRecordReply, self);
+	if ( err == kDNSServiceErr_NoError) {
+		fAddressResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
+		[fAddressResolver addToCurrentRunLoop];
+	}
+
+    [hostField setStringValue:host];
     [portField setIntValue:port];
 
 	// kind of a hack: munge txtRecord so it's human-readable
-	readableText = (char*) malloc( txtLen);
+	char	*readableText = (char*) malloc( txtLen);
 	if ( readableText != nil) {
+		ByteCount   index, subStrLen;
 		memcpy( readableText, txtRecord, txtLen);
 		for ( index=0; index < txtLen - 1; index += subStrLen + 1) {
 			subStrLen = readableText[ index];
 			readableText[ index] = '\n';
 		}
 		[textField setStringValue:[NSString stringWithCString:&readableText[1] length:txtLen - 1]];
+		free( readableText);
 	}
 }
 
+- (void)updateAddress:(uint16_t)rrtype  addr:(const void *)buff addrLen:(uint16_t)addrLen 
+						host:(const char*) host interfaceIndex:(uint32_t)interface more:(boolean_t)moreToCome
+/* Update address field(s) with info obtained by fAddressResolver. */
+{
+	if ( rrtype == ns_t_a) {		// IPv4
+		char	addrBuff[256];
+		inet_ntop( AF_INET, buff, addrBuff, sizeof addrBuff);
+		strcat( addrBuff, " ");
+		[ipAddressField setStringValue:[NSString stringWithFormat:@"%@%s", [ipAddressField stringValue], addrBuff]];
+
+		if ( !moreToCome) {
+			[fAddressResolver release];
+			fAddressResolver = nil;
+	
+			// After we find v4 we look for v6
+			DNSServiceRef		serviceRef;
+			DNSServiceErrorType err;
+			err = DNSServiceQueryRecord( &serviceRef, (DNSServiceFlags) 0, interface, host, 
+									ns_t_aaaa, ns_c_in, QueryRecordReply, self);
+			if ( err == kDNSServiceErr_NoError) {
+				fAddressResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
+				[fAddressResolver addToCurrentRunLoop];
+			}
+		}
+	}
+	else if ( rrtype == ns_t_aaaa)  // IPv6
+	{
+		char	addrBuff[256];
+		inet_ntop( AF_INET6, buff, addrBuff, sizeof addrBuff);
+		strcat( addrBuff, " ");
+		[ip6AddressField setStringValue:[NSString stringWithFormat:@"%@%s", [ip6AddressField stringValue], addrBuff]];
+
+		if ( !moreToCome) {
+			[fAddressResolver release];
+			fAddressResolver = nil;
+		}
+	}
+}
+
+
 - (void)connect:(id)sender
 {
-    NSString *ipAddr = [ipAddressField stringValue];
+    NSString *host = [hostField stringValue];
     int port = [portField intValue];
     NSString *txtRecord = [textField stringValue];
 
     if (!txtRecord) txtRecord = @"";
 
-    if (!ipAddr || !port) return;
+    if (!host || !port) return;
 
     if ([SrvType isEqualToString:@"_http._tcp"])
     {
         NSString    *pathDelim = @"path=";
+		NSRange		where;
 
-        // The DNSServiceDiscovery API seems to only return the first component of the TXT record
-        // If it specifies a path, extract it.
-// ¥¥FIXME: only works if path is first element
-        if ( [txtRecord length] > [pathDelim length] && 
-             NSOrderedSame == [[txtRecord substringToIndex:[pathDelim length]] caseInsensitiveCompare:pathDelim])
+        // If the TXT record specifies a path, extract it.
+		where = [txtRecord rangeOfString:pathDelim options:NSCaseInsensitiveSearch];
+        if ( where.length)
         {
-            NSString    *path = [txtRecord substringFromIndex:[pathDelim length]];
-            [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d%@", ipAddr, port, path]]];
+			NSRange		targetRange = { where.location + where.length, [txtRecord length] - where.location - where.length };
+			NSRange		endDelim = [txtRecord rangeOfString:@"\n" options:kNilOptions range:targetRange];
+			
+			if ( endDelim.length)   // if a delimiter was found, truncate the target range
+				targetRange.length = endDelim.location - targetRange.location;
+
+            NSString    *path = [txtRecord substringWithRange:targetRange];
+            [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d%@", host, port, path]]];
         }
         else
-            [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d", ipAddr, port]]];
+            [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d", host, port]]];
     }
-    else if      ([SrvType isEqualToString:@"_ftp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_tftp._tcp"])       [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"tftp://%@:%d/",   ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_ssh._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_telnet._tcp"])     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"telnet://%@:%d/", ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_printer._tcp"])    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"lpr://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_ipp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ipp://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_afpovertcp._tcp"]) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/",    ipAddr, port]]];
-    else if ([SrvType isEqualToString:@"_smb._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_ftp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/",    host, port]]];
+    else if ([SrvType isEqualToString:@"_tftp._tcp"])       [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"tftp://%@:%d/",   host, port]]];
+    else if ([SrvType isEqualToString:@"_ssh._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/",    host, port]]];
+    else if ([SrvType isEqualToString:@"_telnet._tcp"])     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"telnet://%@:%d/", host, port]]];
+    else if ([SrvType isEqualToString:@"_printer._tcp"])    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"lpr://%@:%d/",    host, port]]];
+    else if ([SrvType isEqualToString:@"_ipp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ipp://%@:%d/",    host, port]]];
+    else if ([SrvType isEqualToString:@"_afpovertcp._tcp"]) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/",    host, port]]];
+    else if ([SrvType isEqualToString:@"_smb._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/",    host, port]]];
 
     return;
 }
@@ -582,23 +632,91 @@ static void ServiceResolveReply( DNSServiceRef sdRef, DNSServiceFlags flags, uin
         [typeField reloadData];
         [serviceDisplayTable reloadData];
     }
-
 }
 
 - (void)_cancelPendingResolve
 // If there a a Resolve outstanding, cancel it.
 {
+	if ( fAddressResolver != nil) {
+		[fAddressResolver release];
+		fAddressResolver = nil;
+	}
+
 	if ( fServiceResolver != nil) {
-		DNSServiceRefDeallocate( fServiceResolver);
+		[fServiceResolver release];
 		fServiceResolver = nil;
 	}
 
-    [ipAddressField setStringValue:@""];
-    [portField setStringValue:@""];
-    [textField setStringValue:@""];
+	[self _clearResolvedInfo];
 }
 
+- (void)_clearResolvedInfo
+// Erase the display of resolved info.
+{
+	[hostField setStringValue:@""];
+	[ipAddressField setStringValue:@""];
+	[ip6AddressField setStringValue:@""];
+	[portField setStringValue:@""];
+	[textField setStringValue:@""];
+}
+
+@end // implementation BrowserController
 
 
-@end
+@implementation ServiceController : NSObject
+{
+	DNSServiceRef			fServiceRef;
+	CFSocketRef				fSocketRef;
+	CFRunLoopSourceRef		fRunloopSrc;
+}
+
+- (id) initWithServiceRef:(DNSServiceRef) ref
+{
+	[super init];
+	fServiceRef = ref;
+	return self;
+}
+
+- (boolean_t) addToCurrentRunLoop
+/* Add the service to the current runloop. Returns non-zero on success. */
+{
+	CFSocketContext			ctx = { 1, (void*) fServiceRef, nil, nil, nil };
+
+	fSocketRef = CFSocketCreateWithNative( kCFAllocatorDefault, DNSServiceRefSockFD( fServiceRef), 
+										kCFSocketReadCallBack, ProcessSockData, &ctx);
+	if ( fSocketRef != nil)
+		fRunloopSrc = CFSocketCreateRunLoopSource( kCFAllocatorDefault, fSocketRef, 1);
+	if ( fRunloopSrc != nil)
+		CFRunLoopAddSource( CFRunLoopGetCurrent(), fRunloopSrc, kCFRunLoopDefaultMode);
+	else
+		printf("Could not listen to runloop socket\n");
+
+	return fRunloopSrc != nil;
+}
+
+- (DNSServiceRef) serviceRef
+{
+	return fServiceRef;
+}
+
+- (void) dealloc
+/* Remove service from runloop, deallocate service and associated resources */
+{
+	if ( fSocketRef != nil) {
+		CFSocketInvalidate( fSocketRef);
+		CFRelease( fSocketRef);
+	}
+
+	if ( fRunloopSrc != nil) {
+		CFRunLoopRemoveSource( CFRunLoopGetCurrent(), fRunloopSrc, kCFRunLoopDefaultMode);
+		CFRelease( fRunloopSrc);
+	}
+
+	DNSServiceRefDeallocate( fServiceRef);
+
+	[super dealloc];
+}
+
+@end // implementation ServiceController
+
 

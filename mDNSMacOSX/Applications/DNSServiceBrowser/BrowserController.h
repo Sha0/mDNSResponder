@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserController.h,v $
+Revision 1.11  2003/11/07 19:34:58  rpantos
+3282283/6: Display multiple IP addresses. Connect using host rather than IP addr.
+
 Revision 1.10  2003/10/29 05:17:26  rpantos
 Checkpoint: transition from DNSServiceDiscovery.h to dns_sd.h
 
@@ -44,6 +47,8 @@ Update to APSL 2.0
 #include "dns_sd.h"
 
 
+@class		ServiceController;  // holds state corresponding to outstanding DNSServiceRef
+
 @interface BrowserController : NSObject
 {
     IBOutlet id domainField;
@@ -56,7 +61,9 @@ Update to APSL 2.0
     IBOutlet id serviceTypeField;
     IBOutlet id serviceNameField;
 
+    IBOutlet id hostField;
     IBOutlet id ipAddressField;
+    IBOutlet id ip6AddressField;
     IBOutlet id portField;
     IBOutlet id textField;
     
@@ -69,9 +76,10 @@ Update to APSL 2.0
     NSString *SrvName;
     NSString *Name;
 
-	DNSServiceRef				fDomainBrowser;
-	DNSServiceRef				fServiceBrowser;
-	DNSServiceRef				fServiceResolver;
+	ServiceController			*fDomainBrowser;
+	ServiceController			*fServiceBrowser;
+	ServiceController			*fServiceResolver;
+	ServiceController			*fAddressResolver;
 
 }
 
@@ -93,10 +101,11 @@ Update to APSL 2.0
 
 - (void)updateBrowseWithResult:(DNSServiceFlags)flags name:(NSString *)name type:(NSString *)resulttype domain:(NSString *)domain;
 - (void)updateEnumWithResult:(DNSServiceFlags)flags domain:(NSString *)domain;
-- (void)resolveClientWithInterface:(struct sockaddr *)interface address:(struct sockaddr *)address txtRecord:(NSString *)txtRecord;
 - (void)resolveClientWitHost:(NSString *)host port:(uint16_t)port interfaceIndex:(uint32_t)interface txtRecord:(const char*)txtRecord txtLen:(uint16_t)txtLen;
-
+- (void)updateAddress:(uint16_t)rrtype addr:(const void *)buff addrLen:(uint16_t)addrLen 
+						host:(const char*) host interfaceIndex:(uint32_t)interface more:(boolean_t)moreToCome;
 
 - (void)_cancelPendingResolve;
+- (void)_clearResolvedInfo;
 
 @end
