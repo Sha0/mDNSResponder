@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.363  2004/03/12 21:00:51  cheshire
+Also show port numbers when logging "apparent spoof mDNS Response" messages
+
 Revision 1.362  2004/03/12 08:58:18  cheshire
 Guard against empty TXT records
 
@@ -4320,7 +4323,8 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
-	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSAddr *dstaddr,
+	const DNSMessage *const response, const mDNSu8 *end,
+	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	static mDNSu32 NumPktsAccepted = 0, NumPktsIgnored = 0;
@@ -4352,8 +4356,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		{
 		mDNSBool ignoredlots = (++NumPktsIgnored > NumPktsAccepted + 10);
 		if (ignoredlots || NumPktsIgnored <= 10)
-			LogMsg("Ignored apparent spoof mDNS Response with TTL %d from %#-15a to %#-15a on %p with %2d Q %2d Ans %2d Auth %2d Add",
-				ttl, srcaddr, dstaddr, InterfaceID,
+			LogMsg("Ignored apparent spoof mDNS Response with TTL %d from %#-15a:%-5d to %#-15a:%-5d on %p with %2d Q %2d Ans %2d Auth %2d Add",
+				ttl, srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 				response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
 		if (ignoredlots)
 			LogMsg("WARNING: Have ignored %lu packets out of %lu; this may indicate an error in the platform support layer.",
@@ -4592,8 +4596,9 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	
 	mDNS_Lock(m);
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr,          dstaddr,          InterfaceID, ttl);
-	else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
+	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
+	else LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
+		msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
 
 	// Packet reception often causes a change to the task list:
 	// 1. Inbound queries can cause us to need to send responses
