@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.234  2004/10/29 21:59:02  ksekar
+SOA serial should be a signed integer, as per RFC 1035
+
 Revision 1.233  2004/10/28 03:24:41  cheshire
 Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
 
@@ -1188,7 +1191,7 @@ typedef packedstruct
 	{
 	domainname mname;
 	domainname rname;
-	mDNSs32 serial;		// Modular counter; increases when zone changes
+	mDNSu32 serial;		// Modular counter; increases when zone changes
 	mDNSu32 refresh;	// Time in seconds that a slave waits after successful replication of the database before it attempts replication again
 	mDNSu32 retry;		// Time in seconds that a slave waits after an unsuccessful replication attempt before it attempts replication again
 	mDNSu32 expire;		// Time in seconds that a slave holds on to old data while replication attempts remain unsuccessful
