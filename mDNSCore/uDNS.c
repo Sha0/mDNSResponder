@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.26  2004/04/14 19:36:05  ksekar
+Fixed memory corruption error in deriveGoodbyes.
+
 Revision 1.25  2004/04/14 04:07:11  ksekar
 Fixed crash in IsActiveUnicastQuery().  Removed redundant checks in routine.
 
@@ -453,7 +456,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 				}
 			fptr = ka;
 			ka = ka->next;
-			ufree(ka);
+			ufree(fptr);
 			}
 		question->uDNS_info.knownAnswers = NULL;
 		return;
