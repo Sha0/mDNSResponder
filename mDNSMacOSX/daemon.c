@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.131  2003/08/19 05:39:43  cheshire
+<rdar://problem/3380097> SIGINFO dump should include resolves started by DNSServiceQueryRecord
+
 Revision 1.130  2003/08/16 03:39:01  cheshire
 <rdar://problem/3338440> InterfaceID -1 indicates "local only"
 
@@ -1452,6 +1455,8 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 
 	for (r = DNSServiceRegistrationList; r; r=r->next)
 		LogMsg("%5d: ServiceRegistration %##s", r->ClientMachPort, r->s.RR_SRV.resrec.name.c);
+
+	udsserver_info();
 
 	LogMsg("%s ----  END STATE LOG  ----", mDNSResponderVersionString);
 	}

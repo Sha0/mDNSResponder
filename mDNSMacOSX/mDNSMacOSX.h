@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.20  2003/08/19 05:39:43  cheshire
+<rdar://problem/3380097> SIGINFO dump should include resolves started by DNSServiceQueryRecord
+
 Revision 1.19  2003/08/19 05:36:45  cheshire
 Add missing "extern" directives
 
@@ -179,6 +182,7 @@ extern int udsserver_init(void);
 extern int udsserver_add_rl_source(void);
 extern mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled event time, does idle work,
                                                    // and returns the updated nextevent time
+extern void udsserver_info(void);
 extern void udsserver_handle_configchange(void);
 extern int udsserver_exit(void);
 
