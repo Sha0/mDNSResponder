@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.69  2005/01/11 04:39:48  shersche
+Workaround for GetAdaptersAddresses() bug in iphlpapi.dll
+
 Revision 1.68  2005/01/11 02:04:48  shersche
 Gracefully handle when IPv6 is not installed on a user's machine
 
@@ -314,6 +317,7 @@ Multicast DNS platform plugin for Win32
 #define	MDNS_WINDOWS_ENABLE_IPV6					1
 #define	MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6		1
 #define	MDNS_WINDOWS_AAAA_OVER_IPV4					1
+#define	MDNS_FIX_IPHLPAPI_PREFIX_BUG				1
 
 #define	kMDNSDefaultName							"My Computer"
 
@@ -2769,6 +2773,25 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			check( ifa->ifa_addr );
 			
 			// Get subnet mask (IPv4)/link prefix (IPv6). It is specified as a bit length (e.g. 24 for 255.255.255.0).
+
+			// For IPv4 interfaces, there seems to be a bug in iphlpapi.dll that causes the 
+			// following code to crash when iterating through the prefix list.  This seems
+			// to occur when iaa->Ipv6IfIndex != 0 when IPv6 is not installed on the host.
+			// This shouldn't happen according to Microsoft docs which states:
+			//
+			//     "Ipv6IfIndex contains 0 if IPv6 is not available on the interface."
+			//
+			// So the data structure seems to be corrupted when we return from
+			// GetAdaptersAddresses().
+
+#if ( MDNS_FIX_IPHLPAPI_PREFIX_BUG )
+
+			if ( family == AF_INET )
+			{
+				iaa->FirstPrefix = NULL;
+			}
+
+#endif
 			
 			prefixLength = 0;
 			for( prefixIndex = 0, prefix = iaa->FirstPrefix; prefix; ++prefixIndex, prefix = prefix->Next )
