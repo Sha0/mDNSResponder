@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.237  2004/11/10 20:40:53  ksekar
+<rdar://problem/3868216> LLQ mobility fragile on non-primary interface
+
 Revision 1.236  2004/11/01 20:36:11  ksekar
 <rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
 
@@ -1544,13 +1547,13 @@ typedef enum
 	LLQ_SecondaryRequest  = 3,
 	LLQ_Refresh           = 4,
 	LLQ_Retry             = 5,
-	LLQ_Suspended         = 6,   
-	LLQ_SuspendDeferred   = 7, // suspend once we get zone info
-	LLQ_SuspendedPoll     = 8, // suspended from polling state
-	LLQ_NatMapWait        = 9,
+	LLQ_Established       = 6,	
+	LLQ_Suspended         = 7,   
+	LLQ_SuspendDeferred   = 8, // suspend once we get zone info
+	LLQ_SuspendedPoll     = 9, // suspended from polling state
+	LLQ_NatMapWait        = 10,
 	
 	// Established/error states
-	LLQ_Established       = 15,
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,
 	LLQ_Error             = 18,
@@ -2255,12 +2258,9 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const doma
 // Hostname/Unicast Interface Configuration
 
 // All hostnames advertised point to a single IP address, set via SetPrimaryInterfaceInfo.  Invoking this routine
-// updates all existing hostnames to point to the new address.  In addition, it sets the interface/port used to
-// send LLQ setup messages and receive LLQ events.  Changing the interface address or port causes all currently
-// established LLQs to be updated such that events are sent to the new address/port.
-
-// A hostname is added via AddDynDNSHostDomain, which registers a name of the form <computername>.<hostdomain>. and
-// points to the primary interface's IP address.
+// updates all existing hostnames to point to the new address.
+	
+// A hostname is added via AddDynDNSHostDomain, which points to the primary interface's IP address.
 
 // The status callback is invoked to convey success or failure codes - the callback should not modify the AuthRecord or free memory.
 // The record passed to the callback is the address record for the hostname.  The StatusContext pointer will be found in
@@ -2271,9 +2271,14 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const doma
 // Host domains added prior to specification of the primary interface address and computer name will be deferred until
 // these values are initialized.
 
+// When routable V4 interfaces are added or removed, mDNS_UpdateLLQs should be called to re-estabish LLQs in case the
+// destination address for events (i.e. the route) has changed.  For performance reasons, The caller is responsible for 
+// batching changes, e.g.  calling the routine only once if multiple interfaces are simultanously removed or added.
+
 extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mDNSAddr *router);
+extern void mDNS_UpdateLLQs(mDNS *m);
 
 // Routines called by the core, exported by DNSDigest.c
 

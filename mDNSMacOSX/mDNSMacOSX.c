@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.232  2004/11/10 20:40:54  ksekar
+<rdar://problem/3868216> LLQ mobility fragile on non-primary interface
+
 Revision 1.231  2004/11/06 00:59:33  ksekar
 Don't log ENETDOWN errors for unicast destinations (pollutes log on
 wake from sleep)
@@ -1880,9 +1883,11 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, char 
 	return(NULL);
 	}
 
-mDNSlocal void SetupActiveInterfaces(mDNS *const m)
+// returns count of non-link local V4 addresses registered
+mDNSlocal int SetupActiveInterfaces(mDNS *const m)
 	{
 	NetworkInterfaceInfoOSX *i;
+	int count = 0;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->Exists)
 			{
@@ -1903,6 +1908,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
 				mDNS_RegisterInterface(m, n);
+				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
 				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%#a%s",
 					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, &n->mask, n->InterfaceActive ? " (Primary)" : "");
 				}
@@ -1926,6 +1932,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 					}
 				}
 			}
+	return count;
 	}
 
 mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
@@ -1956,7 +1963,8 @@ mDNSlocal void CloseSocketSet(CFSocketSet *ss)
 	ss->rlsv4 = ss->rlsv6 = NULL;
 	}
 
-mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
+// returns count of non-link local V4 addresses deregistered
+mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 	{
 	// First pass:
 	// If an interface is going away, then deregister this from the mDNSCore.
@@ -1966,6 +1974,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	// Don't actually close the sockets or free the memory yet: When the last representative of an interface goes away
 	// mDNSCore may want to send goodbye packets on that interface. (Not yet implemented, but a good idea anyway.)
 	NetworkInterfaceInfoOSX *i;
+	int count = 0;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
 		// 1. If this interface is no longer active, or its InterfaceID is changing, deregister it
@@ -1976,6 +1985,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a%s",
 					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
 				mDNS_DeregisterInterface(m, &i->ifinfo);
+				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
 				i->ifinfo.InterfaceID = mDNSNULL;
 				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
@@ -2003,6 +2013,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		else
 			p = &i->next;
 		}
+	return count;
 	}
 
 
@@ -2480,6 +2491,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 
 mDNSexport void mDNSMacOSXNetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{
+	int nDeletions = 0, nAdditions = 0;
 	(void)store;        // Parameter not used
 	(void)changedKeys;  // Parameter not used
 	LogOperation("***   Network Configuration Change   ***");
@@ -2488,8 +2500,9 @@ mDNSexport void mDNSMacOSXNetworkChanged(SCDynamicStoreRef store, CFArrayRef cha
 	
 	MarkAllInterfacesInactive(m);
 	UpdateInterfaceList(m);
-	ClearInactiveInterfaces(m);
-	SetupActiveInterfaces(m);
+	nDeletions = ClearInactiveInterfaces(m);
+	nAdditions = SetupActiveInterfaces(m);
+	if (nDeletions || nAdditions) mDNS_UpdateLLQs(m);
 	DynDNSConfigChanged(store, changedKeys, context);
 	
 	if (m->MainCallback)

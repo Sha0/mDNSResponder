@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.109  2004/11/10 20:40:53  ksekar
+<rdar://problem/3868216> LLQ mobility fragile on non-primary interface
+
 Revision 1.108  2004/11/01 20:36:16  ksekar
 <rdar://problem/3802395> mDNSResponder should not receive Keychain Notifications
 
@@ -443,7 +446,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info);
 mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs);
 mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);
 mDNSlocal void RestartQueries(mDNS *m);
-mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info);
+mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer);
 mDNSlocal void llqResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *context);
 
 // ***************************************************************************
@@ -949,7 +952,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m)
 				llqInfo->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
 				llqInfo->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 				}
-			else { llqInfo->state = LLQ_GetZoneInfo; startLLQHandshake(m, llqInfo); }	
+			else { llqInfo->state = LLQ_GetZoneInfo; startLLQHandshake(m, llqInfo, mDNSfalse); }	
 			}
 		}
 	}
@@ -1421,18 +1424,6 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, cons
 	else        u->Router.ip.v4.NotAnInteger = 0; // setting router to zero indicates that nat mappings must be reestablished when router is reset
 	
 	if (addr && AddrChanged) UpdateHostnameRegistrations(m);
-	if (AddrChanged || RouterChanged)
-		{
-		if (u->LLQNatInfo)
-			{
-			NATTraversalInfo *nat = u->LLQNatInfo;
-			u->LLQNatInfo = mDNSNULL;
-			DeleteNATPortMapping(m, nat, mDNSNULL);
-			}
-		SuspendLLQs(m, mDNSfalse);
-		RestartQueries(m);
-		}
-
 	mDNS_Unlock(m);
 	}
 
@@ -2390,13 +2381,13 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
 
-mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
+mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	{
 	DNSMessage msg;
 	mDNSu8 *end;
 	LLQOptData llqData;
 	DNSQuestion *q = info->question; 
-	mStatus err;
+	mStatus err = mStatus_NoError;
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
@@ -2436,10 +2427,13 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 		return;
 		}
 
-	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
-	if (err) LogMsg("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err);
-	// on error, we procede as normal and retry after the appropriate interval
-
+	if (!defer) // if we are to defer, we simply set the retry timers so the request goes out in the future
+		{
+		err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
+		if (err) LogMsg("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err);
+		// on error, we procede as normal and retry after the appropriate interval
+		}
+	
 	// update question/info state
 	info->state = LLQ_InitialRequest;
 	info->origLease = kLLQ_DefLease;
@@ -2496,7 +2490,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
     info->ntries = 0;
 
 	if (info->state == LLQ_SuspendDeferred) info->state = LLQ_Suspended;
-	else startLLQHandshake(m, info);
+	else startLLQHandshake(m, info, mDNSfalse);
 	return;
 
 	poll:
@@ -4034,7 +4028,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq->state != LLQ_Poll)
 			{
-			if (llq->state >= LLQ_InitialRequest && llq->state < LLQ_Suspended)
+			if (llq->state >= LLQ_InitialRequest && llq->state < LLQ_Established)
 				{
 				if (llq->retry - timenow < 0)				
 					{
@@ -4044,11 +4038,11 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 					else if (llq->state == LLQ_Established || llq->state == LLQ_Refresh)
 						sendLLQRefresh(m, q, llq->origLease);
 					else if (llq->state == LLQ_InitialRequest) 
-						startLLQHandshake(m, llq);
+						startLLQHandshake(m, llq, mDNSfalse);
 					else if (llq->state == LLQ_SecondaryRequest)
 						sendChallengeResponse(m, q, mDNSNULL);
 					else if (llq->state == LLQ_Retry) 
-						{ llq->ntries = 0; startLLQHandshake(m, llq); }
+						{ llq->ntries = 0; startLLQHandshake(m, llq, mDNSfalse); }
 					}
 				else if (llq->retry - nextevent < 0) nextevent = llq->retry;
 				}
@@ -4208,15 +4202,21 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq)
 			{
-			if (llq->state < LLQ_Suspended)
+			if (llq->state == LLQ_GetZoneInfo)
+				{
+				debugf("Marking %##s suspend-deferred", q->qname.c);
+				llq->state = LLQ_SuspendDeferred;  // suspend once we're done getting zone info
+				}
+			else if (llq->state < LLQ_Suspended)
 				{
 				if (DeregisterActive && (llq->state == LLQ_Established || llq->state == LLQ_Refresh))
-					sendLLQRefresh(m, q, 0);
-				if (llq->state == LLQ_GetZoneInfo) llq->state = LLQ_SuspendDeferred;  // suspend once we're done getting zone info
-				else llq->state = LLQ_Suspended;
+					{ debugf("Deleting LLQ %##s", q->qname.c); sendLLQRefresh(m, q, 0); }
+				debugf("Marking %##s suspended", q->qname.c);
+				llq->state = LLQ_Suspended;
+				ubzero(llq->id, 8);
 				}
-			else if (llq->state == LLQ_Poll) llq->state = LLQ_SuspendedPoll;
-			if (llq->NATMap) llq->NATMap = mDNSfalse;  // may not need nat mapping if we restart in new location
+			else if (llq->state == LLQ_Poll) { debugf("Marking %##s suspended-poll", q->qname.c); llq->state = LLQ_SuspendedPoll; }
+			if (llq->NATMap) llq->NATMap = mDNSfalse;  // may not need nat mapping if we restart with new route
 			}
 		}
 	CheckForUnreferencedLLQMapping(m);
@@ -4227,6 +4227,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	DNSQuestion *q;
 	LLQ_Info *llqInfo;
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	
 	u->CurrentQuery = u->ActiveQueries;
 	while (u->CurrentQuery)
@@ -4238,7 +4239,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 			{
 			if (!llqInfo) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; } 
 			if (llqInfo->state == LLQ_Suspended || llqInfo->state == LLQ_NatMapWait)		
-				{ llqInfo->ntries = 0; llqInfo->deriveRemovesOnResume = mDNStrue; startLLQHandshake(m, llqInfo); }
+				{ llqInfo->ntries = -1; llqInfo->deriveRemovesOnResume = mDNStrue; startLLQHandshake(m, llqInfo, mDNStrue); } // we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
 			else if (llqInfo->state == LLQ_SuspendDeferred)
 				llqInfo->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
 			else if (llqInfo->state == LLQ_SuspendedPoll)
@@ -4250,9 +4251,26 @@ mDNSlocal void RestartQueries(mDNS *m)
 				startGetZoneData(&q->qname, m, mDNSfalse, mDNStrue, startLLQHandshakeCallback, llqInfo);
 				}
 			}
-		else q->ThisQInterval = INIT_UCAST_POLL_INTERVAL; // trigger immediate poll for non long-lived queries
+		else { q->LastQTime = timenow; q->ThisQInterval = INIT_UCAST_POLL_INTERVAL; } // trigger poll in 1 second (to reduce packet rate when restarts come in rapid succession)
 		}
 	}
+
+mDNSexport void mDNS_UpdateLLQs(mDNS *m)
+	{
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+
+	mDNS_Lock(m);
+	if (u->LLQNatInfo)
+		{
+		NATTraversalInfo *nat = u->LLQNatInfo;
+		u->LLQNatInfo = mDNSNULL;
+		DeleteNATPortMapping(m, nat, mDNSNULL);
+		}
+	SuspendLLQs(m, mDNStrue);
+	RestartQueries(m);
+	mDNS_Unlock(m);
+	}
+
 
 //!!!KRS implement me for real
 mDNSlocal void SuspendRecordRegistrations(mDNS *m)
