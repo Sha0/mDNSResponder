@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.8  2002/09/16 23:12:14  cheshire
+Minor code tidying
+
 Revision 1.7  2002/09/16 18:41:42  cheshire
 Merge in license terms from Quinn's copy, in preparation for Darwin release
 
@@ -102,7 +105,10 @@ extern void     mDNSPlatformClose  (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSIPAddr src, mDNSIPPort srcport, mDNSIPAddr dst, mDNSIPPort dstport);
 
+extern mDNSs32  mDNSPlatformOneSecond;
+extern mDNSs32  mDNSPlatformTimeNow();
 extern void     mDNSPlatformScheduleTask(const mDNS *const m, mDNSs32 NextTaskTime);
+
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);
 
@@ -111,8 +117,6 @@ extern mDNSu32  mDNSPlatformStrLen (const void *src);
 extern void     mDNSPlatformMemCopy(const void *src,       void *dst, mDNSu32 len);
 extern mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, mDNSu32 len);
 extern void     mDNSPlatformMemZero(                       void *dst, mDNSu32 len);
-extern mDNSs32  mDNSPlatformTimeNow();
-extern mDNSs32  mDNSPlatformOneSecond;
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);

@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNSvsprintf.h,v $
+Revision 1.4  2002/09/16 23:12:14  cheshire
+Minor code tidying
+
 Revision 1.3  2002/09/16 18:41:42  cheshire
 Merge in license terms from Quinn's copy, in preparation for Darwin release
 
@@ -59,6 +62,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 	extern "C" {
 #endif
 
+#include <stdarg.h>		// for va_list
 extern int mDNS_vsprintf(char *sbuffer, const char *fmt, va_list arg);
 
 #ifdef	__cplusplus

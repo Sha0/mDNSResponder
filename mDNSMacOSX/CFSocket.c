@@ -18,6 +18,13 @@
  * under the License.
  *
  * @APPLE_LICENSE_HEADER_END@
+
+    Change History (most recent first):
+
+$Log: CFSocket.c,v $
+Revision 1.42  2002/09/16 23:13:50  cheshire
+Minor code tidying
+
  */
 
 // ***************************************************************************
@@ -96,6 +103,8 @@ struct NetworkInterfaceInfo2_struct
 // ***************************************************************************
 // Functions
 
+// Note, this uses mDNS_vsprintf instead of standard "vsprintf", because mDNS_vsprintf knows
+// how to print special data types like IP addresses and length-prefixed domain names
 mDNSexport void debugf_(const char *format, ...)
 	{
 	unsigned char buffer[512];
@@ -119,12 +128,12 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSIPAddr src, mDNSIPPort srcport, mDNSIPAddr dst, mDNSIPPort dstport)
+	mDNSIPAddr src, mDNSIPPort srcPort, mDNSIPAddr dst, mDNSIPPort dstPort)
 	{
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)(m->HostInterfaces);
 	struct sockaddr_in to;
 	to.sin_family      = AF_INET;
-	to.sin_port        = dstport.NotAnInteger;
+	to.sin_port        = dstPort.NotAnInteger;
 	to.sin_addr.s_addr = dst.    NotAnInteger;
 
 	if (src.NotAnInteger == 0) debugf("mDNSPlatformSendUDP ERROR! Cannot send from zero source address");
@@ -134,11 +143,11 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		if (info->ifinfo.ip.NotAnInteger == src.NotAnInteger)
 			{
 			int s, err;
-			if      (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) s = info->socket;
+			if      (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger) s = info->socket;
 #if mDNS_AllowPort53
-			else if (srcport.NotAnInteger == UnicastDNSPort.NotAnInteger  ) s = info->socket53;
+			else if (srcPort.NotAnInteger == UnicastDNSPort.NotAnInteger  ) s = info->socket53;
 #endif
-			else { debugf("Source port %d not allowed", (mDNSu16)srcport.b[0]<<8 | srcport.b[1]); return(-1); }
+			else { debugf("Source port %d not allowed", (mDNSu16)srcPort.b[0]<<8 | srcPort.b[1]); return(-1); }
 			err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, sizeof(to));
 			if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
 			}
@@ -196,8 +205,8 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 
 mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *context)
 	{
-	mDNSIPAddr senderaddr, destaddr;
-	mDNSIPPort senderport;
+	mDNSIPAddr senderAddr, destAddr;
+	mDNSIPPort senderPort;
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)context;
 	mDNS *const m = info->m;
 	DNSMessage packet;
@@ -220,9 +229,9 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 
 	if (err < 0) { debugf("myCFSocketCallBack recvfrom error %d", err); return; }
 
-	senderaddr.NotAnInteger = from.sin_addr.s_addr;
-	senderport.NotAnInteger = from.sin_port;
-	destaddr.NotAnInteger   = to.s_addr;
+	senderAddr.NotAnInteger = from.sin_addr.s_addr;
+	senderPort.NotAnInteger = from.sin_port;
+	destAddr.NotAnInteger   = to.s_addr;
 
 	// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
 	// sockets API means that even though this socket has only officially joined the multicast group
@@ -233,21 +242,21 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	if (strcmp(info->ifa_name, packetifname))
 		{
 		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s (Ignored -- really arrived on interface %s)",
-			&senderaddr, &destaddr, &info->ifinfo.ip, info->ifa_name, packetifname);
+			&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name, packetifname);
 		return;
 		}
 	else
 		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s",
-			&senderaddr, &destaddr, &info->ifinfo.ip, info->ifa_name);
+			&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name);
 
 	if (err < (int)sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 	
 #if mDNS_AllowPort53
 	if (s == info->cfsocket53)
-		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, UnicastDNSPort, info->ifinfo.ip);
+		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderAddr, senderPort, destAddr, UnicastDNSPort, info->ifinfo.ip);
 	else
 #endif
-	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderaddr, senderport, destaddr, MulticastDNSPort, info->ifinfo.ip);
+	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderAddr, senderPort, destAddr, MulticastDNSPort, info->ifinfo.ip);
 	}
 
 mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
@@ -308,7 +317,7 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	// Add multicast group membership on this interface
 	imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 	imr.imr_interface        = ifa_addr->sin_addr;
-	err = setsockopt(*s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(struct ip_mreq));	
+	err = setsockopt(*s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));	
 	if (err < 0) { perror("setsockopt - IP_ADD_MEMBERSHIP"); return(err); }
 
 	// Specify outgoing interface too
@@ -820,26 +829,9 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		}
 	}
 
-mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, mDNSs32 NextTaskTime)
-	{
-	if (m->p->CFTimer)
-		{
-		CFAbsoluteTime ticks    = (CFAbsoluteTime)(NextTaskTime - mDNSPlatformTimeNow());
-		CFAbsoluteTime interval = ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
-		CFRunLoopTimerSetNextFireDate(m->p->CFTimer, CFAbsoluteTimeGetCurrent() + interval);
-		}
-	}
+mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
 
-// Locking is a no-op here, because we're CFRunLoop-based, so we can never interrupt ourselves
-mDNSexport void    mDNSPlatformLock   (const mDNS *const m) { (void)m; }
-mDNSexport void    mDNSPlatformUnlock (const mDNS *const m) { (void)m; }
-mDNSexport void    mDNSPlatformStrCopy(const void *src,       void *dst)             { strcpy((char *)dst, (char *)src); }
-mDNSexport UInt32  mDNSPlatformStrLen (const void *src)                              { return(strlen((char*)src)); }
-mDNSexport void    mDNSPlatformMemCopy(const void *src,       void *dst, UInt32 len) { memcpy(dst, src, len); }
-mDNSexport Boolean mDNSPlatformMemSame(const void *src, const void *dst, UInt32 len) { return(memcmp(dst, src, len) == 0); }
-mDNSexport void    mDNSPlatformMemZero(                       void *dst, UInt32 len) { bzero(dst, len); }
-
-mDNSexport SInt32  mDNSPlatformTimeNow()
+mDNSexport mDNSs32  mDNSPlatformTimeNow()
 	{
 	struct timeval tp;
 	gettimeofday(&tp, NULL);
@@ -852,4 +844,21 @@ mDNSexport SInt32  mDNSPlatformTimeNow()
 	return( (tp.tv_sec << 10) | (tp.tv_usec * 16 / 15625) );
 	}
 
-mDNSexport SInt32  mDNSPlatformOneSecond = 1024;
+mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, mDNSs32 NextTaskTime)
+	{
+	if (m->p->CFTimer)
+		{
+		CFAbsoluteTime ticks    = (CFAbsoluteTime)(NextTaskTime - mDNSPlatformTimeNow());
+		CFAbsoluteTime interval = ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
+		CFRunLoopTimerSetNextFireDate(m->p->CFTimer, CFAbsoluteTimeGetCurrent() + interval);
+		}
+	}
+
+// Locking is a no-op here, because we're single-threaded with a CFRunLoop, so we can never interrupt ourselves
+mDNSexport void     mDNSPlatformLock   (const mDNS *const m) { (void)m; }
+mDNSexport void     mDNSPlatformUnlock (const mDNS *const m) { (void)m; }
+mDNSexport void     mDNSPlatformStrCopy(const void *src,       void *dst)              { strcpy((char *)dst, (char *)src); }
+mDNSexport mDNSu32  mDNSPlatformStrLen (const void *src)                               { return(strlen((char*)src)); }
+mDNSexport void     mDNSPlatformMemCopy(const void *src,       void *dst, mDNSu32 len) { memcpy(dst, src, len); }
+mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, mDNSu32 len) { return(memcmp(dst, src, len) == 0); }
+mDNSexport void     mDNSPlatformMemZero(                       void *dst, mDNSu32 len) { bzero(dst, len); }
