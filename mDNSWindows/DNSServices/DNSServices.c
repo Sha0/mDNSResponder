@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.22  2003/12/17 21:12:15  bradley
+<rdar://problem/3491823>: Use the default .local domain when registering with an empty domain.
+
 Revision 1.21  2003/11/20 22:29:56  cheshire
 Don't need to use MAX_ESCAPED_DOMAIN_LABEL for the name part -- that's not escaped
 
@@ -832,7 +835,7 @@ DNSStatus
 	require_action( !inRef->isServiceBrowsing, exit, err = kDNSBadStateErr );
 	require_action( inType, exit, err = kDNSBadParamErr );
 	
-	// Default to the local domain when null is passed in.
+	// Default to the local domain when a NULL, empty, or "." domain is passed in.
 	
 	if( !inDomain || ( inDomain[ 0 ] == '\0' ) || ( inDomain[ 0 ] == '.' ) )
 	{
@@ -1585,9 +1588,9 @@ DNSStatus
 	require_action( !inInterfaceName || 
 					( strlen( inInterfaceName ) < sizeof( objectPtr->interfaceName ) ), exit, err = kDNSBadParamErr );
 	
-	// Default to the local domain when null is passed in.
+	// Default to the local domain when a NULL, empty, or "." domain is passed in.
 	
-	if( !inDomain )
+	if( !inDomain || ( inDomain[ 0 ] == '\0' ) || ( inDomain[ 0 ] == '.' ) )
 	{
 		inDomain = kDNSLocalDomain;
 	}
@@ -1729,9 +1732,9 @@ DNSStatus
 	require_action( !inInterfaceName || 
 					( strlen( inInterfaceName ) < sizeof( objectPtr->interfaceName ) ), exit, err = kDNSBadParamErr );
 	
-	// Default to the local domain when null is passed in.
+	// Default to the local domain when a NULL, empty, or "." domain is passed in.
 	
-	if( !inDomain )
+	if( !inDomain || ( inDomain[ 0 ] == '\0' ) || ( inDomain[ 0 ] == '.' ) )
 	{
 		inDomain = kDNSLocalDomain;
 	}
@@ -2333,9 +2336,9 @@ DNSStatus
 	require_action( !inInterfaceName || 
 					( strlen( inInterfaceName ) < sizeof( object->interfaceName ) ), exit, err = kDNSBadParamErr );
 	
-	// Default to the local domain when null is passed in.
+	// Default to the local domain when a NULL, empty, or "." domain is passed in.
 	
-	if( !inDomain )
+	if( !inDomain || ( inDomain[ 0 ] == '\0' ) || ( inDomain[ 0 ] == '.' ) )
 	{
 		inDomain = kDNSLocalDomain;
 	}
