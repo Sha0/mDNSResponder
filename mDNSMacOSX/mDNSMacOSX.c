@@ -22,6 +22,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.81  2003/05/24 02:06:42  cheshire
+<rdar://problem/3268480> IPv6 Multicast Loopback doesn't work
+Tried setting IPV6_MULTICAST_LOOP; it doesn't help.
+However, it is probably wise to have the code explicitly set this socket
+option anyway, in case the default changes in later versions of Unix.
+
 Revision 1.80  2003/05/24 02:02:24  cheshire
 <rdar://problem/3221880> if_indextoname consumes a lot of CPU
 Fix error in myIfIndexToName; was returning prematurely
@@ -657,6 +663,10 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
 		if (err < 0) { LogMsg("setsockopt - IPV6_TCLASS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		#endif
+		
+		// Want to receive our own packets
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &on, sizeof(on));
+		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_LOOP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// And start listening for packets
 		struct sockaddr_in6 listening_sockaddr6;
