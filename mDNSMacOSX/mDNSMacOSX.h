@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.25  2003/11/08 22:18:29  cheshire
+<rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
+
 Revision 1.24  2003/11/08 22:13:00  cheshire
 Move extern declarations inside '#ifdef __cplusplus extern "C" {' section
 
@@ -153,6 +156,8 @@ struct mDNS_PlatformSupport_struct
     CFRunLoopSourceRef       PowerRLS;
     };
 
+extern void LogMsgIdent(const char *ident, const char *format, ...);
+#define LogMsgNoIdent(args...) LogMsgIdent("", args)
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);

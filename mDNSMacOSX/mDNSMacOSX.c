@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.117  2003/11/08 22:18:29  cheshire
+<rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
+
 Revision 1.116  2003/09/23 16:39:49  cheshire
 When LogAllOperations is set, also report registration and deregistration of interfaces
 
@@ -408,14 +411,8 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	}
 #endif
 
-mDNSexport void LogMsg(const char *format, ...)
+mDNSlocal void WriteLogMsg(const char *ident, const char *buffer, int logoptflags)
 	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	
 	extern int debug_mode;
 	if (debug_mode)		// In debug_mode we write to stderr
 		{
@@ -424,10 +421,30 @@ mDNSexport void LogMsg(const char *format, ...)
 		}
 	else				// else, in production mode, we write to syslog
 		{
-		openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
+		openlog(ident, LOG_CONS | LOG_PERROR | logoptflags, LOG_DAEMON);
 		syslog(LOG_ERR, "%s", buffer);
 		closelog();
 		}
+	}
+
+mDNSexport void LogMsg(const char *format, ...)
+	{
+	unsigned char buffer[512];
+	va_list ptr;
+	va_start(ptr,format);
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
+	va_end(ptr);
+	WriteLogMsg("mDNSResponder", buffer, 0);
+	}
+
+mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
+	{
+	unsigned char buffer[512];
+	va_list ptr;
+	va_start(ptr,format);
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
+	va_end(ptr);
+	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
 	}
 
 mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)

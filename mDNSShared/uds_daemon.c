@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.28  2003/11/08 22:18:29  cheshire
+<rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
+
 Revision 1.27  2003/11/05 22:44:57  ksekar
 Bug #: <rdar://problem/3335230>: No bounds checking when reading data from client
 Reviewed by: Stuart Cheshire
@@ -446,15 +449,15 @@ void udsserver_info(void)
         void *t = req->termination_context;
         if (!t) continue;
         if (req->terminate == regservice_termination_callback)
-            LogMsg("DNSServiceRegister         %##s %u", ((registered_service *)t)->srs->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(((registered_service *)t)->srs));
+            LogMsgNoIdent("DNSServiceRegister         %##s %u", ((registered_service *)t)->srs->RR_SRV.resrec.name.c, SRS_PORT_AS_NUM(((registered_service *)t)->srs));
         else if (req->terminate == browse_termination_callback)
-            LogMsg("DNSServiceBrowse           %##s", ((DNSQuestion *)          t)->qname.c);
+            LogMsgNoIdent("DNSServiceBrowse           %##s", ((DNSQuestion *)          t)->qname.c);
         else if (req->terminate == resolve_termination_callback)
-            LogMsg("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->srv->question.qname.c);
+            LogMsgNoIdent("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->srv->question.qname.c);
         else if (req->terminate == question_termination_callback)
-            LogMsg("DNSServiceQueryRecord      %##s", ((DNSQuestion *)          t)->qname.c);
+            LogMsgNoIdent("DNSServiceQueryRecord      %##s", ((DNSQuestion *)          t)->qname.c);
         else if (req->terminate == enum_termination_callback)
-            LogMsg("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
+            LogMsgNoIdent("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
         }
     }
 
