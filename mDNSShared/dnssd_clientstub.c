@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.14  2004/01/19 22:39:17  cheshire
+Don't use "MSG_WAITALL"; it makes send() return "Invalid argument" on Linux;
+use an explicit while() loop instead. (In any case, this should only make a difference
+with non-blocking sockets, which we don't use on the client side right now.)
+
 Revision 1.13  2004/01/19 21:46:52  cheshire
 Fix compiler warning
 
@@ -913,7 +918,14 @@ static DNSServiceRef connect_to_server(void)
 
 int my_write(int sd, char *buf, int len)
     {
-    if (send(sd, buf, len, MSG_WAITALL) != len)   return -1;
+    //if (send(sd, buf, len, MSG_WAITALL) != len)   return -1;
+    while (len)
+    	{
+    	ssize_t num_written = send(sd, buf, len, 0);
+    	if (num_written < 0 || num_written > len) return -1;
+    	buf += num_written;
+    	len -= num_written;
+    	}
     return 0;
     }
 
@@ -1011,7 +1023,7 @@ static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start, int reuse_so
         {
 	  if (gettimeofday(&time, NULL) < 0) return NULL;
 	  sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(), 
-		  time.tv_sec & 0xFFF, time.tv_usec);
+		  (unsigned long)(time.tv_sec & 0xFFF), (unsigned long)(time.tv_usec));
 
         *len += strlen(ctrl_path) + 1;
         }
