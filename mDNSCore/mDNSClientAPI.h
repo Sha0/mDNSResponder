@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.54  2003/05/24 16:39:48  cheshire
+<rdar://problem/3268631> SendResponses also needs to handle multihoming better
+
 Revision 1.53  2003/05/23 02:15:37  cheshire
 Fixed misleading use of the term "duplicate suppression" where it should have
 said "known answer suppression". (Duplicate answer suppression is something
@@ -311,15 +314,15 @@ typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identi
 
 enum
 	{
-	mDNSAddrType_None = 0,
-	mDNSAddrType_IPv4 = 4,
-	mDNSAddrType_IPv6 = 6,
-	mDNSAddrType_Any  = 0xffffffff
+	mDNSAddrType_None    = 0,
+	mDNSAddrType_IPv4    = 4,
+	mDNSAddrType_IPv6    = 6,
+	mDNSAddrType_Unknown = ~0	// Special marker value used in known answer list recording
 	};
 
 typedef struct
 	{
-	mDNSu32	type;
+	mDNSs32	type;
 	union
 		{
 		mDNSv6Addr	ipv6;
@@ -412,13 +415,6 @@ enum
 	kDNSRecordTypeActiveMask       = 0xF0	// Test for all records that have finished their probing and are now active
 	};
 
-enum
-	{
-	kDNSSendPriorityNone       = 0,		// Don't need to send this record right now
-	kDNSSendPriorityAdditional = 1,		// Send this record as an additional, if we have space in the packet
-	kDNSSendPriorityAnswer     = 2		// Need to send this record as an answer
-	};
-
 typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target; } rdataSRV;
 
 typedef union
@@ -477,16 +473,15 @@ struct ResourceRecord_struct
 	mDNSu8          Acknowledged;		// AR: Set if we've given the success callback to the client
 	mDNSu8          ProbeCount;			// AR: Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// AR: Number of announcements remaining (kDNSRecordTypeShared)
-	mDNSInterfaceID SendRNow;			// AR: The interface this query is being sent on right now
 	mDNSu8          IncludeInProbe;		// AR: Set if this RR is being put into a probe right now
-	mDNSu8          SendPriority;		// AR: See enum above
-	mDNSAddr        Requester;			// AR: Used for inter-packet duplicate suppression
-										//     If set, give the IP address of the last host that sent a truncated query for this record
-										//     If set to all-ones, more than one host sent such a request in the last few milliseconds
+	mDNSInterfaceID ImmedAnswer;		// AR: Someone on this interface issued a query we need to answer (all-ones for all interfaces)
+	mDNSInterfaceID ImmedAdditional;	// AR: Hint that we might want to also send this record, just to be helpful
+	mDNSInterfaceID SendRNow;			// AR: The interface this query is being sent on right now
+	mDNSIPAddr      v4Requester;		// AR: Recent v4 query for this record, or all-ones if more than one recent query
+	mDNSv6Addr      v6Requester;		// AR: Recent v6 query for this record, or all-ones if more than one recent query
 	ResourceRecord *NextResponse;		// AR: Link to the next element in the chain of responses to generate
 	const mDNSu8   *NR_AnswerTo;		// AR: Set if this record was selected by virtue of being a direct answer to a question
 	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another
-	mDNSs32         RRLastTxTime;		// AR: In platform time units: Last time this record was sent for any reason
 	mDNSs32         ThisAPInterval;		// AR: In platform time units: Current interval for announce/probe
 	mDNSs32         LastAPTime;			// AR: In platform time units: Last time we sent announcement/probe
 	RData          *NewRData;			// AR: Set if we are updating this record with new rdata
@@ -648,7 +643,7 @@ struct mDNS_struct
 	mDNSs32  NextCacheCheck;			// Next time to refresh cache record before it expires
 	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
 	mDNSs32  NextProbeTime;				// Next time to probe for new authoritative record
-	mDNSs32  NextAnnouncementTime;		// Next time to announce new authoritative record
+	mDNSs32  NextResponseTime;			// Next time to send authoritative record(s) in responses
 	mDNSBool SendDeregistrations;		// Set if we need to send deregistrations (immediately)
 	mDNSBool SendImmediateAnswers;		// Set if we need to send answers (immediately -- or as soon as SuppressSending clears)
 	mDNSBool SleepState;				// Set if we're sleeping (send no more packets)
@@ -686,7 +681,8 @@ extern const ResourceRecord  zeroRR;
 extern const mDNSIPPort      zeroIPPort;
 extern const mDNSIPAddr      zeroIPAddr;
 extern const mDNSv6Addr      zerov6Addr;
-extern const mDNSIPAddr      onesIPAddr;
+extern const mDNSIPAddr      onesIPv4Addr;
+extern const mDNSv6Addr      onesIPv6Addr;
 extern const mDNSInterfaceID mDNSInterface_Any;
 
 extern const mDNSIPPort      UnicastDNSPort;
