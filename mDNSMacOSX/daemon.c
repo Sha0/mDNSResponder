@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.241  2005/01/25 17:28:06  ksekar
+<rdar://problem/3971467> Should not return "local" twice for domain enumeration
+
 Revision 1.240  2005/01/21 02:39:18  cheshire
 Rename FoundDomain() to DomainEnumFound() to avoid order-file symbol clash with other routine called FoundDomain()
 
@@ -1037,7 +1040,6 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 
 	mDNS_DomainType dt1 = regDom ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
 	mDNS_DomainType dt2 = regDom ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
-	const DNSServiceDomainEnumerationReplyResultType rt = DNSServiceDomainEnumerationReplyAddDomainDefault;
 
 	// Allocate memory, and handle failure
 	DNSServiceDomainEnumeration *x = mallocL("DNSServiceDomainEnumeration", sizeof(*x));
@@ -1048,12 +1050,7 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	x->next = DNSServiceDomainEnumerationList;
 	DNSServiceDomainEnumerationList = x;
 
-	// Generate initial response
 	verbosedebugf("%5d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
-	// We always give local. as the initial default browse domain, and then look for more
-	kern_return_t status = DNSServiceDomainEnumerationReply_rpc(x->ClientMachPort, rt, "local.", 0, MDNS_MM_TIMEOUT);
-	if (status == MACH_SEND_TIMED_OUT)
-		{ AbortBlockedClient(x->ClientMachPort, "local enumeration", x); return(mStatus_UnknownErr); }
 
 	// Do the operation
 	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, NULL, mDNSInterface_LocalOnly, DomainEnumFound, x);

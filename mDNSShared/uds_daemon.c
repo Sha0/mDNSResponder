@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.158  2005/01/25 17:28:07  ksekar
+<rdar://problem/3971467> Should not return "local" twice for domain enumeration
+
 Revision 1.157  2005/01/21 02:20:39  cheshire
 Fix mistake in LogOperation() format string
 
@@ -2748,14 +2751,12 @@ static mStatus remove_extra(request_state *rstate, service_instance *serv)
 // domain enumeration
 static void handle_enum_request(request_state *rstate)
     {
-    DNSServiceFlags flags, add_default;
+    DNSServiceFlags flags;
     uint32_t ifi;
     mDNSInterfaceID InterfaceID;
     char *ptr = rstate->msgdata;
     domain_enum_t *def, *all;
     enum_termination_t *term;
-    reply_state *reply;  // initial default reply
-    transfer_state tr;
     mStatus err;
     int result;
     
@@ -2821,21 +2822,6 @@ static void handle_enum_request(request_state *rstate)
         unlink_request(rstate);
         return;
         }
-
-    // provide local. as the first domain automatically
-    add_default = kDNSServiceFlagsDefault | kDNSServiceFlagsAdd;
-    reply = format_enumeration_reply(rstate, "local.", add_default, ifi, 0);
-    tr = send_msg(reply);
-    if (tr == t_error || tr == t_terminated) 
-        {
-        freeL("handle_enum_request", def);
-        freeL("handle_enum_request", all);
-        abort_request(rstate);
-        unlink_request(rstate);
-        return;
-        }
-    if (tr == t_complete) freeL("handle_enum_request", reply);
-    if (tr == t_morecoming) append_reply(rstate, reply); // couldn't send whole reply because client is blocked - link into list
     }
 
 static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
