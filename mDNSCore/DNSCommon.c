@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.25  2004/04/22 03:05:28  cheshire
+kDNSClass_ANY should be kDNSQClass_ANY
+
 Revision 1.24  2004/04/22 02:51:20  cheshire
 Use common code for HINFO/TXT and TSIG cases in putRData
 
@@ -801,7 +804,7 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
-	if (                                rr->rrclass != q->qclass && q->qclass != kDNSClass_ANY)  return(mDNSfalse);
+	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
 	return(rr->namehash == q->qnamehash && SameDomainName(&rr->name, &q->qname));
 	}
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.3  2004/04/22 03:05:28  cheshire
+kDNSClass_ANY should be kDNSQClass_ANY
+
 Revision 1.2  2004/04/15 00:51:28  bradley
 Minor tweaks for Windows and C++ builds. Added casts for signed/unsigned integers and 64-bit pointers.
 Prefix some functions with mDNS to avoid conflicts. Disable benign warnings on Microsoft compilers.
@@ -1232,8 +1235,8 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	MD5_Update(&c, info->keyname.c, mDNSPlatformStrLen(info->keyname.c)+1);
 
 	// class
-	tsig.resrec.rrclass = kDNSClass_ANY;
-	buf = mDNSOpaque16fromIntVal(kDNSClass_ANY);
+	tsig.resrec.rrclass = kDNSQClass_ANY;
+	buf = mDNSOpaque16fromIntVal(kDNSQClass_ANY);
 	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));
 
 	// ttl

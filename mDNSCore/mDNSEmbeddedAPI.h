@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.165  2004/04/22 03:05:28  cheshire
+kDNSClass_ANY should be kDNSQClass_ANY
+
 Revision 1.164  2004/04/21 02:55:03  cheshire
 Update comments describing 'InterfaceActive' field
 
@@ -617,11 +620,11 @@ typedef enum							// From RFC 1035
 	kDNSClass_CH               = 3,		// CHAOS
 	kDNSClass_HS               = 4,		// Hesiod
 	kDNSClass_NONE             = 254,	// Used in DNS UPDATE [RFC 2136]
-	kDNSClass_ANY              = 255,	// Used in TSIG records, and in queries for "all classes"
 	
 	kDNSClass_Mask             = 0x7FFF,// Multicast DNS uses the bottom 15 bits to identify the record class...
 	kDNSClass_UniqueRRSet      = 0x8000,// ... and the top bit indicates that all other cached records are now invalid
 
+	kDNSQClass_ANY             = 255,	// Not a DNS class, but a DNS query class, meaning "all classes"
 	kDNSQClass_UnicastResponse = 0x8000	// Top bit set in a question means "unicast response acceptable"
 	} DNS_ClassValues;
 
