@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.13  2004/08/11 01:59:41  cheshire
+Remove "mDNS *globalInstance" parameter from udsserver_init()
+
 Revision 1.12  2004/06/28 23:19:19  cheshire
 Fix "Daemon_Init declared but never defined" warning on Linux
 
@@ -96,7 +99,7 @@ extern const char mDNSResponderVersionString[];
 
 int		main( int argc, char **argv)
 {
-	mDNS					mDNSRecord;
+	#define mDNSRecord mDNSStorage
 	mDNS_PlatformSupport	platformStorage;
 	mStatus					err;
 
@@ -109,7 +112,7 @@ int		main( int argc, char **argv)
 					mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext); 
 
 	if ( mStatus_NoError == err)
-		err = udsserver_init( &mDNSRecord);
+		err = udsserver_init();
 
 	// Now that we're finished with anything privileged, switch over to running as "nobody"
 	if ( mStatus_NoError == err)

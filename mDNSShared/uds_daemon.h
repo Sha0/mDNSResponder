@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.6  2004/08/11 01:58:49  cheshire
+Remove "mDNS *globalInstance" parameter from udsserver_init()
+
 Revision 1.5  2004/06/18 04:44:58  rpantos
 Use platform layer for socket types
 
@@ -54,7 +57,7 @@ Changes necessary to support mDNSResponder on Linux.
 
 #define SRS_PORT(S) mDNSVal16((S)->RR_SRV.resrec.rdata->u.srv.port)
 
-extern int udsserver_init( mDNS *globalInstance);
+extern int udsserver_init(void);
 
 // takes the next scheduled event time, does idle work, and returns the updated nextevent time
 extern mDNSs32 udsserver_idle(mDNSs32 nextevent);
@@ -73,3 +76,10 @@ typedef	void (*udsEventCallback)(void *context);
 
 extern mStatus udsSupportAddFDToEventLoop(dnssd_sock_t fd, udsEventCallback callback, void *context);
 extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd);
+
+
+// Globals and functions defined in uds_daemon.c and also shared with the old "daemon.c" on OS X
+extern mDNS mDNSStorage;
+extern mDNSs32 CountSubTypes(char *regtype);
+extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
+extern int CountExistingRegistrations(domainname *srv, mDNSIPPort port);

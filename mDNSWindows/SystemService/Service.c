@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.9  2004/08/11 01:59:41  cheshire
+Remove "mDNS *globalInstance" parameter from udsserver_init()
+
 Revision 1.8  2004/08/05 05:40:05  shersche
 <rdar://problem/3751566> Only invoke SetConsoleCtrlHandler when running directly from command line.
 <rdar://problem/3751481> Invoke udsserver_handle_configchange() when the computer description changes
@@ -195,7 +198,7 @@ static OSStatus		SetLLRoute();
 //===========================================================================================================================
 //	Globals
 //===========================================================================================================================
-DEBUG_LOCAL	mDNS						gMDNSRecord;
+#define gMDNSRecord mDNSStorage
 DEBUG_LOCAL	mDNS_PlatformSupport		gPlatformStorage;
 DEBUG_LOCAL BOOL						gServiceQuietMode		= FALSE;
 DEBUG_LOCAL SERVICE_TABLE_ENTRY			gServiceDispatchTable[] = 
@@ -1002,7 +1005,7 @@ static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
 	err = mDNS_Init( &gMDNSRecord, &gPlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext); 
 	require_noerr( err, exit);
 
-	err = udsserver_init(&gMDNSRecord);
+	err = udsserver_init();
 	require_noerr( err, exit);
 
 	//
