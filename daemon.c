@@ -461,13 +461,16 @@ void start(const char *bundleName, const char *bundleDir)
 int main(int argc, char **argv)
     {
 	int i;
+
 	for (i=1; i<argc; i++)
 		{
 		if (!strcmp(argv[i], "-d")) debug_mode = 1;
 		if (!strcmp(argv[i], "-no53")) use_53 = 0;
 		}
-    if (!debug_mode) daemon(0,0);
+    //if (!debug_mode)
+	//		daemon(0,0);
     start(NULL, NULL);
-    CFRunLoopRun();
+	CFRunLoopRun();
+
     return(0);
     }
