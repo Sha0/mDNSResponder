@@ -179,7 +179,7 @@ void *mallocL(char *msg, unsigned int size)
 		}
 	else
 		{
-		LogMsg("malloc( %s : %d ) = %X", msg, size, &mem[2]);
+		LogMalloc("malloc( %s : %d ) = %X", msg, size, &mem[2]);
 		mem[0] = 0xDEAD1234;
 		mem[1] = size;
 		bzero(&mem[2], size);
@@ -199,7 +199,7 @@ void freeL(char *msg, void *x)
 			{ LogMsg("free( %s @ %X ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
 		if (mem[1] > 8000)
 			{ LogMsg("free( %s : %d @ %X) too big!", msg, mem[1], &mem[2]); return; }
-		LogMsg("free( %s : %d @ %X)", msg, mem[1], &mem[2]);
+		LogMalloc("free( %s : %d @ %X)", msg, mem[1], &mem[2]);
 		//bzero(mem, mem[1]+8);
 		memset(mem, 0xFF, mem[1]+8);
 		validatelists(&mDNSStorage);

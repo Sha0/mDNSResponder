@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.6  2003/03/05 21:59:56  cheshire
+Bug #: 3189097 Additional debugging code in mDNSResponder
+
 Revision 1.5  2003/03/05 01:50:38  cheshire
 Bug #: 3189097 Additional debugging code in mDNSResponder
 
@@ -108,14 +111,21 @@ struct mDNS_PlatformSupport_struct
     };
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
-#define MACOSX_MDNS_MALLOC_DEBUGGING 0
+// Set this symbol to 2 to write a log message for every malloc() and free()
+#define MACOSX_MDNS_MALLOC_DEBUGGING 1
 
-#if MACOSX_MDNS_MALLOC_DEBUGGING
+#if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 extern void *mallocL(char *msg, unsigned int size);
 extern void freeL(char *msg, void *x);
 #else
 #define mallocL(X,Y) malloc(Y)
 #define freeL(X,Y) free(Y)
+#endif
+
+#if MACOSX_MDNS_MALLOC_DEBUGGING >= 2
+#define LogMalloc LogMsg
+#else
+#define	LogMalloc(ARGS...) ((void)0)
 #endif
 
 #define LogAllOperations 0
