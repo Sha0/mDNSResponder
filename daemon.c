@@ -41,7 +41,7 @@ static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 500
 static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
-const char PID_FILE[] = "/var/run/mDNSResponder.pid";
+static const char PID_FILE[] = "/var/run/mDNSResponder.pid";
 
 #if DEBUGBREAKS
 static int debug_mode = 1;
@@ -152,8 +152,16 @@ mDNSlocal void AbortClient(mach_port_t port)
 		*r = (*r)->next;
 		debugf("Aborting DNSServiceRegistration %d", port);
 		mDNS_DeregisterService(&mDNSStorage, &x->s);
+		// Note that we don't do the "free(x);" here -- wait for the mStatus_MemFree message
 		return;
 		}
+	}
+
+mDNSlocal void AbortBlockedClient(mach_port_t port, char *msg)
+	{
+	fprintf(stderr, "mDNSResponder [%d] Client %d has stopped accepting messages.  "
+		"The client has been disconnected from its %s reply\n", getpid(), port, msg);
+	AbortClient(port);
 	}
 
 mDNSlocal void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex size, void *info)
@@ -167,7 +175,6 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex si
 
 		/* Deallocate the send right that came in the dead name notification */
 		mach_port_destroy( mach_task_self(), deathMessage->not_port );
-
 		}
 	}
 
@@ -208,13 +215,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 
 	ConvertDomainNameToCString(&answer->rdata.name, buffer);
 	status = DNSServiceDomainEnumerationReply_rpc(x->port, rt, buffer, 0, 10);
-
-	if (status == MACH_SEND_TIMED_OUT)
-		{
-		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's enumeration reply\n", getpid(), x->port);
-		mDNS_StopGetDomains(m, question);
-		}
-
+	if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "enumeration");
 	}
 
 mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t server, mach_port_t client, int regDom)
@@ -235,15 +236,17 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	status = DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0, 10);
 	if (status == MACH_SEND_TIMED_OUT)
 		{
-		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's local enumeration reply\n", getpid(), x->port);
-		err = mStatus_UnknownErr;
-		return(err);
+		AbortBlockedClient(x->port, "local enumeration");
+		return(mStatus_UnknownErr);
 		}
 
 	err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, zeroIPAddr, FoundDomain, x);
 	if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, zeroIPAddr, FoundDomain, x);
-	if (!err) EnableDeathNotificationForClient(client);
-	else debugf("provide_DNSServiceDomainEnumerationCreate_rpc: Error %d", err);
+
+	if (err) AbortClient(client);
+	else EnableDeathNotificationForClient(client);
+
+	if (err) debugf("provide_DNSServiceDomainEnumerationCreate_rpc: mDNS_GetDomains error %d", err);
 	return(err);
 	}
 
@@ -268,12 +271,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	if (answer->rrremainingttl == 0) resultType = DNSServiceBrowserReplyRemoveInstance;
 	debugf("DNSServiceBrowserReply_rpc sending reply for %s", c_name);
 	status = DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0, 10);
-	if (status == MACH_SEND_TIMED_OUT)
-		{
-		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's browser reply\n", getpid(), x->port);
-		mDNS_StopBrowse(m, question);
-		}
-
+	if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "browse");
 	}
 
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_t client,
@@ -295,8 +293,11 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server,
 	debugf("Client %d: provide_DNSServiceBrowserCreate_rpc", client);
 	debugf("Client %d: Browse for Services: %##s%##s", client, &t, &d);
 	err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, zeroIPAddr, FoundInstance, x);
-	if (!err) EnableDeathNotificationForClient(client);
-	else debugf("provide_DNSServiceBrowserCreate_rpc: mDNS_StartBrowse failed");
+
+	if (err) AbortClient(client);
+	else EnableDeathNotificationForClient(client);
+
+	if (err) debugf("provide_DNSServiceBrowserCreate_rpc: mDNS_StartBrowse error %d", err);
 	return(err);
 	}
 
@@ -321,11 +322,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
 	
 	DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0, 10);
-	if (status == MACH_SEND_TIMED_OUT)
-		{
-		fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been disconnected from it's resolver reply\n", getpid(), x->port);
-		mDNS_StopResolveService(m, query);
-		}
+	if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "resolve");
 	}
 
 mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_port_t client,
@@ -351,8 +348,11 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t serve
 	debugf("Client %d: provide_DNSServiceResolverResolve_rpc", client);
 	debugf("Client %d: Resolve Service: %##s", client, &x->i.name);
 	err = mDNS_StartResolveService(&mDNSStorage, &x->q, &x->i, FoundInstanceInfo, x);
-	if (!err) EnableDeathNotificationForClient(client);
-	else debugf("provide_DNSServiceResolverResolve_rpc: mDNS_StartResolveService failed");
+
+	if (err) AbortClient(client);
+	else EnableDeathNotificationForClient(client);
+
+	if (err) debugf("provide_DNSServiceResolverResolve_rpc: mDNS_StartResolveService error %d", err);
 	return(err);
 	}
 
@@ -367,6 +367,7 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 	{
 	DNSServiceRegistration *x = (DNSServiceRegistration*)sr->Context;
 	mach_port_t port = x->port;
+
 	switch (result)
 		{
 		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   sr->RR_SRV.name.c); break;
@@ -374,39 +375,32 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       sr->RR_SRV.name.c); break;
 		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
 		}
+
 	if (result == mStatus_NoError)
 		{
 		kern_return_t status = DNSServiceRegistrationReply_rpc(port, result, 10);
-
-		if (status == MACH_SEND_TIMED_OUT)
-			{
-#warning Should we really deregister a client who can't receive the "good" notification?
-			fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been deregistered\n", getpid(), x->port);
-			mDNS_DeregisterService(m, sr);
-			}
-		
+		if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "registration success");
 		}
-//	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr);
+
 	if (result == mStatus_NameConflict)
 		{
 		kern_return_t status;
-		AbortClient(port);
+		AbortClient(port);    // This unlinks our DNSServiceRegistration from the list so we can safely free it
 		status = DNSServiceRegistrationReply_rpc(port, result, 10);
-
-		if (status == MACH_SEND_TIMED_OUT)
-			{
-			fprintf(stderr,"mDNSResponder [%d] cannot send a message to client %d.  The client has been deregistered\n", getpid(), x->port);
-			mDNS_DeregisterService(m, sr);
-			}
-		
+		if (status == MACH_SEND_TIMED_OUT) AbortBlockedClient(x->port, "registration conflict"); // Yes, this IS safe :-)
 		free(x);
 		}
-	if (result == mStatus_MemFree) { debugf("Freeing DNSServiceRegistration %d", x->port); free(x); }
+
+	if (result == mStatus_MemFree)
+		{
+		debugf("Freeing DNSServiceRegistration %d", x->port);
+		free(x);
+		}
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
-																  DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
-{
+	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
+	{
 	mStatus err;
 	domainlabel n;
 	domainname t, d;
@@ -428,36 +422,41 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
 	debugf("Client %d: Register Service: %#s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
 	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtRecord, Callback, x);
-	if (!err) EnableDeathNotificationForClient(client);
-	debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
+
+	if (err) AbortClient(client);
+	else EnableDeathNotificationForClient(client);
+
+	if (err) debugf("provide_DNSServiceRegistrationCreate_rpc: mDNS_RegisterService error %d", err);
+	else debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
+
 	return(err);
-}
+	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t server, mach_port_t client, int type, const char *data, mach_msg_type_number_t data_len, natural_t *reference)
-{
+	{
 	mStatus err = 0;
 
 	printf("Received a request to add the record(s) of type: %d length: %d data: %s, returned cookie 32\n", type, data_len, data);
 	*reference = 32;
 	return(err);
-}
+	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference, int type, const char *data, mach_msg_type_number_t data_len)
-{
+	{
 	mStatus err = 0;
 
 	printf("Received a request to update the record(s) of type: %d length: %d data: %s for reference: %d\n", type, data_len, data, reference);
 	return(err);
-}
+	}
 
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference)
-{
+	{
 	mStatus err = 0;
 
 	printf("Received a request to remove the record(s) of reference: %d\n", (int)reference);
 	return(err);
-}
+	}
 
 
 //*************************************************************************************************************
@@ -598,18 +597,18 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 
-	if (!debug_mode) {
-		daemon(0,0);
+	if (!debug_mode)
 		{
-			FILE *fp = fopen(PID_FILE, "w");
-			if (fp != NULL)
+		FILE *fp;
+		daemon(0,0);
+		fp = fopen(PID_FILE, "w");
+		if (fp != NULL)
 			{
-				fprintf(fp, "%d\n", getpid());
-				fclose(fp);
+			fprintf(fp, "%d\n", getpid());
+			fclose(fp);
 			}
 		}
-	}
-		
+
 	status = start(NULL, NULL);
 
 	if (status == 0)
