@@ -11,90 +11,12 @@
 			path = mDNSMacOSX.h;
 			refType = 4;
 		};
-		0017390704CC75C30CCA2C71 = {
-			fileEncoding = 4;
-			isa = PBXFileReference;
-			path = SampleUDSClient.c;
-			refType = 2;
-		};
-		0017390804CC75C30CCA2C71 = {
-			fileRef = 0017390704CC75C30CCA2C71;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		0044D34804CC73600CCA2C71 = {
-			buildPhases = (
-				0044D34904CC73600CCA2C71,
-				0044D34A04CC73600CCA2C71,
-				0044D34C04CC73600CCA2C71,
-				0044D34E04CC73600CCA2C71,
-			);
-			buildSettings = {
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS)";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = uds_test;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = "-W -Wall -Wmissing-prototypes -Wno-four-char-constants -Wno-unknown-pragmas";
-			};
-			dependencies = (
-			);
-			isa = PBXToolTarget;
-			name = "UDS API Test Tool";
-			productName = "UDS API Test Tool";
-			productReference = 0044D34F04CC73600CCA2C71;
-		};
-		0044D34904CC73600CCA2C71 = {
-			buildActionMask = 2147483647;
-			files = (
-			);
-			isa = PBXHeadersBuildPhase;
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		0044D34A04CC73600CCA2C71 = {
-			buildActionMask = 2147483647;
-			files = (
-				0017390804CC75C30CCA2C71,
-				00DD152B04CC79700CCA2C71,
-				00DD152C04CC79A50CCA2C71,
-			);
-			isa = PBXSourcesBuildPhase;
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		0044D34C04CC73600CCA2C71 = {
-			buildActionMask = 2147483647;
-			files = (
-			);
-			isa = PBXFrameworksBuildPhase;
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		0044D34E04CC73600CCA2C71 = {
-			buildActionMask = 2147483647;
-			files = (
-			);
-			isa = PBXRezBuildPhase;
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		0044D34F04CC73600CCA2C71 = {
-			isa = PBXExecutableFileReference;
-			path = uds_test;
-			refType = 3;
-		};
 		004EFB9604CC78130CCA2C71 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = dnssd_clientstub.c;
 			path = ../mDNSShared/dnssd_clientstub.c;
 			refType = 2;
-		};
-		0066920A04CC7AA80CCA2C71 = {
-			isa = PBXTargetDependency;
-			target = 0044D34804CC73600CCA2C71;
 		};
 		00AD62A3032D799A0CCA2C71 = {
 			buildPhases = (
@@ -255,7 +177,6 @@
 				00AD62BC032D7A160CCA2C71,
 				00AD62BD032D7A1B0CCA2C71,
 				00AD62BE032D7A1D0CCA2C71,
-				0066920A04CC7AA80CCA2C71,
 				FFD41DDB0664169900F0C438,
 				FFD41DDC0664169B00F0C438,
 			);
@@ -289,18 +210,6 @@
 			name = IOKit.framework;
 			path = /System/Library/Frameworks/IOKit.framework;
 			refType = 0;
-		};
-		00DD152B04CC79700CCA2C71 = {
-			fileRef = 004EFB9604CC78130CCA2C71;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00DD152C04CC79A50CCA2C71 = {
-			fileRef = F5E11B5A04A28126019798ED;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 //000
 //001
@@ -340,7 +249,6 @@
 				08FB779FFE84155DC02AAC07,
 				00AD62A3032D799A0CCA2C71,
 				6575FC1C022EB76000000109,
-				0044D34804CC73600CCA2C71,
 				DB2CC4530662DD6800335AB3,
 				DB2CC4660662DF5C00335AB3,
 			);
@@ -510,7 +418,6 @@
 				034768E2FF38A6DC11DB9C8B,
 				6575FC1D022EB76000000109,
 				00AD62B8032D799A0CCA2C71,
-				0044D34F04CC73600CCA2C71,
 				DB2CC4670662DF5C00335AB3,
 				FFD41DDA0664157900F0C438,
 			);
@@ -719,7 +626,6 @@
 		6575FC1F022EB78C00000109 = {
 			children = (
 				6575FC20022EB7AA00000109,
-				0017390704CC75C30CCA2C71,
 				004EFB9604CC78130CCA2C71,
 			);
 			isa = PBXGroup;
