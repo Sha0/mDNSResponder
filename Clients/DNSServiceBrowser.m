@@ -102,6 +102,8 @@ void resolve_reply (
     [nameField sizeLastColumnToFit];
     [domainField setDataSource:self];
     [domainField sizeLastColumnToFit];
+
+    [nameField setDoubleAction:@selector(connect:)];
     
     //[srvtypeKeys addObject:@"_ftp._tcp."];	//Add supported protocols and domains to their
     //[srvnameKeys addObject:@"File Transfer (ftp)"];
@@ -173,7 +175,7 @@ void resolve_reply (
     }
     if (theTableView == nameField)
     {
-        return [nameKeys objectAtIndex:rowIndex];
+        return [[nameKeys sortedArrayUsingSelector:@selector(compare:)] objectAtIndex:rowIndex];
     }
     if (theTableView == serviceDisplayTable)
     {
@@ -220,7 +222,7 @@ void resolve_reply (
 {
     int index=[sender selectedRow];				//Find index of selected row
     if (index==-1) return;					//Error checking
-    Name=[nameKeys objectAtIndex:index];			//Save desired name
+    Name=[[nameKeys sortedArrayUsingSelector:@selector(compare:)] objectAtIndex:index];			//Save desired name
 
     {
         CFMachPortRef           cfMachPort;
@@ -431,8 +433,18 @@ void resolve_reply (
     [portField setIntValue:port];
     [textField setStringValue:txtRecord];
     
-    
-    //[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:txtRecord]];
+    return;
+}
+
+- (void)connect:(id)sender
+{
+    NSString *ipAddr = [ipAddressField stringValue];
+    int port = [portField intValue];
+    NSString *txtRecord = [textField stringValue];
+
+    if (!txtRecord) txtRecord = @"";
+
+    if (!ipAddr || !port) return;
 
     if ([SrvType isEqualToString:@"_http._tcp."]) {
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d/%@", ipAddr, port, txtRecord]]];

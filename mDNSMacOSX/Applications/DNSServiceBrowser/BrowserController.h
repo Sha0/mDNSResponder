@@ -46,6 +46,8 @@
 - (IBAction)handleNameClick:(id)sender;
 - (IBAction)handleTypeClick:(id)sender;
 
+- (IBAction)connect:(id)sender;
+
 - (IBAction)handleTableClick:(id)sender;
 - (IBAction)removeSelected:(id)sender;
 - (IBAction)addNewService:(id)sender;

@@ -3,6 +3,7 @@
         {
             ACTIONS = {
                 addNewService = id; 
+                connect = id; 
                 editDomains = id; 
                 handleDomainClick = id; 
                 handleNameClick = id; 
