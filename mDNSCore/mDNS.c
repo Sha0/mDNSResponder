@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.96  2003/04/01 23:58:55  cheshire
+Minor comment changes
+
 Revision 1.95  2003/04/01 23:46:05  cheshire
 <rdar://problem/3214832> mDNSResponder can get stuck in infinite loop after many location cycles
 mDNS_DeregisterInterface() flushes the RR cache by marking all records received on that interface
@@ -1443,7 +1446,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 			{
 			m->ProbeFailTime = timenow;
 			// If we've had ten probe failures, rate-limit to one every five seconds
-			// The result is ORed with 1 to make sure the SuppressProbes is not accidentally set to zero
+			// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
 			if (m->NumFailedProbes < 10) m->NumFailedProbes++;
 			else m->SuppressProbes = (timenow + mDNSPlatformOneSecond * 5) | 1;
 			if (rr->RecordCallback)
@@ -3638,6 +3641,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
 								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
 								rr->LastAPTime     = timenow - rr->LastAPTime;
+								// We increment NumFailedProbes here to make sure that repeated late conflicts
+								// will also cause us to back off to the slower probing rate
 								m->NumFailedProbes++;
 								}
 							// If we're probing for this record, we just failed
