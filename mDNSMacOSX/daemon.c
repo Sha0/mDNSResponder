@@ -153,7 +153,7 @@ static void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex size,
 		AbortClient(deathMessage->not_port);
 
 		/* Deallocate the send right that came in the dead name notification */
-		mach_port_deallocate( mach_task_self(), deathMessage->not_port );
+		mach_port_destroy( mach_task_self(), deathMessage->not_port );
 
 		}
 	}
