@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.230  2004/11/05 01:04:10  ksekar
+<rdar://problem/3774577> LegacyNATDestroy() called too enthusiastically
+
 Revision 1.229  2004/11/03 03:45:16  cheshire
 <rdar://problem/3863627> mDNSResponder does not inform user of Computer Name collisions
 
@@ -753,9 +756,6 @@ static SearchListElem *SearchList = NULL;    // where we search for _browse doma
 static DNSQuestion DefBrowseDomainQ;         // our local enumeration query for _browse domains
 static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
 static DNameListElem *DefRegList = NULL;     // manually generated list of domains where we register for empty string registrations
-
-
-static mDNSBool LegacyNATInitialized = mDNSfalse;
 
 static domainname DynDNSZone;                // Default wide-area zone for service registration
 static domainname DynDNSHostname;
@@ -1827,12 +1827,6 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 				i->ifinfo.McastTxRx = txrx;
 				i->Exists = 2; // State change; need to deregister and reregister this interface
 				}
-			if (IsPrivateV4Addr(&i->ifinfo.ip) && !LegacyNATInitialized)
-				{
-				mStatus err = LegacyNATInit();
-				if (err)  LogMsg("ERROR: LegacyNATInit");
-				LegacyNATInitialized = mDNStrue;
-				}
 			}
 	if (InfoSocket >= 0) close(InfoSocket);
 
@@ -2372,7 +2366,10 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
 	{
 	static mDNSBool DynDNSConfigInitialized = mDNSfalse;
+	static mDNSBool LegacyNATInitialized = mDNSfalse;
+
 	mDNS *m = context;
+	uDNS_GlobalInfo *u = &m->uDNS_info;
 	CFDictionaryRef dict;
 	CFStringRef     key;
 	CFStringRef router, primary;
@@ -2455,8 +2452,19 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 				{
 				mDNSAddr ip;
 				SetupAddr(&ip, ifa->ifa_addr);
-				mDNS_SetPrimaryInterfaceInfo(m, &ip, r.ip.v4.NotAnInteger ? &r : NULL);
-				break;
+				if (ip.ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger ||
+					r.ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger)
+					{
+					if (LegacyNATInitialized) { LegacyNATDestroy(); LegacyNATInitialized = mDNSfalse; }
+					if (IsPrivateV4Addr(&ip))
+						{
+						mStatus err = LegacyNATInit();
+						if (err)  LogMsg("ERROR: LegacyNATInit");
+						else LegacyNATInitialized = mDNStrue;
+						}					
+					mDNS_SetPrimaryInterfaceInfo(m, &ip, r.ip.v4.NotAnInteger ? &r : NULL);
+					break;
+					}
 				}
 			ifa = ifa->ifa_next;
 			}
@@ -2473,8 +2481,6 @@ mDNSexport void mDNSMacOSXNetworkChanged(SCDynamicStoreRef store, CFArrayRef cha
 	LogOperation("***   Network Configuration Change   ***");
 
 	mDNS *const m = (mDNS *const)context;
-
-	if (LegacyNATInitialized) { LegacyNATDestroy(); LegacyNATInitialized = mDNSfalse; }
 	
 	MarkAllInterfacesInactive(m);
 	UpdateInterfaceList(m);
