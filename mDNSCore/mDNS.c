@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.331  2003/11/19 22:31:48  cheshire
+When automatically adding A records to SRVs, add them as additionals, not answers
+
 Revision 1.330  2003/11/19 22:28:50  cheshire
 Increment/Decrement mDNS_reentrancy around calls to m->MainCallback()
 to allow client to make mDNS calls (specifically the call to mDNS_GrowCache())
@@ -3390,7 +3393,10 @@ mDNSlocal void SendResponses(mDNS *const m)
 			ResourceRecordIsValidAnswer(rr)))
 			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
 
-	// When sending SRV records (particularly when announcing a new service) automatically add the related Address record(s)
+	// When sending SRV records (particularly when announcing a new service) automatically add related Address record(s) as additionals
+	// NOTE: Currently all address records are interface-specific, so it's safe to set ImmedAdditional to their InterfaceID,
+	// which will be non-null. If by some chance there is an address record that's not interface-specific (should never happen)
+	// then all that means is that it won't get sent -- which would not be the end of the world.
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->ImmedAnswer && rr->resrec.rrtype == kDNSType_SRV)
 			for (r2=m->ResourceRecords; r2; r2=r2->next)				// Scan list of resource records
@@ -3400,7 +3406,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					rr->resrec.rdnamehash == r2->resrec.namehash &&		// ... whose name is the name of the SRV target
 					SameDomainName(&rr->resrec.rdata->u.srv.target, &r2->resrec.name) &&
 					(rr->ImmedAnswer == mDNSInterfaceMark || rr->ImmedAnswer == r2->resrec.InterfaceID))
-					r2->ImmedAnswer = mDNSInterfaceMark;				// ... then mark this address record for sending too
+					r2->ImmedAdditional = r2->resrec.InterfaceID;		// ... then mark this address record for sending too
 
 	// If there's a record which is supposed to be unique that we're going to send, then make sure that we give
 	// the whole RRSet as an atomic unit. That means that if we have any other records with the same name/type/class
