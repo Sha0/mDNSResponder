@@ -1,5 +1,5 @@
- /* -*- Mode: C; tab-width: 4 -*- */
- /*
+/* -*- Mode: C; tab-width: 4 -*-
+ *
  * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.447  2004/10/15 00:51:21  cheshire
+<rdar://problem/3711302> Seen in console: Ignored apparent spoof mDNS Response with TTL 1
+
 Revision 1.446  2004/10/14 00:43:34  cheshire
 <rdar://problem/3815984> Services continue to announce SRV and HINFO
 
@@ -4663,12 +4666,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
-	// TTL should be 255
-	// In the case of overlayed subnets that aren't using RFC 3442, some packets may incorrectly
-	// go to the router first and then come back with a TTL of 254, so we allow that too.
-	// Anything lower than 254 is a pretty good sign of an off-net spoofing attack.
-	// Also, if we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
-	if (ttl < 254 || (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2)))
+	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
+	if (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2))
 		{
 		mDNSBool ignoredlots = (++NumPktsIgnored > NumPktsAccepted + 10);
 		if (ignoredlots || NumPktsIgnored <= 10)
