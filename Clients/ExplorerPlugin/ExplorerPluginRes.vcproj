@@ -68,7 +68,10 @@
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
-				Name="VCPreLinkEventTool"/>
+				Name="VCPreLinkEventTool"
+				Description="Building Output Directories"
+				CommandLine="if not exist Debug\Resources mkdir Debug\Resources
+if not exist Debug\Resources\ExplorerPlugin.dll.Resources mkdir Debug\Resources\ExplorerPlugin.dll.Resources"/>
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="_DEBUG"
@@ -140,7 +143,13 @@
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
-				Name="VCPreLinkEventTool"/>
+				Name="VCPreLinkEventTool"
+				Description="Building Output Directories"
+				CommandLine="if not exist Release\Root mkdir Release\Root
+if not exist &quot;Release\Root\Program Files&quot; mkdir &quot;Release\Root\Program Files&quot;
+if not exist &quot;Release\Root\Program Files\Rendezvous&quot; mkdir &quot;Release\Root\Program Files\Rendezvous&quot;
+if not exist &quot;Release\Root\Program Files\Rendezvous\Resources&quot; mkdir &quot;Release\Root\Program Files\Rendezvous\Resources&quot;
+if not exist &quot;Release\Root\Program Files\Rendezvous\Resources\ExplorerPlugin.dll.Resources&quot; mkdir &quot;Release\Root\Program Files\Rendezvous\Resources\ExplorerPlugin.dll.Resources&quot;"/>
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="NDEBUG"
