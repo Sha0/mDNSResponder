@@ -33,6 +33,12 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.13  2003/05/26 03:21:29  cheshire
+ * Tidy up address structure naming:
+ * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+ * mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+ * mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+ *
  * Revision 1.12  2003/05/26 03:01:28  cheshire
  * <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
  *
@@ -391,7 +397,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	// For now we're only interested in monitoring IPv4 traffic.
 	// All IPv6 packets should just be duplicates of the v4 packets.
 	if (srcaddr->type == mDNSAddrType_IPv4)
-		if (FilterAddr.type == 0 || FilterAddr.addr.ipv4.NotAnInteger == srcaddr->addr.ipv4.NotAnInteger)
+		if (FilterAddr.type == 0 || FilterAddr.ip.v4.NotAnInteger == srcaddr->ip.v4.NotAnInteger)
 			{
 			const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 			const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
@@ -442,13 +448,13 @@ mDNSexport int main(int argc, char **argv)
 	
 	if (argc == 2)
 		{
-		FilterAddr.addr.ipv4.NotAnInteger = inet_addr(argv[1]);
-		if (FilterAddr.addr.ipv4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
+		FilterAddr.ip.v4.NotAnInteger = inet_addr(argv[1]);
+		if (FilterAddr.ip.v4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
 			{
 			struct hostent *h = gethostbyname(argv[1]);
-			if (h) FilterAddr.addr.ipv4.NotAnInteger = *(long*)h->h_addr;
+			if (h) FilterAddr.ip.v4.NotAnInteger = *(long*)h->h_addr;
 			}
-		if (FilterAddr.addr.ipv4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
+		if (FilterAddr.ip.v4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
 			goto usage;
 		FilterAddr.type = mDNSAddrType_IPv4;
 		}

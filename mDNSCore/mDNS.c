@@ -88,6 +88,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.133  2003/05/26 03:21:27  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
 Revision 1.132  2003/05/26 03:01:26  cheshire
 <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
 
@@ -446,9 +452,9 @@ typedef enum
 
 mDNSexport const ResourceRecord  zeroRR;
 mDNSexport const mDNSIPPort      zeroIPPort        = { { 0 } };
-mDNSexport const mDNSIPAddr      zeroIPAddr        = { { 0 } };
+mDNSexport const mDNSv4Addr      zeroIPAddr        = { { 0 } };
 mDNSexport const mDNSv6Addr      zerov6Addr        = { { 0 } };
-mDNSexport const mDNSIPAddr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
+mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
 mDNSlocal  const mDNSAddr	     zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
 
@@ -459,8 +465,8 @@ mDNSlocal  const mDNSInterfaceID mDNSInterfaceMark = { (mDNSInterfaceID)~0 };
 #define MulticastDNSPortAsNumber 5353
 mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
 mDNSexport const mDNSIPPort MulticastDNSPort   = { { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF } };
-mDNSexport const mDNSIPAddr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
-mDNSexport const mDNSIPAddr	AllDNSLinkGroup    = { { 224,   0,   0, 251 } };
+mDNSexport const mDNSv4Addr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
+mDNSexport const mDNSv4Addr	AllDNSLinkGroup    = { { 224,   0,   0, 251 } };
 mDNSexport const mDNSv6Addr AllDNSLinkGroupv6  = { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };
@@ -622,8 +628,8 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 							s = mDNS_VACB;	// Adjust s to point to the start of the buffer, not the end
 							if (F.altForm)
 								{
-								a = (unsigned char  *)&ip->addr.ipv4;
-								w = (unsigned short *)&ip->addr.ipv6;
+								a = (unsigned char  *)&ip->ip.v4;
+								w = (unsigned short *)&ip->ip.v6;
 								switch (ip->type)
 									{
 									case mDNSAddrType_IPv4: F.precision =  4; break;
@@ -794,8 +800,8 @@ mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)
 		{
 		switch (ip1->type)
 			{
-			case mDNSAddrType_IPv4 : return(mDNSSameIPv4Address(ip1->addr.ipv4, ip2->addr.ipv4));
-			case mDNSAddrType_IPv6 : return(mDNSSameIPv6Address(ip1->addr.ipv6, ip2->addr.ipv6));
+			case mDNSAddrType_IPv4 : return(mDNSSameIPv4Address(ip1->ip.v4, ip2->ip.v4));
+			case mDNSAddrType_IPv6 : return(mDNSSameIPv6Address(ip1->ip.v6, ip2->ip.v6));
 			}
 		}
 	return(mDNSfalse);
@@ -807,14 +813,14 @@ mDNSlocal mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 	switch(ip->type)
 		{
 		case mDNSAddrType_IPv4:
-			result = ip->addr.ipv4.NotAnInteger == AllDNSLinkGroup.NotAnInteger ? mDNStrue : mDNSfalse;
+			result = ip->ip.v4.NotAnInteger == AllDNSLinkGroup.NotAnInteger ? mDNStrue : mDNSfalse;
 			break;
 		
 		case mDNSAddrType_IPv6:
-			if (ip->addr.ipv6.l[0] == AllDNSLinkGroupv6.l[0] &&
-				ip->addr.ipv6.l[1] == AllDNSLinkGroupv6.l[1] &&
-				ip->addr.ipv6.l[2] == AllDNSLinkGroupv6.l[2] &&
-				ip->addr.ipv6.l[3] == AllDNSLinkGroupv6.l[3])
+			if (ip->ip.v6.l[0] == AllDNSLinkGroupv6.l[0] &&
+				ip->ip.v6.l[1] == AllDNSLinkGroupv6.l[1] &&
+				ip->ip.v6.l[2] == AllDNSLinkGroupv6.l[2] &&
+				ip->ip.v6.l[3] == AllDNSLinkGroupv6.l[3])
 				result = mDNStrue;
 			else result = mDNSfalse;
 			break;
@@ -3781,11 +3787,11 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				{
 				if (srcaddr->type == mDNSAddrType_IPv4)
 					{
-					if (mDNSSameIPv4Address(rr->v4Requester, srcaddr->addr.ipv4)) rr->v4Requester = zeroIPAddr;
+					if (mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4)) rr->v4Requester = zeroIPAddr;
 					}
 				else if (srcaddr->type == mDNSAddrType_IPv6)
 					{
-					if (mDNSSameIPv6Address(rr->v6Requester, srcaddr->addr.ipv6)) rr->v6Requester = zerov6Addr;
+					if (mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6)) rr->v6Requester = zerov6Addr;
 					}
 				if (mDNSIPv4AddressIsZero(rr->v4Requester) && mDNSIPv6AddressIsZero(rr->v6Requester)) rr->ImmedAnswer = mDNSNULL;
 				}
@@ -3828,23 +3834,23 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					m->NextResponseTime = m->timenow;
 					if (srcaddr->type == mDNSAddrType_IPv4)
 						{
-						if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->addr.ipv4;
-						else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->addr.ipv4))
+						if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
+						else if (!mDNSSameIPv4Address(rr->v4Requester, srcaddr->ip.v4))
 							{
 							LogMsg("%##s : Cannot perform multi-packet known answer suppression from more than one"
 								" client at a time %.4a %.4a (this is benign if it happens only rarely)",
-								rr->name.c, rr->v4Requester, srcaddr->addr.ipv4);
+								rr->name.c, rr->v4Requester, srcaddr->ip.v4);
 							rr->v4Requester = onesIPv4Addr;
 							}
 						}
 					else if (srcaddr->type == mDNSAddrType_IPv6)
 						{
-						if (mDNSIPv6AddressIsZero(rr->v6Requester)) rr->v6Requester = srcaddr->addr.ipv6;
-						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->addr.ipv6))
+						if (mDNSIPv6AddressIsZero(rr->v6Requester)) rr->v6Requester = srcaddr->ip.v6;
+						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
 							{
 							LogMsg("%##s : Cannot perform multi-packet known answer suppression from more than one "
 								"client at a time %.16a %.16a (this is benign if it happens only rarely)",
-								rr->name.c, rr->v6Requester, srcaddr->addr.ipv6);
+								rr->name.c, rr->v6Requester, srcaddr->ip.v6);
 							rr->v6Requester = onesIPv6Addr;
 							}
 						}
@@ -4411,12 +4417,12 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	if (answer->rrtype == kDNSType_A)
 		{
 		query->info->ip.type = mDNSAddrType_IPv4;
-		query->info->ip.addr.ipv4 = answer->rdata->u.ip;
+		query->info->ip.ip.v4 = answer->rdata->u.ip;
 		}
 	else if (answer->rrtype == kDNSType_AAAA)
 		{
 		query->info->ip.type = mDNSAddrType_IPv6;
-		query->info->ip.addr.ipv6 = answer->rdata->u.ipv6;
+		query->info->ip.ip.v6 = answer->rdata->u.ipv6;
 		}
 	else
 		{
@@ -4667,24 +4673,24 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		{
 		set->RR_A1.rrtype = kDNSType_A;
 		set->RR_A2.rrtype = kDNSType_A;
-		set->RR_A1.rdata->u.ip = set->ip.addr.ipv4;
-		set->RR_A2.rdata->u.ip = set->ip.addr.ipv4;
-		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", set->ip.addr.ipv4.b[3],
-					 set->ip.addr.ipv4.b[2], set->ip.addr.ipv4.b[1], set->ip.addr.ipv4.b[0]);
+		set->RR_A1.rdata->u.ip = set->ip.ip.v4;
+		set->RR_A2.rdata->u.ip = set->ip.ip.v4;
+		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.",
+			set->ip.ip.v4.b[3], set->ip.ip.v4.b[2], set->ip.ip.v4.b[1], set->ip.ip.v4.b[0]);
 		}
 	else if (set->ip.type == mDNSAddrType_IPv6)
 		{
 		int	i;
 		set->RR_A1.rrtype = kDNSType_AAAA;
 		set->RR_A2.rrtype = kDNSType_AAAA;
-		set->RR_A1.rdata->u.ipv6 = set->ip.addr.ipv6;
-		set->RR_A2.rdata->u.ipv6 = set->ip.addr.ipv6;
+		set->RR_A1.rdata->u.ipv6 = set->ip.ip.v6;
+		set->RR_A2.rdata->u.ipv6 = set->ip.ip.v6;
 		for (i = 0; i < 16; i++)
 			{
 			static const char hexValues[] = "0123456789ABCDEF";
-			buffer[i * 4    ] = hexValues[set->ip.addr.ipv6.b[15 - i] & 0x0F];
+			buffer[i * 4    ] = hexValues[set->ip.ip.v6.b[15 - i] & 0x0F];
 			buffer[i * 4 + 1] = '.';
-			buffer[i * 4 + 2] = hexValues[set->ip.addr.ipv6.b[15 - i] >> 4];
+			buffer[i * 4 + 2] = hexValues[set->ip.ip.v6.b[15 - i] >> 4];
 			buffer[i * 4 + 3] = '.';
 			}
 		mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");

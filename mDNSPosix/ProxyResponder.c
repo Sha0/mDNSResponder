@@ -20,6 +20,12 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ProxyResponder.c,v $
+ * Revision 1.17  2003/05/26 03:21:29  cheshire
+ * Tidy up address structure naming:
+ * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+ * mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+ * mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+ *
  * Revision 1.16  2003/05/26 03:01:28  cheshire
  * <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
  *
@@ -63,7 +69,7 @@ static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 
 typedef struct
 	{
-	mDNSIPAddr ip;
+	mDNSv4Addr ip;
 	domainlabel hostlabel;		// Conforms to standard DNS letter-digit-hyphen host name rules
 	ResourceRecord RR_A;		// 'A' (address) record for our ".local" name
 	ResourceRecord RR_PTR;		// PTR (reverse lookup) record

@@ -39,7 +39,7 @@ typedef enum
 	mOT_Ready
 	} mOT_State;
 
-typedef struct { TOptionHeader h; mDNSIPAddr multicastGroupAddress; mDNSIPAddr InterfaceAddress; } TIPAddMulticastOption;
+typedef struct { TOptionHeader h; mDNSv4Addr multicastGroupAddress; mDNSv4Addr InterfaceAddress; } TIPAddMulticastOption;
 typedef struct { TOptionHeader h; UInt32 flag; } TSetBooleanOption;
 
 // TOptionBlock is a union of various types.

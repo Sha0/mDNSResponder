@@ -68,6 +68,12 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.57  2003/05/26 03:21:27  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
 Revision 1.56  2003/05/26 03:01:27  cheshire
 <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
 
@@ -317,8 +323,8 @@ typedef union { mDNSu8 b[2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
 typedef union { mDNSu8 b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
 typedef union { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 
-typedef mDNSOpaque16 mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
-typedef mDNSOpaque32 mDNSIPAddr;		// An IP address is a four-byte opaque identifier (not an integer)
+typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
+typedef mDNSOpaque32  mDNSv4Addr;		// An IP address is a four-byte opaque identifier (not an integer)
 typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identifier (not an integer)
 
 enum
@@ -334,9 +340,9 @@ typedef struct
 	mDNSs32	type;
 	union
 		{
-		mDNSv6Addr	ipv6;
-		mDNSIPAddr	ipv4;
-		} addr;
+		mDNSv6Addr v6;
+		mDNSv4Addr v4;
+		} ip;
 	} mDNSAddr;
 
 
@@ -429,7 +435,7 @@ typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname t
 typedef union
 	{
 	mDNSu8     data[768];	// Generic untyped data (temporarily set 768 for the benefit of Airport Extreme printing)
-	mDNSIPAddr ip;			// For 'A' record
+	mDNSv4Addr ip;			// For 'A' record
 	mDNSv6Addr ipv6;		// For 'AAAA' record
 	domainname name;		// For PTR and CNAME records
 	UTF8str255 txt;			// For TXT record
@@ -486,7 +492,7 @@ struct ResourceRecord_struct
 	mDNSInterfaceID ImmedAnswer;		// AR: Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 	mDNSInterfaceID ImmedAdditional;	// AR: Hint that we might want to also send this record, just to be helpful
 	mDNSInterfaceID SendRNow;			// AR: The interface this query is being sent on right now
-	mDNSIPAddr      v4Requester;		// AR: Recent v4 query for this record, or all-ones if more than one recent query
+	mDNSv4Addr      v4Requester;		// AR: Recent v4 query for this record, or all-ones if more than one recent query
 	mDNSv6Addr      v6Requester;		// AR: Recent v6 query for this record, or all-ones if more than one recent query
 	ResourceRecord *NextResponse;		// AR: Link to the next element in the chain of responses to generate
 	const mDNSu8   *NR_AnswerTo;		// AR: Set if this record was selected by virtue of being a direct answer to a question
@@ -688,16 +694,16 @@ struct mDNS_struct
 
 extern const ResourceRecord  zeroRR;
 extern const mDNSIPPort      zeroIPPort;
-extern const mDNSIPAddr      zeroIPAddr;
+extern const mDNSv4Addr      zeroIPAddr;
 extern const mDNSv6Addr      zerov6Addr;
-extern const mDNSIPAddr      onesIPv4Addr;
+extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;
 extern const mDNSInterfaceID mDNSInterface_Any;
 
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      MulticastDNSPort;
-extern const mDNSIPAddr      AllDNSAdminGroup;
-extern const mDNSIPAddr      AllDNSLinkGroup;
+extern const mDNSv4Addr      AllDNSAdminGroup;
+extern const mDNSv4Addr      AllDNSLinkGroup;
 extern const mDNSv6Addr      AllDNSLinkGroupv6;
 extern const mDNSAddr        AllDNSLinkGroup_v4;
 extern const mDNSAddr        AllDNSLinkGroup_v6;

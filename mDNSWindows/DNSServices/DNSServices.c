@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServices.c,v 1.8 2003/05/06 00:00:51 cheshire Exp $
+	$Id: DNSServices.c,v 1.9 2003/05/26 03:21:30 cheshire Exp $
 
 	Contains:	DNS Services implementation.
 	
@@ -68,6 +68,12 @@
     Change History (most recent first):
     
         $Log: DNSServices.c,v $
+        Revision 1.9  2003/05/26 03:21:30  cheshire
+        Tidy up address structure naming:
+        mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+        mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+        mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
         Revision 1.8  2003/05/06 00:00:51  cheshire
         <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -768,7 +774,7 @@ mDNSlocal void
 			serviceDataPtr 	= &event.data.addService;
 		}
 		serviceDataPtr->interfaceAddr.addressType		= kDNSNetworkAddressTypeIPv4;
-		serviceDataPtr->interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.addr.ipv4.NotAnInteger;
+		serviceDataPtr->interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.ip.v4.NotAnInteger;
 		serviceDataPtr->name							= nameString;
 		serviceDataPtr->type 							= typeString;
 		serviceDataPtr->domain 							= domainString;
@@ -832,7 +838,7 @@ mDNSlocal void
 		
 		ConvertDomainNameToCString( &inAnswer->rdata->u.name, domainString );
 		domainDataPtr->interfaceAddr.addressType	= kDNSNetworkAddressTypeIPv4;
-		domainDataPtr->interfaceAddr.u.ipv4.address = infoPtr->hostSet.ip.addr.ipv4.NotAnInteger;
+		domainDataPtr->interfaceAddr.u.ipv4.address = infoPtr->hostSet.ip.ip.v4.NotAnInteger;
 		domainDataPtr->domain 						= domainString;
 		domainDataPtr->flags						= 0;
 		
@@ -1208,9 +1214,9 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	event.data.resolved.type							= objectPtr->resolveType;
 	event.data.resolved.domain							= objectPtr->resolveDomain;
 	event.data.resolved.interfaceAddr.addressType		= kDNSNetworkAddressTypeIPv4;
-	event.data.resolved.interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.addr.ipv4.NotAnInteger;
+	event.data.resolved.interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.ip.v4.NotAnInteger;
 	event.data.resolved.address.addressType				= kDNSNetworkAddressTypeIPv4;
-	event.data.resolved.address.u.ipv4.address 			= inQuery->info->ip.addr.ipv4.NotAnInteger;
+	event.data.resolved.address.u.ipv4.address 			= inQuery->info->ip.ip.v4.NotAnInteger;
 	event.data.resolved.address.u.ipv4.port				= (DNSUInt16)
 														  ( ( inQuery->info->port.b[ 0 ] << 8 ) | 
 															( inQuery->info->port.b[ 1 ] << 0 ) );

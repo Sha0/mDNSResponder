@@ -35,6 +35,12 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.105  2003/05/26 03:21:29  cheshire
+ * Tidy up address structure naming:
+ * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+ * mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+ * mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+ *
  * Revision 1.104  2003/05/26 00:42:06  cheshire
  * <rdar://problem/3268876> Temporarily include mDNSResponder version in packets
  *
@@ -627,7 +633,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin->sin_len         = sizeof(*sin);
 		sin->sin_family      = AF_INET;
 		sin->sin_port        = 0;
-		sin->sin_addr.s_addr = ifinfo->ip.addr.ipv4.NotAnInteger;
+		sin->sin_addr.s_addr = ifinfo->ip.ip.v4.NotAnInteger;
 		}
 	else if (ifinfo->ip.type == mDNSAddrType_IPv6)
 		{
@@ -636,7 +642,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin6->sin6_family    = AF_INET6;
 		sin6->sin6_flowinfo  = 0;
 		sin6->sin6_port      = 0;
-		sin6->sin6_addr		 = *(struct in6_addr*)&ifinfo->ip.addr.ipv6;
+		sin6->sin6_addr		 = *(struct in6_addr*)&ifinfo->ip.ip.v6;
 		sin6->sin6_scope_id  = ifinfo->scope_id;
 		}
 	
@@ -646,7 +652,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin->sin_len           = sizeof(*sin);
 		sin->sin_family        = AF_INET;
 		sin->sin_port          = query->info->port.NotAnInteger;
-		sin->sin_addr.s_addr   = query->info->ip.addr.ipv4.NotAnInteger;
+		sin->sin_addr.s_addr   = query->info->ip.ip.v4.NotAnInteger;
 		}
 	else
 		{
@@ -655,7 +661,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin6->sin6_family        = AF_INET6;
 		sin6->sin6_port          = query->info->port.NotAnInteger;
 		sin6->sin6_flowinfo      = 0;
-		sin6->sin6_addr			 = *(struct in6_addr*)&query->info->ip.addr.ipv6;
+		sin6->sin6_addr			 = *(struct in6_addr*)&query->info->ip.ip.v6;
 		sin6->sin6_scope_id      = ifinfo->scope_id;
 		}
 

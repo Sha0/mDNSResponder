@@ -135,7 +135,7 @@ mDNSlocal OSStatus CreateProxyRegistrationForRealService(mDNS *m, UInt16 PortAsN
 mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	{
 	char buffer[256];
-	mDNSIPAddr ip = m->HostInterfaces->ip.addr.ipv4;
+	mDNSv4Addr ip = m->HostInterfaces->ip.ip.v4;
 	
 	ConvertDomainNameToCString(&m->hostname1, buffer);
 	printf("Name %s\n", buffer);

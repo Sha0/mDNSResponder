@@ -80,7 +80,7 @@ static void PrintServiceInfo(SearcherServices *services)
 			ConvertDomainLabelToCString_unescaped(&name, c_name);
 			ConvertDomainNameToCString(&type, c_type);
 			ConvertDomainNameToCString(&domain, c_dom);
-			sprintf(c_ip, "%d.%d.%d.%d", s->ip.addr.ipv4.b[0], s->ip.addr.ipv4.b[1], s->ip.addr.ipv4.b[2], s->ip.addr.ipv4.b[3]);
+			sprintf(c_ip, "%d.%d.%d.%d", s->ip.ip.v4.b[0], s->ip.ip.v4.b[1], s->ip.ip.v4.b[2], s->ip.ip.v4.b[3]);
 
 			printf("%-55s %-16s %-14s ", c_name, c_type, c_dom);
 			if (ls->add) printf("%-15s %5d %#s\n", c_ip, port, s->TXTinfo);
@@ -130,7 +130,7 @@ static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRe
 	info->i.name          = answer->rdata->u.name;
 	info->i.InterfaceID   = answer->InterfaceID;
 	info->i.ip.type		  = mDNSAddrType_IPv4;
-	info->i.ip.addr.ipv4  = zeroIPAddr;
+	info->i.ip.ip.v4  = zeroIPAddr;
 	info->i.port          = zeroIPPort;
 	info->add             = (answer->rrremainingttl > 0);
 	info->dom             = mDNSfalse;
@@ -163,7 +163,7 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	info->i.name          = answer->rdata->u.name;
 	info->i.InterfaceID   = answer->InterfaceID;
 	info->i.ip.type		  = mDNSAddrType_IPv4;
-	info->i.ip.addr.ipv4  = zeroIPAddr;
+	info->i.ip.ip.v4  = zeroIPAddr;
 	info->i.port          = zeroIPPort;
 	info->add             = (answer->rrremainingttl > 0);
 	info->dom             = mDNStrue;

@@ -22,6 +22,12 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.83  2003/05/26 03:21:29  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
 Revision 1.82  2003/05/26 03:01:27  cheshire
 <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
 
@@ -325,7 +331,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin_to->sin_len			= sizeof(*sin_to);
 		sin_to->sin_family      = AF_INET;
 		sin_to->sin_port        = dstPort.NotAnInteger;
-		sin_to->sin_addr.s_addr = dst->addr.ipv4.NotAnInteger;
+		sin_to->sin_addr.s_addr = dst->ip.v4.NotAnInteger;
 		}
 	else if (dst->type == mDNSAddrType_IPv6)
 		{
@@ -334,7 +340,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin6_to->sin6_family	= AF_INET6;
 		sin6_to->sin6_port		= dstPort.NotAnInteger;
 		sin6_to->sin6_flowinfo	= 0;
-		sin6_to->sin6_addr		= *(struct in6_addr*)&dst->addr.ipv6;
+		sin6_to->sin6_addr		= *(struct in6_addr*)&dst->ip.v6;
 		sin6_to->sin6_scope_id	= if_nametoindex(info->ifa_name);
 		}
 	else
@@ -423,7 +429,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVDSTADDR)
 			{
 			dstaddr->type = mDNSAddrType_IPv4;
-			dstaddr->addr.ipv4.NotAnInteger = *(u_int32_t*)CMSG_DATA(cmPtr);
+			dstaddr->ip.v4.NotAnInteger = *(u_int32_t*)CMSG_DATA(cmPtr);
 			}
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVIF)
 			{
@@ -439,7 +445,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 			{
 			struct in6_pktinfo *ip6_info = (struct in6_pktinfo*)CMSG_DATA(cmPtr);
 			dstaddr->type = mDNSAddrType_IPv6;
-			dstaddr->addr.ipv6 = *(mDNSv6Addr*)&ip6_info->ipi6_addr;
+			dstaddr->ip.v6 = *(mDNSv6Addr*)&ip6_info->ipi6_addr;
 			myIfIndexToName(ip6_info->ipi6_ifindex, ifname);
 			}
 		}
@@ -486,14 +492,14 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			{
 			struct sockaddr_in *sin = (struct sockaddr_in*)&from;
 			senderAddr.type = mDNSAddrType_IPv4;
-			senderAddr.addr.ipv4.NotAnInteger = sin->sin_addr.s_addr;
+			senderAddr.ip.v4.NotAnInteger = sin->sin_addr.s_addr;
 			senderPort.NotAnInteger = sin->sin_port;
 			}
 		else if (from.ss_family == AF_INET6)
 			{
 			struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&from;
 			senderAddr.type = mDNSAddrType_IPv6;
-			senderAddr.addr.ipv6 = *(mDNSv6Addr*)&sin6->sin6_addr;
+			senderAddr.ip.v6 = *(mDNSv6Addr*)&sin6->sin6_addr;
 			senderPort.NotAnInteger = sin6->sin6_port;
 			}
 		else
@@ -590,7 +596,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
 		
 		// Add multicast group membership on this interface
-		struct in_addr addr = { i->ifinfo.ip.addr.ipv4.NotAnInteger };
+		struct in_addr addr = { i->ifinfo.ip.ip.v4.NotAnInteger };
 		struct ip_mreq imr;
 		imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 		imr.imr_interface        = addr;
@@ -701,7 +707,7 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 		{
 		struct sockaddr_in *ifa_addr = (struct sockaddr_in *)sa;
 		ip->type = mDNSAddrType_IPv4;
-		ip->addr.ipv4.NotAnInteger = ifa_addr->sin_addr.s_addr;
+		ip->ip.v4.NotAnInteger = ifa_addr->sin_addr.s_addr;
 		return(0);
 		}
 	else if (sa->sa_family == AF_INET6)
@@ -709,7 +715,7 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 		struct sockaddr_in6 *ifa_addr = (struct sockaddr_in6 *)sa;
 		ip->type = mDNSAddrType_IPv6;
 		if (IN6_IS_ADDR_LINKLOCAL(&ifa_addr->sin6_addr)) ifa_addr->sin6_addr.__u6_addr.__u6_addr16[1] = 0;
-		ip->addr.ipv6 = *(mDNSv6Addr*)&ifa_addr->sin6_addr;
+		ip->ip.v6 = *(mDNSv6Addr*)&ifa_addr->sin6_addr;
 		return(0);
 		}
 	else

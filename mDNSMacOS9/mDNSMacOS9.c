@@ -50,7 +50,7 @@ static const TIPAddMulticastOption kAddAdminMulticastOption =
 
 // Bind endpoint to port number. Don't specify any specific IP address --
 // we want to receive unicasts on all interfaces, as well as multicasts.
-typedef struct { OTAddressType fAddressType; mDNSIPPort fPort; mDNSIPAddr fHost; UInt8 fUnused[8]; } mDNSInetAddress;
+typedef struct { OTAddressType fAddressType; mDNSIPPort fPort; mDNSv4Addr fHost; UInt8 fUnused[8]; } mDNSInetAddress;
 //static const mDNSInetAddress mDNSPortInetAddress = { AF_INET, { 0,0 }, { 0,0,0,0 } };	// For testing legacy client support
 #define MulticastDNSPortAsNumber 5353
 static const mDNSInetAddress mDNSPortInetAddress = { AF_INET, { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF }, { 0,0,0,0 } };
@@ -106,15 +106,15 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	
 	InetDest.fAddressType = AF_INET;
 	InetDest.fPort        = dstPort.NotAnInteger;
-	InetDest.fHost        = dst->addr.ipv4.NotAnInteger;
+	InetDest.fHost        = dst->ip.v4.NotAnInteger;
 
 	senddata.addr .maxlen = sizeof(InetDest);
 	senddata.addr .len    = sizeof(InetDest);
 	senddata.addr .buf    = (UInt8*)&InetDest;
-	senddata.opt           = zeroTNetbuf;
-	senddata.udata.maxlen  = (UInt32)((UInt8*)end - (UInt8*)msg);
-	senddata.udata.len     = (UInt32)((UInt8*)end - (UInt8*)msg);
-	senddata.udata.buf     = (UInt8*)msg;
+	senddata.opt          = zeroTNetbuf;
+	senddata.udata.maxlen = (UInt32)((UInt8*)end - (UInt8*)msg);
+	senddata.udata.len    = (UInt32)((UInt8*)end - (UInt8*)msg);
+	senddata.udata.buf    = (UInt8*)msg;
 	
 	return(OTSndUData(m->p->ep, &senddata));
 	}
@@ -147,10 +147,10 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	if (err) return(err);
 
 	senderaddr.type = mDNSAddrType_IPv4;
-	senderaddr.addr.ipv4.NotAnInteger = sender.fHost;
+	senderaddr.ip.v4.NotAnInteger = sender.fHost;
 	senderport.NotAnInteger = sender.fPort;
 	destaddr.type = mDNSAddrType_IPv4;
-	destaddr.addr.ipv4  = AllDNSLinkGroup;		// For now, until I work out how to get the dest address, assume it was sent to AllDNSLinkGroup
+	destaddr.ip.v4  = AllDNSLinkGroup;		// For now, until I work out how to get the dest address, assume it was sent to AllDNSLinkGroup
 	interface = m->HostInterfaces->InterfaceID;
 	
 	if (recvdata.opt.len) debugf("readpacket: got some option data at %X, len %d", options, recvdata.opt.len);
@@ -199,10 +199,10 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			if (err) { debugf("OTInetGetInterfaceInfo failed %d", err); mDNSinitComplete(m, err); return; }
 
 			// Make our basic standard host resource records (address, PTR, etc.)
-			m->p->interface.ip.type = mDNSAddrType_IPv4;
-			m->p->interface.ip.addr.ipv4.NotAnInteger = interfaceinfo.fAddress;
-			m->p->interface.Advertise       = m->AdvertiseLocalAddresses;
-			m->p->interface.InterfaceID = (mDNSInterfaceID)&m->p->interface;
+			m->p->interface.ip.type               = mDNSAddrType_IPv4;
+			m->p->interface.ip.ip.v4.NotAnInteger = interfaceinfo.fAddress;
+			m->p->interface.Advertise             = m->AdvertiseLocalAddresses;
+			m->p->interface.InterfaceID           = (mDNSInterfaceID)&m->p->interface;
 			mDNS_RegisterInterface(m, &m->p->interface);
 			}
 			

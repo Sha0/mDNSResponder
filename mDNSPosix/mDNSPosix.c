@@ -35,6 +35,12 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.14  2003/05/26 03:21:30  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
 Revision 1.13  2003/05/26 03:01:28  cheshire
 <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
 
@@ -175,7 +181,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 			{
 			struct sockaddr_in* sin          = (struct sockaddr_in*)sa;
 			ipAddr->type                     = mDNSAddrType_IPv4;
-			ipAddr->addr.ipv4.NotAnInteger   = sin->sin_addr.s_addr;
+			ipAddr->ip.v4.NotAnInteger       = sin->sin_addr.s_addr;
 			if (ipPort) ipPort->NotAnInteger = sin->sin_port;
 			break;
 			}
@@ -186,7 +192,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 			struct sockaddr_in6* sin6        = (struct sockaddr_in6*)sa;
 			assert(sin6->sin6_len == sizeof(*sin6));
 			ipAddr->type                     = mDNSAddrType_IPv6;
-			ipAddr->addr.ipv6                = *(mDNSv6Addr*)&sin6->sin6_addr;
+			ipAddr->ip.v6                    = *(mDNSv6Addr*)&sin6->sin6_addr;
 			if (ipPort) ipPort->NotAnInteger = sin6->sin6_port;
 			break;
 			}
@@ -226,7 +232,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 #endif
 		sin->sin_family         = AF_INET;
 		sin->sin_port           = dstPort.NotAnInteger;
-		sin->sin_addr.s_addr    = dst->addr.ipv4.NotAnInteger;
+		sin->sin_addr.s_addr    = dst->ip.v4.NotAnInteger;
 		}
 
 #ifdef mDNSIPv6Support
@@ -237,7 +243,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin6->sin6_len            = sizeof(*sin6);
 		sin6->sin6_family         = AF_INET6;
 		sin6->sin6_port           = dstPort.NotAnInteger;
-		sin6->sin6_addr           = *(struct in6_addr*)&dst->addr.ipv6;
+		sin6->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
 		}
 #endif
 
@@ -304,8 +310,8 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 			if ( (destAddr.NotAnInteger == 0) && (flags & MSG_MCAST) )
 				{
 				destAddr.type == senderAddr.type;
-				if      (senderAddr.type == mDNSAddrType_IPv4) destAddr.addr.ipv4 = AllDNSLinkGroup;
-				else if (senderAddr.type == mDNSAddrType_IPv6) destAddr.addr.ipv6 = AllDNSLinkGroupv6;
+				if      (senderAddr.type == mDNSAddrType_IPv4) destAddr.ip.v4 = AllDNSLinkGroup;
+				else if (senderAddr.type == mDNSAddrType_IPv6) destAddr.ip.v6 = AllDNSLinkGroupv6;
 				}
 		#endif
 
