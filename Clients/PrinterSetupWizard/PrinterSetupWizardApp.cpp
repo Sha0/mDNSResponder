@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardApp.cpp,v $
+Revision 1.7  2005/02/15 07:50:09  shersche
+<rdar://problem/4007151> Update name
+
 Revision 1.6  2005/02/10 22:35:10  cheshire
 <rdar://problem/3727944> Update name
 
@@ -120,7 +123,7 @@ BOOL CPrinterSetupWizardApp::InitInstance()
 
 	// Load Resources
 
-	res = PathForResource( NULL, L"BonjourPrinterWizard.dll", resource, MAX_PATH );
+	res = PathForResource( NULL, L"PrinterWizard.dll", resource, MAX_PATH );
 	err = translate_errno( res != 0, kUnknownErr, kUnknownErr );
 	require_noerr( err, exit );
 
@@ -128,7 +131,7 @@ BOOL CPrinterSetupWizardApp::InitInstance()
 	translate_errno( g_nonLocalizedResources, GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
-	res = PathForResource( NULL, L"BonjourPrinterWizardLocalized.dll", resource, MAX_PATH );
+	res = PathForResource( NULL, L"PrinterWizardLocalized.dll", resource, MAX_PATH );
 	err = translate_errno( res != 0, kUnknownErr, kUnknownErr );
 	require_noerr( err, exit );
 

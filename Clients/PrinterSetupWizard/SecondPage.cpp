@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.13  2005/02/15 07:50:10  shersche
+<rdar://problem/4007151> Update name
+
 Revision 1.12  2005/02/10 22:35:11  cheshire
 <rdar://problem/3727944> Update name
 
@@ -113,9 +116,9 @@ CSecondPage::InitBrowseList()
 	require_quiet( psheet, exit );
 
 	//
-	// load the no Bonjour printers message until something shows up in the browse list
+	// load the no printers message until something shows up in the browse list
 	//
-	text.LoadString(IDS_NO_BONJOUR_PRINTERS);
+	text.LoadString(IDS_NO_PRINTERS);
 
 	LoadTextAndDisableWindow( text );
 
@@ -184,7 +187,7 @@ CSecondPage::OnSetActive()
 	require_action( psheet, exit, err = kUnknownErr );
 
 	// initialize the browse list...this will remove everything currently
-	// in it, and add the no Bonjour printers item
+	// in it, and add the no printers item
 
 	InitBrowseList();
 
@@ -308,7 +311,7 @@ CSecondPage::OnRemovePrinter(
 	{
 		//
 		// if we're the only thing in the list, then redisplay
-		// it with the no Bonjour printers message
+		// it with the no printers message
 		//
 		InitBrowseList();
 	}
