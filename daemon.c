@@ -371,7 +371,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
 	debugf("Client %d: Register Service: %#s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
-	err = mDNS_RegisterService(&mDNSStorage, &x->s, port, txtRecord, &n, &t, &d, Callback, x);
+	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtRecord, Callback, x);
 	if (!err) EnableDeathNotificationForClient(client);
 	debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
 	return(err);

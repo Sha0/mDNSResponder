@@ -3040,14 +3040,18 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 // Domain is fully qualified domain name (i.e. ending with a null label)
 // We always register a TXT, even if it is empty (so that clients are not
 // left waiting forever looking for a nonexistent record.)
-mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr, mDNSIPPort port, const char txtinfo[],
-	const domainlabel *const name, const domainname *const type, const domainname *const domain, mDNSServiceCallback Callback, void *Context)
+mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
+	const domainlabel *const name, const domainname *const type, const domainname *const domain,
+	const domainname *const host, mDNSIPPort port, const char txtinfo[],
+	mDNSServiceCallback Callback, void *Context)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
 
 	sr->Callback = Callback;
 	sr->Context  = Context;
 	sr->Conflict = mDNSfalse;
+	if (host && host->c[0]) sr->host = *host;
+	else sr->host.c[0] = 0;
 	
 	mDNS_SetupResourceRecord(&sr->RR_SRV, zeroIPAddr, kDNSType_SRV, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
  	mDNS_SetupResourceRecord(&sr->RR_TXT, zeroIPAddr, kDNSType_TXT, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
@@ -3058,11 +3062,13 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr, mDN
 	ConstructServiceName(&sr->RR_PTR.name, mDNSNULL, type, domain);
 	
 	// 1. Set up the SRV record rdata.
-	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
 	sr->RR_SRV.rdata.srv.priority = 0;
 	sr->RR_SRV.rdata.srv.weight   = 0;
 	sr->RR_SRV.rdata.srv.port     = port;
-	sr->RR_SRV.HostTarget         = mDNStrue;
+
+	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
+	if (sr->host.c[0]) sr->RR_SRV.rdata.srv.target = sr->host;
+	else sr->RR_SRV.HostTarget = mDNStrue;
 
 	// 2. Set up the TXT record rdata.
 	if (txtinfo != (char *)(sr->RR_TXT.rdata.txt.c))
@@ -3088,12 +3094,15 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	{
 	domainlabel name;
 	domainname type, domain;
+	domainname *host = mDNSNULL;
 
 	DeconstructServiceName(&sr->RR_SRV.name, &name, &type, &domain);
 	IncrementLabelSuffix(&name, mDNStrue);
 	debugf("Reregistering as %#s", name.c);
-	return(mDNS_RegisterService(m, sr, sr->RR_SRV.rdata.srv.port, (char *)sr->RR_TXT.rdata.txt.c,
-		&name, &type, &domain, sr->Callback, sr->Context));
+	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->host.c[0]) host = &sr->host;
+	return(mDNS_RegisterService(m, sr, &name, &type, &domain,
+		host, sr->RR_SRV.rdata.srv.port, (char *)sr->RR_TXT.rdata.txt.c,
+		sr->Callback, sr->Context));
 	}
 
 mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
