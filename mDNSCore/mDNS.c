@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.426  2004/09/23 20:21:07  cheshire
+<rdar://problem/3426876> Refine "immediate answer burst; restarting exponential backoff sequence" logic
+Associate a unique sequence number with each received packet, and only increment the count of recent answer
+packets if the packet sequence number for this answer record is not one we've already seen and counted.
+
 Revision 1.425  2004/09/23 20:14:38  cheshire
 Rename "question->RecentAnswers" to "question->RecentAnswerPkts"
 
@@ -3267,14 +3272,18 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			// We must be at least at the eight-second interval to do this. If we're at the four-second interval, or less,
 			// there's not much benefit accelerating because we will anyway send another query within a few seconds.
 			// The first reset query is sent out randomized over the next four seconds to reduce possible synchronization between machines.
-			if (ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
-				q->ThisQInterval > InitialQuestionInterval*16 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
+			if (q->LastAnswerPktNum != m->PktNum)
 				{
-				LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
-					q->qname.c, DNSTypeName(q->qtype));
-				q->LastQTime     = m->timenow - InitialQuestionInterval + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*4);
-				q->ThisQInterval = InitialQuestionInterval;
-				SetNextQueryTime(m,q);
+				q->LastAnswerPktNum = m->PktNum;
+				if (ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
+					q->ThisQInterval > InitialQuestionInterval*16 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
+					{
+					LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
+						q->qname.c, DNSTypeName(q->qtype));
+					q->LastQTime     = m->timenow - InitialQuestionInterval + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*4);
+					q->ThisQInterval = InitialQuestionInterval;
+					SetNextQueryTime(m,q);
+					}
 				}
 			verbosedebugf("CacheRecordAdd %p %##s (%s) %lu", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), rr->resrec.rroriginalttl);
 			q->CurrentAnswers++;
@@ -4798,6 +4807,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 #endif	
 	
 	mDNS_Lock(m);
+	m->PktNum++;
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
 	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
 	else LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
@@ -4933,6 +4943,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->qnamehash        = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
 		question->ThisQInterval    = InitialQuestionInterval * 2;			// MUST be > zero for an active question
 		question->LastQTime        = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
+		question->LastAnswerPktNum = m->PktNum;
 		question->RecentAnswerPkts = 0;
 		question->CurrentAnswers   = 0;
 		question->LargeAnswers     = 0;
@@ -6291,6 +6302,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NextScheduledResponse   = timenow + 0x78000000;
 	m->ExpectUnicastResponse   = timenow + 0x78000000;
 	m->RandomQueryDelay        = 0;
+	m->PktNum                  = 0;
 	m->SendDeregistrations     = mDNSfalse;
 	m->SendImmediateAnswers    = mDNSfalse;
 	m->SleepState              = mDNSfalse;

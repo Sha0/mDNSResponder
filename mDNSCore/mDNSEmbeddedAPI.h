@@ -60,6 +60,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.210  2004/09/23 20:21:07  cheshire
+<rdar://problem/3426876> Refine "immediate answer burst; restarting exponential backoff sequence" logic
+Associate a unique sequence number with each received packet, and only increment the count of recent answer
+packets if the packet sequence number for this answer record is not one we've already seen and counted.
+
 Revision 1.209  2004/09/23 20:14:39  cheshire
 Rename "question->RecentAnswers" to "question->RecentAnswerPkts"
 
@@ -1517,6 +1522,7 @@ struct DNSQuestion_struct
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
+	mDNSs32               LastAnswerPktNum;	// The sequence number of the last response packet containing an answer to this Q
 	mDNSu32               RecentAnswerPkts;	// Number of answers since the last time we sent this query
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
 	mDNSu32               LargeAnswers;		// Number of answers with rdata > 1024 bytes
@@ -1716,6 +1722,7 @@ struct mDNS_struct
 	mDNSs32  NextScheduledResponse;		// Next time to send authoritative record(s) in responses
 	mDNSs32  ExpectUnicastResponse;		// Set when we send a query with the kDNSQClass_UnicastResponse bit set
 	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
+	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
 	mDNSBool SendDeregistrations;		// Set if we need to send deregistrations (immediately)
 	mDNSBool SendImmediateAnswers;		// Set if we need to send answers (immediately -- or as soon as SuppressSending clears)
 	mDNSBool SleepState;				// Set if we're sleeping (send no more packets)
