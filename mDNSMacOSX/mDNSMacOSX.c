@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.298  2005/02/10 00:41:59  cheshire
+Fix compiler warning
+
 Revision 1.297  2005/02/09 23:38:51  ksekar
 <rdar://problem/3993508> Reregister hostname when DNS server changes but IP address does not
 
@@ -2382,13 +2385,14 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 	{
 	(void)m;  // unused on 10.3 systems
 	void *v;
-	DNSServer *p;
 	*nAdditions = *nDeletions = 0;
 	mStatus err = GetDNSConfig(&v);
+
+#ifdef MAC_OS_X_VERSION_10_4
 	if (!err && v)
 		{
-#ifdef MAC_OS_X_VERSION_10_4
 		int i;
+		DNSServer *p;
 		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
 		mDNS_Lock(m);
 		p = m->uDNS_info.Servers;
@@ -2465,9 +2469,10 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 			}
 		mDNS_Unlock(m);
 		dns_configuration_free(config);
-#endif
 		}
-		return err;
+#endif
+
+	return err;
 	}
 
 mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
