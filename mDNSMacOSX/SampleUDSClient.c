@@ -5,7 +5,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#define BIND_8_COMPAT 1
 #include <nameser.h>
+// T_SRV is not defined in older versions of nameser.h
+#ifndef T_SRV
+#define T_SRV 33
+#endif
 
 
 
@@ -166,23 +171,23 @@ static void print_rdata(int type, int len, const u_char *rdata)
     
     switch (type)
         {
-        case ns_t_txt:
+        case T_TXT:
             // print all the alphanumeric and punctuation characters
             for (i = 0; i < len; i++)
                 if (rdata[i] >= 32 && rdata[i] <= 127) printf("%c", rdata[i]);
             printf("\n");
             return;
-        case ns_t_srv:
+        case T_SRV:
             srv = (srv_rdata *)rdata;
             ConvertDomainNameToCString_withescape(&srv->target, targetstr, 0);
             printf("pri=%d, w=%d, port=%d, target=%s\n", srv->priority, srv->weight, srv->port, targetstr);
             return;
-        case ns_t_a:
+        case T_A:
             assert(len == 4);
             memcpy(&in, rdata, sizeof(in));
             printf("%s\n", inet_ntoa(in));
             return;
-        case ns_t_ptr:
+        case T_PTR:
             ConvertDomainNameToCString_withescape((domainname *)rdata, targetstr, 0);
             printf("%s\n", targetstr);
             return;
