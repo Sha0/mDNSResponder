@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.309  2003/09/26 01:06:36  cheshire
+<rdar://problem/3427923> Set kDNSClass_UniqueRRSet bit for updates too
+Made new routine HaveSentEntireRRSet() to check if flag should be set
+
 Revision 1.308  2003/09/23 01:05:01  cheshire
 Minor changes to comments and debugf() message
 
@@ -3257,6 +3261,15 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 		}
 	}
 
+mDNSlocal mDNSBool HaveSentEntireRRSet(const mDNS *const m, const AuthRecord *const rr, mDNSInterfaceID InterfaceID)
+	{
+	// Try to find another member of this set that we're still planning to send on this interface
+	const AuthRecord *a;
+	for (a = m->ResourceRecords; a; a=a->next)
+		if (a->SendRNow == InterfaceID && a != rr && SameResourceRecordSignature(&a->resrec, &rr->resrec)) break;
+	return (a == mDNSNULL);		// If no more members of this set found, then we should set the cache flush bit
+	}
+
 // Note about acceleration of announcements to facilitate automatic coalescing of
 // multiple independent threads of announcements into a single synchronized thread:
 // The announcements in the packet may be at different stages of maturity;
@@ -3426,22 +3439,17 @@ mDNSlocal void SendResponses(mDNS *const m)
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
 					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
+					if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) && HaveSentEntireRRSet(m, rr, intf->InterfaceID))
+						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutResourceRecord(&response, responseptr, &response.h.numAnswers, &rr->resrec);
+					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (newptr) responseptr = newptr;
 					SetNewRData(&rr->resrec, OldRData, oldrdlength);
 					}
 				else
 					{
-					// If this record is supposed to be unique, see if we've sent its whole set
-					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
-						{
-						// Try to find another member of this set that we're still planning to send on this interface
-						const AuthRecord *a;
-						for (a = m->ResourceRecords; a; a=a->next)
-							if (a->SendRNow == intf->InterfaceID && a != rr && SameResourceRecordSignature(&a->resrec, &rr->resrec)) break;
-						if (a == mDNSNULL)							// If no more members of this set found
-							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
-						}
+					if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) && HaveSentEntireRRSet(m, rr, intf->InterfaceID))
+						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, m->SleepState ? 0 : rr->resrec.rroriginalttl);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (!newptr && response.h.numAnswers) break;
