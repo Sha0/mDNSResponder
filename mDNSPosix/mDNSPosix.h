@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.15  2004/02/06 01:19:51  cheshire
+Conditionally exclude IPv6 code unless HAVE_IPV6 is set
+
 Revision 1.14  2004/01/28 21:12:15  cheshire
 Reconcile mDNSIPv6Support & HAVE_IPV6 into a single flag (HAVE_IPV6)
 
@@ -94,7 +97,9 @@ struct PosixNetworkInterface
 	PosixNetworkInterface * aliasIntf;
 	int                     index;
 	int                     multicastSocket4;
+#if HAVE_IPV6
 	int                     multicastSocket6;
+#endif
 	};
 
 // This is a global because debugf_() needs to be able to check its value
@@ -103,7 +108,9 @@ extern int gMDNSPlatformPosixVerboseLevel;
 struct mDNS_PlatformSupport_struct
 	{
 	int unicastSocket4;
+#if HAVE_IPV6
 	int unicastSocket6;
+#endif
 	};
 
 extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m);

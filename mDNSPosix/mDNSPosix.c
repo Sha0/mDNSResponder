@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.41  2004/02/06 01:19:51  cheshire
+Conditionally exclude IPv6 code unless HAVE_IPV6 is set
+
 Revision 1.40  2004/02/05 01:00:01  rpantos
 Fix some issues that turned up when building for FreeBSD.
 
@@ -539,7 +542,9 @@ static void FreePosixNetworkInterface(PosixNetworkInterface *intf)
 	assert(intf != NULL);
 	if (intf->intfName != NULL)        free((void *)intf->intfName);
 	if (intf->multicastSocket4 != -1) assert(close(intf->multicastSocket4) == 0);
+#if HAVE_IPV6
 	if (intf->multicastSocket6 != -1) assert(close(intf->multicastSocket6) == 0);
+#endif
 	free(intf);
 	}
 
@@ -811,7 +816,9 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 		assert(intf->intfName != NULL);         // intf->intfName already set up above
 		intf->index                = if_nametoindex(intf->intfName);
 		intf->multicastSocket4     = -1;
+#if HAVE_IPV6
 		intf->multicastSocket6     = -1;
+#endif
 		alias                      = SearchForInterfaceByName(m, intf->intfName);
 		if (alias == NULL) alias   = intf;
 		intf->coreIntf.InterfaceID = (mDNSInterfaceID)alias;
@@ -1219,7 +1226,9 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	assert(m != NULL);
 	ClearInterfaceList(m);
 	if (m->p->unicastSocket4 != -1) assert(close(m->p->unicastSocket4) == 0);
+#if HAVE_IPV6
 	if (m->p->unicastSocket6 != -1) assert(close(m->p->unicastSocket6) == 0);
+#endif
 	}
 
 extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m)
@@ -1334,11 +1343,15 @@ mDNSexport void mDNSPosixGetFDSet(mDNS *m, int *nfds, fd_set *readfds, struct ti
 	// 2. Build our list of active file descriptors
 	PosixNetworkInterface *info = (PosixNetworkInterface *)(m->HostInterfaces);
 	if (m->p->unicastSocket4 != -1) mDNSPosixAddToFDSet(nfds, readfds, m->p->unicastSocket4);
+#if HAVE_IPV6
 	if (m->p->unicastSocket6 != -1) mDNSPosixAddToFDSet(nfds, readfds, m->p->unicastSocket6);
+#endif
 	while (info)
 		{
 		if (info->multicastSocket4 != -1) mDNSPosixAddToFDSet(nfds, readfds, info->multicastSocket4);
+#if HAVE_IPV6
 		if (info->multicastSocket6 != -1) mDNSPosixAddToFDSet(nfds, readfds, info->multicastSocket6);
+#endif
 		info = (PosixNetworkInterface *)(info->coreIntf.next);
 		}
 
@@ -1366,11 +1379,13 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 		FD_CLR(m->p->unicastSocket4, readfds);
 		SocketDataReady(m, NULL, m->p->unicastSocket4);
 		}
+#if HAVE_IPV6
 	if (m->p->unicastSocket6 != -1 && FD_ISSET(m->p->unicastSocket6, readfds))
 		{
 		FD_CLR(m->p->unicastSocket6, readfds);
 		SocketDataReady(m, NULL, m->p->unicastSocket6);
 		}
+#endif
 
 	while (info)
 		{
@@ -1379,11 +1394,13 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 			FD_CLR(info->multicastSocket4, readfds);
 			SocketDataReady(m, info, info->multicastSocket4);
 			}
+#if HAVE_IPV6
 		if (info->multicastSocket6 != -1 && FD_ISSET(info->multicastSocket6, readfds))
 			{
 			FD_CLR(info->multicastSocket6, readfds);
 			SocketDataReady(m, info, info->multicastSocket6);
 			}
+#endif
 		info = (PosixNetworkInterface *)(info->coreIntf.next);
 		}
 	}
