@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.149  2004/05/13 03:55:14  ksekar
+Fixed list traversal bug in FoundDefSearchDomain.
+
 Revision 1.148  2004/05/12 22:03:08  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
 from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
@@ -2004,7 +2007,8 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 				freeL("FoundDefBrowseDomain", ptr);
 				return;
 				}
-			else ptr = ptr->next;
+			prev = ptr;
+			ptr = ptr->next;
 			}
 		LogMsg("FoundDefBrowseDomain: Got remove event for domain %s not in list", answer->rdata->u.name.c);
 		}    
