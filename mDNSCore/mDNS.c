@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.345  2004/01/22 03:43:08  cheshire
+Export constants like mDNSInterface_LocalOnly so that the client layers can use them
+
 Revision 1.344  2004/01/21 21:53:18  cheshire
 <rdar://problem/3448144>: Don't try to receive unicast responses if we're not the first to bind to the UDP port
 
@@ -1186,8 +1189,11 @@ mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
 mDNSlocal  const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
 
-mDNSexport const mDNSInterfaceID mDNSInterface_Any = { 0 };
-mDNSlocal  const mDNSInterfaceID mDNSInterfaceMark = { (mDNSInterfaceID)~0 };
+mDNSexport const mDNSInterfaceID mDNSInterface_Any        = 0;
+mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly  = (mDNSInterfaceID)-1;
+
+// Note that mDNSInterfaceMark is the same value as mDNSInterface_LocalOnly, but they are used in different contexts
+mDNSlocal  const mDNSInterfaceID mDNSInterfaceMark        = (mDNSInterfaceID)~0;
 
 #define UnicastDNSPortAsNumber 53
 #define MulticastDNSPortAsNumber 5353
@@ -1199,9 +1205,9 @@ mDNSexport const mDNSv6Addr AllDNSLinkGroupv6  = { { 0xFF,0x02,0x00,0x00, 0x00,0
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };
 
-static const mDNSOpaque16 zeroID = { { 0, 0 } };
-static const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
-static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
+mDNSexport const mDNSOpaque16 zeroID = { { 0, 0 } };
+mDNSexport const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
+mDNSexport const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
 #define zeroDomainNamePtr ((domainname*)"")
 
 // Any records bigger than this are considered 'large' records
@@ -1784,7 +1790,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	AuthRecord **l = &m->LocalOnlyRecords;
 	
 #if TEST_LOCALONLY_FOR_EVERYTHING
-	rr->resrec.InterfaceID = (mDNSInterfaceID)~0;
+	rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
 #endif
 
 	while (*p && *p != rr) p=&(*p)->next;
@@ -1815,7 +1821,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		}
 
 	// If this resource record is referencing a specific interface, make sure it exists
-	if (rr->resrec.InterfaceID && rr->resrec.InterfaceID != ((mDNSInterfaceID)~0))
+	if (rr->resrec.InterfaceID && rr->resrec.InterfaceID != mDNSInterface_LocalOnly)
 		{
 		NetworkInterfaceInfo *intf;
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -1894,7 +1900,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
 	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
 	
-	if (rr->resrec.InterfaceID == ((mDNSInterfaceID)~0))
+	if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
 		{
 		debugf("Adding %p %##s (%s) to LocalOnly list", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 		*l = rr;
@@ -1980,7 +1986,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	{
 	mDNSu8 RecordType = rr->resrec.RecordType;
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
-	if (rr->resrec.InterfaceID == ((mDNSInterfaceID)~0)) p = &m->LocalOnlyRecords;
+	if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly) p = &m->LocalOnlyRecords;
 	while (*p && *p != rr) p=&(*p)->next;
 
 	if (*p)
@@ -2050,7 +2056,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
 		rr->resrec.rroriginalttl = 0;
 		rr->ImmedAnswer          = mDNSInterfaceMark;
-		if (rr->resrec.InterfaceID == ((mDNSInterfaceID)~0))
+		if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
 			m->DiscardLocalOnlyRecords = mDNStrue;
 		else
 			{
@@ -4573,7 +4579,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
 #if TEST_LOCALONLY_FOR_EVERYTHING
-	question->InterfaceID = (mDNSInterfaceID)~0;
+	question->InterfaceID = mDNSInterface_LocalOnly;
 #endif
 
     if (!IsLocalDomain(&question->qname))  return uDNS_StartQuery(m, question);
@@ -4585,7 +4591,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		int i;
 		// Note: It important that new questions are appended at the *end* of the list, not prepended at the start
 		DNSQuestion **q = &m->Questions;
-		if (question->InterfaceID == ((mDNSInterfaceID)~0)) q = &m->LocalOnlyQuestions;
+		if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 		while (*q && *q != question) q=&(*q)->next;
 
 		if (*q)
@@ -4596,7 +4602,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			}
 
 		// If this question is referencing a specific interface, make sure it exists
-		if (question->InterfaceID && question->InterfaceID != ((mDNSInterfaceID)~0))
+		if (question->InterfaceID && question->InterfaceID != mDNSInterface_LocalOnly)
 			{
 			NetworkInterfaceInfo *intf;
 			for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -4645,7 +4651,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, question, question->DuplicateOf);
 
 		*q = question;
-		if (question->InterfaceID == ((mDNSInterfaceID)~0))
+		if (question->InterfaceID == mDNSInterface_LocalOnly)
 			{
 			if (!m->NewLocalOnlyQuestions) m->NewLocalOnlyQuestions = question;
 			}
@@ -4666,7 +4672,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 
     if (IsActiveUnicastQuery(question)) return uDNS_StopQuery(m, question);
 
-	if (question->InterfaceID == ((mDNSInterfaceID)~0)) q = &m->LocalOnlyQuestions;
+	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
 	else

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.125  2004/01/22 03:43:09  cheshire
+Export constants like mDNSInterface_LocalOnly so that the client layers can use them
+
 Revision 1.124  2004/01/21 21:53:19  cheshire
 <rdar://problem/3448144>: Don't try to receive unicast responses if we're not the first to bind to the UDP port
 
@@ -434,7 +437,7 @@ mDNSlocal int myIfIndexToName(u_short index, char* name)
 mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index)
 	{
 	NetworkInterfaceInfoOSX *i;
-	if (index == (uint32_t)~0) return((mDNSInterfaceID)~0);
+	if (index == (uint32_t)~0) return(mDNSInterface_LocalOnly);
 	if (index)
 		for (i = m->p->InterfaceList; i; i = i->next)
 			if (i->scope_id == index)
@@ -445,7 +448,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS 
 mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
 	{
 	NetworkInterfaceInfoOSX *i;
-	if (id == (mDNSInterfaceID)~0) return((mDNSu32)~0);
+	if (id == mDNSInterface_LocalOnly) return((mDNSu32)~0);
 	if (id)
 		for (i = m->p->InterfaceList; i; i = i->next)
 			if (i->ifinfo.InterfaceID == id)

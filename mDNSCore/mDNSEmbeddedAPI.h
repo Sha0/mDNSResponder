@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.132  2004/01/22 03:43:08  cheshire
+Export constants like mDNSInterface_LocalOnly so that the client layers can use them
+
 Revision 1.131  2004/01/21 21:53:18  cheshire
 <rdar://problem/3448144>: Don't try to receive unicast responses if we're not the first to bind to the UDP port
 
@@ -972,7 +975,6 @@ typedef struct
     mDNSs32               timestamp;
     } uDNS_QuestionInfo;
 
-
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 struct DNSQuestion_struct
@@ -980,8 +982,8 @@ struct DNSQuestion_struct
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	DNSQuestion          *next;
 	mDNSu32               qnamehash;
-	mDNSs32               LastQTime;		// Last scheduled tranmission of this Q on *all* applicable interfaces
-	mDNSs32               ThisQInterval;	// LastQTime + ThisQInterval is the next scheduled tranmission of this Q
+	mDNSs32               LastQTime;		// Last scheduled transmission of this Q on *all* applicable interfaces
+	mDNSs32               ThisQInterval;	// LastQTime + ThisQInterval is the next scheduled transmission of this Q
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
@@ -1056,14 +1058,12 @@ enum
 	mDNS_KnownBug_PhantomInterfaces = 1
 	};
 
-
 typedef struct 
     {
     DNSQuestion     *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
     mDNSOpaque16    NextMessageID;
     mDNSv4Addr      Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
     } uDNS_data_t;  
-
 
 struct mDNS_struct
 	{
@@ -1109,7 +1109,7 @@ struct mDNS_struct
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
 	DNSQuestion *NewQuestions;			// Fresh questions not yet answered from cache
 	DNSQuestion *CurrentQuestion;		// Next question about to be examined in AnswerLocalQuestions()
-	DNSQuestion *LocalOnlyQuestions;	// Questions with InterfaceID set to ~0 ("local only")
+	DNSQuestion *LocalOnlyQuestions;	// Questions with InterfaceID set to mDNSInterface_LocalOnly
 	DNSQuestion *NewLocalOnlyQuestions;	// Fresh local-only questions not yet answered
 	mDNSu32 rrcache_size;				// Total number of available cache entries
 	mDNSu32	rrcache_totalused;			// Number of cache entries currently occupied
@@ -1128,7 +1128,7 @@ struct mDNS_struct
 	UTF8str255 HISoftware;
 	AuthRecord *ResourceRecords;
 	AuthRecord *DuplicateRecords;		// Records currently 'on hold' because they are duplicates of existing records
-	AuthRecord *LocalOnlyRecords;		// Local records registered with InterfaceID set to ~0 ("local only")
+	AuthRecord *LocalOnlyRecords;		// Local records registered with InterfaceID set to mDNSInterface_LocalOnly
 	AuthRecord *NewLocalOnlyRecords;	// Fresh local-only records not yet delivered to local-only questions
 	mDNSBool    DiscardLocalOnlyRecords;// Set when we have "remove" events we need to deliver to local-only questions
 	AuthRecord *CurrentRecord;			// Next AuthRecord about to be examined
@@ -1152,7 +1152,9 @@ extern const mDNSv4Addr      zeroIPAddr;
 extern const mDNSv6Addr      zerov6Addr;
 extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;
+
 extern const mDNSInterfaceID mDNSInterface_Any;
+extern const mDNSInterfaceID mDNSInterface_LocalOnly;
 
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      MulticastDNSPort;
@@ -1161,6 +1163,10 @@ extern const mDNSv4Addr      AllDNSLinkGroup;
 extern const mDNSv6Addr      AllDNSLinkGroupv6;
 extern const mDNSAddr        AllDNSLinkGroup_v4;
 extern const mDNSAddr        AllDNSLinkGroup_v6;
+
+extern const mDNSOpaque16 zeroID;
+extern const mDNSOpaque16 QueryFlags;
+extern const mDNSOpaque16 ResponseFlags;
 
 // ***************************************************************************
 #if 0

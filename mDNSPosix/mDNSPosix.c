@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.34  2004/01/22 03:43:09  cheshire
+Export constants like mDNSInterface_LocalOnly so that the client layers can use them
+
 Revision 1.33  2004/01/21 21:54:20  cheshire
 <rdar://problem/3448144>: Don't try to receive unicast responses if we're not the first to bind to the UDP port
 
@@ -452,8 +455,7 @@ extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *con
 
 	assert(m != NULL);
 
-	if (index == (uint32_t)~0) 
-		return((mDNSInterfaceID)~0);
+	if (index == (uint32_t)~0) return(mDNSInterface_LocalOnly);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
 	while ( (intf != NULL) && (mDNSu32) intf->index != index) 
@@ -468,8 +470,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 
 	assert(m != NULL);
 
-	if (id == (mDNSInterfaceID)~0) 
-		return((mDNSu32)~0);
+	if (id == mDNSInterface_LocalOnly) return((mDNSu32)~0);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
 	while ( (intf != NULL) && (mDNSInterfaceID) intf != id)
