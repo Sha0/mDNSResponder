@@ -92,7 +92,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalDependencies="../../mDNSWindows/DLL/Release/dnssd.lib ws2_32.lib iphlpapi.lib winspool.lib"
-				OutputFile="$(OutDir)/RendezvousPrinterWizard.exe"
+				OutputFile="$(OutDir)/PrinterSetupWizard.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="TRUE"
 				SubSystem="2"
