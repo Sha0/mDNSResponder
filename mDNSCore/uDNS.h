@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.12  2004/07/26 22:49:30  ksekar
+<rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
+
 Revision 1.11  2004/06/17 01:13:11  ksekar
 <rdar://problem/3696616>: polling interval too short
 
@@ -70,6 +73,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	extern "C" {
 #endif
 
+#define MIN_UCAST_PERIODIC_EXEC (3 * mDNSPlatformOneSecond) 	
 #define INIT_UCAST_POLL_INTERVAL (15 * mDNSPlatformOneSecond)
 #define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
 #define NO_GOODBYE                       // will we receive goodbye packets from the server?
@@ -102,6 +106,8 @@ extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *
 const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
 const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 
+extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, int len);
+	
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.45  2004/07/26 22:49:31  ksekar
+<rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
+
 Revision 1.44  2004/07/26 05:42:50  shersche
 use "Computer Description" for nicename if available, track dynamic changes to "Computer Description"
 
@@ -450,7 +453,7 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 mStatus
 	mDNSPlatformSendUDP( 
 		const mDNS * const			inMDNS, 
-		const DNSMessage * const	inMsg, 
+		const void * const	        inMsg, 
 		const mDNSu8 * const		inMsgEnd, 
 		mDNSInterfaceID 			inInterfaceID, 
 		const mDNSAddr *			inDstIP, 

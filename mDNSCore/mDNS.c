@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.387  2004/07/26 22:49:30  ksekar
+<rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
+
 Revision 1.386  2004/07/13 21:24:24  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -1865,6 +1868,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	AuthRecord **p = &m->ResourceRecords;
 	AuthRecord **d = &m->DuplicateRecords;
 	AuthRecord **l = &m->LocalOnlyRecords;
+
+	mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
 
 	if ((mDNSs32)rr->resrec.rroriginalttl <= 0)
 		{ LogMsg("mDNS_Register_internal: TTL must be 1 - 0x7FFFFFFF %s", GetRRDisplayString(m, rr)); return(mStatus_BadParamErr); }
@@ -4671,17 +4676,24 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		}
 	}
 
-mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
+mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
+	mDNSIPPort NATPort = mDNSOpaque16fromIntVal(NATMAP_PORT);
+	DNSMessage *msg = mDNSNULL;	
 	const mDNSu8 StdQ    = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
-	const mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
+	mDNSu8 QR_OP;
+	mDNSu8 *ptr = mDNSNULL;
 	
+	if (srcport.NotAnInteger == NATPort.NotAnInteger) { uDNS_ReceiveNATMap(m, pkt, end - (mDNSu8 *)pkt); return; }
+	else if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
+	msg = (DNSMessage *)pkt;
+	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
-	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
+	ptr = (mDNSu8 *)&msg->h.numQuestions;
 	msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
 	msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
 	msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
@@ -5229,6 +5241,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
 	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
 	{
+	  mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
 	// Don't try to store a TTL bigger than we can represent in platform time units
 	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
 		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
@@ -5471,7 +5484,6 @@ mDNSlocal void GenerateFQDN(mDNS *const m, const char *domain, mDNSBool local)
 		if (local) m->hostname = newname;
 		else       m->uDNS_info.hostname = newname;
 
-		//!!!KRS for unicast, we can do the deadvertisements/new adverts in the same update message
 		// 1. Stop advertising our address records on all interfaces
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
 			if (intf->Advertise)

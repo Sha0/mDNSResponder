@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.49  2004/07/26 22:49:31  ksekar
+<rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
+
 Revision 1.48  2004/07/20 01:47:36  rpantos
 NOT_HAVE_SA_LEN applies to v6, too. And use more-portable s6_addr.
 
@@ -305,7 +308,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 #endif
 
 // mDNS core calls this routine when it needs to send a packet.
-mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
+mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	int                     err = 0;
@@ -450,12 +453,6 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 				num_pkts_accepted++;
 				}
 			}
-		}
-
-	if (packetLen >= 0 && packetLen < (ssize_t)sizeof(DNSMessageHeader))
-		{
-		debugf("SocketDataReady packet length (%d) too short", packetLen);
-		packetLen = -1;
 		}
 
 	if (packetLen >= 0)
