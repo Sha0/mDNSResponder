@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.68  2005/01/11 02:04:48  shersche
+Gracefully handle when IPv6 is not installed on a user's machine
+
 Revision 1.67  2004/12/18 00:51:52  cheshire
 Use symbolic constant kDNSServiceInterfaceIndexLocalOnly instead of (mDNSu32) ~0
 
@@ -284,6 +287,7 @@ Multicast DNS platform plugin for Win32
 
 #include	"CommonServices.h"
 #include	"DebugServices.h"
+#include	<dns_sd.h>
 
 #include	<Iphlpapi.h>
 #if( !TARGET_OS_WINDOWS_CE )
@@ -497,13 +501,23 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	sa6.sin6_family		= AF_INET6;
 	sa6.sin6_addr		= in6addr_any;
 	sa6.sin6_scope_id	= 0;
+
+	// This call will fail if the machine hasn't installed IPv6.  In that case,
+	// the error will be WSAEAFNOSUPPORT.
+
 	err = SetupSocket( inMDNS, (const struct sockaddr*) &sa6, zeroIPPort, &inMDNS->p->unicastSock6 );
-	check_noerr( err );
+	require_action( !err || ( err == WSAEAFNOSUPPORT ), exit, err = (mStatus) WSAGetLastError() );
 	inMDNS->p->unicastSock6ReadEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
 	err = translate_errno( inMDNS->p->unicastSock6ReadEvent, (mStatus) GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
-	err = WSAEventSelect( inMDNS->p->unicastSock6, inMDNS->p->unicastSock6ReadEvent, FD_READ );
-	require_noerr( err, exit );
+	
+	// If we weren't able to create the socket (because IPv6 hasn't been installed) don't do this
+
+	if ( inMDNS->p->unicastSock6 != INVALID_SOCKET )
+	{
+		err = WSAEventSelect( inMDNS->p->unicastSock6, inMDNS->p->unicastSock6ReadEvent, FD_READ );
+		require_noerr( err, exit );
+	}
 
 #endif
 
