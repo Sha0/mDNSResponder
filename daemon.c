@@ -418,7 +418,7 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
-	DNSCString name, DNSCString regtype, DNSCString domain, uint16_t notAnIntPort, DNSCString txtRecord)
+	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
 	{
 	mStatus err;
 	domainlabel n;
@@ -450,7 +450,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	return(err);
 	}
 
-mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t server, mach_port_t client, uint16_t type, const char *data, mach_msg_type_number_t data_len, natural_t *reference)
+mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t server, mach_port_t client, int type, const char *data, mach_msg_type_number_t data_len, natural_t *reference)
 	{
 	mStatus err = 0;
 
@@ -459,7 +459,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	return(err);
 	}
 
-mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference, uint16_t type, const char *data, mach_msg_type_number_t data_len)
+mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference, int type, const char *data, mach_msg_type_number_t data_len)
 	{
 	mStatus err = 0;
 
