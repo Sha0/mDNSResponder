@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.203  2004/10/08 04:29:25  ksekar
+<rdar://problem/3831842> Allow default search domains to be set via hint from DHCP
+
 Revision 1.202  2004/10/04 05:56:04  cheshire
 <rdar://problem/3824730> mDNSResponder doesn't respond to certain AirPort changes
 
@@ -647,8 +650,10 @@ typedef struct SearchListElem
     struct SearchListElem *next;
     domainname domain;
     int flag;
-    DNSQuestion browseQ;
-    DNSQuestion registerQ;
+    DNSQuestion BrowseQ;
+    DNSQuestion DefBrowseQ;
+    DNSQuestion RegisterQ;
+    DNSQuestion DefRegisterQ;
     ARListElem *AuthRecs;
 	} SearchListElem;
 
@@ -1912,8 +1917,12 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		arElem = mallocL("FoundDomain - arElem", sizeof(ARListElem));
 		if (!arElem) { LogMsg("ERROR: malloc");  return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, arElem);
-		if (question == &slElem->browseQ) name = "_browse._dns-sd._udp.local.";
-		else                              name = "_register._dns-sd._udp.local.";
+		if      (question == &slElem->BrowseQ)      name = "_browse._dns-sd._udp.local.";
+		else if (question == &slElem->DefBrowseQ)   name = "_default._browse._dns-sd._udp.local.";
+		else if (question == &slElem->RegisterQ)    name = "_register._dns-sd._udp.local.";
+		else if (question == &slElem->DefRegisterQ) name = "_default._register._dns-sd._udp.local.";
+		else { LogMsg("FoundDomain - unknown question"); return; }
+		
 		MakeDomainNameFromDNSNameString(&arElem->ar.resrec.name, name);
 		AssignDomainName(arElem->ar.resrec.rdata->u.name, answer->rdata->u.name);
 		err = mDNS_Register(m, &arElem->ar);
@@ -1962,8 +1971,8 @@ mDNSlocal void MarkSearchListElem(domainname *domain)
 	// if domain not in list, add to list, mark as add (1)
 	if (!ptr)
 		{
-		new = mallocL("RegisterSearchDomains - SearchListElem", sizeof(SearchListElem));
-		if (!new) { LogMsg("ERROR: RegisterSearchDomains - malloc"); return; }
+		new = mallocL("MarkSearchListElem - SearchListElem", sizeof(SearchListElem));
+		if (!new) { LogMsg("ERROR: MarkSearchListElem - malloc"); return; }
 		bzero(new, sizeof(SearchListElem));
 		AssignDomainName(new->domain, *domain);
 		new->flag = 1;  // add
@@ -1976,7 +1985,6 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	{
 	struct ifaddrs *ifa = NULL;
 	int i, count;
-	CFArrayRef values = NULL;
 	domainname domain;
 	char  buf[MAX_ESCAPED_DOMAIN_NAME];
 	CFStringRef s;
@@ -1988,29 +1996,42 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = dict ? -1 : 0;
 
 	// get all the domains from "Search Domains" field of sharing prefs
-	if (dict) values = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
-	if (values)
+	if (dict)
 		{
-		count = CFArrayGetCount(values);
-		for (i = 0; i < count; i++)
+		CFArrayRef searchdomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
+		if (searchdomains)
 			{
-			s = CFArrayGetValueAtIndex(values, i);
-			if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
-			if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
+			count = CFArrayGetCount(searchdomains);
+			for (i = 0; i < count; i++)
 				{
-				LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
-				continue;
+				s = CFArrayGetValueAtIndex(searchdomains, i);
+				if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
+				if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
+					{
+					LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
+					continue;
+					}
+				if (!MakeDomainNameFromDNSNameString(&domain, buf))
+					{
+					LogMsg("ERROR: RegisterNameServers - invalid search domain %s", buf);
+					continue;
+					}
+				MarkSearchListElem(&domain);
 				}
-			if (!MakeDomainNameFromDNSNameString(&domain, buf))
+			}
+		CFStringRef dname = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
+		if (dname)
+			{
+			if (CFStringGetCString(dname, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
 				{
-				LogMsg("ERROR: RegisterNameServers - invalid search domain %s", buf);
-				continue;
+				if (MakeDomainNameFromDNSNameString(&domain, buf)) MarkSearchListElem(&domain);
+				else LogMsg("ERROR: RegisterNameServers - invalid domain %s", buf);
 				}
-			MarkSearchListElem(&domain);
+			else LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
 			}
 		}
-
-	// construct reverse-map search domains
+	
+	// Construct reverse-map search domains
 	ifa = myGetIfAddrs(1);
 	while (ifa)
 		{
@@ -2042,9 +2063,12 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		{
 		if (ptr->flag == -1)  // remove
 			{
-			mDNS_StopQuery(m, &ptr->browseQ);
-			mDNS_StopQuery(m, &ptr->registerQ);
-			// deregister records generated from answers to the query
+			mDNS_StopQuery(m, &ptr->BrowseQ);
+			mDNS_StopQuery(m, &ptr->RegisterQ);
+			mDNS_StopQuery(m, &ptr->DefBrowseQ);
+			mDNS_StopQuery(m, &ptr->DefRegisterQ);
+			
+            // deregister records generated from answers to the query
 			arList = ptr->AuthRecs;
 			ptr->AuthRecs = NULL;
 			while (arList)
@@ -2067,11 +2091,17 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		
 		if (ptr->flag == 1)  // add
 			{
-			err = mDNS_GetDomains(m, &ptr->browseQ, mDNS_DomainTypeBrowse, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			if (err) LogMsg("ERROR: RegisterNameServers - mDNS_DomainTypeBrowse, %d", err);
+			mStatus err1, err2, err3, err4;
+			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,      mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,   mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,    mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ, mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
 
-			err = mDNS_GetDomains(m, &ptr->registerQ, mDNS_DomainTypeRegistration, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			if (err) LogMsg("ERROR: RegisterNameServers - mDNS_DomainTypeRegistration, %d", err);
+			if (err1 || err2 || err3 || err4) LogMsg("GetDomains for domain %##s returned error(s):\n"
+													 "%d (mDNS_DomainTypeBrowse)\n"
+													 "%d (mDNS_DomainTypeBrowseDefault)\n"
+													 "%d (mDNS_DomainTypeRegistration)\n"
+													 "%d (mDNS_DomainTypeRegistrationDefault)");		   
 			ptr->flag = 0;
 			}
 		
@@ -2479,7 +2509,7 @@ mDNSlocal void AddKeychainHostDomains(mDNS *m)
 			if (!new->browse || !new->reg) { LogMsg("ERROR: malloc"); return; }
 			AddDefRegDomain(&zone);
 			
-			// set up _browse
+			// set up _browses
 			mDNS_SetupResourceRecord(new->browse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, KeychainEnumRRCallback, mDNSNULL);
 			MakeDomainNameFromDNSNameString(&new->browse->resrec.name, "_default._browse._dns-sd._udp.local.");
 			AssignDomainName(new->browse->resrec.rdata->u.name, new->domain );
