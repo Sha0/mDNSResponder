@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.55  2003/12/23 00:21:31  cheshire
+Send HINFO queries to determine the mDNSResponder version of each host
+
 Revision 1.54  2003/12/17 01:06:39  cheshire
 Also show host name along with HINFO data
 
@@ -342,6 +345,7 @@ typedef struct
 	domainname hostname;
 	UTF8str255 HIHardware;
 	UTF8str255 HISoftware;
+	mDNSu32    NumQueries;
 	} HostEntry;
 
 #define HostEntryTotalPackets(H) ((H)->pkts[HostPkt_Q] + (H)->pkts[HostPkt_L] + (H)->pkts[HostPkt_R] + (H)->pkts[HostPkt_B])
@@ -393,6 +397,7 @@ mDNSlocal HostEntry *AddHost(const mDNSAddr *addr, HostList* list)
 	entry->hostname.c[0] = 0;
 	entry->HIHardware.c[0] = 0;
 	entry->HISoftware.c[0] = 0;
+	entry->NumQueries = 0;
 
 	return(entry);
 	}
@@ -433,8 +438,10 @@ mDNSlocal void ShowSortedHostList(HostList *list, int max)
 			HostEntryTotalPackets(e), e->pkts[HostPkt_Q], e->pkts[HostPkt_L], e->pkts[HostPkt_R]);
 		if (e->pkts[HostPkt_B]) mprintf("Bad: %8lu", e->pkts[HostPkt_B]);
 		mprintf("\n");
+		if (!e->HISoftware.c[0] && e->NumQueries)
+			mDNSPlatformMemCopy("\x0E*** Jaguar ***", &e->HISoftware, 15);
 		if (e->hostname.c[0] || e->HIHardware.c[0] || e->HISoftware.c[0])
-			mprintf("%##s -> %#s %#s\n", e->hostname.c, e->HIHardware.c, e->HISoftware.c);
+			mprintf("%##-45s %#-14s %#s\n", e->hostname.c, e->HIHardware.c, e->HISoftware.c);
 		}
 	}
 
@@ -736,6 +743,12 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 			NumAnswers++;
 			DisplayResourceRecord(srcaddr, (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AN)" : "(AN+)", &pkt.r.resrec);
 			recordstat(entry, &pkt.r.resrec.name, OP_answer, pkt.r.resrec.rrtype);
+			if (!entry->hostname.c[0])
+				if (pkt.r.resrec.rrtype == kDNSType_A || pkt.r.resrec.rrtype == kDNSType_AAAA)
+					{
+					// Should really check that the rdata in the address record matches the source address of this packet
+					AssignDomainName(entry->hostname, pkt.r.resrec.name);
+					}
 			if (pkt.r.resrec.rrtype == kDNSType_HINFO)
 				{
 				RDataBody *rd = &pkt.r.resrec.rdata->u;
@@ -775,6 +788,25 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 		NumAdditionals++;
 		DisplayResourceRecord(srcaddr, (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pkt.r.resrec);
 		}
+	
+	if (!entry->HIHardware.c[0] && entry->hostname.c[0] && entry->NumQueries < 4)
+		{
+		const mDNSOpaque16 id = { { 0xFF, 0xFF } };
+		DNSMessage query;
+		mDNSu8       *qptr        = query.data;
+		const mDNSu8 *const limit = query.data + sizeof(query.data);
+		const mDNSAddr *target = srcaddr;
+		InitializeDNSMessage(&query.h, id, QueryFlags);
+		qptr = putQuestion(&query, qptr, limit, &entry->hostname, kDNSType_HINFO, kDNSClass_IN);
+		// Note: When there are multiple mDNSResponder agents running on a single machine
+		// (e.g. Apple mDNSResponder plus a SliMP3 server with embedded mDNSResponder)
+		// it is possible that unicast queries may not go to the primary system responder.
+		// If we try a unicast query without success, then we try querying via multicast instead.
+		if (entry->NumQueries >= 1) target = &AllDNSLinkGroup_v4;
+		mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, MulticastDNSPort, target, MulticastDNSPort);
+		entry->NumQueries++;
+		//mprintf("%##s HINFO %d\n", entry->hostname.c, entry->NumQueries);
+		}
 	}
 
 mDNSlocal mDNSBool AddressMatchesFilterList(const mDNSAddr *srcaddr)
@@ -801,7 +833,20 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
 	msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
 	msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
-	
+
+#if 0
+	if (!mDNSAddrIsDNSMulticast(dstaddr))
+		{
+		mprintf("** Unicast mDNS %s packet from %#-15a to %#-15a TTL %d on %p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		(QR_OP == StdQ) ? "Query" : (QR_OP == StdR) ? "Response" : "Unkown",
+		srcaddr, dstaddr, ttl, InterfaceID,
+		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
+		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
+		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		}
+#endif
+
 	if (ttl < 254)
 		{
 		debugf("** Apparent spoof mDNS %s packet from %#-15a to %#-15a TTL %d on %p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
