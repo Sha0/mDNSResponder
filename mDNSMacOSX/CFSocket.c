@@ -750,6 +750,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, m, NULL, NULL, NULL };
 	
+	// Note: Every CFRunLoopTimer has to be created with an initial fire time, and a repeat interval, or it becomes
+	// a one-shot timer and you can't use CFRunLoopTimerSetNextFireDate(timer, when) to schedule subsequent firings.
+	// Here we create it with an initial fire time ten seconds from now, and a repeat interval of ten seconds,
+	// knowing that we'll reschedule it using CFRunLoopTimerSetNextFireDate(timer, when) long before that happens.
 	m->p->CFTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 10.0, 10.0, 0, 1,
 											myCFRunLoopTimerCallBack, &myCFRunLoopTimerContext);
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), m->p->CFTimer, kCFRunLoopDefaultMode);
