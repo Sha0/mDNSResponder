@@ -85,6 +85,7 @@ kern_return_t DNSServiceRegistrationAddRecord_rpc
     int type,
     record_data_t data,
     mach_msg_type_number_t record_dataCnt,
+    uint32_t ttl,
     natural_t *reference
 );
 
@@ -94,9 +95,9 @@ int DNSServiceRegistrationUpdateRecord_rpc
     mach_port_t server,
     mach_port_t client,
     natural_t reference,
-    int type,
     record_data_t data,
-    mach_msg_type_number_t record_dataCnt
+    mach_msg_type_number_t record_dataCnt,
+    uint32_t ttl
 );
 
 extern
@@ -356,7 +357,7 @@ dns_service_discovery_ref DNSServiceResolverResolve(const char *name, const char
     return return_t;
 }
 
-DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref ref, uint16_t rrtype, uint16_t rdlen, const char *rdata)
+DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref ref, uint16_t rrtype, uint16_t rdlen, const char *rdata, uint32_t ttl)
 {
     mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
     mach_port_t clientPort;
@@ -373,7 +374,7 @@ DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref ref
         return kDNSServiceDiscoveryUnknownErr;
     }
 
-    result = DNSServiceRegistrationAddRecord_rpc(serverPort, clientPort, rrtype, (record_data_t)rdata, rdlen, &reference);
+    result = DNSServiceRegistrationAddRecord_rpc(serverPort, clientPort, rrtype, (record_data_t)rdata, rdlen, ttl, &reference);
 
     if (result != KERN_SUCCESS) {
         printf("The result of the registration was not successful.  Error %d, result %s\n", result, mach_error_string(result));
@@ -382,7 +383,7 @@ DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref ref
     return reference;
 }
 
-DNSServiceRegistrationReplyErrorType DNSServiceRegistrationUpdateRecord(dns_service_discovery_ref ref, DNSRecordReference reference, uint16_t rrtype, uint16_t rdlen, const char *rdata)
+DNSServiceRegistrationReplyErrorType DNSServiceRegistrationUpdateRecord(dns_service_discovery_ref ref, DNSRecordReference reference, uint16_t rdlen, const char *rdata, uint32_t ttl)
 {
     mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
     mach_port_t clientPort;
@@ -398,7 +399,7 @@ DNSServiceRegistrationReplyErrorType DNSServiceRegistrationUpdateRecord(dns_serv
         return kDNSServiceDiscoveryUnknownErr;
     }
 
-    result = DNSServiceRegistrationUpdateRecord_rpc(serverPort, clientPort, (natural_t)reference, rrtype, (record_data_t)rdata, rdlen);
+    result = DNSServiceRegistrationUpdateRecord_rpc(serverPort, clientPort, (natural_t)reference, (record_data_t)rdata, rdlen, ttl);
     if (result != KERN_SUCCESS) {
         printf("The result of the registration was not successful.  Error %d, result %s\n", result, mach_error_string(result));
         return result;

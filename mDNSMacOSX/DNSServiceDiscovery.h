@@ -257,21 +257,22 @@ void DNSServiceDiscoveryDeallocate(dns_service_discovery_ref dnsServiceDiscovery
     @param rrtype A standard DNS Resource Record Type, from http://www.iana.org/assignments/dns-parameters
     @param rdlen Length of the data
     @param rdata Opaque binary Resource Record data, up to 64 kB.
+    @param ttl time to live for the added record.
     @result DNSRecordReference An opaque reference that can be passed to the update and remove record calls.  If an error occurs, this value will be zero or negative
 */
-DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref dnsServiceDiscovery, uint16_t rrtype, uint16_t rdlen, const char *rdata);
+DNSRecordReference DNSServiceRegistrationAddRecord(dns_service_discovery_ref dnsServiceDiscovery, uint16_t rrtype, uint16_t rdlen, const char *rdata, uint32_t ttl);
 
 /*!
-    @function DNSServiceRegistrationAddRecord
+    @function DNSServiceRegistrationUpdateRecord
     @description Request that the mDNS Responder add the DNS Record of a specific type
     @param dnsServiceDiscovery A dns_service_discovery_ref as returned from a DNSServiceRegistrationCreate call
     @param dnsRecordReference A dnsRecordReference as returned from a DNSServiceRegistrationAddRecord call
-    @param rrtype A standard DNS Resource Record Type, from http://www.iana.org/assignments/dns-parameters
     @param rdlen Length of the data
     @param rdata Opaque binary Resource Record data, up to 64 kB.
+    @param ttl time to live for the updated record.
     @result DNSServiceRegistrationReplyErrorType If an error occurs, this value will be non zero
 */
-DNSServiceRegistrationReplyErrorType DNSServiceRegistrationUpdateRecord(dns_service_discovery_ref ref, DNSRecordReference reference, uint16_t rrtype, uint16_t rdlen, const char *rdata);
+DNSServiceRegistrationReplyErrorType DNSServiceRegistrationUpdateRecord(dns_service_discovery_ref ref, DNSRecordReference reference, uint16_t rdlen, const char *rdata, uint32_t ttl);
 
 /*!
     @function DNSServiceRegistrationRemoveRecord
