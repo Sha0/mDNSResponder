@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.5  2004/06/18 04:44:58  rpantos
+Use platform layer for socket types
+
 Revision 1.4  2004/06/12 00:51:58  cheshire
 Changes for Windows compatibility
 
@@ -44,6 +47,7 @@ Changes necessary to support mDNSResponder on Linux.
 */
 
 #include "mDNSClientAPI.h"
+#include "dnssd_ipc.h"
 
 
 /* Client interface: */
@@ -66,11 +70,6 @@ extern int udsserver_exit(void);	// should be called prior to app exit
 
 typedef	void (*udsEventCallback)(void *context);
 
-#if (WIN32)
-#define SocketRef SOCKET
-#else
-#define SocketRef int
-#endif
 
-extern mStatus udsSupportAddFDToEventLoop(SocketRef fd, udsEventCallback callback, void *context);
-extern mStatus udsSupportRemoveFDFromEventLoop(SocketRef fd);
+extern mStatus udsSupportAddFDToEventLoop(dnssd_sock_t fd, udsEventCallback callback, void *context);
+extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd);
