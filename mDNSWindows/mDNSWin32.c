@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.23  2003/10/14 03:26:12  bradley
+Clear interface list buffer to workaround Windows CE bug where interfaces are not reported correctly.
+
 Revision 1.22  2003/08/20 06:21:25  bradley
 Updated to latest internal version of the Rendezvous for Windows platform plugin: Added support
 for Windows CE/PocketPC 2003; re-did interface-related code to emulate getifaddrs/freeifaddrs for
@@ -1899,7 +1902,7 @@ int	getifaddrs( struct ifaddrs **outAddrs )
 	require_action( size > 0, exit, err = -1 );
 	size *= 2;
 	
-	buffer = malloc( size );
+	buffer = calloc( 1, size );
 	require_action( buffer, exit, err = -1 );
 	
 	// We now know the size of the list and have a buffer to hold so call WSAIoctl again to get it.
