@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.159  2004/07/26 22:49:31  ksekar
+<rdar://problem/3651409>: Feature #9516: Need support for NATPMP in client
+
 Revision 1.158  2004/07/13 21:24:24  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -517,6 +520,7 @@ typedef struct SearchListElem
 
 static mDNSu32 clockdivisor = 0;
 static mDNSBool DNSConfigInitialized = mDNSfalse;
+static mDNSBool RouterInitialized = mDNSfalse;
 #define MAX_SEARCH_DOMAINS 32
 
 // for domain enumeration and default browsing
@@ -592,7 +596,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m
 
 // NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
 // NOTE: If InterfaceID is non-NULL it means, "send this packet through our port 5353 socket on the specified interface"
-mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
+mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	#pragma unused(m)
@@ -814,8 +818,6 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 				&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name, packetifname);
 			return;
 			}
-		
-		if (err < (int)sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 		
 		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID, ttl);
 		}
@@ -1237,12 +1239,12 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 
 	debugf("AddInterfaceToList: Making   new   interface %u with address %#a", scope_id, &ip);
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
+	bzero(i, sizeof(NetworkInterfaceInfoOSX));
 	if (!i) return(mDNSNULL);
 	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
 	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(mDNSNULL); }
 	strcpy(i->ifa_name, ifa->ifa_name);
 
-	bzero(&i->ifinfo.uDNS_info, sizeof(uDNS_NetworkInterfaceInfo));
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
@@ -1717,6 +1719,34 @@ mDNSlocal mStatus RegisterDNSConfig(mDNS *const m, CFDictionaryRef dict, const C
 	}
 
 
+mDNSlocal void RouterChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
+	{
+	mDNS *m = context;
+	CFDictionaryRef dict;
+	CFStringRef     key;
+	CFStringRef router;
+	char buf[256];
+	
+	if (RouterInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
+	
+	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
+
+	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
+	dict = SCDynamicStoreCopyValue(session, key);
+	CFRelease(key);
+	if (!dict) return;	
+	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);		
+	if (!router) return;
+	if (!CFStringGetCString(router, buf, 256, kCFStringEncodingASCII))
+		LogMsg("ERROR: RouterChanged - CFStringGetCString");
+	else
+		{
+		m->uDNS_info.Router.type = mDNSAddrType_IPv4;
+		inet_aton(buf, (struct in_addr *)&m->uDNS_info.Router.ip.v4);
+		}
+	CFRelease(dict);
+	}
+
 mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
 	{
 	mDNS *m = context;
@@ -1742,7 +1772,7 @@ mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, v
 	// no-op if label & domain are unchanged
 	}
 
-mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)	
+mDNSlocal mStatus WatchForNetworkConfigChanges(mDNS *const m, const CFStringRef entity)	
     {
     CFStringRef			    key;
     CFMutableArrayRef		keyList;
@@ -1750,15 +1780,20 @@ mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)
     SCDynamicStoreRef 		session;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 	
-    session = SCDynamicStoreCreate(NULL, CFSTR("trackDNS"), DNSConfigChanged, &context);    
-    if (!session) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
+	if (entity == kSCEntNetDNS) 
+		session = SCDynamicStoreCreate(NULL, CFSTR("TrackDNS"), DNSConfigChanged, &context);    
+	else if (entity == kSCEntNetIPv4)
+	  session = SCDynamicStoreCreate(NULL, CFSTR("TrackRouter"), RouterChanged, &context); 		
+	else { LogMsg("ERROR: WatchForNetworkConfigChanges - bad entity"); return mStatus_UnknownErr; }
+			  
+	if (!session) {  LogMsg("ERROR: WatchForNetworkConfigChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
 
     keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-    if (!keyList) {  LogMsg("ERROR: WatchForDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
+    if (!keyList) {  LogMsg("ERROR: WatchForNetworkConfigChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
     
     // create a pattern that matches the global DNS dictionary key
-    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-    if (!key) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr;  }
+    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, entity);
+    if (!key) {  LogMsg("ERROR:  - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr;  }
     
     CFArrayAppendValue(keyList, key);
     CFRelease(key);
@@ -1775,8 +1810,10 @@ mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
     CFRelease(rls);
     
-	// get initial configuration
-    DNSConfigChanged(session, NULL, m);
+    // get initial configuration
+    if (entity == kSCEntNetDNS) 
+      DNSConfigChanged(session, NULL, m);
+    else RouterChanged(session, NULL, m);
     return mStatus_NoError;
     }
 
@@ -2117,6 +2154,7 @@ mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	
 	end:
 	fclose(f);
+	mDNS_GenerateGlobalFQDN(m);  // no-op if we didn't get a config
 	}
 
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
@@ -2250,8 +2288,12 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = WatchForPowerChanges(m);
 	if (err) return err;
 	
-	err = WatchForDNSChanges(m);
+	err = WatchForNetworkConfigChanges(m, kSCEntNetDNS);
+	if (err) return err;
 
+	err = WatchForNetworkConfigChanges(m, kSCEntNetIPv4);
+	if (err) return err;
+	
 	InitDNSConfig(m);
 
 	m->uDNS_info.ServiceRegDomain[0] = '\0';

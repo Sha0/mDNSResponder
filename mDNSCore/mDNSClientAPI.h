@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.179  2004/07/26 22:49:30  ksekar
+<rdar://problem/3651409>: Feature #9516: Need support for NATPMP in client
+
 Revision 1.178  2004/07/13 21:24:24  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -1013,7 +1016,8 @@ typedef struct ResourceRecord_struct ResourceRecord;
 typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
-
+typedef struct NATTraversalInfo_struct NATTraversalInfo;
+	
 // Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
@@ -1052,7 +1056,9 @@ enum
 	regState_Cancelled         = 6,     // update not sent, reg. cancelled by client
 	regState_TargetChange      = 7,     // host name change update pending
 	regState_Unregistered      = 8,     // not in any list
-	regState_Refresh           = 9      // outstanding refresh message
+	regState_Refresh           = 9,     // outstanding refresh message
+	regState_NATMap            = 10,
+	regState_Retry             = 11
 	};
 
 typedef mDNSu16 regState_t;
@@ -1066,6 +1072,7 @@ typedef struct
     mDNSIPPort   port;   // port on which server accepts dynamic updates
     mDNSBool     add;    // !!!KRS this should really be an enumerated state
     struct uDNS_AuthInfo *AuthInfo;  // authentication info (may be null)
+    NATTraversalInfo *NATinfo;
     mDNSBool     lease;  // dynamic update contains (should contain) lease option
     mDNSs32      expire; // expiration of lease (-1 for static)
 	} uDNS_RegInfo;
@@ -1153,15 +1160,14 @@ typedef struct
 	mDNSu8 _extradata[MaximumRDSize-InlineCacheRDSize];		// Glue on the necessary number of extra bytes
 	} LargeCacheRecord;
 
-typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
-
 typedef struct
 	{
-    AuthRecord RR_A;
-    mDNSBool registered;                // True if a name for the interface is globally registered
-    domainname regname;                 // the name registered to the update server
+    AuthRecord RR_A;                          // Copy of address record (may be mapped NAT address)
+    domainname name;                          // The name registered
 	} uDNS_NetworkInterfaceInfo;
 
+typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
+	
 // A NetworkInterfaceInfo_struct serves two purposes:
 // 1. It holds the address, PTR and HINFO records to advertise a given IP address on a given physical interface
 // 2. It tells mDNSCore which physical interfaces are available; each physical interface has its own unique InterfaceID.
@@ -1185,7 +1191,8 @@ struct NetworkInterfaceInfo_struct
 	AuthRecord RR_PTR;					// PTR (reverse lookup) record
 	AuthRecord RR_HINFO;
 
-    uDNS_NetworkInterfaceInfo uDNS_info;
+    uDNS_NetworkInterfaceInfo *uDNS_info;  // Storage allocated by core may persist beyond life of NetworkInterfaceInfo,
+                                           // since we need to asyncronously deregister the A records
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
@@ -1193,7 +1200,7 @@ struct NetworkInterfaceInfo_struct
 	mDNSBool        Advertise;			// False if you are only searching on this interface
 	mDNSBool        McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	};
-
+	
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
 struct ExtraResourceRecord_struct
 	{
@@ -1355,15 +1362,15 @@ struct DNSQuestion_struct
     mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
                                             // Set by mDNS.c in mDNS_StartBrowse.
 	};
-
+	
 typedef struct
 	{
-	// Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()
+    // Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()
 	// When the callback is invoked, ip, port, TXTlen and TXTinfo will have been filled in with the results learned from the network.
 	domainname      name;
 	mDNSInterfaceID InterfaceID;		// ID of the interface the response was received on
 	mDNSAddr        ip;					// Remote (destination) IP address where this service can be accessed
-	mDNSIPPort      port;				// Port where this service can be accessed
+    mDNSIPPort      port;				// Port where this service can be accessed
 	mDNSu16         TXTlen;
 	mDNSu8          TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
@@ -1389,9 +1396,72 @@ struct ServiceInfoQuery_struct
 	mDNSu32                       Answers;
 	ServiceInfo                  *info;
 	mDNSServiceInfoQueryCallback *ServiceInfoQueryCallback;
-	void                         *ServiceInfoQueryContext;
+    void                         *ServiceInfoQueryContext;
+	};
+	
+// ***************************************************************************
+#if 0
+#pragma mark - NAT Traversal structures and constants
+#endif
+	
+#define NATMAP_INIT_RETRY (mDNSPlatformOneSecond / 4)          // start at 250ms w/ exponential decay
+#define NATMAP_DEFAULT_LEASE (60 * 60)  // lease life in seconds
+#define NATMAP_MAX_TRIES 3
+#define NATMAP_VERS 0
+#define NATMAP_PORT 5351
+#define ADDR_REQUEST_PKTLEN 2
+#define ADDR_REPLY_PKTLEN 8
+#define PORTMAP_PKTLEN 12
+#define NATMAP_RESPONSE_MASK 128
+
+typedef enum
+	{
+	NATOp_AddrRequest = 0,
+	NATOp_MapUDP      = 1,
+	NATOp_MapTCP      = 2,
+	NATOp_MapAll      = 3	
+	} NATOp_t;
+
+typedef enum
+   	{
+   	NATErr_None = 0,
+   	NATErr_Vers = 1,
+   	NATErr_Refused = 2,
+   	NATErr_NetFail = 3,
+   	NATErr_Res = 4,
+   	NATErr_Opcode = 5
+   	} NATErr_t;
+
+typedef enum
+	{
+	NATState_Init,
+	NATState_Request,
+	NATState_Established,
+	NATState_Error,
+	NATState_Refresh
+	} NATState_t;
+// Note: we have no explicit "cancelled" state, where a service/interface is deregistered while we
+ // have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL
+	
+// Pass NULL for pkt on error (including timeout)
+typedef void (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, int len);
+
+struct NATTraversalInfo_struct
+	{
+    NATOp_t op;
+    NATResponseHndlr ReceiveResponse;
+    union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
+    mDNSIPPort PublicPort;
+    mDNSu8 request[PORTMAP_PKTLEN];  // buffer for request messages
+    int requestlen;                  // length of buffer used
+    mDNSs32 retry;                   // absolute time when we retry
+    mDNSs32 RetryInterval;           // delta between time sent and retry
+    int ntries;
+    NATState_t state;
+    NATTraversalInfo *next;
 	};
 
+	
 // ***************************************************************************
 #if 0
 #pragma mark - Main mDNS object, used to hold all the mDNS state
@@ -1415,8 +1485,10 @@ typedef struct
                                          //!!!KRS do the same for registration lists
     ServiceRecordSet *ServiceRegistrations;
     AuthRecord       *RecordRegistrations;
+    NATTraversalInfo *NATTraversals;
     mDNSu16          NextMessageID;
     mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list
+    mDNSAddr         Router;
     domainname       hostname;           // global name for dynamic registration of address records
     char             NameRegDomain[MAX_ESCAPED_DOMAIN_NAME];
                                          // domain in which above hostname is registered
@@ -1906,7 +1978,7 @@ extern mStatus DNSDigest_MD5(const DNSMessage *msg, mDNSu32 msglen, mDNSOpaque16
 // can raise the value of this constant to a suitable value (at the expense of increased memory usage).
 extern mStatus  mDNSPlatformInit        (mDNS *const m);
 extern void     mDNSPlatformClose       (mDNS *const m);
-extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
+extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
 mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
 
 extern void     mDNSPlatformLock        (const mDNS *const m);
@@ -2019,7 +2091,7 @@ extern void     mDNS_DeregisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);
 extern void     mDNS_DeregisterDNSList(mDNS *const m);
 extern mDNSBool mDNS_DNSRegistered(mDNS *const m);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
-extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
+extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
