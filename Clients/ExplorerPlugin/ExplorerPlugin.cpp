@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerPlugin.cpp,v $
+Revision 1.2  2004/06/24 20:09:39  shersche
+Change text
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:34:59  rpantos
 Move to Clients from mDNSWindows
 
@@ -115,7 +119,7 @@ BOOL WINAPI	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 	{
 		case DLL_PROCESS_ATTACH:
 			gInstance = inInstance;
-			debug_initialize( kDebugOutputTypeWindowsEventLog, "RendezvousBar", inInstance );
+			debug_initialize( kDebugOutputTypeWindowsEventLog, "DNSServices Bar", inInstance );
 			debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelTrace );
 			dlog( kDebugLevelTrace, "\nDllMain: process attach\n" );
 			
