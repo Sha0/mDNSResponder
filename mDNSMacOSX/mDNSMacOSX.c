@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.62  2003/03/28 01:55:44  cheshire
+Minor improvements to debugging messages
+
 Revision 1.61  2003/03/27 03:30:56  cheshire
 <rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
 Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
@@ -293,13 +296,13 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		}
 	if (msg.msg_controllen < sizeof(struct cmsghdr))
 		{
-		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg msg.msg_controllen %d < sizeof(struct cmsghdr) %d",
-			msg.msg_controllen, sizeof(struct cmsghdr));
+		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %d",
+			s, msg.msg_controllen, sizeof(struct cmsghdr));
 		return(-1);
 		}
 	if (msg.msg_flags & MSG_CTRUNC)
 		{
-		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg msg.msg_flags & MSG_CTRUNC");
+		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_flags & MSG_CTRUNC", s);
 		return(-1);
 		}
 	
@@ -364,12 +367,12 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		{
 		LogMsg("myCFSocketCallBack: s1 %d native socket %d", s1, skt);
 		LogMsg("myCFSocketCallBack: cfs %X, cfs53 %X, cfsv4 %X, cfsv6 %X", cfs, info->cfs53, info->cfsv4, info->cfsv6);
-		LogMsg("myCFSocketCallBack: skt53 %X, sktv4 %X, sktv6 %X", info->skt53, info->sktv4, info->sktv6);
+		LogMsg("myCFSocketCallBack: skt53 %d, sktv4 %d, sktv6 %d", info->skt53, info->sktv4, info->sktv6);
 		}
 
 	err = myrecvfrom(s1, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname);
 
-	if (err < 0) { LogMsg("myCFSocketCallBack recvfrom error %d errno %d", err, errno); return; }
+	if (err < 0) { LogMsg("myCFSocketCallBack recvfrom(%d) error %d errno %d", s1, err, errno); return; }
 
 	if (from.ss_family == AF_INET)
 		{
