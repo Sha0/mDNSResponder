@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.67  2004/08/13 23:46:58  cheshire
+"asyncronous" -> "asynchronous"
+
 Revision 1.66  2004/08/13 23:37:02  cheshire
 Now that we do both uDNS and mDNS, global replace "uDNS_info.hostname" with
 "uDNS_info.UnicastHostname" for clarity
@@ -200,7 +203,7 @@ Revision 1.13  2004/02/03 22:15:01  ksekar
 Fixed nameToAddr error check: don't abort state machine on nxdomain error.
 
 Revision 1.12  2004/02/03 19:47:36  ksekar
-Added an asyncronous state machine mechanism to uDNS.c, including
+Added an asynchronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
 in repository previously dissabled via "#if 0 //incomplete".  Codepath
 is currently unused, and will be called to create update records, etc.
@@ -263,7 +266,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define ubzero(x,y)        mDNSPlatformMemZero(x,y)
 #define umemcpy(x, y, l)   mDNSPlatformMemCopy(y, x, l)  // uses memcpy(2) arg ordering
 
-// Asyncronous operation types
+// Asynchronous operation types
 
 typedef enum
 	{
@@ -2170,7 +2173,7 @@ mDNSlocal mStatus startInternalQuery(DNSQuestion *q, mDNS *m, InternalResponseHn
 
 /* startGetZoneData
  *
- * asyncronously find the address of the nameserver for the enclosing zone for a given domain name,
+ * Asynchronously find the address of the nameserver for the enclosing zone for a given domain name,
  * i.e. the server to which update and LLQ requests will be sent for a given name.  Once the address is
  * derived, it will be passed to the callback, along with a context pointer.  If the zone cannot
  * be determined or if an error occurs, an all-zeros address will be passed and a message will be

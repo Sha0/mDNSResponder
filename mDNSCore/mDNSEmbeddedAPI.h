@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.188  2004/08/13 23:46:58  cheshire
+"asyncronous" -> "asynchronous"
+
 Revision 1.187  2004/08/13 23:37:02  cheshire
 Now that we do both uDNS and mDNS, global replace "uDNS_info.hostname" with
 "uDNS_info.UnicastHostname" for clarity
@@ -187,7 +190,7 @@ Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
 
 Revision 1.148  2004/02/03 19:47:36  ksekar
-Added an asyncronous state machine mechanism to uDNS.c, including
+Added an asynchronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
 in repository previously dissabled via "#if 0 //incomplete".  Codepath
 is currently unused, and will be called to create update records, etc.
@@ -2079,7 +2082,7 @@ extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mD
 // reading on the socket (indicated by the ConnectionEstablished parameter being false.)  If the connection
 // asynchronously fails, the TCPConnectionCallback should be invoked as usual, with the error being
 // returned in subsequent calls to PlatformReadTCP or PlatformWriteTCP.  (This allows for platforms
-// with limited asyncronous error detection capabilities.)  PlatformReadTCP and PlatformWriteTCP must
+// with limited asynchronous error detection capabilities.)  PlatformReadTCP and PlatformWriteTCP must
 // return the number of bytes read/written, 0 if the call would block, and -1 if an error.
 // PlatformTCPCloseConnection must close the connection to the peer and remove the descriptor from the
 // event loop.  CloseConnectin may be called at any time, including in a ConnectionCallback.

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.16  2004/08/13 23:46:58  cheshire
+"asyncronous" -> "asynchronous"
+
 Revision 1.15  2004/08/10 23:19:14  ksekar
 <rdar://problem/3722542>: DNS Extension daemon for Wide Area Service Discovery
 Moved routines/constants to allow extern access for garbage collection daemon
@@ -50,7 +53,7 @@ Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
 
 Revision 1.7  2004/02/03 19:47:36  ksekar
-Added an asyncronous state machine mechanism to uDNS.c, including
+Added an asynchronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
 in repository previously dissabled via "#if 0 //incomplete".  Codepath
 is currently unused, and will be called to create update records, etc.

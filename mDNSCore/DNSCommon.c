@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.44  2004/08/13 23:46:58  cheshire
+"asyncronous" -> "asynchronous"
+
 Revision 1.43  2004/08/12 02:55:46  ksekar
 Fix param order error moving putPrereqNameNotInUse from uDNS.c using
 ustrcpy macro to DNSCommon.c using mDNSPlatformStrCopy().
@@ -132,7 +135,7 @@ Revision 1.11  2004/02/03 22:35:34  cheshire
 <rdar://problem/3548256>: Should not allow empty string for resolve domain
 
 Revision 1.10  2004/02/03 19:47:36  ksekar
-Added an asyncronous state machine mechanism to uDNS.c, including
+Added an asynchronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
 in repository previously dissabled via "#if 0 //incomplete".  Codepath
 is currently unused, and will be called to create update records, etc.
