@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.133  2004/12/02 18:37:52  ksekar
+<rdar://problem/3758233> Registering with port number zero should not create a port mapping
+
 Revision 1.132  2004/12/01 20:57:19  ksekar
 <rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
 
@@ -3812,7 +3815,7 @@ mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs)
 	
 	info->lease = mDNStrue;
 
-	if (MapServicePort(m))
+	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && MapServicePort(m))
 		{
 		// !!!KRS if interface is already in NATState_Legacy, don't try NAT-PMP
 		info->state = regState_NATMap;
