@@ -439,8 +439,9 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemWillPowerOff: debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true); break;
 		case kIOMessageSystemWillSleep:    debugf("PowerChanged got kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break;
 		case kIOMessageSystemHasPoweredOn: debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break;
-		default:                           debugf("PowerChanged got unknown message %X", messageType);                       IOAllowPowerChange(PowerConnection, (long)messageArgument); break;
+		default:                           debugf("PowerChanged got unknown message %X", messageType); break;                       
 		}
+        IOAllowPowerChange(PowerConnection, (long)messageArgument);
 	}
 
 mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
