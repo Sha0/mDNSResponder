@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServiceBrowser.cs,v $
+Revision 1.3  2004/09/11 00:38:14  shersche
+DNSService APIs now assume port in host format. Check for null text record in resolve callback.
+
 Revision 1.2  2004/07/22 23:15:25  shersche
 Fix service names for teleport, tftp, and bootps
 
@@ -532,23 +535,26 @@ namespace DNSServiceBrowser_NET
 
 			serviceTextField.Items.Clear();
 		
-			for (ushort idx = 0; idx < DNSService.TextRecord.GetCount(resolveData.TxtRecord); idx++)
+			if (resolveData.TxtRecord != null)
 			{
-				String	key;
-				Byte[]	bytes;
-				
-				bytes	= DNSService.TextRecord.GetItemAtIndex(resolveData.TxtRecord, idx, out key);
-
-				if (key.Length > 0)
+				for (ushort idx = 0; idx < DNSService.TextRecord.GetCount(resolveData.TxtRecord); idx++)
 				{
-					String	val = "";
+					String	key;
+					Byte[]	bytes;
+				
+					bytes	= DNSService.TextRecord.GetItemAtIndex(resolveData.TxtRecord, idx, out key);
 
-					if (bytes != null)
+					if (key.Length > 0)
 					{
-						val = Encoding.ASCII.GetString(bytes, 0, bytes.Length);
-					}
+						String	val = "";
 
-					serviceTextField.Items.Add(key + "=" + val);
+						if (bytes != null)
+						{
+							val = Encoding.ASCII.GetString(bytes, 0, bytes.Length);
+						}
+
+						serviceTextField.Items.Add(key + "=" + val);
+					}
 				}
 			}
 		}
@@ -714,7 +720,7 @@ namespace DNSServiceBrowser_NET
 				data.InterfaceIndex = interfaceIndex;
 				data.FullName		= fullName;
 				data.HostName		= hostName;
-				data.Port			= (ushort) System.Net.IPAddress.NetworkToHostOrder((short) port);;
+				data.Port			= port;
 				data.TxtRecord		= txtRecord;
 	
 				Invoke(resolveServiceCallback, new Object[]{data});
