@@ -18,8 +18,7 @@
  * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- */
-/*
+
     File:       mDNS.c
 
     Contains:   Implementation of the mDNS core itself.
@@ -65,9 +64,33 @@
                 (INCLUDING NEGLIGENCE), STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN
                 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+ * This code is completely 100% portable C. It does not depend on any external header files
+ * from outside the mDNS project -- all the types it expects to find are defined right here.
+ * 
+ * The previous point is very important: This file does not depend on any external
+ * header files. It should complile on *any* platform that has a C compiler, without
+ * making *any* assumptions about availability of so-called "standard" C functions,
+ * routines, or types (which may or may not be present on any given platform).
+
+ * Formatting notes:
+ * This code follows the "Whitesmiths style" C indentation rules. Plenty of discussion
+ * on C indentation can be found on the web, such as <http://www.kafejo.com/komp/1tbs.htm>,
+ * but for the sake of brevity here I will say just this: Curly braces are not syntactially
+ * part of an "if" statement; they are the beginning and ending markers of a compound statement;
+ * therefore common sense dictates that if they are part of a compound statement then they
+ * should be indented to the same level as everything else in that compound statement.
+ * Indenting curly braces at the same level as the "if" implies that curly braces are
+ * part of the "if", which is false. (This is as misleading as people who write "char* x,y;"
+ * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
+ * understand why variable y is not of type "char*" just proves the point that poor code
+ * layout leads people to unfortunate misunderstandings about how the C language really works.)
+
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.86  2003/03/06 20:44:33  cheshire
+Comment tidyup
+
 Revision 1.85  2003/03/05 03:38:35  cheshire
 Bug #: 3185731 Bogus error message in console: died or deallocated, but no record of client can be found!
 Fixed by leaving client in list after conflict, until client explicitly deallocates
@@ -139,7 +162,6 @@ Revision 1.70  2003/01/23 19:00:20  cheshire
 Protect against infinite loops in mDNS_Execute
 
 Revision 1.69  2003/01/21 22:56:32  jgraessl
-
 Bug #: 3124348  service name changes are not properly handled
 Submitted by: Stuart Cheshire
 Reviewed by: Joshua Graessley
@@ -159,7 +181,6 @@ Merged changes for the following fixes in to top of tree:
 3124352  announcements sent in pairs, failing chattiness test
 
 Revision 1.65  2002/12/23 22:13:28  jgraessl
-
 Reviewed by: Stuart Cheshire
 Initial IPv6 support for mDNSResponder.
 
@@ -190,37 +211,7 @@ Change mDNS_AdvertiseLocalAddresses to be a parameter to mDNS_Init()
 
 Revision 1.56  2002/09/16 19:44:17  cheshire
 Merge in license terms from Quinn's copy, in preparation for Darwin release
-
 */
-
-// ***************************************************************************
-// mDNS.c
-// This file defines all of mDNS, including
-// mDNS Service Discovery, mDNS Responder, and mDNS Searcher.
-//
-// This code is completely 100% portable C. It does not depend on any external header files
-// from outside the mDNS project -- all the types it expects to find are defined right here.
-//
-// The previous point is very important: This file does not depend on any external
-// header files. It should complile on *any* platform that has a C compiler, without
-// making *any* assumptions about availability of so-called "standard" C functions,
-// routines, or types (which may or may not be present on any given platform).
-// ***************************************************************************
-
-/*
- * Formatting notes:
- * This code follows the "Whitesmiths style" C indentation rules. Plenty of discussion
- * on C indentation can be found on the web, such as <http://www.kafejo.com/komp/1tbs.htm>,
- * but for the sake of brevity here I will say just this: Curly braces are not syntactially
- * part of an "if" statement; they are the beginning and ending markers of a compound statement;
- * therefore common sense dictates that if they are part of a compound statement then they
- * should be indented to the same level as everything else in that compound statement.
- * Indenting curly braces at the same level as the "if" implies that curly braces are
- * part of the "if", which is false. (This is as misleading as people who write "char* x,y;"
- * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
- * understand why variable y is not of type "char*" just proves the point that poor code
- * layout leads people to unfortunate misunderstandings about how the C language really works.)
- */
 
 #include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"		// Defines the interface required of the supporting layer below
