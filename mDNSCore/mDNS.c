@@ -68,6 +68,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.82  2003/03/04 23:38:29  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Only set rr->CRActiveQuestion to point to the
+currently active representative of a question set
+
 Revision 1.81  2003/02/21 03:35:34  cheshire
 Bug #: 3179007 mDNSResponder needs to include AAAA records in additional answer section
 
@@ -2307,7 +2312,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 		rr->RecordType    = kDNSRecordTypeVerified;
 		rr->AnnounceCount = DefaultAnnounceCountForRecordType(rr->RecordType);
 		debugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
-		if (!rr->Acknowledged && rr->Callback)	
+		if (!rr->Acknowledged && rr->Callback)
 			{
 			// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 			// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -2611,7 +2616,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 
 	rr->LastUsed = timenow;
 	rr->UseCount++;
-	rr->CRActiveQuestion = q;
+	if (ActiveQuestion(q)) rr->CRActiveQuestion = q;
 
 	// CAUTION: MUST NOT do anything more with q after calling q->Callback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -3048,7 +3053,7 @@ mDNSlocal mDNSBool AddRecordToResponseList(ResourceRecord **nrp,
 #define MustSendRecord(RR) ((RR)->NR_AnswerTo || (RR)->NR_AdditionalTo)
 
 mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const mDNSu8 *const end,
-	const mDNSOpaqueID InterfaceID, DNSMessage *const reply, ResourceRecord  *ResponseRecords)
+	const mDNSOpaqueID InterfaceID, DNSMessage *const reply, ResourceRecord *ResponseRecords)
 	{
 	const mDNSu8    *const limit     = reply->data + sizeof(reply->data);
 	const mDNSu8    *ptr             = query->data;
