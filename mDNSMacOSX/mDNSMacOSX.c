@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.309  2005/03/23 05:53:29  cheshire
+Fix %s where it should have been %##s in debugf & LogMsg calls
+
 Revision 1.308  2005/03/09 00:48:44  cheshire
 <rdar://problem/4015157> QU packets getting sent too early on wake from sleep
 Move "m->p->NetworkChanged = 0;" line from caller to callee
@@ -2588,7 +2591,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 			{
 			if (SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
 				{
-				debugf("Deregistering PTR %s -> %s", ptr->ar.resrec.name->c, ptr->ar.resrec.rdata->u.name.c);
+				debugf("Deregistering PTR %##s -> %##s", ptr->ar.resrec.name->c, ptr->ar.resrec.rdata->u.name.c);
                 dereg = &ptr->ar;
 				if (prev) prev->next = ptr->next;
 				else slElem->AuthRecs = ptr->next;
@@ -2755,7 +2758,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 				{
 				AuthRecord *dereg = &arList->ar;
 				arList = arList->next;
-				debugf("Deregistering PTR %s -> %s", dereg->resrec.name->c, dereg->resrec.rdata->u.name.c);
+				debugf("Deregistering PTR %##s -> %##s", dereg->resrec.name->c, dereg->resrec.rdata->u.name.c);
 				err = mDNS_Deregister(m, dereg);
 				if (err) LogMsg("ERROR: RegisterSearchDomains mDNS_Deregister returned %d", err);
 				}
@@ -3304,7 +3307,7 @@ mDNSlocal void FoundLegacyBrowseDomain(mDNS *const m, DNSQuestion *question, con
 			prev = ptr;
 			ptr = ptr->next;
 			}
-		LogMsg("FoundLegacyBrowseDomain: Got remove event for domain %s not in list", answer->rdata->u.name.c);
+		LogMsg("FoundLegacyBrowseDomain: Got remove event for domain %##s not in list", answer->rdata->u.name.c);
 		}
 	}
 
