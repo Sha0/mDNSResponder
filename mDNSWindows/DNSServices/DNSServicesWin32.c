@@ -1,5 +1,5 @@
 /*
-	$Id: DNSServicesWin32.c,v 1.1 2002/09/20 02:08:04 cheshire Exp $
+	$Id: DNSServicesWin32.c,v 1.2 2002/09/20 05:58:02 bradley Exp $
 
 	Contains:	DNS Services platform plugin for Win32.
 	
@@ -7,7 +7,7 @@
 	
     Version:    Rendezvous, September 2002
 
-    Copyright:  Copyright (c) 2002 by Apple Computer, Inc., All Rights Reserved.
+    Copyright:  Copyright (C) 2002 by Apple Computer, Inc., All Rights Reserved.
 
     Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple Computer, Inc.
                 ("Apple") in consideration of your agreement to the following terms, and your
@@ -47,11 +47,8 @@
     Change History (most recent first):
     
         $Log: DNSServicesWin32.c,v $
-        Revision 1.1  2002/09/20 02:08:04  cheshire
-        Added rendezvous.exe Windows command-line tool
-
-        Revision 1.8  2002/09/18 11:12:48  bradley
-        Added Apple license and cleaned up header for public distribution.
+        Revision 1.2  2002/09/20 05:58:02  bradley
+        DNS Services for Windows
 
 */
 
@@ -68,6 +65,11 @@
 	#pragma warning( disable:4127 )		// Disable "conditional expression is constant" warning for debug macros.
 #endif
 
+#define	WIN32_WINDOWS		0x0401		// Needed to use waitable timers.
+#define	_WIN32_WINDOWS		0x0401		// Needed to use waitable timers.
+#define	WIN32_LEAN_AND_MEAN				// Needed to avoid redefinitions by Windows interfaces.
+
+#include	<stdlib.h>
 #include	<string.h>
 
 #include	"DNSServices.h"
