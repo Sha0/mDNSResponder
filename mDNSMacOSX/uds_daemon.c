@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.22  2003/08/19 16:03:55  ksekar
+Bug #: <rdar://problem/3380097>: ER: SIGINFO dump should include resolves started by DNSServiceQueryRecord
+Check termination_context for NULL before dereferencing.
+
 Revision 1.21  2003/08/19 05:39:43  cheshire
 <rdar://problem/3380097> SIGINFO dump should include resolves started by DNSServiceQueryRecord
 
@@ -406,23 +410,24 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
     }
 
 void udsserver_info(void)
-	{
-	request_state *req;
-	for (req = all_requests; req; req=req->next)
-		{
-		void *t = req->termination_context;
-		if (req->terminate == regservice_termination_callback)
-			LogMsg("DNSServiceRegister         %##s", ((registered_service *)   t)->srs->RR_SRV.resrec.name.c);
-		else if (req->terminate == browse_termination_callback)
-			LogMsg("DNSServiceBrowse           %##s", ((DNSQuestion *)          t)->qname.c);
-		else if (req->terminate == resolve_termination_callback)
-			LogMsg("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->srv->question.qname.c);
-		else if (req->terminate == question_termination_callback)
-			LogMsg("DNSServiceQueryRecord      %##s", ((DNSQuestion *)          t)->qname.c);
-		else if (req->terminate == enum_termination_callback)
-			LogMsg("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
-		}
-	}
+    {
+    request_state *req;
+    for (req = all_requests; req; req=req->next)
+        {
+        void *t = req->termination_context;
+        if (!t) continue;
+        if (req->terminate == regservice_termination_callback)
+            LogMsg("DNSServiceRegister         %##s", ((registered_service *)   t)->srs->RR_SRV.resrec.name.c);
+        else if (req->terminate == browse_termination_callback)
+            LogMsg("DNSServiceBrowse           %##s", ((DNSQuestion *)          t)->qname.c);
+        else if (req->terminate == resolve_termination_callback)
+            LogMsg("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->srv->question.qname.c);
+        else if (req->terminate == question_termination_callback)
+            LogMsg("DNSServiceQueryRecord      %##s", ((DNSQuestion *)          t)->qname.c);
+        else if (req->terminate == enum_termination_callback)
+            LogMsg("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
+        }
+    }
 
 void udsserver_handle_configchange(void)
     {
