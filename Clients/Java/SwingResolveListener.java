@@ -23,11 +23,11 @@
     Change History (most recent first):
 
 $Log: SwingResolveListener.java,v $
+Revision 1.2  2004/06/14 23:46:55  cheshire
+Recreate CVS state
+
 Revision 1.1  2004/06/14 23:46:26  cheshire
 First checkin
-Bug #:
-Submitted by:
-Reviewed by:
 
  */
 
