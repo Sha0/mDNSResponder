@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.75  2003/01/29 01:47:40  cheshire
+Rename 'Active' to 'CRActive' or 'InterfaceActive' for improved clarity
+
 Revision 1.74  2003/01/28 05:26:25  cheshire
 Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
 Add 'Active' flag for interfaces
@@ -1246,7 +1249,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->LastUsed          = 0;			// Not strictly relevant for a local record
 	rr->UseCount          = 0;			// Not strictly relevant for a local record
 	rr->UnansweredQueries = 0;			// Not strictly relevant for a local record
-	rr->Active            = mDNSfalse;	// Not strictly relevant for a local record
+	rr->CRActive          = mDNSfalse;	// Not strictly relevant for a local record
 	rr->NewData           = mDNSfalse;	// Not strictly relevant for a local record
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -1749,7 +1752,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->LastUsed          = timenow;
 	rr->UseCount          = 0;
 	rr->UnansweredQueries = 0;
-	rr->Active            = mDNSfalse;
+	rr->CRActive          = mDNSfalse;
 	rr->NewData           = mDNStrue;
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -2193,7 +2196,7 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 	baseheader = response.h;
 
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
-		if (intf->Active)
+		if (intf->InterfaceActive)
 			{
 			// Restore the header to the counts for the generic records
 			response.h = baseheader;
@@ -2491,7 +2494,7 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 		if (NextDupSuppress) debugf("SendQueries: NextDupSuppress still set... Will continue in next packet");
 
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Active)
+			if (intf->InterfaceActive)
 				{
 				ResourceRecord *NextDupSuppress2 = mDNSNULL;
 				do
@@ -4143,7 +4146,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		p=&(*p)->next;
 		}
 
-	set->Active = Active;
+	set->InterfaceActive = Active;
 	if (Active)
 		{
 		debugf("mDNS_RegisterInterface: InterfaceID/type %X/%d not represented in list; marking active for now",
@@ -4255,7 +4258,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// Flush any cache entries we received on this interface
 	FlushCacheRecords(m, set->InterfaceID, timenow);
 
-	if (set->Active)
+	if (set->InterfaceActive)
 		{
 		NetworkInterfaceInfo *i;
 		for (i=m->HostInterfaces; i; i=i->next)
@@ -4265,7 +4268,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			{
 			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID/type %X/%d exists; making it active",
 				set->InterfaceID, set->ip.type);
-			i->Active = mDNStrue;
+			i->InterfaceActive = mDNStrue;
 			}
 		else
 			{

@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.30  2003/01/29 01:47:08  cheshire
+Rename 'Active' to 'CRActive' or 'InterfaceActive' for improved clarity
+
 Revision 1.29  2003/01/28 05:23:43  cheshire
 Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
 Add 'Active' flag for interfaces
@@ -372,7 +375,7 @@ struct ResourceRecord_struct
 	mDNSs32         LastUsed;			// CR: In platform time units
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
 	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
-	mDNSBool        Active;				// CR: Set if there is currently a question referencing this answer
+	mDNSBool        CRActive;			// CR: Set if there is currently a question referencing this answer
 	mDNSBool        NewData;			// CR: Set if this is a record we just received
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -398,8 +401,8 @@ struct NetworkInterfaceInfo_struct
 	mDNSOpaqueID   InterfaceID;
 	mDNSAddr       ip;
 	mDNSu32        scope_id;
-	mDNSBool       Active;			// Set Active true if interface is sending & receiving packets
-									// Set Active false if interface is here to represent an address with A and/or AAAA records,
+	mDNSBool       InterfaceActive;	// Set InterfaceActive true if interface is sending & receiving packets
+									// Set InterfaceActive false if interface is here to represent an address with A and/or AAAA records,
 									// but there is already an earlier representative for this physical interface
 									// which will be used for the actual sending & receiving packets
 									// (this status may change as interfaces are added and removed)
