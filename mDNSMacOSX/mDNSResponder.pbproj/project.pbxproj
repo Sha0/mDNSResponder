@@ -33,7 +33,7 @@
 			buildSettings = {
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -DmDNSResponderVersion=$(MVERS)";
+				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS)";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = uds_test;
@@ -678,7 +678,7 @@
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				INSTALL_PATH = /usr/bin;
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -DmDNSResponderVersion=$(MVERS)";
+				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS)";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNS;
