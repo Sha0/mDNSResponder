@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.12  2005/01/05 01:06:12  shersche
+<rdar://problem/3841218> Strip the first substring off the product key if an initial match can't be found with the whole product key.
+Bug #: 3841218
+
 Revision 1.11  2004/12/29 18:53:38  shersche
 <rdar://problem/3725106>
 <rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
@@ -348,6 +352,7 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 						//
 						// get rid of all delimiters
 						//
+						key.Trim();
 						val.Remove('"');
 	
 						//
@@ -511,7 +516,24 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					CString name		= s.Tokenize(L"=",curPos);
 					CString description = s.Tokenize(L"=",curPos);
 					
-					name.Remove('"');
+					if (name.Find('%') == 0)
+					{
+						StringMap::iterator it;
+
+						name.Remove('%');
+
+						it = strings.find(name);
+
+						if (it != strings.end())
+						{
+							name = it->second;
+						}
+					}
+					else
+					{
+						name.Remove('"');
+					}
+
 					name.Trim();
 					description.Trim();
 					
@@ -520,7 +542,7 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					//
 					if (checkForDuplicateModels == true)
 					{
-						if ( MatchModel( iter->second, name ) != NULL )
+						if ( MatchModel( iter->second, ConvertToModelName( name ) ) != NULL )
 						{
 							continue;
 						}
@@ -914,8 +936,8 @@ CThirdPage::MatchManufacturer( Manufacturers & manufacturers, const CString & na
 
 		//
 		// now try and find the lowered string in the name passed in.
-		// 
-		if (name.Find(lower) == 0)
+		//
+		if (name.Find(lower) != -1)
 		{
 			return iter->second;
 		}
@@ -953,6 +975,22 @@ CThirdPage::MatchModel(Manufacturer * manufacturer, const CString & name)
 		if (lowered.Find( name ) != -1)
 		{
 			return model;
+		}
+
+		//
+		// <rdar://problem/3841218>
+		// try removing the first substring and search again
+		//
+
+		if ( name.Find(' ') != -1 )
+		{
+			CString altered = name;
+			altered.Delete( 0, altered.Find(' ') + 1 );
+
+			if ( lowered.Find( altered ) != -1 )
+			{
+				return model;
+			}
 		}
 	}
 
