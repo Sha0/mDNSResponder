@@ -584,6 +584,14 @@ int main(int argc, char **argv)
 		printf("Using LocalOnly\n");
 		}
 
+	if (argc > 2 && !strcmp(argv[1], "-i") && atoi(argv[2]))
+		{
+		opinterface = atoi(argv[2]);
+		argc -= 2;
+		argv += 2;
+		printf("Using interface %d\n", opinterface);
+		}
+
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
 	operation = getfirstoption( argc, argv, "EFBLQRPAUNTMI", &optind);
 	if (operation == -1) goto Fail;
