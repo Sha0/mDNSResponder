@@ -1297,7 +1297,7 @@ mDNSexport int main(int argc, char **argv)
 		fclose(fp);
 		}
 	
-	LogMsg("mDNSResponder (%s %s) starting", __DATE__, __TIME__);
+	LogMsg("%s", "mDNSResponder (" __DATE__ " " __TIME__ ") starting");
 	status = start(NULL, NULL);
 
 	if (status == 0)
