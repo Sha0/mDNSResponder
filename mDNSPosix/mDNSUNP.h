@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.13  2004/03/20 05:37:09  cheshire
+Fix contributed by Terry Lambert & Alfred Perlstein:
+Don't use uint8_t -- it requires stdint.h, which doesn't exist on FreeBSD 4.x
+
 Revision 1.12  2004/01/28 21:12:15  cheshire
 Reconcile mDNSIPv6Support & HAVE_IPV6 into a single flag (HAVE_IPV6)
 
@@ -67,7 +71,6 @@ First checkin
 #ifndef __mDNSUNP_h
 #define __mDNSUNP_h
 
-#include <stdint.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <net/if.h>
@@ -113,7 +116,7 @@ struct my_in_pktinfo {
 /*	2. the destination addres of the received datagram (from the IP_RECVDSTADDR socket option, and */
 /*	3. the index of the interface on which the datagram was received (the IP_RECVIF socket option).' */
 extern ssize_t recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
-               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp, uint8_t *ttl);
+               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp, u_char *ttl);
 
 struct ifi_info {
   char    ifi_name[IFI_NAME];   /* interface name, null terminated */

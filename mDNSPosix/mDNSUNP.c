@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.16  2004/03/20 05:37:09  cheshire
+Fix contributed by Terry Lambert & Alfred Perlstein:
+Don't use uint8_t -- it requires stdint.h, which doesn't exist on FreeBSD 4.x
+
 Revision 1.15  2004/02/14 01:09:45  rpantos
 Just use HAVE_IPV6 rather than defined(HAVE_IPV6).
 
@@ -301,7 +305,7 @@ free_ifi_info(struct ifi_info *ifihead)
 
 ssize_t 
 recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
-               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp, uint8_t *ttl)
+               struct sockaddr *sa, socklen_t *salenptr, struct my_in_pktinfo *pktp, u_char *ttl)
 {
     struct msghdr   msg;
     struct iovec    iov[1];
