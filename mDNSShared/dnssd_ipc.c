@@ -23,6 +23,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.11  2004/06/18 04:56:09  rpantos
+casting goodness
+
 Revision 1.10  2004/06/12 01:08:14  cheshire
 Changes for Windows compatibility
 
@@ -51,7 +54,7 @@ void put_long(const uint32_t l, char **ptr)
 
 uint32_t get_long(char **ptr)
 	{
-	uint8_t *p = *ptr;
+	uint8_t *p = (uint8_t*) *ptr;
 	*ptr += sizeof(uint32_t);
 	return((uint32_t) ((uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]));
 	}
@@ -65,7 +68,7 @@ void put_short(uint16_t s, char **ptr)
 
 uint16_t get_short(char **ptr)
 	{
-	uint8_t *p = *ptr;
+	uint8_t *p = (uint8_t*) *ptr;
 	*ptr += sizeof(uint16_t);
 	return((uint16_t) ((uint16_t)p[0] << 8 | p[1]));
 	}
