@@ -131,7 +131,10 @@ int main(int argc, char ** argv)
 
 		if (client) port = DNSServiceDiscoveryMachPort(client);
 		if (!port)
-			fprintf(stderr, "Could not connect to mDNSResponder daemon\n");
+			{
+            fprintf(stderr, "Could not connect to mDNSResponder daemon\n");
+            return (-1);
+            }
 		else
 			{
 			CFMachPortContext context = { 0, 0, NULL, NULL, NULL };
