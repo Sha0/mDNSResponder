@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.14  2004/07/29 19:27:15  ksekar
+NAT-PMP Support - minor fixes and cleanup
+
 Revision 1.13  2004/07/29 02:03:35  ksekar
 Delete unused #define and structure field
 
@@ -108,7 +111,7 @@ extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *
 const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
 const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 
-extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, int len);
+extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 	
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);

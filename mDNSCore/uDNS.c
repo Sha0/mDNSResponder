@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.59  2004/07/29 19:27:15  ksekar
+NAT-PMP Support - minor fixes and cleanup
+
 Revision 1.58  2004/07/27 07:35:38  shersche
 fix syntax error, variables declared in the middle of a block
 
@@ -495,13 +498,14 @@ mDNSlocal mDNSBool IsPrivateAddr(mDNSv4Addr ip)
 			(b[0] == 192 && b[1] == 168));               // 192.168/16
 	}
 
-mDNSlocal mDNSBool DomainContainsLabelString(domainname *d, char *str)
+mDNSlocal mDNSBool DomainContainsLabelString(const domainname *d, const char *str)
 	{
-	domainlabel *l, buf;
+	const domainlabel *l;
+	domainlabel buf;
 
 	if (!MakeDomainLabelFromLiteralString(&buf, str)) return mDNSfalse;
 
-	for (l = (domainlabel *)d; l->c[0]; l = (domainlabel *)(l->c + l->c[0]+1))
+	for (l = (const domainlabel *)d; l->c[0]; l = (const domainlabel *)(l->c + l->c[0]+1))
 		if (SameDomainLabel(l->c, buf.c)) return mDNStrue;
 	return mDNSfalse;
 	}
@@ -539,7 +543,7 @@ mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 		prev = ptr;
 		ptr = ptr->next;
 		}
-	if (!ptr)  LogMsg("FreeNATInfo: NATTraversalInfo not found in list");
+	LogMsg("FreeNATInfo: NATTraversalInfo not found in list");
 	return mDNSfalse;
 	}
 
@@ -553,29 +557,34 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	if (info->state != NATState_Request && info->state != NATState_Refresh)
 		{ LogMsg("SendNATMsg: Bad state %d", info->state); return; }
 	
+	// send msg
 	dst.type = u->Router.type;
 	dst.ip.v4 = u->Router.ip.v4;
 	dstport = mDNSOpaque16fromIntVal(NATMAP_PORT);
 	err = mDNSPlatformSendUDP(m, info->request, info->request+info->requestlen, 0, &dst, dstport);
-	if (info->ntries) info->RetryInterval *= 2;
-	else              info->RetryInterval  = NATMAP_INIT_RETRY;
+	if (!err) (info->ntries++);  // don't increment attempt counter if the send failed
+
+	// set retry
+	if (info->RetryInterval < NATMAP_INIT_RETRY) info->RetryInterval = NATMAP_INIT_RETRY;
+	else if (info->RetryInterval * 2 > NATMAP_MAX_RETRY) info->RetryInterval = NATMAP_MAX_RETRY;
+	else info->RetryInterval *= 2;
 	info->retry = mDNSPlatformTimeNow() + info->RetryInterval;
-	if (!err) (info->ntries++);
+
 	}
 
 
-mDNSlocal void RecvNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, int len)
+mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
 	NATErr_t err;
 	AuthRecord *rr;
 
 	if (n->state != NATState_Request)
-		{ LogMsg("RecvNATAddrResponse: bad state %d", n->state);  return; }
+		{ LogMsg("ReceiveNATAddrResponse: bad state %d", n->state);  return; }
 	
 	rr = n->reg.RecordRegistration;
 	if (!rr)
 		{
-		LogMsg("RecvNATAddrResponse: registration cancelled");
+		LogMsg("ReceiveNATAddrResponse: registration cancelled");
 		FreeNATInfo(m, n);
 		return;
 		}
@@ -585,7 +594,7 @@ mDNSlocal void RecvNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, in
 	if (len < ADDR_REPLY_PKTLEN) { LogMsg("ReceiveNATAddrResponse: response too short (%d bytes)", len); goto error; }
 	if (pkt[0] != NATMAP_VERS) { LogMsg("ReceiveNATAddrResponse: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto error; }
 	if (pkt[1] != (NATOp_AddrRequest | NATMAP_RESPONSE_MASK)) { LogMsg("ReceiveNATAddrResponse: bad response code %d", pkt[1]); goto error; }
-	err = pkt[2] << 8 | pkt[3] ;
+	err = (int)pkt[2] << 8 | pkt[3] ;
 	if (err) { LogMsg("ReceiveAddrResponse: received error %d", err);  goto error; }
 	LogMsg("Received public IP address %d.%d.%d.%d from NAT.", pkt[4], pkt[5], pkt[6], pkt[7]);
 
@@ -608,7 +617,7 @@ mDNSlocal void StartGetPublicAddr(mDNS *m, uDNS_NetworkInterfaceInfo *ifInfo)
 	mDNSu8 *msg;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
-	NATTraversalInfo *info = AllocNATInfo(u, NATOp_AddrRequest, RecvNATAddrResponse);
+	NATTraversalInfo *info = AllocNATInfo(u, NATOp_AddrRequest, ReceiveNATAddrResponse);
 	if (!info) { uDNS_RegisterRecord(m, &ifInfo->RR_A); return; } 
 	ifInfo->RR_A.uDNS_info.NATinfo = info;
 	info->reg.RecordRegistration = &ifInfo->RR_A;
@@ -638,7 +647,7 @@ mDNSlocal void RefreshNATMapping(NATTraversalInfo *n, mDNS *m)
 	SendNATMsg(n, m);
 	}
 
-mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, int len)
+mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
 	NATErr_t err;
 	ServiceRecordSet *srs;
@@ -646,7 +655,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, in
 	mDNSOpaque32 lease;
 	
 	if (n->state != NATState_Request && n->state != NATState_Refresh)
-		{ LogMsg("RecvNATAddrResponse: bad state %d", n->state);  return; }
+		{ LogMsg("ReceivePortMapReply: bad state %d", n->state);  return; }
 
 	srs = n->reg.ServiceRegistration;
 	if (!srs)
@@ -661,7 +670,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, in
 	if (len < PORTMAP_PKTLEN) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); goto register_service; }
 	if (pkt[0] != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto register_service; }
 	if (pkt[1] != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto register_service; }
-	err = pkt[2] << 8 | pkt[3] ;
+	err = (int)pkt[2] << 8 | pkt[3] ;
 	if (err) { LogMsg("ReceivePortMapReply: received error %d", err);  goto register_service; }
 
 	priv.b[0] = pkt[4];
@@ -804,9 +813,9 @@ mDNSexport void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set
 	mDNSu8 *ip = set->ip.ip.v4.b;	
 	AuthRecord *a  = NULL;
 
-	if (set->ip.type != mDNSAddrType_IPv4                                 // non-v4
-	    || (ip[0] == 169 && ip[1] == 254)                                 // link-local
-	    || (ip[0] == 127 && ip[1] == 0 && ip[2] == 0 && ip[3] == 1))      // loopback
+	if (set->ip.type != mDNSAddrType_IPv4      // non-v4
+	    || (ip[0] == 169 && ip[1] == 254)      // link-local
+	    || (ip[0] == 127))                     // loopback
 	  return;		
 
 	if (!m->uDNS_info.hostname.c[0]) return;	
@@ -3189,7 +3198,6 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mStatus err = mStatus_UnknownErr;
 	uDNS_AuthInfo *authInfo;
-	NATTraversalInfo *n = srs->uDNS_info.NATinfo;
 	mDNSIPPort privport;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
 	mDNSBool mapped = mDNSfalse;
@@ -3200,8 +3208,8 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		{
 		case regState_NATMap:
 			// we're in the middle of nat mapping.  clear ptr from NAT info to RR, unlink and give memfree			
-			if (!n) LogMsg("uDNS_DeregisterRecord: no NAT info context");
-			else n->reg.ServiceRegistration = NULL;  //  NAT Info freed when response is received
+			if (!nat) LogMsg("uDNS_DeregisterRecord: no NAT info context");
+			else nat->reg.ServiceRegistration = NULL;  //  NAT Info freed when response is received
 			unlinkSRS(u, srs);
 			srs->uDNS_info.state = regState_Unregistered;
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
@@ -3260,16 +3268,16 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		if (err) { LogMsg("ERROR: uDNS_DeregisterService - mDNSSendDNSMessage - %d", err); goto error; }
 		}
 
-	if (n && n->state == NATState_Established)  // let other edge-case states expire for simplicity
+	if (nat && nat->state == NATState_Established)  // let other edge-case states expire for simplicity
 		{
 		// zero lease
-		n->request[8]  = 0;
-		n->request[9]  = 0;
-		n->request[10] = 0 ;
-		n->request[11] = 0;
-		n->state = NATState_Request;
-		SendNATMsg(n, m);
-		FreeNATInfo(m, n);
+		nat->request[8]  = 0;
+		nat->request[9]  = 0;
+		nat->request[10] = 0 ;
+		nat->request[11] = 0;
+		nat->state = NATState_Request;
+		SendNATMsg(nat, m);
+		FreeNATInfo(m, nat);
 		srs->uDNS_info.NATinfo = NULL;
 		// Note: no retransmissions of deletion messages
 		}
@@ -3380,7 +3388,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 	AuthRecord *rr;
 	uDNS_RegInfo *rInfo;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
- 	mDNSs32 sendtime, nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+ 	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
 	
 	//!!!KRS list should be pre-sorted by expiration
 	for (rr = u->RecordRegistrations; rr; rr = rr->next)
@@ -3388,13 +3396,12 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 		rInfo = &rr->uDNS_info;		
 		if ((rInfo->state == regState_Pending || rInfo->state == regState_DeregPending))
 			{
-			sendtime = rr->LastAPTime + rr->ThisAPInterval;
-			if (sendtime - timenow < 0)
+			if (rr->LastAPTime + rr->ThisAPInterval - timenow < 0)
 				{
 				if (rInfo->state == regState_Pending) sendRecordRegistration(m, rr);
 				else                                  uDNS_DeregisterRecord(m, rr);
 				}
-			else if (sendtime - nextevent < 0) nextevent = sendtime;
+			if (rr->LastAPTime + rr->ThisAPInterval - nextevent < 0) nextevent = rr->LastAPTime + rr->ThisAPInterval;
 			}
 		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
 		    {		    
@@ -3404,7 +3411,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 		        rInfo->state = regState_Refresh;
 		        sendRecordRegistration(m, rr);
 		        }
-		    else if (rInfo->expire - nextevent < 0) nextevent = rInfo->expire;
+		    if (rInfo->expire - nextevent < 0) nextevent = rInfo->expire;
 		    }		
 		}
 	return nextevent;
@@ -3430,7 +3437,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 			    rInfo->state = regState_Refresh;
 			    SendServiceRegistration(m, srs);
 		        }
-		    else if (rInfo->expire - nextevent < 0) nextevent = rInfo->expire;
+		    if (rInfo->expire - nextevent < 0) nextevent = rInfo->expire;
 		    }		
 		}
 	return nextevent;
