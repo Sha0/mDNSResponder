@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.30  2003/12/11 19:40:36  cheshire
+Fix 'destAddr.type == senderAddr.type;' that should have said 'destAddr.type = senderAddr.type;'
+
 Revision 1.29  2003/12/11 18:53:22  cheshire
 Fix compiler warning reported by Paul Guyot
 
@@ -326,7 +329,7 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 		#if HAVE_BROKEN_RECVDSTADDR || (!defined(IP_PKTINFO) && !defined(IP_RECVDSTADDR))
 			if ( (destAddr.NotAnInteger == 0) && (flags & MSG_MCAST) )
 				{
-				destAddr.type == senderAddr.type;
+				destAddr.type = senderAddr.type;
 				if      (senderAddr.type == mDNSAddrType_IPv4) destAddr.ip.v4 = AllDNSLinkGroup;
 				else if (senderAddr.type == mDNSAddrType_IPv6) destAddr.ip.v6 = AllDNSLinkGroupv6;
 				}
