@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.24  2004/12/14 17:09:06  ksekar
+fixed incorrect usage instructions
+
 Revision 1.23  2004/12/06 20:24:31  ksekar
 <rdar://problem/3907303> dnsextd leaks sockets
 
@@ -748,7 +751,7 @@ mDNSlocal int SetPort(DaemonInfo *d, char *PortAsString)
 	
 mDNSlocal void PrintUsage(void)
 	{
-	fprintf(stderr, "Usage: dnsextd -z <zone> [-vf] [ -s server ] [-k zone keyname secret] ...\n"
+	fprintf(stderr, "Usage: dnsextd -z <zone> [-vf] [ -s server ] [-k keyname secret] ...\n"
 			"Use \"dnsextd -h\" for help\n");
 	}
 
