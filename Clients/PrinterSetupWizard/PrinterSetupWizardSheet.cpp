@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.13  2004/07/26 21:06:29  shersche
+<rdar://problem/3739200> Removing trailing '.' in hostname
+Bug #: 3739200
+
 Revision 1.12  2004/07/13 21:24:23  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -766,6 +770,7 @@ CPrinterSetupWizardSheet::OnResolve(
 	CPrinterSetupWizardSheet	*	self;
 	EventHandlerList::iterator		it1;
 	EventHandlerList::iterator		it2;
+	int								idx;
 	OSStatus						err;
 
 	require_noerr( inErrorCode, exit );
@@ -780,10 +785,20 @@ CPrinterSetupWizardSheet::OnResolve(
 	require_noerr(err, exit);
 	
 	//
-	// hold on to the hostname
+	// hold on to the hostname...
 	//
 	err = UTF8StringToStringObject( inHostName, printer->hostname );
 	require_noerr( err, exit );
+
+	//
+	// <rdar://problem/3739200> remove the trailing dot on hostname
+	//
+	idx = printer->hostname.ReverseFind('.');
+
+	if ((idx > 1) && ((printer->hostname.GetLength() - 1) == idx))
+	{
+		printer->hostname.Delete(idx, 1);
+	}
 
 	//
 	// hold on to the port
