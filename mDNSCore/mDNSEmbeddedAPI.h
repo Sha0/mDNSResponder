@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.232  2004/10/26 06:20:23  cheshire
+Add mDNSAddressIsValidNonZero() macro
+
 Revision 1.231  2004/10/26 06:11:41  cheshire
 Add improved logging to aid in diagnosis of <rdar://problem/3842714> mDNSResponder crashed
 
@@ -2183,6 +2186,10 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 #define mDNSAddressIsZero(X) (                                              \
 	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsZero((X)->ip.v4)) || \
 	((X)->type == mDNSAddrType_IPv6 && mDNSIPv6AddressIsZero((X)->ip.v6))    )
+
+#define mDNSAddressIsValidNonZero(X) (                                              \
+	((X)->type == mDNSAddrType_IPv4 && !mDNSIPv4AddressIsZero((X)->ip.v4)) || \
+	((X)->type == mDNSAddrType_IPv6 && !mDNSIPv6AddressIsZero((X)->ip.v6))    )
 
 #define mDNSAddressIsOnes(X) (                                              \
 	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsOnes((X)->ip.v4)) || \
