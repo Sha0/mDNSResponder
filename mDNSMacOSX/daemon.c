@@ -35,6 +35,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.106  2003/05/27 18:30:55  cheshire
+ * <rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
+ * Dean Reece suggested SIGINFO is more appropriate than SIGHUP
+ *
  * Revision 1.105  2003/05/26 03:21:29  cheshire
  * Tidy up address structure naming:
  * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
@@ -122,7 +126,7 @@ static const char PID_FILE[] = "/var/run/mDNSResponder.pid";
 static const char kmDNSBootstrapName[] = "com.apple.mDNSResponderRestart";
 static mach_port_t client_death_port = MACH_PORT_NULL;
 static mach_port_t exit_m_port       = MACH_PORT_NULL;
-static mach_port_t hup_m_port        = MACH_PORT_NULL;
+static mach_port_t info_m_port       = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
 
 // mDNS Mach Message Timeout, in milliseconds.
@@ -1258,7 +1262,7 @@ mDNSlocal void HandleSIGTERM(int signal)
 		{ LogMsg("HandleSIGTERM: mach_msg_send failed; Exiting immediately."); exit(-1); }
 	}
 
-mDNSlocal void HUPCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
 	(void)port;		// Unused
 	(void)msg;		// Unused
@@ -1286,12 +1290,12 @@ mDNSlocal void HUPCallback(CFMachPortRef port, void *msg, CFIndex size, void *in
 	LogMsg("%s ----  END STATE LOG  ----", mDNSResponderVersionString);
 	}
 
-mDNSlocal void HandleSIGHUP(int signal)
+mDNSlocal void HandleSIGINFO(int signal)
 	{
 	(void)signal;		// Unused
 	mach_msg_header_t header;
 	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
-	header.msgh_remote_port = hup_m_port;
+	header.msgh_remote_port = info_m_port;
 	header.msgh_local_port = MACH_PORT_NULL;
 	header.msgh_size = sizeof(header);
 	header.msgh_id = 0;
@@ -1305,13 +1309,13 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
 	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
-	CFMachPortRef      h_port = CFMachPortCreate(NULL, HUPCallback, NULL, NULL);
+	CFMachPortRef      i_port = CFMachPortCreate(NULL, INFOCallback, NULL, NULL);
 	mach_port_t        m_port = CFMachPortGetPort(s_port);
 	kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	CFRunLoopSourceRef e_rls  = CFMachPortCreateRunLoopSource(NULL, e_port, 0);
-	CFRunLoopSourceRef h_rls  = CFMachPortCreateRunLoopSource(NULL, h_port, 0);
+	CFRunLoopSourceRef i_rls  = CFMachPortCreateRunLoopSource(NULL, i_port, 0);
 	(void)bundleName;		// Unused
 	(void)bundleDir;		// Unused
 	
@@ -1332,16 +1336,16 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 
 	client_death_port = CFMachPortGetPort(d_port);
 	exit_m_port = CFMachPortGetPort(e_port);
-	hup_m_port  = CFMachPortGetPort(h_port);
+	info_m_port = CFMachPortGetPort(i_port);
 
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), e_rls, kCFRunLoopDefaultMode);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), h_rls, kCFRunLoopDefaultMode);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), i_rls, kCFRunLoopDefaultMode);
 	CFRelease(d_rls);
 	CFRelease(s_rls);
 	CFRelease(e_rls);
-	CFRelease(h_rls);
+	CFRelease(i_rls);
 	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
 
 	return(err);
@@ -1360,7 +1364,7 @@ mDNSexport int main(int argc, char **argv)
 
 	signal(SIGINT,  HandleSIGTERM);		// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIGTERM);
-	signal(SIGHUP,  HandleSIGHUP);
+	signal(SIGINFO, HandleSIGINFO);
 
 	// Register the server with mach_init for automatic restart only during debug mode
     if (!debug_mode)
