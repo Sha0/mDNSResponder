@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.76  2004/12/16 08:05:29  shersche
+Remove extranenous semicolons that cause compilation errors on Windows
+
 Revision 1.75  2004/12/15 02:11:22  ksekar
 <rdar://problem/3917317> Don't check for Dynamic DNS hostname uniqueness
 
@@ -1506,7 +1509,7 @@ mDNSexport mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecor
 
 mDNSexport mDNSu8 *putDeleteRRSet(DNSMessage *msg, mDNSu8 *ptr, const domainname *name, mDNSu16 rrtype)
 	{
-	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;;
+	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;
 	mDNSu16 class = kDNSQClass_ANY;
 	
 	ptr = putDomainNameAsLabels(msg, ptr, limit, name);
@@ -1525,7 +1528,7 @@ mDNSexport mDNSu8 *putDeleteRRSet(DNSMessage *msg, mDNSu8 *ptr, const domainname
 // for dynamic updates
 mDNSexport mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domainname *name)
 	{
-	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;;
+	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;
 	mDNSu16 class = kDNSQClass_ANY;
 	mDNSu16 rrtype = kDNSQType_ANY;
 	
