@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.186  2004/09/18 01:11:57  ksekar
+<rdar://problem/3806734> Add a user's default domain to empty-string browse list
+
 Revision 1.185  2004/09/17 01:08:52  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -1772,7 +1775,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		if (question == &slElem->browseQ) name = "_browse._dns-sd._udp.local.";
 		else                              name = "_register._dns-sd._udp.local.";
 		MakeDomainNameFromDNSNameString(&arElem->ar.resrec.name, name);
-		strcpy(arElem->ar.resrec.rdata->u.name.c, answer->rdata->u.name.c);
+		AssignDomainName(arElem->ar.resrec.rdata->u.name, answer->rdata->u.name);
 		err = mDNS_Register(m, &arElem->ar);
 		if (err)
 			{

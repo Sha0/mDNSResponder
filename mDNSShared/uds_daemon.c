@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.85  2004/09/18 01:11:58  ksekar
+<rdar://problem/3806734> Add a user's default domain to empty-string browse list
+
 Revision 1.84  2004/09/17 01:08:55  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -471,6 +474,16 @@ typedef struct
     request_state *rstate;
 	} browse_termination_context;
 
+#ifdef __MACOSX__
+typedef struct default_browse_list_t
+	{
+    struct default_browse_list_t *next;
+    uid_t uid;
+    AuthRecord ptr_rec;
+	} default_browse_list_t;
+
+static default_browse_list_t *default_browse_list = NULL;
+#endif // __MACOSX__
 
 // globals
 mDNSexport mDNS mDNSStorage;
@@ -478,8 +491,6 @@ mDNSexport mDNS mDNSStorage;
 
 static dnssd_sock_t			listenfd		=	dnssd_InvalidSocket;  
 static request_state	*	all_requests	=	NULL;  
-//!!!KRS we should keep a separate list containing only the requests that need to be examined
-//in the idle() routine.
 
 
 #define MAX_OPENFILES 1024
@@ -1383,6 +1394,15 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 	return(st);
 	}
 
+
+#ifdef __MACOSX__
+static void free_defdomain(mDNS *const m, AuthRecord *const rr, mStatus result)
+	{
+	(void)m;  // unused
+	if (result == mStatus_MemFree) free(rr->RecordContext);  // context is the enclosing list structure
+	}
+#endif
+
 static void handle_setdomain_request(request_state *request)
 	{
 	mStatus err = mStatus_NoError;
@@ -1420,7 +1440,45 @@ static void handle_setdomain_request(request_state *request)
 	if (getsockopt(request->sd, 0, LOCAL_PEERCRED, &xuc, &xuclen))
 		{ my_perror("ERROR: getsockopt, LOCAL_PEERCRED"); err = mStatus_UnknownErr; goto end; }
 	if (xuc.cr_version != XUCRED_VERSION) { LogMsg("getsockopt, LOCAL_PEERCRED - bad version"); err = mStatus_UnknownErr; goto end; }
-	LogMsg("Default domain %s set for UID %d", domainstr, xuc.cr_uid);	
+	LogMsg("Default domain %s %s for UID %d", domainstr, flags & kDNSServiceFlagsAdd ? "set" : "removed", xuc.cr_uid);	
+
+	if (flags & kDNSServiceFlagsAdd)
+		{
+		// register a local-only PRT record
+		default_browse_list_t *newelem = malloc(sizeof(default_browse_list_t));
+		if (!newelem) { LogMsg("ERROR: malloc"); err = mStatus_NoMemoryErr; goto end; }
+		mDNS_SetupResourceRecord(&newelem->ptr_rec, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, free_defdomain, newelem);
+		MakeDomainNameFromDNSNameString(&newelem->ptr_rec.resrec.name, "_default._browse._dns-sd._udp.local.");
+ 		AssignDomainName(newelem->ptr_rec.resrec.rdata->u.name, domain);
+		newelem->uid = xuc.cr_uid;
+		err = mDNS_Register(gmDNS, &newelem->ptr_rec);
+		if (err) free(newelem);
+		else
+			{
+			// link into list
+			newelem->next = default_browse_list;
+			default_browse_list = newelem;
+			}
+		
+		}
+	else
+		{
+		// remove - find in list, deregister
+		default_browse_list_t *ptr = default_browse_list, *prev = NULL;
+		while (ptr)
+			{
+			if (SameDomainName(&ptr->ptr_rec.resrec.rdata->u.name, &domain))
+				{
+				if (prev) prev->next = ptr->next;
+				else default_browse_list = ptr->next;
+				err = mDNS_Deregister(gmDNS, &ptr->ptr_rec);
+				break;
+				}
+			prev = ptr;
+			ptr = ptr->next;
+			}
+		if (!ptr) { LogMsg("Attempt to remove nonexistent domain %s for UID %d", domainstr, xuc.cr_uid); err = mStatus_Invalid; }
+		}		
 #else
 	err = mStatus_UnsupportedErr;
 #endif // __MACOSX__
