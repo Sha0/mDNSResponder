@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.188  2003/06/10 20:33:28  cheshire
+<rdar://problem/3287141> Crash in SendQueries/SendResponses when no active interfaces
+
 Revision 1.187  2003/06/10 04:30:44  cheshire
 <rdar://problem/3286234> Need to re-probe/re-announce on configuration change
 Only interface-specific records were re-probing and re-announcing, not non-specific records.
@@ -2753,7 +2756,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// Now set SendRNow state appropriately
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (!rr->RRInterfaceActive)						// Interface inactive:
+		if (!rr->RRInterfaceActive || !intf)			// Interface inactive:
 			{
 			rr->ImmedAnswer     = mDNSNULL;				// Can't send this record
 			rr->ImmedAdditional = mDNSNULL;
@@ -3111,8 +3114,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			if (q->SendQNow || (q->ThisQInterval <= maxExistingQuestionInterval && TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/2)))
 				{
-				// Mark for sending
-				q->SendQNow = (q->InterfaceID) ? q->InterfaceID : intf->InterfaceID;
+				// Mark for sending. (If no active interfaces, then don't even try.)
+				q->SendQNow = !intf ? mDNSNULL : (q->InterfaceID) ? q->InterfaceID : intf->InterfaceID;
 
 				// If we recorded a duplicate suppression for this question less than half an interval ago,
 				// then we consider it recent enough that we don't need to do an identical query ourselves.
@@ -3160,7 +3163,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 				// 2. else, if it has reached its probe time, mark it for sending and then update m->NextProbeTime correctly
 				else if (rr->ProbeCount)
 					{
-					rr->SendRNow   = (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
+					// Mark for sending. (If no active interfaces, then don't even try.)
+					rr->SendRNow   = !intf ? mDNSNULL : (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
 					rr->LastAPTime = m->timenow;
 					rr->ProbeCount--;
 					SetNextAnnounceProbeTime(m, rr);
