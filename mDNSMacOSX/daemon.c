@@ -894,7 +894,11 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 		port.NotAnInteger = notAnIntPort;
 	
-		CheckForDuplicateRegistrations(x, &t, &d, port);
+		// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
+		// a port number of zero. When two instances of the protected client are allowed to run on one
+		// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
+		if (port.NotAnInteger)
+			CheckForDuplicateRegistrations(x, &t, &d, port);
 		err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port, txtinfo, data_len, RegCallback, x);
 	
 		if (err) AbortClient(client, x);
