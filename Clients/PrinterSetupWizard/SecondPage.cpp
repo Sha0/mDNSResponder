@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.6  2004/12/30 01:24:02  shersche
+<rdar://problem/3906182> Remove references to description key
+Bug #: 3906182
+
 Revision 1.5  2004/12/30 01:02:47  shersche
 <rdar://problem/3734478> Add Printer information box that displays description and location information when printer name is selected
 Bug #: 3734478
@@ -636,10 +640,6 @@ CSecondPage::OnResolve(
 		else if ((key == L"usb_mdl") || (key == L"usb_model"))
 		{
 			service->usb_MDL = val;
-		}
-		else if (key == L"description")
-		{
-			service->description = val;
 		}
 		else if (key == L"product")
 		{

@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.6  2004/12/30 01:24:02  shersche
+<rdar://problem/3906182> Remove references to description key
+Bug #: 3906182
+
 Revision 1.5  2004/12/29 18:53:38  shersche
 <rdar://problem/3725106>
 <rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
@@ -141,7 +145,6 @@ namespace PrinterSetupWizard
 		unsigned short	portNumber;
 		CString			usb_MFG;
 		CString			usb_MDL;
-		CString			description;
 		CString			location;
 		CString			product;
 		unsigned short	qtotal;
