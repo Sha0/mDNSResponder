@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.28  2004/03/04 23:33:42  cheshire
+# Fixes from Alfred Perlstein for FreeBSD's benefit
+#
 # Revision 1.27  2004/02/11 21:00:21  cheshire
 # Update URL for GNU Make manual page
 #
@@ -149,6 +152,11 @@ CFLAGS_OS =
 LDCONFIG = ldconfig
 else
 ifeq ($(os),freebsd)
+# If not already defined, set LOCALBASE to /usr/local
+# FreeBSD requires the startup script to end in ".sh"
+LOCALBASE?=/usr/local
+INSTBASE=$(LOCALBASE)
+STARTUPSCRIPTNAME=mdns.sh
 CFLAGS_OS =
 LDCONFIG = ldconfig
 else
@@ -178,6 +186,11 @@ endif
 endif
 endif
 
+# If not otherwise defined, we install into /usr/lib and /usr/include
+# and our startup script is called mdns (e.g. /etc/init.d/mdns)
+INSTBASE?=/usr
+STARTUPSCRIPTNAME?=mdns
+
 ifeq ($(HAVE_IPV6),1)
 CFLAGS_OS += -DHAVE_IPV6=1
 else
@@ -197,7 +210,7 @@ STARTUPSCRIPTDIR = /etc/init.d
 RUNLEVELSCRIPTSDIR = /etc
 else
 # else install into /etc/rc.d/ (*BSD)
-STARTUPSCRIPTDIR = /etc/rc.d
+STARTUPSCRIPTDIR = $(INSTBASE)/etc/rc.d
 endif
 endif
 
@@ -246,30 +259,30 @@ $(BUILDDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dns
 #############################################################################
 
 # The Install targets place built stuff in their proper places
-InstalledDaemon: /usr/sbin/mdnsd
+InstalledDaemon: $(INSTBASE)/sbin/mdnsd
 	@echo $< " installed"
 
-InstalledLib: /usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS) /usr/include/dns_sd.h
+InstalledLib: $(INSTBASE)/lib/libmdns.$(LDSUFFIX).$(LIBVERS) $(INSTBASE)/include/dns_sd.h
 	@echo $< " installed"
 
-InstalledStartup: $(STARTUPSCRIPTDIR)/mdns
+InstalledStartup: $(STARTUPSCRIPTDIR)/$(STARTUPSCRIPTNAME)
 	@echo $< " installed"
 
-/usr/sbin/mdnsd: $(BUILDDIR)/mdnsd
+$(INSTBASE)/sbin/mdnsd: $(BUILDDIR)/mdnsd
 	$(CP) $< $@
 
-/usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS): $(BUILDDIR)/libmdns.$(LDSUFFIX)
+$(INSTBASE)/lib/libmdns.$(LDSUFFIX).$(LIBVERS): $(BUILDDIR)/libmdns.$(LDSUFFIX)
 	$(CP) $< $@
-	$(LN) $@ /usr/lib/libmdns.$(LDSUFFIX)
+	$(LN) $@ $(INSTBASE)/lib/libmdns.$(LDSUFFIX)
 ifdef LDCONFIG
     # -m means 'merge into existing database', -R means 'rescan directories'
 	$(LDCONFIG) -mR
 endif
 
-/usr/include/dns_sd.h: $(SHAREDDIR)/dns_sd.h
+$(INSTBASE)/include/dns_sd.h: $(SHAREDDIR)/dns_sd.h
 	$(CP) $< $@
 
-$(STARTUPSCRIPTDIR)/mdns: mdnsd.sh $(STARTUPSCRIPTDIR)
+$(STARTUPSCRIPTDIR)/$(STARTUPSCRIPTNAME): mdnsd.sh $(STARTUPSCRIPTDIR)
 	$(CP) $< $@
 	chmod ugo+x $@
 ifdef RUNLEVELSCRIPTSDIR
