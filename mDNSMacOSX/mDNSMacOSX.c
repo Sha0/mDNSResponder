@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.143  2004/04/21 03:03:30  cheshire
+Preparation work: AddInterfaceToList() should return pointer to structure it creates
+
 Revision 1.142  2004/04/21 02:49:11  cheshire
 To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
 
@@ -1132,7 +1135,7 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 		}
 	}
 
-mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
+mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	{
 	mDNSu32 scope_id = if_nametoindex(ifa->ifa_name);
 	mDNSAddr ip;
@@ -1143,14 +1146,14 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 			{
 			debugf("AddInterfaceToList: Found existing interface %u with address %#a", scope_id, &ip);
 			(*p)->Exists = mDNStrue;
-			return(0);
+			return(*p);
 			}
 
 	debugf("AddInterfaceToList: Making   new   interface %u with address %#a", scope_id, &ip);
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
-	if (!i) return(-1);
+	if (!i) return(mDNSNULL);
 	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
-	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(-1); }
+	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(mDNSNULL); }
 	strcpy(i->ifa_name, ifa->ifa_name);
 
 	bzero(&i->ifinfo.uDNS_info, sizeof(uDNS_NetworkInterfaceInfo));
@@ -1173,7 +1176,7 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->ss.cfsv6 = NULL;
 	
 	*p = i;
-	return(0);
+	return(i);
 	}
 
 mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope_id)
