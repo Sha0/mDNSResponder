@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.35  2004/05/07 23:01:04  ksekar
+Cleaned up list traversal in deriveGoodbyes - removed unnecessary
+conditional assignment.
+
 Revision 1.34  2004/05/05 18:26:12  ksekar
 Periodically re-transmit questions if the send() fails.  Include
 internal questions in retransmission.
@@ -618,8 +622,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			}
 		else
 			{
-			if (prev) prev = ka;
-			else prev = question->uDNS_info.knownAnswers;
+			prev = ka;
 			ka = ka->next;
 			}
 		}
