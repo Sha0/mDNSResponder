@@ -608,13 +608,21 @@ mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const
 	return(SameRData(r1->rrtype, r1->rdlength, &r1->rdata, &r2->rdata));
 	}
 
-// ResourceRecord *q is the ResourceRecord from the duplicate suppression section of the query
+// ResourceRecord *ds is the ResourceRecord from the duplicate suppression section of the query
+// This is the information that the requester believes to be correct
 // ResourceRecord *rr is the answer we are proposing to give, if not suppressed
+// This is the information that we believe to be correct
 mDNSlocal mDNSBool SuppressDuplicate(const ResourceRecord *const ds, const ResourceRecord *const rr)
 	{
-	// Suppress response *only* if RR signature and data are identical, *and* TTL is within a reasonable range
+	// If RR signature is different, or data is different, then don't suppress
 	if (!IdenticalResourceRecord(ds,rr)) return(mDNSfalse);
-	return(ds->rroriginalttl >= rr->rroriginalttl / 2 && ds->rroriginalttl <= rr->rroriginalttl);
+	
+	// If the requester's indicated TTL is at least half the real TTL, then we can suppress our answer this time.
+	// If the requester's indicated TTL is less than half the real TTL, we need to give our answer before the requester's copy expires.
+	// If the requester's indicated TTL is greater than the TTL we believe, then that's okay, and we don't need to do anything about it.
+	// (If two responders on the network are offering the same information, that's okay, and if they are offering the
+	// information with different TTLs, the one offering the lower TTL should defer to the one offering the higher TTL.)
+	return(ds->rroriginalttl >= rr->rroriginalttl / 2);
 	}
 
 mDNSlocal mDNSu32 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
@@ -2272,7 +2280,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	if (query->h.flags.b[0] & kDNSFlag0_TC) delayresponse = mDNStrue;
 
 	// ***
-	// *** 1. Parse Question Section and build our list of answer records
+	// *** 1. Parse Question Section and mark potential answers
 	// ***
 	for (i=0; i<query->h.numQuestions; i++)						// For each question...
 		{
@@ -2281,6 +2289,11 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		ptr = getQuestion(query, ptr, end, InterfaceAddr, &q);	// get the question...
 		if (!ptr) goto exit;
 		
+		// Note: We use the m->CurrentRecord mechanism here because calling ResolveSimultaneousProbe
+		// can result in user callbacks which may change the record list and/or question list.
+		// Also note: we just mark potential answer records here, without trying to build the
+		// "ResponseRecords" list, because we don't want to risk user callbacks deleting records
+		//  from that list while we're in the middle of trying to build it.
 		if (m->CurrentRecord) debugf("ProcessQuery ERROR m->CurrentRecord already set");
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
@@ -2294,12 +2307,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				else if (ResourceRecordIsValidAnswer(rr))
 					{
 					NumAnswersForThisQuestion++;
-					// If it is not already in our list, append this record to our list of potential answers
-					if (AddRecordToResponseList(nrp, rr, ptr, mDNSNULL))
-						{
-						nrp = &rr->NextResponse;
-						if (rr->RecordType == kDNSRecordTypeShared) delayresponse = mDNStrue;
-						}
+					if (!rr->NR_AnswerTo) rr->NR_AnswerTo = ptr;	// Mark as potential answer
 					}
 				}
 			}
@@ -2309,7 +2317,18 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 2. Add additional records
+	// *** 2. Now we can safely build the list of marked answers
+	// ***
+	for (rr = m->ResourceRecords; rr; rr=rr->next)				// Now build our list of potential answers
+		if (rr->NR_AnswerTo)									// If we marked the record...
+			if (AddRecordToResponseList(nrp, rr, rr->NR_AnswerTo, mDNSNULL))	// ... add it to the list
+				{
+				nrp = &rr->NextResponse;
+				if (rr->RecordType == kDNSRecordTypeShared) delayresponse = mDNStrue;
+				}
+
+	// ***
+	// *** 3. Add additional records
 	// ***
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)			// For each record we plan to put
 		{
@@ -2332,7 +2351,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 3. Parse Answer Section and cancel any records disallowed by duplicate suppression
+	// *** 4. Parse Answer Section and cancel any records disallowed by duplicate suppression
 	// ***
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
@@ -2361,14 +2380,14 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 4. Cancel any additionals that were added because of now-deleted records
+	// *** 5. Cancel any additionals that were added because of now-deleted records
 	// ***
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AdditionalTo && !MustSendRecord(rr->NR_AdditionalTo))
 			{ rr->NR_AnswerTo = mDNSNULL; rr->NR_AdditionalTo = mDNSNULL; }
 
 	// ***
-	// *** 5. Mark the send flags on the records we plan to send
+	// *** 6. Mark the send flags on the records we plan to send
 	// ***
 	if (replymulticast)
 		for (rr=ResponseRecords; rr; rr=rr->NextResponse)
@@ -2400,7 +2419,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			}
 
 	// ***
-	// *** 6. If we think other machines are likely to answer these questions, set our packet suppression timer
+	// *** 7. If we think other machines are likely to answer these questions, set our packet suppression timer
 	// ***
 	if (delayresponse && !m->SuppressSending)
 		{
@@ -2410,18 +2429,22 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 7. If query is from a legacy client, generate a unicast reply too
+	// *** 8. If query is from a legacy client, generate a unicast reply too
 	// ***
 	if (answers && replyunicast)
 		responseptr = GenerateUnicastResponse(query, end, InterfaceAddr, replyunicast, ResponseRecords);
 
 exit:
-	// Finally clear our NextResponse link chain ready for use next time
+	// ***
+	// *** 9. Finally, clear our NextResponse link chain ready for use next time
+	// ***
 	while (ResponseRecords)
 		{
 		rr = ResponseRecords;
 		ResponseRecords = rr->NextResponse;
-		rr->NextResponse = mDNSNULL;
+		rr->NextResponse    = mDNSNULL;
+		rr->NR_AnswerTo     = mDNSNULL;
+		rr->NR_AdditionalTo = mDNSNULL;
 		}
 	
 	return(responseptr);
