@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.42  2005/01/11 02:01:02  shersche
+Use dnssd_close() rather than close() for Windows compatibility
+
 Revision 1.41  2004/12/23 17:34:26  ksekar
 <rdar://problem/3931319> Calls leak sockets if mDNSResponder is not running
 
@@ -326,7 +329,7 @@ static DNSServiceRef connect_to_server(void)
 #endif
 	if (connect(sdr->sockfd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
 		{
-		close(sdr->sockfd);
+		dnssd_close(sdr->sockfd);
 		sdr->sockfd = dnssd_InvalidSocket;
 		free(sdr);
 		return NULL;
