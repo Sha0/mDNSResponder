@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.4  2004/05/21 17:25:56  cheshire
+# Fixes to make sample client work on Linux
+#
 # Revision 1.3  2004/03/12 08:05:32  cheshire
 # Add a "make clean" target
 #
@@ -39,13 +42,21 @@
 
 #############################################################################
 
+
+# If library /usr/lib/libmdns.* exists, then link it
+ifneq "$(wildcard /usr/lib/libmdns.*)" ""
+LIBS = -lmdns
+else
+LIBS =
+endif
+
 targets: build/dns-sd
 
 clean:
-	rm build/*
+	rm -rf build
 
 build:
 	mkdir build
 
 build/dns-sd: build dns-sd.c
-	cc $(filter %.c %.o, $+) -o $@
+	cc $(filter %.c %.o, $+) $(LIBS) -o $@

@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.4  2004/05/21 17:25:56  cheshire
+Fixes to make sample client work on Linux
+
 Revision 1.3  2004/04/06 22:02:06  cheshire
 Also show interface id when showing browse add/remove events
 
@@ -47,19 +50,20 @@ Check in code to make command-line "dns-sd" testing tool
 
 */
 
-#include <libc.h>
-#define BIND_8_COMPAT
-#include <arpa/nameser.h>
-#include <dns_sd.h>
-#include <unistd.h>         // For select()
+#include <stdio.h>		// For stdout, stderr
+#include <unistd.h>         // For getopt() and optind
 #include <errno.h>          // For errno, EINTR
+#define BIND_8_COMPAT
+#include <arpa/nameser.h>	// For T_HINFO, etc.
+#include <sys/time.h>		// For struct timeval
+#include <dns_sd.h>
 
 //*************************************************************************************************************
 // Globals
 
 typedef union { unsigned char b[2]; unsigned short NotAnInteger; } Opaque16;
 
-static char operation;
+static int operation;
 static DNSServiceRef client = NULL;
 static int num_printed;
 static char addtest = 0;
