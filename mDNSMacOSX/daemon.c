@@ -36,6 +36,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.170  2004/05/30 20:01:50  ksekar
+<rdar://problem/3668635>: wide-area default registrations should be in
+.local too - fixed service registration when clients pass an explicit
+domain (broken by previous checkin)
+
 Revision 1.169  2004/05/30 01:30:16  ksekar
 <rdar://problem/3668635>: wide-area default registrations should be in
 .local too
@@ -435,7 +440,7 @@ struct DNSServiceRegistration_struct
 	domainlabel name;
     ExtraRecordRef   *ExtraRefList;
     ServiceRecordSet *gs; // default "global" (wide area) service (may be NULL)
-    ServiceRecordSet ls;  // .local service
+    ServiceRecordSet ls;  // .local service (also used if client passes an explicit domain)
 	// Don't add any fields after ServiceRecordSet.
 	// This is where the implicit extra space goes if we allocate an oversized ServiceRecordSet object
 	};
@@ -1319,11 +1324,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
 
-	if (!*domain)
-		{
-		x = RegisterService(client, name, regtype, "local.", notAnIntPort, txtRecord, NULL);
-		if (!x) { err = mStatus_UnknownErr;  goto fail; } 
-		}
+	x = RegisterService(client, name, regtype, *domain ? domain : "local.", notAnIntPort, txtRecord, NULL);
+	if (!x) { err = mStatus_UnknownErr;  goto fail; } 
 
     //!!!KRS if we got a dynamic reg domain from the config file, use it for default (except for iChat)
 	if (!*domain && mDNSStorage.uDNS_info.ServiceRegDomain[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
