@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.131  2004/12/10 02:09:25  cheshire
+<rdar://problem/3898376> Modify default TTLs
+
 Revision 1.130  2004/12/10 00:55:24  cheshire
 Add full name and type to LogOperation messages for DNSServiceAddRecord/UpdateRecord/RemoveRecord
 
@@ -2232,14 +2235,8 @@ static void handle_add_request(request_state *rstate)
     rdata = get_rdata(&ptr, rdlen);
     ttl = get_long(&ptr);
 	
-    if (!ttl)
-		{
-		if      (rrtype == kDNSType_TXT)         ttl = kDefaultTTLforTXT;
-		else if (flags & kDNSServiceFlagsShared) ttl = kDefaultTTLforShared;
-		else if (flags & kDNSServiceFlagsUnique) ttl = kDefaultTTLforUnique;
-		else { LogMsg("Don't know how to get default ttl for record.  Using default for Unique"); ttl = kDefaultTTLforUnique; }
-		}
-	
+    if (!ttl) ttl = DefaultTTLforRRType(rrtype);
+
 	LogOperation("%3d: DNSServiceAddRecord(%##s, %s)", rstate->sd, 
 		(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name.c : NULL, DNSTypeName(rrtype));
 
@@ -2465,7 +2462,7 @@ static void handle_regrecord_request(request_state *rstate)
     	}
     
     if (rr->resrec.rroriginalttl == 0)
-        rr->resrec.rroriginalttl = (rr->resrec.RecordType == kDNSRecordTypeUnique) ? kDefaultTTLforUnique : kDefaultTTLforShared;
+        rr->resrec.rroriginalttl = DefaultTTLforRRType(rr->resrec.rrtype);
     
 	LogOperation("%3d: DNSServiceRegisterRecord %s", rstate->sd, RRDisplayString(gmDNS, &rr->resrec));
     result = mDNS_Register(gmDNS, rr);

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.257  2004/12/10 02:09:23  cheshire
+<rdar://problem/3898376> Modify default TTLs
+
 Revision 1.256  2004/12/09 03:15:40  ksekar
 <rdar://problem/3806610> use _legacy instead of _default to find "empty string" browse domains
 
@@ -1139,12 +1142,14 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 #define MAX_ESCAPED_DOMAIN_LABEL 254
 #define MAX_ESCAPED_DOMAIN_NAME 1005
 
-// By default, unique records have a TTL of two minutes
-// By default, shared records have a TTL of 75 minutes, so that their 80% cache-renewal query occurs once per hour
-// By default, TXT records have a TTL of 75 minutes, same as shared records, because they tend to be the subject of ongoing monitoring
-#define kDefaultTTLforUnique 120
-#define kDefaultTTLforShared (3600 * 100 / 80)
-#define kDefaultTTLforTXT    (3600 * 100 / 80)
+// Most records have a TTL of 75 minutes, so that their 80% cache-renewal query occurs once per hour.
+// For records containing a hostname (in the name on the left, or in the rdata on the right),
+// like A, AAAA, reverse-mapping PTR, and SRV, we use a two-minute TTL by default, because we don't want
+// them to hang around for too long in the cache if the host in question crashes or otherwise goes away.
+#define kStandardTTL (3600 * 100 / 80)
+#define kHostNameTTL 120
+
+#define DefaultTTLforRRType(X) (((X) == kDNSType_A || (X) == kDNSType_AAAA || (X) == kDNSType_SRV) ? kHostNameTTL : kStandardTTL)
 
 // ***************************************************************************
 #if 0

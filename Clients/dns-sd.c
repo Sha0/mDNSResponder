@@ -339,11 +339,11 @@ static void myTimerCallBack(void)
 			switch (addtest)
 				{
 				case 0: printf("Adding Test HINFO record\n");
-						err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_HINFO, sizeof(myhinfoW), &myhinfoW[0], 120);
+						err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_HINFO, sizeof(myhinfoW), &myhinfoW[0], 0);
 						addtest = 1;
 						break;
 				case 1: printf("Updating Test HINFO record\n");
-						err = DNSServiceUpdateRecord(client, record, 0, sizeof(myhinfoX), &myhinfoX[0], 120);
+						err = DNSServiceUpdateRecord(client, record, 0, sizeof(myhinfoX), &myhinfoX[0], 0);
 						addtest = 2;
 						break;
 				case 2: printf("Removing Test HINFO record\n");
@@ -361,14 +361,14 @@ static void myTimerCallBack(void)
 			updatetest[0] = 3 - updatetest[0];
 			updatetest[2] = updatetest[1];
 			printf("Updating Test TXT record to %c\n", updatetest[1]);
-			err = DNSServiceUpdateRecord(client, NULL, 0, 1+updatetest[0], &updatetest[0], 120);
+			err = DNSServiceUpdateRecord(client, NULL, 0, 1+updatetest[0], &updatetest[0], 0);
 			}
 			break;
 
 		case 'N':
 			{
 			printf("Adding big NULL record\n");
-			err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_NULL, sizeof(bigNULL), &bigNULL[0], 120);
+			err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_NULL, sizeof(bigNULL), &bigNULL[0], 0);
 			timeOut = LONG_TIME;
 			}
 			break;
@@ -648,7 +648,7 @@ int main(int argc, char **argv)
 					static const char TXT2[] = "\xD" "Fourth String" "\xC" "Fifth String"  "\xC" "Sixth String";
 					printf("Registering Service Test._testdualtxt._tcp.local.\n");
 					err = DNSServiceRegister(&client, 0, 0, "Test", "_testdualtxt._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT1)-1, TXT1, reg_reply, NULL);
-					if (!err) err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_TXT, sizeof(TXT2)-1, TXT2, 120);
+					if (!err) err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_TXT, sizeof(TXT2)-1, TXT2, 0);
 					break;
 					}
 
@@ -658,7 +658,7 @@ int main(int argc, char **argv)
 					static const char TXT[] = "\x09" "Test Data";
 					printf("Registering Service Test._testtxt._tcp.local.\n");
 					err = DNSServiceRegister(&client, 0, 0, "Test", "_testtxt._tcp.", "", NULL, registerPort.NotAnInteger, 0, NULL, reg_reply, NULL);
-					if (!err) err = DNSServiceUpdateRecord(client, NULL, 0, sizeof(TXT)-1, TXT, 120);
+					if (!err) err = DNSServiceUpdateRecord(client, NULL, 0, sizeof(TXT)-1, TXT, 0);
 					break;
 					}
 
