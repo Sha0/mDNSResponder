@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.14  2003/07/20 03:38:51  ksekar
+Bug #: 3320722
+Completed support for Unix-domain socket based API.
+
 Revision 1.13  2003/07/18 00:30:00  cheshire
 <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
 
@@ -117,7 +121,10 @@ struct mDNS_PlatformSupport_struct
     };
 
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
+extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
+
 extern char HINFO_SWstring[];
+
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()
@@ -155,6 +162,7 @@ int udsserver_init(void);
 int udsserver_add_rl_source(void);
 mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled event time, does idle work,
                                             // and returns the updated nextevent time
+void udsserver_handle_configchange(void);
 int udsserver_exit(void);
 
 

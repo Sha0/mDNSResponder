@@ -6,6 +6,7 @@
 	objectVersion = 38;
 	objects = {
 		000753D303367C1C0CCA2C71 = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = mDNSMacOSX.h;
 			refType = 4;
@@ -38,18 +39,17 @@
 			name = "mDNSResponder debug";
 			productName = mDNSResponder;
 			productReference = 00AD62B8032D799A0CCA2C71;
-			shouldUseHeadermap = 1;
 		};
 		00AD62A4032D799A0CCA2C71 = {
 			buildActionMask = 2147483647;
 			files = (
 				00AD62A5032D799A0CCA2C71,
 				F5E11B5F04A28126019798ED,
-				F5E11B6504A2813A019798ED,
 				F515E29604A37BB701CA296C,
 				F515E29704A37BB801CA296C,
 				F515E29804A37BBB01CA296C,
 				F515E29904A37BBB01CA296C,
+				9DD6952E04C718C900E7873D,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -165,11 +165,11 @@
 				00AD62BC032D7A160CCA2C71,
 				00AD62BD032D7A1B0CCA2C71,
 				00AD62BE032D7A1D0CCA2C71,
+				9D0B9DBD04C77181003924CB,
 			);
 			isa = PBXAggregateTarget;
 			name = "Build All";
 			productName = "Build All";
-			shouldUseHeadermap = 0;
 		};
 		00AD62BC032D7A160CCA2C71 = {
 			isa = PBXTargetDependency;
@@ -227,6 +227,7 @@
 			buildStyles = (
 				00B2AB0C032D7B220CCA2C71,
 			);
+			hasScannedForEncodings = 1;
 			isa = PBXProject;
 			mainGroup = 08FB7794FE84155DC02AAC07;
 			projectDirPath = "";
@@ -235,6 +236,7 @@
 				08FB779FFE84155DC02AAC07,
 				00AD62A3032D799A0CCA2C71,
 				6575FC1C022EB76000000109,
+				9D0B9DBA04C7713D003924CB,
 			);
 		};
 		08FB7794FE84155DC02AAC07 = {
@@ -251,10 +253,10 @@
 		};
 		08FB7795FE84155DC02AAC07 = {
 			children = (
+				9DD6952C04C718C900E7873D,
 				F525E72804AA167501F1CF4D,
 				F5E11B5A04A28126019798ED,
 				F5E11B5B04A28126019798ED,
-				F5E11B6104A2813A019798ED,
 				6575FBEC022EAF7200000109,
 				6575FBE9022EAF5A00000109,
 				6575FBEB022EAF7200000109,
@@ -307,14 +309,13 @@
 			productInstallPath = "$(HOME)/bin";
 			productName = mDNSResponder;
 			productReference = 034768E2FF38A6DC11DB9C8B;
-			shouldUseHeadermap = 1;
 		};
 		08FB77A0FE84155DC02AAC07 = {
 			buildActionMask = 2147483647;
 			files = (
 				6575FC02022EAFBA00000109,
 				F5E11B5D04A28126019798ED,
-				F5E11B6304A2813A019798ED,
+				9DD6952D04C718C900E7873D,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -387,6 +388,7 @@
 				034768E2FF38A6DC11DB9C8B,
 				6575FC1D022EB76000000109,
 				00AD62B8032D799A0CCA2C71,
+				9D0B9DBB04C7713D003924CB,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -403,18 +405,21 @@
 //653
 //654
 		654BE64F02B63B93000001D1 = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = mDNSClientAPI.h;
 			path = ../mDNSCore/mDNSClientAPI.h;
 			refType = 4;
 		};
 		654BE65002B63B93000001D1 = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = mDNSDebug.h;
 			path = ../mDNSCore/mDNSDebug.h;
 			refType = 4;
 		};
 		654BE65202B63B93000001D1 = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			name = mDNSPlatformFunctions.h;
 			path = ../mDNSCore/mDNSPlatformFunctions.h;
@@ -433,6 +438,7 @@
 			};
 		};
 		6575FBE9022EAF5A00000109 = {
+			fileEncoding = 30;
 			indentWidth = 4;
 			isa = PBXFileReference;
 			name = mDNS.c;
@@ -448,6 +454,7 @@
 			};
 		};
 		6575FBEB022EAF7200000109 = {
+			fileEncoding = 30;
 			indentWidth = 4;
 			isa = PBXFileReference;
 			path = CFSocket.c;
@@ -456,6 +463,7 @@
 			usesTabs = 1;
 		};
 		6575FBEC022EAF7200000109 = {
+			fileEncoding = 30;
 			indentWidth = 4;
 			isa = PBXFileReference;
 			path = daemon.c;
@@ -486,16 +494,19 @@
 			refType = 4;
 		};
 		6575FBFF022EAFBA00000109 = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = DNSServiceDiscoveryDefines.h;
 			refType = 4;
 		};
 		6575FC00022EAFBA00000109 = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = DNSServiceDiscoveryReply.defs;
 			refType = 4;
 		};
 		6575FC01022EAFBA00000109 = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = DNSServiceDiscoveryRequest.defs;
 			refType = 4;
@@ -535,7 +546,6 @@
 		6575FC19022EB76000000109 = {
 			buildActionMask = 2147483647;
 			files = (
-				6575FC21022EB7AA00000109,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -581,7 +591,6 @@
 			productInstallPath = /usr/bin;
 			productName = "Sample mDNS Client";
 			productReference = 6575FC1D022EB76000000109;
-			shouldUseHeadermap = 0;
 		};
 		6575FC1D022EB76000000109 = {
 			isa = PBXExecutableFileReference;
@@ -591,24 +600,21 @@
 		6575FC1F022EB78C00000109 = {
 			children = (
 				6575FC20022EB7AA00000109,
+				9D0B9DBE04C77273003924CB,
+				9D0B9DC204C7729A003924CB,
 			);
 			isa = PBXGroup;
 			name = SampleMulticastDNSClient;
 			refType = 4;
 		};
 		6575FC20022EB7AA00000109 = {
+			fileEncoding = 30;
 			indentWidth = 4;
 			isa = PBXFileReference;
 			path = SamplemDNSClient.c;
 			refType = 4;
 			tabWidth = 4;
 			usesTabs = 0;
-		};
-		6575FC21022EB7AA00000109 = {
-			fileRef = 6575FC20022EB7AA00000109;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 		6575FC24022EBA5D00000109 = {
 			fileRef = 09AB6884FE841BABC02AAC07;
@@ -627,6 +633,149 @@
 //652
 //653
 //654
+//9D0
+//9D1
+//9D2
+//9D3
+//9D4
+		9D0B9DB604C7713D003924CB = {
+			buildActionMask = 2147483647;
+			files = (
+				9D0B9DC504C7739E003924CB,
+				9D0B9DD304C7741B003924CB,
+			);
+			isa = PBXHeadersBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9D0B9DB704C7713D003924CB = {
+			buildActionMask = 2147483647;
+			files = (
+				9D0B9DC404C77396003924CB,
+				9D0B9DD204C773FD003924CB,
+				9D0B9DD404C77421003924CB,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9D0B9DB804C7713D003924CB = {
+			buildActionMask = 2147483647;
+			files = (
+				9D0B9DCD04C773CB003924CB,
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9D0B9DB904C7713D003924CB = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXRezBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9D0B9DBA04C7713D003924CB = {
+			buildPhases = (
+				9D0B9DB604C7713D003924CB,
+				9D0B9DB704C7713D003924CB,
+				9D0B9DB804C7713D003924CB,
+				9D0B9DB904C7713D003924CB,
+			);
+			buildSettings = {
+				OPTIMIZATION_CFLAGS = "-O0";
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = uds_test;
+				REZ_EXECUTABLE = YES;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
+			};
+			dependencies = (
+			);
+			isa = PBXToolTarget;
+			name = "UDS API Test Tool";
+			productName = "UDS API Test Tool";
+			productReference = 9D0B9DBB04C7713D003924CB;
+		};
+		9D0B9DBB04C7713D003924CB = {
+			isa = PBXExecutableFileReference;
+			path = uds_test;
+			refType = 3;
+		};
+		9D0B9DBD04C77181003924CB = {
+			isa = PBXTargetDependency;
+			target = 9D0B9DBA04C7713D003924CB;
+		};
+		9D0B9DBE04C77273003924CB = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			path = SampleUDSClient.c;
+			refType = 4;
+		};
+		9D0B9DC204C7729A003924CB = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			path = dnssd_clientstub.c;
+			refType = 4;
+		};
+		9D0B9DC404C77396003924CB = {
+			fileRef = 9D0B9DBE04C77273003924CB;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		9D0B9DC504C7739E003924CB = {
+			fileRef = 9DD6952C04C718C900E7873D;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		9D0B9DCD04C773CB003924CB = {
+			fileRef = 09AB6884FE841BABC02AAC07;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		9D0B9DD204C773FD003924CB = {
+			fileRef = 9D0B9DC204C7729A003924CB;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		9D0B9DD304C7741B003924CB = {
+			fileRef = F5E11B5B04A28126019798ED;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		9D0B9DD404C77421003924CB = {
+			fileRef = F5E11B5A04A28126019798ED;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		9DD6952C04C718C900E7873D = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			path = dns_sd.h;
+			refType = 4;
+		};
+		9DD6952D04C718C900E7873D = {
+			fileRef = 9DD6952C04C718C900E7873D;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		9DD6952E04C718C900E7873D = {
+			fileRef = 9DD6952C04C718C900E7873D;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+//9D0
+//9D1
+//9D2
+//9D3
+//9D4
 //F50
 //F51
 //F52
@@ -657,6 +806,7 @@
 			};
 		};
 		F525E72804AA167501F1CF4D = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = uds_daemon.c;
 			refType = 4;
@@ -674,11 +824,13 @@
 			};
 		};
 		F5E11B5A04A28126019798ED = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = dnssd_ipc.c;
 			refType = 4;
 		};
 		F5E11B5B04A28126019798ED = {
+			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = dnssd_ipc.h;
 			refType = 4;
@@ -703,23 +855,6 @@
 		};
 		F5E11B5F04A28126019798ED = {
 			fileRef = F5E11B5B04A28126019798ED;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		F5E11B6104A2813A019798ED = {
-			isa = PBXFileReference;
-			path = uds_dnssd.h;
-			refType = 4;
-		};
-		F5E11B6304A2813A019798ED = {
-			fileRef = F5E11B6104A2813A019798ED;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		F5E11B6504A2813A019798ED = {
-			fileRef = F5E11B6104A2813A019798ED;
 			isa = PBXBuildFile;
 			settings = {
 			};

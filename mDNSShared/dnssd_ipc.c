@@ -22,37 +22,8 @@
 
 
 #include "dnssd_ipc.h"
+
  
-ipc_msg_hdr *create_hdr(int op, int *len, char **data_start)
-    {
-    char *msg = NULL;
-    ipc_msg_hdr *hdr;
-    int datalen;
-
-    assert(len);
-    assert(data_start);
-
-    datalen = *len;
-    *len += sizeof(ipc_msg_hdr);
-
-    // write message to buffer
-    msg = malloc(*len);
-    if (!msg)
-    	{
-        perror("ERROR: malloc");
-        return NULL;
-    	}
-    
-    hdr = (void *)msg;
-    hdr->len = *len;
-    hdr->datalen = datalen;
-    hdr->version = VERSION;
-    hdr->op.request_op = op;
-    *data_start = msg + sizeof(ipc_msg_hdr);
-    return hdr;
-    }
-
-
 
 void put_flags(const DNSServiceDiscoveryFlags flags, char **ptr)
     {
@@ -71,21 +42,21 @@ DNSServiceDiscoveryFlags get_flags(char **ptr)
 	return flags;
     }
 
-void put_long(const u_int32_t l, char **ptr)
+void put_long(const uint32_t l, char **ptr)
     {
     assert(ptr && *ptr);
 
-    *(u_int32_t *)(*ptr) = l;
-    *ptr += sizeof(u_int32_t);
+    *(uint32_t *)(*ptr) = l;
+    *ptr += sizeof(uint32_t);
     }
 
-u_int32_t get_long(char **ptr)
+uint32_t get_long(char **ptr)
     {
-    u_int32_t l;
+    uint32_t l;
 	
     assert(ptr && *ptr);
-    l = *(u_int32_t *)(*ptr);
-    *ptr += sizeof(u_int32_t);
+    l = *(uint32_t *)(*ptr);
+    *ptr += sizeof(uint32_t);
     return l;
     }
 
@@ -107,21 +78,21 @@ DNSServiceReplyErrorType get_error_code(char **ptr)
     return error;
     }
 
-void put_short(const u_int16_t s, char **ptr)
+void put_short(const uint16_t s, char **ptr)
     {
     assert (ptr && *ptr);
 
-    *(u_int16_t *)(*ptr) = s;
-    *ptr += sizeof(u_int16_t);
+    *(uint16_t *)(*ptr) = s;
+    *ptr += sizeof(uint16_t);
     }
 
-u_int16_t get_short(char **ptr)
+uint16_t get_short(char **ptr)
     {
-    u_int16_t s;
+    uint16_t s;
 
     assert(ptr && *ptr);
-    s = *(u_int16_t *)(*ptr);
-    *ptr += sizeof(u_int16_t);
+    s = *(uint16_t *)(*ptr);
+    *ptr += sizeof(uint16_t);
     return s;
     }
 
@@ -129,19 +100,23 @@ u_int16_t get_short(char **ptr)
 
 
 
-void put_string(const char *str, char **ptr)
+int put_string(const char *str, char **ptr)
     {
     strcpy(*ptr, str);
     *ptr += strlen(str) + 1;
+    return 0;
     }
 
 // !!!KRS we don't properly handle the case where the string is longer than the buffer!!!	
-char *get_string(char **ptr, char *buffer, int buflen)
+int get_string(char **ptr, char *buffer, int buflen)
     {
+    int overrun;
+    
+    overrun = (int)strlen(*ptr) <  buflen ? 0 : -1;
     strncpy(buffer, *ptr,  buflen - 1);
     buffer[buflen - 1] = '\0';
     *ptr += strlen(buffer) + 1;
-    return buffer;
+    return overrun;
     }	
 
 void put_rdata(const int rdlen, const char *rdata, char **ptr)
@@ -165,7 +140,6 @@ char *get_rdata(char **ptr, int rdlen)
         return NULL;
         }
     memcpy(buffer, *ptr, rdlen);
-    fprintf(stderr, "pulled string %s\n", *ptr);
     *ptr += rdlen;
     return buffer;
     }

@@ -35,6 +35,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.121  2003/07/20 03:38:51  ksekar
+ * Bug #: 3320722
+ * Completed support for Unix-domain socket based API.
+ *
  * Revision 1.120  2003/07/18 00:30:00  cheshire
  * <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
  *
@@ -154,6 +158,7 @@
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
+#define ENABLE_UDS 1
 #define REMOVE_THIS_BEFORE_PANTHER_SHIPS 1
 #if REMOVE_THIS_BEFORE_PANTHER_SHIPS
 #include </System/Library/Frameworks/CoreFoundation.framework/Versions/A/PrivateHeaders/CFPriv.h>

@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.98  2003/07/20 03:38:51  ksekar
+Bug #: 3320722
+Completed support for Unix-domain socket based API.
+
 Revision 1.97  2003/07/19 03:15:16  cheshire
 Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
 and add the obvious trivial implementations to each platform support layer
@@ -372,6 +376,16 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS 
 			if (i->scope_id == index)
 				return(i->ifinfo.InterfaceID);
 	return(mDNSNULL);
+	}
+	
+mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
+	{
+	NetworkInterfaceInfoOSX *i;
+	if (id)
+		for (i = m->p->InterfaceList; i; i = i->next)
+			if (i->ifinfo.InterfaceID == id)
+				return i->scope_id;
+	return 0;
 	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,

@@ -23,13 +23,18 @@
 
 #include "mDNSClientAPI.h"
 #include "mDNSMacOSX.h"
-#include "uds_dnssd.h"
+#include "dns_sd.h"
 #include "dnssd_ipc.h"
 #include <fcntl.h>
+#include <sys/ioctl.h>
 
+
+// Types and Data Structures
+// ----------------------------------------------------------------------
 
 typedef enum
     {
+    t_uninitialized,
     t_morecoming,
     t_complete,
     t_error,
@@ -38,46 +43,92 @@ typedef enum
 
 typedef void (*req_termination_fn)(void *);
 
-//!!!KRS this should be a hashtable, not a list!
-typedef struct registration_entry
+
+typedef struct registered_record_entry
     {
     int key;
     ResourceRecord *rr;
-    struct registration_entry *next;
-    } registration_entry;
+    struct registered_record_entry *next;
+    } registered_record_entry;
 
+typedef struct registered_service
+    {
+    struct registered_service *next;
+    int autoname;
+    int renameonconflict;
+    int rename_on_memfree;  	// set flag on config change when we deregister original name
+    domainlabel name;
+    ServiceRecordSet *srs;
+    ResourceRecord *subtypes;
+    char *buffer;		//storage for ServiceRecordSet and subtypes - srs comes first
+    } registered_service;
+    
+typedef struct 
+    {
+    mStatus err;
+    int nwritten;
+    int sd;
+    } undelivered_error_t;
 
 typedef struct request_state
     {
+    // connection structures
     CFRunLoopSourceRef rls;
     CFSocketRef sr;		
-    int sd;			// we could use CFSocketGetNative() to get the descriptor from the CFSocket,
-                                // but maintaining/using a separate descriptor eases portability to other platforms
+    int sd;	
+    int errfd;		
+                                
+    // state of read (in case message is read over several recv() calls)                            
     transfer_state ts;
     uint32_t hdr_bytes;		// bytes of header already read
     ipc_msg_hdr hdr;
     uint32_t data_bytes;	// bytes of message data already read
     char *msgbuf;		// pointer to data storage
     int bufsize;		// size of data storage
+
+    // reply, termination, error, and client context info
+    void *client_context;	// don't touch this - pointer only valid in client's addr space
     struct reply_state *replies;  // corresponding (active) reply list
+    undelivered_error_t *u_err;
     void *termination_context;
     req_termination_fn terminate;
-    void *client_context;	// don't touch this - pointer only valid in client's addr space
-    registration_entry *reg_entries;  // non-null only for connection-oriented registrations
+
+    // registration context associated with this request (null if not applicable)
+    registered_record_entry *reg_recs;  // muliple registrations for a connection-oriented request
+    registered_service *service;  // service record set and flags
+    
     struct request_state *next;
     } request_state;
 
+//deamon context types
+#define DC_SRS 1       // service record set
+
+// struct physically sits between ipc message header and call-specific fields in the message buffer
+typedef struct
+    {
+    DNSServiceDiscoveryFlags flags;
+    uint32_t ifi;
+    DNSServiceReplyErrorType error;
+    } reply_hdr;
+    
+
 typedef struct reply_state
     {
-    transfer_state ts;
+    // state of the transmission
     int sd;
+    transfer_state ts;
     uint32_t nwriten;
     uint32_t len;
-    DNSServiceDiscoveryFlags *fptr; // pointer to flags field in message buffer - flags may need to be modified
-                                    // after message is fully formatted  !!!KRS why not just put flags in ipc_msg_hdr?	
-    char *msgbuf;		// header and message data together
+    // context of the reply
     struct request_state *request;  // the request that this answers
     struct reply_state *next;   // if there are multiple unsent replies
+    struct reply_state *prev;
+    // pointer into message buffer - allows fields to be changed after message is formatted
+    ipc_msg_hdr *mhdr;
+    reply_hdr *rhdr;
+    char *sdata;  // pointer to start of call-specific data
+    // pointer to malloc'd buffer
+    char *msgbuf;	
     } reply_state;
 
 
@@ -104,9 +155,24 @@ typedef struct
     client_context_t client_context;
     } regrecord_callback_context;
 
+
+
+// Macros  
+// ----------------------------------------------------------------------
+
+
+#define MAX(a,b) (a > b ? a : b)
+
+
+
+
+
 // globals
 static int listenfd = -1;  
-request_state *all_requests = NULL;
+static request_state *all_requests = NULL;  
+static registered_service  *registered_services = NULL;
+//!!!KRS we should keep a separate list containing only the requests that need to be examined
+//in the idle() routine.
  
 // private function prototypes
 static void connect_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
@@ -116,7 +182,6 @@ static void abort_request(request_state *rs);
 static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
 static void handle_resolve_request(request_state *rstate);
 static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
-//static void question_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
 static void question_termination_callback(void *context);
 static void handle_browse_request(request_state *request);
 static void browse_termination_callback(void *context);
@@ -125,14 +190,16 @@ static void handle_regservice_request(request_state *request);
 static void regservice_termination_callback(void *context);
 static void process_service_registration(ServiceRecordSet *const srs);
 static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result);
-static ipc_msg_hdr *gen_rr_response(domainname *servicename, DNSServiceDiscoveryFlags **fptr);
+static void handle_add_request(request_state *rstate);
+static void handle_update_request(request_state *rstate);
+static mStatus gen_rr_response(domainname *servicename, mDNSInterfaceID id, request_state *request, reply_state **rep);
 static void append_reply(request_state *req, reply_state *rep);
-static int BuildDomainNameFromStrings(domainname *srv, char *name, char *regtype, char *domain);
+static int build_domainname_from_strings(domainname *srv, char *name, char *regtype, char *domain);
 static void enum_termination_callback(void *context);
 static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
 static void handle_query_request(request_state *rstate);
-static void do_question(request_state *rstate, domainname *name, u_int32_t ifi, uint16_t rrtype, int16_t rrclass);
-static reply_state *format_enumeration_reply(request_state *rstate, char *domain,                                             	DNSServiceDiscoveryFlags flags, u_int32_t ifi, DNSServiceReplyErrorType err);
+static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi, uint16_t rrtype, int16_t rrclass);
+static reply_state *format_enumeration_reply(request_state *rstate, char *domain,                                             	DNSServiceDiscoveryFlags flags, uint32_t ifi, DNSServiceReplyErrorType err);
 static void handle_enum_request(request_state *rstate);
 static void handle_regrecord_request(request_state *rstate);
 static void regrecord_callback(mDNS *const m, ResourceRecord *const rr, mStatus result);
@@ -142,6 +209,13 @@ static void handle_reconfirm_request(request_state *rstate);
 static ResourceRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl);
 static void handle_removerecord_request(request_state *rstate);
 static void reset_connected_rstate(request_state *rstate);
+static int deliver_error(request_state *rstate, mStatus err);
+static int deliver_async_error(request_state *rs, reply_op_t op, mStatus err);
+static int send_undelivered_error(request_state *rs);
+static reply_state *create_reply(reply_op_t op, int datalen, request_state *request);
+static void update_callback(mDNS *const m, ResourceRecord *const rr, RData *oldrd);
+static void my_perror(char *errmsg);
+static void unlink_request(request_state *rs);
 
 
 // initialization, setup/teardown functions
@@ -150,13 +224,13 @@ int udsserver_init(void)
     {
     mode_t mask;
     struct sockaddr_un laddr;
-	//umask(0777);
 
     if ((listenfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
             goto error;
     unlink(MDNS_UDS_SERVERPATH);  //OK if this fails
     bzero(&laddr, sizeof(laddr));
     laddr.sun_family = AF_LOCAL;
+    laddr.sun_len = sizeof(struct sockaddr_un);
     strcpy(laddr.sun_path, MDNS_UDS_SERVERPATH);
     mask = umask(0);
     if (bind(listenfd, (struct sockaddr *)&laddr, sizeof(laddr)) < 0)
@@ -165,14 +239,14 @@ int udsserver_init(void)
 
     if (fcntl(listenfd, F_SETFL, O_NONBLOCK) < 0)
         {
-        perror("ERROR: could not set listen socket to non-blocking mode");
-        return -1;
+        my_perror("ERROR: could not set listen socket to non-blocking mode");
+        goto error;
         }
     listen(listenfd, LISTENQ);
     return 0;
 	
 error:
-    perror("ERROR: ");
+    my_perror("ERROR: udsserver_init");
     return -1;
     }
 
@@ -180,7 +254,6 @@ int udsserver_exit(void)
     {
     close(listenfd);
     unlink(MDNS_UDS_SERVERPATH);
-    //!!!KRS we should run through the list and close all open descriptors
     return 0;
     }
 
@@ -188,7 +261,7 @@ int udsserver_exit(void)
 // add the named socket as a runloop source
 int udsserver_add_rl_source(void)
     {
-    CFSocketContext context = 	{ 0, NULL, NULL, NULL, NULL 	};
+    CFSocketContext context = 	{ 0, NULL, NULL, NULL, NULL };
     CFSocketRef sr = CFSocketCreateWithNative(kCFAllocatorDefault, listenfd, kCFSocketReadCallBack, connect_callback, &context);
     if (!sr)
         {
@@ -203,35 +276,42 @@ int udsserver_add_rl_source(void)
         return -1;
     	}
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-    //CFRelease(rls);
     return 0;
     }
 
 mDNSs32 udsserver_idle(mDNSs32 nextevent)
     {
-    request_state *req = all_requests;
+    request_state *req = all_requests, *tmp, *prev = NULL;
     reply_state *fptr;
-    transfer_state result;
+    transfer_state result; 
     mDNSs32 now = mDNSPlatformTimeNow();
 
 
     while(req)
         {
-        if (req->ts == t_complete || (req->ts == t_morecoming && req->replies)) //!!!KRS clean this up...
+        result = t_uninitialized;
+        if (req->u_err) 
+            {
+            if (send_undelivered_error(req) < 0) 
+                {   
+                req = req->next;
+                continue;	// don't try to send message data if client is blocked or aborted
+                }
+            }
+        if (req->ts == t_complete || req->ts == t_morecoming) 
             {
             while(req->replies)
                 {
-                if (req->replies->next) *req->replies->fptr |= kDNSServiceDiscoveryFlagsMoreComing;
-                else *req->replies->fptr |= kDNSServiceDiscoveryFlagsFinished;
+                if (req->replies->next) req->replies->rhdr->flags |= kDNSServiceDiscoveryFlagsMoreComing;
+                else req->replies->rhdr->flags |= kDNSServiceDiscoveryFlagsFinished;
                 result = send_msg(req->replies);
                 if (result == t_complete)
                     {
                     fptr = req->replies;
                     req->replies = req->replies->next;
-                    free(fptr);
-                    fprintf(stderr, "***completed\n");
+                    freeL("udsserver_idle", fptr);
                     }
-                else if (result == t_terminated)
+                else if (result == t_terminated || result == t_error)
                     {
                     abort_request(req);
                     break;
@@ -242,21 +322,55 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
                         nextevent = now + mDNSPlatformOneSecond;
                     break;					// start where we left off in a second
                     }
-                else if (result == t_error) assert(0);  //!!!KRS do something better here!
                 }
             }
-        req = req->next;
+        if (result == t_terminated || result == t_error)  
+        //since we're already doing a list traversal, we unlink the request manunally instead of calling unlink_request()
+            {
+            tmp = req;
+            if (prev) prev->next = req->next;
+            if (req == all_requests) all_requests = all_requests->next;
+            req = req->next;
+            freeL("udsserver_idle", tmp);
+            }
+        else 
+            {
+            prev = req;
+            req = req->next;
+            }
         }
     return nextevent;
     }
+    
+void udsserver_handle_configchange(void)
+    {
+    registered_service *ptr;
+    mStatus err;
+    
+    for (ptr = registered_services; ptr; ptr = ptr->next)
+        {
+        if (ptr->autoname && !SameDomainLabel(ptr->name.c, mDNSStorage.nicelabel.c))
+            {
+            ptr->rename_on_memfree = 1;
+            err = mDNS_DeregisterService(&mDNSStorage, ptr->srs);
+            if (err) LogMsg("ERROR: udsserver_handle_configchange: DeregisterService returned error %d.  Continuing.", err);
+            // error should never occur - safest to log and continue
+            }
+        }
+    }
+    
+    
+    
 
-// accept a connection on the named socket, adding the new descriptor to the runloop
+// accept a connection on the named socket, adding the new descriptor to the runloop and passing the error
+// descriptor to the client
 static void connect_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i)
     {
     int sd, clilen, optval;
     struct sockaddr_un cliaddr;
     CFSocketContext context = 	{ 0, NULL, NULL, NULL, NULL 	};
     request_state *rstate;
+//    int errpipe[2];
     
     (void)s;
     (void)t;
@@ -264,62 +378,82 @@ static void connect_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr
     (void)c;
     (void)i;
 
-    assert(listenfd > 0);	//daemon must have already called init()
-    assert(listenfd == CFSocketGetNative(s));  //!!!KRS we can remove the global listenfd...
     clilen = sizeof(cliaddr);
     sd = accept(listenfd, (struct sockaddr *)&cliaddr, &clilen);
 
     if (sd < 0)
         {
         if (errno == EWOULDBLOCK) return; 
-        perror("ERROR: accept");
-        //!!!KRS we need to terminate here!  maybe not...
+        my_perror("ERROR: accept");
         return;
     	}
-#ifdef UDSDEBUG
-    fprintf(stderr, "***UDS: Established connection with client on sd %d, path %s\n", sd, cliaddr.sun_path);
-#endif
     optval = 1;
     if (setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
     	{
-        perror("ERROR: setsockopt - SOL_NOSIGPIPE");  //!!! do something better here...
+        my_perror("ERROR: setsockopt - SOL_NOSIGPIPE - aborting client");  
+        close(sd);
         return;
     	}
 
-    if (fcntl(listenfd, F_SETFL, O_NONBLOCK) < 0)
+    if (fcntl(sd, F_SETFL, O_NONBLOCK) < 0)
     	{
-        perror("ERROR: could not set connected socket to non-blocking mode");
-        return;  //!!! do something better here...
-    	}
+        my_perror("ERROR: could not set connected socket to non-blocking mode - aborting client");
+        close(sd);    	
+        return;
+        }
 
-    // allocate a request_state struct that will live with the socket
-    rstate = malloc(sizeof(request_state));
+/*
+    // open a pipe to deliver error messages, pass descriptor to client
+    if (pipe(errpipe) < 0)
+        {
+        my_perror("ERROR: could not create pipe");
+        exit(1);
+        }
+    
+    if (ioctl(sd, I_SENDFD, errpipe[0]) < 0)
+        {
+        my_perror("ERROR: could not pass pipe descriptor to client.  Aborting client.\n");
+        close(sd);
+        return;
+        }
+    if (fcntl(errpipe[1], F_SETFL, O_NONBLOCK) < 0)
+    	{
+        my_perror("ERROR: could not set error pipe to non-blocking mode - aborting client");
+        close(sd);    	
+        close(errpipe[1]);
+        return;
+        }
+  */
+  
+      // allocate a request_state struct that will live with the socket
+    rstate = mallocL("connect_callback", sizeof(request_state));
     if (!rstate)
     	{
-        perror("ERROR: malloc");
-        return;         		//!!!KRS we should exit here!
+        my_perror("ERROR: malloc");
+        exit(1);
     	}
     bzero(rstate, sizeof(request_state));
     rstate->ts = t_morecoming;
     rstate->sd = sd;
-    context.info = rstate;
-
+    //rstate->errfd = errpipe[1];
+    
     //now create CFSocket wrapper and add to run loop
+    context.info = rstate;
     rstate->sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketReadCallBack, request_callback, &context);
     if (!rstate->sr)
     	{
         debugf("ERROR: connect_callback - CFSocketCreateWithNative");
-        free(rstate);
+        freeL("connect_callback", rstate);
+        close(sd);
         return;
     	}
     rstate->rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, rstate->sr, 0);
-    fprintf(stderr, "***UDS: adding rls %p\n", rstate->rls);
-    assert(CFSocketGetNative(rstate->sr) == sd);
     if (!rstate->rls)
     	{
         debugf("ERROR: connect_callback - CFSocketCreateRunLoopSource");
+        CFSocketInvalidate(rstate->sr);  // automatically closes socket
         CFRelease(rstate->sr);
-        free(rstate);
+        freeL("connect_callback", rstate);
         return;
     	}
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rstate->rls, kCFRunLoopDefaultMode);
@@ -352,20 +486,19 @@ static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef d
     if (result == t_terminated)
     	{
         abort_request(rstate);
+        unlink_request(rstate);
         return;
     	}
     if (result == t_error)
     	{
-        //!!! need a xf call to cleanup and exit!
+        abort_request(rstate);
+        unlink_request(rstate);
         return;
     	}
-#ifdef UDSDEBUG
-    fprintf(stderr, "done.\n");
-#endif
 
     if (rstate->hdr.version != VERSION)
     {
-        fprintf(stderr, "ERROR: client incompatible with daemon (client version = %d, "
+        LogMsg("ERROR: client incompatible with daemon (client version = %d, "
                 "daemon version = %d)\n", rstate->hdr.version, VERSION);
         return;
     }
@@ -378,6 +511,8 @@ static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef d
         case reg_service_request: handle_regservice_request(rstate);  break;
         case enumeration_request: handle_enum_request(rstate); break;
         case reg_record_request: handle_regrecord_request(rstate);  break;
+        case add_record_request: handle_add_request(rstate); break;
+        case update_record_request: handle_update_request(rstate); break;
         case remove_record_request: handle_removerecord_request(rstate); break;
         case reconfirm_record_request: handle_reconfirm_request(rstate); break;
         default:
@@ -398,32 +533,42 @@ static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef d
 static void handle_query_request(request_state *rstate)
     {
     DNSServiceDiscoveryFlags flags;
-    u_int32_t interfaceIndex;
+    uint32_t interfaceIndex;
     char name[256];
-    u_int16_t rrtype, rrclass;
+    uint16_t rrtype, rrclass;
     char *ptr;
     domainname dname;
+    mStatus result;
     
     assert(rstate->ts == t_complete);
     ptr = rstate->msgbuf;
     assert(ptr);
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
-    get_string(&ptr, name, 256);
+    if (get_string(&ptr, name, 256) < 0) goto bad_param;
     rrtype = get_short(&ptr);
     rrclass = get_short(&ptr);
-    MakeDomainNameFromDNSNameString (&dname, name);
-    do_question(rstate, &dname, interfaceIndex, rrtype, rrclass);
+    if (!MakeDomainNameFromDNSNameString(&dname, name)) goto bad_param;
+    result = do_question(rstate, &dname, interfaceIndex, rrtype, rrclass);
+    deliver_error(rstate, result);
+    return;
+    
+bad_param:
+    deliver_error(rstate, mStatus_BadParamErr);
+    abort_request(rstate);
+    unlink_request(rstate);
+    return;
     }
 
 static void handle_resolve_request(request_state *rstate)
     {
     DNSServiceDiscoveryFlags flags;
-    u_int32_t interfaceIndex;
-    char name[256], regtype[256], domain[256];  //!!!KRS re-examine these buffer sizes
-    u_int16_t rrtype;
+    uint32_t interfaceIndex;
+    char name[256], regtype[256], domain[256];  
+    uint16_t rrtype;
     char *ptr;  // message data pointer
     domainname fqdn;
+    mStatus result;
     assert(rstate->ts == t_complete);
 
     // extract the data from the message
@@ -431,33 +576,38 @@ static void handle_resolve_request(request_state *rstate)
     assert(ptr);
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
-    get_string(&ptr, name, 256);
-    get_string(&ptr, regtype, 256);
-    get_string(&ptr, domain, 256);
+    if (get_string(&ptr, name, 256) < 0 ||
+        get_string(&ptr, regtype, 256) < 0 ||
+        get_string(&ptr, domain, 256) < 0)
+        goto bad_param;
     rrtype = get_short(&ptr);
     // free memory in rstate since we don't need it anymore
-    free(rstate->msgbuf);
+    freeL("handle_resolve_request", rstate->msgbuf);
     rstate->msgbuf = NULL;
+        
+    if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
+        goto bad_param;
+    result = do_question(rstate, &fqdn, interfaceIndex, rrtype, kDNSClass_IN);
+    deliver_error(rstate, result);
+    return;
 
-    if (BuildDomainNameFromStrings(&fqdn, name, regtype, domain) < 0)
-    	{
-        fprintf(stderr, "ERROR: invalid label(s)\n");
-        return;
-    	}
-    do_question(rstate, &fqdn, interfaceIndex, rrtype, kDNSClass_IN);
+bad_param:
+    deliver_error(rstate, mStatus_BadParamErr);
+    abort_request(rstate);
+    unlink_request(rstate);
     }
 
 // common query issuing routine for resolve and query requests
-static void do_question(request_state *rstate, domainname *name, u_int32_t ifi, uint16_t rrtype, int16_t rrclass)
+static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi, uint16_t rrtype, int16_t rrclass)
     {
     DNSQuestion *q;
+    mStatus result;
 
-    (void)ifi;  //!!!KRS
-    q = malloc(sizeof(DNSQuestion));
+    q = mallocL("do_question", sizeof(DNSQuestion));
     if (!q)
     	{
-        perror("ERROR: do_question - malloc");
-        return;  //!!!KRS do something more meaningful here...
+        my_perror("ERROR: do_question - malloc");
+        exit(1);
     	}
     bzero(q, sizeof(DNSQuestion));	
 
@@ -466,28 +616,25 @@ static void do_question(request_state *rstate, domainname *name, u_int32_t ifi, 
     memcpy(&q->qname, name, MAX_DOMAIN_NAME);
     q->qtype = rrtype;
     q->qclass = rrclass;
-    q->InterfaceID = NULL;  // !!!KRS fix this
+    q->InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
+
 
     rstate->termination_context = q;
     rstate->terminate = question_termination_callback;
 
-    if (mDNS_StartQuery(&mDNSStorage, q) != mStatus_NoError)
-    	{
-        fprintf(stderr, "ERROR: mDNS_StartQuery");
-        //!!!KRS
-    	}
-    }		
-
+    result = mDNS_StartQuery(&mDNSStorage, q);
+    if (result != mStatus_NoError) LogMsg("ERROR: mDNS_StartQuery: %d", (int)result);
+    return result;
+    }
+    
 // what gets called when a resolve is completed and we need to send the data back to the client
 static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
     {
-    ipc_msg_hdr *hdr;
     char *data;
     char name[256];
     request_state *req;
     reply_state *rep;
     int len;
-    DNSServiceDiscoveryFlags *fptr;
 
     (void)m;
     //mDNS_StopQuery(m, question);
@@ -495,19 +642,19 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     
     // calculate reply data length
     len = sizeof(DNSServiceDiscoveryFlags);
-    len += 2 * sizeof(u_int32_t);  // if index + ttl
+    len += 2 * sizeof(uint32_t);  // if index + ttl
     len += sizeof(DNSServiceReplyErrorType);
-    len += 3 * sizeof(u_int16_t); // type, class, rdlen
+    len += 3 * sizeof(uint16_t); // type, class, rdlen
     len += answer->rdata->RDLength;
     ConvertDomainNameToCString(&answer->name, name);
     len += strlen(name) + 1;
     
-    hdr = create_hdr(query_reply, &len, &data);
-    if (!hdr) return;					//!!!KRS do something more here!
-    fptr = (DNSServiceDiscoveryFlags *)data;
-    put_flags(0, &data);
-    put_long(0, &data);  //!!!for ifindex - FIX THIS!
-    put_error_code(0, &data);
+    rep =  create_reply(query_reply, len, req);
+    rep->rhdr->flags = 0;
+    rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID);
+    rep->rhdr->error = kDNSServiceDiscoveryErr_NoError;
+    data = rep->sdata;
+    
     put_string(name, &data);
     put_short(answer->rrtype, &data);
     put_short(answer->rrclass, &data);
@@ -515,20 +662,6 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     put_rdata(answer->rdata->RDLength, (char *)&answer->rdata->u, &data);
     put_long(answer->rrremainingttl, &data);
 
-    rep = malloc(sizeof(reply_state));
-    if (!rep)
-    	{
-        perror("ERROR: malloc");
-        return;		//!!!KRS should exit here
-    	}
-    bzero(rep, sizeof(reply_state));
-    rep->ts = t_morecoming;
-    rep->sd = req->sd;
-    rep->len = len;
-    rep->msgbuf = (char *)hdr;
-    rep->fptr = fptr;
-    rep->request = req;
-    // add reply to list in request struct
     append_reply(req, rep);
     return;
     }
@@ -537,29 +670,28 @@ static void question_termination_callback(void *context)
     {
     DNSQuestion *q = context;
 
-#ifdef UDSDEBUG
-    fprintf(stderr, "***UDS: Ending query\n");
-#endif
-    mDNS_StopQuery(&mDNSStorage,q);  //!!!KRS error-check here
-    free(q);
+
+    mDNS_StopQuery(&mDNSStorage, q);  // no need to error check
+    freeL("question_termination_callback", q);
     }
 
-// browse
+
 static void handle_browse_request(request_state *request)
     {
     DNSServiceDiscoveryFlags flags;
-    u_int32_t interfaceIndex;
+    uint32_t interfaceIndex;
     char regtype[256], domain[256];
     DNSQuestion *q;
     domainname typedn, domdn;
     char *ptr;
+    mStatus result;
 
     assert(request->ts == t_complete);
-    q = malloc(sizeof(DNSQuestion));
+    q = mallocL("handle_browse_request", sizeof(DNSQuestion));
     if (!q)
     	{
-        perror("ERROR: handle_browse_request - malloc");
-        return;  //!!!KRS something more here...
+        my_perror("ERROR: handle_browse_request - malloc");
+        exit(1);
     	}
     bzero(q, sizeof(DNSQuestion));
 
@@ -567,199 +699,361 @@ static void handle_browse_request(request_state *request)
     ptr = request->msgbuf;
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
-    get_string(&ptr, regtype, 256);
-    get_string(&ptr, domain, 256);
-    free(request->msgbuf);
+    if (get_string(&ptr, regtype, 256) < 0 || 
+        get_string(&ptr, domain, 256) < 0)
+        goto bad_param;
+        
+    freeL("handle_browse_request", request->msgbuf);
     request->msgbuf = NULL;
 
     q->QuestionContext = request;
     q->QuestionCallback = browse_result_callback;
     if (!MakeDomainNameFromDNSNameString(&typedn, regtype) ||
         !MakeDomainNameFromDNSNameString(&domdn, domain))
-    	{
-        fprintf(stderr, "ERROR: invalid label(s)\n");
-        return;  //!!!KRS
-    	}
+        goto bad_param;
     request->termination_context = q;
     request->terminate = browse_termination_callback;
-    if (mDNS_StartBrowse(&mDNSStorage, q, &typedn, &domdn, 0, browse_result_callback, request) != mStatus_NoError)
-    	{
-        fprintf(stderr, "ERROR: mDNS_Start_Browse\n");
-        //!!!KRS
-    	}
+    result = mDNS_StartBrowse(&mDNSStorage, q, &typedn, &domdn, 0, browse_result_callback, request);
+    deliver_error(request, result);
+    return;
+    
+bad_param:
+    deliver_error(request, mStatus_BadParamErr);
+    abort_request(request);
+    unlink_request(request);
     }
 
 static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
     {
-
-    ipc_msg_hdr *hdr;
     request_state *req;
     reply_state *rep;
-    DNSServiceDiscoveryFlags *fptr;
-    
+    mStatus err;
+        
     (void)m;
     req = question->QuestionContext;
 
-    hdr = gen_rr_response(&answer->rdata->u.name, &fptr);
-    if (!hdr) goto error;
-
-    rep = malloc(sizeof(reply_state));
-    if (!rep)
-    	{
-        perror("ERROR: malloc");
-        goto error;
-    	}
-    bzero(rep, sizeof(reply_state));
-    rep->ts = t_morecoming;
-    rep->sd = req->sd;
-    rep->len = hdr->len;
-    rep->msgbuf = (char *)hdr;
-    rep->fptr = fptr;
-    rep->request = req;
-    // add reply to list in request struct
+    err = gen_rr_response(&answer->rdata->u.name, answer->InterfaceID, req, &rep);
+    if (err)
+        {
+        if (deliver_async_error(req, browse_reply, err) < 0) 
+            {
+            abort_request(req);
+            unlink_request(req);
+            }
+        return;
+        }
     append_reply(req, rep);
     return;
-
-error:
-        assert(0);  //!!!KRS
     }
 
 static void browse_termination_callback(void *context)
     {
     DNSQuestion *q = context;
 
-#ifdef UDSDEBUG
-    fprintf(stderr, "***UDS: Ending browse\n");
-#endif
-    mDNS_StopBrowse(&mDNSStorage, q);  //!!!KRS error-check here
-    free(q);
-
+    mDNS_StopBrowse(&mDNSStorage, q);  // no need to error-check result
+    freeL("browse_termination_callback", q);
     }
 
 // service registration
 static void handle_regservice_request(request_state *request)
     {
     DNSServiceDiscoveryFlags flags;
-    u_int32_t interfaceIndex, txtTTL;
+    uint32_t ifi, txtTTL;
     char name[256], regtype[256], domain[256];
-    u_int16_t txtlen;
+    uint16_t txtlen;
     mDNSIPPort port;
     void *txtdata;
     char *ptr;
     domainlabel n;
     domainname t, d;
     domainname srv;
-    ServiceRecordSet *srs;
-    mDNS *mDNSdata;
+    registered_service *r_srv;
+    int srs_size;
+    mStatus result;
 
-    mDNSdata = &mDNSStorage;
-
+    char *sub, *rtype_ptr;
+    int i, num_subtypes = 0;
+    
+    
     assert(request->ts == t_complete);
 
     // extract data from message
     ptr = request->msgbuf;
     flags = get_flags(&ptr);
-    interfaceIndex = get_long(&ptr);
-    get_string(&ptr, name, 256);
-    get_string(&ptr, regtype, 256);
-    get_string(&ptr, domain, 256);
+    ifi = get_long(&ptr);
+    if (get_string(&ptr, name, 256) < 0 ||
+        get_string(&ptr, regtype, 256) < 0 || 
+        get_string(&ptr, domain, 256) < 0)
+        goto bad_param;
+        
     port.NotAnInteger = get_short(&ptr);
     txtlen = get_short(&ptr);
     txtdata = get_rdata(&ptr, txtlen);
     txtTTL = get_long(&ptr);
 
-    fprintf(stderr, "Args: flags=%d, name=%s, type=%s, domain=%s\n", flags, name, regtype, domain);
+    // count subtypes, replacing commas w/ whitespace
+    rtype_ptr = regtype;
+    while((sub = strsep(&rtype_ptr, ",")))
+        if (*sub) num_subtypes++;
+        
+    if (!name[0]) n = (&mDNSStorage)->nicelabel;
+    else if (!MakeDomainLabelFromLiteralString(&n, name))  
+        goto bad_param;
+    if ((!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype)) ||
+    (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) ||
+    (!ConstructServiceName(&srv, &n, &t, &d)))
+        goto bad_param;
 
-    
-    if (!name[0]) n = mDNSdata->nicelabel;
-    else if (!MakeDomainLabelFromLiteralString(&n, name)) goto error;
-    if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype)) goto error;
-    if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) goto error;
-    if (!ConstructServiceName(&srv, &n, &t, &d)) goto error;
-
-    srs = malloc(sizeof(ServiceRecordSet));
-    if (!srs)
+    // calculate variable-length struct sizes and allocate registered_service object
+    srs_size = sizeof(ServiceRecordSet) + (sizeof(RDataBody) > txtlen ? 0 : txtlen - sizeof(RDataBody));
+    r_srv = mallocL("handle_regservice_request:register_service", sizeof(registered_service) + srs_size + (num_subtypes * sizeof(ResourceRecord)));
+        if (!r_srv)
     	{
-        perror("ERROR: malloc");
-        goto error;
+        my_perror("ERROR: malloc");
+        exit(1);
     	}
-    request->termination_context = srs;
+    r_srv->srs = (ServiceRecordSet *)r_srv->buffer;
+    r_srv->subtypes = (ResourceRecord *)(r_srv->buffer + srs_size);
+    r_srv->autoname = (!name[0]);
+    r_srv->rename_on_memfree = 0;
+    r_srv->next = NULL;
+    r_srv->renameonconflict = !(flags & kDNSServiceDiscoveryFlagsNoRenameOnConflict);
+    r_srv->name = n;
+    request->termination_context = &r_srv->srs;
     request->terminate = regservice_termination_callback;
+    request->service = r_srv;
     
+    sub = regtype;
+    for (i = 0; i < num_subtypes; i++)
+        {
+        MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->name, sub);
+        sub += strlen(sub);
+        }
 
-    mDNS_RegisterService(mDNSdata, srs, &n, &t, &d, NULL, port, txtdata, txtlen, 0, NULL, 0, regservice_callback, request);
-    //!!!KRS check error here
+    result = mDNS_RegisterService(&mDNSStorage, r_srv->srs, &n, &t, &d, NULL, port, txtdata, txtlen, r_srv->subtypes, num_subtypes, mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi), regservice_callback, request);
+    deliver_error(request, result);
+    if (result != mStatus_NoError) 
+        {
+        abort_request(request);
+        unlink_request(request);
+        }
+    else 
+        {
+        reset_connected_rstate(request);  // reset to receive add/remove messages
+        r_srv->next = registered_services;
+        registered_services = r_srv;
+        }
     return;
 
-
-error:
-        assert(0);  ///KRS
+bad_param:
+    deliver_error(request, mStatus_BadParamErr);
+    abort_request(request);
+    unlink_request(request);
     }
-
+    
 // service registration callback performs three duties - frees memory for deregistered services,
 // handles name conflicts, and delivers comppleted registration information to the client (via
 // process_service_registraion())
 
 static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
     {
+    mStatus err;
+    request_state *rs = srs->ServiceContext;
+
     (void)m;
+    assert(rs->service);
+    assert(rs->service->srs == srs);
+    
     if (result == mStatus_NoError)
         return process_service_registration(srs);
     else if (result == mStatus_MemFree)
-        free(srs);
+        {
+        if (rs->service->rename_on_memfree)
+            {
+            rs->service->rename_on_memfree = 0;
+            rs->service->name = mDNSStorage.nicelabel;
+            err = mDNS_RenameAndReregisterService(&mDNSStorage, srs, &rs->service->name);
+            if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %d", err);
+            // error should never happen - safest to log and continue
+            }
+        else 
+            {
+            freeL("regservice_callback", rs->service);
+            rs->termination_context = NULL;
+            rs->service = NULL;
+            }
+        }
     else if (result == mStatus_NameConflict)
     	{
-        fprintf(stderr, "ERROR: name conflict\n");  //!!!KRS need to handle this
-        return;
-    	} else fprintf(stderr, "ERROR: unknown result in regservice_callback\n");
+        if (rs->service->autoname || rs->service->renameonconflict)
+            {
+            mDNS_RenameAndReregisterService(&mDNSStorage, srs, mDNSNULL);
+            return;
+            }
+        else
+            {
+            freeL("regservice_callback", rs->service);
+            rs->service = NULL;
+            if (deliver_async_error(rs, reg_service_reply, result) < 0) 
+                {
+                abort_request(rs);
+                unlink_request(rs);
+                }
+            return;
+            }
+    	} 
+    else 
+        {
+        LogMsg("ERROR: unknown result in regservice_callback");
+        if (deliver_async_error(rs, reg_service_reply, result) < 0) 
+            {
+            abort_request(rs);
+            unlink_request(rs);
+            }
+        }
     }
         
+static void handle_add_request(request_state *rstate)
+    {
+    registered_record_entry *re;
+    ExtraResourceRecord *extra;
+    uint32_t size, ttl;
+    uint16_t rrtype, rdlen;
+    char *ptr, *rdata;
+    mStatus result;
+    ServiceRecordSet *srs = rstate->service->srs;
+    
+    if (!srs)
+        {
+        LogMsg("ERROR: handle_add_request - no service record set in request state");
+        deliver_error(rstate, mStatus_UnknownErr);
+        return;
+        }
+        
+    ptr = rstate->msgbuf;
+    rrtype = get_short(&ptr);
+    rdlen = get_short(&ptr);
+    rdata = get_rdata(&ptr, rdlen);
+    ttl = get_long(&ptr);
+    
+    if (rdlen > sizeof(RDataBody)) size = rdlen;
+    else size = sizeof(RDataBody);
+    
+    extra = mallocL("hanle_add_request", sizeof(ExtraResourceRecord) - sizeof(RDataBody) + size);
+    if (!extra)
+        {
+        my_perror("ERROR: malloc");
+        exit(1);
+        }
+        
+    bzero(extra, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
+    extra->r.rrtype = rrtype;
+    extra->r.rdatastorage.MaxRDLength = size;
+    extra->r.rdatastorage.RDLength = rdlen;
+    memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
+    result =  mDNS_AddRecordToService(&mDNSStorage, srs , extra, &extra->r.rdatastorage, ttl);
+    deliver_error(rstate, mStatus_UnknownErr);
+    reset_connected_rstate(rstate);
+    re = mallocL("handle_add_request", sizeof(registered_record_entry));
+    if (!re)
+        {
+        my_perror("ERROR: malloc");
+        exit(1);
+        }
+    re->key = rstate->hdr.reg_index;
+    re->rr = &extra->r;
+    re->next = rstate->reg_recs;
+    rstate->reg_recs = re;
+    }
+    
+static void handle_update_request(request_state *rstate)
+    {
+    registered_record_entry *reptr;
+    ResourceRecord *rr;
+    RData *newrd;
+    uint16_t rdlen, rdsize;
+    char *ptr, *rdata;
+    uint32_t ttl;
+    mStatus result;
+    
+    if (rstate->hdr.reg_index == TXT_RECORD_INDEX)
+        {
+        if (!rstate->service)
+            {
+            deliver_error(rstate, mStatus_BadParamErr);
+            return;
+            }
+        rr  = &rstate->service->srs->RR_TXT;
+        }
+    else
+        {
+        reptr = rstate->reg_recs;
+        while(reptr && reptr->key != rstate->hdr.reg_index) reptr = reptr->next;
+        if (!reptr) deliver_error(rstate, mStatus_BadReferenceErr); 
+        rr = reptr->rr;
+        }
+
+    ptr = rstate->msgbuf;
+    rdlen = get_short(&ptr);
+    rdata = get_rdata(&ptr, rdlen);
+    ttl = get_long(&ptr);
+
+    if (rdlen > sizeof(RDataBody)) rdsize = rdlen;
+    else rdsize = sizeof(RDataBody);
+    newrd = mallocL("handle_update_request", sizeof(RData) - sizeof(RDataBody) + rdsize);
+    if (!newrd)
+        {
+        my_perror("ERROR: malloc");
+        exit(1);
+        }
+    newrd->MaxRDLength = rdsize;
+    newrd->RDLength = rdlen;
+    memcpy(&newrd->u, rdata, rdlen);
+    result = mDNS_Update(&mDNSStorage, rr, ttl, newrd, update_callback);
+    deliver_error(rstate, result);
+    reset_connected_rstate(rstate);
+    }
+    
+static void update_callback(mDNS *const m, ResourceRecord *const rr, RData *oldrd)
+    {
+    (void)m;	
+    if (oldrd != &rr->rdatastorage) freeL("update_callback", oldrd);
+    }
     
 static void process_service_registration(ServiceRecordSet *const srs)
     {
-    ipc_msg_hdr *hdr;
-    DNSServiceDiscoveryFlags *fptr;
     request_state *req = srs->ServiceContext;
     reply_state *rep;
     transfer_state send_result;
+    mStatus err;
 
-    hdr = gen_rr_response(&srs->RR_SRV.name, &fptr);
-    if (!hdr) goto error;
-    rep = malloc(sizeof(reply_state));
-    if (!rep)
-    	{
-        perror("ERROR: malloc");
-        goto error;
-    	}
-    bzero(rep, sizeof(reply_state));
-    rep->ts = t_morecoming;
-    rep->sd = req->sd;
-    rep->len = hdr->len;
-    rep->msgbuf = (char *)hdr;
-    rep->fptr = fptr;
-    rep->request = req;
-    send_result = send_msg(rep);
-    if (send_result ==  t_error) goto error;
-    else if (send_result == t_complete)
-    	{
-        free(rep);
+    err = gen_rr_response(&srs->RR_SRV.name, srs->RR_SRV.InterfaceID, req, &rep);
+    if (err) 
+        {
+        if (deliver_async_error(req, reg_service_reply, err) < 0)
+            {
+            abort_request(req);
+            unlink_request(req);
+            }
         return;
-    	}
-    // if we can't send the whole reply, because the client is blocked, link it into list
+        }
+    send_result = send_msg(rep);
+    if (send_result == t_error || send_result == t_terminated) 
+        {  
+        abort_request(req);  
+        unlink_request(req);
+        freeL("process_service_registration", rep);  
+        }
+    else if (send_result == t_complete) freeL("process_service_registration", rep);
     else append_reply(req, rep);
-    return;
-    
-error:
-        assert(0);  //!!!KRS
     }
 
 static void regservice_termination_callback(void *context)
     {
     // only safe to free memory if registration is not valid, ie deregister fails
     if (mDNS_DeregisterService(&mDNSStorage, (ServiceRecordSet *)context) != mStatus_NoError)
-        free(context);
+        freeL("regservice_termination_callback", context);
     }
-
 
 
 
@@ -767,13 +1061,18 @@ static void handle_regrecord_request(request_state *rstate)
     {
     ResourceRecord *rr;
     regrecord_callback_context *rcc;
-    registration_entry *re;
-
+    registered_record_entry *re;
+    mStatus result;
+    
     assert(rstate->ts == t_complete);
     rr = read_rr_from_ipc_msg(rstate->msgbuf, 1);
-    if (!rr) return;
+    if (!rr) 
+        {
+        deliver_error(rstate, mStatus_BadParamErr);
+        return;
+        }
 
-    rcc = malloc(sizeof(regrecord_callback_context));
+    rcc = mallocL("hanlde_regrecord_request", sizeof(regrecord_callback_context));
     if (!rcc) goto malloc_error;
     rcc->rstate = rstate;
     rcc->client_context = rstate->hdr.client_context;
@@ -781,12 +1080,12 @@ static void handle_regrecord_request(request_state *rstate)
     rr->RecordCallback = regrecord_callback;
 
     // allocate registration entry, link into list
-    re = malloc(sizeof(registration_entry));
+    re = mallocL("hanlde_regrecord_request", sizeof(registered_record_entry));
     if (!re) goto malloc_error;
     re->key = rstate->hdr.reg_index;
     re->rr = rr;
-    re->next = rstate->reg_entries;
-    rstate->reg_entries = re;
+    re->next = rstate->reg_recs;
+    rstate->reg_recs = re;
 
     if (!rstate->terminate)
     	{
@@ -794,84 +1093,59 @@ static void handle_regrecord_request(request_state *rstate)
         rstate->termination_context = rstate;
     	}
     
-    if (mDNS_Register(&mDNSStorage, rr) != mStatus_NoError) assert(0);  //!!!KRS
+    result = mDNS_Register(&mDNSStorage, rr);
+    deliver_error(rstate, result); 
     reset_connected_rstate(rstate);
     return;
 
 malloc_error:
-    perror("ERROR: malloc");
+    my_perror("ERROR: malloc");
     return;
     }
 
 static void regrecord_callback(mDNS *const m, ResourceRecord *const rr, mStatus result)
     {
     regrecord_callback_context *rcc;
-    DNSServiceDiscoveryFlags flags, *fptr;
-    u_int32_t interfaceIndex;
-    DNSServiceReplyErrorType errorCode;
     int len;
-    ipc_msg_hdr *hdr;
-    char *data;
     reply_state *reply;
     transfer_state ts;
 
     (void)m;
-    if (result == mStatus_NameConflict) 	{ return; }  	//!!!KRS report this to client!
-    if (result == mStatus_MemFree) 	{ free(rr);  return; }
-    if (result != mStatus_NoError)
-        {
-        fprintf(stderr, "ERROR: regrecord_callback: unknown error (%d)\n", (int)result);
-        return;
-        }
 
+    if (result == mStatus_MemFree) 	{ freeL("regrecord_callback", rr);  return; }
     rcc = rr->RecordContext;
+
     // format result, add to the list for the request, including the client context in the header
     len = sizeof(DNSServiceDiscoveryFlags);
-    len += sizeof(u_int32_t);                //interfaceIndex
+    len += sizeof(uint32_t);                //interfaceIndex
     len += sizeof(DNSServiceReplyErrorType);
     
-    flags = 0;           //!!!KRS should this be set?
-    interfaceIndex = 0;  //!!!KRS
-    errorCode = kDNSServiceDiscoveryNoErr;
-
-    hdr = create_hdr(reg_record_reply, &len, &data);
-    if (!hdr) return;
-    hdr->client_context = rcc->client_context;
-    fptr = (void *)data;
-    put_flags(flags, &data);
-    put_long(interfaceIndex, &data);
-    put_error_code(errorCode, &data);
-
-    reply = malloc(sizeof(reply_state));
-    if (!reply)
-    	{
-        perror("ERROR: malloc");
-        return;
-    	}
-    bzero(reply, sizeof(reply_state));
-    reply->ts = t_morecoming;
-    reply->sd = rcc->rstate->sd;
-    reply->len = len;
-    reply->msgbuf = (char *)hdr;
-    reply->fptr = fptr;
-    reply->request = rcc->rstate;
+    reply = create_reply(reg_record_reply, len, rcc->rstate);
+    reply->mhdr->client_context = rcc->client_context;
+    reply->rhdr->flags = 0;
+    reply->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->InterfaceID);
+    reply->rhdr->error = result;
 
     ts = send_msg(reply);
-    if (ts == t_error) return;  //!!!KRS memory leak
-    if (ts == t_complete) free(reply);
-    if (ts == t_morecoming) append_reply(rcc->rstate, reply);   // client is blocked, link reply into list
+    if (ts == t_error || ts == t_terminated) 
+        {
+        abort_request(rcc->rstate);
+        unlink_request(rcc->rstate);
+        }
+    else if (ts == t_complete) freeL("regrecord_callback", reply);
+    else if (ts == t_morecoming) append_reply(rcc->rstate, reply);   // client is blocked, link reply into list
     }
 
 static void connected_registration_termination(void *context)
     {
-    registration_entry *fptr, *ptr = ((request_state *)context)->reg_entries;
+    registered_record_entry *fptr, *ptr = ((request_state *)context)->reg_recs;
     while(ptr)
     	{
         fptr = ptr->next;
         mDNS_Deregister(&mDNSStorage, ptr->rr);
         fptr = ptr;
         ptr = ptr->next;
-        free(fptr);
+        freeL("connected_registration_termination", fptr);
     	}
     }
     
@@ -879,19 +1153,18 @@ static void connected_registration_termination(void *context)
 
 static void handle_removerecord_request(request_state *rstate)
     {
-    registration_entry *reptr, *prev = NULL;
+    registered_record_entry *reptr, *prev = NULL;
     mStatus err;
-    reptr = rstate->reg_entries;
+    reptr = rstate->reg_recs;
 
     while(reptr)
     	{
         if (reptr->key == rstate->hdr.reg_index)  // found match
             {
             if (prev) prev->next = reptr->next;
-            else rstate->reg_entries = reptr->next;
+            else rstate->reg_recs = reptr->next;
             err  = mDNS_Deregister(&mDNSStorage, reptr->rr);
-
-            free(reptr);  //rr gets freed by callback
+            freeL("handle_removerecord_request", reptr);  //rr gets freed by callback
             break;
             }
         prev = reptr;
@@ -905,8 +1178,8 @@ static void handle_removerecord_request(request_state *rstate)
 static void handle_enum_request(request_state *rstate)
     {
     DNSServiceDiscoveryFlags flags, add_default;
-    u_int32_t ifi;
-    u_int32_t reg_domains;
+    uint32_t ifi;
+    uint32_t reg_domains;
     char *ptr = rstate->msgbuf;
     domain_enum_t *def, *all;
     enum_termination_t *term;
@@ -920,13 +1193,13 @@ static void handle_enum_request(request_state *rstate)
     reg_domains = get_long(&ptr);
 
     // allocate context structures
-    def = malloc(sizeof(domain_enum_t));
-    all = malloc(sizeof(domain_enum_t));
-    term = malloc(sizeof(enum_termination_t));
+    def = mallocL("hanlde_enum_request", sizeof(domain_enum_t));
+    all = mallocL("handle_enum_request", sizeof(domain_enum_t));
+    term = mallocL("handle_enum_request", sizeof(enum_termination_t));
     if (!def || !all || !term)
     	{
-        perror("ERROR: malloc");
-        return;				//!!!KRS
+        my_perror("ERROR: malloc");
+        exit(1);
     	}
 
     // enumeration requires multiple questions, so we must link all the context pointers so that
@@ -948,8 +1221,8 @@ static void handle_enum_request(request_state *rstate)
     add_default = kDNSServiceDiscoveryFlagsDefault | kDNSServiceDiscoveryFlagsAdd | kDNSServiceDiscoveryFlagsFinished;
     reply = format_enumeration_reply(rstate, "local.", add_default, ifi, 0);
     tr = send_msg(reply);
-    if (tr == t_error) goto error;
-    if (tr == t_complete) free(reply);
+    if (tr == t_error || tr == t_terminated) goto error;
+    if (tr == t_complete) freeL("handle_enum_request", reply);
     if (tr == t_morecoming) append_reply(rstate, reply); // couldn't send whole reply because client is blocked - link into list
 
     // make the calls
@@ -982,10 +1255,10 @@ static void enum_result_callback(mDNS *const m, DNSQuestion *question, const Res
         flags |= kDNSServiceDiscoveryFlagsRemove;
     	}
     ConvertDomainNameToCString(&answer->rdata->u.name, domain);
-    reply = format_enumeration_reply(de->rstate, domain, flags, 0, 0);  //!!!KRS ifi
+    reply = format_enumeration_reply(de->rstate, domain, flags, mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID), kDNSServiceDiscoveryErr_NoError);
     if (!reply)
     	{
-        fprintf(stderr, "ERROR: enum_result_callback, format_enumeration_reply\n");
+        LogMsg("ERROR: enum_result_callback, format_enumeration_reply");
         return;
     	}
     reply->next = NULL;
@@ -993,41 +1266,24 @@ static void enum_result_callback(mDNS *const m, DNSQuestion *question, const Res
     return;
     }
 
-static reply_state *format_enumeration_reply(request_state *rstate, char *domain,                                             	DNSServiceDiscoveryFlags flags, u_int32_t ifi, DNSServiceReplyErrorType err)
+static reply_state *format_enumeration_reply(request_state *rstate, char *domain, DNSServiceDiscoveryFlags flags, uint32_t ifi, DNSServiceReplyErrorType err)
     {
     int len;
     reply_state *reply;
     char *data;
-    ipc_msg_hdr *hdr;
-    DNSServiceDiscoveryFlags *fptr;
+    
     
     len = sizeof(DNSServiceDiscoveryFlags);
-    len += sizeof(u_int32_t);
+    len += sizeof(uint32_t);
     len += sizeof(DNSServiceReplyErrorType);
     len += strlen(domain) + 1;
-
-    hdr = create_hdr(enumeration_reply, &len, &data);
-    if (!hdr) return NULL;
-    fptr = (void *)data;
-    put_flags(flags, &data);
-    put_long(ifi, &data);
-    put_error_code(err, &data);
+  
+    reply = create_reply(enumeration_reply, len, rstate);
+    reply->rhdr->flags = flags;
+    reply->rhdr->ifi = ifi;  
+    reply->rhdr->error = err;
+    data = reply->sdata;
     put_string(domain, &data);
-
-    reply = malloc(sizeof(reply_state));
-    if (!reply)
-    	{
-        perror("ERROR: malloc");
-        free(hdr);
-        return NULL;
-    	}
-    bzero(reply, sizeof(reply_state));
-    reply->ts = t_morecoming;
-    reply->sd = rstate->sd;
-    reply->len = len;
-    reply->msgbuf = (char *)hdr;
-    reply->fptr = fptr;
-    reply->request = rstate;
     return reply;
     }
 
@@ -1038,10 +1294,10 @@ static void enum_termination_callback(void *context)
 
     mDNS_StopGetDomains(coredata, &t->all->question);
     mDNS_StopGetDomains(coredata, &t->def->question);
-    free(t->all);
-    free(t->def);
+    freeL("enum_termination_callback", t->all);
+    freeL("enum_termination_callback", t->def);
     t->rstate->termination_context = NULL;
-    free(t);
+    freeL("enum_termination_callback", t);
     }
 
 static void handle_reconfirm_request(request_state *rstate)
@@ -1058,7 +1314,7 @@ static void handle_reconfirm_request(request_state *rstate)
 static void reconfirm_record_callback(mDNS *const m, ResourceRecord *const rr, mStatus result)
     {
     (void)m;
-    if (result == mStatus_MemFree) free(rr);
+    if (result == mStatus_MemFree) freeL("reconfirm_record_callback", rr);
     }
 
 // setup rstate to accept new reg/dereg requests
@@ -1067,7 +1323,7 @@ static void reset_connected_rstate(request_state *rstate)
     rstate->ts = t_morecoming;
     rstate->hdr_bytes = 0;
     rstate->data_bytes = 0;
-    if (rstate->msgbuf) free(rstate->msgbuf);
+    if (rstate->msgbuf) freeL("reset_connected_rstate", rstate->msgbuf);
     rstate->msgbuf = NULL;
     rstate->bufsize = 0;
     }
@@ -1076,27 +1332,30 @@ static void reset_connected_rstate(request_state *rstate)
 
 // returns a resource record (allocated w/ malloc) containing the data found in an IPC message
 // data must be in format flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
-// (ttl only extracted/set if ttl argument is non-zero)
+// (ttl only extracted/set if ttl argument is non-zero).  returns NULL for a bad-parameter error
 static ResourceRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
     {
     char *rdata, name[256];
     ResourceRecord *rr;
     DNSServiceDiscoveryFlags flags;
-    u_int32_t interfaceIndex;
+    uint32_t interfaceIndex;
 
-    rr = malloc(sizeof(ResourceRecord));
-    if (!rr) 	{ perror("ERROR: malloc");  return NULL;  	}
+    rr = mallocL("read_rr_from_ipc_msg", sizeof(ResourceRecord));
+    if (!rr) 	
+        { 
+        my_perror("ERROR: malloc");  
+        exit(1);
+        }
     bzero(rr, sizeof(ResourceRecord));
     rr->rdata = &rr->rdatastorage;
     flags = get_flags(&msgbuf);
     interfaceIndex = get_long(&msgbuf);
-    rr->InterfaceID = NULL;     //!!!KRS
-    get_string(&msgbuf, name, 256);
-    if (!MakeDomainNameFromDNSNameString(&rr->name, name))
+    rr->InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+    if ((get_string(&msgbuf, name, 256) < 0) ||
+        (!MakeDomainNameFromDNSNameString(&rr->name, name)))
     	{
-        //!!!KRS
-        fprintf(stderr, "ERROR: bad name: %s\n", name);
-        free(rr);
+        LogMsg("ERROR: bad name: %s", name);
+        freeL("read_rr_from_ipc_msg", rr);
         return NULL;
     	}
     rr->rrtype = get_short(&msgbuf);
@@ -1109,7 +1368,7 @@ static ResourceRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
     rr->rdata->MaxRDLength = sizeof(RDataBody);
     rdata = get_rdata(&msgbuf, rr->rdata->RDLength);  //!!!KRS change function to take a buffer so we don't need to copy twice
     memcpy(rr->rdata->u.data, rdata, rr->rdata->RDLength);
-    free(rdata);
+    freeL("read_rr_from_ipc_msg", rdata);
     if (ttl)
     	{
         rr->rroriginalttl = get_long(&msgbuf);
@@ -1120,61 +1379,57 @@ static ResourceRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
 
 
 // generate a response message for a browse result, service registration result, or any other call with the
-// identical callback signature
-static ipc_msg_hdr *gen_rr_response(domainname *servicename, DNSServiceDiscoveryFlags **fptr)
+// identical callback signature.  on successful completion rep is set to point to a malloc'd reply_state struct,
+// and mStatus_NoError is returned.  otherwise the appropriate error is returned.
+
+static mStatus gen_rr_response(domainname *servicename, mDNSInterfaceID id, request_state *request, reply_state **rep)
     {
-    ipc_msg_hdr *hdr;
     char *data;
     int len;
     domainlabel name;
     domainname type, dom;
     char namestr[256], typestr[256], domstr[256];
+
+    *rep = NULL;
     
-    if (!DeconstructServiceName(servicename, &name, &type, &dom)) goto error;
+    if (!DeconstructServiceName(servicename, &name, &type, &dom))
+        return kDNSServiceDiscoveryErr_Unknown;
+
     ConvertDomainLabelToCString_unescaped(&name, namestr);
     ConvertDomainNameToCString(&type, typestr);
     ConvertDomainNameToCString(&dom, domstr);
 
     // calculate reply data length
     len = sizeof(DNSServiceDiscoveryFlags);
-    len += sizeof(u_int32_t);  // if index
+    len += sizeof(uint32_t);  // if index
     len += sizeof(DNSServiceReplyErrorType);
     len += strlen(namestr) + 1;
     len += strlen(typestr) + 1;
     len += strlen(domstr) + 1;
-
-    hdr = create_hdr(query_reply, &len, &data);
-    if (!hdr) return NULL;
-    *fptr = (DNSServiceDiscoveryFlags *)data;
-    put_flags(0, &data);
-    put_long(0, &data);  //!!!for ifindex - FIX THIS!
-    put_error_code(0, &data);
+    
+    *rep = create_reply(query_reply, len, request);
+    (*rep)->rhdr->flags = 0;
+    (*rep)->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id);
+    (*rep)->rhdr->error = kDNSServiceDiscoveryErr_NoError;    
+    data = (*rep)->sdata;
+    
     put_string(namestr, &data);
     put_string(typestr, &data);
     put_string(domstr, &data);
-    return hdr;
-    
-error:
-    fprintf(stderr, "ERROR: gen_rr_response\n");
-    assert(0);  //!!!KRS
+    return mStatus_NoError;
     }
 
 
-static int BuildDomainNameFromStrings(domainname *srv, char *name, char *regtype, char *domain)
+static int build_domainname_from_strings(domainname *srv, char *name, char *regtype, char *domain)
     {
     domainlabel n;
     domainname d, t;
 
-    if (!MakeDomainLabelFromLiteralString(&n, name)) goto error;
-    if (!MakeDomainNameFromDNSNameString(&t, regtype)) goto error;
-    if (!MakeDomainNameFromDNSNameString(&d, domain)) goto error;
-    if (!ConstructServiceName(srv, &n, &t, &d)) goto error;
+    if (!MakeDomainLabelFromLiteralString(&n, name)) return -1;
+    if (!MakeDomainNameFromDNSNameString(&t, regtype)) return -1;
+    if (!MakeDomainNameFromDNSNameString(&d, domain)) return -1;
+    if (!ConstructServiceName(srv, &n, &t, &d)) return -1;
     return 0;
-
-error:
-        fprintf(stderr, "ERROR: bad param\n");  //!!!KRS
-    return -1;
-    
     }
 
 
@@ -1189,6 +1444,7 @@ static void append_reply(request_state *req, reply_state *rep)
         ptr = req->replies;
         while (ptr->next) ptr = ptr->next;
         ptr->next = rep;
+        rep->prev = ptr->next;
     	}
     rep->next = NULL;
     }
@@ -1209,7 +1465,7 @@ static int read_msg(request_state *rs)
         nread = recv(rs->sd, buf, 4, 0);
         if (!nread) 	{  rs->ts = t_terminated;  return t_terminated;  	}
         if (nread < 0) goto rerror;
-        fprintf(stderr, "ERROR: read data from a completed request.\n");
+        LogMsg("ERROR: read data from a completed request.");
         rs->ts = t_error;
         return t_error;
     	}
@@ -1238,10 +1494,10 @@ static int read_msg(request_state *rs)
         if (!rs->msgbuf)  // allocate the buffer first time through
             {
             assert(!rs->data_bytes);
-            rs->msgbuf = malloc(rs->hdr.datalen);
+            rs->msgbuf = mallocL("read_msg", rs->hdr.datalen);
             if (!rs->msgbuf)
             	{
-                perror("ERROR: malloc");
+                my_perror("ERROR: malloc");
                 rs->ts = t_error;
                 return t_error;
             	}
@@ -1262,7 +1518,7 @@ static int read_msg(request_state *rs)
 
 rerror:
     if (errno == EAGAIN || errno == EINTR) return rs->ts;	
-    perror("ERROR: read_msg");
+    my_perror("ERROR: read_msg");
     rs->ts = t_error;
     return t_error;
     }
@@ -1283,14 +1539,14 @@ static int send_msg(reply_state *rs)
             {
             if (errno == EPIPE)
             	{
-                fprintf(stderr, "broken pipe - cleanup should be handled by run-loop read wakeup\n");
+                LogMsg("broken pipe - cleanup should be handled by run-loop read wakeup");
                 rs->ts = t_terminated;
                 rs->request->ts = t_terminated;
-                return t_terminated;  //!!!KRS make sure that the error handling of caller allows for this!
+                return t_terminated;  
             	}
             else
             	{
-                perror("ERROR: send\n");
+                my_perror("ERROR: send\n");
                 rs->ts = t_error;
                 return t_error;
             	}
@@ -1301,40 +1557,218 @@ static int send_msg(reply_state *rs)
     if (rs->nwriten == rs->len)
     	{
         rs->ts = t_complete;
-        free(rs->msgbuf);
+        freeL("send_msg", rs->msgbuf);
     	}
     return rs->ts;
     }
+
+
+
+static reply_state *create_reply(reply_op_t op, int datalen, request_state *request)
+{
+    reply_state *reply;
+    int totallen;
+
+    
+    assert((unsigned)datalen >= sizeof(reply_hdr));
+    
+    totallen = datalen + sizeof(ipc_msg_hdr);
+    reply = mallocL("create_reply", sizeof(reply_state));
+    if (!reply) 
+        {
+        my_perror("ERROR: malloc");
+        exit(1);
+        }
+    bzero(reply, sizeof(reply_state));
+    reply->ts = t_morecoming;
+    reply->sd = request->sd;
+    reply->request = request;
+    reply->len = totallen;
+    reply->msgbuf = mallocL("create_reply", totallen);
+    if (!reply->msgbuf)
+        {
+        my_perror("ERROR: malloc");
+        exit(1);
+        }
+    reply->mhdr = (ipc_msg_hdr *)reply->msgbuf;
+    reply->rhdr = (reply_hdr *)(reply->msgbuf + sizeof(ipc_msg_hdr));
+    reply->sdata = reply->msgbuf + sizeof(ipc_msg_hdr) + sizeof(reply_hdr);
+    reply->mhdr->len = totallen;
+    reply->mhdr->datalen = datalen;
+    reply->mhdr->version = VERSION;
+    reply->mhdr->op.reply_op = op;
+    return reply;
+    }
+
+
+
+//!!!KRS
+// need to add section in idle() that runs through all the undelivered errors and tries to send them again
+// caller needs to error check deliver_err - if it returns < 0, it should clean up and call abort_client
+// (make sure to check the mStatus error to see if we need to cancel a core call or not)
+static int deliver_error(request_state *rstate, mStatus err)
+    {
+    struct sockaddr_un cliaddr;
+    int sd, nwritten;
+    undelivered_error_t *undeliv;
+
+    if ((sd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
+  	{
+  	my_perror("ERROR: socket");	
+        exit(1);
+  	}
+    if (fcntl(sd, F_SETFL, O_NONBLOCK) < 0)
+        {
+        my_perror("ERROR: could not set control socket to non-blocking mode");
+        return -1;
+        }        
+    bzero(&cliaddr, sizeof(cliaddr));
+    cliaddr.sun_family = AF_LOCAL;
+    strcpy(cliaddr.sun_path, rstate->hdr.ctrl_path);
+    if (connect(sd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
+  	{
+  	my_perror("ERROR: connect");
+        return -1;
+  	}
+    nwritten = send(sd, &err, sizeof(mStatus), 0);
+    if (nwritten < (int)sizeof(mStatus))
+    	{
+        if (errno == EINTR || errno == EAGAIN)   
+            nwritten = 0;
+        if (nwritten < 0)
+            {
+            my_perror("ERROR: send - unable to deliver error to client");
+            return -1;
+            }
+        //client blocked - store result and come backr
+        undeliv = mallocL("deliver_error", sizeof(undelivered_error_t));
+        undeliv->err = err;
+        undeliv->nwritten = nwritten;
+        undeliv->sd = sd;
+        rstate->u_err = undeliv;
+        return 0;
+    }
+    close(sd);
+    return 0;
+    }
+           
+
+// returns 0 on success, -1 if send is incomplete, or on terminal failre (request is aborted)
+static int send_undelivered_error(request_state *rs)
+    {
+    int nwritten;
+    
+    nwritten = send(rs->u_err->sd, (char *)(&rs->u_err) + rs->u_err->nwritten, sizeof(mStatus) - rs->u_err->nwritten, 0);
+    if (nwritten < 0)
+        {
+        if (errno == EINTR || errno == EAGAIN)
+            nwritten = 0;
+        else
+            {
+            my_perror("ERROR: send - unable to deliver error to client\n");
+            abort_request(rs);
+            unlink_request(rs);
+            return -1;
+            }
+        }
+    if (nwritten + rs->u_err->nwritten == sizeof(mStatus))
+        {
+        close(rs->u_err->sd);
+        freeL("send_undelivered_error", rs->u_err);
+        rs->u_err = NULL;
+        return 0;
+        }
+    rs->u_err->nwritten += nwritten;
+    return -1;
+    }
+
+
+// send bogus data along with an error code to the app callback
+// returns 0 on success (linking reply into list of not fully delivered),
+// -1 on failure (request should be aborted)
+static int deliver_async_error(request_state *rs, reply_op_t op, mStatus err)
+    {
+    int len;
+    reply_state *reply;
+    transfer_state ts;
+    
+    len = 256;		// long enough for any reply handler to read all args w/o buffer overrun
+    reply = create_reply(op, len, rs);
+    reply->rhdr->error = err;
+    ts = send_msg(reply);
+    if (ts == t_error || ts == t_terminated)
+        {
+        freeL("deliver_async_error", reply);
+        return -1;
+        }
+    else if (ts == t_complete) freeL("deliver_async_error", reply);
+    else if (ts == t_morecoming) append_reply(rs, reply);   // client is blocked, link reply into list
+    return 0;
+    }
+
+
 
 
 static void abort_request(request_state *rs)
     {
     reply_state *rep, *ptr;
 
-    fprintf(stderr, "***UDS: Terminating connection with client:\n");
     if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
     assert(rs->ts == t_terminated);
-    if (rs->msgbuf) free(rs->msgbuf);
+    if (rs->msgbuf) freeL("abort_request", rs->msgbuf);
     CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rs->rls, kCFRunLoopDefaultMode);
-    assert(!CFRunLoopContainsSource(CFRunLoopGetCurrent(), rs->rls, kCFRunLoopDefaultMode));
     CFRunLoopSourceInvalidate(rs->rls);
     CFRelease(rs->rls);
     CFSocketInvalidate(rs->sr);
     CFRelease(rs->sr);
     rs->sd = -1;
+    if (rs->errfd >= 0) close(rs->errfd);
+    rs->errfd = -1;
 
     // free pending replies
     rep = rs->replies;
     while(rep)
     	{
-        if (rep->msgbuf) free(rep->msgbuf);
+        if (rep->msgbuf) freeL("abort_request", rep->msgbuf);
         ptr = rep;
         rep = rep->next;
-        free(ptr);
+        freeL("abort_request", ptr);
     	}
-    fprintf(stderr, "...done.\n");
+    
+    if (rs->u_err)
+        {
+        freeL("abort_request", rs->u_err);
+        rs->u_err = NULL;
+        }
     }
 
 
+static void unlink_request(request_state *rs)
+    {
+    request_state *ptr;
+    
+    if (rs == all_requests)
+        {
+        all_requests = all_requests->next;
+        freeL("unlink_request", rs);
+        return;
+        }
+    for(ptr = all_requests; ptr->next; ptr = ptr->next)
+        if (ptr->next == rs)
+            {
+            ptr->next = rs->next;
+            freeL("unlink_request", rs);
+            return;
+        }
+    }
+    
+
+
+
+//hack to search-replace perror's to LogMsg's
+static void my_perror(char *errmsg)
+    {
+    LogMsg("%s: %s", errmsg, strerror(errno));
+    }
 
 
