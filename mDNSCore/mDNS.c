@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.179  2003/06/07 06:28:13  cheshire
+For clarity, change name of "DNSQuestion q" to "DNSQuestion pktq"
+
 Revision 1.178  2003/06/07 06:25:12  cheshire
 Update some comments
 
@@ -4123,8 +4126,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	for (i=0; i<query->h.numQuestions; i++)						// For each question...
 		{
 		int NumAnswersForThisQuestion = 0;
-		DNSQuestion q;
-		ptr = getQuestion(query, ptr, end, InterfaceID, &q);	// get the question...
+		DNSQuestion pktq;
+		ptr = getQuestion(query, ptr, end, InterfaceID, &pktq);	// get the question...
 		if (!ptr) goto exit;
 		
 		// Note: We use the m->CurrentRecord mechanism here because calling ResolveSimultaneousProbe
@@ -4138,10 +4141,10 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			{
 			rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (ResourceRecordAnswersQuestion(rr, &q))
+			if (ResourceRecordAnswersQuestion(rr, &pktq))
 				{
 				if (rr->RecordType == kDNSRecordTypeUnique)
-					ResolveSimultaneousProbe(m, query, end, &q, rr);
+					ResolveSimultaneousProbe(m, query, end, &pktq, rr);
 				else if (ResourceRecordIsValidAnswer(rr))
 					{
 					NumAnswersForThisQuestion++;
@@ -4154,8 +4157,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		if (NumAnswersForThisQuestion == 0) delayresponse = mDNStrue;
 
 		// Make a list indicating which of our own cache records we expect to see updated as a result of this query		
-		for (rr = m->rrcache_hash[HashSlot(&q.qname)]; rr; rr=rr->next)
-			if (ResourceRecordAnswersQuestion(rr, &q) && !rr->NextInKAList && eap != &rr->NextInKAList)
+		for (rr = m->rrcache_hash[HashSlot(&pktq.qname)]; rr; rr=rr->next)
+			if (ResourceRecordAnswersQuestion(rr, &pktq) && !rr->NextInKAList && eap != &rr->NextInKAList)
 				{ *eap = rr; eap = &rr->NextInKAList; }
 		}
 
