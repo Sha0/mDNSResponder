@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ProxyResponder.c,v $
+ * Revision 1.13  2003/04/18 22:46:12  cheshire
+ * Fix mistake in 1.8 -- INADDR_NONE is 0xFFFFFFFF, not 0
+ *
  * Revision 1.12  2003/04/16 02:11:07  cheshire
  * Fixed mDNS_RegisterNoSuchService non-existence function so that it works again
  *
@@ -236,12 +239,12 @@ mDNSexport int main(int argc, char **argv)
 		ServiceRecordSet proxyservice;
 
 		proxyhost.ip.NotAnInteger = inet_addr(argv[1]);
-		if (proxyhost.ip.NotAnInteger == 0)
+		if (proxyhost.ip.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
 			{
 			struct hostent *h = gethostbyname(argv[1]);
 			if (h) proxyhost.ip.NotAnInteger = *(long*)h->h_addr;
 			}
-		if (proxyhost.ip.NotAnInteger == 0)
+		if (proxyhost.ip.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
 			{
 			fprintf(stderr, "%s is not valid host address\n", argv[1]);
 			return(-1);
