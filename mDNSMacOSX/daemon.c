@@ -1283,11 +1283,11 @@ mDNSexport int main(int argc, char **argv)
 		fclose(fp);
 		}
 	
+	LogMsg("mDNSResponder (%s %s) starting", __DATE__, __TIME__);
 	status = start(NULL, NULL);
 
 	if (status == 0)
 		{
-		LogMsg("mDNSResponder (%s %s) starting", __DATE__, __TIME__);
 		CFRunLoopRun();
 		LogMsg("CFRunLoopRun Exiting. This is bad.");
 		mDNS_Close(&mDNSStorage);
