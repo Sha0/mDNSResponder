@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.335  2003/12/01 20:27:48  cheshire
+Display IPv6 addresses correctly (e.g. in log messages) on little-endian processors
+
 Revision 1.334  2003/11/20 22:59:53  cheshire
 Changed runtime checks in mDNS.c to be compile-time checks in mDNSClientAPI.h
 Thanks to Bob Bradley for suggesting the ingenious compiler trick to make this work.
@@ -1321,17 +1324,14 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 							if (!a) { static char emsg[] = "<<NULL>>"; s = emsg; i = sizeof(emsg)-1; }
 							else
 								{
-								unsigned short *w = (unsigned short *)a;
 								s = mDNS_VACB;	// Adjust s to point to the start of the buffer, not the end
 								if (F.altForm)
 									{
 									mDNSAddr *ip = (mDNSAddr*)a;
-									a = (unsigned char  *)&ip->ip.v4;
-									w = (unsigned short *)&ip->ip.v6;
 									switch (ip->type)
 										{
-										case mDNSAddrType_IPv4: F.precision =  4; break;
-										case mDNSAddrType_IPv6: F.precision = 16; break;
+										case mDNSAddrType_IPv4: F.precision =  4; a = (unsigned char *)&ip->ip.v4; break;
+										case mDNSAddrType_IPv6: F.precision = 16; a = (unsigned char *)&ip->ip.v6; break;
 										default:                F.precision =  0; break;
 										}
 									}
@@ -1341,8 +1341,10 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 														a[0], a[1], a[2], a[3]); break;
 									case  6: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%02X:%02X:%02X:%02X:%02X:%02X",
 														a[0], a[1], a[2], a[3], a[4], a[5]); break;
-									case 16: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X",
-														w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]); break;
+									case 16: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB),
+														"%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+														a[0x0], a[0x1], a[0x2], a[0x3], a[0x4], a[0x5], a[0x6], a[0x7],
+														a[0x8], a[0x9], a[0xA], a[0xB], a[0xC], a[0xD], a[0xE], a[0xF]); break;
 									default: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%s", "<< ERROR: Must specify address size "
 														"(i.e. %.4a=IPv4, %.6a=Ethernet, %.16a=IPv6) >>"); break;
 									}
