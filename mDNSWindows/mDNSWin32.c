@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.50  2004/08/25 23:36:56  shersche
+<rdar://problem/3658379> Remove code that retrieves TTL from received packets
+Bug #: 3658379
+
 Revision 1.49  2004/08/25 16:43:29  ksekar
 Fix Windows build - change mDNS_SetFQDNs to mDNS_SetFQDN, remove unicast
 hostname parameter.
@@ -1697,12 +1701,6 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		err = setsockopt( sock, IPPROTO_IPV6, IPV6_PKTINFO, (char *) &option, sizeof( option ) );
 		check_translated_errno( err == 0, errno_compat(), kOptionErr );
 		
-		// Turn on option to receive TTL so we can check for spoofing.
-		
-		option = 1;
-		err = setsockopt( sock, IPPROTO_IPV6, IPV6_HOPLIMIT, (char *) &option, sizeof( option ) );
-		check_translated_errno( err == 0, errno_compat(), kOptionErr );
-		
 		// We only want to receive IPv6 packets (not IPv4-mapped IPv6 addresses) because we have a separate socket 
 		// for IPv4, but the IPv6 stack in Windows currently doesn't support IPv4-mapped IPv6 addresses and doesn't
 		// support the IPV6_V6ONLY socket option so the following code would typically not be executed (or needed).
@@ -2275,10 +2273,6 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 				
 				dstAddr.type	= mDNSAddrType_IPv6;
 				dstAddr.ip.v6	= *( (mDNSv6Addr *) &ipv6PacketInfo->ipi6_addr );
-			}
-			else if( ( header->cmsg_level == IPPROTO_IPV6 ) && ( header->cmsg_type == IPV6_HOPLIMIT ) )
-			{
-				ttl = (mDNSu8) *( (int *) WSA_CMSG_DATA( header ) );
 			}
 		}
 	}
