@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.2  2004/06/25 02:25:59  shersche
+Remove item field from manufacturer and model structures
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:36:58  rpantos
 First checked in
 
@@ -97,7 +101,6 @@ namespace PrinterSetupWizard
 
 	struct Manufacturer
 	{
-		int			item;
 		CString		name;
 		CString		tag;
 		Models		models;
@@ -106,7 +109,6 @@ namespace PrinterSetupWizard
 
 	struct Model
 	{
-		int			item;
 		bool		driverInstalled;
 		CString		infFileName;
 		CString		name;
