@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: RMxServer.c,v $
+Revision 1.4  2004/04/08 21:14:19  bradley
+Changed resolve callback to use correct calling conventions (previously hidden by a cast).
+
 Revision 1.3  2004/04/08 09:43:43  bradley
 Changed callback calling conventions to __stdcall so they can be used with C# delegates.
 
@@ -163,7 +166,7 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 		void *				inContext );
 
 DEBUG_LOCAL void	DNSServiceResolve_server( RMxMessage *inMessage );
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceResolveCallBack_server(
 		DNSServiceRef			inRef,
 		DNSServiceFlags			inFlags,
@@ -1330,7 +1333,7 @@ exit:
 //	DNSServiceResolveCallBack_server
 //===========================================================================================================================
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceResolveCallBack_server(
 		DNSServiceRef			inRef,
 		DNSServiceFlags			inFlags,
