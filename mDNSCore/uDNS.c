@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.30  2004/04/16 21:33:27  ksekar
+Fixed bug in processing GetZoneData responses that do not use BIND formatting.
+
 Revision 1.29  2004/04/15 20:03:13  ksekar
 Clarified log message when pulling bad resource records off packet.
 
@@ -1226,7 +1229,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 				return smContinue;
 				}
 			}		
-
+		ptr = LocateAuthorities(msg, end);
 		// SOA not in answers, check in authority
 		for (i = 0; i < msg->h.numAuthorities; i++)
 			{
@@ -1335,6 +1338,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 			}
 		else
 			{
+			ptr = LocateAdditionals(msg, end);
 			for (i = 0; i < msg->h.numAdditionals; i++)
 				{
 				ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
