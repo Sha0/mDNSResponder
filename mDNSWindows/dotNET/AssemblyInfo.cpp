@@ -8,12 +8,12 @@ using namespace System::Runtime::CompilerServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 //
-[assembly:AssemblyTitleAttribute("")];
-[assembly:AssemblyDescriptionAttribute("")];
+[assembly:AssemblyTitleAttribute("dnssd.NET")];
+[assembly:AssemblyDescriptionAttribute(".NET wrapper for DNS-SD services")];
 [assembly:AssemblyConfigurationAttribute("")];
-[assembly:AssemblyCompanyAttribute("")];
+[assembly:AssemblyCompanyAttribute("Apple Computer, Inc.")];
 [assembly:AssemblyProductAttribute("")];
-[assembly:AssemblyCopyrightAttribute("")];
+[assembly:AssemblyCopyrightAttribute("Apple Computer, Inc.")];
 [assembly:AssemblyTrademarkAttribute("")];
 [assembly:AssemblyCultureAttribute("")];		
 
@@ -53,6 +53,6 @@ using namespace System::Runtime::CompilerServices;
 //       documentation for more information on this.
 //
 [assembly:AssemblyDelaySignAttribute(false)];
-[assembly:AssemblyKeyFileAttribute("dotNET.snk")];
+[assembly:AssemblyKeyFileAttribute("dnssd_NET.snk")];
 [assembly:AssemblyKeyNameAttribute("")];
 
