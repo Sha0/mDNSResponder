@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.317  2003/11/13 00:10:49  cheshire
+<rdar://problem/3436412>: Verify that rr data is different before updating.
+
 Revision 1.316  2003/11/08 23:37:54  cheshire
 Give explicit zero initializers to blank static structure, required by certain compilers.
 (Thanks to ramaprasad.kr@hp.com for reporting this.)
@@ -2576,6 +2579,15 @@ mDNSlocal void RecordProbeFailure(mDNS *const m, const AuthRecord *const rr)
 			rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), m->NumFailedProbes);
 	}
 
+mDNSlocal void CompleteRDataUpdate(mDNS *const m, AuthRecord *const rr)
+	{
+	RData *OldRData = rr->resrec.rdata;
+	SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);	// Update our rdata
+	rr->NewRData = mDNSNULL;									// Clear the NewRData pointer ...
+	if (rr->UpdateCallback)
+		rr->UpdateCallback(m, rr, OldRData);					// ... and let the client know
+	}
+
 // mDNS_Dereg_normal is used for most calls to mDNS_Deregister_internal
 // mDNS_Dereg_conflict is used to indicate that this record is being forcibly deregistered because of a conflict
 // mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
@@ -2690,14 +2702,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 				rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 
 		// If we have an update queued up which never executed, give the client a chance to free that memory
-		if (rr->NewRData)
-			{
-			RData *OldRData = rr->resrec.rdata;
-			SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);	// Update our rdata
-			rr->NewRData = mDNSNULL;									// Clear the NewRData pointer ...
-			if (rr->UpdateCallback)
-				rr->UpdateCallback(m, rr, OldRData);					// ... and let the client know
-			}
+		if (rr->NewRData) CompleteRDataUpdate(m, rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
 		
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -3545,14 +3550,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		rr = m->CurrentRecord;
 		m->CurrentRecord = rr->next;
 
-		if (rr->NewRData)
-			{
-			RData *OldRData = rr->resrec.rdata;
-			SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);	// Update our rdata
-			rr->NewRData = mDNSNULL;									// Clear the NewRData pointer ...
-			if (rr->UpdateCallback)
-				rr->UpdateCallback(m, rr, OldRData);					// ... and let the client know
-			}
+		if (rr->NewRData) CompleteRDataUpdate(m,rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
 
 		if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 			CompleteDeregistration(m, rr);
@@ -6176,26 +6174,42 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		if (rr->UpdateCallback)
 			rr->UpdateCallback(m, rr, n);	// ...and let the client free this memory, if necessary
 		}
-	
-	if (rr->AnnounceCount < ReannounceCount)
-		rr->AnnounceCount = ReannounceCount;
-	rr->ThisAPInterval       = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-	InitializeLastAPTime(m, rr);
+
 	rr->NewRData             = newrdata;
 	rr->newrdlength          = newrdlength;
 	rr->UpdateCallback       = Callback;
-	if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
-	if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + mDNSPlatformOneSecond * 60) | 1;
-	if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
-	if (rr->UpdateCredits <= 5)
+	
+	if (rr->resrec.rroriginalttl == newttl && rr->resrec.rdlength == newrdlength && mDNSPlatformMemSame(rr->resrec.rdata->u.data, newrdata->u.data, newrdlength))
+		CompleteRDataUpdate(m, rr);
+	else
 		{
-		mDNSs32 delay = 1 << (5 - rr->UpdateCredits);
-		if (!rr->UpdateBlocked) rr->UpdateBlocked = (m->timenow + delay * mDNSPlatformOneSecond) | 1;
-		rr->LastAPTime = rr->UpdateBlocked;
-		rr->ThisAPInterval *= 4;
-		LogMsg("Excessive update rate for %##s; delaying announcement by %d seconds", rr->resrec.name.c, delay);
+		domainlabel name;
+		domainname type, domain;
+		DeconstructServiceName(&rr->resrec.name, &name, &type, &domain);
+		if (rr->AnnounceCount < ReannounceCount)
+			rr->AnnounceCount = ReannounceCount;
+		// iChat often does suprious record updates where no data has changed. For the _presence service type, using
+		// name/value pairs, the mDNSPlatformMemSame() check above catches this and correctly suppresses the wasteful
+		// update. For the _ichat service type, the XML encoding introduces spurious noise differences into the data
+		// even though there's no actual semantic change, so the mDNSPlatformMemSame() check doesn't help us.
+		// To work around this, we simply unilaterally limit all legacy _ichat-type updates to a single announcement.
+		if (SameDomainLabel(type.c, "\x6_ichat")) rr->AnnounceCount = 1;
+		rr->ThisAPInterval       = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
+		InitializeLastAPTime(m, rr);
+		if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
+		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + mDNSPlatformOneSecond * 60) | 1;
+		if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
+		if (rr->UpdateCredits <= 5)
+			{
+			mDNSs32 delay = 1 << (5 - rr->UpdateCredits);
+			if (!rr->UpdateBlocked) rr->UpdateBlocked = (m->timenow + delay * mDNSPlatformOneSecond) | 1;
+			rr->LastAPTime = rr->UpdateBlocked;
+			rr->ThisAPInterval *= 4;
+			LogMsg("Excessive update rate for %##s; delaying announcement by %d seconds", rr->resrec.name.c, delay);
+			}
+		rr->resrec.rroriginalttl = newttl;
 		}
-	rr->resrec.rroriginalttl = newttl;
+
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
 	}
