@@ -195,6 +195,7 @@ struct ResourceRecord_struct
 	void               *Context;		// AR: Context parameter for the callback function
 
 	mDNSu8          RecordType;			// --: See enum above
+	mDNSu8          Acknowledged;		// AR: Set if we've given the 
 	mDNSu8          ProbeCount;			// AR: Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// AR: Number of announcements remaining (kDNSRecordTypeShared)
 	mDNSu8          IncludeInProbe;		// AR: Set if this RR is being put into a probe right now
@@ -261,10 +262,11 @@ typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const Re
 struct DNSQuestion_struct
 	{
 	DNSQuestion          *next;
-	mDNSs32               NextSendTime;		// In platform time units
-	mDNSs32               ThisSendInterval;	// In platform time units (zero for questions not in list)
-											// NextSendInterval will be non-zero for an active question;
+	mDNSs32               NextQTime;		// In platform time units
+	mDNSs32               ThisQInterval;	// In platform time units (zero for questions not in list)
+											// ThisQInterval will be non-zero for an active question;
 											// Zero for a cancelled or inactive question
+	mDNSs32               NextQInterval;
 	DNSQuestion          *DuplicateOf;
 	mDNSIPAddr            InterfaceAddr;	// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	domainname            name;
