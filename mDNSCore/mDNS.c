@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.266  2003/08/12 12:47:16  cheshire
+In mDNSCoreMachineSleep debugf message, display value of m->timenow
+
 Revision 1.265  2003/08/11 20:04:28  cheshire
 <rdar://problem/3366553> Improve efficiency by restricting cases where we have to walk the entire cache
 
@@ -4194,7 +4197,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	mDNS_Lock(m);
 
 	m->SleepState = sleepstate;
-	debugf("mDNSCoreMachineSleep: %s", sleepstate ? "Sleep" : "Wake");
+	debugf("mDNSCoreMachineSleep: %s @ %ld", sleepstate ? "Sleep" : "Wake", m->timenow);
 
 	if (sleepstate)
 		{
