@@ -23,6 +23,13 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.75  2004/09/02 03:48:47  cheshire
+<rdar://problem/3709039> Disable targeted unicast query support by default
+1. New flag kDNSServiceFlagsAllowRemoteQuery to indicate we want to allow remote queries for this record
+2. New field AllowRemoteQuery in AuthRecord structure
+3. uds_daemon.c sets AllowRemoteQuery if kDNSServiceFlagsAllowRemoteQuery is set
+4. mDNS.c only answers remote queries if AllowRemoteQuery is set
+
 Revision 1.74  2004/08/25 02:32:47  cheshire
 Minor cleanup: replace "&regtype[0]" with "regtype"
 
@@ -2379,6 +2386,9 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flag
         exit(1);
         }
     bzero(rr, sizeof(AuthRecord));  // ok if oversized rdata not zero'd
+    
+    // SHOULD CALL mDNS_SetupResourceRecord() HERE TO ENSURE FIELDS ARE INITIALIZED CORRECTLY
+    
     rr->resrec.rdata = &rr->rdatastorage;
     rr->resrec.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (!MakeDomainNameFromDNSNameString(&rr->resrec.name, name))
@@ -2392,6 +2402,7 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flag
         rr->resrec.RecordType = kDNSRecordTypeShared;
     if ((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique)
         rr->resrec.RecordType = kDNSRecordTypeUnique;
+    if (flags & kDNSServiceFlagsAllowRemoteQuery) rr->AllowRemoteQuery = mDNStrue;
     rr->resrec.rrclass = class;
     rr->resrec.rdlength = rdlen;
     rr->resrec.rdata->MaxRDLength = rdlen;

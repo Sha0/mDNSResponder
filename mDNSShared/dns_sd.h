@@ -114,8 +114,12 @@ enum
      * enumerates domains recommended for registration.
      */
 
-    kDNSServiceFlagsLongLivedQuery      = 0x100
+    kDNSServiceFlagsLongLivedQuery      = 0x100,
     /* Flag for creating a long-lived unicast query for the DNSServiceQueryRecord call. */
+
+    kDNSServiceFlagsAllowRemoteQuery    = 0x200
+    /* Flag for creating a record for which we will answer remote queries                           */
+    /* (queries from hosts more than one hop away; hosts not directly connected to the local link). */
     };
 
 /*

@@ -44,6 +44,13 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.400  2004/09/02 03:48:47  cheshire
+<rdar://problem/3709039> Disable targeted unicast query support by default
+1. New flag kDNSServiceFlagsAllowRemoteQuery to indicate we want to allow remote queries for this record
+2. New field AllowRemoteQuery in AuthRecord structure
+3. uds_daemon.c sets AllowRemoteQuery if kDNSServiceFlagsAllowRemoteQuery is set
+4. mDNS.c only answers remote queries if AllowRemoteQuery is set
+
 Revision 1.399  2004/09/02 01:39:40  cheshire
 For better readability, follow consistent convention that QR bit comes first, followed by OP bits
 
@@ -1982,6 +1989,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 //	rr->Context           = already set in mDNS_SetupResourceRecord
 //	rr->RecordType        = already set in mDNS_SetupResourceRecord
 //	rr->HostTarget        = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->AllowRemoteQuery  = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
 	// Make sure target is not uninitialized data, or we may crash writing debugging log messages
 	if (rr->HostTarget && target) target->c[0] = 0;
 
@@ -4029,7 +4037,7 @@ mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, ResourceR
 
 // ProcessQuery examines a received query to see if we have any answers to give
 mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
-	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, mDNSBool QueryWasMulticast,
+	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, mDNSBool QueryWasMulticast, mDNSBool QueryWasLocalUnicast,
 	DNSMessage *const response)
 	{
 	AuthRecord  *ResponseRecords = mDNSNULL;
@@ -4044,9 +4052,6 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	mDNSu8          *responseptr     = mDNSNULL;
 	AuthRecord  *rr, *rr2;
 	int i;
-
-	// If TC flag is set, it means we should expect that additional known answers may be coming in another packet.
-	if (query->h.flags.b[0] & kDNSFlag0_TC) delayresponse = mDNSPlatformOneSecond;	// Divided by 50 = 20ms
 
 	// ***
 	// *** 1. Parse Question Section and mark potential answers
@@ -4083,7 +4088,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			{
 			rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (ResourceRecordAnswersQuestion(&rr->resrec, &pktq))
+			if (ResourceRecordAnswersQuestion(&rr->resrec, &pktq) && (QueryWasMulticast || QueryWasLocalUnicast || rr->AllowRemoteQuery))
 				{
 				if (rr->resrec.RecordType == kDNSRecordTypeUnique)
 					ResolveSimultaneousProbe(m, query, end, &pktq, rr);
@@ -4307,11 +4312,12 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						}
 					}
 				}
-			if (rr->resrec.RecordType == kDNSRecordTypeShared)
-				{
-				if (query->h.flags.b[0] & kDNSFlag0_TC) delayresponse = mDNSPlatformOneSecond * 20;	// Divided by 50 = 400ms
-				else                                    delayresponse = mDNSPlatformOneSecond;		// Divided by 50 = 20ms
-				}
+			// If TC flag is set, it means we should expect that additional known answers may be coming in another packet,
+			// so we allow roughly half a second before deciding to reply (we've observed inter-packet delays of 100-200ms on 802.11)
+			// else, if record is a shared one, spread responses over 100ms to avoid implosion of simultaneous responses
+			// else, for a simple unique record reply, we can reply immediately; no need for delay
+			if      (query->h.flags.b[0] & kDNSFlag0_TC)            delayresponse = mDNSPlatformOneSecond * 20;	// Divided by 50 = 400ms
+			else if (rr->resrec.RecordType == kDNSRecordTypeShared) delayresponse = mDNSPlatformOneSecond;		// Divided by 50 = 20ms
 			}
 		else if (rr->NR_AdditionalTo && rr->NR_AdditionalTo->NR_AnswerTo == (mDNSu8*)~0)
 			{
@@ -4476,7 +4482,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 	
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID,
-		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), &response);
+		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), mDNSfalse, &response);
 
 	if (responseend)	// If responseend is non-null, that means we built a unicast response packet
 		{
@@ -5330,6 +5336,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 
 	rr->resrec.RecordType        = RecordType;
 	rr->HostTarget        = mDNSfalse;
+	rr->AllowRemoteQuery  = mDNSfalse;
 	
 	// Field Group 2: Transient state for Authoritative Records (set in mDNS_Register_internal)
 	// Field Group 3: Transient state for Cache Records         (set in mDNS_Register_internal)

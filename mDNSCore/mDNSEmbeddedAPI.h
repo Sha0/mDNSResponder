@@ -60,6 +60,13 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.192  2004/09/02 03:48:47  cheshire
+<rdar://problem/3709039> Disable targeted unicast query support by default
+1. New flag kDNSServiceFlagsAllowRemoteQuery to indicate we want to allow remote queries for this record
+2. New field AllowRemoteQuery in AuthRecord structure
+3. uds_daemon.c sets AllowRemoteQuery if kDNSServiceFlagsAllowRemoteQuery is set
+4. mDNS.c only answers remote queries if AllowRemoteQuery is set
+
 Revision 1.191  2004/08/25 00:37:27  ksekar
 <rdar://problem/3774635>: Cleanup DynDNS hostname registration code
 
@@ -1181,6 +1188,7 @@ struct AuthRecord_struct
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes
 	void           *RecordContext;		// Context parameter for the callback function
 	mDNSu8          HostTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
+	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record.
 
 	// Transient state for Authoritative Records
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
