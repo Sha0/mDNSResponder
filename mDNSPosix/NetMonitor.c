@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.8  2003/05/09 21:41:56  cheshire
+ * Track deletion/goodbye packets as separate category
+ *
  * Revision 1.7  2003/05/07 00:16:01  cheshire
  * More detailed decoding of Resource Records
  *
@@ -82,19 +85,28 @@
 
 enum
 	{
+	// Primitive operations
 	OP_probe        = 0,
-	OP_query        = 1,
-	OP_answer       = 2,
+	OP_goodbye      = 1,
 
-	OP_browsegroup  = 1,
-	OP_browseq      = 1,
-	OP_browsea      = 2,
+	// These are meta-categories;
+	// Query and Answer operations are actually subdivided into two classes:
+	// Browse  query/answer and
+	// Resolve query/answer
+	OP_query        = 2,
+	OP_answer       = 3,
 
-	OP_resolvegroup = 3,
-	OP_resolveq     = 3,
-	OP_resolvea     = 4,
+	// The "Browse" variants of query/answer
+	OP_browsegroup  = 2,
+	OP_browseq      = 2,
+	OP_browsea      = 3,
 
-	NumStatOps = 5
+	// The "Resolve" variants of query/answer
+	OP_resolvegroup = 4,
+	OP_resolveq     = 4,
+	OP_resolvea     = 5,
+
+	NumStatOps = 6
 	};
 
 typedef struct ActivityStat_struct ActivityStat;
@@ -115,8 +127,9 @@ static mDNS_PlatformSupport PlatformStorage;	// Stores this platform's globals
 
 static mDNSAddr FilterAddr;
 
-static int NumQuestions;
 static int NumProbes;
+static int NumGoodbyes;
+static int NumQuestions;
 static int NumAnswers;
 static int NumAdditionals;
 
@@ -126,7 +139,8 @@ static ActivityStat *stats;
 // Utilities
 
 // Special version of printf that knows how to print IP addresses, DNS-format name strings, etc.
-mDNSexport void mprintf(const char *format, ...)
+//mDNSlocal void mprintf(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+mDNSlocal void mprintf(const char *format, ...)
 	{
 	unsigned char buffer[512];
 	va_list ptr;
@@ -195,8 +209,6 @@ mDNSlocal void recordstat(domainname *fqdn, int op, mDNSu16 rrtype)
 mDNSlocal void printstats(void)
 	{
 	int i;
-	mprintf("%-25sTotal Ops    Probe  BrowseQ  BrowseA ResolveQ ResolveA\n", "Service Type");
-
 	for (i=0; i<20; i++) 
 		{
 		int max = 0;
@@ -206,7 +218,9 @@ mDNSlocal void printstats(void)
 				{ m = s; max = s->totalops; }
 		if (!m) return;
 		m->printed = mDNStrue;
-		mprintf("%##-25s%8d %8d %8d %8d %8d %8d\n", &m->srvtype, m->totalops, m->stat[0], m->stat[1], m->stat[2], m->stat[3], m->stat[4]);
+		if (i==0) mprintf("%-25sTotal Ops    Probe  Goodbye  BrowseQ  BrowseA ResolveQ ResolveA\n", "Service Type");
+		mprintf("%##-25s%8d %8d %8d %8d %8d %8d %8d\n", &m->srvtype, m->totalops, m->stat[OP_probe],
+			m->stat[OP_goodbye], m->stat[OP_browseq], m->stat[OP_browsea], m->stat[OP_resolveq], m->stat[OP_resolvea]);
 		}
 	}
 
@@ -308,15 +322,20 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
-		const char *op;
 		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr); return; }
-		NumAnswers++;
-		if      (pktrr.rroriginalttl == 0)                    op = "(DE)";
-		else if (pktrr.RecordType & kDNSRecordTypeUniqueMask) op = "(AN)";
-		else                                                  op = "(A+)";
-		DisplayResourceRecord(srcaddr, op, &pktrr);
-		recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
+		if (pktrr.rroriginalttl)
+			{
+			NumAnswers++;
+			DisplayResourceRecord(srcaddr, (pktrr.RecordType & kDNSRecordTypeUniqueMask) ? "(AN)" : "(A+)", &pktrr);
+			recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
+			}
+		else
+			{
+			NumGoodbyes++;
+			DisplayResourceRecord(srcaddr, "(DE)", &pktrr);
+			recordstat(&pktrr.name, OP_goodbye, pktrr.rrtype);
+			}
 		}
 
 	for (i=0; i<msg->h.numAuthorities; i++)
@@ -373,8 +392,9 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	ExampleClientEventLoop(&mDNSStorage);
 
 	mprintf("\n\n");
+	mprintf("Total New Service Probes:   %6d\n", NumProbes);
+	mprintf("Total Goodbye Announcements:%6d\n", NumGoodbyes);
 	mprintf("Total Query Questions:      %6d\n", NumQuestions);
-	mprintf("Total Probe Questions:      %6d\n", NumProbes);
 	mprintf("Total Answers/Announcements:%6d\n", NumAnswers);
 	mprintf("Total Additional Records:   %6d\n", NumAdditionals);
 	mprintf("\n");
@@ -407,23 +427,30 @@ mDNSexport int main(int argc, char **argv)
 	return(0);
 
 usage:
-	fprintf(stderr, "\n");
-	fprintf(stderr, "mDNS traffic monitor\n");
+	fprintf(stderr, "\nmDNS traffic monitor\n");
 	fprintf(stderr, "Usage: %s (<host>)\n", argv[0]);
 	fprintf(stderr, "Optional <host> parameter displays only packets from that host\n");
-	fprintf(stderr, "\n");
-	fprintf(stderr, "Output (per-packet header):\n");
-	fprintf(stderr, "-Q-            Query Packet\n");
-	fprintf(stderr, "-R-            Response Packet\n");
+
+	fprintf(stderr, "\nPer-packet header output:\n");
+	fprintf(stderr, "-Q- / -R-      Query Packet or Response Packet\n");
 	fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet.\n");
-	fprintf(stderr, "\n");
-	fprintf(stderr, "Output (individual record display):\n");
+
+	fprintf(stderr, "\nPer-record display:\n");
 	fprintf(stderr, "(P)            Probe Question (new service starting)\n");
+	fprintf(stderr, "(DE)           Deletion/Goodbye (service going away)\n");
 	fprintf(stderr, "(Q)            Query Question\n");
 	fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
 	fprintf(stderr, "(AN)           Answer to question (or periodic announcment) (entire RR Set)\n");
 	fprintf(stderr, "(A+)           Answer to question (or periodic announcment) (add to existing RR Set members)\n");
 	fprintf(stderr, "(AD)           Additional record\n");
-	fprintf(stderr, "(DE)           Deletion (record going away)\n");
+
+	fprintf(stderr, "\nFinal summary, sorted by service type:\n");
+	fprintf(stderr, "Probe          Probes for this service type starting up\n");
+	fprintf(stderr, "Goodbye        Goodbye (deletion) packets for this service type shutting down\n");
+	fprintf(stderr, "BrowseQ        Browse questions from clients browsing to find a list of instances of this service\n");
+	fprintf(stderr, "BrowseA        Browse answers/announcments advertising instances of this service\n");
+	fprintf(stderr, "ResolveQ       Resolve questions from clients actively connecting to an instance of this service\n");
+	fprintf(stderr, "ResolveA       Resolve answers/announcments giving connection information for an instance of this service\n");
+	fprintf(stderr, "\n");
 	return(-1);
 	}
