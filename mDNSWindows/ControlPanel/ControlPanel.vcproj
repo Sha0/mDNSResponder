@@ -40,14 +40,14 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalDependencies="../DLL/Debug/dnssd.lib ws2_32.lib"
-				OutputFile="Debug/Rendezvous.cpl"
+				OutputFile="Debug/Bonjour.cpl"
 				LinkIncremental="2"
 				SuppressStartupBanner="TRUE"
 				ModuleDefinitionFile=".\ControlPanel.def"
 				GenerateDebugInformation="TRUE"
 				ProgramDatabaseFile=".\Debug/ControlPanel.pdb"
 				SubSystem="2"
-				ImportLibrary=".\Debug/Rendezvous.lib"
+				ImportLibrary=".\Debug/Bonjour.lib"
 				TargetMachine="1"/>
 			<Tool
 				Name="VCMIDLTool"
@@ -98,13 +98,13 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="Release/Rendezvous.cpl"
+				OutputFile="Release/Bonjour.cpl"
 				LinkIncremental="1"
 				SuppressStartupBanner="FALSE"
 				ModuleDefinitionFile=".\ControlPanel.def"
 				ProgramDatabaseFile=".\Release/ControlPanel.pdb"
 				SubSystem="2"
-				ImportLibrary=".\Release/Rendezvous.lib"
+				ImportLibrary=".\Release/Bonjour.lib"
 				TargetMachine="1"/>
 			<Tool
 				Name="VCMIDLTool"
@@ -226,6 +226,9 @@
 				RelativePath="SharedSecret.cpp">
 			</File>
 			<File
+				RelativePath="ThirdPage.cpp">
+			</File>
+			<File
 				RelativePath="stdafx.cpp">
 				<FileConfiguration
 					Name="Debug|Win32">
@@ -273,6 +276,9 @@
 				RelativePath="SharedSecret.h">
 			</File>
 			<File
+				RelativePath="ThirdPage.h">
+			</File>
+			<File
 				RelativePath="stdafx.h">
 			</File>
 		</Filter>
@@ -287,6 +293,9 @@
 			</File>
 			<File
 				RelativePath="res\configurator.ico">
+			</File>
+			<File
+				RelativePath="res\controlpanel.ico">
 			</File>
 			<File
 				RelativePath="res\failure.ico">
