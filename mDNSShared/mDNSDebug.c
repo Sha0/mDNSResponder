@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.4  2004/06/11 22:36:51  cheshire
+Fixes for compatibility with Windows
+
 Revision 1.3  2004/01/28 21:14:23  cheshire
 Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)
 
@@ -43,7 +46,18 @@ Changes necessary to support mDNSResponder on Linux.
 #include "mDNSDebug.h"
 
 #include <stdio.h>
+
+#if defined(WIN32)
+// Need to add Windows syslog support here
+#define LOG_PID 0x01
+#define LOG_CONS 0x02
+#define LOG_PERROR 0x20
+#define openlog(A,B,C) (void)(A); (void)(B)
+#define syslog(A,B,C)
+#define closelog()
+#else
 #include <syslog.h>
+#endif
 
 #include "mDNSClientAPI.h"
 
@@ -96,13 +110,7 @@ mDNSlocal void WriteLogMsg(const char *ident, const char *buffer, int logoptflag
 		}
 	}
 
-mDNSlocal void LogMsgWithIdent(const char *ident, const char *format, va_list ptr)
-	{
-	unsigned char buffer[512];
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
-	}
-
+// Log message with default "mDNSResponder" ident string at the start
 mDNSexport void LogMsg(const char *format, ...)
 	{
 	unsigned char buffer[512];
@@ -113,18 +121,24 @@ mDNSexport void LogMsg(const char *format, ...)
 	WriteLogMsg("mDNSResponder", buffer, 0);
 	}
 
+// Log message with specified ident string at the start
 mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
 	{
+	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	LogMsgWithIdent(ident, format, ptr);
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
+	WriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
 	}
 
+// Log message with no ident string at the start
 mDNSexport void LogMsgNoIdent(const char *format, ...)
 	{
+	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	LogMsgWithIdent("", format, ptr);
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
+	WriteLogMsg("", buffer, 0);
 	}
