@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.15  2004/07/30 17:40:06  ksekar
+<rdar://problem/3739115>: TXT Record updates not available for wide-area services
+
 Revision 1.14  2004/07/29 19:27:15  ksekar
 NAT-PMP Support - minor fixes and cleanup
 
@@ -98,6 +101,14 @@ extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 // Call SuspendLLQs prior to sleep, and on shutdown.  Call RestartLLQs on wake from sleep.
 extern void uDNS_SuspendLLQs(mDNS *m);
 extern void uDNS_RestartLLQs(mDNS *m);
+
+// uDNS_UpdateRecord
+// following fields must be set, and the update validated, upon entry.
+// rr->NewRData
+// rr->newrdlength
+// rr->UpdateCallback
+
+extern mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr);
 	
 extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);

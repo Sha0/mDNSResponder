@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.388  2004/07/30 17:40:06  ksekar
+<rdar://problem/3739115>: TXT Record updates not available for wide-area services
+
 Revision 1.387  2004/07/26 22:49:30  ksekar
 <rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
 
@@ -5294,13 +5297,8 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	const mDNSu16 newrdlength,
 	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
+	mDNSBool unicast = (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name));
 	
-	if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name))
-		{
-		LogMsg("mDNS_Update: Not implemented for unicast DNS");
-		return mStatus_UnsupportedErr;
-		}
-
 	if (!ValidateRData(rr->resrec.rrtype, newrdlength, newrdata))
 		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(m, &rr->resrec, &newrdata->u)); return(mStatus_Invalid); }
 
@@ -5311,7 +5309,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 
 	// If we already have an update queued up which has not gone through yet,
 	// give the client a chance to free that memory
-	if (rr->NewRData)
+	if (!unicast && rr->NewRData)
 		{
 		RData *n = rr->NewRData;
 		rr->NewRData = mDNSNULL;			// Clear the NewRData pointer ...
@@ -5322,6 +5320,8 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	rr->NewRData             = newrdata;
 	rr->newrdlength          = newrdlength;
 	rr->UpdateCallback       = Callback;
+
+	if (unicast) { 	mDNS_Unlock(m); return uDNS_UpdateRecord(m, rr); }
 	
 	if (rr->resrec.rroriginalttl == newttl && rr->resrec.rdlength == newrdlength && mDNSPlatformMemSame(rr->resrec.rdata->u.data, newrdata->u.data, newrdlength))
 		CompleteRDataUpdate(m, rr);

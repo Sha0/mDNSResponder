@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.182  2004/07/30 17:40:06  ksekar
+<rdar://problem/3739115>: TXT Record updates not available for wide-area services
+
 Revision 1.181  2004/07/29 19:27:15  ksekar
 NATPMP Support - minor fixes and cleanup
 
@@ -1063,8 +1066,8 @@ enum
 	regState_TargetChange      = 7,     // host name change update pending
 	regState_Unregistered      = 8,     // not in any list
 	regState_Refresh           = 9,     // outstanding refresh message
-	regState_NATMap            = 10,
-	regState_Retry             = 11
+	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
+	regState_UpdatePending     = 11     // update in flight as result of mDNS_Update call
 	};
 
 typedef mDNSu16 regState_t;
@@ -1073,13 +1076,19 @@ typedef struct
 	{
     regState_t   state;
     mDNSOpaque16 id;
-    domainname   zone;   // the zone that is updated
-    mDNSAddr     ns;     // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
-    mDNSIPPort   port;   // port on which server accepts dynamic updates
-    mDNSBool     add;    // !!!KRS this should really be an enumerated state
+    domainname   zone;     // the zone that is updated
+    mDNSAddr     ns;       // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
+    mDNSIPPort   port;     // port on which server accepts dynamic updates
+    mDNSBool     add;      // !!!KRS this should really be an enumerated state
     NATTraversalInfo *NATinfo; // NAT traversal context.  may be NULL
-    mDNSBool     lease;  // dynamic update contains (should contain) lease option
-    mDNSs32      expire; // expiration of lease (-1 for static)
+    mDNSBool     lease;    // dynamic update contains (should contain) lease option
+    mDNSs32      expire;   // expiration of lease (-1 for static)  
+
+    // uDNS_UpdateRecord support fields
+    mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
+    RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
+    int          UpdateRDLen;  // length of above field
+    mDNSRecordUpdateCallback *UpdateRDCallback; // client callback to free old rdata
 	} uDNS_RegInfo;
 
 struct AuthRecord_struct
