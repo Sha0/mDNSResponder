@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.74  2004/08/25 02:32:47  cheshire
+Minor cleanup: replace "&regtype[0]" with "regtype"
+
 Revision 1.73  2004/08/25 02:30:40  cheshire
 <rdar://problem/3588761> Current method of doing subtypes causes name collisions
 
@@ -1604,12 +1607,12 @@ static void handle_regservice_request(request_state *request)
 
 	if (host[0] && !MakeDomainNameFromDNSNameString(&h, host)) goto bad_param;
 
-	result = register_service(request, &request->servicepair.local, flags, txtlen, txtdata, port, &n,  &regtype[0], &t, &d, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
+	result = register_service(request, &request->servicepair.local, flags, txtlen, txtdata, port, &n, regtype, &t, &d, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
 
 	//!!!KRS if we got a dynamic reg domain from the config file, use it for default (except for iChat)
 	if (!domain[0] && gmDNS->uDNS_info.ServiceRegDomain.c[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
 		{
-		register_service(request, &request->servicepair.global, flags, txtlen, txtdata, port, &n, &regtype[0], &t, &gmDNS->uDNS_info.ServiceRegDomain, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
+		register_service(request, &request->servicepair.global, flags, txtlen, txtdata, port, &n, regtype, &t, &gmDNS->uDNS_info.ServiceRegDomain, host[0] ? &h : NULL, !name[0], num_subtypes, InterfaceID);
 		// don't return default global errors - it will confuse legacy clients, and we want .local to still work for them
 		}
 		
