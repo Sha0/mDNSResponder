@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.17  2004/09/01 03:59:29  ksekar
+<rdar://problem/3783453>: Conditionally compile out uDNS code on Windows
+
 Revision 1.16  2004/08/25 00:37:27  ksekar
 <rdar://problem/3774635>: Cleanup DynDNS hostname registration code
 
@@ -94,9 +97,9 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 // Entry points into unicast-specific routines
 
 extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
-extern mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_GlobalInfo *u);  // returns true if OK to call StopQuery
+extern mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalInfo *u);  // returns true if OK to call StopQuery
 extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
-
+	
 extern void uDNS_Init(mDNS *m);
 extern void uDNS_Close(mDNS *m);
 extern void uDNS_Sleep(mDNS *m);

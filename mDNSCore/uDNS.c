@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.72  2004/09/01 03:59:29  ksekar
+<rdar://problem/3783453>: Conditionally compile out uDNS code on Windows
+
 Revision 1.71  2004/08/27 17:51:53  ksekar
 Replaced unnecessary LogMsg with debugf.
 
@@ -360,7 +363,7 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 
 mDNSlocal void LinkActiveQuestion(uDNS_GlobalInfo *u, DNSQuestion *q)
 	{
-	if (IsActiveUnicastQuery(q, u))
+	if (uDNS_IsActiveQuery(q, u))
 		{ LogMsg("LinkActiveQuestion - %s (%d) already in list!", q->qname.c, q->qtype); return; }
 	
 	q->next = u->ActiveQueries;
@@ -2229,7 +2232,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	return mDNSfalse;
 	}
 
-mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_GlobalInfo *u)
+mDNSexport mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalInfo *u)
     {
 	DNSQuestion *q;
 

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.398  2004/09/01 03:59:29  ksekar
+<rdar://problem/3783453>: Conditionally compile out uDNS code on Windows
+
 Revision 1.397  2004/08/25 22:04:25  rpantos
 Fix the standard Windows compile error.
 
@@ -1352,6 +1355,10 @@ static const char *const mDNS_DomainTypeNames[] =
 	"_default._register._dns-sd._udp."
 	};
 
+#ifdef UNICAST_DISABLED
+#define uDNS_IsActiveQuery(q, u) mDNSfalse
+#endif
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -1913,12 +1920,14 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
 #endif
 
+#ifndef UNICAST_DISABLED
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration  on that interface, even for unicast domains.
     if (rr->resrec.InterfaceID || IsLocalDomain(&rr->resrec.name))
     	rr->uDNS_info.id = zeroID;
     else return uDNS_RegisterRecord(m, rr);
-
+#endif
+	
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
 	while (*l && *l != rr) l=&(*l)->next;
@@ -2112,8 +2121,10 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	mDNSu8 RecordType = rr->resrec.RecordType;
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 
+#ifndef UNICAST_DISABLED
     if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name) && rr->uDNS_info.id.NotAnInteger)
 		return uDNS_DeregisterRecord(m, rr);
+#endif
 	
 	if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly) p = &m->LocalOnlyRecords;
 	while (*p && *p != rr) p=&(*p)->next;
@@ -2612,11 +2623,13 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 
 mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, mDNSu32 interval)
 	{
+#ifndef UNICAST_DISABLED
 	if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name))
 		{
 		LogMsg("mDNS_Reconfirm_internal: Not implemented for unicast DNS");
 		return mStatus_UnsupportedErr;
 		}
+#endif
 
 	if (interval < kMinimumReconfirmTime)
 		interval = kMinimumReconfirmTime;
@@ -3566,7 +3579,9 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (m->NewLocalOnlyRecords)     return(m->timenow);
 	if (m->DiscardLocalOnlyRecords) return(m->timenow);
 	if (m->SuppressSending)         return(m->SuppressSending);
+#ifndef UNICAST_DISABLED
 	if (e - m->uDNS_info.nextevent   > 0) e = m->uDNS_info.nextevent;
+#endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
 	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
@@ -3691,7 +3706,9 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	// callback function should call mDNS_Execute() (and ignore the return value, which may already be stale
 	// by the time it gets to the timer callback function).
 
+#ifndef UNICAST_DISABLED
 	uDNS_Execute(m);
+#endif
 	mDNS_Unlock(m);		// Calling mDNS_Unlock is what gives m->NextScheduledEvent its new value
 	return(m->NextScheduledEvent);
 	}
@@ -3718,7 +3735,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 
 	if (sleepstate)
 		{
+#ifndef UNICAST_DISABLED
 		uDNS_Sleep(m);
+#endif		
 		// Mark all the records we need to deregister and send them
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
@@ -3731,8 +3750,10 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		mDNSu32 slot;
 		CacheRecord *cr;
 
+#ifndef UNICAST_DISABLED
 		uDNS_Wake(m);
-
+#endif
+		
         // 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
 			if (ActiveQuestion(q))
@@ -4715,16 +4736,19 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
-	mDNSIPPort NATPort = mDNSOpaque16fromIntVal(NATMAP_PORT);
 	DNSMessage *msg = mDNSNULL;	
 	const mDNSu8 StdQ    = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
-	const mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
 	mDNSu8 QR_OP;
 	mDNSu8 *ptr = mDNSNULL;
+
+#ifndef UNICAST_DISABLED	
+	mDNSIPPort NATPort = mDNSOpaque16fromIntVal(NATMAP_PORT);
+	const mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
 	
 	if (srcport.NotAnInteger == NATPort.NotAnInteger) { uDNS_ReceiveNATMap(m, pkt, end - (mDNSu8 *)pkt); return; }
-	else if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
+#endif		
+	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
 	msg = (DNSMessage *)pkt;
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
@@ -4740,12 +4764,14 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	// If we accept and try to process a packet with zero or all-ones source address, that could really mess things up
 	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 
+#ifndef UNICAST_DISABLED	
 	if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger &&
 		(QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
 		{
 		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
 		return;
 		}
+#endif	
 	
 	mDNS_Lock(m);
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
@@ -4821,12 +4847,16 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->Target.type = mDNSAddrType_None;
 		}
 
+#ifndef UNICAST_DISABLED	
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast query on that interface, even for unicast domains.
     if (question->InterfaceID || IsLocalDomain(&question->qname))
     	question->uDNS_info.id = zeroID;
     else return uDNS_StartQuery(m, question);
-
+#else
+    question->uDNS_info.id = zeroID;
+#endif // UNICAST_DISABLED
+	
 	// The special interface ID "-2" means
 	// "do this query via multicast on all interfaces, even if it's apparently a unicast domain"
 	// After it's served its purpose by preventing a unicast query above, we now set it to mDNSInterface_Any.
@@ -4919,8 +4949,8 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
 
-    if (IsActiveUnicastQuery(question, &m->uDNS_info)) return uDNS_StopQuery(m, question);
-
+    if (uDNS_IsActiveQuery(question, &m->uDNS_info)) return uDNS_StopQuery(m, question);
+	
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
@@ -5026,6 +5056,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->QuestionContext  = Context;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 
+#ifndef UNICAST_DISABLED
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast query on that interface, even for unicast domains.
     if (question->InterfaceID || IsLocalDomain(&question->qname))
@@ -5039,6 +5070,9 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 		question->LongLived = mDNStrue;
 		return uDNS_StartQuery(m, question);
 		}
+#else
+	return(mDNS_StartQuery(m, question));
+#endif // UNICAST_DISABLED
 	}
 
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -5238,13 +5272,13 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *query)
 	{
 	mDNS_Lock(m);
-	if (query->qSRV.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qSRV, &m->uDNS_info))
+	if (query->qSRV.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qSRV, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qSRV);
-	if (query->qTXT.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qTXT, &m->uDNS_info))
+	if (query->qTXT.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qTXT, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qTXT);
-	if (query->qAv4.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv4, &m->uDNS_info))
+	if (query->qAv4.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qAv4, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qAv4);
-	if (query->qAv6.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv6, &m->uDNS_info))
+	if (query->qAv6.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qAv6, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qAv6);
 	mDNS_Unlock(m);
 	}
@@ -5329,11 +5363,15 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	const mDNSu16 newrdlength,
 	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
+#ifndef UNICAST_DISABLED
 	mDNSBool unicast = (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name));
-	
+#else
+	mDNSBool unicast = mDNSfalse;
+#endif
+
 	if (!ValidateRData(rr->resrec.rrtype, newrdlength, newrdata))
 		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(&rr->resrec, &newrdata->u, m->MsgBuffer)); return(mStatus_Invalid); }
-
+	
 	mDNS_Lock(m);
 
 	// If TTL is unspecified, leave TTL unchanged
@@ -5354,7 +5392,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	rr->UpdateCallback       = Callback;
 
 	if (unicast) { 	mDNS_Unlock(m); return uDNS_UpdateRecord(m, rr); }
-	
+
 	if (rr->resrec.rroriginalttl == newttl && rr->resrec.rdlength == newrdlength && mDNSPlatformMemSame(rr->resrec.rdata->u.data, newrdata->u.data, newrdlength))
 		CompleteRDataUpdate(m, rr);
 	else
@@ -5906,11 +5944,12 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 
+#ifndef UNICAST_DISABLED	
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration  on that interface, even for unicast domains.
 	if (!InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
 		return uDNS_RegisterService(m, sr);
-
+#endif
 	mDNS_Lock(m);
 	err = mDNS_Register_internal(m, &sr->RR_SRV);
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_TXT);
@@ -5935,12 +5974,14 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	ExtraResourceRecord **e;
 	mStatus status;
 
+#ifndef UNICAST_DISABLED
 	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
 		{
 		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
 		return mStatus_UnsupportedErr;
 		}
-
+#endif
+	
 	mDNS_Lock(m);
 	e = &sr->Extras;
 	while (*e) e = &(*e)->next;
@@ -5966,11 +6007,13 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	ExtraResourceRecord **e;
 	mStatus status;
 
+#ifndef UNICAST_DISABLED	
 	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
 		{
 		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
 		return mStatus_UnsupportedErr;
 		}
+#endif
 
 	mDNS_Lock(m);
 	e = &sr->Extras;
@@ -6036,9 +6079,10 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	// If port number is zero, that means this was actually registered using mDNS_RegisterNoSuchService()
 	if (!sr->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger) return(mDNS_DeregisterNoSuchService(m, &sr->RR_SRV));
 
+#ifndef UNICAST_DISABLED	
 	if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
 		return uDNS_DeregisterService(m, sr);
-
+#endif
 	if (sr->RR_PTR.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
 		debugf("Service set for %##s already deregistered", sr->RR_PTR.resrec.name.c);
@@ -6223,7 +6267,9 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NumFailedProbes         = 0;
 	m->SuppressProbes          = 0;
 
+#ifndef UNICAST_DISABLED	
 	uDNS_Init(m);
+#endif
 	result = mDNSPlatformInit(m);
 
 	return(result);
@@ -6252,7 +6298,9 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	
 	m->mDNS_shutdown = mDNStrue;
 
+#ifndef UNICAST_DISABLED	
 	uDNS_Close(m);
+#endif
 	rrcache_totalused = m->rrcache_totalused;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
