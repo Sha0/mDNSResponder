@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.92  2004/10/08 03:54:35  ksekar
+<rdar://problem/3831802> Refine unicast polling intervals
+
 Revision 1.91  2004/09/30 17:45:34  ksekar
 <rdar://problem/3821119> lots of log messages: mDNS_SetPrimaryIP: IP address unchanged
 
@@ -1485,8 +1488,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 		}
 	if (llq && (llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume))	
 		{ deriveGoodbyes(m, msg, end,question);  llqInfo->deriveRemovesOnResume = mDNSfalse; }
-	//!!!KRS should we derive goodbyes for non-LLQs?
 
+	// our interval may be set lower to recover from failures - now that we have an answer, fully back off retry
+	if (question->ThisQInterval < MAX_UCAST_POLL_INTERVAL) question->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 	return;
 
 	pkt_error:
@@ -2228,7 +2232,7 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 	poll:
 	info->state = LLQ_Poll;
 	q->uDNS_info.responseCallback = simpleResponseHndlr;
-	info->question->LastQTime = 0;  // trigger immediate poll
+	info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
 
@@ -2328,7 +2332,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	poll:
 	info->question->uDNS_info.responseCallback = simpleResponseHndlr;
 	info->state = LLQ_Poll;
-	info->question->LastQTime = 0;  // trigger immediate poll
+	info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
 
@@ -2510,10 +2514,9 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	// break here if its and LLQ
 	if (question->LongLived) return startLLQ(m, question);
 
+	// else send the query to our server
 	err = constructQueryMsg(&msg, &endPtr, question);
 	if (err) return err;
-
-	// else send the query to our server
 
 	question->LastQTime = mDNSPlatformTimeNow(m);
 	question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
