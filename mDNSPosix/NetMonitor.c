@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.43  2003/09/02 21:42:52  cheshire
+Improved alignment of final summary table with v6 addresses
+
 Revision 1.42  2003/09/02 20:59:24  cheshire
 Use bcopy() instead of non-portable "__u6_addr.__u6_addr32" fields.
 
@@ -262,7 +265,7 @@ static int NumProbes, NumGoodbyes, NumQuestions, NumLegacy, NumAnswers, NumAddit
 
 static ActivityStat *stats;
 
-#define OPBanner "Total Ops    Probe  Goodbye  BrowseQ  BrowseA ResolveQ ResolveA"
+#define OPBanner "Total Ops   Probe   Goodbye  BrowseQ  BrowseA ResolveQ ResolveA"
 
 //*************************************************************************************************************
 // Utilities
@@ -376,11 +379,12 @@ mDNSlocal void ShowSortedHostList(HostList *list, int max)
 	{
 	HostEntry *e, *end = &list->hosts[(max < list->num) ? max : list->num];
 	qsort(list->hosts, list->num, sizeof(HostEntry), CompareHosts);
-	if (list->num) mprintf("\n%-25s%s%s\n", "Source Address", OPBanner, "     Pkts    Query   Legacy Response");
+	if (list->num) mprintf("\n%-25s%s%s\n", "Source Address", OPBanner, "    Pkts    Query   LegacyQ Response");
 	for (e = &list->hosts[0]; e < end; e++)
 		{
-		mprintf("%#-25a%8d %8d %8d %8d %8d %8d %8d",
-			&e->addr, e->totalops,
+		int len = mprintf("%#-25a", &e->addr);
+		if (len > 25) mprintf("\n%25s", "");
+		mprintf("%8d %8d %8d %8d %8d %8d %8d", e->totalops,
 			e->stat[OP_probe], e->stat[OP_goodbye],
 			e->stat[OP_browseq], e->stat[OP_browsea],
 			e->stat[OP_resolveq], e->stat[OP_resolvea]);
