@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.20  2003/06/06 22:18:22  cheshire
+ * Add extra space in Q output to line it up with RR output
+ *
  * Revision 1.19  2003/06/06 21:05:04  cheshire
  * Display state of cache-flush bit on additional records
  *
@@ -412,7 +415,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			const char *ptype = "(Q) ";
 			if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumQuestions++;
 			else { NumLegacy++; ptype = "(LQ)"; }
-			mprintf("%#-16a %s %-5s      %##s\n", srcaddr, ptype, DNSTypeName(q.qtype), q.qname.c);
+			mprintf("%#-16a %-5s %-5s      %##s\n", srcaddr, ptype, DNSTypeName(q.qtype), q.qname.c);
 			recordstat(&q.qname, OP_query, q.qtype);
 			}
 		}
