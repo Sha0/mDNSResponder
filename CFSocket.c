@@ -590,13 +590,14 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 			debugf("SetupInterface: %s Flags %04X Family %d not AF_INET",
 				ifa->ifa_name, ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (!(ifa->ifa_flags & IFF_UP))
-			debugf("SetupInterface: %s Flags %04X Interface not IFF_UP",
-				ifa->ifa_name, ifa->ifa_flags, ifa->ifa_addr->sa_family);
+			debugf("SetupInterface: %s Flags %04X Interface not IFF_UP", ifa->ifa_name, ifa->ifa_flags);
 		if (ifa->ifa_flags & IFF_LOOPBACK)
-			debugf("SetupInterface: %s Flags %04X Interface IFF_LOOPBACK",
-				ifa->ifa_name, ifa->ifa_flags, ifa->ifa_addr->sa_family);
+			debugf("SetupInterface: %s Flags %04X Interface IFF_LOOPBACK", ifa->ifa_name, ifa->ifa_flags);
+		if (ifa->ifa_flags & IFF_POINTOPOINT)
+			debugf("SetupInterface: %s Flags %04X Interface IFF_POINTOPOINT", ifa->ifa_name, ifa->ifa_flags);
 #endif
-		if (ifa->ifa_addr->sa_family == AF_INET && (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_LOOPBACK))
+		if (ifa->ifa_addr->sa_family == AF_INET && (ifa->ifa_flags & IFF_UP) &&
+			!(ifa->ifa_flags & IFF_LOOPBACK) && !(ifa->ifa_flags & IFF_POINTOPOINT))
 			{
 			NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)malloc(sizeof(NetworkInterfaceInfo2));
 			if (!info) debugf("SetupInterfaceList: Out of Memory!");
