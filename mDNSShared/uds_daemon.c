@@ -23,6 +23,14 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.19  2003/08/15 20:16:03  cheshire
+<rdar://problem/3366590> mDNSResponder takes too much RPRVT
+We want to avoid touching the rdata pages, so we don't page them in.
+1. RDLength was stored with the rdata, which meant touching the page just to find the length.
+   Moved this from the RData to the ResourceRecord object.
+2. To avoid unnecessarily touching the rdata just to compare it,
+   compute a hash of the rdata and store the hash in the ResourceRecord object.
+
 Revision 1.18  2003/08/15 00:38:00  ksekar
 Bug #: <rdar://problem/3377005>: Bug: buffer overrun when reading long rdata from client
 
@@ -833,7 +841,7 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     len += strlen(fullname) + 1;
     len += strlen(target) + 1;
     len += 2 * sizeof(uint16_t);  // port, txtLen
-    len += res->txt->rdata->RDLength;
+    len += res->txt->rdlength;
     
     // allocate/init reply header
     rep =  create_reply(resolve_reply, len, rs);
@@ -846,8 +854,8 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     put_string(fullname, &data);
     put_string(target, &data);
     put_short(res->srv->rdata->u.srv.port.NotAnInteger, &data);
-    put_short(res->txt->rdata->RDLength, &data);
-    put_rdata(res->txt->rdata->RDLength, res->txt->rdata->u.txt.c, &data);
+    put_short(res->txt->rdlength, &data);
+    put_rdata(res->txt->rdlength, res->txt->rdata->u.txt.c, &data);
     
     result = send_msg(rep);
     if (result == t_error || result == t_terminated) 
@@ -911,7 +919,7 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     len += 2 * sizeof(uint32_t);  // if index + ttl
     len += sizeof(DNSServiceErrorType);
     len += 3 * sizeof(uint16_t); // type, class, rdlen
-    len += answer->rdata->RDLength;
+    len += answer->rdlength;
     ConvertDomainNameToCString(&answer->name, name);
     len += strlen(name) + 1;
     
@@ -924,8 +932,8 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     put_string(name, &data);
     put_short(answer->rrtype, &data);
     put_short(answer->rrclass, &data);
-    put_short(answer->rdata->RDLength, &data);
-    put_rdata(answer->rdata->RDLength, (char *)&answer->rdata->u, &data);
+    put_short(answer->rdlength, &data);
+    put_rdata(answer->rdlength, (char *)&answer->rdata->u, &data);
     put_long(AddRecord ? answer->rroriginalttl : 0, &data);
 
     append_reply(req, rep);
@@ -1260,7 +1268,7 @@ static void handle_add_request(request_state *rstate)
     bzero(extra, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
     extra->r.resrec.rrtype = rrtype;
     extra->r.rdatastorage.MaxRDLength = size;
-    extra->r.rdatastorage.RDLength = rdlen;
+    extra->r.resrec.rdlength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
     result =  mDNS_AddRecordToService(&mDNSStorage, srs , extra, &extra->r.rdatastorage, ttl);
     deliver_error(rstate, result);
@@ -1326,9 +1334,8 @@ static void handle_update_request(request_state *rstate)
         exit(1);
         }
     newrd->MaxRDLength = rdsize;
-    newrd->RDLength = rdlen;
     memcpy(&newrd->u, rdata, rdlen);
-    result = mDNS_Update(&mDNSStorage, rr, ttl, newrd, update_callback);
+    result = mDNS_Update(&mDNSStorage, rr, ttl, rdlen, newrd, update_callback);
     deliver_error(rstate, result);
     reset_connected_rstate(rstate);
     }
@@ -1734,7 +1741,7 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
     if ((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique)
         rr->resrec.RecordType = kDNSRecordTypeUnique;
     rr->resrec.rrclass = class;
-    rr->resrec.rdata->RDLength = rdlen;
+    rr->resrec.rdlength = rdlen;
     rr->resrec.rdata->MaxRDLength = rdlen;
     rdata = get_rdata(&msgbuf, rdlen);
     memcpy(rr->resrec.rdata->u.data, rdata, rdlen);

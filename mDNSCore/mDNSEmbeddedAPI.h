@@ -23,6 +23,14 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.101  2003/08/15 20:16:02  cheshire
+<rdar://problem/3366590> mDNSResponder takes too much RPRVT
+We want to avoid touching the rdata pages, so we don't page them in.
+1. RDLength was stored with the rdata, which meant touching the page just to find the length.
+   Moved this from the RData to the ResourceRecord object.
+2. To avoid unnecessarily touching the rdata just to compare it,
+   compute a hash of the rdata and store the hash in the ResourceRecord object.
+
 Revision 1.100  2003/08/14 19:29:04  cheshire
 <rdar://problem/3378473> Include cache records in SIGINFO output
 Moved declarations of DNSTypeName() and GetRRDisplayString to mDNSEmbeddedAPI.h so daemon.c can use them
@@ -572,13 +580,26 @@ enum
 typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target; } rdataSRV;
 typedef struct { mDNSu16 preference; domainname exchange; } rdataMX;
 
-// Standard RData size is 264 (256+8), which is large enough to hold a maximum-sized SRV record
-#define StandardRDSize 264
+// StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
+// MaximumRDSize is 8K the absolute maximum we support (at least for now)
+#define StandardAuthRDSize 264
 #define MaximumRDSize 8192
+
+// InlineCacheRDSize is 64
+// Records received from the network with rdata this size or less have their rdata stored right in the CacheRecord object
+// Records received from the network with rdata larger than this have additional storage allocated for the rdata
+// A quick unscientific sample from a busy network at Apple with lots of machines revealed this:
+// 1461 records in cache
+// 292 were one-byte TXT records
+// 136 were four-byte A records
+// 184 were sixteen-byte AAAA records
+// 780 were various PTR, TXT and SRV records from 12-64 bytes
+// Only 69 records had rdata bigger than 64 bytes
+#define InlineCacheRDSize 64
 
 typedef union
 	{
-	mDNSu8      data[StandardRDSize];
+	mDNSu8      data[StandardAuthRDSize];
 	mDNSv4Addr  ip;			// For 'A' record
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	domainname  name;		// For PTR and CNAME records
@@ -590,7 +611,6 @@ typedef union
 typedef struct
 	{
 	mDNSu16    MaxRDLength;	// Amount of storage allocated for rdata (usually sizeof(RDataBody))
-	mDNSu16    RDLength;	// Size of the rdata currently stored here
 	RDataBody  u;
 	} RData;
 #define sizeofRDataHeader (sizeof(RData) - sizeof(RDataBody))
@@ -622,7 +642,11 @@ struct ResourceRecord_struct
 	mDNSu16         rrtype;
 	mDNSu16         rrclass;
 	mDNSu32         rroriginalttl;		// In seconds
+	mDNSu16         rdlength;			// Size of the raw rdata, in bytes
 	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
+	mDNSu32         namehash;			// Name-based (i.e. case insensitive) hash of name
+	mDNSu32         rdatahash;			// 32-bit hash of the raw rdata
+	mDNSu32         rdnamehash;			// Set if this rdata contains a domain name (e.g. PTR, SRV, CNAME etc.)
 	RData           *rdata;				// Pointer to storage for this rdata
 	};
 
@@ -634,7 +658,7 @@ struct AuthRecord_struct
 	// mDNS_SetupResourceRecord() is avaliable as a helper routine to set up most fields to sensible default values for you
 
 	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
-	ResourceRecord       resrec;
+	ResourceRecord  resrec;
 
 	// Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response
@@ -675,7 +699,7 @@ struct AuthRecord_struct
 struct CacheRecord_struct
 	{
 	CacheRecord    *next;				// Next in list; first element of structure for efficiency reasons
-	ResourceRecord       resrec;
+	ResourceRecord  resrec;
 
 	// Transient state for Cache Records
 	CacheRecord    *NextInKAList;		// Link to the next element in the chain of known answers to send
@@ -692,14 +716,14 @@ struct CacheRecord_struct
 	mDNSBool        MPExpectingKA;		// Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
 	CacheRecord    *NextInCFList;		// Set if this is in the list of records we just received with the cache flush bit set
 
-	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
+	struct { mDNSu16 MaxRDLength; mDNSu8 data[InlineCacheRDSize]; } rdatastorage;	// Storage for small records is right here
 	};
 
 typedef struct
 	{
 	CacheRecord r;
-	mDNSu8 _extradata[MaximumRDSize-StandardRDSize];		// Glue on the necessary number of extra bytes
-	} LargeResourceRecord;
+	mDNSu8 _extradata[MaximumRDSize-InlineCacheRDSize];		// Glue on the necessary number of extra bytes
+	} LargeCacheRecord;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 
@@ -776,6 +800,7 @@ struct DNSQuestion_struct
 	{
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	DNSQuestion          *next;
+	mDNSu32               qnamehash;
 	mDNSs32               LastQTime;		// In platform time units
 	mDNSs32               ThisQInterval;	// In platform time units
 											// ThisQInterval > 0 for an active question;
@@ -978,6 +1003,7 @@ extern mDNSs32 mDNS_Execute   (mDNS *const m);
 
 extern mStatus mDNS_Register  (mDNS *const m, AuthRecord *const rr);
 extern mStatus mDNS_Update    (mDNS *const m, AuthRecord *const rr, mDNSu32 newttl,
+								const mDNSu16 newrdlength, 
 								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr);
 

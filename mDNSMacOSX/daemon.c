@@ -36,6 +36,14 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.129  2003/08/15 20:16:03  cheshire
+<rdar://problem/3366590> mDNSResponder takes too much RPRVT
+We want to avoid touching the rdata pages, so we don't page them in.
+1. RDLength was stored with the rdata, which meant touching the page just to find the length.
+   Moved this from the RData to the ResourceRecord object.
+2. To avoid unnecessarily touching the rdata just to compare it,
+   compute a hash of the rdata and store the hash in the ResourceRecord object.
+
 Revision 1.128  2003/08/14 19:30:36  cheshire
 <rdar://problem/3378473> Include list of cache records in SIGINFO output
 
@@ -1086,7 +1094,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	// Fill in type, length, and data of new record
 	extra->r.resrec.rrtype = type;
 	extra->r.rdatastorage.MaxRDLength = size;
-	extra->r.rdatastorage.RDLength    = data_len;
+	extra->r.resrec.rdlength          = data_len;
 	memcpy(&extra->r.rdatastorage.u.data, data, data_len);
 	
 	// Do the operation
@@ -1147,13 +1155,12 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 
 	// Fill in new length, and data
 	newrdata->MaxRDLength = size;
-	newrdata->RDLength    = data_len;
 	memcpy(&newrdata->u, data, data_len);
 	
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistrationUpdateRecord(%##s, %X, new length %d)",
 		client, x->s.RR_SRV.name.c, reference, data_len);
-	err = mDNS_Update(&mDNSStorage, rr, ttl, newrdata, UpdateCallback);
+	err = mDNS_Update(&mDNSStorage, rr, ttl, data_len, newrdata, UpdateCallback);
 	if (err) { errormsg = "mDNS_Update"; goto fail; }
 	
 	// Succeeded: Wrap up and return
@@ -1422,6 +1429,7 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 			if (rr->CRActiveQuestion) CacheActive++;
 			LogMsg("%s %-5s%-6s%s", rr->CRActiveQuestion ? "Active:  " : "Inactive:", DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfoOSX *)rr->resrec.InterfaceID)->ifa_name, GetRRDisplayString(&mDNSStorage, rr));
+			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 			}
 	if (mDNSStorage.rrcache_totalused != CacheUsed)
 		LogMsg("Cache use mismatch: rrcache_totalused is %lu, true count %lu", mDNSStorage.rrcache_totalused, CacheUsed);
