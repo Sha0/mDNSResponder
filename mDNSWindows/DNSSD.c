@@ -23,12 +23,16 @@
     Change History (most recent first):
     
 $Log: DNSSD.c,v $
+Revision 1.2  2004/05/03 10:34:24  bradley
+Implemented preliminary version of the TXTRecord API.
+
 Revision 1.1  2004/01/30 02:45:21  bradley
 High-level implementation of the DNS-SD API. Supports both "direct" (compiled-in mDNSCore) and "client"
 (IPC<->service) usage. Conditionals can exclude either "direct" or "client" to reduce code size.
 
 */
 
+#include	<ctype.h>
 #include	<stdlib.h>
 #include	<stdio.h>
 #include	<string.h>
@@ -865,6 +869,900 @@ DEBUG_LOCAL int DomainEndsInDot( const char *dom )
 	}
 	return (*dom == '.');
 }
+
+#if 0
+#pragma mark -
+#pragma mark == TXT Records ==
+#endif
+
+//===========================================================================================================================
+//	Structures
+//===========================================================================================================================
+
+typedef struct	_TXTRecordRef_t		_TXTRecordRef_t;
+struct	_TXTRecordRef_t
+{
+	uint8_t *		txt;
+	uint16_t		size;
+};
+
+//===========================================================================================================================
+//	Prototypes
+//===========================================================================================================================
+
+DEBUG_LOCAL DNSServiceErrorType
+	TXTRecordGetValuePtrInternal( 
+		TXTRecordRef 	inRef, 
+		const char *	inKey, 
+		uint8_t **		outItem, 
+		uint16_t *		outItemSize, 
+		const void **	outValue, 
+		uint16_t *		outValueSize );
+
+DEBUG_LOCAL DNSServiceErrorType
+	TXTRecordGetPtrsAtIndexInternal( 
+		TXTRecordRef 	inRef, 
+		uint16_t 		inIndex, 
+		uint8_t **		outItem, 
+		uint16_t *		outItemSize, 
+		const char **	outKey, 
+		uint16_t *		outKeySize, 
+		const void **	outValue, 
+		uint16_t *		outValueSize );
+
+DEBUG_LOCAL int	TXTRecordMemEqv( const void *inLeft, size_t inLeftSize, const void *inRight, size_t inRightSize );
+
+//===========================================================================================================================
+//	TXTRecordCreate
+//===========================================================================================================================
+
+DNSServiceErrorType	TXTRecordCreate( TXTRecordRef *outRef, const void *inBytes, uint16_t inByteCount )
+{
+	DNSServiceErrorType		err;
+	TXTRecordRef			obj;
+	
+	obj = NULL;
+	require_action_expect( outRef, exit, err = kDNSServiceErr_BadReference );
+	require_action_expect( inBytes || ( inByteCount == 0 ), exit, err = kDNSServiceErr_BadParam );
+	
+	// Allocate and initialize the object.
+	
+	obj = (TXTRecordRef) calloc( 1, sizeof( *obj ) );
+	require_action( obj, exit, err = kDNSServiceErr_NoMemory );
+	
+	if( inBytes && ( inByteCount > 0 ) )
+	{
+		const uint8_t *		p;
+		const uint8_t *		q;
+		
+		// Raw TXT record bytes were passed in. Make sure the TXT record looks valid.
+		
+		p = (const uint8_t *) inBytes;
+		q = p + inByteCount;
+		while( p < q )
+		{
+			p += ( 1 + *p );
+			require_action( p <= q, exit, err = kDNSServiceErr_Invalid );
+		}
+		
+		// Make a copy so the caller doesn't have to keep it around.
+		
+		obj->txt = (uint8_t *) malloc( inByteCount );
+		require_action( obj->txt, exit, err = kDNSServiceErr_NoMemory );
+		
+		memcpy( obj->txt, inBytes, inByteCount );
+		obj->size = inByteCount;
+	}
+	
+	// Success!
+	
+	*outRef	= obj;
+	obj		= NULL;
+	err		= kDNSServiceErr_NoError;
+	
+exit:
+	if( obj ) TXTRecordDeallocate( obj );
+	return( err );
+}
+
+//===========================================================================================================================
+//	TXTRecordDeallocate
+//===========================================================================================================================
+
+void	TXTRecordDeallocate( TXTRecordRef inRef )
+{
+	check( inRef );
+	if( inRef )
+	{
+		if( inRef->txt ) free( inRef->txt );
+		free( inRef );
+	}
+}
+
+//===========================================================================================================================
+//	TXTRecordGetValuePtr
+//===========================================================================================================================
+
+DNSServiceErrorType
+	TXTRecordGetValuePtr( 
+		TXTRecordRef 	inRef, 
+		const char *	inKey, 
+		const void **	outValue, 
+		uint16_t *		outValueSize )
+{
+	return( TXTRecordGetValuePtrInternal( inRef, inKey, NULL, NULL, outValue, outValueSize ) );
+}
+
+//===========================================================================================================================
+//	TXTRecordSetValue
+//===========================================================================================================================
+
+DNSServiceErrorType	TXTRecordSetValue( TXTRecordRef inRef, const char *inKey, const void *inValue, uint16_t inValueSize )
+{
+	DNSServiceErrorType		err;
+	const char *			p;
+	size_t					keySize;
+	uint8_t *				item;
+	uint8_t *				itemEnd;
+	uintptr_t				itemOffset;
+	uint16_t				oldItemSize;
+	uint16_t				newItemSize;
+	uint16_t				delta;
+	uint8_t *				txt;
+	
+	require_action_expect( inRef, exit, err = kDNSServiceErr_BadReference );
+	require_action_expect( inKey, exit, err = kDNSServiceErr_BadParam );
+	keySize = strlen( inKey );
+	require_action( keySize > 0, exit, err = kDNSServiceErr_BadParam );
+	require_action_expect( inValue || ( inValueSize == 0 ), exit, err = kDNSServiceErr_BadParam );
+	
+	// Make sure the key is printable US-ASCII values (0x20-0x7E), excluding '=' (0x3D).
+	
+	for( p = inKey; *p != '\0'; ++p )
+	{
+		if( ( *p < 0x20 ) || ( *p > 0x7E ) || ( *p == 0x3D ) )
+		{
+			break;
+		}
+	}
+	require_action( *p == '\0', exit, err = kDNSServiceErr_Invalid );
+	
+	// Make sure the total item size does not exceed 255 bytes.
+	
+	newItemSize = (uint16_t) keySize;
+	if( inValue ) newItemSize += 1;		// Add '=' (only if there is a non-NULL value)
+	newItemSize = (uint16_t)( newItemSize + inValueSize );
+	require_action( newItemSize <= 255, exit, err = kDNSServiceErr_BadParam );
+	
+	// Search for an existing item with the same key. If found, replace its value. Otherwise, append a new item.
+	
+	err = TXTRecordGetValuePtrInternal( inRef, inKey, &item, &oldItemSize, NULL, NULL );
+	if( err == kDNSServiceErr_NoError )
+	{
+		if( newItemSize > oldItemSize )
+		{
+			// Expand the buffer then shift subsequent item(s) forward to make room for the larger value.
+			// Note: this saves off and restores the item pointer since the pointer is invalidated by realloc.
+			
+			itemOffset = (uintptr_t)( item - inRef->txt );
+			delta = (uint16_t)( newItemSize - oldItemSize );
+			txt = (uint8_t *) realloc( inRef->txt, (size_t)( inRef->size + delta ) );
+			require_action( txt, exit, err = kDNSServiceErr_NoMemory );
+			
+			item	= txt + itemOffset;
+			itemEnd = item + ( 1 + oldItemSize );
+			memmove( item + ( 1 + newItemSize ), itemEnd, (size_t)( ( inRef->txt + inRef->size ) - itemEnd ) );
+			inRef->txt  = txt;
+			inRef->size = (uint16_t)( inRef->size + delta );
+		}
+		else if( newItemSize < oldItemSize )
+		{
+			// Shift subsequent item(s) backward to take up the slack then shrink the buffer to fit.
+			// Note: this saves off and restores the item pointer since the pointer is invalidated by realloc.
+			
+			itemEnd = item + ( 1 + oldItemSize );
+			memmove( item + ( 1 + newItemSize ), itemEnd, (size_t)( ( inRef->txt + inRef->size ) - itemEnd ) );
+			
+			itemOffset = (uintptr_t)( item - inRef->txt );
+			inRef->size -= ( oldItemSize - newItemSize );
+			txt = (uint8_t *) realloc( inRef->txt, inRef->size );
+			require_action( txt, exit, err = kDNSServiceErr_NoMemory );
+			
+			item		= txt + itemOffset;
+			inRef->txt	= txt;
+		}
+	}
+	else
+	{
+		// Resize the buffer to hold the new item.
+		
+		delta = (uint16_t)( 1 + newItemSize );
+		txt = (uint8_t *) realloc( inRef->txt, (size_t)( inRef->size + delta ) );
+		require_action( txt, exit, err = kDNSServiceErr_NoMemory );
+		
+		item		= txt + inRef->size;
+		inRef->txt  = txt;
+		inRef->size	= (uint16_t)( inRef->size + delta );
+	}
+	
+	// Write the new key/value pair to the TXT record in the form key[=<value>].
+	// Note: This always writes the entire item to handle case changes in the key.
+	
+	*item++ = (uint8_t) newItemSize;
+	memcpy( item, inKey, keySize );
+	item += keySize;
+	if( inValue ) *item++ = '=';	// Add '=' (only if there is a non-NULL value)
+	memcpy( item, inValue, inValueSize );
+	err = kDNSServiceErr_NoError;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	TXTRecordRemoveValue
+//===========================================================================================================================
+
+DNSServiceErrorType	TXTRecordRemoveValue( TXTRecordRef inRef, const char *inKey )
+{
+	DNSServiceErrorType		err;
+	uint8_t *				item;
+	uint8_t *				itemEnd;
+	uint16_t				size;
+	uint8_t *				txt;
+	uint8_t *				txtEnd;
+	
+	err = TXTRecordGetValuePtrInternal( inRef, inKey, &item, &size, NULL, NULL );
+	require_noerr_quiet( err, exit );
+	
+	// Shift subsequent item(s) back to take up the slack of removing the item.
+	
+	itemEnd = item + ( 1 + size );
+	txtEnd  = inRef->txt + inRef->size;
+	if( itemEnd < txtEnd )
+	{
+		memmove( item, itemEnd, (size_t)( txtEnd - itemEnd ) );
+	}
+	
+	// Shrink the buffer to fit. If size goes to 0, use free because realloc with size 0 is not consistent across platforms.
+	
+	inRef->size = (uint16_t)( inRef->size - ( (uint16_t)( itemEnd - item ) ) );
+	if( inRef->size > 0 )
+	{
+		txt = (uint8_t *) realloc( inRef->txt, inRef->size );
+		require_action_quiet( txt, exit, err = kDNSServiceErr_Unknown );
+	}
+	else
+	{
+		free( inRef->txt );
+		txt = NULL;
+	}
+	inRef->txt = txt;
+		
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	TXTRecordGetCount
+//
+//	Warning: This assumes the TXT record is either NULL/empty or is properly formed and may crash if it is not.
+//	Well-formed checks are performed when a TXT record is first created so it should never be in a malformed state.
+//===========================================================================================================================
+
+uint16_t	TXTRecordGetCount( TXTRecordRef inRef )
+{
+	uint16_t			n;
+	const uint8_t *		p;
+	const uint8_t *		q;
+	
+	check( inRef );
+	
+	// Parse the TXT record and count the number of items.
+	
+	n = 0;
+	if( inRef && inRef->txt && ( inRef->size > 0 ) )
+	{
+		p = inRef->txt;
+		q = p + inRef->size;
+		while( p < q )
+		{
+			++n;
+			p += ( 1 + *p );
+			check( p <= q );
+		}
+	}
+	return( n );
+}
+
+//===========================================================================================================================
+//	TXTRecordGetPtrsAtIndex
+//===========================================================================================================================
+
+DNSServiceErrorType
+	TXTRecordGetPtrsAtIndex( 
+		TXTRecordRef 	inRef, 
+		uint16_t 		inIndex, 
+		const char **	outKey, 
+		uint16_t *		outKeySize, 
+		const void **	outValue, 
+		uint16_t *		outValueSize )
+{
+	return( TXTRecordGetPtrsAtIndexInternal( inRef, inIndex, NULL, NULL, outKey, outKeySize, outValue, outValueSize ) );
+}
+
+//===========================================================================================================================
+//	TXTRecordGetBytesPtr
+//===========================================================================================================================
+
+const void *	TXTRecordGetBytesPtr( TXTRecordRef inRef )
+{
+	check( inRef );
+	
+	if( inRef && inRef->txt )
+	{
+		return( inRef->txt );
+	}
+	return( NULL );
+}
+
+//===========================================================================================================================
+//	TXTRecordGetLength
+//===========================================================================================================================
+
+uint16_t	TXTRecordGetLength( TXTRecordRef inRef )
+{
+	check( inRef );
+	
+	if( inRef && inRef->txt )
+	{
+		return( inRef->size );
+	}
+	return( 0 );
+}
+
+#if 0
+#pragma mark -
+#endif
+
+//===========================================================================================================================
+//	TXTRecordGetValuePtrInternal
+//
+//	Warning: This assumes the TXT record is either NULL/empty or is properly formed and may crash if it is not.
+//	Well-formed checks are performed when a TXT record is first created so it should never be in a malformed state.
+//===========================================================================================================================
+
+DEBUG_LOCAL DNSServiceErrorType
+	TXTRecordGetValuePtrInternal( 
+		TXTRecordRef 	inRef, 
+		const char *	inKey, 
+		uint8_t **		outItem, 
+		uint16_t *		outItemSize, 
+		const void **	outValue, 
+		uint16_t *		outValueSize )
+{
+	DNSServiceErrorType		err;
+	size_t					keySize;
+	const uint8_t *			p;
+	const uint8_t *			q;
+	const uint8_t *			r;
+	const uint8_t *			key;
+	const uint8_t *			keyEnd;
+	const uint8_t *			value;
+	const uint8_t *			valueEnd;
+	
+	require_action_expect( inRef, exit, err = kDNSServiceErr_BadReference );
+	require_action_expect( inKey, exit, err = kDNSServiceErr_BadParam );
+	keySize = strlen( inKey );
+	
+	// The following initializations are not necessary, but some compilers warn because they cannot tell.
+	
+	keyEnd	 = NULL;
+	value	 = NULL;
+	valueEnd = NULL;
+	
+	// Find the item with the specified key.
+	
+	p = inRef->txt;
+	q = p + inRef->size;
+	while( p < q )
+	{
+		// Parse the key/value tokens. No '=' means the key takes up the entire item.
+		
+		r			= p + ( 1 + *p );
+		key			= p + 1;
+		keyEnd		= (const uint8_t *) memchr( key, '=', *p );
+		if( keyEnd )
+		{
+			value	= keyEnd + 1;
+		}
+		else
+		{
+			keyEnd	= r;
+			value	= r;
+		}
+		valueEnd	= r;
+		if( TXTRecordMemEqv( key, (size_t)( keyEnd - key ), inKey, keySize ) == 0 )
+		{
+			break;
+		}
+		
+		p = valueEnd;
+		check( p <= q );
+	}
+	require_action_quiet( p < q, exit, err = kDNSServiceErr_NoSuchKey );	
+	
+	// Fill in the results the caller wants.
+	
+	if( outItem )		*outItem = (uint8_t *) p;
+	if( outItemSize )	*outItemSize = *p;
+	if( outValue )		*outValue = ( value == keyEnd ) ? NULL : value;	// NULL value ptr means no value.
+	if( outValueSize )	*outValueSize = (uint16_t)( valueEnd - value );
+	err = kDNSServiceErr_NoError;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	TXTRecordGetPtrsAtIndexInternal
+//
+//	Warning: This assumes the TXT record is either NULL/empty or is properly formed and may crash if it is not.
+//	Well-formed checks are performed when a TXT record is first created so it should never be in a malformed state.
+//===========================================================================================================================
+
+DEBUG_LOCAL DNSServiceErrorType
+	TXTRecordGetPtrsAtIndexInternal( 
+		TXTRecordRef 	inRef, 
+		uint16_t 		inIndex, 
+		uint8_t **		outItem, 
+		uint16_t *		outItemSize, 
+		const char **	outKey, 
+		uint16_t *		outKeySize, 
+		const void **	outValue, 
+		uint16_t *		outValueSize )
+{
+	DNSServiceErrorType		err;
+		
+	uint16_t				n;
+	const uint8_t *			p;
+	const uint8_t *			q;
+	const uint8_t *			r;
+	const uint8_t *			key;
+	const uint8_t *			keyEnd;
+	const uint8_t *			value;
+	const uint8_t *			valueEnd;
+	
+	require_action_expect( inRef, exit, err = kDNSServiceErr_BadReference );
+	
+	// Find the Nth item in the TXT record.
+	
+	n = 0;
+	p = inRef->txt;
+	q = p + inRef->size;
+	while( p < q )
+	{
+		if( n == inIndex ) break;
+		++n;
+		
+		p += ( 1 + *p );
+		check( p <= q );
+	}
+	require_action_quiet( p < q, exit, err = kDNSServiceErr_BadParam );
+	
+	// Item found. Parse the key/value tokens. No '=' means the key takes up the entire item.
+	
+	r			= p + ( 1 + *p );
+	key			= p + 1;
+	keyEnd		= (const uint8_t *) memchr( key, '=', *p );
+	if( keyEnd )
+	{
+		value	= keyEnd + 1;
+	}
+	else
+	{
+		keyEnd	= r;
+		value	= r;
+	}
+	valueEnd	= r;
+	
+	// Fill in the results the caller wants.
+	
+	if( outItem )		*outItem = (uint8_t *) p;
+	if( outItemSize )	*outItemSize = *p;
+	if( outKey )		*outKey = (const char *) key;
+	if( outKeySize )	*outKeySize = (uint16_t)( keyEnd - key );
+	if( outValue )		*outValue = ( value == keyEnd ) ? NULL : value;	// NULL value ptr means no value.
+	if( outValueSize )	*outValueSize = (uint16_t)( valueEnd - value );
+	err = kDNSServiceErr_NoError;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	TXTRecordMemEqv
+//===========================================================================================================================
+
+DEBUG_LOCAL int	TXTRecordMemEqv( const void *inLeft, size_t inLeftSize, const void *inRight, size_t inRightSize )
+{
+	const uint8_t *		p1;
+	const uint8_t *		p2;
+	const uint8_t *		end;
+	int					c1;
+	int					c2;
+	
+	if( inLeftSize < inRightSize ) return( -1 );
+	if( inLeftSize > inRightSize ) return(  1 );
+	
+	p1  = (const uint8_t *) inLeft;
+	p2  = (const uint8_t *) inRight;
+	end = p1 + inLeftSize;
+	while( p1 < end )
+	{
+		c1 = tolower( *p1 );
+		c2 = tolower( *p2 );
+		if( c1 < c2 ) return( -1 );
+		if( c1 > c2 ) return(  1 );
+		
+		++p1;
+		++p2;
+	}
+	return( 0 );
+}
+
+#if( DEBUG )
+//===========================================================================================================================
+//	TXTRecordTest
+//===========================================================================================================================
+
+DNSServiceErrorType	TXTRecordTest( void );
+
+DNSServiceErrorType	TXTRecordTest( void )
+{
+	DNSServiceErrorType		err;
+	const char *			s;
+	TXTRecordRef			ref;
+	const void *			txt;
+	uint16_t				size;
+	uint16_t				n;
+	const char *			key;
+	uint16_t				keySize;
+	const void *			value;
+	uint16_t				valueSize;
+	
+	// Create Existing Test
+	
+	s = "\014Anon Allowed"
+		"\010Options="
+		"\025InstalledPlugins=JPEG";
+	size = (uint16_t) strlen( s );
+	err = TXTRecordCreate( &ref, s, size );
+	require_noerr( err, exit );
+
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 44, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( txt, 
+		"\014Anon Allowed"
+		"\010Options="
+		"\025InstalledPlugins=JPEG", 
+		size ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 3, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "test", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Anon", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Allowed", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Anon Allowed", &value, &size );
+	require_noerr( err, exit );
+	require_action( value == NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "Options", &value, &size );
+	require_noerr( err, exit );
+	require_action( value != NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "InstalledPlugins", &value, &size );
+	require_noerr( err, exit );
+	require_action( size == 4, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( value, "JPEG", 4 ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetPtrsAtIndex( ref, 0, &key, &keySize, &value, &valueSize );
+	require_noerr( err, exit );
+	require_action( keySize == sizeof_string( "Anon Allowed" ), exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( key, "Anon Allowed", keySize ) == 0, exit, err = kDNSServiceErr_Unknown );
+	require_action( value == NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( valueSize == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetPtrsAtIndex( ref, 1, &key, &keySize, &value, &valueSize );
+	require_noerr( err, exit );
+	require_action( keySize == sizeof_string( "Options" ), exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( key, "Options", keySize ) == 0, exit, err = kDNSServiceErr_Unknown );
+	require_action( value != NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( valueSize == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetPtrsAtIndex( ref, 2, &key, &keySize, &value, &valueSize );
+	require_noerr( err, exit );
+	require_action( keySize == sizeof_string( "InstalledPlugins" ), exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( key, "InstalledPlugins", keySize ) == 0, exit, err = kDNSServiceErr_Unknown );
+	require_action( value != NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( valueSize == 4, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( value, "JPEG", valueSize ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetPtrsAtIndex( ref, 3, &key, &keySize, &value, &valueSize );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	TXTRecordDeallocate( ref );
+	
+	// Empty Test
+	
+	err = TXTRecordCreate( &ref, NULL, 0 );
+	require_noerr( err, exit );
+	
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt == NULL, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "test", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+		
+	TXTRecordDeallocate( ref );
+	
+	// Create Single Test
+	
+	err = TXTRecordCreate( &ref, NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", NULL, 0 );
+	require_noerr( err, exit );
+	
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 13, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( txt, "\014Anon Allowed", size ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 1, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "test", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Anon", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Allowed", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Anon Allowed", &value, &size );
+	require_noerr( err, exit );
+	require_action( value == NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "aNoN aLlOwEd", &value, &size );
+	require_noerr( err, exit );
+	require_action( value == NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	TXTRecordDeallocate( ref );
+	
+	// Create Multiple Test
+	
+	err = TXTRecordCreate( &ref, NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Options", "", 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "InstalledPlugins", "JPEG", 4 );
+	require_noerr( err, exit );
+	
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 44, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( txt, 
+		"\014Anon Allowed"
+		"\010Options="
+		"\025InstalledPlugins=JPEG", 
+		size ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 3, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "test", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Anon", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Allowed", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "", NULL, NULL );
+	require( err != kDNSServiceErr_NoError, exit );
+	
+	err = TXTRecordGetValuePtr( ref, "Anon Allowed", &value, &size );
+	require_noerr( err, exit );
+	require_action( value == NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "Options", &value, &size );
+	require_noerr( err, exit );
+	require_action( value != NULL, exit, err = kDNSServiceErr_Unknown );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordGetValuePtr( ref, "InstalledPlugins", &value, &size );
+	require_noerr( err, exit );
+	require_action( size == 4, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( value, "JPEG", 4 ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	TXTRecordDeallocate( ref );
+	
+	// Remove Single Test
+	
+	err = TXTRecordCreate( &ref, NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordRemoveValue( ref, "Anon Allowed" );
+	require_noerr( err, exit );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 0, exit, err = kDNSServiceErr_Unknown );
+
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt == NULL, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	TXTRecordDeallocate( ref );
+	
+	// Remove Multiple Test
+	
+	err = TXTRecordCreate( &ref, NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Options", "", 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "InstalledPlugins", "JPEG", 4 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordRemoveValue( ref, "Options" );
+	require_noerr( err, exit );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 2, exit, err = kDNSServiceErr_Unknown );
+
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 35, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( txt, 
+		"\014Anon Allowed"
+		"\025InstalledPlugins=JPEG", 
+		size ) == 0, exit, err = kDNSServiceErr_Unknown );
+
+	err = TXTRecordRemoveValue( ref, "Anon Allowed" );
+	require_noerr( err, exit );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 1, exit, err = kDNSServiceErr_Unknown );
+
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 22, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( txt, 
+		"\025InstalledPlugins=JPEG", 
+		size ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordRemoveValue( ref, "InstalledPlugins" );
+	require_noerr( err, exit );
+	
+	n = TXTRecordGetCount( ref );
+	require_action( n == 0, exit, err = kDNSServiceErr_Unknown );
+
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt == NULL, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	TXTRecordDeallocate( ref );
+	
+	// Replace Test
+	
+	err = TXTRecordCreate( &ref, NULL, 0 );
+	require_noerr( err, exit );
+
+	err = TXTRecordSetValue( ref, "Anon Allowed", NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Options", "", 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Options", "", 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "InstalledPlugins", "JPEG", 4 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "InstalledPlugins", "JPEG", 4 );
+	require_noerr( err, exit );
+	
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 44, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( txt, 
+		"\014Anon Allowed"
+		"\010Options="
+		"\025InstalledPlugins=JPEG", 
+		size ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", "test", 4 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", "", 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", NULL, 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", "", 0 );
+	require_noerr( err, exit );
+	
+	err = TXTRecordSetValue( ref, "Anon Allowed", "test", 4 );
+	require_noerr( err, exit );
+	
+	txt = TXTRecordGetBytesPtr( ref );
+	require_action( txt, exit, err = kDNSServiceErr_Unknown );
+	size = TXTRecordGetLength( ref );
+	require_action( size == 49, exit, err = kDNSServiceErr_Unknown );
+	require_action( memcmp( txt, 
+		"\021Anon Allowed=test"
+		"\010Options="
+		"\025InstalledPlugins=JPEG", 
+		size ) == 0, exit, err = kDNSServiceErr_Unknown );
+	
+	TXTRecordDeallocate( ref );
+	
+exit:	
+	return( err );
+}
+#endif	// DEBUG
 
 #ifdef	__cplusplus
 	}

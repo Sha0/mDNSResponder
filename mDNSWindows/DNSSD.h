@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.h,v $
+Revision 1.5  2004/05/03 10:34:24  bradley
+Implemented preliminary version of the TXTRecord API.
+
 Revision 1.4  2004/04/15 01:00:05  bradley
 Removed support for automatically querying for A/AAAA records when resolving names. Platforms
 without .local name resolving support will need to manually query for A/AAAA records as needed.
@@ -81,6 +84,10 @@ High-level implementation of the DNS-SD API. Supports both "direct" (compiled-in
 
 #if( !defined( DNS_SD_CLIENT_ENABLED ) )
 	#define	DNS_SD_CLIENT_ENABLED		1
+#endif
+
+#if 0
+#pragma mark == Types ==
 #endif
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -245,24 +252,42 @@ typedef uint32_t		DNSServiceInitializeFlags;
 typedef int32_t		DNSServiceErrorType;
 enum
 {
-	// mDNS Error codes are in the range FFFE FF00 (-65792) to FFFE FFFF (-65537)
+	// Error codes are in the range FFFE FF00 (-65792) to FFFE FFFF (-65537)
+
+	kDNSServiceErr_NoError					= 0,
+	kDNSServiceErr_Unknown					= -65537,	// 0xFFFE FFFF (first error code)
+	kDNSServiceErr_NoSuchName				= -65538,
+	kDNSServiceErr_NoMemory					= -65539,
+	kDNSServiceErr_BadParam					= -65540,
+	kDNSServiceErr_BadReference				= -65541,
+	kDNSServiceErr_BadState					= -65542,
+	kDNSServiceErr_BadFlags					= -65543,
+	kDNSServiceErr_Unsupported				= -65544,
+	kDNSServiceErr_NotInitialized			= -65545,
+	kDNSServiceErr_NoCache					= -65546,
+	kDNSServiceErr_AlreadyRegistered		= -65547,
+	kDNSServiceErr_NameConflict				= -65548,
+	kDNSServiceErr_Invalid					= -65549,
+	kDNSServiceErr_Incompatible				= -65551,
+	kDNSServiceErr_BadInterfaceIndex		= -65552, 
+	kDNSServiceErr_Refused					= -65553, 
+	kDNSServiceErr_NoSuchRecord				= -65554,
+	kDNSServiceErr_NoAuth					= -65555,
+	kDNSServiceErr_NoSuchKey				= -65556, 
+	kDNSServiceErr_NoValue					= -65557, 
+	kDNSServiceErr_BufferTooSmall			= -65558, 
 	
-	kDNSServiceErr_NoError				= 0,
-	kDNSServiceErr_Unknown				= -65537,	// 0xFFFE FFFF
-	kDNSServiceErr_NoSuchName			= -65538,
-	kDNSServiceErr_NoMemory				= -65539,
-	kDNSServiceErr_BadParam				= -65540,
-	kDNSServiceErr_BadReference			= -65541,
-	kDNSServiceErr_BadState				= -65542,
-	kDNSServiceErr_BadFlags				= -65543,
-	kDNSServiceErr_Unsupported			= -65544,
-	kDNSServiceErr_NotInitialized		= -65545,
-	kDNSServiceErr_AlreadyRegistered	= -65547,
-	kDNSServiceErr_NameConflict			= -65548,
-	kDNSServiceErr_Invalid				= -65549,
-	kDNSServiceErr_Incompatible			= -65551,	// Cient library incompatible with daemon
-	kDNSServiceErr_BadInterfaceIndex	= -65552, 
-	kDNSServiceErr_ConfigChanged		= -65791
+	// TCP Connection Status
+
+	kDNSServiceErr_ConnectionPending		= -65570,
+	kDNSServiceErr_ConnectionFailed			= -65571,
+	kDNSServiceErr_ConnectionEstablished 	= -65572, 
+
+	// Non-error values
+
+	kDNSServiceErr_GrowCache				= -65790,
+	kDNSServiceErr_ConfigChanged			= -65791,
+	kDNSServiceErr_MemFree					= -65792	// 0xFFFE FF00 (last error code)
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -563,7 +588,7 @@ typedef void
 	@param		inContext
 					An application context pointer which is passed to the callback function (may be NULL).
 
-	@result		Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous errors are delivered to the 
+	@result		Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous errors are delivered to the 
 				callback), otherwise returns an error code indicating the error that occurred (the callback is not invoked 
 				and the DNSServiceRef is not initialized).
 	
@@ -686,7 +711,7 @@ typedef void
 	@param		inContext
 					An application context pointer which is passed to the callback function (may be NULL).
 
-	@result		Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous errors are delivered to the 
+	@result		Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous errors are delivered to the 
 				callback), otherwise returns an error code indicating the error that occurred (the callback is never invoked 
 				and the DNSServiceRef is not initialized).
 */
@@ -900,7 +925,7 @@ typedef void
 	@param		inContext
 					 An application context pointer which is passed to the callback function (may be NULL).
 	
-	@result		Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous errors are delivered to the 
+	@result		Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous errors are delivered to the 
 				callback), otherwise returns an error code indicating the error that occurred (the callback is not invoked 
 				and the DNSServiceRef is not initialized).
 */
@@ -1004,7 +1029,7 @@ typedef void
 	@param		inContext
 					An application context pointer which is passed to the callback function (may be NULL).
 
-	@result		Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous errors are delivered to the 
+	@result		Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous errors are delivered to the 
 				callback), otherwise returns an error code indicating the error that occurred (the callback is never 
 				invoked and the DNSServiceRef is not initialized). The context pointer that was passed to the callout.
 	
@@ -1182,7 +1207,7 @@ DNSServiceErrorType	DNSServiceCreateConnection( DNSServiceRef *outRef );
 	@param		inContext
 					An application context pointer which is passed to the callback function (may be NULL).
 
-	@result		Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous errors are delivered to the 
+	@result		Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous errors are delivered to the 
 				callback), otherwise returns an error code indicating the error that occurred (the callback is never 
 				invoked and the DNSRecordRef is not initialized).
 
@@ -1293,7 +1318,7 @@ typedef void
 	@param		inContext
 					An application context pointer which is passed to the callback function (may be NULL).
 
-	@result		Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous errors are delivered to the 
+	@result		Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous errors are delivered to the 
 				callback), otherwise returns an error code indicating the error that occurred (the callback is never 
 				invoked and the DNSServiceRef is not initialized).
 
@@ -1348,6 +1373,225 @@ void
 		uint16_t		inRRClass,
 		uint16_t		inRDataSize,
 		const void *	inRData );
+
+#if 0
+#pragma mark == TXT Records ==
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	TXTRecordRef
+
+	@abstract	Reference to a TXTRecord object representing a DNS-SD TXT record.
+	
+	@discussion
+	
+	Note: client is responsible for serializing access to these structures if they are shared between concurrent threads.
+*/
+
+typedef struct _TXTRecordRef_t *		TXTRecordRef;
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordCreate
+	
+	@abstract	Creates a TXTRecordRef object with the specified bytes, or pass in NULL to create an empty TXTRecordRef.
+	
+	@param		outRef
+					A pointer to an uninitialized TXTRecordRef. Filled in on success.
+
+	@param		inBytes
+					The initial raw bytes used to create the TXTRecordRef. The bytes are copied into the TXTRecordRef 
+					and it's your responsibility to free them by calling TXTRecordDeallocate() when finished with the
+					TXTRecordRef. Pass in NULL to create an empty TXTRecordRef.
+
+	@param		inByteCount
+					The number of bytes in "inBytes". Must be set to 0 if inBytes is set to NULL.
+	
+	@result		Returns kDNSServiceErr__NoError on success. Returns a kDNSServiceErr__Invalid error if the "bytes" do not 
+				conform to the rules regarding proper DNS-SD TXT Record format.  Specifically, the bytes must be 
+				formatted as <length><data><length><data>... Returns a kDNSServiceErr__BadParam error if "inBytes" is 
+				NULL, but "inByteCount" is not 0.
+	
+	@discussion
+	
+	Once you've created a TXTRecordRef, you can pass it to TXTRecordSetValue and other functions to add "key=value" 
+	pairs to it. Finally, you can extract the raw bytes again to pass to DNSServiceRegister() or DNSServiceUpdateRecord().
+*/
+
+DNSServiceErrorType	TXTRecordCreate( TXTRecordRef *outRef, const void *inBytes, uint16_t inByteCount );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordDeallocate
+	
+	@abstract	Releases the memory associated with a TXTRecordRef.
+	
+	@param		inRef	A TXTRecordRef initialized by TXTRecordCreate.
+*/
+
+void	TXTRecordDeallocate( TXTRecordRef inRef );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordGetValuePtr
+	
+	@abstract	Allows you to retrieve the value for a given key from a TXTRecordRef.
+	
+	@param		inRef
+					A TXTRecordRef initialized by TXTRecordCreate.
+					
+	@param		inKey
+					Key to search for. Keys are case insensitive.
+
+	@param		outValue
+					Pointer to receive a pointer to the value. If the item has a key, but no value (e.g. "Anon Allowed"), 
+					a NULL pointer is returned and the size is 0. If the item has a key and an empty value 
+					(e.g. "InstalledPlugins="), a non-NULL pointer is returned and the size is 0. May be NULL.
+	
+	@param		outValueSize
+					Pointer to receive the size of the value. May be NULL.
+
+	@discussion
+	
+	The pointer may become invalid if you subsequently make changes to the TXTRecordRef by calling TXTRecordSetValue() 
+	or TXTRecordRemoveValue().
+*/
+
+DNSServiceErrorType
+	TXTRecordGetValuePtr( 
+		TXTRecordRef 	inRef, 
+		const char *	inKey, 
+		const void **	outValue, 
+		uint16_t *		outValueSize );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordSetValue
+	
+	@abstract	Adds a "key=value" pair to a TXTRecordRef.
+	
+	@param		inRef
+					A TXTRecordRef initialized by TXTRecordCreate.
+					
+	@param		inKey
+					Key of the value to add. Must be at least 1 character and consist of only printable US-ASCII 
+					characters (0x20-0x7E), excluding '=' (0x3D). Should be 14 characters or less. Keys are case 
+					insensitive.
+					
+	@param		inValue
+					Pointer to value to add. If this is NULL, a key will be added with no value for things like Boolean 
+					keys (e.g. "Anon Allowed"). If this is non-NULL, but the value size is 0 then this adds a key with 
+					an empty value (e.g. "InstalledPlugins=").
+	
+	@param		inValueSize
+					Number of bytes in the value. Must be 0 if inValue is NULL.
+	
+	@discussion
+	
+	Keys within a TXT record must be unique (ignoring case). If this function is called with a key that already exists, 
+	the existing value is replaced with the new value (i.e. Add if missing, replace if present).
+*/
+
+DNSServiceErrorType	TXTRecordSetValue( TXTRecordRef inRef, const char *inKey, const void *inValue, uint16_t inValueSize );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordRemoveValue
+
+	@abstract	Removes a previously added "key=value" pair from a TXTRecordRef.
+	
+	@param		inRef
+					A TXTRecordRef initialized by TXTRecordCreate.
+					
+	@param		inKey
+					Key of the value to remove.	Keys are case insensitive.
+*/
+
+DNSServiceErrorType	TXTRecordRemoveValue( TXTRecordRef inRef, const char *inKey );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordGetCount
+	
+	@abstract	Returns the number of "key=value" pairs stored in the TXTRecordRef.
+	
+	@param		inRef
+					A TXTRecordRef initialized by TXTRecordCreate.					
+*/
+
+uint16_t	TXTRecordGetCount( TXTRecordRef inRef );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordGetPtrsAtIndex
+	
+	@abstract	Gets a key/value pair for an item at an index.
+	
+	@param		inRef
+					A TXTRecordRef initialized by TXTRecordCreate.
+					
+	@param		inIndex
+					Index of item to get. The index is 0-based (0 is the first item).
+					
+	@param		outKey
+					Pointer to receive a pointer to the key. The key is not null terminated.
+
+	@param		outKeySize
+					Pointer to receive the size of the key. May be NULL.
+
+	@param		outValue
+					Pointer to receive a pointer to the value. If the item has a key, but no value (e.g. "Anon Allowed"), 
+					a NULL pointer is returned and the size is 0. If the item has a key and an empty value 
+					(e.g. "InstalledPlugins="), a non-NULL pointer is returned and the size is 0. May be NULL.
+	
+	@param		outValueSize
+					Pointer to receive the size of the value. May be NULL.
+	
+	@discussion
+	
+	The pointer may become invalid if you subsequently make changes to the TXTRecordRef by calling TXTRecordSetValue() 
+	or TXTRecordRemoveValue().
+*/
+
+DNSServiceErrorType
+	TXTRecordGetPtrsAtIndex( 
+		TXTRecordRef 	inRef, 
+		uint16_t 		inIndex, 
+		const char **	outKey, 
+		uint16_t *		outKeySize, 
+		const void **	outValue, 
+		uint16_t *		outValueSize );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordGetBytesPtr
+	
+	@abstract	Allows you to retrieve the raw bytes pointer of a TXTRecordRef.
+	
+	@param		inRef
+					A TXTRecordRef initialized by TXTRecordCreate.
+
+	@param		outSize
+					Receives number of raw bytes in the TXT record. May be NULL.
+
+	@result		Returns a pointer to the raw bytes inside the TXTRecordRef which you can pass directly to 
+				DNSServiceRegister(). Returns NULL if the TXTRecord is empty.
+
+	@discussion
+	
+	The pointer may become invalid if you subsequently make changes to the TXTRecordRef by calling TXTRecordSetValue() 
+	or TXTRecordRemoveValue().
+*/
+
+const void *	TXTRecordGetBytesPtr( TXTRecordRef inRef );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*! @function	TXTRecordGetBytesPtr
+	
+	@abstract	Allows you to determine the length of the TXTRecordRef raw bytes.
+	
+	@param		inRef
+					A TXTRecordRef initialized by TXTRecordCreate.
+
+	@param		outSize
+					Receives number of raw bytes in the TXT record. May be NULL.
+	
+	@result		Returns the size of the txtRecord data which you can pass directly to DNSServiceRegister().
+*/
+
+uint16_t	TXTRecordGetLength( TXTRecordRef inRef );
 
 #ifdef	__cplusplus
 	}
