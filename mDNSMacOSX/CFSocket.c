@@ -195,12 +195,12 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 
 	if (strcmp(info->ifa_name, ifname))
 		{
-		debugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s (Ignored)",
+		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s (Ignored)",
 			&senderaddr, &destaddr, &interface, ifname);
 		return;
 		}
 	else
-		debugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s",
+		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s",
 			&senderaddr, &destaddr, &interface, ifname);
 
 	if (err < sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }

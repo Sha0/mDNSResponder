@@ -1534,7 +1534,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 		}
 
 	if (numDereg || numAnnounce || numAnswer || response->h.numAdditionals)
-		debugf("BuildResponse Built %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s",
+		verbosedebugf("BuildResponse Built %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s",
 			numDereg,                   numDereg                   == 1 ? "" : "s",
 			numAnnounce,                numAnnounce                == 1 ? "" : "s",
 			numAnswer,                  numAnswer                  == 1 ? "" : "s",
@@ -1998,14 +1998,14 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 			}
 		}
 	
-	if (count) debugf("TidyRRCache Deleting %d Expired Cache Entries", count);
+	if (count) verbosedebugf("TidyRRCache Deleting %d Expired Cache Entries", count);
 
 	m->lock_rrcache = 0;
 
 	while (deletelist)
 		{
 		ResourceRecord *r = deletelist;
-		debugf("TidyRRCache: Deleted %##s (%s)", r->name.c, DNSTypeName(r->rrtype));
+		verbosedebugf("TidyRRCache: Deleted %##s (%s)", r->name.c, DNSTypeName(r->rrtype));
 		deletelist = deletelist->next;
 		AnswerLocalQuestions(m, r, timenow);
 		r->next = m->rrcache_free;	// and move it back to the free list
@@ -2176,7 +2176,7 @@ mDNSlocal void ScheduleNextTask(const mDNS *const m)
 	interval = nextevent - timenow;
 	if (interval < 0) { interval = -interval; sign = "-"; }
 	fraction = interval % mDNSPlatformOneSecond;
-	debugf("ScheduleNextTask: Next event: <%s> in %s%d.%03d seconds", msg, sign,
+	verbosedebugf("ScheduleNextTask: Next event: <%s> in %s%d.%03d seconds", msg, sign,
 		interval / mDNSPlatformOneSecond, fraction * 1000 / mDNSPlatformOneSecond);
 
 	mDNSPlatformScheduleTask(m, nextevent);
@@ -2201,7 +2201,8 @@ mDNSlocal void mDNS_Unlock(mDNS *const m)
 mDNSexport void mDNSCoreTask(mDNS *const m)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
-	debugf("mDNSCoreTask");
+
+	verbosedebugf("mDNSCoreTask");
 	if (m->mDNS_busy > 1) debugf("mDNSCoreTask: Locking failure! mDNS already busy");
 	if (m->CurrentQuestion) debugf("mDNSCoreTask: ERROR! m->CurrentQuestion already set");
 	
@@ -2433,19 +2434,22 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 		ResourceRecord pktrr;
 		ptr = getResourceRecord(query, ptr, end, zeroIPAddr, 0, 0, &pktrr, mDNSNULL);
 		if (!ptr) break;
-		if (ResourceRecordAnswersQuestion(&pktrr, q) && PacketRRConflict(m, our, &pktrr))
+		if (ResourceRecordAnswersQuestion(&pktrr, q))
 			{
-			int result          = (int)pktrr.rrclass - (int)our->rrclass;
-			if (!result) result = (int)pktrr.rrtype  - (int)our->rrtype;
-			if (!result) result = CompareRData(&pktrr, our);
 			FoundUpdate = mDNStrue;
-			switch (result)
+			if (PacketRRConflict(m, our, &pktrr))
 				{
-				case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",    our->name.c, DNSTypeName(our->rrtype)); break;
-				case  0:	/*debugf("ResolveSimultaneousProbe: %##s (%s): Identical", our->name.c, DNSTypeName(our->rrtype));*/ break;
-				case -1:	debugf("ResolveSimultaneousProbe: %##s (%s): We lost",   our->name.c, DNSTypeName(our->rrtype));
-							mDNS_Deregister_internal(m, our, timenow, mDNStrue);
-							return;
+				int result          = (int)pktrr.rrclass - (int)our->rrclass;
+				if (!result) result = (int)pktrr.rrtype  - (int)our->rrtype;
+				if (!result) result = CompareRData(&pktrr, our);
+				switch (result)
+					{
+					case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",    our->name.c, DNSTypeName(our->rrtype)); break;
+					case  0:	/*debugf("ResolveSimultaneousProbe: %##s (%s): Identical", our->name.c, DNSTypeName(our->rrtype));*/ break;
+					case -1:	debugf("ResolveSimultaneousProbe: %##s (%s): We lost",   our->name.c, DNSTypeName(our->rrtype));
+								mDNS_Deregister_internal(m, our, timenow, mDNStrue);
+								return;
+					}
 				}
 			}
 		}
@@ -2650,7 +2654,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	DNSMessage   *replyunicast   = mDNSNULL;
 	mDNSBool      replymulticast = mDNSfalse;
 	
-	debugf("Received Query with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+	verbosedebugf("Received Query with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
 		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? "" : "s",
 		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? "" : "s",
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y" : "ies",
@@ -2683,7 +2687,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
 	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
 
-	debugf("Received Response with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+	verbosedebugf("Received Response with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
 		response->h.numQuestions,   response->h.numQuestions   == 1 ? "" : "s",
 		response->h.numAnswers,     response->h.numAnswers     == 1 ? "" : "s",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y" : "ies",
