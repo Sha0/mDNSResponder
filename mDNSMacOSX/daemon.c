@@ -486,7 +486,14 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 
 	if (result == mStatus_MemFree)
 		{
-		debugf("Freeing DNSServiceRegistration %d", x->ClientMachPort);
+		DNSServiceRegistration **r = &DNSServiceRegistrationList;
+		while (*r && *r != x) r = &(*r)->next;
+		if (*r)
+			{
+			debugf("RegCallback: %##s Still in DNSServiceRegistration list; removing now", sr->RR_SRV.name.c);
+			*r = (*r)->next;
+			}
+		debugf("RegCallback: Freeing DNSServiceRegistration %##s %d", sr->RR_SRV.name.c, x->ClientMachPort);
 		FreeDNSServiceRegistration(x);
 		}
 	}
@@ -693,13 +700,23 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 	while (x && x->ClientMachPort != client) x = x->next;
 	if (!x)
 		{
+		LogErrorMessage("DNSServiceRegistrationRemoveRecord Client %5d not found", client);
 		debugf("provide_DNSServiceRegistrationRemoveRecord_rpc bad client %X", client);
 		return(mStatus_BadReferenceErr);
 		}
 
 	err = mDNS_RemoveRecordFromService(&mDNSStorage, &x->s, extra);
-	if (!err) debugf("Received a request to remove the record of reference: %X", extra);
-	else debugf("Received a request to remove the record of reference: %X (failed %d)", extra, err);
+	if (err)
+		{
+		LogErrorMessage("DNSServiceRegistrationRemoveRecord Client %5d does not have record %X", client, extra);
+		debugf("Received a request to remove the record of reference: %X (failed %d)", extra, err);
+		return(err);
+		}
+
+	LogErrorMessage("Received a request to remove the record of reference: %X", extra);
+	debugf("Received a request to remove the record of reference: %X", extra);
+	if (extra->r.rdata != &extra->r.rdatastorage)
+		free(extra->r.rdata);
 	free(extra);
 	return(err);
 	}
@@ -854,9 +871,17 @@ mDNSlocal kern_return_t destroyBootstrapService()
 
 mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
-	debugf("Handling signal from mach msg");
+	debugf("ExitCallback: destroyBootstrapService");
 	if (!debug_mode)
 		destroyBootstrapService();
+
+	debugf("ExitCallback: Aborting MIG clients");
+	while (DNSServiceDomainEnumerationList) AbortClient(DNSServiceDomainEnumerationList->ClientMachPort);
+	while (DNSServiceBrowserList)           AbortClient(DNSServiceBrowserList->ClientMachPort);
+	while (DNSServiceResolverList)          AbortClient(DNSServiceResolverList->ClientMachPort);
+	while (DNSServiceRegistrationList)      AbortClient(DNSServiceRegistrationList->ClientMachPort);
+
+	debugf("ExitCallback: mDNS_Close");
 	mDNS_Close(&mDNSStorage);
 	exit(0);
 	}
