@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.29  2003/08/05 00:43:12  cheshire
+ * Report errors encountered while processing authority section
+ *
  * Revision 1.28  2003/07/29 22:51:08  cheshire
  * Added hexdump for packets we can't decode, so we can find out *why* we couldn't decode them
  *
@@ -473,7 +476,12 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			}
 		}
 
-	for (i=0; ptr && i<msg->h.numAuthorities; i++) ptr = skipResourceRecord(msg, ptr, end);
+	for (i=0; i<msg->h.numAuthorities; i++)
+		{
+		const mDNSu8 *ep = ptr;
+		ptr = skipResourceRecord(msg, ptr, end);
+		if (!ptr) { DisplayError(srcaddr, ep, end, "AUTHORITY"); return; }
+		}
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
