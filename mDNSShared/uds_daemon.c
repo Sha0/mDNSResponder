@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.179  2005/03/04 02:47:26  ksekar
+<rdar://problem/4026393> SCPreference domains disappear from enumeration when moving out from firewall
+
 Revision 1.178  2005/02/25 19:35:38  ksekar
 <rdar://problem/4023750> Non-local empty string registration failures should not return errors to caller
 
@@ -2925,12 +2928,14 @@ static void enum_result_callback(mDNS *const m, DNSQuestion *question, const Res
     (void)m; // Unused
 
     if (answer->rrtype != kDNSType_PTR) return;
+	if (!AddRecord && de->type != mDNS_DomainTypeBrowse) return;
+	
     if (AddRecord)
     	{
         flags |= kDNSServiceFlagsAdd;
         if (de->type == mDNS_DomainTypeRegistrationDefault || de->type == mDNS_DomainTypeBrowseDefault)
             flags |= kDNSServiceFlagsDefault;
-    	}
+    	}	
     ConvertDomainNameToCString(&answer->rdata->u.name, domain);
 	// note that we do NOT propagate specific interface indexes to the client - for example, a domain we learn from
 	// a machine's system preferences may be discovered on the LocalOnly interface, but should be browsed on the
