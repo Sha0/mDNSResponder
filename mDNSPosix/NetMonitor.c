@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.59  2004/02/03 21:42:55  cheshire
+Add constants kReportTopServices and kReportTopHosts
+
 Revision 1.58  2004/01/27 20:15:23  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -296,6 +299,12 @@ struct FilterList_struct
 	FilterList *next;
 	mDNSAddr FilterAddr;
 	};
+
+//*************************************************************************************************************
+// Constants
+
+#define kReportTopServices 15
+#define kReportTopHosts    15
 
 //*************************************************************************************************************
 // Globals
@@ -1019,12 +1028,12 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	mprintf("Total Answers/Announcements:      %7d   (avg%5d/min)\n", NumAnswers,     NumAnswers     * mul / div);
 	mprintf("Total Additional Records:         %7d   (avg%5d/min)\n", NumAdditionals, NumAdditionals * mul / div);
 	mprintf("\n");
-	printstats(15);
+	printstats(kReportTopServices);
 
 	if (!ExactlyOneFilter)
 		{
-		ShowSortedHostList(&IPv4HostList, 15);
-		ShowSortedHostList(&IPv6HostList, 15);
+		ShowSortedHostList(&IPv4HostList, kReportTopHosts);
+		ShowSortedHostList(&IPv6HostList, kReportTopHosts);
 		}
 
 	mDNS_Close(&mDNSStorage);
