@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.2  2004/05/28 23:34:42  ksekar
+<rdar://problem/3672903>: Java project build errors
+
 Revision 1.1  2004/04/30 16:29:35  rpantos
 First checked in.
 
@@ -65,6 +68,7 @@ First checked in.
 #endif
 
 #if !AUTO_CALLBACKS
+#include <sys/types.h>
 #include <sys/select.h>
 #endif
 
