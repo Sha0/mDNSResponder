@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.275  2005/01/10 04:02:22  ksekar
+Refinement to <rdar://problem/3891628> - strip trailing dot before writing hostname status to dynamic store
+
 Revision 1.274  2005/01/10 03:41:36  ksekar
 Correction to checkin 1.272 - check that registration domain is set
 before trying to remove it as an implicit browse domain
@@ -1624,7 +1627,13 @@ mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
 		char uname[MAX_ESCAPED_DOMAIN_NAME];
 		ConvertDomainNameToCString(dname, uname);
 		char *p = uname;
-		while (*p) { *p = tolower(*p); p++; }
+
+		while (*p)
+			{
+			*p = tolower(*p);
+			if (!(*(p+1)) && *p == '.') *p = 0; // if last character, strip trailing dot
+			p++;
+			}
 		
 		const void *StatusKey = CFSTR("Status");		
 		const void *StatusVal = CFNumberCreate(NULL, kCFNumberSInt32Type, &status); // CFNumberRef
