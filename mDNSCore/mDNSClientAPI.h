@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.49  2003/05/07 01:49:36  cheshire
+Remove "const" in ConstructServiceName prototype
+
 Revision 1.48  2003/05/07 00:18:44  cheshire
 Fix typo: "kDNSQClass_Mask" should be "kDNSClass_Mask"
 
@@ -829,7 +832,7 @@ extern char    *ConvertDomainNameToCString_withescape(const domainname *const na
 
 extern void     ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], domainlabel *const hostlabel);
 
-extern mDNSu8  *ConstructServiceName(domainname *const fqdn, const domainlabel *const name, const domainname *const type, const domainname *const domain);
+extern mDNSu8  *ConstructServiceName(domainname *const fqdn, const domainlabel *name, const domainname *const type, const domainname *const domain);
 extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel *const name, domainname *const type, domainname *const domain);
 
 // Note: Some old functions have been replaced by more sensibly-named versions.
