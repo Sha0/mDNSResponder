@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.172  2003/06/07 00:59:42  cheshire
+<rdar://problem/3283454> Need some randomness to spread queries on the network
+
 Revision 1.171  2003/06/06 21:41:10  cheshire
 For consistency, mDNS_StopQuery() should return an mStatus result, just like all the other mDNSCore routines
 
@@ -1822,6 +1825,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	// Field Group 3: Transient state for Cache Records
 	rr->NextInKAList      = mDNSNULL;	// Not strictly relevant for a local record
 	rr->TimeRcvd          = 0;			// Not strictly relevant for a local record
+	rr->NextRequiredQuery = 0;			// Not strictly relevant for a local record
 	rr->LastUsed          = 0;			// Not strictly relevant for a local record
 	rr->UseCount          = 0;			// Not strictly relevant for a local record
 	rr->CRActiveQuestion  = mDNSNULL;	// Not strictly relevant for a local record
@@ -2396,6 +2400,7 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	// Field Group 3: Transient state for Cache Records
 	rr->NextInKAList      = mDNSNULL;
 	rr->TimeRcvd          = m->timenow;
+	rr->NextRequiredQuery = m->timenow;		// Will be updated to the real value when we call SetNextCacheCheckTime()
 	rr->LastUsed          = m->timenow;
 	rr->UseCount          = 0;
 	rr->CRActiveQuestion  = mDNSNULL;
@@ -2845,6 +2850,28 @@ mDNSlocal void SendResponses(mDNS *const m)
 	verbosedebugf("SendResponses: Next in %d ticks", m->NextResponseTime - m->timenow);
 	}
 
+// Note: MUST call SetNextCacheCheckTime any time we change:
+// rr->TimeRcvd
+// rr->rroriginalttl
+// rr->UnansweredQueries
+mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
+	{
+	mDNSs32 ttl = (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+	rr->NextRequiredQuery = rr->TimeRcvd + ttl;
+
+	// If we have an active question, then see if we want to schedule an 80% or 90% query for this record
+	if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
+		{
+		rr->NextRequiredQuery -= ttl/10 * (2 - rr->UnansweredQueries);
+		rr->NextRequiredQuery += mDNSRandom(ttl/20);
+		debugf("SetNextCacheCheckTime: %##s (%s) NextRequiredQuery in %ld sec",
+			rr->name.c, DNSTypeName(rr->rrtype), (rr->NextRequiredQuery - m->timenow) / mDNSPlatformOneSecond);
+		}
+
+	if (m->NextCacheCheck - rr->NextRequiredQuery > 0)
+		m->NextCacheCheck = rr->NextRequiredQuery;
+	}
+
 #define MaxQuestionInterval         (3600 * mDNSPlatformOneSecond)
 
 // BuildQuestion puts a question into a DNS Query packet and if successful, updates the value of queryptr.
@@ -2875,29 +2902,22 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// If we have a resource record in our cache,
 			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
-				ResourceRecordAnswersQuestion(rr, q))						// which answers our question, then add it
+				ResourceRecordAnswersQuestion(rr, q) &&						// which answers our question
+				rr->NextRequiredQuery - (m->timenow + q->ThisQInterval) > 0)// and we'll ask at least once again before NextRequiredQuery
 				{
-				// Work out the latest time we should ask about this record to refresh it before it expires
-				mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
-				mDNSs32 expire = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-				// If we're planning to ask again at least once before this records reaches
-				// its 80% final expiration query, then we should suppress it this time.
-				if ((expire - onetenth*2) - (m->timenow + q->ThisQInterval) > 0)
+				*ka = rr;	// Link this record into our known answer chain
+				ka = &rr->NextInKAList;
+				// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
+				forecast += 12 + rr->rdestimate;
+				// If we're trying to put more than one question in this packet, and it doesn't fit
+				// then undo that last question and try again next time
+				if (query->h.numQuestions > 1 && newptr + forecast >= limit)
 					{
-					*ka = rr;	// Link this record into our known answer chain
-					ka = &rr->NextInKAList;
-					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
-					forecast += 12 + rr->rdestimate;
-					// If we're trying to put more than one question in this packet, and it doesn't fit
-					// then undo that last question and try again next time
-					if (query->h.numQuestions > 1 && newptr + forecast >= limit)
-						{
-						debugf("BuildQuestion: Retracting question %##s new forecast total %d", q->qname.c, newptr + forecast - query->data);
-						query->h.numQuestions--;
-						ka = *kalistptrptr;		// Go back to where we started and retract these answer records
-						while (*ka) { ResourceRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
-						return(mDNSfalse);
-						}
+					debugf("BuildQuestion: Retracting question %##s new forecast total %d", q->qname.c, newptr + forecast - query->data);
+					query->h.numQuestions--;
+					ka = *kalistptrptr;		// Go back to where we started and retract these answer records
+					while (*ka) { ResourceRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
+					return(mDNSfalse);
 					}
 				}
 
@@ -2910,7 +2930,10 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not in the known answer list
 				ResourceRecordAnswersQuestion(rr, q))						// which answers our question
+					{
 					rr->UnansweredQueries++;								// indicate that we're expecting a response
+					SetNextCacheCheckTime(m, rr);
+					}
 
 		return(mDNStrue);
 		}
@@ -3168,7 +3191,11 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 
 	rr->LastUsed = m->timenow;
 	rr->UseCount++;
-	if (ActiveQuestion(q)) rr->CRActiveQuestion = q;
+	if (ActiveQuestion(q) && rr->CRActiveQuestion != q)
+		{
+		rr->CRActiveQuestion = q;
+		SetNextCacheCheckTime(m, rr);
+		}
 
 	// CAUTION: MUST NOT do anything more with q after calling q->Callback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -3311,8 +3338,8 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 		while (*rp)
 			{
 			ResourceRecord *const rr = *rp;
-			mDNSs32 expire = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-			if (m->timenow - expire >= 0)	// If expired, delete it
+			mDNSs32 event = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+			if (m->timenow - event >= 0)	// If expired, delete it
 				{
 				*rp = rr->next;				// Cut it from the list
 				verbosedebugf("CheckCacheExpiration: Deleting %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
@@ -3324,48 +3351,25 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 				}
 			else							// else, not expired; see if we need to query
 				{
-				DNSQuestion *q = rr->CRActiveQuestion;
-				if (q && rr->UnansweredQueries < 2)
+				if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
 					{
-					// rr->UnansweredQueries is either 0 or 1. We want to query at 80% or 90% respectively.
-					mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
-					mDNSs32 qt = expire - onetenth * (mDNSs32)(2 - rr->UnansweredQueries);
-
-					// If due to query now, do it now
-					if (m->timenow - qt >= 0)
+					if (m->timenow - rr->NextRequiredQuery < 0)
+						event = rr->NextRequiredQuery;
+					else
 						{
-						q->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
+						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
 						m->NextScheduledQuery = m->timenow;	// And adjust NextScheduledQuery so it will happen
-						qt += onetenth;						// Adjust qt for next expected NextCacheCheck event time after this
+						// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
+						// which will correctly update m->NextCacheCheck for us
 						}
-					// Make sure NextCacheCheck is set correctly for next anticipated event
-					// Note: Can't use the usual SetNextCacheCheckTime() call here because we want to compute what the next expected
-					// event will be *after* the scheduled question has been sent out and has incremented rr->UnansweredQueries.
-					if (m->NextCacheCheck - qt > 0)
-						m->NextCacheCheck = qt;
 					}
-				if (m->NextCacheCheck - expire > 0)
-					m->NextCacheCheck = expire;
+				if (m->NextCacheCheck - event > 0)
+					m->NextCacheCheck = event;
 				rp = &rr->next;
 				}
 			}
 		}
 	m->lock_rrcache = 0;
-	}
-
-mDNSlocal void SetNextCacheCheckTime(mDNS *const m, const ResourceRecord *const rr)
-	{
-	mDNSs32 event = rr->TimeRcvd + ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond);
-
-	// If we have an active question, then see if we want to schedule an 80% or 90% query for this record
-	if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
-		{
-		mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
-		event -= onetenth * (2 - rr->UnansweredQueries);
-		}
-
-	if (m->NextCacheCheck - event > 0)
-		m->NextCacheCheck = event;
 	}
 
 mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
@@ -3438,9 +3442,7 @@ mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, ResourceRecord *rr)
 	rr->TimeRcvd          = m->timenow - mDNSPlatformOneSecond * 60;
 	rr->UnansweredQueries = 2;
 	rr->rroriginalttl     = 0;
-	
-	// Set m->NextCacheCheck so that we will immediately clear these records
-	m->NextCacheCheck = m->timenow;
+	SetNextCacheCheckTime(m, rr);
 	}
 
 static mDNSs32 gNextEventScheduledAt;
@@ -3777,6 +3779,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 				rr->TimeRcvd          = m->timenow;
 				rr->rroriginalttl     = 5;
 				rr->UnansweredQueries = 0;
+				SetNextCacheCheckTime(m, rr);
 				}
 
 		// 3. Retrigger probing and announcing for all our authoritative records
@@ -4477,7 +4480,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
 					CacheRecordAdd(m, rr);
 					// MUST do this AFTER CacheRecordAdd(), because that's what sets CRActiveQuestion for us
-					SetNextCacheCheckTime(m,rr);
+					SetNextCacheCheckTime(m, rr);
 					}
 				}
 			}
@@ -5328,6 +5331,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 					rr->TimeRcvd          = m->timenow;
 					rr->rroriginalttl     = 5;
 					rr->UnansweredQueries = 0;
+					SetNextCacheCheckTime(m, rr);
 					}
 		}
 

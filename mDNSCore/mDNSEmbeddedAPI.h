@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.66  2003/06/07 00:59:43  cheshire
+<rdar://problem/3283454> Need some randomness to spread queries on the network
+
 Revision 1.65  2003/06/06 21:41:11  cheshire
 For consistency, mDNS_StopQuery() should return an mStatus result, just like all the other mDNSCore routines
 
@@ -571,6 +574,7 @@ struct ResourceRecord_struct
 	// Field Group 3: Transient state for Cache Records
 	ResourceRecord *NextInKAList;		// CR: Link to the next element in the chain of known answers to send
 	mDNSs32         TimeRcvd;			// CR: In platform time units
+	mDNSs32         NextRequiredQuery;	// CR: In platform time units
 	mDNSs32         LastUsed;			// CR: In platform time units
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
 	DNSQuestion    *CRActiveQuestion;	// CR: Points to an active question referencing this answer
