@@ -157,37 +157,45 @@ static void validatelists(mDNS *const m)
 	DNSServiceResolver          *l;
 	DNSServiceRegistration      *r;
 	ResourceRecord              *rr;
-
+	DNSQuestion                 *q;
+	
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
-		if (e->ClientMachPort == 0)
-			LogMsg("!!!! DNSServiceDomainEnumerationList %X is garbage !!!!", e);
+		if (e->ClientMachPort == 0 || e->ClientMachPort == (mach_port_t)~0)
+			LogMsg("!!!! DNSServiceDomainEnumerationList %X is garbage (%X) !!!!", e, e->ClientMachPort);
 
 	for (b = DNSServiceBrowserList; b; b=b->next)
-		if (b->ClientMachPort == 0)
-			LogMsg("!!!! DNSServiceBrowserList %X is garbage !!!!", b);
+		if (b->ClientMachPort == 0 || b->ClientMachPort == (mach_port_t)~0)
+			LogMsg("!!!! DNSServiceBrowserList %X is garbag  (%X) !!!!", b, b->ClientMachPort);
 
 	for (l = DNSServiceResolverList; l; l=l->next)
-		if (l->ClientMachPort == 0)
-			LogMsg("!!!! DNSServiceResolverList %X is garbage !!!!", l);
+		if (l->ClientMachPort == 0 || l->ClientMachPort == (mach_port_t)~0)
+			LogMsg("!!!! DNSServiceResolverList %X is garbage (%X) !!!!", l, l->ClientMachPort);
 
 	for (r = DNSServiceRegistrationList; r; r=r->next)
-		if (r->ClientMachPort == 0)
-			LogMsg("!!!! DNSServiceRegistrationList %X is garbage !!!!", r);
+		if (r->ClientMachPort == 0 || r->ClientMachPort == (mach_port_t)~0)
+			LogMsg("!!!! DNSServiceRegistrationList %X is garbage (%X) !!!!", r, r->ClientMachPort);
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->RecordType == 0)
-			LogMsg("!!!! ResourceRecords %X list is garbage !!!!");
+		if (rr->RecordType == 0 || rr->RecordType == 0xFF)
+			LogMsg("!!!! ResourceRecords %X list is garbage (%X) !!!!", rr, rr->RecordType);
+
+	for (q = m->ActiveQuestions; q; q=q->next)
+		if (q->ThisQInterval == 0 || q->ThisQInterval == (mDNSs32)~0)
+			LogMsg("!!!! ActiveQuestions %X list is garbage (%X) !!!!", q, q->ThisQInterval);
 	}
 
 void *mallocL(char *msg, unsigned int size)
 	{
 	unsigned long *mem = malloc(size+8);
 	if (!mem)
-		{ LogMsg("malloc(%s:%d) failed", msg, size); return(NULL); }
+		{
+		LogMsg("malloc( %s : %d ) failed", msg, size);
+		return(NULL); 
+		}
 	else
 		{
-		LogMsg("malloc(%s:%d) = %X", msg, size, &mem[2]);
-		mem[0] = 0xDEADBEEF;
+		LogMsg("malloc( %s : %d ) = %X", msg, size, &mem[2]);
+		mem[0] = 0xDEAD1234;
 		mem[1] = size;
 		bzero(&mem[2], size);
 		validatelists(&mDNSStorage);
@@ -198,16 +206,17 @@ void *mallocL(char *msg, unsigned int size)
 void freeL(char *msg, void *x)
 	{
 	if (!x)
-		LogMsg("free(%s@NULL)!", msg);
+		LogMsg("free( %s @ NULL )!", msg);
 	else
 		{
 		unsigned long *mem = ((unsigned long *)x) - 2;
-		if (mem[0] != 0xDEADBEEF)
-			{ LogMsg("free(%s@%X) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
+		if (mem[0] != 0xDEAD1234)
+			{ LogMsg("free( %s @ %X ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
 		if (mem[1] > 8000)
-			{ LogMsg("free(%s:%d@%X) too big!", msg, mem[1], &mem[2]); return; }
-		LogMsg("free(%s:%d@%X)", msg, mem[1], &mem[2]);
-		bzero(mem, mem[1]+8);
+			{ LogMsg("free( %s : %d @ %X) too big!", msg, mem[1], &mem[2]); return; }
+		LogMsg("free( %s : %d @ %X)", msg, mem[1], &mem[2]);
+		//bzero(mem, mem[1]+8);
+		memset(mem, 0xFF, mem[1]+8);
 		validatelists(&mDNSStorage);
 		free(mem);
 		}
@@ -357,7 +366,12 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	mDNS_DomainType dt2 = regDom ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
 	const DNSServiceDomainEnumerationReplyResultType rt = DNSServiceDomainEnumerationReplyAddDomainDefault;
 	DNSServiceDomainEnumeration *x = mallocL("DNSServiceDomainEnumeration", sizeof(*x));
-	if (!x) { debugf("provide_DNSServiceDomainEnumerationCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
+	if (!x)
+		{
+		LogMsg("%5d: DNSServiceDomainEnumerationCreate(%d): No memory!", client, regDom);
+		return(mStatus_NoMemoryErr);
+		}
+
 	x->ClientMachPort = client;
 	x->next = DNSServiceDomainEnumerationList;
 	DNSServiceDomainEnumerationList = x;
@@ -452,7 +466,12 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	mStatus err;
 	domainname t, d;
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
-	if (!x) { debugf("provide_DNSServiceBrowserCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
+	if (!x)
+		{
+		LogMsg("%5d: DNSServiceBrowserCreate(%s): No memory!", client, regtype);
+		return(mStatus_NoMemoryErr);
+		}
+
 	x->ClientMachPort = client;
 	x->resultType = -1;
 	x->next = DNSServiceBrowserList;
@@ -531,7 +550,12 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	domainlabel n;
 	domainname t, d;
 	DNSServiceResolver *x = mallocL("DNSServiceResolver", sizeof(*x));
-	if (!x) { debugf("provide_DNSServiceResolverResolve_rpc: No memory!"); return(mStatus_NoMemoryErr); }
+	if (!x)
+		{
+		LogMsg("%5d: DNSServiceResolverResolve(%s.%s): No memory!", client, name, regtype);
+		return(mStatus_NoMemoryErr);
+		}
+
 	x->ClientMachPort = client;
 	x->next = DNSServiceResolverList;
 	DNSServiceResolverList = x;
@@ -686,7 +710,12 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		size = data_len;
 
 	x = mallocL("DNSServiceRegistration", sizeof(*x) - sizeof(RDataBody) + size);
-	if (!x) { debugf("provide_DNSServiceRegistrationCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
+	if (!x)
+		{
+		LogMsg("%5d: DNSServiceRegistrationCreate(%s.%s): No memory!", client, name, regtype);
+		return(mStatus_NoMemoryErr);
+		}
+
 	x->ClientMachPort = client;
 	x->next = DNSServiceRegistrationList;
 	DNSServiceRegistrationList = x;
