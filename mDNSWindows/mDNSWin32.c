@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.87  2005/04/03 08:03:12  shersche
+<rdar://problem/4076478> mDNSResponder won't start on Windows 2000.
+
 Revision 1.86  2005/03/30 07:37:14  shersche
 Use prefix to compute IPv4 subnet mask, falling back to calling AddressToIndexAndMask only if prefix is zero.
 
@@ -4112,6 +4115,11 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 			memcpy( ifa->ifa_addr, sa4, sizeof( *sa4 ) );
 
 			ifa->ifa_netmask = (struct sockaddr*) calloc(1, sizeof( *sa4 ) );
+
+			// <rdar://problem/4076478> Service won't start on Win2K. The address
+			// family field was not being initialized.
+
+			ifa->ifa_netmask->sa_family = AF_INET;
 			require_action( ifa->ifa_netmask, exit, err = WSAENOBUFS );
 			err = AddressToIndexAndMask( ifa->ifa_addr, &ifa->ifa_extra.index, ifa->ifa_netmask );
 			require_noerr( err, exit );
