@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.164  2004/08/16 16:52:37  ksekar
+Pass in zone read from keychain to mDNS_SetFQDNs.
+
 Revision 1.163  2004/08/14 03:22:42  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -1080,10 +1083,11 @@ mDNSlocal void GetUserSpecifiedDDNSName(domainname *const dname)
 				if (name)
 					{
 					char uname[MAX_ESCAPED_DOMAIN_NAME];
-					CFStringGetCString(name, uname, sizeof(uname), kCFStringEncodingUTF8);
-					LogMsg("GetUserSpecifiedDDNSName SCDynamicStore DDNS host name: %s", uname);
-					if (!MakeDomainNameFromDNSNameString(dname, uname) || !dname->c[0])
-						LogMsg("GetUserSpecifiedDDNSName SCDynamicStore bad DDNS host name: %s", uname);
+                    uname[0] = '\0';
+					if (!CFStringGetCString(name, uname, sizeof(uname), kCFStringEncodingUTF8) ||
+                        !MakeDomainNameFromDNSNameString(dname, uname) || !dname->c[0])
+						LogMsg("GetUserSpecifiedDDNSName SCDynamicStore bad DDNS host name: %s", uname[0] ? uname : "(unknown)");
+					else LogMsg("GetUserSpecifiedDDNSName SCDynamicStore DDNS host name: %s", uname);						
 					CFRelease(name);
 					}
 				CFRelease(array);
@@ -2010,7 +2014,7 @@ mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
 	mDNS_UpdateDomainRequiresAuthentication(m, &zone, &zone, data, dataLen, mDNStrue);
 	if (m->uDNS_info.UnicastHostname.c[0]) { debugf("Overwriting config file options with KeyChain values"); }
 	
-	mDNS_SetFQDNs(m, &m->uDNS_info.UnicastHostname);
+	mDNS_SetFQDNs(m, &zone);
 	// normally we'd query the zone for _register/_browse domains, but to reduce server load we manually generate the records
 
 	haveSecInfo = mDNStrue;
