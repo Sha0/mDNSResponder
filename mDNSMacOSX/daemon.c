@@ -35,6 +35,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.123  2003/07/23 17:45:28  cheshire
+ * <rdar://problem/3339388> mDNSResponder leaks a bit
+ * Don't allocate memory for the reply until after we've verified that the reply is valid
+ *
  * Revision 1.122  2003/07/23 00:00:04  cheshire
  * Add comments
  *
@@ -610,20 +614,13 @@ fail:
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	DNSServiceBrowser *browser = (DNSServiceBrowser *)question->QuestionContext;
-	DNSServiceBrowserResult **p = &browser->results;
-	DNSServiceBrowserResult *x = mallocL("DNSServiceBrowserResult", sizeof(*x));
-	domainlabel name;
-	domainname type, domain;
 	(void)m;		// Unused
 	
 	if (answer->rrtype != kDNSType_PTR)
-		{
-		LogMsg("FoundInstance: Should not be called with rrtype %d (not a PTR record)",
-			answer->rrtype);
-		return;
-		}
+		{ LogMsg("FoundInstance: Should not be called with rrtype %d (not a PTR record)", answer->rrtype); return; }
 	
+	domainlabel name;
+	domainname type, domain;
 	if (!DeconstructServiceName(&answer->rdata->u.name, &name, &type, &domain))
 		{
 		LogMsg("FoundInstance: %##s PTR %##s is not valid DNS-SD service pointer",
@@ -631,7 +628,8 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 		return;
 		}
 
-	if (!x) { LogMsg("FoundInstance: Failed to allocate memory for result"); return; }
+	DNSServiceBrowserResult *x = mallocL("DNSServiceBrowserResult", sizeof(*x));
+	if (!x) { LogMsg("FoundInstance: Failed to allocate memory for result %##s", answer->rdata->u.name.c); return; }
 	
 	verbosedebugf("FoundInstance: %s %##s", answer->rrremainingttl ? "Add" : "Rmv", answer->rdata->u.name.c);
 	ConvertDomainLabelToCString_unescaped(&name, x->name);
@@ -641,6 +639,9 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 		 x->resultType = DNSServiceBrowserReplyAddInstance;
 	else x->resultType = DNSServiceBrowserReplyRemoveInstance;
 	x->next = NULL;
+
+	DNSServiceBrowser *browser = (DNSServiceBrowser *)question->QuestionContext;
+	DNSServiceBrowserResult **p = &browser->results;
 	while (*p) p = &(*p)->next;
 	*p = x;
 	}
