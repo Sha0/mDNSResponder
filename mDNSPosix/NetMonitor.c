@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.49  2003/10/30 19:38:56  cheshire
+Fix warning on certain compilers
+
 Revision 1.48  2003/10/30 19:30:00  cheshire
 Fix warnings on certain compilers
 
@@ -632,7 +635,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
 		DNSQuestion q;
-		mDNSu8 *p2 = getQuestion(msg, ptr, end, InterfaceID, &q);
+		mDNSu8 *p2 = (mDNSu8 *)getQuestion(msg, ptr, end, InterfaceID, &q);
 		mDNSu16 ucbit = q.qclass & kDNSQClass_UnicastResponse;
 		q.qclass &= ~kDNSQClass_UnicastResponse;
 		if (!p2) { DisplayError(srcaddr, ptr, end, "QUESTION"); return; }
