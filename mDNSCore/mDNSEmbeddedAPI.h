@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.88  2003/07/24 23:45:44  cheshire
+To eliminate compiler warnings, changed definition of mDNSBool from
+"unsigned char" to "int", since "int" is in fact truly the type that C uses
+for the result of comparison operators (a<b) and logical operators (a||b)
+
 Revision 1.87  2003/07/22 23:57:20  cheshire
 Move platform-layer function prototypes from mDNSEmbeddedAPI.h to mDNSPlatformFunctions.h where they belong
 
@@ -358,7 +363,7 @@ typedef enum				// From RFC 1035
 
 // mDNS defines its own names for these common types to simplify portability across
 // multiple platforms that may each have their own (different) names for these types.
-typedef unsigned char  mDNSBool;
+typedef          int   mDNSBool;
 typedef   signed char  mDNSs8;
 typedef unsigned char  mDNSu8;
 typedef   signed short mDNSs16;
