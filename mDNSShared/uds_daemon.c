@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.56  2004/06/12 01:35:47  cheshire
+Changes for Windows compatibility
+
 Revision 1.55  2004/06/05 00:04:27  cheshire
 <rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
 
@@ -183,8 +186,6 @@ Update to APSL 2.0
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
 
-// convenience definition 
-#define	_UNUSED	__attribute__ ((unused))
 // Types and Data Structures
 // ----------------------------------------------------------------------
 
@@ -198,7 +199,6 @@ typedef enum
     } transfer_state;
 
 typedef void (*req_termination_fn)(void *);
-
 
 typedef struct registered_record_entry
     {
@@ -236,14 +236,13 @@ typedef struct
     {
     mStatus err;
     int nwritten;
-    int sd;
+    SocketRef sd;
     } undelivered_error_t;
 
 typedef struct request_state
     {
     // connection structures
-    int sd;	
-    int errfd;		
+    SocketRef sd, errfd;		
                                 
     // state of read (in case message is read over several recv() calls)                            
     transfer_state ts;
@@ -284,7 +283,7 @@ typedef struct
 typedef struct reply_state
     {
     // state of the transmission
-    int sd;
+    SocketRef sd;
     transfer_state ts;
     uint32_t nwriten;
     uint32_t len;
@@ -358,7 +357,7 @@ typedef struct
 
 // globals
 static mDNS *gmDNS = NULL;
-static int listenfd = -1;  
+static SocketRef listenfd = -1;  
 static request_state *all_requests = NULL;  
 //!!!KRS we should keep a separate list containing only the requests that need to be examined
 //in the idle() routine.
@@ -616,12 +615,15 @@ void udsserver_handle_configchange(void)
 		}
     }
 
-static void connect_callback(void *info _UNUSED)
+static void connect_callback(void *info)
     {
-    int sd, clilen, optval;
+    SocketRef sd;
+	int clilen;
+	unsigned long optval;
     struct sockaddr_un cliaddr;
     request_state *rstate;
 //    int errpipe[2];
+    (void)info; // Unused
     
     clilen = sizeof(cliaddr);
     sd = accept(listenfd, (struct sockaddr *)&cliaddr, &clilen);
@@ -757,10 +759,21 @@ static void request_callback(void *info)
             unlink_request(rstate);
             return;
             }        
+#if defined(WIN32)
+		{
+		mDNSOpaque16 port;
+		port.b[0] = rstate->msgdata[0];
+		port.b[1] = rstate->msgdata[1];
+        rstate->msgdata += 2;
+		cliaddr.sin_family      = AF_INET;
+		cliaddr.sin_port        = port.NotAnInteger;
+		cliaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+#else
         get_string(&rstate->msgdata, ctrl_path, 256);	// path is first element in message buffer
         bzero(&cliaddr, sizeof(cliaddr));
         cliaddr.sun_family = AF_LOCAL;
         strcpy(cliaddr.sun_path, ctrl_path);
+#endif
         if (connect(rstate->errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
             {
             my_perror("ERROR: connect");
@@ -768,9 +781,6 @@ static void request_callback(void *info)
             unlink_request(rstate);
             }
         }
-
-        
-
 
     switch(rstate->hdr.op.request_op)
     	{
@@ -1005,15 +1015,16 @@ static void resolve_termination_callback(void *context)
     
     
 
-static void resolve_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 {
-    int len = 0;
+    size_t len = 0;
     char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
     char *data;
     transfer_state result;
     reply_state *rep;
     request_state *rs = question->QuestionContext;
     resolve_result_t *res = rs->resolve_results;
+    (void)m; // Unused
     
 	if (!AddRecord)
 		{
@@ -1065,13 +1076,14 @@ static void resolve_result_callback(mDNS *const m _UNUSED, DNSQuestion *question
     }
  
 // what gets called when a resolve is completed and we need to send the data back to the client
-static void question_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char *data;
     char name[MAX_ESCAPED_DOMAIN_NAME];
     request_state *req;
     reply_state *rep;
-    int len;
+    size_t len;
+    (void)m; // Unused
 
     //mDNS_StopQuery(m, question);
     req = question->QuestionContext;
@@ -1212,11 +1224,12 @@ bad_param:
     unlink_request(request);
     }
 
-static void browse_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void browse_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     request_state *req;
     reply_state *rep;
     mStatus err;
+    (void)m; // Unused
         
     req = question->QuestionContext;
 
@@ -1356,7 +1369,7 @@ static void handle_regservice_request(request_state *request)
     // count subtypes, replacing commas w/ whitespace
     rtype_ptr = regtype;
     num_subtypes = -1;
-    while((sub = strsep(&rtype_ptr, ",")))
+    while((sub = strsep(&rtype_ptr, ",")))	// Unsafe -- we need to recognise and skip over '\,'
         if (*sub) num_subtypes++;
         
     if (!name[0]) n = (gmDNS)->nicelabel;
@@ -1406,11 +1419,12 @@ bad_param:
 // handles name conflicts, and delivers completed registration information to the client (via
 // process_service_registraion())
 
-static void regservice_callback(mDNS *const m _UNUSED, ServiceRecordSet *const srs, mStatus result)
+static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
     {
     mStatus err;
     registered_service *r_srv = srs->ServiceContext;
     request_state *rs = r_srv->request;
+    (void)m; // Unused
     
     if (!rs && (result != mStatus_MemFree && !r_srv->rename_on_memfree))
         {     
@@ -1628,8 +1642,9 @@ static void handle_update_request(request_state *rstate)
     reset_connected_rstate(rstate);
     }
     
-static void update_callback(mDNS *const m _UNUSED, AuthRecord *const rr, RData *oldrd)
+static void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd)
     {    
+    (void)m; // Unused
     if (oldrd != &rr->rdatastorage) freeL("update_callback", oldrd);
     }
     
@@ -1765,12 +1780,13 @@ malloc_error:
     return;
     }
 
-static void regrecord_callback(mDNS *const m _UNUSED, AuthRecord *const rr, mStatus result)
+static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result)
     {
     regrecord_callback_context *rcc = rr->RecordContext;
     int len;
     reply_state *reply;
     transfer_state ts;
+    (void)m; // Unused
 
     if (result == mStatus_MemFree) 	
         { 
@@ -2008,12 +2024,13 @@ static void handle_enum_request(request_state *rstate)
     if (tr == t_morecoming) append_reply(rstate, reply); // couldn't send whole reply because client is blocked - link into list
     }
 
-static void enum_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char domain[MAX_ESCAPED_DOMAIN_NAME];
     domain_enum_t *de = question->QuestionContext;
     DNSServiceFlags flags = 0;
     reply_state *reply;
+    (void)m; // Unused
 
     if (answer->rrtype != kDNSType_PTR) return;
     if (AddRecord)
@@ -2036,7 +2053,7 @@ static void enum_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, c
 
 static reply_state *format_enumeration_reply(request_state *rstate, const char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err)
     {
-    int len;
+    size_t len;
     reply_state *reply;
     char *data;
     
