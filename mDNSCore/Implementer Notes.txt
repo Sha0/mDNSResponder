@@ -61,6 +61,6 @@ should call mDNS_Execute(), and use the value returned to set the
 platform callback timer to fire at the indicated time.
 
 3. When the platform callback timer fires, it should call mDNS_Execute()
-(to allow mDNSCOre to perform its necessary work) and then the timer
+(to allow mDNSCore to perform its necessary work) and then the timer
 routine use the result returned to reset itself to fire at the right
 time for the next scheduled event.

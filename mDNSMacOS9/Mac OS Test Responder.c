@@ -205,15 +205,19 @@ int main()
 	err = mDNS_Init(&m, &p, mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
 		mDNS_Init_AdvertiseLocalAddresses, mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (err) return(err);
+	mDNS_OS9Exec(&m);
 
 	while (!YieldSomeTime(35))
 		{
+		// For debugging, use "#define __ONLYSYSTEMTASK__ 1" and call mDNSPlatformIdle() periodically.
+		// For shipping code, don't define __ONLYSYSTEMTASK__, and you don't need to call mDNSPlatformIdle()
 		mDNSPlatformIdle(&m);	// Only needed for debugging version
 		if (m.mDNSPlatformStatus == mStatus_NoError && !DoneSetup)
 			{
 			DoneSetup = true;
 			printf("\nListening for mDNS queries...\n");
 			mDNSResponderTestSetup(&m);
+			mDNS_OS9Exec(&m);
 			}
 		}
 	

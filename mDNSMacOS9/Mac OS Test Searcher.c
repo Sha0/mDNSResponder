@@ -58,7 +58,7 @@ static void PrintServiceInfo(SearcherServices *services)
 
 		if (!services->headerPrinted)
 			{
-			printf("Name                                Type             Domain         IP Address       Port Info\n");
+			printf("%-50s Type             Domain         IP Address       Port Info\n", "Name");
 			services->headerPrinted = true;
 			}
 
@@ -66,8 +66,8 @@ static void PrintServiceInfo(SearcherServices *services)
 			{
 			char c_dom[256];
 			ConvertDomainNameToCString(&s->name, c_dom);
-			if (ls->add) printf("%-35s available for browsing\n", c_dom);
-			else         printf("%-35s no longer available for browsing\n", c_dom);
+			if (ls->add) printf("%-50s available for browsing\n", c_dom);
+			else         printf("%-50s no longer available for browsing\n", c_dom);
 			}
 		else
 			{
@@ -82,7 +82,7 @@ static void PrintServiceInfo(SearcherServices *services)
 			ConvertDomainNameToCString(&domain, c_dom);
 			sprintf(c_ip, "%d.%d.%d.%d", s->ip.addr.ipv4.b[0], s->ip.addr.ipv4.b[1], s->ip.addr.ipv4.b[2], s->ip.addr.ipv4.b[3]);
 
-			printf("%-35s %-16s %-14s ", c_name, c_type, c_dom);
+			printf("%-50s %-16s %-14s ", c_name, c_type, c_dom);
 			if (ls->add) printf("%-15s %5d %#s\n", c_ip, port, s->TXTinfo);
 			else         printf("Removed\n");
 			}
@@ -189,7 +189,8 @@ int main()
 
 	SIOUXSettings.asktosaveonclose = false;
 	SIOUXSettings.userwindowtitle  = "\pMulticast DNS Searcher";
-	SIOUXSettings.columns          = 120;
+	SIOUXSettings.rows             = 40;
+	SIOUXSettings.columns          = 132;
 
 	printf("Prototype Multicast DNS Searcher\n\n");
 	printf("WARNING! This is experimental software.\n\n");
@@ -204,6 +205,7 @@ int main()
 	err = mDNS_Init(&mDNSStorage, &PlatformSupportStorage, rrcachestorage, RR_CACHE_SIZE,
 		mDNS_Init_DontAdvertiseLocalAddresses, mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (err) return(err);
+	mDNS_OS9Exec(&mDNSStorage);
 
 	services.serviceinfolist.fHead = NULL;
 	services.headerPrinted         = false;
@@ -211,6 +213,8 @@ int main()
 
 	while (!YieldSomeTime(35))
 		{
+		// For debugging, use "#define __ONLYSYSTEMTASK__ 1" and call mDNSPlatformIdle() periodically.
+		// For shipping code, don't define __ONLYSYSTEMTASK__, and you don't need to call mDNSPlatformIdle()
 		mDNSPlatformIdle(&mDNSStorage);	// Only needed for debugging version
 		if (mDNSStorage.mDNSPlatformStatus == mStatus_NoError && !DoneSetup)
 			{
@@ -223,6 +227,7 @@ int main()
 			if (err) break;
 			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, mDNSInterface_Any, FoundDomain, &services);
 			if (err) break;
+			mDNS_OS9Exec(&mDNSStorage);
 			}
 
 		if (services.serviceinfolist.fHead)
