@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.503  2004/12/20 18:41:47  cheshire
+<rdar://problem/3591622> Low memory support: Provide answers even when we don't have cache space
+
 Revision 1.502  2004/12/20 18:04:08  cheshire
 <rdar://problem/3923098> For now, don't put standard wide-area unicast responses in our main cache
 
@@ -3486,6 +3489,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 				qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
 				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, -1, mDNSNULL);
 				q->ThisQInterval   *= 2;
+				if (q->ThisQInterval > MaxQuestionInterval)
+					q->ThisQInterval = MaxQuestionInterval;
 				if (q->RequestUnicast) q->RequestUnicast--;
 				q->LastQTime        = m->timenow;
 				q->LastQTxTime      = m->timenow;
@@ -3517,9 +3522,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					q->SendQNow = mDNSInterfaceMark;	// Mark this question for sending on all interfaces
 					q->ThisQInterval *= 2;
-					if (q->RequestUnicast) q->RequestUnicast--;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
+					if (q->RequestUnicast) q->RequestUnicast--;
 					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * 8)
 						{
 						debugf("SendQueries: Zero current answers for %##s (%s); will reconfirm antecedents", q->qname.c, DNSTypeName(q->qtype));
@@ -3845,6 +3850,40 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				rr->UnansweredQueries = MaxUnansweredQueries;
 				}
 			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
+			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+			}
+		}
+	m->CurrentQuestion = mDNSNULL;
+	}
+
+// NoCacheAnswer is only called from mDNSCoreReceiveResponse, *never* directly as a result of a client API call.
+// If new questions are created as a result of invoking client callbacks, they will be added to
+// the end of the question list, and m->NewQuestions will be set to indicate the first new question.
+// rr is a new CacheRecord just received from the wire (kDNSRecordTypePacketAns/AnsUnique/Add/AddUnique)
+// but we don't have any place to cache it. We'll deliver question 'add' events now, but we won't have any
+// way to deliver 'remove' events in future, nor will we be able to include this in known-answer lists,
+// so we immediately bump ThisQInterval up to MaxQuestionInterval to avoid pounding the network.
+// NOTE: NoCacheAnswer calls AnswerQuestionWithResourceRecord which can call a user callback,
+// which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
+mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
+	{
+	LogMsg("No cache space: Delivering non-cached result for %##s", m->rec.r.resrec.name->c);
+	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
+	m->CurrentQuestion = m->Questions;
+	while (m->CurrentQuestion)
+		{
+		DNSQuestion *q = m->CurrentQuestion;
+		m->CurrentQuestion = q->next;
+		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+			{
+			if (!q->RequestUnicast)				// If we've already done at least one 'QM' query for this
+				{
+				q->LastQTime   = m->timenow;	// then don't do any more and time soon
+				q->LastQTxTime = m->timenow;
+				q->ThisQInterval = MaxQuestionInterval;
+				}
+			AnswerQuestionWithResourceRecord(m, q, rr, 2);	// Value '2' indicates "don't expect 'remove' events for this"
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
 		}
@@ -5289,7 +5328,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				// If we don't have a CacheGroup for this name, make one now
 				if (!cg) cg = GetCacheGroup(m, slot, &m->rec.r.resrec);
 				if (cg) rr = GetCacheRecord(m, cg, m->rec.r.resrec.rdlength);	// Make a cache record, being careful not to recycle cg
-				if (!rr) debugf("No cache space to add record for %##s", m->rec.r.resrec.name->c);
+				if (!rr) NoCacheAnswer(m, &m->rec.r);
 				else
 					{
 					RData *saveptr = rr->resrec.rdata;		// Save the rr->resrec.rdata pointer
