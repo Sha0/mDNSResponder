@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.334  2003/11/20 22:59:53  cheshire
+Changed runtime checks in mDNS.c to be compile-time checks in mDNSClientAPI.h
+Thanks to Bob Bradley for suggesting the ingenious compiler trick to make this work.
+
 Revision 1.333  2003/11/20 20:49:53  cheshire
 Another fix from HP: Use packedstruct macro to ensure proper packing for on-the-wire packet structures
 
@@ -6999,20 +7003,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	mDNSs32 timenow;
 	mStatus result = mDNSPlatformTimeInit(&timenow);
 	if (result != mStatus_NoError) return(result);
-
-	// Check that the compiler generated our on-the-wire packet format structure definitions properly packed,
-	// without adding padding bytes to align fields on 32-bit or 64-bit boundaries.
-	// A decent compiler should be able to evaluate this "if" condition as a compile-time constant
-	// and completely eliminate the "if" statement in the common case where there's no error to report.
-	// It would be nice if we could report the error at compile time instead of run time,
-	// but I don't know a way to do that cleanly that would work on all compilers.
-	if (sizeof(rdataSRV) != 262 || sizeof(DNSMessageHeader) != 12 || sizeof(DNSMessage) != 12+AbsoluteMaxDNSMessageData)
-		{
-		LogMsg("sizeof(rdataSRV)         %4lu should be %4lu", sizeof(rdataSRV),         262);
-		LogMsg("sizeof(DNSMessageHeader) %4lu should be %4lu", sizeof(DNSMessageHeader), 12);
-		LogMsg("sizeof(DNSMessage)       %4lu should be %4lu", sizeof(DNSMessage),       12+AbsoluteMaxDNSMessageData);
-		return(mStatus_Incompatible);
-		}
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
