@@ -21,12 +21,9 @@
  */
 
 #include "dnssd_ipc.h"
-#include <errno.h>
-#include <sys/time.h>
 
-#define CTL_PATH_PREFIX "/tmp/dnssd_clippath."	
-// error socket (if needed) is named "dnssd_clipath.[pid].xxx:n" where xxx are the
-// last 3 digits of the time (in seconds) and n is the 6-digit microsecond time
+
+#define CTL_PATH_PREFIX "/tmp/dnssd_clippath."	// control socket is named dnssd_clipath.[PID]
 
 // general utility functions
 static DNSServiceRef connect_to_server(void);
@@ -90,7 +87,6 @@ DNSServiceErrorType DNSServiceProcessResult(DNSServiceRef sdRef)
     if (my_read(sdRef->sockfd, data, hdr.datalen) < 0) 
         return kDNSServiceErr_Unknown;
     sdRef->process_reply(sdRef, &hdr, data);
-    free(data);
     return kDNSServiceErr_Unknown;
     }
 
@@ -186,7 +182,6 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
     txtrecord = get_rdata(&data, txtlen);
     
     ((DNSServiceResolveReply)sdr->app_callback)(sdr, flags, ifi, err, fullname, target, port, txtlen, txtrecord, sdr->app_context);
-    free(txtrecord);
     }
     
     
@@ -248,7 +243,6 @@ DNSServiceErrorType DNSServiceQueryRecord
     return err;
 
 error:
-    fprintf(stderr, "exiting w/ error\n");
     if (msg) free(msg);
     if (*sdRef) { free(*sdRef);  *sdRef = NULL; }
     return kDNSServiceErr_Unknown;
@@ -265,8 +259,6 @@ static void handle_query_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *dat
     char *rdata;
     (void)hdr;//Unused
 
-    //!!!KRS we should do zero-copy data extraction here using pointers into the message buffer...
-    
     flags = get_flags(&data);
     interfaceIndex = get_long(&data);
     errorCode = get_error_code(&data);
@@ -276,13 +268,10 @@ static void handle_query_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *dat
     rdlen = get_short(&data);
     rdata = get_rdata(&data, rdlen);
     ttl = get_long(&data);
-    if (!rdata) goto error;
+    if (!rdata) return;
     ((DNSServiceQueryRecordReply)sdr->app_callback)(sdr, flags, interfaceIndex, errorCode, name, rrtype, rrclass,
                                               rdlen, rdata, ttl, sdr->app_context);
-    //!!!KRS free rdata!
     return;
-error:
-    fprintf(stderr, "ERROR: handle_resolve_response\n");
     }
 
 DNSServiceErrorType DNSServiceBrowse
@@ -304,8 +293,6 @@ DNSServiceErrorType DNSServiceBrowse
 
     if (!sdRef) return kDNSServiceErr_BadParam;
     *sdRef = NULL;
-
-    if (!domain) domain = "";
 
     len = sizeof(flags);
     len += sizeof(interfaceIndex);
@@ -336,7 +323,6 @@ DNSServiceErrorType DNSServiceBrowse
     return err;
 
 error:
-    fprintf(stderr, "exiting with error\n");
     if (msg) free(msg);
     if (*sdRef) { free(*sdRef);  *sdRef = NULL; }
     return kDNSServiceErr_Unknown;
@@ -508,7 +494,6 @@ DNSServiceErrorType DNSServiceEnumerateDomains
     return err;
 
 error:
-    fprintf(stderr, "exiting w/ error\n");
     if (msg) free(msg);
     if (*sdRef) { free(*sdRef);  *sdRef = NULL; }
     return kDNSServiceErr_Unknown;
@@ -608,11 +593,7 @@ DNSServiceErrorType DNSServiceRegisterRecord
     put_long(ttl, &ptr);
 
     rref = malloc(sizeof(_DNSRecordRef_t));
-    if (!rref) 
-        {
-        perror("ERROR: malloc");
-        goto error;
-        }
+    if (!rref) goto error;
     rref->app_context = context;
     rref->app_callback = callBack;
     rref->record_index = sdRef->max_index++;
@@ -665,11 +646,7 @@ DNSServiceErrorType DNSServiceAddRecord
     put_long(ttl, &ptr);
 
     rref = malloc(sizeof(_DNSRecordRef_t));
-    if (!rref) 
-        {
-        perror("ERROR: malloc");
-        goto error;
-        }
+    if (!rref) goto error;
     rref->app_context = NULL;
     rref->app_callback = NULL;
     rref->record_index = sdRef->max_index++;
@@ -862,15 +839,10 @@ static DNSServiceRef connect_to_server(void)
     DNSServiceRef sdr;
 
     sdr = malloc(sizeof(_DNSServiceRef_t));
-    if (!sdr)
-        {
-        perror("ERROR: malloc");
-        return NULL;
-        }
+    if (!sdr) return NULL;
 
     if ((sdr->sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
   	{
-  	perror("ERROR: socket");	
         free(sdr);
         return NULL;
   	}
@@ -879,7 +851,6 @@ static DNSServiceRef connect_to_server(void)
     strcpy(saddr.sun_path, MDNS_UDS_SERVERPATH);
     if (connect(sdr->sockfd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
   	{
-  	perror("ERROR: connect");
         free(sdr);
         return NULL;
   	}
@@ -891,11 +862,7 @@ static DNSServiceRef connect_to_server(void)
 
 int my_write(int sd, char *buf, int len)
     {
-    if (send(sd, buf, len, MSG_WAITALL) != len)
-    	{
-        perror("ERROR: send");
-        return -1;
-    	}
+    if (send(sd, buf, len, MSG_WAITALL) != len)   return -1;
     return 0;
     }
 
@@ -903,11 +870,7 @@ int my_write(int sd, char *buf, int len)
 // read len bytes.  return 0 on success, -1 on error
 int my_read(int sd, char *buf, int len)
     {
-    if (recv(sd, buf, len, MSG_WAITALL) != len)
-    	{
-        perror("ERROR: recv");
-        return -1;
-    	}
+    if (recv(sd, buf, len, MSG_WAITALL) != len)  return -1;
     return 0;
     }
 
@@ -917,7 +880,7 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
     ipc_msg_hdr *hdr = msg;
     mode_t mask;
     struct sockaddr_un caddr, daddr;  // (client and daemon address structs)
-    char *path = NULL;
+    char path[MAX_CTLPATH];
     int listenfd = -1, errsd = -1, len;
     DNSServiceErrorType err = kDNSServiceErr_Unknown;
     
@@ -926,23 +889,17 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
     if (!reuse_sd) 
         {
         // setup temporary error socket
+        sprintf(path, "%s%d", CTL_PATH_PREFIX, (int)getpid());
         if ((listenfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
-            {
-            perror("ERROR: socket");
             goto cleanup;
-            }
+
+        unlink(path);  //OK if this fails
         bzero(&caddr, sizeof(caddr));
         caddr.sun_family = AF_LOCAL;
-        caddr.sun_len = sizeof(struct sockaddr_un);
-        path = (char *)msg + sizeof(ipc_msg_hdr);
         strcpy(caddr.sun_path, path);
         mask = umask(0);
         if (bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr)) < 0)
-            {
-            perror("ERROR: bind");
-            umask(mask);
             goto cleanup;
-            }
         umask(mask);
         listen(listenfd, 1);
         }
@@ -957,23 +914,18 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
         {
         len = sizeof(daddr);
         errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
-        if (errsd < 0) 
-            {
-            perror("ERROR: accept");
-            goto cleanup;
-            }
+        if (errsd < 0)  goto cleanup;
         }
     
     len = recv(errsd, &err, sizeof(err), MSG_WAITALL);
     if (len != sizeof(err))
         {
-        fprintf(stderr, "ERROR: did not receive proper error message from server\n");
         err = kDNSServiceErr_Unknown;
         }
 cleanup:
     if (!reuse_sd && listenfd > 0) close(listenfd);
     if (!reuse_sd && errsd > 0) close(errsd);	
-    if (!reuse_sd && path) unlink(path);
+    if (!reuse_sd) unlink(path);
     if (msg) free(msg);
     return err;
     }
@@ -996,25 +948,21 @@ static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start, int reuse_so
     ipc_msg_hdr *hdr;
     int datalen;
     char ctrl_path[256];
-    struct timeval time;
-    
+
     if (!reuse_socket)
         {
-        if (gettimeofday(&time, NULL) < 0) return NULL;
-        sprintf(ctrl_path, "%s%d-%.3x-%.6u", CTL_PATH_PREFIX, (int)getpid(), time.tv_sec & 0xFFF, time.tv_usec);
+        sprintf(ctrl_path, "%s%d", CTL_PATH_PREFIX, (int)getpid());
         *len += strlen(ctrl_path) + 1;
         }
     
+        
     datalen = *len;
     *len += sizeof(ipc_msg_hdr);
 
     // write message to buffer
     msg = malloc(*len);
-    if (!msg)
-    	{
-        perror("ERROR: malloc");
-        return NULL;
-    	}
+    if (!msg) return NULL;
+
     bzero(msg, *len);
     hdr = (void *)msg;
     hdr->datalen = datalen;
