@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.2  2004/06/23 16:09:34  shersche
+Add the resolve DNSServiceRef to list of extant refs.  This fixes the "doesn't resolve when double clicking" problem
+
+Submitted by: Scott Herscher
+
 Revision 1.1  2004/06/18 04:34:59  rpantos
 Move to Clients from mDNSWindows
 
@@ -407,8 +412,6 @@ void DNSSD_API
 		}
 		else if (!inFlags || (inFlags == kDNSServiceFlagsMoreComing))
 		{
-dlog(kDebugLevelNotice, "browse callback: calling service remove\n");
-
 			obj->obj->OnServiceRemove(service);
 		}
 	
@@ -546,6 +549,8 @@ OSStatus	ExplorerBarWindow::StartResolve( ServiceInfo *inService )
 	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(mResolveServiceRef), m_hWnd, WM_PRIVATE_SERVICE_EVENT, FD_READ|FD_CLOSE);
 	require_noerr( err, exit );
 	
+	m_serviceRefs.push_back(mResolveServiceRef);
+
 exit:
 	return( err );
 }
@@ -559,6 +564,7 @@ void	ExplorerBarWindow::StopResolve( void )
 	if( mResolveServiceRef )
 	{
 		Stop( mResolveServiceRef, true );
+		m_serviceRefs.remove(mResolveServiceRef);
 		mResolveServiceRef = NULL;
 	}
 }
