@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.244  2004/11/30 02:59:35  cheshire
+For debugging diagnostics, added identifying strings in SCDynamicStoreCreate() calls
+
 Revision 1.243  2004/11/29 19:17:29  ksekar
 <rdar://problem/3878195> Unnecessary GetUserSpecifiedDDNSConfig log messages
 
@@ -1437,7 +1440,7 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 	zone->c[0] = 0;
 	buf[0] = 0;
 	
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NULL, NULL);
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
 	if (store)
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
@@ -1475,7 +1478,7 @@ mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *co
 
 mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
 	{
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NULL, NULL);
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDDNSNameStatus"), NULL, NULL);
 	if (store)
 		{
 		char uname[MAX_ESCAPED_DOMAIN_NAME];
@@ -2418,7 +2421,7 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 		}
 	}
 
-mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
+mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef store, CFArrayRef changes, void *context)
 	{
 	static mDNSBool DynDNSConfigInitialized = mDNSfalse;
 	static mDNSBool LegacyNATInitialized = mDNSfalse;
@@ -2461,7 +2464,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
     // get DNS settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
-	dict = SCDynamicStoreCopyValue(session, key);
+	dict = SCDynamicStoreCopyValue(store, key);
 	CFRelease(key);
 
 	// handle any changes to search domains and DNS server addresses
@@ -2475,7 +2478,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	// get IPv4 settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
 	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
-	dict = SCDynamicStoreCopyValue(session, key);
+	dict = SCDynamicStoreCopyValue(store, key);
 	CFRelease(key);
 	if (!dict)
 		{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL); return; } // lost v4
@@ -2555,7 +2558,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	{
 	mStatus err = -1;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
-	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), mDNSMacOSXNetworkChanged, &context);
+	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:WatchForNetworkChanges"), mDNSMacOSXNetworkChanged, &context);
 	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
 	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
