@@ -11,13 +11,6 @@
 			path = mDNSMacOSX.h;
 			refType = 4;
 		};
-		004EFB9604CC78130CCA2C71 = {
-			fileEncoding = 4;
-			isa = PBXFileReference;
-			name = dnssd_clientstub.c;
-			path = ../mDNSShared/dnssd_clientstub.c;
-			refType = 2;
-		};
 		00AD62A3032D799A0CCA2C71 = {
 			buildPhases = (
 				00AD62A4032D799A0CCA2C71,
@@ -251,6 +244,7 @@
 				08FB779FFE84155DC02AAC07,
 				00AD62A3032D799A0CCA2C71,
 				6575FC1C022EB76000000109,
+				FF1C919207021C84001048AB,
 				DB2CC4530662DD6800335AB3,
 				DB2CC4660662DF5C00335AB3,
 				FF25792906C9A70800376F7B,
@@ -285,6 +279,7 @@
 				000753D303367C1C0CCA2C71,
 				DBAAFE2C057E8F660085CAD0,
 				FF0E0B5D065ADC7600FE4D9C,
+				FF1C919D07021D77001048AB,
 				FF485D5105632E0000130380,
 				FFF4F63A06CFE4DD00459EFD,
 				7F18A9F60587CEF6001880B3,
@@ -429,6 +424,7 @@
 				DB2CC4670662DF5C00335AB3,
 				FFD41DDA0664157900F0C438,
 				FF25794406C9A70800376F7B,
+				FF1C919B07021C84001048AB,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -623,9 +619,9 @@
 			dependencies = (
 			);
 			isa = PBXToolTarget;
-			name = "mDNS Command-Line tool";
+			name = "mDNS command-line tool";
 			productInstallPath = /usr/bin;
-			productName = "Sample mDNS Client";
+			productName = "mDNS command-line tool";
 			productReference = 6575FC1D022EB76000000109;
 		};
 		6575FC1D022EB76000000109 = {
@@ -636,10 +632,10 @@
 		6575FC1F022EB78C00000109 = {
 			children = (
 				6575FC20022EB7AA00000109,
-				004EFB9604CC78130CCA2C71,
+				FF1C919F07021E3F001048AB,
 			);
 			isa = PBXGroup;
-			name = SampleMulticastDNSClient;
+			name = "Command-Line Clients";
 			refType = 4;
 		};
 		6575FC20022EB7AA00000109 = {
@@ -647,7 +643,7 @@
 			indentWidth = 4;
 			isa = PBXFileReference;
 			path = SamplemDNSClient.c;
-			refType = 4;
+			refType = 2;
 			tabWidth = 4;
 			usesTabs = 0;
 		};
@@ -1273,6 +1269,105 @@
 			name = mDNS.1;
 			path = ../mDNSShared/mDNS.1;
 			refType = 2;
+		};
+		FF1C919207021C84001048AB = {
+			buildPhases = (
+				FF1C919307021C84001048AB,
+				FF1C919407021C84001048AB,
+				FF1C919607021C84001048AB,
+				FF1C919807021C84001048AB,
+				FF1C919907021C84001048AB,
+			);
+			buildSettings = {
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				INSTALL_PATH = /usr/bin;
+				MACOSX_DEPLOYMENT_TARGET = 10.2;
+				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS) -I../mDNSShared";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = "dns-sd";
+				REZ_EXECUTABLE = YES;
+				SECTORDER_FLAGS = "";
+				STRIPFLAGS = "-S";
+				WARNING_CFLAGS = "-W -Wall -Wmissing-prototypes -Wno-four-char-constants -Wno-unknown-pragmas";
+			};
+			dependencies = (
+			);
+			isa = PBXToolTarget;
+			name = "dns-sd command-line tool";
+			productInstallPath = /usr/bin;
+			productName = "dns-sd command-line tool";
+			productReference = FF1C919B07021C84001048AB;
+		};
+		FF1C919307021C84001048AB = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXHeadersBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1C919407021C84001048AB = {
+			buildActionMask = 2147483647;
+			files = (
+				FF1C91A007021E40001048AB,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1C919607021C84001048AB = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1C919807021C84001048AB = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXRezBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF1C919907021C84001048AB = {
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man1;
+			dstSubfolderSpec = 0;
+			files = (
+				FF1C919E07021D78001048AB,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		FF1C919B07021C84001048AB = {
+			isa = PBXExecutableFileReference;
+			path = "dns-sd";
+			refType = 3;
+		};
+		FF1C919D07021D77001048AB = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = "dns-sd.1";
+			path = "../mDNSShared/dns-sd.1";
+			refType = 2;
+		};
+		FF1C919E07021D78001048AB = {
+			fileRef = FF1C919D07021D77001048AB;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF1C919F07021E3F001048AB = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = "dns-sd.c";
+			path = "../Clients/dns-sd.c";
+			refType = 2;
+		};
+		FF1C91A007021E40001048AB = {
+			fileRef = FF1C919F07021E3F001048AB;
+			isa = PBXBuildFile;
+			settings = {
+			};
 		};
 		FF25792906C9A70800376F7B = {
 			buildPhases = (
