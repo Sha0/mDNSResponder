@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.424  2004/09/23 00:58:36  cheshire
+<rdar://problem/3781269> Rate limiting interferes with updating TXT records
+
 Revision 1.423  2004/09/23 00:50:53  cheshire
 <rdar://problem/3419452> Don't send a (DE) if a service is unregistered after wake from sleep
 
@@ -2647,15 +2650,18 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if (rr->SendRNow)
 			{ LogMsg("SendResponses: No active interface to send: %s", GetRRDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
 
-		if (rr->NewRData) CompleteRDataUpdate(m,rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
-
-		if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
-			CompleteDeregistration(m, rr);
-		else
+		if (rr->ImmedAnswer)
 			{
-			rr->ImmedAnswer = mDNSNULL;
-			rr->v4Requester = zerov4Addr;
-			rr->v6Requester = zerov6Addr;
+			if (rr->NewRData) CompleteRDataUpdate(m,rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
+	
+			if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
+				CompleteDeregistration(m, rr);
+			else
+				{
+				rr->ImmedAnswer = mDNSNULL;
+				rr->v4Requester = zerov4Addr;
+				rr->v6Requester = zerov6Addr;
+				}
 			}
 		}
 	verbosedebugf("SendResponses: Next in %ld ticks", m->NextScheduledResponse - m->timenow);
