@@ -755,7 +755,7 @@
 			};
 		};
 		7FC8F9D406D14E66007E879D = {
-			fileEncoding = 30;
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			path = LegacyNATTraversal.c;
 			refType = 2;
