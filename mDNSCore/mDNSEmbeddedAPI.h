@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.65  2003/06/06 21:41:11  cheshire
+For consistency, mDNS_StopQuery() should return an mStatus result, just like all the other mDNSCore routines
+
 Revision 1.64  2003/06/06 21:38:55  cheshire
 Renamed 'NewData' as 'FreshData' (The data may not be new data, just a refresh of data that we
 already had in our cache. This refreshes our TTL on the data, but the data itself stays the same.)
@@ -820,7 +823,7 @@ extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 
 								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern mStatus mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
-extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
+extern mStatus mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
 
 // ***************************************************************************
 #if 0

@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.171  2003/06/06 21:41:10  cheshire
+For consistency, mDNS_StopQuery() should return an mStatus result, just like all the other mDNSCore routines
+
 Revision 1.170  2003/06/06 21:38:55  cheshire
 Renamed 'NewData' as 'FreshData' (The data may not be new data, just a refresh of data that we
 already had in our cache. This refreshes our TTL on the data, but the data itself stays the same.)
@@ -4633,14 +4636,18 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		}
 	}
 
-mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question)
+mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
 	ResourceRecord *rr;
 	DNSQuestion **q = &m->Questions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
-	else debugf("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
-		question->qname.c, DNSTypeName(question->qtype));
+	else
+		{
+		LogMsg("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
+			question->qname.c, DNSTypeName(question->qtype));
+		return(mStatus_BadReferenceErr);
+		}
 
 	// Take care to cut question from list *before* calling UpdateQuestionDuplicates
 	UpdateQuestionDuplicates(m, question);
@@ -4680,6 +4687,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 
 	// Take care not to trash question->next until *after* we've updated m->CurrentQuestion and m->NewQuestions
 	question->next = mDNSNULL;
+	return(mStatus_NoError);
 	}
 
 mDNSexport mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
@@ -4691,11 +4699,13 @@ mDNSexport mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
 	return(status);
 	}
 
-mDNSexport void mDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
+mDNSexport mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 	{
+	mStatus status;
 	mDNS_Lock(m);
-	mDNS_StopQuery_internal(m, question);
+	status = mDNS_StopQuery_internal(m, question);
 	mDNS_Unlock(m);
+	return(status);
 	}
 
 mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
