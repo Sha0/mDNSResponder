@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.215  2004/10/25 20:09:00  ksekar
+Cleaned up config file parsing.
+
 Revision 1.214  2004/10/25 19:30:53  ksekar
 <rdar://problem/3827956> Simplify dynamic host name structures
 
@@ -2190,16 +2193,20 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	{
 	char buf[1024];
 	int len;
-	
-	if (!fgets(buf, 1024, f)) { LogMsg("Option %s not set", option); return mDNSfalse; }
-	len = strlen(option);
-	if (!strncmp(buf, option, len))
+
+	fseek(f, 0, SEEK_SET);  // set position to beginning of stream
+	while (fgets(buf, 1024, f))
 		{
-		strcpy(dst, buf + len + 1);
-		len = strlen(dst);
-		if ( len && dst[len-1] == '\n') dst[len-1] = '\0';  // chop newline
-		return mDNStrue;
+		len = strlen(option);
+		if (!strncmp(buf, option, len))
+			{
+			strcpy(dst, buf + len + 1);
+			len = strlen(dst);
+			if ( len && dst[len-1] == '\n') dst[len-1] = '\0';  // chop newline
+			return mDNStrue;
+			}
 		}
+	debugf("Option %s not set", option);
 	return mDNSfalse;
 	}
 
@@ -2209,7 +2216,7 @@ mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
 	char secret[1024];
 	int slen;
 	mStatus err;
-	FILE *f;
+	FILE *f = NULL;
 	
 	secret[0] = 0;
 	DynDNSZone.c[0] = 0;
@@ -2221,6 +2228,8 @@ mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
 		if (GetConfigOption(fqdn, "hostname", f) && !MakeDomainNameFromDNSNameString(&DynDNSHostname, fqdn)) goto badf;
 		if (GetConfigOption(zone, "zone", f) && !MakeDomainNameFromDNSNameString(&DynDNSZone, zone)) goto badf;
 		GetConfigOption(secret, "secret-64", f);  // failure means no authentication	   
+		fclose(f);
+		f = NULL;
 		}
 	else
 		{
@@ -2246,6 +2255,7 @@ mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
 
 	badf:
 	LogMsg("ERROR: malformatted config file");
+	if (f) fclose(f);	
 	}
 
 mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
