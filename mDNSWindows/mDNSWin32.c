@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.11 2003/05/06 00:00:51 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.12 2003/05/06 21:06:05 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.12  2003/05/06 21:06:05  cheshire
+        <rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
+
         Revision 1.11  2003/05/06 00:00:51  cheshire
         <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -513,10 +516,11 @@ void	mDNSPlatformLock( const mDNS *const inMDNS )
 
 void	mDNSPlatformUnlock( const mDNS *const inMDNS )
 {
-	// Some API routine has been called. Wake up our main thread to can call mDNS_Execute():
-	// (a) to handle immediate work (if any) resulting from this API call
-	// (b) to calculate the next sleep time between now and the next interesting event
-	SetEvent( &inMDNS->p->wakeupEvent );
+	// When an API routine is called, "m->NextScheduledEvent" is reset to "timenow" before calling mDNSPlatformUnlock()
+	// Since our main mDNS_Execute() loop is on a different thread, we need to wake up that thread to:
+	// (a) handle immediate work (if any) resulting from this API call
+	// (b) calculate the next sleep time between now and the next interesting event
+	if (mDNSPlatformTimeNow() - inMDNS->NextScheduledEvent >= 0) SetEvent( inMDNS->p->wakeupEvent );
 	LeaveCriticalSection( &inMDNS->p->lock );
 }
 
