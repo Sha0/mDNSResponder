@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.132  2003/08/20 01:44:56  cheshire
+Fix errors in LogOperation() calls (only used for debugging)
+
 Revision 1.131  2003/08/19 05:39:43  cheshire
 <rdar://problem/3380097> SIGINFO dump should include resolves started by DNSServiceQueryRecord
 
@@ -428,7 +431,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		*e = (*e)->next;
 		if (m && m != x)
 			LogMsg("%5d: DNSServiceDomainEnumeration(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->dom.qname.c, m, x);
-		else LogOperation("%5d: DNSServiceDomainEnumeration(%##s) STOP", ClientMachPort, x->dom.name.c);
+		else LogOperation("%5d: DNSServiceDomainEnumeration(%##s) STOP", ClientMachPort, x->dom.qname.c);
 		mDNS_StopGetDomains(&mDNSStorage, &x->dom);
 		mDNS_StopGetDomains(&mDNSStorage, &x->def);
 		freeL("DNSServiceDomainEnumeration", x);
@@ -442,7 +445,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		*b = (*b)->next;
 		if (m && m != x)
 			LogMsg("%5d: DNSServiceBrowser(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->q.qname.c, m, x);
-		else LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, x->q.name.c);
+		else LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, x->q.qname.c);
 		mDNS_StopBrowse(&mDNSStorage, &x->q);
 		while (x->results)
 			{
@@ -475,7 +478,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		x->autorename = mDNSfalse;
 		if (m && m != x)
 			LogMsg("%5d: DNSServiceRegistration(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->s.RR_SRV.resrec.name.c, m, x);
-		else LogOperation("%5d: DNSServiceRegistration(%##s) STOP", ClientMachPort, x->s.RR_SRV.name.c);
+		else LogOperation("%5d: DNSServiceRegistration(%##s) STOP", ClientMachPort, x->s.RR_SRV.resrec.name.c);
 		// If mDNS_DeregisterService() returns mStatus_NoError, that means that the service was found in the list,
 		// is sending its goodbye packet, and we'll get an mStatus_MemFree message when we can free the memory.
 		// If mDNS_DeregisterService() returns an error, it means that the service had already been removed from
@@ -579,7 +582,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 
 	LogOperation("%5d: DNSServiceDomainEnumeration(%##s) %##s %s",
-		x->ClientMachPort, x->dom.name.c, answer->rdata->u.name.c,
+		x->ClientMachPort, x->dom.qname.c, answer->rdata->u.name.c,
 		!AddRecord ? "RemoveDomain" :
 		question == &x->dom ? "AddDomain" : "AddDomainDefault");
 
@@ -625,7 +628,7 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	if (err) { AbortClient(client, x); errormsg = "mDNS_GetDomains"; goto fail; }
 	
 	// Succeeded: Wrap up and return
-	LogOperation("%5d: DNSServiceDomainEnumeration(%##s) START", client, x->dom.name.c);
+	LogOperation("%5d: DNSServiceDomainEnumeration(%##s) START", client, x->dom.qname.c);
 	EnableDeathNotificationForClient(client, x);
 	return(mStatus_NoError);
 
@@ -853,7 +856,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 	if (result == mStatus_NoError)
 		{
 		kern_return_t status;
-		LogOperation("%5d: DNSServiceRegistration(%##s) Name Registered", x->ClientMachPort, sr->RR_SRV.name.c);
+		LogOperation("%5d: DNSServiceRegistration(%##s) Name Registered", x->ClientMachPort, sr->RR_SRV.resrec.name.c);
 		status = DNSServiceRegistrationReply_rpc(x->ClientMachPort, result, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
 			AbortBlockedClient(x->ClientMachPort, "registration success", x);
@@ -861,7 +864,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 
 	else if (result == mStatus_NameConflict)
 		{
-		LogOperation("%5d: DNSServiceRegistration(%##s) Name Conflict", x->ClientMachPort, sr->RR_SRV.name.c);
+		LogOperation("%5d: DNSServiceRegistration(%##s) Name Conflict", x->ClientMachPort, sr->RR_SRV.resrec.name.c);
 		// Note: By the time we get the mStatus_NameConflict message, the service is already deregistered
 		// and the memory is free, so we don't have to wait for an mStatus_MemFree message as well.
 		if (x->autoname)
@@ -895,7 +898,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 				LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", sr->RR_SRV.resrec.name.c);
 				*r = (*r)->next;
 				}
-			LogOperation("%5d: DNSServiceRegistration(%##s) Memory Free", x->ClientMachPort, sr->RR_SRV.name.c);
+			LogOperation("%5d: DNSServiceRegistration(%##s) Memory Free", x->ClientMachPort, sr->RR_SRV.resrec.name.c);
 			FreeDNSServiceRegistration(x);
 			}
 		}
@@ -1018,7 +1021,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	DNSServiceRegistrationList = x;
 
 	// Do the operation
-	LogOperation("%5d: DNSServiceRegistration(%##s) START", x->ClientMachPort, srv.c);
+	LogOperation("%5d: DNSServiceRegistration(\"%s\", \"%s\", \"%s\") START", x->ClientMachPort, name, regtype, domain);
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
 	// a port number of zero. When two instances of the protected client are allowed to run on one
 	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
@@ -1106,7 +1109,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistrationAddRecord(%##s, type %d, length %d) REF %p",
-		client, x->s.RR_SRV.name.c, type, data_len, extra);
+		client, x->s.RR_SRV.resrec.name.c, type, data_len, extra);
 	err = mDNS_AddRecordToService(&mDNSStorage, &x->s, extra, &extra->r.rdatastorage, ttl);
 	*reference = (natural_t)extra;
 	if (err) { errormsg = "mDNS_AddRecordToService"; goto fail; }
@@ -1166,7 +1169,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistrationUpdateRecord(%##s, %X, new length %d)",
-		client, x->s.RR_SRV.name.c, reference, data_len);
+		client, x->s.RR_SRV.resrec.name.c, reference, data_len);
 	err = mDNS_Update(&mDNSStorage, rr, ttl, data_len, newrdata, UpdateCallback);
 	if (err) { errormsg = "mDNS_Update"; goto fail; }
 	
@@ -1193,7 +1196,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 	name = &x->s.RR_SRV.resrec.name;
 
 	// Do the operation
-	LogOperation("%5d: DNSServiceRegistrationRemoveRecord(%##s, %X)", client, x->s.RR_SRV.name.c, reference);
+	LogOperation("%5d: DNSServiceRegistrationRemoveRecord(%##s, %X)", client, x->s.RR_SRV.resrec.name.c, reference);
 	ExtraResourceRecord *extra = (ExtraResourceRecord*)reference;
 	err = mDNS_RemoveRecordFromService(&mDNSStorage, &x->s, extra);
 	if (err) { errormsg = "mDNS_RemoveRecordFromService (No such record)"; goto fail; }
