@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.155  2004/06/04 08:58:30  ksekar
+<rdar://problem/3668624>: Keychain integration for secure dynamic update
+
 Revision 1.154  2004/05/31 22:22:28  ksekar
 <rdar://problem/3668639>: wide-area domains should be returned in
 reg. domain enumeration
@@ -467,6 +470,8 @@ Minor code tidying
 #include <netinet/ip.h>             // For IPTOS_LOWDELAY etc.
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 
+#include <Security/Security.h>
+
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
 // work on Mac OS X 10.1, which does not have the getifaddrs call.
@@ -510,8 +515,12 @@ static SearchListElem *SearchList = NULL;    // where we search for _browse doma
 static DNSQuestion DefBrowseDomainQ;         // our local enumeration query for _browse domains
 static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
 
-
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
+#define LH_KEYCHAIN_DESC "Lighthouse Shared Secret"
+#define LH_KEYCHAIN_SERVICE "Lighthouse"
+#define SYS_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
+#define LH_SUFFIX "members.mac.com."
+
 // ***************************************************************************
 // Macros
 
@@ -1659,7 +1668,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 				arList = arList->next;
 				debugf("Deregistering PTR %s -> %s", dereg->resrec.name.c, dereg->resrec.rdata->u.name.c);
 				err = mDNS_Deregister(m, dereg);
-				if (err) LogMsg("ERROR: RegisterSearchDomains - mDNS_Deregister returned %d", err);
+				if (err) LogMsg("ERROR: RegisterSearchDomains mDNS_Deregister returned %d", err);
 				}
 			
 			// remove elem from list, delete				
@@ -1863,6 +1872,121 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 	return(-1);
 	}
 
+mDNSexport mDNSBool haveSecInfo = mDNSfalse;  // this must go away once we have full keychain integration
+mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
+	{
+	OSStatus err;
+	mDNSu32 infoTag = kSecAccountItemAttr;
+	mDNSu32 infoFmt = 0; // string
+    SecKeychainAttributeInfo info;		
+	SecKeychainAttributeList *authAttrList = NULL; 
+	void *data;
+	mDNSu32 dataLen;
+	
+	mStatus regErr;		
+	char accountName[MAX_ESCAPED_DOMAIN_NAME];
+	domainname zone;
+	AuthRecord *rrReg, *rrBrowse;
+
+	info.count = 1;
+	info.tag = &infoTag;
+	info.format = &infoFmt;
+		
+	err = SecKeychainItemCopyAttributesAndData(item, &info, NULL, &authAttrList, &dataLen, &data);
+	if (err) { LogMsg("SecKeychainItemCopyAttributesAndData returned error %d", err); return; }
+	
+	// copy account name
+	if (!authAttrList->count || authAttrList->attr->tag != kSecAccountItemAttr)
+	    { LogMsg("Received bad authAttrList"); return; }
+	
+	if (authAttrList->attr->length + strlen(LH_SUFFIX) > MAX_ESCAPED_DOMAIN_NAME)
+		{ LogMsg("Account name too long (%d bytes)", authAttrList->attr->length); return; }
+	memcpy(accountName, authAttrList->attr->data, authAttrList->attr->length);
+	accountName[authAttrList->attr->length] = '\0';
+	
+	zone.c[0] = '\0';
+	if (!AppendLiteralLabelString(&zone, accountName) ||
+		!AppendDNSNameString(&zone, LH_SUFFIX))
+		{ LogMsg("InitAuthInfo - bad account name"); return; }
+	
+	mDNS_UpdateDomainRequiresAuthentication(m, &zone, &zone, data, dataLen, mDNStrue);
+	if(m->uDNS_info.NameRegDomain) { debugf("Overwriting config file options with KeyChain values"); }
+	
+	if (!ConvertDomainNameToCString(&zone, m->uDNS_info.NameRegDomain) ||
+		!ConvertDomainNameToCString(&zone, m->uDNS_info.ServiceRegDomain))
+		{ LogMsg("Couldn't set keychain username in uDNS global info"); }
+	
+	mDNS_GenerateGlobalFQDN(m);
+	// normally we'd query the zone for _register/_browse domains, but to reduce server load we manually generate the records
+
+	haveSecInfo = mDNStrue;
+	//!!!KRS need to do better bookkeeping once we support multiple users
+	rrReg = mallocL("AuthRecord", sizeof(AuthRecord));
+	rrBrowse = mallocL("AuthRecord", sizeof(AuthRecord));
+	if (!rrReg || !rrBrowse) { LogMsg("ERROR: Malloc"); return; }
+	
+	// set up _browse
+	mDNS_SetupResourceRecord(rrBrowse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
+	MakeDomainNameFromDNSNameString(&rrBrowse->resrec.name, "_browse._dns-sd._udp.local.");
+	strcpy(rrBrowse->resrec.rdata->u.name.c, zone.c);
+	
+	// set up _register
+	mDNS_SetupResourceRecord(rrReg, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
+	MakeDomainNameFromDNSNameString(&rrReg->resrec.name, "_register._dns-sd._udp.local.");
+	strcpy(rrReg->resrec.rdata->u.name.c, zone.c);
+	
+	regErr = mDNS_Register(m, rrReg);
+	if (regErr) LogMsg("Registration of local-only reg domain %s failed", zone.c);
+	
+	regErr = mDNS_Register(m, rrBrowse);
+	if (regErr) LogMsg("Registration of local-only browse domain %s failed", zone.c);
+	SecKeychainItemFreeContent(authAttrList, data);
+	}
+
+mDNSlocal void InitAuthInfo(mDNS *m);
+
+mDNSlocal OSStatus KeychainCallback(SecKeychainEvent event, SecKeychainCallbackInfo *info, void *context)
+	{
+	(void)event;
+	(void)info;
+	// unused
+	
+	debugf("SecKeychainAddCallback received event %d", event);
+	InitAuthInfo((mDNS *)context);  // keychain events happen rarely - just rebuild the list
+	return 0;
+	}
+
+mDNSexport void InitAuthInfo(mDNS *m)
+	{
+	OSStatus err;
+	
+	SecKeychainSearchRef searchRef = NULL;
+	SecKeychainRef sysKeychain;
+	SecKeychainAttribute searchAttrs[] = { { kSecDescriptionItemAttr, strlen(LH_KEYCHAIN_DESC), LH_KEYCHAIN_DESC },
+									  { kSecServiceItemAttr, strlen(LH_KEYCHAIN_SERVICE), LH_KEYCHAIN_SERVICE } };	
+	SecKeychainAttributeList searchList = { sizeof(searchAttrs) / sizeof(*searchAttrs), searchAttrs };
+	SecKeychainItemRef item;
+
+	// clear any previous entries
+	mDNS_ClearAuthenticationList(m);
+
+	err = SecKeychainOpen(SYS_KEYCHAIN_PATH, &sysKeychain);
+	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't open system keychain - %d", err); return; }
+	err = SecKeychainSetDomainDefault(kSecPreferencesDomainSystem, sysKeychain);
+	if (err) { LogMsg("ERROR: InitAuthInfo - couldn't set domain default for system keychain - %d", err); return; }
+	
+	err = SecKeychainSearchCreateFromAttributes(sysKeychain, kSecGenericPasswordItemClass, &searchList, &searchRef);
+	if (err) { LogMsg("ERROR: InitAuthInfo - SecKeychainSearchCreateFromAttributes %d", err); return; }
+
+	while (!SecKeychainSearchCopyNext(searchRef, &item))
+		{
+		GetAuthInfoFromKeychainItem(m, item);
+		}
+
+	err = SecKeychainAddCallback(KeychainCallback, kSecAddEventMask | kSecDeleteEventMask | kSecUpdateEventMask | kSecPasswordChangedEventMask, m);	
+	if (err && err != errSecDuplicateCallback) { LogMsg("SecKeychainAddCallback returned error %d", err); }							 	
+	}
+
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
 CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
@@ -1937,11 +2061,11 @@ mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
 	char secret[1024];
 	int slen;
 	mStatus err;
-	
+
     // read registration domain (for dynamic updates) from config file
     // !!!KRS these must go away once we can learn the reg domain from the network or prefs	
-	m->uDNS_info.NameRegDomain[0] = '\0';
-	m->uDNS_info.ServiceRegDomain[0] = '\0';
+	if (m->uDNS_info.NameRegDomain[0] || m->uDNS_info.ServiceRegDomain[0])
+		{ debugf("Options from config already set via keychain. Ignoring config file."); return; }
 	
 	f = fopen(CONFIG_FILE, "r");
 	if (!f)
@@ -2039,7 +2163,6 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 		}    
 	}
 
-
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
 // 1) query for _browse._dns-sd._udp.local on LocalOnly interface
 //    (.local manually generated via explicit callback)
@@ -2053,8 +2176,7 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	{
 	mStatus err;
-	AuthRecord local;
-
+	AuthRecord local;	
 	DNSConfigInitialized = mDNStrue;
 
 	// start query for domains to be used in default (empty string domain) browses
@@ -2070,8 +2192,6 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
     return mStatus_NoError;
 	}
 	
-
-
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
@@ -2099,8 +2219,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
 
-	ReadRegDomainFromConfig(m);	
-
  	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;
 	m->p->unicastsockets.sktv4 = m->p->unicastsockets.sktv6 = -1;
@@ -2125,6 +2243,11 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	InitDNSConfig(m);
 
+	m->uDNS_info.ServiceRegDomain[0] = '\0';
+	m->uDNS_info.NameRegDomain[0] = '\0';
+	InitAuthInfo(m);
+	ReadRegDomainFromConfig(m);	
+	
  	return(err);
 	}
 

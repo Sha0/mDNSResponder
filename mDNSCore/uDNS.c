@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.41  2004/06/04 08:58:29  ksekar
+<rdar://problem/3668624>: Keychain integration for secure dynamic update
+
 Revision 1.40  2004/06/03 03:09:58  ksekar
 <rdar://problem/3668626>: Garbage Collection for Dynamic Updates
 
@@ -385,6 +388,7 @@ mDNSexport void mDNS_ClearAuthenticationList(mDNS *m)
 		ptr = ptr->next;
 		ufree(fptr);
 		}
+	m->uDNS_info.AuthInfoList = NULL;
 	}
 
 mDNSlocal uDNS_AuthInfo *GetAuthInfoForZone(const uDNS_GlobalInfo *u, const domainname *zone)
@@ -484,30 +488,24 @@ mDNSexport void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set
 	mDNSu8 *ip = set->ip.ip.v4.b;	
 	AuthRecord *a   = &set->uDNS_info.RR_A;
 	a->RecordContext = set;
-	if (set->ip.type != mDNSAddrType_IPv4                             // non-v4
+	if (set->ip.type != mDNSAddrType_IPv4                                 // non-v4
 		|| (ip[0] == 169 && ip[1] == 254)                             // link-local
 		|| (ip[0] == 127 && ip[1] == 0 && ip[2] == 0 && ip[3] == 1))  // loopback
-		{
-		LogMsg("uDNS_AdvertiseInterface: Bad Type (must be v4, non link-local, non loopback)");
 		return;		
-		}
-	if (set->uDNS_info.registered && SameDomainName(&m->uDNS_info.hostname, &set->uDNS_info.regname))
-		// already registered
-		{
-		LogMsg("uDNS_AdvertiseInterface: Already Registered");
-		return;
-		}
+	
+	if (set->uDNS_info.registered && SameDomainName(&m->uDNS_info.hostname, &set->uDNS_info.regname))		
+	  return; // already registered
+
 	if (!m->uDNS_info.hostname.c[0])
 		{
 		// no hostname available
 		set->uDNS_info.registered = mDNSfalse;
-		LogMsg("uDNS_AdvertiseInterface: No hostname available");
 		return;
 		}
-	
+		
 	set->uDNS_info.registered = mDNStrue;
 	ustrcpy(set->uDNS_info.regname.c, m->uDNS_info.hostname.c);
-    //!!!KRS temp ttl 1
+        //!!!KRS temp ttl 1
 	mDNS_SetupResourceRecord(a, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeShared /*Unique*/, hostnameCallback, set); //!!!KRS
 
 	ustrcpy(a->resrec.name.c, m->uDNS_info.hostname.c);
@@ -1672,10 +1670,6 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	if (err) return err;
 
 	// else send the query to our server
-	server = getInitializedDNS(u);
-	if (!server) { LogMsg("ERROR: startQuery - no initialized DNS"); return mStatus_NotInitializedErr; }
-	err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, server, UnicastDNSPort);
-	if (err) { LogMsg("ERROR: startQuery - mDNSSendDNSMessage - %d (keeping question in list for retransmission", err); } //!!!KRS
 
 	question->LastQTxTime = mDNSPlatformTimeNow();
     // store the question/id in active question list
@@ -1685,7 +1679,12 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	u->ActiveQueries = question;
 	question->uDNS_info.knownAnswers = NULL;
 
-	return mStatus_NoError;;
+	server = getInitializedDNS(u);
+	if (!server) { LogMsg("startQuery - no initialized DNS"); err =  mStatus_NotInitializedErr; }
+	else err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, server, UnicastDNSPort);	
+	if (err) { LogMsg("ERROR: startQuery - %d (keeping question in list for retransmission", err); }
+
+	return err;
 	}
 	
 mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
@@ -1961,7 +1960,11 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     query->qtype = kDNSType_SOA;
     query->qclass = kDNSClass_IN;
     err = startInternalQuery(query, context->m, getZoneData, context);
-    if (err) { LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  return smError;  }
+	if (err && err != mStatus_NotInitializedErr)
+		{ LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  return smError;  }
+	if (err == mStatus_NotInitializedErr)
+		LogMsg("hndlLookupSOA: startQuery called prior to initialization.  Question in list for retransmission");
+   
 	context->questionActive = mDNStrue;
     return smBreak;     // break from state machine until we receive another packet	
     }
@@ -2869,7 +2872,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 					continue;
 					}
 				err = mDNSSendDNSMessage(m, &msg, end, q->InterfaceID, server, UnicastDNSPort);
-				if (err) { LogMsg("ERROR: uDNS_idle - mDNSSendDNSMessage - %d", err); }
+				if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %d", err); } // surpress syslog messages if we have no network
 				q->LastQTxTime = timenow;
 				}
 			else if (sendtime < u->nextevent)  u->nextevent = sendtime;

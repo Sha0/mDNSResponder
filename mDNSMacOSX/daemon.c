@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.171  2004/06/04 08:58:30  ksekar
+<rdar://problem/3668624>: Keychain integration for secure dynamic update
+
 Revision 1.170  2004/05/30 20:01:50  ksekar
 <rdar://problem/3668635>: wide-area default registrations should be in
 .local too - fixed service registration when clients pass an explicit
@@ -1931,11 +1934,11 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 	// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
 	mDNSs32 nextevent = mDNS_Execute(&mDNSStorage);
 
-	mDNSs32 now = mDNSPlatformTimeNow();
-
+	mDNSs32 now = mDNSPlatformTimeNow();	
+	
 	// 2. Deliver any waiting browse messages to clients
 	DNSServiceBrowser *b = DNSServiceBrowserList;
-
+		    
 	while (b)
 		{
 		// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
@@ -1995,7 +1998,7 @@ mDNSexport int main(int argc, char **argv)
 	{
 	int i;
 	kern_return_t status;
-
+	
 	for (i=1; i<argc; i++)
 		{
 		if (!strcmp(argv[i], "-d")) mDNS_DebugMode = mDNStrue;

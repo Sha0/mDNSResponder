@@ -206,6 +206,7 @@
 				00AD62B4032D799A0CCA2C71,
 				00AD62B5032D799A0CCA2C71,
 				00AD62B6032D799A0CCA2C71,
+				7F869687066EE02400D2A2DC,
 			);
 			isa = PBXFrameworksBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -383,6 +384,7 @@
 		};
 		08FB779DFE84155DC02AAC07 = {
 			children = (
+				7F869685066EE02400D2A2DC,
 				09AB6884FE841BABC02AAC07,
 				65713D46025A293200000109,
 				00CA213D02786FC30CCA2C71,
@@ -459,6 +461,7 @@
 				09AB6885FE841BABC02AAC07,
 				65713D66025A293200000109,
 				6585DD640279A3B7000001D1,
+				7F869686066EE02400D2A2DC,
 			);
 			isa = PBXFrameworksBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -813,6 +816,24 @@
 		};
 		7F461DB7062DBF2900672BF3 = {
 			fileRef = 7F461DB5062DBF2900672BF3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F869685066EE02400D2A2DC = {
+			isa = PBXFrameworkReference;
+			name = Security.framework;
+			path = /System/Library/Frameworks/Security.framework;
+			refType = 0;
+		};
+		7F869686066EE02400D2A2DC = {
+			fileRef = 7F869685066EE02400D2A2DC;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F869687066EE02400D2A2DC = {
+			fileRef = 7F869685066EE02400D2A2DC;
 			isa = PBXBuildFile;
 			settings = {
 			};

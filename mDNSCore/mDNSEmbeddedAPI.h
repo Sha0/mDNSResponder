@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.176  2004/06/04 08:58:29  ksekar
+<rdar://problem/3668624>: Keychain integration for secure dynamic update
+
 Revision 1.175  2004/06/04 00:15:06  cheshire
 Move misplaced brackets
 
@@ -1845,13 +1848,13 @@ extern mDNSs32  mDNSPlatformUTC(void);
 // domain name format.  The shared secret must be a base64 encoded string with the base64 parameter set to
 // true, or binary data with the base64 parameter set to false.  The length is the size of the secret in
 // bytes.  (A minimum size of 16 bytes (128 bits) is recommended for an MD5 hash as per RFC 2485).
-//	The This routine is normally called once for each secure domain at startup, though it can be called at any time.
+// The This routine is normally called once for each secure domain at startup, though it can be called at any time.
 
 // mDNS_ClearAuthenticationList clears from the core's internal structures all domains previously passed to
 // mDNS_UpdateDomainRequiresAuthentication.
 
 extern mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *zone, domainname *key,
-    mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
+	mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
 
 extern void mDNS_ClearAuthenticationList(mDNS *m);
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.37  2004/06/04 08:58:30  ksekar
+<rdar://problem/3668624>: Keychain integration for secure dynamic update
+
 Revision 1.36  2004/05/26 17:06:33  cheshire
 <rdar://problem/3668515>: Don't rely on CFSocketInvalidate() to remove RunLoopSource
 
@@ -207,7 +210,7 @@ struct mDNS_PlatformSupport_struct
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
-	
+
 #ifdef  __cplusplus
     }
 #endif
