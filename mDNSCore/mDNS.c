@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.438  2004/09/29 23:07:04  cheshire
+Patch from Pavel Repin to fix compile error on Windows
+
 Revision 1.437  2004/09/28 02:23:50  cheshire
 <rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
 Don't need to search the entire cache for nearly-expired records -- just the appropriate hash slot
@@ -4827,8 +4830,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	while (CacheFlushRecords)
 		{
 		CacheRecord *r1 = CacheFlushRecords, *r2;
-		CacheFlushRecords = CacheFlushRecords->NextInCFList;
 		const mDNSu32 slot = HashSlot(&r1->resrec.name);
+		CacheFlushRecords = CacheFlushRecords->NextInCFList;
 		r1->NextInCFList = mDNSNULL;
 		for (r2 = m->rrcache_hash[slot]; r2; r2=r2->next)
 			if (SameResourceRecordSignature(&r1->resrec, &r2->resrec) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)

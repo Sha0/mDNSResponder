@@ -68,16 +68,18 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib .
 #include <string.h>			// For strlen(), strcpy(), bzero()
 #include <errno.h>          // For errno, EINTR
 #include <time.h>
-#include <arpa/inet.h>
 
 #ifdef _WIN32
 #include <process.h>
 typedef	int	pid_t;
 #define	getpid	_getpid
 #define	strcasecmp	_stricmp
+#define snprintf _snprintf
+typedef unsigned long in_addr_t;
 #else
 #include <sys/time.h>		// For struct timeval
 #include <unistd.h>         // For getopt() and optind
+#include <arpa/inet.h>		// For inet_addr()
 #endif
 
 
@@ -345,7 +347,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint3
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	const unsigned char *rd  = rdata;
-	const unsigned char *end = rdata + rdlen;
+	const unsigned char *end = (const unsigned char *) rdata + rdlen;
 	char rdb[1000];
 	char *p = rdb;
 	const char * const lim = rdb + sizeof(rdb);
@@ -440,7 +442,7 @@ static int getfirstoption( int argc, char **argv, const char *optstr, int *pOptI
 	}
 #endif
 
-static void MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record, DNSServiceFlags flags,
+static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record, DNSServiceFlags flags,
     DNSServiceErrorType errorCode, void * context)
 	{
 	char *name = (char *)context;
