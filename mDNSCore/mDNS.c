@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.419  2004/09/21 19:51:14  cheshire
+Move "Starting time value" message from mDNS.c to mDNSMacOSX/daemon.c
+
 Revision 1.418  2004/09/21 18:40:17  cheshire
 <rdar://problem/3376752> Adjust default record TTLs
 
@@ -6243,7 +6246,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	if (result != mStatus_NoError) return(result);
 	timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
 	timenow = mDNSPlatformRawTime() + timenow_adjust;
-	LogMsg("Starting time value 0x%08lX (%ld)", (mDNSu32)timenow, timenow);
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	

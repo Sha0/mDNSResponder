@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.190  2004/09/21 19:51:15  cheshire
+Move "Starting time value" message from mDNS.c to mDNSMacOSX/daemon.c
+
 Revision 1.189  2004/09/21 18:17:23  cheshire
 <rdar://problem/3785400> Add version info to mDNSResponder
 
@@ -2078,6 +2081,7 @@ mDNSexport int main(int argc, char **argv)
 
 	if (status == 0)
 		{
+		LogMsg("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
 		int numevents = 0;
 		int RunLoopStatus = kCFRunLoopRunTimedOut;
 
