@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.59  2004/06/18 05:10:31  rpantos
+Changes to allow code to be used on Windows
+
 Revision 1.58  2004/06/15 03:54:08  cheshire
 Include mDNSPlatformTimeNow() in SIGINFO output
 
@@ -180,6 +183,9 @@ Update to APSL 2.0
 
  */
 
+#if defined(_WIN32)
+#include <process.h>
+#else
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/ioctl.h>
@@ -187,7 +193,10 @@ Update to APSL 2.0
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#endif
 
+#include <stdlib.h>
+#include <stdio.h>
 #include "mDNSClientAPI.h"
 #include "uds_daemon.h"
 #include "dns_sd.h"
@@ -243,13 +252,13 @@ typedef struct
     {
     mStatus err;
     int nwritten;
-    SocketRef sd;
+    dnssd_sock_t sd;
     } undelivered_error_t;
 
 typedef struct request_state
     {
     // connection structures
-    SocketRef sd, errfd;		
+    dnssd_sock_t sd, errfd;		
                                 
     // state of read (in case message is read over several recv() calls)                            
     transfer_state ts;
@@ -290,7 +299,7 @@ typedef struct
 typedef struct reply_state
     {
     // state of the transmission
-    SocketRef sd;
+    dnssd_sock_t sd;
     transfer_state ts;
     uint32_t nwriten;
     uint32_t len;
@@ -363,9 +372,9 @@ typedef struct
 
 
 // globals
-static mDNS *gmDNS = NULL;
-static SocketRef listenfd = -1;  
-static request_state *all_requests = NULL;  
+static mDNS				*	gmDNS			=	NULL;
+static dnssd_sock_t			listenfd		=	dnssd_InvalidSocket;  
+static request_state	*	all_requests	=	NULL;  
 //!!!KRS we should keep a separate list containing only the requests that need to be examined
 //in the idle() routine.
 
@@ -411,7 +420,7 @@ static void reset_connected_rstate(request_state *rstate);
 static int deliver_error(request_state *rstate, mStatus err);
 static int deliver_async_error(request_state *rs, reply_op_t op, mStatus err);
 static transfer_state send_undelivered_error(request_state *rs);
-static reply_state *create_reply(reply_op_t op, int datalen, request_state *request);
+static reply_state *create_reply(reply_op_t op, size_t datalen, request_state *request);
 static void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd);
 static void my_perror(char *errmsg);
 static void unlink_request(request_state *rs);
@@ -421,6 +430,11 @@ static int validate_message(request_state *rstate);
 static mStatus remove_extra_rr_from_service(request_state *rstate);
 static mStatus remove_record(request_state *rstate);
 static void free_service_registration(registered_service *srv);
+static uint32_t dnssd_htonl(uint32_t l);
+
+#if defined(PLATFORM_NO_STRSEP)
+static char * strsep (char **stringp, const char *delim);
+#endif
 
 // initialization, setup/teardown functions
 
@@ -431,9 +445,11 @@ static void free_service_registration(registered_service *srv);
 
 int udsserver_init( mDNS *globalInstance)  
     {
-    mode_t mask;
-    struct sockaddr_un laddr;
-    struct rlimit maxfds;
+	dnssd_sockaddr_t laddr;
+	int				 ret;
+#if defined(_WIN32)
+	u_long opt = 1;
+#endif
 
     if ( !globalInstance)
         goto error;
@@ -450,60 +466,105 @@ int udsserver_init( mDNS *globalInstance)
 			}
 		}
 
-    if ((listenfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
-        goto error;
-    unlink(MDNS_UDS_SERVERPATH);  //OK if this fails
-    bzero(&laddr, sizeof(laddr));
-    laddr.sun_family = AF_LOCAL;
-#ifndef NOT_HAVE_SA_LEN		// According to Stevens (section 3.2), there is no portable way to 
-							// determine whether sa_len is defined on a particular platform. 
-    laddr.sun_len = sizeof(struct sockaddr_un);
-#endif
-    strcpy(laddr.sun_path, MDNS_UDS_SERVERPATH);
-    mask = umask(0);
-    if (bind(listenfd, (struct sockaddr *)&laddr, sizeof(laddr)) < 0)
-        goto error;
-    umask(mask);
+	if ((listenfd = socket(AF_DNSSD, SOCK_STREAM, 0)) == dnssd_InvalidSocket)
+		goto error;
 
-    if (fcntl(listenfd, F_SETFL, O_NONBLOCK) < 0)
-        {
-        my_perror("ERROR: could not set listen socket to non-blocking mode");
-        goto error;
-        }
-    listen(listenfd, LISTENQ);
-    
+    bzero(&laddr, sizeof(laddr));
+
+#if defined(USE_TCP_LOOPBACK)
+		{
+		laddr.sin_family		=	AF_INET;
+		laddr.sin_port			=	htons(MDNS_TCP_SERVERPORT);
+		laddr.sin_addr.s_addr	=	inet_addr(MDNS_TCP_SERVERADDR);
+    	ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
+		if (ret < 0)
+			goto error;
+		}
+#else
+		{
+    	mode_t mask = umask(0);
+    	unlink(MDNS_UDS_SERVERPATH);  //OK if this fails
+    	laddr.sun_family = AF_LOCAL;
+#	ifndef NOT_HAVE_SA_LEN	
+	// According to Stevens (section 3.2), there is no portable way to 
+	// determine whether sa_len is defined on a particular platform. 
+    	laddr.sun_len = sizeof(struct sockaddr_un);
+#	endif
+    	strcpy(laddr.sun_path, MDNS_UDS_SERVERPATH);
+		ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
+		umask(mask);
+		if (ret < 0)
+			goto error;
+		}
+#endif
+
+#if defined(_WIN32)
+	//
+	// SEH: do we even need to do this on windows?  this socket
+	// will be given to WSAEventSelect which will automatically
+	// set it to non-blocking
+	//
+	if (ioctlsocket(listenfd, FIONBIO, &opt) != 0)
+#else
+    if (fcntl(listenfd, F_SETFL, O_NONBLOCK) != 0)
+#endif
+	{
+		my_perror("ERROR: could not set listen socket to non-blocking mode");
+		goto error;
+	}
+
+	if (listen(listenfd, LISTENQ) != 0)
+		{
+		my_perror("ERROR: could not listen on listen socket");
+		goto error;
+		}
+
     if (mStatus_NoError != udsSupportAddFDToEventLoop(listenfd, connect_callback, (void *) NULL))
         {
         my_perror("ERROR: could not add listen socket to event loop");
         goto error;
         }
-    
-    // set maximum file descriptor to 1024
-    if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0)
-        {
-        my_perror("ERROR: Unable to get file descriptor limit");
-        return 0;
-        }
-    if (maxfds.rlim_max >= MAX_OPENFILES && maxfds.rlim_cur == maxfds.rlim_max)
-        {
-        // proper values already set
-        return 0;
-        }
-    maxfds.rlim_max = MAX_OPENFILES;
-    maxfds.rlim_cur = MAX_OPENFILES;	
-    if (setrlimit(RLIMIT_NOFILE, &maxfds) < 0)
-        my_perror("ERROR: Unable to set maximum file descriptor limit");
+
+#if !defined(PLATFORM_NO_RLIMIT)
+	{
+	struct rlimit maxfds;
+
+	// set maximum file descriptor to 1024
+	if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0)
+		{
+		my_perror("ERROR: Unable to get file descriptor limit");
+		return 0;
+		}
+
+	if (maxfds.rlim_max >= MAX_OPENFILES && maxfds.rlim_cur == maxfds.rlim_max)
+		{
+		// proper values already set
+		return 0;
+		}
+
+	maxfds.rlim_max = MAX_OPENFILES;
+	maxfds.rlim_cur = MAX_OPENFILES;
+	if (setrlimit(RLIMIT_NOFILE, &maxfds) < 0)
+		my_perror("ERROR: Unable to set maximum file descriptor limit");
+	}
+#endif
+	
     return 0;
 	
 error:
+
     my_perror("ERROR: udsserver_init");
     return -1;
     }
 
 int udsserver_exit(void)
     {
-    close(listenfd);
-    unlink(MDNS_UDS_SERVERPATH);
+	dnssd_close(listenfd);
+
+#if !defined(USE_TCP_LOOPBACK)
+	unlink(MDNS_UDS_SERVERPATH);
+#endif
+
     return 0;
     }
 
@@ -525,7 +586,7 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
             {
             while(req->replies)
                 {
-                if (req->replies->next) req->replies->rhdr->flags |= kDNSServiceFlagsMoreComing;
+                if (req->replies->next) req->replies->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsMoreComing);
                 result = send_msg(req->replies);
                 if (result == t_complete)
                     {
@@ -625,40 +686,25 @@ void udsserver_handle_configchange(void)
 
 static void connect_callback(void *info)
     {
-    SocketRef sd;
-	int clilen;
+    dnssd_sock_t sd;
+	int len;
 	unsigned long optval;
-    struct sockaddr_un cliaddr;
+    dnssd_sockaddr_t cliaddr;
     request_state *rstate;
 //    int errpipe[2];
     (void)info; // Unused
-    
-    clilen = sizeof(cliaddr);
-    sd = accept(listenfd, (struct sockaddr *)&cliaddr, &clilen);
 
-    if (sd < 0)
+	len = (int) sizeof(cliaddr);
+    
+	sd = accept(listenfd, (struct sockaddr*) &cliaddr, &len);
+
+    if (sd == dnssd_InvalidSocket)
         {
-        if (errno == EWOULDBLOCK) return; 
+        if (dnssd_errno() == dnssd_EWOULDBLOCK) return; 
         my_perror("ERROR: accept");
         return;
     	}
     optval = 1;
-#ifdef SO_NOSIGPIPE
-	// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
-    if (setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
-    	{
-        my_perror("ERROR: setsockopt - SOL_NOSIGPIPE - aborting client");  
-        close(sd);
-        return;
-    	}
-#endif
-
-    if (fcntl(sd, F_SETFL, O_NONBLOCK) < 0)
-    	{
-        my_perror("ERROR: could not set connected socket to non-blocking mode - aborting client");
-        close(sd);    	
-        return;
-        }
 
 /*
     // open a pipe to deliver error messages, pass descriptor to client
@@ -707,8 +753,10 @@ static void request_callback(void *info)
     {
     request_state *rstate = info;
     transfer_state result;
-    struct sockaddr_un cliaddr;
-    char ctrl_path[MAX_CTLPATH];
+    dnssd_sockaddr_t cliaddr;
+#if defined(_WIN32)
+    u_long opt = 1;
+#endif
     
     result = read_msg(rstate);
     if (result == t_morecoming)
@@ -754,20 +802,25 @@ static void request_callback(void *info)
     if (rstate->hdr.flags & IPC_FLAGS_REUSE_SOCKET)
         rstate->errfd = rstate->sd;
     else
-       {
-        if ((rstate->errfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0)
+		{
+		if ((rstate->errfd = socket(AF_DNSSD, SOCK_STREAM, 0)) == dnssd_InvalidSocket)
             {
             my_perror("ERROR: socket");	
             exit(1);
             }
-        if (fcntl(rstate->errfd, F_SETFL, O_NONBLOCK) < 0)
+
+#if defined(_WIN32)
+		if (ioctlsocket(rstate->errfd, FIONBIO, &opt) != 0)
+#else
+    	if (fcntl(rstate->errfd, F_SETFL, O_NONBLOCK) != 0)
+#endif
             {
             my_perror("ERROR: could not set control socket to non-blocking mode");
             abort_request(rstate);
             unlink_request(rstate);
             return;
             }        
-#if defined(WIN32)
+#if defined(USE_TCP_LOOPBACK)
 		{
 		mDNSOpaque16 port;
 		port.b[0] = rstate->msgdata[0];
@@ -775,12 +828,16 @@ static void request_callback(void *info)
         rstate->msgdata += 2;
 		cliaddr.sin_family      = AF_INET;
 		cliaddr.sin_port        = port.NotAnInteger;
-		cliaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+		cliaddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
+		}
 #else
+		{
+    	char ctrl_path[MAX_CTLPATH];
         get_string(&rstate->msgdata, ctrl_path, 256);	// path is first element in message buffer
         bzero(&cliaddr, sizeof(cliaddr));
         cliaddr.sun_family = AF_LOCAL;
         strcpy(cliaddr.sun_path, ctrl_path);
+		}
 #endif
         if (connect(rstate->errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
             {
@@ -788,7 +845,7 @@ static void request_callback(void *info)
             abort_request(rstate);
             unlink_request(rstate);
             }
-        }
+		}
 
     switch(rstate->hdr.op.request_op)
     	{
@@ -1060,9 +1117,10 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     
     // allocate/init reply header
     rep =  create_reply(resolve_reply, len, rs);
-    rep->rhdr->flags = 0;
-    rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID);
-    rep->rhdr->error = kDNSServiceErr_NoError;
+    rep->rhdr->flags = dnssd_htonl(0);
+    rep->rhdr->ifi =  dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
+    rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
+
     data = rep->sdata;
     
     // write reply data to message
@@ -1106,9 +1164,11 @@ static void question_result_callback(mDNS *const m, DNSQuestion *question, const
     len += strlen(name) + 1;
     
     rep =  create_reply(query_reply, len, req);
-    rep->rhdr->flags = AddRecord ? kDNSServiceFlagsAdd : 0;
-    rep->rhdr->ifi =  mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID);
-    rep->rhdr->error = kDNSServiceErr_NoError;
+
+    rep->rhdr->flags = dnssd_htonl(AddRecord ? kDNSServiceFlagsAdd : 0);
+    rep->rhdr->ifi =  dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
+    rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
+
     data = rep->sdata;
     
     put_string(name, &data);
@@ -1251,7 +1311,7 @@ static void browse_result_callback(mDNS *const m, DNSQuestion *question, const R
             }
         return;
         }
-    if (AddRecord) rep->rhdr->flags |= kDNSServiceFlagsAdd;  // non-zero TTL indicates add
+    if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);  // non-zero TTL indicates add
     append_reply(req, rep);
     return;
     }
@@ -1377,7 +1437,7 @@ static void handle_regservice_request(request_state *request)
     // count subtypes, replacing commas w/ whitespace
     rtype_ptr = regtype;
     num_subtypes = -1;
-    while((sub = strsep(&rtype_ptr, ",")))	// Unsafe -- we need to recognise and skip over '\,'
+    while((sub = strsep(&rtype_ptr, ",")) != NULL)	// Unsafe -- we need to recognise and skip over '\,'
         if (*sub) num_subtypes++;
         
     if (!name[0]) n = (gmDNS)->nicelabel;
@@ -1442,7 +1502,10 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
         }
 
     if (result == mStatus_NoError)
-        return process_service_registration(srs);
+		{
+        process_service_registration(srs);
+		return;
+		}
     else if (result == mStatus_MemFree)
         {
         if (r_srv->rename_on_memfree)
@@ -1510,7 +1573,7 @@ static mStatus add_record_to_service(request_state *rstate, registered_service *
     bzero(ere, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
     extra = &ere->e;
     extra->r.resrec.rrtype = rrtype;
-    extra->r.rdatastorage.MaxRDLength = size;
+    extra->r.rdatastorage.MaxRDLength = (mDNSu16) size;
     extra->r.resrec.rdlength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
 
@@ -1571,7 +1634,7 @@ static mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uint32
         my_perror("ERROR: malloc");
         exit(1);
         }
-    newrd->MaxRDLength = rdsize;
+    newrd->MaxRDLength = (mDNSu16) rdsize;
     memcpy(&newrd->u, rdata, rdlen);
     result = mDNS_Update(gmDNS, rr, ttl, rdlen, newrd, update_callback);
 	if (result) { LogMsg("ERROR: mDNS_Update - %d", result); freeL("handle_update_request", newrd); }
@@ -1811,9 +1874,9 @@ static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus resu
     
     reply = create_reply(reg_record_reply, len, rcc->rstate);
     reply->mhdr->client_context = rcc->client_context;
-    reply->rhdr->flags = 0;
-    reply->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID);
-    reply->rhdr->error = result;
+    reply->rhdr->flags = dnssd_htonl(0);
+    reply->rhdr->ifi = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID));
+    reply->rhdr->error = dnssd_htonl(result);
 
     ts = send_msg(reply);
     if (ts == t_error || ts == t_terminated) 
@@ -2072,9 +2135,9 @@ static reply_state *format_enumeration_reply(request_state *rstate, const char *
     len += strlen(domain) + 1;
   
     reply = create_reply(enumeration_reply, len, rstate);
-    reply->rhdr->flags = flags;
-    reply->rhdr->ifi = ifi;  
-    reply->rhdr->error = err;
+    reply->rhdr->flags = dnssd_htonl(flags);
+    reply->rhdr->ifi = dnssd_htonl(ifi); 
+    reply->rhdr->error = dnssd_htonl(err);
     data = reply->sdata;
     put_string(domain, &data);
     return reply;
@@ -2213,14 +2276,16 @@ static mStatus gen_rr_response(domainname *servicename, mDNSInterfaceID id, requ
     len = sizeof(DNSServiceFlags);
     len += sizeof(uint32_t);  // if index
     len += sizeof(DNSServiceErrorType);
-    len += strlen(namestr) + 1;
-    len += strlen(typestr) + 1;
-    len += strlen(domstr) + 1;
+    len += (int) (strlen(namestr) + 1);
+    len += (int) (strlen(typestr) + 1);
+    len += (int) (strlen(domstr) + 1);
     
     *rep = create_reply(query_reply, len, request);
-    (*rep)->rhdr->flags = 0;
-    (*rep)->rhdr->ifi = mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, id);
-    (*rep)->rhdr->error = kDNSServiceErr_NoError;    
+
+    (*rep)->rhdr->flags = dnssd_htonl(0);
+    (*rep)->rhdr->ifi = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, id));
+    (*rep)->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
+
     data = (*rep)->sdata;
     
     put_string(namestr, &data);
@@ -2349,7 +2414,7 @@ static int read_msg(request_state *rs)
     return rs->ts;
 
 rerror:
-    if (errno == EAGAIN || errno == EINTR) return rs->ts;	
+    if (dnssd_errno() == dnssd_EWOULDBLOCK || dnssd_errno() == dnssd_EINTR) return t_morecoming;	
     my_perror("ERROR: read_msg");
     rs->ts = t_error;
     return t_error;
@@ -2376,10 +2441,11 @@ static int send_msg(reply_state *rs)
     nwriten = send(rs->sd, rs->msgbuf + rs->nwriten, rs->len - rs->nwriten, 0);
     if (nwriten < 0)
     	{
-        if (errno == EINTR || errno == EAGAIN) nwriten = 0;
+        if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK) nwriten = 0;
         else
             {
-            if (errno == EPIPE)
+#if !defined(PLATFORM_NO_EPIPE)
+            if (dnssd_errno() == EPIPE)
             	{
                 LogMsg("broken pipe - cleanup should be handled by run-loop read wakeup");
                 rs->ts = t_terminated;
@@ -2387,6 +2453,7 @@ static int send_msg(reply_state *rs)
                 return t_terminated;  
             	}
             else
+#endif
             	{
                 my_perror("ERROR: send\n");
                 rs->ts = t_error;
@@ -2406,7 +2473,7 @@ static int send_msg(reply_state *rs)
 
 
 
-static reply_state *create_reply(reply_op_t op, int datalen, request_state *request)
+static reply_state *create_reply(reply_op_t op, size_t datalen, request_state *request)
 {
     reply_state *reply;
     int totallen;
@@ -2418,7 +2485,7 @@ static reply_state *create_reply(reply_op_t op, int datalen, request_state *requ
         return NULL;
         }
     
-    totallen = datalen + sizeof(ipc_msg_hdr);
+    totallen = (int) (datalen + sizeof(ipc_msg_hdr));
     reply = mallocL("create_reply", sizeof(reply_state));
     if (!reply) 
         {
@@ -2455,7 +2522,7 @@ static int deliver_error(request_state *rstate, mStatus err)
     nwritten = send(rstate->errfd, &err, sizeof(mStatus), 0);
     if (nwritten < (int)sizeof(mStatus))
         {
-        if (errno == EINTR || errno == EAGAIN)   
+        if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK)   
             nwritten = 0;
         if (nwritten < 0)
             {
@@ -2475,11 +2542,11 @@ static int deliver_error(request_state *rstate, mStatus err)
         rstate->u_err = undeliv;
         return 0;
     }
-    if (rstate->errfd != rstate->sd) close(rstate->errfd);
+    if (rstate->errfd != rstate->sd) dnssd_close(rstate->errfd);
     return 0;
     
 error:
-    if (rstate->errfd != rstate->sd) close(rstate->errfd);
+    if (rstate->errfd != rstate->sd) dnssd_close(rstate->errfd);
     return -1;
     
     }
@@ -2493,18 +2560,18 @@ static transfer_state send_undelivered_error(request_state *rs)
     nwritten = send(rs->u_err->sd, (char *)(&rs->u_err) + rs->u_err->nwritten, sizeof(mStatus) - rs->u_err->nwritten, 0);
     if (nwritten < 0)
         {
-        if (errno == EINTR || errno == EAGAIN)
+        if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK)
             nwritten = 0;
         else
             {
             my_perror("ERROR: send - unable to deliver error to client\n");
-            if (rs->u_err->sd == rs->sd) close (rs->u_err->sd);
+            if (rs->u_err->sd == rs->sd) dnssd_close(rs->u_err->sd);
             return t_error;
             }
         }
     if (nwritten + rs->u_err->nwritten == sizeof(mStatus))
         {
-        if (rs->u_err->sd == rs->sd) close(rs->u_err->sd);
+        if (rs->u_err->sd == rs->sd) dnssd_close(rs->u_err->sd);
         freeL("send_undelivered_error", rs->u_err);
         rs->u_err = NULL;
         return t_complete;
@@ -2546,9 +2613,9 @@ static void abort_request(request_state *rs)
     if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
     if (rs->msgbuf) freeL("abort_request", rs->msgbuf);
     udsSupportRemoveFDFromEventLoop(rs->sd);
-    rs->sd = -1;
-    if (rs->errfd >= 0) close(rs->errfd);
-    rs->errfd = -1;
+    rs->sd = dnssd_InvalidSocket;
+    if (rs->errfd >= 0) dnssd_close(rs->errfd);
+    rs->errfd = dnssd_InvalidSocket;
 
     // free pending replies
     rep = rs->replies;
@@ -2592,7 +2659,7 @@ static void unlink_request(request_state *rs)
 //hack to search-replace perror's to LogMsg's
 static void my_perror(char *errmsg)
     {
-    LogMsg("%s: %s", errmsg, strerror(errno));
+    LogMsg("%s: %s", errmsg, strerror(dnssd_errno()));
     }
 
 // check that the message delivered by the client is sufficiently long to extract the required data from the buffer
@@ -2656,3 +2723,57 @@ static int validate_message(request_state *rstate)
     }
 
 
+static uint32_t dnssd_htonl(uint32_t l)
+	{
+	uint32_t 	ret;
+	char	*	data;
+
+	data = (char*) &ret;
+
+	put_long(l, &data);
+
+	return ret;
+	}
+
+
+#if defined(PLATFORM_NO_STRSEP)
+static char * strsep (char **stringp, const char *delim)
+	{
+	char *begin, *end;
+ 
+	begin = *stringp;
+	if (begin == NULL) return NULL;
+ 
+	/*
+	 * A frequent case is when the delimiter string contains only one
+	 * character.  Here we don't need to call the expensive `strpbrk'
+	 * function and instead work using `strchr'.
+	 */
+	if (delim[0] == '\0' || delim[1] == '\0')
+    	{
+		char ch = delim[0];
+ 
+		if (ch == '\0') end = NULL;
+		else
+        	{
+			if (*begin == ch) end = begin;
+			else end = strchr (begin + 1, ch);
+			}  
+		}
+	else
+		/* Find the end of the token.  */
+		end = strpbrk (begin, delim);
+ 
+	if (end)
+		{
+		/* Terminate the token and set *STRINGP past NUL character.  */
+		*end++ = '\0';
+		*stringp = end;
+		}
+	else
+		/* No more delimiters; this is the last token.  */
+		*stringp = NULL;
+ 
+	return begin;
+	}
+#endif
