@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.341  2003/12/18 22:56:12  cheshire
+<rdar://problem/3510798>: Reduce syslog messages about ignored spoof packets
+
 Revision 1.340  2003/12/16 02:31:37  cheshire
 Minor update to comments
 
@@ -4261,13 +4264,14 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// go to the router first and then come back with a TTL of 254, so we allow that too.
 	// Anything lower than 254 is a pretty good sign of an off-net spoofing attack.
 	// Also, if we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
-	if (ttl < 254 || (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)mDNSPlatformOneSecond))
+	if (ttl < 254 || (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2)))
 		{
-		LogMsg("Ignored apparent spoof mDNS Response with TTL %d from %#-15a to %#-15a on %p with %2d Q %2d Ans %2d Auth %2d Add",
-		ttl, srcaddr, dstaddr, InterfaceID,
-		response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
-		NumPktsIgnored++;
-		if (NumPktsIgnored > NumPktsAccepted + 10)
+		mDNSBool ignoredlots = (++NumPktsIgnored > NumPktsAccepted + 10);
+		if (ignoredlots || NumPktsIgnored <= 10)
+			LogMsg("Ignored apparent spoof mDNS Response with TTL %d from %#-15a to %#-15a on %p with %2d Q %2d Ans %2d Auth %2d Add",
+				ttl, srcaddr, dstaddr, InterfaceID,
+				response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
+		if (ignoredlots)
 			LogMsg("WARNING: Have ignored %lu packets out of %lu; this may indicate an error in the platform support layer.",
 				NumPktsIgnored, NumPktsIgnored + NumPktsAccepted);
 		return;
