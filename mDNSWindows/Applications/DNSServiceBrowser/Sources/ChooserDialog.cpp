@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.7  2003/08/20 06:45:56  bradley
+Updated for IP address changes in DNSServices. Added support for browsing for Xserve RAID.
+
 Revision 1.6  2003/08/12 19:56:28  cheshire
 Update to APSL 2.0
 
@@ -139,6 +142,7 @@ static const KnownServiceEntry		kKnownServiceTable[] =
 	{ "_tftp._tcp.", 		"Trivial File Transfer (TFTP)", 	"tftp://", 	false }, 
 	{ "_http._tcp.", 		"Web Server (HTTP)", 				"http://", 	true  }, 
 	{ "_smb._tcp.", 		"Windows File Sharing", 			"smb://", 	false }, 
+	{ "_xserveraid._tcp.", 	"Xserve RAID",						"xsr://", 	false }, 
 	{ NULL,					NULL,								NULL,		false }, 
 };
 
@@ -549,7 +553,7 @@ void	ChooserDialog::OnChooserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 		{
 			// Create a URL representing the service instance. Special case for SMB (no port number).
 			
-			if( service->serviceType == "_smb._tcp" )
+			if( strcmp( service->serviceType, "_smb._tcp" ) == 0 )
 			{
 				url.Format( "%s%s/", service->urlScheme, (const char *) p->ip.c_str() ); 
 			}
@@ -1016,7 +1020,7 @@ static void
 				
 				domain->eventType 	= inEvent->type;
 				domain->domain 		= inEvent->data.addDomain.domain;
-				domain->ifIP		= inEvent->data.addDomain.interfaceAddr;
+				domain->ifIP		= inEvent->data.addDomain.interfaceIP;
 				
 				message = ( inEvent->type == kDNSBrowserEventTypeRemoveDomain ) ? WM_USER_DOMAIN_REMOVE : WM_USER_DOMAIN_ADD;
 				posted = ::PostMessage( dialog->GetSafeHwnd(), message, 0, (LPARAM) domain );
@@ -1043,7 +1047,7 @@ static void
 				service->name 		= inEvent->data.addService.name;
 				service->type 		= inEvent->data.addService.type;
 				service->domain		= inEvent->data.addService.domain;
-				service->ifIP		= inEvent->data.addService.interfaceAddr;
+				service->ifIP		= inEvent->data.addService.interfaceIP;
 				
 				message = ( inEvent->type == kDNSBrowserEventTypeAddService ) ? WM_USER_SERVICE_ADD : WM_USER_SERVICE_REMOVE;
 				posted = ::PostMessage( dialog->GetSafeHwnd(), message, 0, (LPARAM) service );
@@ -1070,7 +1074,7 @@ static void
 				serviceInstance->type 	= inEvent->data.resolved->type;
 				serviceInstance->domain = inEvent->data.resolved->domain;
 				serviceInstance->ip		= DNSNetworkAddressToString( &inEvent->data.resolved->address, s );
-				serviceInstance->ifIP	= DNSNetworkAddressToString( &inEvent->data.resolved->interfaceAddr, s );
+				serviceInstance->ifIP	= DNSNetworkAddressToString( &inEvent->data.resolved->interfaceIP, s );
 				serviceInstance->text 	= inEvent->data.resolved->textRecord;
 				
 				posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_RESOLVE, 0, (LPARAM) serviceInstance );
@@ -1100,16 +1104,18 @@ static void
 
 static char *	DNSNetworkAddressToString( const DNSNetworkAddress *inAddr, char *outString )
 {
-	unsigned char *		ip;
+	const DNSUInt8 *		p;
+	DNSUInt16				port;
 	
-	ip = (unsigned char *) &inAddr->u.ipv4.address;
-	if( inAddr->u.ipv4.port != kDNSPortInvalid )
+	p = inAddr->u.ipv4.addr.v8;
+	port = ntohs( inAddr->u.ipv4.port.v16 );
+	if( port != kDNSPortInvalid )
 	{
-		sprintf( outString, "%u.%u.%u.%u:%u", ip[ 0 ], ip[ 1 ], ip[ 2 ], ip[ 3 ], inAddr->u.ipv4.port );
+		sprintf( outString, "%u.%u.%u.%u:%u", p[ 0 ], p[ 1 ], p[ 2 ], p[ 3 ], port );
 	}
 	else
 	{
-		sprintf( outString, "%u.%u.%u.%u", ip[ 0 ], ip[ 1 ], ip[ 2 ], ip[ 3 ] );
+		sprintf( outString, "%u.%u.%u.%u", p[ 0 ], p[ 1 ], p[ 2 ], p[ 3 ] );
 	}
 	return( outString );
 }
