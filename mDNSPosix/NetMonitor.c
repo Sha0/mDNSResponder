@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.42  2003/09/02 20:59:24  cheshire
+Use bcopy() instead of non-portable "__u6_addr.__u6_addr32" fields.
+
 Revision 1.41  2003/08/29 22:05:44  cheshire
 Also count subsequent KA packets for the purposes of statistics counting
 
@@ -187,6 +190,7 @@ Added NetMonitor.c
 
 #include <stdio.h>			// For printf()
 #include <stdlib.h>			// For malloc()
+#include <string.h>			// For bcopy()
 #include <time.h>			// For "struct tm" etc.
 #include <netdb.h>			// For gethostbyname()
 #include <sys/socket.h>		// For AF_INET, AF_INET6, etc.
@@ -850,10 +854,7 @@ mDNSexport int main(int argc, char **argv)
 		else if (inet_pton(AF_INET6, argv[i], &s6) == 1)
 			{
 			a.type = mDNSAddrType_IPv6;
-			a.ip.v6.l[0] = s6.__u6_addr.__u6_addr32[0];
-			a.ip.v6.l[1] = s6.__u6_addr.__u6_addr32[1];
-			a.ip.v6.l[2] = s6.__u6_addr.__u6_addr32[2];
-			a.ip.v6.l[3] = s6.__u6_addr.__u6_addr32[3];
+			bcopy(&s6, &a.ip.v6, sizeof(a.ip.v6));
 			}
 		else
 			{
