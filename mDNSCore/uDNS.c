@@ -23,8 +23,14 @@
     Change History (most recent first):
     
 $Log: uDNS.c,v $
+Revision 1.4  2004/01/24 04:19:26  cheshire
+Restore overwritten checkin 1.2
+
 Revision 1.3  2004/01/23 23:23:15  ksekar
 Added TCP support for truncated unicast messages.
+
+Revision 1.2  2004/01/22 03:48:41  cheshire
+Make sure uDNS client doesn't accidentally use query ID zero
 
 Revision 1.1  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
@@ -58,10 +64,6 @@ mDNSlocal mStatus stopQuery(mDNS *const m, DNSQuestion *const question);
 #define ufree(x) mDNSPlatformMemFree(x)
 #define ubzero(x,y) mDNSPlatformMemZero(x,y)
 #define assert(x) mDNSPlatformAssert(x)
-#define htons(s) mDNSPlatformHtoNS(s)
-#define htonl(l) mDNSPlatformHtoNL(l)
-#define ntohs(s) mDNSPlatformNtoHS(s)
-#define ntohl(l) mDNSPlatformNtoHL(l)
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -264,8 +266,6 @@ mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_data_
     {
 	DNSQuestion *qptr;
 	
-	if (IsLocalDomain(&question->qname)) return mDNSfalse;
-
 	// see if query is in our lists
 	for (qptr = u->ActiveQueries; qptr; qptr = qptr->next)
 		if (qptr == question) return mDNStrue;				
@@ -330,7 +330,8 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     mDNSu8 *endPtr;
     NetworkInterfaceInfo *ifi;
     mStatus err = mStatus_NoError, rv;
-    mDNSOpaque16 id, flags;
+    mDNSu16 idval;
+    mDNSOpaque16 id;
 
     //!!!KRS we should check if the question is already in our acivequestion list
 	if (!ValidateDomainName(&question->qname))
@@ -348,10 +349,11 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
         u->NextInternalMessageID = ~0;
         u->NextMessageID = 1;        
         }
-    id.NotAnInteger = internal ? htons(--u->NextInternalMessageID)  : htons(++u->NextMessageID);
-    flags.NotAnInteger = 0;
+	idval = internal ? --u->NextInternalMessageID : ++u->NextMessageID;
+    id.b[0] = idval >> 8;
+    id.b[1] = idval & 0xFF;
 	question->next = NULL;
-	err = constructQueryMsg(&msg, &endPtr, id, flags, question);
+	err = constructQueryMsg(&msg, &endPtr, id, QueryFlags, question);
 	if (err) return err;
 	
     // store the question/id in active question list
