@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.320  2003/11/13 06:45:04  cheshire
+Fix compiler warning on certain compilers
+
 Revision 1.319  2003/11/13 00:47:40  cheshire
 <rdar://problem/3437556> We should delay AAAA record query if A record already in cache.
 
@@ -6202,7 +6205,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		// update. For the _ichat service type, the XML encoding introduces spurious noise differences into the data
 		// even though there's no actual semantic change, so the mDNSPlatformMemSame() check doesn't help us.
 		// To work around this, we simply unilaterally limit all legacy _ichat-type updates to a single announcement.
-		if (SameDomainLabel(type.c, "\x6_ichat")) rr->AnnounceCount = 1;
+		if (SameDomainLabel(type.c, (mDNSu8*)"\x6_ichat")) rr->AnnounceCount = 1;
 		rr->ThisAPInterval       = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 		InitializeLastAPTime(m, rr);
 		if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
