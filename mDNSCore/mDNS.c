@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.161  2003/06/03 18:29:03  cheshire
+Minor changes to comments and debugf() messages
+
 Revision 1.160  2003/06/03 05:02:16  cheshire
 <rdar://problem/3277080> Duplicate registrations not handled as efficiently as they should be
 
@@ -1729,9 +1732,9 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 			}
 		}
 
-	if (rr->InterfaceID)		// If this resource record is referencing a specific interface
+	if (rr->InterfaceID)				// If this resource record is referencing a specific interface
 		{
-		NetworkInterfaceInfo *intf;	// Then make sure that interface exists
+		NetworkInterfaceInfo *intf;		// Then make sure that interface really exists
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
 			if (intf->InterfaceID == rr->InterfaceID) break;
 		if (!intf)
@@ -1807,7 +1810,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	
 	if (r)
 		{
-		debugf("Adding %##s (%s) to duplicate list", rr->name.c, DNSTypeName(rr->rrtype));
+		debugf("Adding %p %##s (%s) to duplicate list", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		*d = rr;
 		if (rr->RecordType == kDNSRecordTypeUnique)
 			{
@@ -1818,7 +1821,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 		}
 	else
 		{
-		debugf("Adding %##s (%s) to active record list", rr->name.c, DNSTypeName(rr->rrtype));
+		debugf("Adding %p %##s (%s) to active record list", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		*p = rr;
 		}
 
@@ -1872,6 +1875,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 		while (*p && *p != rr) p=&(*p)->next;
 		// If we found our record on the duplicate list, then make sure we don't send a goodbye for it
 		if (*p && RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
+		if (*p) debugf("DNS_Deregister_internal: Deleting DuplicateRecord %p %##s (%s)", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		}
 
 	if (!*p)
