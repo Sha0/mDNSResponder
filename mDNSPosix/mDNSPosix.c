@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.54  2004/09/15 23:55:00  ksekar
+<rdar://problem/3800597> mDNSPosix should #include stdint.h
+
 Revision 1.53  2004/09/14 23:42:36  cheshire
 <rdar://problem/3801296> Need to seed random number generator from platform-layer data
 
@@ -213,6 +216,7 @@ First checkin
 #include "mDNSClientAPI.h"           // Defines the interface provided to the client layer above
 #include "mDNSPosix.h"				 // Defines the specific types needed to run mDNS on this platform
 
+#include <stdint.h>
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
