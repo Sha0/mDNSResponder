@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.h,v $
+Revision 1.4  2004/07/20 06:49:18  shersche
+clean up socket handling code
+
 Revision 1.3  2004/07/13 21:24:21  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -195,11 +198,6 @@ struct	ServiceHandlerEntry
 	
 	~ServiceHandlerEntry( void )
 	{
-		if( ref )
-		{
-			DNSServiceRefDeallocate( ref );
-		}
-		
 		int		i;
 		int		n;
 		
@@ -265,7 +263,7 @@ class	ExplorerBarWindow : public CWnd
 		void		StopResolve( void );
 
 
-		void		Stop( DNSServiceRef ref, bool deallocate );
+		void		Stop( DNSServiceRef ref );
 
 
 		static void DNSSD_API

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.5  2004/07/20 06:49:18  shersche
+clean up socket handling code
+
 Revision 1.4  2004/07/13 21:24:21  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -264,7 +267,7 @@ void	ExplorerBarWindow::OnDestroy( void )
 		//
 		// Stop will remove it from the list
 		//
-		Stop(ref, false);
+		Stop( ref );
 	}
 
 	// Clean up the service handlers.
@@ -333,18 +336,26 @@ ExplorerBarWindow::OnServiceEvent(WPARAM inWParam, LPARAM inLParam)
 		SOCKET sock = (SOCKET) inWParam;
 
 		// iterate thru list
-		ServiceRefList::iterator begin = m_serviceRefs.begin();
-		ServiceRefList::iterator end   = m_serviceRefs.end();
+		ServiceRefList::iterator it;
 
-		while (begin != end)
+		for (it = m_serviceRefs.begin(); it != m_serviceRefs.end(); it++)
 		{
-			DNSServiceRef ref = *begin++;
+			DNSServiceRef ref = *it;
 
 			check(ref != NULL);
 
 			if ((SOCKET) DNSServiceRefSockFD(ref) == sock)
 			{
-				DNSServiceProcessResult(ref);
+				DNSServiceErrorType err;
+
+				err = DNSServiceProcessResult(ref);
+
+				if (err != 0)
+				{
+					Stop(ref);
+				}
+
+				break;
 			}
 		}
 	}
@@ -570,8 +581,7 @@ void	ExplorerBarWindow::StopResolve( void )
 {
 	if( mResolveServiceRef )
 	{
-		Stop( mResolveServiceRef, true );
-		m_serviceRefs.remove(mResolveServiceRef);
+		Stop( mResolveServiceRef );
 		mResolveServiceRef = NULL;
 	}
 }
@@ -734,16 +744,13 @@ exit:
 //===========================================================================================================================
 //	Stop
 //===========================================================================================================================
-void ExplorerBarWindow::Stop( DNSServiceRef ref, bool deallocate )
+void ExplorerBarWindow::Stop( DNSServiceRef ref )
 {
 	m_serviceRefs.remove( ref );
 
 	WSAAsyncSelect(DNSServiceRefSockFD( ref ), m_hWnd, WM_PRIVATE_SERVICE_EVENT, 0);
 
-	if (deallocate)
-	{
-		DNSServiceRefDeallocate( ref );
-	}
+	DNSServiceRefDeallocate( ref );
 }
 
 
