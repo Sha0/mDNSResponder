@@ -1612,7 +1612,6 @@
 			dstSubfolderSpec = 0;
 			files = (
 				FF5A0AE805632EAE00743C27,
-				FF69371C07728FAC00643C9C,
 			);
 			isa = PBXCopyFilesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 1;
@@ -1638,12 +1637,6 @@
 			isa = PBXFileReference;
 			path = LaunchDaemonInfo.plist;
 			refType = 2;
-		};
-		FF69371C07728FAC00643C9C = {
-			fileRef = FF69371B07728FAC00643C9C;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 		FF69371D07728FB800643C9C = {
 			fileRef = FF69371B07728FAC00643C9C;
