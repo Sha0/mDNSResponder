@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.49  2004/06/10 00:10:50  ksekar
+<rdar://problem/3686174>: Infinite Loop in uDNS_Execute()
+
 Revision 1.48  2004/06/09 20:03:37  ksekar
 <rdar://problem/3686163>: Incorrect copying of resource record in deregistration
 
@@ -285,6 +288,15 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 		}
 	LogMsg("ERROR: unlinkAR - no such active record");
 	return mStatus_UnknownErr;
+	}
+
+mDNSlocal void LinkActiveQuestion(uDNS_GlobalInfo *u, DNSQuestion *q)
+	{
+	if (IsActiveUnicastQuery(q, u))
+		{ LogMsg("LinkActiveQuestion - %s (%d) already in list!", q->qname.c, q->qtype); return; }
+	
+	q->next = u->ActiveQueries;
+	u->ActiveQueries = q;
 	}
 
 
@@ -1517,10 +1529,7 @@ mDNSlocal mStatus startLLQ(mDNS *m, DNSQuestion *question)
 		return err;
 		}
 
-    // link question into list
-	question->next = m->uDNS_info.ActiveQueries;
-	m->uDNS_info.ActiveQueries = question;
-
+	LinkActiveQuestion(&m->uDNS_info, question);
 	return err;
 	}
 
@@ -1566,10 +1575,18 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 
 mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_GlobalInfo *u)
     {
-	(void)u;  // unused
+	DNSQuestion *q;
 
-	if (question->uDNS_info.id.NotAnInteger && !question->InterfaceID && !IsLocalDomain(&question->qname))
-		return mDNStrue;
+	for (q = u->ActiveQueries; q; q = q->next)
+		{
+		if (q == question)
+			{
+			if (!question->uDNS_info.id.NotAnInteger || question->InterfaceID || IsLocalDomain(&question->qname))
+				LogMsg("Warning: Question %s in Active Unicast Query list with id %d, interfaceID %x",
+					   question->qname.c, question->uDNS_info.id.NotAnInteger, question->InterfaceID);
+			return mDNStrue;
+			}
+		}
 	return mDNSfalse;
 	}
 
@@ -1707,8 +1724,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     // store the question/id in active question list
     question->uDNS_info.timestamp = question->LastQTxTime;
 	question->uDNS_info.internal = internal;
-	question->next = u->ActiveQueries;
-	u->ActiveQueries = question;
+	LinkActiveQuestion(u, question);
 	question->uDNS_info.knownAnswers = NULL;
 
 	server = getInitializedDNS(u);
