@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.6  2004/05/21 19:57:19  cheshire
+Add -Q option to exercise DNSServiceQueryRecord() API call
+
 Revision 1.5  2004/05/21 17:39:27  cheshire
 Include extra headers to fix Xcode build
 
@@ -255,6 +258,19 @@ static void reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNSServiceErr
 	if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
 	}
 
+void qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode,
+	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
+	{
+	const unsigned char *rd = rdata;
+	char rdb[1000];
+	switch (rrtype)
+		{
+		case T_A: snprintf(rdb, sizeof(rdb), "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
+		default : snprintf(rdb, sizeof(rdb), "Unknown rdata: %d bytes", rdlen);          break;
+		}
+	printf("%-30s%4d%4d  %s\n", fullname, rrtype, rrclass, rdb);
+	}
+
 //*************************************************************************************************************
 // The main test function
 
@@ -302,7 +318,7 @@ int main(int argc, char **argv)
 	setlinebuf(stdout);             // Want to see lines as they appear, not block buffered
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getopt(argc, (char * const *)argv, "EFBLRAUNTMI");
+	operation = getopt(argc, (char * const *)argv, "EFBLQRAUNTMI");
 	if (operation == -1) goto Fail;
 
 	switch (operation)
@@ -353,6 +369,14 @@ int main(int argc, char **argv)
 
 					printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[optind+3], txt);
 					err = DNSServiceRegister(&client, 0, 0, nam, typ, dom, NULL, registerPort.NotAnInteger, ptr-txt, txt, reg_reply, NULL);
+					break;
+					}
+
+		case 'Q':	{
+					if (argc < optind+1) goto Fail;
+					uint16_t rrtype  = (argc <= optind+1) ? T_A  : atoi(argv[optind+1]);
+					uint16_t rrclass = (argc <= optind+2) ? C_IN : atoi(argv[optind+2]);
+					err = DNSServiceQueryRecord(&client, 0, 0, argv[optind+0], rrtype, rrclass, qr_reply, NULL);
 					break;
 					}
 
@@ -414,6 +438,7 @@ Fail:
 	fprintf(stderr, "%s -B        <Type> <Domain>        (Browse for services instances)\n", argv[0]);
 	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", argv[0]);
 	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", argv[0]);
+	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", argv[0]);
 	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", argv[0]);
 	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", argv[0]);
 	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", argv[0]);
