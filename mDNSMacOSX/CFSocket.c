@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.78  2003/05/23 01:19:04  cheshire
+<rdar://problem/3267085> mDNSResponder needs to signal type of service to AirPort
+Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
+
 Revision 1.77  2003/05/23 01:12:05  cheshire
 Minor code tidying
 
@@ -194,6 +198,9 @@ Minor code tidying
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <fcntl.h>
+
+#include <netinet/in_systm.h>		// For n_long, required by <netinet/ip.h> below
+#include <netinet/ip.h>				// For IPTOS_LOWDELAY etc.
 
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
@@ -586,6 +593,11 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
 		if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_TTL error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 
+		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
+		const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
+		err = setsockopt(skt, IPPROTO_IP, IP_TOS, &ip_tosbits, sizeof(ip_tosbits));
+		if (err < 0) { LogMsg("setsockopt - IP_TOS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+
 		// And start listening for packets
 		struct sockaddr_in listening_sockaddr;
 		listening_sockaddr.sin_family      = AF_INET;
@@ -630,6 +642,14 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		// And multicast packets with TTL 255 too
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &twofivefive, sizeof(twofivefive));
 		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_HOPS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		
+		// Note: IPV6_TCLASS appears not to be implemented on OS X right now (or indeed on ANY version of Unix?)
+		#ifdef IPV6_TCLASS
+		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
+		int tclass = IPTOS_LOWDELAY | IPTOS_THROUGHPUT; // This may not be right (since tclass is not implemented on OS X, I can't test it)
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+		if (err < 0) { LogMsg("setsockopt - IPV6_TCLASS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
+		#endif
 		
 		// And start listening for packets
 		struct sockaddr_in6 listening_sockaddr6;
