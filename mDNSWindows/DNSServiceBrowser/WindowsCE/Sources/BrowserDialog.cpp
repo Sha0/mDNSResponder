@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: BrowserDialog.cpp,v $
+Revision 1.2  2004/07/13 21:24:27  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.1  2004/06/18 04:04:37  rpantos
 Move up one level
 
@@ -40,7 +43,7 @@ Revision 1.2  2003/10/10 03:43:34  bradley
 Added support for launching a web browser to go to the browsed web site on a single-tap.
 
 Revision 1.1  2003/08/21 02:16:10  bradley
-Rendezvous Browser for HTTP services for Windows CE/PocketPC.
+DNSServiceBrowser for HTTP services for Windows CE/PocketPC.
 
 */
 

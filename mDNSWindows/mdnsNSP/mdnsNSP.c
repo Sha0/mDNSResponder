@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.5  2004/07/13 21:24:28  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.4  2004/07/09 18:03:33  shersche
 removed extraneous DNSServiceQueryRecord call
 
@@ -31,7 +34,7 @@ Revision 1.3  2004/07/07 17:03:49  shersche
 Bug #: 3715582
 
 Revision 1.2  2004/06/24 19:18:07  shersche
-Change RendezvousNSP to mdnsNSP
+Rename to mdnsNSP
 Submitted by: herscher
 
 Revision 1.1  2004/06/18 04:13:44  rpantos
@@ -41,8 +44,8 @@ Revision 1.2  2004/04/08 09:43:43  bradley
 Changed callback calling conventions to __stdcall so they can be used with C# delegates.
 
 Revision 1.1  2004/01/30 03:00:33  bradley
-Rendezvous NameSpace Provider (NSP). Hooks into the Windows name resolution system to resolve
-Rendezvous name lookups using Multicast DNS so .local names work in all Windows apps.
+mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to perform
+.local name lookups using Multicast DNS in all Windows apps.
 
 */
 
@@ -226,7 +229,7 @@ DEBUG_LOCAL size_t	QueryCopyQuerySetSize( QueryRef inRef, const WSAQUERYSETW *in
 //===========================================================================================================================
 
 // {B600E6E9-553B-4a19-8696-335E5C896153}
-// GUID		kRendezvousNSPGUID = { 0xb600e6e9, 0x553b, 0x4a19, { 0x86, 0x96, 0x33, 0x5e, 0x5c, 0x89, 0x61, 0x53 } };
+// GUID		kmdnsNSPGUID = { 0xb600e6e9, 0x553b, 0x4a19, { 0x86, 0x96, 0x33, 0x5e, 0x5c, 0x89, 0x61, 0x53 } };
 
 DEBUG_LOCAL LONG					gRefCount			= 0;
 DEBUG_LOCAL CRITICAL_SECTION		gLock;

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.43  2004/07/13 21:24:25  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.42  2004/06/24 15:23:24  shersche
 Add InterfaceListChanged callback.  This callback is used in Service.c to add link local routes to the routing table
 Submitted by: herscher
@@ -101,7 +104,7 @@ Revision 1.23  2003/10/14 03:26:12  bradley
 Clear interface list buffer to workaround Windows CE bug where interfaces are not reported correctly.
 
 Revision 1.22  2003/08/20 06:21:25  bradley
-Updated to latest internal version of the Rendezvous for Windows platform plugin: Added support
+Updated to latest internal version of the mDNSWindows platform layer: Added support
 for Windows CE/PocketPC 2003; re-did interface-related code to emulate getifaddrs/freeifaddrs for
 restricting usage to only active, multicast-capable, and non-point-to-point interfaces and to ease
 the addition of IPv6 support in the future; Changed init code to serialize thread initialization to

@@ -131,7 +131,7 @@
 	</References>
 	<Files>
 		<Filter
-			Name="Rendezvous"
+			Name="DNSServiceTest"
 			Filter="">
 			<File
 				RelativePath="..\..\..\mDNSCore\DNSCommon.c">

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.39  2004/07/13 21:24:24  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.38  2004/06/18 21:08:58  cheshire
 <rdar://problem/3540040> Applications are registering invalid records
 Attempts to create domain names like "www..apple.com." now logged to aid debugging
@@ -648,7 +651,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 			*dst++ = 's';
 			type = (domainname *)s1;
 			
-			// Special support for queries done by older versions of Rendezvous Browser
+			// Special support for queries done by older versions of "Rendezvous Browser"
 			// For these queries, we retract the ".s" we just added between the subtype and the main type
 			if (SameDomainName((domainname*)s0, (domainname*)"\x09_services\x07_dns-sd\x04_udp") ||
 				SameDomainName((domainname*)s0, (domainname*)"\x09_services\x05_mdns\x04_udp"))

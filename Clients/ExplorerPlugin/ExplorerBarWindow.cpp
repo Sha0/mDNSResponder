@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.4  2004/07/13 21:24:21  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.3  2004/06/27 14:59:59  shersche
 reference count service info to handle multi-homed hosts
 
@@ -48,7 +51,7 @@ Revision 1.2  2004/02/21 04:36:19  bradley
 Enable dot local name lookups now that the NSP is being installed.
 
 Revision 1.1  2004/01/30 03:01:56  bradley
-Explorer Plugin to browse for Rendezvous-enabled Web and FTP servers from within Internet Explorer.
+Explorer Plugin to browse for DNS-SD advertised Web and FTP servers from within Internet Explorer.
 
 */
 
@@ -231,7 +234,7 @@ exit:
 	// Cannot talk to the mDNSResponder service. Show the error message and exit (with kNoErr so they can see it).
 	if ( err != kNoErr )
 	{
-		s.LoadString( IDS_RENDEZVOUS_NOT_AVAILABLE );
+		s.LoadString( IDS_MDNSRESPONDER_NOT_AVAILABLE );
 		mTree.DeleteAllItems();
 		mTree.InsertItem( s, 0, 0, TVI_ROOT, TVI_LAST );
 		err = kNoErr;

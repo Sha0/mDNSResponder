@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: StdAfx.h,v $
+Revision 1.2  2004/07/13 21:24:26  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.1  2004/06/18 04:04:36  rpantos
 Move up one level
 
@@ -33,7 +36,7 @@ Revision 1.2  2003/10/09 02:31:55  bradley
 Define WINVER if not already defined to avoid warning with Visual Studio .NET 2003.
 
 Revision 1.1  2003/08/21 02:06:47  bradley
-Moved Rendezvous Browser for non-Windows CE into Windows sub-folder.
+Moved DNSServiceBrowser for non-Windows CE into Windows sub-folder.
 
 Revision 1.4  2003/08/12 19:56:28  cheshire
 Update to APSL 2.0
@@ -45,7 +48,7 @@ Revision 1.2  2002/09/21 20:44:56  zarzycki
 Added APSL info
 
 Revision 1.1  2002/09/20 06:12:53  bradley
-Rendezvous Browser for Windows
+DNSServiceBrowser for Windows
 
 */
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: StdAfx.h,v $
+Revision 1.2  2004/07/13 21:24:27  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.1  2004/06/18 04:04:37  rpantos
 Move up one level
 
@@ -30,7 +33,7 @@ Revision 1.2  2004/01/30 02:56:33  bradley
 Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
 
 Revision 1.1  2003/08/21 02:16:10  bradley
-Rendezvous Browser for HTTP services for Windows CE/PocketPC.
+DNSServiceBrowser for HTTP services for Windows CE/PocketPC.
 
 */
 

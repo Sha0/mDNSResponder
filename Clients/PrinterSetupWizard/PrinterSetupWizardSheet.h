@@ -23,11 +23,14 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.4  2004/07/13 21:24:23  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.3  2004/06/28 00:51:47  shersche
 Move call to EnumPrinters out of browse callback into standalone function
 
 Revision 1.2  2004/06/24 20:12:07  shersche
-Remove reference to Rendezvous in source code
+Clean up source code
 Submitted by: herscher
 
 Revision 1.1  2004/06/18 04:36:57  rpantos

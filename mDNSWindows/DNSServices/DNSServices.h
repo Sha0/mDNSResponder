@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.h,v $
+Revision 1.11  2004/07/13 21:24:28  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.10  2004/01/30 02:56:34  bradley
 Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
 
@@ -30,7 +33,7 @@ Revision 1.9  2003/10/31 12:16:03  bradley
 Added support for providing the resolved host name to the callback.
 
 Revision 1.8  2003/08/20 06:44:24  bradley
-Updated to latest internal version of the Rendezvous for Windows code: Added support for interface
+Updated to latest internal version of the mDNSCore code: Added support for interface
 specific registrations; Added support for no-such-service registrations; Added support for host
 name registrations; Added support for host proxy and service proxy registrations; Added support for
 registration record updates (e.g. TXT record updates); Added support for using either a single C

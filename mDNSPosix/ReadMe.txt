@@ -20,8 +20,8 @@ zeroconf technologies.  This sample is designed to show how easy it is
 to make a device "Rendezvous compatible".
 
 The code in this sample was compiled and tested on Mac OS X (10.1.x,
-10.2), Solaris (SunOS 5.6), Linux (Redhat 2.4.9-21), and OpenBSD (2.9). 
-YMMV.
+10.2, 10.3), Solaris (SunOS 5.8), Linux (Redhat 2.4.9-21, Fedora Core 1), 
+and OpenBSD (2.9). YMMV.
 
 
 Packing List

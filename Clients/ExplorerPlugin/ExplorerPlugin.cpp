@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerPlugin.cpp,v $
+Revision 1.4  2004/07/13 21:24:21  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.3  2004/06/26 14:12:07  shersche
 Register the toolbar button
 
@@ -34,7 +37,7 @@ Revision 1.1  2004/06/18 04:34:59  rpantos
 Move to Clients from mDNSWindows
 
 Revision 1.1  2004/01/30 03:01:56  bradley
-Explorer Plugin to browse for Rendezvous-enabled Web and FTP servers from within Internet Explorer.
+Explorer Plugin to browse for DNS-SD advertised Web and FTP servers from within Internet Explorer.
 
 */
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.12  2004/07/13 21:24:23  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.11  2004/06/28 00:51:47  shersche
 Move call to EnumPrinters out of browse callback into standalone function
 
@@ -51,7 +54,7 @@ Normalize key fields in text record entries
 Submitted by: herscher
 
 Revision 1.3  2004/06/24 20:12:07  shersche
-Remove reference to Rendezvous in source code
+Clean up source code
 Submitted by: herscher
 
 Revision 1.2  2004/06/23 17:58:21  shersche
@@ -455,7 +458,7 @@ BOOL CPrinterSetupWizardSheet::OnInitDialog()
 	CPropertySheet::OnInitDialog();
 	
 	//
-	// setup the rendezvous browsing
+	// setup the DNS-SD browsing
 	//
 	err = DNSServiceBrowse( &m_pdlBrowser, 0, 0, kPDLDataStreamServiceType, NULL, OnBrowse, this );
 	require_noerr( err, exit );
@@ -473,8 +476,8 @@ exit:
 	{
 		WizardException exc;
 
-		exc.text.LoadString(IDS_NO_RENDEZVOUS_SERVICE_TEXT);
-		exc.caption.LoadString(IDS_NO_RENDEZVOUS_SERVICE_CAPTION);
+		exc.text.LoadString(IDS_NO_MDNSRESPONDER_SERVICE_TEXT);
+		exc.caption.LoadString(IDS_NO_MDNSRESPONDER_SERVICE_CAPTION);
 
 		throw(exc);
 	}

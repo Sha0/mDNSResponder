@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.2  2004/07/13 21:24:28  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.1  2004/06/18 04:17:43  rpantos
 Move up one level.
 
@@ -177,7 +180,7 @@ int main( int argc, char *argv[] )
 static void	Usage( void )
 {
 	fprintf( stderr, "\n" );
-	fprintf( stderr, "Rendezvous Service Test 1.0d1\n" );
+	fprintf( stderr, "DNSServiceTest 1.0d1\n" );
 	fprintf( stderr, "\n" );
 	fprintf( stderr, "  -server <IP>                                      Set Remote Server\n" );
 	fprintf( stderr, "  -cv                                               Check Version\n" );

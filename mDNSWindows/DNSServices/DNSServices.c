@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.27  2004/07/13 21:24:28  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.26  2004/06/05 00:04:27  cheshire
 <rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
 
@@ -59,7 +62,7 @@ Revision 1.16  2003/10/16 09:16:39  bradley
 Unified address copying to fix a problem with IPv6 resolves not being passed up as IPv6.
 
 Revision 1.15  2003/08/20 06:44:24  bradley
-Updated to latest internal version of the Rendezvous for Windows code: Added support for interface
+Updated to latest internal version of the mDNSCore code: Added support for interface
 specific registrations; Added support for no-such-service registrations; Added support for host
 name registrations; Added support for host proxy and service proxy registrations; Added support for
 registration record updates (e.g. TXT record updates); Added support for using either a single C

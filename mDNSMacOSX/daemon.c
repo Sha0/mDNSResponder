@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.180  2004/07/13 21:24:25  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.179  2004/06/19 00:02:54  cheshire
 Restore fix for <rdar://problem/3548256> Should not allow empty string for resolve domain
 
@@ -261,10 +264,10 @@ standard error file descriptors to /dev/null just like any other
 well behaved daemon
 
 Revision 1.112  2003/06/25 23:42:19  ksekar
-<rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
+<rdar://problem/3249292>: Feature: New DNS-SD APIs (#7875)
 Reviewed by: Stuart Cheshire
 Added files necessary to implement Unix domain sockets based enhanced
-Rendezvous APIs, and integrated with existing Mach-port based daemon.
+DNS-SD APIs, and integrated with existing Mach-port based daemon.
 
 Revision 1.111  2003/06/11 01:02:43  cheshire
 <rdar://problem/3287858> mDNSResponder binary compatibility

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.158  2004/07/13 21:24:24  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.157  2004/06/08 18:54:48  ksekar
 <rdar://problem/3681378>: mDNSResponder leaks after exploring in Printer Setup Utility
 
@@ -254,7 +257,7 @@ Revision 1.90  2003/06/24 01:51:47  cheshire
 Don't need to close sockets: CFSocketInvalidate() does that for us
 
 Revision 1.89  2003/06/21 18:12:47  cheshire
-<rdar://problem/3296061> Rendezvous cannot handle interfaces whose total name is >3 chars
+<rdar://problem/3296061> mDNSResponder cannot handle interfaces whose total name is >3 chars
 One-line change: should say "IF_NAMESIZE", not sizeof(ifname)
 
 Revision 1.88  2003/06/12 23:38:37  cheshire
@@ -1032,7 +1035,7 @@ mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel
 		}
 	}
 
-// This gets the text of the field currently labelled "Rendezvous Name" in the Sharing Prefs Control Panel
+// This gets the text of the field currently labelled "Local Hostname" in the Sharing Prefs Control Panel
 mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 	{
 	CFStringRef cfs = SCDynamicStoreCopyLocalHostName(NULL);

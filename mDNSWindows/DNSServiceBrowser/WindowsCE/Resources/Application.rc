@@ -79,7 +79,7 @@ IDR_MAINFRAME           ICON    DISCARDABLE     "Application.ico"
 IDD_APPLICATION_DIALOG DIALOG DISCARDABLE  0, 0, 139, 153
 STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION
 EXSTYLE WS_EX_APPWINDOW | 0x80000000L
-CAPTION "Rendezvous Browser"
+CAPTION "DNSServiceBrowser"
 FONT 8, "System"
 BEGIN
     CONTROL         "List1",IDC_BROWSE_LIST,"SysListView32",LVS_REPORT | 
@@ -113,14 +113,14 @@ BEGIN
         BEGIN
             VALUE "Comments", "\0"
             VALUE "CompanyName", "Apple Computer, Inc.\0"
-            VALUE "FileDescription", "Rendezvous Browser for Windows CE\0"
+            VALUE "FileDescription", "DNSServiceBrowser for Windows CE\0"
             VALUE "FileVersion", "1, 0, 0, 1\0"
             VALUE "InternalName", "Application\0"
             VALUE "LegalCopyright", "Copyright (C) 2003-2004 Apple Computer, Inc.\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "Application.exe\0"
             VALUE "PrivateBuild", "\0"
-            VALUE "ProductName", "Rendezvous Browser for Windows CE\0"
+            VALUE "ProductName", "DNSServiceBrowser for Windows CE\0"
             VALUE "ProductVersion", "1, 0, 0, 1\0"
             VALUE "SpecialBuild", "\0"
         END

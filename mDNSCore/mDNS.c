@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.386  2004/07/13 21:24:24  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.385  2004/06/18 19:09:59  cheshire
 <rdar://problem/3588761> Current method of doing subtypes causes name collisions
 
@@ -339,7 +342,7 @@ Revision 1.299  2003/09/03 02:33:09  cheshire
 Don't update m->NewQuestions until *after* CheckCacheExpiration();
 
 Revision 1.298  2003/09/03 01:47:01  cheshire
-<rdar://problem/3319418> Rendezvous services always in a state of flux
+<rdar://problem/3319418> Services always in a state of flux
 Change mDNS_Reconfirm_internal() minimum timeout from 5 seconds to 45-60 seconds
 
 Revision 1.297  2003/08/29 19:44:15  cheshire
@@ -588,7 +591,7 @@ Revision 1.231  2003/07/18 00:06:37  cheshire
 To make code a little easier to read in GetRDLength(), search-and-replace "rr->rdata->u." with "rd->"
 
 Revision 1.230  2003/07/17 18:16:54  cheshire
-<rdar://problem/3319418> Rendezvous services always in a state of flux
+<rdar://problem/3319418> Services always in a state of flux
 In preparation for working on this, made some debugf messages a little more selective
 
 Revision 1.229  2003/07/17 17:35:04  cheshire
@@ -1003,7 +1006,7 @@ and caused lots of extra network traffic. Now it only removes interfaces
 that have really gone, and only adds new ones that weren't there before.
 
 Revision 1.116  2003/05/14 06:51:56  cheshire
-<rdar://problem/3027144> Rendezvous doesn't refresh server info if changed during sleep
+<rdar://problem/3027144> mDNSResponder doesn't refresh server info if changed during sleep
 
 Revision 1.115  2003/05/14 06:44:31  cheshire
 Improve debugging message

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.38  2004/07/13 21:24:25  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.37  2004/06/04 08:58:30  ksekar
 <rdar://problem/3668624>: Keychain integration for secure dynamic update
 
@@ -114,10 +117,10 @@ Revision 1.11  2003/07/02 21:19:51  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
 Revision 1.10  2003/06/25 23:42:19  ksekar
-<rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
+<rdar://problem/3249292>: Feature: New DNS-SD APIs (#7875)
 Reviewed by: Stuart Cheshire
 Added files necessary to implement Unix domain sockets based enhanced
-Rendezvous APIs, and integrated with existing Mach-port based daemon.
+DNS-SD APIs, and integrated with existing Mach-port based daemon.
 
 Revision 1.9  2003/06/10 01:14:11  cheshire
 <rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call

@@ -23,12 +23,15 @@
 ;	Change History (most recent first):
 ;    
 ; $Log: mdnsNSP.def,v $
+; Revision 1.2  2004/07/13 21:24:28  rpantos
+; Fix for <rdar://problem/3701120>.
+;
 ; Revision 1.1  2004/06/18 04:13:44  rpantos
 ; Move up one level.
 ;
 ; Revision 1.1  2004/01/30 03:00:33  bradley
-; Rendezvous NameSpace Provider (NSP). Hooks into the Windows name resolution system to resolve
-; Rendezvous name lookups using Multicast DNS so .local names work in all Windows apps.
+; mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to 
+; perform .local name lookups using Multicast DNS in all Windows apps.
 ;
 ;
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: TXTRecord.java,v $
+Revision 1.3  2004/07/13 21:24:25  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.2  2004/04/30 21:48:27  rpantos
 Change line endings for CVS.
 
@@ -40,7 +43,7 @@ package	com.apple.dnssd;
 
 /**	
 	Object used to construct and parse DNS-SD format TXT records.
-	For more info see <a href="http://www.zeroconf.org/Rendezvous/txtrecords.html">DNS-SD TXT record format</a>. 
+	For more info see <a href="http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd.txt">DNS-Based Service Discovery</a>, section 6. 
 */
 
 public class	TXTRecord

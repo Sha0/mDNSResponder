@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.66  2004/07/13 21:24:25  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.65  2004/06/26 03:17:14  shersche
 implement cross-platform strerror function
 
@@ -67,7 +70,7 @@ Revision 1.53  2004/05/28 23:42:37  ksekar
 <rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
 
 Revision 1.52  2004/05/26 00:39:49  ksekar
-<rdar://problem/3667105>: wide-area rendezvous servers don't appear in
+<rdar://problem/3667105>: wide-area DNS-SD servers don't appear in
 Finder
 Use local-only InterfaceID for GetDomains calls for sockets-API
 

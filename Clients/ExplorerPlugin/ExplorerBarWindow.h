@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.h,v $
+Revision 1.3  2004/07/13 21:24:21  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.2  2004/06/27 14:59:59  shersche
 reference count service info to handle multi-homed hosts
 
@@ -37,7 +40,7 @@ Revision 1.2  2004/04/08 09:43:43  bradley
 Changed callback calling conventions to __stdcall so they can be used with C# delegates.
 
 Revision 1.1  2004/01/30 03:01:56  bradley
-Explorer Plugin to browse for Rendezvous-enabled Web and FTP servers from within Internet Explorer.
+Explorer Plugin to browse for DNS-SD advertised Web and FTP servers from within Internet Explorer.
 
 */
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.2  2004/07/13 21:24:28  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.1  2004/06/18 04:07:54  rpantos
 Move up one level
 
@@ -45,7 +48,7 @@ Revision 1.7  2003/08/20 07:06:34  bradley
 Update to APSL 2.0. Updated change history to match other mDNSResponder files.
 
 Revision 1.6  2003/08/20 06:50:55  bradley
-Updated to latest internal version of the Rendezvous for Windows code: Re-did everything to support
+Updated to latest internal version of the mDNSCore code: Re-did everything to support
 the latest DNSServices APIs (proxies, record updates, etc.); Added support for testing the platform
 neutral DNSServices-based emulation layer for the Mac OS X DNSServiceDiscovery API.
 
@@ -215,14 +218,14 @@ struct	PresetData
 
 static const PresetData		gPresets[] = 
 {
-	/* 01 */	{ 2, { "rendezvous", "-bbd" } },
-	/* 02 */	{ 4, { "rendezvous", "-bs",  "_airport._tcp", 		"local."  } }, 
-	/* 03 */	{ 4, { "rendezvous", "-bs",  "_xserveraid._tcp", 	"local."  } }, 
-	/* 04 */	{ 3, { "rendezvous", "-rdb", "apple.com" } }, 
-	/* 05 */	{ 7, { "rendezvous", "-rs",  "My Fake AirPort", 	"_airport._tcp", 	"local.", 	"1234", "My Fake Info"  } }, 
-	/* 06 */	{ 7, { "rendezvous", "-rs",  "My Fake Xserve RAID", "_xserveraid._tcp", "local.", 	"1234", "My Fake Info"  } }, 
-	/* 07 */	{ 7, { "rendezvous", "-rs",  "My Fake Web Server", 	"_http._tcp", 		"local.",	"8080", "index.html"  } }, 
-	/* 08 */	{ 9, { "rendezvous", "-rps", "www.apple.com", "17.254.0.91", "Apple Web Server", "_http._tcp", "local.", "80", "index.html"  } }, 
+	/* 01 */	{ 2, { "DNSServiceTest", "-bbd" } },
+	/* 02 */	{ 4, { "DNSServiceTest", "-bs",  "_airport._tcp", 		"local."  } }, 
+	/* 03 */	{ 4, { "DNSServiceTest", "-bs",  "_xserveraid._tcp", 	"local."  } }, 
+	/* 04 */	{ 3, { "DNSServiceTest", "-rdb", "apple.com" } }, 
+	/* 05 */	{ 7, { "DNSServiceTest", "-rs",  "My Fake AirPort", 	"_airport._tcp", 	"local.", 	"1234", "My Fake Info"  } }, 
+	/* 06 */	{ 7, { "DNSServiceTest", "-rs",  "My Fake Xserve RAID", "_xserveraid._tcp", "local.", 	"1234", "My Fake Info"  } }, 
+	/* 07 */	{ 7, { "DNSServiceTest", "-rs",  "My Fake Web Server", 	"_http._tcp", 		"local.",	"8080", "index.html"  } }, 
+	/* 08 */	{ 9, { "DNSServiceTest", "-rps", "www.apple.com", "17.254.0.91", "Apple Web Server", "_http._tcp", "local.", "80", "index.html"  } }, 
 };
 
 const int 					gPresetsCount = sizeof( gPresets ) / sizeof( gPresets[ 0 ] );
@@ -242,7 +245,7 @@ int main( int argc, char* argv[] )
 	// Set up DNS Services and install a Console Control Handler to handle things like control-c signals.
 	
 	err = DNSServicesInitialize( kDNSFlagAdvertise, 0 );
-	require_noerr_string( err, exit, "could not initialize Rendezvous" );
+	require_noerr_string( err, exit, "could not initialize DNSServiceTest" );
 
 #if( __MACH__ )
 	signal( SIGINT, SigIntHandler );
@@ -266,7 +269,7 @@ exit:
 static void	Usage( void )
 {
 	fprintf( stderr, "\n" );
-	fprintf( stderr, "rendezvous - Rendezvous Tool 1.0d1\n" );
+	fprintf( stderr, "DNSServiceTest - DNS-SD Test Tool 1.0d1\n" );
 	fprintf( stderr, "\n" );
 	fprintf( stderr, "  -bbd                                                    'b'rowse for 'b'rowsing 'd'omains\n" );
 	fprintf( stderr, "  -brd                                                    'b'rowse for 'r'egistration 'd'omains\n" );
@@ -286,13 +289,13 @@ static void	Usage( void )
 	fprintf( stderr, "  -h[elp]                                                 'h'elp\n" );
 	fprintf( stderr, "\n" );
 	
-	fprintf( stderr, "  -1 Preset 1 (browse for browsing domains)    rendezvous -bbd\n" );
-	fprintf( stderr, "  -2 Preset 2 (browse for AirPort)             rendezvous -bs \"_airport._tcp\" \"local.\"\n" );
-	fprintf( stderr, "  -3 Preset 3 (browse for Xserve RAID)         rendezvous -bs \"_xserveraid._tcp\" \"local.\"\n" );
-	fprintf( stderr, "  -4 Preset 4 (register apple.com domain)      rendezvous -rdb \"apple.com\"\n" );
-	fprintf( stderr, "  -5 Preset 5 (register fake AirPort)          rendezvous -rs \"My Fake AirPort\" \"_airport._tcp\" \"local.\" 1234 \"My Fake Info\"\n" );
-	fprintf( stderr, "  -6 Preset 6 (register fake Xserve RAID)      rendezvous -rs \"My Fake Xserve RAID\" \"_xserveraid._tcp\" \"local.\" 1234 \"My Fake Info\"\n" );	
-	fprintf( stderr, "  -7 Preset 7 (register fake web server)       rendezvous -rs \"My Fake Web Server\" \"_http._tcp\" \"local.\" 8080 \"index.html\"\n" );
+	fprintf( stderr, "  -1 Preset 1 (browse for browsing domains)    DNSServiceTest -bbd\n" );
+	fprintf( stderr, "  -2 Preset 2 (browse for AirPort)             DNSServiceTest -bs \"_airport._tcp\" \"local.\"\n" );
+	fprintf( stderr, "  -3 Preset 3 (browse for Xserve RAID)         DNSServiceTest -bs \"_xserveraid._tcp\" \"local.\"\n" );
+	fprintf( stderr, "  -4 Preset 4 (register apple.com domain)      DNSServiceTest -rdb \"apple.com\"\n" );
+	fprintf( stderr, "  -5 Preset 5 (register fake AirPort)          DNSServiceTest -rs \"My Fake AirPort\" \"_airport._tcp\" \"local.\" 1234 \"My Fake Info\"\n" );
+	fprintf( stderr, "  -6 Preset 6 (register fake Xserve RAID)      DNSServiceTest -rs \"My Fake Xserve RAID\" \"_xserveraid._tcp\" \"local.\" 1234 \"My Fake Info\"\n" );	
+	fprintf( stderr, "  -7 Preset 7 (register fake web server)       DNSServiceTest -rs \"My Fake Web Server\" \"_http._tcp\" \"local.\" 8080 \"index.html\"\n" );
 	fprintf( stderr, "\n" );
 }
 

@@ -6,7 +6,7 @@
 #define IDS_WEB_SITES                   107
 #define IDS_FTP_SITES                   108
 #define IDS_PRINTERS                    109
-#define IDS_RENDEZVOUS_NOT_AVAILABLE    110
+#define IDS_MDNSRESPONDER_NOT_AVAILABLE 110
 #define IDB_LOGO                        115
 #define IDI_COLD                        116
 #define IDI_HOT                         117

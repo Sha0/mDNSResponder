@@ -23,8 +23,11 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardApp.cpp,v $
+Revision 1.3  2004/07/13 21:24:23  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.2  2004/06/24 20:12:08  shersche
-Remove reference to Rendezvous in source code
+Clean up source code
 Submitted by: herscher
 
 Revision 1.1  2004/06/18 04:36:57  rpantos

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.178  2004/07/13 21:24:24  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.177  2004/06/05 00:04:26  cheshire
 <rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
 
@@ -347,7 +350,7 @@ Revision 1.87  2003/07/22 23:57:20  cheshire
 Move platform-layer function prototypes from mDNSClientAPI.h to mDNSPlatformFunctions.h where they belong
 
 Revision 1.86  2003/07/20 03:52:02  ksekar
-<rdar://problem/3320722>: Feature: New Rendezvous APIs (#7875) (mDNSResponder component)
+<rdar://problem/3320722>: Feature: New DNS-SD APIs (#7875) (mDNSResponder component)
 Added error type for incompatibility between daemon and client versions
 
 Revision 1.85  2003/07/19 03:23:13  cheshire

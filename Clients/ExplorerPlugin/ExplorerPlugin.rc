@@ -198,7 +198,7 @@ BEGIN
     IDS_WEB_SITES           "Web Sites"
     IDS_FTP_SITES           "FTP Sites"
     IDS_PRINTERS            "Printers"
-    IDS_RENDEZVOUS_NOT_AVAILABLE "Rendezvous Service Not Available"
+    IDS_MDNSRESPONDER_NOT_AVAILABLE "Rendezvous Service Not Available"
 END
 
 #endif    // English (U.S.) resources

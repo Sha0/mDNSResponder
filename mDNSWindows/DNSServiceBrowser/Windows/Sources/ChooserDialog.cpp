@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.2  2004/07/13 21:24:26  rpantos
+Fix for <rdar://problem/3701120>.
+
 Revision 1.1  2004/06/18 04:04:36  rpantos
 Move up one level
 
@@ -57,7 +60,7 @@ from Andrew van der Stock for the addition of an _rfb._tcp service type for a VN
 Server for KDE support. Widened service type list to handle larger service type descriptions.
 
 Revision 1.1  2003/08/21 02:06:47  bradley
-Moved Rendezvous Browser for non-Windows CE into Windows sub-folder.
+Moved DNSServiceBrowser for non-Windows CE into Windows sub-folder.
 
 Revision 1.7  2003/08/20 06:45:56  bradley
 Updated for IP address changes in DNSServices. Added support for browsing for Xserve RAID.
@@ -79,7 +82,7 @@ Make sure each resolved item matches the selected service type to handle resolve
 been queued up on the Windows Message Loop. Reduce column to fit when scrollbar is present.
 
 Revision 1.1  2002/09/20 06:12:52  bradley
-Rendezvous Browser for Windows
+DNSServiceBrowser for Windows
 
 */
 
