@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.174  2004/09/14 19:14:57  ksekar
+<rdar://problem/3192531> DynDNS: Discovery of DynDNS Zones via Reverse-Map PTR
+
 Revision 1.173  2004/08/25 23:35:22  ksekar
 <rdar://problem/3770615>: Error converting shared secret from base-64 to binary
 
@@ -1330,7 +1333,7 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 		}
 	else
 		{
-		LogMsg("SetupAddr invalid sa_family %d", sa->sa_family);
+		debugf("SetupAddr invalid sa_family %d", sa->sa_family);
 		return(-1);
 		}
 	}
@@ -1752,6 +1755,7 @@ mDNSlocal void MarkSearchListElem(domainname *domain)
 
 mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	{
+	struct ifaddrs *ifa = NULL;
 	int i, count;
 	CFArrayRef values = NULL;
 	domainname domain;
@@ -1763,7 +1767,8 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	
 	// step 1: mark each elem for removal (-1), unless we aren't passed a dictionary in which case we mark as preexistent
 	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = dict ? -1 : 0;
-	
+
+	// get all the domains from "Search Domains" field of sharing prefs
 	if (dict) values = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
 	if (values)
 		{
@@ -1785,6 +1790,30 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			MarkSearchListElem(&domain);
 			}
 		}
+
+	// construct reverse-map search domains
+	ifa = myGetIfAddrs(1);
+	while (ifa)
+		{
+		mDNSAddr addr;
+		if (!SetupAddr(&addr, ifa->ifa_addr) && addr.type == mDNSAddrType_IPv4 && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
+			{
+			mDNSAddr netmask;			
+			char buffer[256];
+			if (!SetupAddr(&netmask, ifa->ifa_netmask))
+				{
+				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", addr.ip.v4.b[3] & netmask.ip.v4.b[3],
+                                                             addr.ip.v4.b[2] & netmask.ip.v4.b[2],
+                                                             addr.ip.v4.b[1] & netmask.ip.v4.b[1],
+                                                             addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
+				MakeDomainNameFromDNSNameString(&domain, buffer);
+				MarkSearchListElem(&domain);			
+				}
+			}
+		ifa = ifa->ifa_next;
+		}
+
+	// make sure we don't delete the global DynDNS Zone set in the sharing prefs	
 	if (DynDNSZone.c[0]) MarkSearchListElem(&DynDNSZone);
 
 	// delete elems marked for removal, do queries for elems marked add
