@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.69  2004/12/18 02:03:28  cheshire
+Need to #include "dns_sd.h"
+
 Revision 1.68  2004/12/18 00:51:52  cheshire
 Use symbolic constant kDNSServiceInterfaceIndexLocalOnly instead of (mDNSu32) ~0
 
@@ -264,6 +267,7 @@ First checkin
 
 #include "mDNSEmbeddedAPI.h"           // Defines the interface provided to the client layer above
 #include "mDNSPosix.h"				 // Defines the specific types needed to run mDNS on this platform
+#include "dns_sd.h"
 
 #include <assert.h>
 #include <stdio.h>
