@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.15  2005/02/01 01:44:07  shersche
+Load ntprint.inf at startup.  This will cause the wizard to take a second or two longer to come up, but will eliminate the pause when auto-selecting the print drivers.
+
 Revision 1.14  2005/01/25 08:55:54  shersche
 <rdar://problem/3911084> Load icons at run-time from resource DLL
 Bug #: 3911084
@@ -125,11 +128,39 @@ CThirdPage::CThirdPage()
 		m_initialized(false),
 		m_printerImage( NULL )
 {
+	static const int	bufferSize	= 32768;
+	TCHAR				windowsDirectory[bufferSize];
+	CString				header;
+	CString				ntPrint;
+	OSStatus			err;
+	BOOL				ok;
+
 	m_psp.dwFlags &= ~(PSP_HASHELP);
 	m_psp.dwFlags |= PSP_DEFAULT|PSP_USEHEADERTITLE|PSP_USEHEADERSUBTITLE;
 	
 	m_psp.pszHeaderTitle = MAKEINTRESOURCE(IDS_INSTALL_TITLE);
 	m_psp.pszHeaderSubTitle = MAKEINTRESOURCE(IDS_INSTALL_SUBTITLE);
+
+	//
+	// load printers from ntprint.inf
+	//
+	ok = GetWindowsDirectory( windowsDirectory, bufferSize );
+	err = translate_errno( ok, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+ 
+	ntPrint.Format(L"%s\\%s", windowsDirectory, kNTPrintFile);
+	err = LoadPrintDriverDefsFromFile( m_manufacturers, ntPrint, false );
+	require_noerr(err, exit);
+
+	//
+	// load printer drivers that have been installed on this machine
+	//
+	err = LoadPrintDriverDefs( m_manufacturers );
+	require_noerr(err, exit);
+
+exit:
+
+	return;
 }
 
 
@@ -1031,12 +1062,9 @@ CThirdPage::MatchModel(Manufacturer * manufacturer, const CString & name)
 
 OSStatus CThirdPage::OnInitPage()
 {
-	static const int		bufferSize	= 32768;
-	TCHAR					windowsDirectory[bufferSize];
-	CString					header;
-	CString					ntPrint;
-	OSStatus				err;
-	BOOL					ok;
+	CString		header;
+	CString		ntPrint;
+	OSStatus	err = kNoErr;
 
 	// Load printer icon
 
@@ -1073,25 +1101,6 @@ OSStatus CThirdPage::OnInitPage()
 	header.LoadString(IDS_MODEL_HEADING);
 	m_modelListCtrl.InsertColumn(0, header, LVCFMT_LEFT, 247);
 	m_modelSelected = NULL;
-
-	//
-	// load printers from ntprint.inf
-	//
-	ok = GetWindowsDirectory( windowsDirectory, bufferSize );
-	err = translate_errno( ok, errno_compat(), kUnknownErr );
-	require_noerr( err, exit );
- 
-	ntPrint.Format(L"%s\\%s", windowsDirectory, kNTPrintFile);
-	err = LoadPrintDriverDefsFromFile( m_manufacturers, ntPrint, false );
-	require_noerr(err, exit);
-
-	//
-	// load printer drivers that have been installed on this machine
-	//
-	err = LoadPrintDriverDefs( m_manufacturers );
-	require_noerr(err, exit);
-
-exit:
 
 	return (err);
 }
