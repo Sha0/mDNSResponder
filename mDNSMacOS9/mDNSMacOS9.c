@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.32  2004/09/14 21:03:16  cheshire
+Fix spacing
+
 Revision 1.31  2004/08/14 03:22:42  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -686,7 +689,7 @@ mDNSexport void     mDNSPlatformMemCopy(const void *src,       void *dst, UInt32
 mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, UInt32 len) { return(OTMemcmp(dst, src, len)); }
 mDNSexport void     mDNSPlatformMemZero(                       void *dst, UInt32 len) { OTMemzero(dst, len); }
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len)                              { return(OTAllocMem(len)); }
-mDNSexport void     mDNSPlatformMemFree    (void *mem)                                { OTFreeMem(mem); }
+mDNSexport void     mDNSPlatformMemFree(void *mem)                                    { OTFreeMem(mem); }
 mDNSexport mStatus  mDNSPlatformTimeInit(mDNSs32 *timenow) { *timenow = mDNSPlatformTimeNow(); return(mStatus_NoError); }
 mDNSexport SInt32   mDNSPlatformTimeNow()                                             { return((SInt32)TickCount()); }
 mDNSexport SInt32   mDNSPlatformOneSecond = 60;
