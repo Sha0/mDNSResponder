@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.210  2004/10/20 02:19:54  cheshire
+Eliminate "SetupAddr invalid sa_family" warning from RegisterSearchDomains()
+
 Revision 1.209  2004/10/16 00:17:00  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -2057,7 +2060,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	while (ifa)
 		{
 		mDNSAddr addr;
-		if (!SetupAddr(&addr, ifa->ifa_addr) && addr.type == mDNSAddrType_IPv4 && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
+		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
 			{
 			mDNSAddr netmask;
 			char buffer[256];
