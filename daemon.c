@@ -548,7 +548,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	memcpy(&extra->r.rdatastorage.u.data, data, data_len);
 	
 	// And register it
-	err = mDNS_AddRecordToService(&mDNSStorage, &x->s, extra, &extra->r.rdatastorage);
+	err = mDNS_AddRecordToService(&mDNSStorage, &x->s, extra, &extra->r.rdatastorage, ttl);
 	*reference = (natural_t)extra;
 	debugf("Received a request to add the record of type: %d length: %d; returned reference %X", type, data_len, *reference);
 	return(err);
@@ -600,7 +600,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	memcpy(&newrdata->u, data, data_len);
 	
 	// And update our record
-	err = mDNS_Update(&mDNSStorage, rr, newrdata, UpdateCallback);
+	err = mDNS_Update(&mDNSStorage, rr, ttl, newrdata, UpdateCallback);
 	if (err)
 		{
 		debugf("Received a request to update the record of length: %d for reference: %X; failed %d", data_len, reference, err);
