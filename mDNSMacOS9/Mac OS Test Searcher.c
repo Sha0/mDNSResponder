@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.17  2004/06/10 04:37:27  cheshire
+Add new parameter in mDNS_GetDomains()
+
 Revision 1.16  2004/03/12 21:30:25  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -250,7 +253,7 @@ int main()
 			MakeDomainNameFromDNSNameString(&srvdom, "local.");
 			err = mDNS_StartBrowse(&mDNSStorage, &browsequestion, &srvtype, &srvdom, mDNSInterface_Any, FoundInstance, &services);
 			if (err) break;
-			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, mDNSInterface_Any, FoundDomain, &services);
+			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, NULL, mDNSInterface_Any, FoundDomain, &services);
 			if (err) break;
 			}
 
