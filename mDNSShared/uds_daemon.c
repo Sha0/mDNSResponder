@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.47  2004/05/12 22:04:01  ksekar
+Implemented multi-domain browsing by default for uds_daemon.
+
 Revision 1.46  2004/05/06 18:42:58  ksekar
 General dns_sd.h API cleanup, including the following radars:
 <rdar://problem/3592068>: Remove flags with zero value
@@ -306,7 +309,18 @@ typedef struct
     client_context_t client_context;
     } regrecord_callback_context;
 
+// for multi-domain browsing
+typedef struct qlist_t
+	{
+    DNSQuestion q;
+    struct qlist_t *next;
+	} qlist_t;
 
+typedef struct
+	{
+    qlist_t *qlist;
+    request_state *rstate;
+	} browse_termination_context;
 
 
 // globals
@@ -1075,11 +1089,13 @@ static void handle_browse_request(request_state *request)
     uint32_t interfaceIndex;
     mDNSInterfaceID InterfaceID;
     char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
-    DNSQuestion *q;
-    domainname typedn, domdn;
+	qlist_t *qlist = NULL, *qlist_elem;
+    domainname typedn;
     char *ptr;
     mStatus result;
-
+	DNameListElem *search_domain_list, *sdom, tmp;
+	browse_termination_context *term;
+	
     if (request->ts != t_complete)
         {
         LogMsg("ERROR: handle_browse_request - transfer state != t_complete");
@@ -1087,13 +1103,6 @@ static void handle_browse_request(request_state *request)
         unlink_request(request);
         return;
         }
-    q = mallocL("handle_browse_request", sizeof(DNSQuestion));
-    if (!q)
-    	{
-        my_perror("ERROR: handle_browse_request - malloc");
-        exit(1);
-    	}
-    bzero(q, sizeof(DNSQuestion));
 
     // extract data from message
     ptr = request->msgdata;
@@ -1101,23 +1110,68 @@ static void handle_browse_request(request_state *request)
     interfaceIndex = get_long(&ptr);
     if (get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
         get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
-        goto bad_param;
-        
+        goto bad_param;        
     freeL("handle_browse_request", request->msgbuf);
     request->msgbuf = NULL;
 
     InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (interfaceIndex && !InterfaceID) goto bad_param;
-    q->QuestionContext = request;
-    q->QuestionCallback = browse_result_callback;
-    if (!MakeDomainNameFromDNSNameString(&typedn, regtype) ||
-        !MakeDomainNameFromDNSNameString(&domdn, domain[0] ? domain : "local."))
-        goto bad_param;
-    request->termination_context = q;
+
+	if (!MakeDomainNameFromDNSNameString(&typedn, regtype)) goto bad_param;
+	
+	if (domain[0])
+		{
+		// generate a fake list of one elem to reduce number of code paths
+		if (!MakeDomainNameFromDNSNameString(&tmp.name, domain)) goto bad_param;
+		tmp.next = NULL;
+		search_domain_list = &tmp;
+		}
+	else search_domain_list = mDNSPlatformGetSearchDomainList();
+
+	for (sdom = search_domain_list; sdom; sdom = sdom->next)
+		{
+		qlist_elem = mallocL("handle_browse_request", sizeof(qlist_t));
+		if (!qlist_elem)
+			{
+			my_perror("ERROR: handle_browse_request - malloc");
+			exit(1);
+			}
+		bzero(qlist_elem, sizeof(qlist_t));
+		qlist_elem->q.QuestionContext = request;
+		qlist_elem->q.QuestionCallback = browse_result_callback;
+		qlist_elem->next = qlist;
+		qlist = qlist_elem;
+		}
+	
+	// setup termination context
+	term = (browse_termination_context *)mallocL("handle_browse_request", sizeof(browse_termination_context));
+	if (!term)
+    	{
+        my_perror("ERROR: handle_browse_request - malloc");
+        exit(1);
+    	}
+	term->qlist = qlist;
+	term->rstate = request;
+	request->termination_context = term;
     request->terminate = browse_termination_callback;
-    result = mDNS_StartBrowse(gmDNS, q, &typedn, &domdn, InterfaceID, browse_result_callback, request);
-    deliver_error(request, result);
-    return;
+	
+	// start the browses
+	sdom = search_domain_list;
+	for (qlist_elem = qlist; qlist_elem; qlist_elem = qlist_elem->next)
+		{		
+		result = mDNS_StartBrowse(gmDNS, &qlist_elem->q, &typedn, &sdom->name, InterfaceID, browse_result_callback, request);
+		if (result)
+			{
+			// bail here on error.  questions not yet issued are in no core lists, so they can be deallocated lazily
+			if (search_domain_list != &tmp) mDNSPlatformFreeSearchDomainList(search_domain_list);
+			deliver_error(request, result);
+			return;
+			}
+		sdom = sdom->next;
+		}
+	if (search_domain_list != &tmp) mDNSPlatformFreeSearchDomainList(search_domain_list);
+	deliver_error(request, mStatus_NoError);
+	return;
     
 bad_param:
     deliver_error(request, mStatus_BadParamErr);
@@ -1150,11 +1204,25 @@ static void browse_result_callback(mDNS *const m _UNUSED, DNSQuestion *question,
 
 static void browse_termination_callback(void *context)
     {
-    DNSQuestion *q = context;
+	browse_termination_context *t = context;
+	qlist_t *ptr, *fptr;
+	
+	if (!t) return;
 
-    mDNS_StopBrowse(gmDNS, q);  // no need to error-check result
-    freeL("browse_termination_callback", q);
-    }
+	ptr = t->qlist;
+	t->qlist = NULL;
+
+	while(ptr)
+		{
+		mDNS_StopBrowse(gmDNS, &ptr->q);  // no need to error-check result
+		fptr = ptr;
+		ptr = ptr->next;
+		freeL("browse_termination_callback", fptr);
+		}
+	t->rstate->termination_context = NULL;
+	freeL("browse_termination_callback", t);
+	}
+
 
 // service registration
 static void handle_regservice_request(request_state *request)
