@@ -8,7 +8,6 @@
 // Generated from the TEXTINCLUDE 2 resource.
 //
 #include "afxres.h"
-#include "WinVersRes.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -153,7 +152,7 @@ BEGIN
     DEFPUSHBUTTON   "OK",IDOK,139,69,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,194,69,50,14
     LTEXT           "Name:",IDC_STATIC,9,28,22,8
-    EDITTEXT        IDC_SECRET_NAME,36,26,208,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_KEY,36,26,208,14,ES_AUTOHSCROLL
     LTEXT           "Secret:",IDC_STATIC,9,44,24,8
     EDITTEXT        IDC_SECRET,36,42,208,14,ES_PASSWORD | ES_AUTOHSCROLL
     LTEXT           "Enter a Password if your DNS server requires authentication.",
