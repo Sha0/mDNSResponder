@@ -45,6 +45,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.476  2004/11/29 23:34:31  cheshire
+On platforms with coarse time resolutions, ORing time values with one to ensure they are non-zero
+is crude, and effectively halves the time resolution. The more selective NonZeroTime() function
+only nudges the time value to 1 if the interval calculation happens to result in the value zero.
+
 Revision 1.475  2004/11/29 23:13:31  cheshire
 <rdar://problem/3484552> All unique records in a set should have the cache flush bit set
 Additional check: Make sure we don't unnecessarily send packets containing only additionals.
@@ -2060,7 +2065,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	// If we have no probe suppression time set, or it is in the past, set it now
 	if (m->SuppressProbes == 0 || m->SuppressProbes - m->timenow < 0)
 		{
-		m->SuppressProbes = (m->timenow + DefaultProbeIntervalForTypeUnique) | 1;
+		m->SuppressProbes = NonZeroTime(m->timenow + DefaultProbeIntervalForTypeUnique);
 		// If we already have a probe scheduled to go out sooner, then use that time to get better aggregation
 		if (m->SuppressProbes - m->NextScheduledProbe >= 0)
 			m->SuppressProbes = m->NextScheduledProbe;
@@ -2342,10 +2347,9 @@ mDNSlocal void RecordProbeFailure(mDNS *const m, const AuthRecord *const rr)
 	// so they're more likely to branch out in the available namespace and settle on a set of
 	// unique names quickly. If after five more tries the host is still conflicting, then we
 	// may have a serious problem, so we start rate-limiting so we don't melt down the network.
-	// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
 	if (m->NumFailedProbes >= 15)
 		{
-		m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
+		m->SuppressProbes = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
 		LogMsg("Excessive name conflicts (%lu) for %##s (%s); rate limiting in effect",
 			m->NumFailedProbes, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 		}
@@ -2656,7 +2660,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
 	{
 	if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0;
-	else rr->NextUpdateCredit = (rr->NextUpdateCredit + kUpdateCreditRefreshInterval) | 1;
+	else rr->NextUpdateCredit = NonZeroTime(rr->NextUpdateCredit + kUpdateCreditRefreshInterval);
 	}
 
 // Note about acceleration of announcements to facilitate automatic coalescing of
@@ -2919,7 +2923,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
 			if (intf->IPv4Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
 			if (intf->IPv6Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
-			if (!m->SuppressSending) m->SuppressSending = (m->timenow + (mDNSPlatformOneSecond+9)/10) | 1;	// OR with one to ensure non-zero
+			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+9)/10);
 			if (++pktcount >= 1000) { LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
 			// There might be more things to send on this interface, so go around one more time and try again.
 			}
@@ -3479,7 +3483,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
 			if (intf->IPv4Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
 			if (intf->IPv6Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
-			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
+			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + mDNSPlatformOneSecond/10);
 			if (++pktcount >= 1000)
 				{ LogMsg("SendQueries exceeded loop limit %d: giving up", pktcount); break; }
 			// There might be more records left in the known answer list, or more questions to send
@@ -5824,12 +5828,12 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		InitializeLastAPTime(m, rr);
 		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
 		if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
-		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + kUpdateCreditRefreshInterval) | 1;
+		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = NonZeroTime(m->timenow + kUpdateCreditRefreshInterval);
 		if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
 		if (rr->UpdateCredits <= 5)
 			{
 			mDNSs32 delay = 1 << (5 - rr->UpdateCredits);
-			if (!rr->UpdateBlocked) rr->UpdateBlocked = (m->timenow + delay * mDNSPlatformOneSecond) | 1;
+			if (!rr->UpdateBlocked) rr->UpdateBlocked = NonZeroTime(m->timenow + delay * mDNSPlatformOneSecond);
 			rr->LastAPTime = rr->UpdateBlocked;
 			rr->ThisAPInterval *= 4;
 			LogMsg("Excessive update rate for %##s; delaying announcement by %ld second%s", rr->resrec.name.c, delay, delay > 1 ? "s" : "");

@@ -36,6 +36,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.220  2004/11/29 23:34:31  cheshire
+On platforms with coarse time resolutions, ORing time values with one to ensure they are non-zero
+is crude, and effectively halves the time resolution. The more selective NonZeroTime() function
+only nudges the time value to 1 if the interval calculation happens to result in the value zero.
+
 Revision 1.219  2004/11/25 01:00:56  cheshire
 Checkin 1.217 not necessary
 
@@ -1282,7 +1287,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	x->ClientMachPort = client;
 	x->i.InterfaceID = mDNSInterface_Any;
 	x->i.name = srv;
-	x->ReportTime = (mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond) | 1;
+	x->ReportTime = NonZeroTime(mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond);
 	x->next = DNSServiceResolverList;
 	DNSServiceResolverList = x;
 
@@ -1316,7 +1321,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		status = DNSServiceRegistrationReply_rpc(si->ClientMachPort, result, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
 			AbortBlockedClient(si->ClientMachPort, "registration success", si);
-		if (si->autoname) m->p->NotifyUser = m->timenow | 1;
+		if (si->autoname) m->p->NotifyUser = NonZeroTime(m->timenow);
 		}
 
 	else if (result == mStatus_NameConflict)
@@ -1328,7 +1333,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 			{
 			// On conflict for an autoname service, rename and reregister *all* autoname services
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
-			m->p->NotifyUser = (m->timenow + mDNSPlatformOneSecond*5) | 1;
+			m->p->NotifyUser = NonZeroTime(m->timenow + mDNSPlatformOneSecond*5);
 			m->MainCallback(m, mStatus_ConfigChanged);
 			}
 		else
@@ -1638,7 +1643,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
 	(void)m; // Unused
 	if (result == mStatus_NoError)	
-		m->p->NotifyUser = (m->timenow + mDNSPlatformOneSecond*3) | 1;
+		m->p->NotifyUser = NonZeroTime(m->timenow + mDNSPlatformOneSecond*3);
 	else if (result == mStatus_ConfigChanged)
 		{
 		DNSServiceRegistration *r;
