@@ -243,7 +243,7 @@ int PathForResourceWithPathW (const wchar_t *path, const wchar_t *nm,
 		}
 
 		// fall back on DEFAULT_LANG_CODE if still no good
-		swprintf(tmpBuffer, TMP_BUF_SIZE, L"%ls.Resources\\%s.lproj\\%ls", 
+		swprintf(tmpBuffer, TMP_BUF_SIZE, L"%ls.Resources\\%S.lproj\\%ls", 
 			path, DEFAULT_LANG_CODE, nm);
 
 		// we can't find the resource, so return 0
