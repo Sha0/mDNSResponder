@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.31  2004/09/16 23:37:19  cheshire
+Free hdr before returning
+
 Revision 1.30  2004/09/16 23:14:24  cheshire
 Changes for Windows compatibility
 
@@ -662,16 +665,12 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
  const char                         *domain
  )
     {
-    char *msg = NULL, *ptr;
-    size_t len;
-    ipc_msg_hdr *hdr;
     DNSServiceRef sdr;
     DNSServiceErrorType err;
+    char *msg = NULL, *ptr = NULL;
+    size_t len = sizeof(flags) + strlen(domain) + 1;
+    ipc_msg_hdr *hdr = create_hdr(setdomain_request, &len, &ptr, 1);
 
-    len = sizeof(flags);
-    len += strlen(domain) + 1;
-
-    hdr = create_hdr(setdomain_request, &len, &ptr, 1);
     if (!hdr) return kDNSServiceErr_Unknown;
     msg = (char *)hdr;
     put_flags(flags, &ptr);
@@ -680,6 +679,7 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
     sdr = connect_to_server();
     if (!sdr) return kDNSServiceErr_Unknown;
     err = deliver_request(msg, sdr, 1);
+    free(hdr);
 	DNSServiceRefDeallocate(sdr);
 	return err;
     }
