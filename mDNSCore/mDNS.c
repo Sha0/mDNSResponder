@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.272  2003/08/14 19:29:04  cheshire
+<rdar://problem/3378473> Include cache records in SIGINFO output
+Moved declarations of DNSTypeName() and GetRRDisplayString to mDNSClientAPI.h so daemon.c can use them
+
 Revision 1.271  2003/08/14 02:17:05  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -1218,13 +1222,7 @@ mDNSexport mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt,
 #pragma mark - General Utility Functions
 #endif
 
-// We define DNSTypeName this way because if we declare it as a static (local) function
-// then some compilers give "static function defined but not used" warnings in non-debug builds.
-// Conditionalizing it with "#if MDNS_DEBUGMSGS" so that it is not present in non-debug builds
-// fixes the warning on those compilers, but doesn't work on other compilers that don't strip
-// unreachable code, which then give "undefined function" errors.
-extern char *DNSTypeName(mDNSu16 rrtype);
-char *DNSTypeName(mDNSu16 rrtype)
+mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 	{
 	switch (rrtype)
 		{
@@ -1245,11 +1243,10 @@ char *DNSTypeName(mDNSu16 rrtype)
 		}
 	}
 
-extern char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd);	// See comment for DNSTypeName
-char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd)
+mDNSexport char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody *rd)
 	{
 	char *ptr = m->MsgBuffer;
-	mDNSu32 length = mDNS_snprintf(m->MsgBuffer, 79, "%##s %s ", rr->name.c, DNSTypeName(rr->rrtype));
+	mDNSu32 length = mDNS_snprintf(m->MsgBuffer, 79, "%4d %##s %s ", rr->rdata->RDLength, rr->name.c, DNSTypeName(rr->rrtype));
 	switch (rr->rrtype)
 		{
 		case kDNSType_A:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.4a", &rd->ip);         break;
@@ -1265,7 +1262,6 @@ char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDataBody 
 	for (ptr = m->MsgBuffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
 	return(m->MsgBuffer);
 	}
-#define GetRRDisplayString(m, rr) GetRRDisplayString_rdb((m), &(rr)->resrec, &(rr)->resrec.rdata->u)
 
 mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 	{
@@ -6379,14 +6375,14 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	return(result);
 	}
 
-extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
+mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 	{
 	m->mDNSPlatformStatus = result;
 	if (m->MainCallback)
 		m->MainCallback(m, mStatus_NoError);
 	}
 
-extern void mDNS_Close(mDNS *const m)
+mDNSexport void mDNS_Close(mDNS *const m)
 	{
 	mDNSu32 rrcache_active = 0;
 	mDNSu32 rrcache_totalused = 0;
