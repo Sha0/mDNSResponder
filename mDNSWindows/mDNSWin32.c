@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.72  2005/02/01 01:38:53  shersche
+Handle null DynDNS configuration more gracefully
+
 Revision 1.71  2005/01/27 22:57:57  cheshire
 Fix compile errors on gcc4
 
@@ -4131,6 +4134,8 @@ RegQueryString( HKEY key, const char * valueName, char ** string, DWORD * string
 		i++;
 	}
 	while ( ( err == ERROR_MORE_DATA ) && ( i < 100 ) );
+
+	require_noerr_quiet( err, exit );
 
 	if ( enabled )
 	{
