@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.508  2005/01/18 18:56:32  cheshire
+<rdar://problem/3934245> QU responses not promoted to multicast responses when appropriate
+
 Revision 1.507  2005/01/18 01:12:07  cheshire
 <rdar://problem/3956258> Logging into VPN causes mDNSResponder to reissue multicast probes
 
@@ -4770,8 +4773,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					{
 					NumAnswersForThisQuestion++;
 					// Notes:
-					// NR_AnswerTo pointing into query packet means "answer via immediate legacy unicast" (may also choose to multicast as well)
-					// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier)
+					// NR_AnswerTo pointing into query packet means "answer via immediate legacy unicast" (may *also* choose to multicast)
+					// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier; may promote to multicast instead)
 					// NR_AnswerTo == (mDNSu8*)~0             means "definitely answer via multicast" (can't downgrade to unicast later)
 					// If we're not multicasting this record because the kDNSQClass_UnicastResponse bit was set,
 					// but the multicast querier is not on a matching subnet (e.g. because of overalyed subnets on one link)
@@ -4779,7 +4782,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					if (QuestionNeedsMulticastResponse || (!FromLocalSubnet && QueryWasMulticast && !LegacyQuery))
 						{
 						// We only mark this question for sending if it is at least one second since the last time we multicast it
-						// on this interface. If it is more than a second, or LastMCInterface is different, then we should multicast it.
+						// on this interface. If it is more than a second, or LastMCInterface is different, then we may multicast it.
 						// This is to guard against the case where someone blasts us with queries as fast as they can.
 						if (m->timenow - (rr->LastMCTime + mDNSPlatformOneSecond) >= 0 ||
 							(rr->LastMCInterface != mDNSInterfaceMark && rr->LastMCInterface != InterfaceID))
@@ -4943,7 +4946,14 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			mDNSBool SendUnicastResponse   = mDNSfalse;		// Send modern unicast response (not legacy unicast response)
 			
 			// If it's been a while since we multicast this, then send a multicast response for conflict detection, etc.
-			if (m->timenow - (rr->LastMCTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
+			if (m->timenow - (rr->LastMCTime + TicksTTL(rr)/4) >= 0)
+				{
+				SendMulticastResponse = mDNStrue;
+				// If this record was marked for modern (delayed) unicast response, then mark it as promoted to
+				// multicast response instead (don't want to end up ALSO setting SendUnicastResponse in the check below).
+				// If this record was marked for legacy unicast response, then we mustn't change the NR_AnswerTo value.
+				if (rr->NR_AnswerTo == (mDNSu8*)~1) rr->NR_AnswerTo = (mDNSu8*)~0;
+				}
 			
 			// If the client insists on a multicast response, then we'd better send one
 			if      (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
