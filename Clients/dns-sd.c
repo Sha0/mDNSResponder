@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.9  2004/06/15 05:44:09  cheshire
+Add ability to use symbolic rrtype names like "ptr" and "srv" with "dns-sd -Q ..." command
+
 Revision 1.8  2004/06/15 02:39:47  cheshire
 When displaying error message, only show command name, not entire path
 
@@ -70,6 +73,7 @@ Check in code to make command-line "dns-sd" testing tool
 #include <errno.h>          // For errno, EINTR
 #define BIND_8_COMPAT
 #include <arpa/nameser.h>	// For T_HINFO, etc.
+#define T_SRV 33
 #include <sys/time.h>		// For struct timeval
 #include <dns_sd.h>
 
@@ -94,6 +98,13 @@ static volatile int timeOut = LONG_TIME;
 
 //*************************************************************************************************************
 // Supporting Utility Function
+
+static uint16_t GetRRType(const char *s)
+	{
+	if      (!strcasecmp(s, "ptr")) return(T_PTR);
+	else if (!strcasecmp(s, "srv")) return(T_SRV);
+	else                         return(atoi(s));
+	}
 
 //*************************************************************************************************************
 // Sample callback functions for each of the operation types
@@ -382,7 +393,7 @@ int main(int argc, char **argv)
 
 		case 'Q':	{
 					if (argc < optind+1) goto Fail;
-					uint16_t rrtype  = (argc <= optind+1) ? T_A  : atoi(argv[optind+1]);
+					uint16_t rrtype  = (argc <= optind+1) ? T_A  : GetRRType(argv[optind+1]);
 					uint16_t rrclass = (argc <= optind+2) ? C_IN : atoi(argv[optind+2]);
 					err = DNSServiceQueryRecord(&client, 0, 0, argv[optind+0], rrtype, rrclass, qr_reply, NULL);
 					break;
