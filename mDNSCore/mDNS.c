@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.324  2003/11/17 20:36:32  cheshire
+Function rename: Remove "mDNS_" prefix from AdvertiseInterface() and
+DeadvertiseInterface() -- they're internal private routines, not API routines.
+
 Revision 1.323  2003/11/14 20:59:08  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -891,7 +895,7 @@ Revision 1.92  2003/03/27 03:30:55  cheshire
 Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
 Fixes:
 1. Make mDNS_DeregisterInterface() safe to call from a callback
-2. Make HostNameCallback() use mDNS_DeadvertiseInterface() instead
+2. Make HostNameCallback() use DeadvertiseInterface() instead
    (it never really needed to deregister the interface at all)
 
 Revision 1.91  2003/03/15 04:40:36  cheshire
@@ -6250,7 +6254,7 @@ mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 	return(intf);
 	}
 
-mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
+mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	char buffer[256];
 	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
@@ -6312,7 +6316,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		}
 	}
 
-mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
+mDNSlocal void DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	NetworkInterfaceInfo *intf;
 	// If we still have address records referring to this one, update them
@@ -6323,7 +6327,7 @@ mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *se
 			intf->RR_A.RRSet = A;
 
 	// Unregister these records.
-	// When doing the mDNS_Close processing, we first call mDNS_DeadvertiseInterface for each interface, so by the time the platform
+	// When doing the mDNS_Close processing, we first call DeadvertiseInterface for each interface, so by the time the platform
 	// support layer gets to call mDNS_DeregisterInterface, the address and PTR records have already been deregistered for it.
 	// Also, in the event of a name conflict, one or more of our records will have been forcibly deregistered.
 	// To avoid unnecessary and misleading warning messages, we check the RecordType before calling mDNS_Deregister_internal().
@@ -6349,11 +6353,11 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 
 		// 1. Stop advertising our address records on all interfaces
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise) mDNS_DeadvertiseInterface(m, intf);
+			if (intf->Advertise) DeadvertiseInterface(m, intf);
 
 		// 2. Start advertising our address records using the new name
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise) mDNS_AdvertiseInterface(m, intf);
+			if (intf->Advertise) AdvertiseInterface(m, intf);
 
 		// 3. Make sure that any SRV records (and the like) that reference our
 		// host name in their rdata get updated to reference this new host name
@@ -6490,7 +6494,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		}
 
 	if (set->Advertise)
-		mDNS_AdvertiseInterface(m, set);
+		AdvertiseInterface(m, set);
 
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
@@ -6571,7 +6575,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 	// If we were advertising on this interface, deregister those address and reverse-lookup records now
 	if (set->Advertise)
-		mDNS_DeadvertiseInterface(m, set);
+		DeadvertiseInterface(m, set);
 
 	// If we have any cache records received on this interface that went away, then re-verify them.
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
@@ -7037,7 +7041,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		if (intf->Advertise)
-			mDNS_DeadvertiseInterface(m, intf);
+			DeadvertiseInterface(m, intf);
 
 	// Make sure there are nothing but deregistering records remaining in the list
 	if (m->CurrentRecord) LogMsg("mDNS_Close ERROR m->CurrentRecord already set");
