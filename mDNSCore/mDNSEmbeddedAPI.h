@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.115  2003/09/23 00:53:54  cheshire
+NumFailedProbes should be unsigned
+
 Revision 1.114  2003/08/29 19:44:15  cheshire
 <rdar://problem/3400967> Traffic reduction: Eliminate synchronized QUs when a new service appears
 1. Use m->RandomQueryDelay to impose a random delay in the range 0-500ms on queries
@@ -1010,7 +1013,7 @@ struct mDNS_struct
 	AuthRecord *CurrentRecord;			// Next AuthRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
 	mDNSs32 ProbeFailTime;
-	mDNSs32 NumFailedProbes;
+	mDNSu32 NumFailedProbes;
 	mDNSs32 SuppressProbes;
 	};
 
