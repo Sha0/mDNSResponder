@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.21  2005/03/30 02:09:55  shersche
+Auto-resize the column width to account for differing fonts and font sizes
+
 Revision 1.20  2005/03/05 02:27:45  shersche
 <rdar://problem/4030388> Generic drivers don't do color
 
@@ -1323,11 +1326,11 @@ OSStatus CThirdPage::OnInitPage()
 	// selection notice
 	//
 	header.LoadString(IDS_MANUFACTURER_HEADING);
-	m_manufacturerListCtrl.InsertColumn(0, header, LVCFMT_LEFT, 138);
+	m_manufacturerListCtrl.InsertColumn(0, header, LVCFMT_LEFT, -1 );
 	m_manufacturerSelected = NULL;
 
 	header.LoadString(IDS_MODEL_HEADING);
-	m_modelListCtrl.InsertColumn(0, header, LVCFMT_LEFT, 247);
+	m_modelListCtrl.InsertColumn(0, header, LVCFMT_LEFT, -1 );
 	m_modelSelected = NULL;
 
 	return (err);
@@ -1431,6 +1434,8 @@ CThirdPage::PopulateUI(Manufacturers & manufacturers)
 		nIndex = m_manufacturerListCtrl.InsertItem(0, manufacturer->name);
 
 		m_manufacturerListCtrl.SetItemData(nIndex, (DWORD_PTR) manufacturer);
+
+		m_manufacturerListCtrl.SetColumnWidth( 0, LVSCW_AUTOSIZE_USEHEADER );
 	}
 
 	return 0;
@@ -1471,6 +1476,8 @@ void CThirdPage::OnLvnItemchangedManufacturer(NMHDR *pNMHDR, LRESULT *pResult)
 			int nItem = m_modelListCtrl.InsertItem( 0, model->displayName );
 
 			m_modelListCtrl.SetItemData(nItem, (DWORD_PTR) model);
+
+			m_modelListCtrl.SetColumnWidth( 0, LVSCW_AUTOSIZE_USEHEADER );
 		}
 
 		m_modelListCtrl.SetRedraw(TRUE);
