@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.31  2004/05/05 17:05:02  ksekar
+Use LargeCacheRecord structs when pulling records off packets
+
 Revision 1.30  2004/04/16 21:33:27  ksekar
 Fixed bug in processing GetZoneData responses that do not use BIND formatting.
 
@@ -525,6 +528,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 	const mDNSu8 *ptr;
 	int i;
 	CacheRecord *fptr, *ka, *cr, *answers = NULL, *prev = NULL;
+	LargeCacheRecord *lcr;
 	
 	if (question != m->uDNS_info.CurrentQuery) { LogMsg("ERROR: deriveGoodbyes called without CurrentQuery set!"); return; }
 
@@ -555,11 +559,12 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 	// make a list of all the new answers
 	for (i = 0; i < msg->h.numAnswers; i++)
 		{
-		cr = (CacheRecord *)umalloc(sizeof(CacheRecord));
-		if (!cr) goto malloc_error;
-		ubzero(cr, sizeof(CacheRecord));
-		ptr = GetResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, cr, NULL);
+		lcr = (LargeCacheRecord *)umalloc(sizeof(LargeCacheRecord));
+		if (!lcr) goto malloc_error;
+		ubzero(lcr, sizeof(LargeCacheRecord));
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, lcr);
 		if (!ptr) goto pkt_error;
+		cr = &lcr->r;
 		if (ResourceRecordAnswersQuestion(&cr->resrec, question)) 
 			{
 			cr->next = answers;
@@ -621,6 +626,7 @@ mDNSlocal void simpleResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu
 	const mDNSu8 *ptr;
 	int i;
 	CacheRecord *cr;
+	LargeCacheRecord *lcr;
 	
 	(void)internalContext;  //unused;	
 
@@ -632,11 +638,12 @@ mDNSlocal void simpleResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu
 
 	for (i = 0; i < msg->h.numAnswers; i++)
 		{
-		cr = (CacheRecord *)umalloc(sizeof(CacheRecord));
-		if (!cr) goto malloc_error;
-		ubzero(cr, sizeof(CacheRecord));
-		ptr = GetResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, cr, NULL);
+		lcr = (LargeCacheRecord *)umalloc(sizeof(LargeCacheRecord));
+		if (!lcr) goto malloc_error;
+		ubzero(lcr, sizeof(LargeCacheRecord));
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, lcr);
 		if (!ptr) goto pkt_error;
+		cr = &lcr->r;
 		if (ResourceRecordAnswersQuestion(&cr->resrec, question)) 
 			{
 #ifndef NO_GOODBYE
