@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.242  2004/11/29 18:37:38  ksekar
+<rdar://problem/3889341> Buffer overflow in GetConfigOption
+
 Revision 1.241  2004/11/25 01:37:04  ksekar
 <rdar://problem/3894854> Config file and SCPreferences don't play well together
 
@@ -2310,18 +2313,21 @@ mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatu
 	SetDDNSNameStatus(&rr->resrec.name, result);
 	}
 
+// dst must be at least MAX_ESCAPED_DOMAIN_NAME bytes, and option must be less than 20 bytes in length
 mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	{
 	char buf[1024];
 	int len;
 
+	len = strlen(option);
+	if (len + MAX_ESCAPED_DOMAIN_NAME > 1024) { LogMsg("GetConfigOption: option %s too long", option); return mDNSfalse; }
 	fseek(f, 0, SEEK_SET);  // set position to beginning of stream
 	while (fgets(buf, 1024, f))
 		{
-		len = strlen(option);
 		if (!strncmp(buf, option, len))
 			{
-			strcpy(dst, buf + len + 1);
+			strncpy(dst, buf + len + 1, MAX_ESCAPED_DOMAIN_NAME-1);
+			if (dst[MAX_ESCAPED_DOMAIN_NAME-1]) dst[MAX_ESCAPED_DOMAIN_NAME-1] = '\0';
 			len = strlen(dst);
 			if ( len && dst[len-1] == '\n') dst[len-1] = '\0';  // chop newline
 			return mDNStrue;
@@ -2334,7 +2340,7 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m, domainname *hostname, domainname *domain)
 	{
 	char zone[MAX_ESCAPED_DOMAIN_NAME], fqdn[MAX_ESCAPED_DOMAIN_NAME];
-	char secret[1024];
+	char secret[MAX_ESCAPED_DOMAIN_NAME];
 	int slen;
 	mStatus err;
 	FILE *f = NULL;
