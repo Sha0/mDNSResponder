@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.1  2003/08/21 02:06:47  bradley
+Moved Rendezvous Browser for non-Windows CE into Windows sub-folder.
+
 Revision 1.7  2003/08/20 06:45:56  bradley
 Updated for IP address changes in DNSServices. Added support for browsing for Xserve RAID.
 

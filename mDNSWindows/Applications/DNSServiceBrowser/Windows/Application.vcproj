@@ -20,7 +20,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\DNSServices"
+				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\..\DNSServices"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;DEBUG"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
@@ -95,7 +95,7 @@
 				FavorSizeOrSpeed="2"
 				OmitFramePointers="FALSE"
 				OptimizeForWindowsApplication="FALSE"
-				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\DNSServices"
+				AdditionalIncludeDirectories=".\Resources;..\;..\..\..\..\mDNSCore;..\..\..\mDNSWindows;..\..\..\DNSServices"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
@@ -229,13 +229,13 @@
 			Name="Rendezvous"
 			Filter="">
 			<File
-				RelativePath="..\..\DNSServices\DNSServices.c">
+				RelativePath="..\..\..\DNSServices\DNSServices.c">
 			</File>
 			<File
-				RelativePath="..\..\..\mDNSCore\mDNS.c">
+				RelativePath="..\..\..\..\mDNSCore\mDNS.c">
 			</File>
 			<File
-				RelativePath="..\..\mDNSWin32.c">
+				RelativePath="..\..\..\mDNSWin32.c">
 			</File>
 		</Filter>
 	</Files>

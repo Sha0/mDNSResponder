@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Application.h,v $
+Revision 1.1  2003/08/21 02:06:47  bradley
+Moved Rendezvous Browser for non-Windows CE into Windows sub-folder.
+
 Revision 1.4  2003/08/12 19:56:28  cheshire
 Update to APSL 2.0
 
