@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.10  2004/06/27 23:06:47  shersche
+code cleanup, make sure EnumPrinters returns non-zero value
+
 Revision 1.9  2004/06/27 15:49:31  shersche
 clean up some cruft in the printer browsing code
 
@@ -453,9 +456,11 @@ BOOL CPrinterSetupWizardSheet::OnInitDialog()
 	//
 	err = DNSServiceBrowse( &m_pdlBrowser, 0, 0, kPDLDataStreamServiceType, NULL, OnBrowse, this );
 	require_noerr( err, exit );
+
+	m_serviceRefList.push_back(m_pdlBrowser);
+
 	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(m_pdlBrowser), m_hWnd, WM_SERVICE_EVENT, FD_READ|FD_CLOSE);
 	require_noerr( err, exit );
-	m_serviceRefList.push_back(m_pdlBrowser);
 
 exit:
 
@@ -579,6 +584,7 @@ CPrinterSetupWizardSheet::OnServiceEvent(WPARAM inWParam, LPARAM inLParam)
 			if ((SOCKET) DNSServiceRefSockFD(ref) == sock)
 			{
 				DNSServiceProcessResult(ref);
+				break;
 			}
 		}
 	}
@@ -661,62 +667,68 @@ CPrinterSetupWizardSheet::OnBrowse(
 			// If the printer name is found, we'll try and rename it until we
 			// find a unique name
 			//
-			DWORD dwNeeded, dwNumPrinters;
-	
+			DWORD dwNeeded = 0, dwNumPrinters = 0;
+
 			BOOL ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, NULL, 0, &dwNeeded, &dwNumPrinters);
 			err = translate_errno( ok, errno_compat(), kUnknownErr );
+
+/*
 			require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, kUnknownErr);
+*/
+
+			if (dwNeeded > 0)
+			{
+				try
+				{
+					buffer = new unsigned char[dwNeeded];
+				}
+				catch (...)
+				{
+					buffer = NULL;
+				}
 	
-			try
-			{
-				buffer = new unsigned char[dwNeeded];
-			}
-			catch (...)
-			{
-				buffer = NULL;
-			}
-
-			require_action( buffer, exit, kNoMemoryErr );
-			ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, buffer, dwNeeded, &dwNeeded, &dwNumPrinters);
-			err = translate_errno( ok, errno_compat(), kUnknownErr );
-			require_noerr( err, exit );
-
-			printerNameCount = 2;
-
-			for (;;)
-			{
-				found = false;
-
-				//
-				// look for a name match
-				//
-    			for (DWORD index = 0; index < dwNumPrinters; index++)
-    			{
-					PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
-    
-					if (printer->actualName == lppi4->pPrinterName)
+				require_action( buffer, exit, kNoMemoryErr );
+				ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, buffer, dwNeeded, &dwNeeded, &dwNumPrinters);
+				err = translate_errno( ok, errno_compat(), kUnknownErr );
+				require_noerr( err, exit );
+	
+				printerNameCount = 2;
+	
+				for (;;)
+				{
+					found = false;
+	
+					//
+					// look for a name match
+					//
+    				for (DWORD index = 0; index < dwNumPrinters; index++)
+    				{
+						PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
+    	
+						if (printer->actualName == lppi4->pPrinterName)
+						{
+							found = true;
+							break;
+						}
+					}
+	
+					//
+					// if we found a match
+					//
+					if (found == true)
 					{
-						found = true;
+						//
+						// try a new name
+						//
+						printer->actualName.Format(L"%s (%d)", printer->displayName, printerNameCount++);
+					}
+					else
+					{
+						//
+						// else we got it
+						//
 						break;
 					}
-				}
-
-				//
-				// if we found a match
-				//
-				if (found == true)
-				{
-					//
-					// try a new name
-					//
-					printer->actualName.Format(L"%s (%d)", printer->displayName, printerNameCount++);
-				}
-				else
-				{
-					//
-					// else we got it
-					//
-					break;
 				}
 			}
 
@@ -908,10 +920,11 @@ CPrinterSetupWizardSheet::StartResolve(Printer * printer)
 
 	err = DNSServiceResolve( &printer->serviceRef, 0, 0, printer->name.c_str(), printer->type.c_str(), printer->domain.c_str(), (DNSServiceResolveReply) OnResolve, printer );
 	require_noerr( err, exit);
-	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(printer->serviceRef), m_hWnd, WM_SERVICE_EVENT, FD_READ|FD_CLOSE);
-	require_noerr( err, exit );
 
 	m_serviceRefList.push_back(printer->serviceRef);
+
+	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(printer->serviceRef), m_hWnd, WM_SERVICE_EVENT, FD_READ|FD_CLOSE);
+	require_noerr( err, exit );
 
 	//
 	// set the cursor to arrow+hourglass
@@ -935,7 +948,7 @@ CPrinterSetupWizardSheet::StopResolve(Printer * printer)
 
 	m_serviceRefList.remove( printer->serviceRef );
 
-	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(printer->serviceRef), m_hWnd, WM_SERVICE_EVENT, 0);
+	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(printer->serviceRef), m_hWnd, 0, 0);
 	check(err == 0);	
 
 	DNSServiceRefDeallocate( printer->serviceRef );
