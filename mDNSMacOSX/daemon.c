@@ -49,7 +49,7 @@ int use_53 = 1;
 //*************************************************************************************************************
 // General Utility Functions
 
-char *CorrectRegType(char *regtype)
+mDNSlocal char *CorrectRegType(char *regtype)
 	{
 	if (!strncmp(regtype, "_afp.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _afp changed to _afpovertcp\n"); return("_afpovertcp._tcp"); }
 	if (!strncmp(regtype, "_lpr.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _lpr changed to _printer\n");    return("_printer._tcp"); }
@@ -101,7 +101,7 @@ static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 
 static mach_port_t client_death_port;
 
-static void AbortClient(mach_port_t port)
+mDNSlocal void AbortClient(mach_port_t port)
 	{
 	DNSServiceDomainEnumeration **e = &DNSServiceDomainEnumerationList;
 	DNSServiceBrowser           **b = &DNSServiceBrowserList;
@@ -153,7 +153,7 @@ static void AbortClient(mach_port_t port)
 		}
 	}
 
-static void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex size, void *info)
+mDNSlocal void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex size, void *info)
 	{
 	mach_msg_header_t *msg = (mach_msg_header_t *)voidmsg;
 	if (msg->msgh_id == MACH_NOTIFY_DEAD_NAME)
@@ -168,7 +168,7 @@ static void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex size,
 		}
 	}
 
-static void EnableDeathNotificationForClient(mach_port_t port)
+mDNSlocal void EnableDeathNotificationForClient(mach_port_t port)
 	{
 	mach_port_t prev;
 	kern_return_t r = mach_port_request_notification(mach_task_self(), port, MACH_NOTIFY_DEAD_NAME, 0,
@@ -180,7 +180,7 @@ static void EnableDeathNotificationForClient(mach_port_t port)
 //*************************************************************************************************************
 // Domain Enumeration
 
-static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
 	#pragma unused(m)
 	char buffer[256];
@@ -206,7 +206,7 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	DNSServiceDomainEnumerationReply_rpc(x->port, rt, buffer, 0);
 	}
 
-kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t server, mach_port_t client, int regDom)
+mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t server, mach_port_t client, int regDom)
 	{
 	mStatus err;
 	mDNS_DomainType dt1 = regDom ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
@@ -248,7 +248,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0);
 	}
 
-kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_t client,
+mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_t client,
 	DNSCString regtype, DNSCString domain)
 	{
 	mStatus err;
@@ -275,7 +275,7 @@ kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_
 //*************************************************************************************************************
 // Resolve Service Info
 
-static void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
+mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
 	struct sockaddr_in interface;
@@ -294,7 +294,7 @@ static void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0);
 	}
 
-kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_port_t client,
+mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_port_t client,
 	DNSCString name, DNSCString regtype, DNSCString domain)
 	{
 	mStatus err;
@@ -346,7 +346,7 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 	if (result == mStatus_MemFree) { debugf("Freeing DNSServiceRegistration %d", x->port); free(x); }
 	}
 
-kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
+mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
 	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
 	{
 	mStatus err;
@@ -378,8 +378,7 @@ kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_
 //*************************************************************************************************************
 // Support Code
 
-void
-DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 {
 	mig_reply_error_t		*request = msg;
 	mig_reply_error_t		*reply;
@@ -463,7 +462,7 @@ DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
     CFAllocatorDeallocate(NULL, reply);
 }
 
-kern_return_t start(const char *bundleName, const char *bundleDir)
+mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	{
 	mStatus            err;
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
@@ -491,7 +490,15 @@ kern_return_t start(const char *bundleName, const char *bundleDir)
 	return(err);
 	}
 
-int main(int argc, char **argv)
+mDNSlocal void HandleSIG(int signal)
+	{
+	debugf("");
+	debugf("HandleSIG");
+	mDNS_Close(&mDNSStorage);
+	exit(0);
+	}
+
+mDNSexport int main(int argc, char **argv)
 	{
 	int i;
 	kern_return_t status;
@@ -516,6 +523,7 @@ int main(int argc, char **argv)
 				}
 			daemon(0,0);
 			}
+		signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 		CFRunLoopRun();
 		}
 
