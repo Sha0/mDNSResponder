@@ -206,7 +206,7 @@ int main(int argc, char **argv)
 	char *dom;
 
 	if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
-    operation = getopt(argc, (char * const *)argv, "EFBLRAU");
+    operation = getopt(argc, (char * const *)argv, "EFBLRAUT");
 	if (operation == -1) goto Fail;
 
     switch (operation)
@@ -257,6 +257,18 @@ int main(int argc, char **argv)
                     break;
                     }
 
+        case 'T':	{
+                    Opaque16 registerPort = { { 0x23, 0x45 } };
+                    char TXT[512];
+                    int i;
+                    for (i=0; i<sizeof(TXT)-1; i++)
+                        if ((i & 0x1F) == 0x1F) TXT[i] = 1; else TXT[i] = 'A' + (i >> 5);
+                    TXT[i] = 0;
+                    printf("Registering Service Test._testlargetxt._tcp.local.\n");
+                    client = DNSServiceRegistrationCreate("Test", "_testlargetxt._tcp.", "", registerPort, TXT, reg_reply, nil);
+                    break;
+                    }
+
         default: goto Exit;
         }
 
@@ -281,5 +293,6 @@ Fail:
 	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> (Register a Service)\n", argv[0]);
 	fprintf(stderr, "%s -A                 (Test Adding/Updating/Deleting a record)\n", argv[0]);
 	fprintf(stderr, "%s -U                             (Test Updating a TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -T                       (Test Creating a Large TXT record)\n", argv[0]);
 	return 0;
 	}
