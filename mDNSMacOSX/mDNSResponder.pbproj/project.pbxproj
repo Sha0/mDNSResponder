@@ -275,7 +275,6 @@
 				F5E11B5A04A28126019798ED,
 				F5E11B5B04A28126019798ED,
 				6575FBEC022EAF7200000109,
-				FF69371B07728FAC00643C9C,
 				6575FBE9022EAF5A00000109,
 				6575FBEB022EAF7200000109,
 				654BE64F02B63B93000001D1,
@@ -319,7 +318,7 @@
 				08FB77A3FE84155DC02AAC07,
 				08FB77A5FE84155DC02AAC07,
 				FF5A0AE705632EA600743C27,
-				FF69371A07728F6200643C9C,
+				FF5585E507790732008D1C14,
 			);
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -1606,6 +1605,19 @@
 			path = ../mDNSShared/mDNSResponder.8;
 			refType = 2;
 		};
+		FF5585E507790732008D1C14 = {
+			buildActionMask = 8;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/sh;
+			shellScript = "mkdir -p ${DSTROOT}/System/Library/LaunchDaemons\ncp ${SRCROOT}/LaunchDaemonInfo.plist ${DSTROOT}/System/Library/LaunchDaemons/com.apple.mDNSResponder.plist";
+		};
 		FF5A0AE705632EA600743C27 = {
 			buildActionMask = 8;
 			dstPath = /usr/share/man/man8;
@@ -1618,28 +1630,6 @@
 		};
 		FF5A0AE805632EAE00743C27 = {
 			fileRef = FF485D5105632E0000130380;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		FF69371A07728F6200643C9C = {
-			buildActionMask = 8;
-			dstPath = /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist;
-			dstSubfolderSpec = 0;
-			files = (
-				FF69371D07728FB800643C9C,
-			);
-			isa = PBXCopyFilesBuildPhase;
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		FF69371B07728FAC00643C9C = {
-			fileEncoding = 4;
-			isa = PBXFileReference;
-			path = LaunchDaemonInfo.plist;
-			refType = 2;
-		};
-		FF69371D07728FB800643C9C = {
-			fileRef = FF69371B07728FAC00643C9C;
 			isa = PBXBuildFile;
 			settings = {
 			};
