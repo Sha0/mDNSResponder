@@ -28,7 +28,7 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
 	NSArray *nameArray   = [NSArray arrayWithObjects:@"My ftp Server", @"My Computer", @"Testing Boot Image", @"A Web Server", @"Steve’s Printer", @"Company AppleShare Server", nil];
     NSArray *portArray   = [NSArray arrayWithObjects:@"21",            @"22",          @"69",                 @"80",           @"515",             @"548",                       nil];
     NSArray *domainArray = [NSArray arrayWithObjects:@"local.",        @"local.",      @"local.",             @"local.",       @"local.",          @"local.",                    nil];
-    NSArray *textArray   = [NSArray arrayWithObjects:@"",              @"",            @"mybootimage",        @"/index.html",  @"lpt1",            @"Public",                    nil];
+    NSArray *textArray   = [NSArray arrayWithObjects:@"",              @"",            @"mybootimage",        @"index.html",   @"lpt1",            @"Public",                    nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
     [regDict setObject:nameArray forKey:@"SrvNameKeys"];
@@ -77,7 +77,6 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
     Boolean                 shouldFreeInfo;
     dns_service_discovery_ref 	dns_client;
     mach_port_t port;
-    uint32_t foo;
 
     if (selectedRow < 0) {
         return;
@@ -113,15 +112,11 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
         rls = CFMachPortCreateRunLoopSource(NULL, cfMachPort, 0);
         CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
         CFRelease(rls);
-        [registeredDict setObject:[NSNumber numberWithUnsignedInt:dns_client] forKey:[srvtypeKeys objectAtIndex:selectedRow]];
+        [registeredDict setObject:[NSNumber numberWithUnsignedInt:(unsigned int)dns_client] forKey:[srvtypeKeys objectAtIndex:selectedRow]];
     } else {
         printf("Could not obtain client port\n");
     }
 
-    //foo = DNSServiceRegistrationAddRecord(dns_client, 12, 11, "Hello world");
-    //DNSServiceRegistrationUpdateRecord(dns_client, foo, 13, 12, "Hello again2");
-    //DNSServiceRegistrationRemoveRecord(dns_client, foo);
-    
 }
 
 - (IBAction)unregisterService:(id)sender
@@ -130,7 +125,7 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
     NSString *key = [srvtypeKeys objectAtIndex:selectedRow];
 
     NSNumber *refPtr = [registeredDict objectForKey:key];
-    dns_service_discovery_ref ref = [refPtr unsignedIntValue];
+    dns_service_discovery_ref ref = (dns_service_discovery_ref)[refPtr unsignedIntValue];
 
     if (ref) {
         DNSServiceDiscoveryDeallocate(ref);
