@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.17  2003/12/11 19:11:55  cheshire
+Fix compiler warning
+
 Revision 1.16  2003/08/14 02:19:55  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -610,20 +613,16 @@ static mStatus RegisterOneService(const char *  richTextHostName,
 }
 
 static mDNSBool ReadALine(char *buf, size_t bufSize, FILE *fp)
-{
-    mDNSBool good;
-    size_t len;
-    
-    good = (fgets(buf, bufSize, fp) != NULL);
-    if (good) {
-        len = strlen(buf);
+	{
+    mDNSBool good = (fgets(buf, bufSize, fp) != NULL);
+    if (good)
+    	{
+        size_t len = strlen(buf);
         good = (len > 0 && buf[len - 1] == '\n');
-    }
-    if (good) {
-        buf[len - 1] = 0;
-    }
+		if (good) buf[len - 1] = 0;
+	    }
     return good;
-}
+	}
 
 static mStatus RegisterServicesInFile(const char *filePath)
 {
