@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.36  2003/08/18 23:20:10  cheshire
+RDLength moved from the RData to the ResourceRecord object.
+
 Revision 1.35  2003/08/15 20:17:28  cheshire
 "LargeResourceRecord" changed to "LargeCacheRecord"
 
@@ -387,7 +390,7 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 	char *p = buffer;
 
 	RDataBody *rd = &pktrr->rdata->u;
-	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdata->RDLength;
+	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdlength;
 	mDNSu32 n = mprintf("%#-16a %-5s %-5s%5d %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->rroriginalttl, pktrr->name.c);
 
 	switch(pktrr->rrtype)
