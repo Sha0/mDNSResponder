@@ -137,7 +137,7 @@ mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	char buffer[256];
 	mDNSv4Addr ip = m->HostInterfaces->ip.ip.v4;
 	
-	ConvertDomainNameToCString(&m->hostname1, buffer);
+	ConvertDomainNameToCString(&m->hostname, buffer);
 	printf("Name %s\n", buffer);
 	printf("IP   %d.%d.%d.%d\n", ip.b[0], ip.b[1], ip.b[2], ip.b[3]);
 
