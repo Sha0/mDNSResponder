@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.23  2004/03/24 00:29:45  ksekar
+Make it safe to call StopQuery in a unicast question callback
+
 Revision 1.22  2004/03/19 10:11:09  bradley
 Added AuthRecord * cast from umalloc for C++ builds.
 
@@ -424,6 +427,8 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 	int i;
 	CacheRecord *fptr, *ka, *cr, *answers = NULL, *prev = NULL;
 	
+	if (question != m->uDNS_info.CurrentQuery) { LogMsg("ERROR: deriveGoodbyes called without CurrentQuery set!"); return; }
+
 	ptr = LocateAnswers(msg, end);
 	if (!ptr) goto pkt_error;
 
@@ -434,7 +439,12 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 		while (ka)
 			{
 			debugf("deriving goodbye for %s", ka->resrec.name.c);
-			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse); //!!!KRS the client could call StopQuery here - how do we update structs?			
+			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
+			if (question != m->uDNS_info.CurrentQuery)
+				{
+				debugf("deriveGoodbyes - question removed via callback.  returning.");
+				return;
+				}
 			fptr = ka;
 			ka = ka->next;
 			ufree(ka);
@@ -443,7 +453,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 		return;
 		}
 	
-	// mae a list of all the new answers
+	// make a list of all the new answers
 	for (i = 0; i < msg->h.numAnswers; i++)
 		{
 		cr = (CacheRecord *)umalloc(sizeof(CacheRecord));
@@ -471,7 +481,12 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			if (prev) prev->next = ka->next;
 			else question->uDNS_info.knownAnswers = ka->next;
 			debugf("deriving goodbye for %s", ka->resrec.name.c);
-			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse); //!!!KRS the client could call StopQuery here - how do we update structs?
+			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
+			if (question != m->uDNS_info.CurrentQuery)
+				{
+				debugf("deriveGoodbyes - question removed via callback.  returning.");
+				return;
+				}
 			fptr = ka;
 			ka = ka->next;
 			ufree(fptr);
@@ -510,6 +525,9 @@ mDNSlocal void simpleResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu
 	
 	(void)internalContext;  //unused;	
 
+	//!!!KRS this check should eventually be removed
+	if (question != m->uDNS_info.CurrentQuery) { LogMsg("ERROR: simpleResponseHdnlr called without CurrentQuery ptr set!");  return; }
+		
 	ptr = LocateAnswers(msg, end);
 	if (!ptr) goto pkt_error;
 
@@ -528,6 +546,7 @@ mDNSlocal void simpleResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu
 				removeKnownAnswer(question, cr);
 				question->QuestionCallback(m, question, &cr->resrec, mDNSfalse);
 				ufree(cr);
+				//!!!KRS use ActiveQuestion construct when we implement goodbyes
 				}
 			else
 #endif
@@ -535,6 +554,11 @@ mDNSlocal void simpleResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu
 					{
 					addKnownAnswer(question, cr);
 					question->QuestionCallback(m, question, &cr->resrec, mDNStrue);
+					if (question != m->uDNS_info.CurrentQuery)
+						{
+						debugf("simpleResponseHndlr - CurrentQuery changed by QuestionCallback - returning");
+						return;
+						}
 					}
 			}
 		else
@@ -700,7 +724,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *const m, AuthRecord *rr, mStatus err)
 		rr->RecordCallback(m, rr, err);
 		return;
 		}
-
+	
 	LogMsg("Received unexpected response for record %s type %d, in state %d, with response error %d",
 		   rr->resrec.name.c, rr->resrec.rrtype, rr->uDNS_info.state, err);
 	}
@@ -713,7 +737,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	AuthRecord *rptr;
 	ServiceRecordSet *sptr;
 	mStatus err = mStatus_NoError;
-
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	
 	mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
 	mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
@@ -729,19 +754,25 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	
 	if (QR_OP == StdR)
 		{
-		for (qptr = m->uDNS_info.ActiveQueries; qptr; qptr = qptr->next)
+		for (qptr = u->ActiveQueries; qptr; qptr = qptr->next)
 			{
 			if (qptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
 				if (msg->h.flags.b[0] & kDNSFlag0_TC)  hndlTruncatedAnswer(qptr, srcaddr, m);
-				else qptr->uDNS_info.responseCallback(m, msg, end, qptr, qptr->uDNS_info.context);
-				return;
+				else
+					{
+					u->CurrentQuery = qptr;
+					qptr->uDNS_info.responseCallback(m, msg, end, qptr, qptr->uDNS_info.context);
+					u->CurrentQuery = NULL;
+					// Note: responseCallback can invalidate qptr
+					return;
+					}
 				}
 			}
 		}
 	if (QR_OP == UpdateR)
 		{
-		for (sptr = m->uDNS_info.ServiceRegistrations; sptr; sptr = sptr->next)
+		for (sptr = u->ServiceRegistrations; sptr; sptr = sptr->next)
 			{
 			if (sptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
@@ -750,7 +781,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				return;
 				}
 			}
-		for (rptr = m->uDNS_info.RecordRegistrations; rptr; rptr = rptr->next)
+		for (rptr = u->RecordRegistrations; rptr; rptr = rptr->next)
 			{
 			if (rptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
@@ -814,13 +845,22 @@ mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	DNSQuestion *qptr, *prev = NULL;
-
+	CacheRecord *ka;
+	
 	qptr = u->ActiveQueries;
 	while (qptr)
         {
         if (qptr == question)
             {
-            if (prev) prev->next = question->next;
+			if (m->uDNS_info.CurrentQuery == question)
+				m->uDNS_info.CurrentQuery = m->uDNS_info.CurrentQuery->next;
+			while (question->uDNS_info.knownAnswers)
+				{
+				ka = question->uDNS_info.knownAnswers;
+				question->uDNS_info.knownAnswers = question->uDNS_info.knownAnswers->next;
+				ufree(ka);
+				}
+			if (prev) prev->next = question->next;
             else u->ActiveQueries = question->next;
 			return mStatus_NoError;
             }

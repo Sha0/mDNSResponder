@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.155  2004/03/24 00:29:45  ksekar
+Make it safe to call StopQuery in a unicast question callback
+
 Revision 1.154  2004/03/20 01:05:49  cheshire
 Test __LP64__ and __ILP64__ to compile properly on a wider range of 64-bit architectures
 
@@ -1253,6 +1256,9 @@ typedef struct
     {
     mDNSs32          nextevent;
     DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+    DNSQuestion      *CurrentQuery;      // pointer to ActiveQueries list being examined in a loop.  Functions that remove
+                                         // elements from the ActiveQueries list must update this pointer (if non-NULL) as necessary.
+                                         //!!!KRS do the same for registration lists
     ServiceRecordSet *ServiceRegistrations;
     AuthRecord       *RecordRegistrations;
     mDNSu16          NextMessageID;
