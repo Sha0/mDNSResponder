@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.154  2004/05/31 22:22:28  ksekar
+<rdar://problem/3668639>: wide-area domains should be returned in
+reg. domain enumeration
+
 Revision 1.153  2004/05/26 17:06:33  cheshire
 <rdar://problem/3668515>: Don't rely on CFSocketInvalidate() to remove RunLoopSource
 
@@ -488,7 +492,8 @@ typedef struct SearchListElem
     struct SearchListElem *next;
     domainname domain;
     int flag;  
-    DNSQuestion q;
+    DNSQuestion browseQ;
+    DNSQuestion registerQ;
     AuthRecordListElem *AuthRecs;
 	} SearchListElem;
 
@@ -1535,21 +1540,30 @@ mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus r
 	if (result == mStatus_MemFree) freeL("FreeARElemCallback", elem);
 	}
 
-mDNSlocal void FoundBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)	
+mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)	
 	{
 	SearchListElem *slElem = question->QuestionContext;
 	AuthRecordListElem *arElem, *ptr, *prev;
+    AuthRecord *dereg;    
+	char *name;
 	mStatus err;
-
+	
 	if (AddRecord)
 		{
-		arElem = mallocL("FoundBrowseDomain - arElem", sizeof(AuthRecordListElem));
+		arElem = mallocL("FoundDomain - arElem", sizeof(AuthRecordListElem));
 		if (!arElem) { LogMsg("ERROR: malloc");  return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, arElem);
-		MakeDomainNameFromDNSNameString(&arElem->ar.resrec.name, "_browse._dns-sd._udp.local.");
+		if (question == &slElem->browseQ) name = "_browse._dns-sd._udp.local.";
+		else                              name = "_register._dns-sd._udp.local.";
+		MakeDomainNameFromDNSNameString(&arElem->ar.resrec.name, name);
 		strcpy(arElem->ar.resrec.rdata->u.name.c, answer->rdata->u.name.c);
 		err = mDNS_Register(m, &arElem->ar);
-		if (err) { LogMsg("ERROR: FoundBrowseDomain - mDNS_Register returned %d", err); return; }
+		if (err)
+			{
+			LogMsg("ERROR: FoundDomain - mDNS_Register returned %d", err);
+			freeL("FoundDomain - arElem", arElem);				  
+			return;
+			}
 		arElem->next = slElem->AuthRecs;
 		slElem->AuthRecs = arElem;
 		}
@@ -1562,11 +1576,12 @@ mDNSlocal void FoundBrowseDomain(mDNS *const m, DNSQuestion *question, const Res
 			if (SameDomainName(&ptr->ar.resrec.name, &answer->name) && SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
 				{
 				debugf("Deregistering PTR %s -> %s", ptr->ar.resrec.name.c, ptr->ar.resrec.rdata->u.name.c);
-				err = mDNS_Deregister(m, &ptr->ar);				
-				if (err) LogMsg("ERROR: FoundBrowseDomain - mDNS_Deregister returned %d", err);
+                dereg = &ptr->ar;
 				if (prev) prev->next = ptr->next;
 				else slElem->AuthRecs = ptr->next;
-				ptr = ptr->next;
+                ptr = ptr->next;
+				err = mDNS_Deregister(m, dereg);				
+				if (err) LogMsg("ERROR: FoundDomain - mDNS_Deregister returned %d", err);
 				}
 			else
 				{
@@ -1633,33 +1648,38 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		{
 		if (ptr->flag == -1)  // remove
 			{				
-			mDNS_StopBrowse(m, &ptr->q);
-			
+			mDNS_StopBrowse(m, &ptr->browseQ);
+			mDNS_StopBrowse(m, &ptr->registerQ);			
 			// deregister records generated from answers to the query
 			arList = ptr->AuthRecs;
 			ptr->AuthRecs = NULL;
 			while (arList)
 				{
-				debugf("Deregistering PTR %s -> %s", arList->ar.resrec.name.c, arList->ar.resrec.rdata->u.name.c);
-				err = mDNS_Deregister(m, &arList->ar);
-				if (err) LogMsg("ERROR: RegisterSearchDomains - mDNS_Deregister returned %d", err);
+				AuthRecord *dereg = &arList->ar;
 				arList = arList->next;
+				debugf("Deregistering PTR %s -> %s", dereg->resrec.name.c, dereg->resrec.rdata->u.name.c);
+				err = mDNS_Deregister(m, dereg);
+				if (err) LogMsg("ERROR: RegisterSearchDomains - mDNS_Deregister returned %d", err);
 				}
 			
 			// remove elem from list, delete				
 			if (prev) prev->next = ptr->next;
-				else SearchList = ptr->next;
+			else SearchList = ptr->next;
 			freeSLPtr = ptr;
-				ptr = ptr->next;
-				freeL("RegisterNameServers - freeSLPtr", freeSLPtr);
-				continue;
+			ptr = ptr->next;
+			freeL("RegisterNameServers - freeSLPtr", freeSLPtr);
+			continue;
 			}
 		
 		if (ptr->flag == 1)  // add
 			{
 			domainname type;
 			if (!MakeDomainNameFromDNSNameString(&type, "_browse._dns-sd._udp")) { LogMsg("ERROR - RegisterNameServers - bad type"); continue; }
-			err = mDNS_StartBrowse(m, &ptr->q, &type, &ptr->domain, mDNSInterface_Any, FoundBrowseDomain, ptr);
+			err = mDNS_StartBrowse(m, &ptr->browseQ, &type, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			if (err) LogMsg("ERROR: RegisterNameServers - StartBrowse, %d", err);
+
+			if (!MakeDomainNameFromDNSNameString(&type, "_register._dns-sd._udp")) { LogMsg("ERROR - RegisterNameServers - bad type"); continue; }
+			err = mDNS_StartBrowse(m, &ptr->registerQ, &type, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
 			if (err) LogMsg("ERROR: RegisterNameServers - StartBrowse, %d", err);
 			ptr->flag = 0;
 			}
