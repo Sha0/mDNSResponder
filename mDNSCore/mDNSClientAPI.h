@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.45  2003/04/29 00:40:50  cheshire
+Fix compiler warnings
+
 Revision 1.44  2003/04/26 02:41:56  cheshire
 <rdar://problem/3241281> Change timenow from a local variable to a structure member
 
@@ -191,9 +194,13 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 // Function scope indicators
 
 // If you see "mDNSlocal" before a function name, it means the function is not callable outside this file
+#ifndef mDNSlocal
 #define mDNSlocal static
+#endif
 // If you see "mDNSexport" before a symbol, it means the symbol is exported for use by clients
+#ifndef mDNSexport
 #define mDNSexport
+#endif
 
 // ***************************************************************************
 #if 0
@@ -695,7 +702,7 @@ extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
 #endif
 
 extern mDNSs32  mDNSPlatformOneSecond;
-extern mDNSs32  mDNSPlatformTimeNow();
+extern mDNSs32  mDNSPlatformTimeNow(void);
 
 // ***************************************************************************
 #if 0

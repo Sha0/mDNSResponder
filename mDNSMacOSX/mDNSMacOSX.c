@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.67  2003/04/29 00:43:44  cheshire
+Fix compiler warnings
+
 Revision 1.66  2003/04/26 02:41:58  cheshire
 <rdar://problem/3241281> Change timenow from a local variable to a structure member
 
@@ -188,6 +191,7 @@ struct NetworkInterfaceInfo2_struct
 
 // Note, this uses mDNS_vsprintf instead of standard "vsprintf", because mDNS_vsprintf knows
 // how to print special data types like IP addresses and length-prefixed domain names
+#if MDNS_DEBUGMSGS
 mDNSexport void debugf_(const char *format, ...)
 	{
 	unsigned char buffer[512];
@@ -198,7 +202,9 @@ mDNSexport void debugf_(const char *format, ...)
 	fprintf(stderr, "%s\n", buffer);
 	fflush(stderr);
 	}
+#endif
 
+#if MDNS_DEBUGMSGS > 1
 mDNSexport void verbosedebugf_(const char *format, ...)
 	{
 	unsigned char buffer[512];
@@ -209,6 +215,7 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	fprintf(stderr, "%s\n", buffer);
 	fflush(stderr);
 	}
+#endif
 
 mDNSexport void LogMsg(const char *format, ...)
 	{
@@ -951,7 +958,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
 
-mDNSexport mDNSs32  mDNSPlatformTimeNow()
+mDNSexport mDNSs32  mDNSPlatformTimeNow(void)
 	{
 	struct timeval tp;
 	gettimeofday(&tp, NULL);
