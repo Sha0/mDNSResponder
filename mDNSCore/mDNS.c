@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.152  2003/05/29 22:39:16  cheshire
+<rdar://problem/3273209> Don't truncate strings in the middle of a UTF-8 character
+
 Revision 1.151  2003/05/29 06:35:42  cheshire
 <rdar://problem/3272221> mDNSCoreReceiveResponse() purging wrong record
 
@@ -763,7 +766,8 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 										break;
 										}
 								}
-							if (F.havePrecision && i > F.precision) i = F.precision;
+							if (F.havePrecision && i > F.precision)		// Make sure we don't truncate in the middle of a UTF-8 character
+								{ i = F.precision; while (i>0 && (s[i] & 0xC0) == 0x80) i--; }
 							break;
 	
 				case 'n' :	s = va_arg(arg, char *);
@@ -786,7 +790,8 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 					if (++nwritten >= buflen) goto exit;
 					} while (i < --F.fieldWidth);
 	
-			if (i > buflen - nwritten) i = buflen - nwritten;
+			if (i > buflen - nwritten)	// Make sure we don't truncate in the middle of a UTF-8 character
+				{ i = buflen - nwritten; while (i>0 && (s[i] & 0xC0) == 0x80) i--; }
 			for (j=0; j<i; j++) *sbuffer++ = *s++;			// Write the converted result
 			nwritten += i;
 			if (nwritten >= buflen) goto exit;
