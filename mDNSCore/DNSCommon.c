@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.88  2005/03/16 00:42:32  ksekar
+<rdar://problem/4012279> Long-lived queries not working on Windows
+
 Revision 1.87  2005/02/25 04:21:00  cheshire
 <rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
 
@@ -1342,14 +1345,14 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 		nput += 2 * sizeof(mDNSu16);
 		if (opt->opt == kDNSOpt_LLQ)
 			{
-			if (ptr + sizeof(LLQOptData) > limit) goto space_err;
+			if (ptr + LLQ_OPTLEN > limit) goto space_err;
 			ptr = putVal16(ptr, opt->OptData.llq.vers);
 			ptr = putVal16(ptr, opt->OptData.llq.llqOp);
 			ptr = putVal16(ptr, opt->OptData.llq.err);
 			mDNSPlatformMemCopy(opt->OptData.llq.id, ptr, 8);  // 8-byte id
 			ptr += 8;
 			ptr = putVal32(ptr, opt->OptData.llq.lease);
-			nput += sizeof(LLQOptData);
+			nput += LLQ_OPTLEN;
 			}
 		else if (opt->opt == kDNSOpt_Lease)
 			{
@@ -1389,7 +1392,7 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 		nread += 2 * sizeof(mDNSu16);
 		if (opt->opt == kDNSOpt_LLQ)
 			{
-			if ((unsigned)(limit - ptr) < sizeof(LLQOptData)) goto space_err;
+			if ((unsigned)(limit - ptr) < LLQ_OPTLEN) goto space_err;
 			opt->OptData.llq.vers = getVal16(&ptr);
 			opt->OptData.llq.llqOp = getVal16(&ptr);
 			opt->OptData.llq.err = getVal16(&ptr);
@@ -1399,7 +1402,7 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 			if (opt->OptData.llq.lease > 0x70000000UL / mDNSPlatformOneSecond)
 				opt->OptData.llq.lease = 0x70000000UL / mDNSPlatformOneSecond;
 			ptr += sizeof(mDNSOpaque32);
-			nread += sizeof(LLQOptData);
+			nread += LLQ_OPTLEN;
 			}
 		else if (opt->opt == kDNSOpt_Lease)
 			{
@@ -1629,8 +1632,8 @@ mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	
 	opt->RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
 	opt->rrtype = kDNSType_OPT;
-	opt->rdlength = LEASE_OPT_SIZE;
-	opt->rdestimate = LEASE_OPT_SIZE;
+	opt->rdlength = LEASE_OPT_RDLEN;
+	opt->rdestimate = LEASE_OPT_RDLEN;
 
 	optRD = &rr.resrec.rdata->u.opt;
 	optRD->opt = kDNSOpt_Lease;
