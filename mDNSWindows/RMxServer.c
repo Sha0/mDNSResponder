@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: RMxServer.c,v $
+Revision 1.3  2004/04/08 09:43:43  bradley
+Changed callback calling conventions to __stdcall so they can be used with C# delegates.
+
 Revision 1.2  2004/03/16 22:09:03  bradley
 Skip socket creation failures to handle local IPv6 addresses being returned by Windows even when
 they are not actually supported by the OS; Log a message and only fail if no sockets can be created.
@@ -119,7 +122,7 @@ DEBUG_LOCAL OSStatus	DNSServiceCopyPropertySendData_server( DNSPropertyCode inCo
 // Domain Enumeration
 
 DEBUG_LOCAL void	DNSServiceEnumerateDomains_server( RMxMessage *inMessage );
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceEnumerateDomainsCallBack_server(
 		DNSServiceRef		sdRef,
 		DNSServiceFlags		flags,
@@ -131,7 +134,7 @@ DEBUG_LOCAL void
 // Service Registration
 
 DEBUG_LOCAL void	DNSServiceRegister_server( RMxMessage *inMessage );
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceRegisterCallBack_server(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -148,7 +151,7 @@ DEBUG_LOCAL void	DNSServiceRemoveRecord_server( RMxMessage *inMessage );
 // Service Discovery
 
 DEBUG_LOCAL void	DNSServiceBrowse_server( RMxMessage *inMessage );
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceBrowseCallBack_server(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -179,7 +182,7 @@ DEBUG_LOCAL void
 DEBUG_LOCAL void	DNSServiceCreateConnection_server( RMxMessage *inMessage );
 
 DEBUG_LOCAL void	DNSServiceRegisterRecord_server( RMxMessage *inMessage );
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceRegisterRecordCallBack_server( 
 		DNSServiceRef		inRef,
 		DNSRecordRef		inRecordRef,
@@ -188,7 +191,7 @@ DEBUG_LOCAL void
 		void *				inContext );
 
 DEBUG_LOCAL void	DNSServiceQueryRecord_server( RMxMessage *inMessage );
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceQueryRecordCallBack_server(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -868,7 +871,7 @@ exit:
 //	DNSServiceEnumerateDomainsCallBack_server
 //===========================================================================================================================
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceEnumerateDomainsCallBack_server(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -963,7 +966,7 @@ exit:
 //	DNSServiceRegisterCallBack_server
 //===========================================================================================================================
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceRegisterCallBack_server(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -1234,7 +1237,7 @@ exit:
 //	DNSServiceBrowseCallBack_server
 //===========================================================================================================================
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceBrowseCallBack_server(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -1504,7 +1507,7 @@ exit:
 //	DNSServiceRegisterRecordCallBack_server
 //===========================================================================================================================
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceRegisterRecordCallBack_server( 
 		DNSServiceRef		inRef,
 		DNSRecordRef		inRecordRef,
@@ -1590,7 +1593,7 @@ exit:
 //	DNSServiceQueryRecordCallBack_server
 //===========================================================================================================================
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	DNSServiceQueryRecordCallBack_server(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,

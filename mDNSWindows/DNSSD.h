@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.h,v $
+Revision 1.2  2004/04/08 09:43:42  bradley
+Changed callback calling conventions to __stdcall so they can be used with C# delegates.
+
 Revision 1.1  2004/01/30 02:45:21  bradley
 High-level implementation of the DNS-SD API. Supports both "direct" (compiled-in mDNSCore) and "client"
 (IPC<->service) usage. Conditionals can exclude either "direct" or "client" to reduce code size.
@@ -522,7 +525,7 @@ void	DNSServiceRefDeallocate( DNSServiceRef inRef );
 */
 
 typedef void
-	( *DNSServiceDomainEnumReply )(
+	( CALLBACK_COMPAT *DNSServiceDomainEnumReply )(
 		DNSServiceRef			inRef,
 		DNSServiceFlags			inFlags,
 		uint32_t				inInterfaceIndex,
@@ -610,7 +613,7 @@ DNSServiceErrorType
 */
 
 typedef void
-	( *DNSServiceRegisterReply )(
+	( CALLBACK_COMPAT *DNSServiceRegisterReply )(
 		DNSServiceRef 			inRef,
 		DNSServiceFlags 		inFlags,
 		DNSServiceErrorType 	inErrorCode,
@@ -850,7 +853,7 @@ DNSServiceErrorType
 */
 
 typedef void
-	( *DNSServiceBrowseReply )(
+	( CALLBACK_COMPAT *DNSServiceBrowseReply )(
 		DNSServiceRef 			inRef,
 		DNSServiceFlags 		inFlags,
 		uint32_t 				inInterfaceIndex,
@@ -950,7 +953,7 @@ DNSServiceErrorType
 */
 
 typedef void
-	( *DNSServiceResolveReply )(
+	( CALLBACK_COMPAT *DNSServiceResolveReply )(
 		DNSServiceRef			inRef,
 		DNSServiceFlags			inFlags,
 		uint32_t				inInterfaceIndex,
@@ -963,7 +966,7 @@ typedef void
 		void *					inContext );
 
 typedef void
-	( *DNSServiceResolveAddressReply )(
+	( CALLBACK_COMPAT *DNSServiceResolveAddressReply )(
 		DNSServiceRef			inRef,
 		DNSServiceFlags			inFlags,
 		uint32_t				inInterfaceIndex,
@@ -1134,7 +1137,7 @@ DNSServiceErrorType	DNSServiceCreateConnection( DNSServiceRef *outRef );
 */
 
  typedef void
- 	( *DNSServiceRegisterRecordReply )(
+ 	( CALLBACK_COMPAT *DNSServiceRegisterRecordReply )(
 		DNSServiceRef			inRef,
 		DNSRecordRef			inRecordRef,
 		DNSServiceFlags			inFlags,
@@ -1255,7 +1258,7 @@ DNSServiceErrorType
  */
 
 typedef void
-	( *DNSServiceQueryRecordReply )(
+	( CALLBACK_COMPAT *DNSServiceQueryRecordReply )(
 		DNSServiceRef			inRef,
 		DNSServiceFlags			inFlags,
 		uint32_t				inInterfaceIndex,

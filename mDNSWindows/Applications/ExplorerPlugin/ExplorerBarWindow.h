@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.h,v $
+Revision 1.2  2004/04/08 09:43:43  bradley
+Changed callback calling conventions to __stdcall so they can be used with C# delegates.
+
 Revision 1.1  2004/01/30 03:01:56  bradley
 Explorer Plugin to browse for Rendezvous-enabled Web and FTP servers from within Internet Explorer.
 
@@ -228,7 +231,7 @@ class	ExplorerBarWindow : public CWnd
 		
 		// Browsing
 		
-		static void
+		static void CALLBACK_COMPAT
 			BrowseCallBack(
 				DNSServiceRef 			inRef,
 				DNSServiceFlags 		inFlags,
@@ -246,7 +249,7 @@ class	ExplorerBarWindow : public CWnd
 		OSStatus	StartResolve( ServiceInfo *inService );
 		void		StopResolve( void );
 
-		static void
+		static void CALLBACK_COMPAT
 			ResolveCallBack(
 				DNSServiceRef			inRef,
 				DNSServiceFlags			inFlags,

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.3  2004/04/08 09:43:43  bradley
+Changed callback calling conventions to __stdcall so they can be used with C# delegates.
+
 Revision 1.2  2004/02/21 04:36:19  bradley
 Enable dot local name lookups now that the NSP is being installed.
 
@@ -59,7 +62,7 @@ static char THIS_FILE[] = __FILE__;
 //	Constants
 //===========================================================================================================================
 
-#define	ENABLE_DOT_LOCAL_NAMES			1
+#define	ENABLE_DOT_LOCAL_NAMES			0
 
 // Control IDs
 
@@ -276,7 +279,7 @@ exit:
 //	BrowseCallBack
 //===========================================================================================================================
 
-void
+void CALLBACK_COMPAT
 	ExplorerBarWindow::BrowseCallBack(
 		DNSServiceRef 			inRef,
 		DNSServiceFlags 		inFlags,
@@ -481,7 +484,7 @@ void	ExplorerBarWindow::StopResolve( void )
 //	ResolveCallBack
 //===========================================================================================================================
 
-void
+void CALLBACK_COMPAT
 	ExplorerBarWindow::ResolveCallBack(
 		DNSServiceRef			inRef,
 		DNSServiceFlags			inFlags,

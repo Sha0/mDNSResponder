@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.2  2004/04/08 09:43:43  bradley
+Changed callback calling conventions to __stdcall so they can be used with C# delegates.
+
 Revision 1.1  2004/01/30 02:58:57  bradley
 Test tool for the mDNSResponder Windows service.
 
@@ -67,7 +70,7 @@ static int 			ProcessArgs( int argc, char* argv[] );
 	static BOOL WINAPI	ConsoleControlHandler( DWORD inControlEvent );
 #endif
 
-static void
+static void CALLBACK_COMPAT
 	EnumerateDomainsCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -76,7 +79,7 @@ static void
 		const char *		inDomain,  
 		void *				inContext );
 
-static void
+static void CALLBACK_COMPAT
 	BrowseCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -87,7 +90,7 @@ static void
 		const char *		inDomain,  
 		void *				inContext );
 
-static void
+static void CALLBACK_COMPAT
 	ResolveCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -100,7 +103,7 @@ static void
 		const char *		inTXT, 
 		void *				inContext );
 
-static void
+static void CALLBACK_COMPAT
 	RegisterCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -110,7 +113,7 @@ static void
 		const char *		inDomain,  
 		void *				inContext );
 
-static void
+static void CALLBACK_COMPAT
 	RecordCallBack( 
 		DNSServiceRef 			inRef, 
 		DNSRecordRef 			inRecordRef, 
@@ -118,7 +121,7 @@ static void
 		DNSServiceErrorType 	inErrorCode, 
 		void *					inContext );
 
-static void
+static void CALLBACK_COMPAT
 	QueryCallBack( 
 		const DNSServiceRef 		inRef, 
 		const DNSServiceFlags		inFlags, 
@@ -560,7 +563,7 @@ static BOOL WINAPI	ConsoleControlHandler( DWORD inControlEvent )
 //	EnumerateDomainsCallBack
 //===========================================================================================================================
 
-static void
+static void CALLBACK_COMPAT
 	EnumerateDomainsCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -582,7 +585,7 @@ static void
 //	BrowseCallBack
 //===========================================================================================================================
 
-static void
+static void CALLBACK_COMPAT
 	BrowseCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -608,7 +611,7 @@ static void
 //	ResolveCallBack
 //===========================================================================================================================
 
-static void
+static void CALLBACK_COMPAT
 	ResolveCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -638,7 +641,7 @@ static void
 //	RegisterCallBack
 //===========================================================================================================================
 
-static void
+static void CALLBACK_COMPAT
 	RegisterCallBack(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -662,7 +665,7 @@ static void
 //	RecordCallBack
 //===========================================================================================================================
 
-static void
+static void CALLBACK_COMPAT
 	RecordCallBack( 
 		DNSServiceRef 			inRef, 
 		DNSRecordRef 			inRecordRef, 
@@ -689,7 +692,7 @@ static void
 //	QueryCallBack
 //===========================================================================================================================
 
-static void
+static void CALLBACK_COMPAT
 	QueryCallBack( 
 		const DNSServiceRef 		inRef, 
 		const DNSServiceFlags		inFlags, 

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.2  2004/04/08 09:43:43  bradley
+Changed callback calling conventions to __stdcall so they can be used with C# delegates.
+
 Revision 1.1  2004/01/30 03:00:33  bradley
 Rendezvous NameSpace Provider (NSP). Hooks into the Windows name resolution system to resolve
 Rendezvous name lookups using Multicast DNS so .local names work in all Windows apps.
@@ -123,7 +126,7 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 DEBUG_LOCAL OSStatus	QueryRetain( QueryRef inRef );
 DEBUG_LOCAL OSStatus	QueryRelease( QueryRef inRef );
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	QueryRecordCallback(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
@@ -816,7 +819,7 @@ exit:
 //	QueryRecordCallback
 //===========================================================================================================================
 
-DEBUG_LOCAL void
+DEBUG_LOCAL void CALLBACK_COMPAT
 	QueryRecordCallback(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
