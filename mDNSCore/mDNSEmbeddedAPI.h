@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.265  2004/12/17 23:37:45  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+(and other repetitive configuration changes)
+
 Revision 1.264  2004/12/17 05:25:46  cheshire
 <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
 
@@ -1760,6 +1764,7 @@ struct DNSQuestion_struct
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
+	mDNSu32               RequestUnicast;	// Non-zero if we want to send query with kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
 	uDNS_QuestionInfo     uDNS_info;
 
@@ -2627,7 +2632,7 @@ extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 // not lightweight second-by-second CPU power management modes.)
 
 extern void     mDNS_SetFQDN(mDNS *const m);
-extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
+extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set, mDNSs32 delay);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,

@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.232  2004/12/17 23:37:48  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+(and other repetitive configuration changes)
+
 Revision 1.231  2004/12/17 04:13:38  cheshire
 Removed debugging check
 
@@ -2120,6 +2124,7 @@ mDNSlocal void HandleSIG(int signal)
 
 mDNSlocal void INFOCallback(void)
 	{
+	mDNSs32 utc = mDNSPlatformUTC();
 	DNSServiceDomainEnumeration *e;
 	DNSServiceBrowser           *b;
 	DNSServiceResolver          *l;
@@ -2152,8 +2157,8 @@ mDNSlocal void INFOCallback(void)
 	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 		{
 		if (!i->Exists)
-			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a DORMANT",
-				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID);
+			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a DORMANT %d",
+				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID, utc - i->LastSeen);
 		else
 			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %2d %s %2d InterfaceID %p %s %s %#a",
 				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,

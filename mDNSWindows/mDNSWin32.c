@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.66  2004/12/17 23:37:49  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+(and other repetitive configuration changes)
+
 Revision 1.65  2004/12/15 07:34:45  shersche
 Add platform support for IPv4 and IPv6 unicast sockets
 
@@ -1662,7 +1666,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	
 	ifd->interfaceInfo.Advertise = inMDNS->AdvertiseLocalAddresses;
 	
-	err = mDNS_RegisterInterface( inMDNS, &ifd->interfaceInfo );
+	err = mDNS_RegisterInterface( inMDNS, &ifd->interfaceInfo, 0 );
 	require_noerr( err, exit );
 	ifd->hostRegistered = mDNStrue;
 	

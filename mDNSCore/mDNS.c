@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.499  2004/12/17 23:37:45  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+(and other repetitive configuration changes)
+
 Revision 1.498  2004/12/17 05:25:46  cheshire
 <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
 
@@ -3207,7 +3211,7 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, 
 mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, DNSQuestion *q,
 	CacheRecord ***kalistptrptr, mDNSu32 *answerforecast)
 	{
-	mDNSBool ucast = (q->LargeAnswers || q->ThisQInterval <= InitialQuestionInterval*2) && m->CanReceiveUnicastOn5353;
+	mDNSBool ucast = (q->LargeAnswers || q->RequestUnicast) && m->CanReceiveUnicastOn5353;
 	mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
 	const mDNSu8 *const limit = query->data + NormalMaxDNSMessageData;
 	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, (mDNSu16)(q->qclass | ucbit));
@@ -3438,6 +3442,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
 				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, -1, mDNSNULL);
 				q->ThisQInterval   *= 2;
+				if (q->RequestUnicast) q->RequestUnicast--;
 				q->LastQTime        = m->timenow;
 				q->LastQTxTime      = m->timenow;
 				q->RecentAnswerPkts = 0;
@@ -3468,6 +3473,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					q->SendQNow = mDNSInterfaceMark;	// Mark this question for sending on all interfaces
 					q->ThisQInterval *= 2;
+					if (q->RequestUnicast) q->RequestUnicast--;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
 					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * 8)
@@ -3768,12 +3774,12 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				{
 				q->LastAnswerPktNum = m->PktNum;
 				if (ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
-					q->ThisQInterval > InitialQuestionInterval*16 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
+					q->ThisQInterval > InitialQuestionInterval*32 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 					{
 					LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 						q->qname.c, DNSTypeName(q->qtype));
-					q->LastQTime     = m->timenow - InitialQuestionInterval + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*4);
-					q->ThisQInterval = InitialQuestionInterval;
+					q->LastQTime      = m->timenow - InitialQuestionInterval + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*4);
+					q->ThisQInterval  = InitialQuestionInterval;
 					SetNextQueryTime(m,q);
 					}
 				}
@@ -3968,8 +3974,8 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 	if (ShouldQueryImmediately && m->CurrentQuestion == q)
 		{
-		q->ThisQInterval = InitialQuestionInterval;
-		q->LastQTime = m->timenow - q->ThisQInterval;
+		q->ThisQInterval  = InitialQuestionInterval;
+		q->LastQTime      = m->timenow - q->ThisQInterval;
 		m->NextScheduledQuery = m->timenow;
 		}
 	m->CurrentQuestion = mDNSNULL;
@@ -4369,6 +4375,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			if (ActiveQuestion(q))
 				{
 				q->ThisQInterval    = InitialQuestionInterval;	// MUST be > zero for an active question
+				q->RequestUnicast   = 2;						// Set to 2 because is decremented once *before* we check it
 				q->LastQTime        = m->timenow - q->ThisQInterval;
 				q->RecentAnswerPkts = 0;
 				ExpireDupSuppressInfo(q->DupSuppress, m->timenow);
@@ -5416,6 +5423,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 		if (q->DuplicateOf == question)			// To see if any questions were referencing this as their duplicate
 			{
 			q->ThisQInterval    = question->ThisQInterval;
+			q->RequestUnicast   = question->RequestUnicast;
 			q->LastQTime        = question->LastQTime;
 			q->RecentAnswerPkts = 0;
 			q->DuplicateOf      = FindDuplicateQuestion(m, q);
@@ -5504,6 +5512,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->qnamehash        = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
 		question->DelayAnswering   = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
 		question->ThisQInterval    = InitialQuestionInterval * 2;			// MUST be > zero for an active question
+		question->RequestUnicast   = 2;										// Set to 2 because is decremented once *before* we check it
 		question->LastQTime        = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
 		question->LastAnswerPktNum = m->PktNum;
 		question->RecentAnswerPkts = 0;
@@ -5898,18 +5907,14 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	return(status);
 	}
 
-mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *query)
+mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *q)
 	{
 	mDNS_Lock(m);
 	// We use mDNS_StopQuery_internal here because we're already holding the lock
-	if (query->qSRV.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qSRV, &m->uDNS_info))
-		mDNS_StopQuery_internal(m, &query->qSRV);
-	if (query->qTXT.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qTXT, &m->uDNS_info))
-		mDNS_StopQuery_internal(m, &query->qTXT);
-	if (query->qAv4.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qAv4, &m->uDNS_info))
-		mDNS_StopQuery_internal(m, &query->qAv4);
-	if (query->qAv6.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qAv6, &m->uDNS_info))
-		mDNS_StopQuery_internal(m, &query->qAv6);
+	if (q->qSRV.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qSRV, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qSRV);
+	if (q->qTXT.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qTXT, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qTXT);
+	if (q->qAv4.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv4, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qAv4);
+	if (q->qAv6.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv6, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qAv6);
 	mDNS_Unlock(m);
 	}
 
@@ -6224,7 +6229,7 @@ mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *act
 			}
 	}
 
-mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
+mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSs32 delay)
 	{
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
@@ -6266,6 +6271,9 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	set->next = mDNSNULL;
 	*p = set;
 	
+	if (set->Advertise)
+		AdvertiseInterface(m, set);
+
 	debugf("mDNS_RegisterInterface: InterfaceID %p %#a %s", set->InterfaceID, &set->ip,
 		set->InterfaceActive ?
 			"not represented in list; marking active and retriggering queries" :
@@ -6283,13 +6291,24 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		// In the case of a network administrator turning on an Ethernet hub so that all the connected machines establish link at
 		// exactly the same time, we don't want them to all go and hit the network with identical queries at exactly the same moment.
 		if (!m->SuppressSending) m->SuppressSending = m->timenow + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
+		mDNSs32 initial = InitialQuestionInterval;
+		if (delay)
+			{
+			LogMsg("Repeated transitions for interface %s (%#a); delaying packets by %d seconds",
+				set->ifname, &set->ip, delay/mDNSPlatformOneSecond);
+			initial = InitialQuestionInterval * 8;		// Delay between first and second queries is eight seconds
+			if (!m->SuppressProbes ||
+				m->SuppressProbes - (m->timenow + delay) < 0)
+				m->SuppressProbes = (m->timenow + delay);
+			}
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
-				q->ThisQInterval    = InitialQuestionInterval;			// MUST be > zero for an active question
-				q->LastQTime        = m->timenow - q->ThisQInterval;
+				q->ThisQInterval    = initial;							// MUST be > zero for an active question
+				q->RequestUnicast   = 2;								// Set to 2 because is decremented once *before* we check it
+				q->LastQTime        = m->timenow - q->ThisQInterval + delay;
 				q->RecentAnswerPkts = 0;
-				if (ActiveQuestion(q)) m->NextScheduledQuery = m->timenow;
+				SetNextQueryTime(m,q);
 				}
 		
 		// For all our non-specific authoritative resource records (and any dormant records specific to this interface)
@@ -6299,14 +6318,11 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				{
 				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
-				rr->AnnounceCount  = InitialAnnounceCount;
+				rr->AnnounceCount  = delay ? 1 : InitialAnnounceCount;
 				rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 				InitializeLastAPTime(m, rr);
 				}
 		}
-
-	if (set->Advertise)
-		AdvertiseInterface(m, set);
 
 	mDNS_Unlock(m);
 	return(mStatus_NoError);

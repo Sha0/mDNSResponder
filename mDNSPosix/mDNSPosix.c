@@ -37,6 +37,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.67  2004/12/17 23:37:48  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+(and other repetitive configuration changes)
+
 Revision 1.66  2004/12/01 04:27:28  cheshire
 <rdar://problem/3872803> Darwin patches for Solaris and Suse
 Don't use uint32_t, etc. -- they require stdint.h, which doesn't exist on FreeBSD 4.x, Solaris, etc.
@@ -958,7 +962,7 @@ mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, struct
 
 	// The interface is all ready to go, let's register it with the mDNS core.
 	if (err == 0)
-		err = mDNS_RegisterInterface(m, &intf->coreIntf);
+		err = mDNS_RegisterInterface(m, &intf->coreIntf, 0);
 
 	// Clean up.
 	if (err == 0)

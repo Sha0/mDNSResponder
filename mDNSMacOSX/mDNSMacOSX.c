@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.265  2004/12/17 23:37:47  cheshire
+<rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
+(and other repetitive configuration changes)
+
 Revision 1.264  2004/12/17 19:03:05  cheshire
 Update debugging messages to show netmask a simple CIDR-style numeric value (0-128)
 
@@ -1789,7 +1793,7 @@ mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
 	return(eth);
 	}
 
-mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
+mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa, mDNSs32 utc)
 	{
 	mDNSu32 scope_id  = if_nametoindex(ifa->ifa_name);
 	mDNSEthAddr bssid = GetBSSID(ifa->ifa_name);
@@ -1825,6 +1829,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	
 	i->next            = mDNSNULL;
 	i->Exists          = mDNStrue;
+	i->LastSeen        = utc;
 	i->scope_id        = scope_id;
 	i->BSSID           = bssid;
 	i->sa_family       = ifa->ifa_addr->sa_family;
@@ -1850,7 +1855,7 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 	return(mDNSNULL);
 	}
 
-mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
+mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	{
 	mDNSBool foundav4           = mDNSfalse;
 	mDNSBool foundav6           = mDNSfalse;
@@ -1934,7 +1939,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 							else                                     v6Loopback = ifa;
 						else
 							{
-							AddInterfaceToList(m, ifa);
+							AddInterfaceToList(m, ifa, utc);
 							if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
 							else                                     foundav6 = mDNStrue;
 							}
@@ -1945,8 +1950,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		}
 
     // For efficiency, we don't register a loopback interface when other interfaces of that family are available
-	if (!foundav4 && v4Loopback) AddInterfaceToList(m, v4Loopback);
-	if (!foundav6 && v6Loopback) AddInterfaceToList(m, v6Loopback);
+	if (!foundav4 && v4Loopback) AddInterfaceToList(m, v4Loopback, utc);
+	if (!foundav6 && v6Loopback) AddInterfaceToList(m, v6Loopback, utc);
 
 	// Now the list is complete, set the McastTxRx setting for each interface.
 	// We always send and receive using IPv4.
@@ -2019,7 +2024,7 @@ mDNSlocal int CountMaskBits(mDNSAddr *mask)
 	}
 
 // returns count of non-link local V4 addresses registered
-mDNSlocal int SetupActiveInterfaces(mDNS *const m)
+mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 	{
 	NetworkInterfaceInfoOSX *i;
 	int count = 0;
@@ -2042,10 +2047,12 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m)
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
-				mDNS_RegisterInterface(m, n);
+				mDNSBool flapping = (utc - i->LastSeen > 0);
+				mDNS_RegisterInterface(m, n, flapping ? mDNSPlatformOneSecond * 5 : 0);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
-				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s",
-					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask), n->InterfaceActive ? " (Primary)" : "");
+				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s",
+					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask),
+					flapping ? " (Flapping)" : "", n->InterfaceActive ? " (Primary)" : "");
 				}
 	
 			if (!n->McastTxRx)
@@ -2070,11 +2077,14 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m)
 	return count;
 	}
 
-mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
+mDNSlocal void MarkAllInterfacesInactive(mDNS *const m, mDNSs32 utc)
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
+		{
+		if (i->Exists) i->LastSeen = utc;
 		i->Exists = mDNSfalse;
+		}
 	}
 
 mDNSlocal void CloseRunLoopSourceSocket(CFRunLoopSourceRef rls, CFSocketRef cfs)
@@ -2099,7 +2109,7 @@ mDNSlocal void CloseSocketSet(CFSocketSet *ss)
 	}
 
 // returns count of non-link local V4 addresses deregistered
-mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
+mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	{
 	// First pass:
 	// If an interface is going away, then deregister this from the mDNSCore.
@@ -2121,7 +2131,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 					&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), i->ifinfo.InterfaceActive ? " (Primary)" : "");
 				mDNS_DeregisterInterface(m, &i->ifinfo);
-				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
+				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
 				i->ifinfo.InterfaceID = mDNSNULL;
 				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
@@ -2141,15 +2151,20 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 		// 3. If no longer active, delete interface from list and free memory
 		if (!i->Exists && NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0)
 			{
-			LogOperation("ClearInactiveInterfaces: Deleting      %5s(%lu) %.6a InterfaceID %p %#a/%d%s",
+			LogOperation("ClearInactiveInterfaces: %-13s %5s(%lu) %.6a InterfaceID %p %#a/%d %d%s",
+				(utc - i->LastSeen >= 60) ? "Deleting" : "Holding",
 				i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
-				&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), i->ifinfo.InterfaceActive ? " (Primary)" : "");
-			*p = i->next;
-			if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
-			freeL("NetworkInterfaceInfoOSX", i);
+				&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), utc - i->LastSeen,
+				i->ifinfo.InterfaceActive ? " (Primary)" : "");
+			if (utc - i->LastSeen >= 60)
+				{
+				*p = i->next;
+				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
+				freeL("NetworkInterfaceInfoOSX", i);
+				continue;	// After deleting this object, don't want to do the "p = &i->next;" thing at the end of the loop
+				}
 			}
-		else
-			p = &i->next;
+		p = &i->next;
 		}
 	return count;
 	}
@@ -2654,10 +2669,11 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	{
 	LogOperation("***   Network Configuration Change   ***");
-	MarkAllInterfacesInactive(m);
-	UpdateInterfaceList(m);
-	int nDeletions = ClearInactiveInterfaces(m);
-	int nAdditions = SetupActiveInterfaces(m);
+	mDNSs32 utc = mDNSPlatformUTC();
+	MarkAllInterfacesInactive(m, utc);
+	UpdateInterfaceList(m, utc);
+	int nDeletions = ClearInactiveInterfaces(m, utc);
+	int nAdditions = SetupActiveInterfaces(m, utc);
 	if (nDeletions || nAdditions) mDNS_UpdateLLQs(m);
 	DynDNSConfigChanged(m);
 	
@@ -3002,8 +3018,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->userhostlabel.c[0] = 0;
 	m->p->usernicelabel.c[0] = 0;
 	m->p->NotifyUser         = 0;
-	UpdateInterfaceList(m);
-	SetupActiveInterfaces(m);
+	mDNSs32 utc = mDNSPlatformUTC();
+	UpdateInterfaceList(m, utc);
+	SetupActiveInterfaces(m, utc);
 
 	err = WatchForNetworkChanges(m);
 	if (err) return(err);
@@ -3052,8 +3069,9 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		m->p->StoreRLS = NULL;
 		}
 	
-	MarkAllInterfacesInactive(m);
-	ClearInactiveInterfaces(m);
+	mDNSs32 utc = mDNSPlatformUTC();
+	MarkAllInterfacesInactive(m, utc);
+	ClearInactiveInterfaces(m, utc);
 	CloseSocketSet(&m->p->unicastsockets);
 	}
 
