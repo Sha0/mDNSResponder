@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.434  2004/09/25 02:32:06  cheshire
+Update comments
+
 Revision 1.433  2004/09/25 02:24:27  cheshire
 Removed unused rr->UseCount
 
@@ -3259,15 +3262,15 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 		SetNextCacheCheckTime(m, rr);
 		}
 
-	// CAUTION: MUST NOT do anything more with q after calling q->Callback(), because the client's callback function
-	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
-	// Right now the only routines that call AnswerQuestionWithResourceRecord() are CacheRecordAdd(), CacheRecordRmv()
-	// and AnswerNewQuestion(), and all of them use the "m->CurrentQuestion" mechanism to protect against questions
-	// being deleted out from under them.
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
 	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+	// CAUTION: MUST NOT do anything more with q after calling q->QuestionCallback(), because the client's callback function
+	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
+	// Right now the only routines that call AnswerQuestionWithResourceRecord() are CacheRecordAdd(), CacheRecordRmv()
+	// and AnswerNewQuestion(), and all of them use the "m->CurrentQuestion" mechanism to protect against questions
+	// being deleted out from under them.
 	}
 
 // CacheRecordAdd is only called from mDNSCoreReceiveResponse, *never* directly as a result of a client API call.
@@ -3522,7 +3525,7 @@ mDNSlocal void AnswerLocalOnlyQuestions(mDNS *const m, AuthRecord *rr, mDNSBool 
 			{
 			debugf("AnswerLocalOnlyQuestions %p %##s (%s) %lu", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), rr->resrec.rroriginalttl);
 			AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, AddRecord);
-			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+			// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
 			}
 		}
 	m->CurrentQuestion = mDNSNULL;
