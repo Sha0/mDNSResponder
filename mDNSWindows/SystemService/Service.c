@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.8  2004/08/05 05:40:05  shersche
+<rdar://problem/3751566> Only invoke SetConsoleCtrlHandler when running directly from command line.
+<rdar://problem/3751481> Invoke udsserver_handle_configchange() when the computer description changes
+Bug #: 3751481, 3751566
+
 Revision 1.7  2004/07/26 05:35:07  shersche
 ignore non-enet interfaces when setting up link-local routing
 
@@ -172,6 +177,7 @@ static void			EventSourceLock();
 static void			EventSourceUnlock();
 static mDNSs32		udsIdle(mDNS * const inMDNS, mDNSs32 interval);
 static void			InterfaceListChanged(mDNS * const inMDNS);
+static void			HostDescriptionChanged(mDNS * const inMDNS);
 static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
 static bool			HaveLLRoute(PMIB_IPFORWARDROW rowExtant);
 static OSStatus		SetLLRoute();
@@ -227,12 +233,6 @@ int	__cdecl main( int argc, char *argv[] )
 	
 	debug_initialize( kDebugOutputTypeMetaConsole );
 	debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelVerbose );
-	
-	// Install a Console Control Handler to handle things like control-c signals.
-	
-	ok = SetConsoleCtrlHandler( ConsoleControlHandler, TRUE );
-	err = translate_errno( ok, (OSStatus) GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
 	
 	// Default to automatically starting the service dispatcher if no extra arguments are specified.
 	
@@ -714,9 +714,16 @@ static OSStatus	RunDirect( int argc, char *argv[] )
 {
 	OSStatus		err;
 	BOOL			initialized;
+   BOOL        ok;
 	
 	initialized = FALSE;
 
+	// Install a Console Control Handler to handle things like control-c signals.
+	
+	ok = SetConsoleCtrlHandler( ConsoleControlHandler, TRUE );
+	err = translate_errno( ok, (OSStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+	
 	err = ServiceSpecificInitialize( argc, argv );
 	require_noerr( err, exit );
 	initialized = TRUE;
@@ -982,8 +989,9 @@ static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
 	memset( &gMDNSRecord, 0, sizeof gMDNSRecord);
 	memset( &gPlatformStorage, 0, sizeof gPlatformStorage);
 
-	gPlatformStorage.interfaceListChangedCallback = InterfaceListChanged;
 	gPlatformStorage.idleThreadCallback = udsIdle;
+	gPlatformStorage.interfaceListChangedCallback = InterfaceListChanged;
+	gPlatformStorage.hostDescriptionChangedCallback = HostDescriptionChanged;
 
 	InitializeCriticalSection(&gEventSourceLock);
 	
@@ -1114,6 +1122,15 @@ udsIdle(mDNS * const inMDNS, mDNSs32 interval)
 	mDNSPlatformUnlock(&gMDNSRecord);
 
 	return interval;
+}
+
+
+static void
+HostDescriptionChanged(mDNS * const inMDNS)
+{
+	DEBUG_UNUSED( inMDNS );
+
+	udsserver_handle_configchange();
 }
 
 
