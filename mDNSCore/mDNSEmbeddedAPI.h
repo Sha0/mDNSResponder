@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.157  2004/04/02 19:35:53  cheshire
+Add clarifying comments about legal mDNSInterfaceID values
+
 Revision 1.156  2004/04/02 19:19:48  cheshire
 Add code to do optional logging of multi-packet KA list time intervals
 
@@ -1100,7 +1103,7 @@ struct NetworkInterfaceInfo_struct
     uDNS_NetworkInterfaceInfo uDNS_info;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
-	mDNSInterfaceID InterfaceID;
+	mDNSInterfaceID InterfaceID;		// MUST NOT be 0, -1, or -2
 	mDNSAddr        ip;
 	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
 	mDNSBool        TxAndRx;			// Set to false if not sending and receiving packets on this interface
@@ -1369,9 +1372,9 @@ extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;
 extern const mDNSAddr        zeroAddr;
 
-extern const mDNSInterfaceID mDNSInterface_Any;
-extern const mDNSInterfaceID mDNSInterface_LocalOnly;
-extern const mDNSInterfaceID mDNSInterface_ForceMCast;
+extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
+extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// (mDNSInterfaceID)-1;
+extern const mDNSInterfaceID mDNSInterface_ForceMCast;		// (mDNSInterfaceID)-2;
 
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      MulticastDNSPort;
@@ -1706,6 +1709,7 @@ extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 // -- Name-to-address records (A/AAAA)
 // -- Address-to-name records (PTR)
 // -- Host information (HINFO)
+// IMPORTANT: The specified mDNSInterfaceID MUST NOT be 0, -1, or -2; these values have special meaning
 //
 // mDNS_SetDynamicRegistrationDomain is used to enable dynamic update registrations of address records
 // in the specified domain.
