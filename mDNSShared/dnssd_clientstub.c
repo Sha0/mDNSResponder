@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.28  2004/08/11 17:10:04  cheshire
+Fix signed/unsigned warnings
+
 Revision 1.27  2004/08/11 00:54:16  cheshire
 Change "hdr->op.request_op" to just "hdr->op"
 
@@ -138,7 +141,7 @@ static int g_initWinsock = 0;
 typedef struct _DNSServiceRef_t
     {
     dnssd_sock_t sockfd;  // connected socket between client and daemon
-    int op;      // request/reply_op_t
+    uint32_t op;          // request_op_t or reply_op_t
     process_reply_callback process_reply;
     void *app_callback;
     void *app_context;
@@ -150,7 +153,7 @@ typedef struct _DNSRecordRef_t
     void *app_context;
     DNSServiceRegisterRecordReply app_callback;
     DNSRecordRef recref;
-    int record_index;  // index is unique to the ServiceDiscoveryRef
+    uint32_t record_index;  // index is unique to the ServiceDiscoveryRef
     DNSServiceRef sdr;
     } _DNSRecordRef_t;
 
@@ -196,7 +199,7 @@ static int my_read(dnssd_sock_t sd, char *buf, int len)
  * data_start is set past this string.
  */
 
-static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse_socket)
+static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int reuse_socket)
     {
     char *msg = NULL;
     ipc_msg_hdr *hdr;
