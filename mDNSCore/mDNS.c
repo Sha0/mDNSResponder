@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.167  2003/06/06 21:30:42  cheshire
+<rdar://problem/3282962> Don't delay queries for shared record types
+
 Revision 1.166  2003/06/06 17:20:14  cheshire
 For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
 (Global search-and-replace; no functional change to code execution.)
@@ -2627,11 +2630,23 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// -- If a record is marked to be sent on a certain interface, make sure the whole set is marked to be sent on that interface
 	// -- If any record is marked to be sent on all interfaces, make sure the whole set is marked to be sent on all interfaces
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if ((rr->RecordType & kDNSRecordTypeUniqueMask) && rr->ImmedAnswer)
-			for (r2 = m->ResourceRecords; r2; r2=r2->next)
-				if (ResourceRecordIsValidAnswer(r2))
-					if (r2->ImmedAnswer != mDNSInterfaceMark && r2->ImmedAnswer != rr->ImmedAnswer && SameResourceRecordSignature(r2, rr))
-						r2->ImmedAnswer = rr->ImmedAnswer;
+		if (rr->RecordType & kDNSRecordTypeUniqueMask)
+			{
+			if (rr->ImmedAnswer)			// If we're sending this as answer, see that its whole RRSet is similarly marked
+				{
+				for (r2 = m->ResourceRecords; r2; r2=r2->next)
+					if (ResourceRecordIsValidAnswer(r2))
+						if (r2->ImmedAnswer != mDNSInterfaceMark && r2->ImmedAnswer != rr->ImmedAnswer && SameResourceRecordSignature(r2, rr))
+							r2->ImmedAnswer = rr->ImmedAnswer;
+				}
+			else if (rr->ImmedAdditional)	// If we're sending this as additional, see that its whole RRSet is similarly marked
+				{
+				for (r2 = m->ResourceRecords; r2; r2=r2->next)
+					if (ResourceRecordIsValidAnswer(r2))
+						if (r2->ImmedAdditional != rr->ImmedAdditional && SameResourceRecordSignature(r2, rr))
+							r2->ImmedAdditional = rr->ImmedAdditional;
+				}
+			}
 
 	// Now set SendRNow state appropriately
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -2718,7 +2733,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 						// Try to find another member of this set that we're still planning to send on this interface
 						const ResourceRecord *a;
 						for (a = m->ResourceRecords; a; a=a->next)
-							if (a != rr && SameResourceRecordSignature(a, rr) && a->SendRNow == intf->InterfaceID) break;
+							if (a->SendRNow == intf->InterfaceID && a != rr && SameResourceRecordSignature(a, rr)) break;
 						if (a == mDNSNULL)							// If no more members of this set found
 							rr->rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
 						}
@@ -2736,15 +2751,28 @@ mDNSlocal void SendResponses(mDNS *const m)
 				}
 	
 		// Second Pass. Add additional records, if there's space.
+		newptr = responseptr;
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->ImmedAdditional == intf->InterfaceID)
 				{
-				if (ResourceRecordIsValidAnswer(rr) &&
-					(newptr = PutResourceRecord(&response, responseptr, &response.h.numAdditionals, rr)))
-						responseptr = newptr;
-				// Since additionals are optional, we clear ImmedAdditional anyway, even if it didn't fit in the packet
+				// Since additionals are optional, we clear ImmedAdditional anyway, even if we subsequently find it doesn't fit in the packet
 				rr->ImmedAdditional = mDNSNULL;
+				if (newptr && ResourceRecordIsValidAnswer(rr))
+					{
+					if (rr->RecordType & kDNSRecordTypeUniqueMask)
+						{
+						// Try to find another member of this set that we're still planning to send on this interface
+						const ResourceRecord *a;
+						for (a = m->ResourceRecords; a; a=a->next)
+							if (a->ImmedAdditional == intf->InterfaceID && SameResourceRecordSignature(a, rr)) break;
+						if (a == mDNSNULL)							// If no more members of this set found
+							rr->rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
+						}
+					newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, rr);
+					rr->rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
+					}
 				}
+		if (newptr) responseptr = newptr;
 	
 		if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
 			{
@@ -3205,7 +3233,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, ResourceRecord *rr)
 
 mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	{
-	mDNSu32 NumAnswersGiven = 0;
+	mDNSBool ShouldQueryImmediately = mDNStrue;
 	ResourceRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
 	m->NewQuestions = q->next;				// Advance NewQuestions to the next (if any)
@@ -3235,21 +3263,17 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				continue;	// Go to next one in loop
 				}
 
-			NumAnswersGiven++;
-			// Must do this debugging message *before* calling AnswerQuestionWithResourceRecord
-			if (NumAnswersGiven == 1)
-				debugf("Had   answer   for %##s (%s) already in our cache", q->qname.c, DNSTypeName(q->qtype));
+			// If this record set is marked unique, then that means we can reasonably assume we have the whole set
+			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
+			if (rr->RecordType & kDNSRecordTypePacketUniqueMask) ShouldQueryImmediately = mDNSfalse;
 			rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
 			AnswerQuestionWithResourceRecord(m, q, rr);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 			}
 
-	if (NumAnswersGiven == 0)
+	if (ShouldQueryImmediately && m->CurrentQuestion == q)
 		{
-		debugf("Had no answers for %##s (%s) already in our cache; sending query packet", q->qname.c, DNSTypeName(q->qtype));
-		// This is safe because we only do it if NumAnswersGiven is zero,
-		// in which case we never called AnswerQuestionWithResourceRecord
 		q->LastQTime = m->timenow - q->ThisQInterval;
 		m->NextScheduledQuery = m->timenow;
 		}
