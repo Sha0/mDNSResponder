@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.31  2005/03/16 03:52:06  shersche
+Bump to 1.0.0.59
+
 Revision 1.30  2005/03/07 19:18:18  shersche
 <rdar://problem/4039831> Update Windows build to 1.0.0.58
 
@@ -121,10 +124,10 @@ First checked in.
 #define MASTER_PROD_NAME	"Bonjour"
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		1,0,0,58
-#define MASTER_PROD_VERS_STR	"1,0,0,58"
-#define MASTER_PROD_VERS_STR2	"1.0.0.58"
-#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.0.58"
+#define MASTER_PROD_VERS		1,0,0,59
+#define MASTER_PROD_VERS_STR	"1,0,0,59"
+#define MASTER_PROD_VERS_STR2	"1.0.0.59"
+#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.0.59"
 
 // Define the legal copyright
 #define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2005 Apple Computer, Inc."
