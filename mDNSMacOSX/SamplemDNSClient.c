@@ -286,9 +286,23 @@ int main(int argc, char **argv)
                     char *dom = argv[optind+2];
                     uint16_t PortAsNumber = atoi(argv[optind+3]);
                     Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
-                    char *txt = (argc > optind+4) ? argv[optind+4] : "";
+                    char txt[2048];
+                    char *ptr = txt;
+                    int i;
+
                     if (nam[0] == '.' && nam[1] == 0) nam[0] = 0;	// We allow '.' on the command line as a synonym for empty string
                     if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
+
+					// Copy all the TXT strings into one C string separated by ASCII-1 delimiters                    
+                    for (i = optind+4; i < argc; i++)
+                    	{
+                    	strcpy(ptr, argv[i]);
+                    	ptr += strlen(argv[i]);
+                    	*ptr++ = 1;
+                    	}
+                    if (ptr > txt) ptr--;
+                    *ptr = 0;
+                    
                     printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[optind+3], txt);
                     client = DNSServiceRegistrationCreate(nam, typ, dom, registerPort.NotAnInteger, txt, reg_reply, nil);
                     break;
@@ -344,15 +358,15 @@ Exit:
 	return 0;
 
 Fail:
-	fprintf(stderr, "%s -E             (Enumerate recommended registration domains)\n", argv[0]);
-	fprintf(stderr, "%s -F                 (Enumerate recommended browsing domains)\n", argv[0]);
-	fprintf(stderr, "%s -B        <Type> <Domain>   (Browse for services instances)\n", argv[0]);
-	fprintf(stderr, "%s -L <Name> <Type> <Domain>      (Look up a service instance)\n", argv[0]);
-	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> (Register a service)\n", argv[0]);
-	fprintf(stderr, "%s -A                 (Test Adding/Updating/Deleting a record)\n", argv[0]);
-	fprintf(stderr, "%s -U                             (Test updating a TXT record)\n", argv[0]);
-	fprintf(stderr, "%s -N                        (Test adding a large NULL record)\n", argv[0]);
-	fprintf(stderr, "%s -T                       (Test creating a large TXT record)\n", argv[0]);
-	fprintf(stderr, "%s -M (Test creating a registration with multiple TXT records)\n", argv[0]);
+	fprintf(stderr, "%s -E                        (Enumerate recommended registration domains)\n", argv[0]);
+	fprintf(stderr, "%s -F                            (Enumerate recommended browsing domains)\n", argv[0]);
+	fprintf(stderr, "%s -B        <Type> <Domain>              (Browse for services instances)\n", argv[0]);
+	fprintf(stderr, "%s -L <Name> <Type> <Domain>                 (Look up a service instance)\n", argv[0]);
+	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> [<TXT>...] (Register a service)\n", argv[0]);
+	fprintf(stderr, "%s -A                            (Test Adding/Updating/Deleting a record)\n", argv[0]);
+	fprintf(stderr, "%s -U                                        (Test updating a TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -N                                   (Test adding a large NULL record)\n", argv[0]);
+	fprintf(stderr, "%s -T                                  (Test creating a large TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -M            (Test creating a registration with multiple TXT records)\n", argv[0]);
 	return 0;
 	}
