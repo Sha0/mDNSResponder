@@ -19,7 +19,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories=".;../;../../mDNSCore;../../mDNSShared"
+				AdditionalIncludeDirectories=".;../;../../mDNSCore;../../mDNSShared;&quot;C:\Program Files\Microsoft Platform SDK for Windows XP SP2\Include&quot;"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;DEBUG=1;MDNS_DEBUGMSGS=0;UNICAST_DISABLED;TARGET_OS_WIN32;WIN32_LEAN_AND_MEAN;USE_TCP_LOOPBACK;PLATFORM_NO_STRSEP;PLATFORM_NO_EPIPE;PLATFORM_NO_RLIMIT;PID_FILE=&quot;&quot;&quot;&quot;"
 				StringPooling="TRUE"
 				MinimalRebuild="TRUE"
@@ -69,7 +69,7 @@
 			CharacterSet="2">
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories=".;../;../../mDNSCore;../../mDNSShared"
+				AdditionalIncludeDirectories=".;../;../../mDNSCore;../../mDNSShared;&quot;C:\Program Files\Microsoft Platform SDK for Windows XP SP2\Include&quot;"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;UNICAST_DISABLED;TARGET_OS_WIN32;WIN32_LEAN_AND_MEAN;USE_TCP_LOOPBACK;PLATFORM_NO_STRSEP;PLATFORM_NO_EPIPE;PLATFORM_NO_RLIMIT;PID_FILE=&quot;&quot;&quot;&quot;"
 				RuntimeLibrary="0"
 				UsePrecompiledHeader="0"
@@ -118,6 +118,9 @@
 			</File>
 			<File
 				RelativePath="..\DebugServices.c">
+			</File>
+			<File
+				RelativePath="Firewall.cpp">
 			</File>
 			<File
 				RelativePath="..\..\mDNSShared\GenLinkedList.c">
