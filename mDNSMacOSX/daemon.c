@@ -235,7 +235,7 @@ void freeL(char *msg, void *x)
 //*************************************************************************************************************
 // Client Death Detection
 
-mDNSlocal void AbortClient(mach_port_t ClientMachPort)
+mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 	{
 	DNSServiceDomainEnumeration **e = &DNSServiceDomainEnumerationList;
 	DNSServiceBrowser           **b = &DNSServiceBrowserList;
@@ -247,7 +247,9 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 		{
 		DNSServiceDomainEnumeration *x = *e;
 		*e = (*e)->next;
-		LogOperation("%5d: DNSServiceDomainEnumeration(%##s) STOP", ClientMachPort, &x->dom.name);
+		if (m && m != x)
+			LogMsg("%5d: DNSServiceDomainEnumeration(%##s) STOP; WARNING m %X != x %X", ClientMachPort, &x->dom.name, m, x);
+		else LogOperation("%5d: DNSServiceDomainEnumeration(%##s) STOP", ClientMachPort, &x->dom.name);
 		mDNS_StopGetDomains(&mDNSStorage, &x->dom);
 		mDNS_StopGetDomains(&mDNSStorage, &x->def);
 		freeL("DNSServiceDomainEnumeration", x);
@@ -259,7 +261,9 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 		{
 		DNSServiceBrowser *x = *b;
 		*b = (*b)->next;
-		LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, &x->q.name);
+		if (m && m != x)
+			LogMsg("%5d: DNSServiceBrowser(%##s) STOP; WARNING m %X != x %X", ClientMachPort, &x->q.name, m, x);
+		else LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, &x->q.name);
 		mDNS_StopBrowse(&mDNSStorage, &x->q);
 		freeL("DNSServiceBrowser", x);
 		return;
@@ -270,7 +274,9 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 		{
 		DNSServiceResolver *x = *l;
 		*l = (*l)->next;
-		LogOperation("%5d: DNSServiceResolver(%##s) STOP", ClientMachPort, &x->i.name);
+		if (m && m != x)
+			LogMsg("%5d: DNSServiceResolver(%##s) STOP; WARNING m %X != x %X", ClientMachPort, &x->i.name, m, x);
+		else LogOperation("%5d: DNSServiceResolver(%##s) STOP", ClientMachPort, &x->i.name);
 		mDNS_StopResolveService(&mDNSStorage, &x->q);
 		freeL("DNSServiceResolver", x);
 		return;
@@ -281,7 +287,9 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 		{
 		DNSServiceRegistration *x = *r;
 		*r = (*r)->next;
-		LogOperation("%5d: DNSServiceRegistration(%##s) STOP", ClientMachPort, &x->s.RR_SRV.name);
+		if (m && m != x)
+			LogMsg("%5d: DNSServiceRegistration(%##s) STOP; WARNING m %X != x %X", ClientMachPort, &x->s.RR_SRV.name, m, x);
+		else LogOperation("%5d: DNSServiceRegistration(%##s) STOP", ClientMachPort, &x->s.RR_SRV.name);
 		mDNS_DeregisterService(&mDNSStorage, &x->s);
 		// Note that we don't do the "free(x);" here -- wait for the mStatus_MemFree message
 		return;
@@ -290,7 +298,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort)
 	LogMsg("%5d: died or deallocated, but no record of client can be found!", ClientMachPort);
 	}
 
-mDNSlocal void AbortBlockedClient(mach_port_t c, char *m)
+mDNSlocal void AbortBlockedClient(mach_port_t c, char *msg, void *m)
 	{
 	DNSServiceDomainEnumeration *e = DNSServiceDomainEnumerationList;
 	DNSServiceBrowser           *b = DNSServiceBrowserList;
@@ -300,13 +308,13 @@ mDNSlocal void AbortBlockedClient(mach_port_t c, char *m)
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
-	if      (e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e->dom.name, m);
-	else if (b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b->q.name, m);
-	else if (l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l->i.name, m);
-	else if (r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r->s.RR_SRV.name, m);
-	else        LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
+	if      (e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e->dom.name, msg);
+	else if (b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b->q.name, msg);
+	else if (l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l->i.name, msg);
+	else if (r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r->s.RR_SRV.name, msg);
+	else        LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c, msg);
 
-	AbortClient(c);
+	AbortClient(c, m);
 	}
 
 mDNSlocal mDNSBool CheckForExistingClient(mach_port_t c)
@@ -335,14 +343,14 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIn
 	if (msg->msgh_id == MACH_NOTIFY_DEAD_NAME)
 		{
 		const mach_dead_name_notification_t *const deathMessage = (mach_dead_name_notification_t *)msg;
-		AbortClient(deathMessage->not_port);
+		AbortClient(deathMessage->not_port, NULL);
 
 		/* Deallocate the send right that came in the dead name notification */
 		mach_port_destroy( mach_task_self(), deathMessage->not_port );
 		}
 	}
 
-mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort)
+mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void *m)
 	{
 	mach_port_t prev;
 	kern_return_t r = mach_port_request_notification(mach_task_self(), ClientMachPort, MACH_NOTIFY_DEAD_NAME, 0,
@@ -351,7 +359,7 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort)
 	if (r != KERN_SUCCESS)
 		{
 		LogMsg("%5d: died before we could enable death notification", ClientMachPort);
-		AbortClient(ClientMachPort);
+		AbortClient(ClientMachPort, m);
 		}
 	}
 
@@ -389,7 +397,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	ConvertDomainNameToCString(&answer->rdata->u.name, buffer);
 	status = DNSServiceDomainEnumerationReply_rpc(x->ClientMachPort, rt, buffer, 0, MDNS_MM_TIMEOUT);
 	if (status == MACH_SEND_TIMED_OUT)
-		AbortBlockedClient(x->ClientMachPort, "enumeration");
+		AbortBlockedClient(x->ClientMachPort, "enumeration", x);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -430,15 +438,15 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 		status = DNSServiceDomainEnumerationReply_rpc(x->ClientMachPort, rt, "local.", 0, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
 			{
-			AbortBlockedClient(x->ClientMachPort, "local enumeration");
+			AbortBlockedClient(x->ClientMachPort, "local enumeration", x);
 			return(mStatus_UnknownErr);
 			}
 	
 		err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, zeroIPAddr, FoundDomain, x);
 		if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, zeroIPAddr, FoundDomain, x);
 	
-		if (err) AbortClient(client);
-		else EnableDeathNotificationForClient(client);
+		if (err) AbortClient(client, x);
+		else EnableDeathNotificationForClient(client, x);
 	
 		if (err)
 			LogMsg("%5d: DNSServiceDomainEnumeration(%##s) failed %d", client, &x->dom.name, err);
@@ -465,7 +473,7 @@ mDNSlocal void DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryReplyFla
 		x->resultType, x->name, x->type, x->dom, flags, MDNS_MM_TIMEOUT);
 	x->resultType = -1;
 	if (status == MACH_SEND_TIMED_OUT)
-		AbortBlockedClient(x->ClientMachPort, "browse");
+		AbortBlockedClient(x->ClientMachPort, "browse", x);
 	}
 
 mDNSlocal void DeliverInstanceTimerCallBack(CFRunLoopTimerRef timer, void *info)
@@ -559,8 +567,8 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		LogOperation("%5d: DNSServiceBrowser(%##s%##s) START", client, &t, &d);
 		err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, zeroIPAddr, FoundInstance, x);
 	
-		if (err) AbortClient(client);
-		else EnableDeathNotificationForClient(client);
+		if (err) AbortClient(client, x);
+		else EnableDeathNotificationForClient(client, x);
 	
 		if (err) LogMsg("%5d: DNSServiceBrowser(%##s%##s) failed %d", client, &t, &d, err);
 		return(err);
@@ -619,7 +627,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	status = DNSServiceResolverReply_rpc(x->ClientMachPort,
 		(char*)&interface, (char*)&address, cstring, 0, MDNS_MM_TIMEOUT);
 	if (status == MACH_SEND_TIMED_OUT)
-		AbortBlockedClient(x->ClientMachPort, "resolve");
+		AbortBlockedClient(x->ClientMachPort, "resolve", x);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -661,8 +669,8 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 		LogOperation("%5d: DNSServiceResolver(%##s) START", client, &x->i.name);
 		err = mDNS_StartResolveService(&mDNSStorage, &x->q, &x->i, FoundInstanceInfo, x);
 	
-		if (err) AbortClient(client);
-		else EnableDeathNotificationForClient(client);
+		if (err) AbortClient(client, x);
+		else EnableDeathNotificationForClient(client, x);
 	
 		if (err) LogMsg("%5d: DNSServiceResolver(%##s) failed %d", client, &x->i.name, err);
 		return(err);
@@ -699,7 +707,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 		LogOperation("%5d: DNSServiceRegistration(%##s) Name Registered", x->ClientMachPort, &sr->RR_SRV.name);
 		status = DNSServiceRegistrationReply_rpc(x->ClientMachPort, result, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
-			AbortBlockedClient(x->ClientMachPort, "registration success");
+			AbortBlockedClient(x->ClientMachPort, "registration success", x);
 		}
 
 	else if (result == mStatus_NameConflict)
@@ -713,10 +721,10 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 			{
 			kern_return_t status;
 			// AbortClient unlinks our DNSServiceRegistration from the list so we can safely free it
-			AbortClient(x->ClientMachPort);
+			AbortClient(x->ClientMachPort, x);
 			status = DNSServiceRegistrationReply_rpc(x->ClientMachPort, result, MDNS_MM_TIMEOUT);
 			if (status == MACH_SEND_TIMED_OUT)
-				AbortBlockedClient(x->ClientMachPort, "registration conflict"); // Yes, this IS safe :-)
+				AbortBlockedClient(x->ClientMachPort, "registration conflict", x); // Yes, this IS safe :-)
 			FreeDNSServiceRegistration(x);
 			}
 		}
@@ -830,8 +838,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		CheckForDuplicateRegistrations(x, &n, &t, &d);
 		err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtinfo, data_len, RegCallback, x);
 	
-		if (err) AbortClient(client);
-		else EnableDeathNotificationForClient(client);
+		if (err) AbortClient(client, x);
+		else EnableDeathNotificationForClient(client, x);
 	
 		if (err)
 			LogMsg("%5d: DNSServiceRegistration(%#s.%##s%##s) failed %d",
@@ -1172,10 +1180,14 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 		destroyBootstrapService();
 
 	debugf("ExitCallback: Aborting MIG clients");
-	while (DNSServiceDomainEnumerationList) AbortClient(DNSServiceDomainEnumerationList->ClientMachPort);
-	while (DNSServiceBrowserList)           AbortClient(DNSServiceBrowserList->ClientMachPort);
-	while (DNSServiceResolverList)          AbortClient(DNSServiceResolverList->ClientMachPort);
-	while (DNSServiceRegistrationList)      AbortClient(DNSServiceRegistrationList->ClientMachPort);
+	while (DNSServiceDomainEnumerationList)
+		AbortClient(DNSServiceDomainEnumerationList->ClientMachPort, DNSServiceDomainEnumerationList);
+	while (DNSServiceBrowserList)
+		AbortClient(DNSServiceBrowserList          ->ClientMachPort, DNSServiceBrowserList);
+	while (DNSServiceResolverList)
+		AbortClient(DNSServiceResolverList         ->ClientMachPort, DNSServiceResolverList);
+	while (DNSServiceRegistrationList)
+		AbortClient(DNSServiceRegistrationList     ->ClientMachPort, DNSServiceRegistrationList);
 
 	debugf("ExitCallback: mDNS_Close");
 	mDNS_Close(&mDNSStorage);
