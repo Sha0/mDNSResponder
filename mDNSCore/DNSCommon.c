@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.34  2004/06/04 00:25:25  cheshire
+Fix misaligned write exception that occurs on some platforms
+
 Revision 1.33  2004/06/04 00:16:18  cheshire
 Remove non-portable use of 'inline'
 
@@ -149,7 +152,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
-#pragma mark - DNameList copy/deallocation routines 
+#pragma mark - DNameList copy/deallocation routines
 #endif
 
 mDNSexport DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig)
@@ -1054,7 +1057,8 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 
 mDNSlocal mDNSu8 *putVal16(mDNSu8 *ptr, mDNSu16 val)
 	{
-	*(mDNSOpaque16 *)ptr = mDNSOpaque16fromIntVal(val);
+	ptr[0] = (mDNSu8)((val >> 8 ) & 0xFF);
+	ptr[1] = (mDNSu8)((val      ) & 0xFF);
 	return ptr + sizeof(mDNSOpaque16);
 	}
 
@@ -1067,9 +1071,9 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 		{
 		// check if space for opt/optlen
 		if (ptr + (2 * sizeof(mDNSu16)) > limit) goto space_err;
-		(mDNSu8 *)opt = rr->rdata->u.data + nput;	
+		(mDNSu8 *)opt = rr->rdata->u.data + nput;
 		ptr = putVal16(ptr, opt->opt);
-		ptr = putVal16(ptr, opt->optlen);			
+		ptr = putVal16(ptr, opt->optlen);
 		nput += 2 * sizeof(mDNSu16);
 		if (opt->opt == kDNSOpt_LLQ)
 			{
@@ -1085,7 +1089,7 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 			}
 		else if (opt->opt == kDNSOpt_Lease)
 			{
-			if (ptr + sizeof(mDNSs32) > limit) goto space_err;			
+			if (ptr + sizeof(mDNSs32) > limit) goto space_err;
 			*(mDNSOpaque32 *)ptr = mDNSOpaque32fromIntVal(opt->OptData.lease);
 			ptr += sizeof(mDNSs32);
 			nput += sizeof(mDNSs32);
@@ -1101,8 +1105,8 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 	}
 
 mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
-	{	
-	mDNSu16 val = mDNSVal16(*((mDNSOpaque16 *)*ptr));
+	{
+	mDNSu16 val = ((mDNSu16)(*ptr)[0]) << 8 | (*ptr)[1];
 	*ptr += sizeof(mDNSOpaque16);
 	return val;
 	}
@@ -1114,15 +1118,15 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 	
 	while (nread < pktRDLen)
 		{
-		opt = (rdataOpt *)(rr->rdata->u.data + nread);		
+		opt = (rdataOpt *)(rr->rdata->u.data + nread);
 		// space for opt + optlen
 		if (nread + (2 * sizeof(mDNSu16)) > rr->rdata->MaxRDLength) goto space_err;
 		opt->opt = getVal16(&ptr);
-		opt->optlen = getVal16(&ptr);		
+		opt->optlen = getVal16(&ptr);
 		nread += 2 * sizeof(mDNSu16);
 		if (opt->opt == kDNSOpt_LLQ)
 			{
-			if ((unsigned)(limit - ptr) < sizeof(LLQOptData)) goto space_err;			
+			if ((unsigned)(limit - ptr) < sizeof(LLQOptData)) goto space_err;
 			opt->OptData.llq.vers = getVal16(&ptr);
 			opt->OptData.llq.llqOp = getVal16(&ptr);
 			opt->OptData.llq.err = getVal16(&ptr);
@@ -1134,7 +1138,7 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 			}
 		else if (opt->opt == kDNSOpt_Lease)
 			{
-			if ((unsigned)(limit - ptr) < sizeof(mDNSs32)) goto space_err;						
+			if ((unsigned)(limit - ptr) < sizeof(mDNSs32)) goto space_err;
 
 			opt->OptData.lease = mDNSVal32(*(mDNSOpaque32 *)ptr);
 			ptr += sizeof(mDNSs32);
@@ -1148,8 +1152,8 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 
 	space_err:
 	LogMsg("ERROR: getLLQRdata - out of space");
-	return mDNSNULL; 
-	}			
+	return mDNSNULL;
+	}
 
 mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr)
 	{
@@ -1187,12 +1191,12 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rr->rdata->u.srv.port.b[0];
 							*ptr++ = rr->rdata->u.srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.srv.target));
-		case kDNSType_OPT:	return putOptRData(ptr, limit, rr);		
+		case kDNSType_OPT:	return putOptRData(ptr, limit, rr);
 							
 		default:			debugf("putRData: Warning! Writing unknown resource type %d as raw data", rr->rrtype);
 							// Fall through to common code below
 		case kDNSType_HINFO:
-		case kDNSType_TXT:  
+		case kDNSType_TXT:
 		case kDNSType_TSIG:	if (ptr + rr->rdlength > limit) return(mDNSNULL);
 							mDNSPlatformMemCopy(rr->rdata->u.data, ptr, rr->rdlength);
 							return(ptr + rr->rdlength);
@@ -1504,9 +1508,9 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 			                rr->resrec.rdata->u.soa.expire.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;   ptr += 4;
 			                rr->resrec.rdata->u.soa.min.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;
 			                break;
-							
+
 		case kDNSType_OPT:  getOptRdata(ptr, end, &rr->resrec, pktrdlength); break;
-							   
+
 		default:			if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{
 								debugf("GetResourceRecord: rdata %d (%s) size (%d) exceeds storage (%d)",
@@ -1612,12 +1616,12 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDN
 		end = DNSDigest_SignMessage(msg, &end, &numAdditionals, authInfo);
 		if (!end) return mStatus_UnknownErr;
 		}
-		   		
+
 	// Send the packet on the wire
 
 	if (sd >= 0)
 		{
-		msglen = (mDNSu16)(end - (mDNSu8 *)msg); 
+		msglen = (mDNSu16)(end - (mDNSu8 *)msg);
 		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
 		lenbuf[1] = (mDNSu8)(msglen &  0xFF);
 		nsent = mDNSPlatformWriteTCP(sd, (char*)lenbuf, 2);
@@ -1637,7 +1641,7 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDN
 	msg->h.numAnswers     = numAnswers;
 	msg->h.numAuthorities = numAuthorities;
 	msg->h.numAdditionals = (mDNSu16)(authInfo ? numAdditionals - 1 : numAdditionals);
-	
+
 	return(status);
 
 	tcp_error:
@@ -1645,7 +1649,7 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDN
 	return mStatus_UnknownErr;
 
 	}
-				
+
 mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd)
 	{
 	if (sd < 0) { LogMsg("mDNSSendDNSMessage_tcp: invalid desciptor %d", sd); return mStatus_UnknownErr; }
@@ -1656,7 +1660,7 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport)
 	{
 	return sendDNSMessage(m, msg, end, InterfaceID, dst, dstport, -1, mDNSNULL);
-	}	
+	}
 
 mDNSexport mStatus mDNSSendSignedDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_AuthInfo *authInfo)
