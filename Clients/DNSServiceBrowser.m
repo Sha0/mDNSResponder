@@ -421,7 +421,9 @@ void resolve_reply (
             }
         }
         
-        [nameField reloadData];		//Reload (redraw) Name TableView with newly found data
+		// If not expecting any more data, then reload (redraw) Name TableView with newly found data
+		if ((flags & kDNSServiceDiscoveryMoreRepliesImmediately) == 0)
+			[nameField reloadData];
     }
     return;
 }
