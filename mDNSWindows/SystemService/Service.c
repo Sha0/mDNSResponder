@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.16  2004/09/16 18:49:34  shersche
+Remove the XP SP2 check before attempting to manage the firewall. There is a race condition in the SP2 updater such that upon first reboot after the upgrade, mDNSResponder might not know that it is running under SP2 yet.  This necessitates a second reboot before the firewall is managed.  Removing the check will cause mDNSResponder to try and manage the firewall everytime it boots up, if and only if it hasn't managed the firewall a previous time.
+
 Revision 1.15  2004/09/15 17:13:33  shersche
 Change Firewall name
 
@@ -638,68 +641,39 @@ static OSStatus CheckFirewall()
 	DWORD			valueLen;
 	DWORD			type;
 	const char	*	s;
-	HKEY			key;
+	HKEY			key = NULL;
 	OSStatus		err = kUnknownErr;
 	
-	key = NULL;
+	// Check to see if we've managed the firewall.
+	// This package might have been installed, then
+	// the OS was upgraded to SP2 or above.  If that's
+	// the case, then we need to manipulate the firewall
+	// so networking works correctly.
 
-	// Is the OS Windows XP ?
+	s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+	require_noerr( err, exit );
 
-	if (strcmp((const char*) &gMDNSRecord.HIHardware.c[1], "Windows XP") == 0)
-	{
-		// If so, then check the current service pack installed.
-		// Calling GetVersionEx and parsing the szCSDVersion string field
-		// is problematic for a variety of reasons, most notably
-		// because the field might be localized.  So we'll read the
-		// installed service pack directly from the registry.
-
-		s = "SYSTEM\\CurrentControlSet\\Control\\Windows";
-		err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
-		require_noerr( err, exit );
-
-		valueLen = sizeof(DWORD);
-		err = RegQueryValueEx(key, "CSDVersion", 0, &type, (LPBYTE) &value, &valueLen);
-		require_noerr( err, exit );
-
-		RegCloseKey( key );
-		key = NULL;
-
-		// Is the service pack 2 or newer?
-
-		if (value >= 0x200)
-		{
-			// Then check to see if we've managed the firewall.
-			// This package might have been installed, then
-			// the OS was upgraded to SP2 or above.  If that's
-			// the case, then we need to manipulate the firewall
-			// so networking works correctly.
-
-			s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
-			err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
-			require_noerr( err, exit );
+	valueLen = sizeof(DWORD);
+	err = RegQueryValueEx(key, kServiceManageFirewall, 0, &type, (LPBYTE) &value, &valueLen);
 	
-			valueLen = sizeof(DWORD);
-			err = RegQueryValueEx(key, kServiceManageFirewall, 0, &type, (LPBYTE) &value, &valueLen);
-			
-			if ((err != ERROR_SUCCESS) || (value == 0))
-			{
-				wchar_t	fullPath[ MAX_PATH ];
-				DWORD	size;
+	if ((err != ERROR_SUCCESS) || (value == 0))
+	{
+		wchar_t	fullPath[ MAX_PATH ];
+		DWORD	size;
 
-				// Get a full path to the executable
+		// Get a full path to the executable
 
-				size = GetModuleFileNameW( NULL, fullPath, sizeof( fullPath ) );
-				err = translate_errno( size > 0, (OSStatus) GetLastError(), kPathErr );
-				require_noerr( err, exit );
+		size = GetModuleFileNameW( NULL, fullPath, sizeof( fullPath ) );
+		err = translate_errno( size > 0, (OSStatus) GetLastError(), kPathErr );
+		require_noerr( err, exit );
 
-				err = mDNSAddToFirewall(fullPath, kServiceFirewallName);
-				require_noerr( err, exit );
+		err = mDNSAddToFirewall(fullPath, kServiceFirewallName);
+		require_noerr( err, exit );
 
-				value = 1;
-				err = RegSetValueEx( key, kServiceManageFirewall, 0, REG_DWORD, (const LPBYTE) &value, sizeof( DWORD ) );
-				require_noerr( err, exit );
-			}
-		}
+		value = 1;
+		err = RegSetValueEx( key, kServiceManageFirewall, 0, REG_DWORD, (const LPBYTE) &value, sizeof( DWORD ) );
+		require_noerr( err, exit );
 	}
 	
 exit:
