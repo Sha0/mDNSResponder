@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.355  2004/02/05 09:32:33  cheshire
+Fix from Bob Bradley: When using the "%.*s" string form,
+guard against truncating in the middle of a multi-byte UTF-8 character.
+
 Revision 1.354  2004/02/05 09:30:22  cheshire
 Update comments
 
@@ -1409,7 +1413,35 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 							if (!s) { static char emsg[] = "<<NULL>>"; s = emsg; i = sizeof(emsg)-1; }
 							else switch (F.altForm)
 								{
-								case 0: { char *a=s; i=0; while(*a++) i++; break; }	// C string
+								case 0: i=0;
+										if (!F.havePrecision)				// C string
+											while(s[i]) i++;
+										else
+											{
+											while ((i < F.precision) && s[i]) i++;
+											// Make sure we don't truncate in the middle of a UTF-8 character
+											// If last character we got was any kind of UTF-8 multi-byte character,
+											// then see if we have to back up.
+											// This is not as easy as the similar checks below, because
+											// here we can't assume it's safe to examine the *next* byte, so we
+											// have to confine ourselves to working only backwards in the string.
+											j = i;		// Record where we got to
+											// Now, back up until we find first non-continuation-char
+											while (i>0 && (s[i-1] & 0xC0) == 0x80) i--;
+											// Now s[i-1] is the first non-continuation-char
+											// and (j-i) is the number of continuation-chars we found
+											if (i>0 && (s[i-1] & 0xC0) == 0xC0)	// If we found a start-char
+												{
+												i--;		// Tentatively eliminate this start-char as well
+												// Now (j-i) is the number of characters we're considering eliminating.
+												// To be legal UTF-8, the start-char must contain (j-i) one-bits,
+												// followed by a zero bit. If we shift it right by (7-(j-i)) bits
+												// (with sign extension) then the result has to be 0xFE.
+												// If this is right, then we reinstate the tentatively eliminated bytes.
+												if (((j-i) < 7) && (((s[i] >> (7-(j-i))) & 0xFF) == 0xFE)) i = j;
+												}
+											}
+										break;								
 								case 1: i = (unsigned char) *s++; break;	// Pascal string
 								case 2: {									// DNS label-sequence name
 										unsigned char *a = (unsigned char *)s;
