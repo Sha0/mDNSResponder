@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.182  2003/06/09 18:38:42  cheshire
+<rdar://problem/3285082> Need to be more tolerant when there are mDNS proxies on the network
+Only issue a correction if the TTL in the proxy packet is less than half the correct value.
+
 Revision 1.181  2003/06/07 06:45:05  cheshire
 <rdar://problem/3283666> No need for multiple machines to all be sending the same queries
 
@@ -4543,7 +4547,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				if (SameRData(pktrr.rrtype, rr->rrtype, pktrr.rdata, rr->rdata))
 					{
 					// If the RR in the packet is identical to ours, just check they're not trying to lower the TTL on us
-					if (pktrr.rroriginalttl >= rr->rroriginalttl || m->SleepState)
+					if (pktrr.rroriginalttl >= rr->rroriginalttl/2 || m->SleepState)
 						{
 						// If we were planning to send on this -- and only this -- interface, then we don't need to any more
 						if (rr->ImmedAnswer == InterfaceID) rr->ImmedAnswer = mDNSNULL;
