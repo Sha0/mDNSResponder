@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.33  2003/11/22 01:18:46  ksekar
+Bug #: <rdar://problem/3486646>: config change handler not called for dns-sd services
+
 Revision 1.32  2003/11/20 21:46:12  ksekar
 Bug #: <rdar://problem/3486635>: leak: DNSServiceRegisterRecord
 
@@ -493,6 +496,7 @@ void udsserver_handle_configchange(void)
     for (req = all_requests; req; req = req->next)
         {
         srv = req->service;
+		if (!req->service) continue;  // only registered services require automatic config change handling.
         if (srv->autoname && !SameDomainLabel(srv->name.c, mDNSStorage.nicelabel.c))
             {
             srv->rename_on_memfree = 1;
