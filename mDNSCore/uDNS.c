@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.52  2004/06/17 01:13:11  ksekar
+<rdar://problem/3696616>: polling interval too short
+
 Revision 1.51  2004/06/10 04:36:44  cheshire
 Fix compiler warning
 
@@ -1075,7 +1078,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				}
 			}
 		}
-	LogMsg("Received unexpected response: ID %d matches no active records", mDNSVal16(msg->h.id));		
+	debugf("Received unexpected response: ID %d matches no active records", mDNSVal16(msg->h.id));
 	}
 
 		
@@ -1238,8 +1241,8 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	if (info->state == LLQ_Established) info->ntries = 1;
 	else info->ntries++;
 	info->state = LLQ_Refresh;
-	q->LastQTxTime = mDNSPlatformTimeNow();
-	info->retry = (info->expire - q->LastQTxTime) / 2;	
+	q->LastQTime = mDNSPlatformTimeNow();
+	info->retry = (info->expire - q->LastQTime) / 2;	
 	}
 
 mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, mDNSInterfaceID InterfaceID)
@@ -1312,7 +1315,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 		llq->lease    = info->origLease;
 		}
 
-	q->LastQTxTime = timenow;
+	q->LastQTime = timenow;
 	info->retry = timenow  + (kLLQ_INIT_RESEND * info->ntries * mDNSPlatformOneSecond);
 	
 	if (constructQueryMsg(&response, &responsePtr, q)) goto error;
@@ -1400,7 +1403,8 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 		LogMsg("LLQ Setup for %s failed with rcode %d.  Reverting to polling mode", q->qname.c, rcode);
 		info->state = LLQ_Poll;
 		q->uDNS_info.responseCallback = simpleResponseHndlr;
-		q->LastQTxTime = mDNSPlatformTimeNow() - (UNICAST_POLL_INTERVAL * mDNSPlatformOneSecond);  // trigger question immediately
+		q->LastQTime = mDNSPlatformTimeNow();
+		q->ThisQInterval = 1;
 		return;
 		}
 	
@@ -1467,7 +1471,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	info->state = LLQ_InitialRequest;
 	info->origLease = kLLQ_DefLease;
     info->retry = timenow + (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
-	q->LastQTxTime = timenow;
+	q->LastQTime = timenow;
 	q->uDNS_info.responseCallback = recvSetupResponse;
 	q->uDNS_info.internal = mDNStrue;
 	}
@@ -1621,7 +1625,7 @@ mDNSlocal void stopLLQ(mDNS *m, DNSQuestion *question)
 			sendLLQRefresh(m, question, 0);
 			goto free_info;	
 		default:			
-			LogMsg("stopLLQ - silently discarding LLQ in state %d", info->state);				
+			debugf("stopLLQ - silently discarding LLQ in state %d", info->state);				
 			goto free_info;
 		}
 	
@@ -1726,9 +1730,10 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 
 	// else send the query to our server
 
-	question->LastQTxTime = mDNSPlatformTimeNow();
+	question->LastQTime = mDNSPlatformTimeNow();
+	question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
     // store the question/id in active question list
-    question->uDNS_info.timestamp = question->LastQTxTime;
+    question->uDNS_info.timestamp = question->LastQTime;
 	question->uDNS_info.internal = internal;
 	LinkActiveQuestion(u, question);
 	question->uDNS_info.knownAnswers = NULL;
@@ -2923,7 +2928,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 			}
 		else
 			{
-			sendtime = q->LastQTxTime + UNICAST_POLL_INTERVAL * mDNSPlatformOneSecond;
+			sendtime = q->LastQTime + q->ThisQInterval;
 			if (sendtime <= timenow)
 				{
 				err = constructQueryMsg(&msg, &end, q);
@@ -2935,7 +2940,8 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 					}
 				err = mDNSSendDNSMessage(m, &msg, end, q->InterfaceID, server, UnicastDNSPort);
 				if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %d", err); } // surpress syslog messages if we have no network
-				q->LastQTxTime = timenow;
+				q->LastQTime = timenow;
+				if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;
 				}
 			else if (u->nextevent - sendtime > 0) u->nextevent = sendtime;
 			}

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.11  2004/06/17 01:13:11  ksekar
+<rdar://problem/3696616>: polling interval too short
+
 Revision 1.10  2004/06/11 05:45:03  ksekar
 <rdar://problem/3682397>: Change SRV names for LLQ/Update port lookups
 
@@ -67,8 +70,8 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	extern "C" {
 #endif
 
-//!!!KRS these must go away once we have notifications
-#define UNICAST_POLL_INTERVAL 20         // polling rate for queries !!!KRS should go away w/ notifications
+#define INIT_UCAST_POLL_INTERVAL (15 * mDNSPlatformOneSecond)
+#define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
 #define NO_GOODBYE                       // will we receive goodbye packets from the server?
 #define UPDATE_PORT_NAME "_dns-update._udp."
 #define LLQ_PORT_NAME "_dns-llq._udp"
