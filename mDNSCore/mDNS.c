@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.428  2004/09/24 00:12:25  cheshire
+Get rid of unused RRUniqueOrKnownUnique(RR)
+
 Revision 1.427  2004/09/23 20:44:11  cheshire
 <rdar://problem/3813148> Reduce timeout before expiring records on failure
 
@@ -1788,8 +1791,6 @@ mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 #define ResourceRecordIsValidInterfaceAnswer(RR, INTID) \
 	(ResourceRecordIsValidAnswer(RR) && \
 	((RR)->resrec.InterfaceID == mDNSInterface_Any || (RR)->resrec.InterfaceID == (INTID)))
-
-#define RRUniqueOrKnownUnique(RR) ((RR)->RecordType & (kDNSRecordTypeUnique | kDNSRecordTypeKnownUnique))
 
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 #define DefaultProbeCountForRecordType(X)      ((X) == kDNSRecordTypeUnique ? DefaultProbeCountForTypeUnique : (mDNSu8)0)
