@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.55  2004/07/15 19:01:33  ksekar
+<rdar://problem/3681029>: Check for incorrect time comparisons
+
 Revision 1.54  2004/06/22 02:10:53  ksekar
 <rdar://problem/3705433>: Lighthouse failure causes packet flood to DNS
 
@@ -2923,7 +2926,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq->state != LLQ_Poll)
 			{
-			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Suspended && llq->retry <= timenow)				
+			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Suspended && llq->retry - timenow < 0)				
 				{
 
 				// sanity check to avoid packet flood bugs
@@ -2942,7 +2945,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 		else
 			{
 			sendtime = q->LastQTime + q->ThisQInterval;
-			if (sendtime <= timenow)
+			if (sendtime - timenow < 0)
 				{
 				err = constructQueryMsg(&msg, &end, q);
 				if (err)
@@ -2966,7 +2969,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 		rInfo = &rr->uDNS_info;		
 		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
 		    {		    
-		    if (rInfo->expire < timenow)
+		    if (rInfo->expire - timenow < 0)
 		        {
 		        debugf("refreshing record %s", rr->resrec.name.c);
 		        rInfo->state = regState_Refresh;
@@ -2981,7 +2984,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 		rInfo = &srs->uDNS_info;	
 		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
 		    {		    
-		    if (rInfo->expire < timenow)
+		    if (rInfo->expire - timenow < 0)
 		        {	
 			    debugf("refreshing service %s", srs->RR_SRV.resrec.name.c);
 			    rInfo->state = regState_Refresh;
