@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.7  2004/10/26 21:15:40  cheshire
+<rdar://problem/3854314> Legacy NAT traversal code closes file descriptor 0
+Additional fixes: Code should set fds to -1 after closing sockets.
+
 Revision 1.6  2004/10/26 20:59:20  cheshire
 <rdar://problem/3854314> Legacy NAT traversal code closes file descriptor 0
 
@@ -673,6 +677,7 @@ static int EventInit()
 		iRet = pthread_create(&g_TCPthread, &attr, TCPProc, 0);
 		if (iRet != 0) {
 			close(g_sTCP);
+			g_sTCP = -1;
 			if (g_fLogging & NALOG_ERROR)
 				fprintf(g_log, "EventInit: TCPProc create failed(%d)\n", iRet);
 			return NA_E_THREAD_ERROR;
@@ -1430,8 +1435,10 @@ static void *TCPProc(void *in)
 cleanup:
 	//TracePrint(ELL_TRACE, "UPnP: TCPProc end\n");
 	close(g_sTCP);
+	g_sTCP = -1;
 	g_fEventEnabled = FALSE;
 	if (g_sTCPCancel != -1) close(g_sTCPCancel);
+	g_sTCPCancel = -1;
 
 	return NULL;
 }
@@ -1476,7 +1483,8 @@ static void *UDPProc(void *in)
 			{
 				close(g_sUDP);
 				close(g_sUDPCancel);
-				g_sUDP = 0;
+				g_sUDP = -1;
+				g_sUDPCancel = -1;
 				return NULL;
 			}
 			continue;
@@ -1490,6 +1498,8 @@ static void *UDPProc(void *in)
 				fprintf(g_log, "recv failed (%d)\n", errno);
 			close(g_sUDP);
 			close(g_sUDPCancel);
+			g_sUDP = -1;
+			g_sUDPCancel = -1;
 			return NULL;
 		}
 		buf[n] = '\0';
@@ -1535,6 +1545,7 @@ static void *UDPProc(void *in)
 	}
 
 	close(g_sUDP);
+	g_sUDP = -1;
 }
 
 static void SendUDPMsg(const char *msg) {
@@ -2950,6 +2961,7 @@ int LegacyNATInit(void)
 		if (iRet != 0) {
 			g_fFirstInit = TRUE;		// so we'll redo this part next time
 			close(g_sUDP);
+			g_sUDP = -1;
 			if (g_fLogging & NALOG_ERROR)
 				fprintf(log, "UpnpInit - pthread create failed (%d)\n", iRet);
 			return NA_E_THREAD_ERROR;
@@ -2976,6 +2988,8 @@ int LegacyNATDestroy()
 	g_fQuit = TRUE;
 	if (g_sTCPCancel >= 0) close(g_sTCPCancel);
 	if (g_sUDPCancel >= 0) close(g_sUDPCancel);
+	g_sTCPCancel = -1;
+	g_sUDPCancel = -1;
 	g_fFirstInit = TRUE;
 	g_fUPnPEnabled = FALSE;
 	g_fControlURLSet = FALSE;
