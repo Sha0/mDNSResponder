@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.22  2004/04/20 22:43:28  cheshire
+Use _services._dns-sd._udp query, as documented in
+<http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd-02.txt>
+
 Revision 1.21  2004/01/28 21:38:57  cheshire
 Also ask target host for _services._mdns._udp.local. list
 
@@ -400,11 +404,16 @@ mDNSexport int main(int argc, char **argv)
 	
 		if (hardware[0] || software[0])
 			{
+			DNSQuestion q1, q2;
 			printf("HINFO Hardware: %s\n", hardware);
 			printf("HINFO Software: %s\n", software);
 			// We need to make sure the services query is targeted
 			if (target.type == 0) target = hostaddr;
-			DoQuery(&q, "_services._mdns._udp.local.", kDNSQType_ANY, &target, ServicesCallback);
+			StartQuery(&q1, "_services._mdns._udp.local.",   kDNSQType_ANY, &target, ServicesCallback);
+			StartQuery(&q2, "_services._dns-sd._udp.local.", kDNSQType_ANY, &target, ServicesCallback);
+			WaitForAnswer(&mDNSStorage, 4);
+			mDNS_StopQuery(&mDNSStorage, &q1);
+			mDNS_StopQuery(&mDNSStorage, &q2);
 			if (StopNow == 2) break;
 			}
 		else if (NumAnswers)
