@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.376  2004/05/05 18:30:44  ksekar
+Restored surpressed Cache Tail debug messages.
+
 Revision 1.375  2004/04/26 21:36:25  cheshire
 Only send IPv4 (or v6) multicast when IPv4 (or v6) multicast send/receive
 is indicated as being available on that interface
@@ -3397,7 +3400,7 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 					ReleaseCacheRR(m, rr);
 					}
 				}
-			//!!!KRS uncomment before checkin if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
+			if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
 			m->rrcache_tail[slot] = rp;
 			}
 		#if MDNS_DEBUGMSGS
