@@ -325,7 +325,7 @@ mDNSlocal pascal void ClientNotifier(void *contextPtr, OTEventCode code, OTResul
 		case xOTStackIsLoading:   break;
 		case xOTStackWasLoaded:   m->mDNSPlatformStatus = mStatus_Waiting; m->p->mOTstate = mOT_Reset; break;
 		case xOTStackIsUnloading: break;
-		case kOTPortNetworkChange: /*m->netChanged = true;*/ break;
+		case kOTPortNetworkChange: break;
 		default: debugf("ClientNotifier unknown code %X, %X, %d", contextPtr, code, result); break;
 		}
 	}
@@ -471,7 +471,6 @@ mDNSexport void mDNSPlatformIdle(mDNS *const m)
 		printf("\n");
 		printf("Reopening endpoint\n");
 		mDNSOpenEndpoint(m);
-		m->NetChanged = true;
 		m->ResourceRecords = NULL;
 		}
 
