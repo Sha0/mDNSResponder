@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.14  2005/01/25 08:55:54  shersche
+<rdar://problem/3911084> Load icons at run-time from resource DLL
+Bug #: 3911084
+
 Revision 1.13  2005/01/06 08:15:45  shersche
 Append queue name to end of LPR port name, correctly build port name when queue name is absent
 
@@ -118,7 +122,8 @@ enum PrinterParsingState
 IMPLEMENT_DYNAMIC(CThirdPage, CPropertyPage)
 CThirdPage::CThirdPage()
 	: CPropertyPage(CThirdPage::IDD),
-		m_initialized(false)
+		m_initialized(false),
+		m_printerImage( NULL )
 {
 	m_psp.dwFlags &= ~(PSP_HASHELP);
 	m_psp.dwFlags |= PSP_DEFAULT|PSP_USEHEADERTITLE|PSP_USEHEADERSUBTITLE;
@@ -1032,7 +1037,18 @@ OSStatus CThirdPage::OnInitPage()
 	CString					ntPrint;
 	OSStatus				err;
 	BOOL					ok;
+
+	// Load printer icon
+
+	check( m_printerImage == NULL );
 	
+	m_printerImage = (CStatic*) GetDlgItem( IDR_MANIFEST );
+	check( m_printerImage );
+
+	if ( m_printerImage != NULL )
+	{
+		m_printerImage->SetIcon( LoadIcon( GetNonLocalizedResources(), MAKEINTRESOURCE( IDI_PRINTER ) ) );
+	}
 
 	//
 	// The CTreeCtrl widget automatically sends a selection changed
