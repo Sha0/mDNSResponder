@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.238  2005/01/19 19:15:35  ksekar
+Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
+
 Revision 1.237  2005/01/19 03:33:09  cheshire
 <rdar://problem/3945652> When changing Computer Name, we drop our own Goobye Packets
 
@@ -1133,22 +1136,27 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 				}
 			else
 				{
-				DNSServiceBrowserQuestion *q = ptr->qlist, *prev = NULL;
-				while (q)
+				DNSServiceBrowserQuestion **q = &ptr->qlist;
+				while (*q)
 					{
-					if (SameDomainName(&q->domain, d))
+					if (SameDomainName(&(*q)->domain, d))
 						{
-						if (prev) prev->next = q->next;
-						else ptr->qlist = q->next;
-						mDNS_PurgeResultsForDomain(&mDNSStorage, &q->q, d);
-						mDNS_StopBrowse(&mDNSStorage, &q->q);
-						freeL("DNSServiceBrowserQuestion", q);
-						break;
-						}
-					prev = q;
-					q = q->next;
+						DNSServiceBrowserQuestion *remove = *q;
+						*q = (*q)->next;
+						if (remove->q.LongLived)
+							{
+							// give goodbyes for known answers.  note that since events are sent to client via udns_execute(),
+							// we don't need to worry about the question being cancelled mid-loop
+							CacheRecord *ka = remove->q.uDNS_info.knownAnswers;
+							while (ka) { remove->q.QuestionCallback(&mDNSStorage, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
+							}						
+						mDNS_StopBrowse(&mDNSStorage, &remove->q);
+						freeL("DNSServiceBrowserQuestion", remove );
+						return;						
+						}					
+					q = &(*q)->next;
 					}
-				if (!q) LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
+			    LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
 				}
 			}
 		}

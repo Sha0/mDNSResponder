@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.273  2005/01/19 19:15:31  ksekar
+Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
+
 Revision 1.272  2005/01/18 18:10:55  ksekar
 <rdar://problem/3954575> Use 10.4 resolver API to get search domains
 
@@ -2495,8 +2498,6 @@ extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mD
 extern void mDNS_UpdateLLQs(mDNS *m);
 extern void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
 extern void mDNS_DeleteDNSServers(mDNS *const m);
-
-extern void mDNS_PurgeResultsForDomain(mDNS *m, DNSQuestion *q, const domainname *d);
 
 // Routines called by the core, exported by DNSDigest.c
 

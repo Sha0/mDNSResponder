@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.156  2005/01/19 19:15:36  ksekar
+Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
+
 Revision 1.155  2005/01/19 03:00:47  cheshire
 Show Add/Rmv in DNSServiceBrowse LogOperation() message
 
@@ -1914,8 +1917,8 @@ static void browse_termination_callback(void *context)
 mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDNSBool add)
 	{
 	request_state *r;
-	
-	for (r = all_requests; r; r = r->next)
+
+  	for (r = all_requests; r; r = r->next)
 		{
 		browser_info_t *info = r->browser_info;
 		
@@ -1923,22 +1926,27 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 		if (add) add_domain_to_browser(info, d);
 		else
 			{
-			browser_t *ptr = info->browsers, *prev = NULL;
-			while (ptr)
+			browser_t **ptr = &info->browsers;
+			while (*ptr)
 				{
-				if (SameDomainName(&ptr->domain, d))
+				if (SameDomainName(&(*ptr)->domain, d))
 					{
-					if (prev) prev->next = ptr->next;
-					else info->browsers = ptr->next;
-					mDNS_PurgeResultsForDomain(gmDNS, &ptr->q, d);  // give goodbyes for domain about to disappear
-					mDNS_StopBrowse(gmDNS, &ptr->q);
-					freeL("browser_t", ptr);
-					break;
+					browser_t *remove = *ptr;
+					*ptr = (*ptr)->next;
+					if (remove->q.LongLived)
+						{
+						// give goodbyes for known answers.
+						// note that since events are sent to client via udsserver_idle(), we don't need to worry about the question being cancelled mid-loop
+						CacheRecord *ka = remove->q.uDNS_info.knownAnswers;
+						while (ka) { remove->q.QuestionCallback(gmDNS, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
+						}						
+					mDNS_StopBrowse(gmDNS, &remove->q);
+					freeL("browser_t", remove);
+					return;
 					}
-				prev = ptr;
-				ptr = ptr->next;
+				ptr = &(*ptr)->next;
 				}
-			if (!ptr) LogMsg("Requested removal of default domain %##s not in list for sd %d", d->c, r->sd);
+			LogMsg("Requested removal of default domain %##s not in list for sd %d", d->c, r->sd);
 			}
 		}
 	}

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.179  2005/01/19 19:15:35  ksekar
+Refinement to <rdar://problem/3954575> - Simplify mDNS_PurgeResultsForDomain logic and move into daemon layer
+
 Revision 1.178  2005/01/17 23:47:58  cheshire
 <rdar://problem/3904954> Wide-area services not found on little-endian
 
@@ -1899,45 +1902,6 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 
 	malloc_error:
 	LogMsg("ERROR: Malloc");
-	}
-
-mDNSexport void mDNS_PurgeResultsForDomain(mDNS *m, DNSQuestion *q, const domainname *d)
-	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-	int nlabels = CountLabels(d);
-	
-	CacheRecord **ka = &q->uDNS_info.knownAnswers;
-	u->CurrentQuery = q;
-
-	while (*ka)
-		{
-		domainname *name = (*ka)->resrec.name;
-		int acount = CountLabels(name);
-		int prefixlen = acount - nlabels;
-
-		if (prefixlen >= 0)
-			{
-			const domainname *suffix = name;
-			int i;
-			for (i = 0; i < prefixlen; i++) suffix = (domainname *)(suffix->c + 1 + suffix->c[0]);
-			if (SameDomainName(suffix, d))
-				{
-				m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-				q->QuestionCallback(m, q, &(*ka)->resrec, mDNSfalse);
-				m->mDNS_reentrancy--; // Decrement to block mDNS API calls again				
-
-				if (u->CurrentQuery != q) return; // question cancelled in callback				
-				else
-					{
-					CacheRecord *fptr = *ka;
-					*ka = (*ka)->next;
-					ufree(fptr);
-					continue;
-					}
-				}
-			}
-		ka = &(*ka)->next;
-		}
 	}
 
 mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, mDNSBool llq)
