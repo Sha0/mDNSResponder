@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.483  2004/12/07 23:00:14  ksekar
+<rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration:
+Call RecordProbeFailure even if there is no record callback
+
 Revision 1.482  2004/12/07 22:49:06  cheshire
 <rdar://problem/3908850> BIND doesn't like zero-length rdata
 
@@ -2515,15 +2519,12 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
 		// so any attempt to touch rr after this is likely to lead to a crash.
 		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-		if (rr->RecordCallback)
+		if (drt == mDNS_Dereg_conflict)
 			{
-			if (drt == mDNS_Dereg_conflict)
-				{
-				RecordProbeFailure(m, rr);
-				rr->RecordCallback(m, rr, mStatus_NameConflict);
-				}
-			else rr->RecordCallback(m, rr, mStatus_MemFree);
+			RecordProbeFailure(m, rr);
+			if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_NameConflict);
 			}
+		else if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_MemFree);
 		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 		}
 	return(mStatus_NoError);
