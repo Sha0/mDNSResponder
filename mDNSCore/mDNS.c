@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.275  2003/08/16 02:51:27  cheshire
+<rdar://problem/3366590> mDNSResponder takes too much RPRVT
+Don't try to compute namehash etc, until *after* validating the name
+
 Revision 1.274  2003/08/16 01:12:40  cheshire
 <rdar://problem/3366590> mDNSResponder takes too much RPRVT
 Now that the minimum rdata object size has been reduced to 64 bytes, it is no longer safe to do a
@@ -2218,6 +2222,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	AuthRecord *r;
 	AuthRecord **p = &m->ResourceRecords;
 	AuthRecord **d = &m->DuplicateRecords;
+
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
 	if (*d || *p)
@@ -2246,7 +2251,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 
 	if (rr->resrec.InterfaceID)				// If this resource record is referencing a specific interface
 		{
-		NetworkInterfaceInfo *intf;		// Then make sure that interface really exists
+		NetworkInterfaceInfo *intf;
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
 			if (intf->InterfaceID == rr->resrec.InterfaceID) break;
 		if (!intf)
@@ -2305,9 +2310,6 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		rr->resrec.rdlength   = GetRDLength(&rr->resrec, mDNSfalse);
 		rr->resrec.rdestimate = GetRDLength(&rr->resrec, mDNStrue);
 		}
-	rr->resrec.namehash   = DomainNameHashValue(&rr->resrec.name);
-	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
-	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
 
 	if (!ValidateDomainName(&rr->resrec.name))
 		{ LogMsg("Attempt to register record with invalid name: %s", GetRRDisplayString(m, rr)); return(mStatus_Invalid); }
@@ -2315,6 +2317,10 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	// Don't do this until *after* we've set rr->resrec.rdlength
 	if (!ValidateRData(rr->resrec.rrtype, rr->resrec.rdlength, rr->resrec.rdata))
 		{ LogMsg("Attempt to register record with invalid rdata: %s", GetRRDisplayString(m, rr)); return(mStatus_Invalid); }
+
+	rr->resrec.namehash   = DomainNameHashValue(&rr->resrec.name);
+	rr->resrec.rdatahash  = RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
+	rr->resrec.rdnamehash = target ? DomainNameHashValue(target) : 0;
 
 	// Now that's we've finished building our new record, make sure it's not identical to one we already have
 	for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
@@ -5240,7 +5246,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		if (question->InterfaceID)		// If this question is referencing a specific interface
 			{
-			NetworkInterfaceInfo *intf;	// Then make sure that interface exists
+			NetworkInterfaceInfo *intf;
 			for (intf = m->HostInterfaces; intf; intf = intf->next)
 				if (intf->InterfaceID == question->InterfaceID) break;
 			if (!intf)
@@ -5254,6 +5260,11 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		// wanted, and they may immediately cancel their question. In this case, sending an actual query on the wire would
 		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
 		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
+		if (!ValidateDomainName(&question->qname))
+			{
+			LogMsg("Attempt to start query with invalid qname %##s %s", question->qname.c, DNSTypeName(question->qtype));
+			return(mStatus_Invalid);
+			}
 		question->next           = mDNSNULL;
 		question->qnamehash      = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
 		question->ThisQInterval  = InitialQuestionInterval;  // MUST be > zero for an active question
@@ -5280,7 +5291,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		if (!m->NewQuestions)
 			debugf("mDNS_StartQuery_internal: Setting NewQuestions to %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		if (!m->NewQuestions) m->NewQuestions = question;
-
 		SetNextQueryTime(m,question);
 
 		return(mStatus_NoError);
