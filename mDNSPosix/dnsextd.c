@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.23  2004/12/06 20:24:31  ksekar
+<rdar://problem/3907303> dnsextd leaks sockets
+
 Revision 1.22  2004/12/03 20:20:29  ksekar
 <rdar://problem/3904149> dnsextd: support delivery of large records via LLQ events
 
@@ -1403,6 +1406,7 @@ mDNSlocal void GenLLQEvents(DaemonInfo *d)
 				}
 			}		
 		}
+	close(sd);
 	}
 
 // Monitor zone for changes that may produce LLQ events
