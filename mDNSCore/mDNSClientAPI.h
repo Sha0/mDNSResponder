@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.193  2004/09/03 19:23:05  ksekar
+<rdar://problem/3788460>: Need retransmission mechanism for wide-area service registrations
+
 Revision 1.192  2004/09/02 03:48:47  cheshire
 <rdar://problem/3709039> Disable targeted unicast query support by default
 1. New flag kDNSServiceFlagsAllowRemoteQuery to indicate we want to allow remote queries for this record
@@ -1140,7 +1143,6 @@ enum
 	regState_DeregPending      = 4,     // dereg sent, reply not received
 	regState_DeregDeferred     = 5,     // dereg requested while in Pending state - send dereg AFTER registration is confirmed
 	regState_Cancelled         = 6,     // update not sent, reg. cancelled by client
-	regState_TargetChangeDeferred = 7,  // target change requested in the middle of some other operation - refresh upon completion
 	regState_Unregistered      = 8,     // not in any list
 	regState_Refresh           = 9,     // outstanding refresh (or target change) message
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
@@ -1150,18 +1152,32 @@ enum
 
 typedef mDNSu16 regState_t;
 
+// context for both ServiceRecordSet and individual AuthRec structs
 typedef struct
 	{
+    // registration/lease state
     regState_t   state;
-    mDNSOpaque16 id;
+    mDNSBool     lease;    // dynamic update contains (should contain) lease option
+    mDNSs32      expire;   // expiration of lease (-1 for static)  
+    mDNSBool      TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
+
+    // identifier to match update request and response
+    mDNSOpaque16 id;      
+
+    // server info
     domainname   zone;     // the zone that is updated
     mDNSAddr     ns;       // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
     mDNSIPPort   port;     // port on which server accepts dynamic updates
-    mDNSBool     add;      // !!!KRS this should really be an enumerated state
-    NATTraversalInfo *NATinfo; // NAT traversal context.  may be NULL
-    mDNSBool     lease;    // dynamic update contains (should contain) lease option
-    mDNSs32      expire;   // expiration of lease (-1 for static)  
-    domainname RegisteredTarget; // our previously registered target, in case we need to retransmit a target change refresh
+
+    // NAT traversal context
+    NATTraversalInfo *NATinfo; // may be NULL
+
+    // state for deferred operations 
+    domainname   OrigTarget;              // un-ack'd target change
+    mDNSBool     TargetChangeDeferred;    // update service target upon completion of current operation
+    mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
+    mStatus      DeferredStatus;          // status to deliver when above flag is set
+
     // uDNS_UpdateRecord support fields
     mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
     RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
@@ -1538,7 +1554,8 @@ typedef enum
 	NATState_Established,
     NATState_Legacy,
 	NATState_Error,
-	NATState_Refresh
+	NATState_Refresh,
+	NATState_Deleted
 	} NATState_t;
 // Note: we have no explicit "cancelled" state, where a service/interface is deregistered while we
  // have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.18  2004/09/03 19:23:05  ksekar
+<rdar://problem/3788460>: Need retransmission mechanism for wide-area service registrations
+
 Revision 1.17  2004/09/01 03:59:29  ksekar
 <rdar://problem/3783453>: Conditionally compile out uDNS code on Windows
 
@@ -88,8 +91,9 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	extern "C" {
 #endif
 
-#define MIN_UCAST_PERIODIC_EXEC (3 * mDNSPlatformOneSecond) 	
-#define INIT_UCAST_POLL_INTERVAL (15 * mDNSPlatformOneSecond)
+#define MIN_UCAST_PERIODIC_EXEC (5 * mDNSPlatformOneSecond) 	
+#define INIT_UCAST_POLL_INTERVAL mDNSPlatformOneSecond      // this interval is used after send failures on network transitions
+	                                                        // which typically heal quickly, so we start agressively and exponentially back off
 #define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
 #define UPDATE_PORT_NAME "_dns-update._udp."
 #define LLQ_PORT_NAME "_dns-llq._udp"
