@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.7  2004/06/26 04:00:05  shersche
+fix warnings compiling in debug mode
+Submitted by: herscher
+
 Revision 1.6  2004/06/26 03:19:57  shersche
 clean up warning messages
 
@@ -324,6 +328,7 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					}
 					catch (...)
 					{
+						manufacturer = NULL;
 					}
 
 					require_action( manufacturer, exit, err = kNoMemoryErr );
@@ -388,6 +393,7 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					}
 					catch (...)
 					{
+						model = NULL;
 					}
 
 					require_action( model, exit, err = kNoMemoryErr );
@@ -501,6 +507,7 @@ CThirdPage::LoadPrintDriverDefs( Manufacturers & manufacturers )
 			}
 			catch (...)
 			{
+				manufacturer = NULL;
 			}
 
 			require_action( manufacturer, exit, err = kNoMemoryErr );
@@ -525,6 +532,7 @@ CThirdPage::LoadPrintDriverDefs( Manufacturers & manufacturers )
 			}
 			catch (...)
 			{
+				model = NULL;
 			}
 
 			require_action( model, exit, err = kNoMemoryErr );
