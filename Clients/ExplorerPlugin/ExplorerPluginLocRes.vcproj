@@ -65,15 +65,7 @@
 				TargetEnvironment="1"
 				TypeLibraryName="$(OutDir)/$(ProjectName).tlb"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\bin GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\bin
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\bin
-:END
-"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
@@ -90,7 +82,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\ExplorerPlugin.dll.Resources\en.lproj"
+			OutputDirectory=".\Release\Root\Program Files\bin\ExplorerPlugin.dll.Resources\en.lproj"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -132,12 +124,12 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 				SuppressStartupBanner="TRUE"
 				IgnoreDefaultLibraryNames=""
 				ModuleDefinitionFile=""
-				ProgramDatabaseFile="$(OutDir)/$(ProjectName).pdb"
+				ProgramDatabaseFile=""
 				SubSystem="2"
 				OptimizeReferences="0"
 				EnableCOMDATFolding="0"
 				ResourceOnlyDLL="TRUE"
-				ImportLibrary="$(OutDir)/$(ProjectName).lib"/>
+				ImportLibrary="$(IntDir)/$(ProjectName).lib"/>
 			<Tool
 				Name="VCMIDLTool"
 				PreprocessorDefinitions="NDEBUG"
@@ -146,15 +138,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 				TargetEnvironment="1"
 				TypeLibraryName="$(OutDir)/$(ProjectName).tlb"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\bin GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\bin
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\bin
-:END
-"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool

@@ -13,7 +13,7 @@
 		<Configuration
 			Name="Debug|Win32"
 			OutputDirectory=".\Debug\RendezvousPrinterWizard.exe.Resources\en.lproj"
-			IntermediateDirectory="Debug"
+			IntermediateDirectory=".\Debug"
 			ConfigurationType="2"
 			UseOfMFC="1"
 			CharacterSet="2">
@@ -51,15 +51,7 @@
 				PreprocessorDefinitions="_DEBUG"
 				MkTypLibCompatible="FALSE"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\RendezvousPrinterWizard.exe.Resources\en.lproj GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\RendezvousPrinterWizard.exe.Resources\en.lproj
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\RendezvousPrinterWizard.exe.Resources\en.lproj
-:END
-"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
@@ -76,8 +68,8 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\RendezvousPrinterWizard.exe.Resources\en.lproj"
-			IntermediateDirectory="Release"
+			OutputDirectory=".\Release\Root\Program Files\RendezvousPrinterWizard.exe.Resources\en.lproj"
+			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
 			CharacterSet="2">
@@ -104,27 +96,20 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 				Name="VCLinkerTool"
 				OutputFile="$(OutDir)/RendezvousPrinterWizardLocalized.dll"
 				LinkIncremental="1"
-				GenerateDebugInformation="TRUE"
+				GenerateDebugInformation="FALSE"
 				SubSystem="2"
 				OptimizeReferences="0"
 				EnableCOMDATFolding="0"
 				EntryPointSymbol=""
 				ResourceOnlyDLL="TRUE"
+				ImportLibrary="$(IntDir)/$(TargetName).lib"
 				TargetMachine="1"/>
 			<Tool
 				Name="VCMIDLTool"
 				PreprocessorDefinitions="NDEBUG"
 				MkTypLibCompatible="FALSE"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\RendezvousPrinterWizard.exe.Resources\en.lproj GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\RendezvousPrinterWizard.exe.Resources\en.lproj
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\RendezvousPrinterWizard.exe.Resources\en.lproj
-:END
-"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool

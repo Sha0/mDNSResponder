@@ -68,15 +68,7 @@
 				TargetEnvironment="1"
 				TypeLibraryName="$(OutDir)/$(ProjectName).tlb"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\bin GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\bin
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;\bin
-:END
-"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
@@ -93,7 +85,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release"
+			OutputDirectory=".\Release\Root\Program Files\bin"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -107,7 +99,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 				FavorSizeOrSpeed="2"
 				OmitFramePointers="TRUE"
 				AdditionalIncludeDirectories="..\..\mDNSShared;..\..\mDNSWindows"
-				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;WINVER=0x0400"
+				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;WINVER=0x0501"
 				StringPooling="TRUE"
 				RuntimeLibrary="0"
 				BufferSecurityCheck="FALSE"
@@ -139,11 +131,12 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 				SuppressStartupBanner="TRUE"
 				IgnoreDefaultLibraryNames="uafxcw.lib"
 				ModuleDefinitionFile="./$(ProjectName).def"
-				ProgramDatabaseFile="$(OutDir)/$(ProjectName).pdb"
+				GenerateDebugInformation="TRUE"
+				ProgramDatabaseFile="$(IntDir)/$(ProjectName).pdb"
 				SubSystem="2"
 				OptimizeReferences="0"
 				EnableCOMDATFolding="0"
-				ImportLibrary="$(OutDir)/$(ProjectName).lib"/>
+				ImportLibrary="$(IntDir)/$(ProjectName).lib"/>
 			<Tool
 				Name="VCMIDLTool"
 				PreprocessorDefinitions="NDEBUG"
@@ -152,15 +145,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 				TargetEnvironment="1"
 				TypeLibraryName="$(OutDir)/$(ProjectName).tlb"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\bin GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\bin
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;\bin
-:END
-"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
