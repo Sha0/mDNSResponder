@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.13  2003/03/15 04:40:36  cheshire
+Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
+
 Revision 1.12  2003/02/21 01:54:08  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
@@ -137,7 +140,7 @@ typedef struct
 extern mStatus  mDNSPlatformInit   (mDNS *const m);
 extern void     mDNSPlatformClose  (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSOpaqueID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
+	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
 
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);
@@ -151,7 +154,7 @@ extern void     mDNSPlatformMemZero(                       void *dst, mDNSu32 le
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-								const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSOpaqueID InterfaceID);
+								const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
 #ifdef	__cplusplus

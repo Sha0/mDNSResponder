@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.6 2003/02/21 01:54:10 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.7 2003/03/15 04:40:38 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.7  2003/03/15 04:40:38  cheshire
+        Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
+
         Revision 1.6  2003/02/21 01:54:10  cheshire
         Bug #: 3099194 mDNSResponder needs performance improvements
         Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
@@ -445,7 +448,7 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 mStatus	mDNSPlatformSendUDP( const mDNS * const			inMDNS, 
 							 const DNSMessage * const	inMsg, 
 							 const mDNSu8 * const		inMsgEnd, 
-							 mDNSOpaqueID 				inInterfaceID, 
+							 mDNSInterfaceID 			inInterfaceID, 
 							 mDNSIPPort					inSrcPort, 
 							 const mDNSAddr *			inDstIP, 
 							 mDNSIPPort 				inDstPort )

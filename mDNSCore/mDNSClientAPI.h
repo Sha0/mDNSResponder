@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.38  2003/03/15 04:40:36  cheshire
+Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
+
 Revision 1.37  2003/03/14 21:34:11  cheshire
 <rdar://problem/3176950> Can't setup and print to Lexmark PS printers via Airport Extreme
 Increase size of cache rdata from 512 to 768
@@ -218,7 +221,7 @@ typedef   signed short mDNSs16;
 typedef unsigned short mDNSu16;
 typedef   signed long  mDNSs32;
 typedef unsigned long  mDNSu32;
-typedef void *         mDNSOpaqueID;
+typedef void *         mDNSInterfaceID;
 
 // These types are for opaque two- and four-byte identifiers.
 // The "NotAnInteger" fields of the unions allow the value to be conveniently passed around in a register
@@ -415,7 +418,7 @@ struct ResourceRecord_struct
 	mDNSBool        NewData;			// CR: Set if this is a record we just received
 
 	// Field Group 4: The actual information pertaining to this resource record
-	mDNSOpaqueID    InterfaceID;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)
+	mDNSInterfaceID InterfaceID;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)
 										// For records received off the wire, InterfaceID is *always* set to the receiving interface
 										// For our authoritative records, InterfaceID is usually zero,
 										// except those few records that are interface-specific (e.g. linklocal address records)
@@ -434,19 +437,19 @@ typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 struct NetworkInterfaceInfo_struct
 	{
 	NetworkInterfaceInfo *next;
-	mDNSOpaqueID   InterfaceID;
-	mDNSAddr       ip;
-	mDNSu32        scope_id;
-	mDNSBool       InterfaceActive;	// Set InterfaceActive true if interface is sending & receiving packets
-									// Set InterfaceActive false if interface is here to represent an address with A and/or AAAA records,
-									// but there is already an earlier representative for this physical interface
-									// which will be used for the actual sending & receiving packets
-									// (this status may change as interfaces are added and removed)
-	mDNSBool       Advertise;		// Set Advertise to false if you are only searching on this interface
+	mDNSInterfaceID InterfaceID;
+	mDNSAddr        ip;
+	mDNSu32         scope_id;
+	mDNSBool        InterfaceActive;	// Set InterfaceActive true if interface is sending & receiving packets
+										// Set InterfaceActive false if interface is here to represent an address with A and/or AAAA records,
+										// but there is already an earlier representative for this physical interface
+										// which will be used for the actual sending & receiving packets
+										// (this status may change as interfaces are added and removed)
+	mDNSBool       Advertise;			// Set Advertise to false if you are only searching on this interface
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
-	ResourceRecord RR_A1;			// 'A' or 'AAAA' (address) record for our ".local" name
-	ResourceRecord RR_A2;			// 'A' or 'AAAA' record for our ".local.arpa" name
-	ResourceRecord RR_PTR;			// PTR (reverse lookup) record
+	ResourceRecord RR_A1;				// 'A' or 'AAAA' (address) record for our ".local" name
+	ResourceRecord RR_A2;				// 'A' or 'AAAA' record for our ".local.arpa" name
+	ResourceRecord RR_PTR;				// PTR (reverse lookup) record
 	};
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
@@ -491,7 +494,7 @@ struct DNSQuestion_struct
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
 	mDNSu32               RecentAnswers;
 	DNSQuestion          *DuplicateOf;
-	mDNSOpaqueID          InterfaceID;	// Non-zero if you want to issue link-local queries only on a single specific IP interface
+	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	domainname            name;
 	mDNSu16               rrtype;
 	mDNSu16               rrclass;
@@ -501,12 +504,12 @@ struct DNSQuestion_struct
 
 typedef struct
 	{
-	domainname name;
-	mDNSOpaqueID InterfaceID;		// ID of the interface the response was received on
-	mDNSAddr   ip;					// Remote (destination) IP address where this service can be accessed
-	mDNSIPPort port;				// Port where this service can be accessed
-	mDNSu16    TXTlen;
-	mDNSu8     TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
+	domainname      name;
+	mDNSInterfaceID InterfaceID;		// ID of the interface the response was received on
+	mDNSAddr        ip;					// Remote (destination) IP address where this service can be accessed
+	mDNSIPPort      port;				// Port where this service can be accessed
+	mDNSu16         TXTlen;
+	mDNSu8          TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
 
 typedef struct ServiceInfoQuery_struct ServiceInfoQuery;
@@ -670,7 +673,7 @@ extern mDNSs32  mDNSPlatformTimeNow();
 // of one or more domains that should be offered to the user as choices for where they may register their service,
 // and the default domain in which to register in the case where the user has made no selection.
 
-extern void    mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage, mDNSOpaqueID InterfaceID,
+extern void    mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
                mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context);
 
 extern void    mDNS_GenerateFQDN(mDNS *const m);
@@ -680,7 +683,7 @@ extern void    mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set
 extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
                const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
-               const mDNSOpaqueID InterfaceID, mDNSServiceCallback Callback, void *Context);
+               const mDNSInterfaceID InterfaceID, mDNSServiceCallback Callback, void *Context);
 extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname);
@@ -688,12 +691,12 @@ extern mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
 extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
-               const mDNSOpaqueID InterfaceID, mDNSRecordCallback Callback, void *Context);
+               const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context);
 #define        mDNS_DeregisterNoSuchService mDNS_Deregister
 
 extern mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
                const domainname *const srv, const domainname *const domain,
-               const mDNSOpaqueID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
+               const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopBrowse mDNS_StopQuery
 
 extern mStatus mDNS_StartResolveService(mDNS *const m, ServiceInfoQuery *query, ServiceInfo *info, ServiceInfoQueryCallback *Callback, void *Context);
@@ -707,9 +710,9 @@ typedef enum
 	mDNS_DomainTypeRegistrationDefault = 3
 	} mDNS_DomainType;
 
-extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType, const mDNSOpaqueID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
+extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType, const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopGetDomains mDNS_StopQuery
-extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNSu8 DomainType, const mDNSOpaqueID InterfaceID, char *domname);
+extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNSu8 DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
 
 // ***************************************************************************

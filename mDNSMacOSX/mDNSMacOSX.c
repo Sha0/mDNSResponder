@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.60  2003/03/15 04:40:38  cheshire
+Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
+
 Revision 1.59  2003/03/11 01:23:26  cheshire
 Bug #: 3194246 mDNSResponder socket problems
 
@@ -197,7 +200,7 @@ void LogMsg(const char *format, ...)
 	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSOpaqueID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
+	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	#pragma unused(m)
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)(InterfaceID);

@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.91  2003/03/15 04:40:36  cheshire
+Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
+
 Revision 1.90  2003/03/14 20:26:37  cheshire
 Reduce debugging messages (reclassify some "debugf" as "verbosedebugf")
 
@@ -1776,7 +1779,7 @@ mDNSlocal const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *
 	}
 
 mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end,
-	const mDNSOpaqueID InterfaceID, const mDNSs32 timenow, mDNSu8 RecordType, ResourceRecord *rr, RData *RDataStorage)
+	const mDNSInterfaceID InterfaceID, const mDNSs32 timenow, mDNSu8 RecordType, ResourceRecord *rr, RData *RDataStorage)
 	{
 	mDNSu16 pktrdlength;
 
@@ -1926,7 +1929,7 @@ mDNSlocal const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, c
 	return(ptr+4);
 	}
 
-mDNSlocal const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSOpaqueID InterfaceID,
+mDNSlocal const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSInterfaceID InterfaceID,
 	DNSQuestion *question)
 	{
 	question->InterfaceID = InterfaceID;
@@ -1963,7 +1966,7 @@ mDNSlocal const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDN
 #endif
 
 mDNSlocal mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSOpaqueID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport)
+	mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport)
 	{
 	mStatus status;
 	mDNSu16 numQuestions   = msg->h.numQuestions;
@@ -2024,7 +2027,7 @@ mDNSlocal mDNSBool HaveResponses(const mDNS *const m, const mDNSs32 timenow)
 // NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSOpaqueID InterfaceID, mDNSs32 timenow)
+mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSs32 timenow)
 	{
 	if (m->CurrentRecord) debugf("DiscardDeregistrations ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
@@ -2050,7 +2053,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSOpaqueID InterfaceID, m
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
-	DNSMessage *const response, mDNSu8 *responseptr, const mDNSOpaqueID InterfaceID, const mDNSs32 timenow)
+	DNSMessage *const response, mDNSu8 *responseptr, const mDNSInterfaceID InterfaceID, const mDNSs32 timenow)
 	{
 	int numDereg    = 0;
 	int numAnnounce = 0;
@@ -2450,7 +2453,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 
 mDNSlocal mDNSu8 *BuildQueryPacketQuestions(mDNS *const m, DNSMessage *query, mDNSu8 *queryptr,
 	ResourceRecord ***dups_ptr, mDNSu32 *answerforecast,
-	const mDNSOpaqueID InterfaceID, const mDNSs32 timenow)
+	const mDNSInterfaceID InterfaceID, const mDNSs32 timenow)
 	{
 	DNSQuestion *q;
 	
@@ -2509,7 +2512,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketAnswers(DNSMessage *query, mDNSu8 *queryptr,
 	}
 
 mDNSlocal mDNSu8 *BuildQueryPacketProbes(mDNS *const m, DNSMessage *query, mDNSu8 *queryptr,
-	mDNSu32 *answerforecast, const mDNSOpaqueID InterfaceID, const mDNSs32 timenow)
+	mDNSu32 *answerforecast, const mDNSInterfaceID InterfaceID, const mDNSs32 timenow)
 	{
 	if (m->CurrentRecord) debugf("BuildQueryPacketProbes ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
@@ -3075,7 +3078,7 @@ mDNSlocal mDNSBool AddRecordToResponseList(ResourceRecord **nrp,
 #define MustSendRecord(RR) ((RR)->NR_AnswerTo || (RR)->NR_AdditionalTo)
 
 mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const mDNSu8 *const end,
-	const mDNSOpaqueID InterfaceID, DNSMessage *const reply, ResourceRecord *ResponseRecords)
+	const mDNSInterfaceID InterfaceID, DNSMessage *const reply, ResourceRecord *ResponseRecords)
 	{
 	const mDNSu8    *const limit     = reply->data + sizeof(reply->data);
 	const mDNSu8    *ptr             = query->data;
@@ -3266,7 +3269,7 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 
 // ProcessQuery examines a received query to see if we have any answers to give
 mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
-	const mDNSAddr *srcaddr, const mDNSOpaqueID InterfaceID,
+	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID,
 	DNSMessage *const replyunicast, mDNSBool replymulticast, const mDNSs32 timenow)
 	{
 	ResourceRecord  *ResponseRecords = mDNSNULL;
@@ -3467,7 +3470,7 @@ exit:
 
 mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
-	const mDNSOpaqueID InterfaceID)
+	const mDNSInterfaceID InterfaceID)
 	{
 	const mDNSs32 timenow        = mDNSPlatformTimeNow();
 	DNSMessage    response;
@@ -3505,7 +3508,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
-	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *dstaddr, const mDNSOpaqueID InterfaceID)
+	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
 	const mDNSs32 timenow = mDNSPlatformTimeNow();
@@ -3676,7 +3679,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSOpaqueID InterfaceID)
+	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSInterfaceID InterfaceID)
 	{
 	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
@@ -3858,7 +3861,7 @@ mDNSexport void mDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 
 mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const domainname *const srv, const domainname *const domain,
-	const mDNSOpaqueID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
+	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
 	question->InterfaceID = InterfaceID;
 	question->name = *srv;
@@ -4041,7 +4044,7 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *que
 	}
 
 mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType,
-	const mDNSOpaqueID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
+	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
 	question->InterfaceID = InterfaceID;
 	ConvertCStringToDomainName(mDNS_DomainTypeNames[DomainType], &question->name);
@@ -4060,7 +4063,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 
 // Set up a ResourceRecord with sensible default values.
 // These defaults may be overwritten with new values before mDNS_Register is called
-mDNSexport void mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage, mDNSOpaqueID InterfaceID,
+mDNSexport void mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
 	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
 	{
 	// Don't try to store a TTL bigger than we can represent in platform time units
@@ -4479,7 +4482,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
 	const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
-	const mDNSOpaqueID InterfaceID, mDNSServiceCallback Callback, void *Context)
+	const mDNSInterfaceID InterfaceID, mDNSServiceCallback Callback, void *Context)
 	{
 	mDNSs32 timenow;
 	mStatus err;
@@ -4657,7 +4660,7 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 // could inadvertently advertise its service under the same name "Stuart's Printer", which might be confusing for users.
 mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
-	const mDNSOpaqueID InterfaceID, mDNSRecordCallback Callback, void *Context)
+	const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context)
 	{
 	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_SRV, 60, kDNSRecordTypeUnique, Callback, Context);
 	if (ConstructServiceName(&rr->name, name, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
@@ -4669,7 +4672,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *con
 	}
 
 mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
-	mDNSu8 DomainType, const mDNSOpaqueID InterfaceID, char *domname)
+	mDNSu8 DomainType, const mDNSInterfaceID InterfaceID, char *domname)
 	{
 	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
 	ConvertCStringToDomainName(mDNS_DomainTypeNames[DomainType], &rr->name);

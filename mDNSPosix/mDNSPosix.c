@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.8  2003/03/15 04:40:38  cheshire
+Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
+
 Revision 1.7  2003/03/13 03:46:21  cheshire
 Fixes to make the code build on Linux
 
@@ -167,7 +170,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const s_addr, mDNSAddr *ip
 
 // mDNS core calls this routine when it needs to send a packet.
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSOpaqueID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
+	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	int                     err;
 	struct sockaddr_storage to;

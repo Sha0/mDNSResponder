@@ -80,7 +80,7 @@ mDNSexport void debugf_(const char *format, ...)
 #endif
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSOpaqueID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
+	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	// Note: If we did multi-homing, we'd have to use the InterfaceID parameter to specify from which interface to send this response
 	#pragma unused(InterfaceID, srcPort)
@@ -106,7 +106,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 mDNSlocal OSStatus readpacket(mDNS *m)
 	{
 	mDNSAddr senderaddr, destaddr;
-	mDNSOpaqueID interface;
+	mDNSInterfaceID interface;
 	mDNSIPPort senderport;
 	InetAddress sender;
 	char options[512];
