@@ -22,6 +22,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.18  2003/07/23 21:16:30  cheshire
+        Removed a couple of debugfs
+
         Revision 1.17  2003/07/23 02:23:01  cheshire
         Updated mDNSPlatformUnlock() to work correctly, now that <rdar://problem/3160248>
         "ScheduleNextTask needs to be smarter" has refined the way m->NextScheduledEvent is set
@@ -494,8 +497,7 @@ void	mDNSPlatformUnlock( const mDNS *const inMDNS )
 	// Since our main mDNS_Execute() loop is on a different thread, we need to wake up that thread to:
 	// (a) handle immediate work (if any) resulting from this API call
 	// (b) calculate the next sleep time between now and the next interesting event
-	if (inMDNS->NextScheduledEvent - inMDNS->p->nextWakeupTime < 0) { SetEvent( inMDNS->p->wakeupEvent ); debugf("Waking"); }
-	else debugf("Not Waking");
+	if (inMDNS->NextScheduledEvent - inMDNS->p->nextWakeupTime < 0) SetEvent( inMDNS->p->wakeupEvent );
 	LeaveCriticalSection( &inMDNS->p->lock );
 }
 
