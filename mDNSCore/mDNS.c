@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.258  2003/08/08 16:22:05  cheshire
+<rdar://problem/3335473> Need to check validity of TXT (and other) records
+Remove unneeded LogMsg
+
 Revision 1.257  2003/08/07 01:41:08  cheshire
 <rdar://problem/3367346> Ignore packets with invalid source address (all zeroes or all ones)
 
@@ -5605,7 +5609,6 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 
 	if (!ValidateRData(rr->rrtype, newrdata))
 		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(m, rr, &newrdata->u)); return(mStatus_Invalid); }
-	else LogMsg("Updating: %s", GetRRDisplayString_rdb(m, rr, &newrdata->u));
 
 	// If TTL is unspecified, leave TTL unchanged
 	if (newttl == 0) newttl = rr->rroriginalttl;
