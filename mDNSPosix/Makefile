@@ -24,6 +24,10 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.57  2005/03/17 04:02:28  cheshire
+# <rdar://problem/3986419> mDNSResponder won't compile with gcc4 on Tiger
+# Changed Makefile to link using gcc instead of libtool
+#
 # Revision 1.56  2005/02/02 02:25:21  cheshire
 # <rdar://problem/3980388> /var/run/mDNSResponder should be /var/run/mdnsd on Linux
 #
@@ -301,7 +305,7 @@ else
 ifeq ($(os),tiger)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Wdeclaration-after-statement
 CC = @gcc-4.0
-LD = libtool -dynamic
+LD = $(CC) -dynamiclib
 LIBFLAGS = -lSystem
 LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
