@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.14  2003/12/17 00:51:22  cheshire
+Changed mDNSNetMonitor and mDNSIdentify to link the object files
+instead of #including the "DNSCommon.c" "uDNS.c" and source files
+
 Revision 1.13  2003/12/13 03:05:28  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -86,8 +90,6 @@ Add mDNSIdentify tool, used to discover what version of mDNSResponder a particul
 // except we'll sneak a peek at the packets before forwarding them to the normal mDNSCoreReceive() routine
 #define mDNSCoreReceive __MDNS__mDNSCoreReceive
 #include "mDNS.c"
-#include "DNSCommon.c"
-#include "uDNS.c"
 #undef mDNSCoreReceive
 
 //*************************************************************************************************************

@@ -20,6 +20,10 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.21  2003/12/17 00:51:22  cheshire
+# Changed mDNSNetMonitor and mDNSIdentify to link the object files
+# instead of #including the "DNSCommon.c" "uDNS.c" and source files
+#
 # Revision 1.20  2003/12/13 03:05:28  ksekar
 # Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 #
@@ -107,7 +111,7 @@ endif
 
 # Configure per-OS peculiarities
 ifeq ($(os),solaris)
-CFLAGS_OS =  -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -lsocket -lnsl
+CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -lsocket -lnsl
 else
 ifeq ($(os),linux)
 CFLAGS_OS = -DNOT_HAVE_SA_LEN
@@ -173,8 +177,8 @@ clean:
 
 # daemon target builds the daemon
 DAEMONOBJS = $(OBJDIR)/PosixDaemon.c.o $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNS.c.o \
-			 $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/uds_daemon.c.o \
-			$(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o 
+             $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/uds_daemon.c.o \
+             $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o 
 
 Daemon: setup $(TARGDIR)/mdnsd
 	@echo "Responder daemon done"
@@ -223,16 +227,18 @@ InstalledStartup: /etc/init.d/mDNS
 	$(LN) $@ /etc/rc5.d/K16mDNS
 
 # The following targets build embedded example programs
-COMMONOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o
+SPECIALOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o
+COMMONOBJ  = $(SPECIALOBJ) $(OBJDIR)/mDNS.c.o
+APPOBJ     = $(COMMONOBJ) $(OBJDIR)/ExampleClientApp.c.o
 
 Client: setup $(TARGDIR)/mDNSClientPosix
-	@echo "Client done"
+	@echo "Embedded Standalone Client done"
 
 Responder: setup $(TARGDIR)/mDNSResponderPosix
-	@echo "Responder done"
+	@echo "Embedded Standalone Responder done"
 
 ProxyResponder: setup $(TARGDIR)/mDNSProxyResponderPosix
-	@echo "ProxyResponder done"
+	@echo "Embedded Standalone ProxyResponder done"
 
 Identify: setup $(TARGDIR)/mDNSIdentify
 	@echo "Identify done"
@@ -240,19 +246,19 @@ Identify: setup $(TARGDIR)/mDNSIdentify
 NetMonitor: setup $(TARGDIR)/mDNSNetMonitor
 	@echo "NetMonitor done"
 
-$(TARGDIR)/mDNSClientPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/Client.c.o $(OBJDIR)/ExampleClientApp.c.o 
+$(TARGDIR)/mDNSClientPosix:         $(APPOBJ)     $(OBJDIR)/Client.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/Responder.c.o
+$(TARGDIR)/mDNSResponderPosix:      $(COMMONOBJ)  $(OBJDIR)/Responder.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSProxyResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/ProxyResponder.c.o
+$(TARGDIR)/mDNSProxyResponderPosix: $(COMMONOBJ)  $(OBJDIR)/ProxyResponder.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSIdentify: $(COMMONOBJ) $(OBJDIR)/Identify.c.o
+$(TARGDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSNetMonitor: $(COMMONOBJ) $(OBJDIR)/NetMonitor.c.o
+$(TARGDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@
 
 

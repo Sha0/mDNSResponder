@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.53  2003/12/17 00:51:22  cheshire
+Changed mDNSNetMonitor and mDNSIdentify to link the object files
+instead of #including the "DNSCommon.c" "uDNS.c" and source files
+
 Revision 1.52  2003/12/17 00:21:51  cheshire
 If we received one, display host's HINFO record in final summary
 
@@ -213,8 +217,6 @@ Added NetMonitor.c
 // except we'll steal the packets that would be sent to normal mDNSCoreReceive() routine
 #define mDNSCoreReceive __NOT__mDNSCoreReceive__NOT__
 #include "mDNS.c"
-#include "DNSCommon.c"
-#include "uDNS.c"
 #undef mDNSCoreReceive
 
 //*************************************************************************************************************
