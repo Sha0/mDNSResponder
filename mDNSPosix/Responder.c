@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.21  2004/06/15 03:48:07  cheshire
+Update mDNSResponderPosix to take multiple name=val arguments in a sane way
+
 Revision 1.20  2004/05/18 23:51:26  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -248,91 +251,6 @@ static mDNSBool CheckThatServiceTypeIsUsable(const char *serviceType, mDNSBool p
     return result;
 }
 
-static mDNSBool CheckThatServiceTextIsUsable(const char *serviceText, mDNSBool printExplanation,
-                                             mDNSu8 *pStringList, mDNSu16 *pStringListLen)
-    // Checks that serviceText is a reasonable service text record 
-    // and, if it isn't and printExplanation is true, prints 
-    // an explanation of why not.  Also parse the text into 
-    // the packed PString buffer denoted by pStringList and 
-    // return the length of that buffer in *pStringListLen.
-    // Note that this routine assumes that the buffer is 
-    // sizeof(RDataBody) bytes long.
-{
-    mDNSBool result;
-    size_t   serviceTextLen;
-    
-    // Note that parsing a C string into a PString list always 
-    // expands the data by one character, so the following 
-    // compare is ">=", not ">".  Here's the logic:
-    //
-    // #1 For a string with not ^A's, the PString length is one 
-    //    greater than the C string length because we add a length 
-    //    byte.
-    // #2 For every regular (not ^A) character you add to the C 
-    //    string, you add a regular character to the PString list.
-    //    This does not affect the equivalence stated in #1.
-    // #3 For every ^A you add to the C string, you add a length 
-    //    byte to the PString list but you also eliminate the ^A, 
-    //    which again does not affect the equivalence stated in #1.
-    
-    result = mDNStrue;
-    serviceTextLen = strlen(serviceText);
-    if (result && strlen(serviceText) >= sizeof(RDataBody)) {
-        if (printExplanation) {
-            fprintf(stderr, 
-                    "%s: Service text record is too long (must be less than %d characters)\n", 
-                    gProgramName,
-                    (int) sizeof(RDataBody) );
-        }
-        result = mDNSfalse;
-    }
-    
-    // Now break the string up into PStrings delimited by ^A.
-    // We know the data will fit so we can ignore buffer overrun concerns. 
-    // However, we still have to treat runs long than 255 characters as
-    // an error.
-    
-    if (result) {
-        int         lastPStringOffset;
-        int         i;
-        int         thisPStringLen;
-        
-        // This algorithm is a little tricky.  We start by copying 
-        // the string directly into the output buffer, shifted up by 
-        // one byte.  We then fill in the first byte with a ^A. 
-        // We then walk backwards through the buffer and, for each 
-        // ^A that we find, we replace it with the difference between 
-        // its offset and the offset of the last ^A that we found
-        // (ie lastPStringOffset).
-        
-        memcpy(&pStringList[1], serviceText, serviceTextLen);
-        pStringList[0] = 1;
-        lastPStringOffset = serviceTextLen + 1;
-        for (i = serviceTextLen; i >= 0; i--) {
-            if ( pStringList[i] == 1 ) {
-                thisPStringLen = (lastPStringOffset - i - 1);
-                assert(thisPStringLen >= 0);
-                if (thisPStringLen > 255) {
-                    result = mDNSfalse;
-                    if (printExplanation) {
-                        fprintf(stderr, 
-                                "%s: Each component of the service text record must be 255 characters or less\n", 
-                                gProgramName);
-                    }
-                    break;
-                } else {
-                    pStringList[i]    = thisPStringLen;
-                    lastPStringOffset = i;
-                }
-            }
-        }
-        
-        *pStringListLen = serviceTextLen + 1;
-    }
-
-    return result;
-}
-
 static mDNSBool CheckThatPortNumberIsUsable(long portNumber, mDNSBool printExplanation)
     // Checks that portNumber is a reasonable port number
     // and, if it isn't and printExplanation is true, prints 
@@ -366,7 +284,7 @@ enum {
 static void PrintUsage()
 {
     fprintf(stderr, 
-            "Usage: %s [-v level ] [-r] [-n name] [-t type] [-d domain] [-x TXT] [-p port] [-f file] [-b] [-P pidfile]\n", 
+            "Usage: %s [-v level ] [-r] [-n name] [-t type] [-d domain] [-p port] [-f file] [-b] [-P pidfile] [-x name=val ...]\n", 
             gProgramName);
     fprintf(stderr, "          -v verbose mode, level is a number from 0 to 2\n");
     fprintf(stderr, "             0 = no debugging info (default)\n");
@@ -377,13 +295,15 @@ static void PrintUsage()
     fprintf(stderr, "          -n uses 'name' as the host name (default is none)\n");
     fprintf(stderr, "          -t uses 'type' as the service type (default is '%s')\n", kDefaultServiceType);
     fprintf(stderr, "          -d uses 'domain' as the service domain (default is '%s')\n", kDefaultServiceDomain);
-    fprintf(stderr, "          -x uses 'TXT' as the service TXT record (default is empty)\n");
     fprintf(stderr, "          -p uses 'port' as the port number (default is '%d')\n",  kDefaultPortNumber);
     fprintf(stderr, "          -f reads a service list from 'file'\n");
     fprintf(stderr, "          -b forces daemon (background) mode\n");
     fprintf(stderr, "          -P uses 'pidfile' as the PID file\n");
     fprintf(stderr, "             (default is '%s')\n",  kDefaultPIDFile);
     fprintf(stderr, "             only meaningful if -b also specified\n");
+    fprintf(stderr, "          -x stores name=val in TXT record (default is empty).\n");
+    fprintf(stderr, "             MUST be the last command-line argument;\n");
+    fprintf(stderr, "             all subsequent arguments after -x are treated as name=val pairs.\n");
 }
 
 static   mDNSBool  gAvoidPort53      = mDNStrue;
@@ -415,7 +335,7 @@ static void ParseArguments(int argc, char **argv)
     // Parse command line options using getopt.
     
     do {
-        ch = getopt(argc, argv, "v:rn:t:d:x:p:f:dPb");
+        ch = getopt(argc, argv, "v:rn:t:d:p:f:dPbx");
         if (ch != -1) {
             switch (ch) {
                 case 'v':
@@ -445,11 +365,6 @@ static void ParseArguments(int argc, char **argv)
                 case 'd':
                     gServiceDomain = optarg;
                     break;
-                case 'x':
-                    if ( ! CheckThatServiceTextIsUsable(optarg, mDNStrue, gServiceText, &gServiceTextLen) ) {
-                        exit(1);
-                    }
-                    break;
                 case 'p':
                     gPortNumber = atol(optarg);
                     if ( ! CheckThatPortNumberIsUsable(gPortNumber, mDNStrue) ) {
@@ -465,6 +380,16 @@ static void ParseArguments(int argc, char **argv)
                 case 'P':
                     gPIDFile = optarg;
                     break;
+                case 'x':
+                	while (optind < argc)
+                		{
+                		gServiceText[gServiceTextLen] = strlen(argv[optind]);
+                		memcpy(gServiceText+gServiceTextLen+1, argv[optind], gServiceText[gServiceTextLen]);
+                		gServiceTextLen += 1 + gServiceText[gServiceTextLen];
+                		optind++;
+                		}
+                	ch = -1;
+                	break;
                 case '?':
                 default:
                     PrintUsage();
@@ -632,27 +557,24 @@ static mDNSBool ReadALine(char *buf, size_t bufSize, FILE *fp)
 
 static mStatus RegisterServicesInFile(const char *filePath)
 {
-    mStatus     status;
-    FILE *      fp;
+    mStatus     status = mStatus_NoError;
+    FILE *      fp = fopen(filePath, "r");
     int         junk;
-    mDNSBool    good;
-    int         ch;
-    char name[256];
-    char type[256];
-    const char *dom = kDefaultServiceDomain;
-    char rawText[1024];
-    mDNSu8  text[sizeof(RDataBody)];
-    mDNSu16 textLen;
-    char port[256];
     
-    status = mStatus_NoError;
-    fp = fopen(filePath, "r");
     if (fp == NULL) {
         status = mStatus_UnknownErr;
     }
     if (status == mStatus_NoError) {
-        good = mDNStrue;
+        mDNSBool good = mDNStrue;
         do {
+			int         ch;
+			char name[256];
+			char type[256];
+			const char *dom = kDefaultServiceDomain;
+			char rawText[1024];
+			mDNSu8  text[sizeof(RDataBody)];
+			mDNSu16 textLen = 0;
+			char port[256];
             // Skip over any blank lines.
             do {
                 ch = fgetc(fp);
@@ -676,16 +598,21 @@ static mStatus RegisterServicesInFile(const char *filePath)
                 	}
                 }
                 if (good) {
-                    good = ReadALine(rawText, sizeof(rawText), fp);
-                }
-                if (good) {
                     good = ReadALine(port, sizeof(port), fp);
                 }
                 if (good) {
                     good =     CheckThatRichTextHostNameIsUsable(name, mDNSfalse)
                             && CheckThatServiceTypeIsUsable(type, mDNSfalse)
-                            && CheckThatServiceTextIsUsable(rawText, mDNSfalse, text, &textLen)
                             && CheckThatPortNumberIsUsable(atol(port), mDNSfalse);
+                }
+                if (good) {
+                	while (1) {
+						if (!ReadALine(rawText, sizeof(rawText), fp)) break;
+						text[textLen] = strlen(rawText);
+						if (text[textLen] == 0) break;
+						memcpy(text + textLen + 1, rawText, text[textLen]);
+						textLen += 1 + text[textLen];
+					}
                 }
                 if (good) {
                     status = RegisterOneService(name, type, dom, text, textLen, atol(port));
