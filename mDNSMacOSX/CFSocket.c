@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.77  2003/05/23 01:12:05  cheshire
+Minor code tidying
+
 Revision 1.76  2003/05/22 01:26:01  cheshire
 Tidy up log messages
 
@@ -539,29 +542,22 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 
 mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *s, CFSocketRef *c)
 	{
-	int skt;
-	mStatus err;
 	const int on = 1;
 	const int twofivefive = 255;
-	CFRunLoopSourceRef rls;
 
 	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
 	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %p is already set", *c); return(-1); }
 
 	// Open the socket...
-	skt = socket(i->sa_family, SOCK_DGRAM, IPPROTO_UDP);
+	int skt = socket(i->sa_family, SOCK_DGRAM, IPPROTO_UDP);
 	if (skt < 0) { LogMsg("socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
 	// ... with a shared UDP port
-	err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	mStatus err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
 	if (err < 0) { LogMsg("setsockopt - SO_REUSEPORT error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 
 	if (i->sa_family == AF_INET)
 		{
-		struct ip_mreq imr;
-		struct in_addr addr = { i->ifinfo.ip.addr.ipv4.NotAnInteger };
-		struct sockaddr_in listening_sockaddr;
-		
 		// We want to receive destination addresses
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
 		if (err < 0) { LogMsg("setsockopt - IP_RECVDSTADDR error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
@@ -571,6 +567,8 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
 		
 		// Add multicast group membership on this interface
+		struct in_addr addr = { i->ifinfo.ip.addr.ipv4.NotAnInteger };
+		struct ip_mreq imr;
 		imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 		imr.imr_interface        = addr;
 		err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
@@ -589,6 +587,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_TTL error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 
 		// And start listening for packets
+		struct sockaddr_in listening_sockaddr;
 		listening_sockaddr.sin_family      = AF_INET;
 		listening_sockaddr.sin_port        = port.NotAnInteger;
 		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
@@ -603,10 +602,6 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		}
 	else if (i->sa_family == AF_INET6)
 		{
-		struct ipv6_mreq i6mr;
-		int	interface_id = if_nametoindex(i->ifa_name);
-		struct sockaddr_in6 listening_sockaddr6;
-		
 		// We want to receive destination addresses and receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
 		if (err < 0) { LogMsg("setsockopt - IPV6_PKTINFO error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
@@ -617,6 +612,8 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		if (err < 0) { LogMsg("setsockopt - IPV6_V6ONLY error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// Add multicast group membership on this interface
+		int	interface_id = if_nametoindex(i->ifa_name);
+		struct ipv6_mreq i6mr;
 		i6mr.ipv6mr_interface = interface_id;
 		i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
@@ -635,6 +632,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_HOPS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// And start listening for packets
+		struct sockaddr_in6 listening_sockaddr6;
 		bzero(&listening_sockaddr6, sizeof(listening_sockaddr6));
 		listening_sockaddr6.sin6_len		 = sizeof(listening_sockaddr6);
 		listening_sockaddr6.sin6_family      = AF_INET6;
@@ -650,7 +648,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 	*s = skt;
 	CFSocketContext myCFSocketContext = { 0, i->ifinfo.InterfaceID, NULL, NULL, NULL };
 	*c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, &myCFSocketContext);
-	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
+	CFRunLoopSourceRef rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
 	CFRelease(rls);
 	
