@@ -43,7 +43,12 @@
 // Globals
 //
 
+static char operation;
 static dns_service_discovery_ref client = NULL;
+static char addtest = 0;
+static DNSRecordReference record;
+static char myhinfo9[11] = "\003Mac\006OS 9.2";
+static char myhinfoX[ 9] = "\003Mac\004OS X";
 static char updatetest[2] = "\001A";
 
 //*************************************************************************************************************
@@ -136,12 +141,33 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 	{
 	(void)timer;	// Parameter not used
 	(void)info;		// Parameter not used
-    if (updatetest[1] == 'Z') updatetest[1] = 'A';
-    else updatetest[1]++;
     
-    printf("Updating Test TXT record to %c\n", updatetest[1]);
-    DNSServiceRegistrationUpdateRecord(client, 0, 0, sizeof(updatetest), &updatetest[0]);
-	}
+    if (operation == 'A')
+        {
+        switch (addtest)
+            {
+            case 0: printf("Adding Test HINFO record\n");		// RR type 13 is HINFO
+                    record = DNSServiceRegistrationAddRecord(client, 13, sizeof(myhinfo9), &myhinfo9[0]);
+                    addtest = 1;
+                    break;
+            case 1: printf("Updating Test HINFO record\n");
+                    DNSServiceRegistrationUpdateRecord(client, record, 0, sizeof(myhinfoX), &myhinfoX[0]);
+                    addtest = 2;
+                    break;
+            case 2: printf("Removing Test HINFO record\n");
+                    DNSServiceRegistrationRemoveRecord(client, record);
+                    addtest = 0;
+                    break;
+            }
+        }
+    else
+        {
+        if (updatetest[1] != 'Z') updatetest[1]++;
+        else                      updatetest[1] = 'A';
+        printf("Updating Test TXT record to %c\n", updatetest[1]);
+        DNSServiceRegistrationUpdateRecord(client, 0, 0, sizeof(updatetest), &updatetest[0]);
+        }
+    }
 
 static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *context)
 	{
@@ -153,7 +179,7 @@ static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *cont
         default:                               printf("Error %d\n", errorCode); return;
         }
 
-    if (updatetest)
+    if (operation == 'A' || operation == 'U')
         {
         CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, 0, NULL, NULL, NULL };
         CFRunLoopTimerRef timer = CFRunLoopTimerCreate(kCFAllocatorDefault,
@@ -168,14 +194,13 @@ static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *cont
 
 int main(int argc, char **argv)
 	{
-	char ch;
 	char *dom;
 
 	if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
-    ch = getopt(argc, (char * const *)argv, "EFBLRU");
-	if (ch == -1) goto Fail;
+    operation = getopt(argc, (char * const *)argv, "EFBLRAU");
+	if (operation == -1) goto Fail;
 
-    switch (ch)
+    switch (operation)
         {
         case 'E':	printf("Looking for recommended registration domains:\n");
                     client = DNSServiceDomainEnumerationCreate(1, regdom_reply, nil);
@@ -214,6 +239,7 @@ int main(int argc, char **argv)
                     break;
                     }
 
+        case 'A':
         case 'U':	{
                     Opaque16 registerPort = { { 0x12, 0x34 } };
                     printf("Registering Service Test._testupdate._tcp.local.\n");
@@ -243,8 +269,7 @@ Fail:
 	fprintf(stderr, "%s -B        <Type> <Domain>   (Browse for Services Instances)\n", argv[0]);
 	fprintf(stderr, "%s -L <Name> <Type> <Domain>      (Look Up a Service Instance)\n", argv[0]);
 	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> (Register a Service)\n", argv[0]);
+	fprintf(stderr, "%s -A                 (Test Adding/Updating/Deleting a record)\n", argv[0]);
 	fprintf(stderr, "%s -U                             (Test Updating a TXT record)\n", argv[0]);
-	fprintf(stderr, "%s -A            (Test Adding a record -- not yet implemented)\n", argv[0]);
-	fprintf(stderr, "%s -D          (Test Deleting a record -- not yet implemented)\n", argv[0]);
 	return 0;
 	}
