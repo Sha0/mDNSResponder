@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.13  2004/09/16 23:14:25  cheshire
+Changes for Windows compatibility
+
 Revision 1.12  2004/09/16 21:46:38  ksekar
 <rdar://problem/3665304> Need SPI for LoginWindow to associate a UID with a Wide Area domain
 
@@ -200,5 +203,7 @@ int get_string(char **ptr, char *buffer, int buflen);
 void put_rdata(const int rdlen, const char *rdata, char **ptr);
 char *get_rdata(char **ptr, int rdlen);  // return value is rdata pointed to by *ptr -
                                          // rdata is not copied from buffer.
+
+void ConvertHeaderBytes(ipc_msg_hdr *hdr);
 
 #endif // DNSSD_IPC_H

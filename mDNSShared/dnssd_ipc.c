@@ -23,6 +23,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.12  2004/09/16 23:14:24  cheshire
+Changes for Windows compatibility
+
 Revision 1.11  2004/06/18 04:56:09  rpantos
 casting goodness
 
@@ -101,4 +104,13 @@ char *get_rdata(char **ptr, int rdlen)
 	char *rd = *ptr;
 	*ptr += rdlen;
 	return rd;
+	}
+
+void ConvertHeaderBytes(ipc_msg_hdr *hdr)
+	{
+	hdr->version   = htonl(hdr->version);
+	hdr->datalen   = htonl(hdr->datalen);
+	hdr->flags     = htonl(hdr->flags);
+	hdr->op        = htonl(hdr->op );
+	hdr->reg_index = htonl(hdr->reg_index);
 	}

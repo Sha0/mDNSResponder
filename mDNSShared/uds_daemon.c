@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.82  2004/09/16 23:14:25  cheshire
+Changes for Windows compatibility
+
 Revision 1.81  2004/09/16 21:46:38  ksekar
 <rdar://problem/3665304> Need SPI for LoginWindow to associate a UID with a Wide Area domain
 
@@ -339,7 +342,7 @@ typedef struct
 
 typedef struct 
     {
-    mStatus err;
+    mStatus err;		// Note: This field is in NETWORK byte order
     int nwritten;
     dnssd_sock_t sd;
     } undelivered_error_t;
@@ -379,9 +382,9 @@ typedef struct request_state
 // struct physically sits between ipc message header and call-specific fields in the message buffer
 typedef struct
     {
-    DNSServiceFlags flags;
-    uint32_t ifi;
-    DNSServiceErrorType error;
+    DNSServiceFlags flags;			// Note: This field is in NETWORK byte order
+    uint32_t ifi;					// Note: This field is in NETWORK byte order
+    DNSServiceErrorType error;		// Note: This field is in NETWORK byte order
     } reply_hdr;
     
 
@@ -2604,6 +2607,14 @@ static int read_msg(request_state *rs)
         if (nread == 0)  	{ rs->ts = t_terminated;  return t_terminated;  	}
         if (nread < 0) goto rerror;
         rs->hdr_bytes += nread;
+        if (rs->hdr_bytes == sizeof(ipc_msg_hdr))
+        	ConvertHeaderBytes(&rs->hdr);
+        if (rs->hdr.version != VERSION)
+            {
+            LogMsg("ERROR: read_msg - client version 0x%08X does not match daemon version 0x%08X", rs->hdr.version, VERSION);
+            rs->ts = t_error;
+            return t_error;
+            }
         if (rs->hdr_bytes > sizeof(ipc_msg_hdr))
             {
             LogMsg("ERROR: read_msg - read too many header bytes");
@@ -2678,7 +2689,9 @@ static int send_msg(reply_state *rs)
         return t_complete;
         }
 
+	ConvertHeaderBytes(rs->mhdr);
     nwriten = send(rs->sd, rs->msgbuf + rs->nwriten, rs->len - rs->nwriten, 0);
+	ConvertHeaderBytes(rs->mhdr);
     if (nwriten < 0)
     	{
         if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK) nwriten = 0;
@@ -2759,6 +2772,7 @@ static int deliver_error(request_state *rstate, mStatus err)
     int nwritten = -1;
     undelivered_error_t *undeliv;
     
+    err = dnssd_htonl(err);
     nwritten = send(rstate->errfd, &err, sizeof(mStatus), 0);
     if (nwritten < (int)sizeof(mStatus))
         {
@@ -2792,12 +2806,12 @@ error:
     }
            
 
-// returns 0 on success, -1 if send is incomplete, or on terminal failre (request is aborted)
+// returns 0 on success, -1 if send is incomplete, or on terminal failure (request is aborted)
 static transfer_state send_undelivered_error(request_state *rs)
     {
     int nwritten;
     
-    nwritten = send(rs->u_err->sd, (char *)(&rs->u_err) + rs->u_err->nwritten, sizeof(mStatus) - rs->u_err->nwritten, 0);
+    nwritten = send(rs->u_err->sd, (char *)(&rs->u_err->err) + rs->u_err->nwritten, sizeof(mStatus) - rs->u_err->nwritten, 0);
     if (nwritten < 0)
         {
         if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK)
@@ -2833,7 +2847,7 @@ static int deliver_async_error(request_state *rs, reply_op_t op, mStatus err)
     if (rs->no_reply) return 0;
     len = 256;		// long enough for any reply handler to read all args w/o buffer overrun
     reply = create_reply(op, len, rs);
-    reply->rhdr->error = err;
+    reply->rhdr->error = dnssd_htonl(err);
     ts = send_msg(reply);
     if (ts == t_error || ts == t_terminated)
         {

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.30  2004/09/16 23:14:24  cheshire
+Changes for Windows compatibility
+
 Revision 1.29  2004/09/16 21:46:38  ksekar
 <rdar://problem/3665304> Need SPI for LoginWindow to associate a UID with a Wide Area domain
 
@@ -286,6 +289,7 @@ static DNSServiceRef connect_to_server(void)
 static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
     {
     ipc_msg_hdr *hdr = msg;
+    uint32_t datalen = hdr->datalen;
     dnssd_sockaddr_t caddr, daddr;  // (client and daemon address structs)
     char *data = (char *)msg + sizeof(ipc_msg_hdr);
     dnssd_sock_t listenfd = dnssd_InvalidSocket, errsd = dnssd_InvalidSocket;
@@ -332,7 +336,8 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 #endif
 		}
 
-    if (my_write(sdr->sockfd, msg, hdr->datalen + sizeof(ipc_msg_hdr)) < 0)
+	ConvertHeaderBytes(hdr);
+    if (my_write(sdr->sockfd, msg, datalen + sizeof(ipc_msg_hdr)) < 0)
         goto cleanup;
     free(msg);
     msg = NULL;
@@ -347,6 +352,9 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 
     if (my_read(errsd, (char*)&err, (int)sizeof(err)) < 0)
         err = kDNSServiceErr_Unknown;
+    else
+    	err = ntohl(err);
+
 cleanup:
     if (!reuse_sd && listenfd > 0) dnssd_close(listenfd);
     if (!reuse_sd && errsd > 0) dnssd_close(errsd);
@@ -378,6 +386,7 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 		// where a non-blocking socket is told there is data, but
 		// it was a false positive.
 		return (dnssd_errno() == dnssd_EWOULDBLOCK) ? kDNSServiceErr_NoError : kDNSServiceErr_Unknown;
+	ConvertHeaderBytes(&hdr);
     if (hdr.version != VERSION)
         return kDNSServiceErr_Incompatible;
     data = malloc(hdr.datalen);
@@ -1084,7 +1093,9 @@ void DNSSD_API DNSServiceReconfirmRecord
     put_short(rrclass, &ptr);
     put_short(rdlen, &ptr);
     put_rdata(rdlen, rdata, &ptr);
+	ConvertHeaderBytes(hdr);
     my_write(tmp->sockfd, (char *)hdr, (int) len);
+    free(hdr);
     DNSServiceRefDeallocate(tmp);
     }
 
