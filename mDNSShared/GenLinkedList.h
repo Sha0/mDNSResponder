@@ -29,6 +29,10 @@
 
     Change History (most recent first):
 
+$Log: GenLinkedList.h,v $
+Revision 1.2  2004/02/05 07:41:08  cheshire
+Add Log header
+
 */
 
 #ifndef __GenLinkedList__

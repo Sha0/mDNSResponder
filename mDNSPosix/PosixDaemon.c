@@ -29,6 +29,22 @@
 
     Change History (most recent first):
 
+$Log: PosixDaemon.c,v $
+Revision 1.5  2004/02/05 07:45:43  cheshire
+Add Log header
+
+Revision 1.4  2004/01/28 21:14:23  cheshire
+Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)
+
+Revision 1.3  2004/01/19 19:51:46  cheshire
+Fix compiler error (mixed declarations and code) on some versions of Linux
+
+Revision 1.2  2003/12/11 03:03:51  rpantos
+Clean up mDNSPosix so that it builds on OS X again.
+
+Revision 1.1  2003/12/08 20:47:02  rpantos
+Add support for mDNSResponder on Linux.
+
 */
 
 #include <stdio.h>
