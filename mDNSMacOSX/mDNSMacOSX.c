@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.304  2005/02/25 23:51:22  cheshire
+<rdar://problem/4021868> SendServiceRegistration fails on wake from sleep
+Return mStatus_UnknownErr instead of -1
+
 Revision 1.303  2005/02/25 17:47:45  ksekar
 <rdar://problem/4021868> SendServiceRegistration fails on wake from sleep
 
@@ -1255,7 +1259,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		if (errno == EADDRNOTAVAIL && m->p->NetworkChanged) return(mStatus_TransientErr);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %5s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
-		return(err);
+		return(mStatus_UnknownErr);
 		}
 	
 	return(mStatus_NoError);
