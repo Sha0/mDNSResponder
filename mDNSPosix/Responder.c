@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.24  2004/11/09 19:32:10  rpantos
+Suggestion from Ademar de Souza Reis Jr. to allow comments in services file
+
 Revision 1.23  2004/09/17 01:08:54  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -553,16 +556,21 @@ static mStatus RegisterOneService(const char *  richTextHostName,
 }
 
 static mDNSBool ReadALine(char *buf, size_t bufSize, FILE *fp)
+// Read a line, skipping over any blank lines or lines starting with '#'
+{
+	mDNSBool good, skip;
+	do {
+		good = (fgets(buf, bufSize, fp) != NULL);
+		skip = (good && (buf[0] == '#' || buf[0] == '\r' || buf[0] == '\n'));
+	} while (good && skip);
+	if (good)
 	{
-    mDNSBool good = (fgets(buf, bufSize, fp) != NULL);
-    if (good)
-    	{
-        size_t len = strlen(buf);
-        good = (len > 0 && buf[len - 1] == '\n');
-		if (good) buf[len - 1] = 0;
-	    }
-    return good;
+		int		len = strlen( buf);
+		if ( buf[len - 1] == '\r' || buf[len - 1] == '\n')
+			buf[len - 1] = '\0';
 	}
+    return good;
+}
 
 static mStatus RegisterServicesInFile(const char *filePath)
 {
@@ -576,7 +584,6 @@ static mStatus RegisterServicesInFile(const char *filePath)
     if (status == mStatus_NoError) {
         mDNSBool good = mDNStrue;
         do {
-			int         ch;
 			char name[256];
 			char type[256];
 			const char *dom = kDefaultServiceDomain;
@@ -584,58 +591,49 @@ static mStatus RegisterServicesInFile(const char *filePath)
 			mDNSu8  text[sizeof(RDataBody)];
 			mDNSu16 textLen = 0;
 			char port[256];
-            // Skip over any blank lines.
-            do {
-                ch = fgetc(fp);
-            } while ( ch == '\n' || ch == '\r' );
-            if (ch != EOF) {
-                good = (ungetc(ch, fp) == ch);
-            }
             
             // Read three lines, check them for validity, and register the service.
-            if ( good && ! feof(fp) ) {
-                good = ReadALine(name, sizeof(name), fp);               
-                if (good) {
-                    good = ReadALine(type, sizeof(type), fp);
-                }
-                if (good) {
-                	char *p = type;
-                	while (*p && *p != ' ') p++;
-                	if (*p) {
-                		*p = 0;
-                		dom = p+1;
-                	}
-                }
-                if (good) {
-                    good = ReadALine(port, sizeof(port), fp);
-                }
-                if (good) {
-                    good =     CheckThatRichTextHostNameIsUsable(name, mDNSfalse)
-                            && CheckThatServiceTypeIsUsable(type, mDNSfalse)
-                            && CheckThatPortNumberIsUsable(atol(port), mDNSfalse);
-                }
-                if (good) {
-                	while (1) {
-						if (!ReadALine(rawText, sizeof(rawText), fp)) break;
-						text[textLen] = strlen(rawText);
-						if (text[textLen] == 0) break;
-						memcpy(text + textLen + 1, rawText, text[textLen]);
-						textLen += 1 + text[textLen];
-					}
-                }
-                if (good) {
-                    status = RegisterOneService(name, type, dom, text, textLen, atol(port));
-                    if (status != mStatus_NoError) {
-                        fprintf(stderr, 
-                                "%s: Failed to register service, name = %s, type = %s, port = %s\n", 
-                                gProgramName,
-                                name,
-                                type,
-                                port);
-                        status = mStatus_NoError;       // keep reading
-                    }
-                }
-            }
+			good = ReadALine(name, sizeof(name), fp);               
+			if (good) {
+				good = ReadALine(type, sizeof(type), fp);
+			}
+			if (good) {
+				char *p = type;
+				while (*p && *p != ' ') p++;
+				if (*p) {
+					*p = 0;
+					dom = p+1;
+				}
+			}
+			if (good) {
+				good = ReadALine(port, sizeof(port), fp);
+			}
+			if (good) {
+				good =     CheckThatRichTextHostNameIsUsable(name, mDNSfalse)
+						&& CheckThatServiceTypeIsUsable(type, mDNSfalse)
+						&& CheckThatPortNumberIsUsable(atol(port), mDNSfalse);
+			}
+			if (good) {
+				while (1) {
+					if (!ReadALine(rawText, sizeof(rawText), fp)) break;
+					text[textLen] = strlen(rawText);
+					if (text[textLen] == 0) break;
+					memcpy(text + textLen + 1, rawText, text[textLen]);
+					textLen += 1 + text[textLen];
+				}
+			}
+			if (good) {
+				status = RegisterOneService(name, type, dom, text, textLen, atol(port));
+				if (status != mStatus_NoError) {
+					fprintf(stderr, 
+							"%s: Failed to register service, name = %s, type = %s, port = %s\n", 
+							gProgramName,
+							name,
+							type,
+							port);
+					status = mStatus_NoError;       // keep reading
+				}
+			}
         } while (good && !feof(fp));
 
         if ( ! good ) {
