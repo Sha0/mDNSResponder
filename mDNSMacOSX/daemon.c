@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.153  2004/03/12 08:08:51  cheshire
+Update comments
+
 Revision 1.152  2004/02/05 19:39:29  cheshire
 Move creation of /var/run/mDNSResponder.pid to uds_daemon.c,
 so that all platforms get this functionality
@@ -1012,6 +1015,9 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 			}
 		else
 			{
+			// SANITY CHECK: Should only get mStatus_MemFree as a result of calling mDNS_DeregisterService()
+			// and should only get it with x->autorename false if we've already removed the record from our
+			// list, but this check is just to make sure...
 			DNSServiceRegistration **r = &DNSServiceRegistrationList;
 			while (*r && *r != x) r = &(*r)->next;
 			if (*r)
@@ -1019,6 +1025,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 				LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", sr->RR_SRV.resrec.name.c);
 				*r = (*r)->next;
 				}
+			// END SANITY CHECK
 			LogOperation("%5d: DNSServiceRegistration(%##s, %u) Memory Free", x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT(sr));
 			FreeDNSServiceRegistration(x);
 			}
@@ -1153,7 +1160,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		mDNSNULL, port,			// Host and port
 		txtinfo, data_len,		// TXT data, length
 		SubTypes, NumSubTypes,	// Subtypes
-		mDNSInterface_Any,		// Interace ID
+		mDNSInterface_Any,		// Interface ID
 		RegCallback, x);		// Callback and context
 
 	if (err) { AbortClient(client, x); errormsg = "mDNS_RegisterService"; goto fail; }
