@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.93  2004/09/22 02:39:44  cheshire
+<rdar://problem/3810757> Allow DNSServiceRegisterRecord to pass zero to get default record TTL
+
 Revision 1.92  2004/09/22 02:34:04  cheshire
 Rename parameter "ttl" to "GetTTL" for clarity
 
@@ -2217,6 +2220,9 @@ static void handle_regrecord_request(request_state *rstate)
         rstate->terminate = connected_registration_termination;
         rstate->termination_context = rstate;
     	}
+    
+    if (rr->resrec.rroriginalttl == 0)
+        rr->resrec.rroriginalttl = (rr->resrec.RecordType == kDNSRecordTypeUnique) ? kDefaultTTLforUnique : kDefaultTTLforShared;
     
     result = mDNS_Register(gmDNS, rr);
     deliver_error(rstate, result); 
