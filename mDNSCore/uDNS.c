@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.102  2004/10/23 01:16:00  cheshire
+<rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
+
 Revision 1.101  2004/10/22 20:52:07  ksekar
 <rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
 
@@ -959,7 +962,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 		return;
 		}
 	
-	priv = srs ? srs->RR_SRV.resrec.rdata->u.srv.port : m->uDNS_info.PrimaryPort;
+	priv = srs ? srs->RR_SRV.resrec.rdata->u.srv.port : m->UnicastPort4;
 	
 	if (!pkt) // timeout
 		{
@@ -1136,7 +1139,7 @@ mDNSlocal void StartLLQNatMap(mDNS *m)
 	info->reg.ServiceRegistration = mDNSNULL;
     info->state = NATState_Request;
 	info->requestlen = PORTMAP_PKTLEN;
-	FormatPortMaprequest(info, u->PrimaryPort);
+	FormatPortMaprequest(info, m->UnicastPort4);
     SendInitialPMapReq(m, info);
 	return;
 	}
@@ -1390,36 +1393,31 @@ exit:
 	mDNS_Unlock(m);
 	}
 
-mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port, const mDNSAddr *router)
+mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mDNSAddr *router)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-	mDNSBool AddrChanged, PortChanged, RouterChanged;
+	mDNSBool AddrChanged, RouterChanged;
    
 	if (addr && addr->type !=mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 address.  Discarding."); return; }
 	if (router && router->type !=mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 address.  Discarding."); return; }
 	mDNS_Lock(m);
 
 	AddrChanged = addr ? (addr->ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger) : u->PrimaryIP.ip.v4.NotAnInteger;
-	PortChanged = (u->PrimaryPort.NotAnInteger != port.NotAnInteger);
 	RouterChanged = router ? (router->ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger) : u->Router.ip.v4.NotAnInteger;
 	
 #if MDNS_DEBUGMSGS
-    if (!AddrChanged && !PortChanged && u->PrimaryIf != id) debugf("mDNS_SetPrimaryInterfaceInfo: IP/Port unchanged but InterfaceID different!");
-	if (addr && (AddrChanged || PortChanged))
-		LogMsg("mDNS_SetPrimaryInterfaceInfo: address changed from %d.%d.%d.%d:%d to %d.%d.%d.%d:%d",
-			   u->PrimaryIP.ip.v4.b[0], u->PrimaryIP.ip.v4.b[1], u->PrimaryIP.ip.v4.b[2], u->PrimaryIP.ip.v4.b[3], mDNSVal16(u->PrimaryPort),
-			   addr->ip.v4.b[0], addr->ip.v4.b[1], addr->ip.v4.b[2], addr->ip.v4.b[3], mDNSVal16(port));
+	if (addr && (AddrChanged || RouterChanged))
+		LogMsg("mDNS_SetPrimaryInterfaceInfo: address changed from %d.%d.%d.%d to %d.%d.%d.%d:%d",
+			   u->PrimaryIP.ip.v4.b[0], u->PrimaryIP.ip.v4.b[1], u->PrimaryIP.ip.v4.b[2], u->PrimaryIP.ip.v4.b[3],
+			   addr->ip.v4.b[0], addr->ip.v4.b[1], addr->ip.v4.b[2], addr->ip.v4.b[3], mDNSVal16(m->UnicastPort4));
 #endif // MDNS_DEBUGMSGS
 										   	
 	if (addr)   u->PrimaryIP = *addr;
 	if (router) u->Router = *router;
 	else        u->Router.ip.v4.NotAnInteger = 0; // setting router to zero indicates that nat mappings must be reestablished when router is reset
-	u->PrimaryPort = port;
-	u->PrimaryIf = id;      // Note - if ID changes but the address/port do not, we do not update registrations/LLQs
-	
 	
 	if (addr && AddrChanged) UpdateHostnameRegistrations(m);
-	if (AddrChanged || PortChanged || RouterChanged)
+	if (AddrChanged || RouterChanged)
 		{
 		if (u->LLQNatInfo)
 			{
@@ -2217,7 +2215,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 	
-	err = mDNSSendDNSMessage(m, &msg, end, m->uDNS_info.PrimaryIf, &info->servAddr, info->servPort);
+	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
 	if (err) LogMsg("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
 	if (info->state == LLQ_Established) info->ntries = 1;
@@ -2243,7 +2241,7 @@ mDNSlocal void recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNS
 	InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
 	ackEnd = putQuestion(&ack, ack.data, ack.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putQuestion");  return; }
-	err = mDNSSendDNSMessage(m, &ack, ackEnd, m->uDNS_info.PrimaryIf, srcaddr, srcport); 
+	err = mDNSSendDNSMessage(m, &ack, ackEnd, mDNSInterface_Any, srcaddr, srcport, -1, mDNSNULL); 
 	if (err) LogMsg("ERROR: recvLLQEvent - mDNSSendDNSMessage returned %ld", err);
     }
 
@@ -2305,7 +2303,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	responsePtr = putLLQ(&response, responsePtr, q, llq, mDNSfalse);
 	if (!responsePtr) { LogMsg("ERROR: sendChallengeResponse - putLLQ"); goto error; }
 	
-	err = mDNSSendDNSMessage(m, &response, responsePtr, m->uDNS_info.PrimaryIf, &info->servAddr, info->servPort);
+	err = mDNSSendDNSMessage(m, &response, responsePtr, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
 	if (err) LogMsg("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
@@ -2449,7 +2447,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 		return;
 		}
 
-	err = mDNSSendDNSMessage(m, &msg, end, m->uDNS_info.PrimaryIf, &info->servAddr, info->servPort);
+	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, -1, mDNSNULL);
 	if (err) LogMsg("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
@@ -2719,7 +2717,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	server = getInitializedDNS(u);
 	if (server)
 		{
-		err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, server, UnicastDNSPort);
+		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, server, UnicastDNSPort, -1, mDNSNULL);
 		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
 		}
 
@@ -2731,6 +2729,7 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
 	ubzero(&question->uDNS_info, sizeof(uDNS_QuestionInfo));
 	question->uDNS_info.responseCallback = simpleResponseHndlr;
 	question->uDNS_info.context = mDNSNULL;
+	LogOperation("uDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 	return startQuery(m, question, 0);
     }
 
@@ -3220,7 +3219,7 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 		msg = (DNSMessage *)&msgbuf;
 		err = constructQueryMsg(msg, &end, question);
 		if (err) { LogMsg("ERROR: conQueryCallback: constructQueryMsg - %ld", err);  goto error; }
-		err = mDNSSendDNSMessage_tcp(info->m, msg, end, sd);
+		err = mDNSSendDNSMessage(info->m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, mDNSNULL);
 		if (err) { LogMsg("ERROR: conQueryCallback: mDNSSendDNSMessage_tcp - %ld", err);  goto error; }
 		return;
 		}
@@ -3298,7 +3297,6 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSOpaque16 id;
-	uDNS_AuthInfo *authInfo;
 	uDNS_RegInfo *regInfo = &rr->uDNS_info;
 	mStatus err = mStatus_UnknownErr;
 
@@ -3331,17 +3329,8 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	   
 	rr->uDNS_info.expire = -1;
 	
-	authInfo = GetAuthInfoForZone(u, &regInfo->zone);
-	if (authInfo)
-		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &regInfo->ns, regInfo->port, authInfo);
-		if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendSignedDNSMessage - %ld", err);
-		}
-	else
-		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &regInfo->ns, regInfo->port);
-		if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
-		}
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &regInfo->ns, regInfo->port, -1, GetAuthInfoForZone(u, &regInfo->zone));
+	if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
 	SetRecordRetry(m, rr);
 	
@@ -3435,7 +3424,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSOpaque16 id;
-	uDNS_AuthInfo *authInfo;
 	uDNS_RegInfo *rInfo = &srs->uDNS_info;
 	mStatus err = mStatus_UnknownErr;
 	mDNSIPPort privport;
@@ -3522,17 +3510,9 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	   
 	srs->uDNS_info.expire = -1;
 
-	authInfo = GetAuthInfoForZone(u, &rInfo->zone);
-	if (authInfo)
-		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &rInfo->ns, rInfo->port, authInfo);
-		if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendSignedDNSMessage - %ld", err); goto error; }
-		}
-	else
-		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rInfo->ns, rInfo->port);
-		if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
-		}
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForZone(u, &rInfo->zone));
+	if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
+
 	if (rInfo->state != regState_Refresh)
 		rInfo->state = regState_Pending;
 
@@ -3655,7 +3635,6 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mStatus err;
-	uDNS_AuthInfo *authInfo;
 	NATTraversalInfo *n = rr->uDNS_info.NATinfo;
  
 	switch (rr->uDNS_info.state)
@@ -3706,17 +3685,8 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 
 	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) goto error;
 
-	authInfo = GetAuthInfoForZone(u, &rr->uDNS_info.zone);
-	if (authInfo)
-		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, rr->uDNS_info.port, authInfo);
-		if (err) LogMsg("ERROR: uDNS_DeregiserRecord - mDNSSendSignedDNSMessage - %ld", err);
-		}
-	else
-		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &rr->uDNS_info.ns, rr->uDNS_info.port);
-		if (err) LogMsg("ERROR: uDNS_DeregisterRecord - mDNSSendDNSMessage - %ld", err); 
-		}
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, -1, GetAuthInfoForZone(u, &rr->uDNS_info.zone));
+	if (err) LogMsg("ERROR: uDNS_DeregisterRecord - mDNSSendDNSMessage - %ld", err); 
 
 	SetRecordRetry(m, rr);
 	rr->uDNS_info.state = regState_DeregPending;
@@ -3806,7 +3776,6 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	uDNS_RegInfo *info = &srs->uDNS_info;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
-	uDNS_AuthInfo *authInfo = mDNSNULL;
 	DNSMessage msg;
 	mDNSOpaque16 id;
 	mDNSu8 *ptr = msg.data;
@@ -3846,17 +3815,8 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	//if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_ADV.resrec))) goto error;
 	//!!!KRS  need to handle extras/subtypes etc
 	
-	authInfo = GetAuthInfoForZone(u, &info->zone);
-	if (authInfo)
-		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &info->ns, info->port, authInfo);
-		if (err) { LogMsg("ERROR: uDNS_DeregiserService - mDNSSendSignedDNSMessage - %ld", err); goto error; }
-		}
-	else
-		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &info->ns, info->port);
-		if (err) { LogMsg("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
-		}
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
+	if (err) { LogMsg("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
 	SetRecordRetry(m, &srs->RR_SRV);
     info->id.NotAnInteger = id.NotAnInteger;
@@ -3926,7 +3886,6 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSOpaque16 id;
-	uDNS_AuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
 	
 	rr->uDNS_info.UpdateQueued = mDNSfalse;  // if this was queued, clear flag
@@ -3951,17 +3910,8 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	if (info->lease) ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease);
 	
 	// don't report send errors - retransmission will occurr if necessary
-	authInfo = GetAuthInfoForZone(u, &info->zone);
-	if (authInfo)
-		{
-		err = mDNSSendSignedDNSMessage(m, &msg, ptr, 0, &info->ns, info->port, authInfo);
-		if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendSignedDNSMessage - %ld", err);
-		}
-	else
-		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, 0, &info->ns, info->port);
-		if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
-		}
+	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
+	if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
 	//!!! Update this when we implement retransmission for services	
 	SetRecordRetry(m, rr);
@@ -4123,7 +4073,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 						   q->qname.c);
 					continue;
 					}
-				err = mDNSSendDNSMessage(m, &msg, end, q->InterfaceID, server, UnicastDNSPort);
+				err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, server, UnicastDNSPort, -1, mDNSNULL);
 				if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); } // surpress syslog messages if we have no network
 				q->LastQTime = timenow;
 				if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;

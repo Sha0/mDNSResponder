@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.213  2004/10/23 01:16:01  cheshire
+<rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
+
 Revision 1.212  2004/10/22 20:52:08  ksekar
 <rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
 
@@ -634,6 +637,7 @@ Minor code tidying
 #define AAAA_OVER_V4 1
 
 #include "mDNSEmbeddedAPI.h"          // Defines the interface provided to the client layer above
+#include "DNSCommon.h"
 #include "mDNSMacOSX.h"               // Defines the specific types needed to run mDNS on this platform
 #include "../mDNSShared/uds_daemon.h" // Defines communication interface from platform layer up to UDS daemon
 
@@ -882,6 +886,16 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	char *ifa_name = info ? info->ifa_name : "unicast";
 	struct sockaddr_storage to;
 	int s = -1, err;
+
+	// Sanity check: Make sure that if we're sending a query via unicast, we're sending it using our
+	// anonymous socket created for this purpose, so that we'll receive the response.
+	// If we use one of the many multicast sockets bound to port 5353 then we may not receive responses reliably.
+	if (info && !mDNSAddrIsDNSMulticast(dst))
+		{
+		const DNSMessage *const m = (DNSMessage *)msg;
+		if ((m->h.flags.b[0] & kDNSFlag0_QR_Mask) == kDNSFlag0_QR_Query)
+			LogMsg("mDNSPlatformSendUDP: ERROR: Sending query OP from mDNS port to non-mDNS destination %#a:%d", dst, mDNSVal16(dstPort));
+		}
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
@@ -2274,7 +2288,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	dict = SCDynamicStoreCopyValue(session, key);
 	CFRelease(key);
 	if (!dict)
-		{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, zeroIPPort, NULL); return; } // lost v4
+		{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL); return; } // lost v4
 
 	// handle router changes
 	r.type = mDNSAddrType_IPv4;
@@ -2302,31 +2316,9 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 			if (ifa->ifa_addr->sa_family == AF_INET && !strcmp(buf, ifa->ifa_name))
 				{
 				mDNSAddr ip;
-				struct sockaddr_in saddr;
-				int namelen = sizeof(saddr);
-				NetworkInterfaceInfoOSX *info = &m->p->PrimaryUcastIf;
 				SetupAddr(&ip, ifa->ifa_addr);
-				if (info->ss.sktv4 > -1)
-					{
-					// socket already initialized - see if bound to current address
-					if (getsockname(info->ss.sktv4, (struct sockaddr *)&saddr, &namelen) < 0) 
-						{ LogMsg("Error: getsockname error %d (%s)", errno, strerror(errno)); goto error; }
-					if (((mDNSv4Addr *)&saddr.sin_addr)->NotAnInteger != ip.ip.v4.NotAnInteger)
-						{
-						// primary addr changed - tear down socket
-						CloseSocketSet(&info->ss);
-						info->ss.sktv4 = -1;
-						}
-					}
-					if (info->ss.sktv4 < 0)
-						{
-						// socket uninitialized or changed above
-						if (SetupSocket(&info->ss, zeroIPPort, &ip, AF_INET)) goto error;
-						if (getsockname(info->ss.sktv4, (struct sockaddr *)&saddr, &namelen) < 0)
-							{ LogMsg("Error: getsockname error %d (%s)", errno, strerror(errno)); goto error; }
-						mDNS_SetPrimaryInterfaceInfo(m, (mDNSInterfaceID)info, &ip, *(mDNSIPPort *)&saddr.sin_port, r.ip.v4.NotAnInteger ? &r : NULL);
-						}					
-					break;
+				mDNS_SetPrimaryInterfaceInfo(m, &ip, r.ip.v4.NotAnInteger ? &r : NULL);
+				break;
 				}
 			ifa = ifa->ifa_next;
 			}
@@ -2794,7 +2786,7 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 
     return mStatus_NoError;
 	}
-	
+
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
@@ -2832,14 +2824,15 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET);
 	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET6);
 
-	bzero(&m->p->PrimaryUcastIf, sizeof(m->p->PrimaryUcastIf));
-	m->p->PrimaryUcastIf.ifa_name = "Primary Unicast Info";
-    m->p->PrimaryUcastIf.ss.m     = m;
-	m->p->PrimaryUcastIf.ss.info  = NULL;
-	m->p->PrimaryUcastIf.ss.sktv4 = m->p->PrimaryUcastIf.ss.sktv6 = -1;
-	m->p->PrimaryUcastIf.ss.cfsv4 = m->p->PrimaryUcastIf.ss.cfsv6 = NULL;
-	m->p->PrimaryUcastIf.ss.rlsv4 = m->p->PrimaryUcastIf.ss.rlsv6 = NULL;
-	
+	struct sockaddr_in s4;
+	struct sockaddr_in6 s6;
+	int n4 = sizeof(s4);
+	int n6 = sizeof(s6);
+	if (getsockname(m->p->unicastsockets.sktv4, (struct sockaddr *)&s4, &n4) < 0) LogMsg("getsockname v4 error %d (%s)", errno, strerror(errno));
+	else m->UnicastPort4.NotAnInteger = s4.sin_port;
+	if (getsockname(m->p->unicastsockets.sktv6, (struct sockaddr *)&s6, &n6) < 0) LogMsg("getsockname v6 error %d (%s)", errno, strerror(errno));
+	else m->UnicastPort6.NotAnInteger = s6.sin6_port;
+
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);

@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.454  2004/10/23 01:16:00  cheshire
+<rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
+
 Revision 1.453  2004/10/22 20:52:06  ksekar
 <rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
 
@@ -2712,8 +2715,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 				numAnnounce,               numAnnounce               == 1 ? "" : "s",
 				numAnswer,                 numAnswer                 == 1 ? "" : "s",
 				response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
-			if (intf->IPv4Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
-			if (intf->IPv6Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
 			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
 			if (++pktcount >= 1000)
 				{ LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
@@ -3063,7 +3066,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				const mDNSu8 *const limit = query.data + sizeof(query.data);
 				InitializeDNSMessage(&query.h, q->TargetQID, QueryFlags);
 				qptr = putQuestion(&query, qptr, limit, &q->qname, q->qtype, q->qclass);
-				mDNSSendDNSMessage(m, &query, qptr, mDNSInterface_Any, &q->Target, q->TargetPort);
+				mDNSSendDNSMessage(m, &query, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, -1, mDNSNULL);
 				q->ThisQInterval   *= 2;
 				q->LastQTime        = m->timenow;
 				q->LastQTxTime      = m->timenow;
@@ -3272,8 +3275,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
 				query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
-			if (intf->IPv4Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort);
-			if (intf->IPv6Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
 			if (!m->SuppressSending) m->SuppressSending = (m->timenow + mDNSPlatformOneSecond/10) | 1;	// OR with one to ensure non-zero
 			if (++pktcount >= 1000)
 				{ LogMsg("SendQueries exceeded loop limit %d: giving up", pktcount); break; }
@@ -4673,7 +4676,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 			response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
 			response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s",
 			srcaddr, mDNSVal16(srcport), InterfaceID, srcaddr->type);
-		mDNSSendDNSMessage(m, &response, responseend, InterfaceID, srcaddr, srcport);
+		mDNSSendDNSMessage(m, &response, responseend, InterfaceID, srcaddr, srcport, -1, mDNSNULL);
 		}
 	}
 
@@ -5072,6 +5075,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
     question->uDNS_info.id = zeroID;
 #endif // UNICAST_DISABLED
 	
+	LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+	
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
 	else
@@ -5389,6 +5394,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
+	LogOperation("FoundServiceInfo %d %s", AddRecord, GetRRDisplayString_rdb(answer, &answer->rdata->u, m->MsgBuffer));
 	if (!AddRecord) return;
 	
 	if (answer->rrtype == kDNSType_A)
@@ -6461,6 +6467,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->CanReceiveUnicast       = mDNSfalse;		// Assume we can't receive unicasts, unless platform layer tells us otherwise
 	m->AdvertiseLocalAddresses = AdvertiseLocalAddresses;
 	m->mDNSPlatformStatus      = mStatus_Waiting;
+	m->UnicastPort4            = zeroIPPort;
+	m->UnicastPort6            = zeroIPPort;
 	m->MainCallback            = Callback;
 	m->MainContext             = Context;
 

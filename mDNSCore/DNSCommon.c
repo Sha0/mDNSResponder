@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.66  2004/10/23 01:16:00  cheshire
+<rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
+
 Revision 1.65  2004/10/20 02:15:09  cheshire
 Add case in GetRRDisplayString() to display NS rdata
 
@@ -1818,7 +1821,7 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 #pragma mark - Packet Sending Functions
 #endif
 
-mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
+mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd, uDNS_AuthInfo *authInfo)
 	{
 	mStatus status;
@@ -1875,33 +1878,8 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDN
 	return(status);
 
 	tcp_error:
-	LogMsg("sendDNSMessage: error sending message over tcp");
+	LogMsg("mDNSSendDNSMessage: error sending message over tcp");
 	return mStatus_UnknownErr;
-
-	}
-
-mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd)
-	{
-	if (sd < 0) { LogMsg("mDNSSendDNSMessage_tcp: invalid desciptor %d", sd); return mStatus_UnknownErr; }
-	return sendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, mDNSNULL);
-	}
-
-mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end,
-	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport)
-	{
-	return sendDNSMessage(m, msg, end, InterfaceID, dst, dstport, -1, mDNSNULL);
-	}
-
-mDNSexport mStatus mDNSSendSignedDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end,
-    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_AuthInfo *authInfo)
-	{
-	return sendDNSMessage(m, msg, end, InterfaceID, dst, dstport, -1, authInfo);
-	}
-
-mDNSexport mStatus mDNSSendSignedDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd, uDNS_AuthInfo *authInfo)
-	{
-	if (sd < 0) { LogMsg("mDNSSendDNSMessage_tcp: invalid desciptor %d", sd); return mStatus_UnknownErr; }
-	return sendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, authInfo);
 	}
 
 // ***************************************************************************

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.44  2004/10/23 01:16:01  cheshire
+<rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
+
 Revision 1.43  2004/10/15 23:00:18  ksekar
 <rdar://problem/3799242> Need to update LLQs on location changes
 
@@ -221,7 +224,6 @@ struct mDNS_PlatformSupport_struct
     {
     NetworkInterfaceInfoOSX *InterfaceList;
     CFSocketSet              unicastsockets;
-    NetworkInterfaceInfoOSX  PrimaryUcastIf;    // NetworkInterfaceInfoOSX wrapper around v4 unicast socket bound to primary v4 address
     domainlabel              userhostlabel;
     SCDynamicStoreRef        Store;
     CFRunLoopSourceRef       StoreRLS;

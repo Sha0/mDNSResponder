@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.228  2004/10/23 01:16:00  cheshire
+<rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
+
 Revision 1.227  2004/10/22 20:52:07  ksekar
 <rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
 
@@ -1756,8 +1759,6 @@ typedef struct
 	mDNSAddr         PrimaryIP;          // Address of primary interface
 	mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
     NATTraversalInfo *LLQNatInfo;        // Nat port mapping to receive LLQ events
-    mDNSInterfaceID  PrimaryIf;          // ID used to send explicitly on primary interface
-    mDNSIPPort       PrimaryPort;        // Port on primary interface we send/receive on
     domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
 	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
 	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
@@ -1776,6 +1777,8 @@ struct mDNS_struct
 	mDNSBool CanReceiveUnicast;
 	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
+	mDNSIPPort UnicastPort4;
+	mDNSIPPort UnicastPort6;
 	mDNSCallback *MainCallback;
 	void         *MainContext;
 
@@ -2244,7 +2247,7 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key,
 extern void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *domain, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain);
 extern void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel);
-extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port, const mDNSAddr *router);
+extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mDNSAddr *router);
 
 // Routines called by the core, exported by DNSDigest.c
 
