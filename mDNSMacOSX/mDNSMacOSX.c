@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.205  2004/10/12 21:10:11  cheshire
+<rdar://problem/3438376> mach_absolute_time() not monotonically increasing
+Do a NotifyOfElusiveBug() if we see mach_absolute_time() go backwards
+
 Revision 1.204  2004/10/12 03:20:52  ksekar
 <rdar://problem/3835614> Incorrect LogMsg produces garbage on errors
 
@@ -2870,7 +2874,20 @@ mDNSexport mStatus mDNSPlatformTimeInit(void)
 mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 	{
 	if (clockdivisor == 0) { LogMsg("mDNSPlatformRawTime called before mDNSPlatformTimeInit"); return(0); }
-	return((mDNSs32)(mach_absolute_time() / clockdivisor));
+
+	static uint64_t last_mach_absolute_time = 0;
+	uint64_t this_mach_absolute_time = mach_absolute_time();
+	if ((int64_t)this_mach_absolute_time - (int64_t)last_mach_absolute_time < 0)
+		{
+		LogMsg("mDNSPlatformRawTime: last_mach_absolute_time %08X%08X", last_mach_absolute_time);
+		LogMsg("mDNSPlatformRawTime: this_mach_absolute_time %08X%08X", this_mach_absolute_time);
+		// Update last_mach_absolute_time *before* calling NotifyOfElusiveBug()
+		last_mach_absolute_time = this_mach_absolute_time;
+		NotifyOfElusiveBug("mach_absolute_time went backwards!", 3438376, "");
+		}
+	last_mach_absolute_time = this_mach_absolute_time;
+
+	return((mDNSs32)(this_mach_absolute_time / clockdivisor));
 	}
 
 mDNSexport mDNSs32 mDNSPlatformUTC(void)
