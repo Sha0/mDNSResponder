@@ -1,4 +1,5 @@
-/*
+ /* -*- Mode: C; tab-width: 4 -*- */
+ /*
  * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
@@ -44,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.443  2004/10/10 07:05:45  cheshire
+For consistency, use symbol "localdomain" instead of literal string
+
 Revision 1.442  2004/10/08 20:25:10  cheshire
 Change of plan for <rdar://problem/3831716> -- we're not going to do that at this time
 
@@ -5480,7 +5484,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->QuestionContext  = Context;
 	if (DomainType > mDNS_DomainTypeRegistrationDefault) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
-	if (!dom) dom = (const domainname *)"\x5local";
+	if (!dom) dom = &localdomain;
 	if (!AppendDomainName(&question->qname, dom)) return(mStatus_BadParamErr);
 	return(mDNS_StartQuery(m, question));
 	}
