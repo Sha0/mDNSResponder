@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.5  2004/11/17 17:07:44  cheshire
+Updated comment about AUTO_CALLBACKS
+
 Revision 1.4  2004/11/12 03:23:09  rpantos
 rdar://problem/3809541 implement getIfIndexForName, getNameForIfIndex.
 
@@ -41,9 +44,12 @@ First checked in.
  */
 
 // AUTO_CALLBACKS should be set to 1 if the underlying mDNS implementation fires response
-// callbacks automatically (as it does on Windows).
+// callbacks automatically (as in the early Windows prototypes).
 // AUTO_CALLBACKS should be set to 0 if the client must call DNSServiceProcessResult() to
-// invoke response callbacks (as is true on Mac OS X).
+// invoke response callbacks (as is true on Mac OS X, Posix, Windows, etc.).
+// (Invoking callbacks automatically on a different thread sounds attractive, but while
+// the client gains by not needing to add an event source to its main event loop, it loses
+// by being forced to deal with concurrency and locking, which can be a bigger burden.)
 #ifndef	AUTO_CALLBACKS
 #define	AUTO_CALLBACKS	0
 #endif
