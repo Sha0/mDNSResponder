@@ -1020,7 +1020,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "javah -force -classpath build/mDNSResponder.build/dns_sd.jar.build/JavaClasses/ -o build/mDNSResponder.build/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
+			shellScript = "javah -force -classpath ${OBJROOT}/mDNSResponder.build/dns_sd.jar.build/JavaClasses/ -o ${OBJROOT}/mDNSResponder.build/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
 		};
 		DB2CC4560662DE4500335AB3 = {
 			fileRef = DB2CC4430662DD1100335AB3;
@@ -1135,7 +1135,7 @@
 				DEBUGGING_SYMBOLS = NO;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
-				HEADER_SEARCH_PATHS = "\"$(SYSTEM_LIBRARY_DIR)/Frameworks/JavaVM.framework/Versions/A/Headers\" build/mDNSResponder.build/dns_sd.jar.build";
+				HEADER_SEARCH_PATHS = "\"$(SYSTEM_LIBRARY_DIR)/Frameworks/JavaVM.framework/Versions/A/Headers\" $(OBJROOT)/mDNSResponder.build/dns_sd.jar.build";
 				INSTALL_PATH = /usr/lib/java;
 				LIBRARY_STYLE = DYNAMIC;
 				OTHER_CFLAGS = "";
@@ -1383,7 +1383,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "rm build/dns_sd";
+			shellScript = "rm -f ${BUILD_DIR}/dns_sd";
 		};
 		FFD41DDF06641BBB00F0C438 = {
 			isa = PBXTargetDependency;
