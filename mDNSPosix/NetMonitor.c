@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.27  2003/07/29 22:48:04  cheshire
+ * Completed support for decoding packets containing oversized resource records
+ *
  * Revision 1.26  2003/07/19 03:25:23  cheshire
  * Change to make use of new GetLargeResourceRecord() call, for handling larger records
  *
@@ -299,15 +302,15 @@ mDNSlocal void printstats(void)
 		}
 	}
 
-mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, ResourceRecord *pktrr)
+mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, LargeResourceRecord *pkt)
 	{
 	int i;
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
 		const mDNSu8 *p2 = ptr;
-		ptr = GetResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pktrr, mDNSNULL);
+		ptr = GetLargeResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pkt);
 		if (!ptr) break;
-		if (ResourceRecordAnswersQuestion(pktrr, q)) return(p2);
+		if (ResourceRecordAnswersQuestion(&pkt->r, q)) return(p2);
 		}
 	return(mDNSNULL);
 	}
@@ -411,7 +414,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	int i;
 	const mDNSu8 *ptr = msg->data;
 	const mDNSu8 *auth = LocateAuthorities(msg, end);
-	ResourceRecord pktrr;
+	LargeResourceRecord pkt;
 
 	DisplayPacketHeader(msg, srcaddr, srcport);
 	if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumPktQ++;
@@ -425,11 +428,11 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
 		mDNSu16 ucbit = q.qclass & kDNSQClass_UnicastResponse;
 		q.qclass &= ~kDNSQClass_UnicastResponse;
-		p2 = (mDNSu8 *)FindUpdate(m, msg, auth, end, &q, &pktrr);
+		p2 = (mDNSu8 *)FindUpdate(m, msg, auth, end, &q, &pkt);
 		if (p2)
 			{
 			NumProbes++;
-			DisplayResourceRecord(srcaddr, ucbit ? "(PU)" : "(PM)", &pktrr);
+			DisplayResourceRecord(srcaddr, ucbit ? "(PU)" : "(PM)", &pkt.r);
 			recordstat(&q.qname, OP_probe, q.qtype);
 			p2 = (mDNSu8 *)skipDomainName(msg, p2, end);
 			// Having displayed this update record, clear type and class so we don't display the same one again.
@@ -449,9 +452,9 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
-		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ KNOWN ANSWER **** \n", srcaddr); return; }
-		DisplayResourceRecord(srcaddr, "(KA)", &pktrr);
+		DisplayResourceRecord(srcaddr, "(KA)", &pkt.r);
 		}
 	}
 
@@ -492,14 +495,14 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
-		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt.r, mDNSNULL);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ AUTHORITY **** \n", srcaddr); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(pkt.r.rrtype), pkt.r.name.c);
 		}
 
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
-		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt.r, mDNSNULL);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr); return; }
 		NumAdditionals++;
 		DisplayResourceRecord(srcaddr, (pkt.r.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pkt.r);
