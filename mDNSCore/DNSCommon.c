@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.35  2004/06/05 00:14:44  cheshire
+Fix signed/unsigned and other compiler warnings
+
 Revision 1.34  2004/06/04 00:25:25  cheshire
 Fix misaligned write exception that occurs on some platforms
 
@@ -1106,7 +1109,7 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 
 mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
 	{
-	mDNSu16 val = ((mDNSu16)(*ptr)[0]) << 8 | (*ptr)[1];
+	mDNSu16 val = (mDNSu16)(((mDNSu16)(*ptr)[0]) << 8 | (*ptr)[1]);
 	*ptr += sizeof(mDNSOpaque16);
 	return val;
 	}
@@ -1132,7 +1135,9 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 			opt->OptData.llq.err = getVal16(&ptr);
 			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id, 8);
 			ptr += 8;
-			opt->OptData.llq.lease = mDNSVal32(*(mDNSOpaque32 *)ptr);
+			opt->OptData.llq.lease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
+			if (opt->OptData.llq.lease > 0x70000000UL / mDNSPlatformOneSecond)
+				opt->OptData.llq.lease = 0x70000000UL / mDNSPlatformOneSecond;
 			ptr += sizeof(mDNSOpaque32);
 			nread += sizeof(LLQOptData);
 			}
@@ -1140,7 +1145,9 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *limit, Reso
 			{
 			if ((unsigned)(limit - ptr) < sizeof(mDNSs32)) goto space_err;
 
-			opt->OptData.lease = mDNSVal32(*(mDNSOpaque32 *)ptr);
+			opt->OptData.lease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
+			if (opt->OptData.lease > 0x70000000UL / mDNSPlatformOneSecond)
+				opt->OptData.lease = 0x70000000UL / mDNSPlatformOneSecond;
 			ptr += sizeof(mDNSs32);
 			nread += sizeof(mDNSs32);
 			}

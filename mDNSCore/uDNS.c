@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.43  2004/06/05 00:14:44  cheshire
+Fix signed/unsigned and other compiler warnings
+
 Revision 1.42  2004/06/04 22:36:16  ksekar
 Properly set u->nextevent in uDNS_Execute
 
@@ -724,13 +727,13 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 mDNSlocal void simpleResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *context)
 	{
 	(void)context; // unused
-	return pktResponseHndlr(m, msg, end, question, mDNSfalse);
+	pktResponseHndlr(m, msg, end, question, mDNSfalse);
 	}
 
 mDNSlocal void llqResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *context)
 	{
 	(void)context; // unused
-	return pktResponseHndlr(m, msg, end, question, mDNStrue);
+	pktResponseHndlr(m, msg, end, question, mDNStrue);
 	}
 
 
@@ -806,7 +809,8 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 					LogMsg("Re-trying update of service %s without lease option", srs->RR_SRV.resrec.name.c);
 					srs->uDNS_info.lease = mDNSfalse;
 					srs->uDNS_info.expire = -1;
-					return SendServiceRegistration(m, srs);
+					SendServiceRegistration(m, srs);
+					return;
 					}
 				else
 					{
@@ -906,7 +910,8 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 				LogMsg("Re-trying update of record %s without lease option", rr->resrec.name.c);
 				rr->uDNS_info.lease = mDNSfalse;
 				rr->uDNS_info.expire = -1;
-				return sendRecordRegistration(m, rr);
+				sendRecordRegistration(m, rr);
+				return;
 				}
 			
 			LogMsg("Registration of record %s type %d failed with error %d",
@@ -937,7 +942,7 @@ mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	LargeCacheRecord lcr;
 	const mDNSu8 *ptr;
 	int i;
-	mDNSs32 lease = -1;
+	mDNSu32 lease = 0;
 
 	ptr = LocateAdditionals(msg, end);
 
@@ -958,7 +963,7 @@ mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 		}
 	
 	if (lease > 0)
-		info->expire = (mDNSPlatformTimeNow() + ((lease * mDNSPlatformOneSecond)) * 3/4);
+		info->expire = (mDNSPlatformTimeNow() + (((mDNSs32)lease * mDNSPlatformOneSecond)) * 3/4);
 	else info->expire = -1;
 	}
 
@@ -1152,8 +1157,8 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	if (!sameID(pktData.id, qInfo->id)) { LogMsg("recvRefreshReply - ID mismatch.  Discarding");  return; }
 	if (pktData.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData.err); return; }
 
-	qInfo->expire = mDNSPlatformTimeNow() + (pktData.lease * mDNSPlatformOneSecond);
-	qInfo->retry = qInfo->expire + (pktData.lease * mDNSPlatformOneSecond * 3/4);
+	qInfo->expire = mDNSPlatformTimeNow() + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond);
+	qInfo->retry = qInfo->expire + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond * 3/4);
  
 	qInfo->origLease = pktData.lease;
 	qInfo->state = LLQ_Established;	
@@ -1171,7 +1176,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 		{
 		LogMsg("sendLLQRefresh - %d failed attempts for llq %s", info->ntries, q->qname.c);
 		info->state = LLQ_Retry;
-		info->retry = mDNSPlatformTimeNow() + kLLQ_DEF_RETRY;
+		info->retry = mDNSPlatformTimeNow() + kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
 		info->deriveRemovesOnResume = mDNStrue;
 		return;
 		//!!!KRS handle this - periodically try to re-establish
@@ -1224,13 +1229,14 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 	
 	if (llq->err) { LogMsg("hndlChallengeResponseAck - received error %d from server", llq->err); goto error; }
 	if (!sameID(info->id, llq->id)) { LogMsg("hndlChallengeResponseAck - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
-	info->expire = mDNSPlatformTimeNow() + (llq->lease * mDNSPlatformOneSecond);
-	info->retry = info->expire + (llq->lease * mDNSPlatformOneSecond * 3/4);
+	info->expire = mDNSPlatformTimeNow() + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
+	info->retry = info->expire + ((mDNSs32)llq->lease * mDNSPlatformOneSecond * 3/4);
  
 	info->origLease = llq->lease;
 	info->state = LLQ_Established;	
 	q->uDNS_info.responseCallback = llqResponseHndlr;
-	return llqResponseHndlr(m, pktMsg, end, q, NULL);
+	llqResponseHndlr(m, pktMsg, end, q, NULL);
+	return;
 
 	error:
 	info->state = LLQ_Error;
@@ -1294,14 +1300,15 @@ mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *e
 		case LLQErr_NoError: break;
 		case LLQErr_ServFull:
 			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %s.  Retry in %d sec", q->qname.c, llq->lease);
-			info->retry = timenow + (llq->lease * mDNSPlatformOneSecond);
+			info->retry = timenow + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
 			info->state = LLQ_Retry;
 			simpleResponseHndlr(m, pktMsg, end, q, NULL);  // get available answers
 			info->deriveRemovesOnResume = mDNStrue;
 		case LLQErr_Static:
 			info->state = LLQ_Static;
 			LogMsg("LLQ %s: static", q->qname.c);
-			return simpleResponseHndlr(m, pktMsg, end, q, NULL);			
+			simpleResponseHndlr(m, pktMsg, end, q, NULL);
+			return;
 		case LLQErr_FormErr:
 			LogMsg("ERROR: hndlRequestChallenge - received FormErr from server for LLQ %s", q->qname.c);
 			goto error;
@@ -1321,7 +1328,7 @@ mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *e
 
 	// cache expiration in case we go to sleep before finishing setup
 	info->origLease = llq->lease;
-	info->expire = timenow + (llq->lease * mDNSPlatformOneSecond);
+	info->expire = timenow + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
 
 	// update state and timestamp
 	info->state = LLQ_SecondaryRequest;
@@ -1366,8 +1373,8 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 	if (llq.llqOp != kLLQ_Setup) { LogMsg("ERROR: recvSetupResponse - bad op %d", llq.llqOp); goto error; } 
 	if (llq.vers != kLLQ_Vers) { LogMsg("ERROR: recvSetupResponse - bad vers %d", llq.vers);  goto error; } 
 
-	if (info->state == LLQ_InitialRequest) return hndlRequestChallenge(m, pktMsg, end, &llq, q);
-	if (info->state == LLQ_SecondaryRequest) return hndlChallengeResponseAck(m, pktMsg, end, &llq, q);
+	if (info->state == LLQ_InitialRequest) { hndlRequestChallenge(m, pktMsg, end, &llq, q); return; }
+	if (info->state == LLQ_SecondaryRequest) { hndlChallengeResponseAck(m, pktMsg, end, &llq, q); return; }
 	LogMsg("recvSetupResponse - bad state %d", info->state);
 
 
@@ -1547,8 +1554,8 @@ mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_Globa
 // stopLLQ happens IN ADDITION to stopQuery
 mDNSlocal void stopLLQ(mDNS *m, DNSQuestion *question)
 	{	
-	(void)m;  // unused
 	LLQ_Info *info = question->uDNS_info.llq;
+	(void)m;  // unused
 
 	if (!question->LongLived) { LogMsg("ERROR: stopLLQ - LongLived flag not set"); return; }
 	if (!info)                { LogMsg("ERROR: stopLLQ - llq info is NULL");       return; }
@@ -1891,8 +1898,8 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 	result.zoneData.primaryAddr.type = mDNSAddrType_IPv4;
 	ustrcpy(result.zoneData.zoneName.c, context->zone.c);
 	result.zoneData.zoneClass = context->zoneClass;
-	result.zoneData.llqPort.NotAnInteger = context->findLLQPort ? context->llqPort.NotAnInteger : 0;
-	result.zoneData.updatePort.NotAnInteger = context->findUpdatePort ? context->updatePort.NotAnInteger : 0;
+	result.zoneData.llqPort    = context->findLLQPort    ? context->llqPort    : zeroIPPort;
+	result.zoneData.updatePort = context->findUpdatePort ? context->updatePort : zeroIPPort;
 	context->callback(mStatus_NoError, context->m, context->callbackInfo, &result);
 	goto cleanup;	
 			
@@ -2090,7 +2097,7 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 	{
 	int i;
 	LargeCacheRecord lcr;
-	const char *ptr;
+	const mDNSu8 *ptr;
 	DNSQuestion *q;
 	mStatus err;
 	
@@ -2847,7 +2854,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq->state != LLQ_Poll)
 			{
-			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Suspended && llq->retry <= (unsigned)timenow)				
+			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Suspended && llq->retry <= timenow)				
 				{
 
 				// sanity check to avoid packet flood bugs
