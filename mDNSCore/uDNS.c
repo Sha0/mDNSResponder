@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.177  2005/01/17 23:41:26  cheshire
+Fix compile errors
+
 Revision 1.176  2005/01/17 21:03:04  cheshire
 <rdar://problem/3904954> Wide-area services not found on little-endian
 
@@ -1900,8 +1903,8 @@ mDNSexport void mDNS_PurgeResultsForDomain(mDNS *m, DNSQuestion *q, const domain
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	int nlabels = CountLabels(d);
 	
-	u->CurrentQuery = q;
 	CacheRecord **ka = &q->uDNS_info.knownAnswers;
+	u->CurrentQuery = q;
 
 	while (*ka)
 		{
@@ -3718,7 +3721,7 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 				LogMsg("ERROR:conQueryCallback - attempt to read message length failed (read returned %d)", n);
 				goto error;
 				}
-			info->replylen = ((mDNSu16)lenbuf[0]) << 8 | lenbuf[1];
+			info->replylen = (mDNSu16)((mDNSu16)lenbuf[0] << 8 | lenbuf[1]);
 			}
 		n = mDNSPlatformReadTCP(sd, ((char *)&info->reply) + info->nread, info->replylen - info->nread);
 		if (n < 0) { LogMsg("ERROR: conQueryCallback - read returned %d", n); goto error; }
