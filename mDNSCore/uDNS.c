@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.6  2004/01/24 23:47:17  cheshire
+Use mDNSOpaque16fromIntVal() instead of shifting and masking
+
 Revision 1.5  2004/01/24 04:59:15  cheshire
 Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
@@ -321,7 +324,6 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     NetworkInterfaceInfo *ifi;
     mStatus err = mStatus_NoError, rv;
     mDNSu16 idval;
-    mDNSOpaque16 id;
 
     //!!!KRS we should check if the question is already in our acivequestion list
 	if (!ValidateDomainName(&question->qname))
@@ -340,14 +342,12 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
         u->NextMessageID = 1;
         }
 	idval = internal ? --u->NextInternalMessageID : ++u->NextMessageID;
-    id.b[0] = (mDNSu8)(idval >> 8);
-    id.b[1] = (mDNSu8)(idval & 0xFF);
 	question->next = NULL;
-	err = constructQueryMsg(&msg, &endPtr, id, QueryFlags, question);
+	err = constructQueryMsg(&msg, &endPtr, mDNSOpaque16fromIntVal(idval), QueryFlags, question);
 	if (err) return err;
 
     // store the question/id in active question list
-    question->uDNS_info.id.NotAnInteger = id.NotAnInteger;
+    question->uDNS_info.id.NotAnInteger = mDNSOpaque16fromIntVal(idval).NotAnInteger;
     question->uDNS_info.timestamp = m->timenow;
 	question->uDNS_info.internal = internal;
     question->qnamehash = DomainNameHashValue(&question->qname);    // to do quick domain name comparisons
