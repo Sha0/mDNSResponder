@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.208  2004/11/03 01:54:14  cheshire
+Update debugging messages
+
 Revision 1.207  2004/11/02 23:58:19  cheshire
 <rdar://problem/2974905> mDNSResponder does not inform user of name collisions
 
@@ -629,7 +632,7 @@ static void validatelists(mDNS *const m)
 			LogMsg("!!!! Questions list: %p is garbage (%lX) !!!!", q, q->ThisQInterval);
 
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		for (cr = mDNSStorage.rrcache_hash[slot]; cr; cr=cr->next)
+		for (cr = m->rrcache_hash[slot]; cr; cr=cr->next)
 			if (cr->resrec.RecordType == 0 || cr->resrec.RecordType == 0xFF)
 				LogMsg("!!!! Cache slot %lu: %p is garbage (%X) !!!!", slot, rr, rr->resrec.RecordType);
 
@@ -1310,9 +1313,9 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		{
 		if (si->autorename)
 			{
-			debugf("RegCallback renaming %#s to %#s", si->name.c, mDNSStorage.nicelabel.c);
+			debugf("RegCallback renaming %#s to %#s", si->name.c, m->nicelabel.c);
 			si->autorename = mDNSfalse;
-			si->name = mDNSStorage.nicelabel;
+			si->name = m->nicelabel;
 			mDNS_RenameAndReregisterService(m, srs, &si->name);
 			}
 		else
@@ -1405,7 +1408,7 @@ mDNSexport void DefaultRegDomainChanged(const domainname *d, mDNSBool add)
 						if (prev) prev->next = si->next;
 						else reg->regs = si->next;
 						if (mDNS_DeregisterService(&mDNSStorage, &si->srs))
-							FreeServiceInstance(si);  // only free memory syncronously on error
+							FreeServiceInstance(si);  // only free memory synchronously on error
 						break;
 						}
 					prev = si;
@@ -1516,6 +1519,9 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	x->next = DNSServiceRegistrationList;
 	DNSServiceRegistrationList = x;
 
+	LogOperation("%5d: DNSServiceRegistration(\"%s\", \"%s\", \"%s\", %u) START",
+		x->ClientMachPort, name, regtype, domain, mDNSVal16(port));
+
    	err = AddServiceInstance(x, &d);
 	if (err) { AbortClient(client, x); errormsg = "mDNS_RegisterService"; goto fail; }  // bail if .local (or explicit domain) fails
 
@@ -1553,7 +1559,7 @@ mDNSlocal void RecordUpdatedUserSpecifiedLocalHostName(mDNS *const m)
 	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%s.local” ",  kCFStringEncodingUTF8);
 	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%s.local”. ", kCFStringEncodingUTF8);
 	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
-	LogMsg("Updating hostname from %#s.local %#s.local", m->p->userhostlabel.c, m->hostlabel.c);
+	LogMsg("Updating persistent Local Hostname from %#s.local %#s.local", m->p->userhostlabel.c, m->hostlabel.c);
 	m->p->userhostlabel = m->hostlabel;
 	if (!cfnewname || !f0 || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
 		LogMsg("RecordUpdatedUserSpecifiedLocalHostName: ERROR: Couldn't create SCPreferences session");
@@ -1609,12 +1615,12 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 				ServiceInstance *si;
 				for (si = r->regs; si; si = si->next)
 					{
-					if (!SameDomainLabel(si->name.c, mDNSStorage.nicelabel.c))
+					if (!SameDomainLabel(si->name.c, m->nicelabel.c))
 						{
-						debugf("NetworkChanged renaming %#s (domain %##s) to %#s", si->name.c, si->domain.c, mDNSStorage.nicelabel.c);
+						debugf("NetworkChanged renaming %##s to %#s", si->srs.RR_SRV.resrec.name.c, m->nicelabel.c);
 						si->autorename = mDNStrue;
-						si->name = mDNSStorage.nicelabel;
-						mDNS_DeregisterService(&mDNSStorage, &si->srs);
+						si->name = m->nicelabel;
+						mDNS_DeregisterService(m, &si->srs);
 						}
 					}
 				}
@@ -1625,7 +1631,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		// If we've run out of cache space, then double the total cache size and give the memory to mDNSCore
 		mDNSu32 numrecords = m->rrcache_size;
 		CacheRecord *storage = mallocL("mStatus_GrowCache", sizeof(CacheRecord) * numrecords);
-		if (storage) mDNS_GrowCache(&mDNSStorage, storage, numrecords);
+		if (storage) mDNS_GrowCache(m, storage, numrecords);
 		}
 	}
 
