@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.467  2004/11/24 01:41:28  cheshire
+Rename CompleteProbing() to AcknowledgeRecord()
+
 Revision 1.466  2004/11/23 21:08:07  ksekar
 Don't use ID to demux multicast/unicast now that unicast uses random IDs
 
@@ -2096,7 +2099,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 		}
 	}
 
-mDNSlocal void CompleteProbing(mDNS *const m, AuthRecord *const rr)
+mDNSlocal void AcknowledgeRecord(mDNS *const m, AuthRecord *const rr)
 	{
 	verbosedebugf("Probing for %##s (%s) complete", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 	if (!rr->Acknowledged && rr->RecordCallback)
@@ -2483,7 +2486,7 @@ mDNSlocal void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	// that it should go ahead and immediately dispose of this registration
 	rr->resrec.RecordType = kDNSRecordTypeShared;
 	rr->RequireGoodbye    = mDNSfalse;
-	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);		// Don't touch rr after this
 	}
 
 // NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change
@@ -2499,7 +2502,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 		AuthRecord *rr = m->CurrentRecord;
 		m->CurrentRecord = rr->next;
 		if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
-			CompleteDeregistration(m, rr);
+			CompleteDeregistration(m, rr);		// Don't touch rr after this
 		}
 	}
 
@@ -2788,7 +2791,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			if (rr->NewRData) CompleteRDataUpdate(m,rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
 	
 			if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
-				CompleteDeregistration(m, rr);
+				CompleteDeregistration(m, rr);		// Don't touch rr after this
 			else
 				{
 				rr->ImmedAnswer = mDNSNULL;
@@ -3202,7 +3205,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					for (r2 = m->DuplicateRecords; r2; r2=r2->next)
 						if (r2->resrec.RecordType == kDNSRecordTypeUnique && RecordIsLocalDuplicate(r2, rr))
 							r2->ProbeCount = 0;
-					CompleteProbing(m, rr);
+					AcknowledgeRecord(m, rr);
 					}
 				}
 			}
@@ -3212,7 +3215,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			AuthRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
 			if (rr->resrec.RecordType == kDNSRecordTypeUnique && rr->ProbeCount == 0)
-				CompleteProbing(m, rr);
+				AcknowledgeRecord(m, rr);
 			}
 		}
 
