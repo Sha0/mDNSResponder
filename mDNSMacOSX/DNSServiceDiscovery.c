@@ -340,7 +340,7 @@ void DNSServiceDiscoveryDeallocate(dns_service_discovery_ref dnsServiceDiscovery
         request0 = NULL;
         request  = a_requests;
         while (request) {
-               if (request->client_port == reply) {
+            if (request->client_port == reply) {
                 /* request info found, remove from list */
                 if (request0) {
                     request0->next = request->next;
@@ -348,7 +348,12 @@ void DNSServiceDiscoveryDeallocate(dns_service_discovery_ref dnsServiceDiscovery
                     a_requests = request->next;
                 }
                 break;
+            } else {
+                /* not info for this request, skip to next */
+                request0 = request;
+                request  = request->next;
             }
+
         }
         pthread_mutex_unlock(&a_requests_lock);
 
