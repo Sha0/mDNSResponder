@@ -128,6 +128,7 @@
 				4A9504CCFFE6A4B311CA0CBA,
 				4A9504CDFFE6A4B311CA0CBA,
 			);
+			hasScannedForEncodings = 1;
 			isa = PBXProject;
 			mainGroup = 29B97314FDCFA39411CA2CEA;
 			projectDirPath = "";
@@ -158,6 +159,7 @@
 			refType = 4;
 		};
 		29B97316FDCFA39411CA2CEA = {
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			path = main.m;
 			refType = 4;
@@ -261,7 +263,6 @@
 </dict>
 </plist>
 ";
-			shouldUseHeadermap = 1;
 		};
 		29B97327FDCFA39411CA2CEA = {
 			buildActionMask = 2147483647;
@@ -345,11 +346,13 @@
 //653
 //654
 		6515F1C002245DF2000001D2 = {
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			path = BrowserController.h;
 			refType = 4;
 		};
 		6515F1C102245DF2000001D2 = {
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			path = BrowserController.m;
 			refType = 4;
@@ -367,6 +370,7 @@
 			};
 		};
 		6515F1C5022460A1000001D2 = {
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			name = DNSServiceDiscovery.h;
 			path = /usr/include/DNSServiceDiscovery/DNSServiceDiscovery.h;
