@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.178  2004/09/15 21:51:34  cheshire
+<rdar://problem/3387020> mDNSResponder should notify user of kernel flaw
+Calling CFUserNotificationDisplayNotice too early in the boot process seems to kill
+the machine, so make sure we don't do this until at least three minutes after boot.
+
 Revision 1.177  2004/09/15 01:16:29  cheshire
 <rdar://problem/3387020> mDNSResponder should notify user of kernel flaw
 
@@ -621,21 +626,24 @@ mDNSlocal void NotifyOfElusiveBug(mDNS *const m, const char *title, mDNSu32 rada
 	{
 	NetworkInterfaceInfoOSX *i;
 	static int notifyCount = 0;
+	if (notifyCount) return;
+	
+	// Calling CFUserNotificationDisplayNotice too early in the boot process seems to kill the machine
+	// so we won't do this until at least three minutes after boot
+	if ((mDNSu32)(mDNSPlatformTimeNow()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return;
 	
 	// Determine if we're at Apple (17.*.*.*)
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && i->ifinfo.ip.ip.v4.b[0] == 17)
 			break;
+	if (!i) return;	// If not at Apple, don't show the alert
 
 	// Send a notification to the user to contact coreos-networking
-	if (i && notifyCount == 0)
-		{
-		notifyCount++;
-		CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
-		CFStringRef alertFormat  = CFSTR("Congratulations, you've reproduced an elusive bug. Please contact the owner of <rdar://problem/%d>. %s");
-		CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, alertFormat, radarid, msg);
-		CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
-		}
+	notifyCount++;
+	CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
+	CFStringRef alertFormat  = CFSTR("Congratulations, you've reproduced an elusive bug. Please contact the owner of <rdar://problem/%d>. %s");
+	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, alertFormat, radarid, msg);
+	CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
 	}
 
 mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
@@ -745,7 +753,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		// Don't report EHOSTUNREACH in the first three minutes after boot
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
-		if (errno == EHOSTUNREACH && (mDNSu32)(m->timenow) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
+		if (errno == EHOSTUNREACH && (mDNSu32)(mDNSPlatformTimeNow()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 		return(err);
