@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.5  2003/11/13 23:35:35  ksekar
+Bug #: <rdar://problem/3483020>: Header doesn't say that add/remove are possible values for flags
+Bringing mDNSResponder project copy of dns_sd.h header up to date with
+Libinfo copy
+
 Revision 1.4  2003/10/13 23:50:53  ksekar
 Updated dns_sd clientstub files to bring copies in synch with
 top-of-tree Libinfo:  A memory leak in dnssd_clientstub.c is fixed,
@@ -65,7 +70,7 @@ enum
     kDNSServiceFlagsAdd                 = 2,
     kDNSServiceFlagsDefault             = 4,
     kDNSServiceFlagsRemove              = 0,  /* i.e. bit not set */
-    /* Flags for domain enumeration and browse reply callbacks.
+    /* Flags for domain enumeration and browse/query reply callbacks.
      * "Default" applies only to enumeration and is only valid in
      * conjuction with "Add" 
      */
@@ -253,12 +258,12 @@ typedef void (*DNSServiceDomainEnumReply)
 /* DNSServiceEnumerateDomains() Parameters:
  *
  *
- * sdRef:           A pointer to an uninitialized sdRef.  May be passed to 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef.  May be passed to 
  *                  DNSServiceRefDeallocate() to cancel the enumeration.
  *
  * flags:           Possible values are:
- *                  0 (BrowseDomains) to enumerate domains recommended for browsing.
- *                  32 (RegistrationDomains) to enumerate domains recommended for registration.
+ *                  64 (BrowseDomains) to enumerate domains recommended for browsing.
+ *                  128 (RegistrationDomains) to enumerate domains recommended for registration.
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to look for domains.
  *                  (the index for a given interface is determined via the if_nametoindex()
@@ -332,7 +337,7 @@ typedef void (*DNSServiceRegisterReply)
     
 /* DNSServiceRegister()  Parameters:
  *
- * sdRef:           A pointer to an uninitialized sdRef.  If this call succeeds, the reference
+ * sdRef:           A pointer to an uninitialized DNSServiceRef.  If this call succeeds, the reference
  *                  may be passed to 
  *                  DNSServiceRefDeallocate() to deregister the service.
  *        
@@ -567,7 +572,7 @@ typedef void (*DNSServiceBrowseReply)
     
 /* DNSServiceBrowse() Parameters:
  *
- * sdRef:           A pointer to an uninitialized sdRef.  May be passed to 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef.  May be passed to 
  *                  DNSServiceRefDeallocate() to terminate the browse.
  *
  * flags:           Currently ignored, reserved for future use.
@@ -672,7 +677,7 @@ typedef void (*DNSServiceResolveReply)
   
 /* DNSServiceResolve() Parameters
  *
- * sdRef:           A pointer to an uninitialized sdRef.  May be passed to 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef.  May be passed to 
  *                  DNSServiceRefDeallocate() to terminate the resolve.
  *
  * flags:           Currently ignored, reserved for future use.
@@ -900,7 +905,8 @@ DNSServiceErrorType DNSServiceRegisterRecord
  *
  * sdRef:           The DNSServiceRef initialized by DNSServiceQueryRecord().
  * 
- * flags:           Possible values are Finished/MoreComing.
+ * flags:           Possible values are Finished/MoreComing, and Add/Remove.  The Remove
+ *                  flag is set for PTR records with a ttl of 0.
  *
  * interfaceIndex:  The interface on which the query was resolved (the index for a given 
  *                  interface is determined via the if_nametoindex() family of calls).
