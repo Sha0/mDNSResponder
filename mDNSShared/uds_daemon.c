@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.63  2004/06/24 03:43:44  rpantos
+Fix previous checkin so it builds on Windows.
+
 Revision 1.62  2004/06/24 00:57:08  ksekar
 Replaced code acccidentally removed in checkin 1.59.
 
@@ -722,13 +725,13 @@ static void connect_callback(void *info)
 #endif
 
 #if defined(_WIN32)
-	if (ioctlsocket(sd, FIONBIO, &opt) != 0)
+	if (ioctlsocket(sd, FIONBIO, &optval) != 0)
 #else
 	if (fcntl(sd, F_SETFL, O_NONBLOCK) != 0)
 #endif
         {
 		my_perror("ERROR: setsockopt - SOL_NOSIGPIPE - aborting client");  
-		close(sd);
+		dnssd_close(sd);
 		return;
 		}			
 		
