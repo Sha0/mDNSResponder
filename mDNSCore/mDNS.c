@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.357  2004/02/18 01:47:41  cheshire
+<rdar://problem/3553472>: Insufficient delay waiting for multi-packet KA lists causes AirPort traffic storms
+
 Revision 1.356  2004/02/06 23:04:19  ksekar
 Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
@@ -3857,7 +3860,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	CacheRecord **eap             = &ExpectedAnswers;
 	DNSQuestion     *DupQuestions    = mDNSNULL;			// Our questions that are identical to questions in this packet
 	DNSQuestion    **dqp             = &DupQuestions;
-	mDNSBool         delayresponse   = mDNSfalse;
+	mDNSs32          delayresponse   = 0;
 	mDNSBool         HaveUnicastAnswer = mDNSfalse;
 	const mDNSu8    *ptr             = query->data;
 	mDNSu8          *responseptr     = mDNSNULL;
@@ -3865,7 +3868,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	int i;
 
 	// If TC flag is set, it means we should expect that additional known answers may be coming in another packet.
-	if (query->h.flags.b[0] & kDNSFlag0_TC) delayresponse = mDNStrue;
+	if (query->h.flags.b[0] & kDNSFlag0_TC) delayresponse = mDNSPlatformOneSecond;	// Divided by 50 = 20ms
 
 	// ***
 	// *** 1. Parse Question Section and mark potential answers
@@ -3935,7 +3938,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			CacheRecord *rr;
 			// If we couldn't answer this question, someone else might be able to,
 			// so use random delay on response to reduce collisions
-			if (NumAnswersForThisQuestion == 0) delayresponse = mDNStrue;
+			if (NumAnswersForThisQuestion == 0) delayresponse = mDNSPlatformOneSecond;	// Divided by 50 = 20ms
 
 			// Make a list indicating which of our own cache records we expect to see updated as a result of this query
 			// Note: Records larger than 1K are not habitually multicast, so don't expect those to be updated
@@ -3975,10 +3978,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	for (rr = m->ResourceRecords; rr; rr=rr->next)				// Now build our list of potential answers
 		if (rr->NR_AnswerTo)									// If we marked the record...
-			{
 			AddRecordToResponseList(&nrp, rr, mDNSNULL);		// ... add it to the list
-			if (rr->resrec.RecordType == kDNSRecordTypeShared) delayresponse = mDNStrue;
-			}
 
 	// ***
 	// *** 3. Add additional records
@@ -4120,6 +4120,11 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						}
 					}
 				}
+			if (rr->resrec.RecordType == kDNSRecordTypeShared)
+				{
+				if (query->h.flags.b[0] & kDNSFlag0_TC) delayresponse = mDNSPlatformOneSecond * 20;	// Divided by 50 = 400ms
+				else                                    delayresponse = mDNSPlatformOneSecond;		// Divided by 50 = 20ms
+				}
 			}
 		else if (rr->NR_AdditionalTo && rr->NR_AdditionalTo->NR_AnswerTo == (mDNSu8*)~0)
 			{
@@ -4135,15 +4140,22 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	// *** 7. If we think other machines are likely to answer these questions, set our packet suppression timer
 	// ***
-	if (delayresponse && !m->SuppressSending)
+	if (delayresponse && (!m->SuppressSending || (m->SuppressSending - m->timenow) < (delayresponse + 49) / 50))
 		{
-		// Pick a random delay between 20ms and 120ms.
-		// We first compute a random value in the range 1-6 seconds (an integer value with resolution determined by the platform clock rate)
-		// and then divide that by 50 to get a value in the range 20ms-120ms.
-		// The +49 is to ensure we round up, not down, to ensure that even on platforms where the native clock rate is less than
-		// fifty ticks per second, we still guarantee that the final calculated delay is at least one platform tick.
-		// We want to make sure we don't ever allow the delay to be zero ticks, because if that happens we'll fail the Rendezvous Conformance Test.
-		m->SuppressSending = m->timenow + (mDNSPlatformOneSecond + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*5) + 49) / 50;
+		// Pick a random delay:
+		// We start with the base delay chosen above (typically either 1 second or 20 seconds),
+		// and add a random value in the range 0-5 seconds (making 1-6 seconds or 20-25 seconds).
+		// This is an integer value, with resolution determined by the platform clock rate.
+		// We then divide that by 50 to get the delay value in ticks. We defer the division until last
+		// to get better results on platforms with coarse clock granularity (e.g. ten ticks per second).
+		// The +49 before dividing is to ensure we round up, not down, to ensure that even
+		// on platforms where the native clock rate is less than fifty ticks per second,
+		// we still guarantee that the final calculated delay is at least one platform tick.
+		// We want to make sure we don't ever allow the delay to be zero ticks,
+		// because if that happens we'll fail the Rendezvous Conformance Test.
+		// Our final computed delay is 20-120ms for normal delayed replies,
+		// or 400-500ms in the case of multi-packet known-answer lists.
+		m->SuppressSending = m->timenow + (delayresponse + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*5) + 49) / 50;
 		if (m->SuppressSending == 0) m->SuppressSending = 1;
 		}
 
