@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: mDNSWin32.h,v 1.3 2002/09/21 20:44:54 zarzycki Exp $
+	$Id: mDNSWin32.h,v 1.4 2003/03/22 02:57:44 cheshire Exp $
 
 	Contains:	Multicast DNS platform plugin for Win32.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.h,v $
+        Revision 1.4  2003/03/22 02:57:44  cheshire
+        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
         Revision 1.3  2002/09/21 20:44:54  zarzycki
         Added APSL info
 
@@ -123,7 +126,6 @@ struct	mDNS_PlatformSupport_struct
 	SocketRef					interfaceListChangedSocketRef;
 	int							interfaceCount;
 	mDNSInterfaceInfo *			interfaceList;
-	HANDLE						timer;
 	HANDLE						thread;
 	mDNSBool					advertise;
 };

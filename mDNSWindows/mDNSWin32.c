@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.7 2003/03/15 04:40:38 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.8 2003/03/22 02:57:44 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.8  2003/03/22 02:57:44  cheshire
+        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
         Revision 1.7  2003/03/15 04:40:38  cheshire
         Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
@@ -138,9 +141,8 @@
 #define	kThreadCleanupTimeout					( 10 * 1000 )		// 10 seconds
 
 #define	kWaitListCancelEvent					WAIT_OBJECT_0
-#define	kWaitListTimerEvent						( WAIT_OBJECT_0 + 1 )
-#define	kWaitListInterfaceListChangedEvent		( WAIT_OBJECT_0 + 2 )
-#define	kWaitListFixedItemCount					3
+#define	kWaitListInterfaceListChangedEvent		( WAIT_OBJECT_0 + 1 )
+#define	kWaitListFixedItemCount					2
 
 #if 0
 #pragma mark == Types ==
@@ -353,8 +355,6 @@ static mStatus		TearDown( mDNS * const inMDNS );
 static mStatus		SetupSynchronizationObjects( mDNS * const inMDNS );
 static mStatus		TearDownSynchronizationObjects( mDNS * const inMDNS );
 static mStatus		SetupName( mDNS * const inMDNS );
-static mStatus		SetupTimer( mDNS * const inMDNS );
-static mStatus		TearDownTimer( mDNS * const inMDNS );
 
 static mStatus		SetupInterfaceList( mDNS * const inMDNS );
 static mStatus		TearDownInterfaceList( mDNS * const inMDNS );
@@ -465,11 +465,7 @@ mStatus	mDNSPlatformSendUDP( const mDNS * const			inMDNS,
 	check( inMsg );
 	check( inMsgEnd );
 	
-	if (inDstIP->type != mDNSAddrType_IPv4)
-		{
-		debugf("inDstIP is not an IPv4 address!\n");
-		return mStatus_BadParamErr;
-		}
+	if (inDstIP->type != mDNSAddrType_IPv4) return mStatus_BadParamErr;
 
 	// Send the packet.
 	
@@ -490,48 +486,6 @@ mStatus	mDNSPlatformSendUDP( const mDNS * const			inMDNS,
 	
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send UDP done\n" );
 	return( err );
-}
-
-//===========================================================================================================================
-//	mDNSPlatformScheduleTask
-//===========================================================================================================================
-
-void	mDNSPlatformScheduleTask( const mDNS *const inMDNS, mDNSs32 inNextTaskTime )
-{
-	mDNSs32				deltaTime;
-	LARGE_INTEGER		fireTime;
-	DWORD				result;
-	
-	// Calculate the number of ticks until the task should run. If it is in the past, run it as soon as possible.
-	
-	deltaTime = inNextTaskTime - mDNSPlatformTimeNow();
-	if( deltaTime > 0 )
-	{
-		SYSTEMTIME			sysTime;
-		FILETIME			fileTime;
-		LARGE_INTEGER		deltaTime64;
-		
-		// Get the current time, add the delta to it, and use that as the schedule time.
-		
-		GetSystemTime( &sysTime );
-		SystemTimeToFileTime( &sysTime, &fileTime );
-		
-		fireTime 				= *( (LARGE_INTEGER *) &fileTime );
-		deltaTime64.QuadPart  	= (LONGLONG) deltaTime;
-		deltaTime64.QuadPart   *= (LONGLONG) kFileTimeUnitsPerMillisecond;
-		fireTime.QuadPart 	   += deltaTime64.QuadPart;
-	}
-	else
-	{
-		// Next task time is in the past so set the fire time to the past so it runs the timer as soon as possible.
-		
-		fireTime.QuadPart = 0;
-	}
-	
-	result = SetWaitableTimer( inMDNS->p->timer, &fireTime, 0, NULL, NULL, FALSE );
-	check( result );
-	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "platform schedule task in %ld milliseconds\n", deltaTime );
 }
 
 //===========================================================================================================================
@@ -763,9 +717,6 @@ static mStatus	Setup( mDNS * const inMDNS )
 	err = SetupSynchronizationObjects( inMDNS );
 	require_noerr( err, exit );
 		
-	err = SetupTimer( inMDNS );
-	require_noerr( err, exit );
-	
 	err = SetupInterfaceList( inMDNS );
 	require_noerr( err, exit );
 	
@@ -798,9 +749,6 @@ static mStatus	TearDown( mDNS * const inMDNS )
 	check_noerr( err );
 	
 	err = TearDownInterfaceList( inMDNS );
-	check_noerr( err );
-	
-	err = TearDownTimer( inMDNS );
 	check_noerr( err );
 	
 	err = TearDownSynchronizationObjects( inMDNS );
@@ -921,49 +869,6 @@ static mStatus	SetupName( mDNS * const inMDNS )
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "nice name \"%.*s\"\n", inMDNS->nicelabel.c[ 0 ], &inMDNS->nicelabel.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "host name \"%.*s\"\n", inMDNS->hostlabel.c[ 0 ], &inMDNS->hostlabel.c[ 1 ] );
-	return( err );
-}
-
-//===========================================================================================================================
-//	SetupTimer
-//===========================================================================================================================
-
-static mStatus	SetupTimer( mDNS * const inMDNS )
-{
-	mStatus		err;
-	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up timers\n" );
-		
-	// Set up the timer object to signal the thread.
-	
-	inMDNS->p->timer = CreateWaitableTimer( NULL, FALSE, NULL );
-	require_action( inMDNS->p->timer, exit, err = mStatus_NoMemoryErr );
-	
-	err = 0;
-	
-exit:
-	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up timers done (err=%ld)\n", err );
-	return( err );
-}
-
-//===========================================================================================================================
-//	TearDownTimer
-//===========================================================================================================================
-
-static mStatus	TearDownTimer( mDNS * const inMDNS )
-{
-	mStatus		err;
-	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down timer\n" );
-	require_action_quiet( inMDNS->p->timer, exit, err = mStatus_NotInitializedErr );
-	
-	CloseHandle( inMDNS->p->timer );
-	inMDNS->p->timer = 0;
-	
-	err = mStatus_NoError;
-	
-exit:
-	dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down timer done\n" );
 	return( err );
 }
 
@@ -1461,9 +1366,15 @@ static DWORD	WINAPI ProcessingThread( LPVOID inParam )
 		
 		for( ;; )
 		{
+			// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
+			mDNSs32 interval = mDNS_Execute(mdnsPtr) - mDNSPlatformTimeNow();
+			if      (interval < 0)                 interval = 0;
+			else if (interval > 0x7FFFFFFF / 1000) interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
+			else                                   interval = interval * 1000 / mDNSPlatformOneSecond;
+
 			// Wait until something occurs (e.g. cancel, timer, or incoming packet).
 			
-			result = WaitForMultipleObjects( waitListCount, waitList, FALSE, INFINITE );
+			result = WaitForMultipleObjects( waitListCount, waitList, FALSE, interval );
 			if( result == kWaitListCancelEvent )
 			{
 				// Cancel event. Set the done flag and break to exit.
@@ -1471,13 +1382,6 @@ static DWORD	WINAPI ProcessingThread( LPVOID inParam )
 				dlog( kDebugLevelChatty, DEBUG_NAME "canceling...\n" );
 				done = 1;
 				break;
-			}
-			else if( result == kWaitListTimerEvent )
-			{
-				// Timer event
-				
-				dlog( kDebugLevelChatty, DEBUG_NAME "timer fired\n" );
-				mDNSCoreTask( mdnsPtr );
 			}
 			else if( result == kWaitListInterfaceListChangedEvent )
 			{
@@ -1573,7 +1477,6 @@ static mStatus	ProcessingThreadSetupWaitList( mDNS *const inMDNS, HANDLE **outWa
 	// Add the fixed wait items to the beginning of the list.
 	
 	*waitItemPtr++ = inMDNS->p->cancelEvent;
-	*waitItemPtr++ = inMDNS->p->timer;
 	*waitItemPtr++ = inMDNS->p->interfaceListChangedEvent;
 	
 	// Append all the dynamic wait items to the list.

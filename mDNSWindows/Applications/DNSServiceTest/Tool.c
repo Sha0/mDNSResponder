@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: Tool.c,v 1.2 2002/09/21 20:44:56 zarzycki Exp $
+	$Id: Tool.c,v 1.3 2003/03/22 02:57:45 cheshire Exp $
 
 	Contains:	Rendezvous Test Tool for Windows.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: Tool.c,v $
+        Revision 1.3  2003/03/22 02:57:45  cheshire
+        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
         Revision 1.2  2002/09/21 20:44:56  zarzycki
         Added APSL info
 
@@ -532,13 +535,7 @@ static void
 
 static char *	IPv4ToString( DNSUInt32 inIP, char *outString )
 {
-	unsigned int		ip[ 4 ];
-		
-	ip[ 0 ] = ( inIP >> 24 ) & 0xFF;
-	ip[ 1 ] = ( inIP >> 16 ) & 0xFF;
-	ip[ 2 ] = ( inIP >>  8 ) & 0xFF;
-	ip[ 3 ] = ( inIP >>  0 ) & 0xFF;
-	
+	unsigned char *ip = (unsigned char *)&inIP;
 	sprintf( outString, "%u.%u.%u.%u", ip[ 0 ], ip[ 1 ], ip[ 2 ], ip[ 3 ] );
 	return( outString );
 }

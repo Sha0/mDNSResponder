@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServicesPlatformSupport.h,v 1.3 2002/09/21 20:44:57 zarzycki Exp $
+	$Id: DNSServicesPlatformSupport.h,v 1.4 2003/03/22 02:57:45 cheshire Exp $
 
 	Contains:	DNS Services platform interfaces.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: DNSServicesPlatformSupport.h,v $
+        Revision 1.4  2003/03/22 02:57:45  cheshire
+        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
         Revision 1.3  2002/09/21 20:44:57  zarzycki
         Added APSL info
 
@@ -98,12 +101,6 @@ DNSStatus	DNSPlatformInitialize( DNSFlags inFlags, DNSCount inCacheEntryCount, m
 */
 
 void	DNSPlatformFinalize( void );
-
-//---------------------------------------------------------------------------------------------------------------------------
-/*!	@function	DNSPlatformIdle
-*/
-
-void	DNSPlatformIdle( void );
 
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@function	DNSPlatformMemAlloc

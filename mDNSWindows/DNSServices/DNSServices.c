@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServices.c,v 1.5 2003/02/20 00:59:04 cheshire Exp $
+	$Id: DNSServices.c,v 1.6 2003/03/22 02:57:45 cheshire Exp $
 
 	Contains:	DNS Services implementation.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: DNSServices.c,v $
+        Revision 1.6  2003/03/22 02:57:45  cheshire
+        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
         Revision 1.5  2003/02/20 00:59:04  cheshire
         Brought Windows code up to date so it complies with
         Josh Graessley's interface changes for IPv6 support.
@@ -140,7 +143,7 @@ enum
 	kDNSDomainRegistrationReleaseValidFlags	= 0
 };
 
-#define	kDNSCountCacheEntryCountDefault		64
+#define	kDNSCountCacheEntryCountDefault		500
 
 #if 0
 #pragma mark == Structures ==
@@ -387,20 +390,6 @@ void	DNSServicesFinalize( void )
 		// Tell the platform layer to clean up.
 		
 		DNSPlatformFinalize();
-	}
-}
-
-//===========================================================================================================================
-//	DNSServicesIdle
-//===========================================================================================================================
-
-void	DNSServicesIdle( void )
-{
-	check( gMDNSPtr );
-	if( gMDNSPtr )
-	{
-		DNSPlatformIdle();
-		mDNSCoreTask( gMDNSPtr );
 	}
 }
 
@@ -1170,6 +1159,8 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	mDNSInterfaceInfo *		infoPtr = (mDNSInterfaceInfo *)inQuery->info->InterfaceID;
 	
 	DNS_UNUSED( inMDNS );
+	
+	if (inQuery->info->ip.type != mDNSAddrType_IPv4) return;	// For now, we don't do IPv6
 	
 	DNSServicesLock();
 	

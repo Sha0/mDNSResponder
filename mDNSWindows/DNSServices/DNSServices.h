@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServices.h,v 1.4 2003/02/20 00:59:05 cheshire Exp $
+	$Id: DNSServices.h,v 1.5 2003/03/22 02:57:45 cheshire Exp $
 
 	Contains:	DNS Services interfaces.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: DNSServices.h,v $
+        Revision 1.5  2003/03/22 02:57:45  cheshire
+        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
         Revision 1.4  2003/02/20 00:59:05  cheshire
         Brought Windows code up to date so it complies with
         Josh Graessley's interface changes for IPv6 support.
@@ -369,17 +372,6 @@ DNSStatus	DNSServicesInitialize( DNSFlags inFlags, DNSCount inCacheEntryCount );
 */
 
 void	DNSServicesFinalize( void );
-
-//---------------------------------------------------------------------------------------------------------------------------
-/*!	@function	DNSServicesIdle
-
-	@abstract	Gives DNS Services a chance to service any idle-time needs it may have.
-	
-	@discussion	Explicit idling is not normally needed, but can be useful to explicitly yield control on systems with 
-				cooperative multitasking.
-*/
-
-void	DNSServicesIdle( void );
 
 #if 0
 #pragma mark == Resolving ==

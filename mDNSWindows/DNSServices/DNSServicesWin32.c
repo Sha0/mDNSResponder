@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServicesWin32.c,v 1.3 2002/09/21 20:44:57 zarzycki Exp $
+	$Id: DNSServicesWin32.c,v 1.4 2003/03/22 02:57:45 cheshire Exp $
 
 	Contains:	DNS Services platform plugin for Win32.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: DNSServicesWin32.c,v $
+        Revision 1.4  2003/03/22 02:57:45  cheshire
+        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
         Revision 1.3  2002/09/21 20:44:57  zarzycki
         Added APSL info
 
@@ -134,8 +137,6 @@
 //===========================================================================================================================
 //	Prototypes
 //===========================================================================================================================
-
-extern void mDNSPlatformIdle(mDNS *const m);
 
 #if 0
 #pragma mark == Globals ==
@@ -208,15 +209,6 @@ void	DNSPlatformFinalize( void )
 		free( gMDNSCache );
 		gMDNSCache = NULL;
 	}
-}
-
-//===========================================================================================================================
-//	DNSPlatformIdle
-//===========================================================================================================================
-
-void	DNSPlatformIdle( void )
-{
-	// No idling needed on Win32.
 }
 
 //===========================================================================================================================
