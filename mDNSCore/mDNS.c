@@ -45,6 +45,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.486  2004/12/10 14:16:17  cheshire
+<rdar://problem/3889788> Relax update rate limiting
+We now allow an average rate of ten updates per minute.
+Updates in excess of that are rate limited, but more gently than before.
+
 Revision 1.485  2004/12/10 02:09:24  cheshire
 <rdar://problem/3898376> Modify default TTLs
 
@@ -1627,7 +1632,7 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_QR_Response | kDNSFl
 #define SmallRecordLimit 1024
 
 #define kMaxUpdateCredits 10
-#define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 50)
+#define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 6)
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
@@ -5866,10 +5871,10 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
 		if (rr->UpdateCredits <= 5)
 			{
-			mDNSs32 delay = 1 << (5 - rr->UpdateCredits);
+			mDNSs32 delay = 6 - rr->UpdateCredits;		// Delay 1 second, then 2, then 3, etc. up to 6 seconds maximum
 			if (!rr->UpdateBlocked) rr->UpdateBlocked = NonZeroTime(m->timenow + delay * mDNSPlatformOneSecond);
-			rr->LastAPTime = rr->UpdateBlocked;
 			rr->ThisAPInterval *= 4;
+			rr->LastAPTime = rr->UpdateBlocked - rr->ThisAPInterval;
 			LogMsg("Excessive update rate for %##s; delaying announcement by %ld second%s", rr->resrec.name.c, delay, delay > 1 ? "s" : "");
 			}
 		rr->resrec.rroriginalttl = newttl;
