@@ -2,13 +2,13 @@
  * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.2 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -83,26 +83,32 @@ void resolve_reply (
 {
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
-    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.",          @"_ssh._tcp.",         @"_tftp._tcp.",                  @"_http._tcp.",
-												   @"_printer._tcp.",      @"_afpovertcp._tcp.",  @"_MacOSXDupSuppress._tcp.",     @"_ichat._tcp.",
-												   @"_eppc._tcp.",         nil];
-    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Secure Shell (ssh)", @"Trivial File Transfer (tftp)", @"Web Server (http)",
-	                                               @"Printer (lpd)",       @"AppleShare Server",  @"Mystery Service",              @"iChat",
-												   @"Remote AppleEvents",  nil];
+    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.",          @"_tftp._tcp.",
+												   @"_ssh._tcp.",          @"_telnet._tcp.",
+												   @"_http._tcp.",
+												   @"_printer._tcp.",      @"_ipp._tcp.",
+												   @"_ichat._tcp.",        @"_eppc._tcp.",
+												   @"_afpovertcp._tcp.",   @"_afpovertcp._tcp.",   @"_MacOSXDupSuppress._tcp.", nil];
+    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Trivial File Transfer (tftp)",
+	                                               @"Secure Shell (ssh)",  @"Telnet",
+	                                               @"Web Server (http)",
+	                                               @"LPR Printer",         @"IPP Printer",
+												   @"iChat",               @"Remote AppleEvents",
+												   @"AppleShare Server",   @"SMB File Server",     @"Mystery Service", nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
     [regDict setObject:nameArray forKey:@"SrvNameKeys"];
 
     [[NSUserDefaults standardUserDefaults] registerDefaults:regDict];
 }
-    
+
 
 - (id)init
 {
     [self registerDefaults];
 
     browse_client = nil;
-    
+
     return [super init];
 }
 
@@ -129,7 +135,7 @@ void resolve_reply (
     [domainField sizeLastColumnToFit];
 
     [nameField setDoubleAction:@selector(connect:)];
-    
+
     //[srvtypeKeys addObject:@"_ftp._tcp."];	//Add supported protocols and domains to their
     //[srvnameKeys addObject:@"File Transfer (ftp)"];
     //[srvtypeKeys addObject:@"_printer._tcp."];		//respective arrays
@@ -146,7 +152,7 @@ void resolve_reply (
     [srvtypeKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"]];
     [srvnameKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"]];
 
-    
+
     [typeField reloadData];				//Reload (redraw) data in fields
     [domainField reloadData];
 
@@ -239,7 +245,7 @@ void resolve_reply (
     [ipAddressField setStringValue:@""];
     [portField setStringValue:@""];
     [textField setStringValue:@""];
-    
+
     if (SrvType!=NULL) [self update:SrvType Domain:Domain];	//If Type and Domain are set, update records
 }
 
@@ -346,7 +352,7 @@ void resolve_reply (
         DNSServiceDiscoveryDeallocate(browse_client);
         browse_client = nil;
     }
-    
+
     // now create a browser to return the values for the nameField ...
     {
         CFMachPortRef           cfMachPort;
@@ -428,7 +434,7 @@ void resolve_reply (
 {
 
     //NSLog(@"Received result %@ %@ %@ %d", name, resulttype, domain, type);
-    
+
     if (([domain isEqualToString:Domain] || [domain isEqualToString:@"local."]) && [resulttype isEqualToString:SrvType]) {
 
         if (type == DNSServiceBrowserReplyRemoveInstance) {
@@ -441,7 +447,7 @@ void resolve_reply (
                 [nameKeys addObject:name];
             }
         }
-        
+
 		// If not expecting any more data, then reload (redraw) Name TableView with newly found data
 		if ((flags & kDNSServiceDiscoveryMoreRepliesImmediately) == 0)
 			[nameField reloadData];
@@ -455,11 +461,11 @@ void resolve_reply (
     //printf("address length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)address)->sin_len, ((struct sockaddr_in *)address)->sin_port, ((struct sockaddr_in *)address)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr)));
     NSString *ipAddr = [NSString stringWithCString:inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr))];
     int port = ((struct sockaddr_in *)address)->sin_port;
-    
+
     [ipAddressField setStringValue:ipAddr];
     [portField setIntValue:port];
     [textField setStringValue:txtRecord];
-    
+
     return;
 }
 
@@ -473,19 +479,16 @@ void resolve_reply (
 
     if (!ipAddr || !port) return;
 
-    if ([SrvType isEqualToString:@"_http._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d/%@", ipAddr, port, txtRecord]]];
-    } else if ([SrvType isEqualToString:@"_ftp._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/", ipAddr, port]]];
-    } else if ([SrvType isEqualToString:@"_ssh._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/", ipAddr, port]]];
-    } else if ([SrvType isEqualToString:@"_telnet._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/", ipAddr, port]]];
-    } else if ([SrvType isEqualToString:@"_afpovertcp._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/", ipAddr, port]]];
-    } else if ([SrvType isEqualToString:@"_smb._tcp."]) {
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@/", ipAddr]]];
-    }
+    if      ([SrvType isEqualToString:@"_ftp._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_tftp._tcp."])       [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"tftp://%@:%d/",   ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_ssh._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_telnet._tcp."])     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"telnet://%@:%d/", ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_http._tcp."])       [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_printer._tcp."])    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"lpr://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_ipp._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ipp://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_afpovertcp._tcp."]) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/",    ipAddr, port]]];
+    else if ([SrvType isEqualToString:@"_smb._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/",    ipAddr, port]]];
+
     return;
 }
 
@@ -507,7 +510,7 @@ void resolve_reply (
 
         [[NSUserDefaults standardUserDefaults] setObject:srvtypeKeys forKey:@"SrvTypeKeys"];
         [[NSUserDefaults standardUserDefaults] setObject:srvnameKeys forKey:@"SrvNameKeys"];
-        
+
         [typeField reloadData];
         [serviceDisplayTable reloadData];
     }
