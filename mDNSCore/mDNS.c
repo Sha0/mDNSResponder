@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.220  2003/07/15 02:12:51  cheshire
+Slight tidy-up of debugf messages and comments
+
 Revision 1.219  2003/07/15 01:55:12  cheshire
 <rdar://problem/3315777> Need to implement service registration with subtypes
 
@@ -5745,32 +5748,16 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 	{
 	ServiceRecordSet *sr = (ServiceRecordSet *)rr->RecordContext;
 	(void)m;	// Unused parameter
-	switch (result)
+
+	#if MDNS_DEBUGMSGS
 		{
-		case mStatus_NoError:
-			if (rr == &sr->RR_SRV)
-				debugf("ServiceCallback: Service RR_SRV %##s Registered", rr->name.c);
-			else
-				LogMsg("ServiceCallback: %##s (%s) ERROR Should only get mStatus_NoError callback for RR_SRV",
-					rr->name.c, DNSTypeName(rr->rrtype));
-			break;
-
-		case mStatus_NameConflict:
-			debugf("ServiceCallback: %##s (%s) Name Conflict", rr->name.c, DNSTypeName(rr->rrtype));
-			break;
-
-		case mStatus_MemFree:
-			if (rr == &sr->RR_PTR)
-				debugf("ServiceCallback: Service RR_PTR %##s Memory Free", rr->name.c);
-			else
-				LogMsg("ServiceCallback: %##s (%s) ERROR Should only get mStatus_MemFree callback for RR_PTR",
-					rr->name.c, DNSTypeName(rr->rrtype));
-			break;
-
-		default:
-			debugf("ServiceCallback: %##s (%s) Unknown Result %ld", rr->name.c, DNSTypeName(rr->rrtype), result);
-			break;
+		char *msg = "Unknown result";
+		if      (result == mStatus_NoError)      msg = "Name Registered";
+		else if (result == mStatus_NameConflict) msg = "Name Conflict";
+		else if (result == mStatus_MemFree)      msg = "Memory Free";
+		debugf("ServiceCallback: %##s (%s) %s (%ld)", rr->name.c, DNSTypeName(rr->rrtype), msg, result);
 		}
+	#endif
 
 	// If we got a name conflict on either SRV or TXT, forcibly deregister this service, and record that we did that
 	if (result == mStatus_NameConflict)
@@ -5838,6 +5825,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		sr->RR_TXT.rdata->MaxRDLength = txtlen;
 
 	// Set up the record names
+	// For now we only create an advisory record for the main type, not for subtypes
+	// We need to gain some operational experience before we decide if there's a need to create them for subtypes too
 	if (ConstructServiceName(&sr->RR_ADV.name, (domainlabel*)"\x09_services", (domainname*)"\x05_mdns\x04_udp", domain) == mDNSNULL)
 		return(mStatus_BadParamErr);
 	if (ConstructServiceName(&sr->RR_PTR.name, mDNSNULL, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
