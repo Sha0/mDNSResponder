@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.27  2004/04/22 20:29:07  cheshire
+Log error message if no count field passed to PutResourceRecordTTL()
+
 Revision 1.26  2004/04/22 04:07:01  cheshire
 Fix from Bob Bradley: Don't try to do inline functions on compilers that don't support it
 
@@ -1080,6 +1083,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNS
 	ptr[9] = (mDNSu8)(actualLength &  0xFF);
 
 	if (count) (*count)++;
+	else LogMsg("PutResourceRecordTTL: ERROR: No target count to update for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 	return(endofrdata);
 	}
 
