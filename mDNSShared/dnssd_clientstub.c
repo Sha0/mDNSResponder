@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.33  2004/09/17 01:17:31  ksekar
+Remove double-free of msg header, freed automatically by deliver_request()
+
 Revision 1.32  2004/09/17 01:08:55  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -683,9 +686,8 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
     put_string(domain, &ptr);
 
     sdr = connect_to_server();
-    if (!sdr) return kDNSServiceErr_Unknown;
+    if (!sdr) { free(hdr); return kDNSServiceErr_Unknown; }
     err = deliver_request(msg, sdr, 1);
-    free(hdr);
 	DNSServiceRefDeallocate(sdr);
 	return err;
     }
