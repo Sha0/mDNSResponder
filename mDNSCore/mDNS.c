@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.162  2003/06/03 19:30:39  cheshire
+Minor addition refinements for
+<rdar://problem/3277080> Duplicate registrations not handled as efficiently as they should be
+
 Revision 1.161  2003/06/03 18:29:03  cheshire
 Minor changes to comments and debugf() messages
 
@@ -1812,12 +1816,12 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 		{
 		debugf("Adding %p %##s (%s) to duplicate list", rr, rr->name.c, DNSTypeName(rr->rrtype));
 		*d = rr;
-		if (rr->RecordType == kDNSRecordTypeUnique)
-			{
-			rr->RecordType = kDNSRecordTypeVerified;
-			CompleteProbing(m, rr);
-			// MUST NOT dereference rr after this -- client could already have disposed it
-			}
+		// If the previous copy of this record is already verified unique,
+		// then indicate that we should move this record promptly to kDNSRecordTypeUnique state.
+		// Setting ProbeCount to zero will cause SendQueries() to advance this record to
+		// kDNSRecordTypeVerified state and call the client callback at the next appropriate time.
+		if (rr->RecordType == kDNSRecordTypeUnique && r->RecordType == kDNSRecordTypeVerified)
+			rr->ProbeCount = 0;
 		}
 	else
 		{
@@ -1843,29 +1847,41 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 
 	if (*p)
 		{
-		// We found our record on the main list. Before we delete it (and potentially send a goodbye packet)
-		// first see if we have a record on the duplicate list ready to take over from it.
-		ResourceRecord **d = &m->DuplicateRecords;
-		while (*d && !RecordIsLocalDuplicate(*d, rr)) d=&(*d)->next;
-		if (*d)
+		// We found our record on the main list. See if there are any duplicates that need special handling.
+		if (drt == mDNS_Dereg_conflict)		// If this was a conflict, see that all duplicates get the same treatment
 			{
-			ResourceRecord *dup = *d;
-			debugf("Duplicate record %p taking over from %p %##s (%s)", dup, rr, rr->name.c, DNSTypeName(rr->rrtype));
-			*d        = dup->next;		// Cut replacement record from DuplicateRecords list
-			dup->next = rr->next;		// And then...
-			rr->next  = dup;			// ... splice it in right after the record we're about to delete
-			dup->RecordType        = rr->RecordType;
-			dup->RRInterfaceActive = rr->RRInterfaceActive;
-			dup->ProbeCount        = rr->ProbeCount;
-			dup->AnnounceCount     = rr->AnnounceCount;
-			dup->ImmedAnswer       = rr->ImmedAnswer;
-			dup->ImmedAdditional   = rr->ImmedAdditional;
-			dup->v4Requester       = rr->v4Requester;
-			dup->v6Requester       = rr->v6Requester;
-			dup->ThisAPInterval    = rr->ThisAPInterval;
-			dup->LastAPTime        = rr->LastAPTime;
-			if (dup->HostTarget) SetTargetToHostName(m, dup);
-			if (RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
+			ResourceRecord *r2 = m->DuplicateRecords;
+			while (r2)
+				{
+				if (RecordIsLocalDuplicate(r2, rr)) { mDNS_Deregister_internal(m, r2, drt); r2 = m->DuplicateRecords; }
+				else r2=r2->next;
+				}
+			}
+		else
+			{
+			// Before we delete the record (and potentially send a goodbye packet)
+			// first see if we have a record on the duplicate list ready to take over from it.
+			ResourceRecord **d = &m->DuplicateRecords;
+			while (*d && !RecordIsLocalDuplicate(*d, rr)) d=&(*d)->next;
+			if (*d)
+				{
+				ResourceRecord *dup = *d;
+				debugf("Duplicate record %p taking over from %p %##s (%s)", dup, rr, rr->name.c, DNSTypeName(rr->rrtype));
+				*d        = dup->next;		// Cut replacement record from DuplicateRecords list
+				dup->next = rr->next;		// And then...
+				rr->next  = dup;			// ... splice it in right after the record we're about to delete
+				dup->RecordType        = rr->RecordType;
+				dup->RRInterfaceActive = rr->RRInterfaceActive;
+				dup->ProbeCount        = rr->ProbeCount;
+				dup->AnnounceCount     = rr->AnnounceCount;
+				dup->ImmedAnswer       = rr->ImmedAnswer;
+				dup->ImmedAdditional   = rr->ImmedAdditional;
+				dup->v4Requester       = rr->v4Requester;
+				dup->v6Requester       = rr->v6Requester;
+				dup->ThisAPInterval    = rr->ThisAPInterval;
+				dup->LastAPTime        = rr->LastAPTime;
+				if (RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
+				}
 			}
 		}
 	else
@@ -2923,13 +2939,26 @@ mDNSlocal void SendQueries(mDNS *const m)
 				// else, if it has now finished probing, move it to state Verified, and update m->NextResponseTime so it will be announced
 				else
 					{
+					ResourceRecord *r2;
 					rr->RecordType     = kDNSRecordTypeVerified;
 					rr->ThisAPInterval = DefaultAnnounceIntervalForTypeUnique;
 					rr->LastAPTime     = m->timenow - DefaultAnnounceIntervalForTypeUnique;
 					SetNextAnnounceProbeTime(m, rr);
+					// If we have any records on our duplicate list that match this one, they have now also completed probing
+					for (r2 = m->DuplicateRecords; r2; r2=r2->next)
+						if (r2->RecordType == kDNSRecordTypeUnique && RecordIsLocalDuplicate(r2, rr))
+							r2->ProbeCount = 0;
 					CompleteProbing(m, rr);
 					}
 				}
+			}
+		m->CurrentRecord = m->DuplicateRecords;
+		while (m->CurrentRecord)
+			{
+			ResourceRecord *rr = m->CurrentRecord;
+			m->CurrentRecord = rr->next;
+			if (rr->RecordType == kDNSRecordTypeUnique && rr->ProbeCount == 0)
+				CompleteProbing(m, rr);
 			}
 		}
 
@@ -3825,6 +3854,15 @@ mDNSlocal mDNSBool MatchDependentOn(const mDNS *const m, const ResourceRecord *c
 	{
 	const ResourceRecord *r1;
 	for (r1 = m->ResourceRecords; r1; r1=r1->next)
+		{
+		if (IdenticalResourceRecord(r1, pktrr))
+			{
+			const ResourceRecord *r2 = r1;
+			while (r2->DependentOn) r2 = r2->DependentOn;
+			if (r2 == master) return(mDNStrue);
+			}
+		}
+	for (r1 = m->DuplicateRecords; r1; r1=r1->next)
 		{
 		if (IdenticalResourceRecord(r1, pktrr))
 			{
@@ -5035,8 +5073,8 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 
 		// 3. Make sure that any SRV records (and the like) that reference our
 		// host name in their rdata get updated to reference this new host name
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->HostTarget) SetTargetToHostName(m, rr);
+		for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
+		for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
 		}
 
 	mDNS_Unlock(m);
