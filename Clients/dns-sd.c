@@ -75,7 +75,6 @@ typedef	int	pid_t;
 #define	getpid	_getpid
 #define	strcasecmp	_stricmp
 #define snprintf _snprintf
-typedef unsigned long in_addr_t;
 #else
 #include <sys/time.h>		// For struct timeval
 #include <unistd.h>         // For getopt() and optind
@@ -462,7 +461,7 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
 	{
-	in_addr_t addr = inet_addr(ip);
+	unsigned long addr = inet_addr(ip);
 	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
 	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
 	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, kDNSServiceInterfaceIndexAny, host,
