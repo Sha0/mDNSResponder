@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.12  2005/03/16 03:12:28  shersche
+<rdar://problem/4050504> Generic PCL driver isn't selected correctly on Win2K
+
 Revision 1.11  2005/03/05 02:27:46  shersche
 <rdar://problem/4030388> Generic drivers don't do color
 
@@ -301,7 +304,7 @@ namespace PrinterSetupWizard
 		{
 			Model * model = *it;
 
-			if ( model->name = name )
+			if ( model->name == name )
 			{
 				return model;
 			}
