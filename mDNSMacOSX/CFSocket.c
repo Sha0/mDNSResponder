@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.89  2003/06/21 18:12:47  cheshire
+<rdar://problem/3296061> Rendezvous cannot handle interfaces whose total name is >3 chars
+One-line change: should say "IF_NAMESIZE", not sizeof(ifname)
+
 Revision 1.88  2003/06/12 23:38:37  cheshire
 <rdar://problem/3291162> mDNSResponder doesn't detect some configuration changes
 Also check that scope_id matches before concluding that two interfaces are the same
@@ -460,7 +464,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVIF)
 			{
 			struct sockaddr_dl *sdl = (struct sockaddr_dl *)CMSG_DATA(cmPtr);
-			if (sdl->sdl_nlen < sizeof(ifname))
+			if (sdl->sdl_nlen < IF_NAMESIZE)
 				{
 				mDNSPlatformMemCopy(sdl->sdl_data, ifname, sdl->sdl_nlen);
 				ifname[sdl->sdl_nlen] = 0;
