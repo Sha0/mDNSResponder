@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.175  2003/06/07 04:11:52  cheshire
+Minor changes to comments and debug messages
+
 Revision 1.174  2003/06/07 01:46:38  cheshire
 <rdar://problem/3283540> When query produces zero results, call mDNS_Reconfirm() on any antecedent records
 
@@ -943,6 +946,25 @@ char *DNSTypeName(mDNSu16 rrtype)
 							return(buffer);
 							}
 		}
+	}
+
+extern char *GetRRDisplayString(mDNS *const m, const ResourceRecord *rr);		// See comment for DNSTypeName
+char *GetRRDisplayString(mDNS *const m, const ResourceRecord *rr)
+	{
+	char *ptr = m->MsgBuffer;
+	mDNSu32 length = mDNS_snprintf(m->MsgBuffer, 79, "%##s %s ", rr->name.c, DNSTypeName(rr->rrtype));
+	switch (rr->rrtype)
+		{
+		case kDNSType_A:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.4a", &rr->rdata->u.ip);         break;
+		case kDNSType_CNAME:// Same as PTR
+		case kDNSType_PTR:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rr->rdata->u.name);       break;
+		case kDNSType_TXT:  mDNS_snprintf(m->MsgBuffer+length, 79-length, "%#s", rr->rdata->u.txt.c);        break;
+		case kDNSType_AAAA:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.16a", &rr->rdata->u.ipv6);      break;
+		case kDNSType_SRV:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rr->rdata->u.srv.target); break;
+		default:			mDNS_snprintf(m->MsgBuffer+length, 79-length, "RDLen %d", rr->rdata->RDLength);  break;
+		}
+	for (ptr = m->MsgBuffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
+	return(m->MsgBuffer);
 	}
 
 mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
@@ -2860,6 +2882,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 // rr->TimeRcvd
 // rr->rroriginalttl
 // rr->UnansweredQueries
+// rr->CRActiveQuestion
 mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 	{
 	mDNSs32 ttl = (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
@@ -2870,7 +2893,7 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 		{
 		rr->NextRequiredQuery -= ttl/10 * (2 - rr->UnansweredQueries);
 		rr->NextRequiredQuery += mDNSRandom(ttl/20);
-		debugf("SetNextCacheCheckTime: %##s (%s) NextRequiredQuery in %ld sec",
+		verbosedebugf("SetNextCacheCheckTime: %##s (%s) NextRequiredQuery in %ld sec",
 			rr->name.c, DNSTypeName(rr->rrtype), (rr->NextRequiredQuery - m->timenow) / mDNSPlatformOneSecond);
 		}
 
@@ -4147,7 +4170,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 4. Parse Answer Section and cancel any records disallowed by known answer list
+	// *** 4. Parse Answer Section and cancel any records disallowed by known-answer list
 	// ***
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
@@ -4161,7 +4184,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			if (MustSendRecord(rr) && ShouldSuppressKnownAnswer(&pktrr, rr))
 				{ rr->NR_AnswerTo = mDNSNULL; rr->NR_AdditionalTo = mDNSNULL; }
 
-		// And see if it suppresses any previously scheduled answers
+		// See if it suppresses any previously scheduled answers
 		for (rr=m->ResourceRecords; rr; rr=rr->next)
 			{
 			// If we're planning to send this answer on this interface, and only on this interface, then allow KA suppression
@@ -4208,7 +4231,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					{
 					rr->ImmedAnswer = mDNSInterfaceMark;
 					m->NextResponseTime = m->timenow;
-					debugf("%##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
+					debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
 					}
 				else
 					{
@@ -4275,7 +4298,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 
 exit:
 	// ***
-	// *** 9. Finally, clear our NextResponse link chain ready for use next time
+	// *** 9. Finally, clear our link chains ready for use next time
 	// ***
 	while (ResponseRecords)
 		{
