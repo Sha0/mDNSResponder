@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: DNSServiceBrowser.cs,v $
+Revision 1.5  2004/09/21 16:26:58  shersche
+Check to make sure browse list selected item is not null before resolving
+Submitted by: prepin@gmail.com
+
 Revision 1.4  2004/09/13 19:38:17  shersche
 Changed code to reflect namespace and type changes to dnssd.NET library
 
@@ -600,17 +604,20 @@ namespace DNSServiceBrowser_NET
 				resolver.Dispose();
 			}
 
-			try
-			{
-				BrowseData data = (BrowseData) browseList.SelectedItem;
+            if (browseList.SelectedItem != null)
+            {
+                try
+                {
+                    BrowseData data = (BrowseData) browseList.SelectedItem;
 
-				resolver = DNSService.Resolve(0, 0, data.Name, data.Type, data.Domain, new DNSService.ResolveReply(OnResolveReply));
-			}
-			catch
-			{
-				MessageBox.Show("Resolve Failed", "Error");
-				Application.Exit();
-			}
+                    resolver = DNSService.Resolve(0, 0, data.Name, data.Type, data.Domain, new DNSService.ResolveReply(OnResolveReply));
+                }
+                catch
+                {
+                    MessageBox.Show("Resolve Failed", "Error");
+                    Application.Exit();
+                }
+            }
 		}
 
 		//
