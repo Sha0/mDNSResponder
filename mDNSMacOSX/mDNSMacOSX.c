@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.43  2002/09/17 01:05:28  cheshire
+Change mDNS_AdvertiseLocalAddresses to be an Init parameter instead of a global
+
 Revision 1.42  2002/09/16 23:13:50  cheshire
 Minor code tidying
 
@@ -39,11 +42,6 @@ Minor code tidying
 // the Classic subsystem of Mac OS X 10.2 Jaguar) has been corrected to issue Multicast DNS
 // queries on UDP port 5353, this backwards-compatibility legacy support is no longer needed.
 #define mDNS_AllowPort53 1
-
-// Normally mDNSResponder is advertising local services on all active interfaces.
-// However, should you wish to build a query-only mDNS client, setting mDNS_AdvertiseLocalAddresses
-// to zero will cause CFSocket.c to not set the Advertise flag in its mDNS_RegisterInterface calls.
-int mDNS_AdvertiseLocalAddresses = 1;
 
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
@@ -571,7 +569,7 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 	CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
 
 	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
-	info->ifinfo.Advertise       = mDNS_AdvertiseLocalAddresses;
+	info->ifinfo.Advertise       = m->AdvertiseLocalAddresses;
 	info->m         = m;
 	info->ifa_name  = (char *)mallocL("NetworkInterfaceInfo2 name", strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
