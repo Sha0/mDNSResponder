@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.301  2005/02/24 21:55:57  ksekar
+<rdar://problem/4017292> Should not indicate successful dynamic update if no network connection
+
 Revision 1.300  2005/02/15 20:03:13  ksekar
 <rdar://problem/4005868> Crash when SCPreferences contains empty array
 
@@ -2939,8 +2942,8 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 		if (DynDNSHostname.c[0])
 			{
 			SetSecretForDomain(m, &fqdn); // no-op if "zone" secret, above, is to be used for hostname
+			SetDDNSNameStatus(&DynDNSHostname, -1);
 			mDNS_AddDynDNSHostName(m, &DynDNSHostname, SCPrefsDynDNSCallback, NULL);
-			SetDDNSNameStatus(&DynDNSHostname, 1);
 			}
 		}
 
@@ -2965,8 +2968,13 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	dict = SCDynamicStoreCopyValue(store, key);
 	CFRelease(key);
 	CFRelease(store);
-	if (!dict)
-		{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL); return; } // lost v4
+	if (!dict)		
+		{
+		// lost v4
+		mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL);
+		if (DynDNSHostname.c[0]) SetDDNSNameStatus(&DynDNSHostname, -1);
+		return;
+		} 
 
 	// handle router changes
 	mDNSAddr r;
