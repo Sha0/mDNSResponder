@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.239  2004/11/25 01:27:19  ksekar
+<rdar://problem/3885859> Don't try to advertise link-local IP addresses via dynamic update
+
 Revision 1.238  2004/11/24 22:00:59  cheshire
 Move definition of mDNSAddressIsAllDNSLinkGroup() from mDNSMacOSX.c to mDNSEmbeddedAPI.h
 
@@ -2491,6 +2494,8 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 				{
 				mDNSAddr ip;
 				SetupAddr(&ip, ifa->ifa_addr);
+				if (ip.ip.v4.b[0] == 169 && ip.ip.v4.b[1] == 254)
+					{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL); break; }  // primary IP is link-local				
 				if (ip.ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger ||
 					r.ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger)
 					{
