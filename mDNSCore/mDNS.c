@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.149  2003/05/29 06:18:39  cheshire
+<rdar://problem/3272217> Split AnswerLocalQuestions into CacheRecordAdd and CacheRecordRmv
+
 Revision 1.148  2003/05/29 06:11:34  cheshire
 <rdar://problem/3272214>:	Report if there appear to be too many "Resolve" callbacks
 
@@ -2233,7 +2236,7 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 		rr->rroriginalttl = 0x70000000UL / mDNSPlatformOneSecond;
 	// Note: We don't have to adjust m->NextCacheCheck here -- this is just getting a record into memory for
 	// us to look at. If we decide to copy it into the cache, then we'll update m->NextCacheCheck accordingly.
-	rr->rrremainingttl    = 0;
+	rr->rrremainingttl    = rr->rroriginalttl;
 	pktrdlength           = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
 	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8))
 		rr->RecordType |= kDNSRecordTypeUniqueMask;
@@ -2959,8 +2962,8 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 
 	// CAUTION: MUST NOT do anything more with q after calling q->Callback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
-	// Right now the only routines that call AnswerQuestionWithResourceRecord() are AnswerLocalQuestions() and
-	// AnswerNewQuestion(), and both of them use the "m->CurrentQuestion" mechanism to protect against questions
+	// Right now the only routines that call AnswerQuestionWithResourceRecord() are CacheRecordAdd(), CacheRecordRmv()
+	// and AnswerNewQuestion(), and all of them use the "m->CurrentQuestion" mechanism to protect against questions
 	// being deleted out from under them.
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
@@ -2968,20 +2971,18 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	}
 
-// AnswerLocalQuestions is called from mDNSCoreReceiveResponse,
-// and from CheckCacheExpiration, which is called from mDNS_Execute and from mDNSCoreReceiveResponse.
-// AnswerLocalQuestions is *never* called directly as a result of a client API call.
+// CacheRecordAdd is only called from mDNSCoreReceiveResponse, *never* directly as a result of a client API call.
 // If new questions are created as a result of invoking client callbacks, they will be added to
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
-// rr is either a new ResourceRecord just received into our cache,
-// or an existing ResourceRecord that just expired and is being deleted.
-// (kDNSRecordTypePacketAnswer/PacketAdditional/PacketUniqueAns/PacketUniqueAdd)
-// NOTE: AnswerLocalQuestions calls AnswerQuestionWithResourceRecord which can call a user callback,
+// rr is a new ResourceRecord just received into our cache
+// (kDNSRecordTypePacketAnswer/PacketAdditional/PacketUniqueAns/PacketUniqueAdd).
+// rr->rrremainingttl is necessarily the full rr->rroriginalttl (we just received this record)
+// NOTE: CacheRecordAdd calls AnswerQuestionWithResourceRecord which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr)
+mDNSlocal void CacheRecordAdd(mDNS *const m, ResourceRecord *rr)
 	{
-	if (m->CurrentQuestion) debugf("AnswerLocalQuestions ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 		{
@@ -2989,25 +2990,47 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr)
 		m->CurrentQuestion = q->next;
 		if (ResourceRecordAnswersQuestion(rr, q))
 			{
-			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-			if (rr->rroriginalttl <= SecsSinceRcvd)
-				rr->rrremainingttl = 0;
-			else
+			// If this question is one that's actively sending queries, and it's received three answers within
+			// one second of sending the query packet, then reset its exponential backoff back to the start
+			if (ActiveQuestion(q) && ++q->RecentAnswers >= 3 &&
+				q->ThisQInterval > mDNSPlatformOneSecond && m->timenow - q->LastQTime < mDNSPlatformOneSecond)
 				{
-				rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
-				// If this question is one that's actively sending queries,
-				// and it's received two answers within one second of sending the query packet,
-				// then reset its exponential backoff back to the start
-				if (ActiveQuestion(q) && ++q->RecentAnswers > 1 && m->timenow - q->LastQTime < mDNSPlatformOneSecond)
-					{
-					debugf("AnswerLocalQuestions: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
-						q->name.c, DNSTypeName(q->rrtype));
-					q->ThisQInterval = mDNSPlatformOneSecond;
-					SetNextQueryTime(m,q);
-					}
+				debugf("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
+					q->name.c, DNSTypeName(q->rrtype));
+				q->ThisQInterval = mDNSPlatformOneSecond;
+				SetNextQueryTime(m,q);
 				}
+			verbosedebugf("CacheRecordAdd %p %##s (%s) %lu", rr, rr->name.c, DNSTypeName(rr->rrtype), rr->rrremainingttl);
 			AnswerQuestionWithResourceRecord(m, q, rr);
-			// MUST NOT touch q again after calling AnswerQuestionWithResourceRecord()
+			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+			}
+		}
+	m->CurrentQuestion = mDNSNULL;
+	}
+
+// CacheRecordRmv is only called from CheckCacheExpiration, which is called from mDNS_Execute
+// If new questions are created as a result of invoking client callbacks, they will be added to
+// the end of the question list, and m->NewQuestions will be set to indicate the first new question.
+// rr is an existing cache ResourceRecord that just expired and is being deleted
+// (kDNSRecordTypePacketAnswer/PacketAdditional/PacketUniqueAns/PacketUniqueAdd).
+// NOTE: CacheRecordRmv calls AnswerQuestionWithResourceRecord which can call a user callback,
+// which may change the record list and/or question list.
+// Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
+mDNSlocal void CacheRecordRmv(mDNS *const m, ResourceRecord *rr)
+	{
+	if (m->CurrentQuestion) LogMsg("CacheRecordRmv ERROR m->CurrentQuestion already set");
+	m->CurrentQuestion = m->Questions;
+	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
+		{
+		DNSQuestion *q = m->CurrentQuestion;
+		m->CurrentQuestion = q->next;
+		if (ResourceRecordAnswersQuestion(rr, q))
+			{
+			// Set rr->rrremainingttl to zero to let the client know we're deleting this record
+			rr->rrremainingttl = 0;
+			verbosedebugf("CacheRecordRmv %p %##s (%s)", rr, rr->name.c, DNSTypeName(rr->rrtype));
+			AnswerQuestionWithResourceRecord(m, q, rr);
+			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
 		}
 	m->CurrentQuestion = mDNSNULL;
@@ -3030,28 +3053,34 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	m->lock_rrcache = 1;
 	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
-	for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr && m->CurrentQuestion == q; rr=rr->next)
+	for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)
 		if (ResourceRecordAnswersQuestion(rr, q))
 			{
+			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
+			// That means we will round up the rrremainingttl:
+			// If the rroriginalttl was 1 second, and we received the record 0.999 seconds ago,
+			// we'll report a rrremainingttl of 1, which is what we want, not zero.
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-			if (rr->rroriginalttl <= SecsSinceRcvd) rr->rrremainingttl = 0;
-			else rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
-			
-			// We only give positive responses to new questions.
-			// Since this question is new, it has not received any answers yet, so there's no point
-			// telling it about records that are going away that it never heard about in the first place.
-			if (rr->rrremainingttl > 0)
+			if (rr->rroriginalttl <= SecsSinceRcvd)
 				{
-				NumAnswersGiven++;
-				AnswerQuestionWithResourceRecord(m, q, rr);
+				LogMsg("AnswerNewQuestion: How is rr->rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
+					rr->rroriginalttl, SecsSinceRcvd, rr->name.c, DNSTypeName(rr->rrtype));
+				continue;	// Go to next one in loop
 				}
-			// MUST NOT touch q again after calling AnswerQuestionWithResourceRecord()
+
+				NumAnswersGiven++;
+			// Must do this debugging message *before* calling AnswerQuestionWithResourceRecord
+			if (NumAnswersGiven == 1)
+				debugf("Had   answer   for %##s (%s) already in our cache", q->name.c, DNSTypeName(q->rrtype));
+			rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
+			AnswerQuestionWithResourceRecord(m, q, rr);
+			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 			}
-	if (NumAnswersGiven)
-		debugf("Had   answer   for %##s already in our cache", q->name.c);
-	else
+
+	if (NumAnswersGiven == 0)
 		{
-		debugf("Had no answers for %##s already in our cache; sending query packet", q->name.c);
+		debugf("Had no answers for %##s (%s) already in our cache; sending query packet", q->name.c, DNSTypeName(q->rrtype));
 		// This is safe because we only do it if NumAnswersGiven is zero,
 		// in which case we never called AnswerQuestionWithResourceRecord
 		q->LastQTime = m->timenow - q->ThisQInterval;
@@ -3081,7 +3110,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 				{
 				*rp = rr->next;				// Cut it from the list
 				verbosedebugf("CheckCacheExpiration: Deleting %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
-				AnswerLocalQuestions(m, rr);
+				CacheRecordRmv(m, rr);
 				m->rrcache_used[slot]--;
 				m->rrcache_totalused--;
 				rr->next = m->rrcache_free;	// and move it back to the free list
@@ -4227,8 +4256,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					m->rrcache_used[slot]++;
 					m->rrcache_totalused++;
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
-					AnswerLocalQuestions(m, rr);
-					// MUST do this AFTER AnswerLocalQuestions(), because that's what sets CRActiveQuestion for us
+					CacheRecordAdd(m, rr);
+					// MUST do this AFTER CacheRecordAdd(), because that's what sets CRActiveQuestion for us
 					SetNextCacheCheckTime(m,rr);
 					}
 				}
@@ -4414,7 +4443,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 			}
 		}
 
-	// If we just deleted the question that AnswerLocalQuestions() is about to look at,
+	// If we just deleted the question that CacheRecordAdd() or CacheRecordRmv()is about to look at,
 	// bump its pointer forward one question.
 	if (m->CurrentQuestion == question)
 		{
