@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.49  2002/12/23 22:13:30  jgraessl
+
+Reviewed by: Stuart Cheshire
+Initial IPv6 support for mDNSResponder.
+
 Revision 1.48  2002/11/22 01:37:52  cheshire
 Bug #: 3108426 mDNSResponder is monitoring ServiceEntities instead of InterfaceEntities
 
@@ -62,6 +67,11 @@ Minor code tidying
 // including ones that mDNSResponder chooses not to use.
 #define LIST_ALL_INTERFACES 0
 
+// For enabling AAAA records over IPv4. Setting this to 0 sends only
+// A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
+// AAAA and A records over both IPv4 and IPv6.
+#define AAAA_OVER_V4	0
+
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
@@ -96,9 +106,10 @@ struct NetworkInterfaceInfo2_struct
 	NetworkInterfaceInfo ifinfo;
 	mDNS *m;
 	char *ifa_name;
-	NetworkInterfaceInfo2 *alias;
 	int socket;
 	CFSocketRef cfsocket;
+	int v6socket;
+	CFSocketRef	v6cfsocket;
 #if mDNS_AllowPort53
 	int socket53;
 	CFSocketRef cfsocket53;
@@ -133,37 +144,60 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSIPAddr src, mDNSIPPort srcPort, mDNSIPAddr dst, mDNSIPPort dstPort)
+	mDNSOpaqueID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
-	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)(m->HostInterfaces);
-	struct sockaddr_in to;
-	to.sin_family      = AF_INET;
-	to.sin_port        = dstPort.NotAnInteger;
-	to.sin_addr.s_addr = dst.    NotAnInteger;
+	#pragma unused(m)
+	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)(InterfaceID);
+	struct sockaddr_storage to;
+	int s, err;
 
-	if (src.NotAnInteger == 0) debugf("mDNSPlatformSendUDP ERROR! Cannot send from zero source address");
+	if (InterfaceID == 0) { debugf("mDNSPlatformSendUDP ERROR! Cannot send from zero source address"); return mStatus_BadParamErr; }
 
-	while (info)
+	if (dst->type == mDNSAddrType_IPv4)
 		{
-		if (info->ifinfo.ip.NotAnInteger == src.NotAnInteger)
-			{
-			int s, err;
-			if      (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger) s = info->socket;
-#if mDNS_AllowPort53
-			else if (srcPort.NotAnInteger == UnicastDNSPort.NotAnInteger  ) s = info->socket53;
-#endif
-			else { debugf("Source port %d not allowed", (mDNSu16)srcPort.b[0]<<8 | srcPort.b[1]); return(-1); }
-			err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, sizeof(to));
-			if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
-			}
-		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
+		struct sockaddr_in*	sin_to = (struct sockaddr_in*)&to;
+		sin_to->sin_len			= sizeof(*sin_to);
+		sin_to->sin_family      = AF_INET;
+		sin_to->sin_port        = dstPort.      NotAnInteger;
+		sin_to->sin_addr.s_addr = dst->addr.ipv4.NotAnInteger;
+		}
+	else if (dst->type == mDNSAddrType_IPv6)
+		{
+		struct sockaddr_in6* sin6_to = (struct sockaddr_in6*)&to;
+		sin6_to->sin6_len		= sizeof(*sin6_to);
+		sin6_to->sin6_family	= AF_INET6;
+		sin6_to->sin6_port		= dstPort.NotAnInteger;
+		sin6_to->sin6_flowinfo	= 0;
+		sin6_to->sin6_addr		= *(struct in6_addr*)&dst->addr.ipv6;
+		sin6_to->sin6_scope_id	= if_nametoindex(info->ifa_name);
+		}
+	else
+		{
+		debugf("mDNSPlatformSendUDP: dst is not an IPv4 or IPv6 address!\n");
+		return mStatus_BadParamErr;
 		}
 
+	debugf("mDNSPlatformSendUDP: sending on InterfaceID %04X", InterfaceID);
+
+	if (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger)
+		{
+		if   (dst->type == mDNSAddrType_IPv4) s = info->socket;
+		else s = info->v6socket;
+		}
+#if mDNS_AllowPort53
+	else if (srcPort.NotAnInteger == UnicastDNSPort.NotAnInteger &&
+			 dst->type == mDNSAddrType_IPv4)
+		s = info->socket53;
+#endif
+	else { debugf("Source port %d not allowed", (mDNSu16)srcPort.b[0]<<8 | srcPort.b[1]); return(-1); }
+	err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, to.ss_len);
+	if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
+	
 	return(mStatus_NoError);
 	}
 
 static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
-	struct sockaddr *const from, size_t *const fromlen, struct in_addr *dstaddr, char ifname[128])
+	struct sockaddr *const from, size_t *const fromlen, mDNSAddr *dstaddr, char ifname[IF_NAMESIZE])
 	{
 	struct iovec databuffers = { (char *)buffer, max };
 	struct msghdr   msg;
@@ -192,7 +226,10 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		{
 		// debugf("myrecvfrom cmsg_level %d cmsg_type %d", cmPtr->cmsg_level, cmPtr->cmsg_type);
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVDSTADDR)
-			*dstaddr = *(struct in_addr *)CMSG_DATA(cmPtr);
+			{
+			dstaddr->type = mDNSAddrType_IPv4;
+			dstaddr->addr.ipv4.NotAnInteger = *(u_int32_t*)CMSG_DATA(cmPtr);
+			}
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVIF)
 			{
 			struct sockaddr_dl *sdl = (struct sockaddr_dl *)CMSG_DATA(cmPtr);
@@ -203,6 +240,13 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 				// debugf("IP_RECVIF sdl_index %d, sdl_data %s len %d", sdl->sdl_index, ifname, sdl->sdl_nlen);
 				}
 			}
+		if (cmPtr->cmsg_level == IPPROTO_IPV6 && cmPtr->cmsg_type == IPV6_PKTINFO)
+			{
+			struct in6_pktinfo *ip6_info = (struct in6_pktinfo*)CMSG_DATA(cmPtr);
+			dstaddr->type = mDNSAddrType_IPv6;
+			dstaddr->addr.ipv6 = *(mDNSv6Addr*)&ip6_info->ipi6_addr;
+			if_indextoname(ip6_info->ipi6_ifindex, ifname);
+			}
 		}
 
 	return(n);
@@ -210,15 +254,14 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 
 mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *context)
 	{
-	mDNSIPAddr senderAddr, destAddr;
+	mDNSAddr senderAddr, destAddr;
 	mDNSIPPort senderPort;
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)context;
 	mDNS *const m = info->m;
 	DNSMessage packet;
-	struct in_addr to;
-	struct sockaddr_in from;
+	struct sockaddr_storage from;
 	size_t fromlen = sizeof(from);
-	char packetifname[128] = "";
+	char packetifname[IF_NAMESIZE] = "";
 	int err;
 	
 	(void)address;	// Parameter not used
@@ -227,16 +270,35 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	if (type != kCFSocketReadCallBack) debugf("myCFSocketCallBack: Why is type not kCFSocketReadCallBack?");
 #if mDNS_AllowPort53
 	if (s == info->cfsocket53)
-		err = myrecvfrom(info->socket53, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, packetifname);
+		err = myrecvfrom(info->socket53, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname);
 	else
 #endif
-	err = myrecvfrom(info->socket, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, packetifname);
+	if (s == info->v6cfsocket)
+		err = myrecvfrom(info->v6socket, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname);
+	else
+		err = myrecvfrom(info->socket, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname);
 
 	if (err < 0) { debugf("myCFSocketCallBack recvfrom error %d", err); return; }
 
-	senderAddr.NotAnInteger = from.sin_addr.s_addr;
-	senderPort.NotAnInteger = from.sin_port;
-	destAddr.NotAnInteger   = to.s_addr;
+	if (from.ss_family == AF_INET)
+		{
+		struct sockaddr_in *sin = (struct sockaddr_in*)&from;
+		senderAddr.type = mDNSAddrType_IPv4;
+		senderAddr.addr.ipv4.NotAnInteger = sin->sin_addr.s_addr;
+		senderPort.NotAnInteger = sin->sin_port;
+		}
+	else if (from.ss_family == AF_INET6)
+		{
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&from;
+		senderAddr.type = mDNSAddrType_IPv6;
+		senderAddr.addr.ipv6 = *(mDNSv6Addr*)&sin6->sin6_addr;
+		senderPort.NotAnInteger = sin6->sin6_port;
+		}
+	else
+		{
+		debugf("myCFSocketCallBack from is unknown address family %d", from.ss_family);
+		return;
+		}
 
 	// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
 	// sockets API means that even though this socket has only officially joined the multicast group
@@ -246,22 +308,22 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
 	if (strcmp(info->ifa_name, packetifname))
 		{
-		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s (Ignored -- really arrived on interface %s)",
+		verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
 			&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name, packetifname);
 		return;
 		}
 	else
-		verbosedebugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s",
+		verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s",
 			&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name);
 
 	if (err < (int)sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
 	
 #if mDNS_AllowPort53
 	if (s == info->cfsocket53)
-		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderAddr, senderPort, destAddr, UnicastDNSPort, info->ifinfo.ip);
+		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, UnicastDNSPort, info->ifinfo.InterfaceID);
 	else
 #endif
-	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, senderAddr, senderPort, destAddr, MulticastDNSPort, info->ifinfo.ip);
+	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, MulticastDNSPort, info->ifinfo.InterfaceID);
 	}
 
 mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
@@ -293,17 +355,15 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 		}
 	}
 
-mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int *s, CFSocketRef *c, CFSocketContext *context)
+mDNSlocal mStatus SetupSocket(struct ifaddrs* ifa, mDNSIPPort port, int *s, CFSocketRef *c, CFSocketContext *context)
 	{
 	mStatus err;
 	const int on = 1;
 	const int twofivefive = 255;
-	struct ip_mreq imr;
-	struct sockaddr_in listening_sockaddr;
 	CFRunLoopSourceRef rls;
 	
 	// Open the socket...
-	*s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	*s = socket(ifa->ifa_addr->sa_family, SOCK_DGRAM, IPPROTO_UDP);
 	*c = NULL;
 	if (*s < 0) { perror("socket"); return(*s); }
 	
@@ -311,42 +371,98 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	err = setsockopt(*s, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
 	if (err < 0) { perror("setsockopt - SO_REUSEPORT"); return(err); }
 
-	// We want to receive destination addresses
-	err = setsockopt(*s, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
-	if (err < 0) { perror("setsockopt - IP_RECVDSTADDR"); return(err); }
-	
-	// We want to receive interface identifiers
-	err = setsockopt(*s, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
-	if (err < 0) { perror("setsockopt - IP_RECVIF"); return(err); }
-	
-	// Add multicast group membership on this interface
-	imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
-	imr.imr_interface        = ifa_addr->sin_addr;
-	err = setsockopt(*s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));	
-	if (err < 0) { perror("setsockopt - IP_ADD_MEMBERSHIP"); return(err); }
-
-	// Specify outgoing interface too
-	err = setsockopt(*s, IPPROTO_IP, IP_MULTICAST_IF, &ifa_addr->sin_addr, sizeof(ifa_addr->sin_addr));
-	if (err < 0) { perror("setsockopt - IP_MULTICAST_IF"); return(err); }
-
-	// Send unicast packets with TTL 255
-	err = setsockopt(*s, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
-	if (err < 0) { perror("setsockopt - IP_TTL"); return(err); }
-
-	// And multicast packets with TTL 255 too
-	err = setsockopt(*s, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
-	if (err < 0) { perror("setsockopt - IP_MULTICAST_TTL"); return(err); }
-
-	// And start listening for packets
-	listening_sockaddr.sin_family      = AF_INET;
-	listening_sockaddr.sin_port        = port.NotAnInteger;
-	listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
-	err = bind(*s, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
-	if (err)
+	if (ifa->ifa_addr->sa_family == AF_INET)
 		{
-		if (port.NotAnInteger == UnicastDNSPort.NotAnInteger) err = 0;
-		else perror("bind");
-		return(err);
+		struct ip_mreq imr;
+		struct sockaddr_in	*sin = (struct sockaddr_in*)ifa->ifa_addr;
+		struct sockaddr_in listening_sockaddr;
+		
+		// We want to receive destination addresses
+		err = setsockopt(*s, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
+		if (err < 0) { perror("setsockopt - IP_RECVDSTADDR"); return(err); }
+		
+		// We want to receive interface identifiers
+		err = setsockopt(*s, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
+		if (err < 0) { perror("setsockopt - IP_RECVIF"); return(err); }
+		
+		// Add multicast group membership on this interface
+		imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
+		imr.imr_interface        = sin->sin_addr;
+		err = setsockopt(*s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
+		if (err < 0) { perror("setsockopt - IP_ADD_MEMBERSHIP"); return(err); }
+		
+		// Specify outgoing interface too
+		err = setsockopt(*s, IPPROTO_IP, IP_MULTICAST_IF, &sin->sin_addr, sizeof(sin->sin_addr));
+		if (err < 0) { perror("setsockopt - IP_MULTICAST_IF"); return(err); }
+		
+		// Send unicast packets with TTL 255
+		err = setsockopt(*s, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { perror("setsockopt - IP_TTL"); return(err); }
+		
+		// And multicast packets with TTL 255 too
+		err = setsockopt(*s, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { perror("setsockopt - IP_MULTICAST_TTL"); return(err); }
+
+		// And start listening for packets
+		listening_sockaddr.sin_family      = AF_INET;
+		listening_sockaddr.sin_port        = port.NotAnInteger;
+		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
+		err = bind(*s, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
+		if (err)
+			{
+			if (port.NotAnInteger == UnicastDNSPort.NotAnInteger) err = 0;
+			else perror("bind");
+			return(err);
+			}
+		}
+	else if (ifa->ifa_addr->sa_family == AF_INET6)
+		{
+		struct ipv6_mreq i6mr;
+		int	interface_id = if_nametoindex(ifa->ifa_name);
+		struct sockaddr_in6 listening_sockaddr6;
+		
+		// We want to receive destination addresses and receive interface identifiers
+		err = setsockopt(*s, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
+		if (err < 0) { perror("setsockopt - IPV6_PKTINFO"); return(err); }
+		
+		// We want to receive only IPv6 packets, without this option, we may
+		// get IPv4 addresses as mapped addresses.
+		err = setsockopt(*s, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
+		if (err < 0) { perror("setsockopt - IPV6_V6ONLY"); return(err); }
+		
+		// Add multicast group membership on this interface
+		i6mr.ipv6mr_interface = interface_id;
+		i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
+		err = setsockopt(*s, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
+		if (err < 0) { perror("setsockopt - IPV6_JOIN_GROUP"); return(err); }
+		
+		// Specify outgoing interface too
+		err = setsockopt(*s, IPPROTO_IPV6, IPV6_MULTICAST_IF, &interface_id, sizeof(interface_id));
+		if (err < 0) { perror("setsockopt - IPV6_MULTICAST_IF"); return(err); }
+		
+		// Send unicast packets with TTL 255
+		err = setsockopt(*s, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { perror("setsockopt - IPV6_UNICAST_HOPS"); return(err); }
+		
+		// And multicast packets with TTL 255 too
+		err = setsockopt(*s, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { perror("setsockopt - IPV6_MULTICAST_HOPS"); return(err); }
+		
+		// And start listening for packets
+		bzero(&listening_sockaddr6, sizeof(listening_sockaddr6));
+		listening_sockaddr6.sin6_len		 = sizeof(listening_sockaddr6);
+		listening_sockaddr6.sin6_family      = AF_INET6;
+		listening_sockaddr6.sin6_port        = port.NotAnInteger;
+		listening_sockaddr6.sin6_flowinfo	 = 0;
+//		listening_sockaddr6.sin6_addr = IN6ADDR_ANY_INIT; // Want to receive multicasts AND unicasts on this socket
+		listening_sockaddr6.sin6_scope_id	 = 0;
+		err = bind(*s, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
+		if (err)
+			{
+			if (port.NotAnInteger == UnicastDNSPort.NotAnInteger) err = 0;
+			else perror("bind");
+			return(err);
+			}
 		}
 
 	*c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, context);
@@ -358,7 +474,7 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	}
 
 #if 0
-mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByAddr(mDNS *const m, mDNSIPAddr ip)
+mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByAddr(mDNS *const m, mDNSAddr ip)
 	{
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
 	while (info)
@@ -370,12 +486,14 @@ mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByAddr(mDNS *const m, mDNSIPA
 	}
 #endif
 
-mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByName(mDNS *const m, char *ifname)
+mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByName(mDNS *const m, char *ifname, int type)
 	{
 	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
 	while (info)
 		{
-		if (!strcmp(info->ifa_name, ifname)) return(info);
+		if (!strcmp(info->ifa_name, ifname) && ((AAAA_OVER_V4) ||
+			 (type == AF_INET6 && info->ifinfo.ip.type == mDNSAddrType_IPv4) ||
+			 (type == AF_INET  && info->ifinfo.ip.type == mDNSAddrType_IPv6))) return(info);
 		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
 		}
 	return(NULL);
@@ -384,37 +502,83 @@ mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByName(mDNS *const m, char *i
 mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, struct ifaddrs *ifa)
 	{
 	mStatus err = 0;
-	struct sockaddr_in *ifa_addr = (struct sockaddr_in *)ifa->ifa_addr;
-	CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
+	NetworkInterfaceInfo2 *alias = SearchForInterfaceByName(m, ifa->ifa_name, ifa->ifa_addr->sa_family);
+	if (!alias) alias = info;
 
-	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
-	info->ifinfo.Advertise       = m->AdvertiseLocalAddresses;
+	if (ifa->ifa_addr->sa_family == AF_INET)
+		{
+		struct sockaddr_in *ifa_addr = (struct sockaddr_in *)ifa->ifa_addr;
+		info->ifinfo.ip.type = mDNSAddrType_IPv4;
+		info->ifinfo.ip.addr.ipv4.NotAnInteger = ifa_addr->sin_addr.s_addr;
+		}
+	else if (ifa->ifa_addr->sa_family == AF_INET6)
+		{
+		struct sockaddr_in6 *ifa_addr = (struct sockaddr_in6 *)ifa->ifa_addr;
+		info->ifinfo.ip.type = mDNSAddrType_IPv6;
+		if (IN6_IS_ADDR_LINKLOCAL(&ifa_addr->sin6_addr)) ifa_addr->sin6_addr.__u6_addr.__u6_addr16[1] = 0;
+		info->ifinfo.ip.addr.ipv6 = *(mDNSv6Addr*)&ifa_addr->sin6_addr;
+		}
+	else
+		{
+		debugf("SetupInterface invalid sa_family %d", ifa->ifa_addr->sa_family);
+		return(-1);
+		}
+
+	info->ifinfo.InterfaceID = alias;
+	// info->ifinfo.ipv4 set above
+	// info->ifinfo.ipv6 set above
+	info->ifinfo.scope_id                 = if_nametoindex(ifa->ifa_name);
+	info->ifinfo.Advertise                = m->AdvertiseLocalAddresses;
 	info->m         = m;
 	info->ifa_name  = (char *)mallocL("NetworkInterfaceInfo2 name", strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
 	strcpy(info->ifa_name, ifa->ifa_name);
-	info->alias     = SearchForInterfaceByName(m, ifa->ifa_name);
-	info->socket    = 0;
-	info->cfsocket  = 0;
+	info->socket     = 0;
+	info->cfsocket   = 0;
 #if mDNS_AllowPort53
 	info->socket53   = 0;
 	info->cfsocket53 = 0;
 #endif
+	info->v6socket	 = 0;
+	info->v6cfsocket = 0;
 
 	mDNS_RegisterInterface(m, &info->ifinfo);
 
-	if (info->alias)
-		debugf("SetupInterface: %s Flags %04X %.4a is an alias of %.4a",
-			ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip, &info->alias->ifinfo.ip);
-
+	if (alias->socket == 0 && ifa->ifa_addr->sa_family == AF_INET)
+		{
+		CFSocketContext myCFSocketContext = { 0, alias, NULL, NULL, NULL };
+		
 #if mDNS_AllowPort53
-	err = SetupSocket(ifa_addr, UnicastDNSPort,   &info->socket53, &info->cfsocket53, &myCFSocketContext);
+		err = SetupSocket(ifa, UnicastDNSPort,   &alias->socket53, &alias->cfsocket53, &myCFSocketContext);
 #endif
-	if (!err)
-		err = SetupSocket(ifa_addr, MulticastDNSPort, &info->socket, &info->cfsocket, &myCFSocketContext);
+		if (!err)
+			err = SetupSocket(ifa, MulticastDNSPort, &alias->socket, &alias->cfsocket, &myCFSocketContext);
+		
+		if (err == 0)
+			debugf("SetupInterface: created v4 socket(s) for %s, InterfaceID %04X, ip %#a",
+				ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+		else
+			debugf("SetupInterface: created v4 socket(s) failed for %s, InterfaceID %04X, ip %#a",
+				ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+		}
 
-	debugf("SetupInterface: %s Flags %04X %.4a Registered",
-		ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip);
+	if (alias->v6socket == 0 && ifa->ifa_addr->sa_family == AF_INET6)
+		{
+		CFSocketContext myCFSocketContext = { 0, alias, NULL, NULL, NULL };
+		
+		err = SetupSocket(ifa, MulticastDNSPort, &alias->v6socket, &alias->v6cfsocket, &myCFSocketContext);
+		
+		if (err == 0)
+			debugf("SetupInterface: created v6 socket for %s, InterfaceID %04X, ip %#a",
+				ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+		else
+			debugf("SetupInterface: created v6 socket failed for %s, InterfaceID %04X, ip %#a",
+				ifa->ifa_name, info->ifinfo.InterfaceID, &info->ifinfo.ip);
+		}
+
+
+	debugf("SetupInterface: %s index %d Flags %04X %#a Registered",
+		ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, &info->ifinfo.ip);
 
 	return(err);
 	}
@@ -428,6 +592,8 @@ mDNSlocal void ClearInterfaceList(mDNS *const m)
 		if (info->ifa_name  ) freeL("NetworkInterfaceInfo2 name", info->ifa_name);
 		if (info->socket > 0) shutdown(info->socket, 2);
 		if (info->cfsocket) { CFSocketInvalidate(info->cfsocket); CFRelease(info->cfsocket); }
+		if (info->v6socket > 0) shutdown(info->v6socket, 2);
+		if (info->v6cfsocket) { CFSocketInvalidate(info->v6cfsocket); CFRelease(info->v6cfsocket); }
 #if mDNS_AllowPort53
 		if (info->socket53 > 0) shutdown(info->socket53, 2);
 		if (info->cfsocket53) { CFSocketInvalidate(info->cfsocket53); CFRelease(info->cfsocket53); }
@@ -459,8 +625,8 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	while (ifa)
 		{
 #if LIST_ALL_INTERFACES
-		if (ifa->ifa_addr->sa_family != AF_INET)
-			debugf("SetupInterface: %s Flags %04X Family %d not AF_INET",
+		if (ifa->ifa_addr->sa_family != AF_INET && ifa->ifa_addr->sa_family != AF_INET6)
+			debugf("SetupInterface: %s Flags %04X Family %d not AF_INET or AF_INET6",
 				ifa->ifa_name, ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (!(ifa->ifa_flags & IFF_UP))
 			debugf("SetupInterface: %s Flags %04X Interface not IFF_UP", ifa->ifa_name, ifa->ifa_flags);
@@ -469,8 +635,8 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 		if (ifa->ifa_flags & IFF_POINTOPOINT)
 			debugf("SetupInterface: %s Flags %04X Interface IFF_POINTOPOINT", ifa->ifa_name, ifa->ifa_flags);
 #endif
-		if (ifa->ifa_addr->sa_family == AF_INET && (ifa->ifa_flags & IFF_UP) &&
-			!(ifa->ifa_flags & IFF_POINTOPOINT))
+		if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) &&
+		    (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_POINTOPOINT))
 			{
 			if (ifa->ifa_flags & IFF_LOOPBACK)
 				theLoopback = ifa;

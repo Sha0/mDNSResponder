@@ -66,6 +66,11 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.4  2002/12/23 22:13:31  jgraessl
+
+Reviewed by: Stuart Cheshire
+Initial IPv6 support for mDNSResponder.
+
 Revision 1.3  2002/09/21 20:44:53  zarzycki
 Added APSL info
 
@@ -247,7 +252,7 @@ int main(int argc, char **argv)
         ConvertCStringToDomainName(gServiceType, &type);
         ConvertCStringToDomainName("local.", &domain);
 
-        status = mDNS_StartBrowse(&mDNSStorage, &question, &type, &domain, zeroIPAddr, BrowseCallback, NULL);
+        status = mDNS_StartBrowse(&mDNSStorage, &question, &type, &domain, mDNSInterface_Any, BrowseCallback, NULL);
     
         // Run the platform main event loop until the user types ^C. 
         // The BrowseCallback routine is responsible for printing 

@@ -80,7 +80,7 @@ static void PrintServiceInfo(SearcherServices *services)
 			ConvertDomainLabelToCString_unescaped(&name, c_name);
 			ConvertDomainNameToCString(&type, c_type);
 			ConvertDomainNameToCString(&domain, c_dom);
-			sprintf(c_ip, "%d.%d.%d.%d", s->ip.b[0], s->ip.b[1], s->ip.b[2], s->ip.b[3]);
+			sprintf(c_ip, "%d.%d.%d.%d", s->ip.addr.ipv4.b[0], s->ip.addr.ipv4.b[1], s->ip.addr.ipv4.b[2], s->ip.addr.ipv4.b[3]);
 
 			printf("%-19s %-16s %-14s ", c_name, c_type, c_dom);
 			if (ls->add) printf("%-16s %5d %s\n", c_ip, port, s->TXTinfo);
@@ -125,8 +125,9 @@ static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRe
 	if (!info) { services->lostRecords = true; return; }
 	
 	info->i.name          = answer->rdata->u.name;
-	info->i.InterfaceAddr = answer->InterfaceAddr;
-	info->i.ip            = zeroIPAddr;
+	info->i.InterfaceID   = answer->InterfaceID;
+	info->i.ip.type		  = mDNSAddrType_IPv4;
+	info->i.ip.addr.ipv4  = zeroIPAddr;
 	info->i.port          = zeroIPPort;
 	info->add             = (answer->rrremainingttl > 0);
 	info->dom             = mDNSfalse;
@@ -157,8 +158,9 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	if (!info) { services->lostRecords = true; return; }
 	
 	info->i.name          = answer->rdata->u.name;
-	info->i.InterfaceAddr = answer->InterfaceAddr;
-	info->i.ip            = zeroIPAddr;
+	info->i.InterfaceID   = answer->InterfaceID;
+	info->i.ip.type		  = mDNSAddrType_IPv4;
+	info->i.ip.addr.ipv4  = zeroIPAddr;
 	info->i.port          = zeroIPPort;
 	info->add             = (answer->rrremainingttl > 0);
 	info->dom             = mDNStrue;
@@ -214,9 +216,9 @@ int main()
 			printf("\nSending mDNS service lookup queries and waiting for responses...\n\n");
 			ConvertCStringToDomainName("_printer._tcp.", &srvtype);
 			ConvertCStringToDomainName("local.", &srvdom);
-			err = mDNS_StartBrowse(&mDNSStorage, &browsequestion, &srvtype, &srvdom, zeroIPAddr, FoundInstance, &services);
+			err = mDNS_StartBrowse(&mDNSStorage, &browsequestion, &srvtype, &srvdom, mDNSInterface_Any, FoundInstance, &services);
 			if (err) break;
-			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, zeroIPAddr, FoundDomain, &services);
+			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, mDNSInterface_Any, FoundDomain, &services);
 			if (err) break;
 			}
 

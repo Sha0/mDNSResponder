@@ -66,6 +66,11 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.4  2002/12/23 22:13:31  jgraessl
+
+Reviewed by: Stuart Cheshire
+Initial IPv6 support for mDNSResponder.
+
 Revision 1.3  2002/09/21 20:44:53  zarzycki
 Added APSL info
 
@@ -81,6 +86,8 @@ First checkin
 #define __mDNSPlatformPosix_h
 
 #include <sys/time.h>
+
+#define mDNSIPv6Support 1
 
 #ifdef  __cplusplus
     extern "C" {

@@ -66,6 +66,11 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.4  2002/12/23 22:13:32  jgraessl
+
+Reviewed by: Stuart Cheshire
+Initial IPv6 support for mDNSResponder.
+
 Revision 1.3  2002/09/21 20:44:53  zarzycki
 Added APSL info
 
@@ -99,9 +104,9 @@ First checkin
 // Renamed from my_in_pktinfo because in_pktinfo is used by Linux.
 
 struct my_in_pktinfo {
-    struct in_addr  ipi_addr;               /* dst IPv4 address */
-    int             ipi_ifindex;            /* received interface index */
-    char            ipi_ifname[IFI_NAME];   /* received interface name  */
+    struct sockaddr_storage ipi_addr;
+    int                     ipi_ifindex;            /* received interface index */
+    char                    ipi_ifname[IFI_NAME];   /* received interface name  */
 };
 
 extern ssize_t recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,

@@ -135,7 +135,7 @@ mDNSlocal OSStatus CreateProxyRegistrationForRealService(mDNS *m, UInt16 PortAsN
 mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	{
 	char buffer[256];
-	mDNSIPAddr ip = m->HostInterfaces->ip;
+	mDNSIPAddr ip = m->HostInterfaces->ip.addr.ipv4;
 	
 	ConvertDomainNameToCString(&m->hostname1, buffer);
 	printf("Name %s\n", buffer);
@@ -164,7 +164,7 @@ mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	//RegisterService(m, &njp, 80, "NJP/", &m->nicelabel, "_njp._tcp.", "local.");
 
 	// Advertise that apple.com. is available for browsing
-	mDNS_AdvertiseDomains(m, &browsedomain, mDNS_DomainTypeBrowse, zeroIPAddr, "apple.com.");
+	mDNS_AdvertiseDomains(m, &browsedomain, mDNS_DomainTypeBrowse, mDNSInterface_Any, "apple.com.");
 
 	return(kOTNoError);
 	}

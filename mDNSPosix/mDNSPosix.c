@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.5  2002/12/23 22:13:31  jgraessl
+
+Reviewed by: Stuart Cheshire
+Initial IPv6 support for mDNSResponder.
+
 Revision 1.4  2002/09/27 01:47:45  cheshire
 Workaround for Linux 2.0 systems that don't have IP_PKTINFO
 
@@ -71,6 +76,7 @@ struct PosixNetworkInterface {
     PosixNetworkInterface * aliasIntf;
     int                     index;
     int                     multicastSocket;
+    int                     multicastSocketv6;
 };
 
 // ***************************************************************************
@@ -119,48 +125,97 @@ static mStatus PosixErrorToStatus(int errNum)
     return result;
 }
 
+static void SockAddrTomDNSAddr(const struct sockaddr *const s_addr, mDNSAddr *ipAddr, mDNSIPPort *ipPort)
+{
+	switch (s_addr->sa_family)
+	{
+		case AF_INET:
+		{
+			struct sockaddr_in* sin          = (struct sockaddr_in*)s_addr;
+			ipAddr->type                     = mDNSAddrType_IPv4;
+			ipAddr->addr.ipv4.NotAnInteger   = sin->sin_addr.s_addr;
+			if (ipPort) ipPort->NotAnInteger = sin->sin_port;
+		}
+		break;
+#ifdef mDNSIPv6Support
+		case AF_INET6:
+		{
+			struct sockaddr_in6* sin6        = (struct sockaddr_in6*)s_addr;
+			assert(sin6->sin6_len == sizeof(*sin6));
+			ipAddr->type                     = mDNSAddrType_IPv6;
+			ipAddr->addr.ipv6                = *(mDNSv6Addr*)&sin6->sin6_addr;
+			if (ipPort) ipPort->NotAnInteger = sin6->sin6_port;
+		}
+		break;
+#endif
+		default:
+			verbosedebugf("SockAddrTomDNSAddr: Uknown address family %d\n", s_addr->sa_family);
+			ipAddr->type = mDNSAddrType_None;
+			if (ipPort) ipPort->NotAnInteger = 0;
+		break;
+	}
+}
+
 #pragma mark ***** Send and Receive
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-    mDNSIPAddr src, mDNSIPPort srcPort, mDNSIPAddr dst, mDNSIPPort dstPort)
+    mDNSOpaqueID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
     // mDNS core calls this routine when it needs to send a packet. 
 {
     int                     err;
-    struct sockaddr_in      to;
+    struct sockaddr_storage to;
     PosixNetworkInterface * thisIntf;
 
     assert(m != NULL);
     assert(msg != NULL);
     assert(end != NULL);
     assert( (((char *) end) - ((char *) msg)) > 0 );
-    assert(src.NotAnInteger != 0);      // Can't send from zero source address
-    assert(srcPort.NotAnInteger != 0);  // Nor from a zero source port
-    assert(dstPort.NotAnInteger != 0);  // Nor from a zero source port
+    assert(InterfaceID != 0); // Can't send from zero source address
+    assert(srcPort.NotAnInteger != 0);     // Nor from a zero source port
+    assert(dstPort.NotAnInteger != 0);     // Nor from a zero source port
 
-    to.sin_family      = AF_INET;
-    to.sin_port        = dstPort.NotAnInteger;
-    to.sin_addr.s_addr = dst.    NotAnInteger;
-
-    // Loop through all the interfaces looking for one whose address 
-    // matches the source address, and send on that.
+	if (dst->type == mDNSAddrType_IPv4) {
+		struct sockaddr_in *sin = (struct sockaddr_in*)&to;
+		sin->sin_len            = sizeof(*sin);
+		sin->sin_family         = AF_INET;
+		sin->sin_port           = dstPort.NotAnInteger;
+		sin->sin_addr.s_addr    = dst->addr.ipv4.NotAnInteger;
+	}
+#ifdef mDNSIPv6Support
+	else if (dst->type == mDNSAddrType_IPv6) {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&to;
+		
+		mDNSPlatformMemZero(sin6, sizeof(*sin6));
+		sin6->sin6_len            = sizeof(*sin6);
+		sin6->sin6_family         = AF_INET6;
+		sin6->sin6_port           = dstPort.NotAnInteger;
+		sin6->sin6_addr           = *(struct in6_addr*)&dst->addr.ipv6;
+	}
+#endif
 
     err = 0;
-    thisIntf = (PosixNetworkInterface *)(m->HostInterfaces);
-    while (thisIntf && err == 0) {
-        if (thisIntf->coreIntf.ip.NotAnInteger == src.NotAnInteger) {
-            err = sendto(thisIntf->multicastSocket, 
-                         msg, (char*)end - (char*)msg, 
-                         0,                                     // flags
-                         (struct sockaddr *)&to, sizeof(to));
-            if (err > 0) {
-                err = 0;
-            } else if (err < 0) {
-                verbosedebugf("mDNSPlatformSendUDP got error %d (%s) sending packet to %.4a on interface %.4a/%s/%d",
-                              errno, strerror(errno), &dst, &thisIntf->coreIntf.ip, thisIntf->intfName, thisIntf->index);
-            }
-        }
-        thisIntf = (PosixNetworkInterface *)(thisIntf->coreIntf.next);
-    }
+    thisIntf = (PosixNetworkInterface *)(InterfaceID);
+    if (dst->type == mDNSAddrType_IPv4) {
+		err = sendto(thisIntf->multicastSocket, 
+					 msg, (char*)end - (char*)msg, 
+					 0,                                     // flags
+					 (struct sockaddr *)&to, to.ss_len);
+	}
+#ifdef mDNSIPv6Support
+	else if (dst->type == mDNSAddrType_IPv6) {
+		err = sendto(thisIntf->multicastSocketv6,
+					 msg, (char*)end - (char*)msg,
+					 0,
+					 (struct sockaddr *)&to, to.ss_len);
+	}
+#endif
+
+	if (err > 0) {
+		err = 0;
+	} else if (err < 0) {
+		verbosedebugf("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a on interface %#a/%s/%d",
+					  errno, strerror(errno), dst, &thisIntf->coreIntf.ip, thisIntf->intfName, thisIntf->index);
+	}
 
     return PosixErrorToStatus(err);
 }
@@ -169,13 +224,12 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
     // This routine is called where the main loop detects that 
     // data is available on a socket.
 {
-    mDNSIPAddr intfAddr;
-	mDNSIPAddr senderAddr, destAddr;
+	mDNSAddr   senderAddr, destAddr;
     mDNSIPPort senderPort;
     ssize_t                 packetLen;
     DNSMessage              packet;
     struct my_in_pktinfo    packetInfo;
-    struct sockaddr_in      from;
+    struct sockaddr_storage from;
     socklen_t               fromLen;
     int                     flags;
     mDNSBool                reject;
@@ -191,12 +245,8 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
                                &packetInfo);
 
     if (packetLen >= 0) {
-        assert(fromLen == sizeof(from));
-        
-        intfAddr                = intf->coreIntf.ip;
-        senderAddr.NotAnInteger = from.sin_addr.s_addr;
-        senderPort.NotAnInteger = from.sin_port;
-        destAddr.NotAnInteger   = packetInfo.ipi_addr.s_addr;
+        SockAddrTomDNSAddr((struct sockaddr*)&from, &senderAddr, &senderPort);
+        SockAddrTomDNSAddr((struct sockaddr*)&packetInfo.ipi_addr, &destAddr, NULL);
         
         // If we have broken IP_RECVDSTADDR functionality (so far 
         // I've only seen this on OpenBSD) then apply a hack to 
@@ -208,19 +258,20 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
         // I must admit that I could just be doing something 
         // wrong on OpenBSD and hence triggering this problem 
         // but I'm at a loss as to how.
-        
-        #if HAVE_BROKEN_RECVDSTADDR
-            if ( (destAddr.NotAnInteger == 0) && (flags & MSG_MCAST) ) {
-                destAddr.NotAnInteger = AllDNSLinkGroup.NotAnInteger;
-            }
-        #endif
-
+		//
 		// If this platform doesn't have IP_PKTINFO or IP_RECVDSTADDR, then we have
 		// no way to tell the destination address or interface this packet arrived on,
 		// so all we can do is just assume it's a multicast
-		#if !defined(IP_PKTINFO) && !defined(IP_RECVDSTADDR)
-			destAddr = AllDNSLinkGroup;
-		#endif
+        
+        #if HAVE_BROKEN_RECVDSTADDR || (!defined(IP_PKTINFO) && !defined(IP_RECVDSTADDR))
+            if ( (destAddr.NotAnInteger == 0) && (flags & MSG_MCAST) ) {
+            	destAddr.type == senderAddr.type;
+                if (senderAddr.type == mDNSAddrType_IPv4)
+					destAddr.addr.ipv4 = AllDNSLinkGroup;
+				else if (senderAddr.type == mDNSAddrType_IPv6)
+					destAddr.addr.ipv6 = AllDNSLinkGroupv6;
+            }
+        #endif
 
         // We only accept the packet if the interface on which it came 
         // in matches the interface associated with this socket. 
@@ -238,11 +289,11 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
         }
 
         if (reject) {
-            debugf("SocketDataReady ignored a packet from %.4a to %.4a on interface %s/%d expecting %.4a/%s/%d",
+            debugf("SocketDataReady ignored a packet from %#a to %#a on interface %s/%d expecting %#a/%s/%d",
                     &senderAddr, &destAddr, packetInfo.ipi_ifname, packetInfo.ipi_ifindex, &intf->coreIntf.ip, intf->intfName, intf->index);
             packetLen = -1;
         } else {
-            verbosedebugf("SocketDataReady got a packet from %.4a to %.4a on interface %.4a/%s/%d",
+            verbosedebugf("SocketDataReady got a packet from %#a to %#a on interface %#a/%s/%d",
                 &senderAddr, &destAddr, &intf->coreIntf.ip, intf->intfName, intf->index);
         }
     }
@@ -255,9 +306,9 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
     if (packetLen >= 0) {
         mDNSCoreReceive(m, 
                         &packet, (mDNSu8 *)&packet + packetLen, 
-                        senderAddr, senderPort, 
-                        destAddr, MulticastDNSPort, 
-                        intf->coreIntf.ip);
+                        &senderAddr, senderPort, 
+                        &destAddr, MulticastDNSPort, 
+                        intf->coreIntf.InterfaceID);
     }
 }
 
@@ -312,6 +363,10 @@ static void FreePosixNetworkInterface(PosixNetworkInterface *intf)
         junk = close(intf->multicastSocket);
         assert(junk == 0);
     }
+    if (intf->multicastSocketv6 != -1) {
+        junk = close(intf->multicastSocketv6);
+        assert(junk == 0);
+    }
     free(intf);
 }
 
@@ -336,14 +391,12 @@ static void ClearInterfaceList(mDNS *const m)
     }
 }
 
-static int SetupSocket(struct sockaddr_in *intfAddr, mDNSIPPort port, int *sktPtr)
+static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interfaceIndex, int *sktPtr)
     // Sets up a multicast send/receive socket for the specified 
     // port on the interface specified by the IP addrelss intfAddr.
 {
     int err;
     int junk;
-    struct ip_mreq imr;
-    struct sockaddr_in bindAddr;
     static const int kOn = 1;
     static const int kIntTwoFiveFive = 255;
     static const unsigned char kByteTwoFiveFive = 255;
@@ -355,11 +408,23 @@ static int SetupSocket(struct sockaddr_in *intfAddr, mDNSIPPort port, int *sktPt
     // Open the socket...
     
     err = 0;
-    *sktPtr = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (*sktPtr < 0) {
-        err = errno;
-        perror("socket");
-    }
+    if (intfAddr->sa_family == AF_INET) {
+		*sktPtr = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (*sktPtr < 0) {
+			err = errno;
+			perror("socket");
+		}
+	}
+#ifdef mDNSIPv6Support
+	else if (intfAddr->sa_family == AF_INET6) {
+		*sktPtr = socket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+		if (*sktPtr < 0) {
+			err = errno;
+			perror("socket");
+		}
+	}
+#endif
+	else return EINVAL;
     
     // ... with a shared UDP port
     
@@ -379,105 +444,208 @@ static int SetupSocket(struct sockaddr_in *intfAddr, mDNSIPPort port, int *sktPt
 
     // We want to receive destination addresses and interface identifiers.
 
-    if (err == 0) {
-        #if defined(IP_PKTINFO)
-
-            // Linux
-            
-            err = setsockopt(*sktPtr, IPPROTO_IP, IP_PKTINFO, &kOn, sizeof(kOn));
-            if (err < 0) {  
-                err = errno;
-                perror("setsockopt - IP_PKTINFO");
-            }
-        #elif defined(IP_RECVDSTADDR) || defined(IP_RECVIF)
-
-            // BSD and Solaris
-            
-            #if defined(IP_RECVDSTADDR)
-                err = setsockopt(*sktPtr, IPPROTO_IP, IP_RECVDSTADDR, &kOn, sizeof(kOn));
-                if (err < 0) { 
-                    err = errno;
-                    perror("setsockopt - IP_RECVDSTADDR");
-                }
-            #endif
-        
-            #if defined(IP_RECVIF)
-                if (err == 0) {
-                        err = setsockopt(*sktPtr, IPPROTO_IP, IP_RECVIF, &kOn, sizeof(kOn));
-                        if (err < 0) { 
-                            err = errno;
-                            perror("setsockopt - IP_RECVIF");
-                        }
-                }
-            #endif
-        #else
-            #warning This platform has no way to get the destination interface information -- will only work for single-homed hosts
-        #endif
-    }
-    
-    // Add multicast group membership on this interface
-    
-    if (err == 0) {
-        imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
-        imr.imr_interface        = intfAddr->sin_addr;
-        err = setsockopt(*sktPtr, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr)); 
-        if (err < 0) { 
-            err = errno;
-            perror("setsockopt - IP_ADD_MEMBERSHIP");
-        }
-    }
-
-    // Specify outgoing interface too
-    
-    if (err == 0) {
-        err = setsockopt(*sktPtr, IPPROTO_IP, IP_MULTICAST_IF, &intfAddr->sin_addr, sizeof(intfAddr->sin_addr));
-        if (err < 0) { 
-            err = errno;
-            perror("setsockopt - IP_MULTICAST_IF");
-        }
-    }
-
-    // Per the mDNS spec, send unicast packets with TTL 255
-    
-    if (err == 0) {
-        err = setsockopt(*sktPtr, IPPROTO_IP, IP_TTL, &kIntTwoFiveFive, sizeof(kIntTwoFiveFive));
-        if (err < 0) { 
-            err = errno;
-            perror("setsockopt - IP_TTL");
-        }
-    }
-
-    // and multicast packets with TTL 255 too
-    
-    // There's some debate as to whether IP_MULTICAST_TTL is an int or a byte
-    // so we just try both.
-    
-    if (err == 0) {
-            err = setsockopt(*sktPtr, IPPROTO_IP, IP_MULTICAST_TTL, 
-                             &kByteTwoFiveFive, sizeof(kByteTwoFiveFive));
-        if (err < 0 && errno == EINVAL) {
-        err = setsockopt(*sktPtr, IPPROTO_IP, IP_MULTICAST_TTL, 
-                         &kIntTwoFiveFive, sizeof(kIntTwoFiveFive));
-        }
-        if (err < 0) { 
-            err = errno;
-            perror("setsockopt - IP_MULTICAST_TTL");
-        }
-    }
-
-    // And start listening for packets
-
-    if (err == 0) {
-        bindAddr.sin_family      = AF_INET;
-        bindAddr.sin_port        = port.NotAnInteger;
-        bindAddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
-        err = bind(*sktPtr, (struct sockaddr *) &bindAddr, sizeof(bindAddr));
-        if (err < 0) {
-            err = errno;
-            perror("bind");
-            fflush(stderr);
-        }
-    }
+	if (intfAddr->sa_family == AF_INET) {
+		struct ip_mreq imr;
+		struct sockaddr_in bindAddr;
+		if (err == 0) {
+			#if defined(IP_PKTINFO)
+	
+				// Linux
+				
+				err = setsockopt(*sktPtr, IPPROTO_IP, IP_PKTINFO, &kOn, sizeof(kOn));
+				if (err < 0) {  
+					err = errno;
+					perror("setsockopt - IP_PKTINFO");
+				}
+			#elif defined(IP_RECVDSTADDR) || defined(IP_RECVIF)
+	
+				// BSD and Solaris
+				
+				#if defined(IP_RECVDSTADDR)
+					err = setsockopt(*sktPtr, IPPROTO_IP, IP_RECVDSTADDR, &kOn, sizeof(kOn));
+					if (err < 0) { 
+						err = errno;
+						perror("setsockopt - IP_RECVDSTADDR");
+					}
+				#endif
+			
+				#if defined(IP_RECVIF)
+					if (err == 0) {
+							err = setsockopt(*sktPtr, IPPROTO_IP, IP_RECVIF, &kOn, sizeof(kOn));
+							if (err < 0) { 
+								err = errno;
+								perror("setsockopt - IP_RECVIF");
+							}
+					}
+				#endif
+			#else
+				#warning This platform has no way to get the destination interface information -- will only work for single-homed hosts
+			#endif
+		}
+		
+		// Add multicast group membership on this interface
+		
+		if (err == 0) {
+			imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
+			imr.imr_interface        = ((struct sockaddr_in*)intfAddr)->sin_addr;
+			err = setsockopt(*sktPtr, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr)); 
+			if (err < 0) { 
+				err = errno;
+				perror("setsockopt - IP_ADD_MEMBERSHIP");
+			}
+		}
+	
+		// Specify outgoing interface too
+		
+		if (err == 0) {
+			err = setsockopt(*sktPtr, IPPROTO_IP, IP_MULTICAST_IF,
+			                 &((struct sockaddr_in*)intfAddr)->sin_addr,
+			                 sizeof(struct in_addr));
+			if (err < 0) { 
+				err = errno;
+				perror("setsockopt - IP_MULTICAST_IF");
+			}
+		}
+	
+		// Per the mDNS spec, send unicast packets with TTL 255
+		
+		if (err == 0) {
+			err = setsockopt(*sktPtr, IPPROTO_IP, IP_TTL, &kIntTwoFiveFive, sizeof(kIntTwoFiveFive));
+			if (err < 0) { 
+				err = errno;
+				perror("setsockopt - IP_TTL");
+			}
+		}
+	
+		// and multicast packets with TTL 255 too
+		
+		// There's some debate as to whether IP_MULTICAST_TTL is an int or a byte
+		// so we just try both.
+		
+		if (err == 0) {
+				err = setsockopt(*sktPtr, IPPROTO_IP, IP_MULTICAST_TTL, 
+								 &kByteTwoFiveFive, sizeof(kByteTwoFiveFive));
+			if (err < 0 && errno == EINVAL) {
+			err = setsockopt(*sktPtr, IPPROTO_IP, IP_MULTICAST_TTL, 
+							 &kIntTwoFiveFive, sizeof(kIntTwoFiveFive));
+			}
+			if (err < 0) { 
+				err = errno;
+				perror("setsockopt - IP_MULTICAST_TTL");
+			}
+		}
+	
+		// And start listening for packets
+	
+		if (err == 0) {
+			bindAddr.sin_family      = AF_INET;
+			bindAddr.sin_port        = port.NotAnInteger;
+			bindAddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
+			err = bind(*sktPtr, (struct sockaddr *) &bindAddr, sizeof(bindAddr));
+			if (err < 0) {
+				err = errno;
+				perror("bind");
+				fflush(stderr);
+			}
+		}
+	} // AF_INET
+#ifdef mDNSIPv6Support
+	else if (intfAddr->sa_family == AF_INET6) {
+		struct ipv6_mreq imr6;
+		struct sockaddr_in6 bindAddr6;
+		if (err == 0) {
+			#if defined(IPV6_PKTINFO)
+				err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_PKTINFO, &kOn, sizeof(kOn));
+				if (err < 0) {  
+					err = errno;
+					perror("setsockopt - IPV6_PKTINFO");
+				}
+			#else
+				#warning This platform has no way to get the destination interface information for IPv6 -- will only work for single-homed hosts
+			#endif
+		}
+		
+		// Add multicast group membership on this interface
+		
+		if (err == 0) {
+			imr6.ipv6mr_multiaddr       = *(const struct in6_addr*)&AllDNSLinkGroupv6;
+			imr6.ipv6mr_interface       = interfaceIndex;
+			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_JOIN_GROUP, &imr6, sizeof(imr6)); 
+			if (err < 0) {
+				err = errno;
+				verbosedebugf("IPV6_JOIN_GROUP %.16a on %d failed.\n", &imr6.ipv6mr_multiaddr, imr6.ipv6mr_interface);
+				perror("setsockopt - IPV6_JOIN_GROUP");
+			}
+		}
+	
+		// Specify outgoing interface too
+		
+		if (err == 0) {
+			u_int	multicast_if = interfaceIndex;
+			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_MULTICAST_IF, &multicast_if, sizeof(multicast_if));
+			if (err < 0) { 
+				err = errno;
+				perror("setsockopt - IPV6_MULTICAST_IF");
+			}
+		}
+		
+		// We want to receive only IPv6 packets on this socket.
+		// Without this option, we may get IPv4 addresses as mapped addresses.
+		if (err == 0) {
+			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_V6ONLY, &kOn, sizeof(kOn));
+			if (err < 0) {
+				err = errno;
+				perror("setsockopt - IPV6_V6ONLY");
+			}
+		}
+	
+		// Per the mDNS spec, send unicast packets with TTL 255
+		
+		if (err == 0) {
+			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &kIntTwoFiveFive, sizeof(kIntTwoFiveFive));
+			if (err < 0) { 
+				err = errno;
+				perror("setsockopt - IPV6_UNICAST_HOPS");
+			}
+		}
+	
+		// and multicast packets with TTL 255 too
+		
+		// There's some debate as to whether IP_MULTICAST_TTL is an int or a byte
+		// so we just try both.
+		
+		if (err == 0) {
+			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, 
+							 &kByteTwoFiveFive, sizeof(kByteTwoFiveFive));
+			if (err < 0 && errno == EINVAL) {
+			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, 
+							 &kIntTwoFiveFive, sizeof(kIntTwoFiveFive));
+			}
+			if (err < 0) { 
+				err = errno;
+				perror("setsockopt - IPV6_MULTICAST_HOPS");
+			}
+		}
+	
+		// And start listening for packets
+	
+		if (err == 0) {
+			mDNSPlatformMemZero(&bindAddr6, sizeof(bindAddr6));
+			bindAddr6.sin6_len         = sizeof(bindAddr6);
+			bindAddr6.sin6_family      = AF_INET6;
+			bindAddr6.sin6_port        = port.NotAnInteger;
+			bindAddr6.sin6_flowinfo    = 0;
+//			bindAddr6.sin6_addr.s_addr = IN6ADDR_ANY_INIT; // Want to receive multicasts AND unicasts on this socket
+            bindAddr6.sin6_scope_id    = 0;
+			err = bind(*sktPtr, (struct sockaddr *) &bindAddr6, sizeof(bindAddr6));
+			if (err < 0) {
+				err = errno;
+				perror("bind");
+				fflush(stderr);
+			}
+		}
+	} // AF_INET6
+#endif
 
     // Set the socket to non-blocking.
     
@@ -506,13 +674,14 @@ static int SetupSocket(struct sockaddr_in *intfAddr, mDNSIPPort port, int *sktPt
     return err;
 }
 
-static int SetupOneInterface(mDNS *const m, struct sockaddr_in *intfAddr, const char *intfName, int index)
+static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName, int index)
     // Creates a PosixNetworkInterface for the interface whose 
     // IP address is intfAddr and whose name is intfName 
     // and registers it with mDNS core.
 {
     int err = 0;
     PosixNetworkInterface *intf;
+    PosixNetworkInterface *alias = NULL;
 
     assert(m != NULL);
     assert(intfAddr != NULL);
@@ -539,26 +708,35 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr_in *intfAddr, const 
     
     if (err == 0) {
         // Set up the fields required by the mDNS core.
-        
-        intf->coreIntf.ip.NotAnInteger = intfAddr->sin_addr.s_addr;
+        SockAddrTomDNSAddr(intfAddr, &intf->coreIntf.ip, NULL);
 		intf->coreIntf.Advertise = m->AdvertiseLocalAddresses;
 
         // Set up the extra fields in PosixNetworkInterface.
         
-        assert(intf->intfName != NULL);         // intf->intfName already set up above
-        intf->aliasIntf       = SearchForInterfaceByName(m, intf->intfName);
-        intf->index           = index;
-        intf->multicastSocket = -1;
+        assert(intf->intfName      != NULL);         // intf->intfName already set up above
+        intf->index                = if_nametoindex(intf->intfName);
+        intf->multicastSocket      = -1;
+        intf->multicastSocketv6    = -1;
+        alias                      = SearchForInterfaceByName(m, intf->intfName);
+        if (alias == NULL) alias   = intf;
+        intf->coreIntf.InterfaceID = alias;
 
-        if (intf->aliasIntf) {
-            debugf("SetupOneInterface: %s %.4a is an alias of %.4a",
-                intfName, &intf->coreIntf.ip, &intf->aliasIntf->coreIntf.ip);
+        if (alias != intf) {
+            debugf("SetupOneInterface: %s %#a is an alias of %#a",
+                intfName, &intf->coreIntf.ip, &alias->coreIntf.ip);
         }
     }
     
     // Set up the multicast socket
     if (err == 0) {
-        err = SetupSocket(intfAddr, MulticastDNSPort, &intf->multicastSocket);
+        if (alias->multicastSocket == -1 && intfAddr->sa_family == AF_INET) {
+            err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocket);
+        }
+#ifdef mDNSIPv6Support
+        else if (alias->multicastSocketv6 == -1 && intfAddr->sa_family == AF_INET6) {
+            err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocketv6);
+        }
+#endif
     }
 
     // The interface is all ready to go, let's register it with the mDNS core.
@@ -570,7 +748,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr_in *intfAddr, const 
     // Clean up.
     
     if (err == 0) { 
-        debugf("SetupOneInterface: %s %.4a Registered", intf->intfName, &intf->coreIntf.ip);
+        debugf("SetupOneInterface: %s %#a Registered", intf->intfName, &intf->coreIntf.ip);
         if (gMDNSPlatformPosixVerboseLevel > 0) {
             fprintf(stderr, "Registered interface %s\n", intf->intfName);
         }
@@ -578,7 +756,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr_in *intfAddr, const 
         // Use intfName instead of intf->intfName in the next line to avoid 
         // dereferencing NULL.
 
-        debugf("SetupOneInterface: %s %.4a failed to register %d", intfName, &intfAddr->sin_addr, err);
+        debugf("SetupOneInterface: %s %#a failed to register %d", intfName, &intf->coreIntf.ip, err);
 
         if (intf != NULL) {
             FreePosixNetworkInterface(intf);
@@ -605,14 +783,30 @@ static int SetupInterfaceList(mDNS *const m)
     if (intfList == NULL) {
         err = ENOENT;
     }
+#ifdef mDNSIPv6Support
+    if (err == 0) {
+		struct ifi_info *v6intfList;
+		
+    	/* Get the IPv6 list */
+		v6intfList = get_ifi_info(AF_INET6, mDNStrue);
+		
+		/* Link the IPv6 list to the end of the IPv4 list */
+		for (thisIntf = intfList; thisIntf->ifi_next != NULL; thisIntf = thisIntf->ifi_next)
+			;
+		thisIntf->ifi_next = v6intfList;
+	}
+#endif
     
     if (err == 0) {
         firstLoopbackIntf = NULL;
         
         thisIntf = intfList;
         while (thisIntf != NULL) {
-            if (      (thisIntf->ifi_addr->sa_family == AF_INET) 
-                  &&  (thisIntf->ifi_flags & IFF_UP) ) {
+            if (     ((thisIntf->ifi_addr->sa_family == AF_INET) 
+#ifdef mDNSIPv6Support
+					  || (thisIntf->ifi_addr->sa_family == AF_INET6)
+#endif
+                ) &&  (thisIntf->ifi_flags & IFF_UP) ) {
                 
                 // The Mac OS X code also avoids interfaces with the 
                 // IFF_POINTOPOINT flag set.  This prevents nuisance phone 
@@ -636,8 +830,8 @@ static int SetupInterfaceList(mDNS *const m)
                     // message.
                     
                     (void) SetupOneInterface(m,
-                                             (struct sockaddr_in *) thisIntf->ifi_addr, 
-                                             thisIntf->ifi_name, 
+                                             thisIntf->ifi_addr,
+                                             thisIntf->ifi_name,
                                              thisIntf->ifi_index);
                 }
             }
@@ -652,7 +846,7 @@ static int SetupInterfaceList(mDNS *const m)
         
         if ( (m->HostInterfaces == NULL) && (firstLoopbackIntf != NULL) ) {
             (void) SetupOneInterface(m, 
-                                     (struct sockaddr_in *) firstLoopbackIntf->ifi_addr, 
+                                     firstLoopbackIntf->ifi_addr, 
                                      firstLoopbackIntf->ifi_name, 
                                      firstLoopbackIntf->ifi_index);
         }
@@ -857,9 +1051,18 @@ mDNSexport void mDNSPosixGetFDSet(const mDNS *const m, int *nfds, fd_set *readfd
 
 	while (info)
 		{
-		if (*nfds < info->multicastSocket + 1)
-			*nfds = info->multicastSocket + 1;
-		FD_SET(info->multicastSocket, readfds);
+		if (info->multicastSocket != -1)
+			{
+			if (*nfds < info->multicastSocket + 1)
+				*nfds = info->multicastSocket + 1;
+			FD_SET(info->multicastSocket, readfds);
+			}
+		if (info->multicastSocketv6 != -1)
+			{
+			if (*nfds < info->multicastSocketv6 + 1)
+				*nfds = info->multicastSocketv6 + 1;
+			FD_SET(info->multicastSocketv6, readfds);
+			}
 		info = (PosixNetworkInterface *)(info->coreIntf.next);
 		}
 	}
@@ -880,13 +1083,17 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, int selectresult, fd_set *r
 		debugf("Got a packet");
 		while (info)
 			{
-			if (FD_ISSET(info->multicastSocket, readfds))
+			if (info->multicastSocket != -1 && FD_ISSET(info->multicastSocket, readfds))
 				{
 				FD_CLR(info->multicastSocket, readfds);
 				SocketDataReady(m, info, info->multicastSocket);
 				}
+			if (info->multicastSocketv6 != -1 && FD_ISSET(info->multicastSocketv6, readfds))
+				{
+				FD_CLR(info->multicastSocketv6, readfds);
+				SocketDataReady(m, info, info->multicastSocketv6);
+				}
 			info = (PosixNetworkInterface *)(info->coreIntf.next);
 			}
-	
 		}
 	}

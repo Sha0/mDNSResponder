@@ -37,6 +37,7 @@
 
 #include <libc.h>
 #include <arpa/nameser.h>
+#include <arpa/inet.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
@@ -133,16 +134,27 @@ static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, 
 	{
     (void)interface; // Unused
     (void)context; // Unused
-	if (address->sa_family != AF_INET)
+	if (address->sa_family != AF_INET && address->sa_family != AF_INET6)
 		printf("Unknown address family %d\n", address->sa_family);
 	else
 		{
-		struct sockaddr_in *ip = (struct sockaddr_in *)address;
-		union { uint32_t l; u_char b[4]; } addr = { ip->sin_addr.s_addr };
-		union { uint16_t s; u_char b[2]; } port = { ip->sin_port };
-		uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
         const char *src = txtRecord;
-		printf("Service can be reached at %d.%d.%d.%d:%u", addr.b[0], addr.b[1], addr.b[2], addr.b[3], PortAsNumber);
+        if (address->sa_family == AF_INET)
+            {
+            struct sockaddr_in *ip = (struct sockaddr_in *)address;
+            union { uint32_t l; u_char b[4]; } addr = { ip->sin_addr.s_addr };
+            union { uint16_t s; u_char b[2]; } port = { ip->sin_port };
+            uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
+            printf("Service can be reached at %d.%d.%d.%d:%u", addr.b[0], addr.b[1], addr.b[2], addr.b[3], PortAsNumber);
+            }
+        else if (address->sa_family == AF_INET6)
+            {
+            struct sockaddr_in6 *ip6 = (struct sockaddr_in6 *)address;
+            union { uint16_t s; u_char b[2]; } port = { ip6->sin6_port };
+            uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
+            char buffer[256];
+            printf("Service can be reached at %s:%u", inet_ntop(AF_INET6, &ip6->sin6_addr, buffer, sizeof(buffer)), PortAsNumber);
+            }
         while (*src)
             {
             char txtInfo[256];

@@ -66,6 +66,11 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.4  2002/12/23 22:13:31  jgraessl
+
+Reviewed by: Stuart Cheshire
+Initial IPv6 support for mDNSResponder.
+
 Revision 1.3  2002/09/21 20:44:53  zarzycki
 Added APSL info
 
@@ -118,6 +123,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     struct ifconf       ifc;
     struct ifreq        *ifr, ifrcopy;
     struct sockaddr_in  *sinptr;
+    struct sockaddr_in6 *sinptr6;
     int                 index;
 
     index = 0;
@@ -256,6 +262,24 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
             }
             break;
 
+#ifdef AF_INET6
+        case AF_INET6:
+            sinptr6 = (struct sockaddr_in6 *) &ifr->ifr_addr;
+            if (ifi->ifi_addr == NULL) {
+                ifi->ifi_addr = calloc(1, sizeof(struct sockaddr_in6));
+                if (ifi->ifi_addr == NULL) {
+                    goto gotError;
+                }
+                
+                /* Some platforms (*BSD) inject the prefix in IPv6LL addresses */
+                /* We need to strip that out */
+                if (IN6_IS_ADDR_LINKLOCAL(&sinptr6->sin6_addr))
+                	sinptr6->sin6_addr.__u6_addr.__u6_addr16[1] = 0;
+                memcpy(ifi->ifi_addr, sinptr6, sizeof(struct sockaddr_in6));
+            }
+            break;
+#endif
+
         default:
             break;
         }
@@ -371,9 +395,12 @@ struct in_pktinfo
         if (cmptr->cmsg_level == IPPROTO_IP && 
             cmptr->cmsg_type == IP_PKTINFO) {
             struct in_pktinfo *tmp;
+            struct sockaddr_in *sin = (struct sockaddr_in*)&pktp->ipi_addr;
             
             tmp = (struct in_pktinfo *) CMSG_DATA(cmptr);
-            memcpy(&pktp->ipi_addr, &tmp->ipi_addr, sizeof(struct in_addr));
+            sin->sin_family = AF_INET;
+            sin->sin_addr = tmp->ipi_addr;
+            sin->sin_port = 0;
             pktp->ipi_ifindex = tmp->ipi_ifindex;
             continue;
         }
@@ -382,9 +409,11 @@ struct in_pktinfo
 #ifdef  IP_RECVDSTADDR
         if (cmptr->cmsg_level == IPPROTO_IP &&
             cmptr->cmsg_type == IP_RECVDSTADDR) {
-
-            memcpy(&pktp->ipi_addr, CMSG_DATA(cmptr),
-                   sizeof(struct in_addr));
+            struct sockaddr_in *sin = (struct sockaddr_in*)&pktp->ipi_addr;
+            
+            sin->sin_family = AF_INET;
+            sin->sin_addr = *(struct in_addr*)CMSG_DATA(cmptr);
+            sin->sin_port = 0;
             continue;
         }
 #endif
@@ -404,6 +433,23 @@ struct in_pktinfo
             strncpy(pktp->ipi_ifname, sdl->sdl_data, nameLen);
             assert(pktp->ipi_ifname[IFI_NAME - 1] == 0);
             // null terminated because of memset above
+            continue;
+        }
+#endif
+
+#ifdef	IPV6_PKTINFO
+        if (cmptr->cmsg_level == IPPROTO_IPV6 && 
+            cmptr->cmsg_type == IPV6_PKTINFO) {
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&pktp->ipi_addr;
+			struct in6_pktinfo *ip6_info = (struct in6_pktinfo*)CMSG_DATA(cmptr);
+			
+            sin6->sin6_family   = AF_INET6;
+            sin6->sin6_len      = sizeof(*sin6);
+            sin6->sin6_addr     = ip6_info->ipi6_addr;
+            sin6->sin6_flowinfo = 0;
+            sin6->sin6_scope_id = 0;
+            sin6->sin6_port     = 0;
+			pktp->ipi_ifindex   = ip6_info->ipi6_ifindex;
             continue;
         }
 #endif

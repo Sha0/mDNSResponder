@@ -68,6 +68,11 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.11  2002/12/23 22:13:29  jgraessl
+
+Reviewed by: Stuart Cheshire
+Initial IPv6 support for mDNSResponder.
+
 Revision 1.10  2002/09/21 20:44:49  zarzycki
 Added APSL info
 
@@ -130,7 +135,7 @@ typedef struct
 extern mStatus  mDNSPlatformInit   (mDNS *const m);
 extern void     mDNSPlatformClose  (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSIPAddr src, mDNSIPPort srcport, mDNSIPAddr dst, mDNSIPPort dstport);
+	mDNSOpaqueID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
 
 extern mDNSs32  mDNSPlatformOneSecond;
 extern mDNSs32  mDNSPlatformTimeNow();
@@ -148,7 +153,7 @@ extern void     mDNSPlatformMemZero(                       void *dst, mDNSu32 le
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-								mDNSIPAddr srcaddr, mDNSIPPort srcport, mDNSIPAddr dstaddr, mDNSIPPort dstport, mDNSIPAddr InterfaceAddr);
+								const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSOpaqueID InterfaceID);
 extern void     mDNSCoreTask   (mDNS *const m);
 extern void     mDNSCoreSleep  (mDNS *const m, mDNSBool wake);
 

@@ -80,17 +80,17 @@ mDNSexport void debugf_(const char *format, ...)
 #endif
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	mDNSIPAddr src, mDNSIPPort srcPort, mDNSIPAddr dst, mDNSIPPort dstPort)
+	mDNSOpaqueID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
-	// Note: If we did multi-homing, we'd have to use the src parameter to specify from which interface to send this response
-	#pragma unused(src, srcPort)
+	// Note: If we did multi-homing, we'd have to use the InterfaceID parameter to specify from which interface to send this response
+	#pragma unused(InterfaceID, srcPort)
 
 	InetAddress InetDest;
 	TUnitData senddata;
 	
 	InetDest.fAddressType = AF_INET;
 	InetDest.fPort        = dstPort.NotAnInteger;
-	InetDest.fHost        = dst.NotAnInteger;
+	InetDest.fHost        = dst->addr.ipv4.NotAnInteger;
 
 	senddata.addr .maxlen = sizeof(InetDest);
 	senddata.addr .len    = sizeof(InetDest);
@@ -105,7 +105,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 
 mDNSlocal OSStatus readpacket(mDNS *m)
 	{
-	mDNSIPAddr senderaddr, destaddr, interface;
+	mDNSAddr senderaddr, destaddr;
+	mDNSOpaqueID interface;
 	mDNSIPPort senderport;
 	InetAddress sender;
 	char options[512];
@@ -129,17 +130,19 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	
 	if (err) return(err);
 
-	senderaddr.NotAnInteger = sender.fHost;
+	senderaddr.type = mDNSAddrType_IPv4;
+	senderaddr.addr.ipv4.NotAnInteger = sender.fHost;
 	senderport.NotAnInteger = sender.fPort;
-	destaddr  = AllDNSLinkGroup;		// For now, until I work out how to get the dest address, assume it was sent to AllDNSLinkGroup
-	interface = m->HostInterfaces->ip;
+	destaddr.type = mDNSAddrType_IPv4;
+	destaddr.addr.ipv4  = AllDNSLinkGroup;		// For now, until I work out how to get the dest address, assume it was sent to AllDNSLinkGroup
+	interface = m->HostInterfaces;
 	
 	if (recvdata.opt.len) debugf("readpacket: got some option data at %X, len %d", options, recvdata.opt.len);
 
 	if      (flags & T_MORE)                                debugf("ERROR: OTRcvUData() buffer too small (T_MORE set)");
 	else if (recvdata.addr.len < sizeof(InetAddress))       debugf("ERROR: recvdata.addr.len (%d) too short", recvdata.addr.len);
 	else if (recvdata.udata.len < sizeof(DNSMessageHeader)) debugf("ERROR: recvdata.udata.len (%d) too short", recvdata.udata.len);
-	else mDNSCoreReceive(m, &packet, recvdata.udata.buf + recvdata.udata.len, senderaddr, senderport, destaddr, MulticastDNSPort, interface);
+	else mDNSCoreReceive(m, &packet, recvdata.udata.buf + recvdata.udata.len, &senderaddr, senderport, &destaddr, MulticastDNSPort, interface);
 	
 	return(err);
 	}
@@ -180,8 +183,10 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			if (err) { debugf("OTInetGetInterfaceInfo failed %d", err); mDNSinitComplete(m, err); return; }
 
 			// Make our basic standard host resource records (address, PTR, etc.)
-			m->p->interface.ip.NotAnInteger = interfaceinfo.fAddress;
+			m->p->interface.ip.type = mDNSAddrType_IPv4;
+			m->p->interface.ip.addr.ipv4.NotAnInteger = interfaceinfo.fAddress;
 			m->p->interface.Advertise       = m->AdvertiseLocalAddresses;
+			m->p->interface.InterfaceID = &m->p->interface;
 			mDNS_RegisterInterface(m, &m->p->interface);
 			}
 			

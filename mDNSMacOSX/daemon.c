@@ -440,8 +440,8 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 			return(mStatus_UnknownErr);
 			}
 	
-		err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, zeroIPAddr, FoundDomain, x);
-		if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, zeroIPAddr, FoundDomain, x);
+		err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, mDNSInterface_Any, FoundDomain, x);
+		if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, mDNSInterface_Any, FoundDomain, x);
 	
 		if (err) AbortClient(client, x);
 		else EnableDeathNotificationForClient(client, x);
@@ -579,7 +579,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 	
 		LogOperation("%5d: DNSServiceBrowser(%##s%##s) START", client, &t, &d);
-		err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, zeroIPAddr, FoundInstance, x);
+		err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, mDNSInterface_Any, FoundInstance, x);
 	
 		if (err) AbortClient(client, x);
 		else EnableDeathNotificationForClient(client, x);
@@ -596,8 +596,9 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
-	struct sockaddr_in interface;
-	struct sockaddr_in address;
+	NetworkInterfaceInfo *ifinfo = (NetworkInterfaceInfo*)query->info->InterfaceID;
+	struct sockaddr_storage interface;
+	struct sockaddr_storage address;
 	char cstring[1024];
 	int i, pstrlen = query->info->TXTinfo[0];
 	(void)m;		// Unused
@@ -609,15 +610,43 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	bzero(&interface, sizeof(interface));
 	bzero(&address,   sizeof(address));
 
-	interface.sin_len         = sizeof(interface);
-	interface.sin_family      = AF_INET;
-	interface.sin_port        = 0;
-	interface.sin_addr.s_addr = query->info->InterfaceAddr.NotAnInteger;
+	if (ifinfo->ip.type == mDNSAddrType_IPv4)
+		{
+		struct sockaddr_in *sin = (struct sockaddr_in*)&interface;
+		sin->sin_len         = sizeof(*sin);
+		sin->sin_family      = AF_INET;
+		sin->sin_port        = 0;
+		sin->sin_addr.s_addr = ifinfo->ip.addr.ipv4.NotAnInteger;
+		}
+	else if (ifinfo->ip.type == mDNSAddrType_IPv6)
+		{
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&interface;
+		sin6->sin6_len       = sizeof(*sin6);
+		sin6->sin6_family    = AF_INET6;
+		sin6->sin6_flowinfo  = 0;
+		sin6->sin6_port      = 0;
+		sin6->sin6_addr		 = *(struct in6_addr*)&ifinfo->ip.addr.ipv6;
+		sin6->sin6_scope_id  = ifinfo->scope_id;
+		}
 	
-	address.sin_len           = sizeof(address);
-	address.sin_family        = AF_INET;
-	address.sin_port          = query->info->port.NotAnInteger;
-	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
+	if (query->info->ip.type == mDNSAddrType_IPv4)
+		{
+		struct sockaddr_in *sin = (struct sockaddr_in*)&address;
+		sin->sin_len           = sizeof(*sin);
+		sin->sin_family        = AF_INET;
+		sin->sin_port          = query->info->port.NotAnInteger;
+		sin->sin_addr.s_addr   = query->info->ip.addr.ipv4.NotAnInteger;
+		}
+	else
+		{
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&address;
+		sin6->sin6_len           = sizeof(*sin6);
+		sin6->sin6_family        = AF_INET6;
+		sin6->sin6_port          = query->info->port.NotAnInteger;
+		sin6->sin6_flowinfo      = 0;
+		sin6->sin6_addr			 = *(struct in6_addr*)&query->info->ip.addr.ipv6;
+		sin6->sin6_scope_id      = ifinfo->scope_id;
+		}
 
 	// The OS X DNSServiceResolverResolve() API is defined using a C-string,
 	// but the mDNS_StartResolveService() call actually returns a packed block of P-strings.
@@ -678,7 +707,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 		ConvertCStringToDomainName(regtype, &t);
 		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 		ConstructServiceName(&x->i.name, &n, &t, &d);
-		x->i.InterfaceAddr = zeroIPAddr;
+		x->i.InterfaceID = mDNSInterface_Any;
 	
 		LogOperation("%5d: DNSServiceResolver(%##s) START", client, &x->i.name);
 		err = mDNS_StartResolveService(&mDNSStorage, &x->q, &x->i, FoundInstanceInfo, x);
