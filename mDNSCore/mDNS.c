@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.146  2003/05/28 21:00:44  cheshire
+Re-enable "immediate answer burst" debugf message
+
 Revision 1.145  2003/05/28 20:57:44  cheshire
 <rdar://problem/3271550> mDNSResponder reports "Cannot perform multi-packet
 known-answer suppression ..." This is a known issue caused by a bug in the OS X 10.2
@@ -2991,7 +2994,7 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr)
 				// then reset its exponential backoff back to the start
 				if (ActiveQuestion(q) && ++q->RecentAnswers > 1 && m->timenow - q->LastQTime < mDNSPlatformOneSecond)
 					{
-					verbosedebugf("AnswerLocalQuestions: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
+					debugf("AnswerLocalQuestions: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 						q->name.c, DNSTypeName(q->rrtype));
 					q->ThisQInterval = mDNSPlatformOneSecond;
 					SetNextQueryTime(m,q);
