@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.264  2003/08/09 00:55:02  cheshire
+<rdar://problem/3366553> mDNSResponder is taking 20-30% of the CPU
+Don't scan the whole cache after every packet.
+
 Revision 1.263  2003/08/09 00:35:29  cheshire
 Moved AnswerNewQuestion() later in the file, in preparation for next checkin
 
@@ -2233,7 +2237,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->MPLastUnansweredQT= 0;			// Not strictly relevant for a local record
 	rr->MPUnansweredKA    = 0;			// Not strictly relevant for a local record
 	rr->MPExpectingKA     = mDNSfalse;	// Not strictly relevant for a local record
-	rr->FreshData         = mDNSfalse;	// Not strictly relevant for a local record
+	rr->NextInCFList      = mDNSNULL;	// Not strictly relevant for a local record
 
 	// Field Group 4: The actual information pertaining to this resource record
 //	rr->interface         = already set in mDNS_SetupResourceRecord
@@ -2831,7 +2835,7 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->MPLastUnansweredQT= 0;
 	rr->MPUnansweredKA    = 0;
 	rr->MPExpectingKA     = mDNSfalse;
-	rr->FreshData         = mDNStrue;
+	rr->NextInCFList      = mDNSNULL;
 
 	// Field Group 4: The actual information pertaining to this resource record
 	rr->InterfaceID       = InterfaceID;
@@ -4903,6 +4907,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	{
 	int i;
 	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
+	ResourceRecord *CacheFlushRecords = mDNSNULL;
+	ResourceRecord **cfp = &CacheFlushRecords;
 	
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
 	// to guard against spoof responses, then the only credible protection against that is cryptographic
@@ -5030,7 +5036,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						verbosedebugf("Found record size %5d interface %p already in cache: %s",
 							pkt.r.rdata->RDLength, InterfaceID, GetRRDisplayString(m, &pkt.r));
 					rr->TimeRcvd  = m->timenow;
-					rr->FreshData = mDNStrue;
+					
+					// If this record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
+					if (rr->RecordType & kDNSRecordTypeUniqueMask)
+						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList)
+							{ *cfp = rr; cfp = &rr->NextInCFList; }
+
 					if (pkt.r.rroriginalttl > 0)
 						{
 						rr->rroriginalttl = pkt.r.rroriginalttl;
@@ -5065,6 +5076,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					RData *saveptr = rr->rdata;		// Save the rr->rdata pointer
 					*rr = pkt.r;
 					rr->rdata = saveptr;			// and then restore it after the structure assignment
+					if (rr->RecordType & kDNSRecordTypeUniqueMask)
+						{ *cfp = rr; cfp = &rr->NextInCFList; }
 					// If this is an oversized record with external storage allocated, copy rdata to external storage
 					if (pkt.r.rdata->RDLength > StandardRDSize)
 						mDNSPlatformMemCopy(pkt.r.rdata, rr->rdata, sizeofRDataHeader + pkt.r.rdata->RDLength);
@@ -5080,27 +5093,19 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			}
 		}
 
-	// If we have a cache, then run through all the new records that we've just added,
-	// clear their 'FreshData' flags, and if they were marked as unique in the packet,
-	// then search our cache for any records with the same name/type/class,
-	// and purge them if they are more than one second old.
-	if (m->rrcache_size)
+	// If we've just received one or more records with their cache flush bits set,
+	// then scan that cache slot to see if there are any old stale records we need to flush
+	while (CacheFlushRecords)
 		{
-		ResourceRecord *r1, *r2;
-		mDNSu32 slot;
-		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-			for (r1 = m->rrcache_hash[slot]; r1; r1=r1->next)
-				if (r1->FreshData)
-					{
-					r1->FreshData = mDNSfalse;
-					if (r1->RecordType & kDNSRecordTypeUniqueMask)
-						for (r2 = m->rrcache_hash[slot]; r2; r2=r2->next)
-							if (SameResourceRecordSignature(r1, r2) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)
-								{
-								verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->name.c, DNSTypeName(r2->rrtype));
-								PurgeCacheResourceRecord(m, r2);
-								}
-					}
+		ResourceRecord *r1 = CacheFlushRecords, *r2;
+		CacheFlushRecords = CacheFlushRecords->NextInCFList;
+		r1->NextInCFList = mDNSNULL;
+		for (r2 = m->rrcache_hash[HashSlot(&r1->name)]; r2; r2=r2->next)
+			if (SameResourceRecordSignature(r1, r2) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)
+				{
+				verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->name.c, DNSTypeName(r2->rrtype));
+				PurgeCacheResourceRecord(m, r2);
+				}
 		}
 	}
 

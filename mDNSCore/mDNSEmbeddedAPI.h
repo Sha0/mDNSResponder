@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.95  2003/08/09 00:55:02  cheshire
+<rdar://problem/3366553> mDNSResponder is taking 20-30% of the CPU
+Don't scan the whole cache after every packet.
+
 Revision 1.94  2003/08/09 00:35:29  cheshire
 
 
@@ -643,7 +647,6 @@ struct ResourceRecord_struct
 	mDNSs32         MPLastUnansweredQT;	// CR: Multi-packet query handling: Last time we incremented MPUnansweredQ
 	mDNSu32         MPUnansweredKA;		// CR: Multi-packet query handling: Number of times we've seen this record in a KA list
 	mDNSBool        MPExpectingKA;		// CR: Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
-mDNSBool        FreshData;
 	ResourceRecord *NextInCFList;		// CR: Set if this is in the list of records we just received with the cache flush bit set
 
 	// Field Group 4: The actual information pertaining to this resource record
