@@ -148,6 +148,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	// Parse each option out of the ancillary data.
 	for (cmPtr = CMSG_FIRSTHDR(&msg); cmPtr; cmPtr = CMSG_NXTHDR(&msg, cmPtr))
 		{
+		// debugf("myrecvfrom cmsg_level %d cmsg_type %d", cmPtr->cmsg_level, cmPtr->cmsg_type);
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVDSTADDR)
 			*dstaddr = *(struct in_addr *)CMSG_DATA(cmPtr);
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVIF)
@@ -157,7 +158,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 				{
 				mDNSPlatformMemCopy(sdl->sdl_data, ifname, sdl->sdl_nlen);
 				ifname[sdl->sdl_nlen] = 0;
-//				debugf("IP_RECVIF sdl_index %d, sdl_data %s len %d", sdl->sdl_index, ifname, sdl->sdl_nlen);
+				// debugf("IP_RECVIF sdl_index %d, sdl_data %s len %d", sdl->sdl_index, ifname, sdl->sdl_nlen);
 				}
 			}
 		}
@@ -656,15 +657,17 @@ exit:
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
 	{
 	mDNS *const m = (mDNS *const)refcon;
-	debugf("***   Power Change   ***");
-	debugf("PowerChanged got message %X", messageType);
 	(void)service;		// Parameter not used
 	switch(messageType)
 		{
-		case kIOMessageSystemWillPowerOff: debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true); break;
-		case kIOMessageSystemWillSleep:    debugf("PowerChanged got kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break;
-		case kIOMessageSystemHasPoweredOn: debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break;
-		default:                           debugf("PowerChanged got unknown message %X", messageType); break;                       
+		case kIOMessageCanSystemPowerOff:     debugf("PowerChanged got kIOMessageCanSystemPowerOff (no action)");               break; // E0000240
+		case kIOMessageSystemWillPowerOff:    debugf("PowerChanged got kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true);  break; // E0000250
+		case kIOMessageSystemWillNotPowerOff: debugf("PowerChanged got kIOMessageSystemWillNotPowerOff (no action)");           break; // E0000260
+		case kIOMessageCanSystemSleep:        debugf("PowerChanged got kIOMessageCanSystemSleep (no action)");                  break; // E0000270
+		case kIOMessageSystemWillSleep:       debugf("PowerChanged got kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break; // E0000280
+		case kIOMessageSystemWillNotSleep:    debugf("PowerChanged got kIOMessageSystemWillNotSleep (no action)");              break; // E0000290
+		case kIOMessageSystemHasPoweredOn:    debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break; // E0000300
+		default:                              debugf("PowerChanged got unknown message %X", messageType);                       break; // all others
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
 	}
