@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.41  2004/08/11 00:43:26  ksekar
+# <rdar://problem/3722542>: DNS Extension daemon for DNS Update Lease
+#
 # Revision 1.40  2004/07/08 21:45:55  cheshire
 # Make nss_mdns only build on Linux. We can add it to other targets (Solaris,
 # FreeBSD, etc., as we verify them). In particular, NSS is NOT supported on
@@ -164,6 +167,7 @@ RM = rm
 LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\"
 LIBFLAGS =
+DNSEXT_FLAGS = -D_REENTRANT -g -Wall
 LDSUFFIX = so
 JAVACFLAGS_OS = -fPIC -shared -lmdns
 
@@ -175,7 +179,7 @@ OBJDIR = objects/debug
 BUILDDIR = build/debug
 STRIP = echo 
 else
-CFLAGS_DEBUG = -Os -DMDNS_DEBUGMSGS=0 
+CFLAGS_DEBUG = -O0 -DMDNS_DEBUGMSGS=0 
 OBJDIR = objects/prod
 BUILDDIR = build/prod
 STRIP = strip -S 
@@ -294,7 +298,7 @@ CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS) $(CFLAGS_DEBUG)
 
 #############################################################################
 
-all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor $(OPTIONALTARG)
+all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor dnsextd $(OPTIONALTARG)
 
 install: setup InstalledDaemon InstalledLib InstalledStartup InstalledManPages $(OPTINSTALL)
 
@@ -489,6 +493,9 @@ Identify: setup $(BUILDDIR)/mDNSIdentify
 NetMonitor: setup $(BUILDDIR)/mDNSNetMonitor
 	@echo "NetMonitor done"
 
+dnsextd: setup $(BUILDDIR)/dnsextd
+	@echo "dnsextd done"
+
 $(BUILDDIR)/mDNSClientPosix:         $(APPOBJ)     $(OBJDIR)/Client.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
 
@@ -503,6 +510,9 @@ $(BUILDDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
 
 $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
+
+$(BUILDDIR)/dnsextd:          $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.o
+	$(CC) $+ -o $@ $(DNSEXT_FLAGS)
 
 #############################################################################
 
