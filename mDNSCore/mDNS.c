@@ -43,6 +43,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.267  2003/08/12 14:59:27  cheshire
+<rdar://problem/3374490> Rate-limiting blocks some legitimate responses
+When setting LastMCTime also record LastMCInterface. When checking LastMCTime to determine
+whether to suppress the response, also check LastMCInterface to see if it matches.
+
 Revision 1.266  2003/08/12 12:47:16  cheshire
 In mDNSCoreMachineSleep debugf message, display value of m->timenow
 
@@ -2039,6 +2044,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, ResourceRecord *const rr)
 	// now, to inhibit multicast responses (no need to send additional multicast responses when we're announcing anyway)
 	rr->LastAPTime = m->timenow - rr->ThisAPInterval;
 	rr->LastMCTime = m->timenow;
+	rr->LastMCInterface = mDNSInterfaceMark;
 	
 	if (rr->RecordType == kDNSRecordTypeUnique)
 		{
@@ -2355,6 +2361,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 				dup->ThisAPInterval    = rr->ThisAPInterval;
 				dup->LastAPTime        = rr->LastAPTime;
 				dup->LastMCTime        = rr->LastMCTime;
+				dup->LastMCInterface   = rr->LastMCInterface;
 				if (RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
 				}
 			}
@@ -2825,6 +2832,7 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->ThisAPInterval    = 0;
 	rr->LastAPTime        = 0;
 	rr->LastMCTime        = 0;
+	rr->LastMCInterface   = mDNSNULL;
 	rr->NewRData          = mDNSNULL;
 	rr->UpdateCallback    = mDNSNULL;
 
@@ -3115,6 +3123,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->SendRNow = !intf ? mDNSNULL : (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional if sending as answer
 			rr->LastMCTime      = m->timenow;
+			rr->LastMCInterface = rr->ImmedAnswer;
 			// If we're announcing this record, and it's at least half-way to its ordained time, then consider this announcement done
 			if (TimeToAnnounceThisRecord(rr, m->timenow + rr->ThisAPInterval/2))
 				{
@@ -3129,6 +3138,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->SendRNow = rr->ImmedAnswer;				// Just respond on that interface
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional too
 			rr->LastMCTime      = m->timenow;
+			rr->LastMCInterface = rr->ImmedAnswer;
 			}
 		SetNextAnnounceProbeTime(m, rr);
 		}
@@ -4550,9 +4560,11 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					// NR_AnswerTo == ~0 means "definitely answer via multicast" (can't downgrade to unicast later)
 					if (QuestionNeedsMulticastResponse)
 						{
-						// We only mark this question for sending if it is at least one second since the last time we multicast it.
+						// We only mark this question for sending if it is at least one second since the last time we multicast it
+						// on this interface. If it is more than a second, or LastMCInterface is different, then we should multicast it.
 						// This is to guard against the case where someone blasts us with queries as fast as they can.
-						if (m->timenow - (rr->LastMCTime + mDNSPlatformOneSecond) >= 0)
+						if (m->timenow - (rr->LastMCTime + mDNSPlatformOneSecond) >= 0 ||
+							(rr->LastMCInterface != mDNSInterfaceMark && rr->LastMCInterface != InterfaceID))
 							rr->NR_AnswerTo = (mDNSu8*)~0;
 						}
 					else if (!rr->NR_AnswerTo) rr->NR_AnswerTo = ptr;

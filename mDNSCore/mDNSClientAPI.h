@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.97  2003/08/12 14:59:27  cheshire
+<rdar://problem/3374490> Rate-limiting blocks some legitimate responses
+When setting LastMCTime also record LastMCInterface. When checking LastMCTime to determine
+whether to suppress the response, also check LastMCInterface to see if it matches.
+
 Revision 1.96  2003/08/12 13:57:04  cheshire
 <rdar://problem/3323817> Improve cache performance
 Changed the number of hash table slots from 37 to 499
@@ -635,6 +640,7 @@ struct ResourceRecord_struct
 	mDNSs32         ThisAPInterval;		// AR: In platform time units: Current interval for announce/probe
 	mDNSs32         LastAPTime;			// AR: In platform time units: Last time we sent announcement/probe
 	mDNSs32         LastMCTime;			// AR: Last time we multicast this record (used to guard against packet-storm attacks)
+	mDNSInterfaceID LastMCInterface;	// AR: Interface this record was multicast on at the time LastMCTime was recorded
 	RData          *NewRData;			// AR: Set if we are updating this record with new rdata
 	mDNSRecordUpdateCallback *UpdateCallback;
 
