@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.510  2005/01/19 03:12:45  cheshire
+Move LocalRecordReady() macro from mDNS.c to DNSCommon.h
+
 Revision 1.509  2005/01/19 03:08:49  cheshire
 <rdar://problem/3961051> CPU Spin in mDNSResponder
 Log messages to help catch and report CPU spins
@@ -2211,8 +2214,6 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddR
 #define TimeToSendThisRecord(RR,time) ((TimeToAnnounceThisRecord(RR,time) || (RR)->ImmedAnswer) && ResourceRecordIsValidAnswer(RR))
 #define TicksTTL(RR) ((mDNSs32)(RR)->resrec.rroriginalttl * mDNSPlatformOneSecond)
 #define RRExpireTime(RR) ((RR)->TimeRcvd + TicksTTL(RR))
-
-#define LocalRecordReady(X) ((X)->resrec.RecordType != kDNSRecordTypeUnique && (X)->resrec.RecordType != kDNSRecordTypeDeregistering)
 
 #define MaxUnansweredQueries 4
 
