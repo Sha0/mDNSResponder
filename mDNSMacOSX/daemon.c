@@ -576,11 +576,81 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	return(err);
 	}
 
+#define kmDNSBootstrapName "com.apple.mDNSResponder"
+mach_port_t server_priv_port = MACH_PORT_NULL;
+
+int restarting_via_mach_init = 0;
+
+mDNSlocal kern_return_t registerBootstrapService()
+{
+	kern_return_t status;
+	mach_port_t service_send_port, service_rcv_port;
+
+	debugf("Registering Bootstrap Service");
+
+	/*
+	 * See if our service name is already registered and if we have privilege to check in.
+	 */
+	status = bootstrap_check_in(bootstrap_port, kmDNSBootstrapName, &service_rcv_port);
+	if (status == KERN_SUCCESS)
+	{
+		/*
+		 * If so, we must be a followup instance of an already defined server.  In that case,
+		 * the bootstrap port we inherited from our parent is the server's privilege port, so set
+		 * that in case we have to unregister later (which requires the privilege port).
+		 */
+
+		server_priv_port = bootstrap_port;
+
+		restarting_via_mach_init = TRUE;
+		
+	}
+	else if (status == BOOTSTRAP_UNKNOWN_SERVICE)
+	{
+            status = bootstrap_create_server(bootstrap_port, "/usr/sbin/mDNSResponder", getuid(), FALSE /* relaunch immediately, not on demand */, &server_priv_port);
+		if (status != KERN_SUCCESS) return status;
+
+		status = bootstrap_create_service(server_priv_port, kmDNSBootstrapName, &service_send_port);
+		if (status != KERN_SUCCESS)
+		{
+			mach_port_deallocate(mach_task_self(), server_priv_port);			return status;
+		}
+		status = bootstrap_check_in(server_priv_port, kmDNSBootstrapName, &service_rcv_port);
+		if (status != KERN_SUCCESS)
+		{
+			mach_port_deallocate(mach_task_self(), server_priv_port);
+			mach_port_deallocate(mach_task_self(), service_send_port);
+			return status;
+		}
+		assert(service_send_port == service_rcv_port);
+
+	}
+
+	/*
+	 * We have no intention of responding to requests on the service port.  We are not otherwise a
+	 * Mach port-based service.  We are just using this mechanism for relaunch facilities.  So, we	 * can dispose of all the rights we have for the service port.  We don't destroy the send right for the
+	 * server's privileged bootstrap port - in case we have to unregister later.
+	 */
+	mach_port_destroy(mach_task_self(), service_rcv_port);
+	
+
+	return status;
+}
+
+
+mDNSlocal kern_return_t destroyBootstrapService()
+	{
+	debugf("Destroying Bootstrap Service");
+
+	return bootstrap_register(server_priv_port, kmDNSBootstrapName, MACH_PORT_NULL);
+	}
+
 mDNSlocal void HandleSIG(int signal)
 	{
 	debugf("");
 	debugf("HandleSIG");
 	// CFRunLoopStop(CFRunLoopGetCurrent()); This doesn't work
+	destroyBootstrapService();
 	mDNS_Close(&mDNSStorage);
 	exit(0);
 	}
@@ -599,24 +669,35 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 
-	if (!debug_mode)
-		{
-		FILE *fp;
-		daemon(0,0);
-		fp = fopen(PID_FILE, "w");
+	
+	//register the server with mach_init for automatic restart only during debug mode
+    if (!debug_mode)
+	{
+		registerBootstrapService();
+	}
+
+	if (!debug_mode && !restarting_via_mach_init)
+	{
+		exit(0);
+		/* mach_init restarts us immediately as a daemon */
+	}
+
+	{
+		FILE *fp = fopen(PID_FILE, "w");
 		if (fp != NULL)
 			{
-			fprintf(fp, "%d\n", getpid());
-			fclose(fp);
+				fprintf(fp, "%d\n", getpid());
+				fclose(fp);
 			}
-		}
-
+	}
+	
 	status = start(NULL, NULL);
 
 	if (status == 0)
 		{
 		CFRunLoopRun();
 		debugf("Exiting");
+		destroyBootstrapService();
 		mDNS_Close(&mDNSStorage);
 		}
 
