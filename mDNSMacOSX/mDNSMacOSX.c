@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.183  2004/09/17 00:15:56  cheshire
+Rename mDNSPlatformInit_ReceiveUnicast to mDNSPlatformInit_CanReceiveUnicast
+
 Revision 1.182  2004/09/16 21:36:36  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 Changes to add necessary locking calls around unicast DNS operations
@@ -2494,7 +2497,7 @@ mDNSexport mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 // Test to see if we're the first client running on UDP port 5353, by trying to bind to 5353 without using SO_REUSEPORT.
 // If we fail, someone else got here first. That's not a big problem; we can share the port for multicast responses --
 // we just need to be aware that we shouldn't expect to successfully receive unicast UDP responses.
-mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
+mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 	{
 	int err;
 	int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -2608,7 +2611,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	char HINFO_SWstring[256] = "";
 	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
-	if (mDNSPlatformInit_ReceiveUnicast())               m->CanReceiveUnicast = mDNStrue;
+	if (mDNSPlatformInit_CanReceiveUnicast())            m->CanReceiveUnicast = mDNStrue;
 
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
 	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);

@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.56  2004/09/17 00:15:56  cheshire
+Rename mDNSPlatformInit_ReceiveUnicast to mDNSPlatformInit_CanReceiveUnicast
+
 Revision 1.55  2004/09/16 00:24:49  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -1219,7 +1222,7 @@ mDNSlocal mStatus WatchForInterfaceChange(mDNS *const m)
 // Test to see if we're the first client running on UDP port 5353, by trying to bind to 5353 without using SO_REUSEPORT.
 // If we fail, someone else got here first. That's not a big problem; we can share the port for multicast responses --
 // we just need to be aware that we shouldn't expect to successfully receive unicast UDP responses.
-mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
+mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 	{
 	int err;
 	int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -1241,7 +1244,7 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	struct sockaddr sa;
 	assert(m != NULL);
 
-	if (mDNSPlatformInit_ReceiveUnicast()) m->CanReceiveUnicast = mDNStrue;
+	if (mDNSPlatformInit_CanReceiveUnicast()) m->CanReceiveUnicast = mDNStrue;
 
 	// Tell mDNS core the names of this machine.
 
