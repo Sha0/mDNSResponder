@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.187  2004/08/13 23:37:02  cheshire
+Now that we do both uDNS and mDNS, global replace "uDNS_info.hostname" with
+"uDNS_info.UnicastHostname" for clarity
+
 Revision 1.186  2004/08/13 23:25:00  cheshire
 Now that we do both uDNS and mDNS, global replace "m->hostname" with
 "m->MulticastHostname" for clarity
@@ -1554,7 +1558,7 @@ typedef struct
     mDNSu16          NextMessageID;
     mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list
     mDNSAddr         Router;
-    domainname       hostname;           // global name for dynamic registration of address records
+    domainname       UnicastHostname;           // global name for dynamic registration of address records
     char             NameRegDomain[MAX_ESCAPED_DOMAIN_NAME];
                                          // domain in which above hostname is registered
                                          // currently set by the platform layer at startup

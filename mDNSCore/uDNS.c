@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.66  2004/08/13 23:37:02  cheshire
+Now that we do both uDNS and mDNS, global replace "uDNS_info.hostname" with
+"uDNS_info.UnicastHostname" for clarity
+
 Revision 1.65  2004/08/13 23:12:32  cheshire
 Don't use strcpy() and strlen() on "struct domainname" objects;
 use AssignDomainName() and DomainNameLength() instead
@@ -851,16 +855,16 @@ mDNSexport void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set
 	    || (ip[0] == 127))                     // loopback
 	  return;		
 
-	if (!m->uDNS_info.hostname.c[0]) return;	
+	if (!m->uDNS_info.UnicastHostname.c[0]) return;	
 	if (set->uDNS_info) { LogMsg("uDNS_AdvertiseInterface: uDNS_info already allocated"); return; }
 	
 	set->uDNS_info = umalloc(sizeof(uDNS_NetworkInterfaceInfo));
 	if (!set->uDNS_info) { LogMsg("ERROR: Malloc"); return; }
 	a = &set->uDNS_info->RR_A;
-	AssignDomainName(set->uDNS_info->name, m->uDNS_info.hostname);
+	AssignDomainName(set->uDNS_info->name, m->uDNS_info.UnicastHostname);
 	mDNS_SetupResourceRecord(a, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeShared, hostnameCallback, set->uDNS_info); 
 
-	AssignDomainName(a->resrec.name, m->uDNS_info.hostname);
+	AssignDomainName(a->resrec.name, m->uDNS_info.UnicastHostname);
 	a->resrec.rdata->u.ip = set->ip.ip.v4;
 	
 	if (IsPrivateAddr(set->ip.ip.v4)) 
@@ -2850,12 +2854,12 @@ mDNSlocal mDNSBool setHostTarget(AuthRecord *rr, mDNS *m)
 		return mDNSfalse;
 		}
 
-	if (SameDomainName(target, &m->uDNS_info.hostname))
+	if (SameDomainName(target, &m->uDNS_info.UnicastHostname))
 		{
 		debugf("Host target for %s unchanged", rr->resrec.name.c);
 		return mDNSfalse;
 		}
-	AssignDomainName(*target, m->uDNS_info.hostname);
+	AssignDomainName(*target, m->uDNS_info.UnicastHostname);
 	SetNewRData(&rr->resrec, mDNSNULL, 0);
 	return mDNStrue;
 	}
@@ -3006,7 +3010,7 @@ mDNSexport void uDNS_UpdateServiceTargets(mDNS *const m)
 	AuthRecord *rr;
 	mStatus err = mStatus_NoError;
 	
-	if (!m->uDNS_info.hostname.c[0])
+	if (!m->uDNS_info.UnicastHostname.c[0])
 		{
 		LogMsg("ERROR: uDNS_UpdateServiceTargets called before registration of hostname");
 		return;

@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.392  2004/08/13 23:37:02  cheshire
+Now that we do both uDNS and mDNS, global replace "uDNS_info.hostname" with
+"uDNS_info.UnicastHostname" for clarity
+
 Revision 1.391  2004/08/13 23:25:00  cheshire
 Now that we do both uDNS and mDNS, global replace "m->hostname" with
 "m->MulticastHostname" for clarity
@@ -5487,13 +5491,13 @@ mDNSlocal void GenerateFQDN(mDNS *const m, const char *domain, mDNSBool local)
 	if (!AppendDNSNameString(&newname, domain)) LogMsg("ERROR: GenerateFQDN:  Cannot create hostname");
 		
 	if ((local && !SameDomainName(&m->MulticastHostname, &newname)) ||
-		(!local && !SameDomainName(&m->uDNS_info.hostname, &newname)))
+		(!local && !SameDomainName(&m->uDNS_info.UnicastHostname, &newname)))
 		{
 		NetworkInterfaceInfo *intf;
 		AuthRecord *rr;
 
 		if (local) m->MulticastHostname = newname;
-		else       m->uDNS_info.hostname = newname;
+		else       m->uDNS_info.UnicastHostname = newname;
 
 		// 1. Stop advertising our address records on all interfaces
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -5835,7 +5839,7 @@ mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 // We always register a TXT, even if it is empty (so that clients are not
 // left waiting forever looking for a nonexistent record.)
 // If the host parameter is mDNSNULL or the root domain (ASCII NUL),
-// then the default host name (m->hostname1) is automatically used
+// then the default host name (m->MulticastHostname) is automatically used
 mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
 	const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
