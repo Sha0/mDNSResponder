@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.134  2004/12/02 20:03:49  ksekar
+<rdar://problem/3889647> Still publishes wide-area domains even after switching to a local subnet
+
 Revision 1.133  2004/12/02 18:37:52  ksekar
 <rdar://problem/3758233> Registering with port number zero should not create a port mapping
 
@@ -1629,7 +1632,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	
 	if (question != m->uDNS_info.CurrentQuery)
 		{ LogMsg("ERROR: pktResponseHdnlr called without CurrentQuery ptr set!");  return; }
-		
+
+	question->uDNS_info.Answered = mDNStrue;
+	
 	ptr = LocateAnswers(msg, end);
 	if (!ptr) goto pkt_error;
 
@@ -2410,7 +2415,7 @@ mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *e
 	info->origLease = llq->lease;
 	info->expire = timenow + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
 
-	// update state and timestamp
+	// update state
 	info->state = LLQ_SecondaryRequest;
 	umemcpy(info->id, llq->id, 8);
 	info->ntries = 0; // first attempt to send response
@@ -2760,6 +2765,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	question->next = mDNSNULL;
 	question->qnamehash = DomainNameHashValue(&question->qname);    // to do quick domain name comparisons
     question->uDNS_info.id = newMessageID(u);
+	question->uDNS_info.Answered = mDNSfalse;
 	
 	// break here if its and LLQ
 	if (question->LongLived) return startLLQ(m, question);
@@ -2771,11 +2777,9 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	question->LastQTime = mDNSPlatformTimeNow(m);
 	question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
     // store the question/id in active question list
-    question->uDNS_info.timestamp = question->LastQTime;
 	question->uDNS_info.internal = internal;
 	LinkActiveQuestion(u, question);
 	question->uDNS_info.knownAnswers = mDNSNULL;
-
 	if (GetServerForName(u, &question->qname, &server))
 		{
 		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
@@ -3332,9 +3336,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	ubzero(context, sizeof(tcpInfo_t));
 	context->question = question;
 	context->m = m;
-
 	info->id = newMessageID(&m->uDNS_info);
-	info->timestamp = mDNSPlatformTimeNow(m);         // reset timestamp
 
 	connectionStatus = mDNSPlatformTCPConnect(src, UnicastDNSPort, question->InterfaceID, conQueryCallback, context, &sd);
 	if (connectionStatus == mStatus_ConnEstablished)  // manually invoke callback if connection completes
@@ -4159,36 +4161,35 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 	DNSMessage msg;
 	mStatus err;
 	mDNSu8 *end;
-
+	uDNS_QuestionInfo *info;
+	
 	u->CurrentQuery = u->ActiveQueries;
 	while (u->CurrentQuery)
 		{
-		q = u->CurrentQuery;
-
-		llq = q->uDNS_info.llq;
-		if (q->LongLived && llq->state != LLQ_Poll)
+		q = u->CurrentQuery;		
+		info = &q->uDNS_info;
+		llq = info->llq;
+		
+		if (!info->internal && ((!q->LongLived && !info->Answered) || (llq && llq->state < LLQ_Established)) && 
+			info->RestartTime + RESTART_GOODBYE_DELAY - timenow < 0)
 			{
-			if (llq->state < LLQ_Established)
-				{
-				// if we've been spinning on restart setup, and we have known answers, give goodbyes (they may be re-added later)
-				if (llq->RestartTime + RESTART_GOODBYE_DELAY - timenow < 0 && q->uDNS_info.knownAnswers)
-					{
-					u->CurrentQuery = q;
-					while (q->uDNS_info.knownAnswers)
-						{						
-						CacheRecord *cr = q->uDNS_info.knownAnswers;
-						q->uDNS_info.knownAnswers = q->uDNS_info.knownAnswers->next;
-
-						m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-						q->QuestionCallback(m, q, &cr->resrec, mDNSfalse);
-						m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-						ufree(cr);
-						if (q != u->CurrentQuery) { debugf("CheckQueries - question removed via callback."); break; }
-						}											
-					}
-				}
-			if (q != u->CurrentQuery) continue;
-			
+			// if we've been spinning on restart setup, and we have known answers, give goodbyes (they may be re-added later)
+			while (info->knownAnswers)
+				{						
+				CacheRecord *cr = info->knownAnswers;
+				info->knownAnswers = info->knownAnswers->next;
+				
+				m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+				q->QuestionCallback(m, q, &cr->resrec, mDNSfalse);
+				m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+				ufree(cr);
+				if (q != u->CurrentQuery) { debugf("CheckQueries - question removed via callback."); break; }
+				}											
+			}
+		if (q != u->CurrentQuery) continue;
+		
+		if (q->LongLived && llq->state != LLQ_Poll)
+			{			
 			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Established)
 				{
 				if (llq->retry - timenow < 0)				
@@ -4396,12 +4397,13 @@ mDNSlocal void RestartQueries(mDNS *m)
 		q = u->CurrentQuery;
 		u->CurrentQuery = u->CurrentQuery->next;
 		llqInfo = q->uDNS_info.llq;
+		q->uDNS_info.RestartTime = timenow;
+		q->uDNS_info.Answered = mDNSfalse;
 		if (q->LongLived)
 			{
 			if (!llqInfo) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; } 
 			if (llqInfo->state == LLQ_Suspended || llqInfo->state == LLQ_NatMapWait)		
 				{
-				llqInfo->RestartTime = timenow;
 				llqInfo->ntries = -1;
 				llqInfo->deriveRemovesOnResume = mDNStrue;
 				startLLQHandshake(m, llqInfo, mDNStrue);  // we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
@@ -4411,7 +4413,6 @@ mDNSlocal void RestartQueries(mDNS *m)
 			else if (llqInfo->state == LLQ_SuspendedPoll)
 				{
 				// if we were polling, we may have had bad zone data due to firewall, etc. - refetch
-				llqInfo->RestartTime = timenow;
 				llqInfo->ntries = 0;
 				llqInfo->deriveRemovesOnResume = mDNStrue;
 				llqInfo->state = LLQ_GetZoneInfo;

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.248  2004/12/02 20:03:48  ksekar
+<rdar://problem/3889647> Still publishes wide-area domains even after switching to a local subnet
+
 Revision 1.247  2004/12/01 20:57:19  ksekar
 <rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
 
@@ -1612,7 +1615,6 @@ typedef struct
 	mDNSu32 origLease;  // seconds (relative)
 	mDNSs32 retry;  // ticks (absolute)
 	mDNSs32 expire; // ticks (absolute)
-    mDNSs32 RestartTime; // ticks (absolute)
     mDNSs16 ntries;
 	mDNSu8 id[8];
 	mDNSBool deriveRemovesOnResume;
@@ -1652,12 +1654,13 @@ typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDN
 typedef struct
 	{
 	mDNSOpaque16          id;
-    mDNSs32               timestamp;          //!!!KRS can this be removed?
 	mDNSBool              internal;
 	InternalResponseHndlr responseCallback;   // NULL if internal field is false
 	LLQ_Info              *llq;               // NULL for 1-shot queries
-	CacheRecord           *knownAnswers;
-	void *context;
+    mDNSBool              Answered;           // have we received an answer (including NXDOMAIN) for this question?
+    CacheRecord           *knownAnswers;
+    mDNSs32               RestartTime;        // Mark when we restart a suspended query
+    void *context;
 	} uDNS_QuestionInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
