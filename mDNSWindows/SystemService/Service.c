@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.25  2005/02/10 22:35:36  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.24  2005/01/27 20:02:43  cheshire
 udsSupportRemoveFDFromEventLoop() needs to close the SocketRef as well
 
@@ -153,7 +156,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #define	DEBUG_NAME					"[Server] "
 #define	kServiceName				"Apple mDNSResponder"
-#define kServiceFirewallName		L"Rendezvous"
+#define kServiceFirewallName		L"Bonjour"
 #define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
 #define kServiceManageLLRouting		"ManageLLRouting"
 #define kServiceCacheEntryCount		"CacheEntryCount"

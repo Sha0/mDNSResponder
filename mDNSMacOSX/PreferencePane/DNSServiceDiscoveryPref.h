@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.h,v $
+Revision 1.3  2005/02/10 22:35:19  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.2  2005/02/08 01:32:05  cheshire
 Add trimCharactersFromDomain routine to strip leading and trailing
 white space and punctuation from user-entered fields.
@@ -142,7 +145,7 @@ typedef struct MyDNSServiceState {
 - (void)setBrowseDomainsComboBox;
 - (void)setupInitialValues;
 - (void)startDomainBrowsing;
-- (void)toggleWideAreaRendezvous:(BOOL)state;
+- (void)toggleWideAreaBonjour:(BOOL)state;
 - (void)updateApplyButtonState;
 - (void)enableControls;
 - (void)disableControls;

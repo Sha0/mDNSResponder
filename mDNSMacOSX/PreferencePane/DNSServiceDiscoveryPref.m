@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.3  2005/02/10 22:35:20  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.2  2005/02/08 01:32:05  cheshire
 Add trimCharactersFromDomain routine to strip leading and trailing
 white space and punctuation from user-entered fields.
@@ -347,7 +350,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     if (currentBrowseDomainsArray) [currentBrowseDomainsArray release];
     if (currentHostName)           [currentHostName release];
 
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("com.apple.preference.rendezvous"), NULL, NULL);
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("com.apple.preference.bonjour"), NULL, NULL);
 	origDict = (NSDictionary *)SCDynamicStoreCopyValue(store, SC_DYNDNS_SETUP_KEY);
 
 	regDomainArray = [origDict objectForKey:(NSString *)SC_DYNDNS_REGDOMAINS_KEY];
@@ -500,9 +503,9 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     }
     
     if (currentWideAreaState) {
-        [self toggleWideAreaRendezvous:YES];
+        [self toggleWideAreaBonjour:YES];
     } else {
-        [self toggleWideAreaRendezvous:NO];
+        [self toggleWideAreaBonjour:NO];
     }
 
     if (hostNameSharedSecretValue) {
@@ -691,7 +694,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (IBAction)wideAreaCheckBoxChanged:(id)sender
 {    
-    [self toggleWideAreaRendezvous:[sender state]];
+    [self toggleWideAreaBonjour:[sender state]];
     [self updateApplyButtonState];
     [mainWindow makeFirstResponder:nil];
 }
@@ -852,7 +855,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 }
 
 
-- (void)toggleWideAreaRendezvous:(BOOL)state
+- (void)toggleWideAreaBonjour:(BOOL)state
 {
 	[wideAreaCheckBox setState:state];
 	[regDomainsComboBox setEnabled:state];
@@ -1137,7 +1140,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     [browseDomainsComboBox setEnabled:YES];
     [wideAreaCheckBox setEnabled:YES];
     [registrationSharedSecretButton setEnabled:YES];
-    [self toggleWideAreaRendezvous:[wideAreaCheckBox state]];
+    [self toggleWideAreaBonjour:[wideAreaCheckBox state]];
     [statusImageView setEnabled:YES];
 	[addBrowseDomainButton setEnabled:YES];
 

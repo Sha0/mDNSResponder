@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: PrivilegedOperations.h,v $
+Revision 1.2  2005/02/10 22:35:20  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.1  2005/02/05 01:59:19  cheshire
 Add Preference Pane to facilitate testing of DDNS & wide-area features
 
@@ -53,7 +56,7 @@ Add Preference Pane to facilitate testing of DDNS & wide-area features
 #define	PRIV_OP_TOOL_VERS	1
 
 #define	kToolHome	"/Library/Application Support/"
-#define	kToolDir	"Rendezvous"
+#define	kToolDir	"Bonjour"
 #define	kToolName	"ddnswriteconfig"
 #define	kToolPath	kToolHome kToolDir "/" kToolName
 

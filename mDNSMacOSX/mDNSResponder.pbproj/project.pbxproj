@@ -1668,7 +1668,7 @@
 				OTHER_LDFLAGS = "-twolevel_namespace";
 				OTHER_REZFLAGS = "";
 				PREBINDING = NO;
-				PRODUCT_NAME = Rendezvous;
+				PRODUCT_NAME = Bonjour;
 				SECTORDER_FLAGS = "";
 				SKIP_INSTALL = YES;
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
@@ -1689,13 +1689,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>Rendezvous</string>
+	<string>Bonjour</string>
 	<key>CFBundleGetInfoString</key>
 	<string></string>
 	<key>CFBundleIconFile</key>
 	<string>DNSServiceDiscoveryPref</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.apple.preference.rendezvous</string>
+	<string>com.apple.preference.bonjour</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -1713,7 +1713,7 @@
 	<key>NSPrefPaneIconFile</key>
 	<string>DNSServiceDiscoveryPref.tiff</string>
 	<key>NSPrefPaneIconLabel</key>
-	<string>Rendezvous</string>
+	<string>Bonjour</string>
 	<key>NSPrincipalClass</key>
 	<string>DNSServiceDiscoveryPref</string>
 </dict>
@@ -1722,7 +1722,7 @@
 		};
 		FF2609E207B440DD00CE10E5 = {
 			isa = PBXBundleReference;
-			path = Rendezvous.prefPane;
+			path = Bonjour.prefPane;
 			refType = 3;
 		};
 		FF2609E307B440EC00CE10E5 = {

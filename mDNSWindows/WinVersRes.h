@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.25  2005/02/10 22:35:29  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.24  2005/02/08 23:32:24  shersche
 Bump to 1.0.0.54
 
@@ -100,7 +103,7 @@ First checked in.
 #ifndef WINRESVERS_H
 #define WINRESVERS_H
 
-#define MASTER_PROD_NAME	"Rendezvous"
+#define MASTER_PROD_NAME	"Bonjour"
 
 // Define the product version for mDNSResponder on Windows
 #define MASTER_PROD_VERS		1,0,0,54

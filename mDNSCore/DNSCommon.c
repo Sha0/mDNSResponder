@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.85  2005/02/10 22:35:17  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.84  2005/02/03 00:44:38  cheshire
 <rdar://problem/3986663> DNSServiceUpdateRecord returns kDNSServiceErr_Invalid when rdlen=0, rdata=NULL
 
@@ -823,7 +826,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 					for (i=0; i < (int)sizeof(SubTypeLabel); i++) *dst++ = SubTypeLabel[i];
 					type = (domainname *)s1;
 					
-					// Special support for queries done by older versions of "Rendezvous Browser"
+					// Special support for queries done by some third-party network monitoring software
 					// For these queries, we retract the "._sub" we just added between the subtype and the main type
 					if (SameDomainName((domainname*)s0, (domainname*)"\x09_services\x07_dns-sd\x04_udp") ||
 						SameDomainName((domainname*)s0, (domainname*)"\x09_services\x05_mdns\x04_udp"))

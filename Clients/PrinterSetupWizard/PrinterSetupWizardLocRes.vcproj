@@ -12,7 +12,7 @@
 	<Configurations>
 		<Configuration
 			Name="Debug|Win32"
-			OutputDirectory=".\Debug\Resources\RendezvousPrinterWizard.exe.Resources\en.lproj"
+			OutputDirectory=".\Debug\Resources\BonjourPrinterWizard.exe.Resources\en.lproj"
 			IntermediateDirectory=".\Debug"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -38,7 +38,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="$(OutDir)/RendezvousPrinterWizardLocalized.dll"
+				OutputFile="$(OutDir)/BonjourPrinterWizardLocalized.dll"
 				LinkIncremental="2"
 				GenerateDebugInformation="TRUE"
 				SubSystem="2"
@@ -68,7 +68,7 @@
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Rendezvous\Resources\RendezvousPrinterWizard.exe.Resources\en.lproj"
+			OutputDirectory=".\Release\Root\Program Files\Bonjour\Resources\BonjourPrinterWizard.exe.Resources\en.lproj"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -94,7 +94,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="$(OutDir)/RendezvousPrinterWizardLocalized.dll"
+				OutputFile="$(OutDir)/BonjourPrinterWizardLocalized.dll"
 				LinkIncremental="1"
 				GenerateDebugInformation="FALSE"
 				SubSystem="2"

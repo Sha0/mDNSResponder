@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.518  2005/02/10 22:35:17  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.517  2005/02/03 00:21:21  cheshire
 Update comments about BIND named and zero-length TXT records
 
@@ -5067,7 +5070,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// on platforms where the native clock rate is less than fifty ticks per second,
 		// we still guarantee that the final calculated delay is at least one platform tick.
 		// We want to make sure we don't ever allow the delay to be zero ticks,
-		// because if that happens we'll fail the Rendezvous Conformance Test.
+		// because if that happens we'll fail the Bonjour Conformance Test.
 		// Our final computed delay is 20-120ms for normal delayed replies,
 		// or 400-500ms in the case of multi-packet known-answer lists.
 		m->SuppressSending = m->timenow + (delayresponse + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*5) + 49) / 50;

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.12  2005/02/10 22:35:11  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.11  2005/01/31 23:54:30  shersche
 <rdar://problem/3947508> Start browsing when printer wizard starts. Move browsing logic from CSecondPage object to CPrinterSetupWizardSheet object.
 
@@ -110,9 +113,9 @@ CSecondPage::InitBrowseList()
 	require_quiet( psheet, exit );
 
 	//
-	// load the no rendezvous printers message until something shows up in the browse list
+	// load the no Bonjour printers message until something shows up in the browse list
 	//
-	text.LoadString(IDS_NO_RENDEZVOUS_PRINTERS);
+	text.LoadString(IDS_NO_BONJOUR_PRINTERS);
 
 	LoadTextAndDisableWindow( text );
 
@@ -137,10 +140,15 @@ void CSecondPage::DoDataExchange(CDataExchange* pDX)
 	CPropertyPage::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_BROWSE_LIST, m_browseList);
 	DDX_Control(pDX, IDC_PRINTER_INFORMATION, m_printerInformation);
+
 	DDX_Control(pDX, IDC_DESCRIPTION_LABEL, m_descriptionLabel);
+
 	DDX_Control(pDX, IDC_DESCRIPTION_FIELD, m_descriptionField);
+
 	DDX_Control(pDX, IDC_LOCATION_LABEL, m_locationLabel);
+
 	DDX_Control(pDX, IDC_LOCATION_FIELD, m_locationField);
+
 }
 
 
@@ -176,7 +184,7 @@ CSecondPage::OnSetActive()
 	require_action( psheet, exit, err = kUnknownErr );
 
 	// initialize the browse list...this will remove everything currently
-	// in it, and add the no rendezvous printers item
+	// in it, and add the no Bonjour printers item
 
 	InitBrowseList();
 
@@ -300,7 +308,7 @@ CSecondPage::OnRemovePrinter(
 	{
 		//
 		// if we're the only thing in the list, then redisplay
-		// it with the no rendezvous printers message
+		// it with the no Bonjour printers message
 		//
 		InitBrowseList();
 	}
@@ -429,9 +437,16 @@ void
 CSecondPage::SetPrinterInformationState( BOOL state )
 {
 	m_printerInformation.EnableWindow( state );
+
 	m_descriptionLabel.EnableWindow( state );
+
 	m_descriptionField.EnableWindow( state );
+
 	m_locationLabel.EnableWindow( state );
+
 	m_locationField.EnableWindow( state );
+
 }
+
+
 

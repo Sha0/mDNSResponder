@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: PrivilegedOperations.c,v $
+Revision 1.2  2005/02/10 22:35:20  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.1  2005/02/05 01:59:19  cheshire
 Add Preference Pane to facilitate testing of DDNS & wide-area features
 
@@ -100,7 +103,7 @@ OSStatus EnsureToolInstalled(void)
 	}
 
 	// Locate our in-bundle copy of privop tool
-	bundleURL = CFBundleCopyBundleURL(CFBundleGetBundleWithIdentifier(CFSTR("com.apple.preference.rendezvous")) );
+	bundleURL = CFBundleCopyBundleURL(CFBundleGetBundleWithIdentifier(CFSTR("com.apple.preference.bonjour")) );
 	if (bundleURL != NULL)
 	{
 		CFURLGetFileSystemRepresentation(bundleURL, false, (UInt8*) toolPath, sizeof toolPath);

@@ -44,6 +44,9 @@
 
     Change History (most recent first):
 $Log: ddnswriteconfig.m,v $
+Revision 1.2  2005/02/10 22:35:20  cheshire
+<rdar://problem/3727944> Update name
+
 Revision 1.1  2005/02/05 01:59:19  cheshire
 Add Preference Pane to facilitate testing of DDNS & wide-area features
 
@@ -135,7 +138,7 @@ WriteArrayToDynDNS(CFStringRef arrayKey, CFArrayRef domainArray)
 	// Add domain to the array member ("arrayKey") of the DynamicDNS dictionary
 	// Will replace duplicate, at head of list
 	// At this point, we only support a single-item list
-	store = SCPreferencesCreate(NULL, CFSTR("com.apple.preference.rendezvous"), NULL);
+	store = SCPreferencesCreate(NULL, CFSTR("com.apple.preference.bonjour"), NULL);
 	require_action(store != NULL, SysConfigErr, err=paramErr;);
 	require_action(true == SCPreferencesLock( store, true), LockFailed, err=coreFoundationUnknownErr;);
 

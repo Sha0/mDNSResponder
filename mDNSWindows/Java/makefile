@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: makefile,v $
+# Revision 1.6  2005/02/10 22:35:36  cheshire
+# <rdar://problem/3727944> Update name
+#
 # Revision 1.5  2005/02/08 23:47:51  shersche
 # Build into proper directories for installer
 #
@@ -81,13 +84,13 @@ DEBUG=0
 CFLAGS_DEBUG = -Zi -DMDNS_DEBUGMSGS=2 
 OBJDIR = objects\debug
 BUILDDIR = build\debug
-INSTALLDIR = root\"Program Files"\Rendezvous
+INSTALLDIR = root\"Program Files"\Bonjour
 LIBDIR = ..\DLL\Debug
 !else
 CFLAGS_DEBUG = -Os -DMDNS_DEBUGMSGS=0 
 OBJDIR = objects\prod
 BUILDDIR = build\prod
-INSTALLDIR = root\"Program Files"\Rendezvous
+INSTALLDIR = root\"Program Files"\Bonjour
 LIBDIR = ..\DLL\Release
 !endif
 

@@ -20,6 +20,9 @@
 .\" @APPLE_LICENSE_HEADER_END@
 .\"
 .\" $Log: mDNS.1,v $
+.\" Revision 1.6  2005/02/10 22:35:28  cheshire
+.\" <rdar://problem/3727944> Update name
+.\"
 .\" Revision 1.5  2004/09/24 18:33:05  cheshire
 .\" <rdar://problem/3561780> Update man pages to clarify that mDNS and dns-sd are not intended for script use
 .\"
@@ -184,7 +187,7 @@ network.
 .Pp
 Similarly, to advertise a web page being served by an HTTP
 server on port 80 on this machine, such that it will show up in the
-Rendezvous list in Safari and other mDNS-SD compatible Web clients, use:
+Bonjour list in Safari and other mDNS-SD compatible Web clients, use:
 .Pp
 .Dl Nm Fl R Ns \ \&"My Test\&" _http._tcp \&. 80 path=/path-to-page.html
 .Pp

@@ -590,7 +590,7 @@ int main(int argc, char **argv)
 		case 'F':	printf("Looking for recommended browsing domains:\n");
 					err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsBrowseDomains, opinterface, enum_reply, NULL);
 					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "nicta.com.au.", NULL);
-					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "rendezvous.nicta.com.au.", NULL);
+					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "bonjour.nicta.com.au.", NULL);
 					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "ibm.com.", NULL);
 					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "dns-sd.ibm.com.", NULL);
 					break;
