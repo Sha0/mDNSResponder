@@ -27,6 +27,12 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.23  2004/09/17 01:08:57  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.22  2004/09/17 00:19:11  cheshire
 For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
 
@@ -73,7 +79,7 @@ Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 2
 
 Revision 1.9  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
-Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+Best solution is just to combine mDNSEmbeddedAPI.h and mDNSPlatformFunctions.h into a single file.
 
 Revision 1.8  2003/10/28 10:08:27  bradley
 Removed legacy port 53 support as it is no longer needed.
@@ -151,7 +157,7 @@ mDNS platform plugin for VxWorks.
 	#include	"Support/MiscUtilities.h"
 #endif
 
-#include	"mDNSClientAPI.h"
+#include	"mDNSEmbeddedAPI.h"
 
 #include	"mDNSVxWorks.h"
 

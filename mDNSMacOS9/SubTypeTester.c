@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: SubTypeTester.c,v $
+Revision 1.5  2004/09/17 01:08:50  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.4  2004/09/16 00:24:49  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -46,7 +52,7 @@ Add code for testing avail/busy subtypes
 #include <Events.h>						// For WaitNextEvent()
 #include <SIOUX.h>						// For SIOUXHandleOneEvent()
 
-#include "mDNSClientAPI.h"				// Defines the interface to the client layer above
+#include "mDNSEmbeddedAPI.h"			// Defines the interface to the client layer above
 
 #include "mDNSMacOS9.h"					// Defines the specific types needed to run mDNS on this platform
 

@@ -21,8 +21,8 @@
  * @APPLE_LICENSE_HEADER_END@
 
  * This file defines a simple shim layer between a client calling the "/usr/include/dns_sd.h" APIs
- * and an implementation of mDNSCore ("mDNSClientAPI.h" APIs) in the same address space.
- * When the client calls a dns_sd.h function, the shim calls the corresponding mDNSClientAPI.h
+ * and an implementation of mDNSCore ("mDNSEmbeddedAPI.h" APIs) in the same address space.
+ * When the client calls a dns_sd.h function, the shim calls the corresponding mDNSEmbeddedAPI.h
  * function, and when mDNSCore calls the shim's callback, we call through to the client's callback.
  * The shim is responsible for two main things:
  * - converting string parameters between C string format and native DNS format,
@@ -31,6 +31,12 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.4  2004/09/17 01:08:55  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.3  2004/05/27 06:26:31  cheshire
 Add shim for DNSServiceQueryRecord()
 
@@ -44,7 +50,7 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
  */
 
 #include "dns_sd.h"				// Defines the interface to the client layer above
-#include "mDNSClientAPI.h"		// The interface we're building on top of
+#include "mDNSEmbeddedAPI.h"		// The interface we're building on top of
 extern mDNS mDNSStorage;		// We need to pass the address of this storage to the lower-layer functions
 
 #if MDNS_BUILDINGSHAREDLIBRARY || MDNS_BUILDINGSTUBLIBRARY

@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.32  2004/09/17 01:08:55  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.31  2004/09/16 23:37:19  cheshire
 Free hdr before returning
 
@@ -58,7 +64,7 @@ clean up warning messages on Win32 platform
 Submitted by: herscher
 
 Revision 1.21  2004/06/18 04:53:56  rpantos
-Use platform layer for socket types. Introduce USE_TCP_LOOPBACK. Remove dependency on mDNSClientAPI.h.
+Use platform layer for socket types. Introduce USE_TCP_LOOPBACK. Remove dependency on mDNSEmbeddedAPI.h.
 
 Revision 1.20  2004/06/12 00:50:22  cheshire
 Changes for Windows compatibility

@@ -36,6 +36,12 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.187  2004/09/17 01:08:52  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.186  2004/09/16 00:24:49  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -112,7 +118,7 @@ Unified list copy/free code.  Added symetric list for
 
 Revision 1.164  2004/05/12 22:03:08  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
-from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+from mDNSMacOSX.h to mDNSEmbeddedAPI.h), impelemted to return "local"
 only on non-OSX platforms.  Changed call to return a copy of the list
 to avoid shared memory issues.  Added a routine to free the list.
 
@@ -375,7 +381,7 @@ Add $Log header
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
 
-#include "mDNSClientAPI.h"			// Defines the interface to the client layer above
+#include "mDNSEmbeddedAPI.h"			// Defines the interface to the client layer above
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
 #include "uds_daemon.h"				// Interface to the server side implementation of dns_sd.h

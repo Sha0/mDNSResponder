@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.185  2004/09/17 01:08:52  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.184  2004/09/17 00:19:10  cheshire
 For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
 
@@ -145,7 +151,7 @@ Fixed list traversal bug in FoundDefSearchDomain.
 
 Revision 1.148  2004/05/12 22:03:08  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
-from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+from mDNSMacOSX.h to mDNSEmbeddedAPI.h), impelemted to return "local"
 only on non-OSX platforms.  Changed call to return a copy of the list
 to avoid shared memory issues.  Added a routine to free the list.
 
@@ -244,7 +250,7 @@ Also report value of m->timenow when logging sendto() failure
 
 Revision 1.118  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
-Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+Best solution is just to combine mDNSEmbeddedAPI.h and mDNSPlatformFunctions.h into a single file.
 
 Revision 1.117  2003/11/08 22:18:29  cheshire
 <rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
@@ -541,7 +547,7 @@ Minor code tidying
 // AAAA and A records over both IPv4 and IPv6.
 #define AAAA_OVER_V4 1
 
-#include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
+#include "mDNSEmbeddedAPI.h"          // Defines the interface provided to the client layer above
 #include "mDNSMacOSX.h"             // Defines the specific types needed to run mDNS on this platform
 
 #include <stdio.h>

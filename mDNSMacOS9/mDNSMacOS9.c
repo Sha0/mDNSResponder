@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.38  2004/09/17 01:08:50  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.37  2004/09/17 00:19:10  cheshire
 For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
 
@@ -80,7 +86,7 @@ Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
 Revision 1.20  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
-Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+Best solution is just to combine mDNSEmbeddedAPI.h and mDNSPlatformFunctions.h into a single file.
 
 Revision 1.19  2003/08/18 23:09:20  cheshire
 <rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformRawTime()
@@ -97,7 +103,7 @@ Update to APSL 2.0
 #include <TextUtils.h>					// For smSystemScript
 #include <UnicodeConverter.h>			// For ConvertFromPStringToUnicode()
 
-#include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
+#include "mDNSEmbeddedAPI.h"				// Defines the interface provided to the client layer above
 
 #include "mDNSMacOS9.h"					// Defines the specific types needed to run mDNS on this platform
 

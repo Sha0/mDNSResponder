@@ -29,6 +29,12 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.7  2004/09/17 01:08:55  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.6  2004/08/11 01:58:49  cheshire
 Remove "mDNS *globalInstance" parameter from udsserver_init()
 
@@ -49,7 +55,7 @@ Changes necessary to support mDNSResponder on Linux.
 
 */
 
-#include "mDNSClientAPI.h"
+#include "mDNSEmbeddedAPI.h"
 #include "dnssd_ipc.h"
 
 

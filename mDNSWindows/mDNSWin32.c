@@ -23,6 +23,12 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.54  2004/09/17 01:08:57  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.53  2004/09/17 00:19:11  cheshire
 For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
 
@@ -87,7 +93,7 @@ Unified list copy/free code.  Added symetric list for
 
 Revision 1.36  2004/05/12 22:03:09  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
-from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+from mDNSMacOSX.h to mDNSEmbeddedAPI.h), impelemted to return "local"
 only on non-OSX platforms.  Changed call to return a copy of the list
 to avoid shared memory issues.  Added a routine to free the list.
 
@@ -132,7 +138,7 @@ Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
 Revision 1.25  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
-Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+Best solution is just to combine mDNSEmbeddedAPI.h and mDNSPlatformFunctions.h into a single file.
 
 Revision 1.24  2003/10/24 23:23:02  bradley
 Removed legacy port 53 support as it is no longer needed.
@@ -240,7 +246,7 @@ Multicast DNS platform plugin for Win32
 	#include	<process.h>
 #endif
 
-#include	"mDNSClientAPI.h"
+#include	"mDNSEmbeddedAPI.h"
 
 #include	"mDNSWin32.h"
 

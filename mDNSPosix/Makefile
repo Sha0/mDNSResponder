@@ -20,6 +20,12 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.44  2004/09/17 01:08:53  cheshire
+# Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+#   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+#   declared in that file are ONLY appropriate to single-address-space embedded applications.
+#   For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+#
 # Revision 1.43  2004/09/17 00:30:11  cheshire
 # Added some '@' signs to make build output less verbose --
 # when there's too much on the screen it's easy to miss build errors and warnings
@@ -115,7 +121,7 @@
 #
 # Revision 1.14  2003/11/14 20:59:09  cheshire
 # Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
-# Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+# Best solution is just to combine mDNSEmbeddedAPI.h and mDNSPlatformFunctions.h into a single file.
 #
 # Revision 1.13  2003/08/06 18:20:51  cheshire
 # Makefile cleanup

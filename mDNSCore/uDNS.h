@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.19  2004/09/17 01:08:49  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.18  2004/09/03 19:23:05  ksekar
 <rdar://problem/3788460>: Need retransmission mechanism for wide-area service registrations
 
@@ -84,7 +90,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #ifndef __UDNS_H_
 #define __UDNS_H_
 
-#include "mDNSClientAPI.h"
+#include "mDNSEmbeddedAPI.h"
 #include "DNSCommon.h"
 
 #ifdef	__cplusplus

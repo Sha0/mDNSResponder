@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.84  2004/09/17 01:08:55  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.83  2004/09/16 23:26:33  cheshire
 Move version check inside preceeding "if" that checks we have a complete header
 
@@ -284,7 +290,7 @@ static char * win32_strerror(int inErrorCode);
 
 #include <stdlib.h>
 #include <stdio.h>
-#include "mDNSClientAPI.h"
+#include "mDNSEmbeddedAPI.h"
 #include "uds_daemon.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"

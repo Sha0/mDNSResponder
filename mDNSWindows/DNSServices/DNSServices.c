@@ -23,6 +23,12 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.30  2004/09/17 01:08:58  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.29  2004/09/17 00:31:53  cheshire
 For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
 
@@ -56,10 +62,10 @@ Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 2
 
 Revision 1.19  2003/11/14 20:59:10  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
-Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+Best solution is just to combine mDNSEmbeddedAPI.h and mDNSPlatformFunctions.h into a single file.
 
 Revision 1.18  2003/11/14 19:18:34  cheshire
-Move AssignDomainName macro to mDNSClientAPI.h to that client layers can use it too
+Move AssignDomainName macro to mDNSEmbeddedAPI.h to that client layers can use it too
 
 Revision 1.17  2003/10/31 12:16:03  bradley
 Added support for providing the resolved host name to the callback.
@@ -145,7 +151,7 @@ DNS Services for Windows
 	#include	<CoreServices/CoreServices.h>
 #endif
 
-#include	"mDNSClientAPI.h"
+#include	"mDNSEmbeddedAPI.h"
 
 #include	"DNSServices.h"
 

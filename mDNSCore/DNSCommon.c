@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.55  2004/09/17 01:08:48  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.54  2004/09/17 00:49:51  cheshire
 Get rid of now-unused GetResourceRecord -- the correct (safe) routine to use
 is GetLargeResourceRecord
@@ -206,7 +212,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 
  */
 
-// Set mDNS_InstantiateInlines to tell mDNSClientAPI.h to instantiate inline functions, if necessary
+// Set mDNS_InstantiateInlines to tell mDNSEmbeddedAPI.h to instantiate inline functions, if necessary
 #define mDNS_InstantiateInlines 1
 #include "DNSCommon.h"
 

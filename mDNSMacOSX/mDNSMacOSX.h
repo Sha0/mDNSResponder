@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.40  2004/09/17 01:08:52  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.39  2004/08/18 17:35:41  ksekar
 <rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
 
@@ -40,7 +46,7 @@ Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format
 
 Revision 1.34  2004/05/12 22:03:09  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
-from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
+from mDNSMacOSX.h to mDNSEmbeddedAPI.h), impelemted to return "local"
 only on non-OSX platforms.  Changed call to return a copy of the list
 to avoid shared memory issues.  Added a routine to free the list.
 
@@ -171,7 +177,7 @@ Defines mDNS_PlatformSupport_struct for OS X
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include "mDNSClientAPI.h"  // for domain name structure
+#include "mDNSEmbeddedAPI.h"  // for domain name structure
 	
 
 typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;

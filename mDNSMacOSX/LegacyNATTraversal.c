@@ -23,13 +23,19 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.2  2004/09/17 01:08:52  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.1  2004/08/18 17:35:41  ksekar
 <rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
 
 
 */
 
-#include "mDNSClientAPI.h"
+#include "mDNSEmbeddedAPI.h"
 #include "mDNSMacOSX.h"
 #include <stdio.h>
 #include <stdlib.h>

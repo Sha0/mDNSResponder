@@ -30,6 +30,12 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.15  2004/09/17 01:08:53  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.14  2004/09/16 00:24:49  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -84,7 +90,7 @@ Add support for mDNSResponder on Linux.
 #include <pwd.h>
 #include <sys/types.h>
 
-#include "mDNSClientAPI.h"
+#include "mDNSEmbeddedAPI.h"
 #include "mDNSDebug.h"
 #include "mDNSPosix.h"
 #include "uds_daemon.h"

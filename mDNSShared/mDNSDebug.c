@@ -29,6 +29,12 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.5  2004/09/17 01:08:55  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.4  2004/06/11 22:36:51  cheshire
 Fixes for compatibility with Windows
 
@@ -59,7 +65,7 @@ Changes necessary to support mDNSResponder on Linux.
 #include <syslog.h>
 #endif
 
-#include "mDNSClientAPI.h"
+#include "mDNSEmbeddedAPI.h"
 
 #if MDNS_DEBUGMSGS
 mDNSexport int mDNS_DebugMode = mDNStrue;

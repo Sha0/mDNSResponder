@@ -44,6 +44,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.413  2004/09/17 01:08:48  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.412  2004/09/17 00:46:33  cheshire
 mDNS_TimeNow should take const mDNS parameter
 
@@ -302,7 +308,7 @@ Revision 1.335  2003/12/01 20:27:48  cheshire
 Display IPv6 addresses correctly (e.g. in log messages) on little-endian processors
 
 Revision 1.334  2003/11/20 22:59:53  cheshire
-Changed runtime checks in mDNS.c to be compile-time checks in mDNSClientAPI.h
+Changed runtime checks in mDNS.c to be compile-time checks in mDNSEmbeddedAPI.h
 Thanks to Bob Bradley for suggesting the ingenious compiler trick to make this work.
 
 Revision 1.333  2003/11/20 20:49:53  cheshire
@@ -344,13 +350,13 @@ DeadvertiseInterface() -- they're internal private routines, not API routines.
 
 Revision 1.323  2003/11/14 20:59:08  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
-Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+Best solution is just to combine mDNSEmbeddedAPI.h and mDNSPlatformFunctions.h into a single file.
 
 Revision 1.322  2003/11/14 19:47:52  cheshire
 Define symbol MAX_ESCAPED_DOMAIN_NAME to indicate recommended buffer size for ConvertDomainNameToCString
 
 Revision 1.321  2003/11/14 19:18:34  cheshire
-Move AssignDomainName macro to mDNSClientAPI.h to that client layers can use it too
+Move AssignDomainName macro to mDNSEmbeddedAPI.h to that client layers can use it too
 
 Revision 1.320  2003/11/13 06:45:04  cheshire
 Fix compiler warning on certain compilers
@@ -542,7 +548,7 @@ We want to avoid touching the rdata pages, so we don't page them in.
 
 Revision 1.272  2003/08/14 19:29:04  cheshire
 <rdar://problem/3378473> Include cache records in SIGINFO output
-Moved declarations of DNSTypeName() and GetRRDisplayString to mDNSClientAPI.h so daemon.c can use them
+Moved declarations of DNSTypeName() and GetRRDisplayString to mDNSEmbeddedAPI.h so daemon.c can use them
 
 Revision 1.271  2003/08/14 02:17:05  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
@@ -1333,7 +1339,6 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 
 #define TEST_LOCALONLY_FOR_EVERYTHING 0
 
-//#include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
 #include "DNSCommon.h"                  // Defines general DNS untility routines
 #include "uDNS.h"						// Defines entry points into unicast-specific routines
 // Disable certain benign warnings with Microsoft compilers

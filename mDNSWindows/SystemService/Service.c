@@ -23,6 +23,12 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.17  2004/09/17 01:08:58  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.16  2004/09/16 18:49:34  shersche
 Remove the XP SP2 check before attempting to manage the firewall. There is a race condition in the SP2 updater such that upon first reboot after the upgrade, mDNSResponder might not know that it is running under SP2 yet.  This necessitates a second reboot before the firewall is managed.  Removing the check will cause mDNSResponder to try and manage the firewall everytime it boots up, if and only if it hasn't managed the firewall a previous time.
 
@@ -100,7 +106,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #include	"Resource.h"
 
-#include	"mDNSClientAPI.h"
+#include	"mDNSEmbeddedAPI.h"
 #include	"mDNSWin32.h"
 
 #include	"Firewall.h"
@@ -219,7 +225,7 @@ static OSStatus		SetLLRoute();
 #define kLLNetworkAddrMask  "255.255.0.0"
 
 
-#include	"mDNSClientAPI.h"
+#include	"mDNSEmbeddedAPI.h"
 
 #if 0
 #pragma mark == Globals ==

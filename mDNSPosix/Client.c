@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.12  2004/09/17 01:08:53  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.11  2003/11/17 20:14:32  cheshire
 Typo: Wrote "domC" where it should have said "domainC"
 
@@ -68,7 +74,7 @@ First checkin
 #include <unistd.h>
 #include <stdlib.h>
 
-#include "mDNSClientAPI.h"// Defines the interface to the mDNS core code
+#include "mDNSEmbeddedAPI.h"// Defines the interface to the mDNS core code
 #include "mDNSPosix.h"    // Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"
 

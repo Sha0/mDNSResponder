@@ -23,6 +23,12 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.17  2004/09/17 01:08:57  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.16  2004/08/05 05:43:01  shersche
 <rdar://problem/3751566> Add HostDescriptionChangedCallback so callers can choose to handle it when mDNSWin32 core detects that the computer description string has changed
 Bug #: 3751566
@@ -95,7 +101,7 @@ Multicast DNS platform plugin for Win32
 	#include	<mswsock.h>
 #endif
 
-#include	"mDNSClientAPI.h"
+#include	"mDNSEmbeddedAPI.h"
 
 #ifdef	__cplusplus
 	extern "C" {

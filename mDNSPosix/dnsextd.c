@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.6  2004/09/17 01:08:54  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.5  2004/09/16 00:50:54  cheshire
 Don't use MSG_WAITALL -- it returns "Invalid argument" on some Linux versions
 
@@ -43,7 +49,7 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 
 */
 
-#include "../mDNSCore/mDNSClientAPI.h"
+#include "../mDNSCore/mDNSEmbeddedAPI.h"
 #include "../mDNSCore/DNSCommon.h"
 #include "../mDNSCore/mDNS.c"
 //!!!KRS we #include mDNS.c for the various constants defined there  - we should move these to DNSCommon.h

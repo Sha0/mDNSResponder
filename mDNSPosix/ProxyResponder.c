@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.31  2004/09/17 01:08:53  cheshire
+Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
+  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
+  declared in that file are ONLY appropriate to single-address-space embedded applications.
+  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
+
 Revision 1.30  2004/09/17 00:31:52  cheshire
 For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
 
@@ -99,7 +105,7 @@ Add "$Log" header
 #include <netinet/in.h>		// For INADDR_NONE
 #include <netdb.h>			// For gethostbyname()
 
-#include "mDNSClientAPI.h"  // Defines the interface to the client layer above
+#include "mDNSEmbeddedAPI.h"  // Defines the interface to the client layer above
 #include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"
 
