@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.184  2003/06/10 02:26:39  cheshire
+<rdar://problem/3283516> mDNSResponder needs an mDNS_Reconfirm() function
+Make mDNS_Reconfirm() call mDNS_Lock(), like the other API routines
+
 Revision 1.183  2003/06/09 18:53:13  cheshire
 Simplify some debugf() statements (replaced block of 25 lines with 2 lines)
 
@@ -2934,6 +2938,27 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, ResourceRecord *const rr)
 		m->NextCacheCheck = rr->NextRequiredQuery;
 	}
 
+mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, ResourceRecord *const rr, mDNSs32 interval)
+	{
+	mDNSs32 expire = rr->TimeRcvd + ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond);
+	if (interval < mDNSPlatformOneSecond * 5)
+		interval = mDNSPlatformOneSecond * 5;
+	if (expire - m->timenow > interval)
+		{
+		// Typically, we use an expiry interval of five seconds.
+		// That means we pretend we received it 15 seconds ago with a TTL of 20,
+		// so its 80-85% check will occur at 16-17 seconds (1-2 seconds from now)
+		// and its 90-95% check at 18-19 seconds (3-4 seconds from now).
+		// If neither query elicits a response, the record will expire five seconds from now.
+		rr->TimeRcvd          = m->timenow - interval * 3;
+		rr->rroriginalttl     = interval * 4 / mDNSPlatformOneSecond;
+		SetNextCacheCheckTime(m, rr);
+		}
+	debugf("mDNS_Reconfirm_internal: %ld ticks to go for %s",	
+		rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond - m->timenow, GetRRDisplayString(m, rr));
+	return(mStatus_NoError);
+	}
+
 #define MaxQuestionInterval         (3600 * mDNSPlatformOneSecond)
 
 // BuildQuestion puts a question into a DNS Query packet and if successful, updates the value of queryptr.
@@ -3009,7 +3034,7 @@ mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name)
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 			if ((target = GetRRDomainNameTarget(rr)) && SameDomainName(target, name))
-				mDNS_Reconfirm(m, rr);
+				mDNS_Reconfirm_internal(m, rr, 0);
 	}
 
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
@@ -3467,24 +3492,6 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 	m->lock_rrcache = 0;
 	}
 
-mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, ResourceRecord *const rr)
-	{
-	mDNSs32 expire = rr->TimeRcvd + ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond);
-	if (expire - m->timenow > mDNSPlatformOneSecond * 5)
-		{
-		// If this record has more than five seconds to live, pretend we received it 15 seconds ago with a TTL of 20.
-		// That means its 80-85% check will occur at 16-17 seconds (1-2 seconds from now)
-		// and its 90-95% check at 18-19 seconds (3-4 seconds from now).
-		// If neither query elicits a response, the record will expire five seconds from now.
-		rr->TimeRcvd          = m->timenow - mDNSPlatformOneSecond * 15;
-		rr->rroriginalttl     = 20;
-		SetNextCacheCheckTime(m, rr);
-		}
-	debugf("mDNS_Reconfirm: %ld seconds to go for %s",
-		rr->rroriginalttl - (m->timenow - rr->TimeRcvd) / mDNSPlatformOneSecond, GetRRDisplayString(m, rr));
-	return(mStatus_NoError);
-	}
-
 mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 	{
 	ResourceRecord *r = m->rrcache_free;
@@ -3887,15 +3894,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		m->NextCacheCheck  = m->timenow;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
-				{
-				// If we don't get an answer for these in the next five seconds, assume they're gone
-				rr->TimeRcvd          = m->timenow;
-				rr->rroriginalttl     = 5;
-				rr->UnansweredQueries = 0;
-				rr->UnansweredTCQ     = 0;
-				rr->UnansweredTCKA    = 0;
-				SetNextCacheCheckTime(m, rr);
-				}
+				mDNS_Reconfirm_internal(m, rr, 0);
 
 		// 3. Retrigger probing and announcing for all our authoritative records
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -4904,6 +4903,15 @@ mDNSexport mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 	return(status);
 	}
 
+mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, ResourceRecord *const rr)
+	{
+	mStatus status;
+	mDNS_Lock(m);
+	status = mDNS_Reconfirm_internal(m, rr, 0);
+	mDNS_Unlock(m);
+	return(status);
+	}
+
 mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const domainname *const srv, const domainname *const domain,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
@@ -5519,15 +5527,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				if (rr->InterfaceID == set->InterfaceID)
-					{
-					// If we don't get an answer for these in the next five seconds, assume they're gone
-					rr->TimeRcvd          = m->timenow;
-					rr->rroriginalttl     = 5;
-					rr->UnansweredQueries = 0;
-					rr->UnansweredTCQ     = 0;
-					rr->UnansweredTCKA    = 0;
-					SetNextCacheCheckTime(m, rr);
-					}
+					mDNS_Reconfirm_internal(m, rr, 0);
 		}
 
 	mDNS_Unlock(m);
