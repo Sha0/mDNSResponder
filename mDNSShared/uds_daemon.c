@@ -974,7 +974,7 @@ static void handle_regservice_request(request_state *request)
     char name[256], regtype[256], domain[256], host[256];
     uint16_t txtlen;
     mDNSIPPort port;
-    void *txtdata;
+    void *txtdata = NULL;
     char *ptr;
     domainlabel n;
     domainname t, d, h, srv;
@@ -1056,12 +1056,14 @@ static void handle_regservice_request(request_state *request)
         {
         reset_connected_rstate(request);  // reset to receive add/remove messages
         }
+    free(txtdata);
     return;
 
 bad_param:
     deliver_error(request, mStatus_BadParamErr);
     abort_request(request);
     unlink_request(request);
+    if (txtdata) free(txtdata);
 return;
 
 malloc_error:
@@ -1181,6 +1183,7 @@ static void handle_add_request(request_state *rstate)
     extra->r.rdatastorage.MaxRDLength = size;
     extra->r.rdatastorage.RDLength = rdlen;
     memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
+    free(rdata);
     result =  mDNS_AddRecordToService(&mDNSStorage, srs , extra, &extra->r.rdatastorage, ttl);
     deliver_error(rstate, mStatus_UnknownErr);
     reset_connected_rstate(rstate);
@@ -1240,6 +1243,7 @@ static void handle_update_request(request_state *rstate)
     newrd->MaxRDLength = rdsize;
     newrd->RDLength = rdlen;
     memcpy(&newrd->u, rdata, rdlen);
+    free(rdata);
     result = mDNS_Update(&mDNSStorage, rr, ttl, newrd, update_callback);
     deliver_error(rstate, result);
     reset_connected_rstate(rstate);
@@ -1627,9 +1631,9 @@ static ResourceRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl)
     rr->rrclass = get_short(&msgbuf);
     rr->rdata->RDLength = get_short(&msgbuf);
     rr->rdata->MaxRDLength = sizeof(RDataBody);
-    rdata = get_rdata(&msgbuf, rr->rdata->RDLength);  //!!!KRS change function to take a buffer so we don't need to copy twice
+    rdata = get_rdata(&msgbuf, rr->rdata->RDLength);  
     memcpy(rr->rdata->u.data, rdata, rr->rdata->RDLength);
-    freeL("read_rr_from_ipc_msg", rdata);
+    free(rdata);
     if (ttl)	
     	{
         rr->rroriginalttl = get_long(&msgbuf);
