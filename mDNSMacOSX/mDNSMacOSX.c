@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.63  2003/04/15 16:33:50  jgraessl
+
+Bug #: 3221880
+Switched to our own copy of if_indextoname to improve performance.
+
 Revision 1.62  2003/03/28 01:55:44  cheshire
 Minor improvements to debugging messages
 
@@ -210,6 +215,39 @@ void LogMsg(const char *format, ...)
 	fflush(stderr);
 	}
 
+static struct ifaddrs* myGetIfAddrs(int refresh)
+	{
+	static struct ifaddrs	*ifa = NULL;
+	
+	if (refresh && ifa)
+		{
+		freeifaddrs(ifa);
+		ifa = NULL;
+		}
+	
+	if (ifa == NULL) getifaddrs(&ifa);
+	
+	return ifa;
+	}
+
+static int myIfIndexToName(u_short index, char* name)
+	{
+	struct ifaddrs*	ifa = myGetIfAddrs(0);
+	if (ifa == NULL) return -1;
+	
+	for (;ifa ; ifa = ifa->ifa_next)
+		{
+		if (ifa->ifa_addr->sa_family == AF_LINK)
+			{
+			struct sockaddr_dl	*sdl = (struct sockaddr_dl*)ifa->ifa_addr;
+			if (sdl->sdl_index == index) strncpy(name, ifa->ifa_name, IF_NAMESIZE);
+			return 0;
+			}
+		}
+	
+	return -1;
+	}
+
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
@@ -332,7 +370,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 			struct in6_pktinfo *ip6_info = (struct in6_pktinfo*)CMSG_DATA(cmPtr);
 			dstaddr->type = mDNSAddrType_IPv6;
 			dstaddr->addr.ipv6 = *(mDNSv6Addr*)&ip6_info->ipi6_addr;
-			if_indextoname(ip6_info->ipi6_ifindex, ifname);
+			myIfIndexToName(ip6_info->ipi6_ifindex, ifname);
 			}
 		}
 
@@ -691,8 +729,8 @@ mDNSlocal void ClearInterfaceList(mDNS *const m)
 mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	{
 	mDNSBool foundav4 = mDNSfalse;
-	struct ifaddrs *ifalist;
-	int err = getifaddrs(&ifalist);
+	struct ifaddrs *ifalist = myGetIfAddrs(1);
+	int err = ifalist != NULL ? 0 : (errno != 0 ? errno : -1);
 	struct ifaddrs *ifa = ifalist;
 	struct ifaddrs *theLoopback = NULL;
 	if (err) return(err);
@@ -758,7 +796,6 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 		else SetupInterface(m, info, theLoopback);
 		}
 
-	freeifaddrs(ifalist);
 	return(err);
 	}
 
