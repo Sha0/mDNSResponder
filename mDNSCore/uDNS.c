@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.141  2004/12/07 01:39:28  cheshire
+Don't fail if the same server is responsible for more than one domain
+(e.g. the same DNS server may be responsible for both apple.com. and 17.in-addr.arpa.)
+
 Revision 1.140  2004/12/06 21:15:22  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -673,24 +677,26 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr)
 
 mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const domainname *d)
     {
-	DNSServer *s, *p;
     uDNS_GlobalInfo *u = &m->uDNS_info;
+	DNSServer *s, **p = &u->Servers;
 	
 	mDNS_Lock(m);
 	if (!d) d = (domainname *)"";
 
-	// make sure server is unique
-	p = u->Servers;
-	while (p && !mDNSSameAddress(&p->addr, addr) && !SameDomainName(&p->domain, d)) p = p->next;
-	if (p) { LogMsg("Duplicate registration of DNS for domain %##s", d->c); goto end; }
+	while (*p)		// Check if we already have this {server,domain} pair registered
+		{
+		if (mDNSSameAddress(&(*p)->addr, addr) && SameDomainName(&(*p)->domain, d))
+			LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
+		p=&(*p)->next;
+		}
 
 	// allocate, add to list
 	s = umalloc(sizeof(*s));
 	if (!s) { LogMsg("Error: mDNS_AddDNSServer - malloc"); goto end; }
 	s->addr = *addr;
 	AssignDomainName(s->domain, *d);
-	s->next = u->Servers;
-	u->Servers = s;
+	s->next = mDNSNULL;
+	*p = s;
 	
 	end:
 	mDNS_Unlock(m);
