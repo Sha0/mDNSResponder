@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.6  2003/12/04 06:24:33  cheshire
+Clarify meaning of MoreComing/Finished flag
+
 Revision 1.5  2003/11/13 23:35:35  ksekar
 Bug #: <rdar://problem/3483020>: Header doesn't say that add/remove are possible values for flags
 Bringing mDNSResponder project copy of dns_sd.h header up to date with
@@ -62,10 +65,18 @@ enum
     {
     kDNSServiceFlagsMoreComing          = 1,
     kDNSServiceFlagsFinished            = 0,  /* i.e. bit not set */
-    /* MoreComing indicates to a Browse callback that another result is
-     * queued.  Applications should not update their UI to display browse
-     * results when the MoreComing flag is set, instead deferring the update
-     * until the callback's flag is Finished. */
+    /* MoreComing indicates to a callback that at least one more result is
+     * queued and will be delivered following immediately after this one.
+     * Applications should not update their UI to display browse
+     * results when the MoreComing flag is set, because this would
+     * result in a great deal of ugly flickering on the screen.
+     * Applications should instead wait until until MoreComing is not set
+     * (i.e. "Finished", for now), and then update their UI.
+     * When MoreComing is not set (i.e. "Finished") that doesn't mean there
+     * will be no more answers EVER, just that there are no more answers
+     * immediately available right now at this instant. If more answers
+     * become available in the future they will be delivered as usual.
+     */
 
     kDNSServiceFlagsAdd                 = 2,
     kDNSServiceFlagsDefault             = 4,
