@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.165  2003/06/04 02:53:21  cheshire
+Add some "#pragma warning" lines so it compiles clean on Microsoft compilers
+
 Revision 1.164  2003/06/04 01:25:33  cheshire
 <rdar://problem/3274950> Cannot perform multi-packet known-answer suppression messages
 Display time interval between first and subsequent queries
@@ -504,9 +507,24 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"		// Defines the interface required of the supporting layer below
 
+// Disable certain benign warnings with Microsoft compilers
 #if(defined(_MSC_VER))
-	// Disable warnings about Microsoft Visual Studio/C++ not understanding "pragma unused"
-	#pragma warning( disable:4068 )
+	// Disable "conditional expression is constant" warning for debug macros.
+	// Otherwise, this generates warnings for the perfectly natural construct "while(1)"
+	// If someone knows a variant way of writing "while(1)" that doesn't generate warning messages, please let us know
+	#pragma warning(disable:4127)
+	
+	// Disable "const object should be initialized"
+	// We know that static/globals are defined to be zeroed in ANSI C, and to avoid this warning would require some
+	// *really* ugly chunk of zeroes and curly braces to initialize zeroRR and mDNSprintf_format_default to all zeroes
+	#pragma warning(disable:4132)
+	
+	// Disable "assignment within conditional expression".
+	// Other compilers understand the convention that if you place the assignment expression within an extra pair
+	// of parentheses, this signals to the compiler that you really intended an assignment and no warning is necessary.
+	// The Microsoft compiler doesn't understand this convention, so in the absense of any other way to signal
+	// to the compiler that the assignment is intentional, we have to just turn this warning off completely.
+	#pragma warning(disable:4706)		
 #endif
 
 // ***************************************************************************
@@ -645,7 +663,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 			char *s = mDNS_VACB_Lim, *digits;
 			struct mDNSprintf_format F = mDNSprintf_format_default;
 	
-			while(1)	//  decode flags
+			while (1)	//  decode flags
 				{
 				c = *++fmt;
 				if      (c == '-')	F.leftJustify = 1;
@@ -919,8 +937,8 @@ mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)
 		{
 		switch (ip1->type)
 			{
-			case mDNSAddrType_IPv4 : return(mDNSSameIPv4Address(ip1->ip.v4, ip2->ip.v4));
-			case mDNSAddrType_IPv6 : return(mDNSSameIPv6Address(ip1->ip.v6, ip2->ip.v6));
+			case mDNSAddrType_IPv4 : return(mDNSBool)(mDNSSameIPv4Address(ip1->ip.v4, ip2->ip.v4));
+			case mDNSAddrType_IPv6 : return(mDNSBool)(mDNSSameIPv6Address(ip1->ip.v6, ip2->ip.v6));
 			}
 		}
 	return(mDNSfalse);
@@ -928,24 +946,15 @@ mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)
 
 mDNSlocal mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 	{
-	mDNSBool result = mDNSfalse;
 	switch(ip->type)
 		{
-		case mDNSAddrType_IPv4:
-			result = ip->ip.v4.NotAnInteger == AllDNSLinkGroup.NotAnInteger ? mDNStrue : mDNSfalse;
-			break;
-		
-		case mDNSAddrType_IPv6:
-			if (ip->ip.v6.l[0] == AllDNSLinkGroupv6.l[0] &&
-				ip->ip.v6.l[1] == AllDNSLinkGroupv6.l[1] &&
-				ip->ip.v6.l[2] == AllDNSLinkGroupv6.l[2] &&
-				ip->ip.v6.l[3] == AllDNSLinkGroupv6.l[3])
-				result = mDNStrue;
-			else result = mDNSfalse;
-			break;
+		case mDNSAddrType_IPv4: return(mDNSBool)(ip->ip.v4.NotAnInteger == AllDNSLinkGroup.NotAnInteger);
+		case mDNSAddrType_IPv6: return(mDNSBool)(ip->ip.v6.l[0] == AllDNSLinkGroupv6.l[0] &&
+												 ip->ip.v6.l[1] == AllDNSLinkGroupv6.l[1] &&
+												 ip->ip.v6.l[2] == AllDNSLinkGroupv6.l[2] &&
+												 ip->ip.v6.l[3] == AllDNSLinkGroupv6.l[3] );
+		default: return(mDNSfalse);
 		}
-	
-	return result;
 	}
 
 mDNSlocal const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf)
@@ -1502,10 +1511,10 @@ mDNSlocal mDNSBool SameRData(const mDNSu16 r1type, const mDNSu16 r2type, const R
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(SameDomainName(&r1->u.name, &r2->u.name));
 
-		case kDNSType_SRV:	return( r1->u.srv.priority          == r2->u.srv.priority          &&
-									r1->u.srv.weight            == r2->u.srv.weight            &&
-									r1->u.srv.port.NotAnInteger == r2->u.srv.port.NotAnInteger &&
-									SameDomainName(&r1->u.srv.target, &r2->u.srv.target));
+		case kDNSType_SRV:	return(mDNSBool)(  	r1->u.srv.priority          == r2->u.srv.priority          &&
+												r1->u.srv.weight            == r2->u.srv.weight            &&
+												r1->u.srv.port.NotAnInteger == r2->u.srv.port.NotAnInteger &&
+												SameDomainName(&r1->u.srv.target, &r2->u.srv.target)       );
 
 		default:			return(mDNSPlatformMemSame(r1->u.data, r2->u.data, r1->RDLength));
 		}
@@ -1550,7 +1559,7 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 	if (r1->InterfaceID &&
 		r2->InterfaceID &&
 		r1->InterfaceID != r2->InterfaceID) return(mDNSfalse);
-	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
+	return(mDNSBool)(r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
 	}
 
 // PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if the
@@ -1564,7 +1573,7 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const ResourceRecord *const pktrr, c
 		authrr->InterfaceID &&
 		pktrr->InterfaceID != authrr->InterfaceID) return(mDNSfalse);
 	if (authrr->RecordType != kDNSRecordTypeUnique && pktrr->rrtype != authrr->rrtype) return(mDNSfalse);
-	return (pktrr->rrclass == authrr->rrclass && SameDomainName(&pktrr->name, &authrr->name));
+	return(mDNSBool)(pktrr->rrclass == authrr->rrclass && SameDomainName(&pktrr->name, &authrr->name));
 	}
 
 // IdenticalResourceRecord returns true if two resources records have
@@ -1598,7 +1607,7 @@ mDNSlocal mDNSBool ShouldSuppressKnownAnswer(const ResourceRecord *const ka, con
 	// (If two responders on the network are offering the same information,
 	// that's okay, and if they are offering the information with different TTLs,
 	// the one offering the lower TTL should defer to the one offering the higher TTL.)
-	return(ka->rroriginalttl >= rr->rroriginalttl / 2);
+	return(mDNSBool)(ka->rroriginalttl >= rr->rroriginalttl / 2);
 	}
 
 mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
@@ -4268,7 +4277,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
 		ResourceRecord pktrr;
-		mDNSu8 RecordType = (i < response->h.numAnswers) ? kDNSRecordTypePacketAns : kDNSRecordTypePacketAdd;
+		const mDNSu8 RecordType = (mDNSu8)((i < response->h.numAnswers) ? kDNSRecordTypePacketAns : kDNSRecordTypePacketAdd);
 		ptr = GetResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &pktrr, mDNSNULL);
 		if (!ptr) return;
 
@@ -4665,7 +4674,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
-	mDNSBool PortChanged = (query->info->port.NotAnInteger != answer->rdata->u.srv.port.NotAnInteger);
+	mDNSBool PortChanged = (mDNSBool)(query->info->port.NotAnInteger != answer->rdata->u.srv.port.NotAnInteger);
 	if (answer->rrremainingttl == 0) return;
 	if (answer->rrtype != kDNSType_SRV) return;
 
@@ -5091,7 +5100,7 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
-	#pragma unused(rr)
+	(void)rr;	// Unused parameter
 	switch (result)
 		{
 		case mStatus_NoError:
@@ -5277,8 +5286,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
-	#pragma unused(m)
 	ServiceRecordSet *sr = (ServiceRecordSet *)rr->RecordContext;
+	(void)m;	// Unused parameter
 	switch (result)
 		{
 		case mStatus_NoError:
