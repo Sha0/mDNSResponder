@@ -76,7 +76,8 @@
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="_DEBUG"
-				Culture="1033"/>
+				Culture="1033"
+				AdditionalIncludeDirectories="../../mDNSWindows"/>
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
@@ -151,7 +152,8 @@
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="NDEBUG"
-				Culture="1033"/>
+				Culture="1033"
+				AdditionalIncludeDirectories="../../mDNSWindows"/>
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
@@ -244,10 +246,10 @@
 				RelativePath="Web.ico">
 			</File>
 			<File
-				RelativePath=".\res\about.bmp">
+				RelativePath=".\about.bmp">
 			</File>
 			<File
-				RelativePath=".\about.bmp">
+				RelativePath=".\res\about.bmp">
 			</File>
 			<File
 				RelativePath=".\res\cold.ico">
@@ -256,16 +258,16 @@
 				RelativePath=".\cold.ico">
 			</File>
 			<File
-				RelativePath=".\res\hot.ico">
-			</File>
-			<File
 				RelativePath=".\hot.ico">
 			</File>
 			<File
-				RelativePath=".\res\logo.bmp">
+				RelativePath=".\res\hot.ico">
 			</File>
 			<File
 				RelativePath=".\logo.bmp">
+			</File>
+			<File
+				RelativePath=".\res\logo.bmp">
 			</File>
 		</Filter>
 	</Files>
