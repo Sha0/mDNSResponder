@@ -521,7 +521,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 		if (DeliverInstance(x, DNSServiceDiscoverReplyFlagsMoreComing) == mDNSfalse)
 			return;
 
-	debugf("FoundInstance: %##s", &answer->rdata->u.name);
+	debugf("FoundInstance: %s %##s", answer->rrremainingttl ? "Add" : "Rmv", &answer->rdata->u.name);
 	ConvertDomainLabelToCString_unescaped(&name, x->name);
 	ConvertDomainNameToCString(&type, x->type);
 	ConvertDomainNameToCString(&domain, x->dom);
@@ -1368,7 +1368,7 @@ mDNSexport int main(int argc, char **argv)
 			// This gives us chance to regain control so we can call mDNS_Execute() before sleeping again
 			ticks     = nextevent - mDNSPlatformTimeNow();
 			if (ticks < 1) ticks = 1;
-			debugf("main: Handled %d events; now sleeping for %d ticks", numevents, ticks);
+			verbosedebugf("main: Handled %d events; now sleeping for %d ticks", numevents, ticks);
 			numevents = 0;
 			interval  = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
 			RunLoopStatus = CFRunLoopRunInMode(kCFRunLoopDefaultMode, interval, true);
