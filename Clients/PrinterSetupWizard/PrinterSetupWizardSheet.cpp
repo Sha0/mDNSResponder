@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.22  2005/01/25 18:49:43  shersche
+Get icon resources from resource DLL
+
 Revision 1.21  2005/01/10 01:09:32  shersche
 Use the "note" key to populate pLocation field when setting up printer
 
@@ -547,7 +550,7 @@ void CPrinterSetupWizardSheet::Init(void)
 	m_psh.pszbmWatermark = MAKEINTRESOURCE(IDB_WATERMARK);
 	m_psh.pszbmHeader = MAKEINTRESOURCE(IDB_BANNER_ICON);
 
-	m_psh.hInstance = AfxGetInstanceHandle();
+	m_psh.hInstance = GetNonLocalizedResources();
 
 	SetWizardMode();
 }
