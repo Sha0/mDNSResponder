@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.170  2005/02/16 01:15:02  cheshire
+Improve LogOperation() debugging messages for DNSServiceBrowse and DNSServiceRegister
+
 Revision 1.169  2005/02/08 01:57:14  cheshire
 More detailed error reporting in udsserver_init()
 
@@ -1902,7 +1905,7 @@ static void handle_browse_request(request_state *request)
 	request->termination_context = info;
     request->terminate = browse_termination_callback;
 	
-	LogOperation("%3d: DNSServiceBrowse(%##s%s) START", request->sd, info->regtype.c, domain);
+	LogOperation("%3d: DNSServiceBrowse(\"%##s\", \"%s\") START", request->sd, info->regtype.c, domain);
 	if (domain[0])
 		{
 		if (!MakeDomainNameFromDNSNameString(&d, domain)) { err = mStatus_BadParamErr;  goto error; }
@@ -2238,7 +2241,8 @@ static void handle_regservice_request(request_state *request)
 				count+1, srv.c, mDNSVal16(service->port));
 		}
 
-	LogOperation("%3d: DNSServiceRegister(%##s, %u) START", request->sd, srv.c, mDNSVal16(service->port));
+	LogOperation("%3d: DNSServiceRegister(\"%s\", \"%s\", \"%s\", \"%s\", %u) START",
+		request->sd, name, service->type_as_string, domain, host, mDNSVal16(service->port));
 	result = register_service_instance(request, &d);
 	
 	if (!result && !*domain)
