@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.40  2003/03/29 01:55:19  cheshire
+<rdar://problem/3212360> mDNSResponder sometimes suffers false self-conflicts when it sees its own packets
+Solution: Major cleanup of packet timing and conflict handling rules
+
 Revision 1.39  2003/03/27 03:30:55  cheshire
 <rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
 Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
@@ -416,9 +420,9 @@ struct ResourceRecord_struct
 	ResourceRecord *NextResponse;		// AR: Link to the next element in the chain of responses to generate
 	const mDNSu8   *NR_AnswerTo;		// AR: Set if this record was selected by virtue of being a direct answer to a question
 	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another
-	mDNSs32         LastSendTime;		// AR: In platform time units
-	mDNSs32         NextSendTime;		// AR: In platform time units
-	mDNSs32         NextSendInterval;	// AR: In platform time units
+	mDNSs32         RRLastTxTime;		// AR: In platform time units: Last time this record was sent for any reason
+	mDNSs32         ThisAPInterval;		// AR: In platform time units: Current interval for announce/probe
+	mDNSs32         LastAPTime;			// AR: In platform time units: Last time we sent announcement/probe
 	RData          *NewRData;			// AR: Set if we are updating this record with new rdata
 	mDNSRecordUpdateCallback *UpdateCallback;
 
@@ -587,6 +591,8 @@ struct mDNS_struct
 	ResourceRecord *CurrentRecord;	// Next ResourceRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
 	mDNSs32 SuppressSending;
+	mDNSs32 ProbeFailTime;
+	mDNSs32 NumFailedProbes;
 	mDNSs32 SuppressProbes;
 	mDNSBool SleepState;
 	mDNSBool NetChanged;

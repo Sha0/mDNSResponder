@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.94  2003/03/29 01:55:19  cheshire
+<rdar://problem/3212360> mDNSResponder sometimes suffers false self-conflicts when it sees its own packets
+Solution: Major cleanup of packet timing and conflict handling rules
+
 Revision 1.93  2003/03/28 01:54:36  cheshire
 Minor tidyup of IPv6 (AAAA) code
 
@@ -1085,27 +1089,32 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	(ResourceRecordIsValidAnswer(RR) && \
 	((RR)->InterfaceID == mDNSInterface_Any || (RR)->InterfaceID == (I)))
 
+#define RRUniqueOrKnownUnique(RR) ((RR)->RecordType == kDNSRecordTypeUnique || (RR)->RecordType == kDNSRecordTypeKnownUnique)
+
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 #define DefaultProbeCountForRecordType(X)      ((X) == kDNSRecordTypeUnique ? DefaultProbeCountForTypeUnique : (mDNSu8)0)
 
-#define DefaultAnnounceCountForTypeShared ((mDNSu8)10)
-#define DefaultAnnounceCountForTypeUnique ((mDNSu8)2)
+#define DefaultAnnounceCount ((mDNSu8)10)
 
-#define DefaultAnnounceCountForRecordType(X)   ((X) == kDNSRecordTypeShared      ? DefaultAnnounceCountForTypeShared : \
-												(X) == kDNSRecordTypeUnique      ? DefaultAnnounceCountForTypeUnique : \
-												(X) == kDNSRecordTypeVerified    ? DefaultAnnounceCountForTypeUnique : \
-												(X) == kDNSRecordTypeKnownUnique ? DefaultAnnounceCountForTypeUnique : (mDNSu8)0)
+// Note that the announce intervals use exponential backoff, doubling each time. The probe intervals do not.
+// This means that because the announce interval is doubled after sending the first packet, the first
+// observed on-the-wire inter-packet interval between announcements is actually one second.
+// The half-second value here may be thought of as a conceptual (non-existent) half-second delay *before* the first packet is sent.
+#define DefaultProbeIntervalForTypeUnique (mDNSPlatformOneSecond/4)
+#define DefaultAnnounceIntervalForTypeShared (mDNSPlatformOneSecond/2)
+#define DefaultAnnounceIntervalForTypeUnique (mDNSPlatformOneSecond/2)
 
-#define DefaultSendIntervalForRecordType(X)    ((X) == kDNSRecordTypeShared   ? mDNSPlatformOneSecond   : \
-												(X) == kDNSRecordTypeUnique   ? mDNSPlatformOneSecond/4 : \
-												(X) == kDNSRecordTypeVerified ? mDNSPlatformOneSecond/4 : 0)
+#define DefaultAPIntervalForRecordType(X)  ((X) == kDNSRecordTypeShared      ? DefaultAnnounceIntervalForTypeShared : \
+											(X) == kDNSRecordTypeUnique      ? DefaultProbeIntervalForTypeUnique    : \
+											(X) == kDNSRecordTypeVerified    ? DefaultAnnounceIntervalForTypeUnique : \
+											(X) == kDNSRecordTypeKnownUnique ? DefaultAnnounceIntervalForTypeUnique : 0)
 
-#define TimeToAnnounceThisRecord(RR,time) ((RR)->AnnounceCount && time - (RR)->NextSendTime >= 0)
-#define TimeToSendThisRecord(RR,time) \
-	((RR)->RRInterfaceActive && (TimeToAnnounceThisRecord(RR,time) || (RR)->SendPriority) && ResourceRecordIsValidAnswer(RR))
+#define TimeToAnnounceThisRecord(RR,time) ((RR)->AnnounceCount && (RR)->LastAPTime + (RR)->ThisAPInterval - (time) <= 0)
+#define TimeToSendThisRecord(RR,time,level) \
+	((TimeToAnnounceThisRecord(RR,time) || (RR)->SendPriority >= (level)) && ResourceRecordIsValidAnswer(RR))
 
 #define ActiveQuestion(Q) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf)
-#define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (Q)->LastQTime + (Q)->ThisQInterval - time <= 0)
+#define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (Q)->LastQTime + (Q)->ThisQInterval - (time) <= 0)
 
 mDNSlocal mDNSBool SameRData(const mDNSu16 rrtype, const RData *const r1, const RData *const r2)
 	{
@@ -1211,33 +1220,43 @@ mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		}
 	}
 
-mDNSlocal void SetTargetToHostName(const mDNS *const m, ResourceRecord *const rr)
+mDNSlocal void SetTargetToHostName(const mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow)
 	{
 	switch (rr->rrtype)
 		{
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	rr->rdata->u.name       = m->hostname1; break;
 		case kDNSType_SRV:	rr->rdata->u.srv.target = m->hostname1; break;
-		default: debugf("SetTargetToHostName: Dont' know how to set the target of rrtype %d", rr->rrtype); break;
+		default: debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->rrtype); break;
 		}
-	rr->rdata->RDLength  = GetRDLength(rr, mDNSfalse);
-	rr->rdestimate       = GetRDLength(rr, mDNStrue);
+	rr->rdata->RDLength      = GetRDLength(rr, mDNSfalse);
+	rr->rdestimate           = GetRDLength(rr, mDNStrue);
 	
 	// If we're in the middle of probing this record, we need to start again,
 	// because changing its rdata may change the outcome of the tie-breaker.
-	rr->ProbeCount       = DefaultProbeCountForRecordType(rr->RecordType);
-	rr->AnnounceCount    = DefaultAnnounceCountForRecordType(rr->RecordType);
-	rr->NextSendTime     = mDNSPlatformTimeNow();
-	rr->NextSendInterval = DefaultSendIntervalForRecordType(rr->RecordType);
-	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
+	rr->ProbeCount     = DefaultProbeCountForRecordType(rr->RecordType);
+	rr->AnnounceCount  = DefaultAnnounceCount;
+	rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->RecordType);
+	rr->LastAPTime     = timenow - rr->ThisAPInterval;
+	if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
+
+	// If this is a record type that's not going to probe, then delay its first announcement so that it will go out
+	// synchronized with the first announcement for the other records that *are* probing
+	// The addition of "rr->ThisAPInterval / 4" is to make sure that this announcement is not scheduled to go out
+	// *before* the probing is complete. When the probing is complete and those records begin to
+	// announce, these records will also be picked up and accelerated, because they will be considered to be
+	// more than half-way to their scheduled announcement time.
+	// Ignoring timing jitter, they will be exactly 3/4 of the way to their scheduled announcement time.
+	// Anything between 50% and 100% would work, so aiming for 75% gives us the best safety margin in case of timing jitter.
+	if (rr->ProbeCount == 0) rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 4;
 	}
 
-mDNSlocal void UpdateHostNameTargets(const mDNS *const m)
+mDNSlocal void UpdateHostNameTargets(const mDNS *const m, const mDNSs32 timenow)
 	{
 	ResourceRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->HostTarget)
-			SetTargetToHostName(m, rr);
+			SetTargetToHostName(m, rr, timenow);
 	}
 
 mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr, const mDNSs32 timenow)
@@ -1296,17 +1315,17 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->RRInterfaceActive = mDNStrue;
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
-	rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
+	rr->AnnounceCount     = DefaultAnnounceCount;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->SendPriority      = 0;
 	rr->Requester         = zeroAddr;
 	rr->NextResponse      = mDNSNULL;
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
-	rr->LastSendTime      = timenow - mDNSPlatformOneSecond;
-	rr->NextSendTime      = timenow;
-	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
-	rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
+	rr->RRLastTxTime      = timenow - mDNSPlatformOneSecond;
+	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
+	rr->LastAPTime        = timenow - rr->ThisAPInterval;
+	if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
 	rr->NewRData          = mDNSNULL;
 	rr->UpdateCallback    = mDNSNULL;
 
@@ -1328,7 +1347,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 //	rr->rrremainingttl    = already set in mDNS_SetupResourceRecord
 
 	if (rr->HostTarget)
-		SetTargetToHostName(m, rr);	// This also sets rdlength and rdestimate for us
+		SetTargetToHostName(m, rr ,timenow);	// This also sets rdlength and rdestimate for us
 	else
 		{
 		rr->rdata->RDLength = GetRDLength(rr, mDNSfalse);
@@ -1363,7 +1382,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
-	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCountForTypeShared && rr->RRInterfaceActive)
+	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCount && rr->RRInterfaceActive)
 		{
 		debugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 		rr->RecordType     = kDNSRecordTypeDeregistering;
@@ -1415,8 +1434,11 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 			}
 		else if (drt == mDNS_Dereg_conflict)
 			{
-			m->SuppressProbes = timenow + mDNSPlatformOneSecond;
-			if (m->SuppressProbes == 0) m->SuppressProbes = 1;
+			m->ProbeFailTime = timenow;
+			// If we've had ten probe failures, rate-limit to one every five seconds
+			// The result is ORed with 1 to make sure the SuppressProbes is not accidentally set to zero
+			if (m->NumFailedProbes < 10) m->NumFailedProbes++;
+			else m->SuppressProbes = (timenow + mDNSPlatformOneSecond * 5) | 1;
 			if (rr->RecordCallback)
 				rr->RecordCallback(m, rr, mStatus_NameConflict);
 			}
@@ -1583,7 +1605,7 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 
 // Put a domain name, type, class, ttl, length, and type-specific data
 // domainname is a fully-qualified name
-// Only pass the "m" and "timenow" parameters in cases where the LastSendTime is to be updated,
+// Only pass the "m" and "timenow" parameters in cases where the RRLastTxTime is to be updated,
 // and the kDNSClass_UniqueRRSet bit set
 mDNSlocal mDNSu8 *putResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr,
 	mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, mDNS *const m, const mDNSs32 timenow)
@@ -1624,7 +1646,7 @@ mDNSlocal mDNSu8 *putResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr,
 
 	if (m)														// If the 'm' parameter was passed in...
 		{
-		rr->LastSendTime = timenow;								// ... then update LastSendTime
+		rr->RRLastTxTime = timenow;								// ... then update RRLastTxTime
 		if (rr->RecordType & kDNSRecordTypeUniqueMask)			// If it is supposed to be unique
 			{
 			const ResourceRecord *a = mDNSNULL;
@@ -1632,7 +1654,7 @@ mDNSlocal mDNSu8 *putResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr,
 			// that hasn't been updated within the last quarter second, don't set the bit
 			for (a = m->ResourceRecords; a; a=a->next)
 				if (SameResourceRecordSignatureAnyInterface(rr, a))
-					if (timenow - a->LastSendTime > mDNSPlatformOneSecond/4)
+					if (timenow - a->RRLastTxTime > mDNSPlatformOneSecond/4)
 						break;
 			if (a == mDNSNULL)
 				ptr[2] |= kDNSClass_UniqueRRSet >> 8;
@@ -1810,9 +1832,9 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->NextResponse      = mDNSNULL;
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
-	rr->LastSendTime      = 0;
-	rr->NextSendTime      = 0;
-	rr->NextSendInterval  = 0;
+	rr->RRLastTxTime      = 0;
+	rr->ThisAPInterval    = 0;
+	rr->LastAPTime        = 0;
 	rr->NewRData          = mDNSNULL;
 	rr->UpdateCallback    = mDNSNULL;
 
@@ -1998,27 +2020,19 @@ mDNSlocal mDNSBool HaveResponses(const mDNS *const m, const mDNSs32 timenow)
 	else
 		{
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			{
-			if (rr->RecordType == kDNSRecordTypeDeregistering)
-				return(mDNStrue);
-
-			if (rr->RRInterfaceActive)
-				{
-				if (rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) && timenow - rr->NextSendTime >= 0)
+			if (rr->RecordType == kDNSRecordTypeDeregistering ||
+				(rr->RRInterfaceActive && TimeToSendThisRecord(rr, timenow, kDNSSendPriorityAnswer)))
 					return(mDNStrue);
-		
-				if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
-					return(mDNStrue);
-				}
-			}
 		}
 	return(mDNSfalse);
 	}
 
 mDNSlocal void CompleteDeregistration(mDNS *const m, ResourceRecord *rr, mDNSs32 timenow)
 	{
+	// Setting AnnounceCount to one greater than DefaultAnnounceCount signals mDNS_Deregister_internal()
+	// that it should go ahead and immediately dispose of this registration
 	rr->RecordType    = kDNSRecordTypeShared;
-	rr->AnnounceCount = DefaultAnnounceCountForTypeShared+1;
+	rr->AnnounceCount = DefaultAnnounceCount+1;
 	mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_normal);
 	}
 
@@ -2040,190 +2054,181 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSInterfaceID InterfaceID
 		}
 	}
 
+mDNSlocal void UpdateAnnouncedRecord(ResourceRecord *const rr, const mDNSs32 timenow)
+	{
+	rr->SendPriority      = 0;
+	rr->Requester         = zeroAddr;
+	rr->AnnounceCount--;
+	rr->ThisAPInterval *= 2;
+	rr->LastAPTime        = timenow;
+	}
+
+// If we're sleeping, only send deregistrations
+mDNSlocal mDNSu8 *BuildSleepResponse(mDNS *const m,
+	DNSMessage *const response, mDNSu8 *responseptr, const mDNSInterfaceID InterfaceID, const mDNSs32 timenow)
+	{
+	ResourceRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
+		mDNSu8 *newptr;
+		if (rr->InterfaceID == InterfaceID &&
+			rr->RecordType == kDNSRecordTypeShared &&
+			rr->rrremainingttl == 0 &&
+			(newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0)))
+			{
+			responseptr = newptr;
+			rr->rrremainingttl = rr->rroriginalttl;
+			}
+		}
+	return(responseptr);
+	}
+
 // This routine sends as many records as it can fit in a single DNS Response Message, in order of priority.
 // If there are any deregistrations, announcements, or answers that don't fit, they are left in the work list for next time.
 // If there are any additionals that don't fit, they are discarded -- they were optional anyway.
 // NOTE: BuildResponse calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
+
+// Note about acceleration of announcements to facilitate automatic coalescing of
+// multiple independent threads of announcements into a single synchronized thread:
+// The announcements in the packet may be at different stages of maturity;
+// One-second interval, two-second interval, four-second interval, and so on.
+// After we've put in all the announcements that are due, we then consider
+// whether there are other nearly-due announcements that are worth accelerating.
+// To be eligible for acceleration, a record MUST NOT be older (further along
+// its timeline) than the most mature record we've already put in the packet.
+// In other words, younger records can have their timelines accelerated to catch up
+// with their elder bretheren; this narrows the age gap and helps them eventually get in sync.
+// Older records cannot have their timelines accelerated; this would just widen
+// the gap between them and their younger bretheren and get them even more out of sync.
+
 mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 	DNSMessage *const response, mDNSu8 *responseptr, const mDNSInterfaceID InterfaceID, const mDNSs32 timenow)
 	{
 	int numDereg    = 0;
 	int numAnnounce = 0;
 	int numAnswer   = 0;
+	mDNSs32 maxExistingAnnounceInterval = 0;
+	ResourceRecord *rr;
+	mDNSu8 *newptr;
 
-	// If we're sleeping, only send deregistrations
-	if (m->SleepState)
+	// First Pass. Look for:
+	// 1. Deregistering records that no longer have an active interface
+	// 2. Updated records that need to retract their old data
+	// 3. Deregistering records that need to send their goodbye packet
+	// 4. Answers and announcements we need to send
+
+	if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
+	m->CurrentRecord = m->ResourceRecords;
+	while (m->CurrentRecord)
 		{
-		if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
-		m->CurrentRecord = m->ResourceRecords;
-		while (m->CurrentRecord)
+		rr = m->CurrentRecord;
+		m->CurrentRecord = rr->next;
+
+		// 1. If we have Deregistering records that don't have an active interface any more, go ahead and
+		// complete their deregistration and call the client back so that the client can free the memory
+		if (rr->RecordType == kDNSRecordTypeDeregistering && !rr->RRInterfaceActive)
 			{
-			mDNSu8 *newptr;
-			ResourceRecord *rr = m->CurrentRecord;
-			m->CurrentRecord = rr->next;
-			if (rr->InterfaceID == InterfaceID &&
-				rr->RecordType == kDNSRecordTypeShared && rr->rrremainingttl == 0 &&
+			CompleteDeregistration(m, rr, timenow);
+			}
+		else if (rr->InterfaceID == InterfaceID)
+			{
+			// 2. Updated records that need to retract their old data
+			if (rr->NewRData)								// If we have new data for this record
+				{
+				RData *OldRData = rr->rdata;
+				if (ResourceRecordIsValidAnswer(rr))		// First see if we have to de-register the old data
+					{
+					newptr = putResourceRecordTTL(response, responseptr, &response->h.numAnswers, rr, 0, mDNSNULL, 0);
+					if (newptr)
+						{
+						numDereg++;
+						responseptr = newptr;
+						}
+					}
+				rr->rdata = rr->NewRData;	// Update our rdata
+				rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
+				if (rr->UpdateCallback)
+					rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
+				}
+
+			// 3. Deregistering records that need to send their goodbye packet
+			if (rr->RecordType == kDNSRecordTypeDeregistering &&
 				(newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0)))
 				{
 				numDereg++;
 				responseptr = newptr;
-				rr->rrremainingttl = rr->rroriginalttl;
+				CompleteDeregistration(m, rr, timenow);
+				}
+			
+			// 4. Answers and announcements we need to send
+			else if (TimeToSendThisRecord(rr, timenow, kDNSSendPriorityAnswer))
+				{
+				newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
+				if (newptr)
+					{
+					if (rr->SendPriority >= kDNSSendPriorityAnswer) numAnswer++;
+					else numAnnounce++;
+					responseptr = newptr;
+					}
+				// If we were able to put the record, then update the state variables
+				// If we were unable to put the record because it is too large to fit, even though
+				// there are no other answers in the packet then pretend we succeeded anyway,
+				// or we'll end up in an infinite loop trying to send a record that will never fit
+				if (response->h.numAnswers == 0) debugf("BuildResponse answers/announcements failed");
+				if (newptr || response->h.numAnswers == 0)
+					{
+					rr->SendPriority = 0;
+					rr->Requester    = zeroAddr;
+					// If this record was already more than half-way to its scheduled announcement time,
+					// then consider this to be its announcement, just done a little soon.
+					// By setting maxExistingAnnounceInterval, we ensure that any other records already synchronized
+					// into the same annoucement thread will also be accelerated so that we keep the thread together.
+					if (TimeToAnnounceThisRecord(rr, timenow + rr->ThisAPInterval/2))
+						{
+						if (maxExistingAnnounceInterval < rr->ThisAPInterval)
+							maxExistingAnnounceInterval = rr->ThisAPInterval;
+						UpdateAnnouncedRecord(rr, timenow);
+						}
+					}
 				}
 			}
 		}
-	else
+
+		
+	// Second Pass. Look for:
+	// 1. Announcements that are worth accelerating
+	// 2. Additional records, if there's space
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		// The announcements in the packet may be at different stages of maturity;
-		// One-second interval, two-second interval, four-second interval, and so on.
-		// After we've put in all the announcements that are due, we then consider
-		// whether there are other nearly-due announcements that are worth accelerating.
-		// To be eligible for acceleration, a record MUST NOT be older (further along
-		// its timeline) than the most mature record we've already put in the packet.
-		// In other words, younger records can have their timelines accelerated to catch up
-		// with their elder bretheren; this narrows the age gap and helps them eventually get in sync.
-		// Older records cannot have their timelines accelerated; this would just widen
-		// the gap between them and their younger bretheren and get them even more out of sync.
-		mDNSs32 maxExistingAnnounceInterval = 0;
-		ResourceRecord *rr;
-		mDNSu8 *newptr;
-
-		// 1. Look for deregistrations we need to send
-		if (m->CurrentRecord) debugf("BuildResponse ERROR m->CurrentRecord already set");
-		m->CurrentRecord = m->ResourceRecords;
-		while (m->CurrentRecord)
-			{
-			rr = m->CurrentRecord;
-			m->CurrentRecord = rr->next;
-
-			// If we have Deregistering records that don't have an active interface any more, go ahead and
-			// complete their deregistration and call the client back so that the client can free the memory
-			if (rr->RecordType == kDNSRecordTypeDeregistering && !rr->RRInterfaceActive)
-				{
-				CompleteDeregistration(m, rr, timenow);
-				}
-			else if (rr->InterfaceID == InterfaceID)
-				{
-				if (rr->NewRData)								// If we have new data for this record
-					{
-					RData *OldRData = rr->rdata;
-					if (ResourceRecordIsValidAnswer(rr))		// First see if we have to de-register the old data
-						{
-						newptr = putResourceRecordTTL(response, responseptr, &response->h.numAnswers, rr, 0, mDNSNULL, 0);
-						if (newptr)
-							{
-							numDereg++;
-							responseptr = newptr;
-							}
-						}
-					rr->rdata = rr->NewRData;	// Update our rdata
-					rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-					if (rr->UpdateCallback)
-						rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
-					}
-				if (rr->RecordType == kDNSRecordTypeDeregistering &&
-					(newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0)))
-					{
-					numDereg++;
-					responseptr = newptr;
-					CompleteDeregistration(m, rr, timenow);
-					}
-				}
-			}
-	
-		// 2. Look for announcements we are due to send in the next second
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			{
-			if (rr->InterfaceID == InterfaceID &&
-				rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
-				timenow + mDNSPlatformOneSecond - rr->NextSendTime >= 0)
-					{
-					newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
-					if (newptr)
-						{
-						numAnnounce++;
-						responseptr = newptr;
-						}
-					// If we were able to put the record, then update the state variables
-					// If we were unable to put the record because it is too large to fit, even though
-					// there are no other answers in the packet, then pretend we succeeded anyway,
-					// or we'll end up in an infinite loop trying to send a record that will never fit
-					if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
-					if (newptr || response->h.numAnswers == 0)
-						{
-						if (maxExistingAnnounceInterval < rr->NextSendInterval)
-							maxExistingAnnounceInterval = rr->NextSendInterval;
-						rr->SendPriority      = 0;
-						rr->Requester         = zeroAddr;
-						rr->AnnounceCount--;
-						rr->NextSendTime     += rr->NextSendInterval;
-						if (rr->NextSendTime - (timenow + rr->NextSendInterval/2) < 0)
-							rr->NextSendTime = (timenow + rr->NextSendInterval/2);
-						rr->NextSendInterval *= 2;
-						}
-					}
-			}
-	
-		// 3. Look for additional announcements that are worth accelerating
+		// 1. Announcements that are worth accelerating
 		// They must be (a) at least half way to their next announcement and
 		// (b) at an interval equal or less than any of the ones we've already put in
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->InterfaceID == InterfaceID)
 			{
-			if (rr->InterfaceID == InterfaceID &&
-				rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
-				timenow - (rr->LastSendTime + rr->NextSendInterval/4) >= 0 &&
-				rr->NextSendInterval <= maxExistingAnnounceInterval)
+			if (rr->ThisAPInterval <= maxExistingAnnounceInterval &&
+				TimeToAnnounceThisRecord(rr, timenow + rr->ThisAPInterval/2) &&
+				ResourceRecordIsValidAnswer(rr))
+				{
+				verbosedebugf("BuildResponse: Accelerating announcement for %##s", rr->name.c);
+				newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
+				if (newptr)
 					{
-					newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
-					if (newptr)
-						{
-						numAnnounce++;
-						responseptr = newptr;
-						}
-					// If we were able to put the record, then update the state variables
-					// If we were unable to put the record because it is too large to fit, even though
-					// there are no other answers in the packet, then pretend we succeeded anyway,
-					// or we'll end up in an infinite loop trying to send a record that will never fit
-					if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
-					if (newptr || response->h.numAnswers == 0)
-						{
-						rr->SendPriority      = 0;
-						rr->Requester         = zeroAddr;
-						rr->AnnounceCount--;
-						rr->NextSendTime      = timenow + rr->NextSendInterval;
-						rr->NextSendInterval *= 2;
-						}
+					numAnnounce++;
+					responseptr = newptr;
 					}
-			}
-	
-		// 4. Look for answers we need to send
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->InterfaceID == InterfaceID &&
-				rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
-					{
-					newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
-					if (newptr)
-						{
-						numAnswer++;
-						responseptr = newptr;
-						}
-					// If we were able to put the record, then update the state variables
-					// If we were unable to put the record because it is too large to fit, even though
-					// there are no other answers in the packet then pretend we succeeded anyway,
-					// or we'll end up in an infinite loop trying to send a record that will never fit
-					if (response->h.numAnswers == 0) debugf("BuildResponse answers failed");
-					if (newptr || response->h.numAnswers == 0)
-						{
-						rr->SendPriority = 0;
-						rr->Requester    = zeroAddr;
-						}
-					}
-	
-		// 5. Add additionals, if there's space
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->InterfaceID == InterfaceID &&
-				rr->SendPriority == kDNSSendPriorityAdditional)
+				// If we were able to put the record, then update the state variables
+				// If we were unable to put the record because it is too large to fit, even though
+				// there are no other answers in the packet, then pretend we succeeded anyway,
+				// or we'll end up in an infinite loop trying to send a record that will never fit
+				if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
+				if (newptr || response->h.numAnswers == 0)
+					UpdateAnnouncedRecord(rr, timenow);
+				}
+
+			// 2. Additional records, if there's space
+			if (rr->SendPriority == kDNSSendPriorityAdditional)
 				{
 				if (ResourceRecordIsValidAnswer(rr) &&
 					(newptr = putResourceRecord(response, responseptr, &response->h.numAdditionals, rr, m, timenow)))
@@ -2231,6 +2236,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
 				rr->SendPriority = 0;	// Clear SendPriority anyway, even if we didn't put the additional in the packet
 				rr->Requester    = zeroAddr;
 				}
+			}
 		}
 
 	if (numDereg || numAnnounce || numAnswer || response->h.numAdditionals)
@@ -2263,15 +2269,16 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 	// we would mark the entire RRSet for sending again, resulting in an infinite loop packet storm.
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->RecordType & kDNSRecordTypeUniqueMask)
-			if (TimeToSendThisRecord(rr,timenow))
+			if (rr->RRInterfaceActive && TimeToSendThisRecord(rr, timenow, kDNSSendPriorityAdditional))
 				for (r2 = m->ResourceRecords; r2; r2=r2->next)
-					if (r2 != rr && timenow - r2->LastSendTime > mDNSPlatformOneSecond/4)
+					if (r2 != rr && timenow - r2->RRLastTxTime > mDNSPlatformOneSecond/4)
 						if (SameResourceRecordSignatureAnyInterface(rr, r2))
 							r2->SendPriority = kDNSSendPriorityAnswer;
 
 	// First build the generic part of the message
 	InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
-	baselimit = BuildResponse(m, &response, response.data, mDNSInterface_Any, timenow);
+	if (m->SleepState) baselimit = BuildSleepResponse(m, &response, response.data, mDNSInterface_Any, timenow);
+	else               baselimit = BuildResponse     (m, &response, response.data, mDNSInterface_Any, timenow);
 	baseheader = response.h;
 
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -2280,7 +2287,8 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 			// Restore the header to the counts for the generic records
 			response.h = baseheader;
 			// Now add any records specific to this interface
-			responseptr = BuildResponse(m, &response, baselimit, intf->InterfaceID, timenow);
+			if (m->SleepState) responseptr = BuildSleepResponse(m, &response, baselimit, intf->InterfaceID, timenow);
+			else               responseptr = BuildResponse     (m, &response, baselimit, intf->InterfaceID, timenow);
 			if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
 				{
 				debugf("SendResponses Sending %d Answer%s, %d Additional%s on %X",
@@ -2319,7 +2327,7 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 
 	// 3. Scan our list of Resource Records to see if we need to send any probe questions
 	for (rr = m->ResourceRecords; rr; rr=rr->next)		// Scan our list of records
-		if (rr->RecordType == kDNSRecordTypeUnique && timenow - rr->NextSendTime >= 0)
+		if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - timenow <= 0)
 			return(mDNStrue);
 
 	return(mDNSfalse);
@@ -2335,8 +2343,10 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 	{
 	if (rr->ProbeCount == 0)
 		{
-		rr->RecordType    = kDNSRecordTypeVerified;
-		rr->AnnounceCount = DefaultAnnounceCountForRecordType(rr->RecordType);
+		rr->RecordType     = kDNSRecordTypeVerified;
+		rr->AnnounceCount  = DefaultAnnounceCount;
+		rr->ThisAPInterval = DefaultAnnounceIntervalForTypeUnique;
+		rr->LastAPTime     = timenow - DefaultAnnounceIntervalForTypeUnique;
 		verbosedebugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
 		if (!rr->Acknowledged && rr->RecordCallback)
 			{
@@ -2362,7 +2372,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 			*answerforecast = forecast;
 			rr->ProbeCount--;		// Only decrement ProbeCount if we successfully added the record to the packet
 			rr->IncludeInProbe = mDNStrue;
-			rr->NextSendTime = timenow + rr->NextSendInterval;
+			rr->LastAPTime     = timenow;
 			}
 		else
 			{
@@ -2374,7 +2384,6 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 
 #define MaxQuestionInterval         (3600 * mDNSPlatformOneSecond)
 #define GetNextQInterval(X)         (((X)*2) <= MaxQuestionInterval ? ((X)*2) : MaxQuestionInterval)
-#define GetNextSendTime(T,EARLIEST) (((T) - (EARLIEST) >= 0) ? (T) : (EARLIEST) )
 
 // BuildQuestion puts a question into a DNS Query packet and if successful, updates the value of queryptr.
 // It also appends to the list of duplicate suppression records that need to be included,
@@ -2474,13 +2483,18 @@ mDNSlocal mDNSu8 *BuildQueryPacketQuestions(mDNS *const m, DNSMessage *query, mD
 					maxExistingQuestionInterval = ThisQInterval;
 			}
 
-	// See if we have any younger questions that are more than half way to their NextSendTime,
-	// and send them too, if we have space
+	// After we've put in all the questions that are due, we then consider
+	// whether there are other nearly-due questions that are worth accelerating.
+	// To be eligible for acceleration, a question MUST NOT be older (further along
+	// its timeline) than the most mature question we've already put in the packet.
 	for (q = m->Questions; q; q=q->next)
 		if (q->InterfaceID == InterfaceID &&
 			q->ThisQInterval <= maxExistingQuestionInterval &&
 			TimeToSendThisQuestion(q, timenow + q->ThisQInterval/2))
+			{
+			verbosedebugf("BuildQueryPacketQuestions: Accelerating question for %##s", q->name.c);
 			BuildQuestion(m, query, &queryptr, q, dups_ptr, answerforecast, timenow);
+			}
 
 	return(queryptr);
 	}
@@ -2523,8 +2537,8 @@ mDNSlocal mDNSu8 *BuildQueryPacketProbes(mDNS *const m, DNSMessage *query, mDNSu
 		ResourceRecord *rr = m->CurrentRecord;
 		m->CurrentRecord = rr->next;
 		if (rr->InterfaceID == InterfaceID &&
-			rr->RecordType == kDNSRecordTypeUnique && timenow - rr->NextSendTime >= 0)
-			BuildProbe(m, query, &queryptr, rr, answerforecast, timenow);
+			rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - timenow <= 0)
+				BuildProbe(m, query, &queryptr, rr, answerforecast, timenow);
 		}
 	return(queryptr);
 	}
@@ -2584,6 +2598,8 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 					mDNSu8 *queryptr = baselimit;
 					query.h = baseheader;
 					// Now add any records specific to this interface, if we can
+					// Note: If we've already added probe questions in the generic part of the message,then there
+					//  will be Authorities (Updates) in the packet, so it is too late to add more questions to it.
 					if (query.h.numAnswers == 0 && query.h.numAuthorities == 0 && !NextDupSuppress)
 						{
 						if (!NextDupSuppress2)
@@ -2912,20 +2928,15 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 					}
 				if (rr->RRInterfaceActive)
 					{
-					if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
+					if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - nextevent <= 0)
 						{
-						nextevent = timenow;
-						msg = "Send Answers";
-						}
-					else if (rr->RecordType == kDNSRecordTypeUnique && nextevent - rr->NextSendTime > 0)
-						{
-						nextevent = rr->NextSendTime;
+						nextevent = rr->LastAPTime + rr->ThisAPInterval;
 						msg = "Send Probes";
 						}
-					else if (rr->AnnounceCount && nextevent - rr->NextSendTime > 0 && ResourceRecordIsValidAnswer(rr))
+					else if (TimeToSendThisRecord(rr, nextevent, kDNSSendPriorityAnswer))
 						{
-						nextevent = rr->NextSendTime;
-						msg = "Send Announcements";
+						nextevent = timenow;
+						msg = "Send Answers/Announcements";
 						}
 					}
 				}
@@ -2966,10 +2977,15 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		int i;
 		verbosedebugf("mDNS_Execute");
 		if (m->CurrentQuestion) debugf("mDNS_Execute: ERROR! m->CurrentQuestion already set");
-		
+
+		// If we're past the probe suppression time, we can clear it
 		if (m->SuppressProbes && timenow - m->SuppressProbes >= 0)
 			m->SuppressProbes = 0;
-	
+
+		// If it's been more than ten seconds since the last probe failure, we can clear the counter
+		if (m->NumFailedProbes && timenow - m->ProbeFailTime >= mDNSPlatformOneSecond * 10)
+			m->NumFailedProbes = 0;
+		
 		// 1. See if we can answer any of our new local questions from the cache
 		for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m, timenow);
 		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
@@ -2988,10 +3004,10 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			// and we're not suppressing packet generation right now
 			// send our responses, probes, and questions
 			m->SuppressSending = 0;
-			for (i=0; HaveResponses(m, timenow) && i<1000; i++) SendResponses(m, timenow);
-			if (i >= 1000) debugf("mDNS_Execute: SendResponses exceeded loop limit");
 			for (i=0; HaveQueries  (m, timenow) && i<1000; i++) SendQueries  (m, timenow);
 			if (i >= 1000) debugf("mDNS_Execute: SendQueries exceeded loop limit");
+			for (i=0; HaveResponses(m, timenow) && i<1000; i++) SendResponses(m, timenow);
+			if (i >= 1000) debugf("mDNS_Execute: SendResponses exceeded loop limit");
 			}
 	
 		if (m->rrcache_size) TidyRRCache(m, timenow);
@@ -3032,7 +3048,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		// We set rr->rrremainingttl to zero here.
 		// After the record is put in the packet, rr->rrremainingttl is automatically reset to rr->rroriginalttl
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCountForTypeShared)
+			if (rr->RecordType == kDNSRecordTypeShared && rr->AnnounceCount <= DefaultAnnounceCount)
 				rr->rrremainingttl = 0;
 		while (HaveResponses(m, timenow)) SendResponses(m, timenow);
 		}
@@ -3044,9 +3060,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			{
 			if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
 			rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
-			rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
-			rr->NextSendTime      = timenow;
-			rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
+			rr->AnnounceCount     = DefaultAnnounceCount;
+			rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
+			rr->LastAPTime        = timenow - rr->LastAPTime;
 			}
 
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
@@ -3142,27 +3158,27 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	return(responseptr);
 	}
 
-// ResourceRecord *pktrr is the ResourceRecord from the response packet we've witnessed on the network
-// ResourceRecord *rr is our ResourceRecord
+// ResourceRecord *our is our ResourceRecord
+// ResourceRecord *pkt is the ResourceRecord from the response packet we've witnessed on the network
 // Returns 0 if there is no conflict
 // Returns +1 if there was a conflict and we won
 // Returns -1 if there was a conflict and we lost and have to rename
-mDNSlocal int CompareRData(ResourceRecord *pkt, ResourceRecord *our)
+mDNSlocal int CompareRData(ResourceRecord *our, ResourceRecord *pkt)
 	{
-	mDNSu8 pktdata[256], *pktptr = pktdata, *pktend;
 	mDNSu8 ourdata[256], *ourptr = ourdata, *ourend;
-	if (!pkt) { debugf("CompareRData ERROR: pkt is NULL"); return(+1); }
+	mDNSu8 pktdata[256], *pktptr = pktdata, *pktend;
 	if (!our) { debugf("CompareRData ERROR: our is NULL"); return(+1); }
+	if (!pkt) { debugf("CompareRData ERROR: pkt is NULL"); return(+1); }
 
-	pktend = putRData(mDNSNULL, pktdata, pktdata + sizeof(pktdata), pkt->rrtype, pkt->rdata);
 	ourend = putRData(mDNSNULL, ourdata, ourdata + sizeof(ourdata), our->rrtype, our->rdata);
-	while (pktptr < pktend && ourptr < ourend && *pktptr == *ourptr) { pktptr++; ourptr++; }
-	if (pktptr >= pktend && ourptr >= ourend) return(0);			// If data identical, not a conflict
+	pktend = putRData(mDNSNULL, pktdata, pktdata + sizeof(pktdata), pkt->rrtype, pkt->rdata);
+	while (ourptr < ourend && pktptr < pktend && *ourptr == *pktptr) { ourptr++; pktptr++; }
+	if (ourptr >= ourend && pktptr >= pktend) return(0);			// If data identical, not a conflict
 
-	if (pktptr >= pktend) return(-1);								// Packet data is substring; We lost
-	if (ourptr >= ourend) return(+1);								// Our data is substring; We won
-	if (*pktptr < *ourptr) return(-1);								// Packet data is numerically lower; We lost
-	if (*pktptr > *ourptr) return(+1);								// Our data is numerically lower; We won
+	if (ourptr >= ourend) return(-1);								// Our data ran out first; We lost
+	if (pktptr >= pktend) return(+1);								// Packet data ran out first; We won
+	if (*pktptr > *ourptr) return(-1);								// Our data is numerically lower; We lost
+	if (*pktptr < *ourptr) return(+1);								// Packet data is numerically lower; We won
 	
 	debugf("CompareRData: How did we get here?");
 	return(-1);
@@ -3254,9 +3270,9 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 			FoundUpdate = mDNStrue;
 			if (PacketRRConflict(m, our, &pktrr))
 				{
-				int result          = (int)pktrr.rrclass - (int)our->rrclass;
-				if (!result) result = (int)pktrr.rrtype  - (int)our->rrtype;
-				if (!result) result = CompareRData(&pktrr, our);
+				int result          = (int)our->rrclass - (int)pktrr.rrclass;
+				if (!result) result = (int)our->rrtype  - (int)pktrr.rrtype;
+				if (!result) result = CompareRData(our, &pktrr);
 				switch (result)
 					{
 					case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",  our->name.c, DNSTypeName(our->rrtype));
@@ -3503,7 +3519,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID, replyunicast, replymulticast, timenow);
 	if (replyunicast && responseend)
 		{
-		verbosedebugf("Unicast Response: %d Answer%s, %d Additional%s on %X/%d",
+		debugf("Unicast Response: %d Answer%s, %d Additional%s on %X/%d",
 			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
 			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s", InterfaceID, srcaddr->type);
 		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceID, dstport, srcaddr, srcport);
@@ -3569,25 +3585,30 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// else, the packet RR has different rdata -- check to see if this is a conflict
 					if (pktrr.rroriginalttl > 0 && PacketRRConflict(m, rr, &pktrr))
 						{
-						if (rr->rrtype == kDNSType_SRV)
+						if (rr->rrtype == kDNSType_A)
 							{
-							debugf("mDNSCoreReceiveResponse: Our Data %d %##s", rr->rdata->RDLength,   rr->rdata->u.srv.target.c);
-							debugf("mDNSCoreReceiveResponse: Pkt Data %d %##s", pktrr.rdata->RDLength, pktrr.rdata->u.srv.target.c);
+							debugf("mDNSCoreReceiveResponse: Our A Data %.4a", &rr->rdata->u.ip);
+							debugf("mDNSCoreReceiveResponse: Pkt A Data %.4a", &pktrr.rdata->u.ip);
+							}
+						else if (rr->rrtype == kDNSType_PTR)
+							{
+							debugf("mDNSCoreReceiveResponse: Our PTR Data %d %##s", rr->rdata->RDLength,   rr->rdata->u.name.c);
+							debugf("mDNSCoreReceiveResponse: Pkt PTR Data %d %##s", pktrr.rdata->RDLength, pktrr.rdata->u.name.c);
 							}
 						else if (rr->rrtype == kDNSType_TXT)
 							{
-							debugf("mDNSCoreReceiveResponse: Our Data %d %#s", rr->rdata->RDLength,   rr->rdata->u.txt.c);
-							debugf("mDNSCoreReceiveResponse: Pkt Data %d %#s", pktrr.rdata->RDLength, pktrr.rdata->u.txt.c);
-							}
-						else if (rr->rrtype == kDNSType_A)
-							{
-							debugf("mDNSCoreReceiveResponse: Our Data %.4a", &rr->rdata->u.ip);
-							debugf("mDNSCoreReceiveResponse: Pkt Data %.4a", &pktrr.rdata->u.ip);
+							debugf("mDNSCoreReceiveResponse: Our TXT Data %d %#s", rr->rdata->RDLength,   rr->rdata->u.txt.c);
+							debugf("mDNSCoreReceiveResponse: Pkt TXT Data %d %#s", pktrr.rdata->RDLength, pktrr.rdata->u.txt.c);
 							}
 						else if (rr->rrtype == kDNSType_AAAA)
 							{
-							debugf("mDNSCoreReceiveResponse: Our Data %.16a", &rr->rdata->u.ipv6);
-							debugf("mDNSCoreReceiveResponse: Pkt Data %.16a", &pktrr.rdata->u.ipv6);
+							debugf("mDNSCoreReceiveResponse: Our AAAA Data %.16a", &rr->rdata->u.ipv6);
+							debugf("mDNSCoreReceiveResponse: Pkt AAAA Data %.16a", &pktrr.rdata->u.ipv6);
+							}
+						else if (rr->rrtype == kDNSType_SRV)
+							{
+							debugf("mDNSCoreReceiveResponse: Our SRV Data %d %##s", rr->rdata->RDLength,   rr->rdata->u.srv.target.c);
+							debugf("mDNSCoreReceiveResponse: Pkt SRV Data %d %##s", pktrr.rdata->RDLength, pktrr.rdata->u.srv.target.c);
 							}
 
 						// If this record is marked DependentOn another record for conflict detection purposes,
@@ -3597,21 +3618,35 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						// If we've just whacked this record's ProbeCount, don't need to do it again
 						if (rr->ProbeCount <= DefaultProbeCountForTypeUnique)
 							{
+							// If we'd previously verified this record, put it back to probing state and try again
 							if (rr->RecordType == kDNSRecordTypeVerified)
 								{
 								debugf("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
-								// If we'd previously verified this record, put it back to probing state and try again
-								rr->RecordType       = kDNSRecordTypeUnique;
-								rr->ProbeCount       = DefaultProbeCountForTypeUnique + 1;
-								rr->NextSendTime     = timenow;
-								rr->NextSendInterval = DefaultSendIntervalForRecordType(kDNSRecordTypeUnique);
+								rr->RecordType     = kDNSRecordTypeUnique;
+								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
+								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
+								rr->LastAPTime     = timenow - rr->LastAPTime;
+								m->NumFailedProbes++;
 								}
-							else
+							// If we're probing for this record, we just failed
+							else if (rr->RecordType == kDNSRecordTypeUnique)
 								{
 								debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
-								// If we're probing for this record (or we assumed it must be unique) we just failed
 								mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_conflict);
 								}
+							// We assumed this record must be unique, but we were wrong.
+							// (e.g. There are two mDNSResponders on the same machine giving
+							// different answers for the reverse mapping record.)
+							// This is simply a misconfiguration, and we don't try to recover from it.
+							else if (rr->RecordType == kDNSRecordTypeKnownUnique)
+								{
+								debugf("mDNSCoreReceiveResponse: Unexpected conflict on %##s (%s) -- discarding our record",
+									rr->name.c, DNSTypeName(rr->rrtype));
+								mDNS_Deregister_internal(m, rr, timenow, mDNS_Dereg_conflict);
+								}
+							else
+								debugf("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
+									rr->RecordType, rr->name.c, DNSTypeName(rr->rrtype));
 							}
 						}
 					}
@@ -4134,10 +4169,10 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 			rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
 		}
 	
-	rr->AnnounceCount    = DefaultAnnounceCountForRecordType(rr->RecordType);
-	rr->NextSendTime     = timenow;
-	if (rr->RecordType == kDNSRecordTypeUnique && m->SuppressProbes) rr->NextSendTime = m->SuppressProbes;
-	rr->NextSendInterval = DefaultSendIntervalForRecordType(rr->RecordType);
+	rr->AnnounceCount    = DefaultAnnounceCount;
+	rr->ThisAPInterval   = DefaultAPIntervalForRecordType(rr->RecordType);
+	rr->LastAPTime       = timenow - rr->ThisAPInterval;
+	if (RRUniqueOrKnownUnique(rr) && m->SuppressProbes) rr->LastAPTime = m->SuppressProbes - rr->ThisAPInterval;
 	rr->NewRData         = newrdata;
 	rr->UpdateCallback   = Callback;
 	rr->rroriginalttl    = newttl;
@@ -4159,6 +4194,8 @@ mDNSexport mStatus mDNS_Deregister(mDNS *const m, ResourceRecord *const rr)
 
 mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 	{
+	const mDNSs32 timenow = mDNS_Lock(m);
+
 	// Set up the Primary mDNS FQDN
 	m->hostname1.c[0] = 0;
 	AppendDomainLabelToName(&m->hostname1, &m->hostlabel);
@@ -4172,7 +4209,9 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 
 	// Make sure that any SRV records (and the like) that reference our 
 	// host name in their rdata get updated to reference this new host name
-	UpdateHostNameTargets(m);
+	UpdateHostNameTargets(m, timenow);
+
+	mDNS_Unlock(m);
 	}
 
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result);
@@ -4359,9 +4398,9 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				rr->RRInterfaceActive = mDNStrue;
 				if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
-				rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
-				rr->NextSendTime      = timenow;
-				rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
+				rr->AnnounceCount     = DefaultAnnounceCount;
+				rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->RecordType);
+				rr->LastAPTime        = timenow - rr->ThisAPInterval;
 				}
 		}
 	else
@@ -4744,6 +4783,9 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->CurrentRecord           = mDNSNULL;
 	m->HostInterfaces          = mDNSNULL;
 	m->SuppressSending         = 0;
+	m->ProbeFailTime           = 0;
+	m->NumFailedProbes         = 0;
+	m->SuppressProbes          = 0;
 	m->SleepState              = mDNSfalse;
 	m->NetChanged              = mDNSfalse;
 
