@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.431  2004/09/24 21:33:12  cheshire
+Adjust comment
+
 Revision 1.430  2004/09/24 02:15:49  cheshire
 <rdar://problem/3680865> Late conflicts don't send goodbye packets on other interfaces
 
@@ -4939,16 +4942,16 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				}
 			}
 
-		// Note: In the case where we already have the answer to this question in our cache, that may be all the client
-		// wanted, and they may immediately cancel their question. In this case, sending an actual query on the wire would
-		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
-		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
 		if (!ValidateDomainName(&question->qname))
 			{
 			LogMsg("Attempt to start query with invalid qname %##s %s", question->qname.c, DNSTypeName(question->qtype));
 			return(mStatus_Invalid);
 			}
 
+		// Note: In the case where we already have the answer to this question in our cache, that may be all the client
+		// wanted, and they may immediately cancel their question. In this case, sending an actual query on the wire would
+		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
+		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
 		if (!m->RandomQueryDelay) m->RandomQueryDelay = 1 + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
 
 		question->next             = mDNSNULL;
