@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.134  2004/01/22 03:54:11  cheshire
+Create special meta-interface 'mDNSInterface_ForceMCast' (-2),
+which means "do this query via multicast, even if it's apparently a unicast domain"
+
 Revision 1.133  2004/01/22 03:48:41  cheshire
 Make sure uDNS client doesn't accidentally use query ID zero
 
@@ -1158,6 +1162,7 @@ extern const mDNSv6Addr      onesIPv6Addr;
 
 extern const mDNSInterfaceID mDNSInterface_Any;
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;
+extern const mDNSInterfaceID mDNSInterface_ForceMCast;
 
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      MulticastDNSPort;

@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.348  2004/01/22 03:54:11  cheshire
+Create special meta-interface 'mDNSInterface_ForceMCast' (-2),
+which means "do this query via multicast, even if it's apparently a unicast domain"
+
 Revision 1.347  2004/01/22 03:50:49  cheshire
 If the client has specified an explicit InterfaceID, then do query by multicast, not unicast
 
@@ -1197,6 +1201,7 @@ mDNSlocal  const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 
 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any        = 0;
 mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly  = (mDNSInterfaceID)-1;
+mDNSexport const mDNSInterfaceID mDNSInterface_ForceMCast = (mDNSInterfaceID)-2;
 
 // Note that mDNSInterfaceMark is the same value as mDNSInterface_LocalOnly, but they are used in different contexts
 mDNSlocal  const mDNSInterfaceID mDNSInterfaceMark        = (mDNSInterfaceID)~0;
@@ -4593,6 +4598,12 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
     if (question->InterfaceID || IsLocalDomain(&question->qname))
     	question->uDNS_info.id = zeroID;
     else return uDNS_StartQuery(m, question);
+
+	// The special interface ID "-2" means
+	// "do this query via multicast on all interfaces, even if it's apparently a unicast domain"
+	// After it's served its purpose by preventing a unicast query above, we now set it to mDNSInterface_Any.
+	if (question->InterfaceID == mDNSInterface_ForceMCast)
+		question->InterfaceID = mDNSInterface_Any;
 
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
