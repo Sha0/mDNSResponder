@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.248  2005/02/19 00:18:34  cheshire
+Confusing variable name -- alertMessage should be called alertHeader
+
 Revision 1.247  2005/02/15 02:13:49  cheshire
 If we did registerBootstrapService() when starting, then we must do
 destroyBootstrapService() before exiting, or Mach init will keep restarting us.
@@ -1688,8 +1691,8 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlab
 	char newname[MAX_DOMAIN_LABEL+1];
 	ConvertDomainLabelToCString_unescaped(n1, oldname);
 	ConvertDomainLabelToCString_unescaped(n2, newname);
-	const CFStringRef      cfoldname = CFStringCreateWithCString(NULL, oldname,    kCFStringEncodingUTF8);
-	const CFStringRef      cfnewname = CFStringCreateWithCString(NULL, newname,    kCFStringEncodingUTF8);
+	const CFStringRef      cfoldname = CFStringCreateWithCString(NULL, oldname,  kCFStringEncodingUTF8);
+	const CFStringRef      cfnewname = CFStringCreateWithCString(NULL, newname,  kCFStringEncodingUTF8);
 	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%@%s”", kCFStringEncodingUTF8);
 	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%@%s”", kCFStringEncodingUTF8);
 	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
@@ -1701,30 +1704,33 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlab
 		const CFStringRef       s0           = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
 		const CFStringRef       s1           = CFStringCreateWithFormat(NULL, NULL, f1, cfoldname, suffix);
 		const CFStringRef       s2           = CFStringCreateWithFormat(NULL, NULL, f2, cfnewname, suffix);
-//		const CFMutableArrayRef alertMessage = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-		const CFMutableStringRef alertMessage = CFStringCreateMutable(NULL, 0);
+//		Making the alertHeader an array is supposed to get us safe localization for free
+//		(we don't want to accidentally translate the literal name in the message, just the words around it)
+//		-- but this trick only works for the alert subtext, not for the alertHeader
+//		const CFMutableArrayRef alertHeader = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+		const CFMutableStringRef alertHeader = CFStringCreateMutable(NULL, 0);
 		Boolean result;
 		if (n2 == &m->hostlabel) result = SCPreferencesSetLocalHostName(session, cfnewname);
 		else                     result = SCPreferencesSetComputerName(session, cfnewname, kCFStringEncodingUTF8);
-		if (!result || !SCPreferencesCommitChanges(session) || !SCPreferencesApplyChanges(session) || !s0 || !s1 || !s2 || !alertMessage)
+		if (!result || !SCPreferencesCommitChanges(session) || !SCPreferencesApplyChanges(session) || !s0 || !s1 || !s2 || !alertHeader)
 			LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
 		else if (m->p->NotifyUser)
 			{
-//			CFArrayAppendValue(alertMessage, s0);
-			CFStringAppend(alertMessage, s0);
-			CFStringAppend(alertMessage, s1);
-			CFStringAppend(alertMessage, CFSTR(" is already in use on this network.  The name has been changed to "));
-			CFStringAppend(alertMessage, s2);
-			CFStringAppend(alertMessage, CFSTR(" automatically."));
+//			CFArrayAppendValue(alertHeader, s0); ... Would like to build an array here, but we'll build a string instead
+			CFStringAppend(alertHeader, s0);
+			CFStringAppend(alertHeader, s1);
+			CFStringAppend(alertHeader, CFSTR(" is already in use on this network.  The name has been changed to "));
+			CFStringAppend(alertHeader, s2);
+			CFStringAppend(alertHeader, CFSTR(" automatically."));
 			CFUserNotificationDisplayNotice(60.0,			// Auto-dismiss after 60 seconds
 				kCFUserNotificationCautionAlertLevel,
 				NULL, NULL, NULL,							// iconURL, soundURL, localizationURL
-				(CFStringRef)alertMessage, subtext, NULL);	// alertHeader, alertMessage, defaultButtonTitle
+				(CFStringRef)alertHeader, subtext, NULL);	// alertHeader, alertMessage, defaultButtonTitle
 			}
-		if (s0)           CFRelease(s0);
-		if (s1)           CFRelease(s1);
-		if (s2)           CFRelease(s2);
-		if (alertMessage) CFRelease(alertMessage);
+		if (s0)          CFRelease(s0);
+		if (s1)          CFRelease(s1);
+		if (s2)          CFRelease(s2);
+		if (alertHeader) CFRelease(alertHeader);
 		SCPreferencesUnlock(session);
 		}
 	if (cfoldname) CFRelease(cfoldname);
