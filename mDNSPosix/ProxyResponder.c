@@ -126,27 +126,30 @@ mDNSlocal void ServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatu
 // parameters, converts them to domainname parameters, and calls mDNS_RegisterService()
 mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	const char name[], const char type[], const char domain[],
-	const domainname *host, mDNSu16 PortAsNumber, const char txtinfo[])
+	const domainname *host, mDNSu16 PortAsNumber, int argc, char **argv)
 	{
 	domainlabel n;
 	domainname t, d;
 	mDNSIPPort port;
-	unsigned char buffer[256];
+	unsigned char buffer[1024], *bptr = buffer;
 
 	ConvertCStringToDomainLabel(name, &n);
 	ConvertCStringToDomainName(type, &t);
 	ConvertCStringToDomainName(domain, &d);
 	port.b[0] = (mDNSu8)(PortAsNumber >> 8);
 	port.b[1] = (mDNSu8)(PortAsNumber     );
-	if (txtinfo)
+	while (argc)
 		{
-		strncpy(buffer+1, txtinfo, sizeof(buffer)-1);
-		buffer[0] = strlen(txtinfo);
+		int len = strlen(argv[0]);
+		printf("STR: %s\n", argv[0]);
+		bptr[0] = len;
+		strcpy(bptr+1, argv[0]);
+		bptr += 1 + len;
+		argc--;
+		argv++;
 		}
-	else
-		buffer[0] = 0;
 	
-	mDNS_RegisterService(m, recordset, &n, &t, &d, host, port, buffer, buffer[0]+1, mDNSInterface_Any, ServiceCallback, mDNSNULL);
+	mDNS_RegisterService(m, recordset, &n, &t, &d, host, port, buffer, bptr-buffer, mDNSInterface_Any, ServiceCallback, mDNSNULL);
 
 	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.name, buffer);
 	printf("Made Service Records for %s\n", buffer);
@@ -235,13 +238,9 @@ mDNSexport int main(int argc, char **argv)
 		{
 		ConvertCStringToDomainLabel(argv[2], &proxyhost.hostlabel);
 		mDNS_RegisterProxyHost(&mDNSStorage, &proxyhost);
-	
 		if (argc >=6)
-			{
-			char *txt = (argc >=7) ? argv[6] : NULL;
 			RegisterService(&mDNSStorage, &proxyservice, argv[3], argv[4], "local.",
-							&proxyhost.RR_A.name, atoi(argv[5]), txt);
-			}
+							&proxyhost.RR_A.name, atoi(argv[5]), argc-6, &argv[6]);
 		}
 
 	ExampleClientEventLoop(&mDNSStorage);
@@ -250,8 +249,8 @@ mDNSexport int main(int argc, char **argv)
 	return(0);
 
 usage:
-	fprintf(stderr, "%s ip hostlabel srvname srvtype port txt\n", argv[0]);
-	fprintf(stderr, "e.g. %s 169.254.12.34 thehost \"My Printer\" _printer._tcp. 515 rp=lpt1\n", argv[0]);
+	fprintf(stderr, "%s ip hostlabel srvname srvtype port txt [txt ...]\n", argv[0]);
+	fprintf(stderr, "e.g. %s 169.254.12.34 thehost \"My Printer\" _printer._tcp. 515 rp=lpt1 pdl=application/postscript\n", argv[0]);
 	fprintf(stderr, "or   %s 0.0.0.0 \"My Printer\" _printer._tcp. (assertion of non-existence)\n", argv[0]);
 	return(-1);
 	}
