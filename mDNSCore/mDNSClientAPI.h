@@ -397,8 +397,6 @@ extern const mDNSIPPort zeroIPPort;
 extern const mDNSIPAddr zeroIPAddr;
 extern const mDNSIPAddr onesIPAddr;
 
-#define UnicastDNSPortAsNumber 53
-#define MulticastDNSPortAsNumber 5353
 extern const mDNSIPPort UnicastDNSPort;
 extern const mDNSIPPort MulticastDNSPort;
 extern const mDNSIPAddr AllDNSLinkGroup;

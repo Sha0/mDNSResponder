@@ -91,6 +91,8 @@ mDNSexport const mDNSIPPort zeroIPPort = { { 0 } };
 mDNSexport const mDNSIPAddr zeroIPAddr = { { 0 } };
 mDNSexport const mDNSIPAddr onesIPAddr = { { 255, 255, 255, 255 } };
 
+#define UnicastDNSPortAsNumber 53
+#define MulticastDNSPortAsNumber 5353
 mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
 mDNSexport const mDNSIPPort MulticastDNSPort   = { { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF } };
 mDNSexport const mDNSIPAddr AllDNSLinkGroup  = { { 224,   0,   0, 251 } };
