@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.88  2003/06/12 23:38:37  cheshire
+<rdar://problem/3291162> mDNSResponder doesn't detect some configuration changes
+Also check that scope_id matches before concluding that two interfaces are the same
+
 Revision 1.87  2003/06/10 01:14:11  cheshire
 <rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
 
@@ -752,18 +756,19 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 
 mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	{
+	mDNSu32 scope_id = if_nametoindex(ifa->ifa_name);
 	mDNSAddr ip;
 	SetupAddr(&ip, ifa->ifa_addr);
 	NetworkInterfaceInfoOSX **p;
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
-		if (mDNSSameAddress(&ip, &(*p)->ifinfo.ip))
+		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip))
 			{
-			debugf("AddInterfaceToList: Found existing interface with address %#a", &ip);
+			debugf("AddInterfaceToList: Found existing interface %u with address %#a", scope_id, &ip);
 			(*p)->CurrentlyActive = mDNStrue;
 			return(0);
 			}
 
-	debugf("AddInterfaceToList: Making   new   interface with address %#a", &ip);
+	debugf("AddInterfaceToList: Making   new   interface %u with address %#a", scope_id, &ip);
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
 	if (!i) return(-1);
 	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
@@ -776,7 +781,7 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 
 	i->next            = mDNSNULL;
 	i->m               = m;
-	i->scope_id        = if_nametoindex(ifa->ifa_name);
+	i->scope_id        = scope_id;
 	i->CurrentlyActive = mDNStrue;
 	i->sa_family       = ifa->ifa_addr->sa_family;
 	#if mDNS_AllowPort53
