@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.44  2004/06/05 00:33:51  cheshire
+<rdar://problem/3681029>: Check for incorrect time comparisons
+
 Revision 1.43  2004/06/05 00:14:44  cheshire
 Fix signed/unsigned and other compiler warnings
 
@@ -2886,7 +2889,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 				if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %d", err); } // surpress syslog messages if we have no network
 				q->LastQTxTime = timenow;
 				}
-			else if (sendtime < u->nextevent)  u->nextevent = sendtime;
+			else if (u->nextevent - sendtime > 0) u->nextevent = sendtime;
 			}
 		}
 
@@ -2902,7 +2905,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 		        rInfo->state = regState_Refresh;
 		        sendRecordRegistration(m, rr);
 		        }
-		    else if (rInfo->expire < u->nextevent) u->nextevent = rInfo->expire;
+		    else if (u->nextevent - rInfo->expire > 0) u->nextevent = rInfo->expire;
 		    }
 		}
 	//!!!KRS list should be pre-sorted by expiration
@@ -2917,7 +2920,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 			    rInfo->state = regState_Refresh;
 			    SendServiceRegistration(m, srs);
 		        }
-		    else if (rInfo->expire < u->nextevent) u->nextevent = rInfo->expire;
+		    else if (u->nextevent - rInfo->expire > 0) u->nextevent = rInfo->expire;
 		    }	
 		}
 	}
