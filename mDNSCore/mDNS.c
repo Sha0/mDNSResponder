@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.239  2003/07/22 01:30:05  cheshire
+<rdar://problem/3329099> Don't try to add the same question to the duplicate-questions list more than once
+
 Revision 1.238  2003/07/22 00:10:20  cheshire
 <rdar://problem/3337355> ConvertDomainLabelToCString() needs to escape escape characters
 
@@ -4413,8 +4416,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				for (q = m->Questions; q; q=q->next)
 					if (ActiveQuestion(q) && m->timenow - q->LastQTime > mDNSPlatformOneSecond / 4)
 						if (!q->InterfaceID || q->InterfaceID == InterfaceID)
-							if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && SameDomainName(&q->qname, &pktq.qname))
-								{ *dqp = q; dqp = &q->NextInDQList; }
+							if (q->NextInDQList == mDNSNULL && dqp != &q->NextInDQList)
+								if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && SameDomainName(&q->qname, &pktq.qname))
+									{ *dqp = q; dqp = &q->NextInDQList; }
 			}
 		}
 
