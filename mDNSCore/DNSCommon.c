@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.47  2004/08/25 02:50:04  cheshire
+<rdar://problem/3561220> Browses are no longer piggybacking on other browses
+Make mDNSSameAddress() recognise that two mDNSAddrType_None addresses are necessarily equal
+
 Revision 1.46  2004/08/18 17:35:40  ksekar
 <rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
 
@@ -324,6 +328,7 @@ mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)
 		{
 		switch (ip1->type)
 			{
+			case mDNSAddrType_None : return(mDNStrue); // Empty addresses have no data and are therefore always equal
 			case mDNSAddrType_IPv4 : return(mDNSBool)(mDNSSameIPv4Address(ip1->ip.v4, ip2->ip.v4));
 			case mDNSAddrType_IPv6 : return(mDNSBool)(mDNSSameIPv6Address(ip1->ip.v6, ip2->ip.v6));
 			}
