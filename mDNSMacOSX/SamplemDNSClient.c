@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.42  2003/12/03 11:39:17  cheshire
+<rdar://problem/3468977> Browse output misaligned in mDNS command-line tool
+(Also fix it to add leading space when the hours part of the time is only one digit)
+
 Revision 1.41  2003/10/30 22:52:57  cheshire
 <rdar://problem/3468977> Browse output misaligned in mDNS command-line tool
 
@@ -133,7 +137,7 @@ static void printtimestamp(void)
 	struct tm tm;
 	gettimeofday(&tv, NULL);
 	localtime_r((time_t*)&tv.tv_sec, &tm);
-	printf("%d:%02d:%02d.%03d  ", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec/1000);
+	printf("%2d:%02d:%02d.%03d  ", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec/1000);
 	}
 
 #define DomainMsg(X) ((X) == DNSServiceDomainEnumerationReplyAddDomain        ? "Added"     :          \
