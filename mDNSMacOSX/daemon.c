@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.140  2003/10/21 19:58:26  cheshire
+<rdar://problem/3459037> Syslog messages should show TTL as signed (for overdue records)
+
 Revision 1.139  2003/10/21 00:10:18  rpantos
 <rdar://problem/3409401>: mDNSResponder should not run as root
 
@@ -1466,8 +1469,8 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 			{
 			CacheUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
-			mDNSu32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
-			LogMsg("%s%6lu %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
+			mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
+			LogMsg("%s%6ld %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfoOSX *)rr->resrec.InterfaceID)->ifa_name, GetRRDisplayString(&mDNSStorage, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 			}
