@@ -482,7 +482,7 @@ _nss_mdns_gethostbyaddr_r (
 //----------
 // Types and Constants
 
-const int MDNS_VERBOSE = 1;
+const int MDNS_VERBOSE = 0;
 	// This enables verbose syslog messages
 	// If zero, only "imporant" messages will appear in syslog
 
