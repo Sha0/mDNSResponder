@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.55  2003/05/26 00:47:30  cheshire
+Comment clarification
+
 Revision 1.54  2003/05/24 16:39:48  cheshire
 <rdar://problem/3268631> SendResponses also needs to handle multihoming better
 
@@ -301,9 +304,12 @@ typedef unsigned long  mDNSu32;
 typedef struct { void *dummy; } *mDNSInterfaceID;
 
 // These types are for opaque two- and four-byte identifiers.
-// The "NotAnInteger" fields of the unions allow the value to be conveniently passed around in a register
-// for the sake of efficiency, but don't forget -- just because it is in a register doesn't mean it is an
-// integer. Operations like add, multiply, increment, decrement, etc., are undefined for opaque identifiers.
+// The "NotAnInteger" fields of the unions allow the value to be conveniently passed around in a
+// register for the sake of efficiency, and compared for equality or inequality, but don't forget --
+// just because it is in a register doesn't mean it is an integer. Operations like greater than,
+// less than, add, multiply, increment, decrement, etc., are undefined for opaque identifiers,
+// and if you make the mistake of trying to do those using the NotAnInteger field, then you'll
+// find you get code that doesn't work consistently on big-endian and little-endian machines.
 typedef union { mDNSu8 b[2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
 typedef union { mDNSu8 b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
 typedef union { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
