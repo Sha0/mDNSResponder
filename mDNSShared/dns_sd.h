@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.7  2004/03/12 08:00:06  cheshire
+Minor comment changes, headers, and wrap file in extern "C" for the benefit of C++ clients
+
 Revision 1.6  2003/12/04 06:24:33  cheshire
 Clarify meaning of MoreComing/Finished flag
 
@@ -44,11 +47,11 @@ Update to APSL 2.0
 #ifndef _DNS_SD_H
 #define _DNS_SD_H
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <stdint.h>
-#include <netinet/in.h>
+#ifdef	__cplusplus
+	extern "C" {
+#endif
 
+#include <stdint.h>
 
 /* DNSServiceRef, DNSRecordRef
  *
@@ -380,10 +383,18 @@ typedef void (*DNSServiceRegisterReply)
  *                  for ensuring that the appropriate address record exists, or creating it
  *                  via DNSServiceRegisterRecord().
  *
- * port:            The port on which the service accepts connections.  Pass 0 for a 
- *                  "placeholder" service (i.e. a service that will not be discovered by 
- *                  browsing, but will cause a name conflict if another client tries to 
- *                  register that same name.)  Most clients will not use placeholder services.
+ * notAnIntPort:    The port on which the service accepts connections.
+ *                  Note that even though the type of this parameter is declared as 'uint16_t'
+ *                  it is actually an opaque 16-bit port identifier, NOT an integer value
+ *                  (in the sense that integers are those quantities upon which operations like
+ *                  increment, decrement, add, multiply, etc. are defined and have useful meaning).
+ *                  To interpret an opaque port identifier as an integer value you need
+ *                  to remember that in Internet protocols the first byte is most significant,
+ *                  and the last byte is least significant, which may or may not be the native
+ *                  representation used by the processor that happens to be running your code.
+ *                  Pass 0 for a "placeholder" service (i.e. a service that will not be discovered
+ *                  by browsing, but will cause a name conflict if another client tries to
+ *                  register that same name).  Most clients will not use placeholder services.
  *
  * txtLen:          The length of the txtRecord, in bytes.  Must be zero if the txtRecord is NULL.
  *
@@ -417,7 +428,7 @@ DNSServiceErrorType DNSServiceRegister
     const char                          *regtype,  
     const char                          *domain,       /* may be NULL */
     const char                          *host,         /* may be NULL */
-    uint16_t                            port,
+    uint16_t                            notAnIntPort,
     uint16_t                            txtLen,
     const void                          *txtRecord,    /* may be NULL */
     DNSServiceRegisterReply             callBack,      /* may be NULL */
@@ -661,7 +672,15 @@ DNSServiceErrorType DNSServiceBrowse
  * hosttarget:      The target hostname of the machine providing the service.  This name can 
  *                  be passed to functions like gethostbyname() to identify the host's IP address.
  *
- * port:            The port number on which connections are accepted for this service.
+ * notAnIntPort:    The port on which the service accepts connections.
+ *                  Note that even though the type of this parameter is declared as 'uint16_t'
+ *                  it is actually an opaque 16-bit port identifier, NOT an integer value
+ *                  (in the sense that integers are those quantities upon which operations like
+ *                  increment, decrement, add, multiply, etc. are defined and have useful meaning).
+ *                  To interpret an opaque port identifier as an integer value you need
+ *                  to remember that in Internet protocols the first byte is most significant,
+ *                  and the last byte is least significant, which may or may not be the native
+ *                  representation used by the processor that happens to be running your code.
  *
  * txtLen:          The length of the txt record, in bytes.
  *
@@ -680,7 +699,7 @@ typedef void (*DNSServiceResolveReply)
     DNSServiceErrorType                 errorCode,
     const char                          *fullname,    
     const char                          *hosttarget,
-    uint16_t                            port,
+    uint16_t                            notAnIntPort,
     uint16_t                            txtLen,
     const char                          *txtRecord,
     void                                *context  
@@ -1035,6 +1054,8 @@ void DNSServiceReconfirmRecord
     const void                         *rdata
     );
 
+#ifdef	__cplusplus
+	}
+#endif
 
 #endif  // _DNS_SD_H
-
