@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.26  2005/02/02 02:21:30  cheshire
+Update references to "mDNSResponder" to say "mdnsd" instead
+
 Revision 1.25  2005/01/27 20:01:50  cheshire
 udsSupportRemoveFDFromEventLoop() needs to close the file descriptor as well
 
@@ -183,7 +186,7 @@ static void ParseCmdLinArgs(int argc, char **argv)
 	if (argc > 1)
 		{
 		if (0 == strcmp(argv[1], "-debug")) mDNS_DebugMode = mDNStrue;
-		else printf("Usage: mDNSResponder [-debug]\n");
+		else printf("Usage: %s [-debug]\n", argv[0]);
 		}
 
 	if (!mDNS_DebugMode)
@@ -191,7 +194,7 @@ static void ParseCmdLinArgs(int argc, char **argv)
 		int result = daemon(0, 0);
 		if (result != 0) { LogMsg("Could not run as daemon - exiting"); exit(result); }
 #if __APPLE__
-		LogMsg("The POSIX mDNSResponder should only be used on OS X for testing - exiting");
+		LogMsg("The POSIX mdnsd should only be used on OS X for testing - exiting");
 		exit(-1);
 #endif
 		}
@@ -258,6 +261,8 @@ int		main(int argc, char **argv)
 
 	ParseCmdLinArgs(argc, argv);
 
+	LogMsgIdent(mDNSResponderVersionString, "starting");
+
 	err = mDNS_Init(&mDNSRecord, &platformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, 
 					mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext); 
 
@@ -279,6 +284,8 @@ int		main(int argc, char **argv)
 	if (mStatus_NoError == err)
 		err = MainLoop(&mDNSRecord);
  
+	LogMsgIdent(mDNSResponderVersionString, "stopping");
+
 	mDNS_Close(&mDNSRecord);
 
 	if (udsserver_exit() < 0)
