@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.77  2005/02/25 20:02:18  shersche
+<rdar://problem/4022802> Call ProcessingThreadDynDNSConfigChanged() when interface list changes
+
 Revision 1.76  2005/02/23 02:59:20  shersche
 <rdar://problem/4013482> Check to see if locks have been initialized before using them.
 
@@ -3052,6 +3055,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 				// Interface list changed event. Break out of the inner loop to re-setup the wait list.
 				
 				ProcessingThreadInterfaceListChanged( m );
+				ProcessingThreadDynDNSConfigChanged( m );
 				break;
 			}
 			else if( result == kWaitListWakeupEvent )
