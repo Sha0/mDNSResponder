@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.117  2004/11/23 20:23:10  ksekar
+Fixed LogOperation that causes crash on connected service deregistrations
+
 Revision 1.116  2004/11/23 03:39:47  cheshire
 Let interface name/index mapping capability live directly in JNISupport.c,
 instead of having to call through to the daemon via IPC to get this information.
@@ -2436,7 +2439,7 @@ static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus resu
     reply_state *reply;
     transfer_state ts;
     (void)m; // Unused
-
+	
     if (result == mStatus_MemFree) 	
         { 
         freeL("regrecord_callback", rcc);
@@ -2457,7 +2460,7 @@ static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus resu
     reply->rhdr->error = dnssd_htonl(result);
 
     ts = send_msg(reply);
-    if (ts == t_error || ts == t_terminated) 
+    if (ts == t_error || ts == t_terminated)
         {
         abort_request(rcc->rstate);
         unlink_request(rcc->rstate);
@@ -2496,12 +2499,11 @@ static void handle_removerecord_request(request_state *rstate)
     ptr = rstate->msgdata;
     get_flags(&ptr);	// flags unused
 
-	LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
-
 	if (rstate->reg_recs)  err = remove_record(rstate);  // remove individually registered record
 	
     else
 		{
+		LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
 		service_instance *i;
 		for (i = rstate->service_registration->instances; i; i = i->next)
 			{
@@ -2531,6 +2533,7 @@ static mStatus remove_record(request_state *rstate)
     	{
         if (reptr->key == rstate->hdr.reg_index)  // found match
             {
+			LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, reptr->rr->resrec.name.c);
             if (prev) prev->next = reptr->next;
             else rstate->reg_recs = reptr->next;
             shared = reptr->rr->resrec.RecordType == kDNSRecordTypeShared;
@@ -2554,6 +2557,8 @@ static mStatus remove_record(request_state *rstate)
         prev = reptr;
         reptr = reptr->next;
     	}
+
+	if (!reptr) LogOperation("%3d: DNSServiceRemoveRecord (bad reference)");
     return err;
     }
 
