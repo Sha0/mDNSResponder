@@ -23,7 +23,7 @@
 				FRAMEWORK_SEARCH_PATHS = "";
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_VERSION = 3.3;
-				HEADER_SEARCH_PATHS = "../mDNSShared \"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\"";
+				HEADER_SEARCH_PATHS = "../mDNSShared \"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\" \"$(OBJROOT)\"";
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OPTIMIZATION_CFLAGS = "-O0";
@@ -331,7 +331,7 @@
 				FRAMEWORK_SEARCH_PATHS = "";
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_VERSION = 3.3;
-				HEADER_SEARCH_PATHS = "../mDNSShared \"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\"";
+				HEADER_SEARCH_PATHS = "../mDNSShared \"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\" \"$(OBJROOT)\"";
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
@@ -1998,7 +1998,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -e /usr/local/lib/libdnsinfo.a ]\nthen\nrm -f \"${OBJROOT}/libdnsinfo.a\"\nelse\necho \"void *dns_configuration_copy() {return(0);} void dns_configuration_free(void*x) { }\" > ${OBJROOT}/libdnsinfo.c\ncc ${OBJROOT}/libdnsinfo.c -c -o \"${OBJROOT}/libdnsinfo.a\"\nrm -f ${OBJROOT}/libdnsinfo.c\nfi";
+			shellScript = "if [ -e /usr/local/include/dnsinfo.h ]\nthen\nrm -f \"${OBJROOT}/dnsinfo.h\"\nrm -f \"${OBJROOT}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${OBJROOT}/dnsinfo.h\ntouch ${OBJROOT}/empty.c\ncc ${OBJROOT}/empty.c -c -o \"${OBJROOT}/libdnsinfo.a\"\nrm -f ${OBJROOT}/empty.c\nfi";
 		};
 		FF485D5105632E0000130380 = {
 			fileEncoding = 4;
@@ -2147,7 +2147,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -e /usr/local/lib/libdnsinfo.a ]\nthen\nrm -f \"${OBJROOT}/libdnsinfo.a\"\nelse\necho \"void *dns_configuration_copy() {return(0);} void dns_configuration_free(void*x) { }\" > ${OBJROOT}/libdnsinfo.c\ncc ${OBJROOT}/libdnsinfo.c -c -o \"${OBJROOT}/libdnsinfo.a\"\nrm -f ${OBJROOT}/libdnsinfo.c\nfi";
+			shellScript = "if [ -e /usr/local/include/dnsinfo.h ]\nthen\nrm -f \"${OBJROOT}/dnsinfo.h\"\nrm -f \"${OBJROOT}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${OBJROOT}/dnsinfo.h\ntouch ${OBJROOT}/empty.c\ncc ${OBJROOT}/empty.c -c -o \"${OBJROOT}/libdnsinfo.a\"\nrm -f ${OBJROOT}/empty.c\nfi";
 		};
 		FFFB0DA407B43BED00B88D48 = {
 			children = (

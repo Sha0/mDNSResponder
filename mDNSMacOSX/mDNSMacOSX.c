@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.306  2005/03/02 22:18:00  cheshire
+<rdar://problem/3930171> mDNSResponder requires AppleInternal packages to build on Tiger
+
 Revision 1.305  2005/02/26 05:08:28  cheshire
 <rdar://problem/3930171> mDNSResponder requires AppleInternal packages to build on Tiger
 Added dnsinfo.h to project directory
@@ -961,10 +964,7 @@ Minor code tidying
 
 #include <Security/Security.h>
 
-#include <AvailabilityMacros.h>
-#ifdef MAC_OS_X_VERSION_10_4
 #include "dnsinfo.h"
-#endif
 
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
@@ -2379,9 +2379,9 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 
 mDNSlocal mStatus GetDNSConfig(void **result)
 	{
-#ifndef MAC_OS_X_VERSION_10_4
+#if MDNS_NO_DNSINFO
 	static int MessageShown = 0;
-	if (!MessageShown) { MessageShown = 1; LogMsg("Note: Compiled without Apple-specific split DNS support"); }
+	if (!MessageShown) { MessageShown = 1; LogMsg("Note: Compiled without Apple-specific Split-DNS support"); }
 	*result = NULL;
 	return mStatus_UnsupportedErr;
 #else
@@ -2403,7 +2403,7 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 		return mStatus_UnknownErr;
 		}
 	return mStatus_NoError;
-#endif // MAC_OS_X_VERSION_10_4
+#endif // MDNS_NO_DNSINFO
 	}
 
 mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
@@ -2413,7 +2413,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 	*nAdditions = *nDeletions = 0;
 	mStatus err = GetDNSConfig(&v);
 
-#ifdef MAC_OS_X_VERSION_10_4
+#if !MDNS_NO_DNSINFO
 	if (!err && v)
 		{
 		int i;
@@ -2635,9 +2635,10 @@ mDNSlocal mStatus GetSearchDomains(void)
 	{
 	void *v;
 	mStatus err = GetDNSConfig(&v);
+
+#if !MDNS_NO_DNSINFO
 	if (!err && v)
 		{
-#ifdef MAC_OS_X_VERSION_10_4	
 		int i;
 		dns_config_t *config = v;
 		if (!config->n_resolver) return err;
@@ -2646,8 +2647,9 @@ mDNSlocal mStatus GetSearchDomains(void)
 		for (i = 0; i < resolv->n_search; i++) MarkSearchListElem(resolv->search[i]);
 		if (resolv->domain) MarkSearchListElem(resolv->domain);
 		dns_configuration_free(config);
-#endif
 		}
+#endif
+
 	return err;
 	}
 
