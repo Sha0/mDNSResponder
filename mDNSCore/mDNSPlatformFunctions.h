@@ -54,6 +54,7 @@ extern mDNSs32  mDNSPlatformTimeNow();
 extern mDNSs32  mDNSPlatformOneSecond;
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
+extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 								mDNSIPAddr srcaddr, mDNSIPPort srcport, mDNSIPAddr dstaddr, mDNSIPPort dstport, mDNSIPAddr InterfaceAddr);
 extern void     mDNSCoreTask   (mDNS *const m);
