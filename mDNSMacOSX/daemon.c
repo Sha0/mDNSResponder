@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.97  2003/05/08 00:19:08  cheshire
+ * <rdar://problem/3250330> Forgot to set "err = mStatus_BadParamErr" in a couple of places
+ *
  * Revision 1.96  2003/05/07 22:10:46  cheshire
  * <rdar://problem/3250330> Add a few more error logging messages
  *
@@ -901,7 +904,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	name = &x->s.RR_SRV.name;
 
 	// Check other parameters
-	if (data_len > 8192) { errormsg = "data_len > 8K"; goto fail; }
+	if (data_len > 8192) { err = mStatus_BadParamErr; errormsg = "data_len > 8K"; goto fail; }
 	unsigned int size = sizeof(RDataBody);
 	if (size < data_len)
 		size = data_len;
@@ -921,7 +924,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 		client, &x->s.RR_SRV.name, type, data_len, extra);
 	err = mDNS_AddRecordToService(&mDNSStorage, &x->s, extra, &extra->r.rdatastorage, ttl);
 	*reference = (natural_t)extra;
-	if (err) { errormsg = "mDNS_AddRecordToService";  goto fail; }
+	if (err) { errormsg = "mDNS_AddRecordToService"; goto fail; }
 	
 	// Succeeded: Wrap up and return
 	return(mStatus_NoError);
@@ -953,7 +956,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	name = &x->s.RR_SRV.name;
 
 	// Check other parameters
-	if (data_len > 8192) { errormsg = "data_len > 8K"; goto fail; }
+	if (data_len > 8192) { err = mStatus_BadParamErr; errormsg = "data_len > 8K"; goto fail; }
 	unsigned int size = sizeof(RDataBody);
 	if (size < data_len)
 		size = data_len;
