@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.19  2004/06/12 00:39:32  ksekar
+stricter checking for FreeBSD version in conditional #include of
+sys/types.h instead of stdint.h.
+
 Revision 1.18  2004/06/11 19:56:31  cheshire
 To be callable from the broadest range of clients on Windows (e.g. Visual Basic, C#, etc.)
 API routines have to be declared as "__stdcall", instead of the C default, "__cdecl"
@@ -97,7 +101,7 @@ Update to APSL 2.0
 #	define DNSSD_API
 #endif
 
-#if defined(__FreeBSD__) && (__FreeBSD_version < 500000)
+#if defined(__FreeBSD__) && defined(__FreeBSD_version) && (__FreeBSD_version < 500000)
 /* stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead */
 #include <sys/types.h>
 #else
