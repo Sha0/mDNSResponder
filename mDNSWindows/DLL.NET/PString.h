@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: PString.h,v $
+Revision 1.2  2004/07/19 16:08:56  shersche
+fix problems in UTF8/Unicode string translations
+
 Revision 1.1  2004/06/26 04:01:22  shersche
 Initial revision
 
@@ -31,6 +34,8 @@ Initial revision
     
 #pragma once
 
+using namespace System;
+using namespace System::Text;
 
 namespace Apple
 {
@@ -42,7 +47,13 @@ namespace Apple
 		{
 			if (string != NULL)
 			{
-				m_p = Marshal::StringToHGlobalAnsi(string);
+				Byte unicodeBytes[] = Encoding::Unicode->GetBytes(string);
+				Byte utf8Bytes[] = Encoding::Convert(Encoding::Unicode, Encoding::UTF8, unicodeBytes);
+				m_p = Marshal::AllocHGlobal(utf8Bytes->Length + 1);
+				Byte __pin * p = &utf8Bytes[0];
+				char * hBytes = static_cast<char*>(m_p.ToPointer());
+				memcpy(hBytes, p, utf8Bytes->Length);
+				hBytes[utf8Bytes->Length] = '\0';
 			}
 			else
 			{

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.3  2004/07/19 16:08:56  shersche
+fix problems in UTF8/Unicode string translations
+
 Revision 1.2  2004/07/19 07:48:34  shersche
 fix bug in DNSService.Register when passing in NULL text record, add TextRecord APIs
 
@@ -51,6 +54,15 @@ using namespace Apple;
 //===========================================================================================================================
 
 #define	DEBUG_NAME	"[dnssd.NET] "
+
+//
+// ConvertToString
+//
+static String*
+ConvertToString(const char * utf8String)
+{
+	return __gc new String(utf8String, 0, strlen(utf8String), __gc new UTF8Encoding(true, true));
+}
 
 
 //
@@ -459,7 +471,7 @@ DNSService::ServiceRef::ServiceRefImpl::EnumerateDomainsCallback
 
 	if (self->m_disposed == false)
 	{
-		self->m_outer->EnumerateDomainsDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, replyDomain);
+		self->m_outer->EnumerateDomainsDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, ConvertToString(replyDomain));
 	}
 }
 
@@ -488,7 +500,7 @@ DNSService::ServiceRef::ServiceRefImpl::RegisterCallback
 	
 	if (self->m_disposed == false)
 	{
-		self->m_outer->RegisterDispatch((ServiceFlags) flags, (ErrorCode) errorCode, name, regtype, domain);
+		self->m_outer->RegisterDispatch((ServiceFlags) flags, (ErrorCode) errorCode, ConvertToString(name), ConvertToString(regtype), ConvertToString(domain));
 	}
 }
 
@@ -518,7 +530,7 @@ DNSService::ServiceRef::ServiceRefImpl::BrowseCallback
 	
 	if (self->m_disposed == false)
 	{
-		self->m_outer->BrowseDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, serviceName, regtype, replyDomain);
+		self->m_outer->BrowseDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, ConvertToString(serviceName), ConvertToString(regtype), ConvertToString(replyDomain));
 	}
 }
 
@@ -564,7 +576,7 @@ DNSService::ServiceRef::ServiceRefImpl::ResolveCallback
 			memcpy(p, txtRecord, txtLen);
 		}
 
-		self->m_outer->ResolveDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, fullname, hosttarget, notAnIntPort, txtRecordBytes);
+		self->m_outer->ResolveDispatch((ServiceFlags) flags, interfaceIndex, (ErrorCode) errorCode, ConvertToString(fullname), ConvertToString(hosttarget), notAnIntPort, txtRecordBytes);
 	}	
 }
 
@@ -642,7 +654,7 @@ DNSService::ServiceRef::ServiceRefImpl::QueryRecordCallback
 			memcpy(p, rdata, rdlen);
 		}
 
-		self->m_outer->QueryRecordDispatch((ServiceFlags) flags, (int) interfaceIndex, (ErrorCode) errorCode, fullname, rrtype, rrclass, rdataBytes, ttl);
+		self->m_outer->QueryRecordDispatch((ServiceFlags) flags, (int) interfaceIndex, (ErrorCode) errorCode, ConvertToString(fullname), rrtype, rrclass, rdataBytes, ttl);
 	}
 }
 
@@ -662,19 +674,19 @@ DNSService::EnumerateDomains
 		EnumerateDomainsReply	*	callback
 		)
 {
-	ServiceRef * ref = new ServiceRef(callback);
+	ServiceRef * sdRef = new ServiceRef(callback);
 	int			 err;
 
-	err = DNSServiceEnumerateDomains(&ref->m_impl->m_ref, flags, interfaceIndex, ServiceRef::ServiceRefImpl::EnumerateDomainsCallback, ref->m_impl);
+	err = DNSServiceEnumerateDomains(&sdRef->m_impl->m_ref, flags, interfaceIndex, ServiceRef::ServiceRefImpl::EnumerateDomainsCallback, sdRef->m_impl);
 
 	if (err != 0)
 	{
 		throw new DNSServiceException(err);
 	}
 
-	ref->StartThread();
+	sdRef->StartThread();
 
-	return ref;
+	return sdRef;
 }
 
 
@@ -699,8 +711,7 @@ DNSService::Register
 				RegisterReply	*	callback
 				)
 {
-	ServiceRef * ref = new ServiceRef(callback);
-
+	ServiceRef	*	sdRef	=	new ServiceRef(callback);
 	PString		*	pName	=	new PString(name);
 	PString		*	pType	=	new PString(regtype);
 	PString		*	pDomain =	new PString(domain);
@@ -716,16 +727,16 @@ DNSService::Register
 		v		= (void*) p;
 	}
 
-	int err = DNSServiceRegister(&ref->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(), pHost->c_str(), notAnIntPort, len, v, ServiceRef::ServiceRefImpl::RegisterCallback, ref->m_impl );
+	int err = DNSServiceRegister(&sdRef->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(), pHost->c_str(), notAnIntPort, len, v, ServiceRef::ServiceRefImpl::RegisterCallback, sdRef->m_impl );
 
 	if (err != 0)
 	{
 		throw new DNSServiceException(err);
 	}
 
-	ref->StartThread();
+	sdRef->StartThread();
 
-	return ref;
+	return sdRef;
 }
 
 
@@ -739,7 +750,7 @@ DNSService::Register
 DNSService::RecordRef*
 DNSService::AddRecord
 				(
-				ServiceRef	*	ref,
+				ServiceRef	*	sdRef,
 				int				flags,
 				int				rrtype,
 				Byte			rdata[],
@@ -751,7 +762,7 @@ DNSService::AddRecord
 
 	RecordRef * record = new RecordRef;
 
-	int err = DNSServiceAddRecord(ref->m_impl->m_ref, &record->m_impl->m_ref, flags, rrtype, rdata->Length, v, ttl);
+	int err = DNSServiceAddRecord(sdRef->m_impl->m_ref, &record->m_impl->m_ref, flags, rrtype, rdata->Length, v, ttl);
 
 	if (err != 0)
 	{
@@ -772,7 +783,7 @@ DNSService::AddRecord
 void
 DNSService::UpdateRecord
 				(
-				ServiceRef	*	ref,
+				ServiceRef	*	sdRef,
 				RecordRef	*	record,
 				int				flags,
 				Byte			rdata[],
@@ -782,7 +793,7 @@ DNSService::UpdateRecord
 	Byte __pin	* p = &rdata[0];
 	void		* v = (void*) p;
 
-	int err = DNSServiceUpdateRecord(ref->m_impl->m_ref, record->m_impl->m_ref, flags, rdata->Length, v, ttl);
+	int err = DNSServiceUpdateRecord(sdRef->m_impl->m_ref, record->m_impl->m_ref, flags, rdata->Length, v, ttl);
 
 	if (err != 0)
 	{
@@ -801,12 +812,12 @@ DNSService::UpdateRecord
 void
 DNSService::RemoveRecord
 		(
-		ServiceRef	*	ref,
+		ServiceRef	*	sdRef,
 		RecordRef	*	record,
 		int				flags
 		)
 {
-	int err = DNSServiceRemoveRecord(ref->m_impl->m_ref, record->m_impl->m_ref, flags);
+	int err = DNSServiceRemoveRecord(sdRef->m_impl->m_ref, record->m_impl->m_ref, flags);
 
 	if (err != 0)
 	{
@@ -832,20 +843,20 @@ DNSService::Browse
 	BrowseReply	*	callback
 	)
 {
-	ServiceRef	*	ref		= new ServiceRef(callback);
+	ServiceRef	*	sdRef	= new ServiceRef(callback);
 	PString		*	pType	= new PString(regtype);
 	PString		*	pDomain	= new PString(domain);
 
-	int err = DNSServiceBrowse(&ref->m_impl->m_ref, flags, interfaceIndex, pType->c_str(), pDomain->c_str(),(DNSServiceBrowseReply) ServiceRef::ServiceRefImpl::BrowseCallback, ref->m_impl);
+	int err = DNSServiceBrowse(&sdRef->m_impl->m_ref, flags, interfaceIndex, pType->c_str(), pDomain->c_str(),(DNSServiceBrowseReply) ServiceRef::ServiceRefImpl::BrowseCallback, sdRef->m_impl);
 
 	if (err != 0)
 	{
 		throw new DNSServiceException(err);
 	}
 
-	ref->StartThread();
+	sdRef->StartThread();
 
-	return ref;
+	return sdRef;
 }
 
 
@@ -867,21 +878,21 @@ DNSService::Resolve
 	ResolveReply	*	callback	
 	)
 {
-	ServiceRef	*	ref		= new ServiceRef(callback);
+	ServiceRef	*	sdRef	= new ServiceRef(callback);
 	PString		*	pName	= new PString(name);
 	PString		*	pType	= new PString(regtype);
 	PString		*	pDomain	= new PString(domain);
 
-	int err = DNSServiceResolve(&ref->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(),(DNSServiceResolveReply) ServiceRef::ServiceRefImpl::ResolveCallback, ref->m_impl);
+	int err = DNSServiceResolve(&sdRef->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(),(DNSServiceResolveReply) ServiceRef::ServiceRefImpl::ResolveCallback, sdRef->m_impl);
 
 	if (err != 0)
 	{
 		throw new DNSServiceException(err);
 	}
 
-	ref->StartThread();
+	sdRef->StartThread();
 
-	return ref;
+	return sdRef;
 }
 
 
@@ -898,18 +909,18 @@ DNSService::CreateConnection
 			RegisterRecordReply * callback
 			)
 {
-	ServiceRef * ref = new ServiceRef(callback);
+	ServiceRef * sdRef = new ServiceRef(callback);
 
-	int err = DNSServiceCreateConnection(&ref->m_impl->m_ref);
+	int err = DNSServiceCreateConnection(&sdRef->m_impl->m_ref);
 
 	if (err != 0)
 	{
 		throw new DNSServiceException(err);
 	}
 
-	ref->StartThread();
+	sdRef->StartThread();
 
-	return ref;
+	return sdRef;
 }
 
 
@@ -968,19 +979,19 @@ DNSService::QueryRecord
 		QueryRecordReply	*	callback
 		)
 {
-	ServiceRef	*	ref			= new ServiceRef(callback);
+	ServiceRef	*	sdRef		= new ServiceRef(callback);
 	PString		*	pFullname	= new PString(fullname);
 
-	int err = DNSServiceQueryRecord(&ref->m_impl->m_ref, flags, interfaceIndex, pFullname->c_str(), rrtype, rrclass, (DNSServiceQueryRecordReply) ServiceRef::ServiceRefImpl::QueryRecordCallback, ref->m_impl);
+	int err = DNSServiceQueryRecord(&sdRef->m_impl->m_ref, flags, interfaceIndex, pFullname->c_str(), rrtype, rrclass, (DNSServiceQueryRecordReply) ServiceRef::ServiceRefImpl::QueryRecordCallback, sdRef->m_impl);
 
 	if (err != 0)
 	{
 		throw new DNSServiceException(err);
 	}
 
-	ref->StartThread();
+	sdRef->StartThread();
 
-	return ref;
+	return sdRef;
 }
 
 
@@ -1177,7 +1188,7 @@ DNSService::TextRecord::GetItemAtIndex
 		throw new DNSServiceException(err);
 	}
 
-	*key = keyBuf;
+	*key = ConvertToString(keyBuf);
 
 	if (valueLen)
 	{
