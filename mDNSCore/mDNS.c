@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.81  2003/02/21 03:35:34  cheshire
+Bug #: 3179007 mDNSResponder needs to include AAAA records in additional answer section
+
 Revision 1.80  2003/02/21 02:47:53  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Several places in the code were calling CacheRRActive(), which searched the entire
@@ -1036,6 +1039,8 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 #pragma mark -
 #pragma mark - Resource Record Utility Functions
 #endif
+
+#define RRIsAddressType(RR) ((RR)->rrtype == kDNSType_A || (RR)->rrtype == kDNSType_AAAA)
 
 #define ResourceRecordIsValidAnswer(RR) ( ((RR)->             RecordType & kDNSRecordTypeActiveMask)  && \
 		((RR)->Additional1 == mDNSNULL || ((RR)->Additional1->RecordType & kDNSRecordTypeActiveMask)) && \
@@ -3314,7 +3319,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// For SRV records, automatically add the Address record(s) for the target host
 		if (rr->rrtype == kDNSType_SRV)
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
-				if (rr2->rrtype == kDNSType_A &&								// For all records type "A" ...
+				if (RRIsAddressType(rr2) &&										// For all address records (A/AAAA) ...
 					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
 					SameDomainName(&rr->rdata->u.srv.target, &rr2->name) &&		// ... whose name is the name of the SRV target
 					AddRecordToResponseList(nrp, rr2, mDNSNULL, rr))
@@ -3889,9 +3894,6 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->Context;
 	if (answer->rrremainingttl == 0) return;
-	if (answer->rrtype != kDNSType_A && answer->rrtype != kDNSType_AAAA) return;
-	query->GotADD = mDNStrue;
-	query->info->InterfaceID = answer->InterfaceID;
 	
 	if (answer->rrtype == kDNSType_A)
 		{
@@ -3908,6 +3910,9 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 		debugf("FoundServiceInfo: answer type %d (%s) unexpected", answer->rrtype, DNSTypeName(answer->rrtype));
 		return;
 		}
+
+	query->GotADD = mDNStrue;
+	query->info->InterfaceID = answer->InterfaceID;
 
 	debugf("FoundServiceInfo: v%d %##s GotTXT=%d", query->info->ip.type, query->info->name.c, query->GotTXT);
 
