@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.258  2004/12/10 20:48:32  cheshire
+<rdar://problem/3705229> Need to pick final EDNS numbers for LLQ and GC
+
 Revision 1.257  2004/12/10 02:09:23  cheshire
 <rdar://problem/3898376> Modify default TTLs
 
@@ -1655,8 +1658,8 @@ typedef struct
 	} LLQ_Info;
 
 // LLQ constants
-#define kDNSOpt_LLQ	   1 //!!!KRS
-#define kDNSOpt_Lease  2 //!!!KRS
+#define kDNSOpt_LLQ	   1
+#define kDNSOpt_Lease  2
 #define kLLQ_Vers      0 // prerelease
 #define kLLQ_DefLease  7200 // 2 hours
 #define kUpdate_DefLease 7200
