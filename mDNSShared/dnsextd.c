@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.25  2004/12/16 20:13:02  cheshire
+<rdar://problem/3324626> Cache memory management improvements
+
 Revision 1.24  2004/12/14 17:09:06  ksekar
 fixed incorrect usage instructions
 
@@ -608,7 +611,7 @@ mDNSlocal void PrintLeaseTable(DaemonInfo *d)
 // delete all RRS of a given name/type
 mDNSlocal mDNSu8 *putRRSetDeletion(DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *limit,  ResourceRecord *rr)
 	{
-	ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->name);
+	ptr = putDomainNameAsLabels(msg, ptr, limit, rr->name);
 	if (!ptr || ptr + 10 >= limit) return NULL;  // out of space
 	ptr[0] = (mDNSu8)(rr->rrtype  >> 8);
 	ptr[1] = (mDNSu8)(rr->rrtype  &  0xFF);
@@ -633,8 +636,8 @@ mDNSlocal mDNSu8 *PutUpdateSRV(DaemonInfo *d, PktMsg *pkt, mDNSu8 *ptr, char *re
 	if (!gethostname(hostname, 1024) < 0 || MakeDomainNameFromDNSNameString(&rr.resrec.rdata->u.srv.target, hostname))
 		rr.resrec.rdata->u.srv.target.c[0] = '\0';
 	
-	MakeDomainNameFromDNSNameString(&rr.resrec.name, regtype);
-	strcpy(rr.resrec.name.c + strlen(rr.resrec.name.c), d->zone.c);
+	MakeDomainNameFromDNSNameString(rr.resrec.name, regtype);
+	strcpy(rr.resrec.name->c + strlen(rr.resrec.name->c), d->zone.c);
 	VLog("%s  %s", registration ? "Registering SRV record" : "Deleting existing RRSet",
 		 GetRRDisplayString_rdb(&rr.resrec, &rr.resrec.rdata->u, buf));
 	if (registration) ptr = PutResourceRecord(&pkt->msg, ptr, &pkt->msg.h.mDNS_numUpdates, &rr.resrec);
@@ -825,7 +828,7 @@ mDNSlocal int ProcessArgs(int argc, char *argv[], DaemonInfo *d)
 		}
 		
 	if (!d->zone.c[0]) goto arg_error;  // zone is the only required argument
-	if (d->AuthInfo) AssignDomainName(d->AuthInfo->zone, d->zone); // if we have a shared secret, use it for the entire zone
+	if (d->AuthInfo) AssignDomainName(&d->AuthInfo->zone, &d->zone); // if we have a shared secret, use it for the entire zone
 	return 0;
 	
 	arg_error:
@@ -1125,9 +1128,7 @@ mDNSlocal PktMsg *HandleRequest(PktMsg *pkt, DaemonInfo *d)
 mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, mDNSu8 *id, mDNSs32 lease)
 	{
 	bzero(opt, sizeof(*opt));
-	opt->resrec.rdata = &opt->rdatastorage;
-	opt->resrec.RecordType = kDNSRecordTypeKnownUnique; // to suppress warnings from other layers
-	opt->resrec.rrtype = kDNSType_OPT;
+	mDNS_SetupResourceRecord(opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	opt->resrec.rdlength = LLQ_OPT_SIZE;
 	opt->resrec.rdestimate = LLQ_OPT_SIZE;
 	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;
@@ -1247,10 +1248,10 @@ mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, LLQEntry *e, int sd)
 		//if (!rr) { LogErr("AnswerQuestion", "malloc"); goto end; }
 		ansptr = GetLargeResourceRecord(NULL, &reply->msg, ansptr, end, 0, kDNSRecordTypePacketAns, &lcr);
 		if (!ansptr) { Log("AnswerQuestions: GetLargeResourceRecord returned NULL"); goto end; }
-		if (lcr.r.resrec.rrtype != e->qtype || lcr.r.resrec.rrclass != kDNSClass_IN || !SameDomainName(&lcr.r.resrec.name, &e->qname))
+		if (lcr.r.resrec.rrtype != e->qtype || lcr.r.resrec.rrclass != kDNSClass_IN || !SameDomainName(lcr.r.resrec.name, &e->qname))
 			{
 			Log("AnswerQuestion: response %##s type #d does not answer question %##s type #d.  Discarding",
-				  lcr.r.resrec.name.c, lcr.r.resrec.rrtype, e->qname.c, e->qtype);
+				  lcr.r.resrec.name->c, lcr.r.resrec.rrtype, e->qname.c, e->qtype);
 			}
 		else
 			{
@@ -1433,7 +1434,7 @@ mDNSlocal void *LLQEventMonitor(void *DInfoPtr)
 	// create question
 	id.NotAnInteger = 0;
 	InitializeDNSMessage(&q.msg.h, id, flags);
-	AssignDomainName(zone, d->zone);
+	AssignDomainName(&zone, &d->zone);
 	end = putQuestion(&q.msg, end, end + AbsoluteMaxDNSMessageData, &zone, kDNSType_SOA, kDNSClass_IN);
 	if (!end) { Log("Error: LLQEventMonitor - putQuestion returned NULL"); return NULL; }
 	q.len = (int)(end - (mDNSu8 *)&q.msg);
@@ -1459,7 +1460,7 @@ mDNSlocal void *LLQEventMonitor(void *DInfoPtr)
 			{
 			ptr = GetLargeResourceRecord(NULL, &reply.msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
 			if (!ptr) { Log("Error: LLQEventMonitor - GetLargeResourceRecord  returned NULL"); continue; }
-			if (rr->rrtype != kDNSType_SOA || rr->rrclass != kDNSClass_IN || !SameDomainName(&rr->name, &zone)) continue;
+			if (rr->rrtype != kDNSType_SOA || rr->rrclass != kDNSClass_IN || !SameDomainName(rr->name, &zone)) continue;
 			if (!SerialInitialized)
 				{
 				// first time through loop
@@ -1497,7 +1498,7 @@ mDNSlocal LLQEntry *NewLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qn
 	
 	// initialize structure
 	e->cli = cli;
-	AssignDomainName(e->qname, *qname);
+	AssignDomainName(&e->qname, qname);
 	e->qtype = qtype;
 	memset(e->id, 0, 8);
 	e->state = RequestReceived;

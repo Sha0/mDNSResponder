@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.259  2004/12/16 20:13:01  cheshire
+<rdar://problem/3324626> Cache memory management improvements
+
 Revision 1.258  2004/12/14 00:18:05  cheshire
 Don't log dns_configuration_copy() failures in the first three minutes after boot
 
@@ -895,7 +898,7 @@ mDNSlocal void AddDefRegDomain(domainname *d)
 	
 	newelem = mallocL("DNameListElem", sizeof(*newelem));
 	if (!newelem) { LogMsg("Error - malloc"); return; }
-	AssignDomainName(newelem->name, *d);
+	AssignDomainName(&newelem->name, d);
 	newelem->next = DefRegList;
 	DefRegList = newelem;
 
@@ -2250,8 +2253,8 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		else if (question == &slElem->DefRegisterQ)  name = "_default._register._dns-sd._udp.local.";
 		else { LogMsg("FoundDomain - unknown question"); return; }
 		
-		MakeDomainNameFromDNSNameString(&arElem->ar.resrec.name, name);
-		AssignDomainName(arElem->ar.resrec.rdata->u.name, answer->rdata->u.name);
+		MakeDomainNameFromDNSNameString(arElem->ar.resrec.name, name);
+		AssignDomainName(&arElem->ar.resrec.rdata->u.name, &answer->rdata->u.name);
 		err = mDNS_Register(m, &arElem->ar);
 		if (err)
 			{
@@ -2270,7 +2273,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 			{
 			if (SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
 				{
-				debugf("Deregistering PTR %s -> %s", ptr->ar.resrec.name.c, ptr->ar.resrec.rdata->u.name.c);
+				debugf("Deregistering PTR %s -> %s", ptr->ar.resrec.name->c, ptr->ar.resrec.rdata->u.name.c);
                 dereg = &ptr->ar;
 				if (prev) prev->next = ptr->next;
 				else slElem->AuthRecs = ptr->next;
@@ -2305,7 +2308,7 @@ mDNSlocal void MarkSearchListElem(domainname *domain)
 		new = mallocL("MarkSearchListElem - SearchListElem", sizeof(SearchListElem));
 		if (!new) { LogMsg("ERROR: MarkSearchListElem - malloc"); return; }
 		bzero(new, sizeof(SearchListElem));
-		AssignDomainName(new->domain, *domain);
+		AssignDomainName(&new->domain, domain);
 		new->flag = 1;  // add
 		new->next = SearchList;
 		SearchList = new;
@@ -2406,7 +2409,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 				{
 				AuthRecord *dereg = &arList->ar;
 				arList = arList->next;
-				debugf("Deregistering PTR %s -> %s", dereg->resrec.name.c, dereg->resrec.rdata->u.name.c);
+				debugf("Deregistering PTR %s -> %s", dereg->resrec.name->c, dereg->resrec.rdata->u.name.c);
 				err = mDNS_Deregister(m, dereg);
 				if (err) LogMsg("ERROR: RegisterSearchDomains mDNS_Deregister returned %d", err);
 				}
@@ -2452,8 +2455,8 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
-	debugf("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
-	SetDDNSNameStatus(&rr->resrec.name, result);
+	debugf("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name->c);
+	SetDDNSNameStatus(rr->resrec.name, result);
 	}
 
 mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
@@ -2515,21 +2518,21 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	if (!SameDomainName(&BrowseDomain, &DynDNSBrowseDomain))
 		{
 		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNSfalse);
-		AssignDomainName(DynDNSBrowseDomain, BrowseDomain);
+		AssignDomainName(&DynDNSBrowseDomain, &BrowseDomain);
 		if (DynDNSBrowseDomain.c[0]) SetSCPrefsBrowseDomain(m, &DynDNSBrowseDomain, mDNStrue);
 		}
 	
 	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
 		{		
 		if (DynDNSRegDomain.c[0]) RemoveDefRegDomain(&DynDNSRegDomain);
-		AssignDomainName(DynDNSRegDomain, RegDomain);		
+		AssignDomainName(&DynDNSRegDomain, &RegDomain);		
 		if (DynDNSRegDomain.c[0]) { SetSecretForDomain(m, &DynDNSRegDomain); AddDefRegDomain(&DynDNSRegDomain); }
 		}
 	
 	if (!SameDomainName(&fqdn, &DynDNSHostname))
 		{
 		if (DynDNSHostname.c[0]) mDNS_RemoveDynDNSHostName(m, &DynDNSHostname);
-		AssignDomainName(DynDNSHostname, fqdn);
+		AssignDomainName(&DynDNSHostname, &fqdn);
 		if (DynDNSHostname.c[0])
 			{
 			SetSecretForDomain(m, &fqdn); // no-op if "zone" secret, above, is to be used for hostname
@@ -2800,7 +2803,7 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 		{
 		new = mallocL("FoundDefBrowseDomain", sizeof(DNameListElem));
 		if (!new) { LogMsg("ERROR: malloc"); return; }
-		AssignDomainName(new->name, answer->rdata->u.name);
+		AssignDomainName(&new->name, &answer->rdata->u.name);
 		new->next = DefBrowseList;
 		DefBrowseList = new;
 		DefaultBrowseDomainChanged(&new->name, mDNStrue);
@@ -2837,10 +2840,10 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 	
 	// Create dummy  record pointing to the domain to be added/removed
 	mDNS_SetupResourceRecord(&rec, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	AssignDomainName(rec.resrec.rdata->u.name, *d);
+	AssignDomainName(&rec.resrec.rdata->u.name, d);
 
 	// add/remove the "_legacy" entry
-	MakeDomainNameFromDNSNameString(&rec.resrec.name, "_legacy._browse._dns-sd._udp.local.");
+	MakeDomainNameFromDNSNameString(rec.resrec.name, "_legacy._browse._dns-sd._udp.local.");
 	FoundDefBrowseDomain(m, &LegacyBrowseDomainQ, &rec.resrec, add);
 
 	if (add)
@@ -2848,8 +2851,8 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 		// allocate/register a non-legacy _browse PTR record
 		ARListElem *ptr = mallocL("ARListElem", sizeof(*ptr));
 		mDNS_SetupResourceRecord(&ptr->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, ptr);
-		MakeDomainNameFromDNSNameString(&ptr->ar.resrec.name, "_browse._dns-sd._udp.local.");
-		AssignDomainName(ptr->ar.resrec.rdata->u.name, *d);
+		MakeDomainNameFromDNSNameString(ptr->ar.resrec.name, "_browse._dns-sd._udp.local.");
+		AssignDomainName(&ptr->ar.resrec.rdata->u.name, d);
 		mStatus err = mDNS_Register(m, &ptr->ar);
 		if (err)
 			{

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.262  2004/12/16 20:13:00  cheshire
+<rdar://problem/3324626> Cache memory management improvements
+
 Revision 1.261  2004/12/14 21:21:20  ksekar
 <rdar://problem/3825979> NAT-PMP: Update response format to contain "Seconds Since Boot"
 
@@ -1323,7 +1326,11 @@ typedef packedstruct
 // 184 were sixteen-byte AAAA records
 // 780 were various PTR, TXT and SRV records from 12-64 bytes
 // Only 69 records had rdata bigger than 64 bytes
+// Note that since CacheRecord object and a CacheGroup object are allocated out of the same pool, it's sensible to
+// have them both be the same size. Making one smaller without making the other smaller won't actually save any memory.
 #define InlineCacheRDSize 64
+
+#define InlineCacheGroupNameSize 144
 
 typedef union
 	{
@@ -1347,7 +1354,7 @@ typedef struct
 
 typedef struct AuthRecord_struct AuthRecord;
 typedef struct CacheRecord_struct CacheRecord;
-typedef struct ResourceRecord_struct ResourceRecord;
+typedef struct CacheGroup_struct CacheGroup;
 typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
@@ -1362,14 +1369,14 @@ typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 // The internal data structures of the mDNS code may not be in a state where mDNS API calls may be made safely.
 typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData *OldRData);
 
-struct ResourceRecord_struct
+typedef struct
 	{
 	mDNSu8          RecordType;			// See enum above
 	mDNSInterfaceID InterfaceID;		// Set if this RR is specific to one interface
 										// For records received off the wire, InterfaceID is *always* set to the receiving interface
 										// For our authoritative records, InterfaceID is usually zero, except for those few records
 										// that are interface-specific (e.g. address records, especially linklocal addresses)
-	domainname      name;
+	domainname     *name;
 	mDNSu16         rrtype;
 	mDNSu16         rrclass;
 	mDNSu32         rroriginalttl;		// In seconds
@@ -1379,7 +1386,7 @@ struct ResourceRecord_struct
 	mDNSu32         rdatahash;			// 32-bit hash of the raw rdata
 	mDNSu32         rdnamehash;			// Set if this rdata contains a domain name (e.g. PTR, SRV, CNAME etc.)
 	RData           *rdata;				// Pointer to storage for this rdata
-	};
+	} ResourceRecord;
 
 // Unless otherwise noted, states may apply to either independent record registrations or service registrations	
 typedef enum
@@ -1439,10 +1446,11 @@ struct AuthRecord_struct
 	// mDNS_SetupResourceRecord() is avaliable as a helper routine to set up most fields to sensible default values for you
 
 	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
+	// Field Group 1: Common ResourceRecord fields
 	ResourceRecord  resrec;
 	uDNS_RegInfo uDNS_info;
 
-	// Persistent metadata for Authoritative Records
+	// Field Group 2: Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response
 	AuthRecord     *Additional2;		// Another additional
 	AuthRecord     *DependentOn;		// This record depends on another for its uniqueness checking
@@ -1453,7 +1461,7 @@ struct AuthRecord_struct
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
 	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
 
-	// Transient state for Authoritative Records
+	// Field Group 3: Transient state for Authoritative Records
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
 	mDNSu8          ProbeCount;			// Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
@@ -1483,6 +1491,7 @@ struct AuthRecord_struct
 	mDNSs32         NextUpdateCredit;	// Time next token is added to bucket
 	mDNSs32         UpdateBlocked;		// Set if update delaying is in effect
 
+	domainname      namestorage;
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
 	// rdatastorage MUST be the last thing in the structure -- when using oversized AuthRecords, extra bytes
 	// are appended after the end of the AuthRecord, logically augmenting the size of the rdatastorage
@@ -1495,6 +1504,16 @@ typedef struct ARListElem
 	struct ARListElem *next;
 	AuthRecord ar;          // Note: Must be last struct in field to accomodate oversized AuthRecords
 	} ARListElem;
+
+struct CacheGroup_struct				// Header object for a list of CacheRecords with the same name
+	{
+	CacheGroup     *next;				// Next CacheGroup object in this hash table bucket
+	mDNSu32         namehash;			// Name-based (i.e. case insensitive) hash of name
+	CacheRecord    *members;			// List of CacheRecords with this same name
+	CacheRecord   **rrcache_tail;		// Tail end of that list
+	domainname     *name;				// Common name for all CacheRecords in this list
+	mDNSu8          namestorage[InlineCacheGroupNameSize];
+	};
 
 struct CacheRecord_struct
 	{
@@ -1519,10 +1538,15 @@ struct CacheRecord_struct
 	struct { mDNSu16 MaxRDLength; mDNSu8 data[InlineCacheRDSize]; } rdatastorage;	// Storage for small records is right here
 	};
 
+// Storage sufficient to hold either a CacheGroup header or a CacheRecord
+typedef union CacheEntity_union CacheEntity;
+union CacheEntity_union { CacheEntity *next; CacheGroup cg; CacheRecord cr; };
+
 typedef struct
 	{
 	CacheRecord r;
 	mDNSu8 _extradata[MaximumRDSize-InlineCacheRDSize];		// Glue on the necessary number of extra bytes
+	domainname namestorage;									// Needs to go *after* the extra rdata bytes
 	} LargeCacheRecord;
 
 typedef struct uDNS_HostnameInfo
@@ -1973,10 +1997,8 @@ struct mDNS_struct
 	mDNSu32 rrcache_totalused;			// Number of cache entries currently occupied
 	mDNSu32 rrcache_active;				// Number of cache entries currently occupied by records that answer active questions
 	mDNSu32 rrcache_report;
-	CacheRecord *rrcache_free;
-	CacheRecord *rrcache_hash[CACHE_HASH_SLOTS];
-	CacheRecord **rrcache_tail[CACHE_HASH_SLOTS];
-	mDNSu32 rrcache_used[CACHE_HASH_SLOTS];
+	CacheEntity *rrcache_free;
+	CacheGroup *rrcache_hash[CACHE_HASH_SLOTS];
 
 	// Fields below only required for mDNS Responder...
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
@@ -2003,6 +2025,11 @@ struct mDNS_struct
 	DNSMessage omsg;		// Outgoing message we're building
 	LargeCacheRecord rec;	// Resource Record extracted from received message
 	};
+
+#define FORALL_CACHERECORDS(SLOT,CG,CR)                          \
+	for ((SLOT) = 0; (SLOT) < CACHE_HASH_SLOTS; (SLOT)++)        \
+		for((CG)=m->rrcache_hash[(SLOT)]; (CG); (CG)=(CG)->next) \
+			for ((CR) = (CG)->members; (CR); (CR)=(CR)->next)
 
 // ***************************************************************************
 #if 0
@@ -2138,7 +2165,7 @@ mDNSinline mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v)
 // code is not entered by an interrupt-time timer callback while in the middle of processing a client call.
 
 extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
-								CacheRecord *rrcachestorage, mDNSu32 rrcachesize,
+								CacheEntity *rrcachestorage, mDNSu32 rrcachesize,
 								mDNSBool AdvertiseLocalAddresses,
 								mDNSCallback *Callback, void *Context);
 // See notes above on use of NoCache/ZeroCacheSize
@@ -2150,7 +2177,7 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 #define mDNS_Init_NoInitCallback              mDNSNULL
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
 
-extern void    mDNS_GrowCache (mDNS *const m, CacheRecord *storage, mDNSu32 numrecords);
+extern void    mDNS_GrowCache (mDNS *const m, CacheEntity *storage, mDNSu32 numrecords);
 extern void    mDNS_Close     (mDNS *const m);
 extern mDNSs32 mDNS_Execute   (mDNS *const m);
 
@@ -2255,7 +2282,7 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 // A simple C structure assignment of a domainname can cause a protection fault by accessing unmapped memory,
 // because that object is defined to be 256 bytes long, but not all domainname objects are truly the full size.
 // This macro uses mDNSPlatformMemCopy() to make sure it only touches the actual bytes that are valid.
-#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC).c, (DST).c, DomainNameLength(&(SRC)))
+#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC)->c, (DST)->c, DomainNameLength((SRC)))
 
 // Comparison functions
 extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
@@ -2626,6 +2653,7 @@ struct mDNS_CompileTimeAssertionChecks
 	char assert9[(sizeof(mDNSOpaque16)     ==   2                          ) ? 1 : -1];
 	char assertA[(sizeof(mDNSOpaque32)     ==   4                          ) ? 1 : -1];
 	char assertB[(sizeof(mDNSOpaque128)    ==  16                          ) ? 1 : -1];
+	char assertC[(sizeof(CacheRecord  )    >=  sizeof(CacheGroup)          ) ? 1 : -1];
 	};
 
 // ***************************************************************************

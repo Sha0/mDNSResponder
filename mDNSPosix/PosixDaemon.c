@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.23  2004/12/16 20:17:11  cheshire
+<rdar://problem/3324626> Cache memory management improvements
+
 Revision 1.22  2004/12/10 13:12:08  cheshire
 Create no-op function RecordUpdatedNiceLabel(), required by uds_daemon.c
 
@@ -125,7 +128,7 @@ static domainname DynDNSZone;                // Default wide-area zone for servi
 static domainname DynDNSHostname;
 
 #define RR_CACHE_SIZE 500
-static CacheRecord gRRCache[RR_CACHE_SIZE];
+static CacheEntity gRRCache[RR_CACHE_SIZE];
 
 extern const char mDNSResponderVersionString[];
 
