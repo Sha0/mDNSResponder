@@ -36,6 +36,7 @@
  */
 
 #include <libc.h>
+#define BIND_8_COMPAT
 #include <arpa/nameser.h>
 #include <arpa/inet.h>
 #include <net/if.h>
