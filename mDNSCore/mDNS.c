@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.291  2003/08/21 18:57:44  cheshire
+<rdar://problem/3387140> Synchronized queries on the network
+
 Revision 1.290  2003/08/21 02:25:23  cheshire
 Minor changes to comments and debugf() messages
 
@@ -3964,13 +3967,17 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 		m->CurrentQuestion = q->next;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
-			// If this question is one that's actively sending queries, and it's received three answers within
-			// one second of sending the query packet, then reset its exponential backoff back to the start
-			if (ActiveQuestion(q) && ++q->RecentAnswers >= 3 &&
-				q->ThisQInterval > InitialQuestionInterval*2 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
+			// If this question is one that's actively sending queries, and it's received ten answers within one second of sending the last
+			// query packet, then that indicates some radical network topology change, so reset its exponential backoff back to the start.
+			// We must be at least at the eight-second interval to do this. If we're at the four-second interval, or less,
+			// there's not much benefit accelerating because we will anyway send another query within a few seconds.
+			// The first reset query is sent out randomized over the next four seconds to reduce possible synchronization between machines.
+			if (ActiveQuestion(q) && ++q->RecentAnswers >= 10 &&
+				q->ThisQInterval > InitialQuestionInterval*16 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 				{
 				debugf("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 					q->qname.c, DNSTypeName(q->qtype));
+				q->LastQTime     = m->timenow - InitialQuestionInterval + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*4);
 				q->ThisQInterval = InitialQuestionInterval;
 				SetNextQueryTime(m,q);
 				}
@@ -6252,13 +6259,17 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	// even if we believe that we previously had an active representative of this interface.
 	if ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || FirstOfType || set->InterfaceActive)
 		{
+		// Use a small amount of randomness:
+		// In the case of a network administrator turning on an Ethernet hub so that all the connected machines establish link at
+		// exactly the same time, we don't want them to all go and hit the network with identical queries at exactly the same moment.
+		mDNSs32 jitter = (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
 		DNSQuestion *q;
 		AuthRecord *rr;
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
 				q->ThisQInterval = InitialQuestionInterval;				// MUST be > zero for an active question
-				q->LastQTime     = m->timenow - q->ThisQInterval;
+				q->LastQTime     = m->timenow - q->ThisQInterval + jitter;
 				q->RecentAnswers = 0;
 				if (ActiveQuestion(q)) m->NextScheduledQuery = m->timenow;
 				}
