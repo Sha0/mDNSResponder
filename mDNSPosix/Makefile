@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.37  2004/06/25 00:51:09  rpantos
+# And fix the Java build for Posix on Solaris, too.
+#
 # Revision 1.36  2004/06/25 00:26:27  rpantos
 # Changes to fix the Posix build on Solaris.
 #
@@ -174,6 +177,7 @@ CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -DNOT_HAVE_SOCKLEN_T -DNOT_HAVE_
 CC = gcc
 LD = gcc -shared
 LIBFLAGS = -lsocket -lnsl
+JAVACFLAGS_OS += -I$(JDK)/include/solaris
 ifneq ($(DEBUG),1)
 STRIP = strip
 endif
