@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.249  2003/08/06 00:13:28  cheshire
+Tidy up debugf messages
+
 Revision 1.248  2003/08/05 22:20:15  cheshire
 <rdar://problem/3330324> Need to check IP TTL on responses
 
@@ -4747,13 +4750,13 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	DNSMessage    response;
 	const mDNSu8 *responseend    = mDNSNULL;
 	
-	verbosedebugf("Received Query from %#-15a:%d to %#-15a:%d on 0x%.8X with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+	verbosedebugf("Received Query from %#-15a:%d to %#-15a:%d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1],
 		dstaddr, (mDNSu16)dstport.b[0]<<8 | dstport.b[1],
 		InterfaceID,
-		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? "" : "s",
-		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? "" : "s",
-		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y" : "ies",
+		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
+		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 	
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID,
@@ -4787,23 +4790,28 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 	(void)srcaddr;	// Currently used only for display in debugging message
 
-	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p TTL %d with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
+	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p TTL %d with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr, dstaddr, InterfaceID, ttl,
-		response->h.numQuestions,   response->h.numQuestions   == 1 ? "" : "s",
-		response->h.numAnswers,     response->h.numAnswers     == 1 ? "" : "s",
-		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y" : "ies",
+		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", " : "s,",
+		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
+		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
 	// TTL should be 255
-	// In the case of overlayed subnets that aren't using RFC 3442, some packets may incorrectly go to
-	// the router first and then come back with a TTL of 254, so we allow that too.
-	// Anything lower than that is a pretty good sign of an off-net spoofing attack
-	if (ttl < 254)
-		{ debugf("** Ignored apparent spoof mDNS response packet addressed to %#-15a with TTL %d **", dstaddr, ttl); return; }
-
-	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
-	if (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)mDNSPlatformOneSecond)
-		{ debugf("** Ignored apparent spoof mDNS response packet addressed to %#-15a **", dstaddr); return; }
+	// In the case of overlayed subnets that aren't using RFC 3442, some packets may incorrectly
+	// go to the router first and then come back with a TTL of 254, so we allow that too.
+	// Anything lower than 254 is a pretty good sign of an off-net spoofing attack.
+	// Also, if we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
+	if (ttl < 254 || (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)mDNSPlatformOneSecond))
+		{
+		debugf("** Ignored apparent spoof mDNS Response from %#-15a to %#-15a TTL %d on %p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		srcaddr, dstaddr, ttl, InterfaceID,
+		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", " : "s,",
+		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
+		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
+		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
+		return;
+		}
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
