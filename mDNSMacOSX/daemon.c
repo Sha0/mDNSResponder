@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.219  2004/11/25 01:00:56  cheshire
+Checkin 1.217 not necessary
+
 Revision 1.218  2004/11/24 20:27:19  cheshire
 Add missing "err" parameter in LogMsg() call
 
@@ -1113,12 +1116,8 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	if (!regtype[0] || !AppendDNSNameString(&t, regtype)) { errormsg = "Illegal regtype";     goto badparam; }
 	domainname temp;
 	if (!MakeDomainNameFromDNSNameString(&temp, regtype)) { errormsg = "Illegal regtype";     goto badparam; }
-	if (temp.c[0] > 15 && (!domain || domain[0] == 0))
-		{
-		LogMsg("Overly long application protocol name %s (max 14 characters).  Limiting browse to local domain", regtype);
-		domain = "local."; // For over-long service types, we only allow domain "local"
-		}
-	
+	if (temp.c[0] > 15 && (!domain || domain[0] == 0)) domain = "local."; // For over-long service types, we only allow domain "local"
+
 	// Allocate memory, and handle failure
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
 	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
