@@ -106,6 +106,7 @@ static DNSServiceResolver          *DNSServiceResolverList          = NULL;
 static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 
 static mach_port_t client_death_port;
+static mach_port_t exit_m_port;
 
 mDNSlocal void AbortClient(mach_port_t port)
 	{
@@ -545,37 +546,6 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
     CFAllocatorDeallocate(NULL, reply);
 }
 
-mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
-	{
-	mStatus            err;
-	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
-	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
-	mach_port_t        m_port = CFMachPortGetPort(s_port);
-	kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
-	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
-	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
-	if (status)
-		{
-		if (status == 1103)
-			LogErrorMessage("Bootstrap_register failed(): A copy of the daemon is apparently already running");
-		else
-			LogErrorMessage("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
-		return(status);
-		}
-	
-	err = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
-	if (err) { LogErrorMessage("Daemon start: mDNS_Init failed %ld", err); return(err); }
-
-	client_death_port = CFMachPortGetPort(d_port);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
-	CFRelease(d_rls);
-	CFRelease(s_rls);
-	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
-
-	return(err);
-	}
-
 #define kmDNSBootstrapName "com.apple.mDNSResponder"
 mach_port_t server_priv_port = MACH_PORT_NULL;
 
@@ -603,11 +573,11 @@ mDNSlocal kern_return_t registerBootstrapService()
 		server_priv_port = bootstrap_port;
 
 		restarting_via_mach_init = TRUE;
-		
+
 	}
 	else if (status == BOOTSTRAP_UNKNOWN_SERVICE)
 	{
-            status = bootstrap_create_server(bootstrap_port, "/usr/sbin/mDNSResponder", getuid(), FALSE /* relaunch immediately, not on demand */, &server_priv_port);
+		status = bootstrap_create_server(bootstrap_port, "/usr/sbin/mDNSResponder", getuid(), FALSE /* relaunch immediately, not on demand */, &server_priv_port);
 		if (status != KERN_SUCCESS) return status;
 
 		status = bootstrap_create_service(server_priv_port, kmDNSBootstrapName, &service_send_port);
@@ -632,27 +602,85 @@ mDNSlocal kern_return_t registerBootstrapService()
 	 * server's privileged bootstrap port - in case we have to unregister later.
 	 */
 	mach_port_destroy(mach_task_self(), service_rcv_port);
-	
+
 
 	return status;
 }
 
 
 mDNSlocal kern_return_t destroyBootstrapService()
-	{
+{
 	debugf("Destroying Bootstrap Service");
 
 	return bootstrap_register(server_priv_port, kmDNSBootstrapName, MACH_PORT_NULL);
+}
+
+mDNSlocal void exitCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+{
+	debugf("Handling signal from mach msg");
+
+	mDNS_Close(&mDNSStorage);
+	destroyBootstrapService();
+	exit(0);
+	return;
+}
+
+mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
+	{
+	mStatus            err;
+	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
+	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
+	CFMachPortRef      exit_port = CFMachPortCreate(NULL, exitCallback, NULL, NULL);
+	mach_port_t        m_port = CFMachPortGetPort(s_port);
+	kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
+	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
+	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
+	CFRunLoopSourceRef exit_rls  = CFMachPortCreateRunLoopSource(NULL, exit_port, 0);
+	
+	if (status)
+		{
+		if (status == 1103)
+			LogErrorMessage("Bootstrap_register failed(): A copy of the daemon is apparently already running");
+		else
+			LogErrorMessage("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
+		return(status);
+		}
+	
+	err = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
+	if (err) { LogErrorMessage("Daemon start: mDNS_Init failed %ld", err); return(err); }
+
+	client_death_port = CFMachPortGetPort(d_port);
+	exit_m_port = CFMachPortGetPort(exit_port);
+
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), exit_rls, kCFRunLoopDefaultMode);
+	CFRelease(d_rls);
+	CFRelease(s_rls);
+	CFRelease(exit_rls);
+	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
+
+	return(err);
 	}
+
 
 mDNSlocal void HandleSIG(int signal)
 	{
 	debugf("");
 	debugf("HandleSIG");
-	// CFRunLoopStop(CFRunLoopGetCurrent()); This doesn't work
-	destroyBootstrapService();
-	mDNS_Close(&mDNSStorage);
-	exit(0);
+	
+	// Send a mach_msg to ourselves (since that is signal safe) telling us to cleanup and exit
+	mach_msg_return_t msg_result;
+	mach_msg_header_t header;
+
+	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
+	header.msgh_remote_port = exit_m_port;
+	header.msgh_local_port = MACH_PORT_NULL;
+	header.msgh_size = sizeof(header);
+	header.msgh_id = 0;
+
+	msg_result = mach_msg_send(&header);
+	
 	}
 
 mDNSexport int main(int argc, char **argv)
@@ -666,11 +694,10 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcmp(argv[i], "-no53")) mDNS_UsePort53 = 0;
 		}
 
+
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIG);	// SIGINT is what you get for a Ctrl-C
-
-	
-	//register the server with mach_init for automatic restart only during debug mode
+							 //register the server with mach_init for automatic restart only during debug mode
     if (!debug_mode)
 	{
 		registerBootstrapService();
