@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.8  2005/01/04 21:09:14  shersche
+Fix problems in parsing text records. Fix problems in remove event handling. Ensure that the same service can't be resolved more than once.
+
 Revision 1.7  2004/12/31 07:25:27  shersche
 Tidy up printer management, and fix memory leaks when hitting 'Cancel'
 
@@ -331,16 +334,50 @@ CSecondPage::StartResolve( Printer * printer )
 
 	for ( it = printer->services.begin(); it != printer->services.end(); it++ )
 	{
-		Service * service = *it;
-
-		err = DNSServiceResolve( &service->serviceRef, 0, 0, printer->name.c_str(), service->type.c_str(), service->domain.c_str(), (DNSServiceResolveReply) OnResolve, service );
-		require_noerr( err, exit );
-
-		err = StartOperation( service->serviceRef );
-		require_noerr( err, exit );
-		
-		printer->resolving++;
+		if ( (*it)->serviceRef == NULL )
+		{
+			err = StartResolve( *it );
+			require_noerr( err, exit );
+		}
 	}
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CSecondPage::StartResolve( Service * service )
+{
+	CPrinterSetupWizardSheet	*	psheet;
+	OSStatus						err = kNoErr;
+
+	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
+	require_quiet( psheet, exit );
+
+	check( service->serviceRef == NULL );
+
+	err = DNSServiceResolve( &service->serviceRef, 0, 0, service->printer->name.c_str(), service->type.c_str(), service->domain.c_str(), (DNSServiceResolveReply) OnResolve, service );
+	require_noerr( err, exit );
+
+	err = StartOperation( service->serviceRef );
+	require_noerr( err, exit );
+
+	//
+	// If we're not currently resolving, then disable the next button
+	// and set the cursor to hourglass
+	//
+
+	if ( !service->printer->resolving )
+	{
+		psheet->SetWizardButtons( PSWIZB_BACK );
+
+		psheet->m_active = psheet->m_wait;
+		SetCursor(psheet->m_active);
+	}
+
+	service->printer->resolving++;
 
 exit:
 
@@ -361,10 +398,28 @@ CSecondPage::StopResolve(Printer * printer)
 	{
 		if ( (*it)->serviceRef )
 		{
-			err = StopOperation( (*it)->serviceRef );
+			err = StopResolve( *it );
 			require_noerr( err, exit );
 		}
 	}
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CSecondPage::StopResolve( Service * service )
+{
+	OSStatus err;
+
+	check( service->serviceRef );
+
+	err = StopOperation( service->serviceRef );
+	require_noerr( err, exit );
+
+	service->printer->resolving--;
 
 exit:
 
@@ -544,7 +599,7 @@ CSecondPage::OnResolve(
 	Service		*	service;
 	Queue		*	q;
 	bool			qtotalDefined = false;
-	int				qpriority = kDefaultPriority;
+	uint32_t		qpriority = kDefaultPriority;
 	CString			qname;
 	int				idx;
 	OSStatus		err;
@@ -553,6 +608,8 @@ CSecondPage::OnResolve(
 
 	service = reinterpret_cast<Service*>( inContext );
 	require_quiet( service, exit);
+
+	check( service->refs != 0 );
 
 	self = service->printer->window;
 	require_quiet( self, exit );
@@ -582,64 +639,11 @@ CSecondPage::OnResolve(
 	service->portNumber = ntohs(inPort);
 
 	//
-	// parse the text record.  we create a stringlist of text record
-	// entries that can be interrogated later
+	// parse the text record.
 	//
-	while (inTXTSize)
-	{
-		char buf[256];
 
-		unsigned char num = *inTXT;
-		check( (int) num < inTXTSize );
-
-		memset(buf, 0, sizeof(buf));
-		memcpy(buf, inTXT + 1, num);
-		
-		inTXTSize -= (num + 1);
-		inTXT += (num + 1);
-
-		CString elem;
-
-		err = UTF8StringToStringObject( buf, elem );
-		require_noerr( err, exit );
-
-		int curPos = 0;
-
-		CString key = elem.Tokenize(L"=", curPos);
-		CString val = elem.Tokenize(L"=", curPos);
-
-		key.MakeLower();
-
-		if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
-		{
-			service->usb_MFG = val;
-		}
-		else if ((key == L"usb_mdl") || (key == L"usb_model"))
-		{
-			service->usb_MDL = val;
-		}
-		else if (key == L"product")
-		{
-			service->product = val;
-		}
-		else if (key == L"note")
-		{
-			service->location = val;
-		}
-		else if (key == L"qtotal")
-		{
-			service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
-			qtotalDefined = true;
-		}
-		else if (key == L"priority")
-		{
-			qpriority = _ttoi((LPCTSTR) val);
-		}
-		else if (key == L"rp")
-		{
-			qname = val;
-		}
-	}
+	err = self->ParseTextRecord( service, inTXTSize, inTXT, qtotalDefined, qname, qpriority );
+	require_noerr( err, exit );
 
 	if ( service->qtotal == 1 )
 	{	
@@ -681,8 +685,6 @@ CSecondPage::OnResolve(
 
 		err = self->StartOperation( service->serviceRef );
 		require_noerr( err, exit );
-
-		self->m_timer = NULL;
 	}
 
 exit:
@@ -712,11 +714,12 @@ CSecondPage::OnQuery(
 	DEBUG_UNUSED( inInterfaceIndex );
 	DEBUG_UNUSED( inRef );
 
-	Service		*	service;
+	Service		*	service = NULL;
 	Queue		*	q;
 	CSecondPage	*	self;
+	bool			qtotalDefined = false;
 	bool			moreComing = (bool) (inFlags & kDNSServiceFlagsMoreComing);
-	OSStatus		err;
+	OSStatus		err = kNoErr;
 
 	require_noerr( inErrorCode, exit );
 
@@ -744,49 +747,8 @@ CSecondPage::OnQuery(
 
 		require_action( q, exit, err = E_OUTOFMEMORY );
 
-		while (inRDLen)
-		{
-			char buf[256];
-
-			unsigned char num = *inTXT;
-			check( (int) num < inRDLen );
-
-			memset(buf, 0, sizeof(buf));
-			memcpy(buf, inTXT + 1, num);
-		
-			inRDLen -= (num + 1);
-			inTXT += (num + 1);
-
-			CString elem;
-
-			err = UTF8StringToStringObject( buf, elem );
-			require_noerr( err, exit );
-
-			int curPos = 0;
-
-			CString key = elem.Tokenize(L"=", curPos);
-			CString val = elem.Tokenize(L"=", curPos);
-
-			key.MakeLower();
-
-			if (key == L"priority")
-			{
-				q->priority = _ttoi((LPCTSTR) val);
-			}
-			else if (key == L"rp")
-			{
-				q->name = val;
-			}
-		}
-
-		//
-		// remove the query record timer
-		//
-
-		if ( self->m_timer != NULL )
-		{
-			self->KillTimer( self->m_timer );
-		}
+		err = service->printer->window->ParseTextRecord( service, inRDLen, inTXT, qtotalDefined, q->name, q->priority );
+		require_noerr( err, exit );
 
 		//
 		// add this queue
@@ -794,20 +756,18 @@ CSecondPage::OnQuery(
 
 		service->queues.push_back( q );
 
-		if ( moreComing )
+		if ( !moreComing )
 		{
 			//
-			// if moreComing is set, then we're going to expect
-			// that we'll be invoked again. so reset the timer
-			// (just in case we're not) and leave
+			// double check here...if moreComing is not set, we should have
+			// all the queues
 			//
 
-			self->m_timer = self->SetTimer((UINT_PTR) service, 1 * 1000, 0 );
-			err = translate_errno( self->m_timer != 0, errno_compat(), kUnknownErr );
-			require_noerr( err, exit );
-		}
-		else
-		{
+			if ( service->queues.size() != service->qtotal )
+			{
+				dlog( kDebugLevelError, "there was an internal inconsistency with the text record associated with %s\n", inFullName );
+			}
+
 			//
 			// else if moreComing is not set, then we're going
 			// to assume that we're done
@@ -830,6 +790,11 @@ CSecondPage::OnQuery(
 	}
 
 exit:
+
+	if ( err && service && ( service->serviceRef != NULL ) )
+	{
+		service->printer->window->StopOperation( service->serviceRef );
+	}
 
 	return;
 }
@@ -860,9 +825,11 @@ CSecondPage::OnAddPrinter(
 
 	check( IsWindow( m_hWnd ) );
 
+	m_browseList.SetRedraw(FALSE);
+
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
-	
+
 	printer = Lookup( inName );
 
 	if (printer == NULL)
@@ -943,48 +910,60 @@ CSecondPage::OnAddPrinter(
 		service->domain		=	inDomain;
 		service->qtotal		=	1;
 		service->refs		=	1;
+		service->serviceRef	=	NULL;
 
 		printer->services.push_back( service );
+
+		//
+		// if the printer is selected, then we'll want to start a
+		// resolve on this guy
+		//
+
+		if ( m_selected == printer )
+		{
+			StartResolve( service );
+		}
 	}
 	
-	m_browseList.SetRedraw(FALSE);
-
-	printer->item = m_browseList.InsertItem(printer->displayName);
-
-	m_browseList.SetItemData( printer->item, (DWORD_PTR) printer );
-
-	m_printers.push_back( printer );
-	
-	m_browseList.SortChildren(TVI_ROOT);
-	
-	if ( printer->name == m_selectedName )
+	if ( newPrinter )
 	{
-		m_browseList.SelectItem( printer->item );
+		printer->item = m_browseList.InsertItem(printer->displayName);
+
+		m_browseList.SetItemData( printer->item, (DWORD_PTR) printer );
+
+		m_printers.push_back( printer );
+		
+		m_browseList.SortChildren(TVI_ROOT);
+		
+		if ( printer->name == m_selectedName )
+		{
+			m_browseList.SelectItem( printer->item );
+		}
+
+		//
+		// if the searching item is still in the list
+		// get rid of it
+		//
+		// note that order is important here.  Insert the printer
+		// item before removing the placeholder so we always have
+		// an item in the list to avoid experiencing the bug
+		// in Microsoft's implementation of CTreeCtrl
+		//
+		if (m_emptyListItem != NULL)
+		{
+			m_browseList.DeleteItem(m_emptyListItem);
+			m_emptyListItem = NULL;
+			m_browseList.EnableWindow(TRUE);
+		}
 	}
 
-	//
-	// if the searching item is still in the list
-	// get rid of it
-	//
-	// note that order is important here.  Insert the printer
-	// item before removing the placeholder so we always have
-	// an item in the list to avoid experiencing the bug
-	// in Microsoft's implementation of CTreeCtrl
-	//
-	if (m_emptyListItem != NULL)
-	{
-		m_browseList.DeleteItem(m_emptyListItem);
-		m_emptyListItem = NULL;
-		m_browseList.EnableWindow(TRUE);
-	}
+exit:
 
 	if (!moreComing)
 	{
 		m_browseList.SetRedraw(TRUE);
 		m_browseList.Invalidate();
 	}
-
-exit:
 
 	return err;
 }
@@ -1005,40 +984,31 @@ CSecondPage::OnRemovePrinter(
 
 	check( IsWindow( m_hWnd ) );
 
+	m_browseList.SetRedraw(FALSE);
+
 	printer = Lookup( inName );
 
 	if ( printer )
 	{
-		Services::iterator it = printer->services.begin();
+		Service * service;
 
-		while ( it != printer->services.end() )
+		service = printer->LookupService( inType );
+
+		if ( service && ( --service->refs == 0 ) )
 		{
-			Service * service = *it;
+			if ( service->serviceRef != NULL )
+			{
+				err = StopResolve( service );
+				require_noerr( err, exit );
+			}
 
-			if ( --service->refs == 0 )
-			{
-				it = printer->services.erase( it );
-				delete service;
-			}
-			else
-			{
-				it++;
-			}
+			printer->services.remove( service );
+
+			delete service;
 		}
 
 		if ( printer->services.size() == 0 )
 		{
-			//
-			// this guy is being removed while we're resolving it...so let's 
-			// stop the resolve
-			//
-			if ( printer->resolving )
-			{
-				StopResolve( printer );
-			}
-
-			m_browseList.SetRedraw(FALSE);
-
 			//
 			// check to make sure if we're the only item in the control...i.e.
 			// the list size is 1.
@@ -1060,16 +1030,24 @@ CSecondPage::OnRemovePrinter(
 				InitBrowseList();
 			}
 
-			if (!moreComing)
-			{
-				m_browseList.SetRedraw(TRUE);
-				m_browseList.Invalidate();
-			}
-
 			m_printers.remove( printer );
+
+			if ( m_selected == printer )
+			{
+				m_selected		= NULL;
+				m_selectedName	= "";
+			}
 
 			delete printer;
 		}
+	}
+
+exit:
+
+	if (!moreComing)
+	{
+		m_browseList.SetRedraw(TRUE);
+		m_browseList.Invalidate();
 	}
 
 	return err;
@@ -1106,24 +1084,7 @@ CSecondPage::OnResolveService( Service * service )
 		//
 		SetPrinterInformationState( TRUE );
 
-		if ( service->usb_MFG.GetLength() > 0 )
-		{
-			CString text;
-
-			text.Format(L"%s %s", service->usb_MFG, service->usb_MDL);
-
-			m_descriptionField.SetWindowText( text );
-		}
-		else
-		{
-			CString text( service->product );
-
-			text.Remove('(');
-			text.Remove(')');
-
-			m_descriptionField.SetWindowText( text );
-		}
-
+		m_descriptionField.SetWindowText( service->description );
 		m_locationField.SetWindowText( service->location );
 
 		psheet->SetWizardButtons( PSWIZB_BACK|PSWIZB_NEXT );
@@ -1200,24 +1161,6 @@ void CSecondPage::OnTvnSelchangedBrowseList(NMHDR *pNMHDR, LRESULT *pResult)
 	require_noerr( err, exit );
 
 	//
-	// if we're resolving then disable the next button
-	//
-	if ( !printer->resolving )
-	{
-		psheet->SetWizardButtons( PSWIZB_BACK|PSWIZB_NEXT );
-	}
-	else
-	{
-		psheet->SetWizardButtons( PSWIZB_BACK );
-	}
-
-	//
-	// set the cursor to arrow+hourglass
-	//
-	psheet->m_active = psheet->m_wait;
-	SetCursor(psheet->m_active);
-
-	//
 	// And clear out the printer information box
 	//
 	SetPrinterInformationState( FALSE );
@@ -1241,46 +1184,28 @@ exit:
 }
 
 
-// ------------------------------------------------------
-// OnTimer
-//
-// Handle timer events.  These are used when resolving
-// a service that has multiple queues associated with it  
-//	
-void
-CSecondPage::OnTimer( UINT_PTR nIDEvent )
-{
-	Service * service;
-
-	service = reinterpret_cast<Service*>( nIDEvent );
-	require_quiet( service, exit);
-
-	StopOperation( service->serviceRef );
-
-	//
-	// we've completely resolved this service
-	//
-
-	OnResolveService( service );
-
-exit:
-
-	return;
-}
-
-
 bool
 CSecondPage::OrderServiceFunc( const Service * a, const Service * b )
 {
 	Queue * q1, * q2;
 
-	q1 = a->queues.front();
-	check( q1 );
+	q1 = (a->queues.size() > 0) ? a->queues.front() : NULL;
 
-	q2 = b->queues.front();
-	check( q2 );
+	q2 = (b->queues.size() > 0) ? b->queues.front() : NULL;
 
-	if ( q1->priority < q2->priority )
+	if ( !q1 && !q2 )
+	{
+		return true;
+	}
+	else if ( q1 && !q2 )
+	{
+		return true;
+	}
+	else if ( !q1 && q2 )
+	{
+		return false;
+	}
+	else if ( q1->priority < q2->priority )
 	{
 		return true;
 	}
@@ -1340,6 +1265,77 @@ CSecondPage::SetPrinterInformationState( BOOL state )
 	m_descriptionField.EnableWindow( state );
 	m_locationLabel.EnableWindow( state );
 	m_locationField.EnableWindow( state );
+}
+
+
+OSStatus
+CSecondPage::ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, bool & qtotalDefined, CString & qname, uint32_t & qpriority )
+{
+	OSStatus err = kNoErr;
+
+	while (inTXTSize)
+	{
+		char buf[256];
+
+		unsigned char num = *inTXT;
+		check( (int) num < inTXTSize );
+
+		memset(buf, 0, sizeof(buf));
+		memcpy(buf, inTXT + 1, num);
+		
+		inTXTSize -= (num + 1);
+		inTXT += (num + 1);
+
+		CString elem;
+
+		err = UTF8StringToStringObject( buf, elem );
+		require_noerr( err, exit );
+
+		int curPos = 0;
+
+		CString key = elem.Tokenize(L"=", curPos);
+		CString val = elem.Tokenize(L"=", curPos);
+
+		key.MakeLower();
+
+		if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
+		{
+			service->usb_MFG = val;
+		}
+		else if ((key == L"usb_mdl") || (key == L"usb_model"))
+		{
+			service->usb_MDL = val;
+		}
+		else if (key == L"ty")
+		{
+			service->description = val;
+		}
+		else if (key == L"product")
+		{
+			service->product = val;
+		}
+		else if (key == L"note")
+		{
+			service->location = val;
+		}
+		else if (key == L"qtotal")
+		{
+			service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
+			qtotalDefined = true;
+		}
+		else if (key == L"priority")
+		{
+			qpriority = _ttoi((LPCTSTR) val);
+		}
+		else if (key == L"rp")
+		{
+			qname = val;
+		}
+	}
+
+exit:
+
+	return err;
 }
 
 

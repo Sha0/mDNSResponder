@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.h,v $
+Revision 1.6  2005/01/04 21:09:14  shersche
+Fix problems in parsing text records. Fix problems in remove event handling. Ensure that the same service can't be resolved more than once.
+
 Revision 1.5  2004/12/31 07:25:27  shersche
 Tidy up printer management, and fix memory leaks when hitting 'Cancel'
 
@@ -115,7 +118,6 @@ protected:
 	afx_msg BOOL OnSetCursor(CWnd * pWnd, UINT nHitTest, UINT message);
 	virtual BOOL OnSetActive();
 	virtual BOOL OnKillActive();
-	virtual void OnTimer(UINT_PTR nIDEvent);
 
 	DECLARE_MESSAGE_MAP()
 
@@ -155,6 +157,9 @@ private:
 	StartResolve( Printer * printer );
 
 	OSStatus
+	StartResolve( Service * service );
+
+	OSStatus
 	StopResolve( Printer * printer );
 
 	OSStatus
@@ -190,6 +195,9 @@ private:
 	void
 	SetPrinterInformationState( BOOL state );
 
+	OSStatus
+	ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, bool & qtotalDefined, CString & qname, uint32_t & qpriority );
+
 	typedef std::map<CString,CString>	PrinterNameMap;
 	typedef std::list<DNSServiceRef>	ServiceRefList;
 	typedef std::list<Printer*>			Printers;
@@ -204,8 +212,6 @@ private:
 
 	Printer		*	m_selected;
 	std::string		m_selectedName;
-	
-	UINT_PTR		m_timer;
 
 private:
 
