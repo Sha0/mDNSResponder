@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.15  2004/01/20 18:36:29  ksekar
+Propagated Libinfo fix for <rdar://problem/3483971>: SU:
+DNSServiceUpdateRecord() doesn't allow you to update the TXT record
+into TOT mDNSResponder.
+
 Revision 1.14  2004/01/19 22:39:17  cheshire
 Don't use "MSG_WAITALL"; it makes send() return "Invalid argument" on Linux;
 use an explicit while() loop instead. (In any case, this should only make a difference
@@ -736,8 +741,7 @@ DNSServiceErrorType DNSServiceUpdateRecord
     int len = 0;
     char *ptr;
 
-    if (!sdRef || !RecordRef || !sdRef->max_index) 
-        return kDNSServiceErr_BadReference;
+	if (!sdRef) return kDNSServiceErr_BadReference;
     
     len += sizeof(uint16_t);
     len += rdlen;
