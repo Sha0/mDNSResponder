@@ -156,7 +156,8 @@ enum
  */
 
 #define kDNSServiceInterfaceIndexAny 0
-#define kDNSServiceInterfaceIndexLocalOnly ( (uint32_t) ~0 )
+#define kDNSServiceInterfaceIndexLocalOnly ( (uint32_t) -1 )
+#define kDNSServiceInterfaceForceMulticast ( (uint32_t) -2 )
 
 
 typedef uint32_t DNSServiceFlags;
