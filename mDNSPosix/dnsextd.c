@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.14  2004/11/17 06:17:58  cheshire
+Update comments to show correct SRV names: _dns-update._udp.<zone>. and _dns-llq._udp.<zone>.
+
 Revision 1.13  2004/11/13 02:22:36  ksekar
 <rdar://problem/3878201> Refresh Acks from daemon malformatted
 
@@ -567,7 +570,7 @@ mDNSlocal void PrintLeaseTable(DaemonInfo *d)
 
 //
 // Startup SRV Registration Routines 
-// Register _dns-update._dns-sd._udp/_tcp.<zone> SRV records indicating the port on which
+// Register _dns-update._udp/_tcp.<zone> SRV records indicating the port on which
 // the daemon accepts requests  
 //
 
