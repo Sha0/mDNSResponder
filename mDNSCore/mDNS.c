@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.89  2003/03/12 19:57:50  cheshire
+Fixed typo in debug message
+
 Revision 1.88  2003/03/12 00:17:44  cheshire
 <rdar://problem/3195426> GetFreeCacheRR needs to be more willing to throw away recent records
 
@@ -3523,7 +3526,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// but we never *issue* unicast queries, so if we ever receive a unicast
 	// response then it is someone trying to spoof us, so ignore it!
 	if (!mDNSAddrIsDNSMulticast(dstaddr))
-		{ debugf("** Ignored attempted spoof unicast mDNS response packet to %#a **", dstaddr); return; }
+		{ debugf("** Ignored apparent spoof mDNS response packet addressed to %#a **", dstaddr); return; }
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
