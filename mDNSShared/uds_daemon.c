@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.129  2004/12/09 03:17:23  ksekar
+<rdar://problem/3910435> DomainEnumeration interface index should be zero
+
 Revision 1.128  2004/12/07 21:26:05  ksekar
 <rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration
 
@@ -2710,7 +2713,10 @@ static void enum_result_callback(mDNS *const m, DNSQuestion *question, const Res
             flags |= kDNSServiceFlagsDefault;
     	}
     ConvertDomainNameToCString(&answer->rdata->u.name, domain);
-    reply = format_enumeration_reply(de->rstate, domain, flags, mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID), kDNSServiceErr_NoError);
+	// note that we do NOT propagate specific interface indexes to the client - for example, a domain we learn from
+	// a machine's system preferences may be discovered on the LocalOnly interface, but should be browsed on the
+	// network, so we just pass kDNSServiceInterfaceIndexAny
+    reply = format_enumeration_reply(de->rstate, domain, flags, kDNSServiceInterfaceIndexAny, kDNSServiceErr_NoError);
     if (!reply)
     	{
         LogMsg("ERROR: enum_result_callback, format_enumeration_reply");
