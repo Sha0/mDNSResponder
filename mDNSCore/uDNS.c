@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.119  2004/11/18 23:21:24  ksekar
+<rdar://problem/3764544> LLQ Security: Need to verify src port/address for LLQ handshake
+
 Revision 1.118  2004/11/18 22:58:37  ksekar
 Removed old comment.
 
@@ -2613,6 +2616,9 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 				{ q = q->next; continue; }
 			else if (llqInfo->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers)
 				{ recvRefreshReply(m, msg, end, q); return mDNStrue; }
+			if ((llqInfo->state == LLQ_InitialRequest || llqInfo->state == LLQ_SecondaryRequest)
+				&& !mDNSSameAddress(srcaddr, &llqInfo->servAddr))
+				{ LogMsg("LLQ Handshake - src address incorrect"); return mDNStrue; }
 			else if (llqInfo->state < LLQ_Static)
 				{ q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context); return mDNStrue; }			
 			}
