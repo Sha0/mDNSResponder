@@ -11,23 +11,19 @@
 .Nm mDNSResponder
 is a daemon invoked at boot time to implement Multicast DNS
 and DNS Service Discovery.
-
 .Pp
 .Nm mDNSResponder
 listens UDP port 5353 for Multicast DNS Query packets. 
 When it receives a query for which it knows an answer, 
 .Nm mDNSResponder 
 issues the appropriate Multicast DNS Reply packet.
-
 .Pp
 .Nm mDNSResponder
 has no user-specifiable command-line argument, and users should not run 
 .Nm mDNSResponder
 manually.
-
 .Sh FILES
 /usr/sbin/mDNSResponder
-
 .Sh SEE ALSO
 For information on Multicast DNS, see 
 .Pa http://www.multicastdns.org/
@@ -42,16 +38,10 @@ API on Mac OS X, see
 For the source code to 
 .Nm mDNSResponder,
 see 
-
 .Pa http://developer.apple.com/darwin/projects/rendezvous/
-
-
-
 .Sh BUGS
-
 .Nm mDNSResponder
 bugs are tracked in Apple Radar component "mDNSResponder".
-
 .Sh HISTORY
 The 
 .Nm mDNSResponder 
