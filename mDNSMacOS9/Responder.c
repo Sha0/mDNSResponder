@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.2  2004/05/20 18:38:31  cheshire
+Fix build broken by removal of 'kDNSServiceFlagsAutoRename' from dns_sd.h
+
 Revision 1.1  2004/03/12 21:30:25  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -84,7 +87,7 @@ static DNSServiceErrorType RegisterService(RegisteredService *rs, mDNSOpaque16 O
 	txtbuffer[0] = (unsigned char)strlen((char*)txtbuffer);
 	rs->gotresult = 0;
 	rs->errorCode = kDNSServiceErr_NoError;
-	err = DNSServiceRegister(&rs->sdRef, kDNSServiceFlagsAutoRename, 0,
+	err = DNSServiceRegister(&rs->sdRef, /* kDNSServiceFlagsAutoRename*/ 0, 0,
 		name, type, domain, NULL, OpaquePort.NotAnInteger, (unsigned short)(1+txtbuffer[0]), txtbuffer, RegCallback, rs);
 	if (err)
 		printf("RegisterService(%s %s %s) failed %d\n", name, type, domain, err);
