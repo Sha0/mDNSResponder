@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.274  2005/01/10 03:41:36  ksekar
+Correction to checkin 1.272 - check that registration domain is set
+before trying to remove it as an implicit browse domain
+
 Revision 1.273  2005/01/08 00:42:18  ksekar
 <rdar://problem/3922758> Clean up syslog messages
 
@@ -2627,7 +2631,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
 		{		
 		if (DynDNSRegDomain.c[0]) RemoveDefRegDomain(&DynDNSRegDomain);
-		if (!SameDomainName(&DynDNSRegDomain, &DynDNSBrowseDomain)) SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
+		if (DynDNSRegDomain.c[0] && !SameDomainName(&DynDNSRegDomain, &DynDNSBrowseDomain)) SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
 		AssignDomainName(&DynDNSRegDomain, &RegDomain);		
 		if (DynDNSRegDomain.c[0])
 			{
