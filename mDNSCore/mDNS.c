@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.217  2003/07/13 04:43:53  cheshire
+<rdar://problem/3325169> Services on multiple interfaces not always resolving
+Minor refinement: No need to make address query broader than the original SRV query that provoked it
+
 Revision 1.216  2003/07/13 03:13:17  cheshire
 <rdar://problem/3325169> Services on multiple interfaces not always resolving
 If we get an identical SRV reply on a second interface, convert address queries to non-specific
@@ -5149,10 +5153,10 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 			// If we get here, it means:
 			// 1. This is not our first SRV answer
 			// 2. The interface ID is different, but the target host and port are the same
-			// This implies that we're seeing the exact same SRV record on more than one interface,
-			// so we should make our address queries non-specific so that we catch all the answers.
-			query->qAv4.InterfaceID = mDNSInterface_Any;
-			query->qAv6.InterfaceID = mDNSInterface_Any;
+			// This implies that we're seeing the exact same SRV record on more than one interface, so we should
+			// make our address queries at least as broad as the original SRV query so that we catch all the answers.
+			query->qAv4.InterfaceID = query->qSRV.InterfaceID;	// Will be mDNSInterface_Any, or a specific interface
+			query->qAv6.InterfaceID = query->qSRV.InterfaceID;
 			}
 		else
 			{
