@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.21  2005/01/10 01:09:32  shersche
+Use the "note" key to populate pLocation field when setting up printer
+
 Revision 1.20  2005/01/03 19:05:01  shersche
 Store pointer to instance of wizard sheet so that print driver install thread sends a window message to the correct window
 
@@ -354,7 +357,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	pInfo.pPortName				=	printer->portName.GetBuffer();
 	pInfo.pDriverName			=	printer->model.GetBuffer();
 	pInfo.pComment				=	printer->model.GetBuffer();
-	pInfo.pLocation				=	L"";
+	pInfo.pLocation				=	service->location.GetBuffer();
 	pInfo.pDevMode				=	NULL;
 	pInfo.pDevMode				=	NULL;
 	pInfo.pSepFile				=	L"";
@@ -411,6 +414,7 @@ CPrinterSetupWizardSheet::InstallPrinterIPP(Printer * printer, Service * service
 	pInfo.pPortName			= printer->portName.GetBuffer();
 	pInfo.pDriverName		= printer->model.GetBuffer();
 	pInfo.pPrintProcessor	= L"winprint";
+	pInfo.pLocation			= service->location.GetBuffer();
 	pInfo.Attributes		= PRINTER_ATTRIBUTE_NETWORK | PRINTER_ATTRIBUTE_LOCAL;
 	
 	hPrinter = AddPrinter(NULL, 2, (LPBYTE)&pInfo);
