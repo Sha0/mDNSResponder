@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.92  2004/09/22 02:34:04  cheshire
+Rename parameter "ttl" to "GetTTL" for clarity
+
 Revision 1.91  2004/09/22 02:25:43  cheshire
 Fix spelling errors
 
@@ -2559,7 +2562,7 @@ static void reset_connected_rstate(request_state *rstate)
 // returns a resource record (allocated w/ malloc) containing the data found in an IPC message
 // data must be in format flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
 // (ttl only extracted/set if ttl argument is non-zero).  returns NULL for a bad-parameter error
-static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flags)
+static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validate_flags)
     {
     char *rdata, name[256];
     AuthRecord *rr;
@@ -2613,7 +2616,7 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flag
     rr->resrec.rdata->MaxRDLength = rdlen;
     rdata = get_rdata(&msgbuf, rdlen);
     memcpy(rr->resrec.rdata->u.data, rdata, rdlen);
-    if (ttl)	
+    if (GetTTL)	
     	{
         rr->resrec.rroriginalttl = get_long(&msgbuf);
     	}
