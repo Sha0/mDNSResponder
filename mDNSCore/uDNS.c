@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.142  2004/12/08 02:03:31  ksekar
+<rdar://problem/3865124> Looping on NAT Traversal error - check for
+NULL RR on error
+
 Revision 1.141  2004/12/07 01:39:28  cheshire
 Don't fail if the same server is responsible for more than one domain
 (e.g. the same DNS server may be responsible for both apple.com. and 17.in-addr.arpa.)
@@ -907,8 +911,8 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 	if (!rr)
 		{
 		LogMsg("ReceiveNATAddrResponse: registration cancelled");
-		FreeNATInfo(m, n);
-		return;
+		err = mStatus_UnknownErr;
+		goto end;
 		}
 
 	addr.type = mDNSAddrType_IPv4;
@@ -966,11 +970,14 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 	end:
 	if (err)
 		{
-		rr->uDNS_info.NATinfo = mDNSNULL;
 		FreeNATInfo(m, n);
-		rr->uDNS_info.state = regState_Unregistered;    // note that rr is not yet in global list
-		rr->RecordCallback(m, rr, mStatus_NATTraversal);
-		// note - unsafe to touch rr after callback
+		if (rr)
+			{
+			rr->uDNS_info.NATinfo = mDNSNULL;
+			rr->uDNS_info.state = regState_Unregistered;    // note that rr is not yet in global list
+			rr->RecordCallback(m, rr, mStatus_NATTraversal);
+			// note - unsafe to touch rr after callback
+			}
 		return;
 		}
 	else LogMsg("Received public IP address %d.%d.%d.%d from NAT.", addr.ip.v4.b[0], addr.ip.v4.b[1], addr.ip.v4.b[2], addr.ip.v4.b[3]);	
