@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.116  2003/09/23 16:39:49  cheshire
+When LogAllOperations is set, also report registration and deregistration of interfaces
+
 Revision 1.115  2003/09/10 00:45:55  cheshire
 <rdar://problem/3412328> Don't log "sendto failed" errors during the first two minutes of startup
 
@@ -1128,7 +1131,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			{
 			n->InterfaceID = (mDNSInterfaceID)alias;
 			mDNS_RegisterInterface(m, n);
-			debugf("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
+			LogOperation("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
 				i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 			}
 
@@ -1179,7 +1182,8 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		NetworkInterfaceInfoOSX *alias = (NetworkInterfaceInfoOSX *)(i->ifinfo.InterfaceID);
 		if (i->ifinfo.InterfaceID && (!i->CurrentlyActive || (alias && !alias->CurrentlyActive) || i->CurrentlyActive == 2))
 			{
-			debugf("ClearInactiveInterfaces: Deregistering %#a", &i->ifinfo.ip);
+			LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) InterfaceID %p %#a%s",
+				i->ifa_name, i->scope_id, alias, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
 			mDNS_DeregisterInterface(m, &i->ifinfo);
 			i->ifinfo.InterfaceID = mDNSNULL;
 			}
