@@ -359,15 +359,15 @@ Exit:
 	return 0;
 
 Fail:
-	fprintf(stderr, "%s -E                        (Enumerate recommended registration domains)\n", argv[0]);
-	fprintf(stderr, "%s -F                            (Enumerate recommended browsing domains)\n", argv[0]);
-	fprintf(stderr, "%s -B        <Type> <Domain>              (Browse for services instances)\n", argv[0]);
-	fprintf(stderr, "%s -L <Name> <Type> <Domain>                 (Look up a service instance)\n", argv[0]);
-	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> [<TXT>...] (Register a service)\n", argv[0]);
-	fprintf(stderr, "%s -A                            (Test Adding/Updating/Deleting a record)\n", argv[0]);
-	fprintf(stderr, "%s -U                                        (Test updating a TXT record)\n", argv[0]);
-	fprintf(stderr, "%s -N                                   (Test adding a large NULL record)\n", argv[0]);
-	fprintf(stderr, "%s -T                                  (Test creating a large TXT record)\n", argv[0]);
-	fprintf(stderr, "%s -M            (Test creating a registration with multiple TXT records)\n", argv[0]);
+	fprintf(stderr, "%s -E                  (Enumerate recommended registration domains)\n", argv[0]);
+	fprintf(stderr, "%s -F                      (Enumerate recommended browsing domains)\n", argv[0]);
+	fprintf(stderr, "%s -B        <Type> <Domain>        (Browse for services instances)\n", argv[0]);
+	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", argv[0]);
+	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", argv[0]);
+	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", argv[0]);
+	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", argv[0]);
+	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", argv[0]);
 	return 0;
 	}
