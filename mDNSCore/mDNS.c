@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.462  2004/10/28 19:21:07  cheshire
+Guard against registering interface with zero InterfaceID
+
 Revision 1.461  2004/10/28 19:02:16  cheshire
 Remove \n from LogMsg() call
 
@@ -5900,8 +5903,11 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 
+	if (!set->InterfaceID)
+		{ LogMsg("Error! Tried to register a NetworkInterfaceInfo %#a with zero InterfaceID", &set->ip); return(mStatus_Invalid); }
+
 	if (!mDNSAddressIsValidNonZero(&set->mask))
-		{ LogMsg("Error! Tried to register a NetworkInterfaceInfo with invalid mask %#a", &set->mask); return(mStatus_Invalid); }
+		{ LogMsg("Error! Tried to register a NetworkInterfaceInfo %#a with invalid mask %#a", &set->ip, &set->mask); return(mStatus_Invalid); }
 
 	mDNS_Lock(m);
 	
