@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.24  2003/10/24 23:23:02  bradley
+Removed legacy port 53 support as it is no longer needed.
+
 Revision 1.23  2003/10/14 03:26:12  bradley
 Clear interface list buffer to workaround Windows CE bug where interfaces are not reported correctly.
 
@@ -383,7 +386,6 @@ mDNSlocal mStatus			SetupInterface( mDNS * const inMDNS, const struct sockaddr_i
 mDNSlocal mStatus			TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inIFD );
 mDNSlocal mStatus			SetupSocket( mDNS * const 				inMDNS, 
 										 const struct sockaddr_in *	inAddress, 
-										 mDNSIPPort 				inPort, 
 										 SocketRef *				outSocketRef  );
 mDNSlocal mStatus			SetupNotifications( mDNS * const inMDNS );
 mDNSlocal mStatus			TearDownNotifications( mDNS * const inMDNS );
@@ -547,14 +549,14 @@ mStatus
 	// Send the packet.
 	
 	ifd = (mDNSInterfaceData *) inInterfaceID;
-	check( IsValidSocket( ifd->multicastSocketRef ) );
+	check( IsValidSocket( ifd->sock ) );
 	
 	addr.sin_family 		= AF_INET;
 	addr.sin_port 			= inDstPort.NotAnInteger;
 	addr.sin_addr.s_addr 	= inDstIP->ip.v4.NotAnInteger;
 
 	n = (int)( inMsgEnd - ( (const mDNSu8 * const) inMsg ) );
-	n = sendto( ifd->multicastSocketRef, (char *) inMsg, n, 0, (struct sockaddr *) &addr, sizeof( addr ) );
+	n = sendto( ifd->sock, (char *) inMsg, n, 0, (struct sockaddr *) &addr, sizeof( addr ) );
 	check_errno( n, errno_compat() );
 	
 	ifd->sendErrorCounter 		+= ( n < 0 );
@@ -1060,7 +1062,6 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	mDNSInterfaceData *			ifd;
 	struct ifaddrs *			addrs;
 	struct ifaddrs *			p;
-	struct ifaddrs *			loopback;
 	u_int						flagMask;
 	u_int						flagTest;
 	
@@ -1089,7 +1090,6 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	flagMask = IFF_UP | IFF_MULTICAST | IFF_LOOPBACK | IFF_POINTTOPOINT;
 	flagTest = IFF_UP | IFF_MULTICAST;
 	
-	loopback = NULL;
 	next = &inMDNS->p->interfaceList;
 	
 	err = getifaddrs( &addrs );
@@ -1181,45 +1181,22 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct sockaddr_in 
 	
 	ifd = (mDNSInterfaceData *) calloc( 1, sizeof( *ifd ) );
 	require_action( ifd, exit, err = mStatus_NoMemoryErr );
-	ifd->multicastSocketRef = kInvalidSocketRef;
-	ifd->unicastSocketRef 	= kInvalidSocketRef;
+	ifd->sock = kInvalidSocketRef;
 	
-	///
-	/// Set up multicast portion of interface.
-	///
+	// Set up a multicast DNS (port 5353) socket for this interface.
 	
-	// Set up the multicast DNS (port 5353) socket for this interface.
-	
-	err = SetupSocket( inMDNS, inAddress, MulticastDNSPort, &socketRef );
+	err = SetupSocket( inMDNS, inAddress, &socketRef );
 	require_noerr( err, exit );
-	ifd->multicastSocketRef = socketRef;
+	ifd->sock = socketRef;
 	
 	// Set up the read pending event and associate it so we can block until data is available for this socket.
 	
-	ifd->multicastReadPendingEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
-	require_action( ifd->multicastReadPendingEvent, exit, err = mStatus_NoMemoryErr );
+	ifd->readPendingEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	require_action( ifd->readPendingEvent, exit, err = mStatus_NoMemoryErr );
 	
-	err = WSAEventSelect( ifd->multicastSocketRef, ifd->multicastReadPendingEvent, FD_READ );
+	err = WSAEventSelect( ifd->sock, ifd->readPendingEvent, FD_READ );
 	require_noerr( err, exit );
-	
-	///
-	/// Set up unicast portion of interface.
-	///
-	
-	// Set up the unicast DNS (port 53) socket for this interface (to handle normal DNS requests).
-	
-	err = SetupSocket( inMDNS, inAddress, UnicastDNSPort, &socketRef );
-	require_noerr( err, exit );
-	ifd->unicastSocketRef = socketRef;
-	
-	// Set up the read pending event and associate it so we can block until data is available for this socket.
-	
-	ifd->unicastReadPendingEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
-	require_action( ifd->unicastReadPendingEvent, exit, err = mStatus_NoMemoryErr );
-	
-	err = WSAEventSelect( ifd->unicastSocketRef, ifd->unicastReadPendingEvent, FD_READ );
-	require_noerr( err, exit );
-	
+		
 	// Register this interface with mDNS.
 	
 	ifd->hostSet.InterfaceID 			= (mDNSInterfaceID) ifd;
@@ -1278,36 +1255,20 @@ mDNSlocal mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inI
 	
 	// Tear down the multicast socket.
 	
-	if( inIFD->multicastReadPendingEvent )
+	if( inIFD->readPendingEvent )
 	{
-		CloseHandle( inIFD->multicastReadPendingEvent );
-		inIFD->multicastReadPendingEvent = 0;
+		CloseHandle( inIFD->readPendingEvent );
+		inIFD->readPendingEvent = 0;
 	}
 	
-	socketRef = inIFD->multicastSocketRef;
-	inIFD->multicastSocketRef = kInvalidSocketRef;
+	socketRef = inIFD->sock;
+	inIFD->sock = kInvalidSocketRef;
 	if( IsValidSocket( socketRef ) )
 	{
-		dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down multicast socket %d\n", socketRef );
+		dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down socket %d\n", socketRef );
 		close_compat( socketRef );
 	}
-	
-	// Tear down the unicast socket.
-	
-	if( inIFD->unicastReadPendingEvent )
-	{
-		CloseHandle( inIFD->unicastReadPendingEvent );
-		inIFD->unicastReadPendingEvent = 0;
-	}
-	
-	socketRef = inIFD->unicastSocketRef;
-	inIFD->unicastSocketRef = kInvalidSocketRef;
-	if( IsValidSocket( socketRef ) )
-	{
-		dlog( kDebugLevelVerbose, DEBUG_NAME "tearing down unicast socket %d\n", socketRef );
-		close_compat( socketRef );
-	}
-	
+		
 	// Free the memory used by the interface info.
 	
 	free( inIFD );	
@@ -1322,7 +1283,6 @@ mDNSlocal mStatus
 	SetupSocket( 
 		mDNS * const 				inMDNS, 
 		const struct sockaddr_in *	inAddress, 
-		mDNSIPPort 					inPort, 
 		SocketRef *					outSocketRef  )
 {
 	mStatus					err;
@@ -1344,37 +1304,27 @@ mDNSlocal mStatus
 	require_action( IsValidSocket( socketRef ), exit, err = mStatus_NoMemoryErr );
 	
 	// Turn on reuse address option so multiple servers can listen for Multicast DNS packets.
-		
+	
 	option = 1;
 	err = setsockopt( socketRef, SOL_SOCKET, SO_REUSEADDR, (char *) &option, sizeof( option ) );
 	check_errno( err, errno_compat() );
 	
-	// Bind to the specified port (53 for unicast or 5353 for multicast).
+	// Bind to the mutlicast DNS port 5353.
 	
 	ip.NotAnInteger 		= inAddress->sin_addr.s_addr;
 	memset( &addr, 0, sizeof( addr ) );
 	addr.sin_family 		= AF_INET;
-	addr.sin_port 			= inPort.NotAnInteger;
+	addr.sin_port 			= MulticastDNSPort.NotAnInteger;
 	addr.sin_addr.s_addr 	= ip.NotAnInteger;
 	err = bind( socketRef, (struct sockaddr *) &addr, sizeof( addr ) );
-	if( err && ( inPort.NotAnInteger == UnicastDNSPort.NotAnInteger ) )
-	{
-		// Some systems prevent code without root permissions from binding to the DNS port so ignore this 
-		// error since it is not critical. This should only occur with non-root processes.
-		
-		err = 0;
-	}
 	check_errno( err, errno_compat() );
 	
 	// Join the all-DNS multicast group so we receive Multicast DNS packets.
 	
-	if( inPort.NotAnInteger == MulticastDNSPort.NotAnInteger )
-	{
-		mreq.imr_multiaddr.s_addr 	= AllDNSLinkGroup.NotAnInteger;
-		mreq.imr_interface.s_addr 	= ip.NotAnInteger;
-		err = setsockopt( socketRef, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof( mreq ) );
-		check_errno( err, errno_compat() );
-	}
+	mreq.imr_multiaddr.s_addr 	= AllDNSLinkGroup.NotAnInteger;
+	mreq.imr_interface.s_addr 	= ip.NotAnInteger;
+	err = setsockopt( socketRef, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof( mreq ) );
+	check_errno( err, errno_compat() );
 				
 	// Direct multicast packets to the specified interface.
 	
@@ -1396,8 +1346,8 @@ mDNSlocal mStatus
 		
 	// Success!
 	
-	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up socket done (%u.%u.%u.%u:%u, %d)\n", 
-		  ip.b[ 0 ], ip.b[ 1 ], ip.b[ 2 ], ip.b[ 3 ], ntohs( inPort.NotAnInteger ), socketRef );
+	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up socket done (%u.%u.%u.%u, %d)\n", 
+		  ip.b[ 0 ], ip.b[ 1 ], ip.b[ 2 ], ip.b[ 3 ], socketRef );
 	
 	*outSocketRef = socketRef;
 	socketRef = kInvalidSocketRef;
@@ -1638,14 +1588,9 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 					n = 0;
 					for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
 					{
-						if( ifd->multicastReadPendingEvent == signaledObject )
+						if( ifd->readPendingEvent == signaledObject )
 						{
-							ProcessingThreadProcessPacket( m, ifd, ifd->multicastSocketRef );
-							++n;
-						}
-						if( ifd->unicastReadPendingEvent == signaledObject )
-						{
-							ProcessingThreadProcessPacket( m, ifd, ifd->unicastSocketRef );
+							ProcessingThreadProcessPacket( m, ifd, ifd->sock );
 							++n;
 						}
 					}
@@ -1729,7 +1674,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	
 	// Allocate an array to hold all the objects to wait on.
 	
-	waitListCount = kWaitListFixedItemCount + ( 2 * inMDNS->p->interfaceCount );
+	waitListCount = kWaitListFixedItemCount + inMDNS->p->interfaceCount;
 	waitList = (HANDLE *) malloc( waitListCount * sizeof( *waitList ) );
 	require_action( waitList, exit, err = mStatus_NoMemoryErr );
 	waitItemPtr = waitList;
@@ -1744,8 +1689,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	
 	for( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
 	{
-		*waitItemPtr++ = ifd->multicastReadPendingEvent;
-		*waitItemPtr++ = ifd->unicastReadPendingEvent;
+		*waitItemPtr++ = ifd->readPendingEvent;
 	}
 	
 	*outWaitList 		= waitList;
@@ -1769,7 +1713,6 @@ exit:
 mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *inIFD, SocketRef inSocketRef )
 {
 	int						n;
-	mDNSBool				isMulticast;
 	DNSMessage				packet;
 	struct sockaddr_in		addr;
 	int						addrSize;
@@ -1778,8 +1721,6 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 	mDNSIPPort				srcPort;
 	mDNSAddr				dstAddr;
 	mDNSIPPort				dstPort;
-	
-	isMulticast = (mDNSBool)( inSocketRef == inIFD->multicastSocketRef );
 	
 	// Receive the packet.
 	
@@ -1794,8 +1735,8 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 		srcAddr.ip.v4.NotAnInteger 	= addr.sin_addr.s_addr;
 		srcPort.NotAnInteger		= addr.sin_port;
 		dstAddr.type				= mDNSAddrType_IPv4;
-		dstAddr.ip.v4				= isMulticast ? AllDNSLinkGroup  : inIFD->hostSet.ip.ip.v4;
-		dstPort						= isMulticast ? MulticastDNSPort : UnicastDNSPort;
+		dstAddr.ip.v4				= AllDNSLinkGroup;
+		dstPort						= MulticastDNSPort;
 		
 		dlog( kDebugLevelChatty, DEBUG_NAME "packet received\n" );
 		dlog( kDebugLevelChatty, DEBUG_NAME "    size      = %d\n", n );
@@ -1819,9 +1760,8 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 	
 	// Update counters.
 	
-	inIFD->recvMulticastCounter += isMulticast;
-	inIFD->recvUnicastCounter 	+= !isMulticast;
-	inIFD->recvErrorCounter 	+= ( n < 0 );
+	inIFD->recvCounter 		+= 1;
+	inIFD->recvErrorCounter += ( n < 0 );
 }
 
 //===========================================================================================================================
