@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.96  2004/10/12 23:30:44  ksekar
+<rdar://problem/3609944> mDNSResponder needs to follow CNAME referrals
+
 Revision 1.95  2004/10/12 03:15:09  ksekar
 <rdar://problem/3835612> mDNS_StartQuery shouldn't return transient no-server error
 
@@ -1460,8 +1463,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	int i;
 	LargeCacheRecord lcr;
 	CacheRecord *cr = &lcr.r;
-	mDNSBool goodbye, inKAList;
+	mDNSBool goodbye, inKAList, followedCName = mDNSfalse;
 	LLQ_Info *llqInfo = question->uDNS_info.llq;
+	domainname origname;
 	
 	if (question != m->uDNS_info.CurrentQuery)
 		{ LogMsg("ERROR: pktResponseHdnlr called without CurrentQuery ptr set!");  return; }
@@ -1475,6 +1479,22 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 		if (!ptr) goto pkt_error;
 		if (ResourceRecordAnswersQuestion(&cr->resrec, question))
 			{
+			if (cr->resrec.rrtype == kDNSType_CNAME)
+				{
+				if (followedCName) LogMsg("Error: multiple CNAME referals for question %##s", question->qname.c);
+				else
+					{
+					debugf("Following cname %##s -> %##s", question->qname.c, cr->resrec.rdata->u.name.c);
+					AssignDomainName(origname, question->qname);					
+					AssignDomainName(question->qname, cr->resrec.rdata->u.name);
+					question->qnamehash = DomainNameHashValue(&question->qname);
+					followedCName = mDNStrue;
+					i = -1; // restart packet answer matching					
+					ptr = LocateAnswers(msg, end);
+					continue;
+					}
+				}
+			
 			goodbye = llq ? ((mDNSs32)cr->resrec.rroriginalttl == -1) : mDNSfalse;
 			inKAList = kaListContainsAnswer(question, cr);
 
@@ -1490,11 +1510,10 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 				return;
 				}
 			}			
-		else
-			{
-			LogMsg("unexpected answer: %##s", cr->resrec.name.c);
-			}
+		else if (!followedCName || !SameDomainName(&cr->resrec.name, &origname))
+			 LogMsg("Question %##s type %d - unexpected answer %##s type %d", question->qname.c, question->qtype, cr->resrec.name.c, cr->resrec.rrtype);
 		}
+	
 	if (llq && (llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume))	
 		{ deriveGoodbyes(m, msg, end,question);  llqInfo->deriveRemovesOnResume = mDNSfalse; }
 
