@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.296  2003/08/29 19:08:21  cheshire
+<rdar://problem/3400986> Traffic reduction: Eliminate huge KA lists after wake from sleep
+Known answers are no longer eligible to go in the KA list if they are more than half-way to their expiry time.
+
 Revision 1.295  2003/08/28 01:10:59  cheshire
 <rdar://problem/3396034> Add syslog message to report when query is reset because of immediate answer burst
 
@@ -3556,6 +3560,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
 				rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
 				ResourceRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
+				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >= 0 &&			// and it is less than half-way to expiry
 				rr->NextRequiredQuery - (m->timenow + q->ThisQInterval) > 0)// and we'll ask at least once again before NextRequiredQuery
 				{
 				*ka = rr;	// Link this record into our known answer chain
