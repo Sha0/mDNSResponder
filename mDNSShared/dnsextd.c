@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.15  2004/11/19 02:35:02  ksekar
+<rdar://problem/3886317> Wide Area Security: Add LLQ-ID to events
+
 Revision 1.14  2004/11/17 06:17:58  cheshire
 Update comments to show correct SRV names: _dns-update._udp.<zone>. and _dns-llq._udp.<zone>.
 
@@ -1085,6 +1088,34 @@ mDNSlocal PktMsg *HandleRequest(PktMsg *pkt, DaemonInfo *d)
 // LLQ Support Routines
 //
 
+// Set fields of an LLQ Opt Resource Record
+mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, mDNSu8 *id, mDNSs32 lease)
+	{
+	bzero(opt, sizeof(*opt));
+	opt->resrec.rdata = &opt->rdatastorage;
+	opt->resrec.RecordType = kDNSRecordTypeKnownUnique; // to suppress warnings from other layers
+	opt->resrec.rrtype = kDNSType_OPT;
+	opt->resrec.rdlength = LLQ_OPT_SIZE;
+	opt->resrec.rdestimate = LLQ_OPT_SIZE;
+	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;
+	opt->resrec.rdata->u.opt.optlen = sizeof(LLQOptData);
+	opt->resrec.rdata->u.opt.OptData.llq.vers = kLLQ_Vers;
+	opt->resrec.rdata->u.opt.OptData.llq.llqOp = opcode;
+	opt->resrec.rdata->u.opt.OptData.llq.err = LLQErr_NoError;
+	memcpy(opt->resrec.rdata->u.opt.OptData.llq.id, id, 8);
+	opt->resrec.rdata->u.opt.OptData.llq.lease = lease;
+	}
+
+// Calculate effective remaining lease of an LLQ
+mDNSlocal mDNSu32 LLQLease(LLQEntry *e)
+	{
+	struct timeval t;
+	
+	gettimeofday(&t, NULL);
+	if (e->expire < t.tv_sec) return 0;
+	else return e->expire - t.tv_sec;
+	}
+
 mDNSlocal void FreeKnownAnswers(LLQEntry *e)
 	{
 	CacheRecord *tmp;
@@ -1211,6 +1242,7 @@ mDNSlocal void UpdateAnswerList(DaemonInfo *d, LLQEntry *e, CacheRecord *answers
 	mDNSu8 *end = (mDNSu8 *)&response.msg.data;
 	mDNSOpaque16 msgID;
 	char rrbuf[80], addrbuf[32];
+	AuthRecord opt;
 	
 	// first pass - mark all answers for deletion
 	for (ka = e->KnownAnswers; ka; ka = ka->next)
@@ -1280,19 +1312,13 @@ mDNSlocal void UpdateAnswerList(DaemonInfo *d, LLQEntry *e, CacheRecord *answers
 			}
 		}
 			   
+	FormatLLQOpt(&opt, kLLQOp_Event, e->id, LLQLease(e));
+	end = PutResourceRecordTTL(&response.msg, end, &response.msg.h.numAdditionals, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+
 	response.len = (int)(end - (mDNSu8 *)&response.msg);
 	if (response.msg.h.numAnswers)
 		if (SendLLQ(d, &response, e->cli) < 0) LogErr("UpdateAnswerList", "SendLLQ");		
-	}
-
-// Calculate effective remaining lease of an LLQ
-mDNSlocal mDNSu32 LLQLease(LLQEntry *e)
-	{
-	struct timeval t;
-	
-	gettimeofday(&t, NULL);
-	if (e->expire < t.tv_sec) return 0;
-	else return e->expire - t.tv_sec;
 	}
 
 mDNSlocal void PrintLLQTable(DaemonInfo *d)
@@ -1455,24 +1481,6 @@ mDNSlocal LLQEntry *NewLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qn
 	d->LLQTable[bucket] = e;
 	
 	return e;
-	}
-
-// Set fields of an LLQ Opt Resource Record
-mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, mDNSu8 *id, mDNSs32 lease)
-	{
-	bzero(opt, sizeof(*opt));
-	opt->resrec.rdata = &opt->rdatastorage;
-	opt->resrec.RecordType = kDNSRecordTypeKnownUnique; // to suppress warnings from other layers
-	opt->resrec.rrtype = kDNSType_OPT;
-	opt->resrec.rdlength = LLQ_OPT_SIZE;
-	opt->resrec.rdestimate = LLQ_OPT_SIZE;
-	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;
-	opt->resrec.rdata->u.opt.optlen = sizeof(LLQOptData);
-	opt->resrec.rdata->u.opt.OptData.llq.vers = kLLQ_Vers;
-	opt->resrec.rdata->u.opt.OptData.llq.llqOp = opcode;
-	opt->resrec.rdata->u.opt.OptData.llq.err = LLQErr_NoError;
-	memcpy(opt->resrec.rdata->u.opt.OptData.llq.id, id, 8);
-	opt->resrec.rdata->u.opt.OptData.llq.lease = lease;
 	}
 
 // Handle a refresh request from client
