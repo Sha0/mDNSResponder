@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.91  2003/08/06 21:33:39  cheshire
+Fix compiler warnings on PocketPC 2003 (Windows CE)
+
 Revision 1.90  2003/08/06 20:30:17  cheshire
 Add structure definition for rdataMX (not currently used, but good to have it for completeness)
 
@@ -999,9 +1002,9 @@ typedef enum
 	mDNS_DomainTypeRegistrationDefault = 3
 	} mDNS_DomainType;
 
-extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType, const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
+extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopGetDomains mDNS_StopQuery
-extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNSu8 DomainType, const mDNSInterfaceID InterfaceID, char *domname);
+extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
 
 // ***************************************************************************

@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.254  2003/08/06 21:33:39  cheshire
+Fix compiler warnings on PocketPC 2003 (Windows CE)
+
 Revision 1.253  2003/08/06 20:43:57  cheshire
 <rdar://problem/3335473> Need to check validity of TXT (and other) records
 Created ValidateDomainName() and ValidateRData(), used by mDNS_Register_internal() and mDNS_Update()
@@ -5491,7 +5494,7 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *que
 	mDNS_Unlock(m);
 	}
 
-mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType,
+mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
 	MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType]);
@@ -6204,7 +6207,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *con
 	}
 
 mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
-	mDNSu8 DomainType, const mDNSInterfaceID InterfaceID, char *domname)
+	mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname)
 	{
 	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
 	if (!MakeDomainNameFromDNSNameString(&rr->name, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
