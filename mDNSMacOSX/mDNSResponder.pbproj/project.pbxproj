@@ -310,6 +310,7 @@
 			settings = {
 				ATTRIBUTES = (
 					Server,
+					Client,
 				);
 			};
 		};
