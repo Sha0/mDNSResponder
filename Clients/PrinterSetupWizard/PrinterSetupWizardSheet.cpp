@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.6  2004/06/26 21:22:39  shersche
+handle spaces in file names
+
 Revision 1.5  2004/06/26 03:19:57  shersche
 clean up warning messages
 
@@ -921,7 +924,7 @@ CPrinterSetupWizardSheet::InstallPrinterThread( LPVOID inParam )
 	si.cb = sizeof(si);
 	ZeroMemory( &pi, sizeof(pi) );
 
-	command.Format(L"rundll32.exe printui.dll,PrintUIEntry /if /b \"%s\" /f%s /r \"%s\" /m \"%s\"", printer->displayName, printer->infFileName, printer->portName, printer->model);
+	command.Format(L"rundll32.exe printui.dll,PrintUIEntry /if /b \"%s\" /f \"%s\" /r \"%s\" /m \"%s\"", printer->displayName, printer->infFileName, printer->portName, printer->model);
 
 	ok = CreateProcess(NULL, command.GetBuffer(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
