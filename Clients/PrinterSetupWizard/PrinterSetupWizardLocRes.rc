@@ -269,6 +269,7 @@ BEGIN
     IDS_LARGE_FONT          "MS Sans Serif"
     IDS_FIREWALL            "Please check firewall setting to ensure the Rendezvous Printer Wizard operates correctly."
     IDS_ERROR_CAPTION       "Error"
+    IDS_PRINTER_UNAVAILABLE "The Rendezvous printer you have selected is no longer available. Please make sure the printer is powered-on and plugged-in."
 END
 
 STRINGTABLE 

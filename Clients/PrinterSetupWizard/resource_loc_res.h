@@ -49,6 +49,7 @@
 #define IDS_REINSTALL                   142
 #define IDS_REINSTALL_CAPTION           143
 #define IDC_INFO								 144
+#define IDS_PRINTER_UNAVAILABLE         145
 #define IDC_BUTTON1                     1000
 #define IDC_LIST1                       1000
 #define IDC_BROWSE_LIST                 1000
