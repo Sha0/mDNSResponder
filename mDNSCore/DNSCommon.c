@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.7  2004/01/24 08:32:30  bradley
+Mask values with 0xFF before casting to avoid runtime truncation errors on Windows debug builds.
+Separated octal-escaped sequences preceding decimal digits to avoid errors with some compilers wanting
+to signal potentially hidden errors about the subsequent digit not being part of the octal sequence.
+
 Revision 1.6  2004/01/24 04:59:15  cheshire
 Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
@@ -207,9 +212,11 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 	// Domains that are defined to be resolved via link-local multicast are:
 	// local., 254.169.in-addr.arpa., and 0.8.E.F.ip6.arpa.
 	// Note that we use octal ('\ooo') instead of hex ('\xhh') because trying to use "\x3254" doesn't work.
+	// Escape sequences preceding digits use separate concatenated strings to avoid errors on some compilers that
+	// want to signal potentially hidden errors about the subsequent digit not being part of the octal sequence.
 	if (d1 && SameDomainName(d1, (domainname*)"\005local")) return(mDNStrue);
-	if (d4 && SameDomainName(d4, (domainname*)"\003254\003169\007in-addr\004arpa")) return(mDNStrue);
-	if (d6 && SameDomainName(d6, (domainname*)"\0010\0018\001e\001f\003ip6\004arpa")) return(mDNStrue);
+	if (d4 && SameDomainName(d4, (domainname*)"\003""254\003""169\007in-addr\004arpa")) return(mDNStrue);
+	if (d6 && SameDomainName(d6, (domainname*)"\001""0\001""8\001e\001f\003ip6\004arpa")) return(mDNStrue);
 	return(mDNSfalse);
 	}
 
@@ -831,7 +838,7 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 			{
 			mDNSu16 offset = (mDNSu16)(pointer - base);
 			*ptr++ = (mDNSu8)(0xC0 | (offset >> 8));
-			*ptr++ = (mDNSu8)(        offset      );
+			*ptr++ = (mDNSu8)(        offset &  0xFF);
 			return(ptr);
 			}
 		else							// Else copy one label and try again
@@ -888,9 +895,9 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 
 		case kDNSType_SRV:	if (ptr + 6 > limit) return(mDNSNULL);
 							*ptr++ = (mDNSu8)(rr->rdata->u.srv.priority >> 8);
-							*ptr++ = (mDNSu8)(rr->rdata->u.srv.priority     );
+							*ptr++ = (mDNSu8)(rr->rdata->u.srv.priority &  0xFF);
 							*ptr++ = (mDNSu8)(rr->rdata->u.srv.weight   >> 8);
-							*ptr++ = (mDNSu8)(rr->rdata->u.srv.weight       );
+							*ptr++ = (mDNSu8)(rr->rdata->u.srv.weight   &  0xFF);
 							*ptr++ = rr->rdata->u.srv.port.b[0];
 							*ptr++ = rr->rdata->u.srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.srv.target));
@@ -922,13 +929,13 @@ mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNS
 	ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->name);
 	if (!ptr || ptr + 10 >= limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
 	ptr[0] = (mDNSu8)(rr->rrtype  >> 8);
-	ptr[1] = (mDNSu8)(rr->rrtype      );
+	ptr[1] = (mDNSu8)(rr->rrtype  &  0xFF);
 	ptr[2] = (mDNSu8)(rr->rrclass >> 8);
-	ptr[3] = (mDNSu8)(rr->rrclass     );
-	ptr[4] = (mDNSu8)(ttl >> 24);
-	ptr[5] = (mDNSu8)(ttl >> 16);
-	ptr[6] = (mDNSu8)(ttl >>  8);
-	ptr[7] = (mDNSu8)(ttl      );
+	ptr[3] = (mDNSu8)(rr->rrclass &  0xFF);
+	ptr[4] = (mDNSu8)((ttl >> 24) &  0xFF);
+	ptr[5] = (mDNSu8)((ttl >> 16) &  0xFF);
+	ptr[6] = (mDNSu8)((ttl >>  8) &  0xFF);
+	ptr[7] = (mDNSu8)( ttl        &  0xFF);
 	endofrdata = putRData(msg, ptr+10, limit, rr);
 	if (!endofrdata) { verbosedebugf("Ran out of space in PutResourceRecord for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype)); return(mDNSNULL); }
 
@@ -936,7 +943,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNS
 	// (actualLength can be less than rdlength when domain name compression is used)
 	actualLength = (mDNSu16)(endofrdata - ptr - 10);
 	ptr[8] = (mDNSu8)(actualLength >> 8);
-	ptr[9] = (mDNSu8)(actualLength     );
+	ptr[9] = (mDNSu8)(actualLength &  0xFF);
 
 	(*count)++;
 	return(endofrdata);
@@ -955,9 +962,9 @@ mDNSexport mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, co
 	ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->name);
 	if (!ptr || ptr + 10 > limit) return(mDNSNULL);		// If we're out-of-space, return mDNSNULL
 	ptr[0] = (mDNSu8)(rr->resrec.rrtype  >> 8);				// Put type
-	ptr[1] = (mDNSu8)(rr->resrec.rrtype      );
+	ptr[1] = (mDNSu8)(rr->resrec.rrtype  &  0xFF);
 	ptr[2] = (mDNSu8)(rr->resrec.rrclass >> 8);				// Put class
-	ptr[3] = (mDNSu8)(rr->resrec.rrclass     );
+	ptr[3] = (mDNSu8)(rr->resrec.rrclass &  0xFF);
 	ptr[4] = ptr[5] = ptr[6] = ptr[7] = 0;				// TTL is zero
 	ptr[8] = ptr[9] = 0;								// RDATA length is zero
 	(*count)++;
@@ -970,9 +977,9 @@ mDNSexport mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 
 	ptr = putDomainNameAsLabels(msg, ptr, limit, name);
 	if (!ptr || ptr+4 >= limit) return(mDNSNULL);			// If we're out-of-space, return mDNSNULL
 	ptr[0] = (mDNSu8)(rrtype  >> 8);
-	ptr[1] = (mDNSu8)(rrtype      );
+	ptr[1] = (mDNSu8)(rrtype  &  0xFF);
 	ptr[2] = (mDNSu8)(rrclass >> 8);
-	ptr[3] = (mDNSu8)(rrclass     );
+	ptr[3] = (mDNSu8)(rrclass &  0xFF);
 	msg->h.numQuestions++;
 	return(ptr+4);
 	}
@@ -1285,21 +1292,21 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
 	*ptr++ = (mDNSu8)(numQuestions   >> 8);
-	*ptr++ = (mDNSu8)(numQuestions       );
+	*ptr++ = (mDNSu8)(numQuestions   &  0xFF);
 	*ptr++ = (mDNSu8)(numAnswers     >> 8);
-	*ptr++ = (mDNSu8)(numAnswers         );
+	*ptr++ = (mDNSu8)(numAnswers     &  0xFF);
 	*ptr++ = (mDNSu8)(numAuthorities >> 8);
-	*ptr++ = (mDNSu8)(numAuthorities     );
+	*ptr++ = (mDNSu8)(numAuthorities &  0xFF);
 	*ptr++ = (mDNSu8)(numAdditionals >> 8);
-	*ptr++ = (mDNSu8)(numAdditionals     );
+	*ptr++ = (mDNSu8)(numAdditionals &  0xFF);
 
 	// Send the packet on the wire
 
 	if (tcp)
 		{
-		msglen = end - (mDNSu8 *)msg; 
+		msglen = (mDNSu16)(end - (mDNSu8 *)msg); 
 		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
-		lenbuf[1] = (mDNSu8)(msglen);
+		lenbuf[1] = (mDNSu8)(msglen &  0xFF);
 		nsent = mDNSPlatformWriteTCP(sd, (char*)lenbuf, 2);
 		//!!!KRS make sure kernel is sending these as 1 packet!
 		if (nsent != 2) goto tcp_error;
