@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.41  2003/08/29 22:05:44  cheshire
+Also count subsequent KA packets for the purposes of statistics counting
+
 Revision 1.40  2003/08/29 16:43:24  cheshire
 Also display breakdown of Probe/Goodbye/BrowseQ etc. for each host
 
@@ -638,6 +641,12 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "KNOWN ANSWER"); return; }
 		DisplayResourceRecord(srcaddr, "(KA)", &pkt.r.resrec);
+		
+		// In the case of queries with long multi-packet KA lists, we count each subsequent KA packet
+		// the same as a single query, to more accurately reflect the burden on the network
+		// (A query with a six-packet KA list is *at least* six times the burden on the network as a single-packet query.)
+		if (msg->h.numQuestions == 0 && i == 0)
+			recordstat(entry, &pkt.r.resrec.name, OP_query, pkt.r.resrec.rrtype);
 		}
 
 	for (i=0; i<msg->h.numAuthorities; i++)
