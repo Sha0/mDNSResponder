@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.27  2004/08/11 00:54:16  cheshire
+Change "hdr->op.request_op" to just "hdr->op"
+
 Revision 1.26  2004/07/26 06:07:27  shersche
 fix bugs when using an error socket to communicate with the daemon
 
@@ -224,7 +227,7 @@ static ipc_msg_hdr *create_hdr(int op, size_t *len, char **data_start, int reuse
     hdr = (void *)msg;
     hdr->datalen = datalen;
     hdr->version = VERSION;
-    hdr->op.request_op = op;
+    hdr->op = op;
     if (reuse_socket) hdr->flags |= IPC_FLAGS_REUSE_SOCKET;
     *data_start = msg + sizeof(ipc_msg_hdr);
 #if defined(USE_TCP_LOOPBACK)
