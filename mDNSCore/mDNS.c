@@ -68,6 +68,13 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.76  2003/01/29 02:46:37  cheshire
+Fix for IPv6:
+A physical interface is identified solely by its InterfaceID (not by IP and type).
+On a given InterfaceID, mDNSCore may send both v4 and v6 multicasts.
+In cases where the requested outbound protocol (v4 or v6) is not supported on
+that InterfaceID, the platform support layer should simply discard that packet.
+
 Revision 1.75  2003/01/29 01:47:40  cheshire
 Rename 'Active' to 'CRActive' or 'InterfaceActive' for improved clarity
 
@@ -239,15 +246,17 @@ mDNSexport const mDNSIPPort zeroIPPort = { { 0 } };
 mDNSexport const mDNSIPAddr zeroIPAddr = { { 0 } };
 mDNSexport const mDNSv6Addr zerov6Addr = { { 0 } };
 mDNSexport const mDNSIPAddr onesIPAddr = { { 255, 255, 255, 255 } };
-mDNSexport const mDNSAddr	zeroAddr   = { 0, {{{ 0 }}} };
+mDNSexport const mDNSAddr	zeroAddr   = { mDNSAddrType_None, {{{ 0 }}} };
 
 #define UnicastDNSPortAsNumber 53
 #define MulticastDNSPortAsNumber 5353
 mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
 mDNSexport const mDNSIPPort MulticastDNSPort   = { { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF } };
-mDNSexport const mDNSIPAddr	AllDNSLinkGroup  = { { 224,   0,   0, 251 } };
-mDNSexport const mDNSv6Addr AllDNSLinkGroupv6  = { {0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB} };
-mDNSexport const mDNSIPAddr AllDNSAdminGroup = { { 239, 255, 255, 251 } };
+mDNSexport const mDNSIPAddr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
+mDNSexport const mDNSIPAddr	AllDNSLinkGroup    = { { 224,   0,   0, 251 } };
+mDNSexport const mDNSv6Addr AllDNSLinkGroupv6  = { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } };
+mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
+mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };
 
 static const mDNSOpaque16 zeroID = { { 0, 0 } };
 static const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
@@ -2204,21 +2213,11 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 			responseptr = BuildResponse(m, &response, baselimit, intf->InterfaceID, timenow);
 			if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
 				{
-				mDNSAddr dest;
-				if (intf->ip.type == mDNSAddrType_IPv4)
-					{
-					dest.type = mDNSAddrType_IPv4;
-					dest.addr.ipv4 = AllDNSLinkGroup;
-					}
-				else if (intf->ip.type == mDNSAddrType_IPv6)
-					{
-					dest.type = mDNSAddrType_IPv6;
-					dest.addr.ipv6 = AllDNSLinkGroupv6;
-					}
-				debugf("SendResponses Sending %d Answer%s, %d Additional%s on %X/%d",
+				debugf("SendResponses Sending %d Answer%s, %d Additional%s on %X",
 					response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
-					response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID, dest.type);
-				mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &dest, MulticastDNSPort);
+					response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
+				mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v4, MulticastDNSPort);
+				mDNSSendDNSMessage(m, &response, responseptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v6, MulticastDNSPort);
 				}
 			}
 	}
@@ -2518,22 +2517,12 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 		
 					if (queryptr > query.data)
 						{
-						mDNSAddr dest;
-						if (intf->ip.type == mDNSAddrType_IPv4)
-							{
-							dest.type = mDNSAddrType_IPv4;
-							dest.addr.ipv4 = AllDNSLinkGroup;
-							}
-						else if (intf->ip.type == mDNSAddrType_IPv6)
-							{
-							dest.type = mDNSAddrType_IPv6;
-							dest.addr.ipv6 = AllDNSLinkGroupv6;
-							}
-						debugf("SendQueries Sending %d Question%s %d Answer%s %d Update%s on %X/%d",
+						debugf("SendQueries Sending %d Question%s %d Answer%s %d Update%s on %X",
 							query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 							query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
-							query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID, dest.type);
-						mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, MulticastDNSPort, &dest, MulticastDNSPort);
+							query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
+						mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v4, MulticastDNSPort);
+						mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, MulticastDNSPort, &AllDNSLinkGroup_v6, MulticastDNSPort);
 						}
 					} while (NextDupSuppress2);
 				}
@@ -4141,7 +4130,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			mDNS_Unlock(m);
 			return(mStatus_AlreadyRegistered);
 			}
-		if ((*p)->InterfaceID == set->InterfaceID && (*p)->ip.type == set->ip.type)
+		if ((*p)->InterfaceID == set->InterfaceID)
 			Active = mDNSfalse;
 		p=&(*p)->next;
 		}
@@ -4149,13 +4138,13 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	set->InterfaceActive = Active;
 	if (Active)
 		{
-		debugf("mDNS_RegisterInterface: InterfaceID/type %X/%d not represented in list; marking active for now",
-			set->InterfaceID, set->ip.type);
+		debugf("mDNS_RegisterInterface: InterfaceID %X not represented in list; marking active for now",
+			set->InterfaceID);
 		ActivateInterfaceQuestions(m, set->InterfaceID, timenow);
 		}
 	else
-		debugf("mDNS_RegisterInterface: InterfaceID/type %X/%d already represented in list; marking inactive for now",
-			set->InterfaceID, set->ip.type);
+		debugf("mDNS_RegisterInterface: InterfaceID %X already represented in list; marking inactive for now",
+			set->InterfaceID);
 
 	if (set->Advertise)
 		{
@@ -4262,18 +4251,18 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 		{
 		NetworkInterfaceInfo *i;
 		for (i=m->HostInterfaces; i; i=i->next)
-			if (i->InterfaceID == set->InterfaceID && i->ip.type == set->ip.type)
+			if (i->InterfaceID == set->InterfaceID)
 				break;
 		if (i)
 			{
-			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID/type %X/%d exists; making it active",
-				set->InterfaceID, set->ip.type);
+			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %X exists; making it active",
+				set->InterfaceID);
 			i->InterfaceActive = mDNStrue;
 			}
 		else
 			{
-			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID/type %X/%d deregistered; deactivating questions",
-				set->InterfaceID, set->ip.type);
+			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID %X deregistered; deactivating questions",
+				set->InterfaceID);
 			DeActivateInterfaceQuestions(m, set->InterfaceID);
 			}
 		}

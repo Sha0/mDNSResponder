@@ -68,6 +68,13 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.31  2003/01/29 02:46:37  cheshire
+Fix for IPv6:
+A physical interface is identified solely by its InterfaceID (not by IP and type).
+On a given InterfaceID, mDNSCore may send both v4 and v6 multicasts.
+In cases where the requested outbound protocol (v4 or v6) is not supported on
+that InterfaceID, the platform support layer should simply discard that packet.
+
 Revision 1.30  2003/01/29 01:47:08  cheshire
 Rename 'Active' to 'CRActive' or 'InterfaceActive' for improved clarity
 
@@ -211,8 +218,8 @@ typedef struct
 	mDNSu32	type;
 	union
 		{
-		mDNSIPAddr	ipv4;
 		mDNSv6Addr	ipv6;
+		mDNSIPAddr	ipv4;
 		} addr;
 	} mDNSAddr;
 
@@ -547,11 +554,13 @@ extern const mDNSIPAddr zeroIPAddr;
 extern const mDNSv6Addr zerov6Addr;
 extern const mDNSIPAddr onesIPAddr;
 
-extern const mDNSIPPort		UnicastDNSPort;
-extern const mDNSIPPort		MulticastDNSPort;
-extern const mDNSIPAddr		AllDNSLinkGroup;
-extern const mDNSv6Addr		AllDNSLinkGroupv6;
-extern const mDNSIPAddr		AllDNSAdminGroup;
+extern const mDNSIPPort UnicastDNSPort;
+extern const mDNSIPPort MulticastDNSPort;
+extern const mDNSIPAddr AllDNSAdminGroup;
+extern const mDNSIPAddr AllDNSLinkGroup;
+extern const mDNSv6Addr AllDNSLinkGroupv6;
+extern const mDNSAddr   AllDNSLinkGroup_v4;
+extern const mDNSAddr   AllDNSLinkGroup_v6;
 
 // ***************************************************************************
 #if 0
