@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerPlugin.cpp,v $
+Revision 1.3  2004/06/26 14:12:07  shersche
+Register the toolbar button
+
 Revision 1.2  2004/06/24 20:09:39  shersche
 Change text
 Submitted by: herscher
@@ -441,7 +444,37 @@ DEBUG_LOCAL OSStatus	RegisterServer( HINSTANCE inInstance, CLSID inCLSID, LPCTST
 		err = RegSetValueEx( key, clsidString, 0, REG_SZ, (LPBYTE) data, size );
 		RegCloseKey( key );
 	}
-	err = kNoErr;
+
+	// register toolbar button
+	lstrcpyn( keyName, TEXT( "SOFTWARE\\Microsoft\\Internet Explorer\\Extensions\\{7F9DB11C-E358-4ca6-A83D-ACC663939424}"), sizeof_array( keyName ) );
+	err = RegCreateKeyEx( HKEY_LOCAL_MACHINE, keyName, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &key, NULL );
+	require_noerr( err, exit );
+
+	lstrcpyn( data, L"Yes", sizeof_array( data ) );
+	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+	RegSetValueEx( key, L"Default Visible", 0, REG_SZ, (LPBYTE) data, size );
+
+	lstrcpyn( data, inName, sizeof_array( data ) );
+	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+	RegSetValueEx( key, L"ButtonText", 0, REG_SZ, (LPBYTE) data, size );
+	
+	lstrcpyn( data, L"{E0DD6CAB-2D10-11D2-8F1A-0000F87ABD16}", sizeof_array( data ) );
+	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+	RegSetValueEx( key, L"CLSID", 0, REG_SZ, (LPBYTE) data, size );
+
+	lstrcpyn( data, clsidString, sizeof_array( data ) );
+	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+	RegSetValueEx( key, L"BandCLSID", 0, REG_SZ, (LPBYTE) data, size );
+
+	wsprintf( data, L"%s,%d", moduleName, IDI_COLD );
+	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+	RegSetValueEx( key, L"Icon", 0, REG_SZ, (LPBYTE) data, size);
+
+	wsprintf( data, L"%s,%d", moduleName, IDI_COLD );
+	size = (DWORD)( ( lstrlen( data ) + 1 ) * sizeof( TCHAR ) );
+	RegSetValueEx( key, L"HotIcon", 0, REG_SZ, (LPBYTE) data, size);
+
+	RegCloseKey( key );
 	
 exit:
 	return( err );
