@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.80  2004/12/16 21:46:43  cheshire
+Add DNSTypeName case for kDNSType_SOA
+
 Revision 1.79  2004/12/16 21:38:37  cheshire
 Add DNSTypeName case for kDNSType_NS
 
@@ -381,6 +384,7 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_A:    return("Addr");
 		case kDNSType_NS:   return("NS");
 		case kDNSType_CNAME:return("CNAME");
+		case kDNSType_SOA:  return("SOA");
 		case kDNSType_NULL: return("NULL");
 		case kDNSType_PTR:  return("PTR");
 		case kDNSType_HINFO:return("HINFO");
