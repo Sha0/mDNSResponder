@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.97  2004/10/13 00:58:35  cheshire
+<rdar://problem/3832738> Registering a proxy doesn't work
+
 Revision 1.96  2004/09/30 00:25:00  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -1953,8 +1956,7 @@ static void handle_regservice_request(request_state *request)
 	
 	if (!ConstructServiceName(&srv, &service->name, &service->type, &d)) goto bad_param;
 		
-	if (host[0] && !MakeDomainNameFromDNSNameString(&service->host, host)) goto bad_param;
-	else service->host.c[0] = '\0';
+	if (!MakeDomainNameFromDNSNameString(&service->host, host)) goto bad_param;
 	service->autorename = !(flags & kDNSServiceFlagsNoAutoRename);
 	
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
