@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.2  2004/02/21 04:36:19  bradley
+Enable dot local name lookups now that the NSP is being installed.
+
 Revision 1.1  2004/01/30 03:01:56  bradley
 Explorer Plugin to browse for Rendezvous-enabled Web and FTP servers from within Internet Explorer.
 
@@ -56,7 +59,7 @@ static char THIS_FILE[] = __FILE__;
 //	Constants
 //===========================================================================================================================
 
-#define	ENABLE_DOT_LOCAL_NAMES			0
+#define	ENABLE_DOT_LOCAL_NAMES			1
 
 // Control IDs
 
