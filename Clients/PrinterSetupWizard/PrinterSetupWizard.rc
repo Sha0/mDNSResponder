@@ -230,9 +230,9 @@ BEGIN
             VALUE "CompanyName", "Apple Computer, Inc."
             VALUE "FileDescription", "Rendezvous Printer Wizard"
             VALUE "FileVersion", MASTER_PROD_VERS_STR
-            VALUE "InternalName", "PrinterSetupWizard.exe"
+            VALUE "InternalName", "RendezvousPrinterWizard.exe"
             VALUE "LegalCopyright", "Copyright (C) 2003-2004 Apple Computer, Inc."
-            VALUE "OriginalFilename", "PrinterSetupWizard.exe"
+            VALUE "OriginalFilename", "RendezvousPrinterWizard.exe"
             VALUE "ProductName", MASTER_PROD_NAME
             VALUE "ProductVersion", MASTER_PROD_VERS_STR
         END
