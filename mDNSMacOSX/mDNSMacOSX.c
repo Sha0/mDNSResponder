@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.181  2004/09/16 02:03:42  cheshire
+<rdar://problem/3802944> Change address to notify user of kernel flaw
+
 Revision 1.180  2004/09/16 01:58:22  cheshire
 Fix compiler warnings
 
@@ -957,7 +960,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
 		if (numLogMessages > 5)
-			NotifyOfElusiveBug(m, "Flaw in Kernel", 3375328, "You can also send email to coreos-networking@group.apple.com. "
+			NotifyOfElusiveBug(m, "Flaw in Kernel", 3375328, "You can also send email to radar-3387020@group.apple.com. "
 				"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
 
 		sleep(1);		// After logging this error, rate limit so we don't flood syslog
