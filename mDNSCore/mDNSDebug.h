@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.11  2003/05/21 17:48:10  cheshire
+Add macro to enable GCC's printf format string checking
+
 Revision 1.10  2003/04/26 02:32:57  cheshire
 Add extern void LogMsg(const char *format, ...);
 
@@ -92,13 +95,26 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 
 //#define MDNS_DEBUGMSGS 2
 
+// Set MDNS_CHECK_PRINTF_STYLE_FUNCTIONS to 1 to enable extra GCC compiler warnings
+// Note: You don't normally want to do this, because it generates a bunch of
+// spurious warnings for the following custom extensions implemented by mDNS_vsprintf:
+//    warning: `#' flag used with `%s' printf format    (for %#s              -- pascal string format)
+//    warning: repeated `#' flag in format              (for %##s             -- DNS name string format)
+//    warning: double format, pointer arg (arg 2)       (for %.4a, %.16a, %#a -- IP address formats)
+#define MDNS_CHECK_PRINTF_STYLE_FUNCTIONS 0
+#if MDNS_CHECK_PRINTF_STYLE_FUNCTIONS
+#define IS_A_PRINTF_STYLE_FUNCTION(F,A) __attribute__ ((format(printf,F,A)))
+#else
+#define IS_A_PRINTF_STYLE_FUNCTION(F,A)
+#endif
+
 #ifdef	__cplusplus
 	extern "C" {
 #endif
 
 #if MDNS_DEBUGMSGS
 #define debugf debugf_
-extern void debugf_(const char *format, ...);
+extern void debugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #else // If debug breaks are off, use a preprocessor trick to optimize those calls out of the code
 	#if( defined( __GNUC__ ) )
 		#define	debugf( ARGS... ) ((void)0)
@@ -111,7 +127,7 @@ extern void debugf_(const char *format, ...);
 
 #if MDNS_DEBUGMSGS > 1
 #define verbosedebugf verbosedebugf_
-extern void verbosedebugf_(const char *format, ...);
+extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #else
 	#if( defined( __GNUC__ ) )
 		#define	verbosedebugf( ARGS... ) ((void)0)
@@ -123,7 +139,7 @@ extern void verbosedebugf_(const char *format, ...);
 #endif
 
 // LogMsg is used even in shipping code, to write truly serious error messages to syslog (or equivalent)
-extern void LogMsg(const char *format, ...);
+extern void LogMsg(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 
 #ifdef	__cplusplus
 	}
