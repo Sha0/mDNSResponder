@@ -33,8 +33,6 @@
 
 __BEGIN_DECLS
 
-typedef union { uint8_t b[2]; uint16_t NotAnInteger; } Opaque16;
-
 /* Opaque internal data type */
 typedef struct _dns_service_discovery_t * dns_service_discovery_ref;
 
@@ -96,7 +94,7 @@ typedef void (*DNSServiceRegistrationReply) (
     @param regtype The service type (e.g. "_printer._tcp." -- see
         RFC 2782 (DNS SRV) and <http://www.iana.org/assignments/port-numbers>)
     @param domain The domain in which to register the service (e.g. "apple.com.")
-    @param port The local port on which this service is being offered
+    @param port The local port on which this service is being offered (in network byte order)
     @param txtRecord Optional protocol-specific additional information
     @param callBack The DNSServiceRegistrationReply function to be called
     @param context A user specified context which will be passed to the callout function.
@@ -107,7 +105,7 @@ dns_service_discovery_ref DNSServiceRegistrationCreate
     const char 		*name,
     const char 		*regtype,
     const char 		*domain,
-    Opaque16		port,
+    uint16_t		port,
     const char 		*txtRecord,
     DNSServiceRegistrationReply callBack,
     void		*context

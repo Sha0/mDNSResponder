@@ -263,7 +263,7 @@ dns_service_discovery_ref DNSServiceDomainEnumerationCreate (int registrationDom
 /* Service Registration */
 
 dns_service_discovery_ref DNSServiceRegistrationCreate
-(const char *name, const char *regtype, const char *domain, Opaque16 port, const char *txtRecord, DNSServiceRegistrationReply callBack, void *context)
+(const char *name, const char *regtype, const char *domain, uint16_t port, const char *txtRecord, DNSServiceRegistrationReply callBack, void *context)
 {
     mach_port_t serverPort = DNSServiceDiscoveryLookupServer();
     mach_port_t clientPort;
@@ -296,7 +296,7 @@ dns_service_discovery_ref DNSServiceRegistrationCreate
     request->context = context;
     request->callout.regCallback = callBack;
 
-    result = DNSServiceRegistrationCreate_rpc(serverPort, clientPort, (char *)name, (char *)regtype, (char *)domain, (int)(port.NotAnInteger), (char *)txtRecord);
+    result = DNSServiceRegistrationCreate_rpc(serverPort, clientPort, (char *)name, (char *)regtype, (char *)domain, port, (char *)txtRecord);
 
     if (result != KERN_SUCCESS) {
         printf("There was an error creating a resolve, %s\n", mach_error_string(result));
