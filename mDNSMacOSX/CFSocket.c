@@ -33,6 +33,10 @@
 #include <stdio.h>
 #include <stdarg.h>						// For va_list support
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <sys/uio.h>
+#include <sys/param.h>
+#include <sys/socket.h>
 #include <ifaddrs.h>
 
 #include <SystemConfiguration/SystemConfiguration.h>
@@ -40,14 +44,13 @@
 // ***************************************************************************
 // Structures
 
-typedef struct InterfaceInfo_struct InterfaceInfo;
-struct InterfaceInfo_struct
+typedef struct NetworkInterfaceInfo2_struct NetworkInterfaceInfo2;
+struct NetworkInterfaceInfo2_struct
 	{
-	HostRecordSet hostrecords;
+	NetworkInterfaceInfo ifinfo;
 	mDNS *m;
 	char *ifa_name;
-	struct sockaddr *ifa_addr;
-	InterfaceInfo *alias;
+	NetworkInterfaceInfo2 *alias;
 	int socket1;
 	int socket2;
     CFSocketRef cfsocket1;
@@ -76,48 +79,105 @@ mDNSexport void debugf_(const char *format, ...)
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSIPAddr src, mDNSIPPort srcport, mDNSIPAddr dst, mDNSIPPort dstport)
 	{
-	int err = -1;
-	InterfaceInfo *info = (InterfaceInfo *)(m->HostRecords);
+	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)(m->HostInterfaces);
 	struct sockaddr_in to;
 	to.sin_family      = AF_INET;
 	to.sin_port        = dstport.NotAnInteger;
 	to.sin_addr.s_addr = dst.    NotAnInteger;
 
+	if (src.NotAnInteger == 0) debugf("mDNSPlatformSendUDP ERROR! Cannot send from zero source address");
+
 	while (info)
 		{
-		if (!info->alias)
+		if (info->ifinfo.ip.NotAnInteger == src.NotAnInteger)
 			{
 			int s = (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? info->socket1 : info->socket2;
-			err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, sizeof(to));
+			int err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, sizeof(to));
+			if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
 			}
-		info = (InterfaceInfo *)(info->hostrecords.next);
+		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
 		}
 
-	if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
 
 	return(mStatus_NoError);
+	}
+
+static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
+	struct sockaddr *const from, size_t *const fromlen, struct in_addr *dstaddr, char ifname[128])
+	{
+	struct iovec databuffers = { buffer, max };
+	struct msghdr   msg;
+	ssize_t         n;
+	struct cmsghdr *cmPtr;
+	char            ancillary[1024];
+
+	// Set up the message
+	msg.msg_name       = (caddr_t)from;
+	msg.msg_namelen    = *fromlen;
+	msg.msg_iov        = &databuffers;
+	msg.msg_iovlen     = 1;
+	msg.msg_control    = (caddr_t)&ancillary;
+	msg.msg_controllen = sizeof(ancillary);
+	msg.msg_flags      = 0;
+	
+	// Receive the data
+	n = recvmsg(s, &msg, 0);
+	if (n<0 || msg.msg_controllen < sizeof(struct cmsghdr) || (msg.msg_flags & MSG_CTRUNC))
+		{ perror("recvmsg"); return(n); }
+	
+	*fromlen = msg.msg_namelen;
+	
+	// Parse each option out of the ancillary data.
+	for (cmPtr = CMSG_FIRSTHDR(&msg); cmPtr; cmPtr = CMSG_NXTHDR(&msg, cmPtr))
+		{
+		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVDSTADDR)
+			*dstaddr = *(struct in_addr *)CMSG_DATA(cmPtr);
+		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVIF)
+			{
+			struct sockaddr_dl *sdl = (struct sockaddr_dl *)CMSG_DATA(cmPtr);
+			if (sdl->sdl_nlen < sizeof(ifname))
+				{
+				mDNSPlatformMemCopy(sdl->sdl_data, ifname, sdl->sdl_nlen);
+				ifname[sdl->sdl_nlen] = 0;
+//				debugf("IP_RECVIF sdl_index %d, sdl_data %s len %d", sdl->sdl_index, ifname, sdl->sdl_nlen);
+				}
+			}
+		}
+
+	return(n);
 	}
 
 mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *context)
     {
 	mDNSIPAddr senderaddr, destaddr, interface;
 	mDNSIPPort senderport, destport;
-	InterfaceInfo *info = (InterfaceInfo *)context;
+	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)context;
 	int skt = (s == info->cfsocket1) ? info->socket1 : info->socket2;
 	mDNS *const m = info->m;
 	DNSMessage packet;
+	struct in_addr to;
 	struct sockaddr_in from;
-	int err, fromlen = sizeof(from);
+	size_t fromlen = sizeof(from);
+	char ifname[128] = "";
+	int err;
 	if (type != kCFSocketReadCallBack) debugf("myCFSocketCallBack: Why is type not kCFSocketReadCallBack?");
-	err = recvfrom(skt, &packet, sizeof(packet), 0, (struct sockaddr *) &from, &fromlen);
+	err = myrecvfrom(skt, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &to, ifname);
 
 	senderaddr.NotAnInteger = from.sin_addr.s_addr;
 	senderport.NotAnInteger = from.sin_port;
-	destaddr  = AllDNSLinkGroup;		// For now, until I work out how to get the dest address, assume it was sent to AllDNSLinkGroup
-	destport  = (s == info->cfsocket1) ? MulticastDNSPort : UnicastDNSPort;
-	interface = m->HostRecords->ip;
+	destaddr.NotAnInteger   = to.s_addr;
+	destport                = (s == info->cfsocket1) ? MulticastDNSPort : UnicastDNSPort;
+	interface               = info->ifinfo.ip;
 
-	debugf("myCFSocketCallBack got a packet from %.4a", &senderaddr);
+	if (strcmp(info->ifa_name, ifname))
+		{
+		debugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s (Ignored)",
+			&senderaddr, &destaddr, &interface, ifname);
+		return;
+		}
+	else
+		debugf("myCFSocketCallBack got a packet from %.4a to %.4a on interface %.4a/%s",
+			&senderaddr, &destaddr, &interface, ifname);
 
 	if (err < 0) debugf("myCFSocketCallBack recvfrom error %d", err);
 	else if (err < sizeof(DNSMessageHeader)) debugf("myCFSocketCallBack packet length (%d) too short", err);
@@ -154,6 +214,14 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	err = setsockopt(*s, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
 	if (err < 0) { perror("setsockopt - SO_REUSEPORT"); return(err); }
 
+	// Receive destination addresses
+	err = setsockopt(*s, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
+	if (err < 0) { perror("setsockopt - IP_RECVDSTADDR"); return(err); }
+	
+	// Receive interface
+	err = setsockopt(*s, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
+	if (err < 0) { perror("setsockopt - IP_RECVIF"); return(err); }
+	
 	// Add multicast group membership
 	imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 	imr.imr_interface        = ifa_addr->sin_addr;
@@ -176,71 +244,77 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 		return(err);
 		}
 
-    *c = CFSocketCreateWithNative(NULL, *s, kCFSocketReadCallBack, myCFSocketCallBack, context);
-    rls = CFSocketCreateRunLoopSource(NULL, *c, 0);
+    *c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, context);
+    rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
     CFRelease(rls);
 	
 	return(err);
 	}
 
-mDNSlocal InterfaceInfo *SearchForInterface(mDNS *const m, char *ifname)
+#if 0
+mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByAddr(mDNS *const m, mDNSIPAddr ip)
 	{
-	InterfaceInfo *info = (InterfaceInfo*)(m->HostRecords);
+	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
 	while (info)
 		{
-		if (!strcmp(ifname, info->ifa_name)) return(info);
-		info = (InterfaceInfo *)(info->hostrecords.next);
+		if (info->ifinfo.ip.NotAnInteger == ip.NotAnInteger) return(info);
+		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
+		}
+	return(NULL);
+	}
+#endif
+
+mDNSlocal NetworkInterfaceInfo2 *SearchForInterfaceByName(mDNS *const m, char *ifname)
+	{
+	NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
+	while (info)
+		{
+		if (!strcmp(info->ifa_name, ifname)) return(info);
+		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
 		}
 	return(NULL);
 	}
 
-mDNSlocal mStatus SetupInterface(mDNS *const m, InterfaceInfo *info, struct ifaddrs *ifa)
+mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, struct ifaddrs *ifa)
 	{
 	extern int use_53;
 	mStatus err = 0;
 	struct sockaddr_in *ifa_addr = (struct sockaddr_in *)ifa->ifa_addr;
     CFSocketContext myCFSocketContext = { 0, info, NULL, NULL, NULL };
 
-	info->hostrecords.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
+	info->ifinfo.ip.NotAnInteger = ifa_addr->sin_addr.s_addr;
 	info->m         = m;
 	info->ifa_name  = malloc(strlen(ifa->ifa_name) + 1);
 	if (!info->ifa_name) return(-1);
 	strcpy(info->ifa_name, ifa->ifa_name);
-	info->ifa_addr  = malloc(ifa->ifa_addr->sa_len);
-	if (!info->ifa_addr) return(-1);
-	bcopy(ifa->ifa_addr, info->ifa_addr, ifa->ifa_addr->sa_len);
-	info->alias     = SearchForInterface(m, ifa->ifa_name);
+	info->alias     = SearchForInterfaceByName(m, ifa->ifa_name);
 	info->socket1   = 0;
 	info->socket2   = 0;
     info->cfsocket1 = 0;
     info->cfsocket2 = 0;
 
-	mDNS_RegisterHostSet(m, &info->hostrecords);
+	mDNS_RegisterInterface(m, &info->ifinfo);
 
-	if (!info->alias)
-		{
-		if (use_53) err = SetupSocket(ifa_addr, UnicastDNSPort,   &info->socket2, &info->cfsocket2, &myCFSocketContext);
-		if (!err)   err = SetupSocket(ifa_addr, MulticastDNSPort, &info->socket1, &info->cfsocket1, &myCFSocketContext);
-		debugf("SetupInterface: %s Flags %04X %.4a Registered",
-			ifa->ifa_name, ifa->ifa_flags, &ifa_addr->sin_addr);
-		}
-	else
-		{
-		struct sockaddr_in *ifa_addr2 = (struct sockaddr_in *)info->alias->ifa_addr;
+	if (info->alias)
 		debugf("SetupInterface: %s Flags %04X %.4a is an alias of %.4a",
-			ifa->ifa_name, ifa->ifa_flags, &ifa_addr->sin_addr, &ifa_addr2->sin_addr);
-		}
-	
+			ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip, &info->alias->ifinfo.ip);
+
+	if (use_53) err = SetupSocket(ifa_addr, UnicastDNSPort,   &info->socket2, &info->cfsocket2, &myCFSocketContext);
+	if (!err)   err = SetupSocket(ifa_addr, MulticastDNSPort, &info->socket1, &info->cfsocket1, &myCFSocketContext);
+
+	debugf("SetupInterface: %s Flags %04X %.4a Registered",
+		ifa->ifa_name, ifa->ifa_flags, &info->ifinfo.ip);
+
 	return(err);
 	}
 
 mDNSlocal void ClearInterfaceList(mDNS *const m)
 	{
-	while (m->HostRecords)
+	while (m->HostInterfaces)
 		{
-		InterfaceInfo *info = (InterfaceInfo*)(m->HostRecords);
-		mDNS_DeregisterHostSet(m, &info->hostrecords);
+		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2*)(m->HostInterfaces);
+		mDNS_DeregisterInterface(m, &info->ifinfo);
 		if (info->socket1 > 0) shutdown(info->socket1, 2);
 		if (info->socket2 > 0) shutdown(info->socket2, 2);
 		if (info->cfsocket1) { CFSocketInvalidate(info->cfsocket1); CFRelease(info->cfsocket1); }
@@ -271,7 +345,7 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 #endif
 		if (ifa->ifa_addr->sa_family == AF_INET && (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_LOOPBACK))
 			{
-			InterfaceInfo *info = malloc(sizeof(InterfaceInfo));
+			NetworkInterfaceInfo2 *info = malloc(sizeof(NetworkInterfaceInfo2));
 			if (!info) debugf("SetupInterfaceList: Out of Memory!");
 			else SetupInterface(m, info, ifa);
 			}
@@ -298,12 +372,12 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
     mDNS_GenerateFQDN(m);
 
-	m->p->cftimer = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 0.5, 0.5, 0, 1,
+	m->p->cftimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 10.0, 10.0, 0, 1,
 											myCFRunLoopTimerCallBack, &myCFRunLoopTimerContext);
     CFRunLoopAddTimer(CFRunLoopGetCurrent(), m->p->cftimer, kCFRunLoopDefaultMode);
 
 	SetupInterfaceList(m);
-	
+
     return(mStatus_NoError);
     }
 
@@ -317,8 +391,12 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 
 mDNSexport void mDNSPlatformClose(mDNS *const m)
     {
-    CFRunLoopTimerInvalidate(m->p->cftimer);
-    CFRelease(m->p->cftimer);
+    if (m->p->cftimer)
+    	{
+	    CFRunLoopTimerInvalidate(m->p->cftimer);
+    	CFRelease(m->p->cftimer);
+    	m->p->cftimer = NULL;
+    	}
 	ClearInterfaceList(m);
     }
 
@@ -334,6 +412,7 @@ mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTim
 	CFRunLoopTimerSetNextFireDate(m->p->cftimer, firetime);
 	}
 
+// Locking is a no-op here, because we're CFRunLoop-based, so we can never interrupt ourselves
 mDNSexport void    mDNSPlatformLock   (const mDNS *const m) { }
 mDNSexport void    mDNSPlatformUnlock (const mDNS *const m) { }
 mDNSexport void    mDNSPlatformStrCopy(const void *src,       void *dst)             { strcpy(dst, src); }
