@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.19  2003/08/19 05:36:45  cheshire
+Add missing "extern" directives
+
 Revision 1.18  2003/08/19 03:04:43  cheshire
 <rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
 
@@ -172,11 +175,11 @@ extern void freeL(char *msg, void *x);
 
 // UDS Server <-> daemon crossover routines/globals
 extern mDNS mDNSStorage;            
-int udsserver_init(void);
-int udsserver_add_rl_source(void);
-mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled event time, does idle work,
-                                            // and returns the updated nextevent time
-void udsserver_handle_configchange(void);
-int udsserver_exit(void);
+extern int udsserver_init(void);
+extern int udsserver_add_rl_source(void);
+extern mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled event time, does idle work,
+                                                   // and returns the updated nextevent time
+extern void udsserver_handle_configchange(void);
+extern int udsserver_exit(void);
 
 #endif
