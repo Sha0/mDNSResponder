@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.7  2004/02/03 19:47:36  ksekar
+Added an asyncronous state machine mechanism to uDNS.c, including
+calls to find the parent zone for a domain name.  Changes include code
+in repository previously dissabled via "#if 0 //incomplete".  Codepath
+is currently unused, and will be called to create update records, etc.
+
 Revision 1.6  2004/01/27 20:15:22  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -228,6 +234,8 @@ extern const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const
 extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *const end);
 
 extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
+
+extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
 
 #define GetLargeResourceRecord(m, msg, p, e, i, t, L) \
 	(((L)->r.rdatastorage.MaxRDLength = MaximumRDSize), GetResourceRecord((m), (msg), (p), (e), (i), (t), &(L)->r, (RData*)&(L)->r.rdatastorage))

@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.148  2004/02/03 19:47:36  ksekar
+Added an asyncronous state machine mechanism to uDNS.c, including
+calls to find the parent zone for a domain name.  Changes include code
+in repository previously dissabled via "#if 0 //incomplete".  Codepath
+is currently unused, and will be called to create update records, etc.
+
 Revision 1.147  2004/02/03 18:57:35  cheshire
 Update comment for "IsLocalDomain()"
 
@@ -840,8 +846,8 @@ enum
 
 typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target;   } rdataSRV;
 typedef packedstruct { mDNSu16 preference;                                domainname exchange; } rdataMX;
-typedef packedstruct { domainname mname; domainname rname; mDNSu32 serial; mDNSu32 refresh;
-                       mDNSu32 retry; mDNSu32 expire; mDNSu32 min;                              } rdataSOA;
+typedef packedstruct { domainname mname; domainname rname; mDNSOpaque32 serial; mDNSOpaque32 refresh;
+                       mDNSOpaque32 retry; mDNSOpaque32 expire; mDNSOpaque32 min;              } rdataSOA;
 	
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
@@ -865,7 +871,7 @@ typedef union
 	mDNSu8      data[StandardAuthRDSize];
 	mDNSv4Addr  ip;			// For 'A' record
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
-	domainname  name;		// For PTR and CNAME records
+	domainname  name;		// For PTR, NS, and CNAME records
 	UTF8str255  txt;		// For TXT record
 	rdataSRV    srv;		// For SRV record
 	rdataMX     mx;			// For MX record

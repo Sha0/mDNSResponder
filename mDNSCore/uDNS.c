@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.12  2004/02/03 19:47:36  ksekar
+Added an asyncronous state machine mechanism to uDNS.c, including
+calls to find the parent zone for a domain name.  Changes include code
+in repository previously dissabled via "#if 0 //incomplete".  Codepath
+is currently unused, and will be called to create update records, etc.
+
 Revision 1.11  2004/01/30 02:12:30  ksekar
 Changed uDNS_ReceiveMsg() to correctly return void.
 
@@ -91,6 +97,31 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, 
 #define umalloc(x) mDNSPlatformMemAllocate(x)       // short hands for common routines
 #define ufree(x) mDNSPlatformMemFree(x)
 #define ubzero(x,y) mDNSPlatformMemZero(x,y)
+
+// Asyncronous operation types
+
+typedef enum
+	{
+	addrResult,
+	} AsyncOpResultType;
+
+typedef union
+	{
+    mDNSv4Addr addr;
+	} AsyncOpResultVal;
+
+typedef struct
+	{
+    AsyncOpResultType type;
+    AsyncOpResultVal val;
+	} AsyncOpResult;
+
+typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, AsyncOpResult *result); 
+
+mDNSlocal mStatus startNameToZoneNSAddr(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo);
+
+
+
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -356,10 +387,10 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	
 	return err;
 	}
-
+	
 mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
     {
-	// how the answer is processed is determined by the type of query
+    // how the answer is processed is determined by the type of query
 	switch(question->qtype)
 		{
 		default:
@@ -369,7 +400,6 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
 	return startQuery(m, question, 0);
     }
 
-#if 0 //!!!KRS incomplete
 // explicitly set response handler
 mDNSlocal mStatus startInternalQuery(DNSQuestion *q, mDNS *m, InternalResponseHndlr callback, void *hndlrContext)
     {    
@@ -395,7 +425,7 @@ mDNSlocal mStatus startInternalQuery(DNSQuestion *q, mDNS *m, InternalResponseHn
  * be determined or if an error occurs, an all-zeros address will be passed and a message will be
  * written to the syslog.  Steps for deriving the name are as follows:
  *
- * Query for an SOA record for the dname.  If we don't get an answer (or an SOA in the Authority
+ * Query for an SOA record for the required domain.  If we don't get an answer (or an SOA in the Authority
  * section), we strip the leading label from the dname and repeat, until we get an answer.
  *
  * The name of the SOA record is our enclosing zone.  The mname field in the SOA rdata is the domain
@@ -421,13 +451,17 @@ typedef enum
     lookupSOA,
 	foundZone,
 	lookupNS,
+	foundNS,
+	lookupA,
+	complete
     } ntaState;
 
 // state machine actions
 typedef enum
     {
-    smContinue,
-    smBreak,
+    smContinue,  // continue immediately to next state 
+    smBreak,     // break until next packet/timeout 
+	smError,     // terminal error - cleanup and abort
     } smAction;
  
 typedef struct
@@ -438,19 +472,25 @@ typedef struct
     mDNS	    *m;
     domainname  zone;                // left-hand-side of SOA record
     domainname  ns;                  // mname in SOA rdata, verified in confirmNS state
+    mDNSv4Addr  addr;                // address of nameserver
     DNSQuestion question;            // storage for any active question
-    mDNSBool questionActive;         // if true, StopQuery() can be called on the question field
+    mDNSBool    questionActive;      // if true, StopQuery() can be called on the question field
+    AsyncOpCallback *callback;        // caller specified function to be called upon completion
+    void        *callbackInfo;
     } ntaContext;
 
 
 // function prototypes (for routines that must be used as fn pointers prior to their definitions,
 // and allows states to be read top-to-bottom in logical order)
-mDNSlocal mStatus startNameToAddr(domainname *name, mDNS *m);
+mDNSlocal mStatus startNameToZoneNSAddr(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo);
 mDNSlocal void nameToAddr(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr);
 mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
+mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr);
+mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
+mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
 
 // initialization
-mDNSlocal mStatus startNameToAddr(domainname *name, mDNS *m)
+mDNSlocal mStatus startNameToZoneNSAddr(domainname *name, mDNS *m, AsyncOpCallback callback, void *callbackInfo)
     {
     ntaContext *context = umalloc(sizeof(ntaContext));
     if (!context) { LogMsg("ERROR: startNameToAddr - umalloc failed");  return mStatus_NoMemoryErr; }
@@ -458,50 +498,81 @@ mDNSlocal mStatus startNameToAddr(domainname *name, mDNS *m)
     ustrcpy(context->origName.c, name->c);
     context->state = init;
     context->m = m;
+	context->callback = callback;
+	context->callbackInfo = callbackInfo;
     nameToAddr(m, NULL, NULL, NULL, context);
     return mStatus_NoError;
     }
 
- 
 // state machine entry routine
 mDNSlocal void nameToAddr(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr)
     {
-	// unused
+	AsyncOpResult result;
+	ntaContext *context = contextPtr;
+	smAction action;
+
+    // unused
 	(void)m;
 	(void)question;
+	
+	// stop any active question
+	if (context->questionActive)
+		{
+		uDNS_StopQuery(context->m, &context->question);
+		context->questionActive = mDNSfalse;
+		}
 
-	ntaContext *context = contextPtr;
-
-    switch (context->state)
+	if (msg && msg->h.flags.b[2] >> 4)
+		{
+		LogMsg("ERROR: nameToAddr - received response w/ rcode %d", msg->h.flags.b[2] >> 4);
+		goto error;
+		}
+ 	
+	switch (context->state)
         {
         case init:
         case lookupSOA:
-            if (hndlLookupSOA(msg, end, context) != smContinue) break;
+            action = hndlLookupSOA(msg, end, context);
+			if (action == smError) goto error;
+			if (action == smBreak) return;
 		case foundZone:
-//		case lookupNS:
-//			if (hdnlLookupNS(msg, context) != smContinue) break;
-		default: return;
-			
+		case lookupNS:
+			action = confirmNS(msg, end, context);
+			if (action == smError) goto error;
+			if (action == smBreak) return;
+		case foundNS:
+		case lookupA:
+			action = lookupNSAddr(msg, end, context);
+			if (action == smError) goto error;
+			if (action == smBreak) return;
+		case complete:
+			result.type = addrResult;
+			result.val.addr.NotAnInteger = context->addr.NotAnInteger;
+			context->callback(mStatus_NoError, context->m, context->callbackInfo, &result);
+			goto cleanup;
+		default: { LogMsg("ERROR: nameToAddr - bad state %d", context->state); goto error; }			
         }
-        
-    }
+
+error:
+	if (context && context->callback)
+		context->callback(mStatus_UnknownErr, context->m, context->callbackInfo, NULL);	
+cleanup:
+	if (context->questionActive)
+		{
+		uDNS_StopQuery(context->m, &context->question);
+		context->questionActive = mDNSfalse;
+		}		
+    if (context) ufree(context);
+	}
 
 mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
     {
     char errbuf[MAX_ESCAPED_DOMAIN_NAME];
-#if MDNS_DEBUGMSGS
-	char errbuf2[MAX_ESCAPED_DOMAIN_NAME];
-#endif
     mStatus err;
     LargeCacheRecord lcr;
 	ResourceRecord *rr = &lcr.r.resrec;
 	DNSQuestion *query = &context->question;
 	const mDNSu8 *ptr;
-
-	// stop any active question
-	if (context->state != init && context->questionActive)
-		uDNS_StopQuery(context->m, query);
-	context->questionActive = mDNSfalse;
 	
     if (msg)
         {
@@ -511,13 +582,10 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 		for (i = 0; i < msg->h.numAnswers; i++)
 			{
 			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
-			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  goto error; }
+			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  return smError; }
 			if (rr->rrtype == kDNSType_SOA && SameDomainName(context->curSOA, &rr->name))
 				{
-				ustrcpy(context->zone.c, rr->rdata->u.soa.mname.c);
-				debugf("Located SOA w/ mname %s for name %s", ConvertDomainNameToCString(&context->zone, errbuf),
-					   ConvertDomainNameToCString(&context->origName, errbuf2));
-				context->state = foundZone;
+				processSOA(context, rr);
 				return smContinue;
 				}
 			}		
@@ -526,13 +594,12 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 		for (i = 0; i < msg->h.numAuthorities; i++)
 			{
 			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr); ///!!!KRS using type PacketAns for auth
-			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  goto error; }		 		
-			if (rr->rrtype != kDNSType_SOA) continue;
-			ustrcpy(context->zone.c, rr->rdata->u.soa.mname.c);
-			debugf("Located SOA in authority section w/ mname %s for name %s",
-				   ConvertDomainNameToCString(&context->zone, errbuf), ConvertDomainNameToCString(&context->origName, errbuf2));
-			context->state = foundZone;
-			return smContinue;
+			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  return smError; }		 		
+			if (rr->rrtype == kDNSType_SOA)
+				{
+				processSOA(context, rr);
+				return smContinue;
+				}
 			}
 		}    
 
@@ -541,7 +608,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
         // we've gone down to the root and have not found an SOA  
         LogMsg("ERROR: hndlLookupSOA - recursed to root label of %s without finding SOA", 
                 ConvertDomainNameToCString(&context->origName, errbuf));
-		goto error;
+		return smError;
         }
 
     ubzero(query, sizeof(DNSQuestion));
@@ -554,18 +621,127 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     query->qtype = kDNSType_SOA;
     query->qclass = kDNSClass_IN;
     err = startInternalQuery(query, context->m, nameToAddr, context);
-    if (err) { LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  goto error;  }
+    if (err) { LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  return smError;  }
 	context->questionActive = mDNStrue;
-    return smBreak;     // break from state machine until we receive another packet
-   
-error:
-	if (context->state != init && context->questionActive)
-		uDNS_StopQuery(context->m, query);
-    if (context) ufree(context);
-    return smBreak;  
+    return smBreak;     // break from state machine until we receive another packet	
     }
 
-#endif //0 (incomplete)
+mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr)
+	{
+	ustrcpy(context->zone.c, rr->name.c);
+	ustrcpy(context->ns.c, rr->rdata->u.soa.mname.c);
+	context->state = foundZone;
+	}
+
+
+mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
+	{
+	DNSQuestion *query = &context->question;
+	mStatus err;
+	LargeCacheRecord lcr;
+	ResourceRecord *rr = &lcr.r.resrec;
+	const mDNSu8 *ptr;
+	int i;
+    char errbuf[MAX_ESCAPED_DOMAIN_NAME];
+		
+	if (context->state == foundZone)
+		{
+		// we've just learned the zone.  confirm that an NS record exists
+		ustrcpy(query->qname.c, context->zone.c);
+		query->qtype = kDNSType_NS;
+		query->qclass = kDNSClass_IN;
+		err = startInternalQuery(query, context->m, nameToAddr, context);
+		if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
+		context->questionActive = mDNStrue;	   
+		context->state = lookupNS;
+		return smBreak;  // break from SM until we receive another packet
+		}
+	else if (context->state == lookupNS)
+		{
+		ptr = LocateAnswers(msg, end);
+		for (i = 0; i < msg->h.numAnswers; i++)
+			{
+			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+			if (!ptr) { LogMsg("ERROR: GetLargeResourceRecord returned NULL");  return smError; }
+			if (rr->rrtype == kDNSType_NS &&
+				SameDomainName(&context->zone, &rr->name) && SameDomainName(&context->ns, &rr->rdata->u.name))
+				{
+				context->state = foundNS;
+				return smContinue;  // next routine will examine additionals section of A record				
+				}				
+			}
+		LogMsg("ERROR: could not confirm existence of NS record %s", ConvertDomainNameToCString(&context->zone, errbuf));
+		return smError;
+		}
+	else { LogMsg("ERROR: confirmNS - bad state %d", context->state); return smError; }
+	}
+		
+	
+mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
+	{
+	const mDNSu8 *ptr;
+	int i;
+	LargeCacheRecord lcr;
+	ResourceRecord *rr = &lcr.r.resrec;
+	DNSQuestion *query = &context->question;
+	mStatus err;
+	
+	if (context->state == foundNS)
+		{
+		// we just found the NS record - look for the corresponding A record in the Additionals section
+		ptr = LocateAdditionals(msg, end);
+		if (!ptr)
+			{
+			if (msg->h.numAdditionals)
+				LogMsg("ERROR: lookupNSAddr - LocateAdditionals returned NULL, expected %d additionals", msg->h.numAdditionals);
+			// error case: continue with query			
+			}
+		else
+			{
+			for (i = 0; i < msg->h.numAdditionals; i++)
+				{
+				ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+				if (!ptr) { LogMsg("ERROR: lookupNSAddr - GetLargeResourceRecord returned NULL"); break; }
+				if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, &rr->name))
+					{
+					context->addr.NotAnInteger = rr->rdata->u.ip.NotAnInteger;
+					context->state = complete;
+					return smContinue;
+					}
+				}
+			}
+		// no A record in Additionals - query the server
+		ustrcpy(query->qname.c, context->ns.c);
+		query->qtype = kDNSType_A;
+		query->qclass = kDNSClass_IN;
+		err = startInternalQuery(query, context->m, nameToAddr, context);
+		if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
+		context->questionActive = mDNStrue;
+		context->state = lookupA;
+		return smBreak;
+		}
+	else if (context->state == lookupA)
+		{
+		ptr = LocateAnswers(msg, end);
+		if (!ptr) { LogMsg("ERROR: lookupNSAddr: LocateAnswers returned NULL");  return smError; }
+		for (i = 0; i < msg->h.numAnswers; i++)
+			{
+			if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, &rr->name))
+				{
+				context->addr.NotAnInteger = rr->rdata->u.ip.NotAnInteger;
+				context->state = complete;
+				return smContinue;
+				}
+			}		
+		LogMsg("ERROR: lookupNSAddr: Address record not found in answer section");
+		return smError;
+		}
+	else { LogMsg("ERROR: lookupNSAddr - bad state %d", context->state); return smError; }
+	}
+
+		
+
+//#endif //0 (incomplete)
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -671,4 +847,6 @@ mDNSexport mDNSs32 uDNS_GetNextEventTime(const mDNS *const m)
     (void)u;				// unused
 
     return m->timenow + 0x78000000;
-    }
+
+	(void)startNameToZoneNSAddr; //!!!KRS surpress unused function warning until this function is integrated
+	}

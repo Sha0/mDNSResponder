@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.10  2004/02/03 19:47:36  ksekar
+Added an asyncronous state machine mechanism to uDNS.c, including
+calls to find the parent zone for a domain name.  Changes include code
+in repository previously dissabled via "#if 0 //incomplete".  Codepath
+is currently unused, and will be called to create update records, etc.
+
 Revision 1.9  2004/01/27 20:15:22  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -737,12 +743,16 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 		{
 		case kDNSType_A:	return(sizeof(rd->ip)); break;
 		case kDNSType_CNAME:// Same as PTR
+		case kDNSType_NS:   // Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
 		case kDNSType_HINFO:return(mDNSu16)(2 + (int)rd->data[0] + (int)rd->data[1 + (int)rd->data[0]]);
 		case kDNSType_NULL:	// Same as TXT -- not self-describing, so have to just trust rdlength
 		case kDNSType_TXT:  return(rr->rdlength); // TXT is not self-describing, so have to just trust rdlength
 		case kDNSType_AAAA:	return(sizeof(rd->ipv6)); break;
 		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
+		case kDNSType_SOA:  return (mDNSu16)(CompressedDomainNameLength(&rd->soa.mname, name) +
+											CompressedDomainNameLength(&rd->soa.rname, name) +
+											5 * sizeof(mDNSOpaque32));
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdlength);
 		}
@@ -1180,6 +1190,7 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 							break;
 
 		case kDNSType_CNAME:// Same as PTR
+		case kDNSType_NS:
 		case kDNSType_PTR:	if (!getDomainName(msg, ptr, end, &rr->resrec.rdata->u.name))
 								{ debugf("GetResourceRecord: Malformed CNAME/PTR RDATA name"); return(mDNSNULL); }
 							//debugf("%##s PTR %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.name.c, pktrdlength);
@@ -1209,6 +1220,19 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 							//debugf("%##s SRV %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.srv.target.c, pktrdlength);
 							break;
 
+		case kDNSType_SOA:  if (!getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.mname) ||
+							   !getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname))
+                			   { debugf("GetResourceRecord: Malformed SOA RDATA mname/rname"); return mDNSNULL; }
+			                if ((unsigned)(end - ptr) < 5 * sizeof(mDNSOpaque32))
+								{ debugf("GetResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
+                			rr->resrec.rdata->u.soa.serial.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;   ptr += 4;
+			                rr->resrec.rdata->u.soa.refresh.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;  ptr += 4;
+			                rr->resrec.rdata->u.soa.retry.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;    ptr += 4;
+			                rr->resrec.rdata->u.soa.expire.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;   ptr += 4;
+			                rr->resrec.rdata->u.soa.min.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;
+			                break;
+			
+							   
 		default:			if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{
 								debugf("GetResourceRecord: rdata %d (%s) size (%d) exceeds storage (%d)",
@@ -1269,6 +1293,14 @@ mDNSexport const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mD
 	const mDNSu8 *ptr = LocateAnswers(msg, end);
 	for (i = 0; i < msg->h.numAnswers && ptr; i++) ptr = skipResourceRecord(msg, ptr, end);
 	return(ptr);
+	}
+
+mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end)
+	{
+	int i;
+	const mDNSu8 *ptr = LocateAuthorities(msg, end);
+	for (i = 0; i < msg->h.numAuthorities; i++) ptr = skipResourceRecord(msg, ptr, end);
+	return (ptr);
 	}
 
 // ***************************************************************************
