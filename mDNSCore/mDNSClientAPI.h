@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.140  2004/01/24 23:37:08  cheshire
+At Kiren's suggestion, made functions to convert mDNSOpaque16s to/from integer values
+
 Revision 1.139  2004/01/24 08:46:26  bradley
 Added InterfaceID<->Index platform interfaces since they are now used by all platforms for the DNS-SD APIs.
 
@@ -601,6 +604,10 @@ typedef packedunion { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
 typedef mDNSOpaque32  mDNSv4Addr;              // An IP address is a four-byte opaque identifier (not an integer)
 typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identifier (not an integer)
+
+mDNSlocal inline mDNSu16      mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
+mDNSlocal inline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
+	{ mDNSOpaque16 x; x.b[0] = (mDNSu8)(v >> 8); x.b[1] = (mDNSu8)(v & 0xFF); return(x); }
 
 enum
 	{
