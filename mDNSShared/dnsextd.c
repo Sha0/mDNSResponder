@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.35  2005/03/17 03:57:43  cheshire
+LEASE_OPT_SIZE is now LEASE_OPT_RDLEN; LLQ_OPT_SIZE is now LLQ_OPT_RDLEN
+
 Revision 1.34  2005/03/16 18:47:37  ksekar
 <rdar://problem/4046465> dnsextd doesn't clean up on exit
 
@@ -532,7 +535,7 @@ mDNSlocal mDNSs32 GetPktLease(PktMsg *pkt)
 			if (!ptr) { Log("Unable to read additional record"); break; }
 			if (lcr.r.resrec.rrtype == kDNSType_OPT)
 				{
-				if (lcr.r.resrec.rdlength < LEASE_OPT_SIZE) continue;
+				if (lcr.r.resrec.rdlength < LEASE_OPT_RDLEN) continue;
 				if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) continue;
 				lease = (mDNSs32)lcr.r.resrec.rdata->u.opt.OptData.lease;
 				break;
@@ -1180,8 +1183,8 @@ mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, mDNSu8 *id, mDNSs32 lea
 	{
 	bzero(opt, sizeof(*opt));
 	mDNS_SetupResourceRecord(opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-	opt->resrec.rdlength = LLQ_OPT_SIZE;
-	opt->resrec.rdestimate = LLQ_OPT_SIZE;
+	opt->resrec.rdlength = LLQ_OPT_RDLEN;
+	opt->resrec.rdestimate = LLQ_OPT_RDLEN;
 	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;
 	opt->resrec.rdata->u.opt.optlen = sizeof(LLQOptData);
 	opt->resrec.rdata->u.opt.OptData.llq.vers = kLLQ_Vers;
@@ -1860,7 +1863,7 @@ mDNSlocal int RecvLLQ(DaemonInfo *d, PktMsg *pkt)
 
 	// validate OPT
 	if (opt.r.resrec.rrtype != kDNSType_OPT) { Log("Malformatted LLQ from %s: last Additional not an Opt RR", addr); goto end; }
-	if (opt.r.resrec.rdlength < pkt->msg.h.numQuestions * LLQ_OPT_SIZE) { Log("Malformatted LLQ from %s: Opt RR to small (%d bytes for %d questions)", addr, opt.r.resrec.rdlength, pkt->msg.h.numQuestions); }
+	if (opt.r.resrec.rdlength < pkt->msg.h.numQuestions * LLQ_OPT_RDLEN) { Log("Malformatted LLQ from %s: Opt RR to small (%d bytes for %d questions)", addr, opt.r.resrec.rdlength, pkt->msg.h.numQuestions); }
 	
 	// dispatch each question
 	for (i = 0; i < pkt->msg.h.numQuestions; i++)
@@ -1908,7 +1911,7 @@ mDNSlocal mDNSBool IsLLQRequest(PktMsg *pkt)
 		}
 	
 	if (lcr.r.resrec.rrtype == kDNSType_OPT &&
-		lcr.r.resrec.rdlength >= LLQ_OPT_SIZE &&
+		lcr.r.resrec.rdlength >= LLQ_OPT_RDLEN &&
 		lcr.r.resrec.rdata->u.opt.opt == kDNSOpt_LLQ)
 		{ result = mDNStrue; goto end; }
 
