@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.9  2004/02/21 08:56:58  bradley
+Wrap prototypes with extern "C" for C++ builds.
+
 Revision 1.8  2004/02/06 23:04:18  ksekar
 Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
@@ -59,6 +62,9 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 #include "mDNSClientAPI.h"
 
+#ifdef	__cplusplus
+	extern "C" {
+#endif
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -256,5 +262,8 @@ extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8
 extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
 extern mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd);
 
+#ifdef	__cplusplus
+	}
+#endif
 
 #endif // __DNSCOMMON_H_

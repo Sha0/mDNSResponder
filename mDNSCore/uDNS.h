@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.5  2004/02/21 08:56:58  bradley
+Wrap prototypes with extern "C" for C++ builds.
+
 Revision 1.4  2004/02/06 23:04:19  ksekar
 Basic Dynamic Update support via mDNS_Register (dissabled via
 UNICAST_REGISTRATION #define)
@@ -45,6 +48,10 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 #include "mDNSClientAPI.h"
 #include "DNSCommon.h"
 
+#ifdef	__cplusplus
+	extern "C" {
+#endif
+
 // Entry points into unicast-specific routines, invoked in mDNS.c
 
 extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
@@ -62,5 +69,9 @@ extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *
 
 // return the time of the next schedule unicast-specific event
 extern mDNSs32 uDNS_GetNextEventTime(const mDNS *const m);
+
+#ifdef	__cplusplus
+	}
+#endif
 
 #endif // __UDNS_H_
