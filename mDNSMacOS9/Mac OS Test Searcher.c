@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.15  2004/01/24 23:55:15  cheshire
+Change to use mDNSOpaque16fromIntVal/mDNSVal16 instead of shifting and masking
+
 Revision 1.14  2003/11/14 21:27:09  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -88,7 +91,6 @@ static void PrintServiceInfo(SearcherServices *services)
 			{
 			domainlabel name;
 			domainname type, domain;
-			UInt16 port = (UInt16)((UInt16)s->port.b[0] << 8 | s->port.b[1]);
 			char c_name[MAX_DOMAIN_LABEL+1], c_type[MAX_ESCAPED_DOMAIN_NAME], c_dom[MAX_ESCAPED_DOMAIN_NAME], c_ip[20];
 			DeconstructServiceName(&s->name, &name, &type, &domain);
 			ConvertDomainLabelToCString_unescaped(&name, c_name);
@@ -97,7 +99,7 @@ static void PrintServiceInfo(SearcherServices *services)
 			sprintf(c_ip, "%d.%d.%d.%d", s->ip.ip.v4.b[0], s->ip.ip.v4.b[1], s->ip.ip.v4.b[2], s->ip.ip.v4.b[3]);
 
 			printf("%-55s %-16s %-14s ", c_name, c_type, c_dom);
-			if (ls->add) printf("%-15s %5d %#s\n", c_ip, port, s->TXTinfo);
+			if (ls->add) printf("%-15s %5d %#s\n", c_ip, mDNSVal16(s->port), s->TXTinfo);
 			else         printf("Removed\n");
 			}
 

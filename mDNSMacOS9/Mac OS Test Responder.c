@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Responder.c,v $
+Revision 1.19  2004/01/24 23:55:15  cheshire
+Change to use mDNSOpaque16fromIntVal/mDNSVal16 instead of shifting and masking
+
 Revision 1.18  2003/11/14 21:27:08  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -75,14 +78,11 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	UInt16 PortAsNumber, const char txtinfo[],
 	const domainlabel *const n, const char type[], const char domain[])
 	{
-	mDNSIPPort port;
 	domainname t;
 	domainname d;
 	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	UInt8 txtbuffer[512];
 
-	port.b[0] = (UInt8)(PortAsNumber >> 8);
-	port.b[1] = (UInt8)(PortAsNumber     );
 	MakeDomainNameFromDNSNameString(&t, type);
 	MakeDomainNameFromDNSNameString(&d, domain);
 	
@@ -96,7 +96,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 
 	mDNS_RegisterService(m, recordset,
 		n, &t, &d,									// Name, type, domain
-		mDNSNULL, port,								// Host and port
+		mDNSNULL, mDNSOpaque16fromIntVal(PortAsNumber),
 		txtbuffer, (mDNSu16)(1+txtbuffer[0]),		// TXT data, length
 		mDNSNULL, 0,								// Subtypes (none)
 		mDNSInterface_Any,							// Interace ID
@@ -124,7 +124,6 @@ mDNSlocal void RegisterFakeServiceForTesting(mDNS *m, ServiceRecordSet *recordse
 mDNSlocal OSStatus CreateProxyRegistrationForRealService(mDNS *m, UInt16 PortAsNumber, const char txtinfo[],
 	const char *servicetype, ServiceRecordSet *recordset)
 	{
-	mDNSIPPort port;
 	InetAddress ia;
 	TBind bindReq;
 	OSStatus err;
@@ -132,10 +131,8 @@ mDNSlocal OSStatus CreateProxyRegistrationForRealService(mDNS *m, UInt16 PortAsN
 	EndpointRef ep = OTOpenEndpoint(OTCreateConfiguration(kTCPName), 0, &endpointinfo, &err);
 	if (!ep || err) { printf("OTOpenEndpoint (CreateProxyRegistrationForRealService) failed %d", err); return(err); }
 
-	port.b[0] = (UInt8)(PortAsNumber >> 8);
-	port.b[1] = (UInt8)(PortAsNumber     );
 	ia.fAddressType = AF_INET;
-	ia.fPort        = port.NotAnInteger;
+	ia.fPort        = mDNSOpaque16fromIntVal(PortAsNumber).NotAnInteger;
 	ia.fHost        = 0;
 	bindReq.addr.maxlen = sizeof(ia);
 	bindReq.addr.len    = sizeof(ia);
