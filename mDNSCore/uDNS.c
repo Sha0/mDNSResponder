@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.81  2004/09/16 02:29:39  cheshire
+Moved mDNS_Lock/mDNS_Unlock to DNSCommon.c; Added necessary locking around
+uDNS_ReceiveMsg, uDNS_StartQuery, uDNS_UpdateRecord, uDNS_RegisterService
+
 Revision 1.80  2004/09/16 01:58:21  cheshire
 Fix compiler warnings
 
@@ -1807,7 +1811,9 @@ mDNSlocal void receiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *co
 
 	sp.NotAnInteger = 0;
 	dp.NotAnInteger = 0;
+	mDNS_Lock(m);
 	uDNS_ReceiveMsg(m, msg, end, sa, sp, da, dp, InterfaceID, ttl);
+	mDNS_Unlock(m);
 	}
 
 //!!!KRS this should go away (don't just pick one randomly!)

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.18  2004/09/16 02:29:39  cheshire
+Moved mDNS_Lock/mDNS_Unlock to DNSCommon.c; Added necessary locking around
+uDNS_ReceiveMsg, uDNS_StartQuery, uDNS_UpdateRecord, uDNS_RegisterService
+
 Revision 1.17  2004/09/14 23:27:46  cheshire
 Fix compile errors
 
@@ -296,6 +300,15 @@ extern mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg
 extern mStatus mDNSSendSignedDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_AuthInfo *authInfo);
 extern mStatus mDNSSendSignedDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, mDNSu8 * end, int sd, uDNS_AuthInfo *authInfo);
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - RR List Management & Task Management
+#endif
+
+extern void mDNS_Lock(mDNS *const m);
+extern void mDNS_Unlock(mDNS *const m);
 	
 #ifdef	__cplusplus
 	}

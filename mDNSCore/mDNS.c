@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.407  2004/09/16 02:29:39  cheshire
+Moved mDNS_Lock/mDNS_Unlock to DNSCommon.c; Added necessary locking around
+uDNS_ReceiveMsg, uDNS_StartQuery, uDNS_UpdateRecord, uDNS_RegisterService
+
 Revision 1.406  2004/09/16 01:58:14  cheshire
 Fix compiler warnings
 
@@ -3576,91 +3580,10 @@ mDNSexport mDNSs32 mDNS_TimeNow(mDNS *const m)
 	return(time);
 	}
 
-mDNSlocal void mDNS_Lock(mDNS *const m)
-	{
-	// MUST grab the platform lock FIRST!
-	mDNSPlatformLock(m);
-
-	// Normally, mDNS_reentrancy is zero and so is mDNS_busy
-	// However, when we call a client callback mDNS_busy is one, and we increment mDNS_reentrancy too
-	// If that client callback does mDNS API calls, mDNS_reentrancy and mDNS_busy will both be one
-	// If mDNS_busy != mDNS_reentrancy that's a bad sign
-	if (m->mDNS_busy != m->mDNS_reentrancy)
-		LogMsg("mDNS_Lock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
-
-	// If this is an initial entry into the mDNSCore code, set m->timenow
-	// else, if this is a re-entrant entry into the mDNSCore code, m->timenow should already be set
-	if (m->mDNS_busy == 0)
-		{
-		if (m->timenow)
-			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNSPlatformRawTime() + m->timenow_adjust);
-		m->timenow = mDNSPlatformRawTime() + m->timenow_adjust;
-		if (m->timenow == 0) m->timenow = 1;
-		}
-	else if (m->timenow == 0)
-		{
-		LogMsg("mDNS_Lock: m->mDNS_busy is %ld but m->timenow not set", m->mDNS_busy);
-		m->timenow = mDNSPlatformRawTime() + m->timenow_adjust;
-		if (m->timenow == 0) m->timenow = 1;
-		}
-
-	if (m->timenow_last - m->timenow > 0)
-		{
-		m->timenow_adjust += m->timenow_last - m->timenow;
-		LogMsg("mDNSPlatformRawTime went backwards by %ld ticks; setting correction factor to %ld", m->timenow_last - m->timenow, m->timenow_adjust);
-		m->timenow = m->timenow_last;
-		}
-	m->timenow_last = m->timenow;
-
-	// Increment mDNS_busy so we'll recognise re-entrant calls
-	m->mDNS_busy++;
-	}
-
-mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
-	{
-	mDNSs32 e = m->timenow + 0x78000000;
-	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) return(e);
-	if (m->NewQuestions)            return(m->timenow);
-	if (m->NewLocalOnlyQuestions)   return(m->timenow);
-	if (m->NewLocalOnlyRecords)     return(m->timenow);
-	if (m->DiscardLocalOnlyRecords) return(m->timenow);
-	if (m->SuppressSending)         return(m->SuppressSending);
-#ifndef UNICAST_DISABLED
-	if (e - m->uDNS_info.nextevent   > 0) e = m->uDNS_info.nextevent;
-#endif
-	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
-	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
-	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
-	if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
-	return(e);
-	}
-
-mDNSlocal void mDNS_Unlock(mDNS *const m)
-	{
-	// Decrement mDNS_busy
-	m->mDNS_busy--;
-	
-	// Check for locking failures
-	if (m->mDNS_busy != m->mDNS_reentrancy)
-		LogMsg("mDNS_Unlock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
-
-	// If this is a final exit from the mDNSCore code, set m->NextScheduledEvent and clear m->timenow
-	if (m->mDNS_busy == 0)
-		{
-		m->NextScheduledEvent = GetNextScheduledEvent(m);
-		if (m->timenow == 0) LogMsg("mDNS_Unlock: ERROR! m->timenow aready zero");
-		m->timenow = 0;
-		}
-
-	// MUST release the platform lock LAST!
-	mDNSPlatformUnlock(m);
-	}
-
 mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
 	mDNS_Lock(m);	// Must grab lock before trying to read m->timenow
 
-	
 	if (m->timenow - m->NextScheduledEvent >= 0)
 		{
 		int i;
@@ -4812,7 +4735,9 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger &&
 		(QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
 		{
+		mDNS_Lock(m);
 		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
+		mDNS_Unlock(m);
 		return;
 		}
 #endif	
@@ -5111,8 +5036,13 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 		}
 	else
 		{
+		mStatus status;
+		// Need to explicitly lock here, because mDNS_StartQuery does locking but uDNS_StartQuery does not
+		mDNS_Lock(m);
 		question->LongLived = mDNStrue;
-		return uDNS_StartQuery(m, question);
+		status = uDNS_StartQuery(m, question);
+		mDNS_Unlock(m);
+		return(status);
 		}
 #else
 	return(mDNS_StartQuery(m, question));
@@ -5436,7 +5366,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	rr->newrdlength          = newrdlength;
 	rr->UpdateCallback       = Callback;
 
-	if (unicast) { 	mDNS_Unlock(m); return uDNS_UpdateRecord(m, rr); }
+	if (unicast) { mStatus status = uDNS_UpdateRecord(m, rr); mDNS_Unlock(m); return(status); }
 
 	if (rr->resrec.rroriginalttl == newttl && rr->resrec.rdlength == newrdlength && mDNSPlatformMemSame(rr->resrec.rdata->u.data, newrdata->u.data, newrdlength))
 		CompleteRDataUpdate(m, rr);
@@ -5993,7 +5923,13 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration  on that interface, even for unicast domains.
 	if (!InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
-		return uDNS_RegisterService(m, sr);
+		{
+		mStatus status;
+		mDNS_Lock(m);
+		status = uDNS_RegisterService(m, sr);
+		mDNS_Unlock(m);
+		return(status);
+		}
 #endif
 	mDNS_Lock(m);
 	err = mDNS_Register_internal(m, &sr->RR_SRV);
