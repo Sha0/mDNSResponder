@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.30  2004/09/17 00:31:52  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.29  2004/09/16 01:58:22  cheshire
 Fix compiler warnings
 
@@ -149,7 +152,7 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p->ip.b[3], p->ip.b[2], p->ip.b[1], p->ip.b[0]);
 	MakeDomainNameFromDNSNameString(&p->RR_PTR.resrec.name, buffer);
 
-	p->RR_A.  resrec.rdata->u.ip   = p->ip;
+	p->RR_A.  resrec.rdata->u.ipv4 = p->ip;
 	p->RR_PTR.resrec.rdata->u.name = p->RR_A.resrec.name;
 
 	mDNS_Register(m, &p->RR_A);

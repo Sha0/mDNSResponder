@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.411  2004/09/17 00:31:51  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.410  2004/09/17 00:19:10  cheshire
 For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
 
@@ -5151,7 +5154,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	if (answer->rrtype == kDNSType_A)
 		{
 		query->info->ip.type = mDNSAddrType_IPv4;
-		query->info->ip.ip.v4 = answer->rdata->u.ip;
+		query->info->ip.ip.v4 = answer->rdata->u.ipv4;
 		}
 	else if (answer->rrtype == kDNSType_AAAA)
 		{
@@ -5176,7 +5179,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 		if (++query->Answers >= 100)
 			{
 			if (answer->rrtype == kDNSType_A)
-				debugf("**** WARNING **** have given %lu answers for %##s (A) %.4a",     query->Answers, query->qSRV.qname.c, &answer->rdata->u.ip);
+				debugf("**** WARNING **** have given %lu answers for %##s (A) %.4a",     query->Answers, query->qSRV.qname.c, &answer->rdata->u.ipv4);
 			else
 				debugf("**** WARNING **** have given %lu answers for %##s (AAAA) %.16a", query->Answers, query->qSRV.qname.c, &answer->rdata->u.ipv6);
 			}
@@ -5453,7 +5456,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (set->ip.type == mDNSAddrType_IPv4)
 		{
 		set->RR_A.resrec.rrtype = kDNSType_A;
-		set->RR_A.resrec.rdata->u.ip = set->ip.ip.v4;
+		set->RR_A.resrec.rdata->u.ipv4 = set->ip.ip.v4;
 		// Note: This is reverse order compared to a normal dotted-decimal IP address
 		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.",
 			set->ip.ip.v4.b[3], set->ip.ip.v4.b[2], set->ip.ip.v4.b[1], set->ip.ip.v4.b[0]);

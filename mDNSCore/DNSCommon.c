@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.53  2004/09/17 00:31:51  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.52  2004/09/17 00:19:10  cheshire
 For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
 
@@ -313,7 +316,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	mDNSu32 length = mDNS_snprintf(buffer, 79, "%4d %##s %s ", rr->rdlength, rr->name.c, DNSTypeName(rr->rrtype));
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	mDNS_snprintf(buffer+length, 79-length, "%.4a", &rd->ip);          break;
+		case kDNSType_A:	mDNS_snprintf(buffer+length, 79-length, "%.4a", &rd->ipv4);          break;
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	mDNS_snprintf(buffer+length, 79-length, "%##s", rd->name.c);       break;
 		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
@@ -986,7 +989,7 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 	const domainname *const name = estimate ? &rr->name : mDNSNULL;
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	return(sizeof(rd->ip));
+		case kDNSType_A:	return(sizeof(rd->ipv4));
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_NS:   // Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
@@ -1278,10 +1281,10 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 								return(mDNSNULL);
 								}
 							if (ptr + 4 > limit) return(mDNSNULL);
-							*ptr++ = rr->rdata->u.ip.b[0];
-							*ptr++ = rr->rdata->u.ip.b[1];
-							*ptr++ = rr->rdata->u.ip.b[2];
-							*ptr++ = rr->rdata->u.ip.b[3];
+							*ptr++ = rr->rdata->u.ipv4.b[0];
+							*ptr++ = rr->rdata->u.ipv4.b[1];
+							*ptr++ = rr->rdata->u.ipv4.b[2];
+							*ptr++ = rr->rdata->u.ipv4.b[3];
 							return(ptr);
 
 		case kDNSType_CNAME:// Same as PTR
@@ -1637,10 +1640,10 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 
 	switch (rr->resrec.rrtype)
 		{
-		case kDNSType_A:	rr->resrec.rdata->u.ip.b[0] = ptr[0];
-							rr->resrec.rdata->u.ip.b[1] = ptr[1];
-							rr->resrec.rdata->u.ip.b[2] = ptr[2];
-							rr->resrec.rdata->u.ip.b[3] = ptr[3];
+		case kDNSType_A:	rr->resrec.rdata->u.ipv4.b[0] = ptr[0];
+							rr->resrec.rdata->u.ipv4.b[1] = ptr[1];
+							rr->resrec.rdata->u.ipv4.b[2] = ptr[2];
+							rr->resrec.rdata->u.ipv4.b[3] = ptr[3];
 							break;
 
 		case kDNSType_CNAME:// Same as PTR

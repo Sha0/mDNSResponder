@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.201  2004/09/17 00:31:51  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.200  2004/09/17 00:19:10  cheshire
 For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
 
@@ -1104,7 +1107,7 @@ typedef packedstruct
 typedef union
 	{
 	mDNSu8      data[StandardAuthRDSize];
-	mDNSv4Addr  ip;			// For 'A' record
+	mDNSv4Addr  ipv4;		// For 'A' record
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	domainname  name;		// For PTR, NS, and CNAME records
 	UTF8str255  txt;		// For TXT record

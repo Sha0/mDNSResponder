@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.66  2004/09/17 00:31:52  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.65  2004/09/16 01:58:22  cheshire
 Fix compiler warnings
 
@@ -721,7 +724,7 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 
 	switch(pktrr->rrtype)
 		{
-		case kDNSType_A:	n += mprintf("%.4a", &rd->ip); break;
+		case kDNSType_A:	n += mprintf("%.4a", &rd->ipv4); break;
 		case kDNSType_PTR:	n += mprintf("%##.*s", MaxWidth - n, rd->name.c); break;
 		case kDNSType_HINFO:// same as kDNSType_TXT below
 		case kDNSType_TXT:	{

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.29  2004/09/17 00:31:53  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.28  2004/09/16 01:58:25  cheshire
 Fix compiler warnings
 
@@ -2421,7 +2424,7 @@ DNSStatus
 	mDNS_snprintf( buffer, sizeof( buffer ), "%d.%d.%d.%d.in-addr.arpa.", ip.b[ 3 ], ip.b[ 2 ], ip.b[ 1 ], ip.b[ 0 ] );
 	MakeDomainNameFromDNSNameString( &object->RR_PTR.resrec.name, buffer );
 	
-	object->RR_A.resrec.rdata->u.ip = ip;
+	object->RR_A.resrec.rdata->u.ipv4 = ip;
 	AssignDomainName( object->RR_PTR.resrec.rdata->u.name, object->RR_A.resrec.name );
 	
 	// Add the object to the list.

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.28  2004/09/17 00:31:52  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.27  2004/09/16 01:58:22  cheshire
 Fix compiler warnings
 
@@ -223,9 +226,9 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 		if (!id.NotAnInteger) id = lastid;
 		NumAnswers++;
 		NumAddr++;
-		mprintf("%##s %s %.4a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ip);
+		mprintf("%##s %s %.4a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ipv4);
 		hostaddr.type = mDNSAddrType_IPv4;	// Prefer v4 target to v6 target, for now
-		hostaddr.ip.v4 = answer->rdata->u.ip;
+		hostaddr.ip.v4 = answer->rdata->u.ipv4;
 		}
 	else if (answer->rrtype == kDNSType_AAAA)
 		{

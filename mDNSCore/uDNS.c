@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.83  2004/09/17 00:31:51  cheshire
+For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
+
 Revision 1.82  2004/09/16 21:36:36  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 Changes to add necessary locking calls around unicast DNS operations
@@ -729,7 +732,7 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 		return;
 		}
 
-	ip = &rr->resrec.rdata->u.ip;
+	ip = &rr->resrec.rdata->u.ipv4;
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
@@ -1012,7 +1015,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	{
 	void *tmpContext;
 	uDNS_HostnameInfo *hi = (uDNS_HostnameInfo *)rr->RecordContext;
-	mDNSu8 *ip = rr->resrec.rdata->u.ip.b;
+	mDNSu8 *ip = rr->resrec.rdata->u.ipv4.b;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	ServiceRecordSet *srs;
 	
@@ -1121,7 +1124,7 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 			AppendDomainLabel(&new->resrec.name, &u->hostlabel);
 			AppendDomainName(&new->resrec.name, HostDomain);
 			}
-		new->resrec.rdata->u.ip = u->PrimaryIP.ip.v4;
+		new->resrec.rdata->u.ipv4 = u->PrimaryIP.ip.v4;
 
 		if (i->ar->uDNS_info.state != regState_Unregistered)
 			{			
@@ -1166,8 +1169,8 @@ mDNSexport void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *newdomain, m
 	if (u->PrimaryIP.ip.v4.NotAnInteger)
 		{
 		// only set RData if we have a valid IP
-		if (u->MappedPrimaryIP.ip.v4.NotAnInteger) new->ar->resrec.rdata->u.ip = u->MappedPrimaryIP.ip.v4;  //!!!KRS implement code that caches this
-		else                                       new->ar->resrec.rdata->u.ip = u->PrimaryIP.ip.v4;
+		if (u->MappedPrimaryIP.ip.v4.NotAnInteger) new->ar->resrec.rdata->u.ipv4 = u->MappedPrimaryIP.ip.v4;  //!!!KRS implement code that caches this
+		else                                       new->ar->resrec.rdata->u.ipv4 = u->PrimaryIP.ip.v4;
 		AdvertiseHostname(m, new);
 		}
 	else new->ar->uDNS_info.state = regState_Unregistered;
@@ -2867,7 +2870,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 					}
 				if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, &rr->name))
 					{
-					context->addr.NotAnInteger = rr->rdata->u.ip.NotAnInteger;
+					context->addr.NotAnInteger = rr->rdata->u.ipv4.NotAnInteger;
 					context->state = foundA;
 					return smContinue;
 					}
@@ -2886,7 +2889,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 			if (!ptr) { LogMsg("ERROR: lookupNSAddr, Answers - GetLargeResourceRecord returned NULL"); break; }			
 			if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, &rr->name))
 				{
-				context->addr.NotAnInteger = rr->rdata->u.ip.NotAnInteger;
+				context->addr.NotAnInteger = rr->rdata->u.ipv4.NotAnInteger;
 				context->state = foundA;
 				return smContinue;
 				}
