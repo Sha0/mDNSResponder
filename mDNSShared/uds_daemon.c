@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.113  2004/11/12 03:21:41  rpantos
+rdar://problem/3809541 Add DNSSDMapIfIndexToName, DNSSDMapNameToIfIndex.
+
 Revision 1.112  2004/11/11 16:58:32  ksekar
 Removed unused code (previously wrapped in #if 0)
 
@@ -627,6 +630,8 @@ static void handle_enum_request(request_state *rstate);
 static void handle_regrecord_request(request_state *rstate);
 static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result);
 static void connected_registration_termination(void *context);
+static void handle_mapifindex_request(request_state *rstate);
+static void handle_mapifname_request(request_state *rstate);
 static void handle_reconfirm_request(request_state *rstate);
 static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flags);
 static void handle_removerecord_request(request_state *rstate);
@@ -1107,6 +1112,8 @@ static void request_callback(void *info)
         case remove_record_request: handle_removerecord_request(rstate); break;
         case reconfirm_record_request: handle_reconfirm_request(rstate); break;
 		case setdomain_request: handle_setdomain_request(rstate); break;
+        case map_ifindex_request: handle_mapifindex_request(rstate); break;
+        case map_ifname_request: handle_mapifname_request(rstate); break;
         default:
             LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", rstate->sd, rstate->hdr.op);
     	}
@@ -2732,6 +2739,114 @@ static void handle_reconfirm_request(request_state *rstate)
     freeL("handle_reconfirm_request", rr);
     }
 
+static void handle_mapifindex_request(request_state *rstate)
+    {
+    uint32_t ifi;
+    uint16_t maxLen;
+    char *ptr;
+    mStatus result = mStatus_NoError;
+    mDNSInterfaceID InterfaceID;
+    char *nameBuff = NULL;
+	
+    if (rstate->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_mapifindex_request - transfer state != t_complete");
+        goto error;
+        }
+    ptr = rstate->msgdata;
+    if (!ptr)
+        {
+        LogMsg("ERROR: handle_mapifindex_request - NULL msgdata");
+        goto error;
+        }
+	
+    ifi = get_long(&ptr);
+    maxLen = get_short(&ptr);
+	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
+    if (InterfaceID)
+    	{
+    	nameBuff = (char*) mallocL( "handle_mapifindex_request", maxLen);
+		mDNSPlatformGetInterfaceName(gmDNS, InterfaceID, nameBuff, maxLen);
+    	}
+    	else
+    	result = mStatus_BadInterfaceErr;
+	
+    deliver_error(rstate, result);
+    if (result == mStatus_NoError)
+    	{
+    	size_t len;
+    	char *data;
+	    reply_state *reply;
+		len = sizeof(DNSServiceFlags);
+		len += sizeof(uint32_t);  // if index
+		len += sizeof(DNSServiceErrorType);
+		len += (int) (strlen(nameBuff) + 1);
+		reply = create_reply(map_ifindex_reply, len, rstate);
+		
+		reply->rhdr->flags = dnssd_htonl(0);
+		reply->rhdr->ifi = dnssd_htonl(ifi);
+		reply->rhdr->error = dnssd_htonl(result);
+		data = reply->sdata;
+		put_string(nameBuff, &data);
+	    send_msg(reply);
+    	}
+error:
+    rstate->terminate = NULL;	// result is immediate
+    abort_request(rstate);
+    unlink_request(rstate);
+    free(nameBuff);
+    }
+
+static void handle_mapifname_request(request_state *rstate)
+    {
+    uint32_t ifi = 0;
+    char *ptr;
+    mStatus result = mStatus_NoError;
+    mDNSInterfaceID InterfaceID;
+    char ifName[256];
+
+    if (rstate->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_mapifname_request - transfer state != t_complete");
+        goto error;
+        }
+    ptr = rstate->msgdata;
+    if (!ptr)
+        {
+        LogMsg("ERROR: handle_mapifname_request - NULL msgdata");
+        goto error;
+        }
+
+	ifName[0] = '\0';
+    get_string(&ptr, ifName, sizeof ifName);
+	InterfaceID = mDNSPlatformGetInterfaceByName(gmDNS, ifName);
+    if (InterfaceID)
+    	{
+		ifi = mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, InterfaceID);
+    	}
+    	else
+    	result = mStatus_BadInterfaceErr;
+
+    deliver_error(rstate, result);
+    if (result == mStatus_NoError)
+    	{
+    	size_t len;
+	    reply_state *reply;
+		len = sizeof(DNSServiceFlags);
+		len += sizeof(uint32_t);  // if index
+		len += sizeof(DNSServiceErrorType);
+		reply = create_reply(map_ifindex_reply, len, rstate);
+
+		reply->rhdr->flags = dnssd_htonl(0);
+		reply->rhdr->ifi = dnssd_htonl(ifi);
+		reply->rhdr->error = dnssd_htonl(result);
+	    send_msg(reply);
+    	}
+error:
+    rstate->terminate = NULL;	// result is immediate
+    abort_request(rstate);
+    unlink_request(rstate);
+    }
 
 // setup rstate to accept new reg/dereg requests
 static void reset_connected_rstate(request_state *rstate)
@@ -3292,6 +3407,11 @@ static int validate_message(request_state *rstate)
 			            break;
 		case setdomain_request: min_size = sizeof(DNSServiceFlags) + sizeof(char);  // flags + domain
 			break; 
+        case map_ifindex_request: min_size =	sizeof(uint32_t) + 		// interface
+						sizeof(uint16_t);		// length
+						break;
+        case map_ifname_request: min_size =	(2 * sizeof(char));		// non-empty string
+						break;
 		default:
             LogMsg("ERROR: validate_message - unsupported request type: %d", rstate->hdr.op);	    
 	    return -1;

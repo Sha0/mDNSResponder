@@ -27,6 +27,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.16  2004/11/12 03:21:41  rpantos
+rdar://problem/3809541 Add DNSSDMapIfIndexToName, DNSSDMapNameToIfIndex.
+
 Revision 1.15  2004/10/06 02:22:20  cheshire
 Changed MacRoman copyright symbol (should have been UTF-8 in any case :-) to ASCII-compatible "(c)"
 
@@ -145,7 +148,9 @@ typedef enum
     reconfirm_record_request,
     add_record_request,
     update_record_request,
-    setdomain_request	
+    setdomain_request,
+    map_ifindex_request,
+    map_ifname_request
     } request_op_t;
 
 typedef enum
@@ -155,7 +160,9 @@ typedef enum
     browse_reply,
     resolve_reply,
     query_reply,
-    reg_record_reply
+    reg_record_reply,
+    map_ifindex_reply,
+    map_ifname_reply
     } reply_op_t;
 
 typedef struct ipc_msg_hdr_struct ipc_msg_hdr;
