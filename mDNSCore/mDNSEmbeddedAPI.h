@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.90  2003/08/06 20:30:17  cheshire
+Add structure definition for rdataMX (not currently used, but good to have it for completeness)
+
 Revision 1.89  2003/08/06 18:58:19  cheshire
 Update comments
 
@@ -532,6 +535,7 @@ enum
 	};
 
 typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target; } rdataSRV;
+typedef struct { mDNSu16 preference; domainname exchange; } rdataMX;
 
 // Standard RData size is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 #define StandardRDSize 264
@@ -545,6 +549,7 @@ typedef union
 	domainname  name;		// For PTR and CNAME records
 	UTF8str255  txt;		// For TXT record
 	rdataSRV    srv;		// For SRV record
+	rdataMX     mx;			// For MX record
 	} RDataBody;
 
 typedef struct
