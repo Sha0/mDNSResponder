@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.311  2003/10/09 18:00:11  cheshire
+Another compiler warning fix.
+
 Revision 1.310  2003/10/07 20:27:05  cheshire
 Patch from Bob Bradley, to fix warning and compile error on Windows
 
@@ -3775,7 +3778,7 @@ mDNSlocal mDNSBool AccelerateThisQuery(mDNS *const m, DNSQuestion *q)
 	if (TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/2))
 		{
 		// We forecast: qname (n) type (2) class (2)
-		mDNSu16 forecast = DomainNameLength(&q->qname) + 4;
+		mDNSu32 forecast = (mDNSu32)DomainNameLength(&q->qname) + 4;
 		CacheRecord *rr;
 		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// If we have a resource record in our cache,
 			if (rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
