@@ -49,6 +49,7 @@ static DNSRecordReference record;
 static char myhinfo9[11] = "\003Mac\006OS 9.2";
 static char myhinfoX[ 9] = "\003Mac\004OS X";
 static char updatetest[2] = "\001A";
+static char bigNULL[4096];
 
 //*************************************************************************************************************
 // Supporting Utility Functions
@@ -151,30 +152,44 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 	(void)timer;	// Parameter not used
 	(void)info;		// Parameter not used
     
-    if (operation == 'A')
+    switch (operation)
         {
-        switch (addtest)
+        case 'A':
             {
-            case 0: printf("Adding Test HINFO record\n");		// RR type 13 is HINFO
-                    record = DNSServiceRegistrationAddRecord(client, 13, sizeof(myhinfo9), &myhinfo9[0], 120);
-                    addtest = 1;
-                    break;
-            case 1: printf("Updating Test HINFO record\n");
-                    DNSServiceRegistrationUpdateRecord(client, record, sizeof(myhinfoX), &myhinfoX[0], 120);
-                    addtest = 2;
-                    break;
-            case 2: printf("Removing Test HINFO record\n");
-                    DNSServiceRegistrationRemoveRecord(client, record);
-                    addtest = 0;
-                    break;
+            switch (addtest)
+                {
+                case 0: printf("Adding Test HINFO record\n");		// RR type 13 is HINFO
+                        record = DNSServiceRegistrationAddRecord(client, 13, sizeof(myhinfo9), &myhinfo9[0], 120);
+                        addtest = 1;
+                        break;
+                case 1: printf("Updating Test HINFO record\n");
+                        DNSServiceRegistrationUpdateRecord(client, record, sizeof(myhinfoX), &myhinfoX[0], 120);
+                        addtest = 2;
+                        break;
+                case 2: printf("Removing Test HINFO record\n");
+                        DNSServiceRegistrationRemoveRecord(client, record);
+                        addtest = 0;
+                        break;
+                }
             }
-        }
-    else
-        {
-        if (updatetest[1] != 'Z') updatetest[1]++;
-        else                      updatetest[1] = 'A';
-        printf("Updating Test TXT record to %c\n", updatetest[1]);
-        DNSServiceRegistrationUpdateRecord(client, 0, sizeof(updatetest), &updatetest[0], 120);
+            break;
+
+        case 'U':
+            {
+            if (updatetest[1] != 'Z') updatetest[1]++;
+            else                      updatetest[1] = 'A';
+            printf("Updating Test TXT record to %c\n", updatetest[1]);
+            DNSServiceRegistrationUpdateRecord(client, 0, sizeof(updatetest), &updatetest[0], 120);
+            }
+            break;
+
+        case 'N':
+            {
+            printf("Adding big NULL record\n");
+            DNSServiceRegistrationAddRecord(client, 10, sizeof(bigNULL), &bigNULL[0], 120);
+            CFRunLoopRemoveTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopDefaultMode);
+            }
+            break;
         }
     }
 
@@ -188,7 +203,7 @@ static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *cont
         default:                               printf("Error %d\n", errorCode); return;
         }
 
-    if (operation == 'A' || operation == 'U')
+    if (operation == 'A' || operation == 'U' || operation == 'N')
         {
         CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, 0, NULL, NULL, NULL };
         CFRunLoopTimerRef timer = CFRunLoopTimerCreate(kCFAllocatorDefault,
@@ -206,7 +221,7 @@ int main(int argc, char **argv)
 	char *dom;
 
 	if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
-    operation = getopt(argc, (char * const *)argv, "EFBLRAUT");
+    operation = getopt(argc, (char * const *)argv, "EFBLRAUNT");
 	if (operation == -1) goto Fail;
 
     switch (operation)
@@ -249,7 +264,8 @@ int main(int argc, char **argv)
                     }
 
         case 'A':
-        case 'U':	{
+        case 'U':
+        case 'N':	{
                     Opaque16 registerPort = { { 0x12, 0x34 } };
                     static const char TXT[] = "First String\001Second String\001Third String";
                     printf("Registering Service Test._testupdate._tcp.local.\n");
@@ -293,6 +309,7 @@ Fail:
 	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> (Register a Service)\n", argv[0]);
 	fprintf(stderr, "%s -A                 (Test Adding/Updating/Deleting a record)\n", argv[0]);
 	fprintf(stderr, "%s -U                             (Test Updating a TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -N                        (Test Adding a Large NULL record)\n", argv[0]);
 	fprintf(stderr, "%s -T                       (Test Creating a Large TXT record)\n", argv[0]);
 	return 0;
 	}
