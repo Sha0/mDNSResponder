@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.85  2004/09/21 22:38:27  ksekar
+<rdar://problem/3810286> PrimaryIP type uninitialized
+
 Revision 1.84  2004/09/18 00:30:39  cheshire
 <rdar://problem/3806643> Infinite loop in CheckServiceRegistrations
 
@@ -1216,9 +1219,11 @@ mDNSexport void mDNS_SetPrimaryIP(mDNS *m, const mDNSAddr *ip)
 	
 	if (ip->ip.v4.NotAnInteger == u->PrimaryIP.ip.v4.NotAnInteger)
 		LogMsg("mDNS_SetPrimaryIP: IP address unchanged");
+	else if (ip->type !=mDNSAddrType_IPv4)
+		LogMsg("Unsupported (non IPv4) address type passed to mDNS_SetPrimaryIP - ignoring");
 	else
 		{
-		u->PrimaryIP.ip.v4 = ip->ip.v4;
+		u->PrimaryIP = *ip;
 		UpdateHostnameRegistrations(m);
 		}
 
