@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.54  2004/09/17 00:49:51  cheshire
+Get rid of now-unused GetResourceRecord -- the correct (safe) routine to use
+is GetLargeResourceRecord
+
 Revision 1.53  2004/09/17 00:31:51  cheshire
 For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
 
@@ -1589,9 +1593,10 @@ mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 
 	return(ptr + pktrdlength);
 	}
 
-mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr,
-    const mDNSu8 * const end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, CacheRecord *rr, RData *RDataStorage)
+mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr,
+    const mDNSu8 * const end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr)
 	{
+	CacheRecord *rr = &largecr->r;
 	mDNSu16 pktrdlength;
 
 	rr->next              = mDNSNULL;
@@ -1630,13 +1635,8 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 	ptr += 10;
 	if (ptr + pktrdlength > end) { debugf("GetResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
 
-	if (RDataStorage)
-		rr->resrec.rdata = RDataStorage;
-	else
-		{
-		rr->resrec.rdata = (RData*)&rr->rdatastorage;
-		rr->resrec.rdata->MaxRDLength = sizeof(RDataBody);
-		}
+	rr->resrec.rdata = (RData*)&rr->rdatastorage;
+	rr->resrec.rdata->MaxRDLength = MaximumRDSize;
 
 	switch (rr->resrec.rrtype)
 		{

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.20  2004/09/17 00:49:51  cheshire
+Get rid of now-unused GetResourceRecord -- the correct (safe) routine to use
+is GetLargeResourceRecord
+
 Revision 1.19  2004/09/16 21:59:15  cheshire
 For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
 
@@ -274,8 +278,8 @@ extern const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *pt
 	
 extern const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
 
-extern const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr, 
-    const mDNSu8 * const end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, CacheRecord *rr, RData *RDataStorage);
+extern const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr, 
+    const mDNSu8 * const end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr);
 
 extern const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
 
@@ -287,9 +291,6 @@ extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *co
 extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
 
 extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
-
-#define GetLargeResourceRecord(m, msg, p, e, i, t, L) \
-	(((L)->r.rdatastorage.MaxRDLength = MaximumRDSize), GetResourceRecord((m), (msg), (p), (e), (i), (t), &(L)->r, (RData*)&(L)->r.rdatastorage))
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
