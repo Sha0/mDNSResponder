@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.59  2004/09/27 22:53:45  ksekar
+Fixed getLargeResourceRecord for SOA rdata.
+
 Revision 1.58  2004/09/25 02:41:39  cheshire
 <rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
 
@@ -1704,7 +1707,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							if (!ptr) { debugf("GetResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
 							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname);
 							if (!ptr) { debugf("GetResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
-			                if (ptr + 0x14 >= end) { debugf("GetResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
+			                if (ptr + 0x14 != end) { debugf("GetResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
                 			rr->resrec.rdata->u.soa.serial  = (mDNSu32) ((mDNSu32)ptr[0x00] << 24 | (mDNSu32)ptr[0x01] << 16 | (mDNSu32)ptr[0x02] << 8 | ptr[0x03]);
 			                rr->resrec.rdata->u.soa.refresh = (mDNSu32) ((mDNSu32)ptr[0x04] << 24 | (mDNSu32)ptr[0x05] << 16 | (mDNSu32)ptr[0x06] << 8 | ptr[0x07]);
 			                rr->resrec.rdata->u.soa.retry   = (mDNSu32) ((mDNSu32)ptr[0x08] << 24 | (mDNSu32)ptr[0x09] << 16 | (mDNSu32)ptr[0x0A] << 8 | ptr[0x0B]);
