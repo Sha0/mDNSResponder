@@ -179,8 +179,8 @@ typedef union
 
 typedef struct
 	{
-	mDNSs16    MaxRDLength;	// Amount of storage allocated for rdata (usually sizeof(RDataBody))
-	mDNSs16    RDLength;	// Size of the rdata currently stored here
+	mDNSu16    MaxRDLength;	// Amount of storage allocated for rdata (usually sizeof(RDataBody))
+	mDNSu16    RDLength;	// Size of the rdata currently stored here
 	RDataBody  u;
 	} RData;
 
