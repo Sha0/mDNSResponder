@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.152  2004/12/14 03:02:10  ksekar
+<rdar://problem/3919016> Rare race condition can cause crash
+
 Revision 1.151  2004/12/13 21:45:08  ksekar
 uDNS_DeregisterService should return NoError if called twice (to follow mDNS behavior expected by daemon layer)
 
@@ -2030,11 +2033,21 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			info->state = regState_Unregistered;
 			break;
 		case regState_DeregDeferred:
-			if (err) { debugf("Error %ld received prior to deferred derigstration of %##s", err, srs->RR_SRV.resrec.name.c); }
-			debugf("Performing deferred deregistration of %##s", srs->RR_SRV.resrec.name.c); 
-			info->state = regState_Registered; // benign to set even if we've got an error
-			SendServiceDeregistration(m, srs);
-			return;		   
+			if (err)
+				{
+				debugf("Error %ld received prior to deferred derigstration of %##s", err, srs->RR_SRV.resrec.name.c);
+				err = mStatus_MemFree;
+				InvokeCallback = mDNStrue;
+				info->state = regState_Unregistered;
+				break;
+				}
+			else
+				{
+				debugf("Performing deferred deregistration of %##s", srs->RR_SRV.resrec.name.c); 
+				info->state = regState_Registered;
+				SendServiceDeregistration(m, srs);
+				return;
+				}
 		case regState_UpdatePending:
 			// find the record being updated
 			UpdateR = &srs->RR_TXT;
@@ -3648,7 +3661,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	SetRecordRetry(m, rr);
 	
-	if (regInfo->state != regState_Refresh) regInfo->state = regState_Pending;
+	if (regInfo->state != regState_Refresh && regInfo->state != regState_DeregDeferred) regInfo->state = regState_Pending;
 	return;
 
 error:
@@ -3810,7 +3823,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForZone(u, &rInfo->zone));
 	if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
-	if (rInfo->state != regState_Refresh)
+	if (rInfo->state != regState_Refresh && rInfo->state != regState_DeregDeferred)
 		rInfo->state = regState_Pending;
 
 	SetRecordRetry(m, &srs->RR_SRV);

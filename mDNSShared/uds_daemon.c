@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.140  2004/12/14 03:02:10  ksekar
+<rdar://problem/3919016> Rare race condition can cause crash
+
 Revision 1.139  2004/12/13 21:18:45  ksekar
 Include uDNS registrations in CountPeerRegistrations
 
@@ -2410,7 +2413,7 @@ static void process_service_registration(ServiceRecordSet *const srs)
     service_instance *instance = srs->ServiceContext;
     request_state *req = instance->request;
 
-
+	if (!req) { LogMsg("ERROR: process_service_registration - null request object"); return; }
     err = gen_rr_response(&srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, req, &rep);
     if (err) 
         {
