@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.166  2005/02/01 19:58:52  ksekar
+Shortened cryptic "broken pipe" syslog message
+
 Revision 1.165  2005/02/01 19:56:47  ksekar
 Moved LogMsg from daemon.c to uds_daemon.c, cleaned up wording
 
@@ -3182,7 +3185,7 @@ static int send_msg(reply_state *rs)
 #if !defined(PLATFORM_NO_EPIPE)
             if (dnssd_errno() == EPIPE)
             	{
-                LogMsg("%3d: broken pipe - cleanup will be handled by run-loop read wakeup", rs->sd);
+                LogMsg("%3d: broken pipe", rs->sd);
                 rs->ts = t_terminated;
                 rs->request->ts = t_terminated;
                 return t_terminated;
