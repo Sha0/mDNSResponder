@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.147  2004/12/12 23:51:42  ksekar
+<rdar://problem/3845683> Wide-area registrations should fallback to using DHCP hostname as target
+
 Revision 1.146  2004/12/12 23:30:40  ksekar
 <rdar://problem/3916987> Extra RRs not properly unlinked when parent service registration fails
 
@@ -1098,7 +1101,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 		int ntries = 0;
 		mStatus err;
 		mDNSBool tcp = (srs && DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp"));
-
+	   
 		pub = priv; // initially request priv == pub
 		while (1)
 			{
@@ -1293,46 +1296,82 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 #pragma mark - host name and interface management
 #endif
 
-
-
-
-//!!!KRS change this to longest-match logic
-// find the target in our list of hostnames for an SRV record
-// e.g. for service example._xxx._tcp.example.foo.com, return target mycomputer.example.foo.com.
-mDNSlocal const domainname *GetServiceTarget(uDNS_GlobalInfo *u, AuthRecord *srv)
+// if we ever want to refine support for multiple hostnames, we can add logic matching service names to a particular hostname
+// for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
+mDNSlocal mDNSBool GetServiceTarget(uDNS_GlobalInfo *u, AuthRecord *srv, domainname *dst)
 	{
-	int i, nzonelabels, nsrvlabels = 0;
-	mDNSu8 *ptr;
-	uDNS_HostnameInfo *hi;
-	domainname *target, *targetzone;
-	
-	if (srv->resrec.rrtype != kDNSType_SRV) { LogMsg("GetServiceTarget: bad rrtype %d", srv->resrec.rrtype); return mDNSNULL; }
+	uDNS_HostnameInfo *hi = u->Hostnames;
+	(void)srv;  // unused
 
-	nsrvlabels = CountLabels(&srv->resrec.name);
-
-	for (hi = u->Hostnames; hi; hi = hi->next)
-		{		
-		target = &hi->ar->resrec.name;
-		targetzone = (domainname *)(target->c + 1 + target->c[0]); // chop hostlabel
-		nzonelabels = CountLabels(targetzone); 		
-
-		if (nsrvlabels >= nzonelabels)
-			{
-			// locate zone in srv
-			ptr = srv->resrec.name.c;
-			for (i = 0; i < nsrvlabels - nzonelabels; i++) ptr = ptr + ptr[0] + 1;
-			if (SameDomainName((domainname *)ptr, targetzone)) return target;
-			}
+	dst->c[0] = 0;
+	while (hi)
+		{
+		if (hi->ar->uDNS_info.state == regState_Registered || hi->ar->uDNS_info.state == regState_Refresh)
+			{ AssignDomainName(*dst, hi->ar->resrec.name); return mDNStrue; }
+		hi = hi->next;
 		}
-	return mDNSNULL;			
+
+	if (u->StaticHostname.c[0]) { AssignDomainName(*dst, u->StaticHostname); return mDNStrue; }
+	return mDNSfalse;
+	}
+
+mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
+	{	
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	ExtraResourceRecord *e;
+	domainname newtarget;
+	domainname *curtarget = &srs->RR_SRV.resrec.rdata->u.srv.target;
+	mDNSBool havetarget = GetServiceTarget(u, &srs->RR_SRV, &newtarget);
+	
+	if ((!havetarget && srs->uDNS_info.state == regState_NoTarget) || (havetarget && SameDomainName(curtarget, &newtarget))) return;  // target unchanged
+	
+	switch(srs->uDNS_info.state)
+		{
+		case regState_FetchingZoneData:
+		case regState_Cancelled:
+		case regState_DeregPending:
+		case regState_DeregDeferred:
+		case regState_Unregistered:
+		case regState_NATMap:
+		case regState_ExtraQueued:
+			// In these states, the SRV has either not yet been registered (it will get up-to-date information when it is)
+			// or is in the process of, or has already been, deregistered
+			return;
+			
+		case regState_Pending:
+		case regState_Refresh:
+		case regState_UpdatePending:
+			// let the in-flight operation complete before updating
+			srs->uDNS_info.SRVUpdateDeferred = mDNStrue;
+			return;
+			
+		case regState_NoTarget:
+			// Service has not been registered due to lack of a target hostname
+			if (havetarget) SendServiceRegistration(m, srs);
+			return;
+			
+		case regState_Registered:
+			// target lost or changed.  deregister service.  upon completion, we'll look for a new target
+			// extra will be re-registed if the service is re-registered
+			for (e = srs->Extras; e; e = e->next) e->r.uDNS_info.state = regState_ExtraQueued;
+			
+			srs->uDNS_info.LostTarget = mDNStrue;
+			SendServiceDeregistration(m, srs);
+			return;
+		}
+	}
+
+mDNSlocal void UpdateSRVRecords(mDNS *m)
+	{
+	ServiceRecordSet *srs;
+
+	for (srs = m->uDNS_info.ServiceRegistrations; srs; srs = srs->next) UpdateSRV(m, srs);
 	}
 
 mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	uDNS_HostnameInfo *hi = (uDNS_HostnameInfo *)rr->RecordContext;
 	mDNSu8 *ip = rr->resrec.rdata->u.ipv4.b;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-	ServiceRecordSet *srs;
 	
 	if (result == mStatus_MemFree)
 		{
@@ -1372,11 +1411,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		}
 
 	// register any pending services that require a target
-	for (srs = u->ServiceRegistrations; srs; srs = srs->next)		
-		{
-		if (srs->uDNS_info.state == regState_NoTarget && GetServiceTarget(u, &srs->RR_SRV))
-			RegisterService(m, srs);
-		}
+	UpdateSRVRecords(m);
 	
 	// Deliver success to client
 	if (!hi) { LogMsg("HostnameCallback invoked with orphaned address record"); return; }
@@ -1398,6 +1433,58 @@ mDNSlocal void AdvertiseHostname(mDNS *m, uDNS_HostnameInfo *h)
 	  LogMsg("Advertising %##s IP %d.%d.%d.%d", h->ar->resrec.name.c, ip[0], ip[1], ip[2], ip[3]);
 	  uDNS_RegisterRecord(m, h->ar); 
 	  }
+	}
+
+mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	const domainname *pktname = &answer->rdata->u.name;
+	domainname *storedname = &m->uDNS_info.StaticHostname;
+	
+	debugf("FoundStaticHostname: %##s -> %##s (%s)", question->qname.c, answer->rdata->u.name.c, AddRecord ? "added" : "removed");
+	if (AddRecord && !SameDomainName(pktname, storedname))
+		{
+		AssignDomainName(*storedname, *pktname);
+		UpdateSRVRecords(m);
+		}
+	else if (!AddRecord && SameDomainName(pktname, storedname))
+		{
+		storedname->c[0] = 0;
+		UpdateSRVRecords(m);
+		}
+	}
+
+mDNSlocal void GetStaticHostname(mDNS *m)
+	{
+	char buf[MAX_ESCAPED_DOMAIN_NAME];
+	DNSQuestion *q = &m->uDNS_info.ReverseMap;
+	mDNSu8 *ip = m->uDNS_info.PrimaryIP.ip.v4.b;
+	mStatus err;
+
+	ubzero(q, sizeof(*q));
+	
+	if (m->uDNS_info.ReverseMapActive)
+		{
+		uDNS_StopQuery(m, q);
+		m->uDNS_info.ReverseMapActive = mDNSfalse;
+		}
+
+	if (!m->uDNS_info.PrimaryIP.ip.v4.NotAnInteger) return;
+	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
+    if (!MakeDomainNameFromDNSNameString(&q->qname, buf)) { LogMsg("Error: GetStaticHostname - bad name %s", buf); return; }	
+
+	q->InterfaceID       = mDNSInterface_Any;
+    q->Target           = zeroAddr;
+    q->qtype            = kDNSType_PTR;
+    q->qclass           = kDNSClass_IN;
+    q->LongLived        = mDNSfalse;
+    q->ExpectUnique     = mDNSfalse;
+    q->ForceMCast       = mDNSfalse;
+    q->QuestionCallback = FoundStaticHostname;
+    q->QuestionContext  = mDNSNULL;
+
+	err = uDNS_StartQuery(m, q);
+	if (err) LogMsg("Error: GetStaticHostname - StartQuery returned error %d", err);
+	else m->uDNS_info.ReverseMapActive = mDNStrue;
 	}
 
 // Deregister hostnames and  register new names for each host domain with the current global 
@@ -1433,7 +1520,7 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 		
 		// advertise new
 		AdvertiseHostname(m, i);
-		}
+		}	
 	}
 
 mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
@@ -1490,7 +1577,7 @@ mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 		else { ufree(hi->ar); hi->ar = mDNSNULL; }
 		ufree(hi);
 		}
-	
+	UpdateSRVRecords(m);
 	mDNS_Unlock(m);
 	}
 
@@ -1517,7 +1604,16 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, cons
 	if (router) u->Router = *router;
 	else        u->Router.ip.v4.NotAnInteger = 0; // setting router to zero indicates that nat mappings must be reestablished when router is reset
 	
-	if (addr && AddrChanged) UpdateHostnameRegistrations(m);
+	if (AddrChanged)
+		{
+		if (addr)
+			{
+			UpdateHostnameRegistrations(m);
+			UpdateSRVRecords(m);
+			}
+		GetStaticHostname(m);  // look up reverse map record to find any static hostnames for our IP address
+		}
+	
 	mDNS_Unlock(m);
 	}
 
@@ -1902,11 +1998,15 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				InvokeCallback = mDNStrue;
 				info->state = regState_Unregistered;				
 				}
-			else info->state = regState_Registered;				
-			info->OrigTarget.c[0] = '\0';  // if we were updating the target, clear the original target
+			else info->state = regState_Registered;
 			break;
 		case regState_DeregPending:
 			if (err) LogMsg("Error %ld for deregistration of service %##s", err, srs->RR_SRV.resrec.name.c);
+			if (info->LostTarget)
+				{
+				info->state = regState_NoTarget;
+				break;
+				} 
 			err = mStatus_MemFree;
 			InvokeCallback = mDNStrue;
 			if (nat)
@@ -1950,6 +2050,12 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			err = mStatus_UnknownErr;
 		}
 
+	if ((info->LostTarget || info->SRVUpdateDeferred) && (info->state == regState_NoTarget || info->state == regState_Registered))
+		{
+		UpdateSRV(m, srs);
+		return;
+		}
+
 	while (*e)
 		{
 		uDNS_RegInfo *einfo = &(*e)->r.uDNS_info;
@@ -1971,21 +2077,13 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				einfo->state = regState_Unregistered;
 				*e = (*e)->next;
 				}
+			else e = &(*e)->next;
 			}
 		else e = &(*e)->next;
 		}
 
 	srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.		
-	if (srs->RR_TXT.uDNS_info.UpdateQueued) SendRecordUpdate(m, &srs->RR_TXT, &srs->uDNS_info);
-	
-	if (info->TargetChangeDeferred)
-		{
-		info->ClientCallbackDeferred = InvokeCallback;
-		info->DeferredStatus = err;
-		info->state = regState_Refresh;  // this updates the target	   
-		SendServiceRegistration(m, srs);
-		return;
-		}				
+	if (srs->RR_TXT.uDNS_info.UpdateQueued) SendRecordUpdate(m, &srs->RR_TXT, &srs->uDNS_info);		
 
 	if (info->state == regState_Unregistered) unlinkSRS(&m->uDNS_info, srs);
 
@@ -3633,8 +3731,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSIPPort privport;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
 	mDNSBool mapped = mDNSfalse;
-	domainname *targetptr;
-	const domainname *newtarget;
+	domainname target;
 	AuthRecord *srv = &srs->RR_SRV;
 	
 	id = newMessageID(u);
@@ -3676,34 +3773,18 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec, srs->RR_PTR.resrec.rroriginalttl))) goto error;
 	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) goto error;
 
-	newtarget = GetServiceTarget(u, srv);
-	if (!newtarget)
+	 if (!GetServiceTarget(u, srv, &target))
 		{
 		debugf("Couldn't get target for service %##s", srv->resrec.name.c);
 		rInfo->state = regState_NoTarget;		
 		return;
 		}	
-	targetptr = GetRRDomainNameTarget(&srv->resrec);
-	if (!targetptr)
+	if (!SameDomainName(&target, &srv->resrec.rdata->u.srv.target))
 		{
-		// this should never happen
-		LogMsg("Couldn't get target location for srv %##s", srv->resrec.name.c);
-		goto error;
-		}	
-	if (rInfo->OrigTarget.c[0] && !SameDomainName(&rInfo->OrigTarget, newtarget))
-		{
-		// if we're changing targets, delete old target
-		AssignDomainName(*targetptr, rInfo->OrigTarget);
-		SetNewRData(&srv->resrec, mDNSNULL, 0);
-		ptr = putDeletionRecord(&msg, ptr, &srv->resrec);
-		if (!ptr) goto error;		
-		srs->uDNS_info.TargetChangeDeferred = mDNSfalse;
-		}
-	if (!SameDomainName(targetptr, newtarget))
-		{
-		AssignDomainName(*targetptr, *newtarget);
+		AssignDomainName(srv->resrec.rdata->u.srv.target, target);
 		SetNewRData(&srv->resrec, mDNSNULL, 0);
 		}
+
 	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
 	if (!ptr) goto error;
 	// !!!KRS do subtypes/extras etc.
@@ -3937,42 +4018,10 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	return mStatus_NoError;
 	}
 
-// !!!KRS look into simpler ways to do this (create a record registration, or dereg and rereg the service, etc)
-#if 0
-mDNSlocal void UpdateServiceTargets(mDNS *const m)
-	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-	ServiceRecordSet *srs;
-	uDNS_RegInfo *info;
-	domainname *target;
-	
-	for (srs = u->ServiceRegistrations; srs; srs = srs->next)
-		{
-		info = &srs->uDNS_info;
-		target = GetRRDomainNameTarget(&srs->RR_SRV.resrec);
-		if (target && target->c[0]) AssignDomainName(info->OrigTarget, *target); // store old target for deletion by SendRecordRegistration
-		if (info->state == regState_Registered)
-			{
-			info->state = regState_Refresh;
-			SendServiceRegistration(m, srs);  // this will automatically grab the new target
-			}
-		else srs->uDNS_info.TargetChangeDeferred = mDNStrue; // trigger target change upon completion of pending operation
-		}		
-	}
-#endif
-
 // register a service already in list with initialized state
 mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs)
 	{
 	uDNS_RegInfo *info = &srs->uDNS_info;	
-
-	if (!GetServiceTarget(&m->uDNS_info, &srs->RR_SRV))
-		{
-		// defer registration until we get a target
-		LogMsg("No service target for %##s - deferring until registration of address record", srs->RR_SRV.resrec.name.c);
-		info->state = regState_NoTarget;
-		return mStatus_NoError;
-		}
 	
 	srs->RR_SRV.resrec.rroriginalttl = 3;
 	srs->RR_TXT.resrec.rroriginalttl = 3;
@@ -4053,6 +4102,9 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		if (SameDomainName(&srs->RR_SRV.resrec.name, &(*r)->resrec.name)) *r = (*r)->next;
 		else r = &(*r)->next;
 		}
+
+	// don't re-register with a new target following deregistration
+	srs->uDNS_info.LostTarget = srs->uDNS_info.SRVUpdateDeferred = mDNSfalse;
 	
 	switch (srs->uDNS_info.state)
 		{

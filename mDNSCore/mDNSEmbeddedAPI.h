@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.260  2004/12/12 23:51:42  ksekar
+<rdar://problem/3845683> Wide-area registrations should fallback to using DHCP hostname as target
+
 Revision 1.259  2004/12/11 20:55:29  ksekar
 <rdar://problem/3916479> Clean up registration state machines
 
@@ -1413,12 +1416,12 @@ typedef struct
 	NATTraversalInfo *NATinfo; // may be NULL
 	
 	// state for deferred operations
-	domainname   OrigTarget;              // un-ack'd target change
-	mDNSBool     TargetChangeDeferred;    // update service target upon completion of current operation
-	mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
+    mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
 	mStatus      DeferredStatus;          // status to deliver when above flag is set
-	
-	// uDNS_UpdateRecord support fields
+    mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
+    mDNSBool     LostTarget;              // temporarily deregistered service because its target was deregistered
+
+    // uDNS_UpdateRecord support fields
 	mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
 	RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
 	mDNSu16      UpdateRDLen;  // length of above field
@@ -1877,6 +1880,9 @@ typedef struct
 	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
 	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
 	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
+    DNSQuestion      ReverseMap;         // Reverse-map query to find  static hostname for service target
+    mDNSBool         ReverseMapActive;   // Is above query active?
+    domainname       StaticHostname;     // Current answer to reverse-map query (above)
 	} uDNS_GlobalInfo;
 
 struct mDNS_struct
