@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.181  2005/01/25 02:17:32  cheshire
+<rdar://problem/3971263> Don't use query ID zero in uDNS queries
+
 Revision 1.180  2005/01/19 21:01:54  ksekar
 <rdar://problem/3955355> uDNS needs to support subtype registration and browsing
 
@@ -720,7 +723,8 @@ mDNSlocal mDNSOpaque16 newMessageID(uDNS_GlobalInfo *u)
 	{
 	static mDNSBool randomized = mDNSfalse;
 
-	if (!randomized) { u->NextMessageID = (mDNSu16)mDNSRandom(~0UL); randomized = mDNStrue; }
+	if (!randomized) { u->NextMessageID = (mDNSu16)mDNSRandom(0xFFFF); randomized = mDNStrue; }
+	if (u->NextMessageID == 0) u->NextMessageID++;
 	return mDNSOpaque16fromIntVal(u->NextMessageID++);
 	}
 
