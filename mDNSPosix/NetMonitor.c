@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.9  2003/05/21 03:56:00  cheshire
+ * Improve display of Probe queries
+ *
  * Revision 1.8  2003/05/09 21:41:56  cheshire
  * Track deletion/goodbye packets as separate category
  *
@@ -224,14 +227,14 @@ mDNSlocal void printstats(void)
 		}
 	}
 
-mDNSlocal mDNSBool FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, ResourceRecord *pktrr)
+mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, ResourceRecord *pktrr)
 	{
 	int i;
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
 		ptr = getResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pktrr, mDNSNULL);
 		if (!ptr) break;
-		if (ResourceRecordAnswersQuestion(pktrr, q)) return(mDNStrue);
+		if (ResourceRecordAnswersQuestion(pktrr, q)) return(ptr);
 		}
 	return(mDNSfalse);
 	}
@@ -271,6 +274,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	int i;
 	const mDNSu8 *ptr = msg->data;
 	const mDNSu8 *auth = LocateAuthorities(msg, end);
+	const mDNSu8 *p2;
 	ResourceRecord pktrr;
 
 	DisplayTimestamp();
@@ -281,11 +285,13 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		DNSQuestion q;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
-		if (FindUpdate(m, msg, auth, end, &q, &pktrr))
+		p2 = FindUpdate(m, msg, auth, end, &q, &pktrr);
+		if (p2)
 			{
 			NumProbes++;
 			DisplayResourceRecord(srcaddr, "(P)", &pktrr);
 			recordstat(&q.name, OP_probe, q.rrtype);
+			auth = p2; // Having displayed this update record, adjust auth forward so we don't display the same one again.
 			}
 		else
 			{
