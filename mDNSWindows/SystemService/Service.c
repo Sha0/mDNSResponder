@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.18  2004/10/11 21:57:50  shersche
+<rdar://problem/3832450> The SharedAccess service dependency causes a circular dependency on Windows Server 2003.  Only add the SharedAccess service dependency if running on XP.  All other platforms do not manipulate the firewall and thus are not dependent on it.
+Bug #: 3832450
+
 Revision 1.17  2004/09/17 01:08:58  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -130,7 +134,8 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #define	DEBUG_NAME					"[Server] "
 #define	kServiceName				"Apple mDNSResponder"
 #define kServiceFirewallName		L"Rendezvous"
-#define	kServiceDependencies		"Tcpip\0winmgmt\0SharedAccess\0\0"
+#define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
+#define	kServiceDependenciesXP		"Tcpip\0winmgmt\0SharedAccess\0\0"
 #define kServiceManageLLRouting		"ManageLLRouting"
 #define kServiceCacheEntryCount		"CacheEntryCount"
 #define kServiceManageFirewall		"ManageFirewall"
@@ -433,6 +438,8 @@ static OSStatus	InstallService( const char *inName, const char *inDisplayName, c
 	SC_HANDLE		service;
 	BOOL			ok;
 	TCHAR			fullPath[ MAX_PATH ];
+	char			platform[ 256 ];
+	LPCTSTR			dependencies;
 	TCHAR *			namePtr;
 	DWORD			size;
 	
@@ -451,8 +458,13 @@ static OSStatus	InstallService( const char *inName, const char *inDisplayName, c
 	err = translate_errno( scm, (OSStatus) GetLastError(), kOpenErr );
 	require_noerr( err, exit );
 	
+	err = GetWindowsVersionString( platform, sizeof( platform ) );
+	require_noerr( err, exit );
+
+	dependencies = strstr( platform, "XP" ) ? kServiceDependenciesXP : kServiceDependencies;
+
 	service = CreateService( scm, inName, inDisplayName, SERVICE_ALL_ACCESS, SERVICE_WIN32_SHARE_PROCESS, 
-							 SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, fullPath, NULL, NULL, kServiceDependencies, 
+							 SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, fullPath, NULL, NULL, dependencies, 
 							 NULL, NULL );
 	err = translate_errno( service, (OSStatus) GetLastError(), kDuplicateErr );
 	require_noerr( err, exit );
