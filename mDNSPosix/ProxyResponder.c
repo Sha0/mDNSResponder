@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ProxyResponder.c,v $
+ * Revision 1.12  2003/04/16 02:11:07  cheshire
+ * Fixed mDNS_RegisterNoSuchService non-existence function so that it works again
+ *
  * Revision 1.11  2003/03/31 22:49:35  cheshire
  * Add "$Log" header
  *
@@ -211,51 +214,56 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr,
 mDNSexport int main(int argc, char **argv)
 	{
 	mStatus status;
-	ProxyHost proxyhost;
-	ServiceRecordSet proxyservice;
-	ResourceRecord proxyrecord;
 	
 	if (argc < 3) goto usage;
 	
-	proxyhost.ip.NotAnInteger = inet_addr(argv[1]);
-	if (proxyhost.ip.NotAnInteger == 0)
-		{
-		struct hostent *h = gethostbyname(argv[1]);
-		if (h) proxyhost.ip.NotAnInteger = *(long*)h->h_addr;
-		}
-	if (proxyhost.ip.NotAnInteger == 0)
-		{
-		fprintf(stderr, "%s is not valid host address\n", argv[1]);
-		return(-1);
-		}
-
 	status = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
 		mDNS_Init_DontAdvertiseLocalAddresses,
 		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (status) { fprintf(stderr, "Daemon start: mDNS_Init failed %ld\n", status); return(status); }
 
-	if (proxyhost.ip.NotAnInteger == 0)
+	if (!strcmp(argv[1], "-"))
 		{
+		ResourceRecord proxyrecord;
 		RegisterNoSuchService(&mDNSStorage, &proxyrecord, argv[2], argv[3], "local.");
+		ExampleClientEventLoop(&mDNSStorage);
+		mDNS_Close(&mDNSStorage);
 		}
 	else
 		{
+		ProxyHost proxyhost;
+		ServiceRecordSet proxyservice;
+
+		proxyhost.ip.NotAnInteger = inet_addr(argv[1]);
+		if (proxyhost.ip.NotAnInteger == 0)
+			{
+			struct hostent *h = gethostbyname(argv[1]);
+			if (h) proxyhost.ip.NotAnInteger = *(long*)h->h_addr;
+			}
+		if (proxyhost.ip.NotAnInteger == 0)
+			{
+			fprintf(stderr, "%s is not valid host address\n", argv[1]);
+			return(-1);
+			}
+	
 		ConvertCStringToDomainLabel(argv[2], &proxyhost.hostlabel);
+
 		mDNS_RegisterProxyHost(&mDNSStorage, &proxyhost);
+
 		if (argc >=6)
 			RegisterService(&mDNSStorage, &proxyservice, argv[3], argv[4], "local.",
 							&proxyhost.RR_A.name, atoi(argv[5]), argc-6, &argv[6]);
+
+		ExampleClientEventLoop(&mDNSStorage);
+		mDNS_Close(&mDNSStorage);
 		}
 
-	ExampleClientEventLoop(&mDNSStorage);
-
-	mDNS_Close(&mDNSStorage);
 	return(0);
 
 usage:
 	fprintf(stderr, "%s ip hostlabel srvname srvtype port txt [txt ...]\n", argv[0]);
 	fprintf(stderr, "e.g. %s 169.254.12.34 thehost \"My Printer\" _printer._tcp. 515 rp=lpt1 pdl=application/postscript\n", argv[0]);
-	fprintf(stderr, "or   %s 0.0.0.0 \"My Printer\" _printer._tcp. (assertion of non-existence)\n", argv[0]);
+	fprintf(stderr, "or   %s - \"My Printer\" _printer._tcp. (assertion of non-existence)\n", argv[0]);
 	return(-1);
 	}
