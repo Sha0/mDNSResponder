@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.10  2004/10/26 04:31:44  cheshire
+Rename CountSubTypes() as ChopSubTypes()
+
 Revision 1.9  2004/09/30 00:25:00  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -95,6 +98,6 @@ extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd);
 
 // Globals and functions defined in uds_daemon.c and also shared with the old "daemon.c" on OS X
 extern mDNS mDNSStorage;
-extern mDNSs32 CountSubTypes(char *regtype);
+extern mDNSs32 ChopSubTypes(char *regtype);
 extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 extern int CountExistingRegistrations(domainname *srv, mDNSIPPort port);

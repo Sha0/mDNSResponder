@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.101  2004/10/26 04:31:44  cheshire
+Rename CountSubTypes() as ChopSubTypes()
+
 Revision 1.100  2004/10/26 01:17:48  cheshire
 Use "#if 0" instead of commenting out code
 
@@ -1499,7 +1502,7 @@ static char *FindNextSubType(char *p)
 	}
 
 // Returns -1 if illegal subtype found
-mDNSexport mDNSs32 CountSubTypes(char *regtype)
+mDNSexport mDNSs32 ChopSubTypes(char *regtype)
 	{
 	mDNSs32 NumSubTypes = 0;
 	char *stp = FindFirstSubType(regtype);
@@ -1690,7 +1693,7 @@ static void handle_browse_request(request_state *request)
     if (interfaceIndex && !InterfaceID) { err = mStatus_BadParamErr;  goto error; }
 
 	typedn.c[0] = 0;
-	NumSubTypes = CountSubTypes(regtype);
+	NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
 	if (NumSubTypes < 0 || NumSubTypes > 1) { err = mStatus_BadParamErr;  goto error; }
 	if (NumSubTypes == 1 && !AppendDNSNameString(&typedn, regtype + strlen(regtype) + 1))
 		{ err = mStatus_BadParamErr;  goto error; }
@@ -1968,10 +1971,10 @@ static void handle_regservice_request(request_state *request)
     service->txtdata = get_rdata(&ptr, service->txtlen);
 
 	// Check for sub-types after the service type
-	service->num_subtypes = CountSubTypes(service->type_as_string);
+	service->num_subtypes = ChopSubTypes(service->type_as_string);	// Note: Modifies regtype string to remove trailing subtypes
 	if (service->num_subtypes < 0) goto bad_param;
 
-	// Don't try to construct "domainname t" until *after* CountSubTypes has worked its magic
+	// Don't try to construct "domainname t" until *after* ChopSubTypes has worked its magic
     if (!*service->type_as_string || !MakeDomainNameFromDNSNameString(&service->type, service->type_as_string)) goto bad_param;
 
     if (!name[0])

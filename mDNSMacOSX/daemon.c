@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.203  2004/10/26 04:31:44  cheshire
+Rename CountSubTypes() as ChopSubTypes()
+
 Revision 1.202  2004/10/26 01:29:18  cheshire
 Use "#if 0" instead of commenting out code
 
@@ -1052,7 +1055,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	// Check other parameters
 	domainname t, d;
 	t.c[0] = 0;
-	mDNSs32 NumSubTypes = CountSubTypes(regtype);
+	mDNSs32 NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
 	if (NumSubTypes < 0 || NumSubTypes > 1) { errormsg = "Bad Service SubType"; goto badparam; }
 	if (NumSubTypes == 1 && !AppendDNSNameString(&t, regtype + strlen(regtype) + 1))
 	                                        { errormsg = "Bad Service SubType"; goto badparam; }
@@ -1414,7 +1417,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
 
     // Check for sub-types after the service type
-	mDNSs32 NumSubTypes = CountSubTypes(regtype);
+	mDNSs32 NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
 	if (NumSubTypes < 0) { errormsg = "Bad Service SubType"; goto badparam; }
 
 	// Check other parameters
