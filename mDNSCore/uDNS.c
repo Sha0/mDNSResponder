@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.190  2005/02/11 19:44:06  shersche
+Remove extra semicolon at end of line
+
 Revision 1.189  2005/02/10 21:07:02  ksekar
 Don't goto error in ReceiveNATAddrResponse if we receive a malformatted response
 
@@ -1212,7 +1215,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m)
 mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
 	ServiceRecordSet *srs = n->reg.ServiceRegistration;
-	mDNSIPPort priv = srs ? srs->RR_SRV.resrec.rdata->u.srv.port : m->UnicastPort4;;
+	mDNSIPPort priv = srs ? srs->RR_SRV.resrec.rdata->u.srv.port : m->UnicastPort4;
 	mDNSu32 lease;
 	mDNSBool deletion = !n->request.PortReq.lease.NotAnInteger;
 	NATPortMapReply *reply = (NATPortMapReply *)pkt;
