@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: FirstPage.h,v $
+Revision 1.3  2005/03/07 18:27:42  shersche
+<rdar://problem/4037940> Fix problem when ControlPanel commits changes to the browse domain list
+
 Revision 1.2  2005/03/03 19:55:21  shersche
 <rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
 
@@ -77,6 +80,7 @@ private:
 	void			ShowStatus( DWORD status );
 
 	CEdit			m_hostnameControl;
+	bool			m_ignoreHostnameChange;
 	bool			m_modified;
 	HKEY			m_statusKey;
 	HKEY			m_setupKey;

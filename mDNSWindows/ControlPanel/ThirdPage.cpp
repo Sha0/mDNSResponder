@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ThirdPage.cpp,v $
+Revision 1.3  2005/03/07 18:27:42  shersche
+<rdar://problem/4037940> Fix problem when ControlPanel commits changes to the browse domain list
+
 Revision 1.2  2005/03/03 19:55:22  shersche
 <rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
 
@@ -242,13 +245,11 @@ CThirdPage::Commit()
 	{	
 		dwSize = MAX_KEY_LENGTH;
             
-		err = RegEnumKeyEx( key, i, subKeyName, &dwSize, NULL, NULL, NULL, NULL );
-		
-		if ( !err )
-		{
-			err = RegDeleteKey( key, subKeyName );
-			require_noerr( err, exit );
-		}
+		err = RegEnumKeyEx( key, 0, subKeyName, &dwSize, NULL, NULL, NULL, NULL );
+		require_noerr( err, exit );
+			
+		err = RegDeleteKey( key, subKeyName );
+		require_noerr( err, exit );
 	}
 
 	// Now re-populate

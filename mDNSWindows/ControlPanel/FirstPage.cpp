@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: FirstPage.cpp,v $
+Revision 1.3  2005/03/07 18:27:42  shersche
+<rdar://problem/4037940> Fix problem when ControlPanel commits changes to the browse domain list
+
 Revision 1.2  2005/03/03 19:55:22  shersche
 <rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
 
@@ -47,6 +50,7 @@ IMPLEMENT_DYNCREATE(CFirstPage, CPropertyPage)
 CFirstPage::CFirstPage()
 :
 	CPropertyPage(CFirstPage::IDD),
+	m_ignoreHostnameChange( false ),
 	m_statusKey( NULL )
 {
 	//{{AFX_DATA_INIT(CFirstPage)
@@ -105,7 +109,10 @@ END_MESSAGE_MAP()
 
 void CFirstPage::OnEnChangeHostname()
 {
-	SetModified( TRUE );
+	if ( !m_ignoreHostnameChange )
+	{
+		SetModified( TRUE );
+	}
 }
 
 
@@ -163,7 +170,9 @@ CFirstPage::OnSetActive()
 
 		if ( !err )
 		{
+			m_ignoreHostnameChange = true;
 			m_hostnameControl.SetWindowText( name );
+			m_ignoreHostnameChange = false;
 		}
 	}
 

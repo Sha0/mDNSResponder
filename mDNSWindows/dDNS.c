@@ -402,53 +402,64 @@ mDNSlocal mStatus RegisterSearchDomains( mDNS *const m )
 	}
 
 
+mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
+	{
+	// allocate/register legacy and non-legacy _browse PTR record
+	mStatus err;
+	ARListElem *browse = mallocL("ARListElem", sizeof(*browse));
+	mDNS_SetupResourceRecord(&browse->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, browse);
+	MakeDomainNameFromDNSNameString(browse->ar.resrec.name, mDNS_DomainTypeNames[type]);
+	AppendDNSNameString            (browse->ar.resrec.name, "local");
+	AssignDomainName(&browse->ar.resrec.rdata->u.name, d);
+	err = mDNS_Register(m, &browse->ar);
+	if (err)
+		{
+		LogMsg("SetSCPrefsBrowseDomain: mDNS_Register returned error %d", err);
+		freeL("ARListElem", browse);
+		}
+	else
+		{
+		browse->next = SCPrefBrowseDomains;
+		SCPrefBrowseDomains = browse;
+		}
+	}
+
+mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
+	{
+	ARListElem *remove, **ptr = &SCPrefBrowseDomains;
+	domainname lhs; // left-hand side of PTR, for comparison
+	
+	MakeDomainNameFromDNSNameString(&lhs, mDNS_DomainTypeNames[type]);
+	AppendDNSNameString            (&lhs, "local");
+
+	while (*ptr)
+		{
+		if (SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, d) && SameDomainName((*ptr)->ar.resrec.name, &lhs))
+			{
+			remove = *ptr;
+			*ptr = (*ptr)->next;
+			mDNS_Deregister(m, &remove->ar);
+			return;
+			}
+		else ptr = &(*ptr)->next;
+		}
+	}
 
 // Add or remove a user-specified domain to the list of empty-string browse domains
 // Also register a non-legacy _browse PTR record so that the domain appears in enumeration lists
 mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
 	{
-	AuthRecord rec;
-
 	LogMsg("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 	
-	// Create dummy  record pointing to the domain to be added/removed
-	mDNS_SetupResourceRecord(&rec, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	AssignDomainName(&rec.resrec.rdata->u.name, d);
-
-	// add/remove the "_legacy" entry
-	MakeDomainNameFromDNSNameString(rec.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeBrowseLegacy]);
-	AppendDNSNameString            (rec.resrec.name, "local");
-	FoundDefBrowseDomain(m, &LegacyBrowseDomainQ, &rec.resrec, add);
-
 	if (add)
 		{
-		mStatus err;
-
-		// allocate/register a non-legacy _browse PTR record
-		ARListElem *ptr = mallocL("ARListElem", sizeof(*ptr));
-		mDNS_SetupResourceRecord(&ptr->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, ptr);
-		MakeDomainNameFromDNSNameString(ptr->ar.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeBrowse]);
-		AppendDNSNameString            (ptr->ar.resrec.name, "local");
-		AssignDomainName(&ptr->ar.resrec.rdata->u.name, d);
-		err = mDNS_Register(m, &ptr->ar);
-		if (err)
-			{
-			LogMsg("SetSCPrefsBrowseDomain: mDNS_Register returned error %d", err);
-			freeL("ARListElem", ptr);
-			}
-		else
-			{
-			ptr->next = SCPrefBrowseDomains;
-			SCPrefBrowseDomains = ptr;
-			}
+		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
+		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
 		}
 	else
 		{
-		ARListElem **remove = &SCPrefBrowseDomains;
-		while (*remove && !SameDomainName(&(*remove)->ar.resrec.rdata->u.name, d)) remove = &(*remove)->next;
-		if (!*remove) { LogMsg("SetSCPrefsBrowseDomain (remove) - domain %##s not found!", d->c); return; }
-		mDNS_Deregister(m, &(*remove)->ar);
-		*remove = (*remove)->next;
+		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
+		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
 		}
 	}
 

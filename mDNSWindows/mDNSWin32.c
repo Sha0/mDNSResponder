@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.83  2005/03/07 18:27:42  shersche
+<rdar://problem/4037940> Fix problem when ControlPanel commits changes to the browse domain list
+
 Revision 1.82  2005/03/06 05:20:24  shersche
 <rdar://problem/4037635> Fix corrupt UTF-8 name when non-ASCII system name used, enabled unicode support
 
@@ -1439,6 +1442,7 @@ dDNSPlatformSetNameStatus(domainname *const dname, mStatus status)
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, name, &key );
 	require_noerr( err, exit );
 
+	status = ( status ) ? 0 : 1;
 	err = RegSetValueEx( key, kServiceDynDNSStatus, 0, REG_DWORD, (const LPBYTE) &status, sizeof(DWORD) );
 	require_noerr( err, exit );
 
