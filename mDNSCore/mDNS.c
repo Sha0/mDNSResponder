@@ -44,6 +44,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.281  2003/08/19 04:49:28  cheshire
+<rdar://problem/3368159> Interaction between v4, v6 and dual-stack hosts not working quite right
+1. A dual-stack host should only suppress its own query if it sees the same query from other hosts on BOTH IPv4 and IPv6.
+2. When we see the first v4 (or first v6) member of a group, we re-trigger questions and probes on that interface.
+3. When we see the last v4 (or v6) member of a group go away, we revalidate all the records received on that interface.
+
 Revision 1.280  2003/08/19 02:33:36  cheshire
 Update comments
 
@@ -3533,11 +3539,43 @@ mDNSlocal void ExpireDupSuppressInfoOnInterface(DupSuppressInfo ds[DupSuppressIn
 	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].InterfaceID == InterfaceID && ds[i].Time - time < 0) ds[i].InterfaceID = mDNSNULL;
 	}
 
-mDNSlocal mDNSBool SuppressOnThisInterface(DupSuppressInfo ds[DupSuppressInfoSize], mDNSInterfaceID InterfaceID)
+mDNSlocal mDNSBool SuppressOnThisInterface(const DupSuppressInfo ds[DupSuppressInfoSize], const NetworkInterfaceInfo * const intf)
 	{
 	int i;
-	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].InterfaceID == InterfaceID) return(mDNStrue);
+	mDNSBool v4 = !intf->IPv4Available;		// If this interface doesn't do v4, we don't need to find a v4 duplicate of this query
+	mDNSBool v6 = !intf->IPv6Available;		// If this interface doesn't do v6, we don't need to find a v6 duplicate of this query
+	for (i=0; i<DupSuppressInfoSize; i++)
+		if (ds[i].InterfaceID == intf->InterfaceID)
+			{
+			if      (ds[i].Type == mDNSAddrType_IPv4) v4 = mDNStrue;
+			else if (ds[i].Type == mDNSAddrType_IPv6) v6 = mDNStrue;
+			if (v4 && v6) return(mDNStrue);
+			}
 	return(mDNSfalse);
+	}
+
+mDNSlocal int RecordDupSuppressInfo(DupSuppressInfo ds[DupSuppressInfoSize], mDNSs32 Time, mDNSInterfaceID InterfaceID, mDNSs32 Type)
+	{
+	int i, j;
+
+	// See if we have this one in our list somewhere already
+	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].InterfaceID == InterfaceID && ds[i].Type == Type) break;
+
+	// If not, find a slot we can re-use
+	if (i >= DupSuppressInfoSize)
+		{
+		i = 0;
+		for (j=1; j<DupSuppressInfoSize && ds[i].InterfaceID; j++)
+			if (!ds[j].InterfaceID || ds[j].Time - ds[i].Time < 0)
+				i = j;
+		}
+	
+	// Record the info about this query we saw
+	ds[i].Time        = Time;
+	ds[i].InterfaceID = InterfaceID;
+	ds[i].Type        = Type;
+	
+	return(i);
 	}
 
 // How Standard Queries are generated:
@@ -3704,10 +3742,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 				if (q->SendQNow == intf->InterfaceID)
 					{
 					debugf("SendQueries: %s question for %##s (%s) at %lu forecast total %lu",
-						SuppressOnThisInterface(q->DupSuppress, intf->InterfaceID) ? "Suppressing" : "Putting    ",
+						SuppressOnThisInterface(q->DupSuppress, intf) ? "Suppressing" : "Putting    ",
 						q->qname.c, DNSTypeName(q->qtype), queryptr - query.data, queryptr + answerforecast - query.data);
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
-					if (SuppressOnThisInterface(q->DupSuppress, intf->InterfaceID) ||
+					if (SuppressOnThisInterface(q->DupSuppress, intf) ||
 						BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
 							q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
@@ -5066,14 +5104,13 @@ exit:
 	
 	while (DupQuestions)
 		{
+		int i;
 		DNSQuestion *q = DupQuestions;
 		DupQuestions = q->NextInDQList;
 		q->NextInDQList = mDNSNULL;
-		if (q->DupSuppress[0].InterfaceID != InterfaceID)	// We save the last two DupSuppressInfos
-			q->DupSuppress[1] = q->DupSuppress[0];
-		q->DupSuppress[0].InterfaceID = InterfaceID;
-		q->DupSuppress[0].Time = m->timenow;
-		debugf("ProcessQuery: Expect to suppress Query %##s (%s) on %p", q->qname.c, DNSTypeName(q->qtype), InterfaceID);
+		i = RecordDupSuppressInfo(q->DupSuppress, m->timenow, InterfaceID, srcaddr->type);
+		debugf("ProcessQuery: Recorded DSI for %##s (%s) on %p/%s %d", q->qname.c, DNSTypeName(q->qtype), InterfaceID,
+			srcaddr->type == mDNSAddrType_IPv4 ? "v4" : "v6", i);
 		}
 	
 	return(responseptr);
@@ -5404,6 +5441,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		return(mStatus_NoCache);
 	else
 		{
+		int i;
 		// Note: It important that new questions are appended at the *end* of the list, not prepended at the start
 		DNSQuestion **q = &m->Questions;
 		if (question->InterfaceID == ((mDNSInterfaceID)~0)) q = &m->LocalOnlyQuestions;
@@ -5447,8 +5485,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->LargeAnswers   = 0;
 		question->DuplicateOf    = FindDuplicateQuestion(m, question);
 		question->NextInDQList   = mDNSNULL;
-		question->DupSuppress[0].InterfaceID = mDNSNULL;
-		question->DupSuppress[1].InterfaceID = mDNSNULL;
+		for (i=0; i<DupSuppressInfoSize; i++)
+			question->DupSuppress[i].InterfaceID = mDNSNULL;
 		// question->InterfaceID must be already set by caller
 		question->SendQNow       = mDNSNULL;
 		question->SendOnAll      = mDNSfalse;
@@ -6073,13 +6111,31 @@ mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		mDNS_GenerateFQDN(m);
 		}
 	}
+
+mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *active)
+	{
+	NetworkInterfaceInfo *intf;
+	active->IPv4Available = mDNSfalse;
+	active->IPv6Available = mDNSfalse;
+	for (intf = m->HostInterfaces; intf; intf = intf->next)
+		if (intf->InterfaceID == active->InterfaceID)
+			{
+			if (intf->ip.type == mDNSAddrType_IPv4) active->IPv4Available = mDNStrue;
+			if (intf->ip.type == mDNSAddrType_IPv6) active->IPv6Available = mDNStrue;
+			}
+	}
+
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
+	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	mDNS_Lock(m);
 	
 	// Assume this interface will be active
 	set->InterfaceActive = mDNStrue;
+	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4);
+	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6);
+
 	while (*p)
 		{
 		if (*p == set)
@@ -6091,14 +6147,19 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 
 		// This InterfaceID is already in the list, so mark this interface inactive for now
 		if ((*p)->InterfaceID == set->InterfaceID)
+			{
 			set->InterfaceActive = mDNSfalse;
+			if (set->ip.type == (*p)->ip.type) FirstOfType = mDNSfalse;
+			if (set->ip.type == mDNSAddrType_IPv4) (*p)->IPv4Available = mDNStrue;
+			if (set->ip.type == mDNSAddrType_IPv6) (*p)->IPv6Available = mDNStrue;
+			}
 
 		p=&(*p)->next;
 		}
 
 	set->next = mDNSNULL;
 	*p = set;
-
+	
 	debugf("mDNS_RegisterInterface: InterfaceID %p %#a %s", set->InterfaceID, &set->ip,
 		set->InterfaceActive ?
 			"not represented in list; marking active and retriggering queries" :
@@ -6108,7 +6169,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	// Therefore, when registering an interface, we want to re-trigger our questions and re-probe our Resource Records,
 	// even if we believe that we previously had an active representative of this interface.
-	if ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || set->InterfaceActive)
+	if ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || FirstOfType || set->InterfaceActive)
 		{
 		DNSQuestion *q;
 		AuthRecord *rr;
@@ -6176,6 +6237,14 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %p exists; making it active",
 				set->InterfaceID);
 			intf->InterfaceActive = mDNStrue;
+			UpdateInterfaceProtocols(m, intf);
+			
+			// See if another representative *of the same type* exists. If not, we mave have gone from
+			// dual-stack to v6-only (or v4-only) so we need to reconfirm which records are still valid.
+			for (intf = m->HostInterfaces; intf; intf = intf->next)
+				if (intf->InterfaceID == set->InterfaceID && intf->ip.type == set->ip.type)
+					break;
+			if (!intf) revalidate = mDNStrue;
 			}
 		else
 			{

@@ -23,6 +23,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.106  2003/08/19 04:49:28  cheshire
+<rdar://problem/3368159> Interaction between v4, v6 and dual-stack hosts not working quite right
+1. A dual-stack host should only suppress its own query if it sees the same query from other hosts on BOTH IPv4 and IPv6.
+2. When we see the first v4 (or first v6) member of a group, we re-trigger questions and probes on that interface.
+3. When we see the last v4 (or v6) member of a group go away, we revalidate all the records received on that interface.
+
 Revision 1.105  2003/08/19 02:33:37  cheshire
 Update comments
 
@@ -465,7 +471,7 @@ enum
 
 typedef struct
 	{
-	mDNSs32	type;
+	mDNSs32 type;
 	union { mDNSv6Addr v6; mDNSv4Addr v4; } ip;
 	} mDNSAddr;
 
@@ -753,6 +759,9 @@ struct NetworkInterfaceInfo_struct
 										// and/or AAAA records, but there is already an earlier representative for this
 										// physical interface which will be used for the actual sending & receiving
 										// packets (this status may change as interfaces are added and removed)
+	mDNSBool        IPv4Available;		// If InterfaceActive, set if v4 available on this interface
+	mDNSBool        IPv6Available;		// If InterfaceActive, set if v6 available on this interface
+
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
 	AuthRecord RR_A;				// 'A' or 'AAAA' (address) record for our ".local" name
 	AuthRecord RR_PTR;				// PTR (reverse lookup) record
@@ -802,12 +811,17 @@ struct ServiceRecordSet_struct
 #pragma mark - Question structures
 #endif
 
-#define DupSuppressInfoSize 2
+// We record the last eight instances of each duplicate query
+// This gives us v4/v6 on each of Ethernet/AirPort and Firewire, and two free slots "for future expansion"
+// If the host has more active interfaces that this it is not fatal -- duplicate question suppression will degrade gracefully.
+// Since we will still remember the last eight, the busiest interfaces will still get the effective duplicate question suppression.
+#define DupSuppressInfoSize 8
 
 typedef struct
 	{
 	mDNSs32               Time;
 	mDNSInterfaceID       InterfaceID;
+	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
