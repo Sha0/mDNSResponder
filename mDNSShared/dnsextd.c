@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.11  2004/11/12 01:03:31  ksekar
+<rdar://problem/3876776> dnsextd: KnownAnswers (CacheRecords) leaked
+
 Revision 1.10  2004/11/12 00:35:28  ksekar
 <rdar://problem/3876705> dnsextd: uninitialized pointer can cause crash
 
@@ -626,7 +629,7 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-update._udp.", registration); if (!ptr) goto end;
 	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-update._tcp.", registration); if (!ptr) goto end;
 	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-llq._udp.", registration);    if (!ptr) goto end;
-	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-llq._udp.", registration);    if (!ptr) goto end;
+	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-llq._udp.", registration);    if (!ptr) goto end;	
 	
 	nAdditHBO = pkt.msg.h.numAdditionals;
 	HdrHToN(&pkt);
@@ -1073,6 +1076,18 @@ mDNSlocal PktMsg *HandleRequest(PktMsg *pkt, DaemonInfo *d)
 // LLQ Support Routines
 //
 
+mDNSlocal void FreeKnownAnswers(LLQEntry *e)
+	{
+	CacheRecord *tmp;
+
+	while(e->KnownAnswers)
+		{
+		tmp = e->KnownAnswers;
+		e->KnownAnswers = e->KnownAnswers->next;
+		free(tmp);
+		}
+	}
+
 mDNSlocal void DeleteLLQ(DaemonInfo *d, LLQEntry *e)
 	{
 	int bucket = bucket = DomainNameHashValue(&e->qname) % LLQ_TABLESIZE;
@@ -1081,7 +1096,8 @@ mDNSlocal void DeleteLLQ(DaemonInfo *d, LLQEntry *e)
 	
 	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
 	VLog("Deleting LLQ table entry for %##s client %s", e->qname.c, addr);
-	
+
+	FreeKnownAnswers(e);
 	while(ptr)
 		{
 		if (ptr == e)
@@ -1487,7 +1503,7 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
 	{
 	char addr[32];
-	CacheRecord *answers = NULL, *ptr;
+	CacheRecord *ptr;
 	AuthRecord opt;
 	PktMsg ack;
 	mDNSu8 *end = (mDNSu8 *)&ack.msg.data;
@@ -1512,9 +1528,9 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 	end = putQuestion(&ack.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
 	if (!end) { Log("Error: putQuestion"); return; }
 	
-	answers = AnswerQuestion(d, e, -1);
+	if (e->state != Established) e->KnownAnswers = AnswerQuestion(d, e, -1);  // only fetch KA list the first time through
 	if (verbose) inet_ntop(AF_INET, &e->cli.sin_addr, addrbuf, 32);
-	for (ptr = answers; ptr; ptr = ptr->next)
+	for (ptr = e->KnownAnswers; ptr; ptr = ptr->next)
 		{
 		if (verbose) GetRRDisplayString_rdb(&ptr->resrec, &ptr->resrec.rdata->u, rrbuf);
 		VLog("%s Intitial Answer - %s", addr, rrbuf);
@@ -1527,17 +1543,7 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
 
 	ack.len = (int)(end - (mDNSu8 *)&ack.msg);
-	if (SendLLQ(d, &ack, e->cli))
-		{
-		Log("Error: LLQCompleteHandshake");
-		while(answers)
-			{
-			ptr = answers;
-			answers = answers->next;
-			free(ptr);		
-			}
-		}
-	else e->KnownAnswers = answers;
+	if (SendLLQ(d, &ack, e->cli)) Log("Error: LLQCompleteHandshake");
 	}
 
 mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
