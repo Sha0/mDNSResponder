@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.29  2004/12/22 00:13:50  ksekar
+<rdar://problem/3873993> Change version, port, and polling interval for LLQ
+
 Revision 1.28  2004/12/17 00:30:00  ksekar
 <rdar://problem/3924045> dnsextd memory leak
 
@@ -151,7 +154,7 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 
 #define LOOPBACK "127.0.0.1"
 #define NS_PORT 53
-#define DAEMON_PORT 5355                // default, may be overridden via command line argument
+#define DAEMON_PORT 5352                // default, may be overridden via command line argument
 #define LISTENQ 128                     // tcp connection backlog
 #define RECV_BUFLEN 9000                
 #define LEASETABLE_INIT_NBUCKETS 256    // initial hashtable size (doubles as table fills)

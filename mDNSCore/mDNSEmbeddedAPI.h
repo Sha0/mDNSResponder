@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.267  2004/12/22 00:13:49  ksekar
+<rdar://problem/3873993> Change version, port, and polling interval for LLQ
+
 Revision 1.266  2004/12/18 03:13:45  cheshire
 <rdar://problem/3751638> kDNSServiceInterfaceIndexLocalOnly should return all local records
 
@@ -1706,7 +1709,7 @@ typedef struct
 // LLQ constants
 #define kDNSOpt_LLQ	   1
 #define kDNSOpt_Lease  2
-#define kLLQ_Vers      0 // prerelease
+#define kLLQ_Vers      1
 #define kLLQ_DefLease  7200 // 2 hours
 #define kUpdate_DefLease 7200
 #define kLLQ_MAX_TRIES 3    // retry an operation 3 times max
