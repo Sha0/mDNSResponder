@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.41  2004/09/30 00:24:59  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.40  2004/09/17 01:08:52  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -227,6 +230,10 @@ extern const char mDNSResponderVersionString[];
 extern int LegacyNATDestroy(void);
 extern int LegacyNATInit(void);
 
+// Allow platform layer to tell daemon when default registration/browse domains
+extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);
+extern void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add);
+	
 #ifdef  __cplusplus
     }
 #endif

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.217  2004/09/30 00:24:56  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.216  2004/09/27 23:24:32  cheshire
 Fix typo: SOA refresh interval is supposed to be unsigned
 
@@ -990,6 +993,8 @@ typedef struct { mDNSu8 c[ 64]; } domainlabel;		// One label: length byte and up
 typedef struct { mDNSu8 c[256]; } domainname;		// Up to 255 bytes of length-prefixed domainlabels
 
 typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
+
+extern domainname localdomain;                      // "local.", as a length-byte fqdn
 
 // The longest legal textual form of a DNS name is 1005 bytes, including the C-string terminating NULL at the end.
 // Explanation:

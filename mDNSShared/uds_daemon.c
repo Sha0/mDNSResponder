@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.96  2004/09/30 00:25:00  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.95  2004/09/26 23:20:36  ksekar
 <rdar://problem/3813108> Allow default registrations in multiple wide-area domains
 
@@ -396,6 +399,24 @@ typedef struct
     struct request_state *request;
 	} service_info;
 
+// for multi-domain default browsing
+typedef struct browser_t
+	{
+    DNSQuestion q;
+    domainname domain;
+    struct browser_t *next;
+	} browser_t;
+
+// parent struct for browser instances: list pointer plus metadata
+typedef struct
+	{
+    mDNSBool default_domain;
+    domainname regtype;
+    mDNSInterfaceID interface_id;
+    struct request_state *rstate;
+    browser_t *browsers;
+	} browser_info_t;
+
 typedef struct 
     {
     mStatus err;		// Note: This field is in NETWORK byte order
@@ -431,7 +452,7 @@ typedef struct request_state
     registered_record_entry *reg_recs;  // muliple registrations for a connection-oriented request
     service_info *service_registration;
     struct resolve_result_t *resolve_results;
-    
+    browser_info_t *browser_info;
     struct request_state *next;
     } request_state;
 
@@ -505,19 +526,6 @@ typedef struct
     client_context_t client_context;
     } regrecord_callback_context;
 
-// for multi-domain browsing
-typedef struct qlist_t
-	{
-    DNSQuestion q;
-    struct qlist_t *next;
-	} qlist_t;
-
-typedef struct
-	{
-    qlist_t *qlist;
-    request_state *rstate;
-	} browse_termination_context;
-
 #ifdef __MACOSX__
 typedef struct default_browse_list_t
 	{
@@ -535,7 +543,6 @@ mDNSexport mDNS mDNSStorage;
 
 static dnssd_sock_t			listenfd		=	dnssd_InvalidSocket;  
 static request_state	*	all_requests	=	NULL;  
-
 
 #define MAX_OPENFILES 1024
 #define MAX_TIME_BLOCKED 60 * mDNSPlatformOneSecond  // try to send data to a blocked client for 60 seconds before
@@ -830,9 +837,9 @@ void udsserver_info(mDNS *const m)
 			}
 		else if (req->terminate == browse_termination_callback)
 			{
-			qlist_t *qlist;
-			for (qlist = ((browse_termination_context *)t)->qlist; qlist; qlist = qlist->next)
-				LogMsgNoIdent("DNSServiceBrowse           %##s", qlist->q.qname.c);
+			browser_t *blist;
+			for (blist = req->browser_info->browsers; blist; blist = blist->next)
+				LogMsgNoIdent("DNSServiceBrowse           %##s", blist->q.qname.c);
 			}
         else if (req->terminate == resolve_termination_callback)
             LogMsgNoIdent("DNSServiceResolve          %##s", ((resolve_termination_t *)t)->srv->question.qname.c);
@@ -1577,19 +1584,46 @@ static void handle_setdomain_request(request_state *request)
     unlink_request(request);
     }
 
+static mStatus add_domain_to_browser(browser_info_t *info, const domainname *d)
+	{
+	browser_t *b, *p;
+	mStatus err;
+	
+	for (p = info->browsers; p; p = p->next)
+		{
+		if (SameDomainName(&p->domain, d))
+			{ LogMsg("add_domain_to_browser - attempt to add domani %##d already in list", d->c); return mStatus_AlreadyRegistered; }
+		}
+
+	b = mallocL("browser_t", sizeof(*b));
+	if (!b) return mStatus_NoMemoryErr;
+	AssignDomainName(b->domain, *d);
+	err = mDNS_StartBrowse(gmDNS, &b->q, &info->regtype, d, info->interface_id, browse_result_callback, info->rstate);
+	if (err)
+		{
+		LogMsg("mDNS_StartBrowse returned %d for type %##s domain %##s", err, info->regtype.c, d->c);
+		freeL("browser_t", b);
+		}
+	else
+		{
+		b->next = info->browsers;
+		info->browsers = b;
+		}
+		return err;
+	}
+
 static void handle_browse_request(request_state *request)
     {
     DNSServiceFlags flags;
     uint32_t interfaceIndex;
     mDNSInterfaceID InterfaceID;
     char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
-	qlist_t *qlist = NULL, *qlist_elem;
-    domainname typedn;
+    domainname typedn, d;
     mDNSs32 NumSubTypes;
     char *ptr;
-    mStatus result;
-	DNameListElem *search_domain_list, *sdom, tmp;
-	browse_termination_context *term;
+    mStatus err;
+	DNameListElem *search_domain_list, *sdom;
+	browser_info_t *info = NULL;
 	
     if (request->ts != t_complete)
         {
@@ -1605,80 +1639,69 @@ static void handle_browse_request(request_state *request)
     interfaceIndex = get_long(&ptr);
     if (get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
         get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
-        goto bad_param;        
+		{ err = mStatus_BadParamErr;  goto error; }
     freeL("handle_browse_request", request->msgbuf);
     request->msgbuf = NULL;
 
     InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
-    if (interfaceIndex && !InterfaceID) goto bad_param;
+    if (interfaceIndex && !InterfaceID) { err = mStatus_BadParamErr;  goto error; }
 
 	typedn.c[0] = 0;
 	NumSubTypes = CountSubTypes(regtype);
-	if (NumSubTypes < 0 || NumSubTypes > 1) goto bad_param;
-	if (NumSubTypes == 1 && !AppendDNSNameString(&typedn, regtype + strlen(regtype) + 1)) goto bad_param;
+	if (NumSubTypes < 0 || NumSubTypes > 1) { err = mStatus_BadParamErr;  goto error; }
+	if (NumSubTypes == 1 && !AppendDNSNameString(&typedn, regtype + strlen(regtype) + 1))
+		{ err = mStatus_BadParamErr;  goto error; }
 
-    if (!AppendDNSNameString(&typedn, regtype)) goto bad_param;
+    if (!AppendDNSNameString(&typedn, regtype)) { err = mStatus_BadParamErr;  goto error; }
 
 	//!!!KRS browse locally for ichat
 	if (!domain[0] && (!strcmp(regtype, "_ichat._tcp.") || !strcmp(regtype, "_presence._tcp.")))
 		strcpy(domain,"local.");
+
+	// allocate and set up browser info
+	info = mallocL("browser_info_t", sizeof(*info));
+	if (!info) { err = mStatus_NoMemoryErr; goto error; }
+
+	request->browser_info = info;
+	info->interface_id = InterfaceID;
+	AssignDomainName(info->regtype, typedn);
+	info->rstate = request;
+	info->default_domain = !domain[0];
+	info->browsers = NULL;
+
+	// setup termination context
+	request->termination_context = info;
+    request->terminate = browse_termination_callback;
 	
 	if (domain[0])
 		{
-		// generate a fake list of one elem to reduce number of code paths
-		if (!MakeDomainNameFromDNSNameString(&tmp.name, domain)) goto bad_param;
-		tmp.next = NULL;
-		search_domain_list = &tmp;
+		if (!MakeDomainNameFromDNSNameString(&d, domain)) { err = mStatus_BadParamErr;  goto error; }
+		err = add_domain_to_browser(info, &d);
 		}
-	else search_domain_list = mDNSPlatformGetSearchDomainList();
 
-	for (sdom = search_domain_list; sdom; sdom = sdom->next)
+	else
 		{
-		qlist_elem = mallocL("handle_browse_request", sizeof(qlist_t));
-		if (!qlist_elem)
+		search_domain_list = mDNSPlatformGetSearchDomainList();
+		for (sdom = search_domain_list; sdom; sdom = sdom->next)
 			{
-			my_perror("ERROR: handle_browse_request - malloc");
-			exit(1);
+			err = add_domain_to_browser(info, &sdom->name);
+			if (err)
+				{
+				if (SameDomainName(&sdom->name, &localdomain)) break;
+				else err = mStatus_NoError;  // suppress errors for non-local "default" domains
+				}
+
 			}
-		bzero(qlist_elem, sizeof(qlist_t));
-		qlist_elem->q.QuestionContext = request;
-		qlist_elem->q.QuestionCallback = browse_result_callback;
-		qlist_elem->next = qlist;
-		qlist = qlist_elem;
+		mDNS_FreeDNameList(search_domain_list);
 		}
-	
-	// setup termination context
-	term = (browse_termination_context *)mallocL("handle_browse_request", sizeof(browse_termination_context));
-	if (!term)
-    	{
-        my_perror("ERROR: handle_browse_request - malloc");
-        exit(1);
-    	}
-	term->qlist = qlist;
-	term->rstate = request;
-	request->termination_context = term;
-    request->terminate = browse_termination_callback;
-	
-	// start the browses
-	sdom = search_domain_list;
-	for (qlist_elem = qlist; qlist_elem; qlist_elem = qlist_elem->next)
-		{		
-		result = mDNS_StartBrowse(gmDNS, &qlist_elem->q, &typedn, &sdom->name, InterfaceID, browse_result_callback, request);
-		if (result)
-			{
-			// bail here on error.  questions not yet issued are in no core lists, so they can be deallocated lazily
-			if (search_domain_list != &tmp) mDNS_FreeDNameList(search_domain_list);
-			deliver_error(request, result);
-			return;
-			}
-		sdom = sdom->next;
-		}
-	if (search_domain_list != &tmp) mDNS_FreeDNameList(search_domain_list);
+		
 	deliver_error(request, mStatus_NoError);
 	return;
     
-bad_param:
-    deliver_error(request, mStatus_BadParamErr);
+error:
+	if (info) freeL("browser_info_t", info);
+	if (request->termination_context) request->termination_context = NULL;
+    deliver_error(request, err);
     abort_request(request);
     unlink_request(request);
     }
@@ -1709,23 +1732,52 @@ static void browse_result_callback(mDNS *const m, DNSQuestion *question, const R
 
 static void browse_termination_callback(void *context)
     {
-	browse_termination_context *t = context;
-	qlist_t *ptr, *fptr;
+	browser_info_t *info = context;
+	browser_t *ptr;
 	
-	if (!t) return;
+	if (!info) return;
 
-	ptr = t->qlist;
-	t->qlist = NULL;
-
-	while(ptr)
+	while(info->browsers)
 		{
+		ptr = info->browsers;
+		info->browsers = ptr->next;
 		mDNS_StopBrowse(gmDNS, &ptr->q);  // no need to error-check result
-		fptr = ptr;
-		ptr = ptr->next;
-		freeL("browse_termination_callback", fptr);
+		freeL("browse_termination_callback", ptr);
 		}
-	t->rstate->termination_context = NULL;
-	freeL("browse_termination_callback", t);
+	
+	info->rstate->termination_context = NULL;
+	freeL("browser_info", info);
+	}
+
+mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDNSBool add)
+	{
+	request_state *r;
+	
+	for (r = all_requests; r; r = r->next)
+		{
+		browser_info_t *info = r->browser_info;
+		
+		if (!info || !info->default_domain) continue;
+		if (add) add_domain_to_browser(info, d);
+		else
+			{
+			browser_t *ptr = info->browsers, *prev = NULL;
+			while (ptr)
+				{
+				if (SameDomainName(&ptr->domain, d))
+					{
+					if (prev) prev->next = ptr->next;
+					else info->browsers = ptr->next;
+					mDNS_StopBrowse(gmDNS, &ptr->q);
+					freeL("browser_t", ptr);
+					break;
+					}
+				prev = ptr;
+				ptr = ptr->next;
+				}
+			if (!ptr) LogMsg("Requested removal of default domain %##s not in list for sd %s", d->c, r->sd);
+			}
+		}
 	}
 
 mDNSexport int CountExistingRegistrations(domainname *srv, mDNSIPPort port)
@@ -1740,13 +1792,19 @@ mDNSexport int CountExistingRegistrations(domainname *srv, mDNSIPPort port)
 	return(count);
 	}
 
-static mStatus register_service_instance(request_state *request, domainname *domain)
+static mStatus register_service_instance(request_state *request, const domainname *domain)
 	{
 	service_info *info = request->service_registration;
-	service_instance *instance;
+	service_instance *ptr, *instance;
     int instance_size;
-	mStatus result;	
-	static domainname localdomain = {{ '\005','l','o','c','a','l','\0'}};
+	mStatus result;
+
+	for (ptr = info->instances; ptr; ptr = ptr->next)
+		{
+		if (SameDomainName(&ptr->domain, domain))
+			{ LogMsg("register_service_instance: domain %##s already registered", domain->c); return mStatus_AlreadyRegistered; }
+		}
+	
 	instance_size = sizeof(*instance);	
 	if (info->txtlen > sizeof(RDataBody)) instance_size += (info->txtlen - sizeof(RDataBody));
 	instance = mallocL("service_instance", instance_size);
@@ -1779,6 +1837,46 @@ malloc_error:
     exit(1);
 	}
 
+mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add)
+	{
+	request_state *rstate;
+	service_info *info;
+	
+	for (rstate = all_requests; rstate; rstate = rstate->next)
+		{
+		if (rstate->terminate != regservice_termination_callback) continue;
+		info = rstate->service_registration;
+		if (!info) { LogMsg("udsserver_default_reg_domain_changed - NULL service info"); continue; } // this should never happen
+		if (!info->default_domain)  continue;
+
+		// valid default registration
+		if (add) register_service_instance(rstate, d);
+		else
+			{
+			// find the instance to remove
+			service_instance *si = rstate->service_registration->instances, *prev = NULL;
+			while (si)
+				{
+				if (SameDomainName(&si->domain, d))
+					{
+					mStatus err;					
+					if (prev) prev->next = si->next;
+					else info->instances = si->next;
+					err = mDNS_DeregisterService(gmDNS, &si->srs);
+					if (err)
+						{
+						LogMsg("udsserver_default_reg_domain_changed - mDNS_DeregisterService err %d", err);
+						free_service_instance(si);
+						}
+					break;
+					}
+				prev = si;
+				si = si->next;
+				}
+			if (!si)  LogMsg("udsserver_default_reg_domain_changed - domain %##s not registered", d->c);
+			}
+		}
+	}
 
 // service registration
 static void handle_regservice_request(request_state *request)

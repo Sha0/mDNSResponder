@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.61  2004/09/30 00:24:56  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.60  2004/09/27 23:25:30  cheshire
 Fix compiler warning: soa.serial is signed, not unsigned
 
@@ -403,6 +406,8 @@ mDNSexport mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 #pragma mark -
 #pragma mark - Domain Name Utility Functions
 #endif
+
+mDNSexport domainname localdomain = {{ '\005','l','o','c','a','l','\0'}};
 
 mDNSexport mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
 	{

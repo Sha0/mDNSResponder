@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.22  2004/09/30 00:24:56  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.21  2004/09/17 01:08:48  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -191,13 +194,12 @@ extern mDNSu32 mDNSRandom(mDNSu32 max);
 #pragma mark -
 #pragma mark - Domain Name Utility Functions
 #endif
-
+	
 #define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
 #define mDNSIsUpperCase(X) ((X) >= 'A' && (X) <= 'Z')
 #define mDNSIsLowerCase(X) ((X) >= 'a' && (X) <= 'z')
 #define mdnsIsLetter(X)    (mDNSIsUpperCase(X) || mDNSIsLowerCase(X))
-
-
+	
 #define mdnsValidHostChar(X, notfirst, notlast) (mdnsIsLetter(X) || mdnsIsDigit(X) || ((notfirst) && (notlast) && (X) == '-') )
 
 extern mDNSu16 CompressedDomainNameLength(const domainname *const name, const domainname *parent);

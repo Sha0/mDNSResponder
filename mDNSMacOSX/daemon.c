@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.195  2004/09/30 00:24:59  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.194  2004/09/26 23:20:35  ksekar
 <rdar://problem/3813108> Allow default registrations in multiple wide-area domains
 
@@ -472,6 +475,7 @@ typedef struct DNSServiceBrowserQuestion
 	{
 	struct DNSServiceBrowserQuestion *next;
 	DNSQuestion q;
+    domainname domain;
 	} DNSServiceBrowserQuestion;
 
 struct DNSServiceBrowser_struct
@@ -481,6 +485,8 @@ struct DNSServiceBrowser_struct
 	DNSServiceBrowserQuestion *qlist;
 	DNSServiceBrowserResult *results;
 	mDNSs32 lastsuccess;
+    mDNSBool DefaultDomain;                // was the browse started on an explicit domain?
+    domainname type;                       //  registration type 
 	};
 
 typedef struct DNSServiceResolver_struct DNSServiceResolver;
@@ -937,6 +943,66 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	*p = x;
 	}
 
+mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainname *d)
+	{
+	mStatus err = mStatus_NoError;
+	DNSServiceBrowserQuestion *ptr, *question = NULL;
+
+	for (ptr = browser->qlist; ptr; ptr = ptr->next)
+		{
+		if (SameDomainName(&ptr->q.qname, d))
+			{ LogMsg("Domain %##s already contained in browser", d->c); return mStatus_AlreadyRegistered; }
+		}
+	
+	question = mallocL("DNSServiceBrowserQuestion", sizeof(DNSServiceBrowserQuestion));
+	if (!question) { LogMsg("Error: malloc"); return mStatus_NoMemoryErr; }
+	AssignDomainName(question->domain, *d);
+	question->next = browser->qlist;
+	browser->qlist = question;
+	LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", browser->ClientMachPort, browser->type.c, d->c);
+	err = mDNS_StartBrowse(&mDNSStorage, &question->q, &browser->type, d, mDNSInterface_Any, FoundInstance, browser);
+	if (err) LogMsg("Error: AddDomainToBrowser: mDNS_StartBrowse %d", err);
+	return err;
+	}
+
+mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
+	{
+	DNSServiceBrowser *ptr;
+
+	LogMsg("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+	for (ptr = DNSServiceBrowserList; ptr; ptr = ptr->next)
+		{
+		if (ptr->DefaultDomain)
+			{
+			if (add)
+				{
+				mStatus err = AddDomainToBrowser(ptr, d);
+				if (err) LogMsg("Default browse in domain %##s for client %5d failed. Continuing", d, ptr->ClientMachPort);
+				}
+			else
+				{
+				// find the question for this domain
+				DNSServiceBrowserQuestion *q = ptr->qlist, *prev = NULL;
+				while (q)
+					{
+					if (SameDomainName(&q->domain, d))
+						{
+						if (prev) prev->next = q->next;
+						else ptr->qlist = q->next;
+						mDNS_StopBrowse(&mDNSStorage, &q->q);
+						freeL("DNSServiceBrowserQuestion", q);
+						break;
+						}
+					prev = q;
+					q = q->next;
+					}
+				if (!q) LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
+				}
+			}
+		}
+	}
+
+
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unusedserver, mach_port_t client,
 	DNSCString regtype, DNSCString domain)
 	{
@@ -945,7 +1011,6 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
 	DNameListElem *SearchDomains = NULL, *sdPtr;
-	DNSServiceBrowserQuestion *qptr;
 
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
@@ -964,6 +1029,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
 
 	// Set up object, and link into list
+	AssignDomainName(x->type, t);
 	x->ClientMachPort = client;
 	x->results = NULL;
 	x->lastsuccess = 0;
@@ -978,31 +1044,30 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	if (domain[0])
 		{
 		// Start browser for an explicit domain
-		x->qlist = mallocL("DNSServiceBrowserQuestion", sizeof(DNSServiceBrowserQuestion));
-		x->qlist->next = NULL;
-		if (!x->qlist) { err = mStatus_UnknownErr; AbortClient(client, x); errormsg = "malloc"; goto fail; }
-
-		if (!MakeDomainNameFromDNSNameString(&d, domain)) { errormsg = "Illegal domain";  goto badparam; }
-		LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", client, t.c, d.c);
-		err = mDNS_StartBrowse(&mDNSStorage, &x->qlist->q, &t, &d, mDNSInterface_Any, FoundInstance, x);
-		if (err) { AbortClient(client, x); errormsg = "mDNS_StartBrowse"; goto fail; }
+		x->DefaultDomain = mDNSfalse;
+		if (!MakeDomainNameFromDNSNameString(&d, domain)) { errormsg = "Illegal domain";  goto badparam; }		
+		err = AddDomainToBrowser(x, &d);
+		if (err) { AbortClient(client, x); errormsg = "AddDomainToBrowser"; goto fail; }
 		}
 	else
 		{
 		// Start browser on all domains
+		x->DefaultDomain = mDNStrue;
 		SearchDomains = mDNSPlatformGetSearchDomainList();
 		if (!SearchDomains) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
 		for (sdPtr = SearchDomains; sdPtr; sdPtr = sdPtr->next)
 			{
-			qptr = mallocL("DNSServiceBrowserQuestion", sizeof(DNSServiceBrowserQuestion));
-			if (!qptr) { err = mStatus_UnknownErr; AbortClient(client, x); errormsg = "malloc"; goto fail; }
-			qptr->next = x->qlist;
-			x->qlist = qptr;
-			LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", client, t.c, sdPtr->name.c);
-			err = mDNS_StartBrowse(&mDNSStorage, &qptr->q, &t, &sdPtr->name, mDNSInterface_Any, FoundInstance, x);
-			if (err) { AbortClient(client, x); errormsg = "mDNS_StartBrowse"; goto fail; }
+			err = AddDomainToBrowser(x, &sdPtr->name);
+			if (err)
+				{
+				// only terminally bail if .local fails
+				if (!SameDomainName(&localdomain, &sdPtr->name))
+					LogMsg("Default browse in domain %##s failed. Continuing", sdPtr->name.c);
+				else { AbortClient(client, x); errormsg = "AddDomainToBrowser"; goto fail; }
+				}
 			}
 		}
+	
 	// Succeeded: Wrap up and return
 	EnableDeathNotificationForClient(client, x);
 	mDNS_FreeDNameList(SearchDomains);
@@ -1014,12 +1079,12 @@ fail:
 	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
 	if (SearchDomains) mDNS_FreeDNameList(SearchDomains);
 	return(err);
-	}
+		}
 
 //*************************************************************************************************************
 // Resolve Service Info
-
-mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
+	
+	mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->ServiceInfoQueryContext;
@@ -1196,16 +1261,24 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 			}
 		else
 			{
-			// SANITY CHECK: Should only get mStatus_MemFree as a result of calling mDNS_DeregisterService()
-			// and should only get it with x->autorename false if we've already removed the record from our
-			// list, but this check is just to make sure...
-			DNSServiceRegistration **r = &DNSServiceRegistrationList;
-			while (*r && (*r)->ClientMachPort != si->ClientMachPort) r = &(*r)->next;  //!!!KRS is there a race condition using the mach port as an identifier
-			if (*r)
+			// SANITY CHECK: make sure service instance is no longer in any ServiceRegistration's list
+			DNSServiceRegistration *r;
+			for (r = DNSServiceRegistrationList; r; r = r->next)
 				{
-				LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", srs->RR_SRV.resrec.name.c);
-				*r = (*r)->next;
-				}
+				ServiceInstance *sp = r->regs, *prev = NULL;
+				while (sp)
+					{
+					if (sp == si)
+						{				  
+						LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", srs->RR_SRV.resrec.name.c);			    
+						if (prev) prev->next = sp->next;
+						else r->regs = sp->next;
+						break;
+						}
+					prev = sp;
+					sp = sp->next;
+					}
+			    }
 			// END SANITY CHECK
 			FreeServiceInstance(si);
 			}
@@ -1215,11 +1288,19 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		LogMsg("%5d: DNSServiceRegistration(%##s, %u) Unknown Result %ld", si->ClientMachPort, srs->RR_SRV.resrec.name.c, SRS_PORT(srs), result);
 	}
 
-mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, domainname *domain)
+mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname *domain)
 	{
 	mStatus err = 0;
 	ServiceInstance *si = NULL;
-	AuthRecord *SubTypes = AllocateSubTypes(x->NumSubTypes, x->regtype);
+	AuthRecord *SubTypes = NULL;
+
+	for (si = x->regs; si; si = si->next)
+		{
+		if (SameDomainName(&si->domain, domain))
+			{ LogMsg("Requested addition of domain %##s already in list", domain->c); return mStatus_AlreadyRegistered; }
+		}
+	
+	SubTypes = AllocateSubTypes(x->NumSubTypes, x->regtype);
 	if (x->NumSubTypes && !SubTypes) return mStatus_NoMemoryErr;
 	
 	si = mallocL("ServiceInstance", sizeof(*si) - sizeof(RDataBody) + x->rdsize);
@@ -1243,6 +1324,41 @@ mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, domainname *doma
 		freeL("ServiceInstance", si);
 		}
 	return err;	
+	}
+
+mDNSexport void DefaultRegDomainChanged(const domainname *d, mDNSBool add)
+	{
+	DNSServiceRegistration *reg;
+
+	LogMsg("%s default registration domain %##s", add ? "Adding" : "Removing", d->c);
+	for (reg = DNSServiceRegistrationList; reg; reg = reg->next)
+		{
+		if (reg->DefaultDomain)
+			{
+			if (add)
+				{
+				AddServiceInstance(reg, d);
+				}
+			else
+				{
+				ServiceInstance *si = reg->regs, *prev = NULL;
+				while (si)
+					{
+					if (SameDomainName(&si->domain, d))
+						{
+						if (prev) prev->next = si->next;
+						else reg->regs = si->next;
+						if (mDNS_DeregisterService(&mDNSStorage, &si->srs))
+							FreeServiceInstance(si);  // only free memory syncronously on error
+						break;
+						}
+					prev = si;
+					si = si->next;
+					}
+				if (!si) LogMsg("Requested removal of default domain %##s not in client %5d's list", d, reg->ClientMachPort);
+				}					
+			}
+		}
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -1274,6 +1390,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (!name[0]) n = mDNSStorage.nicelabel;
 	else if (!MakeDomainLabelFromLiteralString(&n, name))                  { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }
+	if (!*domain && (!strcmp(regtype, "_presence._tcp.") || !strcmp(regtype, "_ichat._tcp.")))
+		domain = "local."; // block iChat until we have AddRecord support for wide area
 	if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
 
@@ -1345,7 +1463,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
    	err = AddServiceInstance(x, &d);
 	if (err) { AbortClient(client, x); errormsg = "mDNS_RegisterService"; goto fail; }  // bail if .local (or explicit domain) fails
 
-	if (strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp.")) // block iChat until we have AddRecord support for wide area
+	if (x->DefaultDomain)
 		{
 		DNameListElem *ptr, *regdomains = mDNSPlatformGetRegDomainList();
 		for (ptr = regdomains; ptr; ptr = ptr->next)

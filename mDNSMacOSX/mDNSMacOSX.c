@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.201  2004/09/30 00:24:59  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.200  2004/09/26 23:20:35  ksekar
 <rdar://problem/3813108> Allow default registrations in multiple wide-area domains
 
@@ -594,7 +597,8 @@ Minor code tidying
 #define AAAA_OVER_V4 1
 
 #include "mDNSEmbeddedAPI.h"          // Defines the interface provided to the client layer above
-#include "mDNSMacOSX.h"             // Defines the specific types needed to run mDNS on this platform
+#include "mDNSMacOSX.h"               // Defines the specific types needed to run mDNS on this platform
+#include "../mDNSShared/uds_daemon.h" // Defines communication interface from platform layer up to UDS daemon
 
 #include <stdio.h>
 #include <unistd.h>                 // For select() and close()
@@ -726,6 +730,9 @@ mDNSlocal void AddDefRegDomain(domainname *d)
 	AssignDomainName(newelem->name, *d);
 	newelem->next = DefRegList;
 	DefRegList = newelem;
+
+	DefaultRegDomainChanged(d, mDNStrue);
+	udsserver_default_reg_domain_changed(d, mDNStrue);
 	}
 
 mDNSlocal void RemoveDefRegDomain(domainname *d)
@@ -739,6 +746,8 @@ mDNSlocal void RemoveDefRegDomain(domainname *d)
 			if (prev) prev->next = ptr->next;
 			else DefRegList = ptr->next;
 			freeL("DNameListElem", ptr);
+			DefaultRegDomainChanged(d, mDNSfalse);
+			udsserver_default_reg_domain_changed(d, mDNSfalse);
 			return;
 			}
 		prev = ptr;
@@ -2528,7 +2537,13 @@ mDNSlocal void RemoveKeychainDomains(mDNS *m)
 			ptr = ptr->next;
 			free(tmp);
 			}
+		else
+			{
+			prev = ptr;
+			ptr = ptr->next;
+			}
 		}
+	
 	}
 
 mDNSlocal OSStatus KeychainCallback(SecKeychainEvent event, SecKeychainCallbackInfo *info, void *context)
@@ -2595,9 +2610,11 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 		{
 		new = mallocL("FoundDefBrowseDomain", sizeof(DNameListElem));
 		if (!new) { LogMsg("ERROR: malloc"); return; }
-		strcpy(new->name.c, answer->rdata->u.name.c);
+		AssignDomainName(new->name, answer->rdata->u.name);
 		new->next = DefBrowseList;
 		DefBrowseList = new;
+		DefaultBrowseDomainChanged(&new->name, mDNStrue);
+		udsserver_default_browse_domain_changed(&new->name, mDNStrue);
 		return;
 		}
 	else
@@ -2608,9 +2625,11 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 			{
 			if (SameDomainName(&ptr->name, &answer->rdata->u.name))
 				{
+				DefaultBrowseDomainChanged(&ptr->name, mDNSfalse);
+				udsserver_default_browse_domain_changed(&ptr->name, mDNSfalse);
 				if (prev) prev->next = ptr->next;
 				else DefBrowseList = ptr->next;
-				freeL("FoundDefBrowseDomain", ptr);
+				freeL("FoundDefBrowseDomain", ptr);				
 				return;
 				}
 			prev = ptr;

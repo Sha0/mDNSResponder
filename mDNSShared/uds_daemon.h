@@ -29,6 +29,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.9  2004/09/30 00:25:00  ksekar
+<rdar://problem/3695802> Dynamically update default registration domains on config change
+
 Revision 1.8  2004/09/21 21:05:11  cheshire
 Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
 into mDNSShared/uds_daemon.c
@@ -78,6 +81,8 @@ extern void udsserver_handle_configchange(void);
 
 extern int udsserver_exit(void);	// should be called prior to app exit
 
+extern void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add);
+extern void udsserver_default_browse_domain_changed(const domainname *d, mDNSBool add);
 
 /* Routines that uds_daemon expects to link against: */
 
