@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.16  2004/03/08 02:45:35  cheshire
+Minor change to make a couple of the log messages a bit shorter
+
 Revision 1.15  2004/03/08 02:44:09  cheshire
 <rdar://problem/3579561>: Need to limit service types to fourteen characters
 
@@ -539,10 +542,10 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	if (len < 2 || len > 15)
 		if (!AllowedServiceNameException(src))			// If length not legal, check our grandfather-exceptions list
 			{ errormsg="Application protocol name must be underscore plus 1-14 characters"; goto fail; }
-	if (src[1] != '_') { errormsg="Service application protocol name must begin with underscore"; goto fail; }
+	if (src[1] != '_') { errormsg="Application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
 		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-' && src[i] != '_')
-			{ errormsg="Service application protocol name must contain only letters, digits, and hyphens"; goto fail; }
+			{ errormsg="Application protocol name must contain only letters, digits, and hyphens"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
