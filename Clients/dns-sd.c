@@ -269,6 +269,8 @@ static void DNSSD_API enum_reply(DNSServiceRef client, DNSServiceFlags flags, ui
 		GetNextLabel(label[labels-1-depth], text);
 		printf("> %s\n", text);
 		}
+
+	fflush( stdout );
 	}
 
 static void DNSSD_API browse_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
@@ -281,6 +283,7 @@ static void DNSSD_API browse_reply(DNSServiceRef client, DNSServiceFlags flags, 
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
 	printf("%s%6X%3d %-24s %-24s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
+	fflush( stdout );
 	}
 
 static void DNSSD_API resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
@@ -328,6 +331,7 @@ static void DNSSD_API resolve_reply(DNSServiceRef client, DNSServiceFlags flags,
 		printf(" TXT %s", txtInfo);
 		}
 	printf("\n");
+	fflush( stdout );
 	}
 
 static void myTimerCallBack(void)
@@ -399,6 +403,7 @@ static void DNSSD_API reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNS
 		}
 
 	if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
+	fflush( stdout );
 	}
 
 static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
@@ -428,6 +433,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint3
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
 	printtimestamp();
 	printf("%s%6X%3d %-30s%4d%4d %s\n", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
+	fflush( stdout );
 	}
 
 //*************************************************************************************************************
@@ -517,6 +523,7 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 		case kDNSServiceErr_NameConflict: printf("Name in use, please choose another\n"); exit(-1);
 		default:                          printf("Error %d\n", errorCode); return;
 		}
+	fflush( stdout );
 	}
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
