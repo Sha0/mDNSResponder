@@ -953,6 +953,7 @@ static void browse_result_callback(mDNS *const m, DNSQuestion *question, const R
             }
         return;
         }
+    if (answer->rrremainingttl) rep->rhdr->flags |= kDNSServiceFlagsAdd;  // non-zero TTL indicates add
     append_reply(req, rep);
     return;
     }
