@@ -23,6 +23,9 @@
 ;	Change History (most recent first):
 ;    
 ; $Log: dnssd.def,v $
+; Revision 1.2  2004/03/19 10:07:14  bradley
+; Export all DNS-SD API symbols from the DLL so they can be used by clients.
+;
 ; Revision 1.1  2004/02/21 04:16:50  bradley
 ; DLL wrapper for DNS-SD API.
 ;
@@ -32,23 +35,23 @@
 LIBRARY		DNSSD
 
 EXPORTS
-	DNSServiceInitialize		PRIVATE
-	DNSServiceFinalize			PRIVATE
-	DNSServiceCheckVersion		PRIVATE
-	DNSServiceCopyProperty		PRIVATE
-	DNSServiceReleaseProperty	PRIVATE
-	DNSServiceRefSockFD			PRIVATE
-	DNSServiceProcessResult		PRIVATE
-	DNSServiceRefDeallocate		PRIVATE
-	DNSServiceEnumerateDomains	PRIVATE
-	DNSServiceRegister			PRIVATE
-	DNSServiceAddRecord			PRIVATE
-	DNSServiceUpdateRecord		PRIVATE
-	DNSServiceRemoveRecord		PRIVATE
-	DNSServiceBrowse			PRIVATE
-	DNSServiceResolve			PRIVATE
-	DNSServiceConstructFullName	PRIVATE
-	DNSServiceCreateConnection	PRIVATE
-	DNSServiceRegisterRecord	PRIVATE
-	DNSServiceQueryRecord		PRIVATE
-	DNSServiceReconfirmRecord	PRIVATE
+	DNSServiceInitialize
+	DNSServiceFinalize
+	DNSServiceCheckVersion
+	DNSServiceCopyProperty
+	DNSServiceReleaseProperty
+	DNSServiceRefSockFD
+	DNSServiceProcessResult
+	DNSServiceRefDeallocate
+	DNSServiceEnumerateDomains
+	DNSServiceRegister
+	DNSServiceAddRecord
+	DNSServiceUpdateRecord
+	DNSServiceRemoveRecord
+	DNSServiceBrowse
+	DNSServiceResolve
+	DNSServiceConstructFullName
+	DNSServiceCreateConnection
+	DNSServiceRegisterRecord
+	DNSServiceQueryRecord
+	DNSServiceReconfirmRecord
