@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.6  2004/07/22 05:27:20  shersche
+<rdar://problem/3735827> Check to make sure error isn't WSAEWOULDBLOCK when canceling browse
+Bug #: 3735827
+
 Revision 1.5  2004/07/20 06:49:18  shersche
 clean up socket handling code
 
@@ -348,9 +352,11 @@ ExplorerBarWindow::OnServiceEvent(WPARAM inWParam, LPARAM inLParam)
 			{
 				DNSServiceErrorType err;
 
+				WSASetLastError(0);
+
 				err = DNSServiceProcessResult(ref);
 
-				if (err != 0)
+				if ((err != 0) && (WSAGetLastError() != WSAEWOULDBLOCK))
 				{
 					Stop(ref);
 				}
@@ -399,7 +405,7 @@ void DNSSD_API
 	//
 	// set the UI to hold off on updates
 	//
-	obj->obj->mTree.SetRedraw(FALSE);
+	// obj->obj->mTree.SetRedraw(FALSE);
 
 	try
 	{
@@ -410,6 +416,8 @@ void DNSSD_API
 		
 		err = UTF8StringToStringObject( inName, service->displayName );
 		check_noerr( err );
+
+OutputDebugString(service->displayName);
 		
 		service->name = strdup( inName );
 		require_action( service->name, exit, err = kNoMemoryErr );
@@ -447,8 +455,8 @@ exit:
 	//
 	if (obj && obj->obj && ((inFlags & kDNSServiceFlagsMoreComing) == 0))
 	{
-		obj->obj->mTree.SetRedraw(TRUE);
-		obj->obj->mTree.Invalidate();
+		// obj->obj->mTree.SetRedraw(TRUE);
+		// obj->obj->mTree.Invalidate();
 	}
 
 	if( service )
