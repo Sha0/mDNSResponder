@@ -47,6 +47,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.60  2002/09/19 23:47:35  cheshire
+Added mDNS_RegisterNoSuchService() function for assertion of non-existence
+of a particular named service
+
 Revision 1.59  2002/09/19 21:25:34  cheshire
 mDNS_sprintf() doesn't need to be in a separate file
 
@@ -820,7 +824,7 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	return(mDNStrue);
 	}
 
-mDNSlocal void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
+mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	{
 	long val = 0, multiplier = 1, divisor = 1, digits = 1;
 
@@ -1058,7 +1062,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 //	rr->Callback          = already set in mDNS_SetupResourceRecord
 //	rr->Context           = already set in mDNS_SetupResourceRecord
 //	rr->RecordType        = already set in mDNS_SetupResourceRecord
-//	rr->HostTarget        = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->HostTarget        = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
 
 	// Field Group 2: Transient state for Authoritative Records
 	rr->Acknowledged      = mDNSfalse;
@@ -3949,6 +3953,8 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 // Domain is fully qualified domain name (i.e. ending with a null label)
 // We always register a TXT, even if it is empty (so that clients are not
 // left waiting forever looking for a nonexistent record.)
+// If the host parameter is mDNSNULL or the root domain (ASCII NUL),
+// then the default host name (m->hostname1) is automatically used
 mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
 	const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
@@ -4110,6 +4116,25 @@ mDNSexport void mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	mDNS_Deregister_internal(m, &sr->RR_PTR, timenow, mDNS_Dereg_normal);
 
 	mDNS_Unlock(m);
+	}
+
+// Create a registration that asserts that no such service exists with this name.
+// This can be useful where there is a given function is available through several protocols.
+// For example, a printer called "Stuart's Printer" may implement printing via the "pdl-datastream" and "IPP"
+// protocols, but not via "LPR". In this case it would be prudent for the printer to assert the non-existence of an
+// "LPR" service called "Stuart's Printer". Without this precaution, another printer than offers only "LPR" printing
+// could inadvertently advertise its service under the same name "Stuart's Printer", which might be confusing for users.
+mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
+	const domainlabel *const name, const domainname *const type, const domainname *const domain,
+	mDNSRecordCallback Callback, void *Context)
+	{
+	mDNS_SetupResourceRecord(rr, mDNSNULL, zeroIPAddr, kDNSType_SRV, 60, kDNSRecordTypeUnique, Callback, Context);
+	if (ConstructServiceName(&rr->name, name, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
+	rr->rdata->u.srv.priority    = 0;
+	rr->rdata->u.srv.weight      = 0;
+	rr->rdata->u.srv.port        = zeroIPPort;
+	rr->rdata->u.srv.target.c[0] = 0;
+	return(mDNS_Register(m, rr));
 	}
 
 mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,

@@ -47,6 +47,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.24  2002/09/19 23:47:35  cheshire
+Added mDNS_RegisterNoSuchService() function for assertion of non-existence
+of a particular named service
+
 Revision 1.23  2002/09/19 21:25:34  cheshire
 mDNS_sprintf() doesn't need to be in a separate file
 
@@ -554,6 +558,11 @@ extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr,
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr);
 extern void    mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
+extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
+				const domainlabel *const name, const domainname *const type, const domainname *const domain,
+				mDNSRecordCallback Callback, void *Context);
+#define        mDNS_DeregisterNoSuchService mDNS_Deregister
+
 extern mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 				const domainname *const srv, const domainname *const domain,
 				const mDNSIPAddr InterfaceAddr, mDNSQuestionCallback *Callback, void *Context);
@@ -615,6 +624,7 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 
 extern int mDNS_sprintf(char *sbuffer, const char *fmt, ...);
 extern int mDNS_vsprintf(char *sbuffer, const char *fmt, va_list arg);
+extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 
 #ifdef	__cplusplus
 	}

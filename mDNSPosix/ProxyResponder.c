@@ -53,10 +53,10 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 	{
 	ProxyHost *f = (ProxyHost*)rr->Context;
 	if (result == mStatus_NoError)
-		debugf("Host name successfully registered: %##s", rr->name.c);
+		debugf("Host name successfully registered: %##s", &rr->name);
 	else
 		{
-		debugf("Host name conflict for %##s", rr->name.c);
+		debugf("Host name conflict for %##s", &rr->name);
 		mDNS_Deregister(m, &f->RR_A);
 		mDNS_Deregister(m, &f->RR_PTR);
 		exit(-1);
@@ -99,13 +99,27 @@ mDNSlocal void ServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatu
 	{
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   sr->RR_SRV.name.c); break;
-		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     sr->RR_SRV.name.c); break;
-		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       sr->RR_SRV.name.c); break;
-		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &sr->RR_SRV.name); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &sr->RR_SRV.name); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &sr->RR_SRV.name); break;
+		default:                   debugf("Callback: %##s Unknown Result %d", &sr->RR_SRV.name, result); break;
 		}
 
-	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr);
+	if (result == mStatus_NoError)
+		{
+		char buffer[256];
+		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer);
+		printf("Service %s now registered and active\n", buffer);
+		}
+
+	if (result == mStatus_NameConflict)
+		{
+		char buffer1[256], buffer2[256];
+		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer1);
+		mDNS_RenameAndReregisterService(m, sr);
+		ConvertDomainNameToCString_unescaped(&sr->RR_SRV.name, buffer2);
+		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
+		}
 	}
 
 // RegisterService() is a simple wrapper function which takes C string
@@ -115,8 +129,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	const domainname *host, mDNSu16 PortAsNumber, const char txtinfo[])
 	{
 	domainlabel n;
-	domainname t;
-	domainname d;
+	domainname t, d;
 	mDNSIPPort port;
 	unsigned char buffer[256];
 
@@ -139,6 +152,50 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	printf("Made Service Records for %s\n", buffer);
 	}
 
+mDNSlocal void NoSuchServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
+	{
+	switch (result)
+		{
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &rr->name); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &rr->name); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &rr->name); break;
+		default:                   debugf("Callback: %##s Unknown Result %d", &rr->name, result); break;
+		}
+
+	if (result == mStatus_NoError)
+		{
+		char buffer[256];
+		ConvertDomainNameToCString_unescaped(&rr->name, buffer);
+		printf("Non-existence assertion %s now registered and active\n", buffer);
+		}
+
+	if (result == mStatus_NameConflict)
+		{
+		domainlabel n;
+		domainname t, d;
+		char buffer1[256], buffer2[256];
+		ConvertDomainNameToCString_unescaped(&rr->name, buffer1);
+		DeconstructServiceName(&rr->name, &n, &t, &d);
+		IncrementLabelSuffix(&n, mDNStrue);
+		mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, NoSuchServiceCallback, mDNSNULL);
+		ConvertDomainNameToCString_unescaped(&rr->name, buffer2);
+		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
+		}
+	}
+
+mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr,
+	const char name[], const char type[], const char domain[])
+	{
+	domainlabel n;
+	domainname t, d;
+	unsigned char buffer[256];
+	ConvertCStringToDomainLabel(name, &n);
+	ConvertCStringToDomainName(type, &t);
+	ConvertCStringToDomainName(domain, &d);
+	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, NoSuchServiceCallback, mDNSNULL);
+	ConvertDomainNameToCString_unescaped(&rr->name, buffer);
+	printf("Made Non-existence Record for %s\n", buffer);
+	}
 
 //*************************************************************************************************************
 // Main
@@ -148,6 +205,7 @@ mDNSexport int main(int argc, char **argv)
 	mStatus status;
 	ProxyHost proxyhost;
 	ServiceRecordSet proxyservice;
+	ResourceRecord proxyrecord;
 	
 	if (argc < 3) goto usage;
 	
@@ -162,7 +220,6 @@ mDNSexport int main(int argc, char **argv)
 		fprintf(stderr, "%s is not valid host address\n", argv[1]);
 		return(-1);
 		}
-	ConvertCStringToDomainLabel(argv[2], &proxyhost.hostlabel);
 
 	status = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
@@ -170,21 +227,31 @@ mDNSexport int main(int argc, char **argv)
 		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (status) { fprintf(stderr, "Daemon start: mDNS_Init failed %ld\n", status); return(status); }
 
-	mDNS_RegisterProxyHost(&mDNSStorage, &proxyhost);
-
-	if (argc >=6)
+	if (proxyhost.ip.NotAnInteger == 0)
 		{
-		char *txt = (argc >=7) ? argv[6] : NULL;
-		RegisterService(&mDNSStorage, &proxyservice, argv[3], argv[4], "local.",
-						&proxyhost.RR_A.name, atoi(argv[5]), txt);
+		RegisterNoSuchService(&mDNSStorage, &proxyrecord, argv[2], argv[3], "local.");
+		}
+	else
+		{
+		ConvertCStringToDomainLabel(argv[2], &proxyhost.hostlabel);
+		mDNS_RegisterProxyHost(&mDNSStorage, &proxyhost);
+	
+		if (argc >=6)
+			{
+			char *txt = (argc >=7) ? argv[6] : NULL;
+			RegisterService(&mDNSStorage, &proxyservice, argv[3], argv[4], "local.",
+							&proxyhost.RR_A.name, atoi(argv[5]), txt);
+			}
 		}
 
 	ExampleClientEventLoop(&mDNSStorage);
+
 	mDNS_Close(&mDNSStorage);
 	return(0);
 
 usage:
 	fprintf(stderr, "%s ip hostlabel srvname srvtype port txt\n", argv[0]);
-	fprintf(stderr, "e.g. %s 169.254.12.34 thehost \"My Printer\" _printer._tcp 515 rp=lpt1\n", argv[0]);
+	fprintf(stderr, "e.g. %s 169.254.12.34 thehost \"My Printer\" _printer._tcp. 515 rp=lpt1\n", argv[0]);
+	fprintf(stderr, "or   %s 0.0.0.0 \"My Printer\" _printer._tcp. (assertion of non-existence)\n", argv[0]);
 	return(-1);
 	}
