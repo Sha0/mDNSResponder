@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.138  2003/10/07 20:16:58  cheshire
+Shorten syslog message a bit
+
 Revision 1.137  2003/09/23 02:12:43  cheshire
 Also include port number in list of services registered via new UDS API
 
@@ -1601,7 +1604,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 		if (l->ReportTime && now - l->ReportTime >= 0)
 			{
 			l->ReportTime = 0;
-			LogMsg("%5d: DNSServiceResolver(%##s) has remained active for over two minutes. "
+			LogMsg("%5d: DNSServiceResolver(%##s) active for over two minutes. "
 				"This places considerable burden on the network.", l->ClientMachPort, l->i.name.c);
 			}
 
