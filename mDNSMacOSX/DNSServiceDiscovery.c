@@ -379,6 +379,7 @@ kern_return_t internal_DNSServiceDomainEnumerationReply_rpc
         if (request->client_port == reply) {
             break;
         }
+        request = request->next;
     }
 
     if (request != NULL) {
@@ -415,6 +416,7 @@ kern_return_t internal_DNSServiceBrowserReply_rpc
         if (request->client_port == reply) {
             break;
         }
+        request = request->next;
     }
     if (request != NULL) {
         callback = (*request->callout.browserCallback);
@@ -447,6 +449,7 @@ kern_return_t internal_DNSServiceRegistrationReply_rpc
         if (request->client_port == reply) {
             break;
         }
+        request = request->next;
     }
     if (request != NULL) {
         callback = (*request->callout.regCallback);
@@ -494,6 +497,7 @@ kern_return_t internal_DNSServiceResolverReply_rpc
         if (request->client_port == reply) {
             break;
         }
+        request = request->next;
     }
 
     if (request != NULL) {
