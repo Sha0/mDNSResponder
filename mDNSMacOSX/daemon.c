@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.181  2004/08/11 02:02:26  cheshire
+Remove "mDNS *globalInstance" parameter from udsserver_init();
+Move CheckForDuplicateRegistrations to uds_daemon.c
+
 Revision 1.180  2004/07/13 21:24:25  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -362,9 +366,6 @@ Add $Log header
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
-extern mDNSs32 CountSubTypes(char *regtype);
-extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
-
 //*************************************************************************************************************
 // Macros
 
@@ -382,7 +383,6 @@ extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 
 #define LOCAL_DEFAULT_REG 1 // empty string means register in the local domain
 #define DEFAULT_REG_DOMAIN "apple.com." // used if the above flag is turned off
-mDNSexport mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 64
 static CacheRecord rrcachestorage[RR_CACHE_SIZE];
@@ -1199,21 +1199,6 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 		}
 	}
 
-mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainname *srv, mDNSIPPort port)
-	{
-	int count = 1;			// Start with the one we're planning to register, then see if there are any more
-	AuthRecord *rr;
-	for (rr = mDNSStorage.ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.rrtype == kDNSType_SRV &&
-			rr->resrec.rdata->u.srv.port.NotAnInteger == port.NotAnInteger &&
-			SameDomainName(&rr->resrec.name, srv))
-			count++;
-
-	if (count > 1)
-		LogMsg("%5d: Client application registered %d identical instances of service %##s port %u.",
-			x->ClientMachPort, count, srv->c, mDNSVal16(port));
-	}
-
 // Pass NULL for x to allocate the structure (for local service).  Call again w/ initialized x to add a global service.
 mDNSlocal DNSServiceRegistration *RegisterService(mach_port_t client, DNSCString name, DNSCString regtype, DNSCString domain,
 												  int notAnIntPort, DNSCString txtRecord, DNSServiceRegistration *x)
@@ -1300,10 +1285,17 @@ mDNSlocal DNSServiceRegistration *RegisterService(mach_port_t client, DNSCString
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistration(\"%s\", \"%s\", \"%s\", %u) START",
 		x->ClientMachPort, name, regtype, domain, mDNSVal16(port));
+
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
 	// a port number of zero. When two instances of the protected client are allowed to run on one
 	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
-	if (port.NotAnInteger) CheckForDuplicateRegistrations(x, &srv, port);
+	if (port.NotAnInteger)
+		{
+		int count = CountExistingRegistrations(&srv, port);
+		if (count)
+			LogMsg("%5d: Client application registered %d identical instances of service %##s port %u.",
+				x->ClientMachPort, count+1, srv.c, mDNSVal16(port));
+		}
 
 	err = mDNS_RegisterService(&mDNSStorage, srs,
 		&x->name, &t, &d,       // Name, type, domain
@@ -1959,7 +1951,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFRelease(e_rls);
 	CFRelease(i_rls);
 	if (mDNS_DebugMode) printf("Service registered with Mach Port %d\n", m_port);
-	err = udsserver_init(&mDNSStorage);
+	err = udsserver_init();
 	if (err) { LogMsg("Daemon start: udsserver_init failed"); return err; }
 	return(err);
 	}
