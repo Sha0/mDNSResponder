@@ -100,7 +100,7 @@ enum
      * by renaming the service.  NoAutoRename overrides this behavior - with this
      * flag set, name conflicts will result in a callback.  The NoAutorename flag
      * is only valid if a name is explicitly specified when registering a service
-     * (ie the default name is not used.)
+     * (i.e. the default name is not used.)
      */
 
     kDNSServiceFlagsShared              = 0x10,
