@@ -25,12 +25,12 @@
 
 	Contains:	main & associated Application layer for mDNSResponder on Linux.
 
-	Version:	1.0
-	Tabs:		4 spaces
-
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.18  2004/11/30 22:45:59  cheshire
+Minor code tidying
+
 Revision 1.17  2004/11/30 22:18:59  cheshire
 <rdar://problem/3889351> Posix needs to read the list of unicast DNS servers and set server list
 
@@ -85,7 +85,6 @@ Clean up mDNSPosix so that it builds on OS X again.
 
 Revision 1.1  2003/12/08 20:47:02  rpantos
 Add support for mDNSResponder on Linux.
-
 */
 
 #include <stdio.h>
@@ -105,152 +104,13 @@ Add support for mDNSResponder on Linux.
 #include "mDNSPosix.h"
 #include "uds_daemon.h"
 
-
-static void		ParseCmdLinArgs( int argc, char **argv);
-static void		DumpStateLog( mDNS *m);
-static mStatus	MainLoop( mDNS *m);
-
 #define uDNS_SERVERS_FILE "/etc/resolv.conf"
 #define RR_CACHE_SIZE 500
 static CacheRecord gRRCache[RR_CACHE_SIZE];
 
 extern const char mDNSResponderVersionString[];
 
-static void Reconfigure( mDNS *m)
-{
-	mDNS_DeregisterDNSList(m);
-	if (ParseDNSServers( m, uDNS_SERVERS_FILE) < 0)
-		LogMsg("Unable to parse DNS server list. Unicast DNS-SD unavailable");
-}
-
-int		main( int argc, char **argv)
-{
-	#define mDNSRecord mDNSStorage
-	mDNS_PlatformSupport	platformStorage;
-	mStatus					err;
-
-	bzero( &mDNSRecord, sizeof mDNSRecord);
-	bzero( &platformStorage, sizeof platformStorage);
-
-	ParseCmdLinArgs( argc, argv);
-
-	err = mDNS_Init( &mDNSRecord, &platformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, 
-					mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext); 
-
-	if ( mStatus_NoError == err)
-		err = udsserver_init();
-		
-	Reconfigure( &mDNSRecord);
-
-	// Now that we're finished with anything privileged, switch over to running as "nobody"
-	if ( mStatus_NoError == err)
-	{
-		const struct passwd *pw = getpwnam("nobody");
-		if ( pw != NULL)
-			setuid( pw->pw_uid);
-		else
-			LogMsg("WARNING: mdnsd continuing as root because user \"nobody\" does not exist");
-	}
-
-	if ( mStatus_NoError == err)
-		err = MainLoop( &mDNSRecord);
- 
-	mDNS_Close( &mDNSRecord);
-
-	if (udsserver_exit() < 0)
-		LogMsg("ExitCallback: udsserver_exit failed");
- 
- #if MDNS_DEBUGMSGS > 0
-	printf( "mDNSResponder exiting normally with %ld\n", err);
- #endif
- 
-	return err;
-}
-
-
-#ifdef NOT_HAVE_DAEMON
-static int	Daemon_Init( int nochdir, int noclose )
-// daemonize the process. Adapted from "Unix Network Programming" vol 1 by Stevens, section 12.4.
-// Returns 0 on success, -1 on failure.
-{
-	pid_t	pid = fork();
-	
-	if ( -1 == (int) pid)		// fork failure
-		return -1;
-	else if ( 0 != (int) pid)
-		exit( 0);				// quit parent
-
-	pid = setsid();
-	if ( -1 == (int) pid)
-		return -1;				// setsid() failure; inform child
-
-	signal( SIGHUP, SIG_IGN);
-
-	pid = fork();	// again, primarily for reasons of Unix trivia
-	if ( -1 == (int) pid)		// fork failure
-		return -1;
-	else if ( 0 != (int) pid)
-		exit( 0);				// quit 1st child
-
-	if ( 0 == nochdir)
-		chdir( "/");
-	umask( 0);
-
-	if ( 0 == noclose)
-	{
-		int fd = open( "/dev/null", O_RDWR, 0);
-		if (fd != -1)
-		{
-			// Avoid unnecessarily duplicating a file descriptor to itself
-			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
-			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
-			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
-			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) 
-				(void)close (fd);
-		}
-	}
-
-	return 0;
-}
-#endif
-
-static void ParseCmdLinArgs( int argc, char **argv)
-// Do appropriate things at startup with command line arguments. Calls exit() if unhappy.
-{
-	if ( argc > 1)
-	{
-		if ( 0 == strcmp( argv[1], "-debug"))
-		{
-			mDNS_DebugMode = mDNStrue;
-		}
-		else
-			printf( "Usage: mDNSResponder [-debug]\n");
-	}
-
-	if ( !mDNS_DebugMode)
-	{
-#ifdef NOT_HAVE_DAEMON
-		int		result = Daemon_Init( 0, 0);
-#else
-		int		result = daemon( 0, 0);
-#endif
-		
-		if ( result != 0)
-		{
-			LogMsg("Could not run as daemon - exiting");
-			exit( result);
-		}
-
-#if __APPLE__
-		{
-			LogMsg("The POSIX mDNSResponder should only be used on OS X for testing - exiting");
-			exit( -1);
-		}
-#endif
-	}
-}
-
-static int ParseDNSServers( mDNS *m, const char *filePath)
+static int ParseDNSServers(mDNS *m, const char *filePath)
 	{
 	char line[256];
 	char nameserver[16];
@@ -275,17 +135,94 @@ static int ParseDNSServers( mDNS *m, const char *filePath)
 	return (numOfServers > 0) ? 0 : -1;
 	}
 
+static void Reconfigure(mDNS *m)
+	{
+	mDNS_DeregisterDNSList(m);
+	if (ParseDNSServers(m, uDNS_SERVERS_FILE) < 0)
+		LogMsg("Unable to parse DNS server list. Unicast DNS-SD unavailable");
+	}
+
+#ifdef NOT_HAVE_DAEMON
+static int	Daemon_Init(int nochdir, int noclose )
+// daemonize the process. Adapted from "Unix Network Programming" vol 1 by Stevens, section 12.4.
+// Returns 0 on success, -1 on failure.
+	{
+	pid_t	pid = fork();
+	
+	if (-1 == (int) pid)		// fork failure
+		return -1;
+	else if (0 != (int) pid)
+		exit(0);				// quit parent
+
+	pid = setsid();
+	if (-1 == (int) pid)
+		return -1;				// setsid() failure; inform child
+
+	signal(SIGHUP, SIG_IGN);
+
+	pid = fork();	// again, primarily for reasons of Unix trivia
+	if (-1 == (int) pid)		// fork failure
+		return -1;
+	else if (0 != (int) pid)
+		exit(0);				// quit 1st child
+
+	if (0 == nochdir)
+		chdir("/");
+	umask(0);
+
+	if (0 == noclose)
+		{
+		int fd = open("/dev/null", O_RDWR, 0);
+		if (fd != -1)
+			{
+			// Avoid unnecessarily duplicating a file descriptor to itself
+			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
+			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
+			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
+			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) 
+				(void)close (fd);
+			}
+		}
+	return 0;
+	}
+#endif
+
+// Do appropriate things at startup with command line arguments. Calls exit() if unhappy.
+static void ParseCmdLinArgs(int argc, char **argv)
+	{
+	if (argc > 1)
+		{
+		if (0 == strcmp(argv[1], "-debug")) mDNS_DebugMode = mDNStrue;
+		else printf("Usage: mDNSResponder [-debug]\n");
+		}
+
+	if (!mDNS_DebugMode)
+		{
+#ifdef NOT_HAVE_DAEMON
+		int		result = Daemon_Init(0, 0);
+#else
+		int		result = daemon(0, 0);
+#endif
+		
+		if (result != 0) { LogMsg("Could not run as daemon - exiting"); exit(result); }
+
+#if __APPLE__
+		LogMsg("The POSIX mDNSResponder should only be used on OS X for testing - exiting");
+		exit(-1);
+#endif
+		}
+	}
+
 static void		DumpStateLog(mDNS *const m)
 // Dump a little log of what we've been up to.
-{
+	{
 	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
 	udsserver_info(m);
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
-}
+	}
 
-static mStatus	MainLoop(mDNS *m)
-// Loop until we quit.
-{
+static mStatus	MainLoop(mDNS *m) // Loop until we quit.
+	{
 	sigset_t	signals;
 	mDNSBool	gotData = mDNSfalse;
 
@@ -295,22 +232,20 @@ static mStatus	MainLoop(mDNS *m)
 	mDNSPosixListenForSignalInEventLoop(SIGPIPE);
 	mDNSPosixListenForSignalInEventLoop(SIGHUP) ;
 
-	for ( ; ;)
-	{
+	for (; ;)
+		{
 		// Work out how long we expect to sleep before the next scheduled task
 		struct timeval	timeout;
 		mDNSs32			ticks;
 
 		// Only idle if we didn't find any data the last time around
 		if (!gotData)
-		{
+			{
 			mDNSs32			nextTimerEvent = mDNS_Execute(m);
-		
 			nextTimerEvent = udsserver_idle(nextTimerEvent);
-	
 			ticks = nextTimerEvent - mDNS_TimeNow(m);
 			if (ticks < 1) ticks = 1;
-		}
+			}
 		else	// otherwise call EventLoop again with 0 timemout
 			ticks = 0;
 
@@ -324,11 +259,53 @@ static mStatus	MainLoop(mDNS *m)
 		// SIGPIPE happens when we try to write to a dead client; death should be detected soon in request_callback() and cleaned up.
 		if (sigismember(&signals, SIGPIPE)) LogMsg("Received SIGPIPE - ignoring");
 		if (sigismember(&signals, SIGINT) || sigismember(&signals, SIGTERM)) break;
+		}
+	return EINTR;
 	}
 
-	return EINTR;
-}
+int		main(int argc, char **argv)
+	{
+	#define mDNSRecord mDNSStorage
+	mDNS_PlatformSupport	platformStorage;
+	mStatus					err;
 
+	bzero(&mDNSRecord, sizeof mDNSRecord);
+	bzero(&platformStorage, sizeof platformStorage);
+
+	ParseCmdLinArgs(argc, argv);
+
+	err = mDNS_Init(&mDNSRecord, &platformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, 
+					mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext); 
+
+	if (mStatus_NoError == err)
+		err = udsserver_init();
+		
+	Reconfigure(&mDNSRecord);
+
+	// Now that we're finished with anything privileged, switch over to running as "nobody"
+	if (mStatus_NoError == err)
+		{
+		const struct passwd *pw = getpwnam("nobody");
+		if (pw != NULL)
+			setuid(pw->pw_uid);
+		else
+			LogMsg("WARNING: mdnsd continuing as root because user \"nobody\" does not exist");
+		}
+
+	if (mStatus_NoError == err)
+		err = MainLoop(&mDNSRecord);
+ 
+	mDNS_Close(&mDNSRecord);
+
+	if (udsserver_exit() < 0)
+		LogMsg("ExitCallback: udsserver_exit failed");
+ 
+ #if MDNS_DEBUGMSGS > 0
+	printf("mDNSResponder exiting normally with %ld\n", err);
+ #endif
+ 
+	return err;
+	}
 
 //		uds_daemon support		////////////////////////////////////////////////////////////
 
@@ -338,31 +315,30 @@ static mStatus	MainLoop(mDNS *m)
 #define LogMalloc(ARGS...) ((void)0)
 #endif
 
-
-mStatus udsSupportAddFDToEventLoop( int fd, udsEventCallback callback, void *context)
+mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 /* Support routine for uds_daemon.c */
-{
+	{
 	// Depends on the fact that udsEventCallback == mDNSPosixEventCallback
-	return mDNSPosixAddFDToEventLoop( fd, callback, context);
-}
+	return mDNSPosixAddFDToEventLoop(fd, callback, context);
+	}
 
-mStatus udsSupportRemoveFDFromEventLoop( int fd)
-{
-	return mDNSPosixRemoveFDFromEventLoop( fd);
-}
+mStatus udsSupportRemoveFDFromEventLoop(int fd)
+	{
+	return mDNSPosixRemoveFDFromEventLoop(fd);
+	}
 
 #if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 
 void *mallocL(char *msg, unsigned int size)
-{
+	{
 	unsigned long *mem = malloc(size+8);
 	if (!mem)
-	{
+		{
 		LogMsg("malloc( %s : %d ) failed", msg, size);
 		return(NULL); 
-	}
+		}
 	else
-	{
+		{
 		LogMalloc("malloc( %s : %lu ) = %p", msg, size, &mem[2]);
 		mem[0] = 0xDEAD1234;
 		mem[1] = size;
@@ -370,15 +346,15 @@ void *mallocL(char *msg, unsigned int size)
 		memset(&mem[2], 0xFF, size);
 //		validatelists(&mDNSStorage);
 		return(&mem[2]);
+		}
 	}
-}
 
 void freeL(char *msg, void *x)
-{
+	{
 	if (!x)
 		LogMsg("free( %s @ NULL )!", msg);
 	else
-	{
+		{
 		unsigned long *mem = ((unsigned long *)x) - 2;
 		if (mem[0] != 0xDEAD1234)
 			{ LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
@@ -389,12 +365,10 @@ void freeL(char *msg, void *x)
 		memset(mem, 0xDD, mem[1]+8);
 //		validatelists(&mDNSStorage);
 		free(mem);
+		}
 	}
-}
 
 #endif // MACOSX_MDNS_MALLOC_DEBUGGING >= 1
-
-
 
 // For convenience when using the "strings" command, this is the last thing in the file
 #if mDNSResponderVersion > 1
