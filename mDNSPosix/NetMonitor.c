@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.3  2003/04/15 18:26:01  cheshire
+ * Added timestamps and help information
+ *
  * Revision 1.2  2003/04/04 20:42:02  cheshire
  * Fix broken statistics counting
  *
@@ -202,6 +205,15 @@ mDNSlocal mDNSBool FindUpdate(const DNSMessage *const query, const mDNSu8 *ptr, 
 	return(mDNSfalse);
 	}
 
+mDNSlocal void DisplayTimestamp(void)
+	{
+	struct timeval tv;
+	struct tm tm;
+	gettimeofday(&tv, NULL);
+	localtime_r((time_t*)&tv.tv_sec, &tm);
+	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
+	}
+
 mDNSlocal void DisplayQuery(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
@@ -209,8 +221,8 @@ mDNSlocal void DisplayQuery(const DNSMessage *const msg, const mDNSu8 *const end
 	const mDNSu8 *auth = LocateAuthorities(msg, end);
 	ResourceRecord pktrr;
 
-	mprintf("\n");
-	mprintf("%#-16a -Q- Q:%3d  Ans:%3d  Auth:%3d  Add:%3d\n", srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
+	DisplayTimestamp();
+	mprintf("%#-16a -Q-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d\n", srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -246,8 +258,8 @@ mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, c
 	const mDNSu8 *ptr = msg->data;
 	ResourceRecord pktrr;
 
-	mprintf("\n");
-	mprintf("%#-16a -R- Q:%3d  Ans:%3d  Auth:%3d  Add:%3d\n", srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
+	DisplayTimestamp();
+	mprintf("%#-16a -R-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d\n", srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -313,13 +325,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 		}
 	}
 
-mDNSexport int main(int argc, char **argv)
+mDNSlocal mStatus mDNSNetMonitor(void)
 	{
 	mStatus status = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
 		mDNS_Init_DontAdvertiseLocalAddresses,
 		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
-	if (status) { fprintf(stderr, "%s: mDNS_Init failed %ld\n", argv[0], status); return(status); }
+	if (status) return(status);
 
 	ExampleClientEventLoop(&mDNSStorage);
 
@@ -332,5 +344,27 @@ mDNSexport int main(int argc, char **argv)
 	printstats();
 
 	mDNS_Close(&mDNSStorage);
+	return(0);
+	}
+
+mDNSexport int main(int argc, char **argv)
+	{
+	if (argc == 1)
+		{
+		mStatus status = mDNSNetMonitor();
+		if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %ld\n", argv[0], status); return(status); }
+		}
+	else
+		{
+		fprintf(stderr, "%s monitors network for mDNS traffic\n", argv[0]);
+		fprintf(stderr, "-Q-            Query Packet\n");
+		fprintf(stderr, "-R-            Response Packet\n");
+		fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet.\n");
+		fprintf(stderr, "(P)            Probe Question (new service starting)\n");
+		fprintf(stderr, "(Q)            Query Question\n");
+		fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
+		fprintf(stderr, "(AN)           Answer to question (or periodic announcment)\n");
+		fprintf(stderr, "(AD)           Additional record\n");
+		}
 	return(0);
 	}
