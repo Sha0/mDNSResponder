@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.444  2004/10/11 17:54:16  ksekar
+Changed hashtable pointer output from debugf to verbosedebugf.
+
 Revision 1.443  2004/10/10 07:05:45  cheshire
 For consistency, use symbol "localdomain" instead of literal string
 
@@ -3685,7 +3688,7 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 					ReleaseCacheRR(m, rr);
 					}
 				}
-			if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%lu] from %p to %p", slot, m->rrcache_tail[slot], rp);
+			if (m->rrcache_tail[slot] != rp) verbosedebugf("GetFreeCacheRR: Updating m->rrcache_tail[%lu] from %p to %p", slot, m->rrcache_tail[slot], rp);
 			m->rrcache_tail[slot] = rp;
 			}
 		#if MDNS_DEBUGMSGS
