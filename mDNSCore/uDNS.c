@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.95  2004/10/12 03:15:09  ksekar
+<rdar://problem/3835612> mDNS_StartQuery shouldn't return transient no-server error
+
 Revision 1.94  2004/10/12 02:49:20  ksekar
 <rdar://problem/3831228> Clean up LLQ sleep/wake, error handling
 
@@ -2538,11 +2541,13 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	question->uDNS_info.knownAnswers = mDNSNULL;
 
 	server = getInitializedDNS(u);
-	if (!server) { debugf("startQuery - no initialized DNS"); err =  mStatus_NotInitializedErr; }
-	else err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, server, UnicastDNSPort);	
-	if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
+	if (server)
+		{
+		err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, server, UnicastDNSPort);
+		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
+		}
 
-	return err;
+	return mStatus_NoError;  // don't return transient errors to caller
 	}
 	
 mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
