@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.128  2004/01/24 23:58:17  cheshire
+Change to use mDNSVal16() instead of shifting and ORing
+
 Revision 1.127  2004/01/24 04:59:16  cheshire
 Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
@@ -506,14 +509,14 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	else if (srcPort.NotAnInteger == UnicastDNSPort.NotAnInteger && dst->type == mDNSAddrType_IPv4)
 		s = info->skt53;
 #endif
-	else { LogMsg("Source port %d not allowed", (mDNSu16)srcPort.b[0]<<8 | srcPort.b[1]); return(-1); }
+	else { LogMsg("Source port %d not allowed", mDNSVal16(srcPort)); return(-1); }
 	
 	if (s >= 0)
 		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %X %s/%d to %#a:%d skt %d",
-			InterfaceID, info->ifa_name, dst->type, dst, (mDNSu16)dstPort.b[0]<<8 | dstPort.b[1], s);
+			InterfaceID, info->ifa_name, dst->type, dst, mDNSVal16(dstPort), s);
 	else
 		verbosedebugf("mDNSPlatformSendUDP: NOT sending on InterfaceID %X %s/%d (socket of this type not available)",
-			InterfaceID, info->ifa_name, dst->type, dst, (mDNSu16)dstPort.b[0]<<8 | dstPort.b[1]);
+			InterfaceID, info->ifa_name, dst->type, dst, mDNSVal16(dstPort));
 
 	// Note: When sending, mDNSCore may often ask us to send both a v4 multicast packet and then a v6 multicast packet
 	// If we don't have the corresponding type of socket available, then return mStatus_Invalid
@@ -529,7 +532,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
 		if (errno == EHOSTUNREACH && (mDNSu32)(m->timenow) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
-			InterfaceID, info->ifa_name, dst->type, dst, (mDNSu16)dstPort.b[0]<<8 | dstPort.b[1], s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
+			InterfaceID, info->ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 		return(err);
 		}
 	

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.57  2004/01/24 23:59:42  cheshire
+Change to use mDNSVal16() instead of shifting and ORing
+
 Revision 1.56  2004/01/24 05:25:34  cheshire
 mDNSNetMonitor now uses the new ability to send unicast queries so that
 it causes less perturbation of the network traffic it's monitoring.
@@ -652,7 +655,7 @@ mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *co
 	mprintf("%#-16a %s             Q:%3d  Ans:%3d  Auth:%3d  Add:%3d  Size:%5d bytes",
 		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals, end - (mDNSu8 *)msg);
 
-	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", ((mDNSu16)msg->h.id.b[0])<<8 | msg->h.id.b[1]);
+	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", mDNSVal16(msg->h.id));
 
 	if (msg->h.flags.b[0] & kDNSFlag0_TC)
 		{
@@ -703,7 +706,7 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 							n += mprintf("%.*s", MaxWidth - n, buffer);
 							} break;
 		case kDNSType_AAAA:	n += mprintf("%.16a", &rd->ipv6); break;
-		case kDNSType_SRV:	n += mprintf("%##s:%d", &rd->srv.target, ((mDNSu16)rd->srv.port.b[0] << 8) | rd->srv.port.b[1]); break;
+		case kDNSType_SRV:	n += mprintf("%##s:%d", &rd->srv.target, mDNSVal16(rd->srv.port)); break;
 		default:			{
 							mDNSu8 *s = rd->data;
 							while (s < rdend && p < buffer+MaxWidth)
