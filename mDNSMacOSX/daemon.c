@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.114  2003/07/01 21:10:20  cheshire
+ * Reinstate checkin 1.111, inadvertently overwritten by checkin 1.112
+ *
  * Revision 1.113  2003/06/28 17:27:43  vlubet
  * <rdar://problem/3221246> Redirect standard input, standard output, and
  * standard error file descriptors to /dev/null just like any other
@@ -45,6 +48,10 @@
  * Reviewed by: Stuart Cheshire
  * Added files necessary to implement Unix domain sockets based enhanced
  * Rendezvous APIs, and integrated with existing Mach-port based daemon.
+ *
+ * Revision 1.111  2003/06/11 01:02:43  cheshire
+ * <rdar://problem/3287858> mDNSResponder binary compatibility
+ * Make single binary that can run on both Jaguar and Panther.
  *
  * Revision 1.110  2003/06/10 01:14:11  cheshire
  * <rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
@@ -128,6 +135,11 @@
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
+
+#define REMOVE_THIS_BEFORE_PANTHER_SHIPS 1
+#if REMOVE_THIS_BEFORE_PANTHER_SHIPS
+#include </System/Library/Frameworks/CoreFoundation.framework/Versions/A/PrivateHeaders/CFPriv.h>
+#endif
 
 //*************************************************************************************************************
 // Macros
@@ -230,20 +242,6 @@ static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 
 //*************************************************************************************************************
 // General Utility Functions
-
-/*
-
-mDNS *Get_mDNSCoreData(void)
-{
-	mDNS *ptr = &mDNSStorage;
-	return ptr;
-}
-*/
-	
-
-
-
-
 
 #if MACOSX_MDNS_MALLOC_DEBUGGING
 
@@ -616,7 +614,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
-	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; } 
+	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
 
 	// Check other parameters
 	domainname t, d;
@@ -922,7 +920,6 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	x->name = n;
 	x->next = DNSServiceRegistrationList;
 	DNSServiceRegistrationList = x;
-
 
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistration(%##s) START", x->ClientMachPort, srv.c);
@@ -1353,7 +1350,22 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
 	CFMachPortRef      i_port = CFMachPortCreate(NULL, INFOCallback, NULL, NULL);
 	mach_port_t        m_port = CFMachPortGetPort(s_port);
+
+#if REMOVE_THIS_BEFORE_PANTHER_SHIPS
+	int major, minor;
+	char buffer[256], letter, *MachServerName;
+	CFDictionaryRef vers = _CFCopySystemVersionDictionary();
+	CFStringRef cfstr = CFDictionaryGetValue(vers, _kCFSystemVersionBuildVersionKey);
+	CFStringGetCString(cfstr, buffer, sizeof(buffer), kCFStringEncodingUTF8);
+	sscanf(buffer, "%d%c%d", &major, &letter, &minor);
+	if (major < 7 || (major == 7 && letter == 'A' && minor < 162))
+		MachServerName = "DNSServiceDiscoveryServer";
+	else
+		MachServerName = "com.apple.mDNSResponder";		// In Panther 7A162 we changed the name
+	kern_return_t      status = bootstrap_register(bootstrap_port, MachServerName, m_port);
+#else
 	kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
+#endif
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	CFRunLoopSourceRef e_rls  = CFMachPortCreateRunLoopSource(NULL, e_port, 0);
@@ -1504,6 +1516,7 @@ mDNSexport int main(int argc, char **argv)
 			// call mDNSDaemonIdle to allow any deferred work to be completed.
 			mDNSs32 nextevent = mDNSDaemonIdle();
 			nextevent = udsserver_idle(nextevent);
+			
 			// 2. Work out how long we expect to sleep before the next scheduled task
 			mDNSs32 ticks = nextevent - mDNSPlatformTimeNow();
 			if (ticks < 1) ticks = 1;
