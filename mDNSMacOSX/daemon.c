@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.244  2005/01/28 00:34:49  cheshire
+Turn off "Starting time value" log message
+
 Revision 1.243  2005/01/27 17:46:58  cheshire
 Added comment about CFSocketInvalidate closing the underlying socket
 
@@ -2450,7 +2453,7 @@ mDNSexport int main(int argc, char **argv)
 
 	if (status == 0)
 		{
-		LogMsg("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
+		LogOperation("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
 		int numevents = 0;
 		int RunLoopStatus = kCFRunLoopRunTimedOut;
 
