@@ -2024,7 +2024,7 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 			if (!q->DuplicateOf)
 				{
 				q->NextQTime     = timenow;
-				q->ThisQInterval = 0;
+				q->ThisQInterval = mDNSPlatformOneSecond;  // MUST NOT be zero for an active question
 				q->NextQInterval = mDNSPlatformOneSecond;
 				}
 		}
@@ -2620,7 +2620,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		question->next          = mDNSNULL;
 		question->NextQTime     = timenow;
-		question->ThisQInterval = 0;
+		question->ThisQInterval = mDNSPlatformOneSecond;  // MUST NOT be zero for an active question
 		question->NextQInterval = mDNSPlatformOneSecond;
 		question->DuplicateOf   = FindDuplicateQuestion(m, question);
 		*q = question;
