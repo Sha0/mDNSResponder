@@ -154,7 +154,9 @@ mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 // Returns length of a domain name INCLUDING the byte for the final null label
 // i.e. for the root label "." it returns one
 // For the FQDN "com." it returns 5 (length, three data bytes, final zero)
-mDNSexport mDNSu32 DomainNameLength(const domainname *const name)
+// Legal results are 1 (just root label) to 255 (MAX_DOMAIN_NAME)
+// If the given domainname is invalid, result is 256
+mDNSexport mDNSu16 DomainNameLength(const domainname *const name)
 	{
 	const mDNSu8 *src = name->c;
 	while (*src)
@@ -163,7 +165,7 @@ mDNSexport mDNSu32 DomainNameLength(const domainname *const name)
 		src += 1 + *src;
 		if (src - name->c >= MAX_DOMAIN_NAME) return(MAX_DOMAIN_NAME+1);
 		}
-	return((mDNSu32)(src - name->c + 1));
+	return((mDNSu16)(src - name->c + 1));
 	}
 
 mDNSlocal mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
@@ -213,18 +215,18 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 // of the child name, plus TWO bytes for the compression pointer.
 // E.g. for the name "foo.com." with parent "com.", it returns 6
 // (length, three data bytes, two-byte compression pointer).
-mDNSlocal mDNSu32 CompressedDomainNameLength(const domainname *const name, const domainname *parent)
+mDNSlocal mDNSu16 CompressedDomainNameLength(const domainname *const name, const domainname *parent)
 	{
 	const mDNSu8 *src = name->c;
 	if (parent && parent->c[0] == 0) parent = mDNSNULL;
 	while (*src)
 		{
 		if (*src > MAX_DOMAIN_LABEL) return(MAX_DOMAIN_NAME+1);
-		if (parent && SameDomainName((domainname *)src, parent)) return((mDNSu32)(src - name->c + 2));
+		if (parent && SameDomainName((domainname *)src, parent)) return((mDNSu16)(src - name->c + 2));
 		src += 1 + *src;
 		if (src - name->c >= MAX_DOMAIN_NAME) return(MAX_DOMAIN_NAME+1);
 		}
-	return((mDNSu32)(src - name->c + 1));
+	return((mDNSu16)(src - name->c + 1));
 	}
 
 mDNSexport void AppendDomainLabelToName(domainname *const name, const domainlabel *const label)
@@ -1042,7 +1044,7 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 	mDNSu16 *count, ResourceRecord *rr, mDNS *const m, const mDNSs32 timenow)
 	{
 	mDNSu8 *endofrdata;
-	mDNSu32 actualLength;
+	mDNSu16 actualLength;
 	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;
 	
 	// If we have a single large record to put in the packet, then we allow the packet to be up to 9K bytes,
@@ -1071,7 +1073,7 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 
 	// Go back and fill in the actual number of data bytes we wrote
 	// (actualLength can be less than rdlength when domain name compression is used)
-	actualLength = (mDNSu32)(endofrdata - ptr - 10);
+	actualLength = (mDNSu16)(endofrdata - ptr - 10);
 	ptr[8] = (mDNSu8)(actualLength >> 8);
 	ptr[9] = (mDNSu8)(actualLength     );
 
@@ -1134,7 +1136,7 @@ mDNSlocal mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *
 
 mDNSlocal const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end)
 	{
-	mDNSu32 total = 0;
+	mDNSu16 total = 0;
 
 	if (ptr < (mDNSu8*)msg || ptr >= end)
 		{ debugf("skipDomainName: Illegal ptr not within packet boundaries"); return(mDNSNULL); }

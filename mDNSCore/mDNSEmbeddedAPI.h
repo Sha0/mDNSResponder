@@ -511,7 +511,7 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNSu8 D
 
 extern mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2);
 
-extern mDNSu32 DomainNameLength(const domainname *const name);
+extern mDNSu16 DomainNameLength(const domainname *const name);
 extern void AppendDomainLabelToName(domainname *const name, const domainlabel *const label);
 extern void AppendStringLabelToName(domainname *const name, const char *cstr);
 extern void AppendDomainNameToName(domainname *const name, const domainname *const append);
