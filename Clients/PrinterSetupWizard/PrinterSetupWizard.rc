@@ -316,6 +316,7 @@ BEGIN
     IDS_PRINTER_MATCH_BAD   "The Rendezvous Printer Wizard cannot find a driver for this printer.  Manually select from the list, or click 'Have Disk' if your printer came with an installation disk. "
     IDS_YES                 "Yes"
     IDS_NO                  "No"
+    IDS_LARGE_FONT          "MS Sans Serif"
 END
 
 #endif    // English (U.S.) resources

@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: FourthPage.cpp,v $
+Revision 1.4  2004/07/13 20:15:04  shersche
+<rdar://problem/3726363> Load large font name from resource
+Bug #: 3726363
+
 Revision 1.3  2004/07/12 06:59:03  shersche
 <rdar://problem/3723695> Use resource strings for Yes/No
 Bug #: 3723695
@@ -49,13 +53,17 @@ CFourthPage::CFourthPage()
 	: CPropertyPage(CFourthPage::IDD),
 		m_initialized(false)
 {
+	CString fontName;
+
 	m_psp.dwFlags &= ~(PSP_HASHELP);
 	m_psp.dwFlags |= PSP_DEFAULT|PSP_HIDEHEADER;
+
+	fontName.LoadString(IDS_LARGE_FONT);
 
 	// create the large font
 	m_largeFont.CreateFont(-16, 0, 0, 0, 
 		FW_BOLD, FALSE, FALSE, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, 
-		CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, _T("MS Sans Serif"));
+		CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, fontName);
 }
 
 CFourthPage::~CFourthPage()

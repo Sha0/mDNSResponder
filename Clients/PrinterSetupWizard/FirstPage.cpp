@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: FirstPage.cpp,v $
+Revision 1.2  2004/07/13 20:15:04  shersche
+<rdar://problem/3726363> Load large font name from resource
+Bug #: 3726363
+
 Revision 1.1  2004/06/18 04:36:57  rpantos
 First checked in
 
@@ -40,13 +44,17 @@ IMPLEMENT_DYNAMIC(CFirstPage, CPropertyPage)
 CFirstPage::CFirstPage()
 	: CPropertyPage(CFirstPage::IDD)
 {
+	CString fontName;
+
 	m_psp.dwFlags &= ~(PSP_HASHELP);
 	m_psp.dwFlags |= PSP_DEFAULT|PSP_HIDEHEADER;
+
+	fontName.LoadString(IDS_LARGE_FONT);
 
 	// create the large font
 	m_largeFont.CreateFont(-16, 0, 0, 0, 
 		FW_BOLD, FALSE, FALSE, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, 
-		CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, _T("MS Sans Serif"));
+		CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, fontName);
 }
 
 CFirstPage::~CFirstPage()
