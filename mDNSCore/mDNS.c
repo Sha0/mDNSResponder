@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.207  2003/07/11 01:28:00  cheshire
+<rdar://problem/3161289> No more local.arpa
+
 Revision 1.206  2003/07/11 00:45:02  cheshire
 <rdar://problem/3321909> Client should get callback confirming successful host name registration
 
@@ -5418,7 +5421,6 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
 	
 	mDNS_SetupResourceRecord(&set->RR_A1,  mDNSNULL, set->InterfaceID, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
-	mDNS_SetupResourceRecord(&set->RR_A2,  mDNSNULL, set->InterfaceID, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
 	mDNS_SetupResourceRecord(&set->RR_PTR, mDNSNULL, set->InterfaceID, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 
 	// 1. Set up primary Address record to map from primary host name ("foo.local.") to IP address
@@ -5427,13 +5429,10 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	// Setting HostTarget tells DNS that the target of this PTR is to be automatically kept in sync if our host name changes
 	// Note: This is reverse order compared to a normal dotted-decimal IP address
 	set->RR_A1.name        = m->hostname1;
-	set->RR_A2.name        = m->hostname2;
 	if (set->ip.type == mDNSAddrType_IPv4)
 		{
 		set->RR_A1.rrtype = kDNSType_A;
-		set->RR_A2.rrtype = kDNSType_A;
 		set->RR_A1.rdata->u.ip = set->ip.ip.v4;
-		set->RR_A2.rdata->u.ip = set->ip.ip.v4;
 		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.",
 			set->ip.ip.v4.b[3], set->ip.ip.v4.b[2], set->ip.ip.v4.b[1], set->ip.ip.v4.b[0]);
 		}
@@ -5441,9 +5440,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		{
 		int i;
 		set->RR_A1.rrtype = kDNSType_AAAA;
-		set->RR_A2.rrtype = kDNSType_AAAA;
 		set->RR_A1.rdata->u.ipv6 = set->ip.ip.v6;
-		set->RR_A2.rdata->u.ipv6 = set->ip.ip.v6;
 		for (i = 0; i < 16; i++)
 			{
 			static const char hexValues[] = "0123456789ABCDEF";
@@ -5459,10 +5456,8 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
 
 	set->RR_A1.RRSet = &primary->RR_A1;	// May refer to self
-	set->RR_A2.RRSet = &primary->RR_A2;	// May refer to self
 
 	mDNS_Register_internal(m, &set->RR_A1);
-	mDNS_Register_internal(m, &set->RR_A2);
 	mDNS_Register_internal(m, &set->RR_PTR);
 
 	// ... Add an HINFO record, etc.?
@@ -5474,11 +5469,9 @@ mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// If we still have address records referring to this one, update them
 	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
 	ResourceRecord *A1 = primary ? &primary->RR_A1 : mDNSNULL;
-	ResourceRecord *A2 = primary ? &primary->RR_A2 : mDNSNULL;
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		{
 		if (intf->RR_A1.RRSet == &set->RR_A1) intf->RR_A1.RRSet = A1;
-		if (intf->RR_A2.RRSet == &set->RR_A2) intf->RR_A2.RRSet = A2;
 		}
 
 	// Unregister these records.
@@ -5487,7 +5480,6 @@ mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// Also, in the event of a name conflict, one or more of our records will have been forcibly deregistered.
 	// To avoid unnecessary and misleading warning messages, we check the RecordType before calling mDNS_Deregister_internal().
 	if (set->RR_A1. RecordType) mDNS_Deregister_internal(m, &set->RR_A1,  mDNS_Dereg_normal);
-	if (set->RR_A2. RecordType) mDNS_Deregister_internal(m, &set->RR_A2,  mDNS_Dereg_normal);
 	if (set->RR_PTR.RecordType) mDNS_Deregister_internal(m, &set->RR_PTR, mDNS_Dereg_normal);
 	}
 
@@ -5505,8 +5497,6 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 		ResourceRecord *rr;
 
 		m->hostname1 = newname;
-		m->hostname2 = newname;
-		if (!AppendLiteralLabelString(&m->hostname2, "arpa")) LogMsg("ERROR! Cannot create local.arpa hostname");
 
 		// 1. Stop advertising our address records on all interfaces
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -6071,7 +6061,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->hostlabel.c[0]          = 0;
 	m->nicelabel.c[0]          = 0;
 	m->hostname1.c[0]          = 0;
-	m->hostname2.c[0]          = 0;
 	m->ResourceRecords         = mDNSNULL;
 	m->CurrentRecord           = mDNSNULL;
 	m->HostInterfaces          = mDNSNULL;

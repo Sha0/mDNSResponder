@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.76  2003/07/11 01:28:00  cheshire
+<rdar://problem/3161289> No more local.arpa
+
 Revision 1.75  2003/07/02 21:19:45  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -599,7 +602,6 @@ struct NetworkInterfaceInfo_struct
 										// packets (this status may change as interfaces are added and removed)
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
 	ResourceRecord RR_A1;				// 'A' or 'AAAA' (address) record for our ".local" name
-	ResourceRecord RR_A2;				// 'A' or 'AAAA' record for our ".local.arpa" name
 	ResourceRecord RR_PTR;				// PTR (reverse lookup) record
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
@@ -774,7 +776,6 @@ struct mDNS_struct
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;				// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
 	domainname  hostname1;				// Primary Host Name, e.g. "Foo.local."
-	domainname  hostname2;				// Secondary Host Name, e.g. "Foo.local.arpa."
 	ResourceRecord *ResourceRecords;
 	ResourceRecord *DuplicateRecords;	// Records currently 'on hold' because they are duplicates of existing records
 	ResourceRecord *CurrentRecord;		// Next ResourceRecord about to be examined
