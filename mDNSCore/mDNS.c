@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.461  2004/10/28 19:02:16  cheshire
+Remove \n from LogMsg() call
+
 Revision 1.460  2004/10/28 03:24:40  cheshire
 Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
 
@@ -3288,7 +3291,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		if (queryptr > query.data)
 			{
 			if ((query.h.flags.b[0] & kDNSFlag0_TC) && query.h.numQuestions > 1)
-				LogMsg("SendQueries: Should not have more than one question (%d) in a truncated packet\n", query.h.numQuestions);
+				LogMsg("SendQueries: Should not have more than one question (%d) in a truncated packet", query.h.numQuestions);
 			debugf("SendQueries:   Sending %d Question%s %d Answer%s %d Update%s on %p",
 				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
 				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
