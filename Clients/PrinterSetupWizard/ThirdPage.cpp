@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.8  2004/06/27 08:06:45  shersche
+Parse [Strings] section of inf file
+
 Revision 1.7  2004/06/26 04:00:05  shersche
 fix warnings compiling in debug mode
 Submitted by: herscher
@@ -86,7 +89,8 @@ enum PrinterParsingState
 {
 	Looking,
 	ParsingManufacturers,
-	ParsingModels
+	ParsingModels,
+	ParsingStrings
 };
 
 
@@ -248,12 +252,74 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 	CString					s;
 	OSStatus				err;
 	BOOL					ok;
+
+	typedef std::map<CString, CString> StringMap;
+
+	StringMap				strings;
  
 	ok = file.Open( filename,  CFile::modeRead|CFile::typeText, &feError);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
 
 	check ( state == Looking );
+	check ( iter == manufacturers.end() );
+
+	//
+	// first, parse the file looking for string sections
+	//
+	while (file.ReadString(s))
+	{
+		if (s.Find('[') == 0)
+		{
+			//
+			// handle any capitalization issues here
+			//
+			CString tag = s;
+
+			tag.MakeLower();
+
+			if (tag == L"[strings]")
+			{
+				state = ParsingStrings;
+			}
+			else
+			{
+				state = Looking;
+			}
+		}
+		else
+		{
+			switch (state)
+			{
+				case ParsingStrings:
+				{
+					int		curPos = 0;
+					CString key = s.Tokenize(L"=",curPos);
+					CString val = s.Tokenize(L"=",curPos);
+
+					//
+					// get rid of all delimiters
+					//
+					val.Remove('"');
+
+					//
+					// and store it
+					//
+					strings[key] = val;
+				}
+				break;
+			}
+		}
+	}
+
+	file.Close();
+
+	ok = file.Open( filename,  CFile::modeRead|CFile::typeText, &feError);
+	err = translate_errno( ok, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+
+	state = Looking;
+
 	check ( iter == manufacturers.end() );
 
 	while (file.ReadString(s))
@@ -334,10 +400,26 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					require_action( manufacturer, exit, err = kNoMemoryErr );
 
 					//
-					// get rid of all delimiters
+					// if it's a variable, look it up
 					//
-					key.Remove('%');
-					key.Remove('"');
+					if (key.Find('%') == 0)
+					{
+						StringMap::iterator it;
+
+						key.Remove('%');
+
+						it = strings.find(key);
+
+						if (it != strings.end())
+						{
+							key = it->second;
+						}
+					}
+					else
+					{
+						key.Remove('"');
+					}
+
 					val.TrimLeft();
 					val.TrimRight();
 
@@ -922,7 +1004,7 @@ CThirdPage::OnSetActive()
 	}
 
 	printer = psheet->GetSelectedPrinter();
-	require_quiet( psheet, exit );
+	require_quiet( printer, exit );
 
 	//
 	// call OnInitPage once
@@ -1035,7 +1117,7 @@ void CThirdPage::OnLvnItemchangedPrinterModel(NMHDR *pNMHDR, LRESULT *pResult)
 	require_quiet( psheet, exit );
 
 	printer = psheet->GetSelectedPrinter();
-	require_quiet( psheet, exit );
+	require_quiet( printer, exit );
 
 	check ( m_manufacturerSelected );
 
@@ -1070,7 +1152,7 @@ void CThirdPage::OnBnClickedDefaultPrinter()
 	require_quiet( psheet, exit );
 
 	printer = psheet->GetSelectedPrinter();
-	require_quiet( psheet, exit );
+	require_quiet( printer, exit );
 
 	printer->deflt = m_defaultPrinterCtrl.GetState() ? true : false;
 
@@ -1090,7 +1172,7 @@ void CThirdPage::OnBnClickedHaveDisk()
 	require_quiet( psheet, exit );
 
 	printer = psheet->GetSelectedPrinter();
-	require_quiet( psheet, exit );
+	require_quiet( printer, exit );
 	
 	if ( dlg.DoModal() == IDOK )
 	{
