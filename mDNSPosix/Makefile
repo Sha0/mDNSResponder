@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.39  2004/06/29 03:34:28  cheshire
+# Add 'dot-local' Name Service Switch support from Andrew White at NICTA
+#
 # Revision 1.38  2004/06/25 02:19:40  rpantos
 # And FreeBSD...
 #
@@ -185,14 +188,17 @@ ifneq ($(DEBUG),1)
 STRIP = strip
 endif
 else
+
 ifeq ($(os),linux)
 CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK
 JAVACFLAGS_OS += -I$(JDK)/include/linux
 else
+
 ifeq ($(os),netbsd)
 CFLAGS_OS =
 LDCONFIG = ldconfig
 else
+
 ifeq ($(os),freebsd)
 # If not already defined, set LOCALBASE to /usr/local
 # FreeBSD requires the startup script to end in ".sh"
@@ -203,10 +209,12 @@ CFLAGS_OS =
 JAVACFLAGS_OS += -I$(JDK)/include/freebsd
 LDCONFIG = ldconfig
 else
+
 ifeq ($(os),openbsd)
 CFLAGS_OS = -DHAVE_BROKEN_RECVDSTADDR
 LDCONFIG = ldconfig
 else
+
 ifeq ($(os),jaguar)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
 LD = libtool -dynamic
@@ -215,6 +223,7 @@ LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
 else
+
 ifeq ($(os),panther)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp #-pedantic
 LD = libtool -dynamic
@@ -223,6 +232,7 @@ LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
 else
+
 $(error ERROR: Must specify target OS on command-line: "make os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris} [target]") 
 endif
 endif
@@ -231,6 +241,12 @@ endif
 endif
 endif
 endif
+
+NSSLIBNAME  := libnss_mdns
+NSSVERSION  := 0.2
+NSSLIBFILE  := $(NSSLIBNAME)-$(NSSVERSION).so
+NSSLINKNAME := $(NSSLIBNAME).so.2
+NSSINSTPATH := /lib
 
 # If not otherwise defined, we install into /usr/lib and /usr/include
 # and our startup script is called mdns (e.g. /etc/init.d/mdns)
@@ -243,6 +259,13 @@ else
 ifeq ($(HAVE_IPV6),0)
 CFLAGS_OS += -DHAVE_IPV6=0
 endif
+endif
+
+# If directory /usr/share/man exists, then we install man pages into that, else /usr/man
+ifeq ($(wildcard /usr/share/man), /usr/share/man)
+MANPATH := /usr/share/man
+else
+MANPATH := /usr/man
 endif
 
 # If directory /etc/rc.d/init.d/ exists, then we install into that (old Linux)
@@ -264,9 +287,9 @@ CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS) $(CFLAGS_DEBUG)
 
 #############################################################################
 
-all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor
+all: setup Daemon libmdns nss_mdns Client Responder ProxyResponder Identify NetMonitor
 
-install: setup InstalledDaemon InstalledLib InstalledStartup
+install: setup InstalledDaemon InstalledLib InstalledStartup InstalledNSS InstalledManPages
 
 # 'setup' sets up the build directory structure the way we want
 setup:
@@ -298,7 +321,17 @@ $(BUILDDIR)/mdnsd: $(DAEMONOBJS)
 libmdns: setup $(BUILDDIR)/libmdns.$(LDSUFFIX)
 	@echo "Client library done"
 
-$(BUILDDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
+CLIENTLIBOBJS = $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
+
+$(BUILDDIR)/libmdns.$(LDSUFFIX): $(CLIENTLIBOBJS)
+	$(LD) $(LIBFLAGS) -o $@ $+
+	$(STRIP) $@
+
+# nss_mdns target builds the Name Service Switch module
+nss_mdns: setup $(BUILDDIR)/$(NSSLIBFILE)
+	@echo "Name Service Switch module done"
+
+$(BUILDDIR)/$(NSSLIBFILE): $(CLIENTLIBOBJS) $(OBJDIR)/nss_mdns.c.so.o
 	$(LD) $(LIBFLAGS) -o $@ $+
 	$(STRIP) $@
 
@@ -306,13 +339,19 @@ $(BUILDDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnss
 
 # The Install targets place built stuff in their proper places
 InstalledDaemon: $(INSTBASE)/sbin/mdnsd
-	@echo $< " installed"
+	@echo $+ " installed"
 
 InstalledLib: $(INSTBASE)/lib/libmdns.$(LDSUFFIX).$(LIBVERS) $(INSTBASE)/include/dns_sd.h
-	@echo $< " installed"
+	@echo $+ " installed"
 
 InstalledStartup: $(STARTUPSCRIPTDIR)/$(STARTUPSCRIPTNAME)
-	@echo $< " installed"
+	@echo $+ " installed"
+
+InstalledNSS: $(NSSINSTPATH)/$(NSSLINKNAME) /etc/nss_mdns.conf
+	@echo $+ " installed"
+
+InstalledManPages: $(MANPATH)/man5/nss_mdns.conf.5 $(MANPATH)/man8/libnss_mdns.8 $(MANPATH)/man8/mdnsd.8
+	@echo $+ " installed"
 
 $(INSTBASE)/sbin/mdnsd: $(BUILDDIR)/mdnsd
 	$(CP) $< $@
@@ -339,6 +378,34 @@ ifdef RUNLEVELSCRIPTSDIR
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc0.d/K16mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc6.d/K16mdns
 endif
+
+$(NSSINSTPATH)/$(NSSLINKNAME): $(NSSINSTPATH)/$(NSSLIBFILE)
+	$(LN) $< $@
+	ldconfig
+
+$(NSSINSTPATH)/$(NSSLIBFILE): $(BUILDDIR)/$(NSSLIBFILE)
+	$(CP) $< $@
+	chmod 444 $@
+
+/etc/nss_mdns.conf: nss_mdns.conf
+	$(CP) $< $@
+	chmod 444 $@
+	# Check the nsswitch.conf file.
+	# If 'mdns' does not already appear on the "hosts:" line, then add it right before 'dns'
+	cp -f /etc/nsswitch.conf /etc/nsswitch.conf.pre-mdns
+	sed -e '/mdns/!s/^\(hosts:.*\)dns\(.*\)/\1mdns dns\2/' /etc/nsswitch.conf.pre-mdns > /etc/nsswitch.conf
+
+$(MANPATH)/man5/%.5: %.5
+	cp $< $@
+	chmod 444 $@
+
+$(MANPATH)/man8/%.8: %.8
+	cp $< $@
+	chmod 444 $@
+
+$(MANPATH)/man8/mdnsd.8: $(SHAREDDIR)/mDNSResponder.8
+	cp $< $@
+	chmod 444 $@
 
 #############################################################################
 

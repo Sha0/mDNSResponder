@@ -72,6 +72,7 @@ When you compile, you will get:
 o Main products for general-purpose use (e.g. on a desktop computer):
   - mdnsd
   - libmdns
+  - nss_mdns (See nss_ReadMe.txt for important information about nss_mdns)
 
 o Standalone products for dedicated devices (printer, network camera, etc.)
   - mDNSClientPosix
@@ -82,14 +83,20 @@ o Debugging tools
   - mDNSNetMonitor
   - mDNSIdentify
 
-Type "sudo make install" to install four things:
-o mdnsd           (usually in /usr/sbin)
-o libmdns         (usually in /usr/lib)
-o dns_sd.h        (usually in /usr/include)
-o startup scripts (e.g. in /etc/rc.d)
+As root type "make install" to install six things:
+o mdnsd                   (usually in /usr/sbin)
+o libmdns                 (usually in /usr/lib)
+o dns_sd.h                (usually in /usr/include)
+o startup scripts         (e.g. in /etc/rc.d)
+o manual pages            (usually in /usr/share/man)
+o nss_mdns                (usually in /lib)
+o nss configuration files (usually in /etc)
 
-Once you've installed the header and the library, and started the
-daemon running, you can cd to the "Clients" folder and type "make".
+Once you've installed the files in their respective places,
+you need to start the daemon running, either by rebooting,
+or by running the startup script "/etc/init.d/mdns start"
+(the exact path may be different on your system).
+Then you can cd to the "Clients" folder and type "make".
 This builds a test client showing how to exercise all the major
 functionality of the daemon.
 
@@ -116,6 +123,11 @@ o uds_daemon.c exports a Unix Domain Socket interface to
 Client applications link with the libmdns, which implements the functions
 defined in the dns_sd.h header file, and implements the IPC protocol
 used to communicate over the Unix Domain Socket interface to the daemon.
+
+Note that, strictly speaking, nss_mdns could be just another client of
+mdnsd, linking with libmdns just like any other client. However, because
+of its central role in the normal operation of multicast DNS, it is built
+and installed along with the other essential system support components.
 
 
 Clients for Embedded Systems
