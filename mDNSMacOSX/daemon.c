@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.234  2005/01/10 03:42:30  ksekar
+Clarify debugf
+
 Revision 1.233  2004/12/18 00:53:46  cheshire
 Use symbolic constant mDNSInterface_LocalOnly instead of (mDNSInterfaceID)~0
 
@@ -1107,7 +1110,7 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 	{
 	DNSServiceBrowser *ptr;
 
-	debugf("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+	debugf("DefaultBrowseDomainChanged: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 	for (ptr = DNSServiceBrowserList; ptr; ptr = ptr->next)
 		{
 		if (ptr->DefaultDomain)
