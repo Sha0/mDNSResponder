@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.144  2004/04/21 03:04:35  cheshire
+Minor cleanup for clarity
+
 Revision 1.143  2004/04/21 03:03:30  cheshire
 Preparation work: AddInterfaceToList() should return pointer to structure it creates
 
@@ -1246,33 +1249,33 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 			debugf("UpdateInterfaceList: %4s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
-		if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) &&
-		    (ifa->ifa_flags & IFF_UP))
-			{
-			int ifru_flags6 = 0;
-			if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
+		if (ifa->ifa_flags & IFF_UP)
+			if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)
 				{
-				struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-				struct in6_ifreq ifr6;
-				bzero((char *)&ifr6, sizeof(ifr6));
-				strncpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
-				ifr6.ifr_addr = *sin6;
-				if (ioctl(InfoSocket, SIOCGIFAFLAG_IN6, &ifr6) != -1)
-					ifru_flags6 = ifr6.ifr_ifru.ifru_flags6;
-				verbosedebugf("%s %.16a %04X %04X", ifa->ifa_name, &sin6->sin6_addr, ifa->ifa_flags, ifru_flags6);
-				}
-			if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
-				{
-				if (ifa->ifa_flags & IFF_LOOPBACK)
-					theLoopback = ifa;
-				else
+				int ifru_flags6 = 0;
+				if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 					{
-					AddInterfaceToList(m, ifa);
-					if (ifa->ifa_addr->sa_family == AF_INET)
-						foundav4 = mDNStrue;
+					struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+					struct in6_ifreq ifr6;
+					bzero((char *)&ifr6, sizeof(ifr6));
+					strncpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
+					ifr6.ifr_addr = *sin6;
+					if (ioctl(InfoSocket, SIOCGIFAFLAG_IN6, &ifr6) != -1)
+						ifru_flags6 = ifr6.ifr_ifru.ifru_flags6;
+					verbosedebugf("%s %.16a %04X %04X", ifa->ifa_name, &sin6->sin6_addr, ifa->ifa_flags, ifru_flags6);
+					}
+				if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
+					{
+					if (ifa->ifa_flags & IFF_LOOPBACK)
+						theLoopback = ifa;
+					else
+						{
+						AddInterfaceToList(m, ifa);
+						if (ifa->ifa_addr->sa_family == AF_INET)
+							foundav4 = mDNStrue;
+						}
 					}
 				}
-			}
 		ifa = ifa->ifa_next;
 		}
 
