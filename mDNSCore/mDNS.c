@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.417  2004/09/21 17:32:16  cheshire
+<rdar://problem/3809484> Rate limiting imposed too soon
+
 Revision 1.416  2004/09/20 23:52:01  cheshire
 CFSocket{Puma}.c renamed to mDNSMacOSX{Puma}.c
 
@@ -2154,9 +2157,15 @@ mDNSlocal void RecordProbeFailure(mDNS *const m, const AuthRecord *const rr)
 	{
 	m->ProbeFailTime = m->timenow;
 	m->NumFailedProbes++;
-	// If we've had ten or more probe failures, rate-limit to one every five seconds
+	// If we've had fifteen or more probe failures, rate-limit to one every five seconds.
+	// If a bunch of hosts have all been configured with the same name, then they'll all
+	// conflict and run through the same series of names: name-2, name-3, name-4, etc.,
+	// up to name-10. After that they'll start adding random increments in the range 1-100,
+	// so they're more likely to branch out in the available namespace and settle on a set of
+	// unique names quickly. If after five more tries the host is still conflicting, then we
+	// may have a serious problem, so we start rate-limiting so we don't melt down the network.
 	// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
-	if (m->NumFailedProbes >= 10)
+	if (m->NumFailedProbes >= 15)
 		{
 		m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
 		LogMsg("Excessive name conflicts (%lu) for %##s (%s); rate limiting in effect",
