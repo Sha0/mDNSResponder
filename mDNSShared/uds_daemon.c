@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.139  2004/12/13 21:18:45  ksekar
+Include uDNS registrations in CountPeerRegistrations
+
 Revision 1.138  2004/12/13 18:23:18  ksekar
 <rdar://problem/3915805> mDNSResponder error when quitting iChat -
 don't close sockets delivering errors to blocked clients
@@ -1894,9 +1897,20 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 	int count = 0;
 	ResourceRecord *r = &srs->RR_SRV.resrec;
 	AuthRecord *rr;
+	ServiceRecordSet *s;
+	
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(&rr->resrec.name, &r->name) && !SameRData(&rr->resrec, r))
 			count++;
+
+	for (rr = m->uDNS_info.RecordRegistrations; rr; rr=rr->next)
+		if (rr->uDNS_info.state != regState_Unregistered && rr->resrec.rrtype == kDNSType_SRV && SameDomainName(&rr->resrec.name, &r->name) && !SameRData(&rr->resrec, r))
+			count++;
+
+	for (s = m->uDNS_info.ServiceRegistrations; s; s = s->next)
+		if (s->uDNS_info.state != regState_Unregistered && SameDomainName(&s->RR_SRV.resrec.name, &r->name) && !SameRData(&s->RR_SRV.resrec, r))
+			count++;
+		
 	verbosedebugf("%d peer registrations for %##s", count, r->name.c);
 	return(count);
 	}
