@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.142  2004/12/16 08:07:33  shersche
+Fix compiler error (mixed declarations and code) on Windows
+
 Revision 1.141  2004/12/16 01:56:21  cheshire
 Improve DNSServiceEnumerateDomains syslog message
 
@@ -2621,9 +2624,10 @@ static void handle_removerecord_request(request_state *rstate)
 	else if (!srvinfo) LogOperation("%3d: DNSServiceRemoveRecord (bad ref)", rstate->sd);
     else
 		{
+		service_instance *i;
 		LogOperation("%3d: DNSServiceRemoveRecord(%##s, %s)", rstate->sd,
 			(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name.c : NULL);
-		service_instance *i;
+		
 		for (i = srvinfo->instances; i; i = i->next)
 			{
 			err = remove_extra(rstate, i);
