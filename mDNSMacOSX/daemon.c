@@ -35,6 +35,11 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.113  2003/06/28 17:27:43  vlubet
+ * <rdar://problem/3221246> Redirect standard input, standard output, and
+ * standard error file descriptors to /dev/null just like any other
+ * well behaved daemon
+ *
  * Revision 1.112  2003/06/25 23:42:19  ksekar
  * Bug #: <rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
  * Reviewed by: Stuart Cheshire
@@ -113,6 +118,8 @@
 #include <servers/bootstrap.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <paths.h>
+#include <fcntl.h>
 
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
@@ -1454,6 +1461,21 @@ mDNSexport int main(int argc, char **argv)
 
 	if (!debug_mode && !restarting_via_mach_init)
 		exit(0); /* mach_init will restart us immediately as a daemon */
+
+	// Unlike deamon(), mach_init does redirect standard file descriptors to /dev/null
+	if (!debug_mode)
+		{
+		int fd = open(_PATH_DEVNULL, O_RDWR, 0);
+		if (fd != -1)
+			{
+			// Avoid to unnecessarily duplicate a file descriptor to itself
+			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
+			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
+			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
+			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) 
+				(void)close (fd);
+			}
+		}
 
 	fp = fopen(PID_FILE, "w");
 	if (fp != NULL)
