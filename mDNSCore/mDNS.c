@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.506  2005/01/17 23:28:53  cheshire
+Fix compile error
+
 Revision 1.505  2005/01/11 02:02:56  shersche
 Move variable declaration to the beginning of statement block
 
@@ -6404,7 +6407,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				{
 				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
-				rr->AnnounceCount  = delay ? 1 : InitialAnnounceCount;
+				rr->AnnounceCount  = delay ? (mDNSu8)1 : InitialAnnounceCount;
 				rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 				InitializeLastAPTime(m, rr);
 				}
