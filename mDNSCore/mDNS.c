@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.468  2004/11/24 01:47:07  cheshire
+<rdar://problem/3780207> DNSServiceRegisterRecord should call CallBack on success.
+
 Revision 1.467  2004/11/24 01:41:28  cheshire
 Rename CompleteProbing() to AcknowledgeRecord()
 
@@ -2101,7 +2104,6 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 
 mDNSlocal void AcknowledgeRecord(mDNS *const m, AuthRecord *const rr)
 	{
-	verbosedebugf("Probing for %##s (%s) complete", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 	if (!rr->Acknowledged && rr->RecordCallback)
 		{
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
@@ -2297,6 +2299,10 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 			*p = rr;
 			}
 		}
+
+	// For records that are not going to probe, acknowledge them right away
+	if (rr->resrec.RecordType != kDNSRecordTypeUnique) AcknowledgeRecord(m, rr);
+
 	return(mStatus_NoError);
 	}
 
@@ -6108,6 +6114,9 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 		debugf("ServiceCallback: %##s (%s) %s (%ld)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), msg, result);
 		}
 	#endif
+
+	// Only pass on the NoError acknowledgement for the SRV record (when it finishes probing)
+	if (result == mStatus_NoError && rr != &sr->RR_SRV) return;
 
 	// If we got a name conflict on either SRV or TXT, forcibly deregister this service, and record that we did that
 	if (result == mStatus_NameConflict)
