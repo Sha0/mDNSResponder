@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Application.cpp,v $
+Revision 1.2  2004/01/30 02:56:32  bradley
+Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
+
 Revision 1.1  2003/08/21 02:06:47  bradley
 Moved Rendezvous Browser for non-Windows CE into Windows sub-folder.
 
@@ -44,6 +47,8 @@ Rendezvous Browser for Windows
 */
 
 #include	<assert.h>
+
+#include	"StdAfx.h"
 
 #include	"DNSServices.h"
 
@@ -94,14 +99,6 @@ BOOL	Application::InitInstance()
 {
 	DNSStatus		err;
 	
-	// WinSock initialization.
-	
-	if( !AfxSocketInit() )
-	{
-		AfxMessageBox( IDP_SOCKETS_INIT_FAILED );
-		return( FALSE );
-	}
-
 	// Standard MFC initialization.
 
 #if( !defined( AFX_DEPRECATED ) )

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: StdAfx.cpp,v $
+Revision 1.2  2004/01/30 02:56:33  bradley
+Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
+
 Revision 1.1  2003/08/21 02:16:10  bradley
 Rendezvous Browser for HTTP services for Windows CE/PocketPC.
 

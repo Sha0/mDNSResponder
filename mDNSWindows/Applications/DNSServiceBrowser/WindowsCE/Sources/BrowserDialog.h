@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: BrowserDialog.h,v $
+Revision 1.4  2004/01/30 02:56:33  bradley
+Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
+
 Revision 1.3  2003/10/14 03:28:50  bradley
 Insert services in sorted order to make them easier to find. Defer service adds/removes to the main
 thread to avoid potential problems with multi-threaded MFC message map access. Added some asserts.

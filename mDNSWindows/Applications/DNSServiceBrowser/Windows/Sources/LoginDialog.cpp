@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: LoginDialog.cpp,v $
+Revision 1.2  2004/01/30 02:56:32  bradley
+Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
+
 Revision 1.1  2003/12/25 03:47:28  bradley
 Login dialog to get the username/password from the user.
 

@@ -86,10 +86,10 @@ BEGIN
                     LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,140,8,224,170
     CONTROL         "",IDC_SERVICE_LIST,"SysListView32",LVS_REPORT | 
                     LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
-                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,8,124,170
+                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,8,124,256
     CONTROL         "",IDC_DOMAIN_LIST,"SysListView32",LVS_REPORT | 
                     LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
-                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,186,124,124
+                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,272,124,38
     GROUPBOX        "Information",IDC_STATIC,140,182,224,128
     RTEXT           "Name:",IDC_STATIC,146,195,38,8
     LTEXT           "My Device",IDC_INFO_NAME_TEXT,188,195,168,10,SS_SUNKEN
@@ -116,7 +116,7 @@ BEGIN
     LTEXT           "Rendezvous Browser for Windows",IDC_ABOUT_APP_NAME_TEXT,
                     44,11,192,12
     LTEXT           "Version 1.1d1",IDC_ABOUT_APP_VERSION_TEXT,44,25,192,8
-    LTEXT           "Copyright (C) 2002-2003 Apple Computer, Inc.",
+    LTEXT           "Copyright (C) 2002-2004 Apple Computer, Inc.",
                     IDC_ABOUT_COPYRIGHT_TEXT,4,60,156,8
     DEFPUSHBUTTON   "OK",IDOK,192,52,44,14
 END
@@ -164,7 +164,7 @@ BEGIN
             VALUE "FileDescription", "Rendezvous Browser for Windows"
             VALUE "FileVersion", "1, 0, 0, 1"
             VALUE "InternalName", "Rendezvous Browser for Windows"
-            VALUE "LegalCopyright", "Copyright (C) 2002-2003 Apple Computer, Inc."
+            VALUE "LegalCopyright", "Copyright (C) 2002-2004 Apple Computer, Inc."
             VALUE "OriginalFilename", "RendezvousBrowser.exe"
             VALUE "ProductName", "Rendezvous Browser for Windows"
             VALUE "ProductVersion", "1, 0, 0, 1"

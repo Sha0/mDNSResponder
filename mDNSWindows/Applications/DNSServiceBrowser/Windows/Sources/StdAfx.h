@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: StdAfx.h,v $
+Revision 1.3  2004/01/30 02:56:32  bradley
+Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
+
 Revision 1.2  2003/10/09 02:31:55  bradley
 Define WINVER if not already defined to avoid warning with Visual Studio .NET 2003.
 
@@ -63,7 +66,7 @@ Rendezvous Browser for Windows
 	#include	<afxcmn.h>	// MFC support for Windows Common Controls
 #endif // _AFX_NO_AFXCMN_SUPPORT
 
-#include 	<afxsock.h>		// MFC socket extensions
+#include	<winsock2.h>
 
 #include	<stdlib.h>
 

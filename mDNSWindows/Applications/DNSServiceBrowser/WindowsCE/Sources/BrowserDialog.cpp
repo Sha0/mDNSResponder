@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: BrowserDialog.cpp,v $
+Revision 1.5  2004/01/30 02:56:33  bradley
+Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
+
 Revision 1.4  2003/10/16 09:21:56  bradley
 Ignore non-IPv4 resolves until mDNS on Windows supports IPv6.
 
@@ -172,7 +175,7 @@ void	BrowserDialog::OnBrowserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 		entry = &mBrowserEntries[ selectedItem ];
 		url += "http://" + entry->ip;
 		temp = entry->text;
-		if( temp.Find( _T( "path=" ) ) == 0 )
+		if( temp.Find( TEXT( "path=" ) ) == 0 )
 		{
 			temp.Delete( 0, 5 );
 		}

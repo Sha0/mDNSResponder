@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.8  2004/01/30 02:56:32  bradley
+Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
+
 Revision 1.7  2003/12/25 03:42:04  bradley
 Added login dialog to get username/password when going to FTP sites. Added more services.
 
@@ -156,20 +159,49 @@ struct	KnownServiceEntry
 
 static const KnownServiceEntry		kKnownServiceTable[] =
 {
+	{ "_async._tcp", 			"address-o-sync", 					"", 			false },
 	{ "_airport._tcp.", 		"AirPort Base Station",				"acp://", 		false }, 
-	{ "_afpovertcp._tcp.", 		"AppleShare Server (AFP)", 			"afp://", 		false },
+	{ "_afpovertcp._tcp.", 		"Apple File Sharing (AFP)", 		"afp://", 		false },
+	{ "_apple-sasl._tcp.", 		"Apple Password Server", 			"", 			false },
+	{ "_aquamon._tcp.", 		"AquaMon", 							"", 			false },
+	{ "_teamlist._tcp", 		"ARTIS Team Task",					"", 			false },
+	{ "_clipboard._tcp", 		"Clipboard Sharing", 				"", 			false },
+	{ "_cvspserver._tcp", 		"CVS PServer", 						"", 			false },
+	{ "_distcc._tcp", 			"Distributed Compiler", 			"", 			false },
 	{ "_ftp._tcp.", 			"File Transfer (FTP)", 				"ftp://", 		false }, 
+	{ "_chfts._tcp", 			"Fluid Theme Server", 				"", 			false },
+	{ "_hotwayd._tcp", 			"Hotwayd", 							"", 			false },
+	{ "_ichalkboard._tcp.", 	"iChalk",							"", 			false }, 
 	{ "_ichat._tcp.", 			"iChat",				 			"ichat://",		false }, 
+	{ "_presence._tcp", 		"iChat AV", 						"", 			false },
+	{ "_iconquer._tcp.",	 	"iConquer",							"", 			false }, 
+	{ "_ica-networking._tcp.", 	"Image Capture Networking",			"", 			false }, 
+	{ "_istorm._tcp", 			"iStorm", 							"", 			false },
 	{ "_daap._tcp.", 			"iTunes Music Sharing (DAAP)",		"daap://",		false }, 
+	{ "_workstation._tcp", 		"Macintosh Manager",				"", 			false },
+	{ "_mp3sushi._tcp", 		"MP3 Sushi", 						"", 			false },
+	{ "_nfs._tcp", 				"NFS", 								"", 			false },
+	{ "_shoutcast._tcp", 		"Nicecast", 						"", 			false },
 	{ "_ptp._tcp.", 			"Picture Transfer (PTP)", 			"ptp://", 		false },
+	{ "_pop3._tcp", 			"POP3 Server", 						"", 			false },
+	{ "_postgresql._tcp", 		"PostgreSQL Server", 				"", 			false },
+	{ "_tce._tcp", 				"Power Card", 						"", 			false },
 	{ "_ipp._tcp.", 			"Printer (IPP)", 					"ipp://", 		false },
-	{ "_printer._tcp.", 		"Printer (LPD)", 					"ldp://", 		false }, 
+	{ "_printer._tcp.", 		"Printer (LPR)", 					"lpr://", 		false }, 
 	{ "_pdl-datastream._tcp.", 	"Printer (PDL)", 					"pdl://", 		false }, 
+	{ "_chess._tcp", 			"Project Gridlock", 				"", 			false },
 	{ "_eppc._tcp.", 			"Remote AppleEvents", 				"eppc://", 		false }, 
+	{ "_rendezvouspong._tcp", 	"RendezvousPong", 					"", 			false },
+	{ "_safarimenu._tcp", 		"Safari Menu", 						"", 			false },
+	{ "_ssscreenshare._tcp", 	"Screen Sharing", 					"", 			false },
 	{ "_ssh._tcp.", 			"Secure Shell (SSH)", 				"ssh://", 		false }, 
+	{ "_hydra._tcp", 			"SubEthaEdit", 						"", 			false },
+	{ "_sybase-tds._tcp", 		"Sybase Server", 					"", 			false },
 	{ "_telnet._tcp.", 			"Telnet", 							"telnet://", 	false }, 
+	{ "_tivo_servemedia._tcp", 	"TiVo",								"", 			false },
 	{ "_tftp._tcp.", 			"Trivial File Transfer (TFTP)", 	"tftp://", 		false }, 
 	{ "_rfb._tcp.",				"VNC Remote Frame Buffer",			"vnc://",		false },
+	{ "_vue4rendercow._tcp",	"VueProRenderCow",					"", 			false },
 	{ "_webdav._tcp.", 			"WebDAV", 							"webdav://",	false  }, 
 	{ "_http._tcp.", 			"Web Server (HTTP)", 				"http://", 		true  }, 
 	{ "_smb._tcp.", 			"Windows File Sharing (SMB)", 		"smb://", 		false }, 
@@ -219,6 +251,7 @@ static void
 static char *	DNSNetworkAddressToString( const DNSNetworkAddress *inAddr, char *outString );
 
 static DWORD	UTF8StringToStringObject( const char *inUTF8, CString &inObject );
+static DWORD	StringObjectToUTF8String( CString &inObject, std::string &outUTF8 );
 
 #if 0
 #pragma mark == Message Map ==
@@ -533,13 +566,13 @@ void	ChooserDialog::OnServiceListChanged( NMHDR *pNMHDR, LRESULT *pResult )
 	
 	if( ( selectedType >= 0 ) && ( selectedDomain >= 0 ) )
 	{
-		CString		type;
-		CString		domain;
+		CString			s;
+		std::string		utf8;
 		
-		type 	= mServiceTypes[ selectedType ].serviceType.c_str();
-		domain 	= mDomainList.GetItemText( selectedDomain, 0 );
+		s = mDomainList.GetItemText( selectedDomain, 0 );
+		StringObjectToUTF8String( s, utf8 );
 		
-		StartBrowsing( type, domain );
+		StartBrowsing( mServiceTypes[ selectedType ].serviceType.c_str(), utf8.c_str() );
 	}
 	
 	if( pResult )
@@ -601,7 +634,7 @@ void	ChooserDialog::OnChooserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 			{
 				// Special case for SMB (no port number).
 				
-				url.Format( "%s%s/", service->urlScheme, (const char *) p->ip.c_str() ); 
+				url.Format( TEXT( "%s%s/" ), service->urlScheme, (const char *) p->ip.c_str() ); 
 			}
 			else if( strcmp( service->serviceType, "_ftp._tcp." ) == 0 )
 			{
@@ -644,17 +677,17 @@ void	ChooserDialog::OnChooserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 				}
 				if( *text != '/' )
 				{
-					url.Format( "%s%s/%s", service->urlScheme, (const char *) p->ip.c_str(), text );
+					url.Format( TEXT( "%s%s/%s" ), service->urlScheme, (const char *) p->ip.c_str(), text );
 				}
 				else
 				{
-					url.Format( "%s%s%s", service->urlScheme, (const char *) p->ip.c_str(), text );
+					url.Format( TEXT( "%s%s%s" ), service->urlScheme, (const char *) p->ip.c_str(), text );
 				}
 			}
 			else
 			{
 				text = service->useText ? p->text.c_str() : "";
-				url.Format( "%s%s/%s", service->urlScheme, (const char *) p->ip.c_str(), text ); 
+				url.Format( TEXT( "%s%s/%s" ), service->urlScheme, (const char *) p->ip.c_str(), text ); 
 			}
 			
 			// Let the system open the URL in the correct app.
@@ -662,7 +695,7 @@ void	ChooserDialog::OnChooserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 			{
 				CWaitCursor		waitCursor;
 				
-				ShellExecute( NULL, "open", url, "", "c:\\", SW_SHOWNORMAL );
+				ShellExecute( NULL, TEXT( "open" ), url, TEXT( "" ), TEXT( "c:\\" ), SW_SHOWNORMAL );
 			}
 		}
 	}
@@ -756,7 +789,8 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 
 		// Sync up the list items with the actual data (IP address may change).
 		
-		mChooserList.SetItemText( selectedItem, 1, ip.c_str() );
+		UTF8StringToStringObject( ip.c_str(), s );
+		mChooserList.SetItemText( selectedItem, 1, s );
 	}
 	
 	// Name
@@ -770,18 +804,21 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 	
 	item = (CWnd *) this->GetDlgItem( IDC_INFO_IP_TEXT );
 	assert( item );
-	item->SetWindowText( ip.c_str() );
+	UTF8StringToStringObject( ip.c_str(), s );
+	item->SetWindowText( s );
 	
 	// Interface
 	
 	item = (CWnd *) this->GetDlgItem( IDC_INFO_INTERFACE_TEXT );
 	assert( item );
-	item->SetWindowText( ifIP.c_str() );
+	UTF8StringToStringObject( ifIP.c_str(), s );
+	item->SetWindowText( s );
 	
 
 	item = (CWnd *) this->GetDlgItem( IDC_INFO_HOST_NAME_TEXT );
 	assert( item );
-	item->SetWindowText( hostName.c_str() );
+	UTF8StringToStringObject( hostName.c_str(), s );
+	item->SetWindowText( s );
 
 	// Text
 	
@@ -794,7 +831,8 @@ void	ChooserDialog::UpdateInfoDisplay( void )
 			*i = '\n';
 		}
 	}
-	item->SetWindowText( text.c_str() );
+	UTF8StringToStringObject( text.c_str(), s );
+	item->SetWindowText( s );
 }
 
 #if 0
@@ -1020,7 +1058,9 @@ LONG	ChooserDialog::OnResolve( WPARAM inWParam, LPARAM inLParam )
 		mServiceInstances.push_back( *p );
 		UTF8StringToStringObject( p->name.c_str(), s );
 		mChooserList.InsertItem( n, s );
-		mChooserList.SetItemText( n, 1, p->ip.c_str() );
+		
+		UTF8StringToStringObject( p->ip.c_str(), s );
+		mChooserList.SetItemText( n, 1, s );
 		
 		// If this is the only item, select it.
 		
@@ -1274,6 +1314,63 @@ exit:
 	if( unicode )
 	{
 		free( unicode );
+	}
+	return( err );
+}
+
+//===========================================================================================================================
+//	StringObjectToUTF8String
+//===========================================================================================================================
+
+static DWORD	StringObjectToUTF8String( CString &inObject, std::string &outUTF8 )
+{
+	DWORD		err;
+	BSTR		unicode;
+	int			nUnicode;
+	int			n;
+	char *		utf8;
+	
+	unicode = NULL;
+	utf8	= NULL;
+	
+	nUnicode = inObject.GetLength();
+	if( nUnicode > 0 )
+	{
+		unicode = inObject.AllocSysString();
+		n = WideCharToMultiByte( CP_UTF8, 0, unicode, nUnicode, NULL, 0, NULL, NULL );
+		assert( n > 0 );
+		
+		utf8 = (char *) malloc( (size_t) n );
+		assert( utf8 );
+		if( !utf8 ) { err = ERROR_INSUFFICIENT_BUFFER; goto exit; }
+		
+		n = WideCharToMultiByte( CP_UTF8, 0, unicode, nUnicode, utf8, n, NULL, NULL );
+		assert( n > 0 );
+		
+		try
+		{
+			outUTF8.assign( utf8, n );
+		}
+		catch( ... )
+		{
+			err = ERROR_NO_UNICODE_TRANSLATION;
+			goto exit;
+		}
+	}
+	else
+	{
+		outUTF8.clear();
+	}
+	err = 0;
+	
+exit:
+	if( unicode )
+	{
+		SysFreeString( unicode );
+	}
+	if( utf8 )
+	{
+		free( utf8 );
 	}
 	return( err );
 }
