@@ -494,6 +494,7 @@ mDNSlocal void HandleSIG(int signal)
 	{
 	debugf("");
 	debugf("HandleSIG");
+	// CFRunLoopStop(CFRunLoopGetCurrent()); This doesn't work
 	mDNS_Close(&mDNSStorage);
 	exit(0);
 	}
@@ -529,6 +530,8 @@ mDNSexport int main(int argc, char **argv)
 	if (status == 0)
 		{
 		CFRunLoopRun();
+		debugf("Exiting");
+		mDNS_Close(&mDNSStorage);
 		}
 
 	return(status);
