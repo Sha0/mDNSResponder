@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.202  2005/03/01 19:29:17  ksekar
+changed LogMsgs to debugfs
+
 Revision 1.201  2005/02/26 03:04:13  cheshire
 <rdar://problem/4017292> Should not indicate successful dynamic update if no network connection
 Don't try to do updates to root name server. This ensures status dot turns red if user
@@ -2835,7 +2838,7 @@ mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *e
 		}
 
 	if (info->origLease != llq->lease)
-		LogMsg("hndlRequestChallenge: requested lease %lu, granted lease %lu", info->origLease, llq->lease);
+		debugf("hndlRequestChallenge: requested lease %lu, granted lease %lu", info->origLease, llq->lease);
 
 	// cache expiration in case we go to sleep before finishing setup
 	info->origLease = llq->lease;
@@ -3538,7 +3541,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 				return smContinue;  // next routine will examine additionals section of A record
 				}
 			}
-		LogMsg("ERROR: could not confirm existence of record %##s NS %##s", context->zone.c, context->ns.c);
+		debugf("ERROR: could not confirm existence of record %##s NS %##s", context->zone.c, context->ns.c);
 		return smError;
 		}
 	else { LogMsg("ERROR: confirmNS - bad state %d", context->state); return smError; }
