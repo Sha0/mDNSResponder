@@ -3,19 +3,20 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
@@ -31,27 +32,32 @@
  * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
  * understand why variable y is not of type "char*" just proves the point that poor code
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
- *
- * $Log: Identify.c,v $
- * Revision 1.6  2003/08/06 01:46:18  cheshire
- * Distinguish no answer from partial answer
- *
- * Revision 1.5  2003/08/05 23:56:26  cheshire
- * Update code to compile with the new mDNSCoreReceive() function that requires a TTL
- * (Right now mDNSPosix.c just reports 255 -- we should fix this)
- *
- * Revision 1.4  2003/08/04 17:24:48  cheshire
- * Combine the three separate A/AAAA/HINFO queries into a single qtype "ANY" query
- *
- * Revision 1.3  2003/08/04 17:14:08  cheshire
- * Do both AAAA queries in parallel
- *
- * Revision 1.2  2003/08/02 02:25:13  cheshire
- * Multiple improvements: Now displays host's name, and all v4 and v6 addresses, as well as HINFO record
- *
- * Revision 1.1  2003/08/01 02:20:02  cheshire
- * Add mDNSIdentify tool, used to discover what version of mDNSResponder a particular host is running
- *
+
+    Change History (most recent first):
+
+$Log: Identify.c,v $
+Revision 1.7  2003/08/12 19:56:26  cheshire
+Update to APSL 2.0
+
+Revision 1.6  2003/08/06 01:46:18  cheshire
+Distinguish no answer from partial answer
+
+Revision 1.5  2003/08/05 23:56:26  cheshire
+Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+(Right now mDNSPosix.c just reports 255 -- we should fix this)
+
+Revision 1.4  2003/08/04 17:24:48  cheshire
+Combine the three separate A/AAAA/HINFO queries into a single qtype "ANY" query
+
+Revision 1.3  2003/08/04 17:14:08  cheshire
+Do both AAAA queries in parallel
+
+Revision 1.2  2003/08/02 02:25:13  cheshire
+Multiple improvements: Now displays host's name, and all v4 and v6 addresses, as well as HINFO record
+
+Revision 1.1  2003/08/01 02:20:02  cheshire
+Add mDNSIdentify tool, used to discover what version of mDNSResponder a particular host is running
+
  */
 
 //*************************************************************************************************************

@@ -3,67 +3,71 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
 
     Change History (most recent first):
     
-        $Log: DNSServices.c,v $
-        Revision 1.12  2003/07/23 00:00:04  cheshire
-        Add comments
+$Log: DNSServices.c,v $
+Revision 1.13  2003/08/12 19:56:29  cheshire
+Update to APSL 2.0
 
-        Revision 1.11  2003/07/15 01:55:17  cheshire
-        <rdar://problem/3315777> Need to implement service registration with subtypes
+Revision 1.12  2003/07/23 00:00:04  cheshire
+Add comments
 
-        Revision 1.10  2003/07/02 21:20:10  cheshire
-        <rdar://problem/3313413> Update copyright notices, etc., in source code comments
+Revision 1.11  2003/07/15 01:55:17  cheshire
+<rdar://problem/3315777> Need to implement service registration with subtypes
 
-        Revision 1.9  2003/05/26 03:21:30  cheshire
-        Tidy up address structure naming:
-        mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
-        mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
-        mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+Revision 1.10  2003/07/02 21:20:10  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
-        Revision 1.8  2003/05/06 00:00:51  cheshire
-        <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+Revision 1.9  2003/05/26 03:21:30  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
 
-        Revision 1.7  2003/03/27 03:30:57  cheshire
-        <rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
-        Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
-        Fixes:
-        1. Make mDNS_DeregisterInterface() safe to call from a callback
-        2. Make HostNameCallback() use mDNS_DeadvertiseInterface() instead
-           (it never really needed to deregister the interface at all)
+Revision 1.8  2003/05/06 00:00:51  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
-        Revision 1.6  2003/03/22 02:57:45  cheshire
-        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+Revision 1.7  2003/03/27 03:30:57  cheshire
+<rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
+Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
+Fixes:
+1. Make mDNS_DeregisterInterface() safe to call from a callback
+2. Make HostNameCallback() use mDNS_DeadvertiseInterface() instead
+   (it never really needed to deregister the interface at all)
 
-        Revision 1.5  2003/02/20 00:59:04  cheshire
-        Brought Windows code up to date so it complies with
-        Josh Graessley's interface changes for IPv6 support.
-        (Actual support for IPv6 on Windows will come later.)
+Revision 1.6  2003/03/22 02:57:45  cheshire
+Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
-        Revision 1.4  2002/09/21 20:44:56  zarzycki
-        Added APSL info
+Revision 1.5  2003/02/20 00:59:04  cheshire
+Brought Windows code up to date so it complies with
+Josh Graessley's interface changes for IPv6 support.
+(Actual support for IPv6 on Windows will come later.)
 
-        Revision 1.3  2002/09/20 08:36:50  bradley
-        Fixed debug messages to output the correct information when resolving.
+Revision 1.4  2002/09/21 20:44:56  zarzycki
+Added APSL info
 
-        Revision 1.2  2002/09/20 05:58:01  bradley
-        DNS Services for Windows
+Revision 1.3  2002/09/20 08:36:50  bradley
+Fixed debug messages to output the correct information when resolving.
+
+Revision 1.2  2002/09/20 05:58:01  bradley
+DNS Services for Windows
 
 */
 

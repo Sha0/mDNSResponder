@@ -3,19 +3,20 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
@@ -31,116 +32,121 @@
  * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
  * understand why variable y is not of type "char*" just proves the point that poor code
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
- *
- * $Log: NetMonitor.c,v $
- * Revision 1.32  2003/08/06 18:57:01  cheshire
- * Update comments
- *
- * Revision 1.31  2003/08/06 02:05:12  cheshire
- * Add ability to give a list of hosts to monitor
- *
- * Revision 1.30  2003/08/05 23:56:26  cheshire
- * Update code to compile with the new mDNSCoreReceive() function that requires a TTL
- * (Right now mDNSPosix.c just reports 255 -- we should fix this)
- *
- * Revision 1.29  2003/08/05 00:43:12  cheshire
- * Report errors encountered while processing authority section
- *
- * Revision 1.28  2003/07/29 22:51:08  cheshire
- * Added hexdump for packets we can't decode, so we can find out *why* we couldn't decode them
- *
- * Revision 1.27  2003/07/29 22:48:04  cheshire
- * Completed support for decoding packets containing oversized resource records
- *
- * Revision 1.26  2003/07/19 03:25:23  cheshire
- * Change to make use of new GetLargeResourceRecord() call, for handling larger records
- *
- * Revision 1.25  2003/07/18 00:13:23  cheshire
- * Remove erroneous trailing '\' from TXT record display
- *
- * Revision 1.24  2003/07/17 17:10:51  cheshire
- * <rdar://problem/3315761> Implement "unicast response" request, using top bit of qclass
- * Further work: distinguish between PM and PU
- *
- * Revision 1.23  2003/07/16 22:20:23  cheshire
- * <rdar://problem/3315761> Implement "unicast response" request, using top bit of qclass
- * Made mDNSNetMonitor distinguish between QM and QU in its logging output
- *
- * Revision 1.22  2003/07/02 21:19:58  cheshire
- * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
- *
- * Revision 1.21  2003/06/18 05:48:41  cheshire
- * Fix warnings
- *
- * Revision 1.20  2003/06/06 22:18:22  cheshire
- * Add extra space in Q output to line it up with RR output
- *
- * Revision 1.19  2003/06/06 21:05:04  cheshire
- * Display state of cache-flush bit on additional records
- *
- * Revision 1.18  2003/06/06 20:01:30  cheshire
- * For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
- * (Global search-and-replace; no functional change to code execution.)
- *
- * Revision 1.17  2003/06/06 14:26:50  cheshire
- * Explicitly #include <time.h> for the benefit of certain Linux distributions
- *
- * Revision 1.16  2003/05/29 21:56:36  cheshire
- * More improvements:
- * Distinguish modern multicast queries from legacy multicast queries
- * In addition to record counts, display packet counts of queries, legacy queries, and responses
- * Include TTL in RR display
- *
- * Revision 1.15  2003/05/29 20:03:57  cheshire
- * Various improvements:
- * Display start and end time, average rates in packets-per-minute,
- * show legacy queries as -LQ-, improve display of TXT and unknown records
- *
- * Revision 1.14  2003/05/26 04:45:42  cheshire
- * Limit line length when printing super-long TXT records
- *
- * Revision 1.13  2003/05/26 03:21:29  cheshire
- * Tidy up address structure naming:
- * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
- * mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
- * mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
- *
- * Revision 1.12  2003/05/26 03:01:28  cheshire
- * <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
- *
- * Revision 1.11  2003/05/26 00:48:13  cheshire
- * If mDNS packet contains a non-zero message ID, then display it.
- *
- * Revision 1.10  2003/05/22 01:10:32  cheshire
- * Indicate when the TC bit is set on a query packet
- *
- * Revision 1.9  2003/05/21 03:56:00  cheshire
- * Improve display of Probe queries
- *
- * Revision 1.8  2003/05/09 21:41:56  cheshire
- * Track deletion/goodbye packets as separate category
- *
- * Revision 1.7  2003/05/07 00:16:01  cheshire
- * More detailed decoding of Resource Records
- *
- * Revision 1.6  2003/05/05 21:16:16  cheshire
- * <rdar://problem/3241281> Change timenow from a local variable to a structure member
- *
- * Revision 1.5  2003/04/19 01:16:22  cheshire
- * Add filter option, to monitor only packets from a single specified source address
- *
- * Revision 1.4  2003/04/18 00:45:21  cheshire
- * Distinguish announcements (AN) from deletions (DE)
- *
- * Revision 1.3  2003/04/15 18:26:01  cheshire
- * Added timestamps and help information
- *
- * Revision 1.2  2003/04/04 20:42:02  cheshire
- * Fix broken statistics counting
- *
- * Revision 1.1  2003/04/04 01:37:14  cheshire
- * Added NetMonitor.c
- *
+
+    Change History (most recent first):
+
+$Log: NetMonitor.c,v $
+Revision 1.33  2003/08/12 19:56:26  cheshire
+Update to APSL 2.0
+
+Revision 1.32  2003/08/06 18:57:01  cheshire
+Update comments
+
+Revision 1.31  2003/08/06 02:05:12  cheshire
+Add ability to give a list of hosts to monitor
+
+Revision 1.30  2003/08/05 23:56:26  cheshire
+Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+(Right now mDNSPosix.c just reports 255 -- we should fix this)
+
+Revision 1.29  2003/08/05 00:43:12  cheshire
+Report errors encountered while processing authority section
+
+Revision 1.28  2003/07/29 22:51:08  cheshire
+Added hexdump for packets we can't decode, so we can find out *why* we couldn't decode them
+
+Revision 1.27  2003/07/29 22:48:04  cheshire
+Completed support for decoding packets containing oversized resource records
+
+Revision 1.26  2003/07/19 03:25:23  cheshire
+Change to make use of new GetLargeResourceRecord() call, for handling larger records
+
+Revision 1.25  2003/07/18 00:13:23  cheshire
+Remove erroneous trailing '\' from TXT record display
+
+Revision 1.24  2003/07/17 17:10:51  cheshire
+<rdar://problem/3315761> Implement "unicast response" request, using top bit of qclass
+Further work: distinguish between PM and PU
+
+Revision 1.23  2003/07/16 22:20:23  cheshire
+<rdar://problem/3315761> Implement "unicast response" request, using top bit of qclass
+Made mDNSNetMonitor distinguish between QM and QU in its logging output
+
+Revision 1.22  2003/07/02 21:19:58  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
+
+Revision 1.21  2003/06/18 05:48:41  cheshire
+Fix warnings
+
+Revision 1.20  2003/06/06 22:18:22  cheshire
+Add extra space in Q output to line it up with RR output
+
+Revision 1.19  2003/06/06 21:05:04  cheshire
+Display state of cache-flush bit on additional records
+
+Revision 1.18  2003/06/06 20:01:30  cheshire
+For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
+(Global search-and-replace; no functional change to code execution.)
+
+Revision 1.17  2003/06/06 14:26:50  cheshire
+Explicitly #include <time.h> for the benefit of certain Linux distributions
+
+Revision 1.16  2003/05/29 21:56:36  cheshire
+More improvements:
+Distinguish modern multicast queries from legacy multicast queries
+In addition to record counts, display packet counts of queries, legacy queries, and responses
+Include TTL in RR display
+
+Revision 1.15  2003/05/29 20:03:57  cheshire
+Various improvements:
+Display start and end time, average rates in packets-per-minute,
+show legacy queries as -LQ-, improve display of TXT and unknown records
+
+Revision 1.14  2003/05/26 04:45:42  cheshire
+Limit line length when printing super-long TXT records
+
+Revision 1.13  2003/05/26 03:21:29  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
+Revision 1.12  2003/05/26 03:01:28  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
+Revision 1.11  2003/05/26 00:48:13  cheshire
+If mDNS packet contains a non-zero message ID, then display it.
+
+Revision 1.10  2003/05/22 01:10:32  cheshire
+Indicate when the TC bit is set on a query packet
+
+Revision 1.9  2003/05/21 03:56:00  cheshire
+Improve display of Probe queries
+
+Revision 1.8  2003/05/09 21:41:56  cheshire
+Track deletion/goodbye packets as separate category
+
+Revision 1.7  2003/05/07 00:16:01  cheshire
+More detailed decoding of Resource Records
+
+Revision 1.6  2003/05/05 21:16:16  cheshire
+<rdar://problem/3241281> Change timenow from a local variable to a structure member
+
+Revision 1.5  2003/04/19 01:16:22  cheshire
+Add filter option, to monitor only packets from a single specified source address
+
+Revision 1.4  2003/04/18 00:45:21  cheshire
+Distinguish announcements (AN) from deletions (DE)
+
+Revision 1.3  2003/04/15 18:26:01  cheshire
+Added timestamps and help information
+
+Revision 1.2  2003/04/04 20:42:02  cheshire
+Fix broken statistics counting
+
+Revision 1.1  2003/04/04 01:37:14  cheshire
+Added NetMonitor.c
+
  */
 
 //*************************************************************************************************************

@@ -3,84 +3,88 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
 
     Change History (most recent first):
     
-        $Log: mDNSWin32.c,v $
-        Revision 1.19  2003/08/05 23:58:18  cheshire
-        Update code to compile with the new mDNSCoreReceive() function that requires a TTL
-        Right now this platform layer just reports 255 instead of returning the real value -- we should fix this
+$Log: mDNSWin32.c,v $
+Revision 1.20  2003/08/12 19:56:27  cheshire
+Update to APSL 2.0
 
-        Revision 1.18  2003/07/23 21:16:30  cheshire
-        Removed a couple of debugfs
+Revision 1.19  2003/08/05 23:58:18  cheshire
+Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+Right now this platform layer just reports 255 instead of returning the real value -- we should fix this
 
-        Revision 1.17  2003/07/23 02:23:01  cheshire
-        Updated mDNSPlatformUnlock() to work correctly, now that <rdar://problem/3160248>
-        "ScheduleNextTask needs to be smarter" has refined the way m->NextScheduledEvent is set
+Revision 1.18  2003/07/23 21:16:30  cheshire
+Removed a couple of debugfs
 
-        Revision 1.16  2003/07/19 03:15:16  cheshire
-        Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
-        and add the obvious trivial implementations to each platform support layer
+Revision 1.17  2003/07/23 02:23:01  cheshire
+Updated mDNSPlatformUnlock() to work correctly, now that <rdar://problem/3160248>
+"ScheduleNextTask needs to be smarter" has refined the way m->NextScheduledEvent is set
 
-        Revision 1.15  2003/07/02 21:20:04  cheshire
-        <rdar://problem/3313413> Update copyright notices, etc., in source code comments
+Revision 1.16  2003/07/19 03:15:16  cheshire
+Add generic MemAllocate/MemFree prototypes to mDNSPlatformFunctions.h,
+and add the obvious trivial implementations to each platform support layer
 
-        Revision 1.14  2003/05/26 03:21:30  cheshire
-        Tidy up address structure naming:
-        mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
-        mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
-        mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+Revision 1.15  2003/07/02 21:20:04  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
-        Revision 1.13  2003/05/26 03:01:28  cheshire
-        <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+Revision 1.14  2003/05/26 03:21:30  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
 
-        Revision 1.12  2003/05/06 21:06:05  cheshire
-        <rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
+Revision 1.13  2003/05/26 03:01:28  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
 
-        Revision 1.11  2003/05/06 00:00:51  cheshire
-        <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+Revision 1.12  2003/05/06 21:06:05  cheshire
+<rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
 
-        Revision 1.10  2003/04/29 00:06:09  cheshire
-        <rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
+Revision 1.11  2003/05/06 00:00:51  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
-        Revision 1.9  2003/04/26 02:40:01  cheshire
-        Add void LogMsg( const char *format, ... )
+Revision 1.10  2003/04/29 00:06:09  cheshire
+<rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
 
-        Revision 1.8  2003/03/22 02:57:44  cheshire
-        Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+Revision 1.9  2003/04/26 02:40:01  cheshire
+Add void LogMsg( const char *format, ... )
 
-        Revision 1.7  2003/03/15 04:40:38  cheshire
-        Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
+Revision 1.8  2003/03/22 02:57:44  cheshire
+Updated mDNSWindows to use new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
-        Revision 1.6  2003/02/21 01:54:10  cheshire
-        Bug #: 3099194 mDNSResponder needs performance improvements
-        Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
+Revision 1.7  2003/03/15 04:40:38  cheshire
+Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
-        Revision 1.5  2003/02/20 00:59:03  cheshire
-        Brought Windows code up to date so it complies with
-        Josh Graessley's interface changes for IPv6 support.
-        (Actual support for IPv6 on Windows will come later.)
+Revision 1.6  2003/02/21 01:54:10  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
 
-        Revision 1.4  2002/09/21 20:44:54  zarzycki
-        Added APSL info
+Revision 1.5  2003/02/20 00:59:03  cheshire
+Brought Windows code up to date so it complies with
+Josh Graessley's interface changes for IPv6 support.
+(Actual support for IPv6 on Windows will come later.)
 
-        Revision 1.3  2002/09/20 05:50:45  bradley
-        Multicast DNS platform plugin for Win32
+Revision 1.4  2002/09/21 20:44:54  zarzycki
+Added APSL info
+
+Revision 1.3  2002/09/20 05:50:45  bradley
+Multicast DNS platform plugin for Win32
 
 */
 

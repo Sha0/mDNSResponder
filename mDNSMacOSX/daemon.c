@@ -3,24 +3,23 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- */
-
-/*
+ *
  * Formatting notes:
  * This code follows the "Whitesmiths style" C indentation rules. Plenty of discussion
  * on C indentation can be found on the web, such as <http://www.kafejo.com/komp/1tbs.htm>,
@@ -33,127 +32,132 @@
  * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
  * understand why variable y is not of type "char*" just proves the point that poor code
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
- *
- * $Log: daemon.c,v $
- * Revision 1.125  2003/08/08 18:36:04  cheshire
- * <rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
- *
- * Revision 1.124  2003/07/25 18:28:23  cheshire
- * Minor fix to error messages in syslog: Display string parameters with quotes
- *
- * Revision 1.123  2003/07/23 17:45:28  cheshire
- * <rdar://problem/3339388> mDNSResponder leaks a bit
- * Don't allocate memory for the reply until after we've verified that the reply is valid
- *
- * Revision 1.122  2003/07/23 00:00:04  cheshire
- * Add comments
- *
- * Revision 1.121  2003/07/20 03:38:51  ksekar
- * Bug #: 3320722
- * Completed support for Unix-domain socket based API.
- *
- * Revision 1.120  2003/07/18 00:30:00  cheshire
- * <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
- *
- * Revision 1.119  2003/07/17 19:08:58  cheshire
- * <rdar://problem/3332153> Remove calls to enable obsolete UDS code
- *
- * Revision 1.118  2003/07/15 21:12:28  cheshire
- * Added extra debugging checks in validatelists() (not used in final shipping version)
- *
- * Revision 1.117  2003/07/15 01:55:15  cheshire
- * <rdar://problem/3315777> Need to implement service registration with subtypes
- *
- * Revision 1.116  2003/07/02 21:19:51  cheshire
- * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
- *
- * Revision 1.115  2003/07/02 02:41:24  cheshire
- * <rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
- *
- * Revision 1.114  2003/07/01 21:10:20  cheshire
- * Reinstate checkin 1.111, inadvertently overwritten by checkin 1.112
- *
- * Revision 1.113  2003/06/28 17:27:43  vlubet
- * <rdar://problem/3221246> Redirect standard input, standard output, and
- * standard error file descriptors to /dev/null just like any other
- * well behaved daemon
- *
- * Revision 1.112  2003/06/25 23:42:19  ksekar
- * Bug #: <rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
- * Reviewed by: Stuart Cheshire
- * Added files necessary to implement Unix domain sockets based enhanced
- * Rendezvous APIs, and integrated with existing Mach-port based daemon.
- *
- * Revision 1.111  2003/06/11 01:02:43  cheshire
- * <rdar://problem/3287858> mDNSResponder binary compatibility
- * Make single binary that can run on both Jaguar and Panther.
- *
- * Revision 1.110  2003/06/10 01:14:11  cheshire
- * <rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
- *
- * Revision 1.109  2003/06/06 19:53:43  cheshire
- * For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
- * (Global search-and-replace; no functional change to code execution.)
- *
- * Revision 1.108  2003/06/06 14:08:06  cheshire
- * For clarity, pull body of main while() loop out into a separate function called mDNSDaemonIdle()
- *
- * Revision 1.107  2003/05/29 05:44:55  cheshire
- * Minor fixes to log messages
- *
- * Revision 1.106  2003/05/27 18:30:55  cheshire
- * <rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
- * Dean Reece suggested SIGINFO is more appropriate than SIGHUP
- *
- * Revision 1.105  2003/05/26 03:21:29  cheshire
- * Tidy up address structure naming:
- * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
- * mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
- * mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
- *
- * Revision 1.104  2003/05/26 00:42:06  cheshire
- * <rdar://problem/3268876> Temporarily include mDNSResponder version in packets
- *
- * Revision 1.103  2003/05/23 23:07:44  cheshire
- * <rdar://problem/3268199> Must not write to stderr when running as daemon
- *
- * Revision 1.102  2003/05/22 01:32:31  cheshire
- * Fix typo in Log message format string
- *
- * Revision 1.101  2003/05/22 00:26:55  cheshire
- * <rdar://problem/3239284> DNSServiceRegistrationCreate() should return error on dup
- * Modify error message to explain that this is technically legal, but may indicate a bug.
- *
- * Revision 1.100  2003/05/21 21:02:24  ksekar
- * Bug #: <rdar://problem/3247035>: Service should be prefixed
- * Changed kmDNSBootstrapName to "com.apple.mDNSResponderRestart" since we're changing the main
- * Mach message port to "com.apple.mDNSResponder.
- *
- * Revision 1.99  2003/05/21 17:33:49  cheshire
- * Fix warnings (mainly printf format string warnings, like using "%d" where it should say "%lu", etc.)
- *
- * Revision 1.98  2003/05/20 00:33:07  cheshire
- * <rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
- * SIGHUP now writes state summary to syslog
- *
- * Revision 1.97  2003/05/08 00:19:08  cheshire
- * <rdar://problem/3250330> Forgot to set "err = mStatus_BadParamErr" in a couple of places
- *
- * Revision 1.96  2003/05/07 22:10:46  cheshire
- * <rdar://problem/3250330> Add a few more error logging messages
- *
- * Revision 1.95  2003/05/07 19:20:17  cheshire
- * <rdar://problem/3251391> Add version number to mDNSResponder builds
- *
- * Revision 1.94  2003/05/07 00:28:18  cheshire
- * <rdar://problem/3250330> Need to make mDNSResponder more defensive against bad clients
- *
- * Revision 1.93  2003/05/06 00:00:49  cheshire
- * <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
- *
- * Revision 1.92  2003/04/04 20:38:57  cheshire
- * Add $Log header
- *
+
+    Change History (most recent first):
+
+$Log: daemon.c,v $
+Revision 1.126  2003/08/12 19:56:25  cheshire
+Update to APSL 2.0
+
+Revision 1.125  2003/08/08 18:36:04  cheshire
+<rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
+
+Revision 1.124  2003/07/25 18:28:23  cheshire
+Minor fix to error messages in syslog: Display string parameters with quotes
+
+Revision 1.123  2003/07/23 17:45:28  cheshire
+<rdar://problem/3339388> mDNSResponder leaks a bit
+Don't allocate memory for the reply until after we've verified that the reply is valid
+
+Revision 1.122  2003/07/23 00:00:04  cheshire
+Add comments
+
+Revision 1.121  2003/07/20 03:38:51  ksekar
+Bug #: 3320722
+Completed support for Unix-domain socket based API.
+
+Revision 1.120  2003/07/18 00:30:00  cheshire
+<rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
+
+Revision 1.119  2003/07/17 19:08:58  cheshire
+<rdar://problem/3332153> Remove calls to enable obsolete UDS code
+
+Revision 1.118  2003/07/15 21:12:28  cheshire
+Added extra debugging checks in validatelists() (not used in final shipping version)
+
+Revision 1.117  2003/07/15 01:55:15  cheshire
+<rdar://problem/3315777> Need to implement service registration with subtypes
+
+Revision 1.116  2003/07/02 21:19:51  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
+
+Revision 1.115  2003/07/02 02:41:24  cheshire
+<rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
+
+Revision 1.114  2003/07/01 21:10:20  cheshire
+Reinstate checkin 1.111, inadvertently overwritten by checkin 1.112
+
+Revision 1.113  2003/06/28 17:27:43  vlubet
+<rdar://problem/3221246> Redirect standard input, standard output, and
+standard error file descriptors to /dev/null just like any other
+well behaved daemon
+
+Revision 1.112  2003/06/25 23:42:19  ksekar
+Bug #: <rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
+Reviewed by: Stuart Cheshire
+Added files necessary to implement Unix domain sockets based enhanced
+Rendezvous APIs, and integrated with existing Mach-port based daemon.
+
+Revision 1.111  2003/06/11 01:02:43  cheshire
+<rdar://problem/3287858> mDNSResponder binary compatibility
+Make single binary that can run on both Jaguar and Panther.
+
+Revision 1.110  2003/06/10 01:14:11  cheshire
+<rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
+
+Revision 1.109  2003/06/06 19:53:43  cheshire
+For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
+(Global search-and-replace; no functional change to code execution.)
+
+Revision 1.108  2003/06/06 14:08:06  cheshire
+For clarity, pull body of main while() loop out into a separate function called mDNSDaemonIdle()
+
+Revision 1.107  2003/05/29 05:44:55  cheshire
+Minor fixes to log messages
+
+Revision 1.106  2003/05/27 18:30:55  cheshire
+<rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
+Dean Reece suggested SIGINFO is more appropriate than SIGHUP
+
+Revision 1.105  2003/05/26 03:21:29  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
+Revision 1.104  2003/05/26 00:42:06  cheshire
+<rdar://problem/3268876> Temporarily include mDNSResponder version in packets
+
+Revision 1.103  2003/05/23 23:07:44  cheshire
+<rdar://problem/3268199> Must not write to stderr when running as daemon
+
+Revision 1.102  2003/05/22 01:32:31  cheshire
+Fix typo in Log message format string
+
+Revision 1.101  2003/05/22 00:26:55  cheshire
+<rdar://problem/3239284> DNSServiceRegistrationCreate() should return error on dup
+Modify error message to explain that this is technically legal, but may indicate a bug.
+
+Revision 1.100  2003/05/21 21:02:24  ksekar
+Bug #: <rdar://problem/3247035>: Service should be prefixed
+Changed kmDNSBootstrapName to "com.apple.mDNSResponderRestart" since we're changing the main
+Mach message port to "com.apple.mDNSResponder.
+
+Revision 1.99  2003/05/21 17:33:49  cheshire
+Fix warnings (mainly printf format string warnings, like using "%d" where it should say "%lu", etc.)
+
+Revision 1.98  2003/05/20 00:33:07  cheshire
+<rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
+SIGHUP now writes state summary to syslog
+
+Revision 1.97  2003/05/08 00:19:08  cheshire
+<rdar://problem/3250330> Forgot to set "err = mStatus_BadParamErr" in a couple of places
+
+Revision 1.96  2003/05/07 22:10:46  cheshire
+<rdar://problem/3250330> Add a few more error logging messages
+
+Revision 1.95  2003/05/07 19:20:17  cheshire
+<rdar://problem/3251391> Add version number to mDNSResponder builds
+
+Revision 1.94  2003/05/07 00:28:18  cheshire
+<rdar://problem/3250330> Need to make mDNSResponder more defensive against bad clients
+
+Revision 1.93  2003/05/06 00:00:49  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
+Revision 1.92  2003/04/04 20:38:57  cheshire
+Add $Log header
+
  */
 
 #include <mach/mach.h>

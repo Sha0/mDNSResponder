@@ -3,56 +3,62 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- *
- * $Log: ProxyResponder.c,v $
- * Revision 1.20  2003/07/23 00:00:04  cheshire
- * Add comments
- *
- * Revision 1.19  2003/07/15 01:55:16  cheshire
- * <rdar://problem/3315777> Need to implement service registration with subtypes
- *
- * Revision 1.18  2003/07/02 21:19:58  cheshire
- * <rdar://problem/3313413> Update copyright notices, etc., in source code comments
- *
- * Revision 1.17  2003/05/26 03:21:29  cheshire
- * Tidy up address structure naming:
- * mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
- * mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
- * mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
- *
- * Revision 1.16  2003/05/26 03:01:28  cheshire
- * <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
- *
- * Revision 1.15  2003/05/06 00:00:50  cheshire
- * <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
- *
- * Revision 1.14  2003/04/25 01:45:57  cheshire
- * <rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
- *
- * Revision 1.13  2003/04/18 22:46:12  cheshire
- * Fix mistake in 1.8 -- INADDR_NONE is 0xFFFFFFFF, not 0
- *
- * Revision 1.12  2003/04/16 02:11:07  cheshire
- * Fixed mDNS_RegisterNoSuchService non-existence function so that it works again
- *
- * Revision 1.11  2003/03/31 22:49:35  cheshire
- * Add "$Log" header
- *
+
+    Change History (most recent first):
+
+$Log: ProxyResponder.c,v $
+Revision 1.21  2003/08/12 19:56:26  cheshire
+Update to APSL 2.0
+
+Revision 1.20  2003/07/23 00:00:04  cheshire
+Add comments
+
+Revision 1.19  2003/07/15 01:55:16  cheshire
+<rdar://problem/3315777> Need to implement service registration with subtypes
+
+Revision 1.18  2003/07/02 21:19:58  cheshire
+<rdar://problem/3313413> Update copyright notices, etc., in source code comments
+
+Revision 1.17  2003/05/26 03:21:29  cheshire
+Tidy up address structure naming:
+mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
+mDNSAddr.addr.ipv4 => mDNSAddr.ip.v4
+mDNSAddr.addr.ipv6 => mDNSAddr.ip.v6
+
+Revision 1.16  2003/05/26 03:01:28  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
+Revision 1.15  2003/05/06 00:00:50  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
+Revision 1.14  2003/04/25 01:45:57  cheshire
+<rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
+
+Revision 1.13  2003/04/18 22:46:12  cheshire
+Fix mistake in 1.8 -- INADDR_NONE is 0xFFFFFFFF, not 0
+
+Revision 1.12  2003/04/16 02:11:07  cheshire
+Fixed mDNS_RegisterNoSuchService non-existence function so that it works again
+
+Revision 1.11  2003/03/31 22:49:35  cheshire
+Add "$Log" header
+
  */
 
 #include <stdio.h>			// For printf()
