@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.27  2004/12/01 04:28:43  cheshire
+<rdar://problem/3872803> Darwin patches for Solaris and Suse
+Use version of daemon() provided in mDNSUNP.c instead of local copy
+
 Revision 1.26  2004/11/30 22:37:01  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -699,43 +703,6 @@ static void DeregisterOurServices(void)
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark **** Main
 #endif
-
-#ifdef NOT_HAVE_DAEMON
-
-    // The version of Solaris that I tested on didn't have the daemon 
-    // call.  This implementation was basically stolen from the 
-    // Mac OS X standard C library.
-    
-    static int daemon(int nochdir, int noclose)
-    {
-        int fd;
-    
-        switch (fork()) {
-        case -1:
-            return (-1);
-        case 0:
-            break;
-        default:
-            _exit(0);
-        }
-    
-        if (setsid() == -1)
-            return (-1);
-    
-        if (!nochdir)
-            (void)chdir("/");
-    
-        if (!noclose && (fd = _open("/dev/null", O_RDWR, 0)) != -1) {
-            (void)dup2(fd, STDIN_FILENO);
-            (void)dup2(fd, STDOUT_FILENO);
-            (void)dup2(fd, STDERR_FILENO);
-            if (fd > 2)
-                (void)_close(fd);
-        }
-        return (0);
-    }
-
-#endif /* NOT_HAVE_DAEMON */
 
 int main(int argc, char **argv)
 {

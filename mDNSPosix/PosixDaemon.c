@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.20  2004/12/01 04:28:43  cheshire
+<rdar://problem/3872803> Darwin patches for Solaris and Suse
+Use version of daemon() provided in mDNSUNP.c instead of local copy
+
 Revision 1.19  2004/12/01 03:30:29  cheshire
 <rdar://problem/3889346> Add Unicast DNS support to mDNSPosix
 
@@ -157,51 +161,6 @@ static void Reconfigure(mDNS *m)
 	if (DynDNSIP.type)       mDNS_SetPrimaryInterfaceInfo(m, &DynDNSIP, NULL);
 	}
 
-#ifdef NOT_HAVE_DAEMON
-static int	Daemon_Init(int nochdir, int noclose )
-// daemonize the process. Adapted from "Unix Network Programming" vol 1 by Stevens, section 12.4.
-// Returns 0 on success, -1 on failure.
-	{
-	pid_t	pid = fork();
-	
-	if (-1 == (int) pid)		// fork failure
-		return -1;
-	else if (0 != (int) pid)
-		exit(0);				// quit parent
-
-	pid = setsid();
-	if (-1 == (int) pid)
-		return -1;				// setsid() failure; inform child
-
-	signal(SIGHUP, SIG_IGN);
-
-	pid = fork();	// again, primarily for reasons of Unix trivia
-	if (-1 == (int) pid)		// fork failure
-		return -1;
-	else if (0 != (int) pid)
-		exit(0);				// quit 1st child
-
-	if (0 == nochdir)
-		chdir("/");
-	umask(0);
-
-	if (0 == noclose)
-		{
-		int fd = open("/dev/null", O_RDWR, 0);
-		if (fd != -1)
-			{
-			// Avoid unnecessarily duplicating a file descriptor to itself
-			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
-			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
-			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
-			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) 
-				(void)close (fd);
-			}
-		}
-	return 0;
-	}
-#endif
-
 // Do appropriate things at startup with command line arguments. Calls exit() if unhappy.
 static void ParseCmdLinArgs(int argc, char **argv)
 	{
@@ -213,14 +172,8 @@ static void ParseCmdLinArgs(int argc, char **argv)
 
 	if (!mDNS_DebugMode)
 		{
-#ifdef NOT_HAVE_DAEMON
-		int		result = Daemon_Init(0, 0);
-#else
-		int		result = daemon(0, 0);
-#endif
-		
+		int result = daemon(0, 0);
 		if (result != 0) { LogMsg("Could not run as daemon - exiting"); exit(result); }
-
 #if __APPLE__
 		LogMsg("The POSIX mDNSResponder should only be used on OS X for testing - exiting");
 		exit(-1);
