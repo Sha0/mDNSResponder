@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.223  2004/10/28 17:24:28  cheshire
+Updated "bad ifa_netmask" log message to give more information
+
 Revision 1.222  2004/10/28 03:36:34  cheshire
 <rdar://problem/3856535> Share the same port for both multicast and unicast receiving
 
@@ -1767,12 +1770,19 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		if (ifa->ifa_flags & IFF_UP && ifa->ifa_addr)
 			if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)
 				{
-				if (!ifa->ifa_netmask || ifa->ifa_addr->sa_family != ifa->ifa_netmask->sa_family)
+				if (!ifa->ifa_netmask)
 					{
 					mDNSAddr ip;
 					SetupAddr(&ip, ifa->ifa_addr);
-					LogMsg("getifaddrs failed to provide ifa_netmask for %5s(%d) Flags %04X Family %2d %#a",
+					LogMsg("getifaddrs: ifa_netmask is NULL for %5s(%d) Flags %04X Family %2d %#a",
 						ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family, &ip);
+					}
+				else if (ifa->ifa_addr->sa_family != ifa->ifa_netmask->sa_family)
+					{
+					mDNSAddr ip;
+					SetupAddr(&ip, ifa->ifa_addr);
+					LogMsg("getifaddrs ifa_netmask for %5s(%d) Flags %04X Family %2d %#a has different family: ",
+						ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family, &ip, ifa->ifa_netmask->sa_family);
 					}
 				else
 					{
