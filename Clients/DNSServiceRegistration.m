@@ -24,11 +24,11 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
 {
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
-    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.", @"_printer._tcp.", @"_http._tcp.", @"_afp._tcp.", nil];
-    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Printer (lpr)", @"Web Server (http)", @"AppleShare Server (afp)", nil];
-    NSArray *portArray = [NSArray arrayWithObjects:@"21", @"515", @"80", @"548", nil];
-    NSArray *domainArray = [NSArray arrayWithObjects:@"local.arpa.", @"local.arpa.", @"local.arpa.", @"local.arpa.", nil];
-    NSArray *textArray = [NSArray arrayWithObjects:@"ftp://appmob.apple.com", @"lpr://printer.apple.com", @"http://appmob.apple.com", @"afp://install.apple.com", nil];
+	NSArray *typeArray   = [NSArray arrayWithObjects:@"_ftp._tcp.",    @"_ssh._tcp.",  @"_tftp._tcp.",        @"_http._tcp.",  @"_printer._tcp.",  @"_afpovertcp._tcp.",         nil];
+	NSArray *nameArray   = [NSArray arrayWithObjects:@"My ftp Server", @"My Computer", @"Testing Boot Image", @"A Web Server", @"Steve’s Printer", @"Company AppleShare Server", nil];
+    NSArray *portArray   = [NSArray arrayWithObjects:@"21",            @"22",          @"69",                 @"80",           @"515",             @"548",                       nil];
+    NSArray *domainArray = [NSArray arrayWithObjects:@"local.arpa.",   @"local.arpa.", @"local.arpa.",        @"local.arpa.",  @"local.arpa.",     @"local.arpa.",               nil];
+    NSArray *textArray   = [NSArray arrayWithObjects:@"",              @"",            @"mybootimage",        @"/index.html",  @"lpt1",            @"Public",                    nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
     [regDict setObject:nameArray forKey:@"SrvNameKeys"];

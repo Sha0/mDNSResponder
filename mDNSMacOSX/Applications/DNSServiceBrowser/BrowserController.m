@@ -69,8 +69,8 @@ void resolve_reply (
 {
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
-    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.", @"_printer._tcp.", @"_http._tcp.", @"_afp._tcp.", nil];
-    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Printer (lpr)", @"Web Server (http)", @"AppleShare Server (afp)", nil];
+    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.",          @"_ssh._tcp.",         @"_tftp._tcp.",                  @"_http._tcp.",       @"_printer._tcp.", @"_afpovertcp._tcp.", nil];
+    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Secure Shell (ssh)", @"Trivial File Transfer (tftp)", @"Web Server (http)", @"Printer (lpd)",  @"AppleShare Server", nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
     [regDict setObject:nameArray forKey:@"SrvNameKeys"];
