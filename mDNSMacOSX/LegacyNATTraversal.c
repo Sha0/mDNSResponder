@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.8  2004/10/27 02:17:21  cheshire
+Turn off "safe_close: ERROR" error messages -- there are too many of them
+
 Revision 1.7  2004/10/26 21:15:40  cheshire
 <rdar://problem/3854314> Legacy NAT traversal code closes file descriptor 0
 Additional fixes: Code should set fds to -1 after closing sockets.
@@ -92,7 +95,7 @@ Revision 1.1  2004/08/18 17:35:41  ksekar
 
 static int safe_close(int fd)
 	{
-	if (fd < 3) { LogMsg("safe_close: ERROR sd %d < 3", fd); return(-1); }
+	if (fd < 3) { /* LogMsg("safe_close: ERROR sd %d < 3", fd); */ return(-1); }
 	return(close(fd));
 	}
 
