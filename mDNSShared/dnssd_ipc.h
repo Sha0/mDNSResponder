@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.7  2004/06/12 01:08:14  cheshire
+Changes for Windows compatibility
+
 Revision 1.6  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -32,18 +35,23 @@ Update to APSL 2.0
 #define DNSSD_IPC_H
 
 #include "dns_sd.h"
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/un.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/stat.h>
+#if defined(WIN32)
+#	include <winsock2.h>
+#	include <windows.h>
+#else
+#	include <sys/types.h>
+#	include <unistd.h>
+#	include <sys/un.h>
+#	include <string.h>
+#	include <stdio.h>
+#	include <stdlib.h>
+#	include <sys/stat.h>
+#endif
 
 //#define UDSDEBUG  // verbose debug output
 
 // General UDS constants
-#define MDNS_UDS_SERVERPATH "/var/run/mDNSResponder" 
+#define MDNS_UDS_SERVERPATH "/var/run/mDNSResponder"
 #define LISTENQ 100
 #define TXT_RECORD_INDEX -1	// record index for default text record
 #define MAX_CTLPATH 256	    // longest legal control path length
@@ -53,7 +61,6 @@ Update to APSL 2.0
 #define IPC_FLAGS_NOREPLY 1	// set flag if no asynchronous replies are to be sent to client
 #define IPC_FLAGS_REUSE_SOCKET 2 // set flag if synchronous errors are to be sent via the primary socket
                                 // (if not set, first string in message buffer must be path to error socket
-
 
 typedef enum
     {
@@ -80,9 +87,7 @@ typedef enum
     reg_record_reply
     } reply_op_t;
 
-
 typedef struct ipc_msg_hdr_struct ipc_msg_hdr;
-
 
 // client stub callback to process message from server and deliver results to
 // client application
@@ -101,7 +106,6 @@ typedef union
     uint32_t ptr64[2];
     } client_context_t;
 
-
 typedef struct ipc_msg_hdr_struct
     {
     uint32_t version;
@@ -116,47 +120,30 @@ typedef struct ipc_msg_hdr_struct
     int reg_index;                   // identifier for a record registered via DNSServiceRegisterRecord() on a
     // socket connected by DNSServiceConnect().  Must be unique in the scope of the connection, such that and
     // index/socket pair uniquely identifies a record.  (Used to select records for removal by DNSServiceRemoveRecord())
-    } ipc_msg_hdr_struct;			
-
-
-
+    } ipc_msg_hdr_struct;
 
 // routines to write to and extract data from message buffers.
-// caller responsible for bounds checking.  
+// caller responsible for bounds checking.
 // ptr is the address of the pointer to the start of the field.
 // it is advanced to point to the next field, or the end of the message
-
-
-void put_flags(const DNSServiceFlags flags, char **ptr);
-DNSServiceFlags get_flags(char **ptr);
 
 void put_long(const uint32_t l, char **ptr);
 uint32_t get_long(char **ptr);
 
-void put_error_code(const DNSServiceErrorType, char **ptr);
-DNSServiceErrorType get_error_code(char **ptr);
+void put_short(uint16_t s, char **ptr);
+uint16_t get_short(char **ptr);
+
+#define put_flags put_long
+#define get_flags get_long
+
+#define put_error_code put_long
+#define get_error_code get_long
 
 int put_string(const char *str, char **ptr);
 int get_string(char **ptr, char *buffer, int buflen);
 
 void put_rdata(const int rdlen, const char *rdata, char **ptr);
-char *get_rdata(char **ptr, int rdlen);  // return value is rdata pointed to by *ptr - 
+char *get_rdata(char **ptr, int rdlen);  // return value is rdata pointed to by *ptr -
                                          // rdata is not copied from buffer.
 
-void put_short(uint16_t s, char **ptr);
-uint16_t get_short(char **ptr);
-
-
-
 #endif // DNSSD_IPC_H
-
-
-
-
-
-
-
-
-
-
-
