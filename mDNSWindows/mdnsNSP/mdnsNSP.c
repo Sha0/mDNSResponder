@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.6  2004/12/06 01:56:53  shersche
+<rdar://problem/3789425> Use the DNS types and classes defined in dns_sd.h
+Bug #: 3789425
+
 Revision 1.5  2004/07/13 21:24:28  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -65,44 +69,6 @@ mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to 
 #pragma mark == Structures ==
 #endif
 
-typedef enum											// From RFC 1035
-{
-	kDNSServiceDNSClass_IN					= 1,		// Internet
-	kDNSServiceDNSClass_CS					= 2,		// CSNET
-	kDNSServiceDNSClass_CH					= 3,		// CHAOS
-	kDNSServiceDNSClass_HS					= 4,		// Hesiod
-	kDNSServiceDNSClass_NONE				= 254,		// Used in DNS UPDATE [RFC 2136]
-
-	kDNSServiceDNSClass_Mask				= 0x7FFF,	// Multicast DNS uses the bottom 15 bits to identify the record class...
-	kDNSServiceDNSClass_UniqueRRSet			= 0x8000,	// ... and the top bit indicates that all other cached records are now invalid
-
-	kDNSServiceDNSQClass_ANY				= 255,		// Not a DNS class, but a DNS query class, meaning "all classes"
-	kDNSServiceDNSQClass_UnicastResponse	= 0x8000	// Top bit set in a question means "unicast response acceptable"
-	
-}	DNSServiceDNSClass;
-typedef enum							// From RFC 1035
-{
-	kDNSServiceDNSType_A		= 1,	// Address
-	kDNSServiceDNSType_NS		= 2,	// Name Server
-	kDNSServiceDNSType_MD		= 3,	// Mail Destination
-	kDNSServiceDNSType_MF		= 4,	// Mail Forwarder
-	kDNSServiceDNSType_CNAME	= 5,	// Canonical Name
-	kDNSServiceDNSType_SOA		= 6,	// Start of Authority
-	kDNSServiceDNSType_MB		= 7,	// Mailbox
-	kDNSServiceDNSType_MG		= 8,	// Mail Group
-	kDNSServiceDNSType_MR		= 9,	// Mail Rename
-	kDNSServiceDNSType_NULL		= 10,	// NULL RR
-	kDNSServiceDNSType_WKS		= 11,	// Well-known-service
-	kDNSServiceDNSType_PTR		= 12,	// Domain name pointer
-	kDNSServiceDNSType_HINFO	= 13,	// Host information
-	kDNSServiceDNSType_MINFO	= 14,	// Mailbox information
-	kDNSServiceDNSType_MX		= 15,	// Mail Exchanger
-	kDNSServiceDNSType_TXT		= 16,	// Arbitrary text string
-	kDNSServiceDNSType_AAAA 	= 28,	// IPv6 address
-	kDNSServiceDNSType_SRV 		= 33,	// Service record
-	kDNSServiceDNSTypeQType_ANY = 255	// Not a DNS type, but a DNS query type, meaning "all types"
-	
-}	DNSServiceDNSType;
 //===========================================================================================================================
 //	Structures
 //===========================================================================================================================
@@ -792,7 +758,7 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 	
 	// Start the query.
 
-	err = DNSServiceQueryRecord( &obj->resolver, 0, 0, name, kDNSServiceDNSType_A, kDNSServiceDNSClass_IN, 
+	err = DNSServiceQueryRecord( &obj->resolver, 0, 0, name, kDNSServiceType_A, kDNSServiceClass_IN, 
 		QueryRecordCallback, obj );
 	require_noerr( err, exit );
 
@@ -956,8 +922,8 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 	check( obj );
 	require_noerr( inErrorCode, exit );
 	require_quiet( inFlags & kDNSServiceFlagsAdd, exit );
-	require( inRRClass   == kDNSServiceDNSClass_IN, exit );
-	require( inRRType    == kDNSServiceDNSType_A, exit );
+	require( inRRClass   == kDNSServiceClass_IN, exit );
+	require( inRRType    == kDNSServiceType_A, exit );
 	require( inRDataSize == 4, exit );
 	
 	dlog( kDebugLevelTrace, "%s (flags=0x%08X, name=%s, rrType=%d, rDataSize=%d)\n", 
