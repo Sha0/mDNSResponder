@@ -569,6 +569,7 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	struct ifaddrs *ifalist;
 	int err = getifaddrs(&ifalist);
 	struct ifaddrs *ifa = ifalist;
+	struct ifaddrs *theLoopback = NULL;
 	if (err) return(err);
 
 	// Set up the nice label
@@ -597,14 +598,27 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 			debugf("SetupInterface: %s Flags %04X Interface IFF_POINTOPOINT", ifa->ifa_name, ifa->ifa_flags);
 #endif
 		if (ifa->ifa_addr->sa_family == AF_INET && (ifa->ifa_flags & IFF_UP) &&
-			!(ifa->ifa_flags & IFF_LOOPBACK) && !(ifa->ifa_flags & IFF_POINTOPOINT))
+			!(ifa->ifa_flags & IFF_POINTOPOINT))
 			{
-			NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)malloc(sizeof(NetworkInterfaceInfo2));
-			if (!info) debugf("SetupInterfaceList: Out of Memory!");
-			else SetupInterface(m, info, ifa);
+			if (ifa->ifa_flags & IFF_LOOPBACK)
+				theLoopback = ifa;
+			else
+				{
+				NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)malloc(sizeof(NetworkInterfaceInfo2));
+				if (!info) debugf("SetupInterfaceList: Out of Memory!");
+				else SetupInterface(m, info, ifa);
+				}
 			}
 		ifa = ifa->ifa_next;
 		}
+
+	if (!m->HostInterfaces && theLoopback)
+		{
+		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)malloc(sizeof(NetworkInterfaceInfo2));
+		if (!info) debugf("SetupInterfaceList: (theLoopback) Out of Memory!");
+		else SetupInterface(m, info, theLoopback);
+		}
+
 	freeifaddrs(ifalist);
 	return(err);
 	}
