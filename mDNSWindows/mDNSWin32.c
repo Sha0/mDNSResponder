@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.74  2005/02/08 06:06:16  shersche
+<rdar://problem/3986597> Implement mDNSPlatformTCPConnect, mDNSPlatformTCPCloseConnection, mDNSPlatformTCPRead, mDNSPlatformTCPWrite
+
 Revision 1.73  2005/02/01 19:35:43  ksekar
 Removed obsolete arguments from mDNS_SetSecretForZone
 
@@ -397,6 +400,18 @@ struct	mDNSPlatformInterfaceInfo
 	mDNSAddr			ip;
 };
 
+typedef struct	mDNSTCPConnectionData	mDNSTCPConnectionData;
+struct	mDNSTCPConnectionData
+{
+	SocketRef					sock;
+	BOOL						connected;
+	TCPConnectionCallback		callback;
+	void					*	context;
+	HANDLE						pendingEvent;
+	mDNSTCPConnectionData	*	next;
+};
+
+
 mDNSexport mStatus	mDNSPlatformInterfaceNameToID( mDNS * const inMDNS, const char *inName, mDNSInterfaceID *outID );
 mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInterfaceID inID, mDNSPlatformInterfaceInfo *outInfo );
 
@@ -421,6 +436,7 @@ mDNSlocal mStatus			RegQueryString( HKEY key, const char * param, char ** string
 mDNSlocal struct ifaddrs*	myGetIfAddrs(int refresh);
 mDNSlocal OSStatus			ConvertUTF8ToLsaString( const char * input, PLSA_UNICODE_STRING output );
 mDNSlocal OSStatus			ConvertLsaStringToUTF8( PLSA_UNICODE_STRING input, char ** output );
+mDNSlocal void				FreeTCPConnectionData( mDNSTCPConnectionData * data );
 
 #ifdef	__cplusplus
 	}
@@ -436,6 +452,9 @@ mDNSlocal OSStatus			ConvertLsaStringToUTF8( PLSA_UNICODE_STRING input, char ** 
 
 mDNSlocal mDNS_PlatformSupport		gMDNSPlatformSupport;
 mDNSs32								mDNSPlatformOneSecond = 0;
+mDNSlocal mDNSTCPConnectionData	*	gTCPConnectionList		= NULL;
+mDNSlocal int						gTCPConnections			= 0;
+mDNSlocal BOOL						gWaitListChanged		= FALSE;
 
 #if( MDNS_WINDOWS_USE_IPV6_IF_ADDRS )
 
@@ -1055,14 +1074,80 @@ mStatus
 		void *					inContext, 
 		int *					outSock )
 {
-	DEBUG_UNUSED( inDstIP );
-	DEBUG_UNUSED( inDstPort );
+	u_long						on		= 1;  // "on" for setsockopt
+	struct sockaddr_in			saddr;
+	mDNSTCPConnectionData	*	tcd		= NULL;
+	mStatus						err		= mStatus_NoError;
+
 	DEBUG_UNUSED( inInterfaceID );
-	DEBUG_UNUSED( inCallback );
-	DEBUG_UNUSED( inContext );
-	DEBUG_UNUSED( outSock );
 	
-	return( mStatus_UnsupportedErr );
+	*outSock = INVALID_SOCKET;
+
+	if ( inDstIP->type != mDNSAddrType_IPv4 )
+	{
+		LogMsg("ERROR: mDNSPlatformTCPConnect - attempt to connect to an IPv6 address: operation not supported");
+		return mStatus_UnknownErr;
+	}
+
+	// Setup connection data object
+
+	tcd = (mDNSTCPConnectionData*) malloc( sizeof( mDNSTCPConnectionData ) );
+	require_action( tcd, exit, err = mStatus_NoMemoryErr );
+	memset( tcd, 0, sizeof( mDNSTCPConnectionData ) );
+
+	tcd->sock		= INVALID_SOCKET;
+	tcd->callback	= inCallback;
+	tcd->context	= inContext;
+
+	bzero(&saddr, sizeof(saddr));
+	saddr.sin_family	= AF_INET;
+	saddr.sin_port		= inDstPort.NotAnInteger;
+	memcpy(&saddr.sin_addr, &inDstIP->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
+
+	// Create the socket
+
+	tcd->sock = socket(AF_INET, SOCK_STREAM, 0);
+	err = translate_errno( tcd->sock != INVALID_SOCKET, WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
+	// Set it to be non-blocking
+
+	err = ioctlsocket( tcd->sock, FIONBIO, &on );
+	err = translate_errno( err == 0, WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
+	// Try and do connect
+
+	err = connect( tcd->sock, ( struct sockaddr* ) &saddr, sizeof( saddr ) );
+	require_action( !err || ( WSAGetLastError() == WSAEWOULDBLOCK ), exit, err = mStatus_ConnFailed );
+	tcd->connected		= !err ? TRUE : FALSE;
+	tcd->pendingEvent	= CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( tcd->pendingEvent, GetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+	err = WSAEventSelect( tcd->sock, tcd->pendingEvent, FD_CONNECT|FD_READ|FD_CLOSE );
+	require_noerr( err, exit );
+
+	// Bookkeeping
+
+	tcd->next			= gTCPConnectionList;
+	gTCPConnectionList	= tcd;
+	gTCPConnections++;
+	gWaitListChanged	= TRUE;
+
+	*outSock = (int) tcd->sock;
+	
+exit:
+
+	if ( !err )
+	{
+		err = tcd->connected ? mStatus_ConnEstablished : mStatus_ConnPending;
+	}
+	else if ( tcd )
+	{
+		FreeTCPConnectionData( tcd );
+	}
+
+	return err;
 }
 
 //===========================================================================================================================
@@ -1071,7 +1156,33 @@ mStatus
 
 void	mDNSPlatformTCPCloseConnection( int inSock )
 {
-	DEBUG_UNUSED( inSock );
+	mDNSTCPConnectionData	*	tcd  = gTCPConnectionList;
+	mDNSTCPConnectionData	*	last = NULL;
+
+	while ( tcd )
+	{
+		if ( tcd->sock == ( SOCKET ) inSock )
+		{
+			if ( last == NULL )
+			{
+				gTCPConnectionList = tcd->next;
+			}
+			else
+			{
+				last->next = tcd->next;
+			}
+
+			FreeTCPConnectionData( tcd );
+
+			gTCPConnections--;
+			gWaitListChanged = TRUE;
+
+			break;
+		}
+
+		last = tcd;
+		tcd  = tcd->next;
+	}
 }
 
 //===========================================================================================================================
@@ -1080,11 +1191,21 @@ void	mDNSPlatformTCPCloseConnection( int inSock )
 
 int	mDNSPlatformReadTCP( int inSock, void *inBuffer, int inBufferSize )
 {
-	DEBUG_UNUSED( inSock );
-	DEBUG_UNUSED( inBuffer );
-	DEBUG_UNUSED( inBufferSize );
-	
-	return( -1 );
+	int			nread;
+	OSStatus	err;
+
+	nread = recv( inSock, inBuffer, inBufferSize, 0);
+	err = translate_errno( ( nread >= 0 ) || ( WSAGetLastError() == WSAEWOULDBLOCK ), WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
+	if ( nread < 0 )
+	{
+		nread = 0;
+	}
+		
+exit:
+
+	return nread;
 }
 
 //===========================================================================================================================
@@ -1093,13 +1214,23 @@ int	mDNSPlatformReadTCP( int inSock, void *inBuffer, int inBufferSize )
 
 int	mDNSPlatformWriteTCP( int inSock, const char *inMsg, int inMsgSize )
 {
-	DEBUG_UNUSED( inSock );
-	DEBUG_UNUSED( inMsg );
-	DEBUG_UNUSED( inMsgSize );
-	
-	return( -1 );
-}
+	int			nsent;
+	OSStatus	err;
 
+	nsent = send( inSock, inMsg, inMsgSize, 0 );
+
+	err = translate_errno( ( nsent >= 0 ) || ( WSAGetLastError() == WSAEWOULDBLOCK ), WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
+	if ( nsent < 0)
+	{
+		nsent = 0;
+	}
+		
+exit:
+
+	return nsent;
+}
 
 //===========================================================================================================================
 //	dDNSPlatformGetConfig
@@ -2882,11 +3013,19 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 		
 		// Main processing loop.
 		
+		gWaitListChanged = FALSE;
+
 		for( ;; )
 		{
 			// Give the mDNS core a chance to do its work and determine next event time.
 			
 			mDNSs32 interval = mDNS_Execute(m) - mDNS_TimeNow(m);
+
+			if ( gWaitListChanged )
+			{
+				break;
+			}
+
 			if (m->p->idleThreadCallback)
 			{
 				interval = m->p->idleThreadCallback(m, interval);
@@ -2956,7 +3095,8 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 				{
 					HANDLE					signaledObject;
 					int						n = 0;
-					mDNSInterfaceData *		ifd;
+					mDNSInterfaceData		*	ifd;
+					mDNSTCPConnectionData	*	tcd;
 					
 					signaledObject = waitList[ waitItemIndex ];
 
@@ -2982,6 +3122,26 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 						{
 							ProcessingThreadProcessPacket( m, ifd, ifd->sock );
 							++n;
+						}
+					}
+
+					for ( tcd = gTCPConnectionList; tcd; tcd = tcd->next )
+					{
+						if ( tcd->pendingEvent == signaledObject )
+						{
+							mDNSBool connect = FALSE;
+
+							if ( !tcd->connected )
+							{
+								tcd->connected	= mDNStrue;
+								connect			= mDNStrue;
+							}
+
+							tcd->callback( ( int ) tcd->sock, tcd->context, connect );
+
+							++n;
+
+							break;
 						}
 					}
 
@@ -3058,11 +3218,12 @@ exit:
 
 mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **outWaitList, int *outWaitListCount )
 {
-	mStatus					err;
-	int						waitListCount;
-	HANDLE *				waitList;
-	HANDLE *				waitItemPtr;
-	mDNSInterfaceData *		ifd;
+	mStatus						err;
+	int							waitListCount;
+	HANDLE *					waitList;
+	HANDLE *					waitItemPtr;
+	mDNSInterfaceData		*	ifd;
+	mDNSTCPConnectionData	*	tcd;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "thread setting up wait list\n" );
 	check( inMDNS );
@@ -3072,7 +3233,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	
 	// Allocate an array to hold all the objects to wait on.
 	
-	waitListCount = kWaitListFixedItemCount + inMDNS->p->interfaceCount;
+	waitListCount = kWaitListFixedItemCount + inMDNS->p->interfaceCount + gTCPConnections;
 	waitList = (HANDLE *) malloc( waitListCount * sizeof( *waitList ) );
 	require_action( waitList, exit, err = mStatus_NoMemoryErr );
 	waitItemPtr = waitList;
@@ -3098,6 +3259,12 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	{
 		*waitItemPtr++ = ifd->readPendingEvent;
 	}
+
+	for ( tcd = gTCPConnectionList; tcd; tcd = tcd->next )
+	{
+		*waitItemPtr++ = tcd->pendingEvent;
+	}
+
 	check( (int)( waitItemPtr - waitList ) == waitListCount );
 	
 	*outWaitList 		= waitList;
@@ -4304,4 +4471,27 @@ exit:
 	}
 
 	return err;
+}
+
+
+//===========================================================================================================================
+//	FreeTCPConnectionData
+//===========================================================================================================================
+
+mDNSlocal void
+FreeTCPConnectionData( mDNSTCPConnectionData * data )
+{
+	check( data );
+
+	if ( data->pendingEvent )
+	{
+		CloseHandle( data->pendingEvent );
+	}
+
+	if ( data->sock != INVALID_SOCKET )
+	{
+		closesocket( data->sock );
+	}
+
+	free( data );
 }
