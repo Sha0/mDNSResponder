@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.9  2003/06/10 01:14:11  cheshire
+<rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
+
 Revision 1.8  2003/05/14 07:08:37  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 Previously, when there was any network configuration change, mDNSResponder
@@ -120,6 +123,7 @@ struct NetworkInterfaceInfoOSX_struct
 	mDNS                    *m;
 	mDNSBool                 CurrentlyActive;
 	char                    *ifa_name;					// Memory for this is allocated using malloc
+	mDNSu32                  scope_id;					// interface index / IPv6 scope ID
 	u_short                  sa_family;
 #if mDNS_AllowPort53
 	int                      skt53;
@@ -140,6 +144,8 @@ struct mDNS_PlatformSupport_struct
     io_object_t              PowerNotifier;
     CFRunLoopSourceRef       PowerRLS;
     };
+
+extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()

@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.110  2003/06/10 01:14:11  cheshire
+ * <rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
+ *
  * Revision 1.109  2003/06/06 19:53:43  cheshire
  * For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
  * (Global search-and-replace; no functional change to code execution.)
@@ -627,7 +630,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->ServiceInfoQueryContext;
-	NetworkInterfaceInfo *ifinfo = (NetworkInterfaceInfo *)query->info->InterfaceID;
+	NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)query->info->InterfaceID;
 	struct sockaddr_storage interface;
 	struct sockaddr_storage address;
 	char cstring[1024];
@@ -641,23 +644,23 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	bzero(&interface, sizeof(interface));
 	bzero(&address,   sizeof(address));
 
-	if (ifinfo->ip.type == mDNSAddrType_IPv4)
+	if (ifx->ifinfo.ip.type == mDNSAddrType_IPv4)
 		{
 		struct sockaddr_in *sin = (struct sockaddr_in*)&interface;
 		sin->sin_len         = sizeof(*sin);
 		sin->sin_family      = AF_INET;
 		sin->sin_port        = 0;
-		sin->sin_addr.s_addr = ifinfo->ip.ip.v4.NotAnInteger;
+		sin->sin_addr.s_addr = ifx->ifinfo.ip.ip.v4.NotAnInteger;
 		}
-	else if (ifinfo->ip.type == mDNSAddrType_IPv6)
+	else if (ifx->ifinfo.ip.type == mDNSAddrType_IPv6)
 		{
 		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&interface;
 		sin6->sin6_len       = sizeof(*sin6);
 		sin6->sin6_family    = AF_INET6;
 		sin6->sin6_flowinfo  = 0;
 		sin6->sin6_port      = 0;
-		sin6->sin6_addr		 = *(struct in6_addr*)&ifinfo->ip.ip.v6;
-		sin6->sin6_scope_id  = ifinfo->scope_id;
+		sin6->sin6_addr		 = *(struct in6_addr*)&ifx->ifinfo.ip.ip.v6;
+		sin6->sin6_scope_id  = ifx->scope_id;
 		}
 	
 	if (query->info->ip.type == mDNSAddrType_IPv4)
@@ -676,7 +679,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin6->sin6_port          = query->info->port.NotAnInteger;
 		sin6->sin6_flowinfo      = 0;
 		sin6->sin6_addr			 = *(struct in6_addr*)&query->info->ip.ip.v6;
-		sin6->sin6_scope_id      = ifinfo->scope_id;
+		sin6->sin6_scope_id      = ifx->scope_id;
 		}
 
 	// The OS X DNSServiceResolverResolve() API is defined using a C-string,

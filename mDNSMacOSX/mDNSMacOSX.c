@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.87  2003/06/10 01:14:11  cheshire
+<rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
+
 Revision 1.86  2003/05/28 02:41:52  cheshire
 <rdar://problem/3034346> Time to remove Mac OS 9 UDP Port 53 legacy support
 
@@ -322,6 +325,16 @@ static int myIfIndexToName(u_short index, char* name)
 			if (((struct sockaddr_dl*)ifa->ifa_addr)->sdl_index == index)
 				{ strncpy(name, ifa->ifa_name, IF_NAMESIZE); return 0; }
 	return -1;
+	}
+
+mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index)
+	{
+	NetworkInterfaceInfoOSX *i;
+	if (index)
+		for (i = m->p->InterfaceList; i; i = i->next)
+			if (i->scope_id == index)
+				return(i->ifinfo.InterfaceID);
+	return(mDNSNULL);
 	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
@@ -758,12 +771,12 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	strcpy(i->ifa_name, ifa->ifa_name);
 
 	i->ifinfo.InterfaceID = mDNSNULL;
-	i->ifinfo.ip              = ip;
-	i->ifinfo.scope_id        = if_nametoindex(ifa->ifa_name);
-	i->ifinfo.Advertise       = m->AdvertiseLocalAddresses;
+	i->ifinfo.ip          = ip;
+	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 
 	i->next            = mDNSNULL;
 	i->m               = m;
+	i->scope_id        = if_nametoindex(ifa->ifa_name);
 	i->CurrentlyActive = mDNStrue;
 	i->sa_family       = ifa->ifa_addr->sa_family;
 	#if mDNS_AllowPort53
@@ -881,7 +894,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			n->InterfaceID = (mDNSInterfaceID)alias;
 			mDNS_RegisterInterface(m, n);
 			debugf("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
-				i->ifa_name, n->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
+				i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 			}
 
 		if (i->sa_family == AF_INET && alias->sktv4 == -1)
@@ -890,15 +903,15 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			err = SetupSocket(i, UnicastDNSPort, &alias->skt53, &alias->cfs53);
 			#endif
 			if (!err) err = SetupSocket(i, MulticastDNSPort, &alias->sktv4, &alias->cfsv4);
-			if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+			else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
 			}
 	
 		if (i->sa_family == AF_INET6 && alias->sktv6 == -1)
 			{
 			err = SetupSocket(i, MulticastDNSPort, &alias->sktv6, &alias->cfsv6);
-			if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+			else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
 			}
 		}
 	}
