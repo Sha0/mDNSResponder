@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.38  2004/05/13 04:57:48  ksekar
+Removed unnecessary FreeSearchList function
+
 Revision 1.37  2004/05/13 04:54:20  ksekar
 Unified list copy/free code.  Added symetric list for
 
@@ -825,7 +828,7 @@ int	mDNSPlatformWriteTCP( int inSock, const char *inMsg, int inMsgSize )
 
 
 //===========================================================================================================================
-//	mDNSPlatformGet/FreeSearchDomainList
+//	mDNSPlatformGetSearchDomainList
 //===========================================================================================================================
 
 
@@ -842,13 +845,6 @@ mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
 		}
 	return mDNS_CopyDNameList(&tmp);
 	}
-
-mDNSexport void mDNSPlatformFreeSearchDomainList(DNameListElem *list)
-	{
-	mDNS_FreeDNameList(list)
-	}
-
-
 
 
 
