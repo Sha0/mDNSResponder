@@ -454,9 +454,9 @@ mDNSexport void mDNSPlatformIdle(mDNS *const m)
 #if TEST_SLEEP
 	switch (mode)
 		{
-		case 0: if ((long)TickCount() - sleep >= 0) { mDNSCoreSleep(m, 1); mode++; }
+		case 0: if ((long)TickCount() - sleep >= 0) { mDNSCoreMachineSleep(m, 1); mode++; }
 				break;
-		case 1: if ((long)TickCount() - wake >= 0) { mDNSCoreSleep(m, 0); mode++; }
+		case 1: if ((long)TickCount() - wake >= 0) { mDNSCoreMachineSleep(m, 0); mode++; }
 				break;
 		}
 #endif

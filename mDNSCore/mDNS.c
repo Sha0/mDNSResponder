@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.79  2003/02/21 01:54:07  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
+
 Revision 1.78  2003/02/20 06:48:32  cheshire
 Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
@@ -106,7 +110,7 @@ Orphan questions cause HaveQueries to return true, but there's no interface to s
 Fix: mDNS_DeregisterInterface() now calls DeActivateInterfaceQuestions()
 
 Revision 1.70  2003/01/23 19:00:20  cheshire
-Protect against infinite loops in mDNSCoreTask
+Protect against infinite loops in mDNS_Execute
 
 Revision 1.69  2003/01/21 22:56:32  jgraessl
 
@@ -2623,7 +2627,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 	}
 
 // AnswerLocalQuestions is called from mDNSCoreReceiveResponse,
-// and from TidyRRCache, which is called from mDNSCoreTask and from mDNSCoreReceiveResponse.
+// and from TidyRRCache, which is called from mDNS_Execute and from mDNSCoreReceiveResponse.
 // AnswerLocalQuestions is *never* called directly as a result of a client API call.
 // If new questions are created as a result of invoking client callbacks, they will be added to
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
@@ -2797,7 +2801,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 	return(r);
 	}
 
-mDNSlocal void ScheduleNextTask(const mDNS *const m)
+mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 	{
 	const mDNSs32 timenow = mDNSPlatformTimeNow();
 	mDNSs32 nextevent = timenow + 0x78000000;
@@ -2808,13 +2812,13 @@ mDNSlocal void ScheduleNextTask(const mDNS *const m)
 	ResourceRecord *rr;
 	
 	if (m->mDNSPlatformStatus != mStatus_NoError)
-		return;
+		return(nextevent);
 	
 	// 1. If sleeping, do nothing
 	if (m->SleepState)
 		{
 		debugf("ScheduleNextTask: Sleeping");
-		return;
+		return(nextevent);
 		}
 	
 	// 2. If we have new questions added to the list, we need to answer them from cache ASAP
@@ -2904,84 +2908,94 @@ mDNSlocal void ScheduleNextTask(const mDNS *const m)
 	verbosedebugf("ScheduleNextTask: Next event: <%s> in %s%d.%03d seconds", msg, sign,
 		interval / mDNSPlatformOneSecond, fraction * 1000 / mDNSPlatformOneSecond);
 
-	mDNSPlatformScheduleTask(m, nextevent);
+	return(nextevent);
 	}
 
 mDNSlocal mDNSs32 mDNS_Lock(mDNS *const m)
 	{
 	mDNSPlatformLock(m);
-	++m->mDNS_busy;
+	m->mDNS_busy++;
 	return(mDNSPlatformTimeNow());
 	}
 
 mDNSlocal void mDNS_Unlock(mDNS *const m)
 	{
-	// Upon unlocking, we've usually added some new work to the task list.
-	// If we don't decrement mDNS_busy to zero, then we don't have to worry about calling
-	// ScheduleNextTask(), because the last lock holder will do it for us on the way out.
-	if (--m->mDNS_busy == 0) ScheduleNextTask(m);
+	m->NextScheduledEvent = 0;
+	m->mDNS_busy--;
 	mDNSPlatformUnlock(m);
 	}
 
-mDNSexport void mDNSCoreTask(mDNS *const m)
+mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
-	int i;
 	const mDNSs32 timenow = mDNS_Lock(m);
-
-	verbosedebugf("mDNSCoreTask");
-	if (m->mDNS_busy > 1) debugf("mDNSCoreTask: Locking failure! mDNS already busy");
-	if (m->CurrentQuestion) debugf("mDNSCoreTask: ERROR! m->CurrentQuestion already set");
 	
-	if (m->SuppressProbes && timenow - m->SuppressProbes >= 0)
-		m->SuppressProbes = 0;
-
-	// 1. See if we can answer any of our new local questions from the cache
-	for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m, timenow);
-	if (i >= 1000) debugf("mDNSCoreTask: AnswerNewQuestion exceeded loop limit");
-
-	// 2. See what packets we need to send
-	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState)
+	// If we don't know when the next event is, or we know that the next event is already due,
+	// then process our work lists now
+	if (m->NextScheduledEvent == 0 || timenow - m->NextScheduledEvent >= 0)
 		{
-		// If the platform code is currently non-operational,
-		// then we'll just complete deregistrations immediately,
-		// without waiting for the goodbye packet to be sent
-		DiscardDeregistrations(m, mDNSInterface_Any, timenow);
-		}
-	else if (m->SuppressSending == 0 || timenow - m->SuppressSending >= 0)
-		{
-		// If the platform code is ready,
-		// and we're not suppressing packet generation right now
-		// send our responses, probes, and questions
-		m->SuppressSending = 0;
-		for (i=0; HaveResponses(m, timenow) && i<1000; i++) SendResponses(m, timenow);
-		if (i >= 1000) debugf("mDNSCoreTask: SendResponses exceeded loop limit");
-		for (i=0; HaveQueries  (m, timenow) && i<1000; i++) SendQueries  (m, timenow);
-		if (i >= 1000) debugf("mDNSCoreTask: SendQueries exceeded loop limit");
+		int i;
+		verbosedebugf("mDNS_Execute");
+		if (m->mDNS_busy > 1) debugf("mDNS_Execute: Locking failure! mDNS already busy");
+		if (m->CurrentQuestion) debugf("mDNS_Execute: ERROR! m->CurrentQuestion already set");
+		
+		if (m->SuppressProbes && timenow - m->SuppressProbes >= 0)
+			m->SuppressProbes = 0;
+	
+		// 1. See if we can answer any of our new local questions from the cache
+		for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m, timenow);
+		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
+	
+		// 2. See what packets we need to send
+		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState)
+			{
+			// If the platform code is currently non-operational,
+			// then we'll just complete deregistrations immediately,
+			// without waiting for the goodbye packet to be sent
+			DiscardDeregistrations(m, mDNSInterface_Any, timenow);
+			}
+		else if (m->SuppressSending == 0 || timenow - m->SuppressSending >= 0)
+			{
+			// If the platform code is ready,
+			// and we're not suppressing packet generation right now
+			// send our responses, probes, and questions
+			m->SuppressSending = 0;
+			for (i=0; HaveResponses(m, timenow) && i<1000; i++) SendResponses(m, timenow);
+			if (i >= 1000) debugf("mDNS_Execute: SendResponses exceeded loop limit");
+			for (i=0; HaveQueries  (m, timenow) && i<1000; i++) SendQueries  (m, timenow);
+			if (i >= 1000) debugf("mDNS_Execute: SendQueries exceeded loop limit");
+			}
+	
+		if (m->rrcache_size) TidyRRCache(m, timenow);
+	
+		// Zero is special, so be careful not to set m->NextScheduledEvent to zero
+		m->NextScheduledEvent = ScheduleNextTask(m);
+		if (m->NextScheduledEvent == 0) m->NextScheduledEvent = 1;
 		}
 
-	if (m->rrcache_size) TidyRRCache(m, timenow);
-
-	mDNS_Unlock(m);
+	// Can't use standard "mDNS_Unlock(m)" here, because that also clears m->NextScheduledEvent
+	m->mDNS_busy--;
+	mDNSPlatformUnlock(m);
+	return(m->NextScheduledEvent);
 	}
 
-// Call mDNSCoreSleep(m, mDNStrue) when the machine is about to go to sleep.
-// Call mDNSCoreSleep(m, mDNSfalse) when the machine is has just woken up.
+// Call mDNSCoreMachineSleep(m, mDNStrue) when the machine is about to go to sleep.
+// Call mDNSCoreMachineSleep(m, mDNSfalse) when the machine is has just woken up.
 // Normally, the platform support layer below mDNSCore should call this, not the client layer above.
 // Note that sleep/wake calls do not have to be paired one-for-one; it is acceptable to call
-// mDNSCoreSleep(m, mDNSfalse) any time there is reason to believe that the machine may have just
+// mDNSCoreMachineSleep(m, mDNSfalse) any time there is reason to believe that the machine may have just
 // found itself in a new network environment. For example, if the Ethernet hardware indicates that the
-// cable has just been connected, the platform support layer should call mDNSCoreSleep(m, mDNSfalse)
+// cable has just been connected, the platform support layer should call mDNSCoreMachineSleep(m, mDNSfalse)
 // to make mDNSCore re-issue its outstanding queries, probe for record uniqueness, etc.
-// While it is safe to call mDNSCoreSleep(m, mDNSfalse) at any time, it does cause extra network
+// While it is safe to call mDNSCoreMachineSleep(m, mDNSfalse) at any time, it does cause extra network
 // traffic, so it should only be called when there is legitimate reason to believe the machine
 // may have become attached to a new network.
-mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
+mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	{
 	ResourceRecord *rr;
 	const mDNSs32 timenow = mDNS_Lock(m);
 
 	m->SleepState = sleepstate;
-	debugf("mDNSCoreSleep: %d", sleepstate);
+	debugf("mDNSCoreMachineSleep: %d", sleepstate);
 
 	if (sleepstate)
 		{
@@ -3734,12 +3748,12 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->ThisQInterval = mDNSPlatformOneSecond/2;  // MUST be > zero for an active question
 		question->RecentAnswers = 0;
 		question->DuplicateOf   = FindDuplicateQuestion(m, question);
-		if (question->DuplicateOf)
-			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %X (%X) duplicate of (%X)",
-				&question->name, DNSTypeName(question->rrtype), question->InterfaceID, question, question->DuplicateOf);
-		else
+		if (!question->DuplicateOf)
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %X (%X) started",
 				&question->name, DNSTypeName(question->rrtype), question->InterfaceID, question);
+		else
+			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %X (%X) duplicate of (%X)",
+				&question->name, DNSTypeName(question->rrtype), question->InterfaceID, question, question->DuplicateOf);
 		*q = question;
 		
 		if (!m->NewQuestions)
@@ -3844,11 +3858,6 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		mDNS_StartQuery_internal(m, &query->qAv4, mDNSPlatformTimeNow());
 		mDNS_StartQuery_internal(m, &query->qAv6, mDNSPlatformTimeNow());
 		}
-
-	// Don't need to do ScheduleNextTask because this callback can only ever happen
-	// (a) as a result of an immediate result from the mDNS_StartQuery call, or
-	// (b) as a result of receiving a packet on the wire
-	// both of which will result in a subsequent ScheduleNextTask call of their own
 	}
 
 mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
@@ -4646,6 +4655,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->Context            = Context;
 
 	m->mDNS_busy          = 0;
+	m->NextScheduledEvent = 0;
 
 	m->lock_rrcache       = 0;
 	m->lock_Questions     = 0;
@@ -4683,8 +4693,6 @@ extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 	{
 	m->mDNSPlatformStatus = result;
 	if (m->Callback) m->Callback(m, mStatus_NoError);
-	mDNS_Lock(m);	// This lock/unlock causes a ScheduleNextTask(m) to get things started
-	mDNS_Unlock(m);
 	}
 
 extern void mDNS_Close(mDNS *const m)

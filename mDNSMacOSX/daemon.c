@@ -70,7 +70,6 @@ static const char kmDNSBootstrapName[] = "com.apple.mDNSResponder";
 static mach_port_t client_death_port = MACH_PORT_NULL;
 static mach_port_t exit_m_port       = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
-static CFRunLoopTimerRef DeliverInstanceTimer;
 
 // mDNS Mach Message Timeout, in milliseconds.
 // We need this to be short enough that we don't deadlock the mDNSResponder if a client
@@ -489,24 +488,6 @@ mDNSlocal mDNSBool DeliverInstance(DNSServiceBrowser *x, DNSServiceDiscoveryRepl
 	return(mDNStrue);
 	}
 
-mDNSlocal void DeliverInstanceTimerCallBack(CFRunLoopTimerRef timer, void *info)
-	{
-	DNSServiceBrowser *b = DNSServiceBrowserList;
-	(void)timer;	// Parameter not used
-	(void)info;		// Unused
-
-	while (b)
-		{
-		// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
-		// event that the client Mach queue overflows, DeliverInstance() will call AbortBlockedClient()
-		// and that will cause the DNSServiceBrowser object's memory to be freed before it returns
-		DNSServiceBrowser *x = b;
-		b = b->next;
-		if (x->resultType != -1)
-			DeliverInstance(x, 0);
-		}
-	}
-
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
 	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
@@ -541,11 +522,6 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	if (answer->rrremainingttl)
 		 x->resultType = DNSServiceBrowserReplyAddInstance;
 	else x->resultType = DNSServiceBrowserReplyRemoveInstance;
-
-	// We schedule this timer 1/10 second in the future because CFRunLoop doesn't respect
-	// the relative priority between CFSocket and CFRunLoopTimer, and continues to call
-	// the timer callback even though there are packets waiting to be processed.
-	CFRunLoopTimerSetNextFireDate(DeliverInstanceTimer, CFAbsoluteTimeGetCurrent() + 0.1);
 	}
 
 mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unusedserver, mach_port_t client,
@@ -899,7 +875,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
 		if (port.NotAnInteger)
 			CheckForDuplicateRegistrations(x, &t, &d, port);
-		err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port, txtinfo, data_len, mDNSInterface_Any, RegCallback, x);
+		err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port,
+			txtinfo, data_len, mDNSInterface_Any, RegCallback, x);
 	
 		if (err) AbortClient(client, x);
 		else EnableDeathNotificationForClient(client, x);
@@ -1276,7 +1253,6 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	{
 	mStatus            err;
-	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, &mDNSStorage, NULL, NULL, NULL };
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
 	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
@@ -1297,18 +1273,6 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 		return(status);
 		}
 
-	// Note: Every CFRunLoopTimer has to be created with an initial fire time, and a repeat interval, or it becomes
-	// a one-shot timer and you can't use CFRunLoopTimerSetNextFireDate(timer, when) to schedule subsequent firings.
-	// Here we create it with an initial fire time 24 hours from now, and a repeat interval of 24 hours, with
-	// the intention that we'll actually reschedule it using CFRunLoopTimerSetNextFireDate(timer, when) as necessary.
-	DeliverInstanceTimer = CFRunLoopTimerCreate(kCFAllocatorDefault,
-							CFAbsoluteTimeGetCurrent() + 24.0*60.0*60.0, 24.0*60.0*60.0,
-							0, // no flags
-							9, // low priority execution (after all packets, etc., have been handled).
-							DeliverInstanceTimerCallBack, &myCFRunLoopTimerContext);
-	if (!DeliverInstanceTimer) return(-1);
-	CFRunLoopAddTimer(CFRunLoopGetCurrent(), DeliverInstanceTimer, kCFRunLoopDefaultMode);
-	
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		rrcachestorage, RR_CACHE_SIZE,
 		mDNS_Init_AdvertiseLocalAddresses,
@@ -1381,7 +1345,53 @@ mDNSexport int main(int argc, char **argv)
 
 	if (status == 0)
 		{
-		CFRunLoopRun();
+		int numevents = 0;
+		int RunLoopStatus = kCFRunLoopRunTimedOut;
+		
+		// This is the main work loop:
+		// (1) First we give mDNSCore a chance to finish off any of its deferred work and calculate the next sleep time
+		// (2) Then we make sure we've delivered all waiting browse messages to our clients
+		// (3) Then we sleep for the time requested by mDNSCore, or until the next event, whichever is sooner
+		// (4) On wakeup we first process *all* events
+		// (5) then when no more events remain, we go back to (1) to finish off any deferred work and do it all again
+		while (RunLoopStatus == kCFRunLoopRunTimedOut)
+			{
+			mDNSs32 ticks;
+			CFAbsoluteTime interval;
+			DNSServiceBrowser *b;
+	
+			// 2. Call mDNS_Execute() to let mDNSCore do what it needs to do
+			ticks = mDNS_Execute(&mDNSStorage) - mDNSPlatformTimeNow();
+	
+			// 1. Deliver any waiting browse messages to clients
+			b = DNSServiceBrowserList;
+			while (b)
+				{
+				// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
+				// event that the client Mach queue overflows, DeliverInstance() will call AbortBlockedClient()
+				// and that will cause the DNSServiceBrowser object's memory to be freed before it returns
+				DNSServiceBrowser *x = b;
+				b = b->next;
+				if (x->resultType != -1)
+					DeliverInstance(x, 0);
+				}
+		
+			// 3. Do a blocking "CFRunLoopRunInMode" until our next wakeup time, or an event occurs
+			// The 'true' parameter makes it return after handling any event that occurs
+			// This gives us chance to regain control so we can call mDNS_Execute() before sleeping again
+			debugf("main: Handled %d events; now sleeping for %d ticks", numevents, ticks);
+			numevents = 0;
+			interval = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
+			RunLoopStatus = CFRunLoopRunInMode(kCFRunLoopDefaultMode, interval, true);
+
+			// 4. Time to do some work? Handle all remaining events before returning to mDNS_Execute()
+			while (RunLoopStatus == kCFRunLoopRunHandledSource)
+				{
+				numevents++;
+				RunLoopStatus = CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
+				}
+			}
+
 		LogMsg("CFRunLoopRun Exiting. This is bad.");
 		mDNS_Close(&mDNSStorage);
 		}

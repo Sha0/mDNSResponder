@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.55  2003/02/21 01:54:09  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
+
 Revision 1.54  2003/02/20 06:48:35  cheshire
 Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
@@ -349,12 +353,6 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef s, CFSocketCallBackType type, CFDa
 	else
 #endif
 	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, MulticastDNSPort, info->ifinfo.InterfaceID);
-	}
-
-mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
-	{
-	(void)timer;	// Parameter not used
-	mDNSCoreTask((mDNS *const)info);
 	}
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
@@ -698,7 +696,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	ClearInterfaceList(m);
 	SetupInterfaceList(m);
 	if (m->Callback) m->Callback(m, mStatus_ConfigChanged);
-	mDNSCoreSleep(m, false);
+	mDNSCoreMachineSleep(m, false);
 	}
 
 mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
@@ -751,14 +749,14 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	(void)service;		// Parameter not used
 	switch(messageType)
 		{
-		case kIOMessageCanSystemPowerOff:     debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");               break; // E0000240
-		case kIOMessageSystemWillPowerOff:    debugf("PowerChanged kIOMessageSystemWillPowerOff"); mDNSCoreSleep(m, true);  break; // E0000250
-		case kIOMessageSystemWillNotPowerOff: debugf("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");           break; // E0000260
-		case kIOMessageCanSystemSleep:        debugf("PowerChanged kIOMessageCanSystemSleep (no action)");                  break; // E0000270
-		case kIOMessageSystemWillSleep:       debugf("PowerChanged kIOMessageSystemWillSleep");    mDNSCoreSleep(m, true);  break; // E0000280
-		case kIOMessageSystemWillNotSleep:    debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");              break; // E0000290
-		case kIOMessageSystemHasPoweredOn:    debugf("PowerChanged kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break; // E0000300
-		default:                              debugf("PowerChanged unknown message %X", messageType);                       break;
+		case kIOMessageCanSystemPowerOff:     debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");                      break; // E0000240
+		case kIOMessageSystemWillPowerOff:    debugf("PowerChanged kIOMessageSystemWillPowerOff"); mDNSCoreMachineSleep(m, true);  break; // E0000250
+		case kIOMessageSystemWillNotPowerOff: debugf("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");                  break; // E0000260
+		case kIOMessageCanSystemSleep:        debugf("PowerChanged kIOMessageCanSystemSleep (no action)");                         break; // E0000270
+		case kIOMessageSystemWillSleep:       debugf("PowerChanged kIOMessageSystemWillSleep");    mDNSCoreMachineSleep(m, true);  break; // E0000280
+		case kIOMessageSystemWillNotSleep:    debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");                     break; // E0000290
+		case kIOMessageSystemHasPoweredOn:    debugf("PowerChanged kIOMessageSystemHasPoweredOn"); mDNSCoreMachineSleep(m, false); break; // E0000300
+		default:                              debugf("PowerChanged unknown message %X", messageType);                              break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
 	}
@@ -779,16 +777,6 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
-
-	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, m, NULL, NULL, NULL };
-	
-	// Note: Every CFRunLoopTimer has to be created with an initial fire time, and a repeat interval, or it becomes
-	// a one-shot timer and you can't use CFRunLoopTimerSetNextFireDate(timer, when) to schedule subsequent firings.
-	// Here we create it with an initial fire time ten seconds from now, and a repeat interval of ten seconds,
-	// knowing that we'll reschedule it using CFRunLoopTimerSetNextFireDate(timer, when) long before that happens.
-	m->p->CFTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 10.0, 10.0, 0, 1,
-											myCFRunLoopTimerCallBack, &myCFRunLoopTimerContext);
-	CFRunLoopAddTimer(CFRunLoopGetCurrent(), m->p->CFTimer, kCFRunLoopDefaultMode);
 
 	SetupInterfaceList(m);
 
@@ -832,13 +820,6 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		}
 	
 	ClearInterfaceList(m);
-	
-	if (m->p->CFTimer)
-		{
-		CFRunLoopTimerInvalidate(m->p->CFTimer);
-		CFRelease(m->p->CFTimer);
-		m->p->CFTimer = NULL;
-		}
 	}
 
 mDNSexport mDNSs32  mDNSPlatformOneSecond = 1024;
@@ -854,16 +835,6 @@ mDNSexport mDNSs32  mDNSPlatformTimeNow()
 	// This gives us a proper modular (cyclic) counter that has a resolution of roughly 1ms (actually 1/1024 second)
 	// and correctly cycles every 2^22 seconds (4194304 seconds = approx 48 days).
 	return( (tp.tv_sec << 10) | (tp.tv_usec * 16 / 15625) );
-	}
-
-mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, mDNSs32 NextTaskTime)
-	{
-	if (m->p->CFTimer)
-		{
-		CFAbsoluteTime ticks    = (CFAbsoluteTime)(NextTaskTime - mDNSPlatformTimeNow());
-		CFAbsoluteTime interval = ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
-		CFRunLoopTimerSetNextFireDate(m->p->CFTimer, CFAbsoluteTimeGetCurrent() + interval);
-		}
 	}
 
 // Locking is a no-op here, because we're single-threaded with a CFRunLoop, so we can never interrupt ourselves

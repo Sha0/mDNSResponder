@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.34  2003/02/21 01:54:08  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
+
 Revision 1.33  2003/02/20 06:48:32  cheshire
 Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
@@ -524,6 +528,7 @@ struct mDNS_struct
 	void         *Context;
 
 	mDNSu32 mDNS_busy;				// For debugging: To catch and report locking failures
+	mDNSs32 NextScheduledEvent;
 
 	mDNSu8 lock_rrcache;			// For debugging: Set at times when these lists may not be modified
 	mDNSu8 lock_Questions;
@@ -613,12 +618,21 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 #define mDNS_Init_NoInitCallback              mDNSNULL
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
 extern void    mDNS_Close     (mDNS *const m);
+extern mDNSs32 mDNS_Execute   (mDNS *const m);
 extern mStatus mDNS_Register  (mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_Update    (mDNS *const m, ResourceRecord *const rr, mDNSu32 newttl,
 								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern void    mDNS_Deregister(mDNS *const m, ResourceRecord *const rr);
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern void    mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
+
+// ***************************************************************************
+#if 0
+#pragma mark - Platform support functions that are accessible to the client layer too
+#endif
+
+extern mDNSs32  mDNSPlatformOneSecond;
+extern mDNSs32  mDNSPlatformTimeNow();
 
 // ***************************************************************************
 #if 0

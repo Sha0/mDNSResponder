@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.4  2003/02/21 01:54:10  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
+
 Revision 1.3  2002/09/21 20:44:51  zarzycki
 Added APSL info
 
@@ -93,7 +97,6 @@ Defines mDNS_PlatformSupport_struct for OS X
 
 struct mDNS_PlatformSupport_struct
     {
-    CFRunLoopTimerRef  CFTimer;
     SCDynamicStoreRef  Store;
     CFRunLoopSourceRef StoreRLS;
     io_connect_t       PowerConnection;

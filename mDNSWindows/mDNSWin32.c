@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.5 2003/02/20 00:59:03 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.6 2003/02/21 01:54:10 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,10 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.6  2003/02/21 01:54:10  cheshire
+        Bug #: 3099194 mDNSResponder needs performance improvements
+        Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
+
         Revision 1.5  2003/02/20 00:59:03  cheshire
         Brought Windows code up to date so it complies with
         Josh Graessley's interface changes for IPv6 support.
@@ -1668,7 +1672,7 @@ static void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 	
 	// Force mDNS to update.
 	
-	mDNSCoreSleep( inMDNS, mDNSfalse );
+	mDNSCoreMachineSleep( inMDNS, mDNSfalse );
 }
 
 #if 0

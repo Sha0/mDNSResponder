@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.12  2003/02/21 01:54:08  cheshire
+Bug #: 3099194 mDNSResponder needs performance improvements
+Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
+
 Revision 1.11  2002/12/23 22:13:29  jgraessl
 
 Reviewed by: Stuart Cheshire
@@ -97,8 +101,6 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 // When Setup is complete, the callback is called.
 // mDNSPlatformSendUDP() sends one UDP packet
 // When a packet is received, the PlatformSupport code calls mDNSCoreReceive()
-// mDNSPlatformScheduleTask() indicates that a timer should be set,
-// and mDNSCoreTask() should be called when the timer expires
 // mDNSPlatformClose() tidies up on exit
 
 #ifdef	__cplusplus
@@ -137,10 +139,6 @@ extern void     mDNSPlatformClose  (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSOpaqueID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
 
-extern mDNSs32  mDNSPlatformOneSecond;
-extern mDNSs32  mDNSPlatformTimeNow();
-extern void     mDNSPlatformScheduleTask(const mDNS *const m, mDNSs32 NextTaskTime);
-
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);
 
@@ -154,8 +152,7 @@ extern void     mDNSPlatformMemZero(                       void *dst, mDNSu32 le
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 								const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSOpaqueID InterfaceID);
-extern void     mDNSCoreTask   (mDNS *const m);
-extern void     mDNSCoreSleep  (mDNS *const m, mDNSBool wake);
+extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
 #ifdef	__cplusplus
 	}
