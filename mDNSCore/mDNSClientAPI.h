@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.166  2004/04/22 03:15:56  cheshire
+Fix use of "struct __attribute__((__packed__))" so it only applies on GCC >= 2.9
+
 Revision 1.165  2004/04/22 03:05:28  cheshire
 kDNSClass_ANY should be kDNSQClass_ANY
 
@@ -599,7 +602,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 // In the event that structures are not packed correctly, mDNS_Init() will detect this and report an error, so the
 // developer will know what's wrong, and can investigate what needs to be done on that compiler to provide proper packing.
 #ifndef packedstruct
- #ifdef __GNUC__
+ #if ((__GNUC__ > 2) || ((__GNUC__ == 2) && (__GNUC_MINOR__ >= 9)))
   #define packedstruct struct __attribute__((__packed__))
   #define packedunion  union  __attribute__((__packed__))
  #else
@@ -620,7 +623,7 @@ typedef enum							// From RFC 1035
 	kDNSClass_CH               = 3,		// CHAOS
 	kDNSClass_HS               = 4,		// Hesiod
 	kDNSClass_NONE             = 254,	// Used in DNS UPDATE [RFC 2136]
-	
+
 	kDNSClass_Mask             = 0x7FFF,// Multicast DNS uses the bottom 15 bits to identify the record class...
 	kDNSClass_UniqueRRSet      = 0x8000,// ... and the top bit indicates that all other cached records are now invalid
 
@@ -650,6 +653,7 @@ typedef enum				// From RFC 1035
 	kDNSType_AAAA = 28,		// 28 IPv6 address
 	kDNSType_SRV = 33,		// 33 Service record
 	kDNSType_TSIG = 250,    // 250 Transaction Signature
+
 	kDNSQType_ANY = 255		// Not a DNS type, but a DNS query type, meaning "all types"
 	} DNS_TypeValues;
 
@@ -1292,7 +1296,7 @@ enum
 	{
 	mDNS_KnownBug_PhantomInterfaces = 1
 	};
-	
+
 typedef struct 
     {
     mDNSs32          nextevent;
@@ -1505,7 +1509,7 @@ extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
 
 extern mDNSs32  mDNSPlatformOneSecond;
 extern mDNSs32  mDNSPlatformTimeNow(void);
-	
+
 // ***************************************************************************
 #if 0
 #pragma mark - General utility and helper functions
@@ -1655,7 +1659,6 @@ extern char *GetRRDisplayString_rdb(mDNS *const m, const ResourceRecord *rr, RDa
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 
-
 // ***************************************************************************
 #if 0
 #pragma mark - Authentication Support
@@ -1760,7 +1763,7 @@ extern void     mDNSPlatformMemZero     (                       void *dst, mDNSu
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
 extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
-	
+
 // Platform support modules should provide the following functions to map between opaque interface IDs
 // and interface indexes in order to support the DNS-SD API. If your target platform does not support 
 // multiple interfaces and/or does not support the DNS-SD API, these functions can be empty.
@@ -1789,7 +1792,7 @@ extern mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport,
 extern void mDNSPlatformTCPCloseConnection(int sd);
 extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
 extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
-	
+
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())
