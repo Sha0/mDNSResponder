@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.515  2005/01/27 00:21:49  cheshire
+<rdar://problem/3973798> Remove mDNSResponder sleep/wake syslog message
+
 Revision 1.514  2005/01/21 01:33:45  cheshire
 <rdar://problem/3962979> Shutdown time regression: mDNSResponder not responding to SIGTERM
 
@@ -4465,7 +4468,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	mDNS_Lock(m);
 
 	m->SleepState = sleepstate;
-	LogMsg("%s at %ld", sleepstate ? "Sleeping" : "Waking", m->timenow);
+	LogOperation("%s at %ld", sleepstate ? "Sleeping" : "Waking", m->timenow);
 
 	if (sleepstate)
 		{
