@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.76  2004/09/14 22:22:00  ksekar
+<rdar://problem/3800920> Legacy browses broken against some BIND versions
+
 Revision 1.75  2004/09/03 19:23:05  ksekar
 <rdar://problem/3788460>: Need retransmission mechanism for wide-area service registrations
 
@@ -2077,32 +2080,26 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 
 	(void)clientContext;  // unused
 	
-	if (rcode && rcode != kDNSFlag1_RC_NXDomain)
-		{
-		LogMsg("LLQ Setup for %##s failed with rcode %d.  Reverting to polling mode", q->qname.c, rcode);
-		info->state = LLQ_Poll;
-		q->uDNS_info.responseCallback = simpleResponseHndlr;
-		q->LastQTime = mDNSPlatformTimeNow();
-		q->ThisQInterval = 1;
-		return;
-		}
+	if (rcode && rcode != kDNSFlag1_RC_NXDomain) goto poll;
 	
 	ptr = getQuestion(pktMsg, ptr, end, 0, &pktQuestion);
-	if (!ptr) { LogMsg("ERROR: recvSetupResponse - getQuestion"); goto error; }
+	if (!ptr) { LogMsg("ERROR: recvSetupResponse - getQuestion"); goto poll; }
 	if (!SameDomainName(&q->qname, &pktQuestion.qname))
-		{ LogMsg("ERROR: recvSetupResponse - mismatched question in response for llq setup %##s", q->qname.c);   goto error; }
+		{ LogMsg("ERROR: recvSetupResponse - mismatched question in response for llq setup %##s", q->qname.c);   goto poll; }
 
-	if (!getLLQAtIndex(m, pktMsg, end, &llq, 0)) { LogMsg("ERROR: recvSetupResponse - GetLLQAtIndex"); goto error; }
-	if (llq.llqOp != kLLQOp_Setup) { LogMsg("ERROR: recvSetupResponse - bad op %d", llq.llqOp); goto error; } 
-	if (llq.vers != kLLQ_Vers) { LogMsg("ERROR: recvSetupResponse - bad vers %d", llq.vers);  goto error; } 
+	if (!getLLQAtIndex(m, pktMsg, end, &llq, 0)) { debugf("recvSetupResponse - GetLLQAtIndex"); goto poll; }
+	if (llq.llqOp != kLLQOp_Setup) { LogMsg("ERROR: recvSetupResponse - bad op %d", llq.llqOp); goto poll; } 
+	if (llq.vers != kLLQ_Vers) { LogMsg("ERROR: recvSetupResponse - bad vers %d", llq.vers);  goto poll; } 
 
 	if (info->state == LLQ_InitialRequest) { hndlRequestChallenge(m, pktMsg, end, &llq, q); return; }
 	if (info->state == LLQ_SecondaryRequest) { hndlChallengeResponseAck(m, pktMsg, end, &llq, q); return; }
 	LogMsg("recvSetupResponse - bad state %d", info->state);
 
-
-	error:
-	info->state = LLQ_Error;
+	poll:
+	info->state = LLQ_Poll;
+	q->uDNS_info.responseCallback = simpleResponseHndlr;
+	info->question->LastQTime = 0;  // trigger immediate poll
+	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
 
 
@@ -2199,6 +2196,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	return;
 
 	poll:
+	info->question->uDNS_info.responseCallback = simpleResponseHndlr;
 	info->state = LLQ_Poll;
 	info->question->LastQTime = 0;  // trigger immediate poll
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
