@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.307  2005/03/03 03:12:02  cheshire
+Add comment about mDNSMacOSXSystemBuildNumber()
+
 Revision 1.306  2005/03/02 22:18:00  cheshire
 <rdar://problem/3930171> mDNSResponder requires AppleInternal packages to build on Tiger
 
@@ -3211,6 +3214,9 @@ CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;
 
+// Major version 6 is 10.2.x (Jaguar)
+// Major version 7 is 10.3.x (Panther)
+// Major version 8 is 10.4.x (Tiger)
 mDNSexport int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 	{
 	int major = 0, minor = 0;
@@ -3551,7 +3557,7 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 		LogMsg("mDNSPlatformRawTime: this_mach_absolute_time %08X%08X", this_mach_absolute_time);
 		// Update last_mach_absolute_time *before* calling NotifyOfElusiveBug()
 		last_mach_absolute_time = this_mach_absolute_time;
-		// Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xxx) or later
+		// Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xyyy) or later
 		if (mDNSMacOSXSystemBuildNumber(NULL) >= 8)
 			NotifyOfElusiveBug("mach_absolute_time went backwards!", 3438376, "");
 		}
