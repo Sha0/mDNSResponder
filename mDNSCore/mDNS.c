@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.368  2004/04/02 19:19:48  cheshire
+Add code to do optional logging of multi-packet KA list time intervals
+
 Revision 1.367  2004/03/20 03:16:10  cheshire
 Minor refinement to "Excessive update rate" message
 
@@ -4072,7 +4075,13 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					{
 					if (mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6)) rr->v6Requester = zerov6Addr;
 					}
-				if (mDNSIPv4AddressIsZero(rr->v4Requester) && mDNSIPv6AddressIsZero(rr->v6Requester)) rr->ImmedAnswer = mDNSNULL;
+				if (mDNSIPv4AddressIsZero(rr->v4Requester) && mDNSIPv6AddressIsZero(rr->v6Requester))
+					{
+					rr->ImmedAnswer = mDNSNULL;
+#if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
+					LogMsg("Suppressed after%4d: %s", m->timenow - rr->ImmedAnswerMarkTime, GetRRDisplayString(m, rr));
+#endif
+					}
 				}
 			}
 
@@ -4136,6 +4145,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	
 			if (SendMulticastResponse)
 				{
+#if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
+				rr->ImmedAnswerMarkTime = m->timenow;
+#endif
 				m->NextScheduledResponse = m->timenow;
 				// If we're already planning to send this on another interface, just send it on all interfaces
 				if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
@@ -4180,6 +4192,11 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	if (delayresponse && (!m->SuppressSending || (m->SuppressSending - m->timenow) < (delayresponse + 49) / 50))
 		{
+#if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
+		mDNSs32 oldss = m->SuppressSending;
+		if (oldss && delayresponse)
+			LogMsg("Current SuppressSending delay%5ld; require%5ld", m->SuppressSending - m->timenow, (delayresponse + 49) / 50);
+#endif
 		// Pick a random delay:
 		// We start with the base delay chosen above (typically either 1 second or 20 seconds),
 		// and add a random value in the range 0-5 seconds (making 1-6 seconds or 20-25 seconds).
@@ -4195,6 +4212,10 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// or 400-500ms in the case of multi-packet known-answer lists.
 		m->SuppressSending = m->timenow + (delayresponse + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*5) + 49) / 50;
 		if (m->SuppressSending == 0) m->SuppressSending = 1;
+#if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
+		if (oldss && delayresponse)
+			LogMsg("Set     SuppressSending to   %5ld", m->SuppressSending - m->timenow);
+#endif
 		}
 
 	// ***

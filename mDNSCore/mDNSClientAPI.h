@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.156  2004/04/02 19:19:48  cheshire
+Add code to do optional logging of multi-packet KA list time intervals
+
 Revision 1.155  2004/03/24 00:29:45  ksekar
 Make it safe to call StopQuery in a unicast question callback
 
@@ -1010,6 +1013,9 @@ struct AuthRecord_struct
 	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
+#if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
+	mDNSs32         ImmedAnswerMarkTime;
+#endif
 	mDNSInterfaceID ImmedAdditional;	// Hint that we might want to also send this record, just to be helpful
 	mDNSInterfaceID SendRNow;			// The interface this query is being sent on right now
 	mDNSv4Addr      v4Requester;		// Recent v4 query for this record, or all-ones if more than one recent query
