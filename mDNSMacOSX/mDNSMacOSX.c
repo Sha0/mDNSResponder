@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.305  2005/02/26 05:08:28  cheshire
+<rdar://problem/3930171> mDNSResponder requires AppleInternal packages to build on Tiger
+Added dnsinfo.h to project directory
+
 Revision 1.304  2005/02/25 23:51:22  cheshire
 <rdar://problem/4021868> SendServiceRegistration fails on wake from sleep
 Return mStatus_UnknownErr instead of -1
@@ -959,7 +963,7 @@ Minor code tidying
 
 #include <AvailabilityMacros.h>
 #ifdef MAC_OS_X_VERSION_10_4
-#include <dnsinfo.h>
+#include "dnsinfo.h"
 #endif
 
 // Code contributed by Dave Heller:
