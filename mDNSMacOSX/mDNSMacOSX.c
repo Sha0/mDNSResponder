@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.280  2005/01/17 22:48:52  ksekar
+No longer need to call MarkSearchListElem for registration domain
+
 Revision 1.279  2005/01/17 20:40:34  ksekar
 SCPreferences changes should remove exactly one browse and one legacy browse domain for each remove event
 
@@ -2520,8 +2523,6 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			}
 		ifa = ifa->ifa_next;
 		}
-
-	if (DynDNSRegDomain.c[0]) MarkSearchListElem(&DynDNSRegDomain);         // implicitly browse reg domain too (no-op if same as BrowseDomain)
 	
 	// delete elems marked for removal, do queries for elems marked add
 	prev = NULL;
