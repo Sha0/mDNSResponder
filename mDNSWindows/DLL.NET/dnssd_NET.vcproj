@@ -44,7 +44,9 @@
 			<Tool
 				Name="VCPostBuildEventTool"/>
 			<Tool
-				Name="VCPreBuildEventTool"/>
+				Name="VCPreBuildEventTool"
+				Description="Generating keypair..."
+				CommandLine="sn -k dnssd_NET.snk"/>
 			<Tool
 				Name="VCPreLinkEventTool"/>
 			<Tool
@@ -85,7 +87,9 @@
 			<Tool
 				Name="VCPostBuildEventTool"/>
 			<Tool
-				Name="VCPreBuildEventTool"/>
+				Name="VCPreBuildEventTool"
+				Description="Generating keypair..."
+				CommandLine="sn -k dnssd_NET.snk"/>
 			<Tool
 				Name="VCPreLinkEventTool"/>
 			<Tool
