@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.176  2005/02/24 18:44:45  ksekar
+<rdar://problem/4018516> Printer Sharing does not get re-registered with wide-area
+
 Revision 1.175  2005/02/21 21:31:25  ksekar
 <rdar://problem/4015162> changed LogMsg to debugf
 
@@ -2210,7 +2213,13 @@ static void handle_regservice_request(request_state *request)
 	service->port.b[1] = *ptr++;
 
     service->txtlen  = get_short(&ptr);
-    service->txtdata = get_rdata(&ptr, service->txtlen);
+	if (service->txtlen)
+		{
+		service->txtdata = mallocL("txtdata", service->txtlen);
+		if (!service->txtdata) { my_perror("ERROR: malloc"); result = mStatus_NoMemoryErr; goto finish; }
+		memcpy(service->txtdata, get_rdata(&ptr, service->txtlen), service->txtlen);
+		}
+	else service->txtdata = NULL;		   
 
 	// Check for sub-types after the service type
 	service->num_subtypes = ChopSubTypes(service->type_as_string);	// Note: Modifies regtype string to remove trailing subtypes
@@ -2642,6 +2651,7 @@ static void regservice_termination_callback(void *context)
 		if (mDNS_DeregisterService(gmDNS, &p->srs)) free_service_instance(p);
 		}
 	info->request->service_registration = NULL; // clear pointer from request back to info
+	if (info->txtdata) { freeL("txtdata", info->txtdata); info->txtdata = NULL; }
 	freeL("service_info", info);
 	}
 
