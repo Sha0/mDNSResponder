@@ -3,7 +3,7 @@
 	ProjectType="Visual C++"
 	Version="7.00"
 	Name="Application"
-	ProjectGUID="{EDE4B529-4CF5-4a49-9B6F-C10F0EA24278}"
+	ProjectGUID="{EDE4B529-4CF5-4A49-9B6F-C10F0EA24278}"
 	Keyword="MFCProj">
 	<Platforms>
 		<Platform
