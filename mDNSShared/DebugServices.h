@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DebugServices.h,v $
+Revision 1.2  2004/03/07 05:59:34  bradley
+Sync'd with internal version: Added expect macros, error codes, and CoreServices exclusion.
+
 Revision 1.1  2004/01/30 02:27:30  bradley
 Debugging support for various platforms.
 
@@ -155,6 +158,20 @@ Debugging support for various platforms.
 
 #if( !defined( DEBUG_IDEBUG_ENABLED ) )
 	#define	DEBUG_IDEBUG_ENABLED				TARGET_API_MAC_OSX_KERNEL
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	DEBUG_CORE_SERVICE_ASSERTS_ENABLED
+	
+	@abstract	Controls whether Core Services assert handling is enabled. Enabling requires CoreServices framework.
+*/
+
+#if( !defined( DEBUG_CORE_SERVICE_ASSERTS_ENABLED ) )
+	#if( defined( __DEBUGGING__ ) )
+		#define	DEBUG_CORE_SERVICE_ASSERTS_ENABLED		1
+	#else
+		#define	DEBUG_CORE_SERVICE_ASSERTS_ENABLED		0
+	#endif
 #endif
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -451,6 +468,18 @@ typedef uint32_t		DebugPropertyTag;
 	#define	debug_add( A, B )		( A ) += ( B )
 #else
 	#define	debug_add( A, B )
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	debug_perform
+	
+	@abstract	Macro to perform something in debug-only builds.
+*/
+
+#if( DEBUG )
+	#define	debug_perform( X )		do { X; } while( 0 )
+#else
+	#define	debug_perform( X )
 #endif
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -1086,6 +1115,47 @@ typedef uint32_t		DebugPropertyTag;
 // Note: Design-By-Contract "require" macros are already defined elsewhere.
 
 #if 0
+#pragma mark == Expect macros ==
+#endif
+
+//===========================================================================================================================
+//	Expect macros
+//===========================================================================================================================
+
+// Expect macros allow code to include runtime checking of things that should not happen in shipping code (e.g. internal 
+// programmer errors, such as a NULL parameter where it is not allowed). Once the code has been verified to work correctly 
+// without asserting, the DEBUG_EXPECT_VERIFIED conditional can be set to eliminate the error checking entirely. It can 
+// also be useful to measure the cost of error checking code by profiling with it enable and with it disabled.
+
+#if( DEBUG_EXPECT_VERIFIED )
+	#define	require_expect
+	#define	require_string_expect
+	#define	require_quiet_expect
+	#define	require_noerr_expect
+	#define	require_noerr_string_expect
+	#define	require_noerr_action_string_expect
+	#define	require_noerr_quiet_expect
+	#define	require_noerr_action_expect
+	#define	require_noerr_action_quiet_expect
+	#define	require_action_expect
+	#define	require_action_quiet_expect
+	#define	require_action_string_expect
+#else
+	#define	require_expect							require
+	#define	require_string_expect					require_string
+	#define	require_quiet_expect					require_quiet
+	#define	require_noerr_expect					require_noerr
+	#define	require_noerr_string_expect				require_noerr_string
+	#define	require_noerr_action_string_expect		require_noerr_action_string
+	#define	require_noerr_quiet_expect				require_noerr_quiet
+	#define	require_noerr_action_expect				require_noerr_action
+	#define	require_noerr_action_quiet_expect		require_noerr_action_quiet
+	#define	require_action_expect					require_action
+	#define	require_action_quiet_expect				require_action_quiet
+	#define	require_action_string_expect			require_action_string
+#endif
+
+#if 0
 #pragma mark == Output macros ==
 #endif
 
@@ -1363,7 +1433,7 @@ typedef uint32_t		DebugPropertyTag;
 */
 
 #if( DEBUG )
-	DEBUG_EXPORT size_t		DebugPrintFVAList( DebugLevel inLevel, const char *inFormat, va_list inList );
+	DEBUG_EXPORT size_t		DebugPrintFVAList( DebugLevel inLevel, const char *inFormat, va_list inArgs );
 #endif
 
 //---------------------------------------------------------------------------------------------------------------------------

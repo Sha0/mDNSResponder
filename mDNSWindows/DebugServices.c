@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DebugServices.c,v $
+Revision 1.2  2004/03/07 05:59:34  bradley
+Sync'd with internal version: Added expect macros, error codes, and CoreServices exclusion.
+
 Revision 1.1  2004/01/30 02:27:30  bradley
 Debugging support for various platforms.
 
@@ -30,7 +33,6 @@ Debugging support for various platforms.
 	To Do:
 	
 	- Use StackWalk on Windows to optionally print stack frames.
-	- Print asserts at interrupt time on VxWorks using logMsg instead of just using logMsg to print a generic error.
 */
 
 #if 0
@@ -144,7 +146,7 @@ static OSStatus	DebugPrint( DebugLevel inLevel, char *inData, size_t inSize );
 
 // DebugLib support
 
-#if( defined( __DEBUGGING__ ) )
+#if( DEBUG_CORE_SERVICE_ASSERTS_ENABLED )
 	static pascal void	
 		DebugAssertOutputHandler( 
 			OSType 				inComponentSignature, 
@@ -212,7 +214,7 @@ static DebugOutputType						gDebugOutputType 				= kDebugOutputTypeNone;
 static DebugLevel							gDebugPrintLevelMin				= kDebugLevelInfo;
 static DebugLevel							gDebugPrintLevelMax				= kDebugLevelMax;
 static DebugLevel							gDebugBreakLevel				= kDebugLevelAssert;
-#if( defined( __DEBUGGING__ ) )
+#if( DEBUG_CORE_SERVICE_ASSERTS_ENABLED )
 	static DebugAssertOutputHandlerUPP		gDebugAssertOutputHandlerUPP	= NULL;
 #endif
 
@@ -270,7 +272,7 @@ DEBUG_EXPORT OSStatus	DebugInitialize( DebugOutputType inType, ... )
 	
 	// Set up DebugLib stuff (if building with Debugging.h).
 	
-#if( defined( __DEBUGGING__ ) )
+#if( DEBUG_CORE_SERVICE_ASSERTS_ENABLED )
 	if( !gDebugAssertOutputHandlerUPP )
 	{
 		gDebugAssertOutputHandlerUPP = NewDebugAssertOutputHandlerUPP( DebugAssertOutputHandler );
@@ -302,6 +304,12 @@ DEBUG_EXPORT OSStatus	DebugInitialize( DebugOutputType inType, ... )
 				type = kDebugOutputTypeiDebug;
 			#elif( DEBUG_KPRINTF_ENABLED )
 				type = kDebugOutputTypeKPrintF;
+			#endif
+		#elif( TARGET_OS_VXWORKS )
+			#if( DEBUG_FPRINTF_ENABLED )
+				type = kDebugOutputTypeFPrintF;
+		#else
+				#error target is VxWorks, but fprintf output is disabled
 			#endif
 		#else
 			#if( DEBUG_FPRINTF_ENABLED )
@@ -410,7 +418,7 @@ exit:
 
 DEBUG_EXPORT void		DebugFinalize( void )
 {
-#if( defined( __DEBUGGING__ ) )
+#if( DEBUG_CORE_SERVICE_ASSERTS_ENABLED )
 	check( gDebugAssertOutputHandlerUPP );
 	if( gDebugAssertOutputHandlerUPP )
 	{
@@ -533,7 +541,7 @@ exit:
 //	DebugPrintFVAList
 //===========================================================================================================================
 
-DEBUG_EXPORT size_t	DebugPrintFVAList( DebugLevel inLevel, const char *inFormat, va_list inList )
+DEBUG_EXPORT size_t	DebugPrintFVAList( DebugLevel inLevel, const char *inFormat, va_list inArgs )
 {
 	size_t		n;
 	char		buffer[ 512 ];
@@ -546,7 +554,7 @@ DEBUG_EXPORT size_t	DebugPrintFVAList( DebugLevel inLevel, const char *inFormat,
 		goto exit;
 	}
 	
-	n = DebugSNPrintFVAList( buffer, sizeof( buffer ), inFormat, inList );
+	n = DebugSNPrintFVAList( buffer, sizeof( buffer ), inFormat, inArgs );
 	DebugPrint( inLevel, buffer, (size_t) n );
 
 exit:
@@ -1122,7 +1130,7 @@ static void	DebugWindowsEventLogPrint( DebugLevel inLevel, char *inData, size_t 
 }
 #endif	// TARGET_OS_WIN32 && !TARGET_OS_WINDOWS_CE
 
-#if( defined( __DEBUGGING__ ) )
+#if( DEBUG_CORE_SERVICE_ASSERTS_ENABLED )
 //===========================================================================================================================
 //	DebugAssertOutputHandler
 //===========================================================================================================================
@@ -1730,6 +1738,10 @@ DEBUG_EXPORT const char *	DebugGetErrorString( int_least32_t inErrorCode, char *
 		CaseErrorStringify( kSkipErr );
 		CaseErrorStringify( kNoAckErr );
 		CaseErrorStringify( kCollisionErr );
+		CaseErrorStringify( kBackoffErr );
+		CaseErrorStringify( kNoAddressAckErr );
+		CaseErrorStringify( kBusyErr );
+		CaseErrorStringify( kNoSpaceErr );
 		
 		// mDNS/DNS-SD Errors
 		
@@ -1752,23 +1764,6 @@ DEBUG_EXPORT const char *	DebugGetErrorString( int_least32_t inErrorCode, char *
 		CaseErrorStringifyHardCode( -65791, mStatus_ConfigChanged );
 		CaseErrorStringifyHardCode( -65792, mStatus_MemFree );
 
-		// I2C Errors
-		
-		CaseErrorStringifyHardCode( -100, kI2CUnknownErr );
-		CaseErrorStringifyHardCode( -101, kI2CNoMemoryErr );
-		CaseErrorStringifyHardCode( -102, kI2CNoAcknowledgeErr );
-		CaseErrorStringifyHardCode( -103, kI2CUnderrunErr );
-		CaseErrorStringifyHardCode( -104, kI2COverrunErr );
-		CaseErrorStringifyHardCode( -105, kI2CCollisionErr );
-		CaseErrorStringifyHardCode( -106, kI2CTransferSizeMismatchErr );
-		CaseErrorStringifyHardCode( -107, kI2CReadTimeoutErr );
-		CaseErrorStringifyHardCode( -108, kI2CWriteTimeoutErr );
-		CaseErrorStringifyHardCode( -109, kI2CHardwareErr );
-		CaseErrorStringifyHardCode( -110, kI2CBusyErr );
-		CaseErrorStringifyHardCode( -111, kI2CParamErr );
-		CaseErrorStringifyHardCode( -112, kI2CBufferTooSmallErr );
-		CaseErrorStringifyHardCode( -113, kI2CUnhangErr );
-		
 		// RSP Errors
 		
 		CaseErrorStringifyHardCode( -400000, kRSPUnknownErr );
