@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.39  2003/08/18 19:05:45  cheshire
+<rdar://problem/3382423> UpdateRecord not working right
+Added "newrdlength" field to hold new length of updated rdata
+
 Revision 1.38  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -71,7 +75,7 @@ static char addtest = 0;
 static DNSRecordReference record;
 static char myhinfo9[11] = "\003Mac\006OS 9.2";
 static char myhinfoX[ 9] = "\003Mac\004OS X";
-static char updatetest[2] = "\001A";
+static char updatetest[3] = "\002AA";
 static char bigNULL[4096];
 
 //*************************************************************************************************************
@@ -256,8 +260,10 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
             {
             if (updatetest[1] != 'Z') updatetest[1]++;
             else                      updatetest[1] = 'A';
+            updatetest[0] = 3 - updatetest[0];
+            updatetest[2] = updatetest[1];
             printf("Updating Test TXT record to %c\n", updatetest[1]);
-            DNSServiceRegistrationUpdateRecord(client, 0, sizeof(updatetest), &updatetest[0], 120);
+            DNSServiceRegistrationUpdateRecord(client, 0, 1+updatetest[0], &updatetest[0], 120);
             }
             break;
 

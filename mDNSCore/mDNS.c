@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.277  2003/08/18 19:05:44  cheshire
+<rdar://problem/3382423> UpdateRecord not working right
+Added "newrdlength" field to hold new length of updated rdata
+
 Revision 1.276  2003/08/16 03:39:00  cheshire
 <rdar://problem/3338440> InterfaceID -1 indicates "local only"
 
@@ -2303,6 +2307,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 //	rr->LastMCTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCInterface   = Set for us in InitializeLastAPTime()
 	rr->NewRData          = mDNSNULL;
+	rr->newrdlength       = 0;
 	rr->UpdateCallback    = mDNSNULL;
 
 //	rr->resrec.interface         = already set in mDNS_SetupResourceRecord
@@ -2509,7 +2514,8 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		if (rr->NewRData)
 			{
 			RData *OldRData = rr->resrec.rdata;
-			rr->resrec.rdata = rr->NewRData;	// Update our rdata
+			rr->resrec.rdata    = rr->NewRData;	// Update our rdata
+			rr->resrec.rdlength = rr->newrdlength;
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
 			if (rr->UpdateCallback)
 				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
@@ -3237,7 +3243,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				else if (rr->NewRData)							// If we have new data for this record
 					{
-					RData *OldRData = rr->resrec.rdata;
+					RData *OldRData     = rr->resrec.rdata;
+					mDNSu16 oldrdlength = rr->resrec.rdlength;
 					if (ResourceRecordIsValidAnswer(rr))		// First see if we have to de-register the old data
 						{
 						newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, 0);
@@ -3246,10 +3253,12 @@ mDNSlocal void SendResponses(mDNS *const m)
 						responseptr = newptr;
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
-					rr->resrec.rdata = rr->NewRData;
+					rr->resrec.rdata    = rr->NewRData;
+					rr->resrec.rdlength = rr->newrdlength;
 					newptr = PutResourceRecord(&response, responseptr, &response.h.numAnswers, &rr->resrec);
 					if (newptr) responseptr = newptr;
-					rr->resrec.rdata = OldRData;
+					rr->resrec.rdata    = OldRData;
+					rr->resrec.rdlength = oldrdlength;
 					}
 				else
 					{
@@ -3339,7 +3348,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if (rr->NewRData)
 			{
 			RData *OldRData = rr->resrec.rdata;
-			rr->resrec.rdata = rr->NewRData;	// Update our rdata
+			rr->resrec.rdata    = rr->NewRData;	// Update our rdata
+			rr->resrec.rdlength = rr->newrdlength;
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
 			if (rr->UpdateCallback)
 				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
@@ -5855,6 +5865,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	rr->ThisAPInterval   = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 	InitializeLastAPTime(m, rr);
 	rr->NewRData         = newrdata;
+	rr->newrdlength      = newrdlength;
 	rr->UpdateCallback   = Callback;
 	rr->resrec.rroriginalttl    = newttl;
 	mDNS_Unlock(m);

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.103  2003/08/18 19:05:44  cheshire
+<rdar://problem/3382423> UpdateRecord not working right
+Added "newrdlength" field to hold new length of updated rdata
+
 Revision 1.102  2003/08/16 03:39:00  cheshire
 <rdar://problem/3338440> InterfaceID -1 indicates "local only"
 
@@ -691,6 +695,7 @@ struct AuthRecord_struct
 	mDNSs32         LastMCTime;			// Last time we multicast this record (used to guard against packet-storm attacks)
 	mDNSInterfaceID LastMCInterface;	// Interface this record was multicast on at the time LastMCTime was recorded
 	RData          *NewRData;			// Set if we are updating this record with new rdata
+	mDNSu16         newrdlength;		// ... and the length of the new RData
 	mDNSRecordUpdateCallback *UpdateCallback;
 
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
