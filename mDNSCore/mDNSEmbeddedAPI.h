@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.51  2003/05/21 20:14:55  cheshire
+Fix comments and warnings
+
 Revision 1.50  2003/05/14 07:08:36  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 Previously, when there was any network configuration change, mDNSResponder
@@ -278,7 +281,11 @@ typedef   signed short mDNSs16;
 typedef unsigned short mDNSu16;
 typedef   signed long  mDNSs32;
 typedef unsigned long  mDNSu32;
-typedef void *         mDNSInterfaceID;
+
+// To enforce useful type checking, we make mDNSInterfaceID be a pointer to a dummy struct
+// This way, mDNSInterfaceIDs can be assigned, and compared with each other, but not with other types
+// Declaring the type to be the typical generic "void *" would lack this type checking
+typedef struct { void *dummy; } *mDNSInterfaceID;
 
 // These types are for opaque two- and four-byte identifiers.
 // The "NotAnInteger" fields of the unions allow the value to be conveniently passed around in a register
@@ -480,7 +487,7 @@ struct ResourceRecord_struct
 	mDNSs32         TimeRcvd;			// CR: In platform time units
 	mDNSs32         LastUsed;			// CR: In platform time units
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
-	DNSQuestion    *CRActiveQuestion;	// CR: Points to a questions referencing this answer
+	DNSQuestion    *CRActiveQuestion;	// CR: Points to an active question referencing this answer
 	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
 	mDNSBool        NewData;			// CR: Set if this is a record we just received
 
@@ -561,7 +568,7 @@ struct DNSQuestion_struct
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
-	mDNSu32               RecentAnswers;
+	mDNSu32               RecentAnswers;	// Number of answers since the last time we sent this query
 	DNSQuestion          *DuplicateOf;
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	domainname            name;
@@ -615,20 +622,21 @@ struct mDNS_struct
 	mDNSCallback *MainCallback;
 	void         *MainContext;
 
-	mDNSu32 mDNS_busy;				// For debugging: To catch and report locking failures
-	mDNSu32 mDNS_reentrancy;		// Incremented when calling a client callback
-	mDNSs32 timenow;				// The time that this particular activation of the mDNS code started
+	// For debugging: To catch and report locking failures
+	mDNSu32 mDNS_busy;					// Incremented between mDNS_Lock/mDNS_Unlock section
+	mDNSu32 mDNS_reentrancy;			// Incremented when calling a client callback
+	mDNSs32 timenow;					// The time that this particular activation of the mDNS code started
 	mDNSs32 NextScheduledEvent;
 
-	mDNSu8 lock_rrcache;			// For debugging: Set at times when these lists may not be modified
+	mDNSu8 lock_rrcache;				// For debugging: Set at times when these lists may not be modified
 	mDNSu8 lock_Questions;
 	mDNSu8 lock_Records;
 	mDNSu8 padding;
 
 	// These fields only required for mDNS Searcher...
-	DNSQuestion *Questions;			// List of all registered questions, active and inactive
-	DNSQuestion *NewQuestions;		// Fresh questions not yet answered from cache
-	DNSQuestion *CurrentQuestion;	// Next question about to be examined in AnswerLocalQuestions()
+	DNSQuestion *Questions;				// List of all registered questions, active and inactive
+	DNSQuestion *NewQuestions;			// Fresh questions not yet answered from cache
+	DNSQuestion *CurrentQuestion;		// Next question about to be examined in AnswerLocalQuestions()
 	mDNSu32 rrcache_size;
 	mDNSu32 rrcache_used[CACHE_HASH_SLOTS];
 	mDNSu32	rrcache_totalused;
@@ -637,12 +645,12 @@ struct mDNS_struct
 	ResourceRecord *rrcache_hash[CACHE_HASH_SLOTS];
 
 	// Fields below only required for mDNS Responder...
-	domainlabel nicelabel;			// Rich text label encoded using canonically precomposed UTF-8
-	domainlabel hostlabel;			// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
-	domainname  hostname1;			// Primary Host Name, e.g. "Foo.local."
-	domainname  hostname2;			// Secondary Host Name, e.g. "Foo.local.arpa."
+	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
+	domainlabel hostlabel;				// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
+	domainname  hostname1;				// Primary Host Name, e.g. "Foo.local."
+	domainname  hostname2;				// Secondary Host Name, e.g. "Foo.local.arpa."
 	ResourceRecord *ResourceRecords;
-	ResourceRecord *CurrentRecord;	// Next ResourceRecord about to be examined
+	ResourceRecord *CurrentRecord;		// Next ResourceRecord about to be examined
 	NetworkInterfaceInfo *HostInterfaces;
 	mDNSs32 SuppressSending;
 	mDNSs32 ProbeFailTime;
@@ -860,7 +868,7 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 #endif
 
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
-extern int mDNS_sprintf(char *sbuffer, const char *fmt, ...);
+extern int mDNS_sprintf(char *sbuffer, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
 extern int mDNS_vsprintf(char *sbuffer, const char *fmt, va_list arg);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 
