@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: BrowserDialog.h,v $
+Revision 1.2  2003/10/10 03:43:34  bradley
+Added support for launching a web browser to go to the browsed web site on a single-tap.
+
 Revision 1.1  2003/08/21 02:16:10  bradley
 Rendezvous Browser for HTTP services for Windows CE/PocketPC.
 
@@ -68,7 +71,7 @@ class	BrowserDialog : public CDialog
 				DNSStatus				inStatusCode,  
 				const DNSBrowserEvent *	inEvent );
 		
-		void	BrowserAddService( const char *inName );
+		void	BrowserAddService( const char *inName, const char *inIP, const char *inText );
 		void	BrowserRemoveService( const char *inName );
 		
 	protected:
@@ -76,6 +79,8 @@ class	BrowserDialog : public CDialog
 		struct	BrowserEntry
 		{
 			CString		name;
+			CString		ip;
+			CString		text;
 		};
 		
 		
@@ -86,6 +91,7 @@ class	BrowserDialog : public CDialog
 		// Generated message map functions
 		//{{AFX_MSG(BrowserDialog)
 		virtual BOOL OnInitDialog();
+		afx_msg void OnBrowserListDoubleClick(NMHDR* pNMHDR, LRESULT* pResult);
 		//}}AFX_MSG
 		DECLARE_MESSAGE_MAP()
 };

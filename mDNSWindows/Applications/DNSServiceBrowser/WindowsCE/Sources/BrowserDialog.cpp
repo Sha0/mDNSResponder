@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: BrowserDialog.cpp,v $
+Revision 1.2  2003/10/10 03:43:34  bradley
+Added support for launching a web browser to go to the browsed web site on a single-tap.
+
 Revision 1.1  2003/08/21 02:16:10  bradley
 Rendezvous Browser for HTTP services for Windows CE/PocketPC.
 
@@ -48,6 +51,7 @@ static char THIS_FILE[] = __FILE__;
 
 BEGIN_MESSAGE_MAP(BrowserDialog, CDialog)
 	//{{AFX_MSG_MAP(BrowserDialog)
+	ON_NOTIFY(NM_CLICK, IDC_BROWSE_LIST, OnBrowserListDoubleClick)
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
 
@@ -117,7 +121,7 @@ BOOL	BrowserDialog::OnInitDialog()
 		goto exit;
 	}
 	
-	err = DNSBrowserStartServiceSearch( mBrowser, 0, "_http._tcp", NULL );
+	err = DNSBrowserStartServiceSearch( mBrowser, kDNSBrowserFlagAutoResolve, "_http._tcp", NULL );
 	if( err )
 	{
 		AfxMessageBox( IDP_SOCKETS_INIT_FAILED );
@@ -126,6 +130,58 @@ BOOL	BrowserDialog::OnInitDialog()
 	
 exit:
 	return( TRUE );
+}
+
+
+//===========================================================================================================================
+//	OnBrowserListDoubleClick
+//===========================================================================================================================
+
+void	BrowserDialog::OnBrowserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult ) 
+{
+	int		selectedItem;
+
+	(void) pNMHDR;
+
+	selectedItem = mBrowserList.GetNextItem( -1, LVNI_SELECTED );
+	if( selectedItem >= 0 )
+	{
+		BrowserEntry *		entry;
+		CString				temp;
+		CString				url;
+		
+		// Build the URL from the IP and optional TXT record.
+
+		entry = &mBrowserEntries[ selectedItem ];
+		url += "http://" + entry->ip;
+		temp = entry->text;
+		if( temp.Find( _T( "path=" ) ) == 0 )
+		{
+			temp.Delete( 0, 5 );
+		}
+		if( temp.Find( '/' ) != 0 )
+		{
+			url += '/';
+		}
+		url += temp;
+
+		// Let the system open the URL in the correct app.
+		
+		SHELLEXECUTEINFO		info;
+
+		info.cbSize			= sizeof( info );
+		info.fMask 			= 0;
+		info.hwnd 			= NULL;
+		info.lpVerb 		= NULL;
+		info.lpFile 		= url;
+		info.lpParameters 	= NULL;
+		info.lpDirectory 	= NULL;
+		info.nShow 			= SW_SHOWNORMAL;
+		info.hInstApp 		= NULL;
+
+		ShellExecuteEx( &info );
+	}
+	*pResult = 0;
 }
 
 //===========================================================================================================================
@@ -146,10 +202,21 @@ void
 	
 	switch( inEvent->type )
 	{
-		case kDNSBrowserEventTypeAddService:
-			dialog->BrowserAddService( inEvent->data.addService.name );
+		case kDNSBrowserEventTypeResolved:
+		{
+			char		ip[ 64 ];
+
+			sprintf( ip, "%u.%u.%u.%u:%u", 
+				inEvent->data.resolved->address.u.ipv4.addr.v8[ 0 ], 
+				inEvent->data.resolved->address.u.ipv4.addr.v8[ 1 ], 
+				inEvent->data.resolved->address.u.ipv4.addr.v8[ 2 ], 
+				inEvent->data.resolved->address.u.ipv4.addr.v8[ 3 ], 
+				( inEvent->data.resolved->address.u.ipv4.port.v8[ 0 ] << 8 ) | 
+				  inEvent->data.resolved->address.u.ipv4.port.v8[ 1 ] );
+			dialog->BrowserAddService( inEvent->data.resolved->name, ip, inEvent->data.resolved->textRecord );
 			break;
-		
+		}
+
 		case kDNSBrowserEventTypeRemoveService:
 			dialog->BrowserRemoveService( inEvent->data.removeService.name );
 			break;
@@ -163,13 +230,15 @@ void
 //	BrowserAddService
 //===========================================================================================================================
 
-void	BrowserDialog::BrowserAddService( const char *inName )
+void	BrowserDialog::BrowserAddService( const char *inName, const char *inIP, const char *inText )
 {
 	BrowserEntry		newEntry;
 	INT_PTR				n;
 	INT_PTR				i;
 	
 	UTF8StringToStringObject( inName, newEntry.name );
+	UTF8StringToStringObject( inIP, newEntry.ip );
+	UTF8StringToStringObject( inText, newEntry.text );
 
 	n = mBrowserEntries.GetSize();
 	for( i = 0; i < n; ++i )
