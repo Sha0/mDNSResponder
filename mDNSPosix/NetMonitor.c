@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.35  2003/08/15 20:17:28  cheshire
+"LargeResourceRecord" changed to "LargeCacheRecord"
+
 Revision 1.34  2003/08/14 02:19:55  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -335,7 +338,7 @@ mDNSlocal void printstats(void)
 		}
 	}
 
-mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, LargeResourceRecord *pkt)
+mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, LargeCacheRecord *pkt)
 	{
 	int i;
 	for (i = 0; i < query->h.numAuthorities; i++)
@@ -468,7 +471,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	int i;
 	const mDNSu8 *ptr = msg->data;
 	const mDNSu8 *auth = LocateAuthorities(msg, end);
-	LargeResourceRecord pkt;
+	LargeCacheRecord pkt;
 
 	DisplayPacketHeader(msg, srcaddr, srcport);
 	if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumPktQ++;
@@ -523,7 +526,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
-	LargeResourceRecord pkt;
+	LargeCacheRecord pkt;
 
 	DisplayPacketHeader(msg, srcaddr, srcport);
 	NumPktR++;
