@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.106  2003/08/12 13:48:32  cheshire
+Add comment explaining clockdivisor calculation
+
 Revision 1.105  2003/08/12 13:44:14  cheshire
 <rdar://problem/3370229> mDNSResponder *VERY* unhappy if time goes backwards
 Use mach_absolute_time() (which is guaranteed to always go forwards, resetting only on reboot)
@@ -1276,6 +1279,24 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
 
+	// Notes: Typical values for mach_timebase_info:
+	// tbi.numer = 1000 million
+	// tbi.denom =   33 million
+	// These are set such that (mach_absolute_time() * numer/denom) gives us nanoseconds;
+	//          numer  / denom = nanoseconds per hardware clock tick (e.g. 30);
+	//          denom  / numer = hardware clock ticks per nanosecond (e.g. 0.033)
+	// (denom*1000000) / numer = hardware clock ticks per millisecond (e.g. 33333)
+	// So: mach_absolute_time() / ((denom*1000000)/numer) = milliseconds
+	//
+	// Arithmetic notes:
+	// tbi.denom is at least 1, and not more than 2^32-1.
+	// Therefore (tbi.denom * 1000000) is at least one million, but cannot overflow a uint64_t.
+	// tbi.denom is at least 1, and not more than 2^32-1.
+	// Therefore clockdivisor should end up being a number roughly in the range 10^3 - 10^9.
+	// If clockdivisor is less than 10^3 then that means that the native clock frequency is less than 1MHz,
+	// which is unlikely on any current or future Macintosh.
+	// If clockdivisor is greater than 10^9 then that means the native clock frequency is greater than 1000GHz.
+	// When we ship Macs with clock frequencies above 1000GHz, we may have to update this code.
 	struct mach_timebase_info tbi;
 	if (mach_timebase_info(&tbi) != KERN_SUCCESS) return(-1);
 	clockdivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
