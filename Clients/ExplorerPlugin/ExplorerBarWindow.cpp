@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.9  2004/09/02 02:11:56  cheshire
+<rdar://problem/3783611> Fix incorrect testing of MoreComing flag
+
 Revision 1.8  2004/07/26 05:47:31  shersche
 use TXTRecord APIs, fix bug in locating service to be removed
 
@@ -442,7 +445,7 @@ void DNSSD_API
 		{
 			obj->obj->OnServiceAdd(service);
 		}
-		else if (!inFlags || (inFlags == kDNSServiceFlagsMoreComing))
+		else
 		{
 			obj->obj->OnServiceRemove(service);
 		}
