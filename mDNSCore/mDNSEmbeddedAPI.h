@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.261  2004/12/14 21:21:20  ksekar
+<rdar://problem/3825979> NAT-PMP: Update response format to contain "Seconds Since Boot"
+
 Revision 1.260  2004/12/12 23:51:42  ksekar
 <rdar://problem/3845683> Wide-area registrations should fallback to using DHCP hostname as target
 
@@ -1792,9 +1795,6 @@ struct ServiceInfoQuery_struct
 #define NATMAP_DEFAULT_LEASE (60 * 60)  // lease life in seconds
 #define NATMAP_VERS 0
 #define NATMAP_PORT 5351
-#define ADDR_REQUEST_PKTLEN 2
-#define ADDR_REPLY_PKTLEN 8
-#define PORTMAP_PKTLEN 12
 #define NATMAP_RESPONSE_MASK 0x80
 
 typedef enum
@@ -1818,17 +1818,53 @@ typedef mDNSu16 NATErr_t;
 
 typedef enum
 	{
-	NATState_Init,
-	NATState_Request,
-	NATState_Established,
-	NATState_Legacy,
-	NATState_Error,
-	NATState_Refresh,
-	NATState_Deleted
+	NATState_Init         = 0,
+	NATState_Request      = 1,
+	NATState_Established  = 2,
+	NATState_Legacy       = 3,
+	NATState_Error        = 4,
+	NATState_Refresh      = 5,
+	NATState_Deleted      = 6
 	} NATState_t;
 // Note: we have no explicit "cancelled" state, where a service/interface is deregistered while we
  // have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL
 
+typedef packedstruct
+	{
+	mDNSu8 vers;
+	mDNSu8 opcode;
+	} NATAddrRequest;	
+	
+typedef packedstruct
+	{
+	mDNSu8 vers;
+	mDNSu8 opcode;
+	mDNSOpaque16 err;
+	mDNSOpaque32 uptime;
+	mDNSv4Addr   PubAddr;
+	} NATAddrReply;
+
+typedef packedstruct
+	{
+	mDNSu8 vers;
+	mDNSu8 opcode;
+	mDNSOpaque16 unused;
+	mDNSIPPort priv;
+	mDNSIPPort pub;
+	mDNSOpaque32 lease;
+	} NATPortMapRequest;
+	
+typedef packedstruct
+	{
+	mDNSu8 vers;
+	mDNSu8 opcode;
+	mDNSOpaque16 err;
+	mDNSOpaque32 uptime;
+	mDNSIPPort priv;
+	mDNSIPPort pub;
+	mDNSOpaque32 lease;
+	} NATPortMapReply;
+	
 // Pass NULL for pkt on error (including timeout)
 typedef void (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 
@@ -1838,8 +1874,7 @@ struct NATTraversalInfo_struct
 	NATResponseHndlr ReceiveResponse;
 	union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
 	mDNSIPPort PublicPort;
-	mDNSu8 request[PORTMAP_PKTLEN];  // buffer for request messages
-	int requestlen;                  // length of buffer used
+    union { NATAddrRequest AddrReq; NATPortMapRequest PortReq; } request;
 	mDNSs32 retry;                   // absolute time when we retry
 	mDNSs32 RetryInterval;           // delta between time sent and retry
 	int ntries;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.155  2004/12/14 21:21:20  ksekar
+<rdar://problem/3825979> NAT-PMP: Update response format to contain "Seconds Since Boot"
+
 Revision 1.154  2004/12/14 20:52:27  cheshire
 Add question->qnamehash and cr->resrec.namehash to log message
 
@@ -916,10 +919,14 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	if (u->Router.ip.v4.NotAnInteger)
 		{
 		// send msg	if we have a router
+		const mDNSu8 *end = (mDNSu8 *)&info->request;
+		if (info->op == NATOp_AddrRequest) end += sizeof(NATAddrRequest);
+		else end += sizeof(NATPortMapRequest);
+ 
 		dst.type = u->Router.type;
 		dst.ip.v4 = u->Router.ip.v4;
 		dstport = mDNSOpaque16fromIntVal(NATMAP_PORT);
-		err = mDNSPlatformSendUDP(m, info->request, info->request+info->requestlen, 0, &dst, dstport);
+		err = mDNSPlatformSendUDP(m, &info->request, end, 0, &dst, dstport);
 		if (!err) (info->ntries++);  // don't increment attempt counter if the send failed
 		}
 	
@@ -932,9 +939,9 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 
 mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
-	NATErr_t NatErr = NATErr_None;
 	mStatus err = mStatus_NoError;
 	AuthRecord *rr = mDNSNULL;
+	NATAddrReply *response = (NATAddrReply *)pkt;
 	mDNSAddr addr; 
 
 	if (n->state != NATState_Request)
@@ -969,31 +976,28 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 		}
 	else
 		{
-		if (len < ADDR_REPLY_PKTLEN)
+		if (len < sizeof(*response))
 			{
 			LogMsg("ReceiveNATAddrResponse: response too short (%d bytes)", len);
 			err = mStatus_NATTraversal;
 			goto end;
 			}
-		if (pkt[0] != NATMAP_VERS)
+		if (response->vers != NATMAP_VERS)
 			{
 			LogMsg("ReceiveNATAddrResponse: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);
 			err = mStatus_NATTraversal;
 			goto end;
 			}
-		if (pkt[1] != (NATOp_AddrRequest | NATMAP_RESPONSE_MASK))
+		if (response->opcode != (NATOp_AddrRequest | NATMAP_RESPONSE_MASK))
 			{
-			LogMsg("ReceiveNATAddrResponse: bad response code %d", pkt[1]);
+			LogMsg("ReceiveNATAddrResponse: bad response code %d", response->opcode);
 			err = mStatus_NATTraversal;
 			goto end;
-			}
-		NatErr = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
-		if (NatErr) { LogMsg("ReceiveAddrResponse: received error %d", err); err = mStatus_NATTraversal; goto end; }
-		
-		addr.ip.v4.b[0] = pkt[4];
-		addr.ip.v4.b[1] = pkt[5];
-		addr.ip.v4.b[2] = pkt[6];
-		addr.ip.v4.b[3] = pkt[7];
+			}		
+		if (response->err.NotAnInteger)
+			{ LogMsg("ReceiveAddrResponse: received error %d", mDNSVal16(response->err)); err = mStatus_NATTraversal; goto end; }
+
+		addr.ip.v4 = response->PubAddr;
 		n->state = NATState_Established;
 		}
 	
@@ -1025,7 +1029,7 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 
 mDNSlocal void StartGetPublicAddr(mDNS *m, uDNS_HostnameInfo *hInfo)
 	{
-	mDNSu8 *msg;
+	NATAddrRequest *req;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
 	NATTraversalInfo *info = AllocNATInfo(m, NATOp_AddrRequest, ReceiveNATAddrResponse);
@@ -1035,10 +1039,9 @@ mDNSlocal void StartGetPublicAddr(mDNS *m, uDNS_HostnameInfo *hInfo)
 	info->state = NATState_Request;
 	
     // format message
-	msg = info->request;
-	msg[0] = NATMAP_VERS;
-	msg[1] = NATOp_AddrRequest;
-	info->requestlen = ADDR_REQUEST_PKTLEN;	
+	req = &info->request.AddrReq;
+	req->vers = NATMAP_VERS;
+	req->opcode = NATOp_AddrRequest;
 	
 	if (!u->Router.ip.v4.NotAnInteger)
 		{
@@ -1091,16 +1094,16 @@ mDNSlocal void LLQNatMapComplete(mDNS *m)
 
 mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
-	NATErr_t err;
 	ServiceRecordSet *srs;
-	mDNSIPPort priv, pktpriv, pub;
+	mDNSIPPort priv;
 	mDNSu32 lease;
 	mDNSBool deletion;
+	NATPortMapReply *reply = (NATPortMapReply *)pkt;
 	
 	if (n->state != NATState_Request && n->state != NATState_Refresh)
 		{ LogMsg("ReceivePortMapReply: bad state %d", n->state);  return; }
 
-	deletion = !(n->request[8] |  n->request[9] | n->request[10] | n->request[11]);  // zero lease
+	deletion = (!n->request.PortReq.lease.NotAnInteger);
 	if (deletion) { n->state = NATState_Deleted; return; }
 	// note that we explicitly ignore timeouts here
 	// we keep the context struct around so that the SendServiceDeregistration code can reference
@@ -1119,6 +1122,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
+		mDNSIPPort pub;
 		int ntries = 0;
 		mStatus err;
 		mDNSBool tcp = (srs && DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp"));
@@ -1150,30 +1154,22 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 
-	if (len < PORTMAP_PKTLEN) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); goto end; }
-	if (pkt[0] != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto end; }
-	if (pkt[1] != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto end; }
-	err = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
-	if (err) { LogMsg("ReceivePortMapReply: received error %d", err);  goto end; }
-
-	pktpriv.b[0] = pkt[4];
-	pktpriv.b[1] = pkt[5];
-	pub.b[0]  = pkt[6];
-	pub.b[1]  = pkt[7];
-
-	lease = (mDNSu32) ((mDNSu32)pkt[8] << 24 | (mDNSu32)pkt[9] << 16 | (mDNSu32)pkt[10] << 8 | pkt[11]);
-	if (lease > 0x70000000UL / mDNSPlatformOneSecond)
-		lease = 0x70000000UL / mDNSPlatformOneSecond;
-
-	if (priv.NotAnInteger != pktpriv.NotAnInteger)
+	if (len < sizeof(*reply)) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); goto end; }	
+	if (reply->vers != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto end; }
+	if (reply->opcode != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto end; }
+	if (reply->err.NotAnInteger) { LogMsg("ReceivePortMapReply: received error %d", mDNSVal16(reply->err));  goto end; }		
+	if (priv.NotAnInteger != reply->priv.NotAnInteger)
 		{ LogMsg("ReceivePortMapReply: reply private port does not match requested private port");  goto end; }
-	
-	if (n->state == NATState_Refresh && pub.NotAnInteger != n->PublicPort.NotAnInteger) 					
-		LogMsg("ReceivePortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(pub));
-      	// !!!KRS we need to update the SRV here!
-	n->PublicPort = pub;
 
-	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)lease * mDNSPlatformOneSecond/2);  // retry half way to expiration
+	lease = (mDNSs32)mDNSVal32(reply->lease);
+	if (lease > 0x70000000UL / mDNSPlatformOneSecond) lease = 0x70000000UL / mDNSPlatformOneSecond;
+
+		if (n->state == NATState_Refresh && reply->pub.NotAnInteger != n->PublicPort.NotAnInteger) 					
+		LogMsg("ReceivePortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
+      	// !!!KRS we need to update the SRV here!
+		n->PublicPort = reply->pub;
+
+	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)lease * mDNSPlatformOneSecond / 2);  // retry half way to expiration
 	
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return; }
 	n->state = NATState_Established;
@@ -1200,22 +1196,14 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 
 mDNSlocal void FormatPortMaprequest(NATTraversalInfo *info, mDNSIPPort port)
 	{
-	mDNSu8 *msg = info->request;
-	mDNSOpaque32 lease = mDNSOpaque32fromIntVal(NATMAP_DEFAULT_LEASE);
-	
-	msg[0] = NATMAP_VERS;
-	msg[1] = info->op;
-	msg[2] = 0; // reserved
-	msg[3] = 0; // reserved
-	msg[4] = port.b[0];  // private port
-	msg[5] = port.b[1];
-	msg[6] = port.b[0];  // requested pub. port
-	msg[7] = port.b[1];
-	
-	msg[8]  = lease.b[0];
-	msg[9]  = lease.b[1];
-	msg[10] = lease.b[2];
-	msg[11] = lease.b[3];
+	NATPortMapRequest *req = &info->request.PortReq;
+
+	req->vers = NATMAP_VERS;
+	req->opcode = info->op;
+	req->unused.NotAnInteger = 0;
+	req->priv = port;
+	req->pub = port;
+	req->lease = mDNSOpaque32fromIntVal(NATMAP_DEFAULT_LEASE);
 	}
 
 mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
@@ -1244,7 +1232,6 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	srs->uDNS_info.NATinfo = info;
 	info->reg.ServiceRegistration = srs;
 	info->state = NATState_Request;
-	info->requestlen = PORTMAP_PKTLEN;
 	
 	FormatPortMaprequest(info, srs->RR_SRV.resrec.rdata->u.srv.port);
 	SendInitialPMapReq(m, info);
@@ -1259,10 +1246,7 @@ mDNSlocal void DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat, ServiceRecor
 	if (nat->state == NATState_Established)  // let other edge-case states expire for simplicity
 		{
 		// zero lease
-		nat->request[8]  = 0;
-		nat->request[9]  = 0;
-		nat->request[10] = 0 ;
-		nat->request[11] = 0;
+		nat->request.PortReq.lease.NotAnInteger = 0;
 		nat->state = NATState_Request;
 		SendNATMsg(nat, m); 
 		}
@@ -1289,7 +1273,6 @@ mDNSlocal void StartLLQNatMap(mDNS *m)
 	info->reg.RecordRegistration = mDNSNULL;	
 	info->reg.ServiceRegistration = mDNSNULL;
     info->state = NATState_Request;
-	info->requestlen = PORTMAP_PKTLEN;
 	FormatPortMaprequest(info, m->UnicastPort4);
     SendInitialPMapReq(m, info);
 	return;
@@ -2281,7 +2264,7 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	NATOp_t op;
 	
 	// check length, version, opcode
-	if (len < ADDR_REPLY_PKTLEN && len < PORTMAP_PKTLEN) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
+	if (len < sizeof(NATPortMapReply) && len < sizeof(NATAddrReply)) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
 	if (pkt[0] != NATMAP_VERS) { LogMsg("Received NAT Traversal response with version %d (expect version %d)", pkt[0], NATMAP_VERS); return; }
 	op = pkt[1];
 	if (!(op & NATMAP_RESPONSE_MASK)) { LogMsg("Received NAT Traversal message that is not a response (opcode %d)", op); return; }
@@ -3814,11 +3797,12 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		rInfo->state = regState_NoTarget;		
 		return;
 		}	
-	if (!SameDomainName(&target, &srv->resrec.rdata->u.srv.target))
-		{
-		AssignDomainName(srv->resrec.rdata->u.srv.target, target);
-		SetNewRData(&srv->resrec, mDNSNULL, 0);
-		}
+
+	 if (!SameDomainName(&target, &srv->resrec.rdata->u.srv.target))
+		 {
+		 AssignDomainName(srv->resrec.rdata->u.srv.target, target);
+		 SetNewRData(&srv->resrec, mDNSNULL, 0);
+		 }
 
 	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
 	if (!ptr) goto error;
@@ -4050,7 +4034,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	rr->uDNS_info.NATinfo = mDNSNULL;
 
 	SendRecordDeregistration(m, rr);
-	return mStatus_NoError;
+	return mStatus_NoError;	
 	}
 
 // register a service already in list with initialized state
@@ -4346,16 +4330,19 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 		{
 		cur = ptr;
 		ptr = ptr->next;
-		if (cur->retry - timenow < 0)
+		if (cur->op != NATOp_AddrRequest || cur->state != NATState_Established)  // no refresh necessary for established Add requests
 			{
-			if (cur->state == NATState_Established) RefreshNATMapping(cur, m);
-			else if (cur->state == NATState_Request || cur->state == NATState_Refresh)
+			if (cur->retry - timenow < 0)
 				{
-				if (cur->ntries >= NATMAP_MAX_TRIES) cur->ReceiveResponse(cur, m, mDNSNULL, 0); // may invalidate "cur"
-				else SendNATMsg(cur, m);
+				if (cur->state == NATState_Established) RefreshNATMapping(cur, m);
+				else if (cur->state == NATState_Request || cur->state == NATState_Refresh)
+					{
+					if (cur->ntries >= NATMAP_MAX_TRIES) cur->ReceiveResponse(cur, m, mDNSNULL, 0); // may invalidate "cur"
+					else SendNATMsg(cur, m);
+					}
 				}
+			else if (cur->retry - nextevent < 0) nextevent = cur->retry;
 			}
-		else if (cur->retry - nextevent < 0) nextevent = cur->retry;
 		}
 	return nextevent;
 	}
