@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.26  2004/12/17 00:21:33  ksekar
+Fixes for new CacheRecord structure with indirect name pointer
+
 Revision 1.25  2004/12/16 20:13:02  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -187,6 +190,7 @@ typedef struct RRTableElem
     struct sockaddr_in cli;   // client's source address
     long expire;              // expiration time, in seconds since epoch
     domainname zone;          // from zone field of update message
+    domainname name;          // name of the record
     CacheRecord rr;           // last field in struct allows for allocation of oversized RRs
 	} RRTableElem;
 
@@ -531,8 +535,10 @@ mDNSlocal mDNSBool SuccessfulUpdateTransaction(PktMsg *request, PktMsg *reply)
 	return mDNSfalse;
 	}
 
-// Allocate an appropriately sized CacheRecord and copy data from original
-mDNSlocal CacheRecord *CopyCacheRecord(CacheRecord *orig)
+// Allocate an appropriately sized CacheRecord and copy data from original.
+// Name pointer in CacheRecord object is set to point to the name specified
+//
+mDNSlocal CacheRecord *CopyCacheRecord(const CacheRecord *orig, domainname *name)
 	{
 	CacheRecord *cr;
 	size_t size = sizeof(*cr);
@@ -541,6 +547,8 @@ mDNSlocal CacheRecord *CopyCacheRecord(CacheRecord *orig)
 	if (!cr) { LogErr("CopyCacheRecord", "malloc"); return NULL; }
 	memcpy(cr, orig, size);
 	cr->resrec.rdata = (RData*)&cr->rdatastorage;
+	cr->resrec.name = name;
+	
 	return cr;
 	}
 
@@ -1046,9 +1054,11 @@ mDNSlocal void UpdateLeaseTable(PktMsg *pkt, DaemonInfo *d, mDNSs32 lease)
 			if (!new) { LogErr("UpdateLeaseTable", "malloc"); goto cleanup; }
 			memcpy(&new->rr, &lcr.r, sizeof(CacheRecord) + lcr.r.resrec.rdlength - InlineCacheRDSize);
 			new->rr.resrec.rdata = (RData *)&new->rr.rdatastorage;
+			AssignDomainName(&new->name, lcr.r.resrec.name);
+			new->rr.resrec.name = &new->name;
 			new->expire = time.tv_sec + (unsigned)lease;
 			new->cli.sin_addr = pkt->src.sin_addr;
-			strcpy(new->zone.c, zone.qname.c);
+			AssignDomainName(&new->zone, &zone.qname);
 			new->next = d->table[bucket];
 			d->table[bucket] = new;
 			d->nelems++;
@@ -1255,7 +1265,7 @@ mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, LLQEntry *e, int sd)
 			}
 		else
 			{
-			CacheRecord *cr = CopyCacheRecord(&lcr.r);
+			CacheRecord *cr = CopyCacheRecord(&lcr.r, &e->qname);
 			if (!cr) { Log("Error: AnswerQuestion - CopyCacheRecord returned NULL"); goto end; }						   
 			cr->next = AnswerList;
 			AnswerList = cr;
@@ -1300,7 +1310,7 @@ mDNSlocal void UpdateAnswerList(DaemonInfo *d, LLQEntry *e, CacheRecord *answers
 		if (!ka)
 			{
 			// answer is not in KA list
-			CacheRecord *cr = CopyCacheRecord(na);
+			CacheRecord *cr = CopyCacheRecord(na, &e->qname);
 			if (!cr) { Log("Error: UpdateAnswerList - CopyCacheRecord returned NULL"); return; }
 			cr->resrec.rroriginalttl = 1; // 1 means add
 			cr->next = e->KnownAnswers;
@@ -1425,7 +1435,7 @@ mDNSlocal void *LLQEventMonitor(void *DInfoPtr)
 	mDNSs32 serial = 0;
 	mDNSBool SerialInitialized = mDNSfalse;
 	int sd;
-     LargeCacheRecord lcr;
+    LargeCacheRecord lcr;
 	ResourceRecord *rr = &lcr.r.resrec;
 	int i, sleeptime = 0;
 	domainname zone;
