@@ -334,6 +334,9 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 
 	if (query->info->TXTlen > sizeof(cstring)) return;
 
+	bzero(&interface, sizeof(interface));
+	bzero(&address,   sizeof(address));
+
 	interface.sin_len         = sizeof(interface);
 	interface.sin_family      = AF_INET;
 	interface.sin_port        = 0;
