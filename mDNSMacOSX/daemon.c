@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.185  2004/08/25 02:01:45  cheshire
+<rdar://problem/3774777> Need to be able to get status of Dynamic DNS Host Name Update
+
 Revision 1.184  2004/08/19 19:04:12  ksekar
 <rdar://problem/3767546>: mDNSResponder crashes when adding a record to a service
 
@@ -2044,12 +2047,14 @@ mDNSexport int main(int argc, char **argv)
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 	status = mDNSDaemonInitialize();
 
+#if CAN_UPDATE_DYNAMIC_STORE_WITHOUT_BEING_ROOT
 	// Now that we're finished with anything privileged, switch over to running as "nobody"
 	const struct passwd *pw = getpwnam("nobody");
 	if (pw != NULL)
 		setuid(pw->pw_uid);
 	else
 		setuid(-2);		// User "nobody" is -2; use that value if "nobody" does not appear in the password database
+#endif
 
 	if (status == 0)
 		{

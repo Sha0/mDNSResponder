@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.172  2004/08/25 02:01:45  cheshire
+<rdar://problem/3774777> Need to be able to get status of Dynamic DNS Host Name Update
+
 Revision 1.171  2004/08/25 01:04:42  cheshire
 Don't need to CFRelease name and array
 
@@ -1130,6 +1133,30 @@ mDNSlocal void GetUserSpecifiedDDNSZone(domainname *const dname)
 		}
 	}
 
+mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
+	{
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NULL, NULL);
+	if (store)
+		{
+		char uname[MAX_ESCAPED_DOMAIN_NAME];
+		ConvertDomainNameToCString(dname, uname);
+		char *p = uname;
+		while (*p) { *p = tolower(*p); p++; }
+		const void *n1 = CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8); // CFStringRef
+		const void *v1 = CFNumberCreate(NULL, kCFNumberSInt32Type, &status); // CFNumberRef
+		const void *n2 = CFSTR("FQDN"); // CFStringRef
+		const void *v2 = CFDictionaryCreate(NULL, &n1, &v1, 1, NULL, NULL); // CFDictionaryRef
+		CFDictionaryRef dict = CFDictionaryCreate(NULL, &n2, &v2, 1, NULL, NULL);
+		SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), dict);
+		CFRelease(dict);
+		CFRelease(v2);
+		CFRelease(n2);
+		CFRelease(v1);
+		CFRelease(n1);
+		CFRelease(store);
+		}
+	}
+
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
 mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *ifaddr, u_short sa_family)
@@ -1812,6 +1839,7 @@ mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatu
 	(void)m;  // unused
 
 	LogMsg("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name.c);
+	SetDDNSNameStatus(&rr->resrec.name, result);
 	}
 
 mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
@@ -1903,6 +1931,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 		if (DynDNSZone.c[0])
 			{
 			mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
+			SetDDNSNameStatus(&DynDNSZone, 1);
 			AssignDomainName(m->uDNS_info.ServiceRegDomain, zone);  //!!!KRS temporary until we have multi-user support
 			}
 		}
