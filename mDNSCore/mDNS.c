@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.505  2005/01/11 02:02:56  shersche
+Move variable declaration to the beginning of statement block
+
 Revision 1.504  2004/12/20 20:24:35  cheshire
 <rdar://problem/3928456> Network efficiency: Don't keep polling if we have at least one unique-type answer
 
@@ -6368,11 +6371,13 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		{
 		DNSQuestion *q;
 		AuthRecord *rr;
+		mDNSs32 initial = InitialQuestionInterval;
+
 		// Use a small amount of randomness:
 		// In the case of a network administrator turning on an Ethernet hub so that all the connected machines establish link at
 		// exactly the same time, we don't want them to all go and hit the network with identical queries at exactly the same moment.
 		if (!m->SuppressSending) m->SuppressSending = m->timenow + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
-		mDNSs32 initial = InitialQuestionInterval;
+		
 		if (delay)
 			{
 			LogMsg("Repeated transitions for interface %s (%#a); delaying packets by %d seconds",
