@@ -566,7 +566,8 @@ mDNSlocal void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 		((RR)->DependentOn == mDNSNULL || ((RR)->DependentOn->RecordType & kDNSRecordTypeActiveMask))  )
 
 #define ResourceRecordIsValidInterfaceAnswer(RR, I) \
-	(ResourceRecordIsValidAnswer(RR) && ((RR)->InterfaceAddr.NotAnInteger == 0 || (RR)->InterfaceAddr.NotAnInteger == (I).NotAnInteger))
+	(ResourceRecordIsValidAnswer(RR) && \
+	((RR)->InterfaceAddr.NotAnInteger == 0 || (RR)->InterfaceAddr.NotAnInteger == (I).NotAnInteger))
 
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 
@@ -632,16 +633,16 @@ mDNSlocal mDNSBool SameResourceRecordSignatureAnyInterface(const ResourceRecord 
 	return (r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass && SameDomainName(&r1->name, &r2->name));
 	}
 
-// IdenticalResourceRecord returns true if two resources records have the same interface, name, type, class, and identical rdata
-// (TTL may differ)
+// IdenticalResourceRecord returns true if two resources records have
+// the same interface, name, type, class, and identical rdata (TTL may differ)
 mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!SameResourceRecordSignature(r1, r2)) return(mDNSfalse);
 	return(SameRData(r1->rrtype, r1->rdata, r2->rdata));
 	}
 
-// IdenticalResourceRecordAnyInterface returns true if two resources records have the same name, type, class, and identical rdata
-// (InterfaceAddr and TTL may differ)
+// IdenticalResourceRecordAnyInterface returns true if two resources records have
+// the same name, type, class, and identical rdata (InterfaceAddr and TTL may differ)
 mDNSlocal mDNSBool IdenticalResourceRecordAnyInterface(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!SameResourceRecordSignatureAnyInterface(r1, r2)) return(mDNSfalse);
@@ -657,11 +658,15 @@ mDNSlocal mDNSBool SuppressDuplicate(const ResourceRecord *const ds, const Resou
 	// If RR signature is different, or data is different, then don't suppress
 	if (!IdenticalResourceRecord(ds,rr)) return(mDNSfalse);
 	
-	// If the requester's indicated TTL is at least half the real TTL, then we can suppress our answer this time.
-	// If the requester's indicated TTL is less than half the real TTL, we need to give our answer before the requester's copy expires.
-	// If the requester's indicated TTL is greater than the TTL we believe, then that's okay, and we don't need to do anything about it.
-	// (If two responders on the network are offering the same information, that's okay, and if they are offering the
-	// information with different TTLs, the one offering the lower TTL should defer to the one offering the higher TTL.)
+	// If the requester's indicated TTL is less than half the real TTL,
+	// we need to give our answer before the requester's copy expires.
+	// If the requester's indicated TTL is at least half the real TTL,
+	// then we can suppress our answer this time.
+	// If the requester's indicated TTL is greater than the TTL we believe,
+	// then that's okay, and we don't need to do anything about it.
+	// (If two responders on the network are offering the same information,
+	// that's okay, and if they are offering the information with different TTLs,
+	// the one offering the lower TTL should defer to the one offering the higher TTL.)
 	return(ds->rroriginalttl >= rr->rroriginalttl / 2);
 	}
 
@@ -673,7 +678,7 @@ mDNSlocal mDNSu32 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		case kDNSType_A:	return(sizeof(rr->rdata->u.ip)); break;
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rr->rdata->u.name, name));
-		case kDNSType_TXT:  return(rr->rdata->RDLength);		// TXT is not self-describing, so have to just trust rdlength
+		case kDNSType_TXT:  return(rr->rdata->RDLength); // TXT is not self-describing, so have to just trust rdlength
 		case kDNSType_SRV:	return(6 + CompressedDomainNameLength(&rr->rdata->u.srv.target, name));
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdata->RDLength);
@@ -732,12 +737,14 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 			rr->RecordType =  kDNSRecordTypeVerified;
 		else
 			{
-			debugf("mDNS_Register_internal: ERROR! %##s: rr->DependentOn && RecordType != kDNSRecordTypeUnique", rr->name.c);
+			debugf("mDNS_Register_internal: ERROR! %##s: rr->DependentOn && RecordType != kDNSRecordTypeUnique",
+				rr->name.c);
 			return(mStatus_Invalid);
 			}
 		if (rr->DependentOn->RecordType != kDNSRecordTypeUnique && rr->DependentOn->RecordType != kDNSRecordTypeVerified)
 			{
-			debugf("mDNS_Register_internal: ERROR! %##s: rr->DependentOn->RecordType bad type %X", rr->name.c, rr->DependentOn->RecordType);
+			debugf("mDNS_Register_internal: ERROR! %##s: rr->DependentOn->RecordType bad type %X",
+				rr->name.c, rr->DependentOn->RecordType);
 			return(mStatus_Invalid);
 			}
 		}
@@ -848,7 +855,7 @@ mDNSlocal void mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const rr,
 			{
 			RData *n = rr->NewRData;
 			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n);	// ... and let the client free this memory, if necessary
+			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
 			}
 		
 		if (RecordType == kDNSRecordTypeShared && rr->Callback)
@@ -928,7 +935,8 @@ mDNSlocal const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const m
 // ptr points to where we want to put the name
 // limit points to one byte past the end of the buffer that we must not overrun
 // domainname is the name to put
-mDNSlocal mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name)
+mDNSlocal mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
+	mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name)
 	{
 	const mDNSu8 *const base        = (const mDNSu8 *const)msg;
 	const mDNSu8 *      np          = name->c;
@@ -974,7 +982,10 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 	switch (rrtype)
 		{
 		case kDNSType_A:	if (rdata->RDLength != 4)
-								{ debugf("putRData: Illegal length %d for kDNSType_A", rdata->RDLength); return(mDNSNULL); }
+								{
+								debugf("putRData: Illegal length %d for kDNSType_A", rdata->RDLength);
+								return(mDNSNULL);
+								}
 							if (ptr + 4 > limit) return(mDNSNULL);
 							*ptr++ = rdata->u.ip.b[0];
 							*ptr++ = rdata->u.ip.b[1];
@@ -1007,7 +1018,8 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 
 // Put a domain name, type, class, ttl, length, and type-specific data
 // domainname is a fully-qualified name
-// Only pass the "m" and "timenow" parameters in cases where the LastSendTime is to be updated, and the kDNSClass_UniqueRRSet bit set
+// Only pass the "m" and "timenow" parameters in cases where the LastSendTime is to be updated,
+// and the kDNSClass_UniqueRRSet bit set
 mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 	mDNSu16 *count, ResourceRecord *rr, mDNS *const m, const mDNSs32 timenow)
 	{
@@ -1052,7 +1064,8 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 			{
 			const ResourceRecord *a = mDNSNULL;
 			const ResourceRecord *b = rr->RRSet;
-			// If we find a member of the same set that hasn't been updated within the last quarter second, don't set the bit
+			// If we find a member of the same set that hasn't been updated
+			// within the last quarter second, don't set the bit
 			if (rr->RRSet)
 				for (a = m->ResourceRecords; a; a=a->next)
 					if (a->RRSet == b && timenow - a->LastSendTime > mDNSPlatformOneSecond/4)
@@ -1106,7 +1119,8 @@ mDNSlocal const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8
 	{
 	mDNSu32 total = 0;
 
-	if (ptr < (mDNSu8*)msg || ptr >= end) { debugf("skipDomainName: Illegal ptr not within packet boundaries"); return(mDNSNULL); }
+	if (ptr < (mDNSu8*)msg || ptr >= end)
+		{ debugf("skipDomainName: Illegal ptr not within packet boundaries"); return(mDNSNULL); }
 
 	while (1)						// Read sequence of labels
 		{
@@ -1130,13 +1144,15 @@ mDNSlocal const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8
 	}
 
 // Routine to fetch an FQDN from the DNS message, following compression pointers if necessary.
-mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end, domainname *const name)
+mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end,
+	domainname *const name)
 	{
 	const mDNSu8 *nextbyte = mDNSNULL;					// Record where we got to before we started following pointers
 	mDNSu8       *np = name->c;							// Name pointer
 	const mDNSu8 *const limit = np + MAX_DOMAIN_NAME;	// Limit so we don't overrun buffer
 
-	if (ptr < (mDNSu8*)msg || ptr >= end) { debugf("getDomainName: Illegal ptr not within packet boundaries"); return(mDNSNULL); }
+	if (ptr < (mDNSu8*)msg || ptr >= end)
+		{ debugf("getDomainName: Illegal ptr not within packet boundaries"); return(mDNSNULL); }
 
 	*np = 0;						// Tentatively place the root label here (may be overwritten if we have more labels)
 
@@ -1158,7 +1174,8 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 						*np = 0;	// Tentatively place the root label here (may be overwritten if we have more labels)
 						break;
 
-			case 0x40:	debugf("getDomainName: Extended EDNS0 label types 0x%X not supported in name %##s", len, name->c); return(mDNSNULL);
+			case 0x40:	debugf("getDomainName: Extended EDNS0 label types 0x%X not supported in name %##s", len, name->c);
+						return(mDNSNULL);
 
 			case 0x80:	debugf("getDomainName: Illegal label length 0x%X in domain name %##s", len, name->c); return(mDNSNULL);
 
@@ -1167,7 +1184,8 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 						ptr = (mDNSu8 *)msg + offset;
 						if (ptr < (mDNSu8*)msg || ptr >= end)
 							{ debugf("getDomainName: Illegal compression pointer not within packet boundaries"); return(mDNSNULL); }
-						if (*ptr & 0xC0) { debugf("getDomainName: Compression pointer must point to real label"); return(mDNSNULL); }
+						if (*ptr & 0xC0)
+							{ debugf("getDomainName: Compression pointer must point to real label"); return(mDNSNULL); }
 						break;
 			}
 		}
@@ -1276,7 +1294,8 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 
 		case kDNSType_TXT:  if (pktrdlength > rr->rdata->MaxRDLength)
 								{
-								debugf("getResourceRecord: TXT rdata size (%d) exceeds storage (%d)", pktrdlength, rr->rdata->MaxRDLength);
+								debugf("getResourceRecord: TXT rdata size (%d) exceeds storage (%d)",
+									pktrdlength, rr->rdata->MaxRDLength);
 								return(mDNSNULL);
 								}
 							rr->rdata->RDLength = pktrdlength;
@@ -1294,7 +1313,8 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 
 		default:			if (pktrdlength > rr->rdata->MaxRDLength)
 								{
-								debugf("getResourceRecord: rdata %d size (%d) exceeds storage (%d)", rr->rrtype, pktrdlength, rr->rdata->MaxRDLength);
+								debugf("getResourceRecord: rdata %d size (%d) exceeds storage (%d)",
+									rr->rrtype, pktrdlength, rr->rdata->MaxRDLength);
 								return(mDNSNULL);
 								}
 							debugf("getResourceRecord: Warning! Reading resource type %d as opaque data", rr->rrtype);
@@ -1415,7 +1435,8 @@ mDNSlocal mDNSBool HaveResponses(const mDNS *const m, const mDNSs32 timenow)
 	return(mDNSfalse);
 	}
 
-// NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change
+// the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSs32 timenow)
 	{
@@ -1438,9 +1459,11 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSs32 timenow)
 // This routine sends as many records as it can fit in a single DNS Response Message, in order of priority.
 // If there are any deregistrations, announcements, or answers that don't fit, they are left in the work list for next time.
 // If there are any additionals that don't fit, they are discarded -- they were optional anyway.
-// NOTE: BuildResponse calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// NOTE: BuildResponse calls mDNS_Deregister_internal which can call a user callback, which may change
+// the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu8 *responseptr, const mDNSIPAddr InterfaceAddr, const mDNSs32 timenow)
+mDNSlocal mDNSu8 *BuildResponse(mDNS *const m,
+	DNSMessage *const response, mDNSu8 *responseptr, const mDNSIPAddr InterfaceAddr, const mDNSs32 timenow)
 	{
 	ResourceRecord *rr;
 	mDNSu8 *newptr;
@@ -1521,8 +1544,9 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 						responseptr = newptr;
 						}
 					// If we were able to put the record, then update the state variables
-					// If we were unable to put the record because it is too large to fit, even though there are no other answers in the packet,
-					// then pretent we succeeded anyway, or we'll end up in an infinite loop trying to send a record that will never fit
+					// If we were unable to put the record because it is too large to fit, even though
+					// there are no other answers in the packet, then pretend we succeeded anyway,
+					// or we'll end up in an infinite loop trying to send a record that will never fit
 					if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
 					if (newptr || response->h.numAnswers == 0)
 						{
@@ -1549,8 +1573,9 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 						responseptr = newptr;
 						}
 					// If we were able to put the record, then update the state variables
-					// If we were unable to put the record because it is too large to fit, even though there are no other answers in the packet
-					// then pretent we succeeded anyway, or we'll end up in an infinite loop trying to send a record that will never fit
+					// If we were unable to put the record because it is too large to fit, even though
+					// there are no other answers in the packet then pretend we succeeded anyway,
+					// or we'll end up in an infinite loop trying to send a record that will never fit
 					if (response->h.numAnswers == 0) debugf("BuildResponse answers failed");
 					if (newptr || response->h.numAnswers == 0)
 						{
@@ -1803,7 +1828,8 @@ mDNSlocal mDNSu8 *BuildQueryPacketAnswers(DNSMessage *query, mDNSu8 *queryptr,
 			}
 		else
 			{
-			debugf("BuildQueryPacketAnswers: Put %d answers; No more space for duplicate suppression", query->h.numAnswers);
+			debugf("BuildQueryPacketAnswers: Put %d answers; No more space for duplicate suppression",
+				query->h.numAnswers);
 			query->h.flags.b[0] |= kDNSFlag0_TC;
 			break;
 			}
@@ -1950,7 +1976,8 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is a ResourceRecord in our cache
 // (kDNSRecordTypePacketAnswer/kDNSRecordTypePacketAdditional/kDNSRecordTypePacketUniqueAns/kDNSRecordTypePacketUniqueAdd)
-// NOTE: AnswerLocalQuestions calls AnswerQuestionWithResourceRecord which can call a user callback, which may change the record list and/or question list.
+// NOTE: AnswerLocalQuestions calls AnswerQuestionWithResourceRecord which can call a user callback, which may change
+// the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr, const mDNSs32 timenow)
 	{
@@ -2185,7 +2212,8 @@ mDNSlocal void ScheduleNextTask(const mDNS *const m)
 					msg = "Send Questions";
 					}
 
-			// 6. Scan list of local resource records to see if we have any deregistrations, probes, announcements, or replies to send
+			// 6. Scan list of local resource records to see if we have any
+			// deregistrations, probes, announcements, or replies to send
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				{
 				if (rr->RecordType == kDNSRecordTypeDeregistering)
@@ -2320,7 +2348,8 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 #pragma mark - Packet Reception Functions
 #endif
 
-mDNSlocal mDNSBool AddRecordToResponseList(ResourceRecord **nrp, ResourceRecord *rr, const mDNSu8 *answerto, ResourceRecord *additionalto)
+mDNSlocal mDNSBool AddRecordToResponseList(ResourceRecord **nrp,
+	ResourceRecord *rr, const mDNSu8 *answerto, ResourceRecord *additionalto)
 	{
 	if (rr->NextResponse == mDNSNULL && nrp != &rr->NextResponse)
 		{
@@ -2421,7 +2450,8 @@ mDNSlocal int CompareRData(ResourceRecord *pkt, ResourceRecord *our)
 
 // Find the canonical DependentOn record for this RR received in a packet.
 // The DependentOn pointer is typically used for the TXT record of service registrations
-// It indicates that there is no inherent conflict detection for the TXT record -- it depends on the SRV record to resolve name conflicts
+// It indicates that there is no inherent conflict detection for the TXT record
+// -- it depends on the SRV record to resolve name conflicts
 // If we find any identical ResourceRecord in our authoritative list, then follow its DependentOn
 // pointers (if any) to make sure we return the canonical DependentOn record
 // If the record has no DependentOn, then just return that record's pointer
@@ -2470,13 +2500,22 @@ mDNSlocal const ResourceRecord *FindRRSet(const mDNS *const m, const ResourceRec
 mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const ResourceRecord *const our, const ResourceRecord *const pktrr)
 	{
 	const ResourceRecord *ourset = our->RRSet ? our->RRSet : our;
-	if (!(our->RecordType & kDNSRecordTypeUniqueMask)) return(mDNSfalse);			// If not supposed to be unique, not a conflict
-	if (our->DependentOn || FindDependentOn(m, pktrr) == our) return(mDNSfalse);	// If a dependent record, not a conflict
-	if (FindRRSet(m, pktrr) == ourset) return(mDNSfalse);							// If the pktrr matches a member of ourset, not a conflict
+
+	// If not supposed to be unique, not a conflict
+	if (!(our->RecordType & kDNSRecordTypeUniqueMask)) return(mDNSfalse);
+
+	// If a dependent record, not a conflict
+	if (our->DependentOn || FindDependentOn(m, pktrr) == our) return(mDNSfalse);
+
+	// If the pktrr matches a member of ourset, not a conflict
+	if (FindRRSet(m, pktrr) == ourset) return(mDNSfalse);
+
+	// Okay, this is a conflict
 	return(mDNStrue);
 	}
 
-// NOTE: ResolveSimultaneousProbe calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// NOTE: ResolveSimultaneousProbe calls mDNS_Deregister_internal which can call a user callback, which may change
+// the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
 	DNSQuestion *q, ResourceRecord *our, const mDNSs32 timenow)
@@ -2500,9 +2539,10 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				if (!result) result = CompareRData(&pktrr, our);
 				switch (result)
 					{
-					case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",    our->name.c, DNSTypeName(our->rrtype)); break;
-					case  0:	/*debugf("ResolveSimultaneousProbe: %##s (%s): Identical", our->name.c, DNSTypeName(our->rrtype));*/ break;
-					case -1:	debugf("ResolveSimultaneousProbe: %##s (%s): We lost",   our->name.c, DNSTypeName(our->rrtype));
+					case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",  our->name.c, DNSTypeName(our->rrtype));
+								break;
+					case  0:	break;
+					case -1:	debugf("ResolveSimultaneousProbe: %##s (%s): We lost", our->name.c, DNSTypeName(our->rrtype));
 								mDNS_Deregister_internal(m, our, timenow, mDNStrue);
 								return;
 					}
@@ -2749,9 +2789,11 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		}
 	}
 
-// NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
+// the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const response, const mDNSu8 *end, const mDNSIPAddr dstaddr, const mDNSIPAddr InterfaceAddr)
+mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
+	const DNSMessage *const response, const mDNSu8 *end, const mDNSIPAddr dstaddr, const mDNSIPAddr InterfaceAddr)
 	{
 	int i;
 	const mDNSs32 timenow = mDNSPlatformTimeNow();
@@ -2772,7 +2814,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
 	// Other mDNS devices may issue unicast queries (which we correctly answer),
-	// but we never *issue* unicast queries, so if we ever receive a unicast response then it is someone trying to spoof us, so ignore it!
+	// but we never *issue* unicast queries, so if we ever receive a unicast
+	// response then it is someone trying to spoof us, so ignore it!
 	if (dstaddr.NotAnInteger != AllDNSLinkGroup.NotAnInteger)
 		{ debugf("** Ignored attempted spoof unicast mDNS response packet **"); return; }
 
@@ -3008,7 +3051,8 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 	DNSQuestion **q = &m->ActiveQuestions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
-	else debugf("mDNS_StopQuery_internal: Question %##s (%s) not found in active list", question->name.c, DNSTypeName(question->rrtype));
+	else debugf("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
+		question->name.c, DNSTypeName(question->rrtype));
 
 	UpdateQuestionDuplicates(m, question);
 
@@ -3259,12 +3303,13 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
 
-	// If we already have an update queued up which has not gone through yet, give the client a chance to free that memory
+	// If we already have an update queued up which has not gone through yet,
+	// give the client a chance to free that memory
 	if (rr->NewRData)
 		{
 		RData *n = rr->NewRData;
 		rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
-		if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n);	// ... and let the client free this memory, if necessary
+		if (rr->UpdateCallback) rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
 		}
 	
 	rr->AnnounceCount    = DefaultAnnounceCountForRecordType(rr->RecordType);
@@ -3279,7 +3324,8 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 	return(mStatus_NoError);
 	}
 
-// NOTE: mDNS_Deregister calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// NOTE: mDNS_Deregister calls mDNS_Deregister_internal which can call a user callback, which may change
+// the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_Deregister(mDNS *const m, ResourceRecord *const rr)
 	{
@@ -3311,9 +3357,15 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 	#pragma unused(rr)
 	switch (result)
 		{
-		case mStatus_NoError:		debugf("HostNameCallback: %##s (%s) Name registered",   rr->name.c, DNSTypeName(rr->rrtype)); break;
-		case mStatus_NameConflict:	debugf("HostNameCallback: %##s (%s) Name conflict",     rr->name.c, DNSTypeName(rr->rrtype)); break;
-		default:					debugf("HostNameCallback: %##s (%s) Unknown result %d", rr->name.c, DNSTypeName(rr->rrtype), result); break;
+		case mStatus_NoError:
+			debugf("HostNameCallback: %##s (%s) Name registered",   rr->name.c, DNSTypeName(rr->rrtype));
+			break;
+		case mStatus_NameConflict:
+			debugf("HostNameCallback: %##s (%s) Name conflict",     rr->name.c, DNSTypeName(rr->rrtype));
+			break;
+		default:
+			debugf("HostNameCallback: %##s (%s) Unknown result %d", rr->name.c, DNSTypeName(rr->rrtype), result);
+			break;
 		}
 
 	if (result == mStatus_NameConflict)
@@ -3373,18 +3425,18 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		{
 		char buffer[256];
 		NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
-		if (!primary) primary = set;	// If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary set
+		if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
 		
 		mDNS_SetupResourceRecord(&set->RR_A1,  mDNSNULL, set->ip, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
 		mDNS_SetupResourceRecord(&set->RR_A2,  mDNSNULL, set->ip, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
 		mDNS_SetupResourceRecord(&set->RR_PTR, mDNSNULL, set->ip, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	
 		// 1. Set up primary Address record to map from primary host name ("foo.local.") to IP address
-		set->RR_A1.name     = m->hostname1;
+		set->RR_A1.name        = m->hostname1;
 		set->RR_A1.rdata->u.ip = set->ip;
 	
 		// 2. Set up secondary Address record to map from secondary host name ("foo.local.arpa.") to IP address
-		set->RR_A2.name     = m->hostname2;
+		set->RR_A2.name        = m->hostname2;
 		set->RR_A2.rdata->u.ip = set->ip;
 	
 		// 3. Set up reverse-lookup PTR record to map from our address back to our primary host name
@@ -3401,15 +3453,17 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		mDNS_Register_internal(m, &set->RR_A2,  timenow);
 		mDNS_Register_internal(m, &set->RR_PTR, timenow);
 	
-		// ... Add an HINFO record?
+		// ... Add an HINFO record, etc.?
 		}
+
 	set->next = mDNSNULL;
 	*p = set;
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
 	}
 
-// NOTE: mDNS_DeregisterInterface calls mDNS_Deregister_internal which can call a user callback, which may change the record list and/or question list.
+// NOTE: mDNS_DeregisterInterface calls mDNS_Deregister_internal which can call a user callback, which may change
+// the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
@@ -3452,14 +3506,33 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
-	#pragma unused(m, rr)
+	#pragma unused(m)
 	ServiceRecordSet *sr = (ServiceRecordSet *)rr->Context;
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("ServiceCallback: %##s (%s) Name Registered",   rr->name.c, DNSTypeName(rr->rrtype)); break;
-		case mStatus_NameConflict: debugf("ServiceCallback: %##s (%s) Name Conflict",     rr->name.c, DNSTypeName(rr->rrtype)); break;
-		case mStatus_MemFree:      debugf("ServiceCallback: %##s (%s) Memory Free",       rr->name.c, DNSTypeName(rr->rrtype)); break;
-		default:                   debugf("ServiceCallback: %##s (%s) Unknown Result %d", rr->name.c, DNSTypeName(rr->rrtype), result); break;
+		case mStatus_NoError:
+			if (rr == &sr->RR_SRV)
+				debugf("ServiceCallback: Service RR_SRV %##s Registered", rr->name.c);
+			else
+				debugf("ServiceCallback: %##s (%s) ERROR Should only get mStatus_NoError callback for RR_SRV",
+					rr->name.c, DNSTypeName(rr->rrtype));
+			break;
+
+		case mStatus_NameConflict:
+			debugf("ServiceCallback: %##s (%s) Name Conflict", rr->name.c, DNSTypeName(rr->rrtype));
+			break;
+
+		case mStatus_MemFree:
+			if (rr == &sr->RR_PTR)
+				debugf("ServiceCallback: Service RR_PTR %##s Memory Free", rr->name.c);
+			else
+				debugf("ServiceCallback: %##s (%s) ERROR Should only get mStatus_MemFree callback for RR_PTR",
+					rr->name.c, DNSTypeName(rr->rrtype));
+			break;
+
+		default:
+			debugf("ServiceCallback: %##s (%s) Unknown Result %d", rr->name.c, DNSTypeName(rr->rrtype), result);
+			break;
 		}
 
 	// If we got a name conflict on either SRV or TXT, forcibly deregister this service, and record that we did that
