@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.27  2005/02/09 05:04:03  shersche
+<rdar://problem/3946587> Use TXTRecordGetValuePtr() API in ParseTextRecord
+
 Revision 1.26  2005/02/08 21:45:06  shersche
 <rdar://problem/3947490> Default to Generic PostScript or PCL if unable to match driver
 
@@ -1506,81 +1509,114 @@ CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize
 {
 	// <rdar://problem/3946587> Use TXTRecord APIs declared in dns_sd.h
 	
-	bool		qtotalDefined	= false;
-	OSStatus	err				= kNoErr;
-	uint16_t	count			= TXTRecordGetCount( inTXTSize, inTXT );
-	uint16_t	i;
+	bool			qtotalDefined	= false;
+	const void	*	val;
+	char			buf[256];
+	uint8_t			len;
+	OSStatus		err				= kNoErr;
 
 	// <rdar://problem/3987680> Default to queue "lp"
 
 	qname = L"lp";
 
-	for ( i = 0; i < count; i++ )
+	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "rp", &len ) ) != NULL )
 	{
-		char		rawKey[ 256 ];
-		uint8_t		valLen;
-		void	*	tmp;
-		char		rawVal[256];
-		CString		key;
-		CString		val;
+		// Stringize val ( doesn't have trailing '\0' yet )
 
-		// Get key and value
+		memcpy( buf, val, len );
+		buf[len] = '\0';
 
-		err = TXTRecordGetItemAtIndex( inTXTSize, inTXT, i, sizeof( rawKey ), rawKey, &valLen, (const void**) &tmp );
+		err = UTF8StringToStringObject( buf, qname );
 		require_noerr( err, exit );
+	}
+	
+	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "pdl", &len ) ) != NULL )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
 
-		// Stringize val ( doesn't have trailing '\0' yet
+		memcpy( buf, val, len );
+		buf[len] = '\0';
 
-		memcpy( rawVal, tmp, valLen );
-		rawVal[valLen] = '\0';
-
-		// Convert to CString
-
-		err = UTF8StringToStringObject( rawKey, key );
+		err = UTF8StringToStringObject( buf, service->pdl );
 		require_noerr( err, exit );
+	}
+	
+	if ( ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "usb_mfg", &len ) ) != NULL ) ||
+	     ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "usb_manufacturer", &len ) ) != NULL ) )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
 
-		err = UTF8StringToStringObject( rawVal, val );
+		memcpy( buf, val, len );
+		buf[len] = '\0';
+
+		err = UTF8StringToStringObject( buf, service->usb_MFG );
 		require_noerr( err, exit );
+	}
+	
+	if ( ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "usb_mdl", &len ) ) != NULL ) ||
+	     ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "usb_model", &len ) ) != NULL ) )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
 
-		key.MakeLower();
+		memcpy( buf, val, len );
+		buf[len] = '\0';
 
-		if ( key == L"rp" )
-		{
-			qname = val;
-		}
-		else if ( key == L"pdl" )
-		{
-			service->pdl = val;
-		}
-		else if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
-		{
-			service->usb_MFG = val;
-		}
-		else if ((key == L"usb_mdl") || (key == L"usb_model"))
-		{
-			service->usb_MDL = val;
-		}
-		else if (key == L"ty")
-		{
-			service->description = val;
-		}
-		else if (key == L"product")
-		{
-			service->product = val;
-		}
-		else if (key == L"note")
-		{
-			service->location = val;
-		}
-		else if (key == L"qtotal")
-		{
-			service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
-			qtotalDefined = true;
-		}
-		else if (key == L"priority")
-		{
-			qpriority = _ttoi((LPCTSTR) val);
-		}
+		err = UTF8StringToStringObject( buf, service->usb_MDL );
+		require_noerr( err, exit );
+	}
+
+	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "ty", &len ) ) != NULL )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
+
+		memcpy( buf, val, len );
+		buf[len] = '\0';
+
+		err = UTF8StringToStringObject( buf, service->description );
+		require_noerr( err, exit );
+	}
+		
+	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "product", &len ) ) != NULL )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
+
+		memcpy( buf, val, len );
+		buf[len] = '\0';
+
+		err = UTF8StringToStringObject( buf, service->product );
+		require_noerr( err, exit );
+	}
+
+	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "note", &len ) ) != NULL )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
+
+		memcpy( buf, val, len );
+		buf[len] = '\0';
+
+		err = UTF8StringToStringObject( buf, service->location );
+		require_noerr( err, exit );
+	}
+
+	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "qtotal", &len ) ) != NULL )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
+
+		memcpy( buf, val, len );
+		buf[len] = '\0';
+
+		service->qtotal = (unsigned short) atoi( buf );
+		qtotalDefined = true;
+	}
+
+	if ( ( val = TXTRecordGetValuePtr( inTXTSize, inTXT, "priority", &len ) ) != NULL )
+	{
+		// Stringize val ( doesn't have trailing '\0' yet )
+
+		memcpy( buf, val, len );
+		buf[len] = '\0';
+
+		qpriority = atoi( buf );
 	}
 
 exit:
