@@ -2,14 +2,14 @@
  * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
  * compliance with the License. Please obtain a copy of the License at
  * http://www.opensource.apple.com/apsl/ and read it before using this
  * file.
- * 
+ *
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -17,7 +17,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
  * Please see the License for the specific language governing rights and
  * limitations under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  *
  * Formatting notes:
@@ -33,21 +33,23 @@
  * understand why variable y is not of type "char*" just proves the point that poor code
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
 
-    Change History (most recent first):
+   Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.2  2004/03/25 05:40:56  cheshire
+Changes from Marc Krochmal: Fix inconsistent use of space/tab
+
 Revision 1.1  2004/02/06 03:19:09  cheshire
 Check in code to make command-line "dns-sd" testing tool
 
-
- */
+*/
 
 #include <libc.h>
 #define BIND_8_COMPAT
 #include <arpa/nameser.h>
 #include <dns_sd.h>
-#include <unistd.h>			// For select()
-#include <errno.h>			// For errno, EINTR
+#include <unistd.h>         // For select()
+#include <errno.h>          // For errno, EINTR
 
 //*************************************************************************************************************
 // Globals
@@ -67,7 +69,7 @@ static char bigNULL[4096];
 #define LONG_TIME 0x4000000
 static volatile int stopNow = 0;
 static volatile int timeOut = LONG_TIME;
-    
+
 //*************************************************************************************************************
 // Supporting Utility Function
 
@@ -89,52 +91,52 @@ static void printtimestamp(void)
 static void regdom_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interface,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
-    (void)interface;    // Unused
-    (void)errorCode;    // Unused
-    (void)context;      // Unused
+	(void)interface;    // Unused
+	(void)errorCode;    // Unused
+	(void)context;      // Unused
 	printtimestamp();
 	printf("Recommended Registration Domain %s %s", replyDomain, DomainMsg(flags));
-    if (flags) printf(" Flags: %X", flags);
+	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
 	}
 
 static void browsedom_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t interface,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
-    (void)client;       // Unused
-    (void)interface;    // Unused
-    (void)errorCode;    // Unused
-    (void)context;      // Unused
+	(void)client;       // Unused
+	(void)interface;    // Unused
+	(void)errorCode;    // Unused
+	(void)context;      // Unused
 	printtimestamp();
 	printf("Recommended Browsing Domain %s %s", replyDomain, DomainMsg(flags));
-    if (flags) printf(" Flags: %X", flags);
+	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
 	}
 
 static void browse_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t interface, DNSServiceErrorType errorCode,
-    const char *replyName, const char *replyType, const char *replyDomain, void *context)
+	const char *replyName, const char *replyType, const char *replyDomain, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
-    (void)client;       // Unused
-    (void)interface;    // Unused
-    (void)errorCode;    // Unused
-    (void)context;      // Unused
+	(void)client;       // Unused
+	(void)interface;    // Unused
+	(void)errorCode;    // Unused
+	(void)context;      // Unused
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
 	printf("%s%6X %-24s %-24s %s\n", op, flags, replyDomain, replyType, replyName);
 	}
 
 static void resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t interface, DNSServiceErrorType errorCode,
-    const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const char *txtRecord, void *context)
+	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const char *txtRecord, void *context)
 	{
 	const char *src = txtRecord;
 	union { uint16_t s; u_char b[2]; } port = { opaqueport };
 	uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
 
-    (void)client;       // Unused
-    (void)interface;    // Unused
-    (void)errorCode;    // Unused
-    (void)context;      // Unused
+	(void)client;       // Unused
+	(void)interface;    // Unused
+	(void)errorCode;    // Unused
+	(void)context;      // Unused
 
 	printtimestamp();
 	printf("%s can be reached at %s:%u", fullname, hosttarget, PortAsNumber);
@@ -142,18 +144,18 @@ static void resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t 
 	if (flags) printf(" Flags: %X", flags);
 	if (*src)
 		{
-		char txtInfo[64];								// Display at most first 64 characters of TXT record
+		char txtInfo[64];                               // Display at most first 64 characters of TXT record
 		char *dst = txtInfo;
 		const char *const lim = &txtInfo[sizeof(txtInfo)];
 		while (*src && dst < lim-1)
 			{
-			if (*src == '\\') *dst++ = '\\';			// '\' displays as "\\"
-			if (*src >= ' ') *dst++ = *src++;			// Display normal characters as-is
+			if (*src == '\\') *dst++ = '\\';            // '\' displays as "\\"
+			if (*src >= ' ') *dst++ = *src++;           // Display normal characters as-is
 			else
 				{
-				*dst++ = '\\';							// Display a backslash
-				if (*src ==    1) *dst++ = ' ';			// String boundary displayed as "\ "
-				else									// Other chararacters displayed as "\0xHH"
+				*dst++ = '\\';                          // Display a backslash
+				if (*src ==    1) *dst++ = ' ';         // String boundary displayed as "\ "
+				else                                    // Other chararacters displayed as "\0xHH"
 					{
 					static const char hexchars[16] = "0123456789ABCDEF";
 					*dst++ = '0';
@@ -172,76 +174,74 @@ static void resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t 
 
 static void myTimerCallBack(void)
 	{
-    DNSServiceErrorType err;
+	DNSServiceErrorType err;
 
-    switch (operation)
-        {
-        case 'A':
-            {
-            switch (addtest)
-                {
-                case 0: printf("Adding Test HINFO record\n");
-                        err = DNSServiceAddRecord(client, &record, 0, T_HINFO, sizeof(myhinfo9), &myhinfo9[0], 120);
-                        addtest = 1;
-                        break;
-                case 1: printf("Updating Test HINFO record\n");
-                        err = DNSServiceUpdateRecord(client, record, 0, sizeof(myhinfoX), &myhinfoX[0], 120);
-                        addtest = 2;
-                        break;
-                case 2: printf("Removing Test HINFO record\n");
-                        err = DNSServiceRemoveRecord(client, record, 0);
-                        addtest = 0;
-                        break;
-                }
-            }
-            break;
+	switch (operation)
+		{
+		case 'A':
+			{
+			switch (addtest)
+				{
+				case 0: printf("Adding Test HINFO record\n");
+						err = DNSServiceAddRecord(client, &record, 0, T_HINFO, sizeof(myhinfo9), &myhinfo9[0], 120);
+						addtest = 1;
+						break;
+				case 1: printf("Updating Test HINFO record\n");
+						err = DNSServiceUpdateRecord(client, record, 0, sizeof(myhinfoX), &myhinfoX[0], 120);
+						addtest = 2;
+						break;
+				case 2: printf("Removing Test HINFO record\n");
+						err = DNSServiceRemoveRecord(client, record, 0);
+						addtest = 0;
+						break;
+				}
+			}
+			break;
 
-        case 'U':
-            {
-            if (updatetest[1] != 'Z') updatetest[1]++;
-            else                      updatetest[1] = 'A';
-            updatetest[0] = 3 - updatetest[0];
-            updatetest[2] = updatetest[1];
-            printf("Updating Test TXT record to %c\n", updatetest[1]);
-            err = DNSServiceUpdateRecord(client, NULL, 0, 1+updatetest[0], &updatetest[0], 120);
-            }
-            break;
+		case 'U':
+			{
+			if (updatetest[1] != 'Z') updatetest[1]++;
+			else                      updatetest[1] = 'A';
+			updatetest[0] = 3 - updatetest[0];
+			updatetest[2] = updatetest[1];
+			printf("Updating Test TXT record to %c\n", updatetest[1]);
+			err = DNSServiceUpdateRecord(client, NULL, 0, 1+updatetest[0], &updatetest[0], 120);
+			}
+			break;
 
-        case 'N':
-            {
-            printf("Adding big NULL record\n");
-            err = DNSServiceAddRecord(client, &record, 0, T_NULL, sizeof(bigNULL), &bigNULL[0], 120);
-            timeOut = LONG_TIME;
-            }
-            break;
-        }
+		case 'N':
+			{
+			printf("Adding big NULL record\n");
+			err = DNSServiceAddRecord(client, &record, 0, T_NULL, sizeof(bigNULL), &bigNULL[0], 120);
+			timeOut = LONG_TIME;
+			}
+			break;
+		}
 
-    if (err != kDNSServiceErr_NoError)
-        {
-        fprintf(stderr, "DNSService call failed %ld\n", (long int)err);
-        stopNow = 1;
-        }
-    }
-
+	if (err != kDNSServiceErr_NoError)
+		{
+		fprintf(stderr, "DNSService call failed %ld\n", (long int)err);
+		stopNow = 1;
+		}
+	}
 
 static void reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNSServiceErrorType errorCode,
-    const char *name, const char *regtype, const char *domain, void *context)
+	const char *name, const char *regtype, const char *domain, void *context)
 	{
-    (void)client;   // Unused
-    (void)flags;    // Unused
-    (void)context;  // Unused
+	(void)client;   // Unused
+	(void)flags;    // Unused
+	(void)context;  // Unused
 
-    printf("Got a reply for %s.%s%s: ", name, regtype, domain);
-    switch (errorCode)
-        {
-        case kDNSServiceErr_NoError:      printf("Name now registered and active\n"); break;
-        case kDNSServiceErr_NameConflict: printf("Name in use, please choose another\n"); exit(-1);
-        default:                          printf("Error %d\n", errorCode); return;
-        }
+	printf("Got a reply for %s.%s%s: ", name, regtype, domain);
+	switch (errorCode)
+		{
+		case kDNSServiceErr_NoError:      printf("Name now registered and active\n"); break;
+		case kDNSServiceErr_NameConflict: printf("Name in use, please choose another\n"); exit(-1);
+		default:                          printf("Error %d\n", errorCode); return;
+		}
 
-    if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
-    }
-
+	if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
+	}
 
 //*************************************************************************************************************
 // The main test function
@@ -254,21 +254,21 @@ static void HandleEvents(void)
 	struct timeval tv;
 	int result;
 
-    while (!stopNow)
-        {
+	while (!stopNow)
+		{
 		// 1. Set up the fd_set as usual here.
 		// This example client has no file descriptors of its own,
 		// but a real application would call FD_SET to add them to the set here
 		FD_ZERO(&readfds);
-		
+
 		// 2. Add the fd for our client(s) to the fd_set
 		FD_SET(dns_sd_fd, &readfds);
 
 		// 3. Set up the timeout.
 		tv.tv_sec = timeOut;
 		tv.tv_usec = 0;
-		
-        result = select(nfds, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv);
+
+		result = select(nfds, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv);
 		if (result > 0)
 			{
 			if (FD_ISSET(dns_sd_fd, &readfds)) DNSServiceProcessResult(client);
@@ -277,8 +277,8 @@ static void HandleEvents(void)
 			myTimerCallBack();
 		else
 			{
-            printf("select() returned %d errno %d %s\n", result, errno, strerror(errno));
-            if (errno != EINTR) stopNow = 1;
+			printf("select() returned %d errno %d %s\n", result, errno, strerror(errno));
+			if (errno != EINTR) stopNow = 1;
 			}
 		}
 	}
@@ -287,113 +287,113 @@ int main(int argc, char **argv)
 	{
 	DNSServiceErrorType err;
 	char *dom;
-	setlinebuf(stdout);				// Want to see lines as they appear, not block buffered
+	setlinebuf(stdout);             // Want to see lines as they appear, not block buffered
 
-	if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
-    operation = getopt(argc, (char * const *)argv, "EFBLRAUNTMI");
+	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
+	operation = getopt(argc, (char * const *)argv, "EFBLRAUNTMI");
 	if (operation == -1) goto Fail;
 
-    switch (operation)
-        {
-        case 'E':	printf("Looking for recommended registration domains:\n");
-                    err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsRegistrationDomains, 0, regdom_reply, NULL);
-                    break;
+	switch (operation)
+		{
+		case 'E':	printf("Looking for recommended registration domains:\n");
+					err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsRegistrationDomains, 0, regdom_reply, NULL);
+					break;
 
-        case 'F':	printf("Looking for recommended browsing domains:\n");
-                    err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsBrowseDomains, 0, browsedom_reply, NULL);
-                    break;
+		case 'F':	printf("Looking for recommended browsing domains:\n");
+					err = DNSServiceEnumerateDomains(&client, kDNSServiceFlagsBrowseDomains, 0, browsedom_reply, NULL);
+					break;
 
-        case 'B':	if (argc < optind+1) goto Fail;
-                    dom = (argc < optind+2) ? "" : argv[optind+1];
-                    if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
-                    printf("Browsing for %s%s\n", argv[optind+0], dom);
-                    err = DNSServiceBrowse(&client, 0, 0, argv[optind+0], dom, browse_reply, NULL);
-                    break;
+		case 'B':	if (argc < optind+1) goto Fail;
+					dom = (argc < optind+2) ? "" : argv[optind+1];
+					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
+					printf("Browsing for %s%s\n", argv[optind+0], dom);
+					err = DNSServiceBrowse(&client, 0, 0, argv[optind+0], dom, browse_reply, NULL);
+					break;
 
-        case 'L':	if (argc < optind+2) goto Fail;
-                    dom = (argc < optind+3) ? "" : argv[optind+2];
-                    if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
-                    printf("Lookup %s.%s.%s\n", argv[optind+0], argv[optind+1], dom);
-                    err = DNSServiceResolve(&client, 0, 0, argv[optind+0], argv[optind+1], dom, resolve_reply, NULL);
-                    break;
+		case 'L':	if (argc < optind+2) goto Fail;
+					dom = (argc < optind+3) ? "" : argv[optind+2];
+					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
+					printf("Lookup %s.%s.%s\n", argv[optind+0], argv[optind+1], dom);
+					err = DNSServiceResolve(&client, 0, 0, argv[optind+0], argv[optind+1], dom, resolve_reply, NULL);
+					break;
 
-        case 'R':	if (argc < optind+4) goto Fail;
-                    {
-                    char *nam = argv[optind+0];
-                    char *typ = argv[optind+1];
-                    char *dom = argv[optind+2];
-                    uint16_t PortAsNumber = atoi(argv[optind+3]);
-                    Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
-                    char txt[2048];
-                    char *ptr = txt;
-                    int i;
+		case 'R':	if (argc < optind+4) goto Fail;
+					{
+					char *nam = argv[optind+0];
+					char *typ = argv[optind+1];
+					char *dom = argv[optind+2];
+					uint16_t PortAsNumber = atoi(argv[optind+3]);
+					Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
+					char txt[2048];
+					char *ptr = txt;
+					int i;
 
-                    if (nam[0] == '.' && nam[1] == 0) nam[0] = 0;	// We allow '.' on the command line as a synonym for empty string
-                    if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
+					if (nam[0] == '.' && nam[1] == 0) nam[0] = 0;   // We allow '.' on the command line as a synonym for empty string
+					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
 
-                    for (i = optind+4; i < argc; i++)
-                    	{
-                    	char *len = ptr++;
-                    	*len = strlen(argv[i]);
-                    	strcpy(ptr, argv[i]);
-                    	ptr += *len;
-                    	}
-                    
-                    printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[optind+3], txt);
-                    err = DNSServiceRegister(&client, 0, 0, nam, typ, dom, NULL, registerPort.NotAnInteger, ptr-txt, txt, reg_reply, NULL);
-                    break;
-                    }
+					for (i = optind+4; i < argc; i++)
+						{
+						char *len = ptr++;
+						*len = strlen(argv[i]);
+						strcpy(ptr, argv[i]);
+						ptr += *len;
+						}
 
-        case 'A':
-        case 'U':
-        case 'N':	{
-                    Opaque16 registerPort = { { 0x12, 0x34 } };
-                    static const char TXT[] = "\xC" "First String" "\xD" "Second String" "\xC" "Third String";
-                    printf("Registering Service Test._testupdate._tcp.local.\n");
-                    err = DNSServiceRegister(&client, 0, 0, "Test", "_testupdate._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT)-1, TXT, reg_reply, NULL);
-                    break;
-                    }
+					printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[optind+3], txt);
+					err = DNSServiceRegister(&client, 0, 0, nam, typ, dom, NULL, registerPort.NotAnInteger, ptr-txt, txt, reg_reply, NULL);
+					break;
+					}
 
-        case 'T':	{
-                    Opaque16 registerPort = { { 0x23, 0x45 } };
-                    char TXT[1024];
-                    unsigned int i;
-                    for (i=0; i<sizeof(TXT); i++)
-                        if ((i & 0x1F) == 0) TXT[i] = 0x1F; else TXT[i] = 'A' + (i >> 5);
-                    printf("Registering Service Test._testlargetxt._tcp.local.\n");
-                    err = DNSServiceRegister(&client, 0, 0, "Test", "_testlargetxt._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT), TXT, reg_reply, NULL);
-                    break;
-                    }
+		case 'A':
+		case 'U':
+		case 'N':	{
+					Opaque16 registerPort = { { 0x12, 0x34 } };
+					static const char TXT[] = "\xC" "First String" "\xD" "Second String" "\xC" "Third String";
+					printf("Registering Service Test._testupdate._tcp.local.\n");
+					err = DNSServiceRegister(&client, 0, 0, "Test", "_testupdate._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT)-1, TXT, reg_reply, NULL);
+					break;
+					}
 
-        case 'M':	{
-                    pid_t pid = getpid();
-                    Opaque16 registerPort = { { pid >> 8, pid & 0xFF } };
-                    static const char TXT1[] = "\xC" "First String"  "\xD" "Second String" "\xC" "Third String";
-                    static const char TXT2[] = "\xD" "Fourth String" "\xC" "Fifth String"  "\xC" "Sixth String";
-                    printf("Registering Service Test._testdualtxt._tcp.local.\n");
-                    err = DNSServiceRegister(&client, 0, 0, "Test", "_testdualtxt._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT1)-1, TXT1, reg_reply, NULL);
-                    if (!err) err = DNSServiceAddRecord(client, &record, 0, T_TXT, sizeof(TXT2)-1, TXT2, 120);
-                    break;
-                    }
+		case 'T':	{
+					Opaque16 registerPort = { { 0x23, 0x45 } };
+					char TXT[1024];
+					unsigned int i;
+					for (i=0; i<sizeof(TXT); i++)
+						if ((i & 0x1F) == 0) TXT[i] = 0x1F; else TXT[i] = 'A' + (i >> 5);
+					printf("Registering Service Test._testlargetxt._tcp.local.\n");
+					err = DNSServiceRegister(&client, 0, 0, "Test", "_testlargetxt._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT), TXT, reg_reply, NULL);
+					break;
+					}
 
-        case 'I':	{
-                    pid_t pid = getpid();
-                    Opaque16 registerPort = { { pid >> 8, pid & 0xFF } };
-                    static const char TXT[] = "\x09" "Test Data";
-                    printf("Registering Service Test._testtxt._tcp.local.\n");
-                    err = DNSServiceRegister(&client, 0, 0, "Test", "_testtxt._tcp.", "", NULL, registerPort.NotAnInteger, 0, NULL, reg_reply, NULL);
-                    if (!err) err = DNSServiceUpdateRecord(client, NULL, 0, sizeof(TXT)-1, TXT, 120);
-                    break;
-                    }
+		case 'M':	{
+					pid_t pid = getpid();
+					Opaque16 registerPort = { { pid >> 8, pid & 0xFF } };
+					static const char TXT1[] = "\xC" "First String"  "\xD" "Second String" "\xC" "Third String";
+					static const char TXT2[] = "\xD" "Fourth String" "\xC" "Fifth String"  "\xC" "Sixth String";
+					printf("Registering Service Test._testdualtxt._tcp.local.\n");
+					err = DNSServiceRegister(&client, 0, 0, "Test", "_testdualtxt._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT1)-1, TXT1, reg_reply, NULL);
+					if (!err) err = DNSServiceAddRecord(client, &record, 0, T_TXT, sizeof(TXT2)-1, TXT2, 120);
+					break;
+					}
 
-        default: goto Fail;
-        }
+		case 'I':	{
+					pid_t pid = getpid();
+					Opaque16 registerPort = { { pid >> 8, pid & 0xFF } };
+					static const char TXT[] = "\x09" "Test Data";
+					printf("Registering Service Test._testtxt._tcp.local.\n");
+					err = DNSServiceRegister(&client, 0, 0, "Test", "_testtxt._tcp.", "", NULL, registerPort.NotAnInteger, 0, NULL, reg_reply, NULL);
+					if (!err) err = DNSServiceUpdateRecord(client, NULL, 0, sizeof(TXT)-1, TXT, 120);
+					break;
+					}
 
-    if (!client || err != kDNSServiceErr_NoError) { fprintf(stderr, "DNSService call failed %ld\n", (long int)err); return (-1); }
+		default: goto Fail;
+		}
+
+	if (!client || err != kDNSServiceErr_NoError) { fprintf(stderr, "DNSService call failed %ld\n", (long int)err); return (-1); }
 	HandleEvents();
 
-    // Be sure to deallocate the DNSServiceRef when you're finished
-    DNSServiceRefDeallocate(client);
+	// Be sure to deallocate the DNSServiceRef when you're finished
+	DNSServiceRefDeallocate(client);
 	return 0;
 
 Fail:
