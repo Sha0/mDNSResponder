@@ -47,7 +47,7 @@
 #include "mDNSClientAPI.h"				// Defines the interface to the client layer above
 #include "mDNSPlatformEnvironment.h"	// Defines the specific types needed to run mDNS on this platform
 #include "mDNSsprintf.h"
-#include "mDNSvsprintf.h"				// Used to implement LogErrorMessage();
+#include "mDNSvsprintf.h"				// Used to implement LogMsg();
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
@@ -132,7 +132,7 @@ static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 //*************************************************************************************************************
 // General Utility Functions
 
-void LogErrorMessage(const char *format, ...)
+void LogMsg(const char *format, ...)
 	{
 	unsigned char buffer[512];
 	va_list ptr;
@@ -160,33 +160,33 @@ static void validatelists(mDNS *const m)
 
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
 		if (e->ClientMachPort == 0)
-			LogErrorMessage("!!!! DNSServiceDomainEnumerationList %X is garbage !!!!", e);
+			LogMsg("!!!! DNSServiceDomainEnumerationList %X is garbage !!!!", e);
 
 	for (b = DNSServiceBrowserList; b; b=b->next)
 		if (b->ClientMachPort == 0)
-			LogErrorMessage("!!!! DNSServiceBrowserList %X is garbage !!!!", b);
+			LogMsg("!!!! DNSServiceBrowserList %X is garbage !!!!", b);
 
 	for (l = DNSServiceResolverList; l; l=l->next)
 		if (l->ClientMachPort == 0)
-			LogErrorMessage("!!!! DNSServiceResolverList %X is garbage !!!!", l);
+			LogMsg("!!!! DNSServiceResolverList %X is garbage !!!!", l);
 
 	for (r = DNSServiceRegistrationList; r; r=r->next)
 		if (r->ClientMachPort == 0)
-			LogErrorMessage("!!!! DNSServiceRegistrationList %X is garbage !!!!", r);
+			LogMsg("!!!! DNSServiceRegistrationList %X is garbage !!!!", r);
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->RecordType == 0)
-			LogErrorMessage("!!!! ResourceRecords %X list is garbage !!!!");
+			LogMsg("!!!! ResourceRecords %X list is garbage !!!!");
 	}
 
 void *mallocL(char *msg, unsigned int size)
 	{
 	unsigned long *mem = malloc(size+8);
 	if (!mem)
-		{ LogErrorMessage("malloc(%s:%d) failed", msg, size); return(NULL); }
+		{ LogMsg("malloc(%s:%d) failed", msg, size); return(NULL); }
 	else
 		{
-		LogErrorMessage("malloc(%s:%d) = %X", msg, size, &mem[2]);
+		LogMsg("malloc(%s:%d) = %X", msg, size, &mem[2]);
 		mem[0] = 0xDEADBEEF;
 		mem[1] = size;
 		bzero(&mem[2], size);
@@ -198,15 +198,15 @@ void *mallocL(char *msg, unsigned int size)
 void freeL(char *msg, void *x)
 	{
 	if (!x)
-		LogErrorMessage("free(%s@NULL)!", msg);
+		LogMsg("free(%s@NULL)!", msg);
 	else
 		{
 		unsigned long *mem = ((unsigned long *)x) - 2;
 		if (mem[0] != 0xDEADBEEF)
-			{ LogErrorMessage("free(%s@%X) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
+			{ LogMsg("free(%s@%X) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
 		if (mem[1] > 8000)
-			{ LogErrorMessage("free(%s:%d@%X) too big!", msg, mem[1], &mem[2]); return; }
-		LogErrorMessage("free(%s:%d@%X)", msg, mem[1], &mem[2]);
+			{ LogMsg("free(%s:%d@%X) too big!", msg, mem[1], &mem[2]); return; }
+		LogMsg("free(%s:%d@%X)", msg, mem[1], &mem[2]);
 		bzero(mem, mem[1]+8);
 		validatelists(&mDNSStorage);
 		free(mem);
@@ -280,11 +280,11 @@ mDNSlocal void AbortBlockedClient(mach_port_t c, char *m)
 	while (*b && (*b)->ClientMachPort != c) b = &(*b)->next;
 	while (*l && (*l)->ClientMachPort != c) l = &(*l)->next;
 	while (*r && (*r)->ClientMachPort != c) r = &(*r)->next;
-	if      (*e) LogErrorMessage("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e[0]->dom.name, m);
-	else if (*b) LogErrorMessage("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b[0]->q.name, m);
-	else if (*l) LogErrorMessage("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l[0]->i.name, m);
-	else if (*r) LogErrorMessage("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r[0]->s.RR_SRV.name, m);
-	else         LogErrorMessage("%5d (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
+	if      (*e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e[0]->dom.name, m);
+	else if (*b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b[0]->q.name, m);
+	else if (*l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l[0]->i.name, m);
+	else if (*r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r[0]->s.RR_SRV.name, m);
+	else         LogMsg("%5d (%s) stopped accepting Mach messages, but no record of client can be found!", c, m);
 
 	AbortClient(c);
 	}
@@ -310,7 +310,7 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort)
 	// If the port already died while we were thinking about it, then abort the operation right away
 	if (r != KERN_SUCCESS)
 		{
-		LogErrorMessage("Client %5d died before we could enable death notification", ClientMachPort);
+		LogMsg("Client %5d died before we could enable death notification", ClientMachPort);
 		AbortClient(ClientMachPort);
 		}
 	}
@@ -641,7 +641,7 @@ mDNSlocal void CheckForDuplicateRegistrations(DNSServiceRegistration *x, domainl
 		{
 		debugf("Client %5d   registering Service Record Set \"%##s\"; WARNING! now have %d instances",
 			x->ClientMachPort, &srvname, count+1);
-		LogErrorMessage("Client %5d   registering Service Record Set \"%s\"; WARNING! now have %d instances",
+		LogMsg("Client %5d   registering Service Record Set \"%s\"; WARNING! now have %d instances",
 			x->ClientMachPort, name, count+1);
 		}
 	}
@@ -822,7 +822,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 	while (x && x->ClientMachPort != client) x = x->next;
 	if (!x)
 		{
-		LogErrorMessage("DNSServiceRegistrationRemoveRecord Client %5d not found", client);
+		LogMsg("DNSServiceRegistrationRemoveRecord Client %5d not found", client);
 		debugf("provide_DNSServiceRegistrationRemoveRecord_rpc bad client %X", client);
 		return(mStatus_BadReferenceErr);
 		}
@@ -830,7 +830,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 	err = mDNS_RemoveRecordFromService(&mDNSStorage, &x->s, extra);
 	if (err)
 		{
-		LogErrorMessage("DNSServiceRegistrationRemoveRecord Client %5d does not have record %X", client, extra);
+		LogMsg("DNSServiceRegistrationRemoveRecord Client %5d does not have record %X", client, extra);
 		debugf("Received a request to remove the record of reference: %X (failed %d)", extra, err);
 		return(err);
 		}
@@ -1023,9 +1023,9 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	if (status)
 		{
 		if (status == 1103)
-			LogErrorMessage("Bootstrap_register failed(): A copy of the daemon is apparently already running");
+			LogMsg("Bootstrap_register failed(): A copy of the daemon is apparently already running");
 		else
-			LogErrorMessage("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
+			LogMsg("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
 		return(status);
 		}
 
@@ -1042,7 +1042,7 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), DeliverInstanceTimer, kCFRunLoopDefaultMode);
 	
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
-	if (err) { LogErrorMessage("Daemon start: mDNS_Init failed %ld", err); return(err); }
+	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);
 	exit_m_port = CFMachPortGetPort(e_port);
@@ -1109,7 +1109,7 @@ mDNSexport int main(int argc, char **argv)
 	if (status == 0)
 		{
 		CFRunLoopRun();
-		LogErrorMessage("CFRunLoopRun Exiting. This is bad.");
+		LogMsg("CFRunLoopRun Exiting. This is bad.");
 		mDNS_Close(&mDNSStorage);
 		}
 
