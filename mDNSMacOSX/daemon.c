@@ -32,6 +32,8 @@
 #include "mDNSClientAPI.h"				// Defines the interface to the client layer above
 #include "mDNSPlatformEnvironment.h"	// Defines the specific types needed to run mDNS on this platform
 
+#include <DNSServiceDiscovery/DNSServiceDiscovery.h>
+
 // Globals
 static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;

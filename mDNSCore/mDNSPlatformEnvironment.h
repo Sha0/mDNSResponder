@@ -5,6 +5,8 @@
 // duplicate the "#elif __SOME_OTHER_OS__" section (including its two-line comment
 // at the start) and add support for the new target platform in the new section.
 
+#pragma once
+
 #ifdef	__cplusplus
 	extern "C" {
 #endif
@@ -12,7 +14,7 @@
 // ***************************************************************************
 // Classic Mac (Open Transport) structures
 
-#if __MACOS__
+#if (TARGET_API_MAC_OS8 || __MACOS__)
 
 // Headers needed for code on this platform
 #include <OpenTptInternet.h>
@@ -53,14 +55,12 @@ struct mDNS_PlatformSupport_struct
 // ***************************************************************************
 // Mac OS X structures
 
-#elif __MACOSX__
+#elif (TARGET_API_MAC_OSX || __MACOSX__)
 
 // Headers needed for code on this platform
-#include <CoreFoundation/CoreFoundation.h>
 #include <SystemConfiguration/SystemConfiguration.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 struct mDNS_PlatformSupport_struct
 	{
@@ -73,12 +73,12 @@ struct mDNS_PlatformSupport_struct
 
 #elif __SOME_OTHER_OS__
 
-#error Other platforms need to make sure that types like UInt16 are defined
-
 // ***************************************************************************
 // Generic code for Unix-style platforms
 
 #else
+
+#error Other platforms need to make sure that types like UInt16 are defined
 
 #endif
 
