@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.22  2005/03/04 22:44:53  shersche
+<rdar://problem/4022802> mDNSResponder did not notice changes to DNS server config
+
 Revision 1.21  2005/03/03 02:29:00  shersche
 Use the RegNames.h header file for registry key names
 
@@ -188,10 +191,12 @@ struct	mDNS_PlatformSupport_struct
 	HANDLE						quitEvent;
 	HANDLE						interfaceListChangedEvent;
 	HANDLE						descChangedEvent;	// Computer description changed event
+	HANDLE						tcpipChangedEvent;	// TCP/IP config changed
 	HANDLE						ddnsChangedEvent;	// DynDNS config changed
 	HANDLE						wakeupEvent;
 	HANDLE						initEvent;
 	HKEY						descKey;
+	HKEY						tcpipKey;
 	HKEY						ddnsKey;
 	mStatus						initStatus;
 	SocketRef					interfaceListChangedSocket;

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.81  2005/03/04 22:44:53  shersche
+<rdar://problem/4022802> mDNSResponder did not notice changes to DNS server config
+
 Revision 1.80  2005/03/03 21:07:38  shersche
 <rdar://problem/4034460> mDNSResponder doesn't handle multiple browse domains
 
@@ -362,8 +365,9 @@ Multicast DNS platform plugin for Win32
 #define	kWaitListInterfaceListChangedEvent			( WAIT_OBJECT_0 + 1 )
 #define	kWaitListWakeupEvent						( WAIT_OBJECT_0 + 2 )
 #define kWaitListComputerDescriptionEvent			( WAIT_OBJECT_0 + 3 )
-#define kWaitListDynDNSEvent						( WAIT_OBJECT_0 + 4 )
-#define	kWaitListFixedItemCount						5 + MDNS_WINDOWS_ENABLE_IPV4 + MDNS_WINDOWS_ENABLE_IPV6
+#define kWaitListTCPIPEvent							( WAIT_OBJECT_0 + 4 )
+#define kWaitListDynDNSEvent						( WAIT_OBJECT_0 + 5 )
+#define	kWaitListFixedItemCount						6 + MDNS_WINDOWS_ENABLE_IPV4 + MDNS_WINDOWS_ENABLE_IPV6
 
 #define kRegistryMaxKeyLength						255
 
@@ -402,6 +406,7 @@ mDNSlocal mStatus			ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE *
 mDNSlocal void				ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *inIFD, SocketRef inSock );
 mDNSlocal void				ProcessingThreadInterfaceListChanged( mDNS *inMDNS );
 mDNSlocal void				ProcessingThreadComputerDescriptionChanged( mDNS * inMDNS );
+mDNSlocal void				ProcessingThreadTCPIPConfigChanged( mDNS * inMDNS );
 mDNSlocal void				ProcessingThreadDynDNSConfigChanged( mDNS * inMDNS );
 
 
@@ -2901,6 +2906,20 @@ mDNSlocal mStatus	SetupNotifications( mDNS * const inMDNS )
 		require_noerr( err, exit );
 	}
 
+	// This will catch all changes to tcp/ip networking, including changes to the domain search list
+
+	inMDNS->p->tcpipChangedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	err = translate_errno( inMDNS->p->tcpipChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", &inMDNS->p->tcpipKey );
+	require_noerr( err, exit );
+
+	err = RegNotifyChangeKeyValue(inMDNS->p->tcpipKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->tcpipChangedEvent, TRUE);
+	require_noerr( err, exit );
+
+	// This will catch all changes to ddns configuration
+
 	inMDNS->p->ddnsChangedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	err = translate_errno( inMDNS->p->ddnsChangedEvent, (mStatus) GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
@@ -2941,6 +2960,12 @@ mDNSlocal mStatus	TearDownNotifications( mDNS * const inMDNS )
 	{
 		RegCloseKey( inMDNS->p->descKey );
 		inMDNS->p->descKey = NULL;
+	}
+
+	if ( inMDNS->p->tcpipChangedEvent != NULL )
+	{
+		CloseHandle( inMDNS->p->tcpipChangedEvent );
+		inMDNS->p->tcpipChangedEvent = NULL;
 	}
 
 	if ( inMDNS->p->ddnsChangedEvent != NULL )
@@ -3109,7 +3134,6 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 				// Interface list changed event. Break out of the inner loop to re-setup the wait list.
 				
 				ProcessingThreadInterfaceListChanged( m );
-				ProcessingThreadDynDNSConfigChanged( m );
 				break;
 			}
 			else if( result == kWaitListWakeupEvent )
@@ -3125,6 +3149,14 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 				// The computer description might have changed
 				//
 				ProcessingThreadComputerDescriptionChanged( m );
+				break;
+			}
+			else if ( result == kWaitListTCPIPEvent )
+			{	
+				//
+				// The TCP/IP might have changed
+				//
+				ProcessingThreadTCPIPConfigChanged( m );
 				break;
 			}
 			else if ( result == kWaitListDynDNSEvent )
@@ -3297,6 +3329,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	*waitItemPtr++ = inMDNS->p->interfaceListChangedEvent;
 	*waitItemPtr++ = inMDNS->p->wakeupEvent;
 	*waitItemPtr++ = inMDNS->p->descChangedEvent;
+	*waitItemPtr++ = inMDNS->p->tcpipChangedEvent;
 	*waitItemPtr++ = inMDNS->p->ddnsChangedEvent;
 	
 	// Append all the dynamic wait items to the list.
@@ -3551,6 +3584,33 @@ mDNSlocal void	ProcessingThreadComputerDescriptionChanged( mDNS *inMDNS )
 
 
 //===========================================================================================================================
+//	ProcessingThreadTCPIPConfigChanged
+//===========================================================================================================================
+mDNSlocal void ProcessingThreadTCPIPConfigChanged( mDNS * inMDNS )
+{
+	mStatus		err;
+	
+	dlog( kDebugLevelInfo, DEBUG_NAME "TCP/IP config has changed\n" );
+	check( inMDNS );
+
+	mDNSPlatformLock( inMDNS );
+
+	err = dDNS_Setup( inMDNS );
+	check_noerr( err );
+
+	// and reset the event handler
+
+	if ( ( inMDNS->p->tcpipKey != NULL ) && ( inMDNS->p->tcpipChangedEvent ) )
+	{
+		err = RegNotifyChangeKeyValue( inMDNS->p->tcpipKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->tcpipChangedEvent, TRUE );
+		check_noerr( err );
+	}
+
+	mDNSPlatformUnlock( inMDNS );
+}
+
+
+//===========================================================================================================================
 //	ProcessingThreadDynDNSConfigChanged
 //===========================================================================================================================
 mDNSlocal void	ProcessingThreadDynDNSConfigChanged( mDNS *inMDNS )
@@ -3566,6 +3626,7 @@ mDNSlocal void	ProcessingThreadDynDNSConfigChanged( mDNS *inMDNS )
 	check_noerr( err );
 
 	// and reset the event handler
+
 	if ((inMDNS->p->ddnsKey != NULL) && (inMDNS->p->ddnsChangedEvent))
 	{
 		err = RegNotifyChangeKeyValue(inMDNS->p->ddnsKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->ddnsChangedEvent, TRUE);
