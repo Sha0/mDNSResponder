@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.13  2004/02/03 22:15:01  ksekar
+Fixed nameToAddr error check: don't abort state machine on nxdomain error.
+
 Revision 1.12  2004/02/03 19:47:36  ksekar
 Added an asyncronous state machine mechanism to uDNS.c, including
 calls to find the parent zone for a domain name.  Changes include code
@@ -522,8 +525,9 @@ mDNSlocal void nameToAddr(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNS
 		context->questionActive = mDNSfalse;
 		}
 
-	if (msg && msg->h.flags.b[2] >> 4)
+	if (msg && msg->h.flags.b[2] >> 4 && msg->h.flags.b[2] >> 4 != kDNSFlag1_RC_NXDomain)
 		{
+		// rcode non-zero, non-nxdomain
 		LogMsg("ERROR: nameToAddr - received response w/ rcode %d", msg->h.flags.b[2] >> 4);
 		goto error;
 		}
