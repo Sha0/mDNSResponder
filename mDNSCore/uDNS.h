@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.26  2004/11/22 17:49:15  ksekar
+Changed INIT_REFRESH from fraction to decimal
+
 Revision 1.25  2004/11/22 17:16:20  ksekar
 <rdar://problem/3854298> Unicast services don't disappear when you disable all networking
 
@@ -119,7 +122,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define MIN_UCAST_PERIODIC_EXEC (5 * mDNSPlatformOneSecond) 	
 #define INIT_UCAST_POLL_INTERVAL mDNSPlatformOneSecond      // this interval is used after send failures on network transitions
 	                                                        // which typically heal quickly, so we start agressively and exponentially back off
-#define INIT_REFRESH (1/2)  // refresh leases 1/2 way to expiration
+#define INIT_REFRESH (0.5)  // refresh leases 1/2 way to expiration
 #define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)        // require server responses within one minute of request
 #define UPDATE_PORT_NAME "_dns-update._udp."
