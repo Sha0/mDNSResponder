@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.302  2003/09/05 00:01:36  cheshire
+<rdar://problem/3407549> Don't accelerate queries that have large KA lists
+
 Revision 1.301  2003/09/04 22:51:13  cheshire
 <rdar://problem/3398213> Group probes and goodbyes better
 
@@ -3708,6 +3711,34 @@ mDNSlocal int RecordDupSuppressInfo(DupSuppressInfo ds[DupSuppressInfoSize], mDN
 	return(i);
 	}
 
+mDNSlocal mDNSBool AccelerateThisQuery(mDNS *const m, DNSQuestion *q)
+	{
+	// If more than 90% of the way to the query time, we should unconditionally accelerate it
+	if (TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/10))
+		return(mDNStrue);
+
+	// If half-way to next scheduled query time, only accelerate if it will add less than 512 bytes to the packet
+	if (TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/2))
+		{
+		// We forecast: qname (n) type (2) class (2)
+		mDNSu32 forecast = DomainNameLength(&q->qname) + 4;
+		CacheRecord *rr;
+		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// If we have a resource record in our cache,
+			if (rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
+				ResourceRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
+				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >= 0 &&			// and it is less than half-way to expiry
+				rr->NextRequiredQuery - (m->timenow + q->ThisQInterval) > 0)// and we'll ask at least once again before NextRequiredQuery
+				{
+				// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
+				forecast += 12 + rr->resrec.rdestimate;
+				if (forecast >= 512) return(mDNSfalse);	// If this would add 512 bytes or more to the packet, don't accelerate
+				}
+		return(mDNStrue);
+		}
+
+	return(mDNSfalse);
+	}
+
 // How Standard Queries are generated:
 // 1. The Question Section contains the question
 // 2. The Additional Section contains answers we already know, to suppress duplicate responses
@@ -3763,7 +3794,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// (b) to update the state variables for all the questions we're going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (q->SendQNow || (q->ThisQInterval <= maxExistingQuestionInterval && TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/2)))
+			if (q->SendQNow || (ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q)))
 				{
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, treat this as logically a repeat of the last transmission, without advancing the interval
