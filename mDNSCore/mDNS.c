@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.138  2003/05/27 22:35:00  cheshire
+<rdar://problem/3270277> mDNS_RegisterInterface needs to retrigger questions
+
 Revision 1.137  2003/05/27 20:04:33  cheshire
 <rdar://problem/3269900> mDNSResponder crash in mDNS_vsnprintf()
 
@@ -4879,11 +4882,18 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	*p = set;
 
 	if (set->InterfaceActive)
+		debugf("mDNS_RegisterInterface: InterfaceID %X not represented in list; marking active and retriggering queries", set->InterfaceID);
+	else
+		debugf("mDNS_RegisterInterface: InterfaceID %X already represented in list; marking inactive for now", set->InterfaceID);
+
+	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
+	// giving the false impression that there's an active representative of this interface when there really isn't.
+	// Therefore, when registering an interface, we want to re-trigger our questions and re-probe our Resource Records,
+	// even if we believe that we previously had an active representative of this interface.
+	if (1 || set->InterfaceActive)
 		{
 		DNSQuestion *q;
 		ResourceRecord *rr;
-		verbosedebugf("mDNS_RegisterInterface: InterfaceID %X not represented in list; marking active for now",
-			set->InterfaceID);
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
@@ -4907,9 +4917,6 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				SetNextAnnounceProbeTime(m, rr);
 				}
 		}
-	else
-		verbosedebugf("mDNS_RegisterInterface: InterfaceID %X already represented in list; marking inactive for now",
-			set->InterfaceID);
 
 	if (set->Advertise)
 		mDNS_AdvertiseInterface(m, set);
@@ -4943,7 +4950,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				break;
 		if (intf)
 			{
-			verbosedebugf("mDNS_DeregisterInterface: Another representative of InterfaceID %X exists; making it active",
+			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %X exists; making it active",
 				set->InterfaceID);
 			intf->InterfaceActive = mDNStrue;
 			}
@@ -4952,7 +4959,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			ResourceRecord *rr;
 			DNSQuestion *q;
 			mDNSs32 slot;
-			verbosedebugf("mDNS_DeregisterInterface: Last representative of InterfaceID %X deregistered", set->InterfaceID);
+			debugf("mDNS_DeregisterInterface: Last representative of InterfaceID %X deregistered; marking questions etc. dormant",
+				set->InterfaceID);
 
 			// 1. Deactivate any questions specific to this interface
 			for (q = m->Questions; q; q=q->next)
