@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.4  2002/09/27 01:47:45  cheshire
+Workaround for Linux 2.0 systems that don't have IP_PKTINFO
+
 Revision 1.3  2002/09/21 20:44:53  zarzycki
 Added APSL info
 
@@ -212,6 +215,13 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
             }
         #endif
 
+		// If this platform doesn't have IP_PKTINFO or IP_RECVDSTADDR, then we have
+		// no way to tell the destination address or interface this packet arrived on,
+		// so all we can do is just assume it's a multicast
+		#if !defined(IP_PKTINFO) && !defined(IP_RECVDSTADDR)
+			destAddr = AllDNSLinkGroup;
+		#endif
+
         // We only accept the packet if the interface on which it came 
         // in matches the interface associated with this socket. 
         // We do this match by name or by index, depending on which 
@@ -401,7 +411,7 @@ static int SetupSocket(struct sockaddr_in *intfAddr, mDNSIPPort port, int *sktPt
                 }
             #endif
         #else
-            #error This platform has no way to get the destination interface information.
+            #warning This platform has no way to get the destination interface information -- will only work for single-homed hosts
         #endif
     }
     
