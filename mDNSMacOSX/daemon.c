@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.124  2003/07/25 18:28:23  cheshire
+ * Minor fix to error messages in syslog: Display string parameters with quotes
+ *
  * Revision 1.123  2003/07/23 17:45:28  cheshire
  * <rdar://problem/3339388> mDNSResponder leaks a bit
  * Don't allocate memory for the reply until after we've verified that the reply is valid
@@ -684,7 +687,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 badparam:
 	err = mStatus_BadParamErr;
 fail:
-	LogMsg("%5d: DNSServiceBrowse(%s.%s) failed: %s (%ld)", client, regtype, domain, errormsg, err);
+	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
 	return(err);
 	}
 
@@ -813,7 +816,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 badparam:
 	err = mStatus_BadParamErr;
 fail:
-	LogMsg("%5d: DNSServiceResolve(%s.%s.%s) failed: %s (%ld)", client, name, regtype, domain, errormsg, err);
+	LogMsg("%5d: DNSServiceResolve(\"%s\", \"%s\", \"%s\") failed: %s (%ld)", client, name, regtype, domain, errormsg, err);
 	return(err);
 	}
 
@@ -1017,7 +1020,8 @@ badtxt:
 badparam:
 	err = mStatus_BadParamErr;
 fail:
-	LogMsg("%5d: DNSServiceRegister(%s.%s.%s,%d) failed: %s (%ld)", client, name, regtype, domain, notAnIntPort, errormsg, err);
+	LogMsg("%5d: DNSServiceRegister(\"%s\", \"%s\", \"%s\", %d) failed: %s (%ld)",
+		client, name, regtype, domain, notAnIntPort, errormsg, err);
 	return(err);
 	}
 	
