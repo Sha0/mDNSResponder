@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.25  2005/02/08 18:54:17  shersche
+<rdar://problem/3987680> Default queue name is "lp" when rp key is not specified.
+
 Revision 1.24  2005/02/01 02:15:55  shersche
 <rdar://problem/3946587> Use TXTRecord parsing APIs in ParseTextRecord
 
@@ -870,7 +873,6 @@ CPrinterSetupWizardSheet::OnResolve(
 	CPrinterSetupWizardSheet	*	self;
 	Service						*	service;
 	Queue						*	q;
-	bool							qtotalDefined = false;
 	uint32_t						qpriority = kDefaultPriority;
 	CString							qname;
 	int								idx;
@@ -914,7 +916,7 @@ CPrinterSetupWizardSheet::OnResolve(
 	// parse the text record.
 	//
 
-	err = self->ParseTextRecord( service, inTXTSize, inTXT, qtotalDefined, qname, qpriority );
+	err = self->ParseTextRecord( service, inTXTSize, inTXT, qname, qpriority );
 	require_noerr( err, exit );
 
 	if ( service->qtotal == 1 )
@@ -933,11 +935,8 @@ CPrinterSetupWizardSheet::OnResolve(
 
 		require_action( q, exit, err = E_OUTOFMEMORY );
 
-		if ( qtotalDefined )
-		{
-			q->name = qname;
-		}
 
+		q->name		= qname;
 		q->priority = qpriority;
 		
 		service->queues.push_back( q );
@@ -993,7 +992,6 @@ CPrinterSetupWizardSheet::OnQuery(
 	Service						*	service = NULL;
 	Queue						*	q;
 	CPrinterSetupWizardSheet	*	self;
-	bool							qtotalDefined = false;
 	OSStatus						err = kNoErr;
 
 	require_noerr( inErrorCode, exit );
@@ -1022,13 +1020,8 @@ CPrinterSetupWizardSheet::OnQuery(
 
 		require_action( q, exit, err = E_OUTOFMEMORY );
 
-		err = service->printer->window->ParseTextRecord( service, inRDLen, inTXT, qtotalDefined, q->name, q->priority );
+		err = service->printer->window->ParseTextRecord( service, inRDLen, inTXT, q->name, q->priority );
 		require_noerr( err, exit );
-
-		if ( !qtotalDefined )
-		{
-			q->name = L"";
-		}
 
 		//
 		// add this queue
@@ -1506,14 +1499,19 @@ exit:
 
 
 OSStatus
-CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, bool & qtotalDefined, CString & qname, uint32_t & qpriority )
+CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, CString & qname, uint32_t & qpriority )
 {
 	// <rdar://problem/3946587> Use TXTRecord APIs declared in dns_sd.h
 	
-	bool		rpOnly = true;
-	OSStatus	err = kNoErr;
-	uint16_t	count	= TXTRecordGetCount( inTXTSize, inTXT );
+	bool		qtotalDefined	= false;
+	bool		rpOnly			= true;
+	OSStatus	err				= kNoErr;
+	uint16_t	count			= TXTRecordGetCount( inTXTSize, inTXT );
 	uint16_t	i;
+
+	// <rdar://problem/3987680> Default to queue "lp"
+
+	qname = "lp";
 
 	for ( i = 0; i < count; i++ )
 	{
@@ -1548,47 +1546,48 @@ CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize
 		{
 			qname = val;
 		}
-		else
+		else if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
 		{
-			rpOnly = false;
-
-			if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
-			{
-				service->usb_MFG = val;
-			}
-			else if ((key == L"usb_mdl") || (key == L"usb_model"))
-			{
-				service->usb_MDL = val;
-			}
-			else if (key == L"ty")
-			{
-				service->description = val;
-			}
-			else if (key == L"product")
-			{
-				service->product = val;
-			}
-			else if (key == L"note")
-			{
-				service->location = val;
-			}
-			else if (key == L"qtotal")
-			{
-				service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
-				qtotalDefined = true;
-			}
-			else if (key == L"priority")
-			{
-				qpriority = _ttoi((LPCTSTR) val);
-			}
+			service->usb_MFG = val;
+		}
+		else if ((key == L"usb_mdl") || (key == L"usb_model"))
+		{
+			service->usb_MDL = val;
+		}
+		else if (key == L"ty")
+		{
+			service->description = val;
+		}
+		else if (key == L"product")
+		{
+			service->product = val;
+		}
+		else if (key == L"note")
+		{
+			service->location = val;
+		}
+		else if (key == L"qtotal")
+		{
+			service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
+			qtotalDefined = true;
+		}
+		else if (key == L"priority")
+		{
+			qpriority = _ttoi((LPCTSTR) val);
 		}
 	}
 
 exit:
 
-	if ( rpOnly )
+	// The following code is to fix a problem with older HP 
+	// printers that don't include "qtotal" in their text
+	// record.  We'll check to see if the qname is "TEXT"
+	// and if so, we're going to modify it to be "lp" so
+	// that we don't use the wrong queue
+
+	if ( !err && !qtotalDefined && ( qname == L"TEXT" ) )
 	{
-		qtotalDefined = true;
+		qname = "lp";
 	}
 
 	return err;
