@@ -1,4 +1,5 @@
-#include "dns_sd.h"
+#include <dns_sd.h>
+#include <unistd.h>
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h> // include Mach API to ensure no conflicts exist
 #include <CoreFoundation/CoreFoundation.h>
 #include <sys/types.h>
@@ -40,20 +41,99 @@ static char *ConvertDomainLabelToCString_withescape(const domainlabel *const lab
 static void print_rdata(int type, int len, const u_char *rdata);
 static void query_cb(const DNSServiceRef DNSServiceRef, const DNSServiceFlags flags, const u_int32_t interfaceIndex, const DNSServiceErrorType errorCode, const char *name, const u_int16_t rrtype, const u_int16_t rrclass, const u_int16_t rdlen, const void *rdata, const u_int32_t ttl, void *context);
 static void resolve_cb(const DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const char                          *txtRecord, void *context);
+static void my_enum_cb( DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *replyDomain, void *context);
+static void my_regecordcb(DNSServiceRef sdRef, DNSRecordRef RecordRef, DNSServiceFlags flags, DNSServiceErrorType errorCode, void *context);
+static void browse_cb(DNSServiceRef sdr, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err, const char *serviceName, const char *regtype, const char *domain, void *context);
+
 
 // globals
 static DNSServiceRef sdr = NULL;
 
 int main (int argc, char * argv[])  {
-    int err, t;
+    int err, t, i;
     char *name, *type, *domain;
     char *txtstring = "My Txt Record";
+    DNSServiceFlags flags;
+    DNSRecordRef recordrefs[10];
+    char host[256];
+    int ipaddr = 12345;	// random IP address
     
     char full[1024];
     
     if (signal(SIGINT, sighdlr) == SIG_ERR)  fprintf(stderr, "ERROR - can't catch interupt!\n");
     if (argc < 2) exit(1);
 
+    if (!strcmp(argv[1], "-regrecord"))
+        {
+        err = DNSServiceCreateConnection(&sdr);
+        if (err)
+            {
+            printf("DNSServiceCreateConnection returned %d\n", err);
+            exit(1);
+            }
+        printf("registering 10 address records...\n");
+        for (i = 0; i < 10; i++)
+            {
+            sprintf(host, "testhost-%d.local.", i);
+            ipaddr++;
+            err = DNSServiceRegisterRecord(sdr, &recordrefs[i], kDNSServiceFlagsUnique, 0, 
+                host, 1, 1, 4, &ipaddr, 60, my_regecordcb, NULL);
+            if (err) 
+                {
+                printf("DNSServiceRegisterRecord returned error %d\n", err);
+                exit(1);
+                }
+            }
+        printf("processing results...\n");
+        for (i = 0; i < 10; i++) DNSServiceProcessResult(sdr);
+        printf("deregistering half of the records\n");
+        for (i = 0; i < 10; i++)
+            {
+            if (i % 2) 
+                {
+                err = DNSServiceRemoveRecord(sdr, recordrefs[i], 0);
+                if (err) 
+                    {
+                    printf("DNSServiceRemoveRecord returned error %d\n" ,err);
+                    exit(1);
+                    }
+                }
+            }
+        printf("sleeping 10...\n");
+        sleep(10);
+        printf("deregistering all remaining records\n");;
+        DNSServiceRefDeallocate(sdr);
+        printf("done.  sleeping 10..\n");
+        sleep(10);
+        exit(1);
+        }
+                
+    if (!strcmp(argv[1], "-browse"))
+        {
+        if (argc < 3) exit(1);
+        err = DNSServiceBrowse(&sdr, 0, 0, argv[2], NULL /*"local."*/, browse_cb, NULL);
+        if (err) 
+            {
+            printf("DNSServiceBrowse returned error %d\n", err);
+            exit(1);
+            }
+        while(1) DNSServiceProcessResult(sdr);
+        }    
+                            
+    if (!strcmp(argv[1], "-enum"))
+        {
+        if (!strcmp(argv[2], "browse")) flags = kDNSServiceFlagsBrowseDomains;
+        else if (!strcmp(argv[2], "register")) flags = kDNSServiceFlagsRegistrationDomains;
+        else exit(1);
+        
+        err = DNSServiceEnumerateDomains(&sdr, flags, 0, my_enum_cb, NULL);
+        if (err) 
+            {
+            printf("EnumerateDomains returned error %d\n", err);
+            exit(1);
+            }
+        while(1) DNSServiceProcessResult(sdr);
+        }
     if (!strcmp(argv[1], "-query"))
         {
         t = atol(argv[5]);
@@ -110,6 +190,33 @@ static void MyCallbackWrapper(CFSocketRef sr, CFSocketCallBackType t, CFDataRef 
     }
 */
 
+static void browse_cb(DNSServiceRef sdr, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err, const char *serviceName, const char *regtype, const char *domain, void *context)
+    {
+    #pragma unused(sdr, ifi, context)
+    
+    if (err)
+        {
+        printf("Callback: error %d\n", err);
+        return;
+        }
+    printf("BrowseCB: %s %s %s %s (%s)\n", serviceName, regtype, domain, (flags & kDNSServiceFlagsMoreComing ? "(more coming)" : ""), flags & kDNSServiceFlagsAdd ? "(ADD)" : "(REMOVE)");
+
+    }
+
+static void my_enum_cb( DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *replyDomain, void *context)
+    {
+    #pragma unused(sdRef, context)
+    char *type;
+    if (flags == kDNSServiceFlagsAdd) type = "add";
+    else if (flags == kDNSServiceFlagsRemove) type = "remove";
+    else if (flags == (kDNSServiceFlagsAdd | kDNSServiceFlagsDefault)) type = "add default";
+    else type = "unknown";
+    
+    
+    if (errorCode) printf("EnumerateDomainsCB: error code %d\n", errorCode);
+    else printf("%s domain %s on interface %d\n", type, replyDomain, interfaceIndex);
+    }
+    
 static void query_cb(const DNSServiceRef DNSServiceRef, const DNSServiceFlags flags, const u_int32_t interfaceIndex, const DNSServiceErrorType errorCode, const char *name, const u_int16_t rrtype, const u_int16_t rrclass, const u_int16_t rdlen, const void *rdata, const u_int32_t ttl, void *context) 
     {
     (void)DNSServiceRef;
@@ -140,6 +247,13 @@ static void resolve_cb(const DNSServiceRef sdRef, DNSServiceFlags flags, uint32_
     }
 
 
+
+static void my_regecordcb(DNSServiceRef sdRef, DNSRecordRef RecordRef, DNSServiceFlags flags, DNSServiceErrorType errorCode, void *context)
+    {
+    #pragma unused (sdRef, RecordRef, flags, context)
+    if (errorCode) printf("regrecord CB received error %d\n", errorCode);
+    else printf("regrecord callback - no errors\n");
+    }
 
 
 // resource record data interpretation routines

@@ -21,9 +21,12 @@
  */
 
 #include "dnssd_ipc.h"
+#include <errno.h>
+#include <sys/time.h>
 
-
-#define CTL_PATH_PREFIX "/tmp/dnssd_clippath."	// control socket is named dnssd_clipath.[PID]
+#define CTL_PATH_PREFIX "/tmp/dnssd_clippath."	
+// error socket (if needed) is named "dnssd_clipath.[pid].xxx:n" where xxx are the
+// last 3 digits of the time (in seconds) and n is the 6-digit microsecond time
 
 // general utility functions
 static DNSServiceRef connect_to_server(void);
@@ -302,6 +305,8 @@ DNSServiceErrorType DNSServiceBrowse
     if (!sdRef) return kDNSServiceErr_BadParam;
     *sdRef = NULL;
 
+    if (!domain) domain = "";
+
     len = sizeof(flags);
     len += sizeof(interfaceIndex);
     len += strlen(regtype) + 1;
@@ -532,7 +537,6 @@ DNSServiceErrorType DNSServiceCreateConnection(DNSServiceRef *sdRef)
     *sdRef = connect_to_server();
     if (!*sdRef)
             return kDNSServiceErr_Unknown;
-    bzero(*sdRef, sizeof(_DNSServiceRef_t));
     (*sdRef)->op = connection;
     (*sdRef)->process_reply = handle_regrecord_response;
     return 0;
@@ -913,7 +917,7 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
     ipc_msg_hdr *hdr = msg;
     mode_t mask;
     struct sockaddr_un caddr, daddr;  // (client and daemon address structs)
-    char path[MAX_CTLPATH];
+    char *path = NULL;
     int listenfd = -1, errsd = -1, len;
     DNSServiceErrorType err = kDNSServiceErr_Unknown;
     
@@ -922,20 +926,21 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
     if (!reuse_sd) 
         {
         // setup temporary error socket
-        sprintf(path, "%s%d", CTL_PATH_PREFIX, (int)getpid());
         if ((listenfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
             {
             perror("ERROR: socket");
             goto cleanup;
             }
-        unlink(path);  //OK if this fails
         bzero(&caddr, sizeof(caddr));
         caddr.sun_family = AF_LOCAL;
+        caddr.sun_len = sizeof(struct sockaddr_un);
+        path = (char *)msg + sizeof(ipc_msg_hdr);
         strcpy(caddr.sun_path, path);
         mask = umask(0);
         if (bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr)) < 0)
             {
             perror("ERROR: bind");
+            umask(mask);
             goto cleanup;
             }
         umask(mask);
@@ -968,7 +973,7 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd)
 cleanup:
     if (!reuse_sd && listenfd > 0) close(listenfd);
     if (!reuse_sd && errsd > 0) close(errsd);	
-    if (!reuse_sd) unlink(path);
+    if (!reuse_sd && path) unlink(path);
     if (msg) free(msg);
     return err;
     }
@@ -991,14 +996,15 @@ static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start, int reuse_so
     ipc_msg_hdr *hdr;
     int datalen;
     char ctrl_path[256];
-
+    struct timeval time;
+    
     if (!reuse_socket)
         {
-        sprintf(ctrl_path, "%s%d", CTL_PATH_PREFIX, (int)getpid());
+        if (gettimeofday(&time, NULL) < 0) return NULL;
+        sprintf(ctrl_path, "%s%d-%.3x-%.6u", CTL_PATH_PREFIX, (int)getpid(), time.tv_sec & 0xFFF, time.tv_usec);
         *len += strlen(ctrl_path) + 1;
         }
     
-        
     datalen = *len;
     *len += sizeof(ipc_msg_hdr);
 
