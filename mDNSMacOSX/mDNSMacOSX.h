@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.12  2003/07/12 03:15:20  cheshire
+<rdar://problem/3324848> After SCDynamicStore notification, mDNSResponder updates
+m->hostlabel even if user hasn't actually actually changed their dot-local hostname
+
 Revision 1.11  2003/07/02 21:19:51  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -101,6 +105,7 @@ struct NetworkInterfaceInfoOSX_struct
 struct mDNS_PlatformSupport_struct
     {
     NetworkInterfaceInfoOSX *InterfaceList;
+    domainlabel              userhostlabel;
     SCDynamicStoreRef        Store;
     CFRunLoopSourceRef       StoreRLS;
     io_connect_t             PowerConnection;

@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.95  2003/07/12 03:15:20  cheshire
+<rdar://problem/3324848> After SCDynamicStore notification, mDNSResponder updates
+m->hostlabel even if user hasn't actually actually changed their dot-local hostname
+
 Revision 1.94  2003/07/03 00:51:54  cheshire
 <rdar://problem/3287213> When select() and recvmgs() disagree, get more info from kernel about the socket state
 
@@ -852,9 +856,15 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	hostlabel.c[0] = 0;
 	GetUserSpecifiedRFC1034ComputerName(&hostlabel);
 	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, "Macintosh");
-	if (!SameDomainLabel(m->hostlabel.c, hostlabel.c))
+	// If the user has changed their dot-local host name since the last time we checked, then update our local copy.
+	// If the user has not changed their dot-local host name, then leave ours alone (m->hostlabel may have gone through
+	// repeated conflict resolution to get to its current value, and if we reset it, we'll have to go through all that again.)
+	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c))
+		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
+	else
 		{
-		m->hostlabel = hostlabel;
+		debugf("Updating m->hostlabel to %#s", hostlabel.c);
+		m->p->userhostlabel = m->hostlabel = hostlabel;
 		mDNS_GenerateFQDN(m);
 		}
 
@@ -1122,8 +1132,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
 
-	m->hostlabel.c[0]   = 0;
-	m->p->InterfaceList = mDNSNULL;
+	m->hostlabel.c[0]        = 0;
+	m->p->InterfaceList      = mDNSNULL;
+	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);
 	SetupActiveInterfaces(m);
 
