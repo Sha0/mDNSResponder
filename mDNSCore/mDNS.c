@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.511  2005/01/19 22:48:53  cheshire
+<rdar://problem/3955355> Handle services with subtypes correctly when doing mDNS_RenameAndReregisterService()
+
 Revision 1.510  2005/01/19 03:12:45  cheshire
 Move LocalRecordReady() macro from mDNS.c to DNSCommon.h
 
@@ -6646,6 +6649,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		{
 		domainname st;
 		AssignDomainName(&st, sr->SubTypes[i].resrec.name);
+		st.c[1+st.c[0]] = 0;			// Only want the first label, not the whole FQDN (particularly for mDNS_RenameAndReregisterService())
 		AppendDomainName(&st, type);
 		mDNS_SetupResourceRecord(&sr->SubTypes[i], mDNSNULL, InterfaceID, kDNSType_PTR, kStandardTTL, kDNSRecordTypeShared, ServiceCallback, sr);
 		if (ConstructServiceName(sr->SubTypes[i].resrec.name, mDNSNULL, &st, domain) == mDNSNULL) return(mStatus_BadParamErr);
