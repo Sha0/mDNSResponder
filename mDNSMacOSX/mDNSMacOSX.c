@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.80  2003/05/24 02:02:24  cheshire
+<rdar://problem/3221880> if_indextoname consumes a lot of CPU
+Fix error in myIfIndexToName; was returning prematurely
+
 Revision 1.79  2003/05/23 23:07:44  cheshire
 <rdar://problem/3268199> Must not write to stderr when running as daemon
 
@@ -288,19 +292,11 @@ static struct ifaddrs* myGetIfAddrs(int refresh)
 
 static int myIfIndexToName(u_short index, char* name)
 	{
-	struct ifaddrs*	ifa = myGetIfAddrs(0);
-	if (ifa == NULL) return -1;
-	
-	for (;ifa ; ifa = ifa->ifa_next)
-		{
+	struct ifaddrs *ifa;
+	for (ifa = myGetIfAddrs(0); ifa; ifa = ifa->ifa_next)
 		if (ifa->ifa_addr->sa_family == AF_LINK)
-			{
-			struct sockaddr_dl	*sdl = (struct sockaddr_dl*)ifa->ifa_addr;
-			if (sdl->sdl_index == index) strncpy(name, ifa->ifa_name, IF_NAMESIZE);
-			return 0;
-			}
-		}
-	
+			if (((struct sockaddr_dl*)ifa->ifa_addr)->sdl_index == index)
+				{ strncpy(name, ifa->ifa_name, IF_NAMESIZE); return 0; }
 	return -1;
 	}
 
