@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.73  2004/09/02 01:39:40  cheshire
+For better readability, follow consistent convention that QR bit comes first, followed by OP bits
+
 Revision 1.72  2004/09/01 03:59:29  ksekar
 <rdar://problem/3783453>: Conditionally compile out uDNS code on Windows
 
@@ -1653,7 +1656,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
 	mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
-	mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
+	mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	mDNSu8 rcode   = (mDNSu8)(msg->h.flags.b[1] & kDNSFlag1_RC);
    	

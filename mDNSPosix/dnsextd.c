@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.3  2004/09/02 01:39:40  cheshire
+For better readability, follow consistent convention that QR bit comes first, followed by OP bits
+
 Revision 1.2  2004/08/24 23:27:57  cheshire
 Fixes for Linux compatibility:
 Don't use strings.h
@@ -900,7 +903,7 @@ mDNSlocal PktMsg *FormatLeaseReply(DaemonInfo *d, PktMsg *orig, mDNSs32 lease)
 	(void)d;  //unused
 	reply = malloc(sizeof(*reply));
 	if (!reply) { LogErr("FormatLeaseReply", "malloc"); return NULL; }
-	flags.b[0] = kDNSFlag0_OP_Update | kDNSFlag0_QR_Response;
+	flags.b[0] = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	flags.b[1] = 0;
  
 	InitializeDNSMessage(&reply->msg.h, orig->msg.h.id, flags);

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.399  2004/09/02 01:39:40  cheshire
+For better readability, follow consistent convention that QR bit comes first, followed by OP bits
+
 Revision 1.398  2004/09/01 03:59:29  ksekar
 <rdar://problem/3783453>: Conditionally compile out uDNS code on Windows
 
@@ -1335,8 +1338,8 @@ mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF
 mDNSexport const mDNSOpaque16 zeroID = { { 0, 0 } };
 mDNSexport const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
 mDNSexport const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
-mDNSexport const mDNSOpaque16 UpdateReqFlags= { { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Query,                   0 } };
-mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response,                0 } };
+mDNSexport const mDNSOpaque16 UpdateReqFlags= { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_Update,                  0 } };
+mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_QR_Response | kDNSFlag0_OP_Update,                  0 } };
 
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
@@ -4744,7 +4747,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 
 #ifndef UNICAST_DISABLED	
 	mDNSIPPort NATPort = mDNSOpaque16fromIntVal(NATMAP_PORT);
-	const mDNSu8 UpdateR = kDNSFlag0_OP_Update   | kDNSFlag0_QR_Response;
+	const mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	
 	if (srcport.NotAnInteger == NATPort.NotAnInteger) { uDNS_ReceiveNATMap(m, pkt, end - (mDNSu8 *)pkt); return; }
 #endif		
