@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.121  2003/05/21 17:54:07  ksekar
+Bug #: <rdar://problem/3148431>:	ER: Tweak responder's default name conflict behavior
+New rename behavior - domain name "foo" becomes "foo--2" on conflict, richtext name becomes "foo (2)"
+
 Revision 1.120  2003/05/19 22:14:14  ksekar
 <rdar://problem/3162914> mDNS probe denials/conflicts not detected unless conflict is of the same type
 
@@ -1129,24 +1133,71 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	return(mDNStrue);
 	}
 
-mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
+// returns true if a rich text label ends in " (n)", or if an RFC 1034
+// name ends in "--n", where n is some digit.
+mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool RichText)
 	{
-	long val = 0, multiplier = 1, divisor = 1, digits = 1;
-
-	// Get any existing numerical suffix off the name
-	while (mdnsIsDigit(name->c[name->c[0]]))
-		{ val += (name->c[name->c[0]] - '0') * multiplier; multiplier *= 10; name->c[0]--; }
+	mDNSu16 l = name->c[0];
 	
-	// If existing suffix, increment it, else start by renaming "Foo" as "Foo2"
-	if (multiplier > 1 && val < 999999) val++; else val = 2;
+	if (RichText) 
+		{ 
+		if (l < 4) return mDNSfalse;
+		if (name->c[l--] != ')') return mDNSfalse;
+		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;
+		l--;
+		while (mdnsIsDigit(name->c[l])) l--;
+		return (name->c[l] == '(' && name->c[l - 1] == ' ');
+		}
+	else
+		{
+		if (l < 3) return mDNSfalse;
+		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;
+		l--;
+		while (mdnsIsDigit(name->c[l])) l--;
+		return (name->c[l] == '-' && name->c[l - 1] == '-');
+		}
+	}
 
-	// Can only add spaces to rich text names, not RFC 1034 names
-	if (RichText && name->c[name->c[0]] != ' ' && name->c[0] < MAX_DOMAIN_LABEL)
-		name->c[++name->c[0]] = ' ';
+// removes an auto-generated suffix (appended on a name collision) from a label.  caller is
+// responsible for ensuring that the label does indeed contain a suffix.  returns the number 
+// from the suffix that was removed.
+mDNSlocal long RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
+	{
+	long  val = 0, multiplier = 1;
+		
+	if (RichText) name->c[0]--;  // chop closing parentheses from RT suffix
+	// Get any existing numerical suffix off the name
+	while (mdnsIsDigit(name->c[name->c[0]])) 
+		{ val += (name->c[name->c[0]] - '0') * multiplier; multiplier *= 10; name->c[0]--; }	
+	name->c[0] -= 2;  // chop opening parentheses and whitespace (RT) or double-hyphen (RFC 1034)
+	return val;
+	}
+
+// appends a numerical suffix to a label, with the number following a whitespace and enclosed 
+// in parentheses (rich text) or following two consecutive hyphens (RFC 1034 domain label).
+mDNSlocal void AppendLabelSuffix(domainlabel *name, long val, mDNSBool RichText)
+	{
+	long divisor = 1, digits = 1;
+	
+	
+	// append " (" (rich text) or "--" (RFC 1034) to name before adding value
+	if (name->c[0] + 1 < MAX_DOMAIN_LABEL)
+	{
+		if (RichText)
+			{
+			name->c[++name->c[0]] = ' ';
+			name->c[++name->c[0]] = '(';
+			}
+		else
+			{
+			name->c[++name->c[0]] = '-';
+			name->c[++name->c[0]] = '-';
+			}
+	}
 	
 	while (val >= divisor * 10)
 		{ divisor *= 10; digits++; }
-
+	
 	if (name->c[0] > (mDNSu8)(MAX_DOMAIN_LABEL - digits))
 		name->c[0] = (mDNSu8)(MAX_DOMAIN_LABEL - digits);
 	
@@ -1156,7 +1207,23 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 		val     %= divisor;
 		divisor /= 10;
 		}
+
+	if (RichText) name->c[++name->c[0]] = ')';
 	}
+
+mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
+	{
+	long val = 0;
+
+	if (LabelContainsSuffix(name, RichText)) 
+		val = RemoveLabelSuffix(name, RichText);
+		
+	// If existing suffix, increment it, else start by renaming "Foo" as "Foo2"
+	if (val && val < 999999) val++; 
+	else val = 2; 
+	
+	AppendLabelSuffix(name, val, RichText);
+	}	
 
 // ***************************************************************************
 #if 0
