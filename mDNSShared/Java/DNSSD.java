@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.2  2004/05/20 17:43:18  cheshire
+Fix invalid UTF-8 characters in file
+
 Revision 1.1  2004/04/30 16:32:34  rpantos
 First checked in.
 
@@ -594,12 +597,12 @@ class	AppleDNSSD extends DNSSD
 
 	protected String			_getNameForIfIndex( int ifIndex)
 	{
-		return null;		// ¥¥Fix me - RNP
+		return null;		// â€¢â€¢Fix me - RNP
 	}
 
 	protected int				_getIfIndexForName( String ifName)
 	{
-		return 0;		// ¥¥Fix me - RNP
+		return 0;		// â€¢â€¢Fix me - RNP
 	}
 
 
