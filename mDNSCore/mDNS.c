@@ -88,6 +88,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.99  2003/04/15 18:09:13  jgraessl
+Bug #: 3228892
+Reviewed by: Stuart Cheshire
+Added code to keep track of when the next cache item will expire so we can
+call TidyRRCache only when necessary.
+
 Revision 1.98  2003/04/03 03:43:55  cheshire
 <rdar://problem/3216837>:	Off-by-one error in probe rate limiting
 
@@ -2780,7 +2786,7 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 	mDNSu32 count = 0;
 	ResourceRecord **rr = &m->rrcache;
 	ResourceRecord *deletelist = mDNSNULL;
-	
+	mDNSs32	nextToExpire = timenow + 0x70000000UL;	
 	if (m->lock_rrcache) { debugf("TidyRRCache ERROR! Cache already locked!"); return; }
 	m->lock_rrcache = 1;
 	
@@ -2788,7 +2794,12 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 		{
 		mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - (*rr)->TimeRcvd)) / mDNSPlatformOneSecond;
 		if ((*rr)->rroriginalttl > SecsSinceRcvd)
+			{
+			mDNSs32 timeExpire = (*rr)->TimeRcvd + ((*rr)->rroriginalttl * mDNSPlatformOneSecond);
+			if ((nextToExpire - timenow) > (timeExpire - timenow))
+				nextToExpire = timeExpire;
 			rr=&(*rr)->next;			// If TTL is greater than time elapsed, save this record
+			}
 		else
 			{
 			ResourceRecord *r = *rr;	// Else,
@@ -2798,7 +2809,8 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 			count++;
 			}
 		}
-	
+
+	m->NextCacheTidyTime = nextToExpire;
 	if (count) verbosedebugf("TidyRRCache Deleting %d Expired Cache Entries", count);
 
 	m->lock_rrcache = 0;
@@ -3033,7 +3045,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			if (i >= 1000) debugf("mDNS_Execute: SendResponses exceeded loop limit");
 			}
 	
-		if (m->rrcache_size) TidyRRCache(m, timenow);
+		if (m->rrcache_size && m->NextCacheTidyTime - timenow <= 0) TidyRRCache(m, timenow);
 	
 		// Zero is special, so be careful not to set m->NextScheduledEvent to zero
 		m->NextScheduledEvent = ScheduleNextTask(m);
@@ -3699,6 +3711,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// to give other hosts on the network a chance to protest
 					if (pktrr.rroriginalttl == 0) rr->rroriginalttl = 1;
 					else rr->rroriginalttl = pktrr.rroriginalttl;
+					if ((m->NextCacheTidyTime - timenow) > (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond))
+						m->NextCacheTidyTime = timenow + rr->rroriginalttl * mDNSPlatformOneSecond;
 					break;
 					}
 				}
@@ -3716,6 +3730,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					rr->next = m->rrcache;
 					m->rrcache = rr;
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
+					if ((m->NextCacheTidyTime - timenow) > (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond))
+						m->NextCacheTidyTime = timenow + rr->rroriginalttl * mDNSPlatformOneSecond;
 					AnswerLocalQuestions(m, rr, timenow);
 					}
 				}
@@ -3739,11 +3755,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					ResourceRecord *r;
 					for (r = m->rrcache; r; r=r->next)
 						if (SameResourceRecordSignature(rr, r) && timenow - r->TimeRcvd > mDNSPlatformOneSecond)
+							{
 							r->rroriginalttl = 0;
+							m->NextCacheTidyTime = timenow;
+							}
 					}
 				}
 			}
-		TidyRRCache(m, timenow);
 		}
 	}
 
@@ -4817,6 +4835,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->ProbeFailTime           = 0;
 	m->NumFailedProbes         = 0;
 	m->SuppressProbes          = 0;
+	m->NextCacheTidyTime       = mDNSPlatformTimeNow();
 	m->SleepState              = mDNSfalse;
 	m->NetChanged              = mDNSfalse;
 
