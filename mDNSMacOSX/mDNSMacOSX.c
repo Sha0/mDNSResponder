@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.189  2004/09/21 00:13:28  cheshire
+Fix build failure (io_connect_t and io_object_t are integers, not pointers)
+
 Revision 1.188  2004/09/20 23:52:02  cheshire
 CFSocket{Puma}.c renamed to mDNSMacOSX{Puma}.c
 
@@ -1115,7 +1118,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	CFSocketRef sr;
 
     // get the CFSocket for the descriptor, if it exists
-	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, NULL, NULL, NULL);
+	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketNoCallBack, NULL, NULL);
 	if (!sr)
 		{
 		LogMsg("ERROR: mDNSPlatformTCPCloseConnection - attempt to close a socket that was not properly created");
@@ -2695,8 +2698,8 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		CFRunLoopSourceInvalidate(m->p->PowerRLS);
 		CFRelease(m->p->PowerRLS);
 		IODeregisterForSystemPower(&m->p->PowerNotifier);
-		m->p->PowerConnection = NULL;
-		m->p->PowerNotifier   = NULL;
+		m->p->PowerConnection = 0;
+		m->p->PowerNotifier   = 0;
 		m->p->PowerRLS        = NULL;
 		}
 	
