@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.292  2003/08/21 19:27:36  cheshire
+<rdar://problem/3387878> Traffic reduction: No need to announce record for longer than TTL
+
 Revision 1.291  2003/08/21 18:57:44  cheshire
 <rdar://problem/3387140> Synchronized queries on the network
 
@@ -2160,6 +2163,10 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	{
 	// Back-date LastAPTime to make it appear that the next announcement/probe is due immediately and set LastMCTime to
 	// now, to inhibit multicast responses (no need to send additional multicast responses when we're announcing anyway)
+	// We announce to flush stale data from other caches. It is a reasonable assumption that any
+	// old stale copies will probably have the same TTL we're using, so announcing longer than
+	// this serves no purpose -- any stale copies of that record will have expired by then anyway.
+	rr->AnnounceUntil   = m->timenow + TicksTTL(rr);
 	rr->LastAPTime      = m->timenow - rr->ThisAPInterval;
 	rr->LastMCTime      = m->timenow;
 	rr->LastMCInterface = mDNSInterfaceMark;
@@ -2375,6 +2382,8 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 	InitializeLastAPTime(m, rr);
+//	rr->AnnounceUntil     = Set for us in InitializeLastAPTime()
+//	rr->LastAPTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCInterface   = Set for us in InitializeLastAPTime()
 	rr->NewRData          = mDNSNULL;
@@ -2524,6 +2533,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 				dup->v4Requester       = rr->v4Requester;
 				dup->v6Requester       = rr->v6Requester;
 				dup->ThisAPInterval    = rr->ThisAPInterval;
+				dup->AnnounceUntil     = rr->AnnounceUntil;
 				dup->LastAPTime        = rr->LastAPTime;
 				dup->LastMCTime        = rr->LastMCTime;
 				dup->LastMCInterface   = rr->LastMCInterface;
@@ -3274,6 +3284,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
+				if (rr->LastAPTime + rr->ThisAPInterval - rr->AnnounceUntil >= 0) rr->AnnounceCount = 0;
 				debugf("Announcing %##s (%s) %d", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
 				}
 			}

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.112  2003/08/21 19:27:36  cheshire
+<rdar://problem/3387878> Traffic reduction: No need to announce record for longer than TTL
+
 Revision 1.111  2003/08/21 02:21:50  cheshire
 <rdar://problem/3386473> Efficiency: Reduce repeated queries
 
@@ -724,6 +727,7 @@ struct AuthRecord_struct
 	AuthRecord     *NextResponse;		// Link to the next element in the chain of responses to generate
 	const mDNSu8   *NR_AnswerTo;		// Set if this record was selected by virtue of being a direct answer to a question
 	AuthRecord     *NR_AdditionalTo;	// Set if this record was selected by virtue of being additional to another
+	mDNSs32         AnnounceUntil;		// In platform time units: Creation time + TTL
 	mDNSs32         ThisAPInterval;		// In platform time units: Current interval for announce/probe
 	mDNSs32         LastAPTime;			// In platform time units: Last time we sent announcement/probe
 	mDNSs32         LastMCTime;			// Last time we multicast this record (used to guard against packet-storm attacks)
