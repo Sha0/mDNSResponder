@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.52  2004/05/26 00:39:49  ksekar
+<rdar://problem/3667105>: wide-area rendezvous servers don't appear in
+Finder
+Use local-only InterfaceID for GetDomains calls for sockets-API
+
 Revision 1.51  2004/05/18 23:51:27  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -1856,7 +1861,10 @@ static void handle_enum_request(request_state *rstate)
     all->question.QuestionContext = all;
     all->type = (flags & kDNSServiceFlagsRegistrationDomains) ? 
         mDNS_DomainTypeRegistration : mDNS_DomainTypeBrowse;
-    
+
+	// if the caller hasn't specified an explicit interface, we use local-only to get the system-wide list.
+	if (!InterfaceID) InterfaceID = mDNSInterface_LocalOnly;
+	
     // make the calls
     err = mDNS_GetDomains(gmDNS, &all->question, all->type, InterfaceID, enum_result_callback, all);
     if (err == mStatus_NoError)
