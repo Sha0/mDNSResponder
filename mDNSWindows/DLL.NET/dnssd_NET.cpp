@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.5  2004/07/27 07:12:56  shersche
+make TextRecord an instantiable class object
+
 Revision 1.4  2004/07/26 06:19:05  shersche
 Treat byte arrays of zero-length as null arrays
 
@@ -1057,35 +1060,27 @@ DNSService::ReconfirmRecord
 }
 
 
-DNSService::TextRecord*
-DNSService::TextRecord::Create
-		(
-		unsigned short buflen
-		)
-{
-	TextRecord * tr;
-
-	tr = new TextRecord();
-
-	TXTRecordCreate(&tr->m_impl->m_ref, buflen, NULL);
-
-	return tr;
-}
-
-
 void
 DNSService::TextRecord::SetValue
 		(
-		TextRecord	*	tr,
-		String		*	key,
-		Byte			value[]            /* may be NULL */
+		String	*	key,
+		Byte		value[]            /* may be NULL */
 		)
 {
 	PString			*	pKey = new PString(key);
-	Byte __pin		*	p	=	&value[0];
+	int					len		=	0;
+	Byte __pin		*	p		=	NULL;
+	void			*	v		=	NULL;
 	DNSServiceErrorType	err;
 
-	err = TXTRecordSetValue(&tr->m_impl->m_ref, pKey->c_str(), value->Length, p);
+	if (value && (value->Length > 0))
+	{
+		len	=	value->Length;
+		p	=	&value[0];
+		v	=	(void*) p;
+	}
+
+	err = TXTRecordSetValue(&m_impl->m_ref, pKey->c_str(), len, v);
 
 	if (err != 0)
 	{
@@ -1097,14 +1092,13 @@ DNSService::TextRecord::SetValue
 void
 DNSService::TextRecord::RemoveValue
 		(
-		TextRecord	*	tr,
-		String		*	key
+		String	*	key
 		)
 {
 	PString			*	pKey = new PString(key);
 	DNSServiceErrorType	err;
 
-	err = TXTRecordRemoveValue(&tr->m_impl->m_ref, pKey->c_str());
+	err = TXTRecordRemoveValue(&m_impl->m_ref, pKey->c_str());
 
 	if (err != 0)
 	{
@@ -1116,24 +1110,22 @@ DNSService::TextRecord::RemoveValue
 unsigned short
 DNSService::TextRecord::GetLength
 		(
-		TextRecord * tr
 		)
 {
-	return TXTRecordGetLength(&tr->m_impl->m_ref);
+	return TXTRecordGetLength(&m_impl->m_ref);
 }
 
 
 Byte
 DNSService::TextRecord::GetBytes
 		(
-		TextRecord * tr
 		) __gc[]
 {
 	const void	*	noGCBytes = NULL;
 	Byte			gcBytes[] = NULL;		
 
-	noGCBytes			=	TXTRecordGetBytesPtr(&tr->m_impl->m_ref);
-	unsigned short len	=	GetLength(tr);
+	noGCBytes			=	TXTRecordGetBytesPtr(&m_impl->m_ref);
+	unsigned short len	=	GetLength();
 
 	if (noGCBytes && len)
 	{
