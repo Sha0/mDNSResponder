@@ -1,3 +1,4 @@
+
 /* -*- Mode: C; tab-width: 4 -*-
  *
  * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
@@ -24,6 +25,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.282  2005/01/19 19:19:21  ksekar
+<rdar://problem/3960191> Need a way to turn off domain discovery
+
 Revision 1.281  2005/01/18 18:10:55  ksekar
 <rdar://problem/3954575> Use 10.4 resolver API to get search domains
 
@@ -931,6 +935,8 @@ static ARListElem *SCPrefBrowseDomains = NULL; // manually generated local-only 
 static domainname DynDNSRegDomain;             // Default wide-area zone for service registration
 static domainname DynDNSBrowseDomain;          // Default wide-area zone for legacy ("empty string") browses
 static domainname DynDNSHostname;
+
+static mDNSBool DomainDiscoveryDisabled = mDNSfalse;
 
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
@@ -2542,6 +2548,8 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 	SearchListElem *ptr, *prev, *freeSLPtr;
 	ARListElem *arList;
 	mStatus err;
+
+	if (DomainDiscoveryDisabled) return mStatus_NoError;
 	
 	// step 1: mark each elem for removal (-1), unless we aren't passed a dictionary in which case we mark as preexistent
 	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = dict ? -1 : 0;
@@ -2691,10 +2699,10 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	CFDictionaryRef dict;
 	CFStringRef     key;
 	domainname BrowseDomain, RegDomain, fqdn;
-	
+
 	// get fqdn, zone from SCPrefs
 	GetUserSpecifiedDDNSConfig(&fqdn, &RegDomain, &BrowseDomain);
-	if (!fqdn.c[0] && !RegDomain.c[0]) ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &fqdn, &RegDomain);
+	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, fqdn.c[0] ? NULL : &fqdn, RegDomain.c[0] ? NULL : &RegDomain, &DomainDiscoveryDisabled);
 
 	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
 		{		
