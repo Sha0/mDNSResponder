@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.105  2004/10/26 01:15:06  cheshire
+Use "#if 0" instead of commenting out code
+
 Revision 1.104  2004/10/25 21:41:38  ksekar
 <rdar://problem/3852958> wide-area name conflicts can cause crash
 
@@ -452,7 +455,7 @@ mDNSlocal mDNSs32 mDNSPlatformTimeNow(mDNS *m)
 
 	// To get a quick and easy stack trace to find out *how* this routine
 	// is being called without holding main mDNS lock, uncomment the line below:
-	//*(long*)0=0;
+	// *(long*)0=0;
 	
 	return(mDNS_TimeNow(m));
 	}
@@ -3683,7 +3686,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	}
 
 // !!!KRS look into simpler ways to do this (create a record registration, or dereg and rereg the service, etc)
-/*
+#if 0
 mDNSlocal void UpdateServiceTargets(mDNS *const m)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
@@ -3704,7 +3707,7 @@ mDNSlocal void UpdateServiceTargets(mDNS *const m)
 		else srs->uDNS_info.TargetChangeDeferred = mDNStrue; // trigger target change upon completion of pending operation
 		}		
 	}
-*/
+#endif
 
 // register a service already in list with initialized state
 mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs)

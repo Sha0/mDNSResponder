@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.100  2004/10/26 01:17:48  cheshire
+Use "#if 0" instead of commenting out code
+
 Revision 1.99  2004/10/19 21:33:22  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
@@ -944,7 +947,7 @@ static void connect_callback(void *info)
 		return;
 		}			
 		
-/*
+#if 0
     // open a pipe to deliver error messages, pass descriptor to client
     if (pipe(errpipe) < 0)
         {
@@ -965,7 +968,7 @@ static void connect_callback(void *info)
         close(errpipe[1]);
         return;
         }
-  */
+#endif
   
       // allocate a request_state struct that will live with the socket
     rstate = mallocL("connect_callback", sizeof(request_state));
