@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.180  2004/07/29 02:03:35  ksekar
+Delete unused #define and structure field
+
 Revision 1.179  2004/07/26 22:49:30  ksekar
 <rdar://problem/3651409>: Feature #9516: Need support for NATPMP in client
 
@@ -1071,7 +1074,6 @@ typedef struct
     mDNSAddr     ns;     // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
     mDNSIPPort   port;   // port on which server accepts dynamic updates
     mDNSBool     add;    // !!!KRS this should really be an enumerated state
-    struct uDNS_AuthInfo *AuthInfo;  // authentication info (may be null)
     NATTraversalInfo *NATinfo;
     mDNSBool     lease;  // dynamic update contains (should contain) lease option
     mDNSs32      expire; // expiration of lease (-1 for static)

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.13  2004/07/29 02:03:35  ksekar
+Delete unused #define and structure field
+
 Revision 1.12  2004/07/26 22:49:30  ksekar
 <rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
 
@@ -76,7 +79,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define MIN_UCAST_PERIODIC_EXEC (3 * mDNSPlatformOneSecond) 	
 #define INIT_UCAST_POLL_INTERVAL (15 * mDNSPlatformOneSecond)
 #define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
-#define NO_GOODBYE                       // will we receive goodbye packets from the server?
 #define UPDATE_PORT_NAME "_dns-update._udp."
 #define LLQ_PORT_NAME "_dns-llq._udp"
 	
