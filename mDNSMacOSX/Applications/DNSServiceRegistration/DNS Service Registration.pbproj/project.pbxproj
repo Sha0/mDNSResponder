@@ -129,6 +129,7 @@
 				4A9504CCFFE6A4B311CA0CBA,
 				4A9504CDFFE6A4B311CA0CBA,
 			);
+			hasScannedForEncodings = 1;
 			isa = PBXProject;
 			mainGroup = 29B97314FDCFA39411CA2CEA;
 			projectDirPath = "";
@@ -159,6 +160,7 @@
 			refType = 4;
 		};
 		29B97316FDCFA39411CA2CEA = {
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			path = main.m;
 			refType = 4;
@@ -261,7 +263,6 @@
 </dict>
 </plist>
 ";
-			shouldUseHeadermap = 1;
 		};
 		29B97327FDCFA39411CA2CEA = {
 			buildActionMask = 2147483647;
@@ -345,11 +346,13 @@
 //653
 //654
 		654EC28C0226D54A006533C2 = {
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			path = RegistrationController.m;
 			refType = 4;
 		};
 		654EC28D0226D54A006533C2 = {
+			fileEncoding = 4;
 			isa = PBXFileReference;
 			path = RegistrationController.h;
 			refType = 4;
