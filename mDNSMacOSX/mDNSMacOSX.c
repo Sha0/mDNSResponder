@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.287  2005/01/25 16:59:23  ksekar
+<rdar://problem/3971138> sa_len not set checking reachability for TCP connections
+
 Revision 1.286  2005/01/25 02:02:37  cheshire
 <rdar://problem/3970673> mDNSResponder leaks
 GetSearchDomains() was not calling dns_configuration_free().
@@ -1107,7 +1110,7 @@ mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
 
 	ReachRef = SCNetworkReachabilityCreateWithAddress(kCFAllocatorDefault, addr);	
 	if (!ReachRef) { LogMsg("ERROR: RequiresConnection - SCNetworkReachabilityCreateWithAddress"); goto end; }
-	if (!SCNetworkReachabilityGetFlags(ReachRef, &flags)) { LogMsg("ERROR: RequiresConnection - SCNetworkReachabilityGetFlags"); goto end; }
+	if (!SCNetworkReachabilityGetFlags(ReachRef, &flags)) { LogMsg("ERROR: AddrRequiresPPPConnection - SCNetworkReachabilityGetFlags"); goto end; }
 	result = flags & kSCNetworkFlagsConnectionRequired;
 
 	end:
@@ -1461,6 +1464,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 	bzero(&saddr, sizeof(saddr));
 	saddr.sin_family = AF_INET;
 	saddr.sin_port = dstport.NotAnInteger;
+	saddr.sin_len = sizeof(saddr);
 	memcpy(&saddr.sin_addr, &dst->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
 
 	// Don't send if it would cause dial on demand connection initiation.
