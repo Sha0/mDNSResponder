@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.115  2003/07/02 02:41:24  cheshire
+ * <rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
+ *
  * Revision 1.114  2003/07/01 21:10:20  cheshire
  * Reinstate checkin 1.111, inadvertently overwritten by checkin 1.112
  *
@@ -157,7 +160,7 @@ static const char mDNSResponderVersionString[];		// Forward declaration for stri
 
 mDNSexport mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
-#define RR_CACHE_SIZE 500
+#define RR_CACHE_SIZE 64
 static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
 static const char PID_FILE[] = "/var/run/mDNSResponder.pid";
 
@@ -958,6 +961,13 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 				mDNS_DeregisterService(&mDNSStorage, &r->s);
 				}
 		}
+	else if (result == mStatus_GrowCache)
+		{
+		// If we've run out of cache space, then double the total cache size and give the memory to mDNSCore
+		mDNSu32 numrecords = m->rrcache_size;
+		ResourceRecord *storage = mallocL("mStatus_GrowCache", sizeof(ResourceRecord) * numrecords);
+		if (storage) mDNS_GrowCache(&mDNSStorage, storage, numrecords);
+		}
 	}
 
 //*************************************************************************************************************
@@ -1311,8 +1321,23 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	DNSServiceBrowser           *b;
 	DNSServiceResolver          *l;
 	DNSServiceRegistration      *r;
+	mDNSs32 slot;
+	ResourceRecord *rr;
+	mDNSu32 CacheUsed = 0, CacheActive = 0;
 
 	LogMsg("%s ---- BEGIN STATE LOG ----", mDNSResponderVersionString);
+
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for (rr = mDNSStorage.rrcache_hash[slot]; rr; rr=rr->next)
+			{
+			CacheUsed++;
+			if (rr->CRActiveQuestion) CacheActive++;
+			}
+	if (mDNSStorage.rrcache_totalused != CacheUsed)
+		LogMsg("Cache use mismatch: rrcache_totalused is %lu, true count %lu", mDNSStorage.rrcache_totalused, CacheUsed);
+	if (mDNSStorage.rrcache_active != CacheActive)
+		LogMsg("Cache use mismatch: rrcache_active is %lu, true count %lu", mDNSStorage.rrcache_active, CacheActive);
+	LogMsg("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
 
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
 		LogMsg("%5d: DomainEnumeration   %##s", e->ClientMachPort, e->dom.qname.c);

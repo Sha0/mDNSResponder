@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.192  2003/07/02 02:41:23  cheshire
+<rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
+
 Revision 1.191  2003/07/02 02:30:51  cheshire
 HashSlot() returns an array index. It can't be negative; hence it should not be signed.
 
@@ -3332,7 +3335,8 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, R
 	rr->UseCount++;
 	if (ActiveQuestion(q) && rr->CRActiveQuestion != q)
 		{
-		rr->CRActiveQuestion = q;
+		if (!rr->CRActiveQuestion) m->rrcache_active++;	// If not previously active, increment rrcache_active count
+		rr->CRActiveQuestion = q;						// We know q is non-null
 		SetNextCacheCheckTime(m, rr);
 		}
 
@@ -3526,55 +3530,68 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 
 mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 	{
-	ResourceRecord *r = m->rrcache_free;
+	ResourceRecord *r = mDNSNULL;
 
 	if (m->lock_rrcache) { LogMsg("GetFreeCacheRR ERROR! Cache already locked!"); return(mDNSNULL); }
 	m->lock_rrcache = 1;
 	
-	if (r)		// If there are records in the free list, take one
+	// If we have no free records, ask the client layer to give us some more memory
+	if (!m->rrcache_free && m->MainCallback)
 		{
-		m->rrcache_free = r->next;
-		if (m->rrcache_totalused+1 >= m->rrcache_report)
+		// We don't want to be vulnerable to a malicious attacker flooding us with an infinite
+		// number of bogus records so that we keep growing our cache until the machine runs out of memory.
+		// To guard against this, if we're actively using less than 1/32 of our cache, then we
+		// purge all the unused records and recycle them, instead of allocating more memory.
+		if (m->rrcache_totalused / 32 > m->rrcache_active)
+			debugf("Possible denial-of-service attack in progress: m->rrcache_totalused %lu; m->rrcache_active %lu",
+				m->rrcache_totalused, m->rrcache_active);
+		else
 			{
-			debugf("RR Cache now using %ld records", m->rrcache_totalused+1);
-			if (m->rrcache_report < 100) m->rrcache_report += 10;
-			else                         m->rrcache_report += 100;
+			mDNSu32 oldsize = m->rrcache_size;
+			m->MainCallback(m, mStatus_GrowCache);
+			LogMsg("GetFreeCacheRR: Cache size was %lu; total used %lu; total active %lu; Cache size now %lu",
+				oldsize, m->rrcache_totalused, m->rrcache_active, m->rrcache_size);
 			}
 		}
-	else		// Else search for a candidate to recycle
+	
+	// If we still have no free records, recycle all the records we can.
+	// Enumerating the entire cache is moderately expensive, so when we do it, we reclaim all the records we can in one pass.
+	if (!m->rrcache_free)
 		{
+		mDNSu32 oldtotalused = m->rrcache_totalused;
 		mDNSu32 slot;
 		ResourceRecord **rr;
-		ResourceRecord **best = mDNSNULL;
-		mDNSs32 bestage = -1;
-		mDNSs32 bestslot = -1;
-
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			{
 			rr = &(m->rrcache_hash[slot]);
 			while (*rr)
 				{
 				// Records that answer still-active questions are not candidates for deletion
-				if (!(*rr)->CRActiveQuestion)
+				if ((*rr)->CRActiveQuestion)
+					rr=&(*rr)->next;
+				else
 					{
-					// Work out a weighted age, which is the number of seconds since this record was last used,
-					// divided by the number of times it has been used (we want to keep frequently used records longer).
-					mDNSs32 count = (*rr)->UseCount < 100 ? 1 + (mDNSs32)(*rr)->UseCount : 100;
-					mDNSs32 age = (m->timenow - (*rr)->LastUsed) / count;
-					if ((*rr)->RecordType & kDNSRecordTypePacketAnsMask) age /= 2;	// Keep answer records longer than additionals
-					if (bestage < age) { best = rr; bestage = age; bestslot = slot; }
+					ResourceRecord *r = *rr;
+					*rr = (*rr)->next;			// Cut record from list
+					m->rrcache_used[slot]--;	// Decrement counts
+					m->rrcache_totalused--;
+					r->next = m->rrcache_free;	// Move record to free list
+					m->rrcache_free = r;
 					}
-
-				rr=&(*rr)->next;
 				}
 			}
-
-		if (best)
+		debugf("Clear unused records; m->rrcache_totalused was %lu; now %lu", oldtotalused, m->rrcache_totalused);
+		}
+	
+	if (m->rrcache_free)	// If there are records in the free list, take one
+		{
+		r = m->rrcache_free;
+		m->rrcache_free = r->next;
+		if (m->rrcache_totalused+1 >= m->rrcache_report)
 			{
-			m->rrcache_used[bestslot]--;
-			m->rrcache_totalused--;
-			r = *best;							// Remember the record we chose
-			*best = r->next;					// And detatch it from the free list
+			debugf("RR Cache now using %ld records", m->rrcache_totalused+1);
+			if (m->rrcache_report < 100) m->rrcache_report += 10;
+			else                         m->rrcache_report += 100;
 			}
 		}
 
@@ -4948,7 +4965,8 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(rr, q))
 					break;
 			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %X", rr->name.c, DNSTypeName(rr->rrtype), q);
-			rr->CRActiveQuestion = q;
+			rr->CRActiveQuestion = q;		// Question used to be active; new value may or may not be null
+			if (!q) m->rrcache_active--;	// If no longer active, decrement rrcache_active count
 			}
 		}
 
@@ -5608,7 +5626,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// If we have any cache records received on this interface that went away, then re-verify them.
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
-	if (revalidate)
+	// Don't need to do this when shutting down, because *all* interfaces are about to go away
+	if (revalidate && !m->mDNS_shutdown)
 		{
 		mDNSu32 slot;
 		ResourceRecord *rr;
@@ -5912,6 +5931,18 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
 #pragma mark - Startup and Shutdown
 #endif
 
+mDNSexport void mDNS_GrowCache(mDNS *const m, ResourceRecord *storage, mDNSu32 numrecords)
+	{
+	if (storage && numrecords)
+		{
+		mDNSu32 i;
+		for (i=0; i<numrecords; i++) storage[i].next = &storage[i+1];
+		storage[numrecords-1].next = m->rrcache_free;
+		m->rrcache_free = storage;
+		m->rrcache_size += numrecords;
+		}
+	}
+
 mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	ResourceRecord *rrcachestorage, mDNSu32 rrcachesize,
 	mDNSBool AdvertiseLocalAddresses, mDNSCallback *Callback, void *Context)
@@ -5931,6 +5962,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	// For debugging: To catch and report locking failures
 	m->mDNS_busy               = 0;
 	m->mDNS_reentrancy         = 0;
+	m->mDNS_shutdown           = mDNSfalse;
 	m->lock_rrcache            = 0;
 	m->lock_Questions          = 0;
 	m->lock_Records            = 0;
@@ -5951,17 +5983,19 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->Questions               = mDNSNULL;
 	m->NewQuestions            = mDNSNULL;
 	m->CurrentQuestion         = mDNSNULL;
-	m->rrcache_size            = rrcachesize;
-	for (i = 0; i < CACHE_HASH_SLOTS; i++) m->rrcache_used[i] = 0;
+	m->rrcache_size            = 0;
 	m->rrcache_totalused       = 0;
+	m->rrcache_active          = 0;
 	m->rrcache_report          = 10;
-	m->rrcache_free            = rrcachestorage;
-	if (rrcachesize)
+	m->rrcache_free            = mDNSNULL;
+
+	for (i = 0; i < CACHE_HASH_SLOTS; i++)
 		{
-		for (i=0; i<rrcachesize; i++) rrcachestorage[i].next = &rrcachestorage[i+1];
-		rrcachestorage[rrcachesize-1].next = mDNSNULL;
+		m->rrcache_hash[i] = mDNSNULL;
+		m->rrcache_used[i] = 0;
 		}
-	for (i = 0; i < CACHE_HASH_SLOTS; i++) m->rrcache_hash[i] = mDNSNULL;
+
+	mDNS_GrowCache(m, rrcachestorage, rrcachesize);
 
 	// Fields below only required for mDNS Responder...
 	m->hostlabel.c[0]          = 0;
@@ -5989,19 +6023,19 @@ extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 
 extern void mDNS_Close(mDNS *const m)
 	{
+	mDNSu32 rrcache_active = 0;
+	ResourceRecord *rr;
+	mDNSu32 slot;
 	NetworkInterfaceInfo *intf;
 	mDNS_Lock(m);
 
-#if MDNS_DEBUGMSGS
-	{
-	ResourceRecord *rr;
-	int rrcache_active = 0;
-	mDNSs32 slot;
+	m->mDNS_shutdown = mDNStrue;
+
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next) if (rr->CRActiveQuestion) rrcache_active++;
 	debugf("mDNS_Close: RR Cache now using %ld records, %d active", m->rrcache_totalused, rrcache_active);
-	}
-#endif
+	if (rrcache_active != m->rrcache_active)
+		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
 
 	m->Questions = mDNSNULL;		// We won't be answering any more questions!
 	

@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.74  2003/07/02 02:41:23  cheshire
+<rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
+
 Revision 1.73  2003/06/10 04:24:39  cheshire
 <rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
 Some additional refinements:
@@ -418,6 +421,7 @@ enum
 	mStatus_AlreadyRegistered = -65547,
 	mStatus_NameConflict      = -65548,
 	mStatus_Invalid           = -65549,
+	mStatus_GrowCache         = -65550,
 
 	mStatus_ConfigChanged     = -65791,
 	mStatus_MemFree           = -65792		// 0xFFFE FF00
@@ -779,10 +783,10 @@ struct mDNS_struct
 	// For debugging: To catch and report locking failures
 	mDNSu32 mDNS_busy;					// Incremented between mDNS_Lock/mDNS_Unlock section
 	mDNSu32 mDNS_reentrancy;			// Incremented when calling a client callback
-	mDNSu8 lock_rrcache;				// For debugging: Set at times when these lists may not be modified
-	mDNSu8 lock_Questions;
-	mDNSu8 lock_Records;
-	mDNSu8 padding;
+	mDNSu8  mDNS_shutdown;				// Set when we're shutting down, allows us to skip some unnecessary steps
+	mDNSu8  lock_rrcache;				// For debugging: Set at times when these lists may not be modified
+	mDNSu8  lock_Questions;
+	mDNSu8  lock_Records;
 	char MsgBuffer[80];					// Temp storage used while building error log messages
 
 	// Task Scheduling variables
@@ -801,12 +805,13 @@ struct mDNS_struct
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
 	DNSQuestion *NewQuestions;			// Fresh questions not yet answered from cache
 	DNSQuestion *CurrentQuestion;		// Next question about to be examined in AnswerLocalQuestions()
-	mDNSu32 rrcache_size;
-	mDNSu32 rrcache_used[CACHE_HASH_SLOTS];
-	mDNSu32	rrcache_totalused;
+	mDNSu32 rrcache_size;				// Total number of available cache entries
+	mDNSu32	rrcache_totalused;			// Number of cache entries currently occupied
+	mDNSu32 rrcache_active;				// Number of cache entries currently occupied by records that answer active questions
 	mDNSu32 rrcache_report;
 	ResourceRecord *rrcache_free;
 	ResourceRecord *rrcache_hash[CACHE_HASH_SLOTS];
+	mDNSu32 rrcache_used[CACHE_HASH_SLOTS];
 
 	// Fields below only required for mDNS Responder...
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
@@ -882,6 +887,7 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 #define mDNS_Init_DontAdvertiseLocalAddresses mDNSfalse
 #define mDNS_Init_NoInitCallback              mDNSNULL
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
+extern void    mDNS_GrowCache (mDNS *const m, ResourceRecord *storage, mDNSu32 numrecords);
 extern void    mDNS_Close     (mDNS *const m);
 extern mDNSs32 mDNS_Execute   (mDNS *const m);
 
