@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.144  2003/11/19 23:21:08  ksekar
+Bug #: <rdar://problem/3486646>: config change handler not called for dns-sd services
+
 Revision 1.143  2003/11/14 21:18:32  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -1103,6 +1106,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 				r->autorename = mDNStrue;
 				mDNS_DeregisterService(&mDNSStorage, &r->s);
 				}
+		udsserver_handle_configchange();
 		}
 	else if (result == mStatus_GrowCache)
 		{
