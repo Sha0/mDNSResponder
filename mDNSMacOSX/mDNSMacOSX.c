@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.161  2004/08/11 00:17:46  ksekar
+<rdar://problem/3757662>: 8A227: Need Lighthouse configred machines to
+set default bit for their domains
+
 Revision 1.160  2004/07/29 19:27:16  ksekar
 NAT-PMP Support - minor fixes and cleanup
 
@@ -1976,7 +1980,7 @@ mDNSlocal void GetAuthInfoFromKeychainItem(mDNS *m, SecKeychainItemRef item)
 	
 	// set up _browse
 	mDNS_SetupResourceRecord(rrBrowse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	MakeDomainNameFromDNSNameString(&rrBrowse->resrec.name, "_browse._dns-sd._udp.local.");
+	MakeDomainNameFromDNSNameString(&rrBrowse->resrec.name, "_default._browse._dns-sd._udp.local.");
 	strcpy(rrBrowse->resrec.rdata->u.name.c, zone.c);
 	
 	// set up _register
