@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.154  2004/03/12 08:42:47  cheshire
+<rdar://problem/3548256>: Should not allow empty string for resolve domain
+
 Revision 1.153  2004/03/12 08:08:51  cheshire
 Update comments
 
@@ -935,7 +938,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	domainname t, d, srv;
 	if (!name[0]    || !MakeDomainLabelFromLiteralString(&n, name))        { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }
-	if (!MakeDomainNameFromDNSNameString(&d, domain))                      { errormsg = "Bad Domain";        goto badparam; }
+	if (!domain[0]  || !MakeDomainNameFromDNSNameString(&d, domain))       { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
 
 	// Allocate memory, and handle failure
