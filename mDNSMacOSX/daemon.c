@@ -509,21 +509,25 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcmp(argv[i], "-no53")) use_53 = 0;
 		}
 
+	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
+	signal(SIGTERM, HandleSIG);	// SIGINT is what you get for a Ctrl-C
+
+	if (!debug_mode) {
+		daemon(0,0);
+		{
+			FILE *fp = fopen(PID_FILE, "w");
+			if (fp != NULL)
+			{
+				fprintf(fp, "%d\n", getpid());
+				fclose(fp);
+			}
+		}
+	}
+		
 	status = start(NULL, NULL);
 
 	if (status == 0)
 		{
-		if (!debug_mode)
-			{
-			FILE *fp = fopen(PID_FILE, "w");
-			if (fp != NULL)
-				{
-				fprintf(fp, "%d\n", getpid());
-				fclose(fp);
-				}
-			daemon(0,0);
-			}
-		signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 		CFRunLoopRun();
 		}
 

@@ -210,7 +210,7 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	struct ip_mreq imr;
 	struct sockaddr_in listening_sockaddr;
 	CFRunLoopSourceRef rls;
-
+	
 	// Open the socket...
 	*s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	*c = NULL;
@@ -231,7 +231,7 @@ mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int
 	// Add multicast group membership on this interface
 	imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 	imr.imr_interface        = ifa_addr->sin_addr;
-	err = setsockopt(*s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(struct ip_mreq));
+	err = setsockopt(*s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(struct ip_mreq));	
 	if (err < 0) { perror("setsockopt - IP_ADD_MEMBERSHIP"); return(err); }
 
 	// Specify outgoing interface too
