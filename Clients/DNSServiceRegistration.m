@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceRegistration.m,v $
+Revision 1.14  2004/03/04 19:20:23  cheshire
+Remove invalid UTF-8 character
+
 Revision 1.13  2003/08/12 19:55:07  cheshire
 Update to APSL 2.0
 
@@ -55,7 +58,7 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
     NSArray *typeArray   = [NSArray arrayWithObjects:@"_ftp._tcp.",    @"_ssh._tcp.",  @"_tftp._tcp.",        @"_http._tcp.",      @"_printer._tcp.",  @"_afpovertcp._tcp.",         nil];
-    NSArray *nameArray   = [NSArray arrayWithObjects:@"My ftp Server", @"My Computer", @"Testing Boot Image", @"A Web Server",     @"Steve’s Printer", @"Company AppleShare Server", nil];
+    NSArray *nameArray   = [NSArray arrayWithObjects:@"My ftp Server", @"My Computer", @"Testing Boot Image", @"A Web Server",     @"Steve's Printer", @"Company AppleShare Server", nil];
     NSArray *portArray   = [NSArray arrayWithObjects:@"21",            @"22",          @"69",                 @"80",               @"515",             @"548",                       nil];
     NSArray *domainArray = [NSArray arrayWithObjects:@"",              @"",            @"",                   @"",                 @"",                @"",                          nil];
     NSArray *textArray   = [NSArray arrayWithObjects:@"",              @"",            @"image=mybootimage",  @"path=/index.html", @"rn=lpt1",         @"Vol=Public",                nil];
