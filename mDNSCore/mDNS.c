@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.416  2004/09/20 23:52:01  cheshire
+CFSocket{Puma}.c renamed to mDNSMacOSX{Puma}.c
+
 Revision 1.415  2004/09/18 01:14:09  cheshire
 <rdar://problem/3485375> Resolve() should not bother doing AAAA queries on machines with no IPv6 interfaces
 
@@ -1097,7 +1100,7 @@ Fix some warnings
 Revision 1.118  2003/05/14 18:48:40  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 More minor refinements:
-CFSocket.c needs to do *all* its mDNS_DeregisterInterface calls before freeing memory
+mDNSMacOSX.c needs to do *all* its mDNS_DeregisterInterface calls before freeing memory
 mDNS_DeregisterInterface revalidates cache record when *any* representative of an interface goes away
 
 Revision 1.117  2003/05/14 07:08:36  cheshire

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.188  2004/09/20 23:52:02  cheshire
+CFSocket{Puma}.c renamed to mDNSMacOSX{Puma}.c
+
 Revision 1.187  2004/09/18 01:37:01  cheshire
 Update comment
 
@@ -423,7 +426,7 @@ Revision 1.73  2003/05/21 17:56:29  ksekar
 Revision 1.72  2003/05/14 18:48:41  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
 More minor refinements:
-CFSocket.c needs to do *all* its mDNS_DeregisterInterface calls before freeing memory
+mDNSMacOSX.c needs to do *all* its mDNS_DeregisterInterface calls before freeing memory
 mDNS_DeregisterInterface revalidates cache record when *any* representative of an interface goes away
 
 Revision 1.71  2003/05/14 07:08:37  cheshire
@@ -529,7 +532,7 @@ Revision 1.45  2002/09/17 01:45:13  cheshire
 Add LIST_ALL_INTERFACES symbol for debugging
 
 Revision 1.44  2002/09/17 01:36:23  cheshire
-Move Puma support to CFSocketPuma.c
+Move Puma support to mDNSMacOSXPuma.c
 
 Revision 1.43  2002/09/17 01:05:28  cheshire
 Change mDNS_AdvertiseLocalAddresses to be an Init parameter instead of a global
@@ -540,7 +543,7 @@ Minor code tidying
  */
 
 // ***************************************************************************
-// mDNS-CFSocket.c:
+// mDNSMacOSX.c:
 // Supporting routines to run mDNS on a CFRunLoop platform
 // ***************************************************************************
 
@@ -586,7 +589,7 @@ Minor code tidying
 // work on Mac OS X 10.1, which does not have the getifaddrs call.
 #define RUN_ON_PUMA_WITHOUT_IFADDRS 0
 #if RUN_ON_PUMA_WITHOUT_IFADDRS
-#include "CFSocketPuma.c"
+#include "mDNSMacOSXPuma.c"
 #else
 #include <ifaddrs.h>
 #endif
@@ -818,18 +821,18 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	n = recvmsg(s, &msg, 0);
 	if (n<0)
 		{
-		if (errno != EWOULDBLOCK && numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) returned error %d errno %d", s, n, errno);
+		if (errno != EWOULDBLOCK && numLogMessages++ < 100) LogMsg("mDNSMacOSX.c: recvmsg(%d) returned error %d errno %d", s, n, errno);
 		return(-1);
 		}
 	if (msg.msg_controllen < (int)sizeof(struct cmsghdr))
 		{
-		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %lu",
+		if (numLogMessages++ < 100) LogMsg("mDNSMacOSX.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %lu",
 			s, msg.msg_controllen, sizeof(struct cmsghdr));
 		return(-1);
 		}
 	if (msg.msg_flags & MSG_CTRUNC)
 		{
-		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_flags & MSG_CTRUNC", s);
+		if (numLogMessages++ < 100) LogMsg("mDNSMacOSX.c: recvmsg(%d) msg.msg_flags & MSG_CTRUNC", s);
 		return(-1);
 		}
 	

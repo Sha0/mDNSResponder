@@ -490,7 +490,7 @@
 			fileEncoding = 4;
 			indentWidth = 4;
 			isa = PBXFileReference;
-			path = CFSocket.c;
+			path = mDNSMacOSX.c;
 			refType = 4;
 			tabWidth = 4;
 			usesTabs = 1;
