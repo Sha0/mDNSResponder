@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardApp.cpp,v $
+Revision 1.5  2005/01/25 18:30:02  shersche
+Fix call to PathForResource() by passing in NULL as first parameter.
+
 Revision 1.4  2005/01/25 08:54:41  shersche
 <rdar://problem/3911084> Load resource DLLs at startup.
 Bug #: 3911084
@@ -114,7 +117,7 @@ BOOL CPrinterSetupWizardApp::InitInstance()
 
 	// Load Resources
 
-	res = PathForResource( L"RendezvousPrinterWizard.dll", resource, MAX_PATH );
+	res = PathForResource( NULL, L"RendezvousPrinterWizard.dll", resource, MAX_PATH );
 	err = translate_errno( res != 0, kUnknownErr, kUnknownErr );
 	require_noerr( err, exit );
 
@@ -122,7 +125,7 @@ BOOL CPrinterSetupWizardApp::InitInstance()
 	translate_errno( g_nonLocalizedResources, GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
-	res = PathForResource(L"RendezvousPrinterWizardLocalized.dll", resource, MAX_PATH );
+	res = PathForResource( NULL, L"RendezvousPrinterWizardLocalized.dll", resource, MAX_PATH );
 	err = translate_errno( res != 0, kUnknownErr, kUnknownErr );
 	require_noerr( err, exit );
 
