@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.487  2004/12/10 19:39:13  cheshire
+<rdar://problem/3915074> Reduce egregious stack space usage
+Reduced SendQueries() stack frame from 18K to 112 bytes
+
 Revision 1.486  2004/12/10 14:16:17  cheshire
 <rdar://problem/3889788> Relax update rate limiting
 We now allow an average rate of ten updates per minute.
@@ -3300,12 +3304,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 		for (q = m->Questions; q; q=q->next)
 			if (q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
-				DNSMessage query;
-				mDNSu8       *qptr        = query.data;
-				const mDNSu8 *const limit = query.data + sizeof(query.data);
-				InitializeDNSMessage(&query.h, q->TargetQID, QueryFlags);
-				qptr = putQuestion(&query, qptr, limit, &q->qname, q->qtype, q->qclass);
-				mDNSSendDNSMessage(m, &query, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, -1, mDNSNULL);
+				mDNSu8       *qptr        = m->omsg.data;
+				const mDNSu8 *const limit = m->omsg.data + sizeof(m->omsg.data);
+				InitializeDNSMessage(&m->omsg.h, q->TargetQID, QueryFlags);
+				qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
+				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, -1, mDNSNULL);
 				q->ThisQInterval   *= 2;
 				q->LastQTime        = m->timenow;
 				q->LastQTxTime      = m->timenow;
@@ -3423,9 +3426,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 	while (intf)
 		{
 		AuthRecord *rr;
-		DNSMessage query;
-		mDNSu8 *queryptr = query.data;
-		InitializeDNSMessage(&query.h, zeroID, QueryFlags);
+		mDNSu8 *queryptr = m->omsg.data;
+		InitializeDNSMessage(&m->omsg.h, zeroID, QueryFlags);
 		if (KnownAnswerList) verbosedebugf("SendQueries:   KnownAnswerList set... Will continue from previous packet");
 		if (!KnownAnswerList)
 			{
@@ -3439,10 +3441,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					debugf("SendQueries: %s question for %##s (%s) at %d forecast total %d",
 						SuppressOnThisInterface(q->DupSuppress, intf) ? "Suppressing" : "Putting    ",
-						q->qname.c, DNSTypeName(q->qtype), queryptr - query.data, queryptr + answerforecast - query.data);
+						q->qname.c, DNSTypeName(q->qtype), queryptr - m->omsg.data, queryptr + answerforecast - m->omsg.data);
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
 					if (SuppressOnThisInterface(q->DupSuppress, intf) ||
-						BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
+						BuildQuestion(m, &m->omsg, &queryptr, q, &kalistptr, &answerforecast))
 							q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
 
@@ -3452,8 +3454,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					mDNSBool ucast = (rr->ProbeCount >= DefaultProbeCountForTypeUnique-1) && m->CanReceiveUnicastOn5353;
 					mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
-					const mDNSu8 *const limit = query.data + ((query.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
-					mDNSu8 *newptr = putQuestion(&query, queryptr, limit, &rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
+					const mDNSu8 *const limit = m->omsg.data + ((m->omsg.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
+					mDNSu8 *newptr = putQuestion(&m->omsg, queryptr, limit, &rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->resrec.rdestimate;
 					if (newptr && newptr + forecast < limit)
@@ -3467,7 +3469,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					else
 						{
 						verbosedebugf("SendQueries:   Retracting Question %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-						query.h.numQuestions--;
+						m->omsg.h.numQuestions--;
 						}
 					}
 				}
@@ -3477,10 +3479,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			CacheRecord *rr = KnownAnswerList;
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-			mDNSu8 *newptr = PutResourceRecordTTL(&query, queryptr, &query.h.numAnswers, &rr->resrec, rr->resrec.rroriginalttl - SecsSinceRcvd);
+			mDNSu8 *newptr = PutResourceRecordTTL(&m->omsg, queryptr, &m->omsg.h.numAnswers, &rr->resrec, rr->resrec.rroriginalttl - SecsSinceRcvd);
 			if (newptr)
 				{
-				verbosedebugf("SendQueries:   Put %##s (%s) at %d - %d", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), queryptr - query.data, newptr - query.data);
+				verbosedebugf("SendQueries:   Put %##s (%s) at %d - %d", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), queryptr - m->omsg.data, newptr - m->omsg.data);
 				queryptr = newptr;
 				KnownAnswerList = rr->NextInKAList;
 				rr->NextInKAList = mDNSNULL;
@@ -3489,9 +3491,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 				{
 				// If we ran out of space and we have more than one question in the packet, that's an error --
 				// we shouldn't have put more than one question if there was a risk of us running out of space.
-				if (query.h.numQuestions > 1)
-					LogMsg("SendQueries:   Put %d answers; No more space for known answers", query.h.numAnswers);
-				query.h.flags.b[0] |= kDNSFlag0_TC;
+				if (m->omsg.h.numQuestions > 1)
+					LogMsg("SendQueries:   Put %d answers; No more space for known answers", m->omsg.h.numAnswers);
+				m->omsg.h.flags.b[0] |= kDNSFlag0_TC;
 				break;
 				}
 			}
@@ -3499,23 +3501,23 @@ mDNSlocal void SendQueries(mDNS *const m)
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->IncludeInProbe)
 				{
-				mDNSu8 *newptr = PutResourceRecord(&query, queryptr, &query.h.numAuthorities, &rr->resrec);
+				mDNSu8 *newptr = PutResourceRecord(&m->omsg, queryptr, &m->omsg.h.numAuthorities, &rr->resrec);
 				rr->IncludeInProbe = mDNSfalse;
 				if (newptr) queryptr = newptr;
 				else LogMsg("SendQueries:   How did we fail to have space for the Update record %##s (%s)?",
 					rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 				}
 		
-		if (queryptr > query.data)
+		if (queryptr > m->omsg.data)
 			{
-			if ((query.h.flags.b[0] & kDNSFlag0_TC) && query.h.numQuestions > 1)
-				LogMsg("SendQueries: Should not have more than one question (%d) in a truncated packet", query.h.numQuestions);
+			if ((m->omsg.h.flags.b[0] & kDNSFlag0_TC) && m->omsg.h.numQuestions > 1)
+				LogMsg("SendQueries: Should not have more than one question (%d) in a truncated packet", m->omsg.h.numQuestions);
 			debugf("SendQueries:   Sending %d Question%s %d Answer%s %d Update%s on %p",
-				query.h.numQuestions,   query.h.numQuestions   == 1 ? "" : "s",
-				query.h.numAnswers,     query.h.numAnswers     == 1 ? "" : "s",
-				query.h.numAuthorities, query.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
-			if (intf->IPv4Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
-			if (intf->IPv6Available) mDNSSendDNSMessage(m, &query, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
+				m->omsg.h.numQuestions,   m->omsg.h.numQuestions   == 1 ? "" : "s",
+				m->omsg.h.numAnswers,     m->omsg.h.numAnswers     == 1 ? "" : "s",
+				m->omsg.h.numAuthorities, m->omsg.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
 			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + mDNSPlatformOneSecond/10);
 			if (++pktcount >= 1000)
 				{ LogMsg("SendQueries exceeded loop limit %d: giving up", pktcount); break; }
