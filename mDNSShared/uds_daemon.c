@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.124  2004/11/30 02:19:14  cheshire
+<rdar://problem/3827971> Raise maxfds.rlim_cur for mDNSResponder
+
 Revision 1.123  2004/11/29 23:50:57  cheshire
 Checkin 1.122 not necessary
 
@@ -625,7 +628,6 @@ mDNSexport mDNS mDNSStorage;
 static dnssd_sock_t			listenfd		=	dnssd_InvalidSocket;  
 static request_state	*	all_requests	=	NULL;  
 
-#define MAX_OPENFILES 1024
 #define MAX_TIME_BLOCKED 60 * mDNSPlatformOneSecond  // try to send data to a blocked client for 60 seconds before
                                                      // terminating connection
 #define MSG_PAD_BYTES 5                              // pad message buffer (read from client) with n zero'd bytes to guarantee
@@ -766,25 +768,24 @@ int udsserver_init(void)
 
 #if !defined(PLATFORM_NO_RLIMIT)
 	{
-	struct rlimit maxfds;
+	// Set maximum number of open file descriptors
+	#define MIN_OPENFILES 10240
+	struct rlimit maxfds, newfds;
 
-	// set maximum file descriptor to 1024
-	if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0)
-		{
-		my_perror("ERROR: Unable to get file descriptor limit");
-		return 0;
-		}
+	// Due to bugs in OS X (<rdar://problem/2941095>, <rdar://problem/3342704>, <rdar://problem/3839173>)
+	// you have to get and set rlimits once before getrlimit will return sensible values
+	if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0) { my_perror("ERROR: Unable to get file descriptor limit"); return 0; }
+	if (setrlimit(RLIMIT_NOFILE, &maxfds) < 0) my_perror("ERROR: Unable to set maximum file descriptor limit");
 
-	if (maxfds.rlim_max >= MAX_OPENFILES && maxfds.rlim_cur == maxfds.rlim_max)
-		{
-		// proper values already set
-		return 0;
-		}
+	if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0) { my_perror("ERROR: Unable to get file descriptor limit"); return 0; }
+	newfds.rlim_max = (maxfds.rlim_max > MIN_OPENFILES) ? maxfds.rlim_max : MIN_OPENFILES;
+	newfds.rlim_cur = (maxfds.rlim_cur > MIN_OPENFILES) ? maxfds.rlim_cur : MIN_OPENFILES;
+	if (newfds.rlim_max != maxfds.rlim_max || newfds.rlim_cur != maxfds.rlim_cur)
+		if (setrlimit(RLIMIT_NOFILE, &newfds) < 0) my_perror("ERROR: Unable to set maximum file descriptor limit");
 
-	maxfds.rlim_max = MAX_OPENFILES;
-	maxfds.rlim_cur = MAX_OPENFILES;
-	if (setrlimit(RLIMIT_NOFILE, &maxfds) < 0)
-		my_perror("ERROR: Unable to set maximum file descriptor limit");
+	if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0) { my_perror("ERROR: Unable to get file descriptor limit"); return 0; }
+	LogOperation("maxfds.rlim_max %d", (long)maxfds.rlim_max);
+	LogOperation("maxfds.rlim_cur %d", (long)maxfds.rlim_cur);
 	}
 #endif
 	
