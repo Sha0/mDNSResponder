@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.110  2003/04/30 21:09:59  cheshire
+<rdar://problem/3244727> mDNS_vsprintf needs to be more defensive against invalid domain names
+
 Revision 1.109  2003/04/26 02:41:56  cheshire
 <rdar://problem/3241281> Change timenow from a local variable to a structure member
 
@@ -573,8 +576,10 @@ conv:	switch (c)	//  perform appropriate conversion
 									unsigned char *a = (unsigned char *)s;
 									s = buf;
 									if (*a == 0) *s++ = '.';	// Special case for root DNS name
-									while (*a && s + *a + 1 < &buf[mDNS_vsprintf_BUFLEN])
+									while (*a)
 										{
+										if (*a > 63) { s += mDNS_sprintf(s, "<<INVALID LABEL LENGTH %d>>", *a); break; }
+										if (s + *a >= &buf[254]) { s += mDNS_sprintf(s, "<<NAME TOO LONG>>"); break; }
 										s += mDNS_sprintf(s, "%#s.", a);
 										a += 1 + *a;
 										}
@@ -897,8 +902,8 @@ mDNSexport void ConvertCStringToDomainLabel(const char *src, domainlabel *label)
 
 mDNSexport mDNSu8 *ConvertCStringToDomainName(const char *const cstr, domainname *name)
 	{
-	const mDNSu8 *src         = (const mDNSu8 *)cstr;					// C string we're reading
-	mDNSu8       *ptr         = name->c;								// Where we're putting it
+	const mDNSu8 *src         = (const mDNSu8 *)cstr;				// C string we're reading
+	mDNSu8       *ptr         = name->c;							// Where we're putting it
 	const mDNSu8 *const limit = ptr + MAX_DOMAIN_NAME;				// The maximum we can put
 
 	while (*src && ptr < limit)										// While more characters, and space to put them...
@@ -913,7 +918,7 @@ mDNSexport mDNSu8 *ConvertCStringToDomainName(const char *const cstr, domainname
 					c = *src++;										// just use the second character
 				else if (mdnsIsDigit(src[0]) && mdnsIsDigit(src[1]) && mdnsIsDigit(src[2]))
 					{												// else, if three decimal digits,
-					int v0 = src[0] - '0';						// then interpret as three-digit decimal
+					int v0 = src[0] - '0';							// then interpret as three-digit decimal
 					int v1 = src[1] - '0';
 					int v2 = src[2] - '0';
 					int val = v0 * 100 + v1 * 10 + v2;
@@ -1625,8 +1630,20 @@ mDNSlocal mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 
 	while (*np && ptr < limit-1)		// While we've got characters in the name, and space to write them in the message...
 		{
+		if (*np > MAX_DOMAIN_LABEL)
+			{ LogMsg("Malformed domain name %##s (label more than 63 bytes)", name->c); return(mDNSNULL); }
+		
+		// This check correctly allows for the final trailing root label:
+		// e.g.
+		// Suppose our domain name is exactly 255 bytes long, including the final trailing root label.
+		// Suppose np is now at name->c[248], and we're about to write our last non-null label ("local").
+		// We know that max will be at name->c[255]
+		// That means that np + 1 + 5 == max - 1, so we (just) pass the "if" test below, write our
+		// six bytes, then exit the loop, write the final terminating root label, and the domain
+		// name we've written is exactly 255 bytes long, exactly at the correct legal limit.
+		// If the name is one byte longer, then we fail the "if" test below, and correctly bail out.
 		if (np + 1 + *np >= max)
-			{ debugf("Malformed domain name (more than 255 characters)"); return(mDNSNULL); }
+			{ LogMsg("Malformed domain name %##s (more than 255 bytes)", name->c); return(mDNSNULL); }
 
 		if (base) pointer = FindCompressionPointer(base, searchlimit, np);
 		if (pointer)					// Use a compression pointer if we can
