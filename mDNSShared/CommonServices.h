@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.3  2004/04/08 09:27:12  bradley
+Added macro for portable specification of callback calling conventions.
+
 Revision 1.2  2004/03/07 05:53:39  bradley
 Fixed NumVersion extraction macros. Updated error code mappings to match latest internal version.
 
@@ -516,6 +519,16 @@ Common Services and portability support for various platforms.
 	#define	inline_compat		__inline
 #else
 	#define	inline_compat		inline
+#endif
+
+// Calling conventions 
+
+#if( !defined( CALLBACK_COMPAT ) )
+	#if( TARGET_OS_WIN32 || TARGET_OS_WINDOWS_CE )
+		#define	CALLBACK_COMPAT		CALLBACK
+	#else
+		#define	CALLBACK_COMPAT
+	#endif
 #endif
 
 #if 0
