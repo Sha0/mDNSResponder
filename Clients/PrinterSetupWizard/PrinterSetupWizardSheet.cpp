@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.17  2004/10/12 18:02:53  shersche
+<rdar://problem/3764873> Escape '/', '@', '"' characters in printui command.
+Bug #: 3764873
+
 Revision 1.16  2004/09/13 21:27:22  shersche
 <rdar://problem/3796483> Pass the moreComing flag to OnAddPrinter and OnRemovePrinter callbacks
 Bug #: 3796483
@@ -1027,6 +1031,7 @@ CPrinterSetupWizardSheet::InstallPrinterThread( LPVOID inParam )
 	check( inParam );
 		
 	Printer			*	printer = (Printer*) inParam;
+	CString				actualName;
 	CString				command;
 	DWORD				exitCode = 0;
 	DWORD				dwResult;
@@ -1039,7 +1044,17 @@ CPrinterSetupWizardSheet::InstallPrinterThread( LPVOID inParam )
 	si.cb = sizeof(si);
 	ZeroMemory( &pi, sizeof(pi) );
 
-	command.Format(L"rundll32.exe printui.dll,PrintUIEntry /if /b \"%s\" /f \"%s\" /r \"%s\" /m \"%s\"", printer->actualName, printer->infFileName, printer->portName, printer->model);
+	//
+	// <rdar://problem/3764873> Escape '\', '@', '"' characters which seem to cause problems for printui
+	//
+
+	actualName = printer->actualName;
+
+	actualName.Replace(L"\\", L"\\\\");
+	actualName.Replace(L"@", L"\\@");
+	actualName.Replace(L"\"", L"\\\"");
+	
+	command.Format(L"rundll32.exe printui.dll,PrintUIEntry /if /b \"%s\" /f \"%s\" /r \"%s\" /m \"%s\"", (LPCTSTR) actualName, (LPCTSTR) printer->infFileName, (LPCTSTR) printer->portName, (LPCTSTR) printer->model);
 
 	ok = CreateProcess(NULL, command.GetBuffer(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
