@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.252  2004/12/07 03:02:12  ksekar
+Fixed comments, grouped unicast-specific routines together
+
 Revision 1.251  2004/12/06 21:15:22  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -2320,7 +2323,7 @@ typedef struct uDNS_AuthInfo
 	struct uDNS_AuthInfo *next;
 	} uDNS_AuthInfo;
 
-// Client Calls
+// Unicast DNS and Dynamic Update specific Client Calls
 //
 // mDNS_SetSecretForZone tells the core to authenticate (via TSIG with an HMAC_MD5 hash of the shared secret)
 // when dynamically updating a given zone (and its subdomains).  The key used in authentication must be in
@@ -2337,26 +2340,29 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const doma
 // All hostnames advertised point to a single IP address, set via SetPrimaryInterfaceInfo.  Invoking this routine
 // updates all existing hostnames to point to the new address.
 	
-// A hostname is added via AddDynDNSHostDomain, which points to the primary interface's IP address.
+// A hostname is added via AddDynDNSHostName, which points to the primary interface's IP address.
 
 // The status callback is invoked to convey success or failure codes - the callback should not modify the AuthRecord or free memory.
-// The record passed to the callback is the address record for the hostname.  The StatusContext pointer will be found in
-// this record's RecordContext field.
-
-// Added hostnames may be removed (deregistered) via mDNS_RemoveDynDNSHostDomain.
+// Added hostnames may be removed (deregistered) via mDNS_RemoveDynDNSHostName.
 
 // Host domains added prior to specification of the primary interface address and computer name will be deferred until
 // these values are initialized.
 
 // When routable V4 interfaces are added or removed, mDNS_UpdateLLQs should be called to re-estabish LLQs in case the
-// destination address for events (i.e. the route) has changed.  For performance reasons, The caller is responsible for 
+// destination address for events (i.e. the route) has changed.  For performance reasons, the caller is responsible for 
 // batching changes, e.g.  calling the routine only once if multiple interfaces are simultanously removed or added.
 
+// DNS servers used to resolve unicast queries are specified by mDNS_AddDNSServer, and may later be removed via mDNS_DeleteDNSServers.
+// For "split" DNS configurations, in which queries for different domains are sent to different servers (e.g. VPN and external),
+// a domain may be associated with a DNS server.  For standard configurations, specify the root label (".") or NULL.
+	
 extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mDNSAddr *router);
 extern void mDNS_UpdateLLQs(mDNS *m);
-
+extern void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
+extern void mDNS_DeleteDNSServers(mDNS *const m);
+	
 // Routines called by the core, exported by DNSDigest.c
 
 // Convert a base64 encoded key into a binary byte stream
@@ -2497,9 +2503,9 @@ extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 // -- Address-to-name records (PTR)
 // -- Host information (HINFO)
 // IMPORTANT: The specified mDNSInterfaceID MUST NOT be 0, -1, or -2; these values have special meaning
-//
-// mDNS_SetDynamicRegistrationDomain is used to enable dynamic update registrations of address records
-// in the specified domain.
+// mDNS_RegisterInterface does not result in the registration of global hostnames via dynamic update -
+// see mDNS_SetPrimaryInterfaceInfo, mDNS_AddDynDNSHostName, etc. for this purpose.
+// Note that the set may be deallocated immediately after it is deregistered via mDNS_DeegisterInterface.
 //
 // mDNS_RegisterDNS() is used by the platform support layer to provide the core with the addresses of
 // available domain name servers for unicast queries/updates.  RegisterDNS() should be called once for
@@ -2520,8 +2526,6 @@ extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 extern void     mDNS_SetFQDN(mDNS *const m);
 extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
-extern void     mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
-extern void     mDNS_DeleteDNSServers(mDNS *const m);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
