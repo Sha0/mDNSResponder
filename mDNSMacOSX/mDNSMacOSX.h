@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.45  2004/10/28 00:53:57  cheshire
+Export mDNSMacOSXNetworkChanged() so it's callable from outside this mDNSMacOSX.c;
+Add LogOperation() call to record when we get network change events
+
 Revision 1.44  2004/10/23 01:16:01  cheshire
 <rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
 
@@ -232,6 +236,7 @@ struct mDNS_PlatformSupport_struct
     CFRunLoopSourceRef       PowerRLS;
     };
 
+extern void mDNSMacOSXNetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context);
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];

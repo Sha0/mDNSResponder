@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.220  2004/10/28 00:53:57  cheshire
+Export mDNSMacOSXNetworkChanged() so it's callable from outside this mDNSMacOSX.c;
+Add LogOperation() call to record when we get network change events
+
 Revision 1.219  2004/10/27 20:42:20  cheshire
 Clean up debugging messages
 
@@ -2382,11 +2386,11 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	CFRelease(dict);
 	}
 
-mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
+mDNSexport void mDNSMacOSXNetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{
 	(void)store;        // Parameter not used
 	(void)changedKeys;  // Parameter not used
-	debugf("***   Network Configuration Change   ***");
+	LogOperation("***   Network Configuration Change   ***");
 
 	mDNS *const m = (mDNS *const)context;
 
@@ -2406,7 +2410,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	{
 	mStatus err = -1;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
-	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NetworkChanged, &context);
+	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), mDNSMacOSXNetworkChanged, &context);
 	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
 	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
@@ -2476,7 +2480,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemWillRestart:		debugf("PowerChanged kIOMessageSystemWillRestart (no action)");							break; // E0000310
 		case kIOMessageSystemWillPowerOn:		debugf("PowerChanged kIOMessageSystemWillPowerOn");
 												// Make sure our interface list is updated, then tell mDNSCore to wake
-												NetworkChanged(NULL, NULL, m); mDNSCoreMachineSleep(m, false);                          break; // E0000320
+												mDNSMacOSXNetworkChanged(NULL, NULL, m); mDNSCoreMachineSleep(m, false);                break; // E0000320
 		default:								debugf("PowerChanged unknown message %X", messageType);									break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
