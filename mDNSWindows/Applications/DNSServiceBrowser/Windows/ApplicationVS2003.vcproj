@@ -48,7 +48,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalOptions="/MACHINE:I386"
+				AdditionalOptions="/MACHINE:I386 /IGNORE:4089"
 				AdditionalDependencies="ws2_32.lib nafxcwd.lib LIBCMTD.lib"
 				OutputFile="Rendezvous Browser Debug.exe"
 				LinkIncremental="1"
@@ -126,7 +126,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalOptions="/MACHINE:I386"
+				AdditionalOptions="/MACHINE:I386 /IGNORE:4089"
 				AdditionalDependencies="ws2_32.lib nafxcw.lib LIBCMT.lib"
 				OutputFile="Rendezvous Browser.exe"
 				LinkIncremental="1"
@@ -153,39 +153,6 @@
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="_AFXDLL;NDEBUG"
 				Culture="1033"/>
-			<Tool
-				Name="VCWebServiceProxyGeneratorTool"/>
-			<Tool
-				Name="VCXMLDataGeneratorTool"/>
-			<Tool
-				Name="VCWebDeploymentTool"/>
-			<Tool
-				Name="VCManagedWrapperGeneratorTool"/>
-			<Tool
-				Name="VCAuxiliaryManagedWrapperGeneratorTool"/>
-		</Configuration>
-		<Configuration
-			Name="All|Win32"
-			OutputDirectory="All"
-			IntermediateDirectory="All"
-			ConfigurationType="1">
-			<Tool
-				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories=""/>
-			<Tool
-				Name="VCCustomBuildTool"/>
-			<Tool
-				Name="VCLinkerTool"/>
-			<Tool
-				Name="VCMIDLTool"/>
-			<Tool
-				Name="VCPostBuildEventTool"/>
-			<Tool
-				Name="VCPreBuildEventTool"/>
-			<Tool
-				Name="VCPreLinkEventTool"/>
-			<Tool
-				Name="VCResourceCompilerTool"/>
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
@@ -249,13 +216,31 @@
 			Name="Rendezvous"
 			Filter="">
 			<File
+				RelativePath="..\..\..\..\mDNSCore\DNSCommon.c">
+			</File>
+			<File
+				RelativePath="..\..\..\..\mDNSCore\DNSCommon.h">
+			</File>
+			<File
 				RelativePath="..\..\..\DNSServices\DNSServices.c">
 			</File>
 			<File
 				RelativePath="..\..\..\..\mDNSCore\mDNS.c">
 			</File>
 			<File
+				RelativePath="..\..\..\..\mDNSCore\mDNSClientAPI.h">
+			</File>
+			<File
+				RelativePath="..\..\..\..\mDNSCore\mDNSDebug.h">
+			</File>
+			<File
 				RelativePath="..\..\..\mDNSWin32.c">
+			</File>
+			<File
+				RelativePath="..\..\..\..\mDNSCore\uDNS.c">
+			</File>
+			<File
+				RelativePath="..\..\..\..\mDNSCore\uDNS.h">
 			</File>
 		</Filter>
 	</Files>
