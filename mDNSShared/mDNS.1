@@ -20,6 +20,9 @@
 .\" @APPLE_LICENSE_HEADER_END@
 .\"
 .\" $Log: mDNS.1,v $
+.\" Revision 1.3  2004/05/19 00:31:28  cheshire
+.\" Add missing "name type domain" for -L option
+.\"
 .\" Revision 1.2  2004/05/18 18:58:29  cheshire
 .\" Refinements from Soren Spies
 .\"
@@ -109,7 +112,7 @@ key/value pairs, which are stored in the advertised service's DNS TXT
 record. Allowable keys and values are listed with the service
 registration at
 .Pa http://www.dns-sd.org/ServiceTypes.html .
-.It Fl B Ar      type domain
+.It Fl B Ar type domain
 browse for instances of service
 .Ar type
 in
@@ -122,7 +125,7 @@ see
 as described above. Omitting the
 .Ar domain
 or using "." means "pick a sensible default."
-.It Fl L
+.It Fl L Ar name type domain
 look up and display the information necessary to contact and use the
 named service: the hostname of the machine where that service is
 available, the port number on which the service is listening, and (if
