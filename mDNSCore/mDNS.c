@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.484  2004/12/09 03:15:40  ksekar
+<rdar://problem/3806610> use _legacy instead of _default to find "empty string" browse domains
+
 Revision 1.483  2004/12/07 23:00:14  ksekar
 <rdar://problem/3908336> DNSServiceRegisterRecord() can crash on deregistration:
 Call RecordProbeFailure even if there is no record callback
@@ -1628,7 +1631,8 @@ static const char *const mDNS_DomainTypeNames[] =
 	"_browse._dns-sd._udp.",
 	"_default._browse._dns-sd._udp.",
 	"_register._dns-sd._udp.",
-	"_default._register._dns-sd._udp."
+	"_default._register._dns-sd._udp.",
+	"_legacy._browse._dns-sd._udp."
 	};
 
 #ifdef UNICAST_DISABLED
@@ -5735,7 +5739,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->ForceMCast       = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
-	if (DomainType > mDNS_DomainTypeRegistrationDefault) return(mStatus_BadParamErr);
+	if (DomainType > mDNS_DomainTypeBrowseLegacy) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&question->qname, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
 	if (!dom) dom = &localdomain;
 	if (!AppendDomainName(&question->qname, dom)) return(mStatus_BadParamErr);

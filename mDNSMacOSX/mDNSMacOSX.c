@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.253  2004/12/09 03:15:41  ksekar
+<rdar://problem/3806610> use _legacy instead of _default to find "empty string" browse domains
+
 Revision 1.252  2004/12/07 01:32:42  cheshire
 Don't log dns_configuration_copy() failure when running on 10.3
 
@@ -816,6 +819,7 @@ typedef struct SearchListElem
     int flag;
     DNSQuestion BrowseQ;
     DNSQuestion DefBrowseQ;
+    DNSQuestion LegacyBrowseQ;
     DNSQuestion RegisterQ;
     DNSQuestion DefRegisterQ;
     ARListElem *AuthRecs;
@@ -829,7 +833,7 @@ static mDNSu32 clockdivisor = 0;
 
 // for domain enumeration and default browsing/registration
 static SearchListElem *SearchList = NULL;    // where we search for _browse domains
-static DNSQuestion DefBrowseDomainQ;         // our local enumeration query for _browse domains
+static DNSQuestion LegacyBrowseDomainQ;      // our local enumeration query for _legacy._browse domains
 static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
 static DNameListElem *DefRegList = NULL;     // manually generated list of domains where we register for empty string registrations
 
@@ -2199,10 +2203,11 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		arElem = mallocL("FoundDomain - arElem", sizeof(ARListElem));
 		if (!arElem) { LogMsg("ERROR: malloc");  return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, arElem);
-		if      (question == &slElem->BrowseQ)      name = "_browse._dns-sd._udp.local.";
-		else if (question == &slElem->DefBrowseQ)   name = "_default._browse._dns-sd._udp.local.";
-		else if (question == &slElem->RegisterQ)    name = "_register._dns-sd._udp.local.";
-		else if (question == &slElem->DefRegisterQ) name = "_default._register._dns-sd._udp.local.";
+		if      (question == &slElem->BrowseQ)       name = "_browse._dns-sd._udp.local.";
+		else if (question == &slElem->DefBrowseQ)    name = "_default._browse._dns-sd._udp.local.";
+		else if (question == &slElem->LegacyBrowseQ) name = "_legacy._browse._dns-sd._udp.local.";
+		else if (question == &slElem->RegisterQ)     name = "_register._dns-sd._udp.local.";
+		else if (question == &slElem->DefRegisterQ)  name = "_default._register._dns-sd._udp.local.";
 		else { LogMsg("FoundDomain - unknown question"); return; }
 		
 		MakeDomainNameFromDNSNameString(&arElem->ar.resrec.name, name);
@@ -2353,6 +2358,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 			mDNS_StopQuery(m, &ptr->RegisterQ);
 			mDNS_StopQuery(m, &ptr->DefBrowseQ);
 			mDNS_StopQuery(m, &ptr->DefRegisterQ);
+			mDNS_StopQuery(m, &ptr->LegacyBrowseQ);			
 			
             // deregister records generated from answers to the query
 			arList = ptr->AuthRecs;
@@ -2377,18 +2383,20 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
 		
 		if (ptr->flag == 1)  // add
 			{
-			mStatus err1, err2, err3, err4;
-			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,      mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,   mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,    mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ, mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-
-			if (err1 || err2 || err3 || err4) LogMsg("GetDomains for domain %##s returned error(s):\n"
-													 "%d (mDNS_DomainTypeBrowse)\n"
-													 "%d (mDNS_DomainTypeBrowseDefault)\n"
-													 "%d (mDNS_DomainTypeRegistration)\n"
-													 "%d (mDNS_DomainTypeRegistrationDefault)",
-													 ptr->domain.c, err1, err2, err3, err4);		   
+			mStatus err1, err2, err3, err4, err5;
+			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,       mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,    mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,     mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,  mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err5 = mDNS_GetDomains(m, &ptr->LegacyBrowseQ, mDNS_DomainTypeBrowseLegacy,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			if (err1 || err2 || err3 || err4 || err5)
+				LogMsg("GetDomains for domain %##s returned error(s):\n"
+					   "%d (mDNS_DomainTypeBrowse)\n"
+					   "%d (mDNS_DomainTypeBrowseDefault)\n"
+					   "%d (mDNS_DomainTypeRegistration)\n"
+					   "%d (mDNS_DomainTypeRegistrationDefault)"
+					   "%d (mDNS_DomainTypeBrowseLegacy)\n",
+					   ptr->domain.c, err1, err2, err3, err4, err5);   
 			ptr->flag = 0;
 			}
 		
@@ -2453,6 +2461,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	CFDictionaryRef dict;
 	CFStringRef     key;
 	domainname zone, fqdn;
+	
 	// get fqdn, zone from SCPrefs
 	GetUserSpecifiedDDNSConfig(&fqdn, &zone);
 	if (!fqdn.c[0] && !zone.c[0]) ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &fqdn, &zone);
@@ -2782,14 +2791,14 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	AuthRecord local;
 
 	// start query for domains to be used in default (empty string domain) browses
-	err = mDNS_GetDomains(m, &DefBrowseDomainQ, mDNS_DomainTypeBrowseDefault, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
+	err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
 
 	// provide .local automatically
 	mDNS_SetupResourceRecord(&local, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	MakeDomainNameFromDNSNameString(&local.resrec.name, "_browse._dns-sd._udp.local.");
+	MakeDomainNameFromDNSNameString(&local.resrec.name, "_legacy._browse._dns-sd._udp.local.");
 	MakeDomainNameFromDNSNameString(&local.resrec.rdata->u.name, "local.");
 	// other fields ignored
-	FoundDefBrowseDomain(m, &DefBrowseDomainQ, &local.resrec, 1);
+	FoundDefBrowseDomain(m, &LegacyBrowseDomainQ, &local.resrec, 1);
 
     return mStatus_NoError;
 	}

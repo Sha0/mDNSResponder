@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.256  2004/12/09 03:15:40  ksekar
+<rdar://problem/3806610> use _legacy instead of _default to find "empty string" browse domains
+
 Revision 1.255  2004/12/07 22:48:37  cheshire
 Tidying
 
@@ -2177,7 +2180,8 @@ typedef enum
 	mDNS_DomainTypeBrowse              = 0,
 	mDNS_DomainTypeBrowseDefault       = 1,
 	mDNS_DomainTypeRegistration        = 2,
-	mDNS_DomainTypeRegistrationDefault = 3
+	mDNS_DomainTypeRegistrationDefault = 3,
+	mDNS_DomainTypeBrowseLegacy        = 4,	
 	} mDNS_DomainType;
 
 extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const domainname *dom,
