@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.14  2003/08/06 18:20:51  cheshire
+Makefile cleanup
+
 Revision 1.13  2003/07/23 00:00:04  cheshire
 Add comments
 
@@ -744,7 +747,7 @@ static void DeregisterOurServices(void)
 #pragma mark **** Main
 #endif
 
-#if !defined(HAVE_DAEMON)
+#ifdef NOT_HAVE_DAEMON
 
     // The version of Solaris that I tested on didn't have the daemon 
     // call.  This implementation was basically stolen from the 
@@ -779,7 +782,7 @@ static void DeregisterOurServices(void)
         return (0);
     }
 
-#endif
+#endif /* NOT_HAVE_DAEMON */
 
 int main(int argc, char **argv)
 {

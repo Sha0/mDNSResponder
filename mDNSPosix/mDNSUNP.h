@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.7  2003/08/06 18:20:51  cheshire
+Makefile cleanup
+
 Revision 1.6  2003/07/02 21:19:59  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -56,7 +59,7 @@ First checkin
     extern "C" {
 #endif
 
-#if !defined(HAVE_SOCKLEN_T)
+#ifdef NOT_HAVE_SOCKLEN_T
     typedef unsigned int socklen_t;
 #endif
 
@@ -64,7 +67,7 @@ First checkin
     #define sockaddr_storage sockaddr
 #endif
 
-#if HAVE_SOCKADDR_SA_LEN
+#ifndef NOT_HAVE_SA_LEN
 #define GET_SA_LEN(X) (sizeof(struct sockaddr) > ((struct sockaddr*)&(X))->sa_len ? \
                        sizeof(struct sockaddr) : ((struct sockaddr*)&(X))->sa_len   )
 #elif mDNSIPv6Support

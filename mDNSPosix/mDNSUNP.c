@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.10  2003/08/06 18:20:51  cheshire
+Makefile cleanup
+
 Revision 1.9  2003/07/14 18:11:54  cheshire
 Fix stricter compiler warnings
 
@@ -288,7 +291,7 @@ recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
     struct iovec    iov[1];
     ssize_t         n;
 
-#ifdef  HAVE_MSGHDR_MSG_CONTROL
+#ifdef CMSG_FIRSTHDR
     struct cmsghdr  *cmptr;
     union {
       struct cmsghdr    cm;
@@ -300,7 +303,7 @@ recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
     msg.msg_flags = 0;
 #else
     memset(&msg, 0, sizeof(msg));   /* make certain msg_accrightslen = 0 */
-#endif
+#endif /* CMSG_FIRSTHDR */
 
     msg.msg_name = (void *) sa;
     msg.msg_namelen = *salenptr;
@@ -327,7 +330,8 @@ recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
 /* end recvfrom_flags1 */
 
 /* include recvfrom_flags2 */
-#ifndef HAVE_MSGHDR_MSG_CONTROL
+#ifndef CMSG_FIRSTHDR
+	#warning CMSG_FIRSTHDR not defined. Will not be able to determine destination address, received interface, etc.
     *flagsp = 0;                    /* pass back results */
     return(n);
 #else
@@ -409,5 +413,5 @@ struct in_pktinfo
         assert(0);  // unknown ancillary data
     }
     return(n);
-#endif  /* HAVE_MSGHDR_MSG_CONTROL */
+#endif /* CMSG_FIRSTHDR */
 }

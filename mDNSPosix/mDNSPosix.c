@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.21  2003/08/06 18:20:51  cheshire
+Makefile cleanup
+
 Revision 1.20  2003/08/05 23:56:26  cheshire
 Update code to compile with the new mDNSCoreReceive() function that requires a TTL
 (Right now mDNSPosix.c just reports 255 -- we should fix this)
@@ -249,7 +252,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	if (dst->type == mDNSAddrType_IPv4)
 		{
 		struct sockaddr_in *sin = (struct sockaddr_in*)&to;
-#if HAVE_SOCKADDR_SA_LEN
+#ifndef NOT_HAVE_SA_LEN
 		sin->sin_len            = sizeof(*sin);
 #endif
 		sin->sin_family         = AF_INET;
