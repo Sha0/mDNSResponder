@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.219  2004/10/27 20:42:20  cheshire
+Clean up debugging messages
+
 Revision 1.218  2004/10/27 02:03:59  cheshire
 Update debugging messages
 
@@ -1575,26 +1578,27 @@ fail:
 
 mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 	{
+	if (!sa) { LogMsg("SetupAddr ERROR: NULL sockaddr"); return(mStatus_Invalid); }
+
 	if (sa->sa_family == AF_INET)
 		{
 		struct sockaddr_in *ifa_addr = (struct sockaddr_in *)sa;
 		ip->type = mDNSAddrType_IPv4;
 		ip->ip.v4.NotAnInteger = ifa_addr->sin_addr.s_addr;
-		return(0);
+		return(mStatus_NoError);
 		}
-	else if (sa->sa_family == AF_INET6)
+
+	if (sa->sa_family == AF_INET6)
 		{
 		struct sockaddr_in6 *ifa_addr = (struct sockaddr_in6 *)sa;
 		ip->type = mDNSAddrType_IPv6;
 		if (IN6_IS_ADDR_LINKLOCAL(&ifa_addr->sin6_addr)) ifa_addr->sin6_addr.__u6_addr.__u6_addr16[1] = 0;
 		ip->ip.v6 = *(mDNSv6Addr*)&ifa_addr->sin6_addr;
-		return(0);
+		return(mStatus_NoError);
 		}
-	else
-		{
-		debugf("SetupAddr invalid sa_family %d", sa->sa_family);
-		return(-1);
-		}
+
+	LogMsg("SetupAddr invalid sa_family %d", sa->sa_family);
+	return(mStatus_Invalid);
 	}
 
 mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
@@ -1625,8 +1629,11 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	{
 	mDNSu32 scope_id  = if_nametoindex(ifa->ifa_name);
 	mDNSEthAddr bssid = GetBSSID(ifa->ifa_name);
-	mDNSAddr ip;
-	SetupAddr(&ip, ifa->ifa_addr);
+
+	mDNSAddr ip, mask;
+	if (SetupAddr(&ip,   ifa->ifa_addr   ) != mStatus_NoError) return(NULL);
+	if (SetupAddr(&mask, ifa->ifa_netmask) != mStatus_NoError) return(NULL);
+
 	NetworkInterfaceInfoOSX **p;
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
 		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip) && mDNSSameEthAddress(&bssid, &(*p)->BSSID))
@@ -1646,7 +1653,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
-	SetupAddr(&i->ifinfo.mask, ifa->ifa_netmask);
+	i->ifinfo.mask        = mask;
 	strncpy(i->ifinfo.ifname, ifa->ifa_name, sizeof(i->ifinfo.ifname));
 	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
@@ -1738,31 +1745,42 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
-		if (ifa->ifa_flags & IFF_UP)
+
+		if (ifa->ifa_flags & IFF_UP && ifa->ifa_addr)
 			if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)
 				{
-				int ifru_flags6 = 0;
-				if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
+				if (!ifa->ifa_netmask || ifa->ifa_addr->sa_family != ifa->ifa_netmask->sa_family)
 					{
-					struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-					struct in6_ifreq ifr6;
-					bzero((char *)&ifr6, sizeof(ifr6));
-					strncpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
-					ifr6.ifr_addr = *sin6;
-					if (ioctl(InfoSocket, SIOCGIFAFLAG_IN6, &ifr6) != -1)
-						ifru_flags6 = ifr6.ifr_ifru.ifru_flags6;
-					verbosedebugf("%s %.16a %04X %04X", ifa->ifa_name, &sin6->sin6_addr, ifa->ifa_flags, ifru_flags6);
+					mDNSAddr ip;
+					SetupAddr(&ip, ifa->ifa_addr);
+					LogMsg("getifaddrs failed to provide ifa_netmask for %5s(%d) Flags %04X Family %2d %#a",
+						ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family, &ip);
 					}
-				if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
+				else
 					{
-					if (ifa->ifa_flags & IFF_LOOPBACK)
-						if (ifa->ifa_addr->sa_family == AF_INET) v4Loopback = ifa;
-						else                                     v6Loopback = ifa;
-					else
+					int ifru_flags6 = 0;
+					if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 						{
-						AddInterfaceToList(m, ifa);
-						if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
-						else                                     foundav6 = mDNStrue;
+						struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+						struct in6_ifreq ifr6;
+						bzero((char *)&ifr6, sizeof(ifr6));
+						strncpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
+						ifr6.ifr_addr = *sin6;
+						if (ioctl(InfoSocket, SIOCGIFAFLAG_IN6, &ifr6) != -1)
+							ifru_flags6 = ifr6.ifr_ifru.ifru_flags6;
+						verbosedebugf("%s %.16a %04X %04X", ifa->ifa_name, &sin6->sin6_addr, ifa->ifa_flags, ifru_flags6);
+						}
+					if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
+						{
+						if (ifa->ifa_flags & IFF_LOOPBACK)
+							if (ifa->ifa_addr->sa_family == AF_INET) v4Loopback = ifa;
+							else                                     v6Loopback = ifa;
+						else
+							{
+							AddInterfaceToList(m, ifa);
+							if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
+							else                                     foundav6 = mDNStrue;
+							}
 						}
 					}
 				}
