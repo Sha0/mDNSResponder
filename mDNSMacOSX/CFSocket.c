@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.74  2003/05/21 20:20:12  cheshire
+Fix warnings (mainly printf format string warnings, like using "%d" where
+it should say "%lu", etc.) and improve error logging (use strerror()
+to include textual error message as well as numeric error in log messages).
+
 Revision 1.73  2003/05/21 17:56:29  ksekar
 Bug #: <rdar://problem/3191277>:	mDNSResponder doesn't watch for IPv6 address changes
 
@@ -279,7 +284,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	struct sockaddr_storage to;
 	int s, err;
 
-	if (InterfaceID == 0) { LogMsg("mDNSPlatformSendUDP ERROR! Cannot send from zero InterfaceID"); return mStatus_BadParamErr; }
+	if (!InterfaceID) { LogMsg("mDNSPlatformSendUDP ERROR! Cannot send from zero InterfaceID"); return mStatus_BadParamErr; }
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
@@ -330,9 +335,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, to.ss_len);
 	if (err < 0)
 		{
-		perror("mDNSPlatformSendUDP sendto");
-		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %X %s/%d to %#a:%d skt %d",
-			InterfaceID, info->ifa_name, dst->type, dst, (mDNSu16)dstPort.b[0]<<8 | dstPort.b[1], s);
+		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s)",
+			InterfaceID, info->ifa_name, dst->type, dst, (mDNSu16)dstPort.b[0]<<8 | dstPort.b[1], s, err, errno, strerror(errno));
 		return(err);
 		}
 	
@@ -367,7 +371,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		}
 	if (msg.msg_controllen < (int)sizeof(struct cmsghdr))
 		{
-		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %d",
+		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %lud",
 			s, msg.msg_controllen, sizeof(struct cmsghdr));
 		return(-1);
 		}
@@ -438,7 +442,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	if (s1 < 0 || s1 != skt)
 		{
 		LogMsg("myCFSocketCallBack: s1 %d native socket %d", s1, skt);
-		LogMsg("myCFSocketCallBack: cfs %X, cfs53 %X, cfsv4 %X, cfsv6 %X", cfs, info->cfs53, info->cfsv4, info->cfsv6);
+		LogMsg("myCFSocketCallBack: cfs %p, cfs53 %p, cfsv4 %p, cfsv6 %p", cfs, info->cfs53, info->cfsv4, info->cfsv6);
 		LogMsg("myCFSocketCallBack: skt53 %d, sktv4 %d, sktv6 %d", info->skt53, info->sktv4, info->sktv6);
 		}
 
@@ -486,7 +490,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, info->ifinfo.InterfaceID);
 		}
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
-		LogMsg("myCFSocketCallBack recvfrom(%d) error %d errno %d", s1, err, errno);
+		LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s)", s1, err, errno, strerror(errno));
 	}
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
@@ -521,15 +525,15 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 	CFRunLoopSourceRef rls;
 
 	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
-	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %X is already set", *c); return(-1); }
+	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %p is already set", *c); return(-1); }
 
 	// Open the socket...
 	skt = socket(i->sa_family, SOCK_DGRAM, IPPROTO_UDP);
-	if (skt < 0) { perror("socket"); return(skt); }
+	if (skt < 0) { LogMsg("socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
 	// ... with a shared UDP port
 	err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
-	if (err < 0) { perror("setsockopt - SO_REUSEPORT"); return(err); }
+	if (err < 0) { LogMsg("setsockopt - SO_REUSEPORT error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 
 	if (i->sa_family == AF_INET)
 		{
@@ -539,29 +543,29 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		
 		// We want to receive destination addresses
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
-		if (err < 0) { perror("setsockopt - IP_RECVDSTADDR"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IP_RECVDSTADDR error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// We want to receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
-		if (err < 0) { perror("setsockopt - IP_RECVIF"); return(err); }
+		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
 		
 		// Add multicast group membership on this interface
 		imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
 		imr.imr_interface        = addr;
 		err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
-		if (err < 0) { perror("setsockopt - IP_ADD_MEMBERSHIP"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// Specify outgoing interface too
 		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr));
-		if (err < 0) { perror("setsockopt - IP_MULTICAST_IF"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// Send unicast packets with TTL 255
 		err = setsockopt(skt, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { perror("setsockopt - IP_TTL"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IP_TTL error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// And multicast packets with TTL 255 too
 		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { perror("setsockopt - IP_MULTICAST_TTL"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IP_MULTICAST_TTL error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 
 		// And start listening for packets
 		listening_sockaddr.sin_family      = AF_INET;
@@ -572,7 +576,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 			{
 			// If we fail to bind to port 53 (because we're not root), that's okay, just tidy up and silently continue
 			if (port.NotAnInteger == UnicastDNSPort.NotAnInteger) { close(skt); err = 0; }
-			else perror("bind");
+			else LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno));
 			return(err);
 			}
 		}
@@ -584,30 +588,30 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		
 		// We want to receive destination addresses and receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
-		if (err < 0) { perror("setsockopt - IPV6_PKTINFO"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IPV6_PKTINFO error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// We want to receive only IPv6 packets, without this option, we may
 		// get IPv4 addresses as mapped addresses.
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
-		if (err < 0) { perror("setsockopt - IPV6_V6ONLY"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IPV6_V6ONLY error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// Add multicast group membership on this interface
 		i6mr.ipv6mr_interface = interface_id;
 		i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
-		if (err < 0) { perror("setsockopt - IPV6_JOIN_GROUP"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// Specify outgoing interface too
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_IF, &interface_id, sizeof(interface_id));
-		if (err < 0) { perror("setsockopt - IPV6_MULTICAST_IF"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// Send unicast packets with TTL 255
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { perror("setsockopt - IPV6_UNICAST_HOPS"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IPV6_UNICAST_HOPS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// And multicast packets with TTL 255 too
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { perror("setsockopt - IPV6_MULTICAST_HOPS"); return(err); }
+		if (err < 0) { LogMsg("setsockopt - IPV6_MULTICAST_HOPS error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		
 		// And start listening for packets
 		bzero(&listening_sockaddr6, sizeof(listening_sockaddr6));
@@ -618,7 +622,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 //		listening_sockaddr6.sin6_addr = IN6ADDR_ANY_INIT; // Want to receive multicasts AND unicasts on this socket
 		listening_sockaddr6.sin6_scope_id	 = 0;
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
-		if (err) { perror("bind"); return(err); }
+		if (err) { LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		}
 	
 	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
@@ -677,9 +681,9 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	strcpy(i->ifa_name, ifa->ifa_name);
 
 	i->ifinfo.InterfaceID = mDNSNULL;
-	i->ifinfo.ip          = ip;
-	i->ifinfo.scope_id    = if_nametoindex(ifa->ifa_name);
-	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
+	i->ifinfo.ip              = ip;
+	i->ifinfo.scope_id        = if_nametoindex(ifa->ifa_name);
+	i->ifinfo.Advertise       = m->AdvertiseLocalAddresses;
 
 	i->next            = mDNSNULL;
 	i->m               = m;
@@ -790,7 +794,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 		NetworkInterfaceInfoOSX *alias = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
 		if (!alias) alias = i;
 
-		if (n->InterfaceID && n->InterfaceID != alias)
+		if (n->InterfaceID && n->InterfaceID != (mDNSInterfaceID)alias)
 			{
 			LogMsg("SetupActiveInterfaces ERROR! n->InterfaceID %p != alias %p", n->InterfaceID, alias);
 			n->InterfaceID = mDNSNULL;
@@ -798,9 +802,9 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 
 		if (!n->InterfaceID)
 			{
-			n->InterfaceID = alias;
+			n->InterfaceID = (mDNSInterfaceID)alias;
 			mDNS_RegisterInterface(m, n);
-			debugf("SetupActiveInterfaces: Registered  %s(%d) InterfaceID %04X %#a%s",
+			debugf("SetupActiveInterfaces: Registered  %s(%lud) InterfaceID %p %#a%s",
 				i->ifa_name, n->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 			}
 
@@ -810,15 +814,15 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			err = SetupSocket(i, UnicastDNSPort, &alias->skt53, &alias->cfs53);
 			#endif
 			if (!err) err = SetupSocket(i, MulticastDNSPort, &alias->sktv4, &alias->cfsv4);
-			if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%d) InterfaceID %04X %#a", alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%d) InterfaceID %04X %#a FAILED",   alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lud) InterfaceID %p %#a", alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lud) InterfaceID %p %#a FAILED",   alias->sktv4, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
 			}
 	
 		if (i->sa_family == AF_INET6 && alias->sktv6 == -1)
 			{
 			err = SetupSocket(i, MulticastDNSPort, &alias->sktv6, &alias->cfsv6);
-			if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%d) InterfaceID %04X %#a", alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
-			else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%d) InterfaceID %04X %#a FAILED",   alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lud) InterfaceID %p %#a", alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
+			else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lud) InterfaceID %p %#a FAILED",   alias->sktv6, i->ifa_name, n->scope_id, n->InterfaceID, &n->ip);
 			}
 		}
 	}
@@ -843,7 +847,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
 		// 1. If this interface is no longer active, or it's InterfaceID is changing, deregister it
-		NetworkInterfaceInfoOSX *alias = i->ifinfo.InterfaceID;
+		NetworkInterfaceInfoOSX *alias = (NetworkInterfaceInfoOSX *)(i->ifinfo.InterfaceID);
 		if (!i->CurrentlyActive || (alias && !alias->CurrentlyActive))
 			{
 			debugf("ClearInactiveInterfaces: Deregistering %#a", &i->ifinfo.ip);
@@ -912,8 +916,8 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
 	CFStringRef           key4     = SCDynamicStoreKeyCreateHostNames(NULL);
-	CFStringRef           pattern1  = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
-CFStringRef           pattern2  = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
+	CFStringRef           pattern1 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
+	CFStringRef           pattern2 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
 
 	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
