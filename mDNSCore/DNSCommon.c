@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.36  2004/06/18 19:09:59  cheshire
+<rdar://problem/3588761> Current method of doing subtypes causes name collisions
+
 Revision 1.35  2004/06/05 00:14:44  cheshire
 Fix signed/unsigned and other compiler warnings
 
@@ -622,15 +625,25 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	// In the case where there is no name (and ONLY in that case),
 	// a single-label subtype is allowed as the first label of a three-part "type"
-	if (!name)
+	if (!name && type)
 		{
-		const mDNSu8 *s2 = type->c + 1 + type->c[0];
-		if (type->c[0]  > 0 && type->c[0]  < 0x40 &&
-			s2[0]       > 0 && s2[0]       < 0x40 &&
-			s2[1+s2[0]] > 0 && s2[1+s2[0]] < 0x40)
+		const mDNSu8 *s0 = type->c, *s1 = s0, *s2 = s0;
+		if (s0[0] && s0[0] < 0x40) s1 = s0 + 1 + s0[0];
+		if (s1[0] && s1[0] < 0x40) s2 = s1 + 1 + s1[0];
+		if (s2[0] && s2[0] < 0x40 && s2[1+s2[0]] == 0)	// Must have three and only three labels
 			{
-			name = (domainlabel *)type;
-			type = (domainname  *)s2;
+			src = s0;		// Copy the first label
+			len = *src;
+			for (i=0; i<=len; i++) *dst++ = *src++;
+			*dst++ = 1;
+			*dst++ = 's';
+			type = (domainname *)s1;
+			
+			// Special support for queries done by older versions of Rendezvous Browser
+			// For these queries, we retract the ".s" we just added between the subtype and the main type
+			if (SameDomainName((domainname*)s0, (domainname*)"\x09_services\x07_dns-sd\x04_udp") ||
+				SameDomainName((domainname*)s0, (domainname*)"\x09_services\x05_mdns\x04_udp"))
+				dst -= 2;
 			}
 		}
 

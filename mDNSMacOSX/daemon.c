@@ -36,8 +36,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.178  2004/06/18 19:10:00  cheshire
+<rdar://problem/3588761> Current method of doing subtypes causes name collisions
+
 Revision 1.177  2004/06/16 23:14:46  ksekar
-<rdar://problem/3693816>: mDNS changed behavior incompatibly from Panther -> Tiger.
+<rdar://problem/3693816> Remove fix for <rdar://problem/3548256> Should not allow empty string for resolve domain
 
 Revision 1.176  2004/06/11 20:27:42  cheshire
 Rename "SocketRef" as "cfs" to avoid conflict with other plaforms
@@ -352,6 +355,9 @@ Add $Log header
 #include "GenLinkedList.h"
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
+
+extern mDNSs32 CountSubTypes(char *regtype);
+extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 
 //*************************************************************************************************************
 // Macros
@@ -918,7 +924,12 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 
 	// Check other parameters
 	domainname t, d;
-	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Illegal regtype"; goto badparam; }
+	t.c[0] = 0;
+	mDNSs32 NumSubTypes = CountSubTypes(regtype);
+	if (NumSubTypes < 0 || NumSubTypes > 1) { errormsg = "Bad Service SubType"; goto badparam; }
+	if (NumSubTypes == 1 && !AppendDNSNameString(&t, regtype + strlen(regtype) + 1))
+	                                        { errormsg = "Bad Service SubType"; goto badparam; }
+	if (!regtype[0] || !AppendDNSNameString(&t, regtype))                  { errormsg = "Illegal regtype"; goto badparam; }
 
 	// Allocate memory, and handle failure
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
@@ -1213,22 +1224,8 @@ mDNSlocal DNSServiceRegistration *RegisterService(mach_port_t client, DNSCString
 	const char *errormsg = "Unknown";
 	
     // Check for sub-types after the service type
-	AuthRecord *SubTypes = mDNSNULL;
-	mDNSu32 i, NumSubTypes = 0;
-	char *comma = regtype;
-	while (*comma && *comma != ',') comma++;
-	if (*comma)					// If we found a comma...
-		{
-		*comma = 0;				// Overwrite the first comma with a nul
-		char *p = comma + 1;	// Start scanning from the next character
-		while (*p)
-			{
-			if ( !(*p && *p != ',')) { errormsg = "Bad Service SubType";  goto badparam; }
-			while (*p && *p != ',') p++;
-			if (*p) *p++ = 0;
-			NumSubTypes++;
-			}
-		}
+	mDNSs32 NumSubTypes = CountSubTypes(regtype);
+	if (NumSubTypes < 0) { errormsg = "Bad Service SubType"; goto badparam; }
 
 	// Check other parameters
 	domainlabel n;
@@ -1297,17 +1294,9 @@ mDNSlocal DNSServiceRegistration *RegisterService(mach_port_t client, DNSCString
 		bzero(srs, sizeof(ServiceRecordSet) - sizeof(RDataBody) + size);
 		}
 	
-	if (NumSubTypes)
-		{
-		SubTypes = mallocL("ServiceSubTypes", NumSubTypes * sizeof(AuthRecord));
-		if (!SubTypes) { freeL("DNSServiceRegistration", x); err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
-		for (i = 0; i < NumSubTypes; i++)
-			{
-			comma++;				// Advance over the nul character
-			MakeDomainNameFromDNSNameString(&SubTypes[i].resrec.name, comma);
-			while (*comma) comma++;	// Advance comma to point to the next terminating nul
-			}
-		}
+	AuthRecord *SubTypes = AllocateSubTypes(NumSubTypes, regtype);
+	if (NumSubTypes && !SubTypes)
+		{ freeL("DNSServiceRegistration", x); err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
 
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistration(\"%s\", \"%s\", \"%s\", %u) START",

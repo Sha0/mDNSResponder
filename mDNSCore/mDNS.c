@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.385  2004/06/18 19:09:59  cheshire
+<rdar://problem/3588761> Current method of doing subtypes causes name collisions
+
 Revision 1.384  2004/06/15 04:31:23  cheshire
 Make sure to clear m->CurrentRecord at the end of AnswerNewLocalOnlyQuestion()
 
@@ -5852,9 +5855,11 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// already set the first label of the record name to the subtype being registered
 	for (i=0; i<NumSubTypes; i++)
 		{
-		domainlabel s = *(domainlabel*)&sr->SubTypes[i].resrec.name;
+		domainname st;
+		AssignDomainName(st, sr->SubTypes[i].resrec.name);
+		AppendDomainName(&st, type);
 		mDNS_SetupResourceRecord(&sr->SubTypes[i], mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared, ServiceCallback, sr);
-		if (ConstructServiceName(&sr->SubTypes[i].resrec.name, &s, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
+		if (ConstructServiceName(&sr->SubTypes[i].resrec.name, mDNSNULL, &st, domain) == mDNSNULL) return(mStatus_BadParamErr);
 		AssignDomainName(sr->SubTypes[i].resrec.rdata->u.name, sr->RR_SRV.resrec.name);
 		sr->SubTypes[i].Additional1 = &sr->RR_SRV;
 		sr->SubTypes[i].Additional2 = &sr->RR_TXT;

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.60  2004/06/18 19:10:00  cheshire
+<rdar://problem/3588761> Current method of doing subtypes causes name collisions
+
 Revision 1.59  2004/06/18 05:10:31  rpantos
 Changes to allow code to be used on Windows
 
@@ -1191,6 +1194,77 @@ static void question_termination_callback(void *context)
     freeL("question_termination_callback", q);
     }
 
+// If there's a comma followed by another character,
+// FindFirstSubType overwrites the comma with a nul and returns the pointer to the next character.
+// Otherwise, it returns a pointer to the final nul at the end of the string
+static char *FindFirstSubType(char *p)
+	{
+	while (*p)
+		{
+		if (p[0] == '\\' && p[1]) p += 2;
+		else if (p[0] == ',' && p[1]) { *p++ = 0; return(p); }
+		else p++;
+		}
+	return(p);
+	}
+
+// If there's a comma followed by another character,
+// FindNextSubType overwrites the comma with a nul and returns the pointer to the next character.
+// If it finds an illegal unescaped dot in the subtype name, it returns mDNSNULL
+// Otherwise, it returns a pointer to the final nul at the end of the string
+static char *FindNextSubType(char *p)
+	{
+	while (*p)
+		{
+		if (p[0] == '\\' && p[1])		// If escape character
+			p += 2;						// ignore following character
+		else if (p[0] == ',')			// If we found a comma
+			{
+			if (p[1]) *p++ = 0;
+			return(p);
+			}
+		else if (p[0] == '.')
+			return(mDNSNULL);
+		else p++;
+		}
+	return(p);
+	}
+
+// Returns -1 if illegal subtype found
+extern mDNSs32 CountSubTypes(char *regtype);
+mDNSexport mDNSs32 CountSubTypes(char *regtype)
+	{
+	mDNSs32 NumSubTypes = 0;
+	char *stp = FindFirstSubType(regtype);
+	while (stp && *stp)					// If we found a comma...
+		{
+		if (*stp == ',') return(-1);
+		NumSubTypes++;
+		stp = FindNextSubType(stp);
+		}
+	if (!stp) return(-1);
+	return(NumSubTypes);
+	}
+
+extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
+mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
+	{
+	AuthRecord *st = mDNSNULL;
+	if (NumSubTypes)
+		{
+		mDNSs32 i;
+		st = mallocL("ServiceSubTypes", NumSubTypes * sizeof(AuthRecord));
+		if (!st) return(mDNSNULL);
+		for (i = 0; i < NumSubTypes; i++)
+			{
+			while (*p) p++;
+			p++;
+			if (!MakeDomainNameFromDNSNameString(&st[i].resrec.name, p))
+				{ freeL("ServiceSubTypes", st); return(mDNSNULL); }
+			}
+		}
+	return(st);
+	}
 
 static void handle_browse_request(request_state *request)
     {
@@ -1200,6 +1274,7 @@ static void handle_browse_request(request_state *request)
     char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
 	qlist_t *qlist = NULL, *qlist_elem;
     domainname typedn;
+    mDNSs32 NumSubTypes;
     char *ptr;
     mStatus result;
 	DNameListElem *search_domain_list, *sdom, tmp;
@@ -1226,7 +1301,12 @@ static void handle_browse_request(request_state *request)
     InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (interfaceIndex && !InterfaceID) goto bad_param;
 
-	if (!MakeDomainNameFromDNSNameString(&typedn, regtype)) goto bad_param;
+	typedn.c[0] = 0;
+	NumSubTypes = CountSubTypes(regtype);
+	if (NumSubTypes < 0 || NumSubTypes > 1) goto bad_param;
+	if (NumSubTypes == 1 && !AppendDNSNameString(&typedn, regtype + strlen(regtype) + 1)) goto bad_param;
+
+    if (!AppendDNSNameString(&typedn, regtype)) goto bad_param;
 
 	//!!!KRS browse locally for ichat
 	if (!domain[0] && (!strcmp(regtype, "_ichat._tcp.") || !strcmp(regtype, "_presence._tcp.")))
@@ -1342,8 +1422,7 @@ static mStatus register_service(request_state *request, registered_service **srv
     domainname *t, domainname *d, domainname *h, mDNSBool autoname, int num_subtypes, mDNSInterfaceID InterfaceID)
 	{
 	registered_service *r_srv;
-    int srs_size, i;
-	char *sub;
+    int srs_size;
 	mStatus result;	
 	*srv_ptr = NULL;
 	
@@ -1352,22 +1431,9 @@ static mStatus register_service(request_state *request, registered_service **srv
     srs_size = sizeof(ServiceRecordSet) + (sizeof(RDataBody) > txtlen ? 0 : txtlen - sizeof(RDataBody));
     r_srv->srs = mallocL("handle_regservice_request", srs_size);
     if (!r_srv->srs) goto malloc_error;
-    if (num_subtypes > 0)
-        {
-        r_srv->subtypes = mallocL("handle_regservice_request", num_subtypes * sizeof(AuthRecord));
-        if (!r_srv->subtypes) goto malloc_error;
-        sub = type_as_string + strlen(type_as_string) + 1;
-        for (i = 0; i < num_subtypes; i++)
-            {
-            if (!MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->resrec.name, sub))
-                {
-				free_service_registration(r_srv);
-                return mStatus_BadParamErr;
-                }
-            sub += strlen(sub) + 1;
-            }
-        }
-    else r_srv->subtypes = NULL;
+	r_srv->subtypes = AllocateSubTypes(num_subtypes, type_as_string);
+	if (num_subtypes && !r_srv->subtypes)
+		{ free_service_registration(r_srv); r_srv = NULL; goto malloc_error; }
     r_srv->request = request;
     
     r_srv->extras = NULL;
@@ -1400,13 +1466,12 @@ static void handle_regservice_request(request_state *request)
     uint16_t txtlen;
     mDNSIPPort port;
     void *txtdata;
-    char *ptr, *sub;
+    char *ptr;
     domainlabel n;
     domainname d, h, t, srv;
     mStatus result;
     mDNSInterfaceID InterfaceID;
-	int num_subtypes;
-    char *rtype_ptr;
+	mDNSs32 num_subtypes;
     
 	if (request->ts != t_complete)
         {
@@ -1434,12 +1499,10 @@ static void handle_regservice_request(request_state *request)
 
     if (!*regtype || !MakeDomainNameFromDNSNameString(&t, regtype)) goto bad_param;
 
-    // count subtypes, replacing commas w/ whitespace
-    rtype_ptr = regtype;
-    num_subtypes = -1;
-    while((sub = strsep(&rtype_ptr, ",")) != NULL)	// Unsafe -- we need to recognise and skip over '\,'
-        if (*sub) num_subtypes++;
-        
+	// Check for sub-types after the service type
+	num_subtypes = CountSubTypes(regtype);
+	if (num_subtypes < 0) goto bad_param;
+
     if (!name[0]) n = (gmDNS)->nicelabel;
     else if (!MakeDomainLabelFromLiteralString(&n, name))  
         goto bad_param;
