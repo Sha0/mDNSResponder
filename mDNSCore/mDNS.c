@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.168  2003/06/06 21:33:31  cheshire
+Instead of using (mDNSPlatformOneSecond/2) all over the place, define a constant "InitialQuestionInterval"
+
 Revision 1.167  2003/06/06 21:30:42  cheshire
 <rdar://problem/3282962> Don't delay queries for shared record types
 
@@ -976,6 +979,7 @@ mDNSlocal mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *i
 	if (next) return(next->InterfaceID); else return(mDNSNULL);
 	}
 
+#define InitialQuestionInterval (mDNSPlatformOneSecond/2)
 #define ActiveQuestion(Q) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf)
 #define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (time) - ((Q)->LastQTime + (Q)->ThisQInterval) >= 0)
 
@@ -3747,8 +3751,8 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
 			if (ActiveQuestion(q))
 				{
-				q->LastQTime     = m->timenow - mDNSPlatformOneSecond/2;
-				q->ThisQInterval = mDNSPlatformOneSecond/2;	// MUST be > zero for an active question
+				q->ThisQInterval = InitialQuestionInterval;	// MUST be > zero for an active question
+				q->LastQTime     = m->timenow - q->ThisQInterval;
 				q->RecentAnswers = 0;
 				m->NextScheduledQuery = m->timenow;
 				}
@@ -4595,7 +4599,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
 		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
 		question->next           = mDNSNULL;
-		question->ThisQInterval  = mDNSPlatformOneSecond/2;  // MUST be > zero for an active question
+		question->ThisQInterval  = InitialQuestionInterval;  // MUST be > zero for an active question
 		question->LastQTime      = m->timenow;
 		question->RecentAnswers  = 0;
 		question->DuplicateOf    = FindDuplicateQuestion(m, question);
@@ -5201,7 +5205,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
 			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
-				q->ThisQInterval = mDNSPlatformOneSecond/2;				// MUST be > zero for an active question
+				q->ThisQInterval = InitialQuestionInterval;				// MUST be > zero for an active question
 				q->LastQTime     = m->timenow - q->ThisQInterval;
 				q->RecentAnswers = 0;
 				if (ActiveQuestion(q)) m->NextScheduledQuery = m->timenow;
