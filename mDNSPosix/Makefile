@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.31  2004/03/15 19:07:06  cheshire
+# Fix error message
+#
 # Revision 1.30  2004/03/11 18:58:29  rpantos
 # Fix Kill /etc/rc scripts so they run at halt & reboot.
 #
@@ -182,7 +185,7 @@ LD = libtool
 LDFLAGS = -dynamic -lSystem
 LDSUFFIX = dylib
 else
-$(error ERROR: Must specify target OS on command-line: "make [target] os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris}) 
+$(error ERROR: Must specify target OS on command-line: "make os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris} [target]") 
 endif
 endif
 endif
