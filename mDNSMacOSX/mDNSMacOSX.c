@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.277  2005/01/12 00:17:50  ksekar
+<rdar://problem/3933573> Update LLQs *after* setting DNS
+
 Revision 1.276  2005/01/10 17:39:10  ksekar
 Refinement to 1.272 - avoid spurious warnings when registration and browse domains are set to same value and toggled on/off
 
@@ -2760,8 +2763,8 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	UpdateInterfaceList(m, utc);
 	int nDeletions = ClearInactiveInterfaces(m, utc);
 	int nAdditions = SetupActiveInterfaces(m, utc);
-	if (nDeletions || nAdditions) mDNS_UpdateLLQs(m);
-	DynDNSConfigChanged(m);
+	DynDNSConfigChanged(m);                           // note - call DynDNSConfigChanged *before* mDNS_UpdateLLQs	                        
+	if (nDeletions || nAdditions) mDNS_UpdateLLQs(m); // so that LLQs are restarted against the up to date name servers
 	
 	if (m->MainCallback)
 		m->MainCallback(m, mStatus_ConfigChanged);
