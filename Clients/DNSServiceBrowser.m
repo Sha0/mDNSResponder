@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.29  2004/06/04 20:58:36  cheshire
+Move DNSServiceBrowser from mDNSMacOSX directory to Clients directory
+
 Revision 1.28  2004/05/18 23:51:26  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -58,13 +61,79 @@ Update to APSL 2.0
 
  */
 
-#import "BrowserController.h"
-
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <nameser.h>
 #include <sys/select.h>
 
+#import <Cocoa/Cocoa.h>
+#import <DNSServiceDiscovery/DNSServiceDiscovery.h>
+
+#include <netinet/in.h>
+#include "dns_sd.h"
+
+@class		ServiceController;  // holds state corresponding to outstanding DNSServiceRef
+
+@interface BrowserController : NSObject
+{
+    IBOutlet id domainField;
+    IBOutlet id nameField;
+    IBOutlet id typeField;
+
+    IBOutlet id serviceDisplayTable;
+    IBOutlet id typeColumn;
+    IBOutlet id nameColumn;
+    IBOutlet id serviceTypeField;
+    IBOutlet id serviceNameField;
+
+    IBOutlet id hostField;
+    IBOutlet id ipAddressField;
+    IBOutlet id ip6AddressField;
+    IBOutlet id portField;
+    IBOutlet id textField;
+    
+    NSMutableArray *srvtypeKeys;
+    NSMutableArray *srvnameKeys;
+    NSMutableArray *domainKeys;
+    NSMutableArray *nameKeys;
+    NSString *Domain;
+    NSString *SrvType;
+    NSString *SrvName;
+    NSString *Name;
+
+	ServiceController			*fDomainBrowser;
+	ServiceController			*fServiceBrowser;
+	ServiceController			*fServiceResolver;
+	ServiceController			*fAddressResolver;
+
+}
+
+- (IBAction)handleDomainClick:(id)sender;
+- (IBAction)handleNameClick:(id)sender;
+- (IBAction)handleTypeClick:(id)sender;
+- (void)notifyTypeSelectionChange:(NSNotification*)note;
+- (void)notifyNameSelectionChange:(NSNotification*)note;
+
+- (IBAction)connect:(id)sender;
+
+- (IBAction)handleTableClick:(id)sender;
+- (IBAction)removeSelected:(id)sender;
+- (IBAction)addNewService:(id)sender;
+
+- (IBAction)update:(NSString *)Type Domain:(NSString *)Domain;
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication;
+- (IBAction)loadDomains:(id)sender;
+
+- (void)updateBrowseWithResult:(DNSServiceFlags)flags name:(NSString *)name type:(NSString *)resulttype domain:(NSString *)domain;
+- (void)updateEnumWithResult:(DNSServiceFlags)flags domain:(NSString *)domain;
+- (void)resolveClientWitHost:(NSString *)host port:(uint16_t)port interfaceIndex:(uint32_t)interface txtRecord:(const char*)txtRecord txtLen:(uint16_t)txtLen;
+- (void)updateAddress:(uint16_t)rrtype addr:(const void *)buff addrLen:(uint16_t)addrLen 
+						host:(const char*) host interfaceIndex:(uint32_t)interface more:(boolean_t)moreToCome;
+
+- (void)_cancelPendingResolve;
+- (void)_clearResolvedInfo;
+
+@end
 
 // The ServiceController manages cleanup of DNSServiceRef & runloop info for an outstanding request
 @interface ServiceController : NSObject
@@ -419,7 +488,7 @@ static void	QueryRecordReply( DNSServiceRef DNSServiceRef, DNSServiceFlags flags
     if ( ( flags & kDNSServiceFlagsAdd) != 0) {    // new domain received
         // add the domain to the list
         [domainKeys addObject:domain];
-    } else if ( ( flags & (kDNSServiceFlagsAdd | kDNSServiceFlagsRemove)) == kDNSServiceFlagsRemove) {
+    } else if (!(flags & kDNSServiceFlagsAdd)) {
         // remove the domain from the list
         NSEnumerator *dmnEnum = [domainKeys objectEnumerator];
         NSString *aDomain = nil;
@@ -454,7 +523,7 @@ static void	QueryRecordReply( DNSServiceRef DNSServiceRef, DNSServiceFlags flags
 
     //NSLog(@"Received result %@ %@ %@ %d", name, resulttype, domain, type);
 
-    if ( ( flags & (kDNSServiceFlagsAdd | kDNSServiceFlagsRemove)) == kDNSServiceFlagsRemove) {
+    if (!(flags & kDNSServiceFlagsAdd)) {
         if ([nameKeys containsObject:name]) {
             [nameKeys removeObject:name];
 
@@ -727,4 +796,7 @@ static void	QueryRecordReply( DNSServiceRef DNSServiceRef, DNSServiceFlags flags
 
 @end // implementation ServiceController
 
-
+int main(int argc, const char *argv[])
+{
+    return NSApplicationMain(argc, argv);
+}
