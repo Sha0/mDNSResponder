@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.304  2003/09/09 02:41:19  cheshire
+<rdar://problem/3411105> Don't send a Goodbye record if we never announced it
+
 Revision 1.303  2003/09/05 19:55:02  cheshire
 <rdar://problem/3409533> Include address records when announcing SRV records
 
@@ -3393,7 +3396,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					{
 					RData *OldRData     = rr->resrec.rdata;
 					mDNSu16 oldrdlength = rr->resrec.rdlength;
-					if (ResourceRecordIsValidAnswer(rr))		// First see if we have to de-register the old data
+					if (ResourceRecordIsValidAnswer(rr) && rr->AnnounceCount < InitialAnnounceCount) // First see if we have to de-register the old data
 						{
 						newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, 0);
 						if (!newptr && response.h.numAnswers) break;
