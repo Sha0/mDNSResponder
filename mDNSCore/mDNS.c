@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.225  2003/07/16 04:46:41  cheshire
+Minor wording cleanup: The correct DNS term is "response", not "reply"
+
 Revision 1.224  2003/07/16 04:39:02  cheshire
 Textual cleanup (no change to functionality):
 Construct "c >= 'A' && c <= 'Z'" appears in too many places; replaced with macro "mDNSIsUpperCase(c)"
@@ -2901,7 +2904,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			}
 		else if (rr->ImmedAnswer)						// Else, just respond to a single query on single interface:
 			{
-			rr->SendRNow = rr->ImmedAnswer;				// Just reply on that interface
+			rr->SendRNow = rr->ImmedAnswer;				// Just respond on that interface
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional too
 			}
 		SetNextAnnounceProbeTime(m, rr);
@@ -4122,16 +4125,16 @@ mDNSlocal mDNSBool AddRecordToResponseList(ResourceRecord **nrp,
 #define MustSendRecord(RR) ((RR)->NR_AnswerTo || (RR)->NR_AdditionalTo)
 
 mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const mDNSu8 *const end,
-	const mDNSInterfaceID InterfaceID, DNSMessage *const reply, ResourceRecord *ResponseRecords)
+	const mDNSInterfaceID InterfaceID, DNSMessage *const response, ResourceRecord *ResponseRecords)
 	{
-	const mDNSu8    *const limit     = reply->data + sizeof(reply->data);
+	mDNSu8          *responseptr     = response->data;
+	const mDNSu8    *const limit     = response->data + sizeof(response->data);
 	const mDNSu8    *ptr             = query->data;
-	mDNSu8          *responseptr     = reply->data;
 	ResourceRecord  *rr;
 	int i;
 
 	// Initialize the response fields so we can answer the questions
-	InitializeDNSMessage(&reply->h, query->h.id, ResponseFlags);
+	InitializeDNSMessage(&response->h, query->h.id, ResponseFlags);
 
 	// ***
 	// *** 1. Write out the list of questions we are actually going to answer with this packet
@@ -4146,14 +4149,14 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 			{
 			if (rr->NR_AnswerTo == ptr)							// If we're going to generate a record answering this question
 				{												// then put the question in the question section
-				responseptr = putQuestion(reply, responseptr, limit, &q.qname, q.qtype, q.qclass);
+				responseptr = putQuestion(response, responseptr, limit, &q.qname, q.qtype, q.qclass);
 				if (!responseptr) { debugf("GenerateUnicastResponse: Ran out of space for questions!"); return(mDNSNULL); }
 				break;		// break out of the ResponseRecords loop, and go on to the next question
 				}
 			}
 		}
 
-	if (reply->h.numQuestions == 0) { LogMsg("GenerateUnicastResponse: ERROR! Why no questions?"); return(mDNSNULL); }
+	if (response->h.numQuestions == 0) { LogMsg("GenerateUnicastResponse: ERROR! Why no questions?"); return(mDNSNULL); }
 
 	// ***
 	// *** 2. Write Answers
@@ -4161,9 +4164,9 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AnswerTo)
 			{
-			mDNSu8 *p = PutResourceRecordCappedTTL(reply, responseptr, &reply->h.numAnswers, rr, 10);
+			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAnswers, rr, 10);
 			if (p) responseptr = p;
-			else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); reply->h.flags.b[0] |= kDNSFlag0_TC; }
+			else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); response->h.flags.b[0] |= kDNSFlag0_TC; }
 			}
 
 	// ***
@@ -4172,7 +4175,7 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AdditionalTo && !rr->NR_AnswerTo)
 			{
-			mDNSu8 *p = PutResourceRecordCappedTTL(reply, responseptr, &reply->h.numAdditionals, rr, 10);
+			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAdditionals, rr, 10);
 			if (p) responseptr = p;
 			else debugf("GenerateUnicastResponse: No more space for additionals");
 			}
@@ -4736,11 +4739,11 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	if (replyunicast && responseend)
 		{
 		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#-15a:%d on %p/%ld",
-			replyunicast->h.numQuestions,   replyunicast->h.numQuestions   == 1 ? "" : "s",
-			replyunicast->h.numAnswers,     replyunicast->h.numAnswers     == 1 ? "" : "s",
-			replyunicast->h.numAdditionals, replyunicast->h.numAdditionals == 1 ? "" : "s",
+			response.h.numQuestions,   response.h.numQuestions   == 1 ? "" : "s",
+			response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
+			response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s",
 			srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1], InterfaceID, srcaddr->type);
-		mDNSSendDNSMessage(m, replyunicast, responseend, InterfaceID, dstport, srcaddr, srcport);
+		mDNSSendDNSMessage(m, &response, responseend, InterfaceID, dstport, srcaddr, srcport);
 		}
 	}
 
@@ -5305,7 +5308,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 // On entry, the client must have set the name and InterfaceID fields of the ServiceInfo structure
 // If the query is not interface-specific, then InterfaceID may be zero
 // Each time the Callback is invoked, the remainder of the fields will have been filled in
-// In addition, InterfaceID will be updated to give the interface identifier corresponding to that reply
+// In addition, InterfaceID will be updated to give the interface identifier corresponding to that response
 mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	ServiceInfoQuery *query, ServiceInfo *info, mDNSServiceInfoQueryCallback *Callback, void *Context)
 	{
