@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserController.h,v $
+Revision 1.9  2003/10/28 02:25:26  rpantos
+3282283/9,10: Cancel pending resolve when focus changes or service disappears.
+
 Revision 1.8  2003/10/28 01:28:54  rpantos
 3282283/4,5: Restructure a bit to make arrow keys work & views behave better.
 
@@ -62,6 +65,7 @@ Update to APSL 2.0
     NSString *Name;
 
     dns_service_discovery_ref 	browse_client;
+    dns_service_discovery_ref 	resolve_client;
 
 }
 
@@ -84,5 +88,7 @@ Update to APSL 2.0
 - (void)updateBrowseWithResult:(int)type name:(NSString *)name type:(NSString *)resulttype domain:(NSString *)domain flags:(int)flags;
 - (void)updateEnumWithResult:(int)resultType domain:(NSString *)domain flags:(int)flags;
 - (void)resolveClientWithInterface:(struct sockaddr *)interface address:(struct sockaddr *)address txtRecord:(NSString *)txtRecord;
+
+- (void)_cancelPendingResolve;
 
 @end

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.24  2003/10/28 02:25:45  rpantos
+3282283/9,10: Cancel pending resolve when focus changes or service disappears.
+
 Revision 1.23  2003/10/28 01:29:15  rpantos
 3282283/4,5: Restructure a bit to make arrow keys work & views behave better.
 
@@ -252,9 +255,7 @@ void resolve_reply (
     if (index==-1) return;					//Error checking
     Domain = [domainKeys objectAtIndex:index];			//Save desired Domain
 
-    [ipAddressField setStringValue:@""];
-    [portField setStringValue:@""];
-    [textField setStringValue:@""];
+    [self _cancelPendingResolve];
 
     if (SrvType!=NULL) [self update:SrvType Domain:Domain];	//If Type and Domain are set, update records
 }
@@ -272,9 +273,7 @@ void resolve_reply (
     SrvType = [srvtypeKeys objectAtIndex:index];		//Save desired Type
     SrvName = [srvnameKeys objectAtIndex:index];		//Save desired Type
 
-    [ipAddressField setStringValue:@""];
-    [portField setStringValue:@""];
-    [textField setStringValue:@""];
+    [self _cancelPendingResolve];
 
     [self update:SrvType Domain:Domain];		//If Type and Domain are set, update records
 }
@@ -283,6 +282,9 @@ void resolve_reply (
 /* Called when the selection of the Name table changes */
 {
     int index=[[note object] selectedRow];  //Find index of selected row
+
+    [self _cancelPendingResolve];           // Cancel any pending Resolve for any table selection change
+
     if (index==-1) return;					//Error checking
     Name=[[nameKeys sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)] objectAtIndex:index];			//Save desired name
 
@@ -290,7 +292,6 @@ void resolve_reply (
         CFMachPortRef           cfMachPort;
         CFMachPortContext       context;
         Boolean                 shouldFreeInfo;
-        dns_service_discovery_ref 	dns_client;
         mach_port_t			port;
         CFRunLoopSourceRef		rls;
 
@@ -304,7 +305,7 @@ void resolve_reply (
 		[portField setStringValue:@"?"];
 		[textField setStringValue:@"?"];
         // start an enumerator on the local server
-        dns_client = DNSServiceResolverResolve
+        resolve_client = DNSServiceResolverResolve
             (
              (char *)[Name UTF8String],
              (char *)[SrvType UTF8String],
@@ -313,7 +314,7 @@ void resolve_reply (
              nil
              );
 
-        port = DNSServiceDiscoveryMachPort(dns_client);
+        port = DNSServiceDiscoveryMachPort(resolve_client);
 
         if (port) {
             cfMachPort = CFMachPortCreateWithPort ( kCFAllocatorDefault, port, ( CFMachPortCallBack ) MyHandleMachMessage,&context,&shouldFreeInfo );
@@ -481,6 +482,10 @@ void resolve_reply (
     if (type == DNSServiceBrowserReplyRemoveInstance) {
         if ([nameKeys containsObject:name]) {
             [nameKeys removeObject:name];
+
+            // 3282283: Cancel pending browse if object goes away.
+            if ( [name isEqualToString:Name])
+                [nameField deselectAll:self];
         }
     }
     else if (type == DNSServiceBrowserReplyAddInstance) {
@@ -592,6 +597,19 @@ void resolve_reply (
         [serviceDisplayTable reloadData];
     }
 
+}
+
+- (void)_cancelPendingResolve
+// If there a a Resolve outstanding, cancel it.
+{
+    if ( resolve_client != NULL) {
+        DNSServiceDiscoveryDeallocate( resolve_client);
+        resolve_client = NULL;
+    }
+
+    [ipAddressField setStringValue:@""];
+    [portField setStringValue:@""];
+    [textField setStringValue:@""];
 }
 
 
