@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.60  2004/07/29 19:40:05  ksekar
+NAT-PMP Support - minor fixes and cleanup
+
 Revision 1.59  2004/07/29 19:27:15  ksekar
 NAT-PMP Support - minor fixes and cleanup
 
@@ -1288,7 +1291,7 @@ mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	else info->expire = -1;
 	}
 
-mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, int len)
+mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	NATTraversalInfo *ptr, *cur;
