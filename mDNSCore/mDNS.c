@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.251  2003/08/06 19:07:34  cheshire
+<rdar://problem/3366251> mDNSResponder not inhibiting multicast responses as much as it should
+Was checking LastAPTime instead of LastMCTime
+
 Revision 1.250  2003/08/06 19:01:55  cheshire
 Update comments
 
@@ -2231,6 +2235,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 				dup->v6Requester       = rr->v6Requester;
 				dup->ThisAPInterval    = rr->ThisAPInterval;
 				dup->LastAPTime        = rr->LastAPTime;
+				dup->LastMCTime        = rr->LastMCTime;
 				if (RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
 				}
 			}
@@ -4580,7 +4585,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			mDNSBool SendMulticastResponse = mDNSfalse;
 			
 			// If it's been a while since we multicast this, then send a multicast response for conflict detection, etc.
-			if (m->timenow - (rr->LastAPTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
+			if (m->timenow - (rr->LastMCTime + TicksTTL(rr)/4) >= 0) SendMulticastResponse = mDNStrue;
 			
 			// If the client insists on a multicast response, then we'd better send one
 			if (rr->NR_AnswerTo == (mDNSu8*)~0) SendMulticastResponse = mDNStrue;
