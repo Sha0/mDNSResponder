@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.72  2003/06/10 01:46:27  cheshire
+Add better comments explaining how these data structures are intended to be used from the client layer
+
 Revision 1.71  2003/06/07 06:45:05  cheshire
 <rdar://problem/3283666> No need for multiple machines to all be sending the same queries
 
@@ -383,13 +386,8 @@ enum
 typedef struct
 	{
 	mDNSs32	type;
-	union
-		{
-		mDNSv6Addr v6;
-		mDNSv4Addr v4;
-		} ip;
+	union { mDNSv6Addr v6; mDNSv4Addr v4; } ip;
 	} mDNSAddr;
-
 
 enum { mDNSfalse = 0, mDNStrue = 1 };
 
@@ -533,12 +531,11 @@ typedef struct
 	} RData;
 
 typedef struct ResourceRecord_struct ResourceRecord;
-typedef struct ResourceRecord_struct *ResourceRecordPtr;
 typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 
-// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSRecordCallback
+// Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
 typedef void mDNSRecordCallback(mDNS *const m, ResourceRecord *const rr, mStatus result);
 
 // Note:
@@ -554,7 +551,12 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, ResourceRecord *const rr, R
 // same storage for two different purposes always makes debugging harder.)
 struct ResourceRecord_struct
 	{
-	ResourceRecord     *next;			// --: Next in list
+	// For examples of how to set up this structure for use in mDNS_Register(),
+	// see mDNS_AdvertiseInterface() or mDNS_RegisterService().
+	// Basically, Field Group 1 and Field Group 4 need to be set up before calling mDNS_Register().
+	// mDNS_SetupResourceRecord() is avaliable as a helper routine to set up most fields to sensible default values for you
+
+	ResourceRecord     *next;			// --: Next in list; first element of structure for efficiency reasons
 
 	// Field Group 1: Persistent metadata for Authoritative Records
 	ResourceRecord     *Additional1;	// AR: Recommended additional record to include in response
@@ -618,20 +620,23 @@ typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 
 struct NetworkInterfaceInfo_struct
 	{
+	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	NetworkInterfaceInfo *next;
-	mDNSInterfaceID InterfaceID;
-	mDNSAddr        ip;
-	mDNSu32         scope_id;
-	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
-	mDNSBool        InterfaceActive;	// Set InterfaceActive true if interface is sending & receiving packets
-										// Set InterfaceActive false if interface is here to represent an address with A and/or AAAA records,
-										// but there is already an earlier representative for this physical interface
-										// which will be used for the actual sending & receiving packets
-										// (this status may change as interfaces are added and removed)
+
+	mDNSBool        InterfaceActive;	// InterfaceActive is set if interface is sending & receiving packets
+										// InterfaceActive is clear if interface is here to represent an address with A
+										// and/or AAAA records, but there is already an earlier representative for this
+										// physical interface which will be used for the actual sending & receiving
+										// packets (this status may change as interfaces are added and removed)
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
 	ResourceRecord RR_A1;				// 'A' or 'AAAA' (address) record for our ".local" name
 	ResourceRecord RR_A2;				// 'A' or 'AAAA' record for our ".local.arpa" name
 	ResourceRecord RR_PTR;				// PTR (reverse lookup) record
+
+	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
+	mDNSInterfaceID InterfaceID;
+	mDNSAddr        ip;
+	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
 	};
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
@@ -644,11 +649,14 @@ struct ExtraResourceRecord_struct
 	// that this extra memory is available, which would result in any fields after the ResourceRecord getting smashed
 	};
 
-// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSServiceCallback
+// Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
 struct ServiceRecordSet_struct
 	{
+	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
+	// No fields need to be set up by the client prior to calling mDNS_RegisterService();
+	// all required data is passed as parameters to that function.
 	mDNSServiceCallback *ServiceCallback;
 	void                *ServiceContext;
 	ExtraResourceRecord *Extras;	// Optional list of extra ResourceRecords attached to this service registration
@@ -675,10 +683,11 @@ typedef struct
 	mDNSInterfaceID       InterfaceID;
 	} DupSuppressInfo;
 
-// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSQuestionCallback
+// Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer);
 struct DNSQuestion_struct
 	{
+	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	DNSQuestion          *next;
 	mDNSs32               LastQTime;		// In platform time units
 	mDNSs32               ThisQInterval;	// In platform time units
@@ -690,8 +699,10 @@ struct DNSQuestion_struct
 	DNSQuestion          *DuplicateOf;
 	DNSQuestion          *NextInDQList;
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
-	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
+
+	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
+	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	domainname            qname;
 	mDNSu16               qtype;
 	mDNSu16               qclass;
@@ -701,6 +712,8 @@ struct DNSQuestion_struct
 
 typedef struct
 	{
+	// Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()
+	// When the callback is invoked, ip, port, TXTlen and TXTinfo will have been filled in with the results learned from the network.
 	domainname      name;
 	mDNSInterfaceID InterfaceID;		// ID of the interface the response was received on
 	mDNSAddr        ip;					// Remote (destination) IP address where this service can be accessed
@@ -709,11 +722,17 @@ typedef struct
 	mDNSu8          TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
 
-// Note: All mDNS API calls except mDNS_Init(), mDNS_Close(), mDNS_Execute() are legal within an mDNSServiceInfoQueryCallback
+// Note: Within an mDNSServiceInfoQueryCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
 typedef struct ServiceInfoQuery_struct ServiceInfoQuery;
 typedef void mDNSServiceInfoQueryCallback(mDNS *const m, ServiceInfoQuery *query);
 struct ServiceInfoQuery_struct
 	{
+	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
+	// No fields need to be set up by the client prior to calling mDNS_StartResolveService();
+	// all required data is passed as parameters to that function.
+	// The ServiceInfoQuery structure memory is working storage for mDNSCore to discover the requested information
+	// and place it in the ServiceInfo structure. After the client has called mDNS_StopResolveService(), it may
+	// dispose of the ServiceInfoQuery structure while retaining the results in the ServiceInfo structure.
 	DNSQuestion                   qSRV;
 	DNSQuestion                   qTXT;
 	DNSQuestion                   qAv4;
@@ -738,6 +757,11 @@ typedef void mDNSCallback(mDNS *const m, mStatus result);
 
 struct mDNS_struct
 	{
+	// Internal state fields. These hold the main internal state of mDNSCore;
+	// the client layer needn't be concerned with them.
+	// No fields need to be set up by the client prior to calling mDNS_Init();
+	// all required data is passed as parameters to that function.
+
 	mDNS_PlatformSupport *p;			// Pointer to platform-specific data of indeterminite size
 	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
