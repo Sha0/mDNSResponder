@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.20  2005/01/03 19:05:01  shersche
+Store pointer to instance of wizard sheet so that print driver install thread sends a window message to the correct window
+
 Revision 1.19  2004/12/31 07:23:53  shersche
 Don't modify the button setting in SetSelectedPrinter()
 
@@ -122,6 +125,7 @@ First checked in
 
 
 // CPrinterSetupWizardSheet
+CPrinterSetupWizardSheet * CPrinterSetupWizardSheet::m_self;
 
 IMPLEMENT_DYNAMIC(CPrinterSetupWizardSheet, CPropertySheet)
 CPrinterSetupWizardSheet::CPrinterSetupWizardSheet(UINT nIDCaption, CWnd* pParentWnd, UINT iSelectPage)
@@ -133,6 +137,7 @@ CPrinterSetupWizardSheet::CPrinterSetupWizardSheet(UINT nIDCaption, CWnd* pParen
 	m_arrow		=	LoadCursor(0, IDC_ARROW);
 	m_wait		=	LoadCursor(0, IDC_APPSTARTING);
 	m_active	=	m_arrow;
+	m_self		=	this;
 	
 	Init();
 }
@@ -145,6 +150,8 @@ CPrinterSetupWizardSheet::~CPrinterSetupWizardSheet()
 		delete m_selectedPrinter;
 		m_selectedPrinter = NULL;
 	}
+
+	m_self = NULL;
 }
 
 
@@ -566,6 +573,7 @@ CPrinterSetupWizardSheet::InstallDriverThread( LPVOID inParam )
 	BOOL				ok;
 
 	check( printer );
+	check( m_self );
 
 	//
 	// because we're calling endthreadex(), C++ objects won't be cleaned up
@@ -612,7 +620,7 @@ exit:
 	//
 	// alert the main thread
 	//
-	printer->window->PostMessage( WM_PROCESS_EVENT, err, exitCode );
+	m_self->PostMessage( WM_PROCESS_EVENT, err, exitCode );
 
 	_endthreadex_compat( 0 );
 

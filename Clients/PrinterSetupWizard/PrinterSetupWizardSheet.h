@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.6  2005/01/03 19:05:01  shersche
+Store pointer to instance of wizard sheet so that print driver install thread sends a window message to the correct window
+
 Revision 1.5  2004/12/29 18:53:38  shersche
 <rdar://problem/3725106>
 <rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
@@ -141,9 +144,10 @@ private:
 	static unsigned WINAPI
 	InstallDriverThread( LPVOID inParam );
 
-	Printer	*	m_selectedPrinter;
-	bool		m_driverThreadFinished;
-	DWORD		m_driverThreadExitCode;
+	static CPrinterSetupWizardSheet	*	m_self;
+	Printer							*	m_selectedPrinter;
+	bool								m_driverThreadFinished;
+	DWORD								m_driverThreadExitCode;
 };
 
 
