@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.124  2003/11/20 22:59:54  cheshire
+Changed runtime checks in mDNS.c to be compile-time checks in mDNSEmbeddedAPI.h
+Thanks to Bob Bradley for suggesting the ingenious compiler trick to make this work.
+
 Revision 1.123  2003/11/20 22:53:01  cheshire
 Add comment about MAX_ESCAPED_DOMAIN_LABEL
 
@@ -1418,6 +1422,26 @@ extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
+
+// ***************************************************************************
+#if 0
+#pragma mark - Compile-Time assertion checks
+#endif
+
+// Some C compiler cleverness. We can make the compiler check certain things for
+// us, and report compile-time errors if anything is wrong. The usual way to do
+// this would be to use a run-time "if" statement, but then you don't find out
+// what's wrong until you run the software. This way, if the assertion condition
+// is false, the array size is negative, and the complier complains immediately.
+
+struct mDNS_CompileTimeAssertionChecks
+	{
+	// Check that the compiler generated our on-the-wire packet format structure definitions
+	// properly packed, without adding padding bytes to align fields on 32-bit or 64-bit boundaries.
+	char assert0[(sizeof(rdataSRV)         == 262                          ) ? 1 : -1];
+	char assert1[(sizeof(DNSMessageHeader) ==  12                          ) ? 1 : -1];
+	char assert2[(sizeof(DNSMessage)       ==  12+AbsoluteMaxDNSMessageData) ? 1 : -1];
+	};
 
 // ***************************************************************************
 
