@@ -28,11 +28,11 @@
     extern "C" {
 #endif
 
-// standard calling convention under Win32 is __stdcall
+/* standard calling convention under Win32 is __stdcall */
 #if defined(_WIN32)
-#	define DNSSD_API	__stdcall
+#define DNSSD_API __stdcall
 #else
-#	define DNSSD_API
+#define DNSSD_API
 #endif
 
 #if defined(__FreeBSD_version) && (__FreeBSD_version < 500000)
@@ -43,13 +43,13 @@
 #elif defined(_WIN32)
 #include <windows.h>
 #define _UNUSED
-#define bzero(a, b)	memset(a, 0, b)
-typedef UINT8		uint8_t;
-typedef INT8		int8_t;
-typedef UINT16		uint16_t;
-typedef INT16		int16_t;
-typedef UINT32		uint32_t;
-typedef INT32		int32_t;
+#define bzero(a, b) memset(a, 0, b)
+typedef UINT8       uint8_t;
+typedef INT8        int8_t;
+typedef UINT16      uint16_t;
+typedef INT16       int16_t;
+typedef UINT32      uint32_t;
+typedef INT32       int32_t;
 #else
 #include <stdint.h>
 #endif
@@ -117,6 +117,75 @@ enum
     kDNSServiceFlagsLongLivedQuery      = 0x100
     /* Flag for creating a long-lived unicast query for the DNSServiceQueryRecord call. */
     };
+
+/*
+ * The values for DNS Classes and Types are listed in RFC 1035, and are available
+ * on every OS in its DNS header file. Unfortunately every OS does not have the
+ * same header file containing DNS Class and Type constants, and the names of
+ * the constants are not consistent. For example, BIND 8 uses "T_A",
+ * BIND 9 uses "ns_t_a", Windows uses "DNS_TYPE_A", etc.
+ * For this reason, these constants are also listed here, so that code using
+ * the DNS-SD programming APIs can use these constants, so that the same code
+ * can compile on all our supported platforms.
+ */
+
+enum
+    {
+    kDNSServiceClass_IN       = 1,      /* Internet */
+    };
+
+enum
+    {
+    kDNSServiceType_A         = 1,      /* Host address. */
+    kDNSServiceType_NS        = 2,      /* Authoritative server. */
+    kDNSServiceType_MD        = 3,      /* Mail destination. */
+    kDNSServiceType_MF        = 4,      /* Mail forwarder. */
+    kDNSServiceType_CNAME     = 5,      /* Canonical name. */
+    kDNSServiceType_SOA       = 6,      /* Start of authority zone. */
+    kDNSServiceType_MB        = 7,      /* Mailbox domain name. */
+    kDNSServiceType_MG        = 8,      /* Mail group member. */
+    kDNSServiceType_MR        = 9,      /* Mail rename name. */
+    kDNSServiceType_NULL      = 10,     /* Null resource record. */
+    kDNSServiceType_WKS       = 11,     /* Well known service. */
+    kDNSServiceType_PTR       = 12,     /* Domain name pointer. */
+    kDNSServiceType_HINFO     = 13,     /* Host information. */
+    kDNSServiceType_MINFO     = 14,     /* Mailbox information. */
+    kDNSServiceType_MX        = 15,     /* Mail routing information. */
+    kDNSServiceType_TXT       = 16,     /* Text strings. */
+    kDNSServiceType_RP        = 17,     /* Responsible person. */
+    kDNSServiceType_AFSDB     = 18,     /* AFS cell database. */
+    kDNSServiceType_X25       = 19,     /* X_25 calling address. */
+    kDNSServiceType_ISDN      = 20,     /* ISDN calling address. */
+    kDNSServiceType_RT        = 21,     /* Router. */
+    kDNSServiceType_NSAP      = 22,     /* NSAP address. */
+    kDNSServiceType_NSAP_PTR  = 23,     /* Reverse NSAP lookup (deprecated). */
+    kDNSServiceType_SIG       = 24,     /* Security signature. */
+    kDNSServiceType_KEY       = 25,     /* Security key. */
+    kDNSServiceType_PX        = 26,     /* X.400 mail mapping. */
+    kDNSServiceType_GPOS      = 27,     /* Geographical position (withdrawn). */
+    kDNSServiceType_AAAA      = 28,     /* Ip6 Address. */
+    kDNSServiceType_LOC       = 29,     /* Location Information. */
+    kDNSServiceType_NXT       = 30,     /* Next domain (security). */
+    kDNSServiceType_EID       = 31,     /* Endpoint identifier. */
+    kDNSServiceType_NIMLOC    = 32,     /* Nimrod Locator. */
+    kDNSServiceType_SRV       = 33,     /* Server Selection. */
+    kDNSServiceType_ATMA      = 34,     /* ATM Address */
+    kDNSServiceType_NAPTR     = 35,     /* Naming Authority PoinTeR */
+    kDNSServiceType_KX        = 36,     /* Key Exchange */
+    kDNSServiceType_CERT      = 37,     /* Certification record */
+    kDNSServiceType_A6        = 38,     /* IPv6 address (deprecates AAAA) */
+    kDNSServiceType_DNAME     = 39,     /* Non-terminal DNAME (for IPv6) */
+    kDNSServiceType_SINK      = 40,     /* Kitchen sink (experimentatl) */
+    kDNSServiceType_OPT       = 41,     /* EDNS0 option (meta-RR) */
+    kDNSServiceType_TKEY      = 249,    /* Transaction key */
+    kDNSServiceType_TSIG      = 250,    /* Transaction signature. */
+    kDNSServiceType_IXFR      = 251,    /* Incremental zone transfer. */
+    kDNSServiceType_AXFR      = 252,    /* Transfer zone of authority. */
+    kDNSServiceType_MAILB     = 253,    /* Transfer mailbox records. */
+    kDNSServiceType_MAILA     = 254,    /* Transfer mail agent records. */
+    kDNSServiceType_ANY       = 255,    /* Wildcard match. */
+    };
+
 
 /* possible error code values */
 enum
@@ -516,7 +585,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
  *
  * flags:           Currently ignored, reserved for future use.
  *
- * rrtype:          The type of the record (e.g. TXT, SRV, etc), as defined in nameser.h.
+ * rrtype:          The type of the record (e.g. kDNSServiceType_TXT, kDNSServiceType_SRV, etc)
  *
  * rdlen:           The length, in bytes, of the rdata.
  *
@@ -931,11 +1000,9 @@ DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
  *
  * fullname:        The full domain name of the resource record.
  *
- * rrtype:          The numerical type of the resource record (e.g. PTR, SRV, etc), as defined
- *                  in nameser.h.
+ * rrtype:          The numerical type of the resource record (e.g. kDNSServiceType_PTR, kDNSServiceType_SRV, etc)
  *
- * rrclass:         The class of the resource record, as defined in nameser.h (usually 1 for the
- *                  Internet class).
+ * rrclass:         The class of the resource record (usually kDNSServiceClass_IN)
  *
  * rdlen:           Length, in bytes, of the rdata.
  *
@@ -995,9 +1062,9 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
  *
  * fullname:        The resource record's full domain name.
  *
- * rrtype:          The resource record's type (e.g. PTR, SRV, etc) as defined in nameser.h.
+ * rrtype:          The resource record's type (e.g. kDNSServiceType_PTR, kDNSServiceType_SRV, etc)
  *
- * rrclass:         The class of the resource record, as defined in nameser.h (usually 1).
+ * rrclass:         The class of the resource record (usually kDNSServiceClass_IN).
  *
  * rdlen:           The length, in bytes, of the resource record rdata.
  *
@@ -1046,11 +1113,10 @@ typedef void (DNSSD_API *DNSServiceQueryRecordReply)
  *
  * fullname:        The full domain name of the resource record to be queried for.
  *
- * rrtype:          The numerical type of the resource record to be queried for (e.g. PTR, SRV, etc)
- *                  as defined in nameser.h.
+ * rrtype:          The numerical type of the resource record to be queried for
+ *                  (e.g. kDNSServiceType_PTR, kDNSServiceType_SRV, etc)
  *
- * rrclass:         The class of the resource record, as defined in nameser.h
- *                  (usually 1 for the Internet class).
+ * rrclass:         The class of the resource record (usually kDNSServiceClass_IN).
  *
  * callBack:        The function to be called when a result is found, or if the call
  *                  asynchronously fails.
@@ -1093,9 +1159,9 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
  *
  * fullname:        The resource record's full domain name.
  *
- * rrtype:          The resource record's type (e.g. PTR, SRV, etc) as defined in nameser.h.
+ * rrtype:          The resource record's type (e.g. kDNSServiceType_PTR, kDNSServiceType_SRV, etc)
  *
- * rrclass:         The class of the resource record, as defined in nameser.h (usually 1).
+ * rrclass:         The class of the resource record (usually kDNSServiceClass_IN).
  *
  * rdlen:           The length, in bytes, of the resource record rdata.
  *
@@ -1103,7 +1169,7 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
  *
  */
 
-void DNSSD_API	DNSServiceReconfirmRecord
+void DNSSD_API DNSServiceReconfirmRecord
     (
     DNSServiceFlags                    flags,
     uint32_t                           interfaceIndex,

@@ -68,29 +68,15 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib .
 #include <string.h>			// For strlen(), strcpy(), bzero()
 #include <errno.h>          // For errno, EINTR
 #include <time.h>
+
 #ifdef _WIN32
 #include <process.h>
-#include <WinDNS.h>
+typedef	int	pid_t;
+#define	getpid	_getpid
+#define	strcasecmp	_stricmp
 #else
 #include <sys/time.h>		// For struct timeval
 #include <unistd.h>         // For getopt() and optind
-#define BIND_8_COMPAT
-#include <arpa/nameser.h>	// For T_HINFO, etc.
-#endif
-#define T_SRV 33
-
-#ifdef _WIN32
-typedef	int	pid_t;
-#define	getpid	_getpid
-
-#define	C_IN	DNS_CLASS_INTERNET
-#define	T_PTR	DNS_TYPE_PTR
-#define	T_A		DNS_TYPE_A
-#define	T_TXT	DNS_TYPE_TEXT
-#define	T_NULL	DNS_TYPE_NULL
-#define	T_HINFO	DNS_TYPE_HINFO
-
-#define	strcasecmp	_stricmp
 #endif
 
 
@@ -104,7 +90,7 @@ static DNSServiceRef client = NULL;
 static int num_printed;
 static char addtest = 0;
 static DNSRecordRef record = NULL;
-static char myhinfo9[11] = "\003Mac\006OS 9.2";
+static char myhinfoW[14] = "\002PC\012Windows XP";
 static char myhinfoX[ 9] = "\003Mac\004OS X";
 static char updatetest[3] = "\002AA";
 static char bigNULL[4096];
@@ -120,8 +106,8 @@ static volatile int timeOut = LONG_TIME;
 
 static uint16_t GetRRType(const char *s)
 	{
-	if      (!strcasecmp(s, "ptr")) return(T_PTR);
-	else if (!strcasecmp(s, "srv")) return(T_SRV);
+	if      (!strcasecmp(s, "ptr")) return(kDNSServiceType_PTR);
+	else if (!strcasecmp(s, "srv")) return(kDNSServiceType_SRV);
 	else                         return(atoi(s));
 	}
 
@@ -244,7 +230,7 @@ static void myTimerCallBack(void)
 			switch (addtest)
 				{
 				case 0: printf("Adding Test HINFO record\n");
-						err = DNSServiceAddRecord(client, &record, 0, T_HINFO, sizeof(myhinfo9), &myhinfo9[0], 120);
+						err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_HINFO, sizeof(myhinfoW), &myhinfoW[0], 120);
 						addtest = 1;
 						break;
 				case 1: printf("Updating Test HINFO record\n");
@@ -273,7 +259,7 @@ static void myTimerCallBack(void)
 		case 'N':
 			{
 			printf("Adding big NULL record\n");
-			err = DNSServiceAddRecord(client, &record, 0, T_NULL, sizeof(bigNULL), &bigNULL[0], 120);
+			err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_NULL, sizeof(bigNULL), &bigNULL[0], 120);
 			timeOut = LONG_TIME;
 			}
 			break;
@@ -311,7 +297,7 @@ void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifI
 	char rdb[1000];
 	switch (rrtype)
 		{
-		case T_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
+		case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
 		default : sprintf(rdb, "Unknown rdata: %d bytes", rdlen);          break;
 		}
 	printf("%-30s%4d%4d  %s\n", fullname, rrtype, rrclass, rdb);
@@ -454,8 +440,8 @@ int main(int argc, char **argv)
 		case 'Q':	{
 					uint16_t rrtype, rrclass;
 					if (argc < optind+1) goto Fail;
-					rrtype = (argc <= optind+1) ? T_A  : GetRRType(argv[optind+1]);
-					rrclass = (argc <= optind+2) ? C_IN : atoi(argv[optind+2]);
+					rrtype = (argc <= optind+1) ? kDNSServiceType_A  : GetRRType(argv[optind+1]);
+					rrclass = (argc <= optind+2) ? kDNSServiceClass_IN : atoi(argv[optind+2]);
 					err = DNSServiceQueryRecord(&client, 0, 0, argv[optind+0], rrtype, rrclass, qr_reply, NULL);
 					break;
 					}
@@ -488,7 +474,7 @@ int main(int argc, char **argv)
 					static const char TXT2[] = "\xD" "Fourth String" "\xC" "Fifth String"  "\xC" "Sixth String";
 					printf("Registering Service Test._testdualtxt._tcp.local.\n");
 					err = DNSServiceRegister(&client, 0, 0, "Test", "_testdualtxt._tcp.", "", NULL, registerPort.NotAnInteger, sizeof(TXT1)-1, TXT1, reg_reply, NULL);
-					if (!err) err = DNSServiceAddRecord(client, &record, 0, T_TXT, sizeof(TXT2)-1, TXT2, 120);
+					if (!err) err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_TXT, sizeof(TXT2)-1, TXT2, 120);
 					break;
 					}
 
