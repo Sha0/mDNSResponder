@@ -275,6 +275,10 @@ dns_service_discovery_ref DNSServiceRegistrationCreate
         return NULL;
     }
 
+    if (!txtRecord) {
+      txtRecord = "";
+    }
+
     result = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &clientPort);
     if (result != KERN_SUCCESS) {
         printf("Mach port receive creation failed, %s\n", mach_error_string(result));
