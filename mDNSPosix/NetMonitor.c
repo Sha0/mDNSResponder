@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.19  2003/06/06 21:05:04  cheshire
+ * Display state of cache-flush bit on additional records
+ *
  * Revision 1.18  2003/06/06 20:01:30  cheshire
  * For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
  * (Global search-and-replace; no functional change to code execution.)
@@ -300,7 +303,7 @@ mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *
 								(srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? "-Q- " : "-LQ-";
 
 	DisplayTimestamp();
-	mprintf("%#-16a %s            Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
+	mprintf("%#-16a %s             Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
 		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
 
 	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", ((mDNSu16)msg->h.id.b[0])<<8 | msg->h.id.b[1]);
@@ -322,7 +325,7 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 
 	RDataBody *rd = &pktrr->rdata->u;
 	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdata->RDLength;
-	mDNSu32 n = mprintf("%#-16a %-4s %-5s%5d %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->rroriginalttl, pktrr->name.c);
+	mDNSu32 n = mprintf("%#-16a %-5s %-5s%5d %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->rroriginalttl, pktrr->name.c);
 
 	switch(pktrr->rrtype)
 		{
@@ -446,7 +449,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 		if (pktrr.rroriginalttl)
 			{
 			NumAnswers++;
-			DisplayResourceRecord(srcaddr, (pktrr.RecordType & kDNSRecordTypeUniqueMask) ? "(AN)" : "(A+)", &pktrr);
+			DisplayResourceRecord(srcaddr, (pktrr.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AN)" : "(AN+)", &pktrr);
 			recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
 			}
 		else
@@ -469,7 +472,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr); return; }
 		NumAdditionals++;
-		DisplayResourceRecord(srcaddr, "(AD)", &pktrr);
+		DisplayResourceRecord(srcaddr, (pktrr.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pktrr);
 		}
 	}
 
@@ -596,9 +599,10 @@ usage:
 	fprintf(stderr, "(DE)           Deletion/Goodbye (service going away)\n");
 	fprintf(stderr, "(Q)            Query Question\n");
 	fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
-	fprintf(stderr, "(AN)           Answer to question (or periodic announcment) (entire RR Set)\n");
-	fprintf(stderr, "(A+)           Answer to question (or periodic announcment) (add to existing RR Set members)\n");
-	fprintf(stderr, "(AD)           Additional record\n");
+	fprintf(stderr, "(AN)           Unique Answer to question (or periodic announcment) (entire RR Set)\n");
+	fprintf(stderr, "(AN+)          Answer to question (or periodic announcment) (add to existing RR Set members)\n");
+	fprintf(stderr, "(AD)           Unique Additional Record Set (entire RR Set)\n");
+	fprintf(stderr, "(AD+)          Additional records (add to existing RR Set members)\n");
 
 	fprintf(stderr, "\nFinal summary, sorted by service type:\n");
 	fprintf(stderr, "Probe          Probes for this service type starting up\n");
