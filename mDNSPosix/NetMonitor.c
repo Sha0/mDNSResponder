@@ -33,6 +33,11 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.15  2003/05/29 20:03:57  cheshire
+ * Various improvements:
+ * Display start and end time, average rates in packets-per-minute,
+ * show legacy queries as -LQ-, improve display of TXT and unknown records
+ *
  * Revision 1.14  2003/05/26 04:45:42  cheshire
  * Limit line length when printing super-long TXT records
  *
@@ -145,6 +150,8 @@ struct ActivityStat_struct
 
 static mDNS mDNSStorage;						// mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;	// Stores this platform's globals
+
+struct timeval tv_start, tv_end, tv_interval;
 
 static mDNSAddr FilterAddr;
 
@@ -268,12 +275,13 @@ mDNSlocal void DisplayTimestamp(void)
 	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
 	}
 
-mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *srcaddr)
+mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *srcaddr, mDNSIPPort srcport)
 	{
-	const char *const ptype = (msg->h.flags.b[0] & kDNSFlag0_QR_Response) ? "R" : "Q";
+	const char *const ptype =   (msg->h.flags.b[0] & kDNSFlag0_QR_Response)             ? "-R- " :
+								(srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? "-Q- " : "-LQ-";
 
 	DisplayTimestamp();
-	mprintf("%#-16a -%s-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
+	mprintf("%#-16a %s       Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
 		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
 
 	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", ((mDNSu16)msg->h.id.b[0])<<8 | msg->h.id.b[1]);
@@ -288,27 +296,71 @@ mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *
 
 mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *const op, const ResourceRecord *const pktrr)
 	{
+	static const char hexchars[16] = "0123456789ABCDEF";
 	#define MaxWidth 132
+	char buffer[MaxWidth+8];
+	char *p = buffer;
+
 	RDataBody *rd = &pktrr->rdata->u;
 	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdata->RDLength;
-	mDNSu8 *t = rd->txt.c;
-	mDNSu32 n = mprintf("%#-16a %-4s %-5s %##s", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->name.c);
+	mDNSu32 n = mprintf("%#-16a %-4s %-5s %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->name.c);
 
 	switch(pktrr->rrtype)
 		{
-		case kDNSType_A:	n += mprintf(" -> %.4a", &rd->ip); break;
-		case kDNSType_PTR:	n += mprintf(" -> %##.*s", MaxWidth - n, &rd->name); break;
+		case kDNSType_A:	n += mprintf("%.4a", &rd->ip); break;
+		case kDNSType_PTR:	n += mprintf("%##.*s", MaxWidth - n, &rd->name); break;
 		case kDNSType_HINFO:// same as kDNSType_TXT below
-		case kDNSType_TXT:	while (t < rdend && n+4 < MaxWidth) { n += mprintf(" -> %#.*s", MaxWidth - (n+4), t); t += 1+t[0]; }
-							break;
-		case kDNSType_AAAA:	n += mprintf(" -> %.16a", &rd->ipv6); break;
-		case kDNSType_SRV:	n += mprintf(" -> %##s:%d", &rd->srv.target, ((mDNSu16)rd->srv.port.b[0] << 8) | rd->srv.port.b[1]); break;
+		case kDNSType_TXT:	{
+							mDNSu8 *t = rd->txt.c;
+							while (t < rdend && t[0] && p < buffer+MaxWidth)
+								{
+								int i;
+								for (i=1; i<=t[0] && p < buffer+MaxWidth; i++)
+									{
+									if (t[i] == '\\') *p++ = '\\';
+									if (t[i] >= ' ') *p++ = t[i];
+									else
+										{
+										*p++ = '\\';
+										*p++ = '0';
+										*p++ = 'x';
+										*p++ = hexchars[t[i] >> 4];
+										*p++ = hexchars[t[i] & 0xF];
+										}
+									}
+								t += 1+t[0];
+								if (t[0]) { *p++ = '\\'; *p++ = ' '; }
+								}
+							*p++ = 0;
+							n += mprintf("%.*s", MaxWidth - n, buffer);
+							} break;
+		case kDNSType_AAAA:	n += mprintf("%.16a", &rd->ipv6); break;
+		case kDNSType_SRV:	n += mprintf("%##s:%d", &rd->srv.target, ((mDNSu16)rd->srv.port.b[0] << 8) | rd->srv.port.b[1]); break;
+		default:			{
+							mDNSu8 *s = rd->data;
+							while (s < rdend && p < buffer+MaxWidth)
+								{
+								if (*s == '\\') *p++ = '\\';
+								if (*s >= ' ') *p++ = *s;
+								else
+									{
+									*p++ = '\\';
+									*p++ = '0';
+									*p++ = 'x';
+									*p++ = hexchars[*s >> 4];
+									*p++ = hexchars[*s & 0xF];
+									}
+								s++;
+								}
+							*p++ = 0;
+							n += mprintf("%.*s", MaxWidth - n, buffer);
+							} break;
 		}
 	
 	mprintf("\n");
 	}
 
-mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
+mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
@@ -316,7 +368,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	const mDNSu8 *p2;
 	ResourceRecord pktrr;
 
-	DisplayPacketHeader(msg, srcaddr);
+	DisplayPacketHeader(msg, srcaddr, srcport);
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -347,13 +399,13 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		}
 	}
 
-mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
+mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
 	ResourceRecord pktrr;
 
-	DisplayPacketHeader(msg, srcaddr);
+	DisplayPacketHeader(msg, srcaddr, srcport);
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -417,8 +469,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 			msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
 			
 			mDNS_Lock(m);
-			if      (QR_OP == StdQ) DisplayQuery   (m, msg, end, srcaddr, InterfaceID);
-			else if (QR_OP == StdR) DisplayResponse(m, msg, end, srcaddr, InterfaceID);
+			if      (QR_OP == StdQ) DisplayQuery   (m, msg, end, srcaddr, srcport, InterfaceID);
+			else if (QR_OP == StdR) DisplayResponse(m, msg, end, srcaddr, srcport, InterfaceID);
 			else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
 			mDNS_Unlock(m);
 			}
@@ -426,20 +478,50 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 
 mDNSlocal mStatus mDNSNetMonitor(void)
 	{
+	struct tm tm;
+	int h, m, s, mul, div;
+	
 	mStatus status = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
 		mDNS_Init_DontAdvertiseLocalAddresses,
 		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (status) return(status);
 
+	gettimeofday(&tv_start, NULL);
 	ExampleClientEventLoop(&mDNSStorage);
+	gettimeofday(&tv_end, NULL);
+	tv_interval = tv_end;
+	if (tv_start.tv_usec > tv_interval.tv_usec)
+		{ tv_interval.tv_usec += 1000000; tv_interval.tv_sec--; }
+	tv_interval.tv_sec  -= tv_start.tv_sec;
+	tv_interval.tv_usec -= tv_start.tv_usec;
+	h = (tv_interval.tv_sec / 3600);
+	m = (tv_interval.tv_sec % 3600) / 60;
+	s = (tv_interval.tv_sec % 60);
+	if (tv_interval.tv_sec > 10)
+		{
+		mul = 60;
+		div = tv_interval.tv_sec;
+		}
+	else
+		{
+		mul = 60000;
+		div = tv_interval.tv_sec * 1000 + tv_interval.tv_usec / 1000;
+		if (div == 0) div=1;
+		}
 
 	mprintf("\n\n");
-	mprintf("Total New Service Probes:   %6d\n", NumProbes);
-	mprintf("Total Goodbye Announcements:%6d\n", NumGoodbyes);
-	mprintf("Total Query Questions:      %6d\n", NumQuestions);
-	mprintf("Total Answers/Announcements:%6d\n", NumAnswers);
-	mprintf("Total Additional Records:   %6d\n", NumAdditionals);
+	localtime_r((time_t*)&tv_start.tv_sec, &tm);
+	mprintf("Started      %3d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv_start.tv_usec);
+	localtime_r((time_t*)&tv_end.tv_sec, &tm);
+	mprintf("End          %3d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv_end.tv_usec);
+	mprintf("Captured for %3d:%02d:%02d.%06d\n", h, m, s, tv_interval.tv_usec);
+	mprintf("\n");
+	mprintf("Total New Service Probes:   %7d   (avg%4d/min)\n", NumProbes,      NumProbes      * mul / div);
+	mprintf("Total Goodbye Announcements:%7d   (avg%4d/min)\n", NumGoodbyes,    NumGoodbyes    * mul / div);
+	mprintf("Total Query Questions:      %7d   (avg%4d/min)\n", NumQuestions,   NumQuestions   * mul / div);
+	mprintf("Total Answers/Announcements:%7d   (avg%4d/min)\n", NumAnswers,     NumAnswers     * mul / div);
+	mprintf("Total Additional Records:   %7d   (avg%4d/min)\n", NumAdditionals, NumAdditionals * mul / div);
 	mprintf("\n");
 	printstats();
 
@@ -475,8 +557,10 @@ usage:
 	fprintf(stderr, "Optional <host> parameter displays only packets from that host\n");
 
 	fprintf(stderr, "\nPer-packet header output:\n");
-	fprintf(stderr, "-Q- / -R-      Query Packet or Response Packet\n");
-	fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet.\n");
+	fprintf(stderr, "-Q-            Multicast Query from mDNS client that accepts multicast replies\n");
+	fprintf(stderr, "-R-            Multicast Response packet containing answers/announcements\n");
+	fprintf(stderr, "-LQ-           Multicast Query from legacy client that does *not* listen for multicast replies\n");
+	fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet\n");
 
 	fprintf(stderr, "\nPer-record display:\n");
 	fprintf(stderr, "(P)            Probe Question (new service starting)\n");
