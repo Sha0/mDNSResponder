@@ -274,12 +274,14 @@ struct ServiceRecordSet_struct
 	{
 	mDNSServiceCallback *Callback;
 	void                *Context;
+	ExtraResourceRecord *Extras;	// Optional list of extra ResourceRecords attached to this service registration
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           Host;		// Set if this service record does not use the standard target host name
 	ResourceRecord       RR_PTR;	// e.g. _printer._tcp.local.      PTR Name._printer._tcp.local.
 	ResourceRecord       RR_SRV;	// e.g. Name._printer._tcp.local. SRV 0 0 port target
 	ResourceRecord       RR_TXT;	// e.g. Name._printer._tcp.local. TXT PrintQueueName
-	ExtraResourceRecord *Extras;
+	// Don't add any fields after ResourceRecord RR_TXT.
+	// This is where the implicit extra space goes if we allocate a ServiceRecordSet containing an oversized RR_TXT record
 	};
 
 // ***************************************************************************
