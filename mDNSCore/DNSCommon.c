@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.38  2004/06/18 21:08:58  cheshire
+<rdar://problem/3540040> Applications are registering invalid records
+Attempts to create domain names like "www..apple.com." now logged to aid debugging
+
 Revision 1.37  2004/06/18 20:25:42  cheshire
 <rdar://problem/3488547> Add a syslog message if someone tries to use "local.arpa".
 
@@ -433,13 +437,15 @@ mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *
 // in the domainname bufer (i.e., the next byte after the terminating zero).
 // If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
 // AppendDNSNameString returns mDNSNULL.
-mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstr)
+mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstring)
 	{
+	const char   *cstr      = cstring;
 	mDNSu8       *      ptr = name->c + DomainNameLength(name) - 1;	// Find end of current name
 	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME - 1;		// Limit of how much we can add (not counting final zero)
 	while (*cstr && ptr < lim)										// While more characters, and space to put them...
 		{
 		mDNSu8 *lengthbyte = ptr++;									// Record where the length is going to go
+		if (*cstr == '.') { LogMsg("AppendDNSNameString: Illegal empty label in name \"%s\"", cstring); return(mDNSNULL); }
 		while (*cstr && *cstr != '.' && ptr < lim)					// While we have characters in the label...
 			{
 			mDNSu8 c = (mDNSu8)*cstr++;								// Read the character
