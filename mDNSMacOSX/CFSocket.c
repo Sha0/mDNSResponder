@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.118  2003/11/14 20:59:09  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.117  2003/11/08 22:18:29  cheshire
 <rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
 
@@ -327,7 +331,6 @@ Minor code tidying
 #define AAAA_OVER_V4	1
 
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
-#include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
 #include <stdio.h>

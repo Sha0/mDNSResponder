@@ -132,7 +132,6 @@
 				F5E11B5F04A28126019798ED,
 				F515E29604A37BB701CA296C,
 				F515E29704A37BB801CA296C,
-				F515E29804A37BBB01CA296C,
 				F515E29904A37BBB01CA296C,
 			);
 			isa = PBXHeadersBuildPhase;
@@ -357,7 +356,6 @@
 				6575FBEB022EAF7200000109,
 				654BE64F02B63B93000001D1,
 				654BE65002B63B93000001D1,
-				654BE65202B63B93000001D1,
 				000753D303367C1C0CCA2C71,
 				FF485D5105632E0000130380,
 			);
@@ -513,13 +511,6 @@
 			isa = PBXFileReference;
 			name = mDNSDebug.h;
 			path = ../mDNSCore/mDNSDebug.h;
-			refType = 4;
-		};
-		654BE65202B63B93000001D1 = {
-			fileEncoding = 4;
-			isa = PBXFileReference;
-			name = mDNSPlatformFunctions.h;
-			path = ../mDNSCore/mDNSPlatformFunctions.h;
 			refType = 4;
 		};
 		65713D46025A293200000109 = {
@@ -751,12 +742,6 @@
 		};
 		F515E29704A37BB801CA296C = {
 			fileRef = 654BE65002B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		F515E29804A37BBB01CA296C = {
-			fileRef = 654BE65202B63B93000001D1;
 			isa = PBXBuildFile;
 			settings = {
 			};

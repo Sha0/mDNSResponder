@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.25  2003/11/14 20:59:09  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.24  2003/10/24 23:23:02  bradley
 Removed legacy port 53 support as it is no longer needed.
 
@@ -135,7 +139,6 @@ Multicast DNS platform plugin for Win32
 #endif
 
 #include	"mDNSClientAPI.h"
-#include	"mDNSPlatformFunctions.h"
 
 #include	"mDNSWin32.h"
 

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.20  2003/11/14 20:59:09  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.19  2003/08/18 23:09:20  cheshire
 <rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
 
@@ -39,7 +43,6 @@ Update to APSL 2.0
 #include <stdarg.h>						// For va_list support
 
 #include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
-#include "mDNSPlatformFunctions.h"		// Defines the interface to the supporting layer below
 
 #include "mDNSMacOS9.h"					// Defines the specific types needed to run mDNS on this platform
 

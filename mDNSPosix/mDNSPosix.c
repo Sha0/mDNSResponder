@@ -36,6 +36,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.26  2003/11/14 20:59:09  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.25  2003/10/30 19:25:49  cheshire
 Fix signed/unsigned warning on certain compilers
 
@@ -119,7 +123,6 @@ First checkin
 */
 
 #include "mDNSClientAPI.h"           // Defines the interface provided to the client layer above
-#include "mDNSPlatformFunctions.h"   // Defines the interface to the supporting layer below
 #include "mDNSPosix.h"				 // Defines the specific types needed to run mDNS on this platform
 
 #include <assert.h>

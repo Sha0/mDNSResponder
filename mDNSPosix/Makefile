@@ -1,4 +1,8 @@
 # $Log: Makefile,v $
+# Revision 1.14  2003/11/14 20:59:09  cheshire
+# Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+# Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+#
 # Revision 1.13  2003/08/06 18:20:51  cheshire
 # Makefile cleanup
 #
@@ -66,8 +70,7 @@ COMMONOBJ = objects/mDNSPosix.c.o objects/mDNSUNP.c.o objects/ExampleClientApp.c
 
 HEADERS = Makefile mDNSUNP.h mDNSPosix.h   \
 ../mDNSCore/mDNSDebug.h                    \
-../mDNSCore/mDNSClientAPI.h                \
-../mDNSCore/mDNSPlatformFunctions.h
+../mDNSCore/mDNSClientAPI.h
 
 all: setup Client Responder ProxyResponder Identify NetMonitor
 

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscovery.c,v $
+Revision 1.4  2003/11/14 20:59:10  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.3  2003/10/04 04:47:08  bradley
 Changed DNSServiceRegistrationCreate to treat the port in network byte order for end-to-end consistency.
 
@@ -58,7 +62,6 @@ Platform-neutral DNSServices-based emulation layer for the Mac OS X DNSServiceDi
 #endif
 
 #include	"mDNSClientAPI.h"
-#include	"mDNSPlatformFunctions.h"
 #include	"DNSServices.h"
 
 #include	"DNSServiceDiscovery.h"

@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.323  2003/11/14 20:59:08  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.322  2003/11/14 19:47:52  cheshire
 Define symbol MAX_ESCAPED_DOMAIN_NAME to indicate recommended buffer size for ConvertDomainNameToCString
 
@@ -1033,7 +1037,6 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #define TEST_LOCALONLY_FOR_EVERYTHING 0
 
 #include "mDNSClientAPI.h"				// Defines the interface provided to the client layer above
-#include "mDNSPlatformFunctions.h"		// Defines the interface required of the supporting layer below
 
 // Disable certain benign warnings with Microsoft compilers
 #if(defined(_MSC_VER))

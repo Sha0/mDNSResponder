@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.19  2003/11/14 20:59:10  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.18  2003/11/14 19:18:34  cheshire
 Move AssignDomainName macro to mDNSClientAPI.h to that client layers can use it too
 
@@ -111,7 +115,6 @@ DNS Services for Windows
 #endif
 
 #include	"mDNSClientAPI.h"
-#include	"mDNSPlatformFunctions.h"
 
 #include	"DNSServices.h"
 

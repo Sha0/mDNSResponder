@@ -27,6 +27,10 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.9  2003/11/14 20:59:09  cheshire
+Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
+Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
+
 Revision 1.8  2003/10/28 10:08:27  bradley
 Removed legacy port 53 support as it is no longer needed.
 
@@ -104,7 +108,6 @@ mDNS platform plugin for VxWorks.
 #endif
 
 #include	"mDNSClientAPI.h"
-#include	"mDNSPlatformFunctions.h"
 
 #include	"mDNSVxWorks.h"
 
