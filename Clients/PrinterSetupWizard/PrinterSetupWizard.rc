@@ -171,8 +171,8 @@ STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Rendezvous Printer Wizard"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    LTEXT           "Completing the Rendezvous Printer Wizard",IDC_GOODBYE,
-                    116,7,171,27
+    LTEXT           "Completing the Rendezvous Printer Wizard",IDC_GOODBYE,116,
+                    7,171,27
     LTEXT           "You have successfully completed the Rendezvous Printer Wizard.  The printer has the following settings:",
                     IDC_STATIC,116,42,158,31
     LTEXT           "Name:",IDC_STATIC,116,78,22,8
@@ -209,8 +209,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,4
- PRODUCTVERSION 1,0,0,4
+ FILEVERSION 1,0,0,5
+ PRODUCTVERSION 1,0,0,5
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
