@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.12  2004/06/28 23:19:19  cheshire
+Fix "Daemon_Init declared but never defined" warning on Linux
+
 Revision 1.11  2004/06/25 00:26:27  rpantos
 Changes to fix the Posix build on Solaris.
 
@@ -81,7 +84,6 @@ Add support for mDNSResponder on Linux.
 #include "uds_daemon.h"
 
 
-static int		Daemon_Init( int nochdir, int noclose );
 static void		ParseCmdLinArgs( int argc, char **argv);
 static void		DumpStateLog( mDNS *m);
 static mStatus	MainLoop( mDNS *m);
