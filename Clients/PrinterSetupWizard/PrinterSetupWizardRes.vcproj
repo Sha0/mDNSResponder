@@ -71,7 +71,7 @@ if not exist Debug\Resources\PrinterWizard.exe.Resources mkdir Debug\Resources\P
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Rendezvous\Resources\PrinterWizard.exe.Resources"
+			OutputDirectory=".\Release\Root\Program Files\Bonjour\Resources\PrinterWizard.exe.Resources"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -120,9 +120,9 @@ if not exist Debug\Resources\PrinterWizard.exe.Resources mkdir Debug\Resources\P
 				Description="Building Output Directories"
 				CommandLine="if not exist Release\Root mkdir Release\Root
 if not exist &quot;Release\Root\Program Files&quot; mkdir &quot;Release\Root\Program Files&quot;
-if not exist &quot;Release\Root\Program Files\Rendezvous&quot; mkdir &quot;Release\Root\Program Files\Rendezvous&quot;
-if not exist &quot;Release\Root\Program Files\Rendezvous\Resources&quot; mkdir &quot;Release\Root\Program Files\Rendezvous\Resources&quot;
-if not exist &quot;Release\Root\Program Files\Rendezvous\Resources\PrinterWizard.exe.Resources&quot; mkdir &quot;Release\Root\Program Files\Rendezvous\Resources\PrinterWizard.exe.Resources&quot;"/>
+if not exist &quot;Release\Root\Program Files\Bonjour&quot; mkdir &quot;Release\Root\Program Files\Bonjour&quot;
+if not exist &quot;Release\Root\Program Files\Bonjour\Resources&quot; mkdir &quot;Release\Root\Program Files\Bonjour\Resources&quot;
+if not exist &quot;Release\Root\Program Files\Bonjour\Resources\PrinterWizard.exe.Resources&quot; mkdir &quot;Release\Root\Program Files\Bonjour\Resources\PrinterWizard.exe.Resources&quot;"/>
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="NDEBUG"
