@@ -5,6 +5,11 @@
 	};
 	objectVersion = 38;
 	objects = {
+		000753D303367C1C0CCA2C71 = {
+			isa = PBXFileReference;
+			path = mDNSOSX.h;
+			refType = 4;
+		};
 		00AD62A3032D799A0CCA2C71 = {
 			buildPhases = (
 				00AD62A4032D799A0CCA2C71,
@@ -36,54 +41,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				00AD62A5032D799A0CCA2C71,
-				00AD62A6032D799A0CCA2C71,
-				00AD62A7032D799A0CCA2C71,
-				00AD62A8032D799A0CCA2C71,
-				00AD62A9032D799A0CCA2C71,
-				00AD62AA032D799A0CCA2C71,
-				00AD62AB032D799A0CCA2C71,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		00AD62A5032D799A0CCA2C71 = {
 			fileRef = 6575FBFF022EAFBA00000109;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00AD62A6032D799A0CCA2C71 = {
-			fileRef = 654BE64F02B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00AD62A7032D799A0CCA2C71 = {
-			fileRef = 654BE65002B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00AD62A8032D799A0CCA2C71 = {
-			fileRef = 654BE65102B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00AD62A9032D799A0CCA2C71 = {
-			fileRef = 654BE65202B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00AD62AA032D799A0CCA2C71 = {
-			fileRef = 654BE65302B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00AD62AB032D799A0CCA2C71 = {
-			fileRef = 654BE65402B63B93000001D1;
 			isa = PBXBuildFile;
 			settings = {
 			};
@@ -296,12 +259,12 @@
 		08FB7795FE84155DC02AAC07 = {
 			children = (
 				6575FBEC022EAF7200000109,
-				6575FBEB022EAF7200000109,
 				6575FBE9022EAF5A00000109,
+				6575FBEB022EAF7200000109,
 				6575FC12022EB27800000109,
+				000753D303367C1C0CCA2C71,
 				654BE64F02B63B93000001D1,
 				654BE65002B63B93000001D1,
-				654BE65102B63B93000001D1,
 				654BE65202B63B93000001D1,
 				654BE65302B63B93000001D1,
 				654BE65402B63B93000001D1,
@@ -354,12 +317,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				6575FC02022EAFBA00000109,
-				654BE65502B63B93000001D1,
-				654BE65602B63B93000001D1,
-				654BE65702B63B93000001D1,
-				654BE65802B63B93000001D1,
-				654BE65902B63B93000001D1,
-				654BE65A02B63B93000001D1,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -458,12 +415,6 @@
 			path = ../mDNSCore/mDNSDebug.h;
 			refType = 4;
 		};
-		654BE65102B63B93000001D1 = {
-			isa = PBXFileReference;
-			name = mDNSPlatformEnvironment.h;
-			path = ../mDNSCore/mDNSPlatformEnvironment.h;
-			refType = 4;
-		};
 		654BE65202B63B93000001D1 = {
 			isa = PBXFileReference;
 			name = mDNSPlatformFunctions.h;
@@ -481,42 +432,6 @@
 			name = mDNSvsprintf.h;
 			path = ../mDNSCore/mDNSvsprintf.h;
 			refType = 4;
-		};
-		654BE65502B63B93000001D1 = {
-			fileRef = 654BE64F02B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		654BE65602B63B93000001D1 = {
-			fileRef = 654BE65002B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		654BE65702B63B93000001D1 = {
-			fileRef = 654BE65102B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		654BE65802B63B93000001D1 = {
-			fileRef = 654BE65202B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		654BE65902B63B93000001D1 = {
-			fileRef = 654BE65302B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		654BE65A02B63B93000001D1 = {
-			fileRef = 654BE65402B63B93000001D1;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 		65713D46025A293200000109 = {
 			isa = PBXFrameworkReference;

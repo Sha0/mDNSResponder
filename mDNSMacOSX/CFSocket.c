@@ -38,10 +38,10 @@
 // to zero will cause CFSocket.c to not set the Advertise flag in its mDNS_RegisterInterface calls.
 int mDNS_AdvertiseLocalAddresses = 1;
 
-#include "mDNSClientAPI.h"           // Defines the interface provided to the client layer above
-#include "mDNSPlatformFunctions.h"   // Defines the interface to the supporting layer below
-#include "mDNSPlatformEnvironment.h" // Defines the specific types needed to run mDNS on this platform
-#include "mDNSvsprintf.h"            // Used to implement debugf_();
+#include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
+#include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
+#include "mDNSOSX.h"				// Defines the specific types needed to run mDNS on this platform
+#include "mDNSvsprintf.h"           // Used to implement debugf_();
 
 #include <stdio.h>
 #include <stdarg.h>                  // For va_list support
@@ -97,6 +97,17 @@ struct NetworkInterfaceInfo2_struct
 // Functions
 
 mDNSexport void debugf_(const char *format, ...)
+	{
+	unsigned char buffer[512];
+	va_list ptr;
+	va_start(ptr,format);
+	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	va_end(ptr);
+	fprintf(stderr, "%s\n", buffer);
+	fflush(stderr);
+	}
+
+mDNSexport void verbosedebugf_(const char *format, ...)
 	{
 	unsigned char buffer[512];
 	va_list ptr;
