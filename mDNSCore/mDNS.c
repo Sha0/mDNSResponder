@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.374  2004/04/21 02:53:26  cheshire
+Typo in debugf statement
+
 Revision 1.373  2004/04/21 02:49:11  cheshire
 To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
 
@@ -2327,7 +2330,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			}
 		else if (rr->ImmedAnswer)						// Else, just respond to a single query on single interface:
 			{
-			rr->SendRNow = rr->ImmedAnswer;				// Just respond on that interface
+			rr->SendRNow        = rr->ImmedAnswer;		// Just respond on that interface
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional too
 			rr->LastMCTime      = m->timenow;
 			rr->LastMCInterface = rr->ImmedAnswer;
@@ -5570,7 +5573,6 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		set->InterfaceActive ?
 			"not represented in list; marking active and retriggering queries" :
 			"already represented in list; marking inactive for now");
-
 	
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
@@ -5653,7 +5655,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				break;
 		if (intf)
 			{
-			debugf("mDNS_DeregisterInterfac: Another representative of InterfaceID %p exists; making it active",
+			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %p exists; making it active",
 				set->InterfaceID);
 			intf->InterfaceActive = mDNStrue;
 			UpdateInterfaceProtocols(m, intf);
