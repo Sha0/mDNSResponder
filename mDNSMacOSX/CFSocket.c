@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.142  2004/04/21 02:49:11  cheshire
+To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
+
 Revision 1.141  2004/04/21 02:20:47  cheshire
 Rename interface field 'CurrentlyActive' to more descriptive 'Exists'
 
@@ -30,7 +33,7 @@ Revision 1.140  2004/04/14 23:09:29  ksekar
 Support for TSIG signed dynamic updates.
 
 Revision 1.139  2004/04/09 17:40:26  cheshire
-Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing McastTxRx field
 
 Revision 1.138  2004/04/09 16:37:16  cheshire
 Suggestion from Bob Bradley:
@@ -1154,7 +1157,7 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
-	i->ifinfo.TxAndRx     = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
+	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 	
 	i->next            = mDNSNULL;
 	i->Exists          = mDNStrue;
@@ -1275,7 +1278,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	if (!foundav4 && theLoopback)
 		AddInterfaceToList(m, theLoopback);
 
-	// Now the list is complete, set the TxAndRx setting for each interface.
+	// Now the list is complete, set the McastTxRx setting for each interface.
 	// We always send and receive using IPv4.
 	// To reduce traffic, we send and receive using IPv6 only on interfaces that have no routable IPv4 address.
 	// Having a routable IPv4 address assigned is a reasonable indicator of being on a large configured network,
@@ -1288,9 +1291,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		if (i->Exists)
 			{
 			mDNSBool txrx = i->Multicast && ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
-			if (i->ifinfo.TxAndRx != txrx)
+			if (i->ifinfo.McastTxRx != txrx)
 				{
-				i->ifinfo.TxAndRx = txrx;
+				i->ifinfo.McastTxRx = txrx;
 				i->Exists = 2; // State change; need to deregister and reregister this interface
 				}
 			}
@@ -1337,7 +1340,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 					i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 				}
 	
-			if (!n->TxAndRx)
+			if (!n->McastTxRx)
 				debugf("SetupActiveInterfaces: No TX/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, alias, &n->ip);
 			else
 				{

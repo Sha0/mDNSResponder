@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.373  2004/04/21 02:49:11  cheshire
+To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
+
 Revision 1.372  2004/04/21 02:38:51  cheshire
 Add debugging checks
 
@@ -51,7 +54,7 @@ Revision 1.371  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
 Revision 1.370  2004/04/09 17:40:26  cheshire
-Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing McastTxRx field
 
 Revision 1.369  2004/04/09 16:34:00  cheshire
 Debugging code for later; currently unused
@@ -5523,8 +5526,8 @@ mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *act
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		if (intf->InterfaceID == active->InterfaceID)
 			{
-			if (intf->ip.type == mDNSAddrType_IPv4 && intf->TxAndRx) active->IPv4Available = mDNStrue;
-			if (intf->ip.type == mDNSAddrType_IPv6 && intf->TxAndRx) active->IPv6Available = mDNStrue;
+			if (intf->ip.type == mDNSAddrType_IPv4 && intf->McastTxRx) active->IPv4Available = mDNStrue;
+			if (intf->ip.type == mDNSAddrType_IPv6 && intf->McastTxRx) active->IPv6Available = mDNStrue;
 			}
 	}
 
@@ -5536,8 +5539,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	
 	// Assume this interface will be active
 	set->InterfaceActive = mDNStrue;
-	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->TxAndRx);
-	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->TxAndRx);
+	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx);
+	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx);
 
 	while (*p)
 		{
@@ -5553,8 +5556,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			{
 			set->InterfaceActive = mDNSfalse;
 			if (set->ip.type == (*p)->ip.type) FirstOfType = mDNSfalse;
-			if (set->ip.type == mDNSAddrType_IPv4 && set->TxAndRx) (*p)->IPv4Available = mDNStrue;
-			if (set->ip.type == mDNSAddrType_IPv6 && set->TxAndRx) (*p)->IPv6Available = mDNStrue;
+			if (set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx) (*p)->IPv4Available = mDNStrue;
+			if (set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx) (*p)->IPv6Available = mDNStrue;
 			}
 
 		p=&(*p)->next;

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.35  2004/04/21 02:49:12  cheshire
+To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
+
 Revision 1.34  2004/04/15 01:00:05  bradley
 Removed support for automatically querying for A/AAAA records when resolving names. Platforms
 without .local name resolving support will need to manually query for A/AAAA records as needed.
@@ -31,7 +34,7 @@ Revision 1.33  2004/04/14 23:09:29  ksekar
 Support for TSIG signed dynamic updates.
 
 Revision 1.32  2004/04/09 17:40:26  cheshire
-Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing McastTxRx field
 
 Revision 1.31  2004/04/09 00:40:46  bradley
 Re-enable IPv6 support, AAAA records over IPv4, and IPv4 routable IPv6 exclusion support.
@@ -429,7 +432,7 @@ mStatus
 	check( inDstIP );
 	
 	ifd = (mDNSInterfaceData *) inInterfaceID;
-	require_action_quiet( ifd->interfaceInfo.TxAndRx, exit, err = mStatus_Invalid );					// Silent Interface
+	require_action_quiet( ifd->interfaceInfo.McastTxRx, exit, err = mStatus_Invalid );					// Silent Interface
 	require_action_quiet( inDstIP->type == ifd->interfaceInfo.ip.type, exit, err = mStatus_NoError );	// Wrong Type
 	check( IsValidSocket( ifd->sock ) );
 	
@@ -1212,7 +1215,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	// but we cut the packet rate in half. At this time, reducing the packet rate is more important than v6-only 
 	// devices on a large configured network, so we are willing to make that sacrifice.
 	
-	ifd->interfaceInfo.TxAndRx		= mDNStrue;
+	ifd->interfaceInfo.McastTxRx		= mDNStrue;
 	
 #if( MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6 )
 	if( inIFA->ifa_addr->sa_family != AF_INET )
@@ -1225,7 +1228,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 				( ( p->interfaceInfo.ip.ip.v4.b[ 0 ] != 169 ) && ( p->interfaceInfo.ip.ip.v4.b[ 1 ] != 254 ) ) &&
 				( strcmp( p->name, inIFA->ifa_name ) == 0 ) )
 			{
-				ifd->interfaceInfo.TxAndRx = mDNSfalse;
+				ifd->interfaceInfo.McastTxRx = mDNSfalse;
 				break;
 			}
 		}
@@ -1248,7 +1251,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 			if( strcmp( ipv4IFD->name, ifd->name ) == 0 )
 			{
 				ipv4IFD->scopeID				= ifd->scopeID;
-				ifd->interfaceInfo.TxAndRx		= mDNSfalse;
+				ifd->interfaceInfo.McastTxRx	= mDNSfalse;
 				ifd->interfaceInfo.InterfaceID	= (mDNSInterfaceID) ipv4IFD;
 				break;
 			}
@@ -1258,7 +1261,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	
 	// Set up a socket for this interface (if needed).
 	
-	if( ifd->interfaceInfo.TxAndRx )
+	if( ifd->interfaceInfo.McastTxRx )
 	{
 		err = SetupSocket( inMDNS, inIFA->ifa_addr, &sock );
 		require_noerr( err, exit );
