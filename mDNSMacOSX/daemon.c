@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.166  2004/05/13 21:33:52  ksekar
+Clean up non-local registration control via config file.  Force iChat
+registrations to be local for now.
+
 Revision 1.165  2004/05/13 04:54:20  ksekar
 Unified list copy/free code.  Added symetric list for
 
@@ -1132,8 +1136,10 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	else if (!MakeDomainLabelFromLiteralString(&n, name))                  { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }	
 
-	if (!*domain && mDNSStorage.uDNS_info.ServiceRegDomain[0]) domain= mDNSStorage.uDNS_info.ServiceRegDomain;
-	else if (!*domain) domain = "local.";		
+	//!!!KRS if we got a dynamic reg domain from the config file, use it for default (except for iChat)
+	if (!*domain && mDNSStorage.uDNS_info.ServiceRegDomain[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
+		domain = mDNSStorage.uDNS_info.ServiceRegDomain;
+	
 	if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
 

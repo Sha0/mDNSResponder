@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.49  2004/05/13 21:33:52  ksekar
+Clean up non-local registration control via config file.  Force iChat
+registrations to be local for now.
+
 Revision 1.48  2004/05/13 04:13:19  ksekar
 Updated SIGINFO handler for multi-domain browses
 
@@ -1285,9 +1289,14 @@ static void handle_regservice_request(request_state *request)
     if (!name[0]) n = (gmDNS)->nicelabel;
     else if (!MakeDomainLabelFromLiteralString(&n, name))  
         goto bad_param;
-    if ((!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype)) ||
-    (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) ||
-    (!ConstructServiceName(&srv, &n, &t, &d)))
+    if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype)) goto bad_param;
+
+	//!!!KRS if we got a dynamic reg domain from the config file, use it for default (except for iChat)
+	if (!domain[0] && gmDNS->uDNS_info.ServiceRegDomain[0] && strcmp(regtype, "_presence._tcp.") && strcmp(regtype, "_ichat._tcp."))
+		strcpy(domain, gmDNS->uDNS_info.ServiceRegDomain);
+	
+    if ((!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) ||
+		(!ConstructServiceName(&srv, &n, &t, &d)))
         goto bad_param;
 	if (host[0] && !MakeDomainNameFromDNSNameString(&h, host)) goto bad_param;
 
