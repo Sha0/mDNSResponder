@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.2  2002/09/19 21:25:36  cheshire
+mDNS_sprintf() doesn't need to be in a separate file
+
 Revision 1.1  2002/09/17 06:24:34  cheshire
 First checkin
 
@@ -30,7 +33,6 @@ First checkin
 #include "mDNSClientAPI.h"           // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"   // Defines the interface to the supporting layer below
 #include "mDNSPosix.h"				 // Defines the specific types needed to run mDNS on this platform
-#include "mDNSvsprintf.h"            // Used to implement debugf_();
 
 #include <assert.h>
 #include <stdio.h>

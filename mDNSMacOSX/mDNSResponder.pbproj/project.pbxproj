@@ -59,7 +59,6 @@
 				00AD62AF032D799A0CCA2C71,
 				00AD62B0032D799A0CCA2C71,
 				00AD62B1032D799A0CCA2C71,
-				00AD62B2032D799A0CCA2C71,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -97,12 +96,6 @@
 		};
 		00AD62B1032D799A0CCA2C71 = {
 			fileRef = 6575FBEC022EAF7200000109;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		00AD62B2032D799A0CCA2C71 = {
-			fileRef = 6575FC12022EB27800000109;
 			isa = PBXBuildFile;
 			settings = {
 			};
@@ -261,13 +254,10 @@
 				6575FBEC022EAF7200000109,
 				6575FBE9022EAF5A00000109,
 				6575FBEB022EAF7200000109,
-				6575FC12022EB27800000109,
-				000753D303367C1C0CCA2C71,
 				654BE64F02B63B93000001D1,
 				654BE65002B63B93000001D1,
 				654BE65202B63B93000001D1,
-				654BE65302B63B93000001D1,
-				654BE65402B63B93000001D1,
+				000753D303367C1C0CCA2C71,
 			);
 			isa = PBXGroup;
 			name = "mDNS Server Sources";
@@ -329,7 +319,6 @@
 				6575FBEA022EAF5A00000109,
 				6575FBED022EAF7200000109,
 				6575FBEE022EAF7200000109,
-				6575FC15022EB27800000109,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -419,18 +408,6 @@
 			isa = PBXFileReference;
 			name = mDNSPlatformFunctions.h;
 			path = ../mDNSCore/mDNSPlatformFunctions.h;
-			refType = 4;
-		};
-		654BE65302B63B93000001D1 = {
-			isa = PBXFileReference;
-			name = mDNSsprintf.h;
-			path = ../mDNSCore/mDNSsprintf.h;
-			refType = 4;
-		};
-		654BE65402B63B93000001D1 = {
-			isa = PBXFileReference;
-			name = mDNSvsprintf.h;
-			path = ../mDNSCore/mDNSvsprintf.h;
 			refType = 4;
 		};
 		65713D46025A293200000109 = {
@@ -536,18 +513,6 @@
 					Server,
 					Client,
 				);
-			};
-		};
-		6575FC12022EB27800000109 = {
-			isa = PBXFileReference;
-			name = mDNSsprintf.c;
-			path = ../mDNSCore/mDNSsprintf.c;
-			refType = 4;
-		};
-		6575FC15022EB27800000109 = {
-			fileRef = 6575FC12022EB27800000109;
-			isa = PBXBuildFile;
-			settings = {
 			};
 		};
 		6575FC18022EB76000000109 = {

@@ -54,8 +54,6 @@
 
 #include "mDNSClientAPI.h"			// Defines the interface to the client layer above
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
-#include "mDNSsprintf.h"
-#include "mDNSvsprintf.h"			// Used to implement LogMsg();
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 

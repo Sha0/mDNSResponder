@@ -12,6 +12,9 @@
 	Change History (most recent first):
 
 		$Log: mDNSWin32.c,v $
+		Revision 1.2  2002/09/19 21:25:36  cheshire
+		mDNS_sprintf() doesn't need to be in a separate file
+		
 		Revision 1.1  2002/09/19 04:33:39  cheshire
 		Code received from Bob Bradley
 		
@@ -43,8 +46,6 @@
 
 #include	"mDNSClientAPI.h"
 #include	"mDNSPlatformFunctions.h"
-#include	"mDNSsprintf.h"
-#include	"mDNSvsprintf.h"
 
 #include	"mDNSWin32.h"
 

@@ -47,6 +47,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.23  2002/09/19 21:25:34  cheshire
+mDNS_sprintf() doesn't need to be in a separate file
+
 Revision 1.22  2002/09/19 04:20:43  cheshire
 Remove high-ascii characters that confuse some systems
 
@@ -61,6 +64,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #ifndef __mDNSClientAPI_h
 #define __mDNSClientAPI_h
 
+#include <stdarg.h>		// stdarg.h is required for for va_list support for the mDNS_vsprintf declaration
 #include "mDNSDebug.h"
 
 #ifdef	__cplusplus
@@ -603,6 +607,14 @@ extern void  ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], domai
 
 extern mDNSu8    *ConstructServiceName(domainname *const fqdn, const domainlabel *const name, const domainname *const type, const domainname *const domain);
 extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel *const name, domainname *const type, domainname *const domain);
+
+// ***************************************************************************
+#if 0
+#pragma mark - Other utility functions
+#endif
+
+extern int mDNS_sprintf(char *sbuffer, const char *fmt, ...);
+extern int mDNS_vsprintf(char *sbuffer, const char *fmt, va_list arg);
 
 #ifdef	__cplusplus
 	}
