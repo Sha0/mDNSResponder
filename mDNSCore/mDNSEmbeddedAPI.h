@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.28  2003/01/28 01:35:56  cheshire
+Revise comment about ThisQInterval to reflect new semantics
+
 Revision 1.27  2003/01/13 23:49:42  jgraessl
 Merged changes for the following fixes in to top of tree:
 3086540  computer name changes not handled properly
@@ -430,9 +433,10 @@ struct DNSQuestion_struct
 	{
 	DNSQuestion          *next;
 	mDNSs32               NextQTime;		// In platform time units
-	mDNSs32               ThisQInterval;	// In platform time units (zero for questions not in list)
-											// ThisQInterval will be non-zero for an active question;
-											// Zero for a cancelled or inactive question
+	mDNSs32               ThisQInterval;	// In platform time units
+											// ThisQInterval > 0 for an active question;
+											// ThisQInterval = 0 for a suspended question that's still in the list
+											// ThisQInterval = -1 for a cancelled question that's been removed from the list
 	mDNSs32               NextQInterval;
 	DNSQuestion          *DuplicateOf;
 	mDNSOpaqueID          InterfaceID;	// Non-zero if you want to issue link-local queries only on a single specific IP interface
