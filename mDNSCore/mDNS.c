@@ -3331,7 +3331,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		{
 		sr->RR_TXT.rdata->RDLength = txtlen;
 		if (sr->RR_TXT.rdata->RDLength > sr->RR_TXT.rdata->MaxRDLength) return(mStatus_BadParamErr);
-		mDNSPlatformStrCopy(txtinfo,(char *)(sr->RR_TXT.rdata->u.txt.c));
+		mDNSPlatformMemCopy(txtinfo, sr->RR_TXT.rdata->u.txt.c, txtlen);
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 
