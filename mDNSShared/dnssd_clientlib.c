@@ -23,6 +23,10 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.5  2004/05/25 18:29:33  cheshire
+Move DNSServiceConstructFullName() from dnssd_clientstub.c to dnssd_clientlib.c,
+so that it's also accessible to dnssd_clientshim.c (single address space) clients.
+
 Revision 1.4  2004/05/25 17:08:55  cheshire
 Fix compiler warning (doesn't make sense for function return type to be const)
 
@@ -38,7 +42,8 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 
  */
 
-#include <malloc.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "dns_sd.h"
 
@@ -53,30 +58,6 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
  *********************************************************************************************/
 
 #define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
-
-static int strlen(const char *str)
-	{
-	const char *s = str;
-	while (*s) s++;
-	return(s - str);
-	}
-
-static int strncmp(const char *s1, const char *s2, int n)
-	{
-	while (n)
-		{
-		if (*s1 != *s2++) return (*(const unsigned char *)s1 - *(const unsigned char *)(s2 - 1));
-		if (*s1++ == 0) return (0);
-		n--;
-		}
-	return (0);
-	}
-
-static void memcpy(void *dst, const void *src, int length)
-	{
-	int i;
-	for (i=0; i<length; i++) ((char*)dst)[i] = ((char*)src)[i];
-	}
 
 static int DomainEndsInDot(const char *dom)
 	{
@@ -98,7 +79,7 @@ static uint8_t *InternalTXTRecordSearch
 	uint16_t         txtLen,
 	const void       *txtRecord,
 	const char       *key,
-	int              *keylen
+	unsigned long    *keylen
 	)
 	{
 	uint8_t *p = (uint8_t*)txtRecord;
@@ -128,7 +109,7 @@ int DNSServiceConstructFullName
 	const char                *domain
 	)
 	{
-	int len;
+	unsigned long len;
 	unsigned char c;
 	char *fn = fullName;
 	const char *s = service;
@@ -219,17 +200,17 @@ DNSServiceErrorType TXTRecordSetValue
 	{
 	uint8_t *start, *p;
 	const char *k;
-	int keysize, keyvalsize;
+	unsigned long keysize, keyvalsize;
 
 	for (k = key; *k; k++) if (*k < 0x20 || *k > 0x7E || *k == '=') return(kDNSServiceErr_Invalid);
-	keysize = k - key;
+	keysize = (unsigned long)(k - key);
 	keyvalsize = 1 + keysize + (value ? (1 + valueSize) : 0);
 	if (keysize < 1 || keyvalsize > 255) return(kDNSServiceErr_Invalid);
 	(void)TXTRecordRemoveValue(txtRecord, key);
 	if (txtRec->datalen + keyvalsize > txtRec->buflen)
 		{
 		unsigned char *newbuf;
-		int newlen = txtRec->datalen + keyvalsize;
+		unsigned long newlen = txtRec->datalen + keyvalsize;
 		if (newlen > 0xFFFF) return(kDNSServiceErr_Invalid);
 		newbuf = malloc((size_t)newlen);
 		if (!newbuf) return(kDNSServiceErr_NoMemory);
@@ -260,11 +241,13 @@ DNSServiceErrorType TXTRecordRemoveValue
 	const char       *key
 	)
 	{
-	int keylen, itemlen;
+	unsigned long keylen, itemlen, remainder;
 	uint8_t *item = InternalTXTRecordSearch(txtRec->datalen, txtRec->buffer, key, &keylen);
 	if (!item) return(kDNSServiceErr_NoSuchKey);
-	itemlen = 1 + item[0];
-	memcpy(item, item + itemlen, txtRec->buffer + txtRec->datalen - (item + itemlen));
+	itemlen   = (unsigned long)(1 + item[0]);
+	remainder = (unsigned long)((txtRec->buffer + txtRec->datalen) - (item + itemlen));
+	// Use memmove because memcpy behaviour is undefined for overlapping regions
+	memmove(item, item + itemlen, remainder);
 	txtRec->datalen -= itemlen;
 	return(kDNSServiceErr_NoError);
 	}
@@ -285,7 +268,7 @@ int TXTRecordContainsKey
 	const char       *key
 	)
 	{
-	int keylen;
+	unsigned long keylen;
 	return (InternalTXTRecordSearch(txtLen, txtRecord, key, &keylen) ? 1 : 0);
 	}
 
@@ -297,7 +280,7 @@ const void * TXTRecordGetValuePtr
 	uint8_t          *valueLen
 	)
 	{
-	int keylen;
+	unsigned long keylen;
 	uint8_t *item = InternalTXTRecordSearch(txtLen, txtRecord, key, &keylen);
 	if (!item || item[0] <= keylen) return(NULL);	// If key not found, or found with no value, return NULL
 	*valueLen = (uint8_t)(item[0] - (keylen + 1));
@@ -335,7 +318,7 @@ DNSServiceErrorType TXTRecordGetItemAtIndex
 	if (p<e && p + 1 + p[0] <= e)	// If valid
 		{
 		uint8_t *x = p+1;
-		int len = 0;
+		unsigned long len = 0;
 		e = p + 1 + p[0];
 		while (x+len<e && x[len] != '=') len++;
 		if (len >= keyBufLen) return(kDNSServiceErr_NoMemory);

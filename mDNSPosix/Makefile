@@ -20,6 +20,10 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.34  2004/05/25 18:29:33  cheshire
+# Move DNSServiceConstructFullName() from dnssd_clientstub.c to dnssd_clientlib.c,
+# so that it's also accessible to dnssd_clientshim.c (single address space) clients.
+#
 # Revision 1.33  2004/04/30 16:46:32  rpantos
 # Add support for building Java libraries.
 #
@@ -273,7 +277,7 @@ $(BUILDDIR)/mdnsd: $(DAEMONOBJS)
 libmdns: setup $(BUILDDIR)/libmdns.$(LDSUFFIX)
 	@echo "Client library done"
 
-$(BUILDDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
+$(BUILDDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
 	$(LD) $(LDFLAGS) -o $@ $+
 	$(STRIP) $@
 

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.19  2004/05/25 18:29:33  cheshire
+Move DNSServiceConstructFullName() from dnssd_clientstub.c to dnssd_clientlib.c,
+so that it's also accessible to dnssd_clientshim.c (single address space) clients.
+
 Revision 1.18  2004/05/18 23:51:27  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -69,10 +73,11 @@ Update to APSL 2.0
 
  */
 
-#include "dnssd_ipc.h"
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/socket.h>
+
+#include "dnssd_ipc.h"
 
 
 #define CTL_PATH_PREFIX "/tmp/dnssd_clippath."
@@ -85,7 +90,6 @@ DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reuse_sd);
 static ipc_msg_hdr *create_hdr(int op, int *len, char **data_start, int reuse_socket);
 static int my_read(int sd, char *buf, int len);
 static int my_write(int sd, char *buf, int len);
-static int domain_ends_in_dot(const char *dom);
 // server response handlers
 static void handle_query_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *msg);
 static void handle_browse_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data);
@@ -837,74 +841,6 @@ void DNSServiceReconfirmRecord
     }
         
         
-int DNSServiceConstructFullName 
-    (
-    char                      *fullName,
-    const char                *service,      /* may be NULL */
-    const char                *regtype,
-    const char                *domain
-    )
-    {
-    int len;
-    u_char c;
-    char *fn = fullName;
-    const char *s = service;
-    const char *r = regtype;
-    const char *d = domain;
-    
-    if (service)
-        {
-        while(*s)
-            {
-            c = *s++;
-            if (c == '.' || (c == '\\')) *fn++ = '\\';		// escape dot and backslash literals
-            else if (c <= ' ')					// escape non-printable characters
-                {
-                *fn++ = '\\';
-		*fn++ = (char) ('0' + (c / 100));
-		*fn++ = (char) ('0' + (c / 10) % 10);
-                c = (u_char)('0' + (c % 10));
-                }
-                *fn++ = c;
-            }
-        *fn++ = '.';
-        }
-
-    if (!regtype) return -1;
-    len = strlen(regtype);
-    if (domain_ends_in_dot(regtype)) len--;
-    if (len < 4) return -1;					// regtype must end in _udp or _tcp
-    if (strncmp((regtype + len - 4), "_tcp", 4) && strncmp((regtype + len - 4), "_udp", 4)) return -1;
-    while(*r)
-        *fn++ = *r++;                                                                                                                                                                                        
-    if (!domain_ends_in_dot(regtype)) *fn++ = '.';
-                                                                                        
-    if (!domain) return -1;
-    len = strlen(domain);
-    if (!len) return -1;
-    while(*d) 
-        *fn++ = *d++;						
-    if (!domain_ends_in_dot(domain)) *fn++ = '.';
-    *fn = '\0';
-    return 0;
-    }
-        
-static int domain_ends_in_dot(const char *dom)
-    {
-    while(*dom && *(dom + 1))
-        {
-        if (*dom == '\\')	// advance past escaped byte sequence
-            {		
-            if (*(dom + 1) >= '0' && *(dom + 1) <= '9') dom += 4;
-            else dom += 2;
-            }
-        else dom++;		// else read one character
-        }
-        return (*dom == '.');
-    }
-
-
-
     // return a connected service ref (deallocate with DNSServiceRefDeallocate)
 static DNSServiceRef connect_to_server(void)
     {
