@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.10  2005/01/20 19:54:38  shersche
+Fix parse error when text record is NULL
+
 Revision 1.9  2005/01/06 08:13:50  shersche
 Don't use moreComing flag to determine number of text record, disregard queue name if qtotal isn't defined, don't disregard queue name if "rp" is the only key specified
 
@@ -1294,62 +1297,65 @@ CSecondPage::ParseTextRecord( Service * service, uint16_t inTXTSize, const char 
 		unsigned char num = *inTXT;
 		check( (int) num < inTXTSize );
 
-		memset(buf, 0, sizeof(buf));
-		memcpy(buf, inTXT + 1, num);
-		
+		if ( num )
+		{
+			memset(buf, 0, sizeof(buf));
+			memcpy(buf, inTXT + 1, num);
+
+			CString elem;
+
+			err = UTF8StringToStringObject( buf, elem );
+			require_noerr( err, exit );
+
+			int curPos = 0;
+
+			CString key = elem.Tokenize(L"=", curPos);
+			CString val = elem.Tokenize(L"=", curPos);
+
+			key.MakeLower();
+
+			if ( key == L"rp" )
+			{
+				qname = val;
+			}
+			else
+			{
+				rpOnly = false;
+
+				if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
+				{
+					service->usb_MFG = val;
+				}
+				else if ((key == L"usb_mdl") || (key == L"usb_model"))
+				{
+					service->usb_MDL = val;
+				}
+				else if (key == L"ty")
+				{
+					service->description = val;
+				}
+				else if (key == L"product")
+				{
+					service->product = val;
+				}
+				else if (key == L"note")
+				{
+					service->location = val;
+				}
+				else if (key == L"qtotal")
+				{
+					service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
+					qtotalDefined = true;
+				}
+				else if (key == L"priority")
+				{
+					qpriority = _ttoi((LPCTSTR) val);
+				}
+			}
+		}
+
 		inTXTSize -= (num + 1);
 		inTXT += (num + 1);
-
-		CString elem;
-
-		err = UTF8StringToStringObject( buf, elem );
-		require_noerr( err, exit );
-
-		int curPos = 0;
-
-		CString key = elem.Tokenize(L"=", curPos);
-		CString val = elem.Tokenize(L"=", curPos);
-
-		key.MakeLower();
-
-		if ( key == L"rp" )
-		{
-			qname = val;
-		}
-		else
-		{
-			rpOnly = false;
-
-			if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
-			{
-				service->usb_MFG = val;
-			}
-			else if ((key == L"usb_mdl") || (key == L"usb_model"))
-			{
-				service->usb_MDL = val;
-			}
-			else if (key == L"ty")
-			{
-				service->description = val;
-			}
-			else if (key == L"product")
-			{
-				service->product = val;
-			}
-			else if (key == L"note")
-			{
-				service->location = val;
-			}
-			else if (key == L"qtotal")
-			{
-				service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
-				qtotalDefined = true;
-			}
-			else if (key == L"priority")
-			{
-				qpriority = _ttoi((LPCTSTR) val);
-			}
-		}
 	}
 
 exit:
