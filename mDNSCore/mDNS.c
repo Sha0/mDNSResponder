@@ -43,6 +43,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.235  2003/07/19 00:03:32  cheshire
+<rdar://problem/3160248> ScheduleNextTask needs to be smarter after a no-op packet is received
+ScheduleNextTask is quite an expensive operation.
+We don't need to do all that work after receiving a no-op packet that didn't change our state.
+
 Revision 1.234  2003/07/18 23:52:11  cheshire
 To improve consistency of field naming, global search-and-replace:
 NextProbeTime    -> NextScheduledProbe
@@ -3805,64 +3810,6 @@ mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, ResourceRecord *rr)
 	SetNextCacheCheckTime(m, rr);
 	}
 
-static mDNSs32 gNextEventScheduledAt;
-static const char *gNextEventMsg = "None yet";
-
-mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
-	{
-	mDNSs32 nextevent = m->timenow + 0x78000000;
-	const char *sign="";
-	mDNSs32 interval, fraction;
-
-	DNSQuestion *q;
-	ResourceRecord *rr;
-	
-	gNextEventMsg = "No Event";
-	
-	if (m->mDNSPlatformStatus != mStatus_NoError)
-		return(nextevent);
-	
-	// 1. If sleeping, do nothing
-	if (m->SleepState)
-		{ debugf("ScheduleNextTask: Sleeping"); gNextEventMsg = "Sleeping"; return(nextevent); }
-	
-	// 2. If we're suppressing sending right now, don't bother searching for packet generation events --
-	// but do make sure we come back at the end of the suppression time to check again
-	if (m->SuppressSending)
-		{ verbosedebugf("ScheduleNextTask: Send Suppressed Packets"); gNextEventMsg = "Send Suppressed Packets"; return(m->SuppressSending); }
-
-	// 3. Cache work to be done?
-	if (nextevent - m->NextCacheCheck > 0)
-		{ nextevent = m->NextCacheCheck; gNextEventMsg = "Check Cache"; }
-	
-	// 4. Scan list of active questions to see if we need to send any queries
-	for (q = m->Questions; q; q=q->next)
-		if (TimeToSendThisQuestion(q, nextevent))
-			{ nextevent = q->LastQTime + q->ThisQInterval; gNextEventMsg = "Send Questions"; }
-
-	// 5. Scan list of local resource records to see if we have any
-	// deregistrations, probes, announcements, or replies to send
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		{
-		if (rr->RecordType == kDNSRecordTypeDeregistering)
-			{ nextevent = m->timenow; gNextEventMsg = "Send Deregistrations"; }
-		if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - nextevent <= 0)
-			{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Probes"; }
-		else if (rr->ImmedAnswer && ResourceRecordIsValidAnswer(rr))
-			{ nextevent = m->timenow;                          gNextEventMsg = "Send Answers"; }
-		else if (TimeToAnnounceThisRecord(rr,nextevent) && ResourceRecordIsValidAnswer(rr))
-			{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Announcements"; }
-		}
-
-	interval = nextevent - m->timenow;
-	if (interval < 0) { interval = -interval; sign = "-"; }
-	fraction = interval % mDNSPlatformOneSecond;
-	verbosedebugf("ScheduleNextTask: Next event: <%s> in %s%d.%03d seconds", gNextEventMsg, sign,
-		interval / mDNSPlatformOneSecond, fraction * 1000 / mDNSPlatformOneSecond);
-
-	return(nextevent);
-	}
-
 mDNSlocal void mDNS_Lock(mDNS *const m)
 	{
 	// MUST grab the platform lock FIRST!
@@ -3895,7 +3842,20 @@ mDNSlocal void mDNS_Lock(mDNS *const m)
 	m->mDNS_busy++;
 	}
 
-mDNSlocal void mDNS_Unlock_(mDNS *const m, mDNSBool clearNextScheduledEvent)
+mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
+	{
+	mDNSs32 e = m->timenow + 0x78000000;
+	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) return(e);
+	if (m->NewQuestions)    return(m->timenow);
+	if (m->SuppressSending) return(m->SuppressSending);
+	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
+	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
+	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
+	if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+	return(e);
+	}
+
+mDNSlocal void mDNS_Unlock(mDNS *const m)
 	{
 	// Decrement mDNS_busy
 	m->mDNS_busy--;
@@ -3904,23 +3864,10 @@ mDNSlocal void mDNS_Unlock_(mDNS *const m, mDNSBool clearNextScheduledEvent)
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		LogMsg("mDNS_Unlock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
-	// If this is a final exit from the mDNSCore code, clear m->timenow
+	// If this is a final exit from the mDNSCore code, set m->NextScheduledEvent and clear m->timenow
 	if (m->mDNS_busy == 0)
 		{
-		// Set NextScheduledEvent to timenow, to signal to mDNS_Execute() that we immediately need
-		// to re-evaluate what work is to be done
-		// In future we can make this smarter. Right now, we assume that after any API call, or after
-		// any packet reception, we always have to call mDNS_Execute() right away to handle it.
-		// In future we should be more selective, and only adjust m->NextScheduledEvent if the packet or API
-		// actually resulted in some future action sooner than previously planned, and in any case, only
-		// adjust m->NextScheduledEvent to the time of the next event, not to timenow
-		if (clearNextScheduledEvent)
-			{
-			m->NextScheduledEvent = m->timenow;
-			gNextEventMsg = "Re-evaluate after mDNS_Unlock";
-			gNextEventScheduledAt = 0;//Indicate that this is a special (non)event
-			}
-	
+		m->NextScheduledEvent = GetNextScheduledEvent(m);
 		if (m->timenow == 0) LogMsg("mDNS_Unlock: ERROR! m->timenow aready zero");
 		m->timenow = 0;
 		}
@@ -3929,69 +3876,34 @@ mDNSlocal void mDNS_Unlock_(mDNS *const m, mDNSBool clearNextScheduledEvent)
 	mDNSPlatformUnlock(m);
 	}
 
-#define mDNS_Unlock(M) mDNS_Unlock_((M), mDNStrue)
-#define mDNS_Unlock_noclear(M) mDNS_Unlock_((M), mDNSfalse)
-
 mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
-	mDNSs32 nse;
-
-	mDNS_Lock(m);
+	mDNS_Lock(m);	// Must grab lock before trying to read m->timenow
 
 	if (m->timenow - m->NextScheduledEvent >= 0)
 		{
-		int i, didwork = 0;
+		int i;
 
 		verbosedebugf("mDNS_Execute");
 		if (m->CurrentQuestion) LogMsg("mDNS_Execute: ERROR! m->CurrentQuestion already set");
-
+	
 		// 1. If we're past the probe suppression time, we can clear it
-		if (m->SuppressProbes && m->timenow - m->SuppressProbes >= 0)
-			{ m->SuppressProbes = 0; didwork |= 0x01; }
-
+		if (m->SuppressProbes && m->timenow - m->SuppressProbes >= 0) m->SuppressProbes = 0;
+	
 		// 2. If it's been more than ten seconds since the last probe failure, we can clear the counter
-		if (m->NumFailedProbes && m->timenow - m->ProbeFailTime >= mDNSPlatformOneSecond * 10)
-			{ m->NumFailedProbes = 0; didwork |= 0x02; }
+		if (m->NumFailedProbes && m->timenow - m->ProbeFailTime >= mDNSPlatformOneSecond * 10) m->NumFailedProbes = 0;
 		
 		// 3. Purge our cache of stale old records
 		// We want to do this before first, before AnswerNewQuestion(), so that
 		// AnswerNewQuestion() only has to deal with real live cache records, not dead expired ones
-		if (m->rrcache_size && m->timenow - m->NextCacheCheck >= 0)
-			{
-			mDNSu32 used = m->rrcache_totalused;
-			// Adjust NextScheduledQuery so that we can tell if CheckCacheExpiration triggers a query
-			if (m->NextScheduledQuery == m->timenow)
-				m->NextScheduledQuery = m->timenow-1;
-			CheckCacheExpiration(m);
-			// If the rrcache_totalused is unchanged, AND no immediate queries were generated, then CheckCacheExpiration did nothing.
-			// This can happen legitimately -- e.g. we were expecting a record to expire in 10 seconds, but then we get a response that
-			// revives it. If it happens a repeatedly in a tight loop though, that's a sign that the NextCacheCheck logic is broken.
-			if (used == m->rrcache_totalused && m->NextScheduledQuery != m->timenow)
-				{
-				static mDNSs32 lastmsg = 0;
-				if ((mDNSu32)(m->timenow - lastmsg) < (mDNSu32)mDNSPlatformOneSecond/10)	// Yes, this *is* supposed to be unsigned
-					LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%lu); next in %ld ticks "
-						"(Only bad if it happens more than a few times per minute. "
-						"This message will be removed before Panther ships.)",
-						(mDNSu32)(m->timenow - lastmsg), m->NextCacheCheck - m->timenow);
-				lastmsg = m->timenow;
-				}
-			didwork |= 0x04;	// Set didwork anyway -- don't need to log two syslog messages
-			}
-
+		if (m->rrcache_size && m->timenow - m->NextCacheCheck >= 0) CheckCacheExpiration(m);
+	
 		// 4. See if we can answer any of our new local questions from the cache
-		for (i=0; m->NewQuestions && i<1000; i++) { AnswerNewQuestion(m); didwork |= 0x08; }
+		for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m);
 		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
 	
 		// 5. See what packets we need to send
-		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState)
-			{
-			// If the platform code is currently non-operational,
-			// then we'll just complete deregistrations immediately,
-			// without waiting for the goodbye packet to be sent
-			DiscardDeregistrations(m);
-			didwork |= 0x10;
-			}
+		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) DiscardDeregistrations(m);
 		else if (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0)
 			{
 			// If the platform code is ready, and we're not suppressing packet generation right now
@@ -4000,12 +3912,10 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			// We send queries next, because there might be final-stage probes that complete their probing here, causing
 			// them to advance to announcing state, and we want those to be included in any announcements we send out.
 			// Finally, we send responses, including the previously mentioned records that just completed probing
-
-			if (m->SuppressSending) didwork |= 0x20;
 			m->SuppressSending = 0;
-
+	
 			// 6. Send Query packets. This may cause some probing records to advance to announcing state
-			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextScheduledProbe >= 0) { SendQueries(m); didwork |= 0x40; }
+			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextScheduledProbe >= 0) SendQueries(m);
 			if (m->timenow - m->NextScheduledQuery >= 0)
 				{
 				LogMsg("mDNS_Execute: SendQueries didn't send all its queries; will try again in one second");
@@ -4016,49 +3926,15 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				LogMsg("mDNS_Execute: SendQueries didn't send all its probes; will try again in one second");
 				m->NextScheduledProbe = m->timenow + mDNSPlatformOneSecond;
 				}
-
+	
 			// 7. Send Response packets, including probing records just advanced to announcing state
-			if (m->timenow - m->NextScheduledResponse >= 0) { SendResponses(m); didwork |= 0x80; }
+			if (m->timenow - m->NextScheduledResponse >= 0) SendResponses(m);
 			if (m->timenow - m->NextScheduledResponse >= 0)
 				{
 				LogMsg("mDNS_Execute: SendResponses didn't send all its responses; will try again in one second");
 				m->NextScheduledResponse = m->timenow + mDNSPlatformOneSecond;
 				}
 			}
-	
-		// ----- This is temporary debugging code that will go away soon -----
-		if (!didwork)	// If we did no work, find out if we should have done
-			{
-			static mDNSs32 lastmsg = 0;
-			if ((mDNSu32)(m->timenow - lastmsg) < (mDNSu32)mDNSPlatformOneSecond)	// Yes, this *is* supposed to be unsigned
-			if (gNextEventScheduledAt && m->timenow - m->NextScheduledEvent >= 0)
-				LogMsg("************ mDNS_Execute had no work to do (Task was \"%s\" scheduled %ld ticks ago for %ld ticks ago)",
-					gNextEventMsg, m->timenow - gNextEventScheduledAt, m->timenow - m->NextScheduledEvent);
-			lastmsg = m->timenow;
-			}
-		else if (m->timenow - m->NextScheduledEvent < 0)		// Should not have had anything to do
-			{
-			if (didwork & 0x01) LogMsg("************ mDNS_Execute did SuppressProbes");
-			if (didwork & 0x02) LogMsg("************ mDNS_Execute did NumFailedProbes");
-			if (didwork & 0x04) LogMsg("************ mDNS_Execute did CheckCacheExpiration");
-			if (didwork & 0x08) LogMsg("************ mDNS_Execute did AnswerNewQuestion");
-			if (didwork & 0x10) LogMsg("************ mDNS_Execute did DiscardDeregistrations");
-			if (didwork & 0x20) LogMsg("************ mDNS_Execute did m->SuppressSending = 0");
-			if (didwork & 0x40) LogMsg("************ mDNS_Execute did SendQueries");
-			if (didwork & 0x80) LogMsg("************ mDNS_Execute did SendResponses");
-			}
-
-		{
-		mDNSs32 oldNextEvent = m->NextScheduledEvent;
-		m->NextScheduledEvent = ScheduleNextTask(m);
-		// If our NextScheduledEvent time hasn't changed, or it is in the past, log an error message
-		if (m->NextScheduledEvent == oldNextEvent || m->NextScheduledEvent - m->timenow <= 0)
-			LogMsg("************ mDNSCoreTask next task \"%s\" %ld ticks from last one, %ld ticks from now",
-				gNextEventMsg, m->NextScheduledEvent - oldNextEvent, m->NextScheduledEvent - m->timenow);
-		gNextEventScheduledAt = mDNSPlatformTimeNow();
-		}
-		// ----- End temporary debugging code that will go away soon -----
-
 		}
 
 	// Note about multi-threaded systems:
@@ -4081,9 +3957,8 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	// callback function should call mDNS_Execute() (and ignore the return value, which may already be stale
 	// by the time it gets to the timer callback function).
 
-	nse = m->NextScheduledEvent;
-	mDNS_Unlock_noclear(m);
-	return(nse);
+	mDNS_Unlock(m);		// Calling mDNS_Unlock is what gives m->NextScheduledEvent its new value
+	return(m->NextScheduledEvent);
 	}
 
 // Call mDNSCoreMachineSleep(m, mDNStrue) when the machine is about to go to sleep.
