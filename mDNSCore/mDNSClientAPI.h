@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.48  2003/05/07 00:18:44  cheshire
+Fix typo: "kDNSQClass_Mask" should be "kDNSClass_Mask"
+
 Revision 1.47  2003/05/06 00:00:46  cheshire
 <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -221,7 +224,7 @@ typedef enum						// From RFC 1035
 	kDNSClass_HS          = 4,		// Hesiod
 	kDNSClass_NONE        = 254,	// Used in DNS UPDATE [RFC 2136]
 	kDNSQClass_ANY        = 255,	// Not a DNS class, but a DNS query class, meaning "all classes"
-	kDNSQClass_Mask       = 0x7FFF,	// Multicast DNS uses the bottom 15 bits to identify the record class...
+	kDNSClass_Mask        = 0x7FFF,	// Multicast DNS uses the bottom 15 bits to identify the record class...
 	kDNSClass_UniqueRRSet = 0x8000	// ... and the top bit indicates that all other cached records are now invalid
 	} DNS_ClassValues;
 
@@ -370,8 +373,8 @@ enum
 
 	kDNSRecordTypePacketAnswer     = 0x10,	// Received in the Answer Section of a DNS Response
 	kDNSRecordTypePacketAdditional = 0x11,	// Received in the Additional Section of a DNS Response
-	kDNSRecordTypePacketUniqueAns  = 0x18,	// Received in the Answer Section of a DNS Response with kDNSQClass_CacheFlushBit set
-	kDNSRecordTypePacketUniqueAdd  = 0x19,	// Received in the Additional Section of a DNS Response with kDNSQClass_CacheFlushBit set
+	kDNSRecordTypePacketUniqueAns  = 0x18,	// Received in the Answer Section of a DNS Response with kDNSClass_UniqueRRSet set
+	kDNSRecordTypePacketUniqueAdd  = 0x19,	// Received in the Additional Section of a DNS Response with kDNSClass_UniqueRRSet set
 
 	kDNSRecordTypeShared           = 0x20,	// Shared means record name does not have to be unique -- so use random delay on replies
 	kDNSRecordTypeVerified         = 0x28,	// Unique means mDNS should check that name is unique (and then send immediate replies)
