@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.7  2004/10/30 00:06:58  ksekar
+<rdar://problem/3722535> Support Long Lived Queries in DNS Extension daemon
+
 Revision 1.6  2004/09/17 01:08:54  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -79,14 +82,25 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #define LISTENQ 128                     // tcp connection backlog
 #define RECV_BUFLEN 9000                
 #define LEASETABLE_INIT_NBUCKETS 256    // initial hashtable size (doubles as table fills)
+#define LLQ_TABLESIZE 1024              // !!!KRS make this dynamically growable
 #define EXPIRATION_INTERVAL 300          // check for expired records every 5 minutes
 #define SRV_TTL 7200                    // TTL For _dns-update SRV records
 
+// LLQ Lease bounds (seconds)
+#define LLQ_MIN_LEASE (15 * 60)
+#define LLQ_MAX_LEASE (120 * 60)
+
+// LLQ SOA poll interval (microseconds)
+#define LLQ_MONITOR_ERR_INTERVAL (60 * 1000000)
+#define LLQ_MONITOR_INTERVAL 250000
 #ifdef SIGINFO
 #define INFO_SIGNAL SIGINFO
 #else
 #define INFO_SIGNAL SIGUSR1
 #endif
+
+#define SAME_INADDR(x,y) (*((uint32_t *)&x) == *((uint32_t *)&y))
+#define ZERO_LLQID(x) (!memcmp(x, "\x0\x0\x0\x0", 8))
 
 //
 // Data Structures
@@ -101,6 +115,7 @@ typedef struct
     // Note: extra storage for oversized (TCP) messages goes here
 	} PktMsg;
 
+// lease table entry
 typedef struct RRTableElem
 	{
     struct RRTableElem *next;
@@ -109,6 +124,27 @@ typedef struct RRTableElem
     domainname zone;          // from zone field of update message
     CacheRecord rr;           // last field in struct allows for allocation of oversized RRs
 	} RRTableElem;
+
+typedef enum
+	{
+	RequestReceived = 0,
+	ChallengeSent   = 1,
+	Established     = 2
+	} LLQState;
+
+// llq table entry
+typedef struct LLQEntry
+	{
+    struct LLQEntry *next;     
+    struct sockaddr_in cli;   // clien'ts source address 
+    domainname qname;
+    mDNSu16 qtype;
+    mDNSu8 id[8];
+    LLQState state;
+    uint32_t lease;           // original lease, in seconds
+    int32_t expire;           // expiration, absolute, in seconds since epoch
+    CacheRecord *KnownAnswers;// !!!KRS this should be shared amongst identical questions
+	} LLQEntry;
 
 // daemon-wide information
 typedef struct 
@@ -128,6 +164,11 @@ typedef struct
     pthread_mutex_t tablelock; // mutex for lease table
     mDNSs32 nbuckets;          // buckets allocated
     mDNSs32 nelems;            // elements in table
+
+    // LLQ table variables
+    LLQEntry *LLQTable[LLQ_TABLESIZE];  // !!!KRS change this and RRTable to use a common data structure
+    int LLQEventListenSock;       // Unix domain socket pair - polling thread writes to ServPollSock, which wakes
+    int LLQServPollSock;          // the main thread listening on EventListenSock, indicating that the zone has changed
 	} DaemonInfo;
 
 // args passed to UDP request handler thread as void*
@@ -223,6 +264,37 @@ mDNSlocal void LogErr(const char *fn, const char *operation)
 // Networking Utility Routines
 //
 
+// Convert DNS Message Header from Network to Host byte order
+mDNSlocal void HdrNToH(PktMsg *pkt)
+	{
+	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
+	mDNSu8 *ptr = (mDNSu8 *)&pkt->msg.h.numQuestions;
+	pkt->msg.h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+	pkt->msg.h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
+	pkt->msg.h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
+	pkt->msg.h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
+	}
+
+// Convert DNS Message Header from Host to Network byte order
+mDNSlocal void HdrHToN(PktMsg *pkt)
+	{
+	mDNSu16 numQuestions   = pkt->msg.h.numQuestions;
+	mDNSu16 numAnswers     = pkt->msg.h.numAnswers;
+	mDNSu16 numAuthorities = pkt->msg.h.numAuthorities;
+	mDNSu16 numAdditionals = pkt->msg.h.numAdditionals;
+	mDNSu8 *ptr = (mDNSu8 *)&pkt->msg.h.numQuestions;
+
+	// Put all the integer values in IETF byte-order (MSB first, LSB second)
+	*ptr++ = (mDNSu8)(numQuestions   >> 8);
+	*ptr++ = (mDNSu8)(numQuestions   &  0xFF);
+	*ptr++ = (mDNSu8)(numAnswers     >> 8);
+	*ptr++ = (mDNSu8)(numAnswers     &  0xFF);
+	*ptr++ = (mDNSu8)(numAuthorities >> 8);
+	*ptr++ = (mDNSu8)(numAuthorities &  0xFF);
+	*ptr++ = (mDNSu8)(numAdditionals >> 8);
+	*ptr++ = (mDNSu8)(numAdditionals &  0xFF);
+	}
+
 // create a socket connected to nameserver
 // caller terminates connection via close()
 mDNSlocal int ConnectToServer(DaemonInfo *d)
@@ -291,9 +363,12 @@ static int my_recv(const int sd, void *const buf, const int len)
     return(len);
     }
 
-// Return a DNS Message (allocated with malloc) read off of a TCP socket, or NULL on failure
-// PktMsg returned contains sufficient extra storage for a Lease OPT RR
-mDNSlocal PktMsg *ReadTCPMsg(int sd)
+// Return a DNS Message read off of a TCP socket, or NULL on failure
+// If storage is non-null, result is placed in that buffer.  Otherwise,
+// returned value is allocated with Malloc, and contains sufficient extra
+// storage for a Lease OPT RR
+
+mDNSlocal PktMsg *ReadTCPMsg(int sd, PktMsg *storage)
 	{	
 	int nread, allocsize;
 	uint16_t msglen = 0;	
@@ -302,15 +377,24 @@ mDNSlocal PktMsg *ReadTCPMsg(int sd)
 	
 	nread = my_recv(sd, &msglen, sizeof(msglen));
 	if (nread < 0) { LogErr("TCPRequestForkFn", "recv"); goto error; }
+	msglen = ntohs(msglen);
 	if (nread != sizeof(msglen)) { Log("Could not read length field of message"); goto error; }	
 
-	// buffer extra space to add an OPT RR
-	if (msglen > sizeof(DNSMessage)) allocsize = sizeof(PktMsg) - sizeof(DNSMessage) + msglen;
-	else                             allocsize = sizeof(PktMsg);
+	if (storage)
+		{
+		if (msglen > sizeof(storage->msg)) { Log("ReadTCPMsg: provided buffer too small."); goto error; }
+		pkt = storage;
+		}
+	else
+		{
+		// buffer extra space to add an OPT RR
+		if (msglen > sizeof(DNSMessage)) allocsize = sizeof(PktMsg) - sizeof(DNSMessage) + msglen;
+		else                             allocsize = sizeof(PktMsg);		
+		pkt = malloc(allocsize);
+		if (!pkt) { LogErr("ReadTCPMsg", "malloc"); goto error; }
+		bzero(pkt, sizeof(*pkt));
+		}
 	
-	pkt = malloc(allocsize);
-	if (!pkt) { LogErr("ReadTCPMsg", "malloc"); goto error; }
-	bzero(pkt, sizeof(*pkt));
 	pkt->len = msglen;
 	srclen = sizeof(pkt->src);
 	if (getpeername(sd, (struct sockaddr *)&pkt->src, &srclen) ||
@@ -320,42 +404,12 @@ mDNSlocal PktMsg *ReadTCPMsg(int sd)
 	if (nread != msglen) { Log("Could not read entire message"); goto error; }
 	if (pkt->len < sizeof(DNSMessageHeader))
 		{ Log("ReadTCPMsg: Message too short (%d bytes)", pkt->len);  goto error; }	
+	HdrNToH(pkt);
 	return pkt;
-
+	//!!!KRS convert to HBO here?
 	error:
-	if (pkt) free(pkt);
+	if (pkt && pkt != storage) free(pkt);
 	return NULL;
-	}
-
-// Convert DNS Message Header from Network to Host byte order
-mDNSlocal void HdrNToH(PktMsg *pkt)
-	{
-	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
-	mDNSu8 *ptr = (mDNSu8 *)&pkt->msg.h.numQuestions;
-	pkt->msg.h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
-	pkt->msg.h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
-	pkt->msg.h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
-	pkt->msg.h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
-	}
-
-// Convert DNS Message Header from Host to Network byte order
-mDNSlocal void HdrHToN(PktMsg *pkt)
-	{
-	mDNSu16 numQuestions   = pkt->msg.h.numQuestions;
-	mDNSu16 numAnswers     = pkt->msg.h.numAnswers;
-	mDNSu16 numAuthorities = pkt->msg.h.numAuthorities;
-	mDNSu16 numAdditionals = pkt->msg.h.numAdditionals;
-	mDNSu8 *ptr = (mDNSu8 *)&pkt->msg.h.numQuestions;
-
-	// Put all the integer values in IETF byte-order (MSB first, LSB second)
-	*ptr++ = (mDNSu8)(numQuestions   >> 8);
-	*ptr++ = (mDNSu8)(numQuestions   &  0xFF);
-	*ptr++ = (mDNSu8)(numAnswers     >> 8);
-	*ptr++ = (mDNSu8)(numAnswers     &  0xFF);
-	*ptr++ = (mDNSu8)(numAuthorities >> 8);
-	*ptr++ = (mDNSu8)(numAuthorities &  0xFF);
-	*ptr++ = (mDNSu8)(numAdditionals >> 8);
-	*ptr++ = (mDNSu8)(numAdditionals &  0xFF);
 	}
 
 //
@@ -418,6 +472,20 @@ mDNSlocal mDNSBool SuccessfulUpdateTransaction(PktMsg *request, PktMsg *reply)
 	return mDNSfalse;
 	}
 
+// Allocate an appropriately sized CacheRecord and copy data from original
+mDNSlocal CacheRecord *CopyCacheRecord(CacheRecord *orig)
+	{
+	CacheRecord *cr;
+	size_t size = sizeof(*cr);
+	if (orig->resrec.rdlength > InlineCacheRDSize) size += orig->resrec.rdlength - InlineCacheRDSize;
+	cr = malloc(size);
+	if (!cr) { LogErr("CopyCacheRecord", "malloc"); return NULL; }
+	memcpy(cr, orig, size);
+	cr->resrec.rdata = (RData*)&cr->rdatastorage;
+	return cr;
+	}
+
+
 //
 // Lease Hashtable Utility Routines
 //
@@ -449,7 +517,7 @@ mDNSlocal void RehashTable(DaemonInfo *d)
 	}
 
 // print entire contents of hashtable, invoked via SIGINFO
-mDNSlocal void PrintTable(DaemonInfo *d)
+mDNSlocal void PrintLeaseTable(DaemonInfo *d)
 	{
 	int i;
 	RRTableElem *ptr;
@@ -495,6 +563,30 @@ mDNSlocal mDNSu8 *putRRSetDeletion(DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *limit, 
 	return ptr + 10;
 	}
 
+mDNSlocal mDNSu8 *PutUpdateSRV(DaemonInfo *d, PktMsg *pkt, mDNSu8 *ptr, char *regtype, mDNSBool registration)
+	{
+	AuthRecord rr;
+	char hostname[1024], buf[80];
+	mDNSu8 *end = (mDNSu8 *)&pkt->msg + sizeof(DNSMessage);
+	
+	mDNS_SetupResourceRecord(&rr, NULL, 0, kDNSType_SRV, SRV_TTL, kDNSRecordTypeUnique, NULL, NULL);
+	rr.resrec.rrclass = kDNSClass_IN;
+	rr.resrec.rdata->u.srv.priority = 0;
+	rr.resrec.rdata->u.srv.weight = 0;
+	rr.resrec.rdata->u.srv.port.NotAnInteger = d->port.NotAnInteger;
+	if (!gethostname(hostname, 1024) < 0 || MakeDomainNameFromDNSNameString(&rr.resrec.rdata->u.srv.target, hostname))
+		rr.resrec.rdata->u.srv.target.c[0] = '\0';
+	
+	MakeDomainNameFromDNSNameString(&rr.resrec.name, regtype);
+	strcpy(rr.resrec.name.c + strlen(rr.resrec.name.c), d->zone.c);
+	VLog("%s  %s", registration ? "Registering SRV record" : "Deleting existing RRSet",
+		 GetRRDisplayString_rdb(&rr.resrec, &rr.resrec.rdata->u, buf));
+	if (registration) ptr = PutResourceRecord(&pkt->msg, ptr, &pkt->msg.h.mDNS_numUpdates, &rr.resrec);
+	else              ptr = putRRSetDeletion(&pkt->msg, ptr, end, &rr.resrec);
+	return ptr;
+	}
+
+
 // perform dynamic update.
 // specify deletion by passing false for the register parameter, otherwise register the records.
 mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
@@ -505,19 +597,9 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 	mDNSu8 *ptr = pkt.msg.data;
 	mDNSu8 *end = (mDNSu8 *)&pkt.msg + sizeof(DNSMessage);
 	mDNSu16 nAdditHBO;  // num additionas, in host byte order, required by message digest routine
-	char hostname[1024], buf[80];
 	PktMsg *reply = NULL;
-	AuthRecord rr;
-	int result = -1;
-	
-	// format the SRV record
-	mDNS_SetupResourceRecord(&rr, NULL, 0, kDNSType_SRV, SRV_TTL, kDNSRecordTypeUnique, NULL, NULL);
-	rr.resrec.rrclass = kDNSClass_IN;
-	rr.resrec.rdata->u.srv.priority = 0;
-	rr.resrec.rdata->u.srv.weight = 0;
-	rr.resrec.rdata->u.srv.port.NotAnInteger = d->port.NotAnInteger;
-	if (!gethostname(hostname, 1024) < 0 || MakeDomainNameFromDNSNameString(&rr.resrec.rdata->u.srv.target, hostname))
-		rr.resrec.rdata->u.srv.target.c[0] = '\0';
+
+	int result = -1;	
 
 	// Initialize message
 	id.NotAnInteger = 0;
@@ -529,23 +611,10 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 	ptr = putZone(&pkt.msg, ptr, end, &d->zone, mDNSOpaque16fromIntVal(kDNSClass_IN));
 	if (!ptr) goto end;
 
-	// do _udp
-	MakeDomainNameFromDNSNameString(&rr.resrec.name, "_dns-update._udp.");
-	strcpy(rr.resrec.name.c + strlen(rr.resrec.name.c), d->zone.c);
-	VLog("%s  %s", registration ? "Registering SRV record" : "Deleting existing RRSet",
-		 GetRRDisplayString_rdb(&rr.resrec, &rr.resrec.rdata->u, buf));
-	if (registration) ptr = PutResourceRecord(&pkt.msg, ptr, &pkt.msg.h.mDNS_numUpdates, &rr.resrec);
-	else              ptr = putRRSetDeletion(&pkt.msg, ptr, end, &rr.resrec);
-	if (!ptr) goto end;
-	
-	// do _tcp
-	MakeDomainNameFromDNSNameString(&rr.resrec.name, "_dns-update._tcp.");
-	strcpy(rr.resrec.name.c + strlen(rr.resrec.name.c), d->zone.c);
-	VLog("%s  %s", registration ? "Registering SRV record" : "Deleting existing RRSet",
-		 GetRRDisplayString_rdb(&rr.resrec, &rr.resrec.rdata->u, buf));	
-	if (registration) ptr = PutResourceRecord(&pkt.msg, ptr, &pkt.msg.h.mDNS_numUpdates, &rr.resrec);
-	else              ptr = putRRSetDeletion(&pkt.msg, ptr, end, &rr.resrec);
-	if (!ptr) goto end;
+	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-update._udp.", registration); if (!ptr) goto end;
+	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-update._tcp.", registration); if (!ptr) goto end;
+	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-llq._udp.", registration);    if (!ptr) goto end;
+	ptr = PutUpdateSRV(d, &pkt, ptr, "_dns-llq._udp.", registration);    if (!ptr) goto end;
 	
 	nAdditHBO = pkt.msg.h.numAdditionals;
 	HdrHToN(&pkt);
@@ -560,7 +629,7 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 	sd = ConnectToServer(d);
 	if (sd < 0) { Log("UpdateSRV: ConnectToServer failed"); goto end; }  
 	if (SendTCPMsg(sd, &pkt)) { Log("UpdateSRV: SendTCPMsg failed"); }
-	reply = ReadTCPMsg(sd);
+	reply = ReadTCPMsg(sd, NULL);
 	if (!SuccessfulUpdateTransaction(&pkt, reply))
 		Log("SRV record registration failed with rcode %d", reply->msg.h.flags.b[1] & kDNSFlag1_RC);
 	else result = 0;
@@ -723,6 +792,7 @@ mDNSlocal int InitLeaseTable(DaemonInfo *d)
 mDNSlocal int SetupSockets(DaemonInfo *daemon)
 	{
 	struct sockaddr_in daddr;
+	int sockpair[2];
 	
 	// set up sockets on which we receive requests
 	bzero(&daddr, sizeof(daddr));
@@ -741,6 +811,10 @@ mDNSlocal int SetupSockets(DaemonInfo *daemon)
 	if (!daemon->udpsd) { LogErr("SetupSockets", "socket");  return -1; }
 	if (bind(daemon->udpsd, (struct sockaddr *)&daddr, sizeof(daddr)) < 0) { LogErr("SetupSockets", "bind"); return -1; }
 
+	// set up Unix domain socket pair for LLQ polling thread to signal main thread that a change to the zone occurred
+	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, sockpair) < 0) { LogErr("SetupSockets", "socketpair"); return -1; }
+	daemon->LLQEventListenSock = sockpair[0];
+	daemon->LLQServPollSock = sockpair[1];
 	return 0;
 	}
 
@@ -785,7 +859,7 @@ mDNSlocal void DeleteRecord(DaemonInfo *d, CacheRecord *rr, domainname *zone)
 	pkt.src.sin_addr.s_addr = htonl(INADDR_ANY); // address field set solely for verbose logging in subroutines
 	pkt.src.sin_family = AF_INET;
 	if (SendTCPMsg(sd, &pkt)) { Log("DeleteRecord: SendTCPMsg failed"); }
-	reply = ReadTCPMsg(sd);
+	reply = ReadTCPMsg(sd, NULL);
 	if (!SuccessfulUpdateTransaction(&pkt, reply))
 		Log("Expiration update failed with rcode %d", reply->msg.h.flags.b[1] & kDNSFlag1_RC);
 					  
@@ -963,7 +1037,7 @@ mDNSlocal PktMsg *HandleRequest(PktMsg *pkt, DaemonInfo *d)
 		{ Log("Discarding request from %s due to connection errors", inet_ntop(AF_INET, &pkt->src.sin_addr, buf, 32)); goto cleanup; }
 	if (SendTCPMsg(sd, pkt) < 0)
 		{ Log("Couldn't relay message from %s to server.  Discarding.", inet_ntop(AF_INET, &pkt->src.sin_addr, buf, 32)); goto cleanup; }
-	reply = ReadTCPMsg(sd);
+	reply = ReadTCPMsg(sd, NULL);
 	
 	// process reply
 	if (!SuccessfulUpdateTransaction(pkt, reply))
@@ -982,9 +1056,658 @@ mDNSlocal PktMsg *HandleRequest(PktMsg *pkt, DaemonInfo *d)
 	return reply;
 	}
 
+
+//
+// LLQ Support Routines
+//
+
+mDNSlocal void DeleteLLQ(DaemonInfo *d, LLQEntry *e)
+	{
+	int bucket = bucket = DomainNameHashValue(&e->qname) % LLQ_TABLESIZE;
+	LLQEntry *prev = NULL, *ptr = d->LLQTable[bucket];
+	char addr[32];
+	
+	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
+	VLog("Deleting LLQ table entry for %##s client %s", e->qname.c, addr);
+	
+	while(ptr)
+		{
+		if (ptr == e)
+			{
+			if (prev) prev->next = ptr->next;
+			else d->LLQTable[bucket] = ptr->next;
+			free(e);
+			return;
+			}
+		prev = ptr;
+		ptr = ptr->next;
+		}
+	Log("Error: DeleteLLQ - LLQ not in table");
+	}
+
+mDNSlocal int SendLLQ(DaemonInfo *d, PktMsg *pkt, struct sockaddr_in dst)
+	{
+	char addr[32];
+	int err = -1;
+
+	HdrHToN(pkt);
+	if (sendto(d->udpsd, &pkt->msg, pkt->len, 0, (struct sockaddr *)&dst, sizeof(dst)) != (int)pkt->len)
+		{
+		LogErr("DaemonInfo", "sendto");
+		Log("Could not send response to client %s", inet_ntop(AF_INET, &dst.sin_addr, addr, 32));
+		}
+	else err = 0;
+	HdrNToH(pkt);
+	return err;
+	}
+
+// if non-negative, sd is a TCP socket connected to the nameserver
+// otherwise, this routine creates and closes its own socket
+mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, LLQEntry *e, int sd)
+	{
+	PktMsg q;
+	int i;
+	const mDNSu8 *ansptr;
+	mDNSu8 *end = q.msg.data;
+	mDNSOpaque16 id, flags = QueryFlags;
+	PktMsg *reply = NULL;
+	LargeCacheRecord lcr;
+	CacheRecord *AnswerList = NULL;
+	mDNSu8 rcode;
+	mDNSBool CloseSDOnExit = sd < 0;
+	
+	VLog("Querying server for %##s type %d", e->qname.c, e->qtype);
+	
+	flags.b[0] |= kDNSFlag0_RD;  // recursion desired
+	id.NotAnInteger = 0;
+	InitializeDNSMessage(&q.msg.h, id, flags);
+	
+	end = putQuestion(&q.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
+	if (!end) { Log("Error: AnswerQuestion - putQuestion returned NULL"); goto end; }
+	q.len = (int)(end - (mDNSu8 *)&q.msg);
+	
+	if (sd < 0) sd = ConnectToServer(d);
+	if (sd < 0) { Log("AnswerQuestion: ConnectToServer failed"); goto end; }
+	if (SendTCPMsg(sd, &q)) { Log("AnswerQuestion: SendTCPMsg failed"); close(sd); goto end; }
+	reply = ReadTCPMsg(sd, NULL);
+
+	if ((reply->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask) != (kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery))
+		{ Log("AnswerQuestion: %##s type %d - Invalid response flags from server"); goto end; }
+	rcode = (mDNSu8)(reply->msg.h.flags.b[1] & kDNSFlag1_RC);
+	if (rcode && rcode != kDNSFlag1_RC_NXDomain) { Log("AnswerQuestion: %##s type %d - non-zero rcode %d from server", e->qname.c, e->qtype, rcode); goto end; }
+
+	end = (mDNSu8 *)&reply->msg + reply->len;
+	ansptr = LocateAnswers(&reply->msg, end);
+	if (!ansptr) { Log("Error: AnswerQuestion - LocateAnswers returned NULL"); goto end; }
+
+	for (i = 0; i < reply->msg.h.numAnswers; i++)
+		{
+		//rr = malloc(sizeof(*rr));
+		//if (!rr) { LogErr("AnswerQuestion", "malloc"); goto end; }
+		ansptr = GetLargeResourceRecord(NULL, &reply->msg, ansptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+		if (!ansptr) { Log("AnswerQuestions: GetLargeResourceRecord returned NULL"); goto end; }
+		if (lcr.r.resrec.rrtype != e->qtype || lcr.r.resrec.rrclass != kDNSClass_IN || !SameDomainName(&lcr.r.resrec.name, &e->qname))
+			{
+			Log("AnswerQuestion: response %##s type #d does not answer question %##s type #d.  Discarding",
+				  lcr.r.resrec.name.c, lcr.r.resrec.rrtype, e->qname.c, e->qtype);
+			}
+		else
+			{
+			CacheRecord *cr = CopyCacheRecord(&lcr.r);
+			if (!cr) { Log("Error: AnswerQuestion - CopyCacheRecord returned NULL"); goto end; }						   
+			cr->next = AnswerList;
+			AnswerList = cr;
+			}
+		}
+	
+	end:
+	if (sd > -1 && CloseSDOnExit) close(sd);
+	if (reply) free(reply);
+	e->state = Established;
+	return AnswerList;
+	}
+
+mDNSlocal void UpdateAnswerList(DaemonInfo *d, LLQEntry *e, CacheRecord *answers)
+	{
+	CacheRecord *prev = NULL, *na, *ka; // "new answer", "known answer"
+	PktMsg  response;
+	mDNSu8 *end = (mDNSu8 *)&response.msg.data;
+	mDNSOpaque16 msgID;
+	char rrbuf[80], addrbuf[32];
+	
+	// first pass - mark all answers for deletion
+	for (ka = e->KnownAnswers; ka; ka = ka->next)
+		ka->resrec.rroriginalttl = -1; // -1 means delete
+
+	// second pass - mark answers pre-existent
+	for (ka = e->KnownAnswers; ka; ka = ka->next)
+		{
+		for (na = answers; na; na = na->next)
+			{
+			if (SameResourceRecord(&ka->resrec, &na->resrec))
+				{ ka->resrec.rroriginalttl = 0; break; } // 0 means no change
+			}
+		}
+
+	// third pass - add new records
+	for (na = answers; na; na = na->next)
+		{
+		for (ka = e->KnownAnswers; ka; ka = ka->next)
+			if (SameResourceRecord(&ka->resrec, &na->resrec)) break;
+		if (!ka)
+			{
+			// answer is not in KA list
+			CacheRecord *cr = CopyCacheRecord(na);
+			if (!cr) { Log("Error: UpdateAnswerList - CopyCacheRecord returned NULL"); return; }
+			cr->resrec.rroriginalttl = 1; // 1 means add
+			cr->next = e->KnownAnswers;
+			e->KnownAnswers = cr;
+			}
+		}
+
+	// now send the update
+	msgID.NotAnInteger = random();
+	InitializeDNSMessage(&response.msg.h, msgID, ResponseFlags);
+	end = putQuestion(&response.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
+	if (!end) { Log("Error: UpdateAnswerList - PutResourceRecordTTL returned NULL"); return; }
+
+	if (verbose) inet_ntop(AF_INET, &e->cli.sin_addr, addrbuf, 32);
+	// put adds/removes in packet
+	for (ka = e->KnownAnswers; ka; ka = ka->next)
+		{
+		if (ka->resrec.rroriginalttl)
+			{
+			if (verbose) GetRRDisplayString_rdb(&ka->resrec, &ka->resrec.rdata->u, rrbuf);
+			VLog("%s (%s): %s", addrbuf, (mDNSs32)ka->resrec.rroriginalttl < 0 ? "Remove": "Add", rrbuf);				 
+			end = PutResourceRecordTTL(&response.msg, end, &response.msg.h.numAnswers, &ka->resrec, ka->resrec.rroriginalttl);
+			if (!end) { Log("Error: UpdateAnswerList - UpdateAnswerList returned NULL"); return; }
+			}
+		}
+
+	// delete removes from list
+	ka = e->KnownAnswers;
+	while (ka)
+		{
+		if ((mDNSs32)ka->resrec.rroriginalttl < 0)
+			{
+			CacheRecord *fptr = ka;
+			if (prev) prev->next = ka->next;
+			else e->KnownAnswers = ka->next;
+			ka = ka->next;
+			free(fptr);
+			}
+		else
+			{
+			prev = ka;
+			ka = ka->next;
+			}
+		}
+			   
+	response.len = (int)(end - (mDNSu8 *)&response.msg);
+	if (response.msg.h.numAnswers)
+		if (SendLLQ(d, &response, e->cli) < 0) LogErr("UpdateAnswerList", "SendLLQ");		
+	}
+
+// Calculate effective remaining lease of an LLQ
+mDNSlocal mDNSu32 LLQLease(LLQEntry *e)
+	{
+	struct timeval t;
+	
+	gettimeofday(&t, NULL);
+	if (e->expire < t.tv_sec) return 0;
+	else return e->expire - t.tv_sec;
+	}
+
+mDNSlocal void PrintLLQTable(DaemonInfo *d)
+	{
+	LLQEntry *e;
+	char addr[32];
+	int i;
+	
+	Log("Printing LLQ table contents");;
+
+	for (i = 0; i < LLQ_TABLESIZE; i++)
+		{
+		e = d->LLQTable[i];
+		while(e)
+			{
+			inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
+			Log("LLQ from %##s type %d lease %d (%d remaining)",
+				addr, e->qname.c, e->qtype, e->lease, LLQLease(e));
+			e = e->next;
+			}
+		}
+	}
+
+// Send events to clients as a result of a change in the zone
+mDNSlocal void GenLLQEvents(DaemonInfo *d)
+	{
+	LLQEntry *e, *tmp;
+	int i, sd;
+	struct timeval t;
+	char addr[32];
+	VLog("Generating LLQ Events");
+
+	gettimeofday(&t, NULL);
+	sd = ConnectToServer(d);
+	if (sd < 0) { Log("GenLLQEvents: ConnectToServer failed"); return; }
+	
+	for (i = 0; i < LLQ_TABLESIZE; i++)
+		{
+		e = d->LLQTable[i];
+		while(e)
+			{
+			if (e->expire < t.tv_sec)
+				{
+				inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
+				VLog("Expiring LLQ $##s from %s", e->qname.c, addr);
+				tmp = e;
+				e = e->next;
+				DeleteLLQ(d, tmp);
+				}
+			else
+				{
+				CacheRecord *answers = AnswerQuestion(d, e, sd);
+				UpdateAnswerList(d, e, answers);
+				e = e->next;
+				}
+			}		
+		}
+	}
+
+// Monitor zone for changes that may produce LLQ events
+mDNSlocal void *LLQEventMonitor(void *DInfoPtr)
+	{
+	DaemonInfo *d = DInfoPtr;
+	PktMsg q;
+	mDNSu8 *end = q.msg.data;
+	const mDNSu8 *ptr;
+	mDNSOpaque16 id, flags = QueryFlags;
+	PktMsg reply;
+	mDNSu32 serial = 0;
+	mDNSBool SerialInitialized = mDNSfalse;;
+	int sd;
+     LargeCacheRecord lcr;
+	ResourceRecord *rr = &lcr.r.resrec;
+	int i, sleeptime = 0;
+	domainname zone;
+	char pingmsg[4];
+	
+	// create question
+	id.NotAnInteger = 0;
+	InitializeDNSMessage(&q.msg.h, id, flags);
+	AssignDomainName(zone, d->zone);
+	end = putQuestion(&q.msg, end, end + AbsoluteMaxDNSMessageData, &zone, kDNSType_SOA, kDNSClass_IN);
+	if (!end) { Log("Error: LLQEventMonitor - putQuestion returned NULL"); return NULL; }
+	q.len = (int)(end - (mDNSu8 *)&q.msg);
+
+	sd = ConnectToServer(d);
+	if (sd < 0) { Log("LLQEventMonitor: ConnectToServer failed"); return NULL; }
+
+	while(1)
+		{
+		usleep(sleeptime);
+		sleeptime = LLQ_MONITOR_ERR_INTERVAL;  // if we bail on error below, rate limit retry
+		
+		// send message, receive response
+		if (SendTCPMsg(sd, &q)) { Log("LLQEventMonitor: SendTCPMsg failed"); continue; }
+		if (!ReadTCPMsg(sd, &reply)) { Log("LLQEventMonitor: ReadTCPMsg failed"); continue; }
+		end = (mDNSu8 *)&reply.msg + reply.len;
+		if (reply.msg.h.flags.b[1] & kDNSFlag1_RC) { Log("LLQEventMonitor - received non-zero rcode"); continue; }
+
+		// find answer
+		ptr = LocateAnswers(&reply.msg, end);
+		if (!ptr) { Log("Error: LLQEventMonitor - LocateAnswers returned NULL"); continue; }
+		for (i = 0; i < reply.msg.h.numAnswers; i++)
+			{
+			ptr = GetLargeResourceRecord(NULL, &reply.msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+			if (!ptr) { Log("Error: LLQEventMonitor - GetLargeResourceRecord  returned NULL"); continue; }
+			if (rr->rrtype != kDNSType_SOA || rr->rrclass != kDNSClass_IN || !SameDomainName(&rr->name, &zone)) continue;
+			if (!SerialInitialized)
+				{
+				// first time through loop
+				SerialInitialized = mDNStrue;
+				serial = rr->rdata->u.soa.serial;
+				sleeptime = LLQ_MONITOR_INTERVAL;
+				break;
+				}
+			else if (rr->rdata->u.soa.serial != serial)
+				{
+				// update serial, wake main thread
+				serial = rr->rdata->u.soa.serial;
+				VLog("LLQEventMonitor: zone changed. Signaling main thread.");
+				if (send(d->LLQServPollSock, pingmsg, sizeof(pingmsg), 0) != sizeof(pingmsg))
+					{ LogErr("LLQEventMonitor", "send"); break; }
+				}
+			sleeptime = LLQ_MONITOR_INTERVAL;
+			break;			
+			}
+		if (!ptr) Log("LLQEventMonitor: response to query did not contain SOA");
+		}
+	}
+ 
+ // Allocate LLQ entry, insert into table
+mDNSlocal LLQEntry *NewLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qname, mDNSu16 qtype, mDNSu32 lease)
+	{
+	char addr[32];
+	struct timeval t;
+	int bucket;
+	LLQEntry *e = malloc(sizeof(*e));
+	if (!e) { LogErr("NewLLQ", "malloc"); return NULL; }
+
+	inet_ntop(AF_INET, &cli.sin_addr, addr, 32);
+	VLog("Allocating LLQ entry for client %s question %##s type %d", addr, qname->c, qtype);
+	
+	// initialize structure
+	e->cli = cli;
+	AssignDomainName(e->qname, *qname);
+	e->qtype = qtype;
+	memset(e->id, 0, 8);
+	e->state = RequestReceived;
+
+	if (lease < LLQ_MIN_LEASE) lease = LLQ_MIN_LEASE;
+	else if (lease > LLQ_MAX_LEASE) lease = LLQ_MIN_LEASE;
+	gettimeofday(&t, NULL);
+	e->expire = t.tv_sec + (int)lease;
+	e->lease = lease;
+	
+	// add to table
+	bucket = DomainNameHashValue(qname) % LLQ_TABLESIZE;
+	e->next = d->LLQTable[bucket];
+	d->LLQTable[bucket] = e;
+	
+	return e;
+	}
+
+// Set fields of an LLQ Opt Resource Record
+mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, mDNSu8 *id, mDNSs32 lease)
+	{
+	bzero(opt, sizeof(*opt));
+	opt->resrec.rdata = &opt->rdatastorage;
+	opt->resrec.RecordType = kDNSRecordTypeKnownUnique; // to suppress warnings from other layers
+	opt->resrec.rrtype = kDNSType_OPT;
+	opt->resrec.rdlength = LLQ_OPT_SIZE;
+	opt->resrec.rdestimate = LLQ_OPT_SIZE;
+	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;
+	opt->resrec.rdata->u.opt.optlen = sizeof(LLQOptData);
+	opt->resrec.rdata->u.opt.OptData.llq.vers = kLLQ_Vers;
+	opt->resrec.rdata->u.opt.OptData.llq.llqOp = opcode;
+	opt->resrec.rdata->u.opt.OptData.llq.err = LLQErr_NoError;
+	memcpy(opt->resrec.rdata->u.opt.OptData.llq.id, id, 8);
+	opt->resrec.rdata->u.opt.OptData.llq.lease = lease;
+	}
+
+// Handle a refresh request from client
+mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
+	{
+	AuthRecord opt;
+	PktMsg ack;
+	mDNSu8 *end = (mDNSu8 *)&ack.msg.data;
+	char addr[32];
+
+	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
+	VLog("%s LLQ for %##s from %s", llq->lease ? "Refreshing" : "Deleting", e->qname.c, addr);
+	
+	if (llq->lease)
+		{
+		if (llq->lease < LLQ_MIN_LEASE) llq->lease = LLQ_MIN_LEASE;
+		else if (llq->lease > LLQ_MAX_LEASE) llq->lease = LLQ_MIN_LEASE;
+		}
+	
+	ack.src.sin_addr.s_addr = 0; // unused 
+	InitializeDNSMessage(&ack.msg.h, msgID, ResponseFlags);
+	end = putQuestion(&ack.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
+	if (!end) { Log("Error: putQuestion"); return; }
+
+	FormatLLQOpt(&opt, kLLQOp_Refresh, e->id, llq->lease ? LLQLease(e) : 0);
+	end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAnswers, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+
+	ack.len = (int)(end - (mDNSu8 *)&ack.msg);
+	if (SendLLQ(d, &ack, e->cli)) Log("Error: LLQRefresh"); 
+
+	if (llq->lease) e->state = Established;
+	else DeleteLLQ(d, e);	
+	}
+
+// Complete handshake with Ack an initial answers
+mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
+	{
+	char addr[32];
+	CacheRecord *answers = NULL, *ptr;
+	AuthRecord opt;
+	PktMsg ack;
+	mDNSu8 *end = (mDNSu8 *)&ack.msg.data;
+	char rrbuf[80], addrbuf[32];
+	
+	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
+	if (e->state == Established) VLog("Retransmitting LLQ ack + answers for %##s", e->qname.c);
+	else                         VLog("Delivering LLQ ack + answers for %##s", e->qname.c);  
+	
+	if (llq->vers != kLLQ_Vers ||
+		llq->llqOp != kLLQOp_Setup ||
+		llq->err != LLQErr_NoError ||
+		memcmp(llq->id, e->id, 8) ||
+		llq->lease != e->lease)
+		{ Log("Incorrect challenge response from %s", addr); return; }
+	
+	// format ack + answers
+	ack.src.sin_addr.s_addr = 0; // unused 
+	InitializeDNSMessage(&ack.msg.h, msgID, ResponseFlags);
+	end = putQuestion(&ack.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
+	if (!end) { Log("Error: putQuestion"); return; }
+	
+	answers = AnswerQuestion(d, e, -1);
+	if (verbose) inet_ntop(AF_INET, &e->cli.sin_addr, addrbuf, 32);
+	for (ptr = answers; ptr; ptr = ptr->next)
+		{
+		if (verbose) GetRRDisplayString_rdb(&ptr->resrec, &ptr->resrec.rdata->u, rrbuf);
+		VLog("%s Intitial Answer - %s", addr, rrbuf);
+		end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAnswers, &ptr->resrec, 1);
+		if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+		}
+
+	FormatLLQOpt(&opt, kLLQOp_Setup, e->id, LLQLease(e));
+	end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+
+	ack.len = (int)(end - (mDNSu8 *)&ack.msg);
+	if (SendLLQ(d, &ack, e->cli))
+		{
+		Log("Error: LLQCompleteHandshake");
+		while(answers)
+			{
+			ptr = answers;
+			answers = answers->next;
+			free(ptr);		
+			}
+		}
+	else e->KnownAnswers = answers;
+	}
+
+mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
+	{
+	struct timeval t;
+	uint32_t randval;
+	PktMsg challenge;
+	mDNSu8 *end = challenge.msg.data;
+	AuthRecord opt;
+
+	if (e->state == ChallengeSent) VLog("Retransmitting LLQ setup challenge for %##s", e->qname.c);
+	else                           VLog("Sending LLQ setup challenge for %##s", e->qname.c);
+	
+	if (!ZERO_LLQID(llq->id)) { Log("Error: LLQSetupChallenge - nonzero ID"); return; } // server bug
+	if (llq->llqOp != kLLQOp_Setup) { Log("LLQSetupChallenge - incorrrect operation from client"); return; } // client error
+	
+	if (ZERO_LLQID(e->id)) // don't regenerate random ID for retransmissions
+		{
+		// construct ID <time><random>
+		gettimeofday(&t, NULL);
+		randval = random();
+		memcpy(e->id, &t.tv_sec, sizeof(t.tv_sec));
+		memcpy(e->id + sizeof(t.tv_sec), &randval, sizeof(randval));			   
+		}
+
+	// format response (query + LLQ opt rr)
+	challenge.src.sin_addr.s_addr = 0; // unused 
+	InitializeDNSMessage(&challenge.msg.h, msgID, ResponseFlags);
+	end = putQuestion(&challenge.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
+	if (!end) { Log("Error: putQuestion"); return; }	
+	FormatLLQOpt(&opt, kLLQOp_Setup, e->id, LLQLease(e));
+	end = PutResourceRecordTTL(&challenge.msg, end, &challenge.msg.h.numAdditionals, &opt.resrec, 0);
+	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
+	challenge.len = (int)(end - (mDNSu8 *)&challenge.msg);
+	if (SendLLQ(d, &challenge, e->cli)) { Log("Error: LLQSetupChallenge"); return; }
+	e->state = ChallengeSent;
+	}
+
+// Take action on an LLQ message from client.  Entry must be initialized and in table
+mDNSlocal void UpdateLLQ(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
+	{
+	switch(e->state)
+		{
+		case RequestReceived:
+			LLQSetupChallenge(d, e, llq, msgID);
+			return;
+		case ChallengeSent:
+			if (ZERO_LLQID(llq->id)) LLQSetupChallenge(d, e, llq, msgID); // challenge sent and lost
+			else LLQCompleteHandshake(d, e, llq, msgID);
+			return;
+		case Established:
+			if (ZERO_LLQID(llq->id))
+				{
+				// client started over.  reset state.
+				LLQEntry *newe = NewLLQ(d, e->cli, &e->qname, e->qtype, llq->lease);
+				if (!newe) return;
+				DeleteLLQ(d, e);
+				LLQSetupChallenge(d, newe, llq, msgID);
+				return;
+				}
+			else if (llq->llqOp == kLLQOp_Setup)
+				{ LLQCompleteHandshake(d, e, llq, msgID); return; } // Ack lost				
+			else if (llq->llqOp == kLLQOp_Refresh)
+				{ LLQRefresh(d, e, llq, msgID); return; }
+			else { Log("Unhandled message for established LLQ"); return; }
+		}	
+	}
+
+mDNSlocal LLQEntry *LookupLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qname, mDNSu16 qtype, mDNSu8 *id)
+	{	
+	int bucket = bucket = DomainNameHashValue(qname) % LLQ_TABLESIZE;
+	LLQEntry *ptr = d->LLQTable[bucket];
+
+	while(ptr)
+		{
+		if (((ptr->state == ChallengeSent && ZERO_LLQID(id)) || // zero-id due to packet loss OK in state ChallengeSent
+			 !memcmp(id, ptr->id, 8)) &&                        // id match
+			SAME_INADDR(cli, ptr->cli) && qtype == ptr->qtype && SameDomainName(&ptr->qname, qname)) // same source, type, qname
+			return ptr;
+		ptr = ptr->next;
+		}
+	return NULL;
+	}
+
+mDNSlocal int RecvLLQ(DaemonInfo *d, PktMsg *pkt)
+	{
+	DNSQuestion q;
+	LargeCacheRecord opt;
+	int i, err = -1;
+	char addr[32];
+	const mDNSu8 *qptr = pkt->msg.data;
+    const mDNSu8 *end = (mDNSu8 *)&pkt->msg + pkt->len;
+	const mDNSu8 *aptr = LocateAdditionals(&pkt->msg, end);
+	LLQOptData *llq = NULL;
+	LLQEntry *e = NULL;
+	
+	HdrNToH(pkt);	
+	inet_ntop(AF_INET, &pkt->src.sin_addr, addr, 32);
+
+	VLog("Received LLQ msg from %s", addr);
+	// sanity-check packet
+	if (!pkt->msg.h.numQuestions || !pkt->msg.h.numAdditionals)
+		{
+		Log("Malformatted LLQ from %s with %d questions, %d additionals", addr, pkt->msg.h.numQuestions, pkt->msg.h.numAdditionals);			
+		goto end;
+		}
+
+	// find the OPT RR - must be last in message
+	for (i = 0; i < pkt->msg.h.numAdditionals; i++)
+		{
+		aptr = GetLargeResourceRecord(NULL, &pkt->msg, aptr, end, 0, kDNSRecordTypePacketAdd, &opt); 
+		if (!aptr) { Log("Malformatted LLQ from %s: could not get Additional record %d", addr, i); goto end; }
+		}
+
+	// validate OPT
+	if (opt.r.resrec.rrtype != kDNSType_OPT) { Log("Malformatted LLQ from %s: last Additional not an Opt RR", addr); goto end; }
+	if (opt.r.resrec.rdlength < pkt->msg.h.numQuestions * LLQ_OPT_SIZE) { Log("Malformatted LLQ from %s: Opt RR to small (%d bytes for %d questions)", addr, opt.r.resrec.rdlength, pkt->msg.h.numQuestions); }
+	
+	// dispatch each question
+	for (i = 0; i < pkt->msg.h.numQuestions; i++)
+		{
+		qptr = getQuestion(&pkt->msg, qptr, end, 0, &q);
+		if (!qptr) { Log("Malformatted LLQ from %s: cannot read question %d", addr, i); goto end; }
+		llq = (LLQOptData *)&opt.r.resrec.rdata->u.opt.OptData.llq + i; // point into OptData at index i
+		if (llq->vers != kLLQ_Vers) { Log("LLQ from %s contains bad version %d (expected %d)", addr, llq->vers, kLLQ_Vers); goto end; }
+		
+		e = LookupLLQ(d, pkt->src, &q.qname, q.qtype, llq->id);
+		if (!e)
+			{
+			// no entry - if zero ID, create new
+			e = NewLLQ(d, pkt->src, &q.qname, q.qtype, llq->lease);
+			if (!e) goto end;
+			}
+		UpdateLLQ(d, e, llq, pkt->msg.h.id);
+		}
+	err = 0;
+	
+	end:
+	HdrHToN(pkt);
+	return err;
+	}
+
+mDNSlocal mDNSBool IsLLQRequest(PktMsg *pkt)
+	{
+	const mDNSu8 *ptr = NULL, *end = (mDNSu8 *)&pkt->msg + pkt->len;
+	LargeCacheRecord lcr;
+	int i;
+	mDNSBool result = mDNSfalse;
+	
+	HdrNToH(pkt);		
+	if ((mDNSu8)(pkt->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask) != (mDNSu8)(kDNSFlag0_QR_Query | kDNSFlag0_OP_StdQuery)) goto end;
+
+	if (!pkt->msg.h.numAdditionals) goto end;
+	ptr = LocateAdditionals(&pkt->msg, end);
+	if (!ptr) goto end;
+
+	// find last Additional
+	for (i = 0; i < pkt->msg.h.numAdditionals; i++)
+		{
+		ptr = GetLargeResourceRecord(NULL, &pkt->msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
+		if (!ptr) { Log("Unable to read additional record"); goto end; }
+		}
+	
+	if (lcr.r.resrec.rrtype == kDNSType_OPT &&
+		lcr.r.resrec.rdlength >= LLQ_OPT_SIZE &&
+		lcr.r.resrec.rdata->u.opt.opt == kDNSOpt_LLQ)
+		{ result = mDNStrue; goto end; }
+
+	end:
+	HdrHToN(pkt);
+	return result;
+	}
+
+// !!!KRS implement properly
+mDNSlocal mDNSBool IsLLQAck(PktMsg *pkt)
+	{
+	if (pkt->msg.h.flags.NotAnInteger == ResponseFlags.NotAnInteger &&
+		pkt->msg.h.numQuestions && !pkt->msg.h.numAnswers && !pkt->msg.h.numAuthorities) return mDNStrue;
+	return mDNSfalse;
+	}
+
+
 // request handler wrappers for TCP and UDP requests
 // (read message off socket, fork thread that invokes main processing routine and handles cleanup)
-mDNSlocal void *UDPRequestForkFn(void *vptr)
+mDNSlocal void *UDPUpdateRequestForkFn(void *vptr)
 	{
 	char buf[32];
 	UDPRequestArgs *req = vptr;
@@ -996,7 +1719,7 @@ mDNSlocal void *UDPRequestForkFn(void *vptr)
 	if (reply)
 		{
 		if (sendto(req->d->udpsd, &reply->msg, reply->len, 0, (struct sockaddr *)&req->pkt.src, sizeof(req->pkt.src)) != (int)reply->len)
-			LogErr("UDPRequestForkFn", "sendto");		
+			LogErr("UDPUpdateRequestForkFn", "sendto");		
 		}
 
 	if (reply) free(reply);		
@@ -1015,12 +1738,22 @@ mDNSlocal int RecvUDPRequest(int sd, DaemonInfo *d)
 	if (!req) { LogErr("RecvUDPRequest", "malloc"); return -1; }
 	bzero(req, sizeof(*req));
 	req->d = d;
-	//!!!KRS if this read blocks indefinitely, we can run out of threads
 	req->pkt.len = recvfrom(sd, &req->pkt.msg, sizeof(req->pkt.msg), 0, (struct sockaddr *)&req->cliaddr, &clisize);
 	if ((int)req->pkt.len < 0) { LogErr("RecvUDPRequest", "recvfrom"); free(req); return -1; }
 	if (clisize != sizeof(req->cliaddr)) { Log("Client address of unknown size %d", clisize); free(req); return -1; }
 	req->pkt.src = req->cliaddr;
-	if (pthread_create(&tid, NULL, UDPRequestForkFn, req)) { LogErr("RecvUDPRequest", "pthread_create"); free(req); return -1; }
+
+	if (IsLLQRequest(&req->pkt))
+		{
+		// LLQ messages handled by main thread
+		int err = RecvLLQ(d, &req->pkt);
+		free(req);
+		return err;
+		}
+
+	if (IsLLQAck(&req->pkt)) return 0; // !!!KRS need to do acks + retrans
+	
+	if (pthread_create(&tid, NULL, UDPUpdateRequestForkFn, req)) { LogErr("RecvUDPRequest", "pthread_create"); free(req); return -1; }
 	return 0;
 	}
 
@@ -1032,7 +1765,7 @@ mDNSlocal void *TCPRequestForkFn(void *vptr)
 	
     //!!!KRS if this read blocks indefinitely, we can run out of threads
 	// read the request
-	in = ReadTCPMsg(req->sd);
+	in = ReadTCPMsg(req->sd, NULL);
 	if (!in)
 		{
 		LogMsg("TCPRequestForkFn: Could not read message from %s", inet_ntop(AF_INET, &req->cliaddr.sin_addr, buf, 32));
@@ -1092,8 +1825,9 @@ mDNSlocal int ListenForUpdates(DaemonInfo *d)
    	VLog("Listening for requests...");
 
 	FD_ZERO(&rset);
-	if (d->tcpsd > d->udpsd) maxfdp1 = d->tcpsd + 1;
-	else                     maxfdp1 = d->udpsd + 1;
+	maxfdp1 = d->tcpsd + 1;
+	if (d->udpsd + 1 > maxfdp1) maxfdp1 = d->udpsd + 1;
+	if (d->LLQEventListenSock + 1 > maxfdp1) maxfdp1 = d->LLQEventListenSock + 1;
 	
 	while(1)
 		{
@@ -1108,27 +1842,32 @@ mDNSlocal int ListenForUpdates(DaemonInfo *d)
 		
 		FD_SET(d->tcpsd, &rset);
 		FD_SET(d->udpsd, &rset);
+		FD_SET(d->LLQEventListenSock, &rset);
+		
 		err = select(maxfdp1, &rset, NULL, NULL, &timeout);		
 		if (err < 0)
 			{
 			if (errno == EINTR)
-			{
-			if (terminate) { DeleteExpiredRecords(d); return 0; }
-			else if (dumptable) { PrintTable(d); dumptable = 0; }
-			else Log("Received unhandled signal - continuing"); 
-			}
-			else
 				{
-				LogErr("ListenForUpdates", "select"); return -1;
+				if (terminate) { DeleteExpiredRecords(d); return 0; }
+				else if (dumptable) { PrintLeaseTable(d); PrintLLQTable(d); dumptable = 0; }
+				else Log("Received unhandled signal - continuing"); 
 				}
+			else { LogErr("ListenForUpdates", "select"); return -1; }
 			}
 		else
 			{
 			if (FD_ISSET(d->tcpsd, &rset)) RecvTCPRequest(d->tcpsd, d);
 			if (FD_ISSET(d->udpsd, &rset)) RecvUDPRequest(d->udpsd, d); 
+			if (FD_ISSET(d->LLQEventListenSock, &rset))
+				{
+				// clear signalling data off socket
+				char buf[32];
+				recv(d->LLQEventListenSock, buf, 32, 0);
+				GenLLQEvents(d);
+				}
 			}
 		}
-
 	return 0;
 	}
 
@@ -1142,6 +1881,7 @@ mDNSlocal void HndlSignal(int sig)
 
 int main(int argc, char *argv[])
 	{
+	pthread_t LLQtid;
 	DaemonInfo d;
 	bzero(&d, sizeof(DaemonInfo));
 	
@@ -1164,9 +1904,11 @@ int main(int argc, char *argv[])
 	if (InitLeaseTable(&d) < 0) exit(1);
 	if (SetupSockets(&d) < 0) exit(1); 
 	if (SetUpdateSRV(&d) < 0) exit(1);
+	
+	if (pthread_create(&LLQtid, NULL, LLQEventMonitor, &d)) { LogErr("main", "pthread_create"); }
+	else ListenForUpdates(&d);              
 		
-	ListenForUpdates(&d);               // clear update srv's even if ListenForUpdates returns an error
-	if (ClearUpdateSRV(&d) < 0) exit(1);
+	if (ClearUpdateSRV(&d) < 0) exit(1);  // clear update srv's even if ListenForUpdates or pthread_create returns an error
 	exit(0);
 	}
 
