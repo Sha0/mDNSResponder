@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.40  2004/02/05 01:00:01  rpantos
+Fix some issues that turned up when building for FreeBSD.
+
 Revision 1.39  2004/01/28 21:12:15  cheshire
 Reconcile mDNSIPv6Support & HAVE_IPV6 into a single flag (HAVE_IPV6)
 
@@ -1180,9 +1183,11 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	sa.sa_family = AF_INET;
 	m->p->unicastSocket4 = -1;
 	if (err == mStatus_NoError) err = SetupSocket(&sa, zeroIPPort, 0, &m->p->unicastSocket4);
+#if HAVE_IPV6
 	sa.sa_family = AF_INET6;
 	m->p->unicastSocket6 = -1;
 	if (err == mStatus_NoError) err = SetupSocket(&sa, zeroIPPort, 0, &m->p->unicastSocket6);
+#endif
 
 	// Tell mDNS core about the network interfaces on this machine.
 	if (err == mStatus_NoError) err = SetupInterfaceList(m);
@@ -1402,7 +1407,7 @@ mStatus mDNSPosixAddFDToEventLoop( int fd, mDNSPosixEventCallback callback, void
 	if ( gEventSources.LinkOffset == 0)
 		InitLinkedList( &gEventSources, offsetof( PosixEventSource, Next));
 
-	if ( fd >= FD_SETSIZE || fd < 0)
+	if ( fd >= (int) FD_SETSIZE || fd < 0)
 		return mStatus_UnsupportedErr;
 	if ( callback == NULL)
 		return mStatus_BadParamErr;
@@ -1504,7 +1509,10 @@ mStatus mDNSPosixRunEventLoopOnce( mDNS *m, const struct timeval *pTimeout,
 		for ( iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
 			{
 			if ( FD_ISSET( iSource->fd, &listenFDs))
+				{
 				iSource->Callback( iSource->Context);
+				break;	// in case callback removed elements from gEventSources
+				}
 			}
 		*pDataDispatched = mDNStrue;
 		}

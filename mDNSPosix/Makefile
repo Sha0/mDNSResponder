@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.24  2004/02/05 01:00:01  rpantos
+# Fix some issues that turned up when building for FreeBSD.
+#
 # Revision 1.23  2004/02/04 01:50:54  cheshire
 # Make InstalledStartup conditional, so it automatically installs into
 # either /etc/init.d/ or /etc/rc.d/init.d/ as appropriate
@@ -160,6 +163,15 @@ endif
 endif
 endif
 endif
+
+ifeq ($(HAVE_IPV6),1)
+CFLAGS_OS += -DHAVE_IPV6=1
+else
+ifeq ($(HAVE_IPV6),0)
+CFLAGS_OS += -DHAVE_IPV6=0
+endif
+endif
+
 
 # If directory /etc/rc.d/init.d/ exists, then we install into that,
 # else install into /etc/init.d/
