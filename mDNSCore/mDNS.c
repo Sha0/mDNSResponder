@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.495  2004/12/16 21:27:37  ksekar
+Fixed build failures when compiled with verbose debugging messages
+
 Revision 1.494  2004/12/16 20:46:56  cheshire
 Fix compiler warnings
 
@@ -3825,7 +3828,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *cg)
 			rp = &rr->next;
 			}
 		}
-	if (cg->rrcache_tail != rp) verbosedebugf("CheckCacheExpiration: Updating m->rrcache_tail[%lu] from %p to %p", slot, cg->rrcache_tail, rp);
+	if (cg->rrcache_tail != rp) verbosedebugf("CheckCacheExpiration: Updating CacheGroup tail from %p to %p", cg->rrcache_tail, rp);
 	cg->rrcache_tail = rp;
 	m->lock_rrcache = 0;
 	}

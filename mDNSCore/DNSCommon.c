@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.78  2004/12/16 21:27:37  ksekar
+Fixed build failures when compiled with verbose debugging messages
+
 Revision 1.77  2004/12/16 20:12:59  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -1424,7 +1427,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 	ptr[6] = (mDNSu8)((ttl >>  8) &  0xFF);
 	ptr[7] = (mDNSu8)( ttl        &  0xFF);
 	endofrdata = putRData(msg, ptr+10, limit, rr);
-	if (!endofrdata) { verbosedebugf("Ran out of space in PutResourceRecord for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype)); return(mDNSNULL); }
+	if (!endofrdata) { verbosedebugf("Ran out of space in PutResourceRecord for %##s (%s)", rr->name->c, DNSTypeName(rr->rrtype)); return(mDNSNULL); }
 
 	// Go back and fill in the actual number of data bytes we wrote
 	// (actualLength can be less than rdlength when domain name compression is used)

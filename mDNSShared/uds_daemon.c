@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.144  2004/12/16 21:27:38  ksekar
+Fixed build failures when compiled with verbose debugging messages
+
 Revision 1.143  2004/12/16 20:13:02  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -1918,7 +1921,7 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 		if (s->uDNS_info.state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !SameRData(&s->RR_SRV.resrec, r))
 			count++;
 		
-	verbosedebugf("%d peer registrations for %##s", count, r->name.c);
+	verbosedebugf("%d peer registrations for %##s", count, r->name->c);
 	return(count);
 	}
 
