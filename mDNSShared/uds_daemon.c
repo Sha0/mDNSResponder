@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.112  2004/11/11 16:58:32  ksekar
+Removed unused code (previously wrapped in #if 0)
+
 Revision 1.111  2004/11/05 22:47:37  shersche
 Conditionally compile usleep(1000) to be Sleep(1) on Windows
 Submitted by: Pavel Repin <prepin@gmail.com>
@@ -936,7 +939,6 @@ static void connect_callback(void *info)
 	unsigned long optval;
     dnssd_sockaddr_t cliaddr;
     request_state *rstate;
-//    int errpipe[2];
     (void)info; // Unused
 
 	len = (int) sizeof(cliaddr);
@@ -970,32 +972,9 @@ static void connect_callback(void *info)
 		my_perror("ERROR: setsockopt - SOL_NOSIGPIPE - aborting client");  
 		dnssd_close(sd);
 		return;
-		}			
-		
-#if 0
-    // open a pipe to deliver error messages, pass descriptor to client
-    if (pipe(errpipe) < 0)
-        {
-        my_perror("ERROR: could not create pipe");
-        exit(1);
-        }
-    
-    if (ioctl(sd, I_SENDFD, errpipe[0]) < 0)
-        {
-        my_perror("ERROR: could not pass pipe descriptor to client.  Aborting client.\n");
-        close(sd);
-        return;
-        }
-    if (fcntl(errpipe[1], F_SETFL, O_NONBLOCK) < 0)
-    	{
-        my_perror("ERROR: could not set error pipe to non-blocking mode - aborting client");
-        close(sd);    	
-        close(errpipe[1]);
-        return;
-        }
-#endif
-  
-      // allocate a request_state struct that will live with the socket
+		}
+	
+	// allocate a request_state struct that will live with the socket
     rstate = mallocL("connect_callback", sizeof(request_state));
     if (!rstate)
     	{
