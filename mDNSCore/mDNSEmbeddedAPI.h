@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.221  2004/10/10 06:57:15  cheshire
+Change definition of "localdomain" to make code compile a little smaller
+
 Revision 1.220  2004/10/06 01:44:19  cheshire
 <rdar://problem/3813936> Resolving too quickly sometimes returns stale TXT record
 
@@ -1005,8 +1008,6 @@ typedef struct { mDNSu8 c[256]; } domainname;		// Up to 255 bytes of length-pref
 
 typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 
-extern domainname localdomain;                      // "local.", as a length-byte fqdn
-
 // The longest legal textual form of a DNS name is 1005 bytes, including the C-string terminating NULL at the end.
 // Explanation:
 // When a native domainname object is converted to printable textual form using ConvertDomainNameToCString(),
@@ -1837,6 +1838,8 @@ extern const mDNSOpaque16 QueryFlags;
 extern const mDNSOpaque16 ResponseFlags;
 extern const mDNSOpaque16 UpdateReqFlags;
 extern const mDNSOpaque16 UpdateRespFlags;
+
+#define localdomain (*(const domainname *)"\x5local")
 
 // ***************************************************************************
 #if 0

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.63  2004/10/10 06:57:14  cheshire
+Change definition of "localdomain" to make code compile a little smaller
+
 Revision 1.62  2004/10/06 01:44:19  cheshire
 <rdar://problem/3813936> Resolving too quickly sometimes returns stale TXT record
 
@@ -409,8 +412,6 @@ mDNSexport mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 #pragma mark -
 #pragma mark - Domain Name Utility Functions
 #endif
-
-mDNSexport domainname localdomain = {{ '\005','l','o','c','a','l','\0'}};
 
 mDNSexport mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
 	{
