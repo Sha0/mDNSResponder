@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscovery.c,v $
+Revision 1.7  2004/05/08 12:24:48  bradley
+Removed trailing character from zero value to fix compile error.
+
 Revision 1.6  2004/05/06 18:42:58  ksekar
 General dns_sd.h API cleanup, including the following radars:
 <rdar://problem/3592068>: Remove flags with zero value
@@ -581,7 +584,7 @@ DNS_LOCAL void
 						  inEvent->data.removeService.name, 
 						  inEvent->data.removeService.type, 
 						  inEvent->data.removeService.domain, 
-						  0d, 
+						  0, 
 						  obj->context );
 			}
 			break;
