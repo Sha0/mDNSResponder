@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.104  2003/04/21 19:15:52  cheshire
+Fix some compiler warnings
+
 Revision 1.103  2003/04/19 02:26:35  cheshire
 Bug #: <rdar://problem/3233804> Incorrect goodbye packet after conflict
 
@@ -2847,7 +2850,7 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 	mDNSu32 count = 0;
 	ResourceRecord **rr;
 	ResourceRecord *deletelist = mDNSNULL;
-	mDNSs32	nextToExpire = timenow + 0x70000000UL;
+	mDNSs32	nextToExpire = timenow + 0x70000000L;
 	mDNSs32	slot;
 	if (m->lock_rrcache) { debugf("TidyRRCache ERROR! Cache already locked!"); return; }
 	m->lock_rrcache = 1;
@@ -2860,7 +2863,7 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - (*rr)->TimeRcvd)) / mDNSPlatformOneSecond;
 			if ((*rr)->rroriginalttl > SecsSinceRcvd)
 				{
-				mDNSs32 timeExpire = (*rr)->TimeRcvd + ((*rr)->rroriginalttl * mDNSPlatformOneSecond);
+				mDNSs32 timeExpire = (*rr)->TimeRcvd + (mDNSs32)((*rr)->rroriginalttl * mDNSPlatformOneSecond);
 				if ((nextToExpire - timenow) > (timeExpire - timenow))
 					nextToExpire = timeExpire;
 				rr=&(*rr)->next;			// If TTL is greater than time elapsed, save this record
@@ -3808,7 +3811,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						rr->UnansweredQueries = 2;
 						}
 					if ((m->NextCacheTidyTime - timenow) > (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond))
-						m->NextCacheTidyTime = timenow + rr->rroriginalttl * mDNSPlatformOneSecond;
+						m->NextCacheTidyTime = timenow + (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond);
 					break;
 					}
 				}
@@ -3828,7 +3831,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					m->rrcache_used[slot]++;
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
 					if ((m->NextCacheTidyTime - timenow) > (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond))
-						m->NextCacheTidyTime = timenow + rr->rroriginalttl * mDNSPlatformOneSecond;
+						m->NextCacheTidyTime = timenow + (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond);
 					AnswerLocalQuestions(m, rr, timenow);
 					}
 				}
