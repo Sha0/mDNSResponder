@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.6  2004/07/14 19:53:26  shersche
+bump version to 1.0.0.9
+
 Revision 1.5  2004/07/13 22:20:02  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -46,7 +49,8 @@ First checked in.
 #define MASTER_PROD_NAME	"Rendezvous"
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		1,0,0,8
-#define MASTER_PROD_VERS_STR	"1,0,0,8"
+#define MASTER_PROD_VERS		1,0,0,9
+#define MASTER_PROD_VERS_STR	"1,0,0,9"
+#define MASTER_PROD_VERS_STR2	"1.0.0.9"
 
 #endif // WINRESVERS_H
