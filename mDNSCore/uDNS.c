@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: uDNS.c,v $
+Revision 1.2  2004/01/22 03:48:41  cheshire
+Make sure uDNS client doesn't accidentally use query ID zero
+
 Revision 1.1  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -168,7 +171,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 
 mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question)
     {
-    return (!IsLocalDomain(&question->qname) && question->uDNS_info.id.NotAnInteger);
+    return (question->uDNS_info.id.NotAnInteger != 0);
     }
 
 mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
@@ -222,7 +225,7 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
     mDNSu8 *endPtr;
     NetworkInterfaceInfo *ifi;
     mStatus err = mStatus_NoError;
-    mDNSOpaque16 id, flags;
+    mDNSOpaque16 id;
     
     //!!!KRS we should check if the question is already in our acivequestion list
 	if (!ValidateDomainName(&question->qname))
@@ -233,9 +236,10 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
 		
     // construct the packet
     mDNSPlatformMemZero(&msg, sizeof(msg));
-    id.NotAnInteger = ++u->NextMessageID.NotAnInteger;
-    flags.NotAnInteger = 0;
-    InitializeDNSMessage(&msg.h, id, flags);
+    if (++u->NextMessageID == 0) u->NextMessageID = 1;	// Don't want to ever use ID zero
+    id.b[0] = u->NextMessageID >> 8;
+    id.b[1] = u->NextMessageID & 0xFF;
+    InitializeDNSMessage(&msg.h, id, QueryFlags);
     endPtr = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, &question->qname, question->qtype, question->qclass);
     if (!endPtr) 
         {
@@ -244,7 +248,7 @@ mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
         }
     
     // store the question/id in active question list
-    question->uDNS_info.id = u->NextMessageID;
+    question->uDNS_info.id = id;
     question->uDNS_info.timestamp = m->timenow;
     question->next = u->ActiveQueries;
     question->qnamehash = DomainNameHashValue(&question->qname);    // to do quick domain name comparisons

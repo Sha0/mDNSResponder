@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.133  2004/01/22 03:48:41  cheshire
+Make sure uDNS client doesn't accidentally use query ID zero
+
 Revision 1.132  2004/01/22 03:43:08  cheshire
 Export constants like mDNSInterface_LocalOnly so that the client layers can use them
 
@@ -1060,9 +1063,9 @@ enum
 
 typedef struct 
     {
-    DNSQuestion     *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
-    mDNSOpaque16    NextMessageID;
-    mDNSv4Addr      Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
+    DNSQuestion *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+    mDNSu16      NextMessageID;
+    mDNSv4Addr   Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
     } uDNS_data_t;  
 
 struct mDNS_struct

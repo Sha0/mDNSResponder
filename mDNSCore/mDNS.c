@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.346  2004/01/22 03:48:41  cheshire
+Make sure uDNS client doesn't accidentally use query ID zero
+
 Revision 1.345  2004/01/22 03:43:08  cheshire
 Export constants like mDNSInterface_LocalOnly so that the client layers can use them
 
@@ -4582,7 +4585,9 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 	question->InterfaceID = mDNSInterface_LocalOnly;
 #endif
 
-    if (!IsLocalDomain(&question->qname))  return uDNS_StartQuery(m, question);
+    if (IsLocalDomain(&question->qname))
+    	question->uDNS_info.id = zeroID;
+    else return uDNS_StartQuery(m, question);
 
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
