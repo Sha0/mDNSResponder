@@ -2,7 +2,7 @@
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="7.00"
-	Name="dnssd.NET"
+	Name="DLL.NET"
 	ProjectGUID="{9C6701E2-82B7-44B7-9B5E-3897D9153F79}"
 	Keyword="ManagedCProj">
 	<Platforms>
