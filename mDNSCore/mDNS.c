@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.144  2003/05/28 18:05:12  cheshire
+<rdar://problem/3009899> mDNSResponder allows invalid service registrations
+Fix silly mistake: old logic allowed "TDP" and "UCP" as valid names
+
 Revision 1.143  2003/05/28 04:31:29  cheshire
 <rdar://problem/3270733> mDNSResponder not sending probes at the prescribed time
 
@@ -1217,8 +1221,8 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	len = *src;
 	//if (len == 0 || len >= 0x40)  { errormsg="Invalid service transport protocol name"; goto fail; }
 	if (!(len == 4 && src[1] == '_' &&
-		((src[2] | 0x20) == 'u' || (src[2] | 0x20) == 't') &&
-		((src[3] | 0x20) == 'd' || (src[3] | 0x20) == 'c') && (src[4] | 0x20) == 'p'))
+		(((src[2] | 0x20) == 'u' && (src[3] | 0x20) == 'd') || ((src[2] | 0x20) == 't' && (src[3] | 0x20) == 'c')) &&
+		(src[4] | 0x20) == 'p'))
 		{ errormsg="Service transport protocol name must be _udp or _tcp"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 	
