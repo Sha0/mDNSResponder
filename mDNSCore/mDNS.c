@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.336  2003/12/01 21:26:19  cheshire
+Guard against zero-length sbuffer in mDNS_vsnprintf()
+
 Revision 1.335  2003/12/01 20:27:48  cheshire
 Display IPv6 addresses correctly (e.g. in log messages) on little-endian processors
 
@@ -1212,6 +1215,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 	{
 	mDNSu32 nwritten = 0;
 	int c;
+	if (buflen == 0) return(0);
 	buflen--;		// Pre-reserve one space in the buffer for the terminating nul
 
 	for (c = *fmt; c != 0; c = *++fmt)
