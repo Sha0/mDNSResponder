@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.21  2004/03/15 02:03:45  bradley
+Added const to params where needed to match prototypes. Changed SetNewRData calls to use 0 instead
+of -1 for unused size to fix warning. Disable assignment within conditional warnings with Visual C++.
+
 Revision 1.20  2004/03/13 02:07:26  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -99,6 +103,14 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 #include "uDNS.h"
 
+#if(defined(_MSC_VER))
+	// Disable "assignment within conditional expression".
+	// Other compilers understand the convention that if you place the assignment expression within an extra pair
+	// of parentheses, this signals to the compiler that you really intended an assignment and no warning is necessary.
+	// The Microsoft compiler doesn't understand this convention, so in the absense of any other way to signal
+	// to the compiler that the assignment is intentional, we have to just turn this warning off completely.
+	#pragma warning(disable:4706)
+#endif
 
 #ifndef NULL
 #define NULL mDNSNULL
@@ -1495,11 +1507,11 @@ mDNSlocal void sendServiceRegistration(mStatus err, mDNS *const m, void *srsPtr,
 
 	// setup resource records
 	if (setHostTarget(&srs->RR_SRV, m))
-		SetNewRData(&srs->RR_SRV.resrec, NULL, -1);  // set rdlen/estimate/hash
+		SetNewRData(&srs->RR_SRV.resrec, NULL, 0);  // set rdlen/estimate/hash
 
-	//SetNewRData(&srs->RR_ADV.resrec, NULL, -1); //!!!KRS
-	SetNewRData(&srs->RR_PTR.resrec, NULL, -1);	
-	SetNewRData(&srs->RR_TXT.resrec, NULL, -1);
+	//SetNewRData(&srs->RR_ADV.resrec, NULL, 0); //!!!KRS
+	SetNewRData(&srs->RR_PTR.resrec, NULL, 0);	
+	SetNewRData(&srs->RR_TXT.resrec, NULL, 0);
 	
 	// construct update packet
     // set zone
@@ -1691,7 +1703,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	}
 
 
-mDNSexport mStatus uDNS_RegisterService(mDNS *m, ServiceRecordSet *srs)
+mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	if (!*m->uDNS_info.regdomain)
 		{
@@ -1713,7 +1725,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *m, ServiceRecordSet *srs)
 	return startGetZoneData(&srs->RR_SRV.resrec.name, m, sendServiceRegistration, srs);
 	}
 
-mDNSexport mStatus uDNS_DeregisterService(mDNS *m, ServiceRecordSet *srs)
+mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	DNSMessage msg;
