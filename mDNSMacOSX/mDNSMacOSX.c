@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.93  2003/07/03 00:09:14  cheshire
+<rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
+Additional refinement suggested by Josh: Use info->scope_id instead of if_nametoindex(info->ifa_name);
+
 Revision 1.92  2003/07/02 21:19:51  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
@@ -381,7 +385,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin6_to->sin6_port		= dstPort.NotAnInteger;
 		sin6_to->sin6_flowinfo	= 0;
 		sin6_to->sin6_addr		= *(struct in6_addr*)&dst->ip.v6;
-		sin6_to->sin6_scope_id	= if_nametoindex(info->ifa_name);
+		sin6_to->sin6_scope_id	= info->scope_id;
 		}
 	else
 		{
