@@ -52,13 +52,6 @@ static int debug_mode = 0;
 //*************************************************************************************************************
 // General Utility Functions
 
-mDNSlocal char *CorrectRegType(char *regtype)
-	{
-	if (!strncmp(regtype, "_afp.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _afp changed to _afpovertcp\n"); return("_afpovertcp._tcp"); }
-	if (!strncmp(regtype, "_lpr.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _lpr changed to _printer\n");    return("_printer._tcp"); }
-	if (!strncmp(regtype, "_lpd.", 5)) { fprintf(stderr, "mDNSResponder: Illegal protocol name _lpd changed to _printer\n");    return("_printer._tcp"); }
-	return(regtype);
-	}
 
 //*************************************************************************************************************
 // Client Death Detection
@@ -282,7 +275,6 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server,
 	x->next = DNSServiceBrowserList;
 	DNSServiceBrowserList = x;
 
-	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 
@@ -333,7 +325,6 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t serve
 	DNSServiceResolverList = x;
 
 	ConvertCStringToDomainLabel(name, &n);
-	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 	ConstructServiceName(&x->i.name, &n, &t, &d);
@@ -414,7 +405,6 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	x->autoname = (*name == 0);
 	if (x->autoname) n = mDNSStorage.nicelabel;
 	else ConvertCStringToDomainLabel(name, &n);
-	regtype = CorrectRegType(regtype);
 	ConvertCStringToDomainName(regtype, &t);
 	ConvertCStringToDomainName(*domain ? domain : "local.", &d);
 	port.NotAnInteger = notAnIntPort;
