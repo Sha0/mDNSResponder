@@ -76,7 +76,7 @@
 				Optimization="2"
 				InlineFunctionExpansion="1"
 				OmitFramePointers="TRUE"
-				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared"
+				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared;C:\WINDDK\2600.1106\inc;C:\WINDDK\2600.1106\inc\wxp"
 				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;WINVER=0x0400;UNICODE;_UNICODE"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
