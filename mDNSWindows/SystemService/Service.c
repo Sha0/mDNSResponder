@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.31  2005/04/06 01:00:11  shersche
+<rdar://problem/4080127> GetFullPathName() should be passed the number of TCHARs in the path buffer, not the size in bytes of the path buffer.
+
 Revision 1.30  2005/04/06 00:52:43  shersche
 <rdar://problem/4079667> Only add default route if there are no other routable IPv4 addresses on any of the other interfaces. More work needs to be done to correctly configure the routing table when multiple interfaces are extant and none of them have routable IPv4 addresses.
 
@@ -481,7 +484,7 @@ static OSStatus	InstallService( LPCTSTR inName, LPCTSTR inDisplayName, LPCTSTR i
 	
 	// Get a full path to the executable since a relative path may have been specified.
 	
-	size = GetFullPathName( inPath, sizeof( fullPath ), fullPath, &namePtr );
+	size = GetFullPathName( inPath, MAX_PATH, fullPath, &namePtr );
 	err = translate_errno( size > 0, (OSStatus) GetLastError(), kPathErr );
 	require_noerr( err, exit );
 	
