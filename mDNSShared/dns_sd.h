@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.16  2004/05/25 17:08:55  cheshire
+Fix compiler warning (doesn't make sense for function return type to be const)
+
 Revision 1.15  2004/05/21 21:41:35  cheshire
 Add TXT record building and parsing APIs
 
@@ -1293,7 +1296,7 @@ DNSServiceErrorType TXTRecordRemoveValue
  *
  */
 
-const uint16_t TXTRecordGetLength
+uint16_t TXTRecordGetLength
     (
     const TXTRecordRef *txtRecord
     );

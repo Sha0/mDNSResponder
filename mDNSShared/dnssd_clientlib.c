@@ -23,6 +23,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.4  2004/05/25 17:08:55  cheshire
+Fix compiler warning (doesn't make sense for function return type to be const)
+
 Revision 1.3  2004/05/21 21:41:35  cheshire
 Add TXT record building and parsing APIs
 
@@ -266,7 +269,7 @@ DNSServiceErrorType TXTRecordRemoveValue
 	return(kDNSServiceErr_NoError);
 	}
 
-const uint16_t TXTRecordGetLength  (const TXTRecordRef *txtRecord) { return(txtRec->datalen); }
+uint16_t       TXTRecordGetLength  (const TXTRecordRef *txtRecord) { return(txtRec->datalen); }
 const void *   TXTRecordGetBytesPtr(const TXTRecordRef *txtRecord) { return(txtRec->buffer); }
 
 /*********************************************************************************************
