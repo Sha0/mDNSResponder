@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.16  2005/02/08 18:56:03  shersche
+Fix generated IPP url so that it doesn't add "/printers" string
+
 Revision 1.15  2005/02/01 01:44:07  shersche
 Load ntprint.inf at startup.  This will cause the wizard to take a second or two longer to come up, but will eliminate the pause when auto-selecting the print drivers.
 
@@ -292,7 +295,7 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufactu
 
 		if ( q->name.GetLength() > 0 )
 		{
-			printer->portName.Format(L"http://%s:%d/printers/%s", static_cast<LPCTSTR>(service->hostname), service->portNumber, static_cast<LPCTSTR>(q->name) );
+			printer->portName.Format(L"http://%s:%d/%s", static_cast<LPCTSTR>(service->hostname), service->portNumber, static_cast<LPCTSTR>(q->name) );
 		}
 		else
 		{
