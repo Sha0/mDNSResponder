@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.85  2005/03/30 07:34:52  shersche
+<rdar://problem/4045657> Interface index being returned is 512
+
 Revision 1.84  2005/03/29 19:19:47  shersche
 <rdar://problem/4055599> Windows is not accepting unicast responses.  This bug was a result of an error in obtaining the subnet mask for IPv4 interfaces.
 
@@ -383,6 +386,8 @@ Multicast DNS platform plugin for Win32
 #if( !TARGET_OS_WINDOWS_CE )
 	static GUID										kWSARecvMsgGUID = WSAID_WSARECVMSG;
 #endif
+
+#define kIPv6IfIndexBase							(1000000L)
 
 
 #if 0
@@ -2525,7 +2530,6 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 		{
 			if (!ifd->interfaceInfo.InterfaceID)
 			{
-				p->scopeID						= ifd->scopeID;
 				ifd->interfaceInfo.InterfaceID	= (mDNSInterfaceID) p;
 			}
 
@@ -3500,7 +3504,7 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 
 				if ( inIFD )
 				{
-					require_action( ipv4PacketInfo->ipi_ifindex == ( inIFD->index >> 8 ), exit, err = kMismatchErr );
+					require_action( ipv4PacketInfo->ipi_ifindex == inIFD->index, exit, err = kMismatchErr );
 				}
 
 				dstAddr.type 				= mDNSAddrType_IPv4;
@@ -3514,7 +3518,7 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 
 				if ( inIFD )
 				{
-					require_action( ipv6PacketInfo->ipi6_ifindex == inIFD->index, exit, err = kMismatchErr );
+					require_action( ipv6PacketInfo->ipi6_ifindex == ( inIFD->index - kIPv6IfIndexBase), exit, err = kMismatchErr );
 				}
 
 				dstAddr.type	= mDNSAddrType_IPv6;
@@ -3874,14 +3878,23 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			if( iaa->IfType == IF_TYPE_SOFTWARE_LOOPBACK )	ifa->ifa_flags |= IFF_LOOPBACK;
 			if( !( iaa->Flags & IP_ADAPTER_NO_MULTICAST ) )	ifa->ifa_flags |= IFF_MULTICAST;
 			
-			// Get the interface index. Windows does not have a uniform scheme for IPv4 and IPv6 interface indexes
-			// so the following is a hack to put IPv4 interface indexes in the upper 24-bits and IPv6 interface indexes
-			// in the lower 8-bits. This allows the IPv6 interface index to be usable as an IPv6 scope ID directly.
+			// <rdar://problem/4045657> Interface index being returned is 512
+			//
+			// Windows does not have a uniform scheme for IPv4 and IPv6 interface indexes.
+			// This code used to shift the IPv4 index up to ensure uniqueness between
+			// it and IPv6 indexes.  Although this worked, it was somewhat confusing to developers, who
+			// then see interface indexes passed back that don't correspond to anything
+			// that is seen in Win32 APIs or command line tools like "route".  As a relatively
+			// small percentage of developers are actively using IPv6, it seems to 
+			// make sense to make our use of IPv4 as confusion free as possible.
+			// So now, IPv6 interface indexes will be shifted up by a
+			// constant value which will serve to uniquely identify them, and we will
+			// leave IPv4 interface indexes unmodified.
 			
 			switch( family )
 			{
-				case AF_INET:  ifa->ifa_extra.index = iaa->IfIndex << 8; break;
-				case AF_INET6: ifa->ifa_extra.index = ipv6IfIndex;	 break;
+				case AF_INET:  ifa->ifa_extra.index = iaa->IfIndex; break;
+				case AF_INET6: ifa->ifa_extra.index = ipv6IfIndex + kIPv6IfIndexBase;	 break;
 				default: break;
 			}
 			
