@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.20  2003/12/13 03:05:28  ksekar
+# Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+#
 # Revision 1.19  2003/12/11 19:42:13  cheshire
 # Change name "mDNSResponderd" to "mdnsd" for consistency with standard Linux (Unix) naming conventions
 #
@@ -170,7 +173,8 @@ clean:
 
 # daemon target builds the daemon
 DAEMONOBJS = $(OBJDIR)/PosixDaemon.c.o $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNS.c.o \
-			$(OBJDIR)/uds_daemon.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o 
+			 $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/uds_daemon.c.o \
+			$(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o 
 
 Daemon: setup $(TARGDIR)/mdnsd
 	@echo "Responder daemon done"
@@ -236,13 +240,13 @@ Identify: setup $(TARGDIR)/mDNSIdentify
 NetMonitor: setup $(TARGDIR)/mDNSNetMonitor
 	@echo "NetMonitor done"
 
-$(TARGDIR)/mDNSClientPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/Client.c.o $(OBJDIR)/ExampleClientApp.c.o 
+$(TARGDIR)/mDNSClientPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/Client.c.o $(OBJDIR)/ExampleClientApp.c.o 
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/Responder.c.o
+$(TARGDIR)/mDNSResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/Responder.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSProxyResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/ProxyResponder.c.o
+$(TARGDIR)/mDNSProxyResponderPosix: $(COMMONOBJ) $(OBJDIR)/mDNS.c.o $(OBJDIR)/uDNS.c.o  $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/ProxyResponder.c.o
 	$(CC) $+ -o $@
 
 $(TARGDIR)/mDNSIdentify: $(COMMONOBJ) $(OBJDIR)/Identify.c.o

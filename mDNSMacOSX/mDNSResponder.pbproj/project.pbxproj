@@ -156,6 +156,8 @@
 				00AD62B1032D799A0CCA2C71,
 				DBAAFE2B057E8F4D0085CAD0,
 				DBAAFE2E057E8F660085CAD0,
+				7F18A9FA0587CEF6001880B3,
+				7F18A9FB0587CEF6001880B3,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -363,6 +365,8 @@
 				000753D303367C1C0CCA2C71,
 				DBAAFE2C057E8F660085CAD0,
 				FF485D5105632E0000130380,
+				7F18A9F60587CEF6001880B3,
+				7F18A9F70587CEF6001880B3,
 			);
 			isa = PBXGroup;
 			name = "mDNS Server Sources";
@@ -432,6 +436,8 @@
 				6575FBEE022EAF7200000109,
 				DBAAFE2A057E8F4D0085CAD0,
 				DBAAFE2D057E8F660085CAD0,
+				7F18A9F80587CEF6001880B3,
+				7F18A9F90587CEF6001880B3,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -736,6 +742,54 @@
 //652
 //653
 //654
+//7F0
+//7F1
+//7F2
+//7F3
+//7F4
+		7F18A9F60587CEF6001880B3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = DNSCommon.c;
+			path = ../mDNSCore/DNSCommon.c;
+			refType = 2;
+		};
+		7F18A9F70587CEF6001880B3 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			name = uDNS.c;
+			path = ../mDNSCore/uDNS.c;
+			refType = 2;
+		};
+		7F18A9F80587CEF6001880B3 = {
+			fileRef = 7F18A9F60587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F18A9F90587CEF6001880B3 = {
+			fileRef = 7F18A9F70587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F18A9FA0587CEF6001880B3 = {
+			fileRef = 7F18A9F60587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7F18A9FB0587CEF6001880B3 = {
+			fileRef = 7F18A9F70587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+//7F0
+//7F1
+//7F2
+//7F3
+//7F4
 //DB0
 //DB1
 //DB2

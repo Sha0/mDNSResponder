@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.129  2003/12/13 03:05:27  ksekar
+Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+
 Revision 1.128  2003/12/01 21:44:23  cheshire
 Add mStatus_BadInterfaceErr = -65552 for consistency with dns_sd.h
 
@@ -562,7 +565,7 @@ typedef packedunion { mDNSu8 b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
 typedef packedunion { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
-typedef mDNSOpaque32  mDNSv4Addr;		// An IP address is a four-byte opaque identifier (not an integer)
+typedef mDNSOpaque32  mDNSv4Addr;              // An IP address is a four-byte opaque identifier (not an integer)
 typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identifier (not an integer)
 
 enum
@@ -957,6 +960,13 @@ typedef struct
 	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
 
+typedef struct
+    {
+    mDNSOpaque16          id;
+    mDNSs32               timestamp;
+    } uDNS_QuestionInfo;
+
+
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 struct DNSQuestion_struct
@@ -979,9 +989,10 @@ struct DNSQuestion_struct
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
+    uDNS_QuestionInfo     uDNS_info;        
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
-	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
+	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
 	domainname            qname;
 	mDNSu16               qtype;
 	mDNSu16               qclass;
@@ -1038,6 +1049,15 @@ enum
 	{
 	mDNS_KnownBug_PhantomInterfaces = 1
 	};
+
+
+typedef struct 
+    {
+    DNSQuestion     *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+    mDNSOpaque16    NextMessageID;
+    mDNSv4Addr      Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
+    } uDNS_data_t;  
+
 
 struct mDNS_struct
 	{
@@ -1109,6 +1129,10 @@ struct mDNS_struct
 	mDNSs32 ProbeFailTime;
 	mDNSu32 NumFailedProbes;
 	mDNSs32 SuppressProbes;
+
+    // unicast-specific data
+    uDNS_data_t uDNS_data;
+   
 	};
 
 // ***************************************************************************
@@ -1284,6 +1308,7 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 // Comparison functions
 extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
 extern mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2);
+extern mDNSBool IsLocalDomain(const domainname *d);     // returns true if domain name ends in ".local."
 
 // Get total length of domain name, in native DNS format, including terminal root label
 //   (e.g. length of "com." is 5 (length byte, three data bytes, final zero)
@@ -1425,6 +1450,12 @@ extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 // -- Address-to-name records (PTR)
 // -- Host information (HINFO)
 //
+// mDNS_RegisterDNS() is used by the platform support layer to provide the core with the addresses of
+// available domain name servers for unicast queries/updates.  RegisterDNS() should be called once for
+// each name server, typically at startup, or when a new name server becomes available.  DeregiterDNS()
+// must be called whenever a registered name server becomes unavailable.  DeregisterDNSList deregisters
+// all registered servers.
+//
 // mDNSCoreInitComplete() is called when the platform support layer is finished.
 // Typically this is at the end of mDNSPlatformInit(), but may be later
 // (on platforms like OT that allow asynchronous initialization of the networking stack).
@@ -1438,6 +1469,9 @@ extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 extern void     mDNS_GenerateFQDN(mDNS *const m);
 extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
+extern void     mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);
+extern void     mDNS_DeregisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);
+extern void     mDNS_DeregisterDNSList(mDNS *const m);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,

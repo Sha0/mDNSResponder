@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.51  2003/12/13 03:05:28  ksekar
+Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+
 Revision 1.50  2003/12/08 20:47:02  rpantos
 Add support for mDNSResponder on Linux.
 
@@ -207,6 +210,8 @@ Added NetMonitor.c
 // except we'll steal the packets that would be sent to normal mDNSCoreReceive() routine
 #define mDNSCoreReceive __NOT__mDNSCoreReceive__NOT__
 #include "mDNS.c"
+#include "DNSCommon.c"
+#include "uDNS.c"
 #undef mDNSCoreReceive
 
 //*************************************************************************************************************

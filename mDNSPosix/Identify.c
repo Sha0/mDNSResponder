@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.13  2003/12/13 03:05:28  ksekar
+Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+
 Revision 1.12  2003/11/14 21:27:09  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -83,6 +86,8 @@ Add mDNSIdentify tool, used to discover what version of mDNSResponder a particul
 // except we'll sneak a peek at the packets before forwarding them to the normal mDNSCoreReceive() routine
 #define mDNSCoreReceive __MDNS__mDNSCoreReceive
 #include "mDNS.c"
+#include "DNSCommon.c"
+#include "uDNS.c"
 #undef mDNSCoreReceive
 
 //*************************************************************************************************************

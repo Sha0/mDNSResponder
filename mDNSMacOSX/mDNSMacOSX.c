@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.121  2003/12/13 03:05:28  ksekar
+Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+
 Revision 1.120  2003/12/08 21:00:46  rpantos
 Changes to support mDNSResponder on Linux.
 
@@ -350,6 +353,8 @@ Minor code tidying
 #include <sys/sysctl.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+
+#include <arpa/inet.h>              // for inet_aton
 
 #include <netinet/in.h>				// For IP_RECVTTL
 #ifndef IP_RECVTTL
@@ -1185,6 +1190,100 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		}
 	}
 
+
+static mDNSBool DNSConfigInitialized = mDNSfalse;
+mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
+    {
+	mDNS *m = context;
+    CFDictionaryRef	dict;
+    CFStringRef		key, s;
+	CFArrayRef      servers;
+	int             i, count;
+	char            addrbuf[32];
+    mDNSv4Addr      saddr;
+
+    if (DNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
+    mDNS_DeregisterDNSList(m);  //!!!KRS fixme - we need a list of registerd servers. this wholesale
+    // dereg doesn't work if there's an error and we bail out before registering the new list    
+    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+    if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
+    dict = SCDynamicStoreCopyValue(session, key);
+    CFRelease(key);
+    if (dict)
+        {
+    	servers = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
+	    if (servers)
+	        {
+	        count = CFArrayGetCount(servers);
+	        for (i = 0; i < count; i++)
+	            {
+	            s = CFArrayGetValueAtIndex(servers, i);
+	            if (!s) { LogMsg("ERROR: DNSConfigChanged - CFArrayGetValueAtIndex"); break; }
+	            if (!CFStringGetCString(s, addrbuf, 32, kCFStringEncodingASCII))
+	                {
+	                LogMsg("ERROR: DNSConfigChanged - CFStringGetCString");
+	                break;
+	                }
+	            if (!inet_aton(addrbuf, (struct in_addr *)saddr.b))
+	                {      
+	                LogMsg("ERROR: DNSConfigChanged - invalid address string");
+	                break;
+	                }
+	            mDNS_RegisterDNS(m, &saddr);
+	            }
+        	}
+    	CFRelease(dict);
+        }    
+    }
+    
+mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)
+    {
+    CFStringRef			    key;
+    CFMutableArrayRef		keyList;
+    CFRunLoopSourceRef		rls;
+    SCDynamicStoreRef 		session;
+	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
+	
+    session = SCDynamicStoreCreate(NULL, CFSTR("trackDNS"), DNSConfigChanged, &context);    
+    if (!session) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
+
+
+    keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+    if (!keyList) {  LogMsg("ERROR: WatchForDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
+    
+    // create a pattern that matches the global DNS dictionary key
+    key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+    if (!key) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr;  }
+    
+    CFArrayAppendValue(keyList, key);
+    CFRelease(key);
+    
+    // set the keys for our DynamicStore session
+    SCDynamicStoreSetNotificationKeys(session, keyList, NULL);
+    CFRelease(keyList);
+    
+    // create a CFRunLoopSource for our DynamicStore session
+    rls = SCDynamicStoreCreateRunLoopSource(NULL, session, 0);
+    if (!rls) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreateRunLoopSource");  return mStatus_UnknownErr;  }
+    
+    // add the run loop source to our current run loop 
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+    CFRelease(rls);
+    
+	// get initial configuration
+    DNSConfigChanged(session, NULL, m);
+    DNSConfigInitialized = mDNStrue;
+    return mStatus_NoError;
+    }
+
+
+
+
+
+
+
+
+
 mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{
 	(void)store;		// Parameter not used
@@ -1343,12 +1442,17 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return(err);
 	
 	err = WatchForPowerChanges(m);
+    if (err) return err;
+    
+    err = WatchForDNSChanges(m);
 	return(err);
 	}
 
 mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	{
 	mStatus result = mDNSPlatformInit_setup(m);
+	
+	LogMsg("Hey There!");
 	// We don't do asynchronous initialization on OS X, so by the time we get here the setup will already
 	// have succeeded or failed -- so if it succeeded, we should just call mDNSCoreInitComplete() immediately
 	if (result == mStatus_NoError) mDNSCoreInitComplete(m, mStatus_NoError);
