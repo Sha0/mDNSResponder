@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.229  2004/11/03 03:45:16  cheshire
+<rdar://problem/3863627> mDNSResponder does not inform user of Computer Name collisions
+
 Revision 1.228  2004/11/02 23:47:32  cheshire
 <rdar://problem/3863214> Default hostname and Computer Name should be unique
 
@@ -1837,9 +1840,10 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
 
 	// Set up the nice label
-	m->nicelabel.c[0] = 0;
-	GetUserSpecifiedFriendlyComputerName(&m->nicelabel);
-	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, defaultname);
+	domainlabel nicelabel;
+	nicelabel.c[0] = 0;
+	GetUserSpecifiedFriendlyComputerName(&nicelabel);
+	if (nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&nicelabel, defaultname);
 
 	// Set up the RFC 1034-compliant label
 	domainlabel hostlabel;
@@ -1847,9 +1851,14 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	GetUserSpecifiedLocalHostName(&hostlabel);
 	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, defaultname);
 
-	// If the user has changed their dot-local host name since the last time we checked, then update our local copy.
-	// If the user has not changed their dot-local host name, then leave ours alone (m->hostlabel may have gone through
-	// repeated conflict resolution to get to its current value, and if we reset it, we'll have to go through all that again.)
+	if (SameDomainLabel(m->p->usernicelabel.c, nicelabel.c))
+		debugf("Usernicelabel (%#s) unchanged since last time; not changing m->nicelabel (%#s)", m->p->usernicelabel.c, m->nicelabel.c);
+	else
+		{
+		debugf("Updating m->nicelabel to %#s", nicelabel.c);
+		m->p->usernicelabel = m->nicelabel = nicelabel;
+		}
+
 	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c))
 		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
 	else
@@ -2734,6 +2743,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
+	m->p->usernicelabel.c[0] = 0;
+	m->p->NotifyUser         = 0;
 	UpdateInterfaceList(m);
 	SetupActiveInterfaces(m);
 

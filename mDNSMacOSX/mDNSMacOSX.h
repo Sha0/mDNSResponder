@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.46  2004/11/03 03:45:16  cheshire
+<rdar://problem/3863627> mDNSResponder does not inform user of Computer Name collisions
+
 Revision 1.45  2004/10/28 00:53:57  cheshire
 Export mDNSMacOSXNetworkChanged() so it's callable from outside this mDNSMacOSX.c;
 Add LogOperation() call to record when we get network change events
@@ -229,6 +232,8 @@ struct mDNS_PlatformSupport_struct
     NetworkInterfaceInfoOSX *InterfaceList;
     CFSocketSet              unicastsockets;
     domainlabel              userhostlabel;
+    domainlabel              usernicelabel;
+    mDNSs32                  NotifyUser;
     SCDynamicStoreRef        Store;
     CFRunLoopSourceRef       StoreRLS;
     io_connect_t             PowerConnection;

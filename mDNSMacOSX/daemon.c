@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.210  2004/11/03 03:45:17  cheshire
+<rdar://problem/3863627> mDNSResponder does not inform user of Computer Name collisions
+
 Revision 1.209  2004/11/03 02:25:50  cheshire
 <rdar://problem/3324137> Conflict for Computer Name should update *all* empty string services, not just the one with the conflict
 
@@ -1292,6 +1295,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		status = DNSServiceRegistrationReply_rpc(si->ClientMachPort, result, MDNS_MM_TIMEOUT);
 		if (status == MACH_SEND_TIMED_OUT)
 			AbortBlockedClient(si->ClientMachPort, "registration success", si);
+		if (si->autoname) m->p->NotifyUser = m->timenow | 1;
 		}
 
 	else if (result == mStatus_NameConflict)
@@ -1303,6 +1307,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 			{
 			// On conflict for an autoname service, rename and reregister *all* autoname services
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
+			m->p->NotifyUser = (m->timenow + mDNSPlatformOneSecond*5) | 1;
 			m->MainCallback(m, mStatus_ConfigChanged);
 			}
 		else
@@ -1554,32 +1559,34 @@ fail:
 	return(err);
 	}
 
-// This updates the text of the field currently labelled "Local Hostname" in the Sharing Prefs Control Panel
-mDNSlocal void RecordUpdatedUserSpecifiedLocalHostName(mDNS *const m)
+// This updates either the text of the field currently labelled "Local Hostname",
+// or the text of the field currently labelled "Computer Name"
+// in the Sharing Prefs Control Panel
+mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlabel *n2, CFStringRef title, char *msg, char *suffix)
 	{
 	char oldname[MAX_DOMAIN_LABEL+1];
 	char newname[MAX_DOMAIN_LABEL+1];
-	ConvertDomainLabelToCString(&m->p->userhostlabel, oldname);
-	ConvertDomainLabelToCString(&m->hostlabel,        newname);
+	ConvertDomainLabelToCString_unescaped(n1, oldname);
+	ConvertDomainLabelToCString_unescaped(n2, newname);
 	const CFStringRef      cfnewname = CFStringCreateWithCString(NULL, newname, kCFStringEncodingUTF8);
-	const CFStringRef      f0        = CFStringCreateWithCString(NULL, "This computer’s Local Hostname ", kCFStringEncodingUTF8);
-	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%s.local” ",  kCFStringEncodingUTF8);
-	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%s.local”. ", kCFStringEncodingUTF8);
+	const CFStringRef      f0        = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
+	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%s%s” ",  kCFStringEncodingUTF8);
+	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%s%s”. ", kCFStringEncodingUTF8);
 	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
-	LogMsg("Updating persistent Local Hostname from %#s.local %#s.local", m->p->userhostlabel.c, m->hostlabel.c);
-	m->p->userhostlabel = m->hostlabel;
+	*n1 = *n2;
 	if (!cfnewname || !f0 || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
-		LogMsg("RecordUpdatedUserSpecifiedLocalHostName: ERROR: Couldn't create SCPreferences session");
+		LogMsg("RecordUpdatedName: ERROR: Couldn't create SCPreferences session");
 	else
 		{
-		const CFStringRef       s1           = CFStringCreateWithFormat(NULL, NULL, f1, oldname);
-		const CFStringRef       s2           = CFStringCreateWithFormat(NULL, NULL, f2, newname);
+		const CFStringRef       s1           = CFStringCreateWithFormat(NULL, NULL, f1, oldname, suffix);
+		const CFStringRef       s2           = CFStringCreateWithFormat(NULL, NULL, f2, newname, suffix);
 		const CFMutableArrayRef alertMessage = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-		if (!SCPreferencesSetLocalHostName(session, cfnewname) ||
-			!SCPreferencesCommitChanges(session) ||
-			!SCPreferencesApplyChanges(session) || !s1 || !s2 || !alertMessage)
-			LogMsg("RecordUpdatedUserSpecifiedLocalHostName: ERROR: Couldn't update SCPreferences");
-		else
+		Boolean result;
+		if (n2 == &m->hostlabel) result = SCPreferencesSetLocalHostName(session, cfnewname);
+		else                     result = SCPreferencesSetComputerName(session, cfnewname, kCFStringEncodingUTF8);
+		if (!result || !SCPreferencesCommitChanges(session) || !SCPreferencesApplyChanges(session) || !s1 || !s2 || !alertMessage)
+			LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
+		else if (m->p->NotifyUser)
 			{
 			CFArrayAppendValue(alertMessage, f0);
 			CFArrayAppendValue(alertMessage, s1);
@@ -1587,11 +1594,10 @@ mDNSlocal void RecordUpdatedUserSpecifiedLocalHostName(mDNS *const m)
 			CFArrayAppendValue(alertMessage, CFSTR("The name has been automatically updated to "));
 			CFArrayAppendValue(alertMessage, s2);
 			CFArrayAppendValue(alertMessage, CFSTR("You can change this name in the Sharing Preference Panel."));
-			CFUserNotificationDisplayNotice(60.0,		// Auto-dismiss after 60 seconds
+			CFUserNotificationDisplayNotice(60.0,			// Auto-dismiss after 60 seconds
 				kCFUserNotificationCautionAlertLevel,
-				NULL, NULL, NULL,						// iconURL, soundURL, localizationURL
-				CFSTR("Name Already In Use"),			// alertHeader
-				(CFStringRef)alertMessage, NULL);		// alertMessage, defaultButtonTitle
+				NULL, NULL, NULL,							// iconURL, soundURL, localizationURL
+				title, (CFStringRef)alertMessage, NULL);	// alertHeader, alertMessage, defaultButtonTitle
 			}
 		if (s1)           CFRelease(s1);
 		if (s2)           CFRelease(s2);
@@ -1608,11 +1614,8 @@ mDNSlocal void RecordUpdatedUserSpecifiedLocalHostName(mDNS *const m)
 mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
 	(void)m; // Unused
-	if (result == mStatus_NoError)
-		{
-		if (!SameDomainLabel(m->p->userhostlabel.c, m->hostlabel.c))
-			RecordUpdatedUserSpecifiedLocalHostName(m);
-		}
+	if (result == mStatus_NoError)	
+		m->p->NotifyUser = (m->timenow + mDNSPlatformOneSecond*3) | 1;
 	else if (result == mStatus_ConfigChanged)
 		{
 		DNSServiceRegistration *r;
@@ -2164,12 +2167,12 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	return(err);
 	}
 
-mDNSlocal mDNSs32 mDNSDaemonIdle(void)
+mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	{
 	// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
-	mDNSs32 nextevent = mDNS_Execute(&mDNSStorage);
+	mDNSs32 nextevent = mDNS_Execute(m);
 
-	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
+	mDNSs32 now = mDNS_TimeNow(m);
 
 	// 2. Deliver any waiting browse messages to clients
 	DNSServiceBrowser *b = DNSServiceBrowserList;
@@ -2225,6 +2228,28 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 			LogMsgNoIdent("Client application bug: DNSServiceResolver(%##s) active for over two minutes. "
 				"This places considerable burden on the network.", l->i.name.c);
 			}
+
+	if (m->p->NotifyUser)
+		{
+		if (m->p->NotifyUser - now < 0)
+			{
+			if (!SameDomainLabel(m->p->usernicelabel.c, m->nicelabel.c))
+				{
+				LogMsg("Updating persistent Computer name from %#s.local %#s.local", m->p->usernicelabel.c, m->nicelabel.c);
+				RecordUpdatedName(m, &m->p->usernicelabel, &m->nicelabel, CFSTR("Computer Name Already In Use"), "This machine’s Computer Name ", "");
+				m->p->NotifyUser = 0;	// Clear m->p->NotifyUser here -- even if the hostlabel has changed too, we don't want to bug the user with *two* alerts
+				}
+			if (!SameDomainLabel(m->p->userhostlabel.c, m->hostlabel.c))
+				{
+				LogMsg("Updating persistent Local Hostname from %#s.local %#s.local", m->p->userhostlabel.c, m->hostlabel.c);
+				RecordUpdatedName(m, &m->p->userhostlabel, &m->hostlabel, CFSTR("Local Hostname Already In Use"), "This computer’s Local Hostname ", ".local");
+				}
+			m->p->NotifyUser = 0;
+			}
+		else
+			if (nextevent - m->p->NotifyUser > 0)
+				nextevent = m->p->NotifyUser;
+		}
 
 	return(nextevent);
 	}
@@ -2294,7 +2319,7 @@ mDNSexport int main(int argc, char **argv)
 			{
 			// 1. Before going into a blocking wait call and letting our process to go sleep,
 			// call mDNSDaemonIdle to allow any deferred work to be completed.
-			mDNSs32 nextevent = mDNSDaemonIdle();
+			mDNSs32 nextevent = mDNSDaemonIdle(&mDNSStorage);
 			nextevent = udsserver_idle(nextevent);
 
 			// 2. Work out how long we expect to sleep before the next scheduled task
