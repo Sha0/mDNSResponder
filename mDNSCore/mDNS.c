@@ -44,6 +44,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.332  2003/11/20 05:47:37  cheshire
+<rdar://problem/3490355>: Don't exclude known answers whose expiry time is before the next query
+Now that we only include answers in the known answer list if they are less than
+halfway to expiry, the check to also see if we have another query scheduled
+before the record expires is no longer necessary (and in fact, not correct).
+
 Revision 1.331  2003/11/19 22:31:48  cheshire
 When automatically adding A records to SRVs, add them as additionals, not answers
 
@@ -3704,8 +3710,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
 				rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
 				ResourceRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
-				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >= 0 &&			// and it is less than half-way to expiry
-				rr->NextRequiredQuery - (m->timenow + q->ThisQInterval) > 0)// and we'll ask at least once again before NextRequiredQuery
+				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >= 0)			// and it is less than half-way to expiry
 				{
 				*ka = rr;	// Link this record into our known answer chain
 				ka = &rr->NextInKAList;
