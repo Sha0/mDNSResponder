@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.19  2003/12/11 19:42:13  cheshire
+# Change name "mDNSResponderd" to "mdnsd" for consistency with standard Linux (Unix) naming conventions
+#
 # Revision 1.18  2003/12/11 19:38:34  cheshire
 # Add APSL
 #
@@ -69,7 +72,7 @@
 # Make with no arguments to build all production targets.
 # 'make DEBUG=1' to build debugging targets.
 # 'make clean' or 'make clean DEBUG=1' to delete prod/debug objects & targets
-# 'sudo make install [DEBUG=1]' to install mDNSResponderd daemon and libmdns.
+# 'sudo make install [DEBUG=1]' to install mdnsd daemon and libmdns.
 
 LIBVERS = 1
 
@@ -169,10 +172,10 @@ clean:
 DAEMONOBJS = $(OBJDIR)/PosixDaemon.c.o $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNS.c.o \
 			$(OBJDIR)/uds_daemon.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o 
 
-Daemon: setup $(TARGDIR)/mDNSResponderd
+Daemon: setup $(TARGDIR)/mdnsd
 	@echo "Responder daemon done"
 
-$(TARGDIR)/mDNSResponderd: $(DAEMONOBJS)
+$(TARGDIR)/mdnsd: $(DAEMONOBJS)
 	$(CC) -o $@ $+
 	$(STRIP) $@
 
@@ -187,11 +190,11 @@ $(TARGDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnss
 
 
 # The Install targets place built stuff in their proper places
-InstalledDaemon: /usr/sbin/mDNSResponderd
+InstalledDaemon: /usr/sbin/mdnsd
 	@echo $< " installed"
 
-/usr/sbin/mDNSResponderd: $(TARGDIR)/mDNSResponderd
-	$(CP) $(TARGDIR)/mDNSResponderd $@
+/usr/sbin/mdnsd: $(TARGDIR)/mdnsd
+	$(CP) $(TARGDIR)/mdnsd $@
 
 InstalledLib: /usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS)
 	@echo $< " installed"
@@ -203,8 +206,8 @@ InstalledLib: /usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS)
 InstalledStartup: /etc/init.d/mDNS
 	@echo $< " installed"
 
-/etc/init.d/mDNS: mDNSResponderd.sh
-	$(CP) mDNSResponderd.sh $@
+/etc/init.d/mDNS: mdnsd.sh
+	$(CP) mdnsd.sh $@
 	chmod ugo+x $@
 	$(LN) $@ /etc/rc2.d/S52mDNS
 	$(LN) $@ /etc/rc3.d/S52mDNS

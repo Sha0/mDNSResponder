@@ -1,8 +1,8 @@
 #!/bin/sh
 #
-# Linux /etc/init.d script to start/stop the mDNSResponderd daemon.
+# Linux /etc/init.d script to start/stop the mdnsd daemon.
 
-DAEMON=/usr/sbin/mDNSResponderd
+DAEMON=/usr/sbin/mdnsd
 
 test -f $DAEMON || exit 0
 
@@ -18,13 +18,13 @@ fi
 case "$1" in
     start)
 	echo -n "Starting mDNS daemon:"
-	echo -n " mDNSResponderd"
+	echo -n " mdnsd"
         $START $DAEMON
 	echo "."
 	;;
     stop)
         echo -n "Stopping mDNS daemon:"
-        echo -n " mDNSResponderd" ; $STOP $DAEMON
+        echo -n " mdnsd" ; $STOP $DAEMON
         echo "."
 	;;
     reload|restart|force-reload)
@@ -32,7 +32,7 @@ case "$1" in
 		$STOP $DAEMON
 		sleep 1
 		$START $DAEMON
-		echo -n " mDNSResponderd"
+		echo -n " mdnsd"
 	;;
     *)
 	echo "Usage: /etc/init.d/mDNS {start|stop|reload|restart}"
