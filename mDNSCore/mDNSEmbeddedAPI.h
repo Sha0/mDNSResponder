@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.244  2004/11/24 22:00:59  cheshire
+Move definition of mDNSAddressIsAllDNSLinkGroup() from mDNSMacOSX.c to mDNSEmbeddedAPI.h
+
 Revision 1.243  2004/11/23 22:43:53  cheshire
 Tidy up code alignment
 
@@ -2221,6 +2224,10 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 
 #define mDNSIPv4AddressIsOnes(A) mDNSSameIPv4Address((A), onesIPv4Addr)
 #define mDNSIPv6AddressIsOnes(A) mDNSSameIPv6Address((A), onesIPv6Addr)
+
+#define mDNSAddressIsAllDNSLinkGroup(X) (                                                     \
+	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroupv4)) || \
+	((X)->type == mDNSAddrType_IPv6 && mDNSSameIPv6Address((X)->ip.v6, AllDNSLinkGroupv6))    )
 
 #define mDNSAddressIsZero(X) (                                                \
 	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsZero((X)->ip.v4))  || \

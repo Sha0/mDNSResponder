@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.238  2004/11/24 22:00:59  cheshire
+Move definition of mDNSAddressIsAllDNSLinkGroup() from mDNSMacOSX.c to mDNSEmbeddedAPI.h
+
 Revision 1.237  2004/11/24 21:54:44  cheshire
 <rdar://problem/3894475> mDNSCore not receiving unicast responses properly
 
@@ -769,6 +772,7 @@ typedef struct SearchListElem
     ARListElem *AuthRecs;
 	} SearchListElem;
 
+
 // ***************************************************************************
 // Globals
 
@@ -789,19 +793,9 @@ static domainname DynDNSHostname;
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 #define SYS_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
 
-// ***************************************************************************
-// Macros
-
-#define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
-#define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
-
-#define mDNSAddressIsAllDNSLinkGroup(X) (                                                     \
-	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroupv4)) || \
-	((X)->type == mDNSAddrType_IPv6 && mDNSSameIPv6Address((X)->ip.v6, AllDNSLinkGroupv6))    )
 
 // ***************************************************************************
 // Functions
-
 
 // routines to allow access to default domain lists from daemon layer
 
