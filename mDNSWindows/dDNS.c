@@ -22,6 +22,11 @@
 
     Change History (most recent first):
 
+$Log: dDNS.c,v $
+Revision 1.6  2005/03/23 05:54:48  cheshire
+<rdar://problem/4021486> Fix build warnings
+Fix %s where it should be %##s in debugf & LogMsg calls
+
 */
 
 #include "dDNS.h"
@@ -167,7 +172,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 			{
 			if (SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
 				{
-				debugf("Deregistering PTR %s -> %s", ptr->ar.resrec.name->c, ptr->ar.resrec.rdata->u.name.c);
+				debugf("Deregistering PTR %##s -> %##s", ptr->ar.resrec.name->c, ptr->ar.resrec.rdata->u.name.c);
                 dereg = &ptr->ar;
 				if (prev) prev->next = ptr->next;
 				else slElem->AuthRecs = ptr->next;
@@ -272,7 +277,7 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 			prev = ptr;
 			ptr = ptr->next;
 			}
-		LogMsg("FoundDefBrowseDomain: Got remove event for domain %s not in list", answer->rdata->u.name.c);
+		LogMsg("FoundDefBrowseDomain: Got remove event for domain %##s not in list", answer->rdata->u.name.c);
 		}
 	}
 
@@ -360,7 +365,7 @@ mDNSlocal mStatus RegisterSearchDomains( mDNS *const m )
 				{
 				AuthRecord *dereg = &arList->ar;
 				arList = arList->next;
-				debugf("Deregistering PTR %s -> %s", dereg->resrec.name->c, dereg->resrec.rdata->u.name.c);
+				debugf("Deregistering PTR %##s -> %##s", dereg->resrec.name->c, dereg->resrec.rdata->u.name.c);
 				err = mDNS_Deregister(m, dereg);
 				if (err) LogMsg("ERROR: RegisterSearchDomains mDNS_Deregister returned %d", err);
 				}
@@ -472,7 +477,7 @@ mDNSlocal void SetSCPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, m
 		{
 			if ( !browseDomain->name.c[0] )
 				{
-				LogMsg("SetSCPrefsBrowseDomains bad DDNS browse domain: %s", browseDomain->name.c[0] ? (char*) browseDomain->name.c : "(unknown)");
+				LogMsg("SetSCPrefsBrowseDomains bad DDNS browse domain: %##s", browseDomain->name.c[0] ? (char*) browseDomain->name.c : "(unknown)");
 				}
 			else
 				{
