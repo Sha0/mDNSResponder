@@ -27,7 +27,9 @@
 #include "dnssd_ipc.h"
 #include <fcntl.h>
 #include <sys/ioctl.h>
-
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 // Types and Data Structures
 // ----------------------------------------------------------------------
@@ -182,6 +184,10 @@ static int listenfd = -1;
 static request_state *all_requests = NULL;  
 //!!!KRS we should keep a separate list containing only the requests that need to be examined
 //in the idle() routine.
+
+
+#define MAX_OPENFILES 1024
+
  
 // private function prototypes
 static void connect_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
@@ -234,6 +240,7 @@ int udsserver_init(void)
     {
     mode_t mask;
     struct sockaddr_un laddr;
+    struct rlimit maxfds;
 
     if ((listenfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
             goto error;
@@ -253,6 +260,23 @@ int udsserver_init(void)
         goto error;
         }
     listen(listenfd, LISTENQ);
+    
+    
+    // set maximum file descriptor to 1024
+    if (getrlimit(RLIMIT_NOFILE, &maxfds) < 0)
+        {
+        my_perror("ERROR: Unable to get file descriptor limit");
+        return 0;
+        }
+    if (maxfds.rlim_max >= MAX_OPENFILES && maxfds.rlim_cur == maxfds.rlim_max)
+        {
+        // proper values already set
+        return 0;
+        }
+    maxfds.rlim_max = MAX_OPENFILES;
+    maxfds.rlim_cur = MAX_OPENFILES;	
+    if (setrlimit(RLIMIT_NOFILE, &maxfds) < 0)
+        my_perror("ERROR: Unable to set maximum file descriptor limit");
     return 0;
 	
 error:
@@ -1356,7 +1380,6 @@ static void connected_registration_termination(void *context)
     registered_record_entry *fptr, *ptr = ((request_state *)context)->reg_recs;
     while(ptr)
     	{
-        fptr = ptr->next;
         mDNS_Deregister(&mDNSStorage, ptr->rr);
         fptr = ptr;
         ptr = ptr->next;
@@ -1543,6 +1566,8 @@ static void handle_reconfirm_request(request_state *rstate)
     if (!rr) return;
     rr->RecordCallback = reconfirm_record_callback;
     mDNS_Reconfirm(&mDNSStorage, rr);
+    abort_request(rstate);
+    unlink_request(rstate);
     }
 
 
