@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.62  2003/06/04 01:25:33  cheshire
+<rdar://problem/3274950> Cannot perform multi-packet known-answer suppression messages
+Display time interval between first and subsequent queries
+
 Revision 1.61  2003/06/03 05:02:16  cheshire
 <rdar://problem/3277080> Duplicate registrations not handled as efficiently as they should be
 
@@ -544,6 +548,7 @@ struct ResourceRecord_struct
 	mDNSInterfaceID SendRNow;			// AR: The interface this query is being sent on right now
 	mDNSv4Addr      v4Requester;		// AR: Recent v4 query for this record, or all-ones if more than one recent query
 	mDNSv6Addr      v6Requester;		// AR: Recent v6 query for this record, or all-ones if more than one recent query
+	mDNSs32         v6RequesterTime;	// AR: For debugging: Time that v6Requester was set non-zero
 	ResourceRecord *NextResponse;		// AR: Link to the next element in the chain of responses to generate
 	const mDNSu8   *NR_AnswerTo;		// AR: Set if this record was selected by virtue of being a direct answer to a question
 	ResourceRecord *NR_AdditionalTo;	// AR: Set if this record was selected by virtue of being additional to another

@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.164  2003/06/04 01:25:33  cheshire
+<rdar://problem/3274950> Cannot perform multi-packet known-answer suppression messages
+Display time interval between first and subsequent queries
+
 Revision 1.163  2003/06/03 19:58:14  cheshire
 <rdar://problem/3277665> mDNS_DeregisterService() fixes:
 When forcibly deregistering after a conflict, ensure we don't send an incorrect goodbye packet.
@@ -2777,9 +2781,9 @@ mDNSlocal void SendResponses(mDNS *const m)
 			CompleteDeregistration(m, rr);
 		else
 			{
-			rr->ImmedAnswer     = mDNSNULL;
-			rr->v4Requester     = zeroIPAddr;
-			rr->v6Requester     = zerov6Addr;
+			rr->ImmedAnswer = mDNSNULL;
+			rr->v4Requester = zeroIPAddr;
+			rr->v6Requester = zerov6Addr;
 			}
 		}
 	verbosedebugf("SendResponses: Next in %d ticks", m->NextResponseTime - m->timenow);
@@ -4139,13 +4143,13 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						}
 					else if (srcaddr->type == mDNSAddrType_IPv6)
 						{
-						if (mDNSIPv6AddressIsZero(rr->v6Requester)) rr->v6Requester = srcaddr->ip.v6;
+						if (mDNSIPv6AddressIsZero(rr->v6Requester)) { rr->v6RequesterTime = m->timenow; rr->v6Requester = srcaddr->ip.v6; }
 						else if (!mDNSSameIPv6Address(rr->v6Requester, srcaddr->ip.v6))
 							{
 							if (query->h.flags.b[0] & kDNSFlag0_TC)
 								LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
-									"client at a time %.16a %.16a (this is benign if it happens only rarely)",
-									rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, &srcaddr->ip.v6);
+									"client at a time %.16a %ld %.16a (this is benign if it happens only rarely)",
+									rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
 							rr->v6Requester = onesIPv6Addr;
 							}
 						}
