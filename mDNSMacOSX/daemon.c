@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.96  2003/05/07 22:10:46  cheshire
+ * <rdar://problem/3250330> Add a few more error logging messages
+ *
  * Revision 1.95  2003/05/07 19:20:17  cheshire
  * <rdar://problem/3251391> Add version number to mDNSResponder builds
  *
@@ -74,6 +77,8 @@
 
 //*************************************************************************************************************
 // Globals
+
+static const char mDNSResponderVersionString[] = "mDNSResponder " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
 
 static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
@@ -339,9 +344,9 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 	LogMsg("%5d: died or deallocated, but no record of client can be found!", ClientMachPort);
 	}
 
-// AbortBlockedClient is logically identical to AbortClient,
-// except that it also writes an error message to the system log
-mDNSlocal void AbortBlockedClient(mach_port_t c, char *msg, void *m)
+#define AbortBlockedClient(C,MSG,M) AbortClientWithLogMessage((C), "stopped accepting Mach messages", " (" MSG ")", (M))
+
+mDNSlocal void AbortClientWithLogMessage(mach_port_t c, char *reason, char *msg, void *m)
 	{
 	DNSServiceDomainEnumeration *e = DNSServiceDomainEnumerationList;
 	DNSServiceBrowser           *b = DNSServiceBrowserList;
@@ -351,11 +356,11 @@ mDNSlocal void AbortBlockedClient(mach_port_t c, char *msg, void *m)
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
-	if      (e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e->dom.name,      msg);
-	else if (b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",           c, &b->q.name,        msg);
-	else if (l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",          c, &l->i.name,        msg);
-	else if (r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)",      c, &r->s.RR_SRV.name, msg);
-	else        LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c,     msg);
+	if      (e) LogMsg("%5d: DomainEnumeration(%##s) %s%s",                   c, &e->dom.name,      reason, msg);
+	else if (b) LogMsg("%5d: Browser(%##s) %s%s",                             c, &b->q.name,        reason, msg);
+	else if (l) LogMsg("%5d: Resolver(%##s) %s%s",                            c, &l->i.name,        reason, msg);
+	else if (r) LogMsg("%5d: Registration(%##s) %s%s",                        c, &r->s.RR_SRV.name, reason, msg);
+	else        LogMsg("%5d: (%s) %s, but no record of client can be found!", c,                    reason, msg);
 
 	AbortClient(c, m);
 	}
@@ -400,10 +405,7 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void
 													 client_death_port, MACH_MSG_TYPE_MAKE_SEND_ONCE, &prev);
 	// If the port already died while we were thinking about it, then abort the operation right away
 	if (r != KERN_SUCCESS)
-		{
-		LogMsg("%5d: died before we could enable death notification", ClientMachPort);
-		AbortClient(ClientMachPort, m);
-		}
+		AbortClientWithLogMessage(ClientMachPort, "died/deallocated before we could enable death notification", "", m);
 	}
 
 //*************************************************************************************************************
@@ -812,7 +814,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	// so that a single C-string can be used to represent one or more P-strings.
 	while (*ptr)
 		{
-		if (++data_len >= sizeof(txtinfo)) return(mStatus_BadParamErr);
+		if (++data_len >= sizeof(txtinfo)) { errormsg = "TXT record too long"; goto badtxt; }
 		if (*ptr == 1)		// If this is our boundary marker, start a new P-string
 			{
 			pstring = &txtinfo[data_len];
@@ -821,7 +823,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 			}
 		else
 			{
-			if (pstring[0] == 255) return(mStatus_BadParamErr);
+			if (pstring[0] == 255) { errormsg = "TXT record invalid (component longer than 255)"; goto badtxt; }
 			pstring[++pstring[0]] = *ptr++;
 			}
 		}
@@ -856,10 +858,12 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	EnableDeathNotificationForClient(client, x);
 	return(mStatus_NoError);
 
+badtxt:
+	LogMsg("%5d: TXT record: %.100s...", client, txtRecord);
 badparam:
 	err = mStatus_BadParamErr;
 fail:
-	LogMsg("%5d: DNSServiceRegister(%s.%s.%s) failed: %s (%d)", client, name, regtype, domain, errormsg, err);
+	LogMsg("%5d: DNSServiceRegister(%s.%s.%s,%d) failed: %s (%d)", client, name, regtype, domain, notAnIntPort, errormsg, err);
 	return(err);
 	}
 	
@@ -1181,6 +1185,9 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	for (rr = mDNSStorage.rrcache; rr; rr=rr->next) if (CacheRRActive(&mDNSStorage, rr)) rrcache_active++;
 	debugf("ExitCallback: RR Cache now using %d records, %d active", mDNSStorage.rrcache_used, rrcache_active);
 */
+
+	LogMsg("%s stopping", mDNSResponderVersionString);
+
 	debugf("ExitCallback: destroyBootstrapService");
 	if (!debug_mode)
 		destroyBootstrapService();
@@ -1290,7 +1297,7 @@ mDNSexport int main(int argc, char **argv)
 		fclose(fp);
 		}
 	
-	LogMsg("%s", "mDNSResponder " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ") starting");
+	LogMsg("%s starting", mDNSResponderVersionString);
 	status = start(NULL, NULL);
 
 	if (status == 0)
