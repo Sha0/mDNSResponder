@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.297  2005/02/09 23:38:51  ksekar
+<rdar://problem/3993508> Reregister hostname when DNS server changes but IP address does not
+
 Revision 1.296  2005/02/01 21:06:52  ksekar
 Avoid spurious log message
 
@@ -2375,17 +2378,21 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 #endif // MAC_OS_X_VERSION_10_4
 	}
 
-mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
+mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 	{
 	(void)m;  // unused on 10.3 systems
 	void *v;
+	DNSServer *p;
+	*nAdditions = *nDeletions = 0;
 	mStatus err = GetDNSConfig(&v);
 	if (!err && v)
 		{
 #ifdef MAC_OS_X_VERSION_10_4
 		int i;
 		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
-		mDNS_DeleteDNSServers(m);
+		mDNS_Lock(m);
+		p = m->uDNS_info.Servers;
+		while (p) { p->flag = -1; p = p->next; }  // mark all for deletion
 		
 		LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
 		for (i = 0; i < config->n_resolver; i++)		
@@ -2421,11 +2428,42 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 					mDNSAddr saddr;
 					if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
 					debugf("Adding dns server from slot %d %d.%d.%d.%d for domain %##s", i, saddr.ip.v4.b[0], saddr.ip.v4.b[1], saddr.ip.v4.b[2], saddr.ip.v4.b[3], d.c);
-					mDNS_AddDNSServer(m, &saddr, &d);
+					p = m->uDNS_info.Servers;					
+					while (p)
+						{
+						if (mDNSSameAddress(&p->addr, &saddr) && SameDomainName(&p->domain, &d)) { p->flag = 0; break; }
+						else p = p->next;
+						}
+					if (!p)
+						{
+						p = mallocL("DNSServer", sizeof(*p));
+						if (!p) { LogMsg("Error: malloc");  mDNS_Unlock(m); return mStatus_UnknownErr; }
+						p->addr = saddr;
+						AssignDomainName(&p->domain, &d);
+						p->flag = 0;
+						p->next = m->uDNS_info.Servers;
+						m->uDNS_info.Servers = p;
+						(*nAdditions)++;
+						}
 					break;  // !!!KRS if we ever support round-robin servers, don't break here
 					}
 				}
 			}
+
+		// remove all servers marked for deletion
+		DNSServer **s = &m->uDNS_info.Servers;
+		while (*s)
+			{
+			if ((*s)->flag < 0)
+				{
+				p = *s;
+				*s = (*s)->next;
+				freeL("DNSServer", p);
+				(*nDeletions)--;
+				}
+			else s = &(*s)->next;
+			}
+		mDNS_Unlock(m);
 		dns_configuration_free(config);
 #endif
 		}
@@ -2847,6 +2885,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	CFStringRef     key;
 	domainname RegDomain, fqdn;
 	CFArrayRef NewBrowseDomains = NULL;
+	int nAdditions = 0, nDeletions = 0;
 	
 	// get fqdn, zone from SCPrefs
 	GetUserSpecifiedDDNSConfig(&fqdn, &RegDomain, &NewBrowseDomains);
@@ -2903,7 +2942,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	CFRelease(key);
 
 	// handle any changes to search domains and DNS server addresses
-	if (RegisterSplitDNS(m) != mStatus_NoError)
+	if (RegisterSplitDNS(m, &nAdditions, &nDeletions) != mStatus_NoError)
 		if (dict) RegisterNameServers(m, dict);  // fall back to non-split DNS aware configuration on failure
 	RegisterSearchDomains(m, dict);  // note that we register name servers *before* search domains
 	if (dict) CFRelease(dict);
@@ -2941,6 +2980,8 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 		}
 
 	// handle primary interface changes
+	// if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
+	if (nAdditions || nDeletions) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL);
 	CFStringRef primary = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
 	if (primary)
 		{

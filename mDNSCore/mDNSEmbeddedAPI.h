@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.278  2005/02/09 23:38:51  ksekar
+<rdar://problem/3993508> Reregister hostname when DNS server changes but IP address does not
+
 Revision 1.277  2005/02/09 23:31:12  ksekar
 <rdar://problem/3984374> NAT-PMP response callback should return a boolean indicating if the packet matched the request
 
@@ -1616,6 +1619,7 @@ typedef struct DNSServer
     struct DNSServer *next;
     mDNSAddr addr;
     domainname domain;       // name->server matching for "split dns"
+    int flag;                // temporary marker for list intersection
 	} DNSServer;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
