@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.365  2004/03/19 23:51:22  cheshire
+Change to use symbolic constant kUpdateCreditRefreshInterval instead of (mDNSPlatformOneSecond * 60)
+
 Revision 1.364  2004/03/13 01:57:33  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -1238,6 +1241,7 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFl
 #define kDefaultTTLforShared (2*3600)
 
 #define kMaxUpdateCredits 10
+#define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 60)
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
@@ -2215,7 +2219,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0)
 			{
 			if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0; 
-			else rr->NextUpdateCredit = (m->timenow + mDNSPlatformOneSecond * 60) | 1;
+			else rr->NextUpdateCredit = (m->timenow + kUpdateCreditRefreshInterval) | 1;
 			}
 		if (TimeToAnnounceThisRecord(rr, m->timenow) && ResourceRecordIsValidAnswer(rr))
 			{
@@ -5208,7 +5212,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		rr->ThisAPInterval       = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 		InitializeLastAPTime(m, rr);
 		if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
-		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + mDNSPlatformOneSecond * 60) | 1;
+		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = (m->timenow + kUpdateCreditRefreshInterval) | 1;
 		if (rr->AnnounceCount > rr->UpdateCredits + 1) rr->AnnounceCount = (mDNSu8)(rr->UpdateCredits + 1);
 		if (rr->UpdateCredits <= 5)
 			{
