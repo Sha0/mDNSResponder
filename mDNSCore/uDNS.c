@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.103  2004/10/25 19:30:52  ksekar
+<rdar://problem/3827956> Simplify dynamic host name structures
+
 Revision 1.102  2004/10/23 01:16:00  cheshire
 <rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
 
@@ -423,7 +426,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs);
 mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const AsyncOpResult *result);
 mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info);
 mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs);
-mDNSlocal void UpdateServiceTargets(mDNS *const m);
 mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);
 mDNSlocal void RestartQueries(mDNS *m);
 mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info);
@@ -1166,7 +1168,7 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 #pragma mark - host name and interface management
 #endif
 
-
+//!!!KRS change this to longest-match logic
 // find the target in our list of hostnames for an SRV record
 // e.g. for service example._xxx._tcp.example.foo.com, return target mycomputer.example.foo.com.
 mDNSlocal const domainname *GetServiceTarget(uDNS_GlobalInfo *u, AuthRecord *srv)
@@ -1305,15 +1307,7 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 			}
 
 		// setup new record
-		if (SameDomainLabel(u->hostlabel.c, i->ar->resrec.name.c))
-			AssignDomainName(new->resrec.name, i->ar->resrec.name);
-		else
-			{
-			// hostlabel changed
-			domainname *HostDomain = (domainname *)(i->ar->resrec.name.c + 1 + i->ar->resrec.name.c[0]);
-			AppendDomainLabel(&new->resrec.name, &u->hostlabel);
-			AppendDomainName(&new->resrec.name, HostDomain);
-			}
+		AssignDomainName(new->resrec.name, i->ar->resrec.name);
 		new->resrec.rdata->u.ipv4 = u->PrimaryIP.ip.v4;
 
 		if (i->ar->uDNS_info.state != regState_Unregistered)
@@ -1329,20 +1323,18 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 		}
 	}
 
-mDNSexport void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *newdomain, mDNSRecordCallback *StatusCallback, const void *StatusContext)
+mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	uDNS_HostnameInfo *ptr, *new;
-	domainname *d;
 
 	mDNS_Lock(m);
 
 	// check if domain already registered
 	for (ptr = u->Hostnames; ptr; ptr = ptr->next)
 		{
-		d = (domainname *)(ptr->ar->resrec.name.c + 1 + ptr->ar->resrec.name.c[0]);  // get the name of the registered hostname
-		if (SameDomainName(newdomain, d))
-			{ LogMsg("Host Domain %##s already in list", d->c); goto exit; }
+		if (SameDomainName(fqdn, &ptr->ar->resrec.name))
+			{ LogMsg("Host Domain %##s already in list", fqdn->c); goto exit; }
 		}
 
 	// allocate and format new address record
@@ -1352,8 +1344,7 @@ mDNSexport void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *newdomain, m
 	new->StatusCallback = StatusCallback;
 	new->StatusContext = StatusContext;
 	mDNS_SetupResourceRecord(new->ar, mDNSNULL, 0, kDNSType_A,  1, kDNSRecordTypeUnique, HostnameCallback, new);	
-	AppendDomainLabel(&new->ar->resrec.name, &u->hostlabel);
-	AppendDomainName(&new->ar->resrec.name, newdomain);
+	AppendDomainName(&new->ar->resrec.name, fqdn);
 	new->next = u->Hostnames;
 	u->Hostnames = new;
 	if (u->PrimaryIP.ip.v4.NotAnInteger)
@@ -1368,18 +1359,16 @@ exit:
 	mDNS_Unlock(m);
 	}
 
-mDNSexport void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain)
+mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	uDNS_HostnameInfo *ptr, *prev = mDNSNULL;
-	domainname *d;
 
 	mDNS_Lock(m);
 
 	for (ptr = u->Hostnames; ptr; ptr = ptr->next)
 		{
-		d = (domainname *)(ptr->ar->resrec.name.c + 1 + ptr->ar->resrec.name.c[0]);  // get the name of the registered hostname
-		if (SameDomainName(domain, d))
+		if (SameDomainName(fqdn, &ptr->ar->resrec.name))
 			{
 			if (prev) prev->next = ptr->next;             // unlink from list
 			else u->Hostnames = ptr->next;
@@ -1388,7 +1377,7 @@ mDNSexport void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain)
 			}
 		prev = ptr;			
 		}
-	LogMsg("mDNS_RemoveDynDNSHostDomain: no such domain %##s", domain->c);
+	LogMsg("mDNS_RemoveDynDNSHostName: no such domainname %##s", fqdn->c);
 exit:
 	mDNS_Unlock(m);
 	}
@@ -1429,22 +1418,6 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, cons
 		RestartQueries(m);
 		}
 
-	mDNS_Unlock(m);
-	}
-
-mDNSexport void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel)
-	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-
-	mDNS_Lock(m);
-
-	if (!u->hostlabel.c[0]) { u->hostlabel = *hostlabel; goto exit; }  // initialization
-	if (SameDomainLabel(u->hostlabel.c, hostlabel->c)) { debugf("mDNS_SetDynDNSComputerName: hostlabel unchanged"); goto exit; }
-	u->hostlabel = *hostlabel;
-	UpdateHostnameRegistrations(m);	
-	UpdateServiceTargets(m);   //!!!KRS this gets done for us for empty-string registrations - how do we tell when we need to do it?
-
-exit:
 	mDNS_Unlock(m);
 	}
 
@@ -1698,7 +1671,7 @@ mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode, const DNSMes
 		}
 	else if (rcode == kDNSFlag1_RC_NXRRSet)
 		{
-		LogMsg("Reregister refusted (NXRRSET): %##s", name->c);
+		LogMsg("Reregister refused (NXRRSET): %##s", name->c);
 		return mStatus_NoSuchRecord;
 		}
 	else if (rcode == kDNSFlag1_RC_NotAuth)
@@ -3706,6 +3679,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	}
 
 // !!!KRS look into simpler ways to do this (create a record registration, or dereg and rereg the service, etc)
+/*
 mDNSlocal void UpdateServiceTargets(mDNS *const m)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
@@ -3726,6 +3700,7 @@ mDNSlocal void UpdateServiceTargets(mDNS *const m)
 		else srs->uDNS_info.TargetChangeDeferred = mDNStrue; // trigger target change upon completion of pending operation
 		}		
 	}
+*/
 
 // register a service already in list with initialized state
 mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs)

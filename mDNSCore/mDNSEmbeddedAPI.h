@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.229  2004/10/25 19:30:52  ksekar
+<rdar://problem/3827956> Simplify dynamic host name structures
+
 Revision 1.228  2004/10/23 01:16:00  cheshire
 <rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
 
@@ -1759,7 +1762,6 @@ typedef struct
 	mDNSAddr         PrimaryIP;          // Address of primary interface
 	mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
     NATTraversalInfo *LLQNatInfo;        // Nat port mapping to receive LLQ events
-    domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
 	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
 	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
 	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
@@ -2237,16 +2239,11 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key,
 
 // Added hostnames may be removed (deregistered) via mDNS_RemoveDynDNSHostDomain.
 
-// mDNS_SetDynDNSComputerName specifies the label to prepend to all hostnames.  This routine must be called prior to the
-// first call to AddDynDNSHostDomain.  Subsequent invokations of this routine causes all existing hostnames and SRV records
-// that point to them to be updated.
-
 // Host domains added prior to specification of the primary interface address and computer name will be deferred until
 // these values are initialized.
 
-extern void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *domain, mDNSRecordCallback *StatusCallback, const void *StatusContext);
-extern void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain);
-extern void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel);
+extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext);
+extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *addr, const mDNSAddr *router);
 
 // Routines called by the core, exported by DNSDigest.c

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.214  2004/10/25 19:30:53  ksekar
+<rdar://problem/3827956> Simplify dynamic host name structures
+
 Revision 1.213  2004/10/23 01:16:01  cheshire
 <rdar://problem/3851677> uDNS operations not always reliable on multi-homed hosts
 
@@ -718,8 +721,8 @@ static DNameListElem *DefRegList = NULL;     // manually generated list of domai
 
 static mDNSBool LegacyNATInitialized = mDNSfalse;
 
-static domainname DynDNSZone;           // Dynamic DNS hostname zone set via Prefs Pane
-                                        // Additional zones (e.g. .Mac domains) may be set via Keychain
+static domainname DynDNSZone;                // Default wide-area zone for service registration
+static domainname DynDNSHostname;
 
 static KeychainDomain *KeychainHostDomains = NULL;  // List of domains in which we register hostnames that we learn from the system keychain
 
@@ -1334,29 +1337,44 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 	}
 
 
-mDNSlocal void GetUserSpecifiedDDNSZone(domainname *const dname)
+mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const zone)
 	{
-	dname->c[0] = 0;
+	char buf[MAX_ESCAPED_DOMAIN_NAME];
+
+	fqdn->c[0] = 0;
+	zone->c[0] = 0;
+	buf[0] = 0;
+	
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder"), NULL, NULL);
 	if (store)
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
 		if (dict)
 			{
-			CFArrayRef array = CFDictionaryGetValue(dict, CFSTR("FQDN"));
-			if (array)
+			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("FQDN"));
+			CFArrayRef zoneArray = CFDictionaryGetValue(dict, CFSTR("DefaultRegistrationZone"));
+			if (fqdnArray)
 				{
-				CFStringRef name = CFArrayGetValueAtIndex(array, 0);
+				CFStringRef name = CFArrayGetValueAtIndex(fqdnArray, 0);
 				if (name)
 					{
-					char uname[MAX_ESCAPED_DOMAIN_NAME];
-                    uname[0] = '\0';
-					if (!CFStringGetCString(name, uname, sizeof(uname), kCFStringEncodingUTF8) ||
-                        !MakeDomainNameFromDNSNameString(dname, uname) || !dname->c[0])
-						LogMsg("GetUserSpecifiedDDNSName SCDynamicStore bad DDNS host name: %s", uname[0] ? uname : "(unknown)");
-					else LogMsg("GetUserSpecifiedDDNSName SCDynamicStore DDNS host name: %s", uname);
+					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+                        !MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
+						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
+					else LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
 					}
-				}
+				}			
+			if (zoneArray)
+				{
+				CFStringRef name = CFArrayGetValueAtIndex(zoneArray, 0);
+				if (name)
+					{
+					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+                        !MakeDomainNameFromDNSNameString(zone, buf) || !zone->c[0])
+						LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration zone: %s", buf[0] ? buf : "(unknown)");
+					else LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
+					}
+				}			
 			CFRelease(dict);
 			}
 		CFRelease(store);
@@ -2185,9 +2203,9 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	return mDNSfalse;
 	}
 
-mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
+mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
 	{
-	char buf[MAX_ESCAPED_DOMAIN_NAME];
+	char zone[MAX_ESCAPED_DOMAIN_NAME], fqdn[MAX_ESCAPED_DOMAIN_NAME];
 	char secret[1024];
 	int slen;
 	mStatus err;
@@ -2195,25 +2213,20 @@ mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
 	
 	secret[0] = 0;
 	DynDNSZone.c[0] = 0;
+	DynDNSHostname.c[0] = 0;
+
 	f = fopen(CONFIG_FILE, "r");
 	if (f)
 		{
-		if (GetConfigOption(buf, "zone", f))
-			{
-			if (!MakeDomainNameFromDNSNameString(&DynDNSZone, buf))
-				LogMsg("ERROR: config file contains bad hostname %s", buf);
-			else GetConfigOption(secret, "secret-64", f);  // failure means no authentication
-			}
-		fclose(f);
+		if (GetConfigOption(fqdn, "hostname", f) && !MakeDomainNameFromDNSNameString(&DynDNSHostname, fqdn)) goto badf;
+		if (GetConfigOption(zone, "zone", f) && !MakeDomainNameFromDNSNameString(&DynDNSZone, zone)) goto badf;
+		GetConfigOption(secret, "secret-64", f);  // failure means no authentication	   
 		}
 	else
 		{
 		if (errno != ENOENT) LogMsg("ERROR: Config file exists, but cannot be opened.");
 		return;
 		}
-
-	if (!DynDNSZone.c[0]) return;
-	AddDefRegDomain(&DynDNSZone); 	//set default (empty-string) service registration domain
 
 	if (secret[0])
 		{
@@ -2223,10 +2236,16 @@ mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
 		if (err) LogMsg("ERROR: mDNS_SetSecretForZone returned %d for domain %##s", err, DynDNSZone.c);
 		}
 
-	mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
-	
-	// update _browse/_register domain list
+	// Note - set secret *before* passing hostname/zone to core
+	if (DynDNSZone.c[0]) AddDefRegDomain(&DynDNSZone); 	//set default (empty-string) service registration domain
+	if (DynDNSHostname.c[0]) mDNS_AddDynDNSHostName(m, &DynDNSHostname, SCPrefsDynDNSCallback, NULL);
+		
+	// Update _browse/_register domain list
 	RegisterSearchDomains(m, NULL); // passing NULL will only trigger query for DynDNSZone
+	return;
+
+	badf:
+	LogMsg("ERROR: malformatted config file");
 	}
 
 mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, void *context)
@@ -2237,36 +2256,33 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	CFStringRef     key;
 	CFStringRef router, primary;
 	char buf[256];
-	domainlabel hostlabel;
-	domainname zone;
+	domainname zone, fqdn;
 	mDNSAddr r;
 	
 	if (DynDNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
 	DynDNSConfigInitialized = mDNStrue;  // set flag once we have initial configuration
 
-	// get host label
-	GetUserSpecifiedRFC1034ComputerName(&hostlabel);
-	mDNS_SetDynDNSComputerName(m, &hostlabel);
-
-	// get zone from SCPrefs
-	GetUserSpecifiedDDNSZone(&zone);
+	// get fqdn, zone from SCPrefs
+	GetUserSpecifiedDDNSConfig(&fqdn, &zone);
 	if (!SameDomainName(&zone, &DynDNSZone))
 		{
-		if (DynDNSZone.c[0])
-			{
-			RemoveDefRegDomain(&DynDNSZone);
-			mDNS_RemoveDynDNSHostDomain(m, &DynDNSZone);
-			}
+		if (DynDNSZone.c[0]) RemoveDefRegDomain(&DynDNSZone);
 		AssignDomainName(DynDNSZone, zone);
-		if (DynDNSZone.c[0])
+		if (DynDNSZone.c[0]) AddDefRegDomain(&zone);
+		}
+	
+	if (!SameDomainName(&fqdn, &DynDNSHostname))
+		{
+		if (DynDNSHostname.c[0]) mDNS_RemoveDynDNSHostName(m, &DynDNSHostname);
+		AssignDomainName(DynDNSHostname, fqdn);
+		if (DynDNSHostname.c[0])
 			{
-			mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
-			SetDDNSNameStatus(&DynDNSZone, 1);
-			AddDefRegDomain(&zone);
+			mDNS_AddDynDNSHostName(m, &DynDNSHostname, SCPrefsDynDNSCallback, NULL);
+			SetDDNSNameStatus(&DynDNSHostname, 1);
 			}
 		}
-
-	if (!DynDNSZone.c[0]) ReadZoneFromConfFile(m);
+		
+	if (!DynDNSZone.c[0] && !DynDNSHostname.c[0]) ReadDDNSSettingsFromConfFile(m);
 
     // get DNS settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
@@ -2589,8 +2605,7 @@ mDNSlocal void AddKeychainHostDomains(mDNS *m)
 			KeychainHostDomains = new;
 			
 			mDNS_SetSecretForZone(m, &zone, &zone, secret, secretlen, mDNStrue);
-			mDNS_AddDynDNSHostDomain(m, &zone, DynDNSRegCallback, NULL);
-
+			mDNS_AddDynDNSHostName(m, &zone, DynDNSRegCallback, NULL);
 			}
 
 		if (secret) free(secret);
@@ -2642,7 +2657,7 @@ mDNSlocal void RemoveKeychainDomains(mDNS *m)
 			RemoveDefRegDomain(&ptr->domain);
 			mDNS_Deregister(m, ptr->reg);
 			mDNS_Deregister(m, ptr->browse);
-			mDNS_RemoveDynDNSHostDomain(m, &ptr->domain);
+			mDNS_RemoveDynDNSHostName(m, &ptr->domain);
 			mDNS_SetSecretForZone(m, &ptr->domain, NULL, NULL, 0, mDNSfalse);
 			if (prev) prev->next = ptr->next;
 			else KeychainHostDomains = ptr->next;
@@ -2847,8 +2862,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	DynDNSZone.c[0] = '\0';						// Get initial DNS configuration
 	DynDNSConfigChanged(m->p->Store, NULL, m);
 
-	GetUserSpecifiedRFC1034ComputerName(&m->uDNS_info.hostlabel);
-	if (!m->uDNS_info.hostlabel.c[0]) MakeDomainLabelFromLiteralString(&m->uDNS_info.hostlabel, "Macintosh");
 	InitDNSConfig(m);
 	//m->uDNS_info.ServiceRegDomain.c[0] = '\0';
 
