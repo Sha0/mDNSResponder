@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.239  2004/11/15 20:09:23  ksekar
+<rdar://problem/3719050> Wide Area support for Add/Remove record
+
 Revision 1.238  2004/11/12 03:16:48  rpantos
 rdar://problem/3809541 Add mDNSPlatformGetInterfaceByName, mDNSPlatformGetInterfaceName
 
@@ -1314,7 +1317,8 @@ enum
 	regState_Refresh           = 9,     // outstanding refresh (or target change) message
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
 	regState_UpdatePending     = 11,    // update in flight as result of mDNS_Update call
-	regState_NoTarget          = 12     // service registration pending registration of hostname
+	regState_NoTarget          = 12,    // service registration pending registration of hostname
+	regState_DeregPendingExtras= 13     // deregistration complete, awaiting deregistration of extras
 	};
 
 typedef mDNSu16 regState_t;

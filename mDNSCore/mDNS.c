@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.465  2004/11/15 20:09:21  ksekar
+<rdar://problem/3719050> Wide Area support for Add/Remove record
+
 Revision 1.464  2004/11/03 01:44:36  cheshire
 Update debugging messages
 
@@ -6263,11 +6266,17 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	ExtraResourceRecord **e;
 	mStatus status;
 
+	extra->next = mDNSNULL;
+	mDNS_SetupResourceRecord(&extra->r, rdata, sr->RR_PTR.resrec.InterfaceID, extra->r.resrec.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
+	AssignDomainName(extra->r.resrec.name, sr->RR_SRV.resrec.name);
+	
 #ifndef UNICAST_DISABLED
 	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
 		{
-		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
-		return mStatus_UnsupportedErr;
+		mDNS_Lock(m);
+		status = uDNS_AddRecordToService(m, sr, extra);
+		mDNS_Unlock(m);
+		return status;
 		}
 #endif
 	
@@ -6278,9 +6287,6 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	// If TTL is unspecified, make it the same as the service's TXT and SRV default
 	if (ttl == 0) ttl = kDefaultTTLforUnique;
 
-	extra->next          = mDNSNULL;
-	mDNS_SetupResourceRecord(&extra->r, rdata, sr->RR_PTR.resrec.InterfaceID, extra->r.resrec.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
-	AssignDomainName(extra->r.resrec.name, sr->RR_SRV.resrec.name);
 	extra->r.DependentOn = &sr->RR_SRV;
 	
 	debugf("mDNS_AddRecordToService adding record to %##s", extra->r.resrec.name.c);
@@ -6296,14 +6302,6 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 	ExtraResourceRecord **e;
 	mStatus status;
 
-#ifndef UNICAST_DISABLED	
-	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
-		{
-		LogMsg("mDNS_AddRecordToService: Not implemented for unicast DNS");
-		return mStatus_UnsupportedErr;
-		}
-#endif
-
 	mDNS_Lock(m);
 	e = &sr->Extras;
 	while (*e && *e != extra) e = &(*e)->next;
@@ -6316,7 +6314,12 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 		{
 		debugf("mDNS_RemoveRecordFromService removing record from %##s", extra->r.resrec.name.c);
 		*e = (*e)->next;
-		status = mDNS_Deregister_internal(m, &extra->r, mDNS_Dereg_normal);
+#ifndef UNICAST_DISABLED	
+		if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
+			status = uDNS_DeregisterRecord(m, &extra->r);
+		else
+#endif
+		status = mDNS_Deregister_internal(m, &extra->r, mDNS_Dereg_normal);		
 		}
 	mDNS_Unlock(m);
 	return(status);

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.115  2004/11/15 20:09:24  ksekar
+<rdar://problem/3719050> Wide Area support for Add/Remove record
+
 Revision 1.114  2004/11/13 02:32:47  ksekar
 <rdar://problem/3868216> LLQ mobility fragile on non-primary interface
 - fixed incorrect state comparison in CheckQueries
@@ -1646,7 +1649,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 				}
 			}			
 		else if (!followedCName || !SameDomainName(&cr->resrec.name, &origname))
-			 LogMsg("Question %##s type %d - unexpected answer %##s type %d", question->qname.c, question->qtype, cr->resrec.name.c, cr->resrec.rrtype);
+			LogMsg("Question %##s type %d - unexpected answer %##s type %d", question->qname.c, question->qtype, cr->resrec.name.c, cr->resrec.rrtype);
 		}
 	
 	if (!llq || llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume)
@@ -1720,7 +1723,8 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 	AuthRecord *UpdateR = mDNSNULL;
 	uDNS_RegInfo *info = &srs->uDNS_info;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
-
+	ExtraResourceRecord *e;
+	
 	switch (info->state)
 		{
 		case regState_Pending:
@@ -1774,7 +1778,9 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				if (nat->state == NATState_Deleted) { FreeNATInfo(m, nat); info->NATinfo = mDNSNULL; } // deletion copmleted
 				else nat->reg.ServiceRegistration = mDNSNULL;  // allow mapping deletion to continue
 				}
-			info->state = regState_Unregistered;
+			for (e = srs->Extras; e; e = e->next) { if (e->r.uDNS_info.state != regState_Unregistered) break; }
+			if (e) { info->state = regState_DeregPendingExtras; return; }
+			else info->state = regState_Unregistered;
 			break;
 		case regState_DeregDeferred:
 			if (err) { debugf("Error %ld received prior to deferred derigstration of %##s", err, srs->RR_SRV.resrec.name.c); }
@@ -1784,21 +1790,14 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			return;		   
 		case regState_UpdatePending:
 			// find the record being updated
-			if (srs->RR_TXT.uDNS_info.state == regState_UpdatePending) UpdateR = &srs->RR_TXT;
-			else
-				{
-				ExtraResourceRecord *e;				
-				for (e = srs->Extras; e; e = e->next)
-					if (e->r.uDNS_info.state == regState_UpdatePending) { UpdateR = &e->r; break; }
-				if (!e) LogMsg("ServiceRecordSet for %##s in regState_UpdatePending with no corresponding records in UpdatePending state", srs->RR_SRV.resrec.name.c);
-				}
+			UpdateR = &srs->RR_TXT;
 			if (err)
 				{
 				LogMsg("hndlServiceUpdateReply: error updating resource record");				
-				if (UpdateR) UpdateR->uDNS_info.state = regState_Unregistered;
+				UpdateR->uDNS_info.state = regState_Unregistered;
 				InvokeCallback = mDNStrue;        // signal error via service callback
 				}
-			else if (UpdateR) 
+			else
 				{
 				UpdateR->uDNS_info.state = regState_Registered;
 				SwapRData(m, UpdateR, mDNStrue);				
@@ -1813,18 +1812,9 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 
 	if (info->state == regState_Registered) 
 		{
-		// send a queued update, if any
-		ExtraResourceRecord *e;
-
-		srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.
-		
+		srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.		
 		if (srs->RR_TXT.uDNS_info.UpdateQueued) SendRecordUpdate(m, &srs->RR_TXT, &srs->uDNS_info);
-		else
-			{
-			for (e = srs->Extras; e; e = e->next)
-				if (e->r.uDNS_info.UpdateQueued) { SendRecordUpdate(m, &e->r, &srs->uDNS_info); break; } 
-			}
-				
+		
 		if (info->TargetChangeDeferred)
 			{
 			info->ClientCallbackDeferred = InvokeCallback;
@@ -1852,6 +1842,25 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	
+	if (rr->uDNS_info.state == regState_UpdatePending)
+		{
+		if (err)
+			{
+			LogMsg("Update record failed for %##s (err %d)", rr->resrec.name.c, err);
+			rr->uDNS_info.state = regState_Unregistered;
+			}
+		else
+			{
+			debugf("Update record %##s - success", rr->resrec.name.c);
+			rr->uDNS_info.state = regState_Registered;
+			SwapRData(m, rr, mDNStrue);
+			}
+		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		rr->RecordCallback(m, rr, err);
+		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		return;
+		}
+
 	if (rr->uDNS_info.state == regState_DeregPending)
 		{					
 		debugf("Received reply for deregister record %##s type %d", rr->resrec.name.c, rr->resrec.rrtype);
@@ -1908,6 +1917,13 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 			}
 		else
 			{
+			if (rr->uDNS_info.UpdateQueued)
+				{
+				debugf("%##s: sending queued update", rr->resrec.name.c);
+				rr->uDNS_info.state = regState_Registered;
+				SendRecordUpdate(m ,rr, &rr->uDNS_info);
+				return;
+				}
 			if (rr->uDNS_info.state == regState_Refresh)
 				rr->uDNS_info.state = regState_Registered;			
 			else
@@ -2254,6 +2270,7 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
  
 	info->origLease = llq->lease;
 	info->state = LLQ_Established;	
+	
 	q->uDNS_info.responseCallback = llqResponseHndlr;
 	llqResponseHndlr(m, pktMsg, end, q, mDNSNULL);
 	return;
@@ -3813,9 +3830,8 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	
 	if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_TXT.resrec))) goto error;
 	if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_PTR.resrec))) goto error;
-	//if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_ADV.resrec))) goto error;
-	//!!!KRS  need to handle extras/subtypes etc
-	
+	//if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_ADV.resrec))) goto error;			
+                                                		// 
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
 	if (err) { LogMsg("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
@@ -3832,7 +3848,16 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
+	ExtraResourceRecord *e = srs->Extras, *tmp;;
 
+	while(e)
+		{
+		tmp = e;
+		e = e->next;
+		uDNS_DeregisterRecord(m, &tmp->r);
+		}
+ 
+	
 	switch (srs->uDNS_info.state)
 		{
 		case regState_NATMap:
@@ -3912,7 +3937,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	
 	// don't report send errors - retransmission will occurr if necessary
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
-	if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
+	if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
 	//!!! Update this when we implement retransmission for services	
 	SetRecordRetry(m, rr);
@@ -3926,21 +3951,70 @@ error:
 	info ->state = regState_Registered;  
 	}
 
+mDNSlocal void ExtraCallback(mDNS *const m, AuthRecord *const rr, mStatus err)
+	{
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	ServiceRecordSet *ptr = u->ServiceRegistrations, *srs = (ServiceRecordSet *)rr->RecordContext;
+	ExtraResourceRecord *e;
+	
+	// sanity check - find ServiceRecordSet in list
+	while (ptr && ptr != srs) ptr = ptr->next;
+	if (!ptr) { LogMsg("Error: ExtraCallback - cannot find parent service"); return; }
+
+	// now find record in Extras list
+	e = srs->Extras;
+	while (&e->r != rr) e = e->next;
+	if (!e) { LogMsg("Error: ExtraCallback - cannot find record in parent's Extras list"); return; }
+	if (err && err != mStatus_MemFree) LogMsg("Extra record registration %##s failed with error %d", rr->resrec.name.c, err);
+	if (rr->uDNS_info.state == regState_Unregistered)
+		{
+		if (srs->uDNS_info.state == regState_DeregPendingExtras)
+			{
+			for (e = srs->Extras; e; e = e->next) if (e->r.uDNS_info.state != regState_Unregistered) break;
+			if (!e) // all records we were waiting for are done
+				{				
+				srs->uDNS_info.state = regState_Unregistered;
+				unlinkSRS(u, srs);
+				err = mStatus_MemFree;
+				}
+			else return;  // don't prematurely give memfree for *service*
+			}
+		}
+
+	if (err == mStatus_MemFree) return;  // don't pass MemFree to service callback until ALL extras (and SRS) can be deleted
+	m->mDNS_reentrancy++;
+	srs->ServiceCallback(m, srs, err);
+	m->mDNS_reentrancy--;
+	}
+
+mDNSexport mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra)
+	{
+	mStatus err;
+	
+	extra->r.resrec.RecordType = kDNSRecordTypeShared;  // don't want it to conflict with the service name
+	extra->r.RecordCallback = ExtraCallback;
+	extra->r.RecordContext = sr;
+	
+	err = uDNS_RegisterRecord(m, &extra->r);
+	if (!err)
+		{
+		extra->next = sr->Extras;
+		sr->Extras = extra;
+		}
+	return err;
+	}
+ 
+ 
 mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	ServiceRecordSet *sptr, *parent = mDNSNULL;
-	ExtraResourceRecord *eptr;
 	AuthRecord *rptr;
 	uDNS_RegInfo *info = mDNSNULL;
 	
 	// find the record in registered service list
 	for (sptr = u->ServiceRegistrations; sptr; sptr = sptr->next)
-		{
 		if (&sptr->RR_TXT == rr) { info = &sptr->uDNS_info; parent = sptr; break; }
-		for (eptr = sptr->Extras; eptr; eptr = eptr->next)
-			if (&eptr->r == rr)  { info = &sptr->uDNS_info; parent = sptr; break; }
-		}
 
 	if (!parent)
 		{
@@ -3956,7 +4030,6 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 	rr->uDNS_info.UpdateRDLen = rr->newrdlength;
 	rr->uDNS_info.UpdateRDCallback = rr->UpdateCallback;
 	rr->NewRData = mDNSNULL;
-
 	
 	switch(info->state)
 		{

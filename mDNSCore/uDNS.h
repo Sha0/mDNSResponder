@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.22  2004/11/15 20:09:24  ksekar
+<rdar://problem/3719050> Wide Area support for Add/Remove record
+
 Revision 1.21  2004/11/11 20:14:55  ksekar
 <rdar://problem/3719574> Wide-Area registrations not deregistered on sleep
 
@@ -127,6 +130,7 @@ extern void uDNS_Wake(mDNS *m);
 // rr->newrdlength
 // rr->UpdateCallback
 
+extern mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr);
 	
 extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
