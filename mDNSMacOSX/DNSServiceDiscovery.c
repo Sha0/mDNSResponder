@@ -141,7 +141,21 @@ mach_port_t DNSServiceDiscoveryLookupServer(void)
         sndPort = MACH_PORT_NULL;
     }
 
+
     return sndPort;
+}
+
+void _increaseQueueLengthOnPort(mach_port_t port)
+{
+    mach_port_limits_t qlimits;
+    kern_return_t result;
+    
+    qlimits.mpl_qlimit = 16;
+    result = mach_port_set_attributes(mach_task_self(), port, MACH_PORT_LIMITS_INFO, (mach_port_info_t)&qlimits, MACH_PORT_LIMITS_INFO_COUNT);
+
+    if (result != KERN_SUCCESS) {
+        printf("%s(): {%s:%d} mach_port_set_attributes() failed: $%x %s\n", __FUNCTION__, __FILE__, __LINE__, (int) result, mach_error_string(result));
+    }
 }
 
 dns_service_discovery_ref DNSServiceBrowserCreate (const char *regtype, const char *domain, DNSServiceBrowserReply callBack,void *context)
@@ -167,6 +181,7 @@ dns_service_discovery_ref DNSServiceBrowserCreate (const char *regtype, const ch
         mach_port_destroy(mach_task_self(), clientPort);
         return NULL;
     }
+    _increaseQueueLengthOnPort(clientPort);
 
     return_t = malloc(sizeof(dns_service_discovery_t));
     return_t->port = clientPort;
@@ -217,6 +232,8 @@ dns_service_discovery_ref DNSServiceDomainEnumerationCreate (int registrationDom
         mach_port_destroy(mach_task_self(), clientPort);
         return NULL;
     }
+    _increaseQueueLengthOnPort(clientPort);
+
     return_t = malloc(sizeof(dns_service_discovery_t));
     return_t->port = clientPort;
 
@@ -268,6 +285,8 @@ dns_service_discovery_ref DNSServiceRegistrationCreate
         mach_port_destroy(mach_task_self(), clientPort);
         return NULL;
     }
+    _increaseQueueLengthOnPort(clientPort);
+
     return_t = malloc(sizeof(dns_service_discovery_t));
     return_t->port = clientPort;
 
@@ -317,6 +336,8 @@ dns_service_discovery_ref DNSServiceResolverResolve(const char *name, const char
         mach_port_destroy(mach_task_self(), clientPort);
         return NULL;
     }
+    _increaseQueueLengthOnPort(clientPort);
+
     return_t = malloc(sizeof(dns_service_discovery_t));
     return_t->port = clientPort;
 
