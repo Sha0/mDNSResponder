@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.31  2004/01/20 01:39:27  rpantos
+Respond to If changes by rebuilding interface list.
+
 Revision 1.30  2003/12/11 19:40:36  cheshire
 Fix 'destAddr.type == senderAddr.type;' that should have said 'destAddr.type = senderAddr.type;'
 
@@ -153,6 +156,15 @@ First checkin
 #include <sys/select.h>
 #include <netinet/in.h>
 
+#if USES_NETLINK
+#include <asm/types.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
+#else // USES_NETLINK
+#include <net/route.h>
+#include <net/if.h>
+#endif // USES_NETLINK
+
 #include "mDNSUNP.h"
 #include "GenLinkedList.h"
 
@@ -168,6 +180,14 @@ struct PosixEventSource
 	struct  PosixEventSource	*Next;
 	};
 typedef struct PosixEventSource	PosixEventSource;
+
+// Context record for interface change callback
+struct IfChangeRec
+	{
+	int			NotifySD;
+	mDNS*		mDNS;
+	};
+typedef struct IfChangeRec	IfChangeRec;
 
 // Note that static data is initialized to zero in (modern) C.
 static fd_set			gEventFDs;
@@ -836,6 +856,228 @@ static int SetupInterfaceList(mDNS *const m)
 	return err;
 	}
 
+#if USES_NETLINK
+
+// See <http://www.faqs.org/rfcs/rfc3549.html> for a description of NetLink
+
+// Open a socket that will receive interface change notifications
+mStatus		OpenIfNotifySocket( int *pFD)
+	{
+	mStatus					err = mStatus_NoError;
+	struct sockaddr_nl		snl;
+	int sock;
+	int ret;
+
+	sock = socket( AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+	if (sock < 0)
+		return errno;
+
+	// Configure read to be non-blocking because inbound msg size is not known in advance
+	(void) fcntl( sock, F_SETFL, O_NONBLOCK);
+
+	/* Subscribe the socket to Link & IP addr notifications. */
+	bzero( &snl, sizeof snl);
+	snl.nl_family = AF_NETLINK;
+	snl.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR;
+	ret = bind( sock, (struct sockaddr *) &snl, sizeof snl);
+	if ( 0 == ret)
+		*pFD = sock;
+	else
+		err = errno;
+
+	return err;
+	}
+
+#if MDNS_DEBUGMSGS
+static void		PrintNetLinkMsg( const struct nlmsghdr *pNLMsg)
+	{
+	const char *kNLMsgTypes[] = { "", "NLMSG_NOOP", "NLMSG_ERROR", "NLMSG_DONE", "NLMSG_OVERRUN" };
+	const char *kNLRtMsgTypes[] = { "RTM_NEWLINK", "RTM_DELLINK", "RTM_GETLINK", "RTM_NEWADDR", "RTM_DELADDR", "RTM_GETADDR" };
+
+	printf( "nlmsghdr len=%d, type=%s, flags=0x%x\n", pNLMsg->nlmsg_len, 
+			pNLMsg->nlmsg_type < RTM_BASE ? kNLMsgTypes[ pNLMsg->nlmsg_type] : kNLRtMsgTypes[ pNLMsg->nlmsg_type - RTM_BASE], 
+			pNLMsg->nlmsg_flags);
+
+	if ( RTM_NEWLINK <= pNLMsg->nlmsg_type && pNLMsg->nlmsg_type <= RTM_GETLINK)
+		{
+		struct ifinfomsg	*pIfInfo = (struct ifinfomsg*) NLMSG_DATA( pNLMsg);
+		printf( "ifinfomsg family=%d, type=%d, index=%d, flags=0x%x, change=0x%x\n", pIfInfo->ifi_family, 
+				pIfInfo->ifi_type, pIfInfo->ifi_index, pIfInfo->ifi_flags, pIfInfo->ifi_change);
+		
+		}
+	else if ( RTM_NEWADDR <= pNLMsg->nlmsg_type && pNLMsg->nlmsg_type <= RTM_GETADDR)
+		{
+		struct ifaddrmsg	*pIfAddr = (struct ifaddrmsg*) NLMSG_DATA( pNLMsg);
+		printf( "ifaddrmsg family=%d, index=%d, flags=0x%x\n", pIfAddr->ifa_family, 
+				pIfAddr->ifa_index, pIfAddr->ifa_flags);
+		}
+	printf( "\n");
+	}
+#endif
+
+static uint32_t		ProcessRoutingNotification( int sd)
+// Read through the messages on sd and if any indicate that any interface records should
+// be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
+	{
+	ssize_t					readCount;
+	char					buff[ 4096];	
+	struct nlmsghdr			*pNLMsg = (struct nlmsghdr*) buff;
+	uint32_t				result = 0;
+	
+	// The structure here is more complex than it really ought to be because,
+	// unfortunately, there's no good way to size a buffer in advance large
+	// enough to hold all pending data and so avoid message fragmentation.
+	// (Note that FIONREAD is not supported on AF_NETLINK.)
+
+	readCount = read( sd, buff, sizeof buff);
+	while ( 1)
+		{
+		// Make sure we've got an entire nlmsghdr in the buffer, and payload, too.
+		// If not, discard already-processed messages in buffer and read more data.
+		if ( ( (char*) &pNLMsg[1] > ( buff + readCount)) ||	// i.e. *pNLMsg extends off end of buffer 
+			 ( (char*) pNLMsg + pNLMsg->nlmsg_len > ( buff + readCount)))
+			{
+			if ( buff < (char*) pNLMsg)		// we have space to shuffle
+				{
+				// discard processed data
+				readCount -= ( (char*) pNLMsg - buff);
+				memmove( buff, pNLMsg, readCount);
+				pNLMsg = (struct nlmsghdr*) buff;
+
+				// read more data
+				readCount += read( sd, buff + readCount, sizeof buff - readCount);
+				continue;					// spin around and revalidate with new readCount
+				}
+			else
+				break;	// Otherwise message does not fit in buffer
+			}
+
+#if MDNS_DEBUGMSGS
+		PrintNetLinkMsg( pNLMsg);
+#endif
+
+		// Process the NetLink message
+		if ( pNLMsg->nlmsg_type == RTM_GETLINK || pNLMsg->nlmsg_type == RTM_NEWLINK)
+			result |= 1 << ((struct ifinfomsg*) NLMSG_DATA( pNLMsg))->ifi_index;
+		else if ( pNLMsg->nlmsg_type == RTM_DELADDR || pNLMsg->nlmsg_type == RTM_NEWADDR)
+			result |= 1 << ((struct ifaddrmsg*) NLMSG_DATA( pNLMsg))->ifa_index;
+
+		// Advance pNLMsg to the next message in the buffer
+		if ( ( pNLMsg->nlmsg_flags & NLM_F_MULTI) != 0 && pNLMsg->nlmsg_type != NLMSG_DONE)
+			{
+			ssize_t	len = readCount - ( (char*)pNLMsg - buff);
+			pNLMsg = NLMSG_NEXT( pNLMsg, len);
+			}
+		else
+			break;	// all done!
+		}
+
+	return result;
+	}
+
+#else // USES_NETLINK
+
+// Open a socket that will receive interface change notifications
+mStatus		OpenIfNotifySocket( int *pFD)
+	{
+	*pFD = socket( AF_ROUTE, SOCK_RAW, 0);
+
+	if ( *pFD < 0)
+		return mStatus_UnknownErr;
+
+	// Configure read to be non-blocking because inbound msg size is not known in advance
+	(void) fcntl( *pFD, F_SETFL, O_NONBLOCK);
+
+	return mStatus_NoError;
+	}
+
+#if MDNS_DEBUGMSGS
+static void		PrintRoutingSocketMsg( const struct ifa_msghdr *pRSMsg)
+	{
+	const char *kRSMsgTypes[] = { "", "RTM_ADD", "RTM_DELETE", "RTM_CHANGE", "RTM_GET", "RTM_LOSING",
+					"RTM_REDIRECT", "RTM_MISS", "RTM_LOCK", "RTM_OLDADD", "RTM_OLDDEL", "RTM_RESOLVE", 
+					"RTM_NEWADDR", "RTM_DELADDR", "RTM_IFINFO", "RTM_NEWMADDR", "RTM_DELMADDR" };
+
+	int		index = pRSMsg->ifam_type == RTM_IFINFO ? ((struct if_msghdr*) pRSMsg)->ifm_index : pRSMsg->ifam_index;
+
+	printf( "ifa_msghdr len=%d, type=%s, index=%d\n", pRSMsg->ifam_msglen, kRSMsgTypes[ pRSMsg->ifam_type], index);
+	}
+#endif
+
+static uint32_t		ProcessRoutingNotification( int sd)
+// Read through the messages on sd and if any indicate that any interface records should
+// be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
+	{
+	ssize_t					readCount;
+	char					buff[ 4096];	
+	struct ifa_msghdr		*pRSMsg = (struct ifa_msghdr*) buff;
+	uint32_t				result = 0;
+
+	readCount = read( sd, buff, sizeof buff);
+	if ( readCount < (ssize_t) sizeof( struct ifa_msghdr))
+		return mStatus_UnsupportedErr;		// cannot decipher message
+
+#if MDNS_DEBUGMSGS
+	PrintRoutingSocketMsg( pRSMsg);
+#endif
+
+	// Process the message
+	if ( pRSMsg->ifam_type == RTM_NEWADDR || pRSMsg->ifam_type == RTM_DELADDR ||
+		 pRSMsg->ifam_type == RTM_IFINFO)
+		{
+		if ( pRSMsg->ifam_type == RTM_IFINFO)
+			result |= 1 << ((struct if_msghdr*) pRSMsg)->ifm_index;
+		else
+			result |= 1 << pRSMsg->ifam_index;
+		}
+
+	return result;
+	}
+
+#endif // USES_NETLINK
+
+// Called when data appears on interface change notification socket
+static void InterfaceChangeCallback( void *context)
+	{
+	IfChangeRec		*pChgRec = (IfChangeRec*) context;
+	fd_set			readFDs;
+	uint32_t		changedInterfaces = 0;
+	struct timeval	zeroTimeout = { 0, 0 };
+	
+	FD_ZERO( &readFDs);
+	FD_SET( pChgRec->NotifySD, &readFDs);
+	
+	do
+	{
+		changedInterfaces |= ProcessRoutingNotification( pChgRec->NotifySD);
+	}
+	while ( 0 < select( pChgRec->NotifySD + 1, &readFDs, (fd_set*) NULL, (fd_set*) NULL, &zeroTimeout));
+
+	// Currently we rebuild the entire interface list whenever any interface change is
+	// detected. If this ever proves to be a performance issue in a multi-homed 
+	// configuration, more care should be paid to changedInterfaces.
+	if ( changedInterfaces)
+		mDNSPlatformPosixRefreshInterfaceList( pChgRec->mDNS);
+	}
+
+// Register with either a Routing Socket or RtNetLink to listen for interface changes.
+static mStatus WatchForInterfaceChange(mDNS *const m)
+	{
+	mStatus		err;
+	IfChangeRec	*pChgRec;
+
+	pChgRec = (IfChangeRec*) mDNSPlatformMemAllocate( sizeof *pChgRec);
+	if ( pChgRec == NULL)
+		return mStatus_NoMemoryErr;
+
+	pChgRec->mDNS = m;
+	err = OpenIfNotifySocket( &pChgRec->NotifySD);
+	if ( err == 0)
+		err = mDNSPosixAddFDToEventLoop( pChgRec->NotifySD, InterfaceChangeCallback, pChgRec);
+
+	return err;
+	}
+
 // mDNS core calls this routine to initialise the platform-specific data.
 mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	{
@@ -858,6 +1100,14 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 
 	// Tell mDNS core about the network interfaces on this machine.
 	err = SetupInterfaceList(m);
+
+	err = WatchForInterfaceChange(m);
+	// Failure to observe interface changes is non-fatal.
+	if ( err != 0)
+		{
+		fprintf(stderr, "mDNS(%d) WARNING: Unable to detect interface changes (%d).\n", getpid(), err);
+		err = 0;
+		}
 
 	// We don't do asynchronous initialization on the Posix platform, so by the time
 	// we get here the setup will already have succeeded or failed.  If it succeeded,
