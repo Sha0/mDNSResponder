@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.26  2003/07/19 03:25:23  cheshire
+ * Change to make use of new GetLargeResourceRecord() call, for handling larger records
+ *
  * Revision 1.25  2003/07/18 00:13:23  cheshire
  * Remove erroneous trailing '\' from TXT record display
  *
@@ -301,11 +304,12 @@ mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query,
 	int i;
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
+		const mDNSu8 *p2 = ptr;
 		ptr = GetResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pktrr, mDNSNULL);
 		if (!ptr) break;
-		if (ResourceRecordAnswersQuestion(pktrr, q)) return(ptr);
+		if (ResourceRecordAnswersQuestion(pktrr, q)) return(p2);
 		}
-	return(mDNSfalse);
+	return(mDNSNULL);
 	}
 
 mDNSlocal void DisplayTimestamp(void)
@@ -407,7 +411,6 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	int i;
 	const mDNSu8 *ptr = msg->data;
 	const mDNSu8 *auth = LocateAuthorities(msg, end);
-	const mDNSu8 *p2;
 	ResourceRecord pktrr;
 
 	DisplayPacketHeader(msg, srcaddr, srcport);
@@ -417,17 +420,20 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
 		DNSQuestion q;
+		mDNSu8 *p2;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
 		mDNSu16 ucbit = q.qclass & kDNSQClass_UnicastResponse;
 		q.qclass &= ~kDNSQClass_UnicastResponse;
-		p2 = FindUpdate(m, msg, auth, end, &q, &pktrr);
+		p2 = (mDNSu8 *)FindUpdate(m, msg, auth, end, &q, &pktrr);
 		if (p2)
 			{
 			NumProbes++;
 			DisplayResourceRecord(srcaddr, ucbit ? "(PU)" : "(PM)", &pktrr);
 			recordstat(&q.qname, OP_probe, q.qtype);
-			auth = p2; // Having displayed this update record, adjust auth forward so we don't display the same one again.
+			p2 = (mDNSu8 *)skipDomainName(msg, p2, end);
+			// Having displayed this update record, clear type and class so we don't display the same one again.
+			p2[0] = p2[1] = p2[2] = p2[3] = 0;
 			}
 		else
 			{
@@ -438,6 +444,8 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			recordstat(&q.qname, OP_query, q.qtype);
 			}
 		}
+
+	for (i=0; ptr && i<msg->h.numAuthorities; i++) ptr = skipResourceRecord(msg, ptr, end);
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
@@ -451,7 +459,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
-	ResourceRecord pktrr;
+	LargeResourceRecord pkt;
 
 	DisplayPacketHeader(msg, srcaddr, srcport);
 	NumPktR++;
@@ -466,35 +474,35 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
-		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr); return; }
-		if (pktrr.rroriginalttl)
+		if (pkt.r.rroriginalttl)
 			{
 			NumAnswers++;
-			DisplayResourceRecord(srcaddr, (pktrr.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AN)" : "(AN+)", &pktrr);
-			recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
+			DisplayResourceRecord(srcaddr, (pkt.r.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AN)" : "(AN+)", &pkt.r);
+			recordstat(&pkt.r.name, OP_answer, pkt.r.rrtype);
 			}
 		else
 			{
 			NumGoodbyes++;
-			DisplayResourceRecord(srcaddr, "(DE)", &pktrr);
-			recordstat(&pktrr.name, OP_goodbye, pktrr.rrtype);
+			DisplayResourceRecord(srcaddr, "(DE)", &pkt.r);
+			recordstat(&pkt.r.name, OP_goodbye, pkt.r.rrtype);
 			}
 		}
 
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
-		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt.r, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ AUTHORITY **** \n", srcaddr); return; }
-		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
+		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(pkt.r.rrtype), pkt.r.name.c);
 		}
 
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
-		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
+		ptr = GetResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pkt.r, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr); return; }
 		NumAdditionals++;
-		DisplayResourceRecord(srcaddr, (pktrr.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pktrr);
+		DisplayResourceRecord(srcaddr, (pkt.r.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pkt.r);
 		}
 	}
 
