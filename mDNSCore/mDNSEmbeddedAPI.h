@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.122  2003/11/20 20:49:53  cheshire
+Another fix from HP: Use packedstruct macro to ensure proper packing for on-the-wire packet structures
+
 Revision 1.121  2003/11/20 05:01:38  cheshire
 Update comments; add explanation of Advertise/DontAdvertiseLocalAddresses
 
@@ -442,6 +445,21 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #endif
 
 // ***************************************************************************
+// Structure packing macro
+
+// If we're not using GNUC, it's not fatal.
+// Most compilers naturally pack the on-the-wire structures correctly anyway, so a plain "struct" is usually fine.
+// In the event that structures are not packed correctly, mDNS_Init() will detect this and report an error, so the
+// developer will know what's wrong, and can investigate what needs to be done on that compiler to provide proper packing.
+#ifndef packed_struct
+ #ifdef __GNUC__
+  #define packedstruct struct __attribute__((__packed__))
+ #else
+  #define packedstruct struct
+ #endif
+#endif
+
+// ***************************************************************************
 #if 0
 #pragma mark - DNS Resource Record class and type constants
 #endif
@@ -544,7 +562,11 @@ enum
 	mStatus_Waiting           = 1,
 	mStatus_NoError           = 0,
 
-	// mDNS Error codes are in the range FFFE FF00 (-65792) to FFFE FFFF (-65537)
+	// mDNS return values are in the range FFFE FF00 (-65792) to FFFE FFFF (-65537)
+	// The top end of the range (FFFE FFFF) is used for error codes;
+	// the bottom end of the range (FFFE FF00) is used for non-error values;
+
+	// Error codes:
 	mStatus_UnknownErr        = -65537,		// 0xFFFE FFFF
 	mStatus_NoSuchNameErr     = -65538,
 	mStatus_NoMemoryErr       = -65539,
@@ -560,6 +582,10 @@ enum
 	mStatus_Invalid           = -65549,
 	mStatus_GrowCache         = -65550,
 	mStatus_Incompatible      = -65551,
+
+	// -65552 - -65790 currently unused
+
+	// Non-error values:
 	mStatus_ConfigChanged     = -65791,
 	mStatus_MemFree           = -65792		// 0xFFFE FF00
 	};
@@ -671,8 +697,8 @@ enum
 	kDNSRecordTypePacketUniqueMask = 0x20	// True for PacketAddUnique and PacketAnsUnique
 	};
 
-typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target; } rdataSRV;
-typedef struct { mDNSu16 preference; domainname exchange; } rdataMX;
+typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target;   } rdataSRV;
+typedef packedstruct { mDNSu16 preference;                                domainname exchange; } rdataMX;
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
@@ -1304,7 +1330,7 @@ extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 // The definitions are placed here because sometimes clients do use these calls indirectly, via other supported client operations.
 // For example, AssignDomainName is a macro defined using mDNSPlatformMemCopy()
 
-typedef struct
+typedef packedstruct
 	{
 	mDNSOpaque16 id;
 	mDNSOpaque16 flags;
@@ -1319,7 +1345,7 @@ typedef struct
 // 40 (IPv6 header) + 8 (UDP header) + 12 (DNS message header) + 1440 (DNS message body) = 1500 total
 #define AbsoluteMaxDNSMessageData 8940
 #define NormalMaxDNSMessageData 1440
-typedef struct
+typedef packedstruct
 	{
 	DNSMessageHeader h;						// Note: Size 12 bytes
 	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 40 (IPv6) + 8 (UDP) + 12 (DNS header) + 8940 (data) = 9000
