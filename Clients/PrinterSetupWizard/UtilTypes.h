@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.8  2005/01/06 08:18:26  shersche
+Add protocol field to service, add EmptyQueues() function to service
+
 Revision 1.7  2005/01/04 21:07:29  shersche
 add description member to service object.  this member corresponds to the 'ty' key in a printer text record
 
@@ -135,6 +138,9 @@ namespace PrinterSetupWizard
 
 		~Service();
 
+		void
+		EmptyQueues();
+
 		Printer		*	printer;
 		uint32_t		ifi;
 		std::string		type;
@@ -151,6 +157,7 @@ namespace PrinterSetupWizard
 		CString			description;
 		CString			location;
 		CString			product;
+		CString			protocol;
 		unsigned short	qtotal;
 
 		//
@@ -243,6 +250,12 @@ namespace PrinterSetupWizard
 	{
 		check( serviceRef == NULL );
 
+		EmptyQueues();
+	}
+
+	inline void
+	Service::EmptyQueues()
+	{
 		while ( queues.size() > 0 )
 		{
 			Queue * q = queues.front();
