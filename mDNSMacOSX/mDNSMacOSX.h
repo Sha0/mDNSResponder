@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.5  2003/03/05 01:50:38  cheshire
+Bug #: 3189097 Additional debugging code in mDNSResponder
+
 Revision 1.4  2003/02/21 01:54:10  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
@@ -114,6 +117,16 @@ extern void freeL(char *msg, void *x);
 #define mallocL(X,Y) malloc(Y)
 #define freeL(X,Y) free(Y)
 #endif
+
+#define LogAllOperations 0
+
+#if LogAllOperations
+#define LogOperation LogMsg
+#else
+#define	LogOperation(ARGS...) ((void)0)
+#endif
+
+extern void LogMsg(const char *format, ...);
 
 #ifdef  __cplusplus
     }

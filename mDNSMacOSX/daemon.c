@@ -35,14 +35,6 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  */
 
-#define LogAllOperations 0
-
-#if LogAllOperations
-#define LogOperation LogMsg
-#else
-#define	LogOperation(ARGS...) ((void)0)
-#endif
-
 #include <mach/mach.h>
 #include <mach/mach_error.h>
 #include <servers/bootstrap.h>
@@ -139,20 +131,6 @@ static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 //*************************************************************************************************************
 // General Utility Functions
 
-void LogMsg(const char *format, ...)
-	{
-	unsigned char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
-	va_end(ptr);
-	openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
-	fprintf(stderr, "%s\n", buffer);
-	syslog(LOG_ERR, "%s", buffer);
-	closelog();
-	fflush(stderr);
-	}
-
 #if MACOSX_MDNS_MALLOC_DEBUGGING
 
 char _malloc_options[] = "AXZ";
@@ -186,9 +164,9 @@ static void validatelists(mDNS *const m)
 		if (rr->RecordType == 0 || rr->RecordType == 0xFF)
 			LogMsg("!!!! ResourceRecords %X list is garbage (%X) !!!!", rr, rr->RecordType);
 
-	for (q = m->ActiveQuestions; q; q=q->next)
+	for (q = m->Questions; q; q=q->next)
 		if (q->ThisQInterval == 0 || q->ThisQInterval == (mDNSs32)~0)
-			LogMsg("!!!! ActiveQuestions %X list is garbage (%X) !!!!", q, q->ThisQInterval);
+			LogMsg("!!!! Questions %X list is garbage (%X) !!!!", q, q->ThisQInterval);
 	}
 
 void *mallocL(char *msg, unsigned int size)
@@ -308,11 +286,11 @@ mDNSlocal void AbortBlockedClient(mach_port_t c, char *msg, void *m)
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
-	if      (e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e->dom.name, msg);
-	else if (b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",      c, &b->q.name, msg);
-	else if (l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",     c, &l->i.name, msg);
-	else if (r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)", c, &r->s.RR_SRV.name, msg);
-	else        LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c, msg);
+	if      (e) LogMsg("%5d: DomainEnumeration(%##s) stopped accepting Mach messages (%s)", c, &e->dom.name,      msg);
+	else if (b) LogMsg("%5d: Browser(%##s) stopped accepting Mach messages (%s)",           c, &b->q.name,        msg);
+	else if (l) LogMsg("%5d: Resolver(%##s) stopped accepting Mach messages (%s)",          c, &l->i.name,        msg);
+	else if (r) LogMsg("%5d: Registration(%##s) stopped accepting Mach messages (%s)",      c, &r->s.RR_SRV.name, msg);
+	else        LogMsg("%5d: (%s) stopped accepting Mach messages, but no record of client can be found!", c,     msg);
 
 	AbortClient(c, m);
 	}

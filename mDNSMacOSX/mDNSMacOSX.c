@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.56  2003/03/05 01:50:38  cheshire
+Bug #: 3189097 Additional debugging code in mDNSResponder
+
 Revision 1.55  2003/02/21 01:54:09  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
@@ -127,7 +130,7 @@ Minor code tidying
 typedef struct NetworkInterfaceInfo2_struct NetworkInterfaceInfo2;
 struct NetworkInterfaceInfo2_struct
 	{
-	NetworkInterfaceInfo ifinfo;
+	NetworkInterfaceInfo ifinfo;	// MUST be the first element in this structure
 	mDNS *m;
 	char *ifa_name;
 	int socket;
@@ -167,6 +170,20 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	fflush(stderr);
 	}
 
+void LogMsg(const char *format, ...)
+	{
+	unsigned char buffer[512];
+	va_list ptr;
+	va_start(ptr,format);
+	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	va_end(ptr);
+	openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
+	fprintf(stderr, "%s\n", buffer);
+	syslog(LOG_ERR, "%s", buffer);
+	closelog();
+	fflush(stderr);
+	}
+
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSOpaqueID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
@@ -201,8 +218,6 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		return mStatus_BadParamErr;
 		}
 
-	debugf("mDNSPlatformSendUDP: sending on InterfaceID %X/%d", InterfaceID, dst->type);
-
 	if (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger)
 		{
 		if (dst->type == mDNSAddrType_IPv4) s = info->socket;
@@ -215,6 +230,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 #endif
 	else { debugf("Source port %d not allowed", (mDNSu16)srcPort.b[0]<<8 | srcPort.b[1]); return(-1); }
 	
+	if (s) debugf("mDNSPlatformSendUDP: sending on InterfaceID %X/%d", InterfaceID, dst->type);
+	else debugf("mDNSPlatformSendUDP: NOT sending on InterfaceID %X/%d (socket of this type not available)", InterfaceID, dst->type);
+
 	// Note: When sending, mDNSCore may often ask us to send both a v4 multicast packet and then a v6 multicast packet
 	// If we don't have the corresponding type of socket available, then return mStatus_Invalid
 	if (!s) return(mStatus_Invalid);
@@ -228,6 +246,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	struct sockaddr *const from, size_t *const fromlen, mDNSAddr *dstaddr, char ifname[IF_NAMESIZE])
 	{
+	static int numLogMessages = 0;
 	struct iovec databuffers = { (char *)buffer, max };
 	struct msghdr   msg;
 	ssize_t         n;
@@ -245,8 +264,22 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	
 	// Receive the data
 	n = recvmsg(s, &msg, 0);
-	if (n<0 || msg.msg_controllen < sizeof(struct cmsghdr) || (msg.msg_flags & MSG_CTRUNC))
-		{ perror("recvmsg"); return(n); }
+	if (n<0)
+		{
+		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg returned error %d", n);
+		return(-1);
+		}
+	if (msg.msg_controllen < sizeof(struct cmsghdr))
+		{
+		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg msg.msg_controllen %d < sizeof(struct cmsghdr) %d",
+			msg.msg_controllen, sizeof(struct cmsghdr));
+		return(-1);
+		}
+	if (msg.msg_flags & MSG_CTRUNC)
+		{
+		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg msg.msg_flags & MSG_CTRUNC");
+		return(-1);
+		}
 	
 	*fromlen = msg.msg_namelen;
 	
