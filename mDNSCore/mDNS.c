@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.241  2003/07/23 21:03:42  cheshire
+Only show "Found record..." debugf message in verbose mode
+
 Revision 1.240  2003/07/23 21:01:11  cheshire
 <rdar://problem/3340584> Need Nagle-style algorithm to coalesce multiple packets into one
 After sending a packet, suppress further sending for the next 100ms.
@@ -4860,7 +4863,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pkt.r, rr))
 					{
 					if (pkt.r.rdata->RDLength > StandardRDSize)
-						debugf("Found record size %5d interface %p already in cache: %s",
+						verbosedebugf("Found record size %5d interface %p already in cache: %s",
 							pkt.r.rdata->RDLength, InterfaceID, GetRRDisplayString(m, &pkt.r));
 					rr->TimeRcvd  = m->timenow;
 					rr->FreshData = mDNStrue;
