@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.164  2004/12/17 03:55:40  ksekar
+Don't use -1 as special meaning for expiration timer (it is a valid
+value, and is redundant with our state variables)
+
 Revision 1.163  2004/12/17 03:51:53  ksekar
 <rdar://problem/3920991> Don't update TXT record if service registration fails
 
@@ -1990,7 +1994,6 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				{
 				LogMsg("Re-trying update of service %##s without lease option", srs->RR_SRV.resrec.name->c);
 				info->lease = mDNSfalse;
-				info->expire = -1;
 				SendServiceRegistration(m, srs);
 				return;
 				}
@@ -2182,7 +2185,6 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 				{
 				LogMsg("Re-trying update of record %##s without lease option", rr->resrec.name->c);
 				rr->uDNS_info.lease = mDNSfalse;
-				rr->uDNS_info.expire = -1;
 				sendRecordRegistration(m, rr);
 				return;
 				}
@@ -2257,7 +2259,7 @@ mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 			{ if (expire - info->expire < 0) info->expire = expire; }
 		else info->expire = expire;
 		}
-	else info->expire = -1;
+	else info->lease = mDNSfalse;
 	}
 
 mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
@@ -3645,9 +3647,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	if (rr->uDNS_info.lease)
 		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
-	   
-	rr->uDNS_info.expire = -1;
-	
+	   	
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &regInfo->ns, regInfo->port, -1, GetAuthInfoForZone(u, &regInfo->zone));
 	if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 
@@ -3821,8 +3821,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (srs->uDNS_info.lease)
 		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
 	   
-	srs->uDNS_info.expire = -1;
-
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForZone(u, &rInfo->zone));
 	if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
@@ -4477,7 +4475,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 				}
 			if (rr->LastAPTime + rr->ThisAPInterval - nextevent < 0) nextevent = rr->LastAPTime + rr->ThisAPInterval;
 			}
-		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
+		if (rInfo->lease && rInfo->state == regState_Registered)
 		    {
 		    if (rInfo->expire - timenow < 0)
 		        {
@@ -4525,7 +4523,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 				nextevent = srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval;
 			}
 
-		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
+		if (rInfo->lease && rInfo->state == regState_Registered)
 		    {
 		    if (rInfo->expire - timenow < 0)
 		        {
