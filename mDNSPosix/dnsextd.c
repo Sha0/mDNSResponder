@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.13  2004/11/13 02:22:36  ksekar
+<rdar://problem/3878201> Refresh Acks from daemon malformatted
+
 Revision 1.12  2004/11/12 01:05:01  ksekar
 <rdar://problem/3876757> dnsextd: daemon registers the SRV same record
 twice at startup
@@ -1492,7 +1495,7 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 	if (!end) { Log("Error: putQuestion"); return; }
 
 	FormatLLQOpt(&opt, kLLQOp_Refresh, e->id, llq->lease ? LLQLease(e) : 0);
-	end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAnswers, &opt.resrec, 0);
+	end = PutResourceRecordTTL(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
 	if (!end) { Log("Error: PutResourceRecordTTL"); return; }
 
 	ack.len = (int)(end - (mDNSu8 *)&ack.msg);
