@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.81  2003/07/16 05:01:36  cheshire
+Add fields 'LargeAnswers' and 'ExpectUnicastResponse' in preparation for
+<rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
+
 Revision 1.80  2003/07/15 01:55:12  cheshire
 <rdar://problem/3315777> Need to implement service registration with subtypes
 
@@ -286,16 +290,19 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #pragma mark - DNS Resource Record class and type constants
 #endif
 
-typedef enum						// From RFC 1035
+typedef enum							// From RFC 1035
 	{
-	kDNSClass_IN          = 1,		// Internet
-	kDNSClass_CS          = 2,		// CSNET
-	kDNSClass_CH          = 3,		// CHAOS
-	kDNSClass_HS          = 4,		// Hesiod
-	kDNSClass_NONE        = 254,	// Used in DNS UPDATE [RFC 2136]
-	kDNSQClass_ANY        = 255,	// Not a DNS class, but a DNS query class, meaning "all classes"
-	kDNSClass_Mask        = 0x7FFF,	// Multicast DNS uses the bottom 15 bits to identify the record class...
-	kDNSClass_UniqueRRSet = 0x8000	// ... and the top bit indicates that all other cached records are now invalid
+	kDNSClass_IN               = 1,		// Internet
+	kDNSClass_CS               = 2,		// CSNET
+	kDNSClass_CH               = 3,		// CHAOS
+	kDNSClass_HS               = 4,		// Hesiod
+	kDNSClass_NONE             = 254,	// Used in DNS UPDATE [RFC 2136]
+
+	kDNSClass_Mask             = 0x7FFF,// Multicast DNS uses the bottom 15 bits to identify the record class...
+	kDNSClass_UniqueRRSet      = 0x8000,// ... and the top bit indicates that all other cached records are now invalid
+
+	kDNSQClass_ANY             = 255,	// Not a DNS class, but a DNS query class, meaning "all classes"
+	kDNSQClass_UnicastResponse = 0x8000	// Top bit set in a question means "unicast reply acceptable"
 	} DNS_ClassValues;
 
 typedef enum				// From RFC 1035
@@ -682,6 +689,7 @@ struct DNSQuestion_struct
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
 	mDNSu32               RecentAnswers;	// Number of answers since the last time we sent this query
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
+	mDNSu32               LargeAnswers;		// Number of answers with rdata > 1024 bytes
 	DNSQuestion          *DuplicateOf;
 	DNSQuestion          *NextInDQList;
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
@@ -771,6 +779,7 @@ struct mDNS_struct
 	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
 	mDNSs32  NextProbeTime;				// Next time to probe for new authoritative record
 	mDNSs32  NextResponseTime;			// Next time to send authoritative record(s) in responses
+	mDNSs32  ExpectUnicastResponse;		// Set when we send a query with the kDNSQClass_UnicastResponse bit set
 	mDNSBool SendDeregistrations;		// Set if we need to send deregistrations (immediately)
 	mDNSBool SendImmediateAnswers;		// Set if we need to send answers (immediately -- or as soon as SuppressSending clears)
 	mDNSBool SleepState;				// Set if we're sleeping (send no more packets)

@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.227  2003/07/16 05:01:36  cheshire
+Add fields 'LargeAnswers' and 'ExpectUnicastResponse' in preparation for
+<rdar://problem/3315761> Need to implement unicast reply request, using top bit of qclass
+
 Revision 1.226  2003/07/16 04:51:44  cheshire
 Fix use of constant 'mDNSPlatformOneSecond' where it should have said 'InitialQuestionInterval'
 
@@ -777,6 +781,9 @@ mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF
 static const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
 static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
 #define zeroDomainNamePtr ((domainname*)"")
+
+// Any records bigger than this are considered 'large' records
+#define SmallRecordLimit 1024
 
 #ifdef mDNSResponderVersion
 static const mDNSOpaque16 mDNS_MessageID = { { mDNSResponderVersion >> 8, mDNSResponderVersion & 0xFF } };
@@ -3500,6 +3507,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, ResourceRecord *rr)
 				}
 			verbosedebugf("CacheRecordAdd %p %##s (%s) %lu", rr, rr->name.c, DNSTypeName(rr->rrtype), rr->rrremainingttl);
 			q->CurrentAnswers++;
+			if (rr->rdata->RDLength > SmallRecordLimit) q->LargeAnswers++;
 			AnswerQuestionWithResourceRecord(m, q, rr);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
@@ -3531,7 +3539,10 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, ResourceRecord *rr)
 			if (q->CurrentAnswers == 0)
 				LogMsg("CacheRecordRmv ERROR: How can CurrentAnswers already be zero for %p %##s (%s)?", q, q->qname.c, DNSTypeName(q->qtype));
 			else
+				{
 				q->CurrentAnswers--;
+				if (rr->rdata->RDLength > SmallRecordLimit) q->LargeAnswers--;
+				}
 			if (q->CurrentAnswers == 0)
 				{
 				debugf("CacheRecordRmv: Zero current answers for %##s (%s); will reconfirm antecedents", q->qname.c, DNSTypeName(q->qtype));
@@ -3581,6 +3592,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			if (rr->RecordType & kDNSRecordTypePacketUniqueMask) ShouldQueryImmediately = mDNSfalse;
 			rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
 			q->CurrentAnswers++;
+			if (rr->rdata->RDLength > SmallRecordLimit) q->LargeAnswers++;
 			AnswerQuestionWithResourceRecord(m, q, rr);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
@@ -4773,10 +4785,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y" : "ies",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
-	// Other mDNS devices may issue unicast queries (which we correctly answer),
-	// but we never *issue* unicast queries, so if we ever receive a unicast
-	// response then it is someone trying to spoof us, so ignore it!
-	if (!mDNSAddrIsDNSMulticast(dstaddr))
+	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
+	if (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)mDNSPlatformOneSecond)
 		{ debugf("** Ignored apparent spoof mDNS response packet addressed to %#-15a **", dstaddr); return; }
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
@@ -5051,6 +5061,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->LastQTime      = m->timenow;
 		question->RecentAnswers  = 0;
 		question->CurrentAnswers = 0;
+		question->LargeAnswers   = 0;
 		question->DuplicateOf    = FindDuplicateQuestion(m, question);
 		question->NextInDQList   = mDNSNULL;
 		question->DupSuppress[0].InterfaceID = mDNSNULL;
@@ -6135,6 +6146,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NextScheduledQuery      = timenow + 0x78000000;
 	m->NextProbeTime           = timenow + 0x78000000;
 	m->NextResponseTime        = timenow + 0x78000000;
+	m->ExpectUnicastResponse   = timenow + 0x78000000;
 	m->SendDeregistrations     = mDNSfalse;
 	m->SendImmediateAnswers    = mDNSfalse;
 	m->SleepState              = mDNSfalse;
