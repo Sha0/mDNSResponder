@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.501  2004/12/19 23:50:18  cheshire
+<rdar://problem/3751638> kDNSServiceInterfaceIndexLocalOnly should return all local records
+Don't show "No active interface to send" messages for kDNSServiceInterfaceIndexLocalOnly services
+
 Revision 1.500  2004/12/18 03:13:46  cheshire
 <rdar://problem/3751638> kDNSServiceInterfaceIndexLocalOnly should return all local records
 
@@ -3711,7 +3715,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 		AuthRecord *rr;
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->SendRNow)
-				{ LogMsg("SendQueries: No active interface to send: %s", ARDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
+				{
+				if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly)
+					LogMsg("SendQueries: No active interface to send: %s", ARDisplayString(m, rr));
+				rr->SendRNow = mDNSNULL;
+				}
 		}
 	}
 
