@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.53  2004/06/17 20:49:09  ksekar
+<rdar://problem/3690436>: mDNSResponder crash while location cycling
+
 Revision 1.52  2004/06/17 01:13:11  ksekar
 <rdar://problem/3696616>: polling interval too short
 
@@ -2443,8 +2446,13 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	AuthRecord *newRR = (AuthRecord*)authPtr;
 	const zoneData_t *zoneData = &result->zoneData;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
+	AuthRecord *ptr;
+
+	for (ptr = u->RecordRegistrations; ptr; ptr = ptr->next)
+		if (ptr == newRR) break;
+	if (!ptr) { LogMsg("RecordRegistrationCallback - RR no longer in list.  Discarding."); return; }		
 	
-	if (err) goto error;
+	if (err) { LogMsg("RecordRegistrationCallback: error %d", err); goto error; }
 	if (newRR->uDNS_info.state == regState_Cancelled)
 		{
 		//!!!KRS we should send a memfree callback here!
