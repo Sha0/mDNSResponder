@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.240  2004/11/19 02:32:43  ksekar
+Wide-Area Security: Add LLQ-ID to events
+
 Revision 1.239  2004/11/15 20:09:23  ksekar
 <rdar://problem/3719050> Wide Area support for Add/Remove record
 
@@ -1594,6 +1597,7 @@ typedef struct
 // LLQ Operation Codes
 #define kLLQOp_Setup     1
 #define kLLQOp_Refresh   2
+#define kLLQOp_Event     3
 
 #define LLQ_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(LLQOptData)
 #define LEASE_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(mDNSs32)
