@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: StdioFileEx.cpp,v $
+Revision 1.2  2004/06/26 03:19:57  shersche
+clean up warning messages
+
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:36:58  rpantos
 First checked in
 
@@ -43,6 +48,8 @@ static char THIS_FILE[]=__FILE__;
 #define	sNEWLINE						_T("\r\n")	// New line characters
 #define	sDEFAULT_UNICODE_FILLER_CHAR	"#"			// Filler char used when no conversion from Unicode to local code page is possible
 
+// local variable is initialize but not referenced
+#pragma warning(disable:4189)
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction

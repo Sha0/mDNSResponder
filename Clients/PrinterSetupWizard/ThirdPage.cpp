@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.6  2004/06/26 03:19:57  shersche
+clean up warning messages
+
+Submitted by: herscher
+
 Revision 1.5  2004/06/25 05:06:02  shersche
 Trim whitespace from key/value pairs when parsing inf files
 Submitted by: herscher
@@ -53,6 +58,9 @@ First checked in
 #include <dns_sd.h>
 #include <tcpxcv.h>
 #include <winspool.h>
+
+// local variable is initialize but not referenced
+#pragma warning(disable:4189)
 
 
 //

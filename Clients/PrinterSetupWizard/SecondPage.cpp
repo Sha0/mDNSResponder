@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.2  2004/06/26 03:19:57  shersche
+clean up warning messages
+
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:36:57  rpantos
 First checked in
 
@@ -34,6 +39,9 @@ First checked in
 #include "PrinterSetupWizardSheet.h"
 #include "SecondPage.h"
 #include "DebugServices.h"
+
+// local variable is initialize but not referenced
+#pragma warning(disable:4189)
 
 
 // CSecondPage dialog
@@ -117,6 +125,10 @@ void CSecondPage::DoDataExchange(CDataExchange* pDX)
 afx_msg BOOL
 CSecondPage::OnSetCursor(CWnd * pWnd, UINT nHitTest, UINT message)
 {
+	DEBUG_UNUSED(pWnd);
+	DEBUG_UNUSED(nHitTest);
+	DEBUG_UNUSED(message);
+
 	CPrinterSetupWizardSheet	*	psheet;
 
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
@@ -247,6 +259,8 @@ void
 CSecondPage::OnResolvePrinter(
 						Printer * printer)
 {
+	DEBUG_UNUSED(printer);
+
 	check( IsWindow( m_hWnd ) );
 
 	CPrinterSetupWizardSheet * psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());

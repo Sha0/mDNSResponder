@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.5  2004/06/26 03:19:57  shersche
+clean up warning messages
+
+Submitted by: herscher
+
 Revision 1.4  2004/06/25 02:26:52  shersche
 Normalize key fields in text record entries
 Submitted by: herscher
@@ -53,6 +58,10 @@ First checked in
 #include <winspool.h>
 #include <tcpxcv.h>
 #include <string>
+
+// unreachable code
+#pragma warning(disable:4702)
+
 
 #if( !TARGET_OS_WINDOWS_CE )
 #	include	<mswsock.h>
@@ -481,6 +490,10 @@ exit:
 BOOL
 CPrinterSetupWizardSheet::OnSetCursor(CWnd * pWnd, UINT nHitTest, UINT message)
 {
+	DEBUG_UNUSED(pWnd);
+	DEBUG_UNUSED(nHitTest);
+	DEBUG_UNUSED(message);
+
 	SetCursor(m_active);
 	return TRUE;
 }
@@ -495,6 +508,9 @@ CPrinterSetupWizardSheet::OnSetCursor(CWnd * pWnd, UINT nHitTest, UINT message)
 void
 CPrinterSetupWizardSheet::OnContextMenu(CWnd * pWnd, CPoint pos)
 {
+	DEBUG_UNUSED(pWnd);
+	DEBUG_UNUSED(pos);
+
 	CAbout dlg;
 
 	dlg.DoModal();
@@ -582,6 +598,9 @@ CPrinterSetupWizardSheet::OnServiceEvent(WPARAM inWParam, LPARAM inLParam)
 LONG
 CPrinterSetupWizardSheet::OnProcessEvent(WPARAM inWParam, LPARAM inLParam)
 {
+	DEBUG_UNUSED(inWParam);
+	DEBUG_UNUSED(inLParam);
+
 	m_processFinished = true;
 
 	return 0;
@@ -599,6 +618,8 @@ CPrinterSetupWizardSheet::OnBrowse(
 								const char *			inDomain,	
 								void *					inContext )
 {
+	DEBUG_UNUSED(inRef);
+
 	CPrinterSetupWizardSheet	*	self;
 	Printer						*	printer;
 	EventHandlerList::iterator		it;
@@ -710,6 +731,11 @@ CPrinterSetupWizardSheet::OnResolve(
 								const char *			inTXT,
 								void *					inContext )
 {
+	DEBUG_UNUSED(inFullName);
+	DEBUG_UNUSED(inInterfaceIndex);
+	DEBUG_UNUSED(inFlags);
+	DEBUG_UNUSED(inRef);
+
 	Printer						*	printer;
 	CPrinterSetupWizardSheet	*	self;
 	EventHandlerList::iterator		it1;
@@ -884,7 +910,7 @@ CPrinterSetupWizardSheet::InstallPrinterThread( LPVOID inParam )
 		
 	Printer			*	printer = (Printer*) inParam;
 	CString				command;
-	DWORD				exitCode;
+	DWORD				exitCode = 0;
 	DWORD				dwResult;
 	OSStatus			err;
 	STARTUPINFO			si;
