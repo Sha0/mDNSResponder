@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: DNSCommon.c,v $
+Revision 1.2  2003/12/13 05:47:48  bradley
+Made local ptr const to fix error when assigning from const structure. Disable benign conditional
+expression is constant warning when building with Microsoft compilers.
+
 Revision 1.1  2003/12/13 03:05:27  ksekar
 Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
@@ -32,6 +36,13 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 #include "DNSCommon.h"
 
+// Disable certain benign warnings with Microsoft compilers
+#if(defined(_MSC_VER))
+	// Disable "conditional expression is constant" warning for debug macros.
+	// Otherwise, this generates warnings for the perfectly natural construct "while(1)"
+	// If someone knows a variant way of writing "while(1)" that doesn't generate warning messages, please let us know
+	#pragma warning(disable:4127)
+#endif
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -162,7 +173,7 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
     {
     mDNSu8 l;
     mDNSu8 localDomain[256] = { (char)5, 'l', 'o', 'c', 'a', 'l'};
-    mDNSu8 *p = d->c;
+    const mDNSu8 *p = d->c;
 	
     for (l = *p;  p[l+1]; p += l+1, l = *p) ;
     return SameDomainLabel(p, localDomain);
