@@ -60,6 +60,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.246  2004/11/29 23:26:32  cheshire
+Added NonZeroTime() function, which usually returns the value given, with the exception
+that if the value given is zero, it returns one instead. For timer values where zero is
+used to mean "not set", this can be used to ensure that setting them to the result of an
+interval computation (e.g. "now+interval") does not inadvertently result in a zero value.
+
 Revision 1.245  2004/11/25 01:28:09  cheshire
 <rdar://problem/3557050> Need to implement random delay for 'QU' unicast replies (and set cache flush bit too)
 
@@ -1959,6 +1965,8 @@ extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 #endif
 
 #ifdef mDNSinline
+
+mDNSinline mDNSs32 NonZeroTime(mDNSs32 t) { if (t) return(t); else return(1); }
 
 mDNSinline mDNSu16 mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)((mDNSu16)x.b[0] <<  8 | (mDNSu16)x.b[1])); }
 mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return((mDNSu32)((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | (mDNSu32)x.b[3])); }
