@@ -35,6 +35,10 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.109  2003/06/06 19:53:43  cheshire
+ * For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
+ * (Global search-and-replace; no functional change to code execution.)
+ *
  * Revision 1.108  2003/06/06 14:08:06  cheshire
  * For clarity, pull body of main while() loop out into a separate function called mDNSDaemonIdle()
  *
@@ -327,7 +331,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		DNSServiceDomainEnumeration *x = *e;
 		*e = (*e)->next;
 		if (m && m != x)
-			LogMsg("%5d: DNSServiceDomainEnumeration(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->dom.name.c, m, x);
+			LogMsg("%5d: DNSServiceDomainEnumeration(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->dom.qname.c, m, x);
 		else LogOperation("%5d: DNSServiceDomainEnumeration(%##s) STOP", ClientMachPort, x->dom.name.c);
 		mDNS_StopGetDomains(&mDNSStorage, &x->dom);
 		mDNS_StopGetDomains(&mDNSStorage, &x->def);
@@ -341,7 +345,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		DNSServiceBrowser *x = *b;
 		*b = (*b)->next;
 		if (m && m != x)
-			LogMsg("%5d: DNSServiceBrowser(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->q.name.c, m, x);
+			LogMsg("%5d: DNSServiceBrowser(%##s) STOP; WARNING m %p != x %p", ClientMachPort, x->q.qname.c, m, x);
 		else LogOperation("%5d: DNSServiceBrowser(%##s) STOP", ClientMachPort, x->q.name.c);
 		mDNS_StopBrowse(&mDNSStorage, &x->q);
 		while (x->results)
@@ -400,8 +404,8 @@ mDNSlocal void AbortClientWithLogMessage(mach_port_t c, char *reason, char *msg,
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
-	if      (e) LogMsg("%5d: DomainEnumeration(%##s) %s%s",                   c, e->dom.name.c,      reason, msg);
-	else if (b) LogMsg("%5d: Browser(%##s) %s%s",                             c, b->q.name.c,        reason, msg);
+	if      (e) LogMsg("%5d: DomainEnumeration(%##s) %s%s",                   c, e->dom.qname.c,     reason, msg);
+	else if (b) LogMsg("%5d: Browser(%##s) %s%s",                             c, b->q.qname.c,       reason, msg);
 	else if (l) LogMsg("%5d: Resolver(%##s) %s%s",                            c, l->i.name.c,        reason, msg);
 	else if (r) LogMsg("%5d: Registration(%##s) %s%s",                        c, r->s.RR_SRV.name.c, reason, msg);
 	else        LogMsg("%5d: (%s) %s, but no record of client can be found!", c,                     reason, msg);
@@ -419,8 +423,8 @@ mDNSlocal mDNSBool CheckForExistingClient(mach_port_t c)
 	while (b && b->ClientMachPort != c) b = b->next;
 	while (l && l->ClientMachPort != c) l = l->next;
 	while (r && r->ClientMachPort != c) r = r->next;
-	if (e) LogMsg("%5d: DomainEnumeration(%##s) already exists!", c, e->dom.name.c);
-	if (b) LogMsg("%5d: Browser(%##s) already exists!",           c, b->q.name.c);
+	if (e) LogMsg("%5d: DomainEnumeration(%##s) already exists!", c, e->dom.qname.c);
+	if (b) LogMsg("%5d: Browser(%##s) already exists!",           c, b->q.qname.c);
 	if (l) LogMsg("%5d: Resolver(%##s) already exists!",          c, l->i.name.c);
 	if (r) LogMsg("%5d: Registration(%##s) already exists!",      c, r->s.RR_SRV.name.c);
 	return(e || b || l || r);
@@ -1282,10 +1286,10 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	LogMsg("%s ---- BEGIN STATE LOG ----", mDNSResponderVersionString);
 
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
-		LogMsg("%5d: DomainEnumeration   %##s", e->ClientMachPort, e->dom.name.c);
+		LogMsg("%5d: DomainEnumeration   %##s", e->ClientMachPort, e->dom.qname.c);
 
 	for (b = DNSServiceBrowserList; b; b=b->next)
-		LogMsg("%5d: ServiceBrowse       %##s", b->ClientMachPort, b->q.name.c);
+		LogMsg("%5d: ServiceBrowse       %##s", b->ClientMachPort, b->q.qname.c);
 
 	for (l = DNSServiceResolverList; l; l=l->next)
 		LogMsg("%5d: ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
