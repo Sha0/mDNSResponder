@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: SampleUDSClient.c,v $
+Revision 1.9  2004/01/19 22:40:36  cheshire
+Fix compiler warnings on Linux
+
 Revision 1.8  2003/11/13 19:15:04  cheshire
 Show Add/Rmv flag in "uds_test -query" output
 
@@ -34,16 +37,24 @@ Update to APSL 2.0
 
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+#include <assert.h>
+
 #include <dns_sd.h>
 #include <unistd.h>
+#ifdef __MACOSX__
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h> // include Mach API to ensure no conflicts exist
 #include <CoreFoundation/CoreFoundation.h>
+#endif
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #define BIND_8_COMPAT 1
-#include <nameser.h>
+#include <arpa/nameser.h>
 // T_SRV is not defined in older versions of nameser.h
 #ifndef T_SRV
 #define T_SRV 33
@@ -90,7 +101,10 @@ static uint32_t InterfaceIndex = 0;
 
 static void regservice_cb(DNSServiceRef sdRef, DNSServiceFlags flags, DNSServiceErrorType errorCode, const char *name, const char *regtype, const char *domain, void *context)
 	{
-	#pragma unused (sdRef, flags, errorCode, context)
+	(void)sdRef; // Unused
+	(void)flags; // Unused
+	(void)errorCode; // Unused
+	(void)context; // Unused
 	printf("regservice_cb %s %s %s\n", name, regtype, domain);
 	}
 
@@ -193,14 +207,12 @@ int main (int argc, char * argv[])  {
 
     if (!strcmp(argv[1], "-regservice"))
         {
-        char *regtype = "_http._tcp";
+        char *regtype = (argc > 3) ? argv[3] : "_http._tcp";
 		char txtstring[] = "\x0DMy Txt Record";
+		uint16_t PortAsNumber = (argc > 4) ? atoi(argv[4]) : 123;
+		Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
         if (argc > 2) name = argv[2];
         else name = NULL;
-        if (argc > 3) regtype = argv[3];
-		uint16_t PortAsNumber = 123;
-        if (argc > 4) PortAsNumber = atoi(argv[4]);
-		Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
         err = DNSServiceRegister(&sdr, 0, InterfaceIndex, name, regtype, "local.", NULL, registerPort.NotAnInteger, sizeof(txtstring)-1, txtstring, regservice_cb, NULL);
         if (err) 
             {
@@ -245,7 +257,9 @@ static void MyCallbackWrapper(CFSocketRef sr, CFSocketCallBackType t, CFDataRef 
 
 static void browse_cb(DNSServiceRef sdr, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err, const char *serviceName, const char *regtype, const char *domain, void *context)
     {
-    #pragma unused(sdr, ifi, context)
+    (void)sdr; // Unused
+    (void)ifi; // Unused
+    (void)context; // Unused
     
     if (err)
         {
@@ -258,8 +272,9 @@ static void browse_cb(DNSServiceRef sdr, DNSServiceFlags flags, uint32_t ifi, DN
 
 static void my_enum_cb( DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *replyDomain, void *context)
     {
-    #pragma unused(sdRef, context)
     char *type;
+    (void)sdRef; // Unused
+    (void)context; // Unused
     if (flags == kDNSServiceFlagsAdd) type = "add";
     else if (flags == kDNSServiceFlagsRemove) type = "remove";
     else if (flags == (kDNSServiceFlagsAdd | kDNSServiceFlagsDefault)) type = "add default";
@@ -272,12 +287,12 @@ static void my_enum_cb( DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t int
     
 static void query_cb(const DNSServiceRef DNSServiceRef, const DNSServiceFlags flags, const u_int32_t interfaceIndex, const DNSServiceErrorType errorCode, const char *name, const u_int16_t rrtype, const u_int16_t rrclass, const u_int16_t rdlen, const void *rdata, const u_int32_t ttl, void *context) 
     {
-    (void)DNSServiceRef;
-    (void)flags;
-    (void)interfaceIndex;
-    (void)rrclass;
-    (void)ttl;
-    (void)context;
+    (void)DNSServiceRef; // Unused
+    (void)flags; // Unused
+    (void)interfaceIndex; // Unused
+    (void)rrclass; // Unused
+    (void)ttl; // Unused
+    (void)context; // Unused
     
     if (errorCode)
         {
@@ -293,8 +308,12 @@ static void query_cb(const DNSServiceRef DNSServiceRef, const DNSServiceFlags fl
 static void resolve_cb(const DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const char *txtRecord, void *context)
     {
     int i;
-    
-    #pragma unused(sdRef, flags, interfaceIndex, errorCode, context, txtRecord)
+    (void)sdRef; // Unused
+    (void)flags; // Unused
+    (void)interfaceIndex; // Unused
+    (void)errorCode; // Unused
+    (void)context; // Unused
+    (void)txtRecord;; // Unused
     printf("Resolved %s to %s:%d (%d bytes txt data)\n", fullname, hosttarget, port, txtLen);
     printf("TXT Data:\n");
     for (i = 0; i < txtLen; i++)
@@ -305,7 +324,10 @@ static void resolve_cb(const DNSServiceRef sdRef, DNSServiceFlags flags, uint32_
 
 static void my_regecordcb(DNSServiceRef sdRef, DNSRecordRef RecordRef, DNSServiceFlags flags, DNSServiceErrorType errorCode, void *context)
     {
-    #pragma unused (sdRef, RecordRef, flags, context)
+    (void)sdRef; // Unused
+    (void)RecordRef; // Unused
+    (void)flags; // Unused
+    (void)context; // Unused
     if (errorCode) printf("regrecord CB received error %d\n", errorCode);
     else printf("regrecord callback - no errors\n");
     }
@@ -395,9 +417,6 @@ static void print_rdata(int type, int len, const u_char *rdata)
         }
     }
 
-
-
-
 // signal handlers, setup/teardown, etc.
 static void sighdlr(int signo)
     {
@@ -407,10 +426,3 @@ static void sighdlr(int signo)
         DNSServiceRefDeallocate(sdr);
     exit(1);
     }
-
-
- 
- 
- 
- 
- 
