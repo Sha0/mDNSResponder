@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.402  2004/09/14 23:59:55  cheshire
+<rdar://problem/3681031> Randomize initial timenow_adjust value in mDNS_Init
+
 Revision 1.401  2004/09/14 23:27:46  cheshire
 Fix compile errors
 
@@ -6205,8 +6208,10 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	{
 	mDNSu32 slot;
 	mDNSs32 timenow;
+	mDNSs32 timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
 	mStatus result = mDNSPlatformTimeInit(&timenow);
 	if (result != mStatus_NoError) return(result);
+	timenow += timenow_adjust;
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
@@ -6229,7 +6234,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	// Task Scheduling variables
 	m->timenow                 = 0;		// MUST only be set within mDNS_Lock/mDNS_Unlock section
 	m->timenow_last            = timenow;
-	m->timenow_adjust          = 0;
+	m->timenow_adjust          = timenow_adjust;
 	m->NextScheduledEvent      = timenow;
 	m->SuppressSending         = timenow;
 	m->NextCacheCheck          = timenow + 0x78000000;
