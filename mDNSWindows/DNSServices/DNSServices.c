@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.16  2003/10/16 09:16:39  bradley
+Unified address copying to fix a problem with IPv6 resolves not being passed up as IPv6.
+
 Revision 1.15  2003/08/20 06:44:24  bradley
 Updated to latest internal version of the Rendezvous for Windows code: Added support for interface
 specific registrations; Added support for no-such-service registrations; Added support for host
@@ -367,7 +370,7 @@ mDNSlocal void	DNSHostRegistrationPrivateCallBack( mDNS * const inMDNS, AuthReco
 
 mDNSlocal DNSStatus	DNSMemAlloc( size_t inSize, void *outMem );
 mDNSlocal void		DNSMemFree( void *inMem );
-mDNSlocal void		MDNSAddrToDNSAddress( const mDNSAddr *inAddr, DNSNetworkAddress *outAddr );
+mDNSlocal void		MDNSAddrToDNSAddress( const mDNSAddr *inAddr, mDNSIPPort inPort, DNSNetworkAddress *outAddr );
 
 // Platform Accessors
 
@@ -953,7 +956,7 @@ mDNSlocal void
 			if( err == mStatus_NoError )
 			{
 				serviceDataPtr->interfaceName = info.name;
-				MDNSAddrToDNSAddress( &info.ip, &serviceDataPtr->interfaceIP );
+				MDNSAddrToDNSAddress( &info.ip, zeroIPPort, &serviceDataPtr->interfaceIP );
 			}
 			else
 			{
@@ -1032,7 +1035,7 @@ mDNSlocal void
 			if( err == mStatus_NoError )
 			{
 				domainDataPtr->interfaceName = info.name;
-				MDNSAddrToDNSAddress( &info.ip, &domainDataPtr->interfaceIP );
+				MDNSAddrToDNSAddress( &info.ip, zeroIPPort, &domainDataPtr->interfaceIP );
 			}
 			else
 			{
@@ -1079,15 +1082,6 @@ mDNSlocal void
 	switch( inEvent->type )
 	{
 		case kDNSResolverEventTypeResolved:
-			verbosedebugf( DEBUG_NAME "private resolver callback: resolved (ref=0x%08X)", inRef );
-			verbosedebugf( DEBUG_NAME "    name:   \"%s\"", 	inEvent->data.resolved.name );
-			verbosedebugf( DEBUG_NAME "    type:   \"%s\"", 	inEvent->data.resolved.type );
-			verbosedebugf( DEBUG_NAME "    domain: \"%s\"", 	inEvent->data.resolved.domain );
-			verbosedebugf( DEBUG_NAME "    if:     %.4a", 		&inEvent->data.resolved.interfaceIP.u.ipv4.addr.v32 );
-			verbosedebugf( DEBUG_NAME "    ip:     %.4a:%u", 	&inEvent->data.resolved.address.u.ipv4.addr.v32, 
-															 	( inEvent->data.resolved.address.u.ipv4.port.v8[ 0 ] << 8 ) |
-															 	  inEvent->data.resolved.address.u.ipv4.port.v8[ 1 ] );
-			verbosedebugf( DEBUG_NAME "    text:   \"%s\"", 	inEvent->data.resolved.textRecord );
 			
 			// Re-package the resolver event as a browser event and call the callback.
 			
@@ -1407,7 +1401,7 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 		if( err == mStatus_NoError )
 		{
 			event.data.resolved.interfaceName = info.name;
-			MDNSAddrToDNSAddress( &info.ip, &event.data.resolved.interfaceIP );
+			MDNSAddrToDNSAddress( &info.ip, zeroIPPort, &event.data.resolved.interfaceIP );
 		}
 		else
 		{
@@ -1415,9 +1409,7 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 		}
 	}
 	event.data.resolved.interfaceID						= inQuery->info->InterfaceID;
-	event.data.resolved.address.addressType				= kDNSNetworkAddressTypeIPv4;
-	event.data.resolved.address.u.ipv4.addr.v32 		= inQuery->info->ip.ip.v4.NotAnInteger;
-	event.data.resolved.address.u.ipv4.port.v16			= inQuery->info->port.NotAnInteger;
+	MDNSAddrToDNSAddress( &inQuery->info->ip, inQuery->info->port, &event.data.resolved.address );
 	event.data.resolved.textRecord						= txtString ? txtString : "";
 	event.data.resolved.flags 							= 0;
 	event.data.resolved.textRecordRaw					= (const void *) inQuery->info->TXTinfo;
@@ -3130,13 +3122,14 @@ exit:
 //	MDNSAddrToDNSAddress
 //===========================================================================================================================
 
-mDNSlocal void	MDNSAddrToDNSAddress( const mDNSAddr *inAddr, DNSNetworkAddress *outAddr )
+mDNSlocal void	MDNSAddrToDNSAddress( const mDNSAddr *inAddr, mDNSIPPort inPort, DNSNetworkAddress *outAddr )
 {
 	switch( inAddr->type )
 	{
 		case mDNSAddrType_IPv4:
 			outAddr->addressType		= kDNSNetworkAddressTypeIPv4;
 			outAddr->u.ipv4.addr.v32 	= inAddr->ip.v4.NotAnInteger;
+			outAddr->u.ipv4.port.v16	= inPort.NotAnInteger;
 			break;
 		
 		case mDNSAddrType_IPv6:
@@ -3145,6 +3138,7 @@ mDNSlocal void	MDNSAddrToDNSAddress( const mDNSAddr *inAddr, DNSNetworkAddress *
 			outAddr->u.ipv6.addr.v32[ 1 ] 	= inAddr->ip.v6.l[ 1 ];
 			outAddr->u.ipv6.addr.v32[ 2 ] 	= inAddr->ip.v6.l[ 2 ];
 			outAddr->u.ipv6.addr.v32[ 3 ] 	= inAddr->ip.v6.l[ 3 ];
+			outAddr->u.ipv6.port.v16		= inPort.NotAnInteger;
 			break;
 		
 		default:
