@@ -581,6 +581,10 @@ mDNSlocal void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 												(X) == kDNSRecordTypeUnique   ? mDNSPlatformOneSecond/4 : \
 												(X) == kDNSRecordTypeVerified ? mDNSPlatformOneSecond/4 : 0)
 
+#define TimeToAnnounceThisRecord(RR,time) ((RR)->AnnounceCount && time - (RR)->NextSendTime >= 0)
+#define TimeToSendThisRecord(RR,time) \
+	((TimeToAnnounceThisRecord(RR,time) || (RR)->SendPriority) && ResourceRecordIsValidAnswer(RR))
+
 mDNSlocal mDNSBool SameRData(const mDNSu16 rrtype, const RData *const r1, const RData *const r2)
 	{
 	if (r1->RDLength != r2->RDLength) return(mDNSfalse);
@@ -1624,17 +1628,23 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 	NetworkInterfaceInfo *intf;
 	ResourceRecord *rr, *r2;
 
-	// Run through our list of records,
-	// and if there's a record which is supposed to be unique that we're proposing to give as an answer,
-	// then make sure that the whole RRSet with that name/type/class is also marked for answering.
+	// Run through our list of records, and if there's a record which is supposed to be unique that we're
+	// proposing to put in the packet, then make sure that we give the whole RRSet as an atomic unit.
+	// That means that if we have any other records with the same name/type/class which haven't
+	// already been sent in the last quarter second, then we need to mark them for sending immediately.
 	// Otherwise, if we set the kDNSClass_UniqueRRSet bit on a record, then other RRSet members
 	// that have not been sent recently will get flushed out of client caches.
+	// Note: We have to be careful to only mark records that *haven't* been sent recently.
+	// Otherwise, we can get into a pathological case where a large RRSet won't fit in a single packet,
+	// so some records are left over for the next packet, and then when we come to send the next packet
+	// we would mark the entire RRSet for sending again, resulting in an infinite loop packet storm.
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->RecordType & kDNSRecordTypeUniqueMask)
-			if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
+			if (TimeToSendThisRecord(rr,timenow))
 				for (r2 = m->ResourceRecords; r2; r2=r2->next)
-					if (SameResourceRecordSignatureAnyInterface(rr, r2))
-						r2->SendPriority = kDNSSendPriorityAnswer;
+					if (r2 != rr && timenow - r2->LastSendTime > mDNSPlatformOneSecond/4)
+						if (SameResourceRecordSignatureAnyInterface(rr, r2))
+							r2->SendPriority = kDNSSendPriorityAnswer;
 
 	// First build the generic part of the message
 	InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
