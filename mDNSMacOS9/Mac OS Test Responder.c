@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Responder.c,v $
+Revision 1.22  2004/08/13 23:25:01  cheshire
+Now that we do both uDNS and mDNS, global replace "m->hostname" with
+"m->MulticastHostname" for clarity
+
 Revision 1.21  2004/03/12 21:30:25  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -162,7 +166,7 @@ mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	mDNSv4Addr ip = m->HostInterfaces->ip.ip.v4;
 	
-	ConvertDomainNameToCString(&m->hostname, buffer);
+	ConvertDomainNameToCString(&m->MulticastHostname, buffer);
 	printf("Name %s\n", buffer);
 	printf("IP   %d.%d.%d.%d\n", ip.b[0], ip.b[1], ip.b[2], ip.b[3]);
 

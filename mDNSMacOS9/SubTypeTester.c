@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: SubTypeTester.c,v $
+Revision 1.3  2004/08/13 23:25:01  cheshire
+Now that we do both uDNS and mDNS, global replace "m->hostname" with
+"m->MulticastHostname" for clarity
+
 Revision 1.2  2004/08/04 22:11:30  cheshire
 <rdar://problem/3588761> Current method of doing subtypes causes name collisions
 Change to use "._sub." instead of ".s." to mark subtypes.
@@ -119,7 +123,7 @@ mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	mDNSv4Addr ip = m->HostInterfaces->ip.ip.v4;
 	
-	ConvertDomainNameToCString(&m->hostname, buffer);
+	ConvertDomainNameToCString(&m->MulticastHostname, buffer);
 	printf("Name %s\n", buffer);
 	printf("IP   %d.%d.%d.%d\n", ip.b[0], ip.b[1], ip.b[2], ip.b[3]);
 

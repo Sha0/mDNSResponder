@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.186  2004/08/13 23:25:00  cheshire
+Now that we do both uDNS and mDNS, global replace "m->hostname" with
+"m->MulticastHostname" for clarity
+
 Revision 1.185  2004/08/12 00:32:36  ksekar
 <rdar://problem/3759567>: LLQ Refreshes never terminate if unanswered
 
@@ -1620,9 +1624,9 @@ struct mDNS_struct
 	// Fields below only required for mDNS Responder...
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;				// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
-	domainname  hostname;				// Host Name, e.g. "Foo.local."
-    UTF8str255 HIHardware;
-	UTF8str255 HISoftware;
+	domainname  MulticastHostname;		// Fully Qualified "dot-local" Host Name, e.g. "Foo.local."
+    UTF8str255  HIHardware;
+	UTF8str255  HISoftware;
 	AuthRecord *ResourceRecords;
 	AuthRecord *DuplicateRecords;		// Records currently 'on hold' because they are duplicates of existing records
 	AuthRecord *LocalOnlyRecords;		// Local records registered with InterfaceID set to mDNSInterface_LocalOnly

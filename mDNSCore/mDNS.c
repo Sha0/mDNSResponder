@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.391  2004/08/13 23:25:00  cheshire
+Now that we do both uDNS and mDNS, global replace "m->hostname" with
+"m->MulticastHostname" for clarity
+
 Revision 1.390  2004/08/11 02:17:01  cheshire
 <rdar://problem/3514236> Registering service with port number 0 should create a "No Such Service" record
 
@@ -1827,12 +1831,12 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 
 	if (!target) debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->resrec.rrtype);
 
-	if (target && SameDomainName(target, &m->hostname))
+	if (target && SameDomainName(target, &m->MulticastHostname))
 		debugf("SetTargetToHostName: Target of %##s is already %##s", rr->resrec.name.c, target->c);
 	
-	if (target && !SameDomainName(target, &m->hostname))
+	if (target && !SameDomainName(target, &m->MulticastHostname))
 		{
-		AssignDomainName(*target, m->hostname);
+		AssignDomainName(*target, m->MulticastHostname);
 		SetNewRData(&rr->resrec, mDNSNULL, 0);
 		
 		// If we're in the middle of probing this record, we need to start again,
@@ -5402,7 +5406,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 
 	// 1. Set up Address record to map from host name ("foo.local.") to IP address
 	// 2. Set up reverse-lookup PTR record to map from our address back to our host name
-	AssignDomainName(set->RR_A.resrec.name, m->hostname);
+	AssignDomainName(set->RR_A.resrec.name, m->MulticastHostname);
 	if (set->ip.type == mDNSAddrType_IPv4)
 		{
 		set->RR_A.resrec.rrtype = kDNSType_A;
@@ -5438,7 +5442,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (m->HIHardware.c[0] > 0 && m->HISoftware.c[0] > 0 && m->HIHardware.c[0] + m->HISoftware.c[0] <= 254)
 		{
 		mDNSu8 *p = set->RR_HINFO.resrec.rdata->u.data;
-		AssignDomainName(set->RR_HINFO.resrec.name, m->hostname);
+		AssignDomainName(set->RR_HINFO.resrec.name, m->MulticastHostname);
 		set->RR_HINFO.DependentOn = &set->RR_A;
 		mDNSPlatformMemCopy(&m->HIHardware, p, 1 + (mDNSu32)m->HIHardware.c[0]);
 		p += 1 + (int)p[0];
@@ -5482,13 +5486,13 @@ mDNSlocal void GenerateFQDN(mDNS *const m, const char *domain, mDNSBool local)
 	if (!AppendDomainLabel(&newname, &m->hostlabel))  LogMsg("ERROR: GenerateFQDN:  Cannot create hostname");
 	if (!AppendDNSNameString(&newname, domain)) LogMsg("ERROR: GenerateFQDN:  Cannot create hostname");
 		
-	if ((local && !SameDomainName(&m->hostname, &newname)) ||
+	if ((local && !SameDomainName(&m->MulticastHostname, &newname)) ||
 		(!local && !SameDomainName(&m->uDNS_info.hostname, &newname)))
 		{
 		NetworkInterfaceInfo *intf;
 		AuthRecord *rr;
 
-		if (local) m->hostname = newname;
+		if (local) m->MulticastHostname = newname;
 		else       m->uDNS_info.hostname = newname;
 
 		// 1. Stop advertising our address records on all interfaces
@@ -6220,7 +6224,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	// Fields below only required for mDNS Responder...
 	m->hostlabel.c[0]          = 0;
 	m->nicelabel.c[0]          = 0;
-	m->hostname.c[0]           = 0;
+	m->MulticastHostname.c[0]  = 0;
 	m->HIHardware.c[0]         = 0;
 	m->HISoftware.c[0]         = 0;
 	m->ResourceRecords         = mDNSNULL;
