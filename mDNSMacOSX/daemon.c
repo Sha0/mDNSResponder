@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.223  2004/12/07 20:42:34  cheshire
+Add explicit context parameter to mDNS_RemoveRecordFromService()
+
 Revision 1.222  2004/12/06 21:15:23  ksekar
 <rdar://problem/3884386> mDNSResponder crashed in CheckServiceRegistrations
 
@@ -1838,7 +1841,7 @@ mDNSlocal mStatus RemoveRecord(ServiceRecordSet *srs, ExtraResourceRecord *extra
 	// Do the operation
 	LogOperation("%5d: DNSServiceRegistrationRemoveRecord(%##s)", client, srs->RR_SRV.resrec.name.c);
 
-	err = mDNS_RemoveRecordFromService(&mDNSStorage, srs, extra, FreeExtraRR);
+	err = mDNS_RemoveRecordFromService(&mDNSStorage, srs, extra, FreeExtraRR, extra);
 	if (err) LogMsg("%5d: DNSServiceRegistrationRemoveRecord (%##s) failed: %d", client, name->c, err);
 	
 	return err;

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.127  2004/12/07 20:42:34  cheshire
+Add explicit context parameter to mDNS_RemoveRecordFromService()
+
 Revision 1.126  2004/12/07 17:23:55  ksekar
 Fixed LogOperation
 
@@ -2594,7 +2597,7 @@ static mStatus remove_extra(request_state *rstate, service_instance *serv)
 	for (ptr = serv->srs.Extras; ptr; ptr = ptr->next)
 		{
 		if (ptr->ClientID == rstate->hdr.reg_index) // found match
-			return mDNS_RemoveRecordFromService(gmDNS, &serv->srs, ptr, FreeExtraRR);
+			return mDNS_RemoveRecordFromService(gmDNS, &serv->srs, ptr, FreeExtraRR, ptr);
 		}
 	return err;
 	}

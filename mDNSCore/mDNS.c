@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.480  2004/12/07 20:42:33  cheshire
+Add explicit context parameter to mDNS_RemoveRecordFromService()
+
 Revision 1.479  2004/12/07 17:50:49  ksekar
 <rdar://problem/3908850> BIND doesn't like zero-length rdata
 
@@ -6457,7 +6460,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	return(status);
 	}
 
-mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, mDNSRecordCallback MemFreeCallback)
+mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, mDNSRecordCallback MemFreeCallback, void *Context)
 	{
 	ExtraResourceRecord **e;
 	mStatus status;
@@ -6474,7 +6477,7 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 		{
 		debugf("mDNS_RemoveRecordFromService removing record from %##s", extra->r.resrec.name.c);
 		extra->r.RecordCallback = MemFreeCallback;
-		extra->r.RecordContext = extra;
+		extra->r.RecordContext  = Context;
 		*e = (*e)->next;
 #ifndef UNICAST_DISABLED	
 		if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.resrec.name)))
