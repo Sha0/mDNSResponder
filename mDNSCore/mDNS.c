@@ -44,6 +44,14 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.274  2003/08/16 01:12:40  cheshire
+<rdar://problem/3366590> mDNSResponder takes too much RPRVT
+Now that the minimum rdata object size has been reduced to 64 bytes, it is no longer safe to do a
+simple C structure assignment of a domainname, because that object is defined to be 256 bytes long,
+and in the process of copying it, the C compiler may run off the end of the rdata object into
+unmapped memory. All assignments of domainname objects of uncertain size are now replaced with a
+call to the macro AssignDomainName(), which is careful to copy only as many bytes as are valid.
+
 Revision 1.273  2003/08/15 20:16:02  cheshire
 <rdar://problem/3366590> mDNSResponder takes too much RPRVT
 We want to avoid touching the rdata pages, so we don't page them in.
@@ -956,6 +964,8 @@ static const char *const mDNS_DomainTypeNames[] =
 	"_register._mdns._udp.local.",
 	"_default._register._mdns._udp.local."
 	};
+
+#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC).c, (DST).c, DomainNameLength(&(SRC)))
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -2119,7 +2129,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 	
 	if (target && !SameDomainName(target, &m->hostname))
 		{
-		*target = m->hostname;
+		AssignDomainName(*target, m->hostname);
 		rr->resrec.rdlength = GetRDLength(&rr->resrec, mDNSfalse);
 		rr->resrec.rdestimate      = GetRDLength(&rr->resrec, mDNStrue);
 		
@@ -5399,9 +5409,9 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		{
 		query->GotSRV             = mDNStrue;
 		query->qAv4.InterfaceID   = answer->InterfaceID;
-		query->qAv4.qname         = answer->rdata->u.srv.target;
+		AssignDomainName(query->qAv4.qname, answer->rdata->u.srv.target);
 		query->qAv6.InterfaceID   = answer->InterfaceID;
-		query->qAv6.qname         = answer->rdata->u.srv.target;
+		AssignDomainName(query->qAv6.qname, answer->rdata->u.srv.target);
 		mDNS_StartQuery_internal(m, &query->qAv4);
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
@@ -5424,9 +5434,9 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		else
 			{
 			query->qAv4.InterfaceID   = answer->InterfaceID;
-			query->qAv4.qname         = answer->rdata->u.srv.target;
+			AssignDomainName(query->qAv4.qname, answer->rdata->u.srv.target);
 			query->qAv6.InterfaceID   = answer->InterfaceID;
-			query->qAv6.qname         = answer->rdata->u.srv.target;
+			AssignDomainName(query->qAv6.qname, answer->rdata->u.srv.target);
 			}
 		mDNS_StartQuery_internal(m, &query->qAv4);
 		mDNS_StartQuery_internal(m, &query->qAv6);
@@ -5531,7 +5541,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 
 	query->qSRV.ThisQInterval       = -1;		// This question not yet in the question list
 	query->qSRV.InterfaceID         = info->InterfaceID;
-	query->qSRV.qname               = info->name;
+	AssignDomainName(query->qSRV.qname, info->name);
 	query->qSRV.qtype               = kDNSType_SRV;
 	query->qSRV.qclass              = kDNSClass_IN;
 	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
@@ -5539,7 +5549,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 
 	query->qTXT.ThisQInterval       = -1;		// This question not yet in the question list
 	query->qTXT.InterfaceID         = info->InterfaceID;
-	query->qTXT.qname               = info->name;
+	AssignDomainName(query->qTXT.qname, info->name);
 	query->qTXT.qtype               = kDNSType_TXT;
 	query->qTXT.qclass              = kDNSClass_IN;
 	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
@@ -5732,7 +5742,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 
 	// 1. Set up Address record to map from host name ("foo.local.") to IP address
 	// 2. Set up reverse-lookup PTR record to map from our address back to our host name
-	set->RR_A.resrec.name = m->hostname;
+	AssignDomainName(set->RR_A.resrec.name, m->hostname);
 	if (set->ip.type == mDNSAddrType_IPv4)
 		{
 		set->RR_A.resrec.rrtype = kDNSType_A;
@@ -5768,7 +5778,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (m->HIHardware.c[0] > 0 && m->HISoftware.c[0] > 0 && m->HIHardware.c[0] + m->HISoftware.c[0] <= 254)
 		{
 		mDNSu8 *p = set->RR_HINFO.resrec.rdata->u.data;
-		set->RR_HINFO.resrec.name = m->hostname;
+		AssignDomainName(set->RR_HINFO.resrec.name, m->hostname);
 		set->RR_HINFO.DependentOn = &set->RR_A;
 		mDNSPlatformMemCopy(&m->HIHardware, p, 1 + (mDNSu32)m->HIHardware.c[0]);
 		p += 1 + (int)p[0];
@@ -6105,14 +6115,14 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		return(mStatus_BadParamErr);
 	if (ConstructServiceName(&sr->RR_PTR.resrec.name, mDNSNULL, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
 	if (ConstructServiceName(&sr->RR_SRV.resrec.name, name,     type, domain) == mDNSNULL) return(mStatus_BadParamErr);
-	sr->RR_TXT.resrec.name = sr->RR_SRV.resrec.name;
+	AssignDomainName(sr->RR_TXT.resrec.name, sr->RR_SRV.resrec.name);
 	
 	// 1. Set up the ADV record rdata to advertise our service type
-	sr->RR_ADV.resrec.rdata->u.name = sr->RR_PTR.resrec.name;
+	AssignDomainName(sr->RR_ADV.resrec.rdata->u.name, sr->RR_PTR.resrec.name);
 
 	// 2. Set up the PTR record rdata to point to our service name
 	// We set up two additionals, so when a client asks for this PTR we automatically send the SRV and the TXT too
-	sr->RR_PTR.resrec.rdata->u.name = sr->RR_SRV.resrec.name;
+	AssignDomainName(sr->RR_PTR.resrec.rdata->u.name, sr->RR_SRV.resrec.name);
 	sr->RR_PTR.Additional1 = &sr->RR_SRV;
 	sr->RR_PTR.Additional2 = &sr->RR_TXT;
 
@@ -6124,7 +6134,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		domainlabel s = *(domainlabel*)&sr->SubTypes[i].resrec.name;
 		mDNS_SetupResourceRecord(&sr->SubTypes[i], mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared, ServiceCallback, sr);
 		if (ConstructServiceName(&sr->SubTypes[i].resrec.name, &s, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
-		sr->SubTypes[i].resrec.rdata->u.name = sr->RR_SRV.resrec.name;
+		AssignDomainName(sr->SubTypes[i].resrec.rdata->u.name, sr->RR_SRV.resrec.name);
 		sr->SubTypes[i].Additional1 = &sr->RR_SRV;
 		sr->SubTypes[i].Additional2 = &sr->RR_TXT;
 		}
@@ -6135,7 +6145,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->RR_SRV.resrec.rdata->u.srv.port     = port;
 
 	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
-	if (sr->Host.c[0]) sr->RR_SRV.resrec.rdata->u.srv.target = sr->Host;
+	if (sr->Host.c[0]) AssignDomainName(sr->RR_SRV.resrec.rdata->u.srv.target, sr->Host);
 	else sr->RR_SRV.HostTarget = mDNStrue;
 
 	// 4. Set up the TXT record rdata,
@@ -6178,7 +6188,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 
 	extra->next          = mDNSNULL;
 	mDNS_SetupResourceRecord(&extra->r, rdata, sr->RR_PTR.resrec.InterfaceID, extra->r.resrec.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
-	extra->r.resrec.name        = sr->RR_SRV.resrec.name;
+	AssignDomainName(extra->r.resrec.name, sr->RR_SRV.resrec.name);
 	extra->r.DependentOn = &sr->RR_SRV;
 	
 	debugf("mDNS_AddRecordToService adding record to %##s", extra->r.resrec.name.c);
@@ -6307,7 +6317,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, AuthRecord *const r
 	rr->resrec.rdata->u.srv.priority    = 0;
 	rr->resrec.rdata->u.srv.weight      = 0;
 	rr->resrec.rdata->u.srv.port        = zeroIPPort;
-	if (host && host->c[0]) rr->resrec.rdata->u.srv.target = *host;
+	if (host && host->c[0]) AssignDomainName(rr->resrec.rdata->u.srv.target, *host);
 	else rr->HostTarget = mDNStrue;
 	return(mDNS_Register(m, rr));
 	}
