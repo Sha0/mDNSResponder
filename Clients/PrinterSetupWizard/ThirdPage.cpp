@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.4  2004/06/25 02:44:13  shersche
+Tweaked code to handle Xerox Phaser printer identification
+Submitted by: herscher
+
 Revision 1.3  2004/06/25 02:27:58  shersche
 Do a CListCtrl::FindItem() before calling CListCtrl::SetItemState().
 Submitted by: herscher
@@ -45,7 +49,6 @@ First checked in
 #include <dns_sd.h>
 #include <tcpxcv.h>
 #include <winspool.h>
-#include ".\thirdpage.h"
 
 
 //
@@ -556,6 +559,15 @@ CThirdPage::ConvertToManufacturerName( const CString & name )
 	if ( lower == L"hewlett-packard")
 	{
 		lower = "hp";
+	}
+
+	//
+	// tweak for Xerox Phaser, which doesn't announce itself
+	// as a xerox
+	//
+	else if ( lower.Find( L"phaser", 0 ) != -1 )
+	{
+		lower = "xerox";
 	}
 
 	return lower;
