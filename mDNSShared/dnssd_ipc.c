@@ -27,7 +27,6 @@
 
 void put_flags(const DNSServiceFlags flags, char **ptr)
     {
-    assert(ptr && *ptr);
     memcpy(*ptr, &flags, sizeof(DNSServiceFlags));
     *ptr += sizeof(flags);
     }
@@ -36,15 +35,13 @@ DNSServiceFlags get_flags(char **ptr)
     {
     DNSServiceFlags flags;
 	
-    assert(ptr && *ptr);
-	flags = *(DNSServiceFlags *)*ptr;
-	*ptr += sizeof(DNSServiceFlags);
-	return flags;
+    flags = *(DNSServiceFlags *)*ptr;
+    *ptr += sizeof(DNSServiceFlags);
+    return flags;
     }
 
 void put_long(const uint32_t l, char **ptr)
     {
-    assert(ptr && *ptr);
 
     *(uint32_t *)(*ptr) = l;
     *ptr += sizeof(uint32_t);
@@ -54,7 +51,6 @@ uint32_t get_long(char **ptr)
     {
     uint32_t l;
 	
-    assert(ptr && *ptr);
     l = *(uint32_t *)(*ptr);
     *ptr += sizeof(uint32_t);
     return l;
@@ -62,8 +58,6 @@ uint32_t get_long(char **ptr)
 
 void put_error_code(const DNSServiceErrorType error, char **ptr)
     {
-    assert(ptr && *ptr);
-
     memcpy(*ptr, &error, sizeof(error));
     *ptr += sizeof(DNSServiceErrorType);
     }
@@ -72,7 +66,6 @@ DNSServiceErrorType get_error_code(char **ptr)
     {
     DNSServiceErrorType error;
 	
-    assert(ptr && *ptr);
     error = *(DNSServiceErrorType *)(*ptr);
     *ptr += sizeof(DNSServiceErrorType);
     return error;
@@ -80,8 +73,6 @@ DNSServiceErrorType get_error_code(char **ptr)
 
 void put_short(const uint16_t s, char **ptr)
     {
-    assert (ptr && *ptr);
-
     *(uint16_t *)(*ptr) = s;
     *ptr += sizeof(uint16_t);
     }
@@ -90,7 +81,6 @@ uint16_t get_short(char **ptr)
     {
     uint16_t s;
 
-    assert(ptr && *ptr);
     s = *(uint16_t *)(*ptr);
     *ptr += sizeof(uint16_t);
     return s;
@@ -119,9 +109,6 @@ int get_string(char **ptr, char *buffer, int buflen)
 
 void put_rdata(const int rdlen, const char *rdata, char **ptr)
     {
-    assert(ptr && *ptr);
-    assert(rdata);
-
     memcpy(*ptr, rdata, rdlen);
     *ptr += rdlen;	
     }
@@ -130,7 +117,6 @@ char *get_rdata(char **ptr, int rdlen)
     {
     char *rd;
 		
-    assert(ptr && *ptr);
     rd = *ptr;
     *ptr += rdlen;
     return rd;

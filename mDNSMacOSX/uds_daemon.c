@@ -484,7 +484,12 @@ static void connect_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr
         return;
     	}
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rstate->rls, kCFRunLoopDefaultMode);
-    assert(CFRunLoopContainsSource(CFRunLoopGetCurrent(), rstate->rls, kCFRunLoopDefaultMode));
+    if (!CFRunLoopContainsSource(CFRunLoopGetCurrent(), rstate->rls, kCFRunLoopDefaultMode))
+        {
+        LogMsg("ERROR: connect_callback, CFRunLoopAddSource");
+        abort_request(rstate);
+        return;
+        }
     rstate->next = all_requests;
     all_requests = rstate;
     }
@@ -502,7 +507,13 @@ static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef d
     #pragma unused(sr, t, dr, context)
 
     int native = CFSocketGetNative(sr);
-    assert(native == rstate->sd);
+    if (native != rstate->sd)
+        {
+        LogMsg("ERROR: request_callback - CFSocket's native descriptor does not match rstate member descriptor.");
+        abort_request(rstate);
+        unlink_request(rstate);
+        return;
+        }
 
     result = read_msg(rstate);
     if (result == t_morecoming)
@@ -603,9 +614,17 @@ static void handle_query_request(request_state *rstate)
     domainname dname;
     mStatus result;
     
-    assert(rstate->ts == t_complete);
+    if (rstate->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_query_request - transfer state != t_complete");
+        goto error;
+        }
     ptr = rstate->msgdata;
-    assert(ptr);
+    if (!ptr)
+        {
+        LogMsg("ERROR: handle_query_request - NULL msgdata");
+        goto error;
+        }
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
     if (get_string(&ptr, name, 256) < 0) goto bad_param;
@@ -614,16 +633,13 @@ static void handle_query_request(request_state *rstate)
     if (!MakeDomainNameFromDNSNameString(&dname, name)) goto bad_param;
     result = do_question(rstate, &dname, interfaceIndex, rrtype, rrclass);
     if (result) rstate->terminate = NULL;
-    if (deliver_error(rstate, result) < 0) 
-        {
-        abort_request(rstate);
-        unlink_request(rstate);
-        }
+    if (deliver_error(rstate, result) < 0) goto error;
     return;
     
 bad_param:
     deliver_error(rstate, mStatus_BadParamErr);
     rstate->terminate = NULL;	// don't try to terminate insuccessful Core calls
+error:
     abort_request(rstate);
     unlink_request(rstate);
     return;
@@ -640,11 +656,23 @@ static void handle_resolve_request(request_state *rstate)
     resolve_termination_t *term;
     mStatus err;
     
-    assert(rstate->ts == t_complete);
-
+    if (rstate->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_resolve_request - transfer state != t_complete");
+        abort_request(rstate);
+        unlink_request(rstate);
+        return;
+        }
+        
     // extract the data from the message
     ptr = rstate->msgdata;
-    assert(ptr);
+    if (!ptr)
+        {
+        LogMsg("ERROR: handle_resolve_request - NULL msgdata");
+        abort_request(rstate);
+        unlink_request(rstate);
+        return;
+        }
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
     if (get_string(&ptr, name, 256) < 0 ||
@@ -897,7 +925,13 @@ static void handle_browse_request(request_state *request)
     char *ptr;
     mStatus result;
 
-    assert(request->ts == t_complete);
+    if (request->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_browse_request - transfer state != t_complete");
+        abort_request(request);
+        unlink_request(request);
+        return;
+        }
     q = mallocL("handle_browse_request", sizeof(DNSQuestion));
     if (!q)
     	{
@@ -986,7 +1020,13 @@ static void handle_regservice_request(request_state *request)
     int i, num_subtypes;
     
     
-    assert(request->ts == t_complete);
+    if (request->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_regservice_request - transfer state != t_complete");
+        abort_request(request);
+        unlink_request(request);
+        return;
+        }
 
     // extract data from message
     ptr = request->msgdata;
@@ -1304,7 +1344,14 @@ static void handle_regrecord_request(request_state *rstate)
     registered_record_entry *re;
     mStatus result;
     
-    assert(rstate->ts == t_complete);
+    if (rstate->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_regrecord_request - transfer state != t_complete");
+        abort_request(rstate);
+        unlink_request(rstate);
+        return;
+        }
+        
     rr = read_rr_from_ipc_msg(rstate->msgdata, 1);
     if (!rr) 
         {
@@ -1435,7 +1482,14 @@ static void handle_enum_request(request_state *rstate)
     mStatus err;
     int result;
     
-    assert(rstate->ts == t_complete);
+    if (rstate->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_enum_request - transfer state != t_complete");
+        abort_request(rstate);
+        unlink_request(rstate);
+        return;
+        }
+        
     flags = get_flags(&ptr);
     ifi = get_long(&ptr);
 
@@ -1718,7 +1772,13 @@ static int read_msg(request_state *rs)
     int nread;
     char buf[4];   // dummy for death notification 
     
-    assert(rs->ts != t_terminated && rs->ts != t_error);
+    if (rs->ts == t_terminated || rs->ts == t_error)
+        {
+        LogMsg("ERROR: read_msg called with transfer state terminated or error");
+        rs->ts = t_error;
+        return t_error;
+        }
+        
     if (rs->ts == t_complete)
     	{  // this must be death or something is wrong
         nread = recv(rs->sd, buf, 4, 0);
@@ -1729,7 +1789,13 @@ static int read_msg(request_state *rs)
         return t_error;
     	}
 
-    assert(rs->ts == t_morecoming);    
+    if (rs->ts != t_morecoming)
+        {
+        LogMsg("ERROR: read_msg called with invalid transfer state (%d)", rs->ts);
+        rs->ts = t_error;
+        return t_error;
+        }
+        
     if (rs->hdr_bytes < sizeof(ipc_msg_hdr))
     	{
         nleft = sizeof(ipc_msg_hdr) - rs->hdr_bytes;
@@ -1737,7 +1803,12 @@ static int read_msg(request_state *rs)
         if (nread == 0)  	{ rs->ts = t_terminated;  return t_terminated;  	}
         if (nread < 0) goto rerror;
         rs->hdr_bytes += nread;
-        assert(rs->hdr_bytes <= sizeof(ipc_msg_hdr));
+        if (rs->hdr_bytes > sizeof(ipc_msg_hdr))
+            {
+            LogMsg("ERROR: read_msg - read too many header bytes");
+            rs->ts = t_error;
+            return t_error;
+            }
     	}
 
     // only read data if header is complete
@@ -1752,7 +1823,6 @@ static int read_msg(request_state *rs)
         
         if (!rs->msgbuf)  // allocate the buffer first time through
             {
-            assert(!rs->data_bytes);
             rs->msgbuf = mallocL("read_msg", rs->hdr.datalen);
             if (!rs->msgbuf)
             	{
@@ -1767,7 +1837,12 @@ static int read_msg(request_state *rs)
         if (nread == 0)  	{ rs->ts = t_terminated;  return t_terminated; 	}
         if (nread < 0)	goto rerror;
         rs->data_bytes += nread;
-        assert(rs->data_bytes <= rs->hdr.datalen);
+        if (rs->data_bytes > rs->hdr.datalen)
+            {
+            LogMsg("ERROR: read_msg - read too many data bytes");
+            rs->ts = t_error;
+            return t_error;
+            }
         }
 
     if (rs->hdr_bytes == sizeof(ipc_msg_hdr) && rs->data_bytes == rs->hdr.datalen)
@@ -1788,8 +1863,11 @@ static int send_msg(reply_state *rs)
     {
     ssize_t nwriten;
     
-    //assert(rs->ts == t_morecoming);
-    assert(rs->msgbuf);
+    if (!rs->msgbuf)
+        {
+        LogMsg("ERROR: send_msg called with NULL message buffer");
+        return t_error;
+        }
     
     if (rs->request->no_reply)	//!!!KRS this behavior should be optimized if it becomes more common
         {
@@ -1837,7 +1915,11 @@ static reply_state *create_reply(reply_op_t op, int datalen, request_state *requ
     int totallen;
 
     
-    assert((unsigned)datalen >= sizeof(reply_hdr));
+    if ((unsigned)datalen < sizeof(reply_hdr))
+        {
+        LogMsg("ERROR: create_reply - data length less than lenght of required fields");
+        return NULL;
+        }
     
     totallen = datalen + sizeof(ipc_msg_hdr);
     reply = mallocL("create_reply", sizeof(reply_state));

@@ -33,9 +33,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <assert.h>
 
-#define UDSDEBUG  // verbose debug output
+//#define UDSDEBUG  // verbose debug output
 
 // General UDS constants
 #define MDNS_UDS_SERVERPATH "/var/run/mDNSResponder" 
