@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.153  2003/05/30 19:10:56  cheshire
+<rdar://problem/3274153> ConstructServiceName needs to be more restrictive
+
 Revision 1.152  2003/05/29 22:39:16  cheshire
 <rdar://problem/3273209> Don't truncate strings in the middle of a UTF-8 character
 
@@ -1243,7 +1246,11 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
-	if (len == 0 || len >= 0x40)  { errormsg="Invalid service application protocol name"; goto fail; }
+	if (len < 2 || len >= 0x40)  { errormsg="Invalid service application protocol name"; goto fail; }
+	if (src[1] != '_') { errormsg="Service application protocol name must begin with underscore"; goto fail; }
+	for (i=2; i<=len; i++)
+		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-')
+			{ errormsg="Service application protocol name must contain only letters, digits, and hyphens"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
