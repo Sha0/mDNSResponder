@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.5  2004/10/26 01:01:35  cheshire
+Use "#if 0" instead of commenting out code
+
 Revision 1.4  2004/10/10 06:51:36  cheshire
 Declared some strings "const" as appropriate
 
@@ -217,7 +220,7 @@ static const char szEventMsgSubscribeFMT[] =
 // 1$s: control URL
 // 2$s: SID (some uuid passed back during subscribe)
 // 3$s: router's host ("host")
-/*
+#if 0
 static const char szEventMsgUnsubscribeFMT[] =
 	"UNSUBSCRIBE %1$s HTTP/1.1\r\n"
 	"SID: %2$s\r\n"
@@ -226,7 +229,7 @@ static const char szEventMsgUnsubscribeFMT[] =
 	"Content-Length: 0\r\n"
 	"Pragma: no-cache\r\n"
 	"\r\n";
-*/
+#endif
 
 //// Generic SOAP Control:Action request messages
 // 1$s: control URL
@@ -281,7 +284,7 @@ static const char szSOAPMsgControlAArgumentFMT_t[] =
 	" xmlns:dt=\"urn:schemas-microsoft-com:datatypes\""
 	" dt:dt=\"%3$s\">%2$s</%1$s>" S_CRLF;
 
-/*
+#if 0
 //// Generic SOAP Control:Query request messages
 // 1$s: control URL
 // 2$s: router's host/port ("host:port")
@@ -309,7 +312,7 @@ static const char szSOAPMsgControlQBodyFMT[] =
 	"</s:Body>" S_CRLF
 	"</s:Envelope>" S_CRLF
 	"" S_CRLF;
-*/
+#endif
 // 1$: device description URL
 // 2$: host/port
 static const char szSSDPMsgDescribeDeviceFMT[] =
@@ -966,10 +969,10 @@ static int DiscoverRouter(PHTTPResponse pResponse)
 	int			fUSN = FALSE;
 	int			fIsNATDevice = FALSE;
 
-/*
+#if 0
 	if (strcmp(pResponse->pszStatus, "200") != 0)
 		return -1;
-*/
+#endif
 
 	if (pResponse == NULL) {
 		if (g_fLogging & NALOG_INFO0)
@@ -1124,7 +1127,7 @@ static void GetTimeElapsed(
 	struct timeval *tv_elapsed)
 {
 	TimevalSubtract(tv_elapsed, tv_end, tv_start);
-/*
+#if 0
 	tv_elapsed->tv_sec = tv_end->tv_sec - tv_start->tv_sec;
 
 	if (tv_start->tv_usec > tv_end->tv_usec) {
@@ -1133,7 +1136,7 @@ static void GetTimeElapsed(
 	}
 	else
 		tv_elapsed->tv_usec = tv_end->tv_usec - tv_start->tv_usec;
-*/
+#endif
 }
 
 // returns +1, 0, or -1, if a>b, a==b, a<b, respectively
@@ -1171,19 +1174,20 @@ static int WaitControlURLSet(double timeout)
 
 	pthread_mutex_lock(&g_xUPnP);
 
-/*
+#if 0
 	// if last update is too long ago then wait for it
 	GetTimeElapsed(&g_tvLastUpdateTime, &tv_start, &elapsed);
 	if ((elapsed.tv_sec + (elapsed.tv_usec / 1000000.0)) >
 		(((double) g_iUPnPTimeout) / U_TOGRAN))
 		g_fControlURLSet = 0;
-*/
+#endif
 
 	while (!g_fControlURLSet) {
 		// get current time
 		gettimeofday(&tv, NULL);
 
-/* for now ignore device timeout
+#if 0
+for now ignore device timeout
 		// see if we've past the device's timeout first
 		GetTimeElapsed(&g_tvUPnPInitTime, &tv, &elapsed);
 		if ((elapsed.tv_sec > g_timeout_sec) ||
@@ -1194,7 +1198,7 @@ static int WaitControlURLSet(double timeout)
 			pthread_mutex_unlock(&g_xUPnP);
 			return FALSE;
 		}
-*/
+#endif
 
 		// calculate ts to sleep till
 		ts.tv_sec = tv.tv_sec + to_sec;
@@ -2430,7 +2434,7 @@ static void ParseURL(
 		psaddr->sin_addr.s_addr = inet_addr(p);
 		psaddr->sin_port = htons(port);
 	}
-/*
+#if 0
 //TracePrint(ELL_TRACE, "ParseURL [%s] -> [%s][%s] %lu.%lu.%lu.%lu:%u\n",
 	szBuf,
 	pszHostPort?pszHostPort:"",
@@ -2440,7 +2444,7 @@ static void ParseURL(
 	(psaddr->sin_addr.s_addr >> 8) & 0xff,
 	(psaddr->sin_addr.s_addr >> 0) & 0xff,
 	psaddr->sin_port);
-*/
+#endif
 }
 
 static void GetDeviceDescription(void)
