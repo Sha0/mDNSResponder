@@ -165,7 +165,7 @@ enum
     kDNSServiceType_HINFO     = 13,     /* Host information. */
     kDNSServiceType_MINFO     = 14,     /* Mailbox information. */
     kDNSServiceType_MX        = 15,     /* Mail routing information. */
-    kDNSServiceType_TXT       = 16,     /* Text strings. */
+    kDNSServiceType_TXT       = 16,     /* One or more text strings. */
     kDNSServiceType_RP        = 17,     /* Responsible person. */
     kDNSServiceType_AFSDB     = 18,     /* AFS cell database. */
     kDNSServiceType_X25       = 19,     /* X_25 calling address. */
@@ -581,9 +581,12 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *
  * txtLen:          The length of the txtRecord, in bytes.  Must be zero if the txtRecord is NULL.
  *
- * txtRecord:       The txt record rdata.  May be NULL.  Note that a non-NULL txtRecord
- *                  MUST be a properly formatted DNS TXT record, i.e. <length byte> <data>
- *                  <length byte> <data> ...
+ * txtRecord:       The TXT record rdata. A non-NULL txtRecord MUST be a properly formatted DNS
+ *                  TXT record, i.e. <length byte> <data> <length byte> <data> ...
+ *                  Passing NULL for the txtRecord is allowed as a synonym for txtLen=1, txtRecord="",
+ *                  i.e. it creates a TXT record of length one containing a single empty string.
+ *                  RFC 1035 doesn't allow a TXT record to contain *zero* strings, so a single empty
+ *                  string is the smallest legal DNS TXT record.
  *
  * callBack:        The function to be called when the registration completes or asynchronously
  *                  fails.  The client MAY pass NULL for the callback -  The client will NOT be notified
@@ -844,9 +847,9 @@ DNSServiceErrorType DNSSD_API DNSServiceBrowse
  * Note: When the desired results have been returned, the client MUST terminate the resolve by calling
  * DNSServiceRefDeallocate().
  *
- * Note: DNSServiceResolve() behaves correctly for typical services that have a single SRV record and
- * a single TXT record (the TXT record may be empty.)  To resolve non-standard services with multiple
- * SRV or TXT records, DNSServiceQueryRecord() should be used.
+ * Note: DNSServiceResolve() behaves correctly for typical services that have a single SRV record
+ * and a single TXT record. To resolve non-standard services with multiple SRV or TXT records,
+ * DNSServiceQueryRecord() should be used.
  *
  * DNSServiceResolveReply Callback Parameters:
  *
@@ -1317,7 +1320,7 @@ typedef struct _TXTRecordRef_t { char privatedata[16]; } TXTRecordRef;
  *
  * bufferLen:       The size of the storage provided in the "buffer" parameter.
  *
- * buffer:          The storage used to hold the TXTRecord data.
+ * buffer:          Optional caller-supplied storage used to hold the TXTRecord data.
  *                  This storage must remain valid for as long as
  *                  the TXTRecordRef.
  */
