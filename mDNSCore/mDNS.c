@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.236  2003/07/19 03:04:55  cheshire
+Fix warnings; some debugf message improvements
+
 Revision 1.235  2003/07/19 00:03:32  cheshire
 <rdar://problem/3160248> ScheduleNextTask needs to be smarter after a no-op packet is received
 ScheduleNextTask is quite an expensive operation.
@@ -1109,6 +1112,7 @@ char *DNSTypeName(mDNSu16 rrtype)
 		{
 		case kDNSType_A:    return("Addr");
 		case kDNSType_CNAME:return("CNAME");
+		case kDNSType_NULL: return("NULL");
 		case kDNSType_PTR:  return("PTR");
 		case kDNSType_HINFO:return("HINFO");
 		case kDNSType_TXT:  return("TXT");
@@ -1136,7 +1140,8 @@ char *GetRRDisplayString(mDNS *const m, const ResourceRecord *rr)
 		case kDNSType_TXT:  mDNS_snprintf(m->MsgBuffer+length, 79-length, "%#s", rr->rdata->u.txt.c);        break;
 		case kDNSType_AAAA:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%.16a", &rr->rdata->u.ipv6);      break;
 		case kDNSType_SRV:	mDNS_snprintf(m->MsgBuffer+length, 79-length, "%##s", &rr->rdata->u.srv.target); break;
-		default:			mDNS_snprintf(m->MsgBuffer+length, 79-length, "RDLen %d", rr->rdata->RDLength);  break;
+		default:			mDNS_snprintf(m->MsgBuffer+length, 79-length, "RDLen %d: %s",
+								rr->rdata->RDLength, rr->rdata->u.data);  break;
 		}
 	for (ptr = m->MsgBuffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
 	return(m->MsgBuffer);
@@ -1883,7 +1888,8 @@ mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 		case kDNSType_A:	return(sizeof(rd->ip)); break;
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
-		case kDNSType_HINFO:return(2 + rd->data[0] + rd->data[1 + rd->data[0]]);
+		case kDNSType_HINFO:return(mDNSu16)(2 + (int)rd->data[0] + (int)rd->data[1 + (int)rd->data[0]]);
+		case kDNSType_NULL:	// Same as TXT -- not self-describing, so have to just trust rdlength
 		case kDNSType_TXT:  return(rr->rdata->RDLength); // TXT is not self-describing, so have to just trust rdlength
 		case kDNSType_AAAA:	return(sizeof(rd->ipv6)); break;
 		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
@@ -2708,11 +2714,12 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 							//debugf("%##s PTR %##s rdlen %d", rr->name.c, rr->rdata->u.name.c, pktrdlength);
 							break;
 
+		case kDNSType_NULL:	//Same as TXT
 		case kDNSType_HINFO://Same as TXT
 		case kDNSType_TXT:  if (pktrdlength > rr->rdata->MaxRDLength)
 								{
-								debugf("GetResourceRecord: TXT rdata size (%d) exceeds storage (%d)",
-									pktrdlength, rr->rdata->MaxRDLength);
+								debugf("GetResourceRecord: %s rdata size (%d) exceeds storage (%d)",
+									DNSTypeName(rr->rrtype), pktrdlength, rr->rdata->MaxRDLength);
 								return(mDNSNULL);
 								}
 							rr->rdata->RDLength = pktrdlength;
@@ -2733,11 +2740,12 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 
 		default:			if (pktrdlength > rr->rdata->MaxRDLength)
 								{
-								debugf("GetResourceRecord: rdata %d size (%d) exceeds storage (%d)",
-									rr->rrtype, pktrdlength, rr->rdata->MaxRDLength);
+								debugf("GetResourceRecord: rdata %d (%s) size (%d) exceeds storage (%d)",
+									rr->rrtype, DNSTypeName(rr->rrtype), pktrdlength, rr->rdata->MaxRDLength);
 								return(mDNSNULL);
 								}
-							debugf("GetResourceRecord: Warning! Reading resource type %d as opaque data", rr->rrtype);
+							debugf("GetResourceRecord: Warning! Reading resource type %d (%s) as opaque data",
+								rr->rrtype, DNSTypeName(rr->rrtype));
 							// Note: Just because we don't understand the record type, that doesn't
 							// mean we fail. The DNS protocol specifies rdlength, so we can
 							// safely skip over unknown records and ignore them.
@@ -3159,9 +3167,9 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 	ResourceRecord ***kalistptrptr, mDNSu32 *answerforecast)
 	{
 	mDNSBool ucast = q->LargeAnswers || q->ThisQInterval <= InitialQuestionInterval*2;
-	mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : 0;
+	mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : (mDNSu16)0;
 	const mDNSu8 *const limit = query->data + NormalMaxDNSMessageData;
-	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, q->qclass | ucbit);
+	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, (mDNSu16)(q->qclass | ucbit));
 	if (!newptr)
 		{
 		debugf("BuildQuestion: No more space in this packet for question %##s", q->qname.c);
@@ -3402,9 +3410,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 				if (rr->SendRNow == intf->InterfaceID)
 					{
 					mDNSBool ucast = rr->ProbeCount >= DefaultProbeCountForTypeUnique-1;
-					mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : 0;
+					mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : (mDNSu16)0;
 					const mDNSu8 *const limit = query.data + ((query.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
-					mDNSu8 *newptr = putQuestion(&query, queryptr, limit, &rr->name, kDNSQType_ANY, rr->rrclass | ucbit);
+					mDNSu8 *newptr = putQuestion(&query, queryptr, limit, &rr->name, kDNSQType_ANY, (mDNSu16)(rr->rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->rdestimate;
 					if (newptr && newptr + forecast < limit)
@@ -5500,9 +5508,9 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		mDNSu8 *p = set->RR_HINFO.rdata->u.data;
 		set->RR_HINFO.name = m->hostname;
 		set->RR_HINFO.DependentOn = &set->RR_A;
-		mDNSPlatformMemCopy(&m->HIHardware, p, 1 + m->HIHardware.c[0]);
-		p += 1 + p[0];
-		mDNSPlatformMemCopy(&m->HISoftware, p, 1 + m->HISoftware.c[0]);
+		mDNSPlatformMemCopy(&m->HIHardware, p, 1 + (mDNSu32)m->HIHardware.c[0]);
+		p += 1 + (int)p[0];
+		mDNSPlatformMemCopy(&m->HISoftware, p, 1 + (mDNSu32)m->HISoftware.c[0]);
 		mDNS_Register_internal(m, &set->RR_HINFO);
 		}
 	else
