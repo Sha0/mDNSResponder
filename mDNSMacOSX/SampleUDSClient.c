@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: SampleUDSClient.c,v $
+Revision 1.7  2003/08/18 18:50:15  cheshire
+Can now give "-lo" as first parameter, to test "local only" mode
+
 Revision 1.6  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -50,6 +53,8 @@ Update to APSL 2.0
 
 
 // data structure defs
+typedef union { unsigned char b[2]; unsigned short NotAnInteger; } Opaque16;
+
 typedef struct { u_char c[ 64]; } domainlabel;
 typedef struct { u_char c[256]; } domainname;
 
@@ -78,6 +83,7 @@ static void browse_cb(DNSServiceRef sdr, DNSServiceFlags flags, uint32_t ifi, DN
 
 // globals
 static DNSServiceRef sdr = NULL;
+static uint32_t InterfaceIndex = 0;
 
 static void regservice_cb(DNSServiceRef sdRef, DNSServiceFlags flags, DNSServiceErrorType errorCode, const char *name, const char *regtype, const char *domain, void *context)
 	{
@@ -95,6 +101,9 @@ int main (int argc, char * argv[])  {
     
     char full[1024];
     
+    // First parameter "-lo" means "local only"
+    if (!strcmp(argv[1], "-lo")) { InterfaceIndex = -1; argv++; argc--; }
+    
     if (signal(SIGINT, sighdlr) == SIG_ERR)  fprintf(stderr, "ERROR - can't catch interupt!\n");
     if (argc < 2) exit(1);
 
@@ -111,7 +120,7 @@ int main (int argc, char * argv[])  {
             {
             sprintf(host, "testhost-%d.local.", i);
             ipaddr++;
-            err = DNSServiceRegisterRecord(sdr, &recordrefs[i], kDNSServiceFlagsUnique, 0, 
+            err = DNSServiceRegisterRecord(sdr, &recordrefs[i], kDNSServiceFlagsUnique, InterfaceIndex, 
                 host, 1, 1, 4, &ipaddr, 60, my_regecordcb, NULL);
             if (err) 
                 {
@@ -146,7 +155,7 @@ int main (int argc, char * argv[])  {
     if (!strcmp(argv[1], "-browse"))
         {
         if (argc < 3) exit(1);
-        err = DNSServiceBrowse(&sdr, 0, 0, argv[2], NULL /*"local."*/, browse_cb, NULL);
+        err = DNSServiceBrowse(&sdr, 0, InterfaceIndex, argv[2], NULL /*"local."*/, browse_cb, NULL);
         if (err) 
             {
             printf("DNSServiceBrowse returned error %d\n", err);
@@ -161,7 +170,7 @@ int main (int argc, char * argv[])  {
         else if (!strcmp(argv[2], "register")) flags = kDNSServiceFlagsRegistrationDomains;
         else exit(1);
         
-        err = DNSServiceEnumerateDomains(&sdr, flags, 0, my_enum_cb, NULL);
+        err = DNSServiceEnumerateDomains(&sdr, flags, InterfaceIndex, my_enum_cb, NULL);
         if (err) 
             {
             printf("EnumerateDomains returned error %d\n", err);
@@ -186,7 +195,10 @@ int main (int argc, char * argv[])  {
         if (argc > 2) name = argv[2];
         else name = NULL;
         if (argc > 3) regtype = argv[3];
-        err = DNSServiceRegister(&sdr, 0, 0, name, regtype, "local.", NULL, 123, sizeof(txtstring)-1, txtstring, regservice_cb, NULL);
+		uint16_t PortAsNumber = 123;
+        if (argc > 4) PortAsNumber = atoi(argv[4]);
+		Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
+        err = DNSServiceRegister(&sdr, 0, InterfaceIndex, name, regtype, "local.", NULL, registerPort.NotAnInteger, sizeof(txtstring)-1, txtstring, regservice_cb, NULL);
         if (err) 
             {
             printf("DNSServiceRegister returned error %d\n", err);
@@ -199,7 +211,7 @@ int main (int argc, char * argv[])  {
         name = argv[2];
         type = argv[3];
         domain = argv[4];
-        err = DNSServiceResolve(&sdr, 0, 0, name, type, domain, resolve_cb, NULL);
+        err = DNSServiceResolve(&sdr, 0, InterfaceIndex, name, type, domain, resolve_cb, NULL);
         if (err) 
             {
             printf("DNSServiceResolve returned error %d\n", err);
