@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.62  2004/03/16 18:24:25  cheshire
+If packet destination was not multicast, then display it
+
 Revision 1.61  2004/02/20 09:36:46  cheshire
 Also show TTL in packet header, if it's not 255
 
@@ -673,7 +676,7 @@ mDNSlocal void DisplayTimestamp(void)
 	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
 	}
 
-mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, mDNSu8 ttl)
+mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSu8 ttl)
 	{
 	const char *const ptype =   (msg->h.flags.b[0] & kDNSFlag0_QR_Response)             ? "-R- " :
 								(srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? "-Q- " : "-LQ-";
@@ -685,6 +688,8 @@ mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *co
 	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", mDNSVal16(msg->h.id));
 
 	if (ttl != 255) mprintf("  TTL:%u", ttl);
+
+	if (!mDNSAddrIsDNSMulticast(dstaddr)) mprintf("   To: %#a", dstaddr);
 
 	if (msg->h.flags.b[0] & kDNSFlag0_TC)
 		{
@@ -782,7 +787,7 @@ mDNSlocal void DisplayError(const mDNSAddr *srcaddr, const mDNSu8 *ptr, const mD
 	}
 
 mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
+	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
@@ -791,7 +796,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	HostEntry *entry = GotPacketFromHost(srcaddr, MQ ? HostPkt_Q : HostPkt_L, msg->h.id);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, end, srcaddr, srcport, ttl);
+	DisplayPacketHeader(msg, end, srcaddr, srcport, dstaddr, ttl);
 	if (msg->h.id.NotAnInteger != 0xFFFF)
 		{
 		if (MQ) NumPktQ++; else NumPktL++;
@@ -857,7 +862,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	HostEntry *entry = GotPacketFromHost(srcaddr, HostPkt_R, msg->h.id);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, end, srcaddr, srcport, ttl);
+	DisplayPacketHeader(msg, end, srcaddr, srcport, dstaddr, ttl);
 	if (msg->h.id.NotAnInteger != 0xFFFF) NumPktR++;
 
 	for (i=0; i<msg->h.numQuestions; i++)
@@ -977,7 +982,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 			}
 		else
 			{
-			if      (QR_OP == StdQ) DisplayQuery          (m, msg, end, srcaddr, srcport,          InterfaceID, ttl);
+			if      (QR_OP == StdQ) DisplayQuery          (m, msg, end, srcaddr, srcport, dstaddr, InterfaceID, ttl);
 			else if (QR_OP == StdR) DisplayResponse       (m, msg, end, srcaddr, srcport, dstaddr, InterfaceID, ttl);
 			else
 				{
