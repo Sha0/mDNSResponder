@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.15  2003/08/05 00:32:28  cheshire
+<rdar://problem/3326712> Time to turn off MACOSX_MDNS_MALLOC_DEBUGGING
+
 Revision 1.14  2003/07/20 03:38:51  ksekar
 Bug #: 3320722
 Completed support for Unix-domain socket based API.
@@ -128,7 +131,7 @@ extern char HINFO_SWstring[];
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()
-#define MACOSX_MDNS_MALLOC_DEBUGGING 1
+#define MACOSX_MDNS_MALLOC_DEBUGGING 0
 
 #if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 extern void *mallocL(char *msg, unsigned int size);
