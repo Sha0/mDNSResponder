@@ -269,6 +269,9 @@ void resolve_reply (
         context.release                 = NULL;
         context.copyDescription 	    = NULL;
 
+		[ipAddressField setStringValue:@"?"];
+		[portField setStringValue:@"?"];
+		[textField setStringValue:@"?"];
         // start an enumerator on the local server
         dns_client = DNSServiceResolverResolve
             (
@@ -457,6 +460,7 @@ void resolve_reply (
 
 - (void)resolveClientWithInterface:(struct sockaddr *)interface address:(struct sockaddr *)address txtRecord:(NSString *)txtRecord
 {
+	if (address->sa_family != AF_INET) return; // For now we only handle IPv4
     //printf("interface length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)interface)->sin_len, ((struct sockaddr_in *)interface)->sin_port, ((struct sockaddr_in *)interface)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)interface)->sin_addr)));
     //printf("address length = %d, port = %d, family = %d, address = %s\n", ((struct sockaddr_in *)address)->sin_len, ((struct sockaddr_in *)address)->sin_port, ((struct sockaddr_in *)address)->sin_family, inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr)));
     NSString *ipAddr = [NSString stringWithCString:inet_ntoa(((struct in_addr)((struct sockaddr_in *)address)->sin_addr))];
