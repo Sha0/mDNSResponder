@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.5  2004/07/09 19:08:07  shersche
+<rdar://problem/3713762> ServiceSetupEventLogging() errors are handled gracefully
+Bug #: 3713762
+
 Revision 1.4  2004/06/24 20:58:15  shersche
 Fix compiler error in Release build
 Submitted by: herscher
@@ -637,7 +641,7 @@ static void WINAPI ServiceMain( DWORD argc, LPSTR argv[] )
 	char			desc[ 256 ];
 	
 	err = ServiceSetupEventLogging();
-	require_noerr( err, exit );
+	check_noerr( err );
 	
 	// Initialize the service status and register the service control handler with the name of the service.
 	
