@@ -973,7 +973,7 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 		{
 		case kDNSType_A:	if (rdata->RDLength != 4)
 								{ debugf("putRData: Illegal length %d for kDNSType_A", rdata->RDLength); return(mDNSNULL); }
-							if (ptr + rdata->RDLength > limit) return(mDNSNULL);
+							if (ptr + 4 > limit) return(mDNSNULL);
 							*ptr++ = rdata->u.ip.b[0];
 							*ptr++ = rdata->u.ip.b[1];
 							*ptr++ = rdata->u.ip.b[2];
@@ -987,7 +987,8 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 							mDNSPlatformMemCopy(rdata->u.data, ptr, rdata->RDLength);
 							return(ptr + rdata->RDLength);
 
-		case kDNSType_SRV:	*ptr++ = (mDNSu8)(rdata->u.srv.priority >> 8);
+		case kDNSType_SRV:	if (ptr + 6 > limit) return(mDNSNULL);
+							*ptr++ = (mDNSu8)(rdata->u.srv.priority >> 8);
 							*ptr++ = (mDNSu8)(rdata->u.srv.priority     );
 							*ptr++ = (mDNSu8)(rdata->u.srv.weight   >> 8);
 							*ptr++ = (mDNSu8)(rdata->u.srv.weight       );
