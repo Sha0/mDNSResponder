@@ -1,5 +1,5 @@
 /*
-	$Id: DNSServices.c,v 1.2 2002/09/20 05:58:01 bradley Exp $
+	$Id: DNSServices.c,v 1.3 2002/09/20 08:36:50 bradley Exp $
 
 	Contains:	DNS Services implementation.
 	
@@ -47,6 +47,9 @@
     Change History (most recent first):
     
         $Log: DNSServices.c,v $
+        Revision 1.3  2002/09/20 08:36:50  bradley
+        Fixed debug messages to output the correct information when resolving.
+
         Revision 1.2  2002/09/20 05:58:01  bradley
         DNS Services for Windows
 
@@ -845,12 +848,12 @@ mDNSlocal void
 		case kDNSResolverEventTypeResolved:
 			verbosedebugf( DEBUG_NAME "private resolver callback: resolved (ref=0x%08X)", inRef );
 			verbosedebugf( DEBUG_NAME "    name:   \"%s\"", 	inEvent->data.resolved.name );
-			verbosedebugf( DEBUG_NAME "    type:   \"%s\"", 	inEvent->data.resolved.name );
-			verbosedebugf( DEBUG_NAME "    domain: \"%s\"", 	inEvent->data.resolved.name );
+			verbosedebugf( DEBUG_NAME "    type:   \"%s\"", 	inEvent->data.resolved.type );
+			verbosedebugf( DEBUG_NAME "    domain: \"%s\"", 	inEvent->data.resolved.domain );
 			verbosedebugf( DEBUG_NAME "    if:     %.4a", 		&inEvent->data.resolved.interfaceAddr.u.ipv4.address );
 			verbosedebugf( DEBUG_NAME "    ip:     %.4a:%u", 	&inEvent->data.resolved.address.u.ipv4.address, 
 															 	inEvent->data.resolved.address.u.ipv4.port );
-			verbosedebugf( DEBUG_NAME "    text:   \"%s\"", 	inEvent->data.resolved.name );
+			verbosedebugf( DEBUG_NAME "    text:   \"%s\"", 	inEvent->data.resolved.textRecord );
 			
 			// Re-package the resolver event as a browser event and call the callback.
 			
