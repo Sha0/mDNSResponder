@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.107  2003/05/29 05:44:55  cheshire
+ * Minor fixes to log messages
+ *
  * Revision 1.106  2003/05/27 18:30:55  cheshire
  * <rdar://problem/3262962> Need a way to easily examine current mDNSResponder state
  * Dean Reece suggested SIGINFO is more appropriate than SIGHUP
@@ -507,7 +510,7 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	DNSServiceDomainEnumerationList = x;
 	
 	// Generate initial response
-	debugf("%5d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
+	verbosedebugf("%5d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
 	// We always give local. as the initial default browse domain, and then look for more
 	kern_return_t status = DNSServiceDomainEnumerationReply_rpc(x->ClientMachPort, rt, "local.", 0, MDNS_MM_TIMEOUT);
 	if (status == MACH_SEND_TIMED_OUT)
@@ -686,7 +689,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		}
 	cstring[i-1] = 0;		// Put the terminating NULL on the end
 	
-	LogOperation("%5d: DNSServiceResolver(%##s) -> %.4a:%d", x->ClientMachPort,
+	LogOperation("%5d: DNSServiceResolver(%##s) -> %#a:%d", x->ClientMachPort,
 		x->i.name.c, &query->info->ip, (int)query->info->port.b[0] << 8 | query->info->port.b[1]);
 	status = DNSServiceResolverReply_rpc(x->ClientMachPort,
 		(char*)&interface, (char*)&address, cstring, 0, MDNS_MM_TIMEOUT);
