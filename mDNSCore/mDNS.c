@@ -88,6 +88,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.176  2003/06/07 04:33:26  cheshire
+<rdar://problem/3283540> When query produces zero results, call mDNS_Reconfirm() on any antecedent records
+Minor change: Increment/decrement logic for q->CurrentAnswers should be in
+CacheRecordAdd() and CacheRecordRmv(), not AnswerQuestionWithResourceRecord()
+
 Revision 1.175  2003/06/07 04:11:52  cheshire
 Minor changes to comments and debug messages
 
@@ -3213,19 +3218,6 @@ mDNSlocal void SendQueries(mDNS *const m)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr)
 	{
-	if (rr->rrremainingttl)
-		q->CurrentAnswers++;
-	else
-		{
-		q->CurrentAnswers--;
-		if (q->CurrentAnswers == 0)
-			{
-			debugf("AnswerQuestionWithResourceRecord: Zero current answers for %##s (%s); will reconfirm antecedents",
-				q->qname.c, DNSTypeName(q->qtype));
-			ReconfirmAntecedents(m, &q->qname);
-			}
-		}
-
 	debugf("AnswerQuestionWithResourceRecord:%4lu %s TTL%6lu %##s (%s)",
 		q->CurrentAnswers, rr->rrremainingttl ? "Add" : "Rmv", rr->rrremainingttl, rr->name.c, DNSTypeName(rr->rrtype));
 
@@ -3278,6 +3270,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, ResourceRecord *rr)
 				SetNextQueryTime(m,q);
 				}
 			verbosedebugf("CacheRecordAdd %p %##s (%s) %lu", rr, rr->name.c, DNSTypeName(rr->rrtype), rr->rrremainingttl);
+			q->CurrentAnswers++;
 			AnswerQuestionWithResourceRecord(m, q, rr);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
@@ -3306,6 +3299,15 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, ResourceRecord *rr)
 			// Set rr->rrremainingttl to zero to let the client know we're deleting this record
 			rr->rrremainingttl = 0;
 			verbosedebugf("CacheRecordRmv %p %##s (%s)", rr, rr->name.c, DNSTypeName(rr->rrtype));
+			if (q->CurrentAnswers == 0)
+				LogMsg("CacheRecordRmv ERROR: How can CurrentAnswers already be zero for %p %##s (%s)?", q, q->qname.c, DNSTypeName(q->qtype));
+			else
+				q->CurrentAnswers--;
+			if (q->CurrentAnswers == 0)
+				{
+				debugf("CacheRecordRmv: Zero current answers for %##s (%s); will reconfirm antecedents", q->qname.c, DNSTypeName(q->qtype));
+				ReconfirmAntecedents(m, &q->qname);
+				}
 			AnswerQuestionWithResourceRecord(m, q, rr);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
@@ -3349,6 +3351,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
 			if (rr->RecordType & kDNSRecordTypePacketUniqueMask) ShouldQueryImmediately = mDNSfalse;
 			rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
+			q->CurrentAnswers++;
 			AnswerQuestionWithResourceRecord(m, q, rr);
 			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
