@@ -1,4 +1,5 @@
-/*
+/* -*- Mode: C; tab-width: 4 -*-
+ *
  * Copright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
@@ -23,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.206  2004/10/13 22:11:46  cheshire
+Update debugging messages
+
 Revision 1.205  2004/10/12 21:10:11  cheshire
 <rdar://problem/3438376> mach_absolute_time() not monotonically increasing
 Do a NotifyOfElusiveBug() if we see mach_absolute_time() go backwards
@@ -1564,12 +1568,12 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
 		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip) && mDNSSameEthAddress(&bssid, &(*p)->BSSID))
 			{
-			debugf("AddInterfaceToList: Found existing interface %u %.6a with address %#a", scope_id, &bssid, &ip);
+			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a", scope_id, &bssid, &ip);
 			(*p)->Exists = mDNStrue;
 			return(*p);
 			}
 
-	debugf("AddInterfaceToList: Making   new   interface %u %.6a with address %#a", scope_id, &bssid, &ip);
+	debugf("AddInterfaceToList: Making   new   interface %lu %.6a with address %#a", scope_id, &bssid, &ip);
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
 	bzero(i, sizeof(NetworkInterfaceInfoOSX));
 	if (!i) return(mDNSNULL);
@@ -1616,8 +1620,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	mDNSBool foundav4           = mDNSfalse;
 	mDNSBool foundav6           = mDNSfalse;
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
-	struct ifaddrs *v4Loopback = NULL;
-	struct ifaddrs *v6Loopback = NULL;
+	struct ifaddrs *v4Loopback  = NULL;
+	struct ifaddrs *v6Loopback  = NULL;
 	int err = (ifa != NULL) ? 0 : (errno != 0 ? errno : -1);
 	int InfoSocket              = err ? -1 : socket(AF_INET6, SOCK_DGRAM, 0);
 	if (err) return(err);
@@ -1768,26 +1772,26 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
 				mDNS_RegisterInterface(m, n);
-				LogOperation("SetupActiveInterfaces: Registered  %s(%lu) InterfaceID %p %#a%s",
-					i->ifa_name, i->scope_id, primary, &n->ip, n->InterfaceActive ? " (Primary)" : "");
+				LogOperation("SetupActiveInterfaces:   Registered    %s(%lu) %.6a InterfaceID %p %#a%s",
+					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 				}
 	
 			if (!n->McastTxRx)
-				debugf("SetupActiveInterfaces: No Tx/Rx on %s(%lu) InterfaceID %p %#a", i->ifa_name, i->scope_id, primary, &n->ip);
+				debugf("SetupActiveInterfaces:   No Tx/Rx on   %s(%lu) %.6a InterfaceID %p %#a", i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip);
 			else
 				{
 				if (i->sa_family == AF_INET && primary->ss.sktv4 == -1)
 					{
 					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET);
-					if (err == 0) debugf("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a", primary->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-					else LogMsg("SetupActiveInterfaces: v4 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					if (err == 0) debugf("SetupActiveInterfaces:   v4 socket%2d %s(%lu) %.6a InterfaceID %p %#a", primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
+					else LogMsg("SetupActiveInterfaces:   v4 socket%2d %s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					}
 			
 				if (i->sa_family == AF_INET6 && primary->ss.sktv6 == -1)
 					{
 					mStatus err = SetupSocket(&primary->ss, MulticastDNSPort, &i->ifinfo.ip, AF_INET6);
-					if (err == 0) debugf("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a", primary->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
-					else LogMsg("SetupActiveInterfaces: v6 socket%2d %s(%lu) InterfaceID %p %#a FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, n->InterfaceID, &n->ip);
+					if (err == 0) debugf("SetupActiveInterfaces:   v6 socket%2d %s(%lu) %.6a InterfaceID %p %#a", primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
+					else LogMsg("SetupActiveInterfaces:   v6 socket%2d %s(%lu) %.6a InterfaceID %p %#a FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip);
 					}
 				}
 			}
@@ -1838,8 +1842,8 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		if (i->ifinfo.InterfaceID)
 			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
-				LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) InterfaceID %p %#a%s",
-					i->ifa_name, i->scope_id, i->ifinfo.InterfaceID, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
+				LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) %.6a InterfaceID %p %#a%s",
+					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
 				mDNS_DeregisterInterface(m, &i->ifinfo);
 				i->ifinfo.InterfaceID = mDNSNULL;
 				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
@@ -2378,6 +2382,8 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemWillSleep:       debugf("PowerChanged kIOMessageSystemWillSleep");    mDNSCoreMachineSleep(m, true);  break; // E0000280
 		case kIOMessageSystemWillNotSleep:    debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");                     break; // E0000290
 		case kIOMessageSystemHasPoweredOn:    debugf("PowerChanged kIOMessageSystemHasPoweredOn"); mDNSCoreMachineSleep(m, false); break; // E0000300
+		case kIOMessageSystemWillRestart:     debugf("PowerChanged kIOMessageSystemWillRestart (no action)");                      break; // E0000310
+		case kIOMessageSystemWillPowerOn:     debugf("PowerChanged kIOMessageSystemWillPowerOn (no action)");                      break; // E0000320
 		default:                              debugf("PowerChanged unknown message %X", messageType);                              break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
