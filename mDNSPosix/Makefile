@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.29  2004/03/04 23:35:41  cheshire
+# Instead of using a dummy target to generate an error message, use "$(error text...)"
+#
 # Revision 1.28  2004/03/04 23:33:42  cheshire
 # Fixes from Alfred Perlstein for FreeBSD's benefit
 #
@@ -176,8 +179,7 @@ LD = libtool
 LDFLAGS = -dynamic -lSystem
 LDSUFFIX = dylib
 else
-cantbuild:
-	@echo "Must specify target OS on command-line: \"make os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris}\""
+$(error ERROR: Must specify target OS on command-line: "make [target] os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris}) 
 endif
 endif
 endif
