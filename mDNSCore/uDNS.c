@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.157  2004/12/15 01:39:21  ksekar
+Refinement to previous checkin - we should still return NatTraversal error  when the port mapping fails
+
 Revision 1.156  2004/12/15 01:18:57  ksekar
 <rdar://problem/3825979> Call DeregisterService on nat port map failure
 
@@ -4112,6 +4115,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
 	AuthRecord **r = &u->RecordRegistrations;
 	char *errmsg = "Unknown State";
+	mStatus err = mStatus_MemFree;
 	
 	// We "silently" unlink any Extras from our RecordRegistration list, as they are implicitly deleted from
 	// the server when we delete all RRSets for this name
@@ -4129,13 +4133,18 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_NATMap:
 			// we're in the middle of nat mapping.  clear ptr from NAT info to RR, unlink and give memfree			
 			if (!nat) LogMsg("uDNS_DeregisterRecord: no NAT info context");
-			else { nat->reg.ServiceRegistration = mDNSNULL; FreeNATInfo(m, nat); }
+			else
+				{
+				if (nat->state == NATState_Error) err = mStatus_NATTraversal;
+				nat->reg.ServiceRegistration = mDNSNULL;
+				FreeNATInfo(m, nat);
+				}
 			unlinkSRS(u, srs);
 			srs->uDNS_info.state = regState_Unregistered;
 			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-			return mStatus_NoError;		
+			return mStatus_NoError;
 		case regState_Unregistered:
 			errmsg = "service not registered";
 			goto error;
