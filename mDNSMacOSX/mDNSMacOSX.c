@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.257  2004/12/10 19:45:46  cheshire
+<rdar://problem/3915074> Reduce egregious stack space usage
+Reduced myCFSocketCallBack() stack frame from 9K to 512 bytes
+
 Revision 1.256  2004/12/10 04:35:43  cheshire
 <rdar://problem/3907233> Show "Note: Compiled without Apple-specific split DNS support" only once
 
@@ -1171,7 +1175,6 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	const CFSocketSet *ss = (const CFSocketSet *)context;
 	mDNS *const m = ss->m;
 	mDNSInterfaceID InterfaceID = ss->info ? ss->info->ifinfo.InterfaceID : mDNSNULL;
-	DNSMessage packet;
 	struct sockaddr_storage from;
 	size_t fromlen = sizeof(from);
 	char packetifname[IF_NAMESIZE] = "";
@@ -1195,7 +1198,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		}
 
 	mDNSu8 ttl;
-	while ((err = myrecvfrom(s1, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname, &ttl)) >= 0)
+	while ((err = myrecvfrom(s1, &m->imsg, sizeof(m->imsg), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname, &ttl)) >= 0)
 		{
 		count++;
 		if (from.ss_family == AF_INET)
@@ -1250,7 +1253,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			if (intf) InterfaceID = intf->InterfaceID;
 			}
 
-		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID);
+		mDNSCoreReceive(m, &m->imsg, (unsigned char*)&m->imsg + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID);
 		}
 
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
