@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.10  2004/10/11 22:55:34  shersche
+<rdar://problem/3827624> Use the IP port number when deriving the printer port name.
+Bug #: 3827624
+
 Revision 1.9  2004/06/27 23:08:00  shersche
 code cleanup, make sure EnumPrintDrivers returns non-zero value, ignore comments in inf files
 
@@ -211,7 +215,7 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Manufacturer * manufacturer,
 	printer->model				=	model->name;
 	printer->driverInstalled	=	model->driverInstalled;
 	printer->infFileName		=	model->infFileName;
-	printer->portName			=	L"IP_" + printer->hostname;
+	printer->portName.Format(L"IP_%s.%d", static_cast<LPCTSTR>(printer->hostname), printer->portNumber);
 }
 
 
