@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.418  2004/09/21 18:40:17  cheshire
+<rdar://problem/3376752> Adjust default record TTLs
+
 Revision 1.417  2004/09/21 17:32:16  cheshire
 <rdar://problem/3809484> Rate limiting imposed too soon
 
@@ -1407,8 +1410,14 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_QR_Response | kDNSFl
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
 
-#define kDefaultTTLforUnique 240
-#define kDefaultTTLforShared (2*3600)
+// By default, unique records have a TTL of two minutes
+#define kDefaultTTLforUnique 120
+
+// By default, shared records have a TTL of 75 minutes, so that their 80% cache-renewal query occurs once per hour
+#define kDefaultTTLforShared (3600 * 100 / 80)
+
+// By default, TXT records have a TTL of 75 minutes, same as shared records, because they tend to be the subject of ongoing monitoring
+#define kDefaultTTLforTXT (3600 * 100 / 80)
 
 #define kMaxUpdateCredits 10
 #define kUpdateCreditRefreshInterval (mDNSPlatformOneSecond * 50)
@@ -5910,7 +5919,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNS_SetupResourceRecord(&sr->RR_ADV, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeAdvisory, ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared,   ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, InterfaceID, kDNSType_SRV, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
-	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, kDefaultTTLforTXT,    kDNSRecordTypeUnique,   ServiceCallback, sr);
 
 	// If the client is registering an oversized TXT record,
 	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it
