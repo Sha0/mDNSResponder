@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: SubTypeTester.c,v $
+Revision 1.2  2004/08/04 22:11:30  cheshire
+<rdar://problem/3588761> Current method of doing subtypes causes name collisions
+Change to use "._sub." instead of ".s." to mark subtypes.
+
 Revision 1.1  2004/06/11 00:03:28  cheshire
 Add code for testing avail/busy subtypes
 
@@ -145,7 +149,7 @@ mDNSlocal OSStatus mDNSResponderSetAvail(mDNS *m, AuthRecord *rr, ServiceRecordS
 	// 3. Set target of subtype PTR record to point to our SRV record (exactly the same as the main service PTR record)
 	// 4. And register it
 	mDNS_SetupResourceRecord(rr, mDNSNULL, mDNSInterface_Any, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, AvailCallback, &availRec2Active);
-	MakeDomainNameFromDNSNameString(&rr->resrec.name, "a.s._raop._tcp.local.");
+	MakeDomainNameFromDNSNameString(&rr->resrec.name, "a._sub._raop._tcp.local.");
 	AssignDomainName(rr->resrec.rdata->u.name, sr->RR_SRV.resrec.name);
 	return(mDNS_Register(m, rr));
 	}

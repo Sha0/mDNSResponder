@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.40  2004/08/04 22:10:46  cheshire
+<rdar://problem/3588761> Current method of doing subtypes causes name collisions
+Change to use "._sub." instead of ".s." to mark subtypes.
+
 Revision 1.39  2004/07/13 21:24:24  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -647,15 +651,14 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 			src = s0;		// Copy the first label
 			len = *src;
 			for (i=0; i<=len; i++) *dst++ = *src++;
-			*dst++ = 1;
-			*dst++ = 's';
+			for (i=0; i<=4;   i++) *dst++ = "\x04_sub"[i];
 			type = (domainname *)s1;
 			
 			// Special support for queries done by older versions of "Rendezvous Browser"
 			// For these queries, we retract the ".s" we just added between the subtype and the main type
 			if (SameDomainName((domainname*)s0, (domainname*)"\x09_services\x07_dns-sd\x04_udp") ||
 				SameDomainName((domainname*)s0, (domainname*)"\x09_services\x05_mdns\x04_udp"))
-				dst -= 2;
+				dst -= 5;
 			}
 		}
 
