@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.8  2004/05/28 23:42:37  ksekar
+<rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
+
 Revision 1.7  2004/05/18 23:51:25  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -72,6 +75,11 @@ extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_GlobalInfo *u);  // returns true if OK to call StopQuery
 extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 
+// SuspendLLQs stops all LLQs, preserving known answers.  RestartLLQs re-starts these suspended LLQs, generating appropriate add/removes
+// Call SuspendLLQs prior to sleep, and on shutdown.  Call RestartLLQs on wake from sleep.
+extern void uDNS_SuspendLLQs(mDNS *m);
+extern void uDNS_RestartLLQs(mDNS *m);
+	
 extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 

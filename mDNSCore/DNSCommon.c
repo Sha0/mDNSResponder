@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.31  2004/05/28 23:42:36  ksekar
+<rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
+
 Revision 1.30  2004/05/26 09:08:04  bradley
 Added cast to correct structure pointer when allocating domain name list element to fix C++ builds.
 
@@ -883,6 +886,7 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 		case kDNSType_SOA:  return (mDNSu16)(CompressedDomainNameLength(&rd->soa.mname, name) +
 											CompressedDomainNameLength(&rd->soa.rname, name) +
 											5 * sizeof(mDNSOpaque32));
+		case kDNSType_OPT:  return(rr->rdlength);
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdlength);
 		}
@@ -1048,6 +1052,69 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 	return(mDNSNULL);
 	}
 
+mDNSlocal inline mDNSu8 *putVal16(mDNSu8 *ptr, mDNSu16 val)
+	{
+	*(mDNSOpaque16 *)ptr = mDNSOpaque16fromIntVal(val);
+	return ptr + sizeof(mDNSOpaque16);
+	}
+
+mDNSlocal mDNSu8 *putLLQRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr)
+	{
+	int nput = 0;
+	rdataLLQ *llq;
+	
+	while (nput < rr->rdlength)
+		{
+		if (ptr + sizeof(rdataLLQ) > limit) { LogMsg("ERROR: putLLQRData - out of space");  return mDNSNULL; }
+		if (rr->rdlength < sizeof(rdataLLQ)) { LogMsg("ERROR: putRData - bad llq"); return mDNSNULL; }
+		(mDNSu8 *)llq = rr->rdata->u.data + nput;
+		ptr = putVal16(ptr, llq->opt);
+		ptr = putVal16(ptr, llq->optlen);
+		ptr = putVal16(ptr, llq->vers);
+		ptr = putVal16(ptr, llq->llqOp);
+		ptr = putVal16(ptr, llq->err);
+		mDNSPlatformMemCopy(llq->id, ptr, 8);  // 8-byte id
+		ptr += 8;
+		*(mDNSOpaque32 *)ptr = mDNSOpaque32fromIntVal(llq->lease);
+		ptr += sizeof(mDNSOpaque32);
+		nput += sizeof(rdataLLQ);
+		}
+	return ptr;
+	}
+
+mDNSlocal inline mDNSu16 getVal16(const mDNSu8 **ptr)
+	{	
+	mDNSu16 val = mDNSVal16(*((mDNSOpaque16 *)*ptr));
+	*ptr += sizeof(mDNSOpaque16);
+	return val;
+	}
+
+mDNSlocal const mDNSu8 *getLLQRdata(const mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr, mDNSu16 pktRDLen)
+	{
+	int nread = 0;
+	rdataLLQ *llq = (rdataLLQ *)rr->rdata->u.data;
+	
+	while (nread < pktRDLen)
+		{
+		if (nread + sizeof(rdataLLQ) > rr->rdata->MaxRDLength) { LogMsg("ERROR: getLLQRdata - out of space");  return mDNSNULL; }
+		if ((unsigned)(limit - ptr) < sizeof(rdataLLQ)) { LogMsg("ERROR: putRData - bad llq"); return mDNSNULL; }
+
+		llq->opt = getVal16(&ptr);
+		llq->optlen = getVal16(&ptr);
+		llq->vers = getVal16(&ptr);
+		llq->llqOp = getVal16(&ptr);
+		llq->err = getVal16(&ptr);
+		mDNSPlatformMemCopy(ptr, llq->id, 8);
+		ptr += 8;
+		llq->lease = mDNSVal32(*(mDNSOpaque32 *)ptr);
+		ptr += sizeof(mDNSOpaque32);
+		nread += sizeof(rdataLLQ);
+		llq++;  // incrememnt pointer into rdata
+		}
+	rr->rdlength = pktRDLen;
+	return ptr;
+	}			
+
 mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr)
 	{
 	switch (rr->rrtype)
@@ -1084,7 +1151,8 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rr->rdata->u.srv.port.b[0];
 							*ptr++ = rr->rdata->u.srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.srv.target));
-
+		case kDNSType_OPT:	return putLLQRData(ptr, limit, rr);		
+							
 		default:			debugf("putRData: Warning! Writing unknown resource type %d as raw data", rr->rrtype);
 							// Fall through to common code below
 		case kDNSType_HINFO:
@@ -1136,7 +1204,8 @@ mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNS
 	return(endofrdata);
 	}
 
-mDNSexport mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl)
+mDNSexport mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32
+											   maxttl)
 	{
 	if (maxttl > rr->rroriginalttl) maxttl = rr->rroriginalttl;
 	return(PutResourceRecordTTL(msg, ptr, count, rr, maxttl));
@@ -1155,18 +1224,6 @@ mDNSexport mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, co
 	ptr[8] = ptr[9] = 0;								// RDATA length is zero
 	(*count)++;
 	return(ptr + 10);
-	}
-
-mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, domainname *zone, mDNSOpaque16 zoneClass)
-	{
-	ptr = putDomainNameAsLabels(msg, ptr, limit, zone);
-	if (!ptr || ptr + 4 > limit) return mDNSNULL;		// If we're out-of-space, return mDNSNULL
-	((mDNSOpaque16 *)ptr)->NotAnInteger = kDNSType_SOA;
-	ptr += 2;
-	((mDNSOpaque16 *)ptr)->NotAnInteger = zoneClass.NotAnInteger;
-	ptr += 2;
-	msg->h.mDNS_numZones++;
-	return ptr;
 	}
 
 mDNSexport mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass)
@@ -1343,7 +1400,7 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 	rr->resrec.rrtype            = (mDNSu16) ((mDNSu16)ptr[0] <<  8 | ptr[1]);
 	rr->resrec.rrclass           = (mDNSu16)(((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSClass_Mask);
 	rr->resrec.rroriginalttl     = (mDNSu32) ((mDNSu32)ptr[4] << 24 | (mDNSu32)ptr[5] << 16 | (mDNSu32)ptr[6] << 8 | ptr[7]);
-	if (rr->resrec.rroriginalttl > 0x70000000UL / mDNSPlatformOneSecond)
+	if (rr->resrec.rroriginalttl > 0x70000000UL / mDNSPlatformOneSecond && (mDNSs32)rr->resrec.rroriginalttl != -1)
 		rr->resrec.rroriginalttl = 0x70000000UL / mDNSPlatformOneSecond;
 	// Note: We don't have to adjust m->NextCacheCheck here -- this is just getting a record into memory for
 	// us to look at. If we decide to copy it into the cache, then we'll update m->NextCacheCheck accordingly.
@@ -1411,7 +1468,8 @@ mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * con
 			                rr->resrec.rdata->u.soa.expire.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;   ptr += 4;
 			                rr->resrec.rdata->u.soa.min.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;
 			                break;
-			
+							
+		case kDNSType_OPT:  getLLQRdata(ptr, end, &rr->resrec, pktrdlength); break;
 							   
 		default:			if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{

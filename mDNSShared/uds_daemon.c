@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.53  2004/05/28 23:42:37  ksekar
+<rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
+
 Revision 1.52  2004/05/26 00:39:49  ksekar
 <rdar://problem/3667105>: wide-area rendezvous servers don't appear in
 Finder
@@ -378,7 +381,6 @@ static int build_domainname_from_strings(domainname *srv, char *name, char *regt
 static void enum_termination_callback(void *context);
 static void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void handle_query_request(request_state *rstate);
-static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi, uint16_t rrtype, int16_t rrclass);
 static reply_state *format_enumeration_reply(request_state *rstate, const char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err);
 static void handle_enum_request(request_state *rstate);
 static void handle_regrecord_request(request_state *rstate);
@@ -785,13 +787,14 @@ static void request_callback(void *info)
 static void handle_query_request(request_state *rstate)
     {
     DNSServiceFlags flags;
-    uint32_t interfaceIndex;
+    uint32_t ifi;
     char name[256];
     uint16_t rrtype, rrclass;
     char *ptr;
-    domainname dname;
     mStatus result;
-    
+    mDNSInterfaceID InterfaceID;
+	DNSQuestion *q;
+	
     if (rstate->ts != t_complete)
         {
         LogMsg("ERROR: handle_query_request - transfer state != t_complete");
@@ -803,13 +806,37 @@ static void handle_query_request(request_state *rstate)
         LogMsg("ERROR: handle_query_request - NULL msgdata");
         goto error;
         }
+	
     flags = get_flags(&ptr);
-    interfaceIndex = get_long(&ptr);
+    ifi = get_long(&ptr);
     if (get_string(&ptr, name, 256) < 0) goto bad_param;
     rrtype = get_short(&ptr);
     rrclass = get_short(&ptr);
-    if (!MakeDomainNameFromDNSNameString(&dname, name)) goto bad_param;
-    result = do_question(rstate, &dname, interfaceIndex, rrtype, rrclass);
+	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
+    if (ifi && !InterfaceID) goto bad_param;
+
+    q = mallocL("DNSQuestion", sizeof(DNSQuestion));
+    if (!q)
+    	{
+        my_perror("ERROR: handle_query - malloc");
+        exit(1);
+    	}
+    bzero(q, sizeof(DNSQuestion));	
+
+    if (!MakeDomainNameFromDNSNameString(&q->qname, name)) { freeL("DNSQuestion", q); goto bad_param; }	
+    q->QuestionContext = rstate;
+    q->QuestionCallback = question_result_callback;
+    q->qtype = rrtype;
+    q->qclass = rrclass;
+    q->InterfaceID = InterfaceID;
+    q->Target = zeroAddr;
+	if (flags & kDNSServiceFlagsLongLivedQuery) q->LongLived = mDNStrue;
+    rstate->termination_context = q;
+    rstate->terminate = question_termination_callback;
+
+    result = mDNS_StartQuery(gmDNS, q);
+    if (result != mStatus_NoError) LogMsg("ERROR: mDNS_StartQuery: %d", (int)result);
+	
     if (result) rstate->terminate = NULL;
     if (deliver_error(rstate, result) < 0) goto error;
     return;
@@ -1021,42 +1048,7 @@ static void resolve_result_callback(mDNS *const m _UNUSED, DNSQuestion *question
     else if (result == t_complete) freeL("resolve_result_callback", rep);
     else append_reply(rs, rep);
     }
-
-
-
-
-// common query issuing routine for resolve and query requests
-static mStatus do_question(request_state *rstate, domainname *name, uint32_t ifi, uint16_t rrtype, int16_t rrclass)
-    {
-    DNSQuestion *q;
-    mStatus result;
-    mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
-    if (ifi && !InterfaceID) return(mStatus_BadParamErr);
-
-    q = mallocL("do_question", sizeof(DNSQuestion));
-    if (!q)
-    	{
-        my_perror("ERROR: do_question - malloc");
-        exit(1);
-    	}
-    bzero(q, sizeof(DNSQuestion));	
-
-    q->QuestionContext = rstate;
-    q->QuestionCallback = question_result_callback;
-    memcpy(&q->qname, name, MAX_DOMAIN_NAME);
-    q->qtype = rrtype;
-    q->qclass = rrclass;
-    q->InterfaceID = InterfaceID;
-    q->Target      = zeroAddr;
-
-    rstate->termination_context = q;
-    rstate->terminate = question_termination_callback;
-
-    result = mDNS_StartQuery(gmDNS, q);
-    if (result != mStatus_NoError) LogMsg("ERROR: mDNS_StartQuery: %d", (int)result);
-    return result;
-    }
-    
+ 
 // what gets called when a resolve is completed and we need to send the data back to the client
 static void question_result_callback(mDNS *const m _UNUSED, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {

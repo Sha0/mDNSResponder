@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.171  2004/05/28 23:42:37  ksekar
+<rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
+
 Revision 1.170  2004/05/18 23:51:25  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -665,7 +668,8 @@ typedef enum				// From RFC 1035
 	kDNSType_TXT,			// 16 Arbitrary text string
 
 	kDNSType_AAAA = 28,		// 28 IPv6 address
-	kDNSType_SRV = 33,		// 33 Service record
+	kDNSType_SRV  = 33,		// 33 Service record
+	kDNSType_OPT  = 41,     // EDNS0 OPT record
 	kDNSType_TSIG = 250,    // 250 Transaction Signature
 
 	kDNSQType_ANY = 255		// Not a DNS type, but a DNS query type, meaning "all types"
@@ -930,6 +934,18 @@ typedef packedstruct { mDNSu16 preference;                                domain
 typedef packedstruct { domainname mname; domainname rname; mDNSOpaque32 serial; mDNSOpaque32 refresh;
                        mDNSOpaque32 retry; mDNSOpaque32 expire; mDNSOpaque32 min;              } rdataSOA;
 
+// NOTE: rdataLLQ format may be repeated an arbitrary number of times in a single resource record
+typedef packedstruct
+	{
+    mDNSu16 opt;
+	mDNSu16 optlen;
+	mDNSu16 vers;
+    mDNSu16 llqOp;
+	mDNSu16 err;
+	mDNSu8 id[8];
+	mDNSu32 lease;
+	} rdataLLQ; 
+	
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
 #define StandardAuthRDSize 264
@@ -957,6 +973,7 @@ typedef union
 	rdataSRV    srv;		// For SRV record
 	rdataMX     mx;			// For MX record
     rdataSOA    soa;        // For SOA record
+    rdataLLQ    opt;        // For eDNS0 OPT record
 	} RDataBody;
 
 typedef struct
@@ -1204,6 +1221,63 @@ typedef struct
 	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
 
+typedef enum
+	{
+	LLQ_UnInit            = 0,
+	LLQ_GetZoneInfo       = 1,
+	LLQ_InitialRequest    = 2,
+	LLQ_SecondaryRequest  = 3,
+	LLQ_Established       = 4,
+	LLQ_Refresh           = 5,  
+	LLQ_Retry             = 6,
+    LLQ_Suspended         = 7,
+    // safe to re-start LLQ before this point
+	LLQ_Static            = 16,
+	LLQ_Poll              = 17,
+	LLQ_Error             = 18,	
+	LLQ_Cancelled         = 19,
+	} LLQ_State;
+	
+typedef struct
+	{
+    LLQ_State state;
+    mDNSAddr servAddr;
+    mDNSIPPort servPort;
+    DNSQuestion *question;
+    mDNSu32 origLease;  // seconds (relative)
+    mDNSu32 retry;  // ticks (absolute)
+    mDNSu32 expire; // ticks (absolute)
+    mDNSs16 ntries;
+    mDNSu8 id[8];
+    mDNSBool deriveRemovesOnResume;
+	} LLQ_Info;
+
+// LLQ constants
+#define kDNSOpt_LLQ	   1 //!!!KRS
+#define kLLQ_Vers      0 // prerelease
+#define LLQ_OPTLEN     sizeof(rdataLLQ) - (2 * sizeof(mDNSOpaque16)); // sizeof rdata - (sizeof opt + sizeof len)
+#define kLLQ_DefLease  7200 // 2 hours
+#define kLLQ_MAX_TRIES 3    // retry an operation 3 times max
+#define kLLQ_INIT_RESEND 2 // resend an un-ack'd packet after 2 seconds, then double for each additional
+#define kLLQ_DEF_RETRY 1800 // retry a failed operation after 30 minutes	
+// LLQ Operation Codes
+#define kLLQ_Setup     1
+#define kLLQ_Refresh   2
+
+	
+// LLQ Errror Codes
+enum
+	{
+	LLQErr_NoError = 0,
+	LLQErr_ServFull = 1,
+	LLQErr_Static = 2,
+	LLQErr_FormErr = 3,
+	LLQErr_NoSuchLLQ = 4,
+	LLQErr_BadVers = 5,
+	LLQErr_UnknownErr = 6,
+	};
+	
+	
 typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *internalContext);
 typedef struct
     {
@@ -1211,6 +1285,7 @@ typedef struct
     mDNSs32               timestamp;
     mDNSBool              internal;
     InternalResponseHndlr responseCallback;   // NULL if internal field is false
+    LLQ_Info              *llq;               // NULL for 1-shot queries
     CacheRecord           *knownAnswers;
     void *context;
     } uDNS_QuestionInfo;
@@ -1249,6 +1324,8 @@ struct DNSQuestion_struct
 	mDNSu16               qclass;
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
+    mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
+                                            // Set by mDNS.c in mDNS_StartBrowse.
 	};
 
 typedef struct
@@ -1446,6 +1523,9 @@ extern const mDNSOpaque16 UpdateRespFlags;
 #if !defined(mDNSinline)
 extern mDNSu16      mDNSVal16(mDNSOpaque16 x);
 extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
+
+extern mDNSu32      mDNSVal32(mDNSOpaque16 x);
+extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 #endif
 
 // If we're compiling the particular C file that instantiates our inlines, then we
@@ -1458,6 +1538,19 @@ extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
 mDNSinline mDNSu16      mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
 mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 	{ mDNSOpaque16 x; x.b[0] = (mDNSu8)(v >> 8); x.b[1] = (mDNSu8)(v & 0xFF); return(x); }
+	
+	
+mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return ((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | x.b[3]); }
+mDNSinline mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v)
+	{
+	mDNSOpaque32 x; 
+	x.b[0] = (mDNSu8) (v >> 24)        ;
+	x.b[1] = (mDNSu8)((v >> 16) & 0xFF); 
+	x.b[2] = (mDNSu8)((v >> 8 ) & 0xFF);
+	x.b[3] = (mDNSu8)((v      ) & 0xFF);
+	return x;
+	}
+   
 #endif
 
 // ***************************************************************************

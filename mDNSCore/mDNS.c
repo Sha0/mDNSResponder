@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.379  2004/05/28 23:42:36  ksekar
+<rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
+
 Revision 1.378  2004/05/25 17:25:25  cheshire
 Remove extraneous blank lines and white space
 
@@ -3229,7 +3232,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
 	// This should be safe, because calling the client's question callback may cause the
 	// question list to be modified, but should not ever cause the rrcache list to be modified.
-	// If the client's question callback deletes the question, then m->CurrentQuestion will
+	// If the client's question callback deletes the question, then m->CurrentQuestion will	
 	// be advanced, and we'll exit out of the loop
 	m->lock_rrcache = 1;
 	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
@@ -3649,6 +3652,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 
 	if (sleepstate)
 		{
+		uDNS_SuspendLLQs(m);
 		// Mark all the records we need to deregister and send them
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
@@ -3661,7 +3665,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		mDNSu32 slot;
 		CacheRecord *cr;
 
-		// 1. Retrigger all our questions
+		uDNS_RestartLLQs(m);
+
+        // 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
 			if (ActiveQuestion(q))
 				{
@@ -4661,12 +4667,21 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	// If we accept and try to process a packet with zero or all-ones source address, that could really mess things up
 	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 
-    if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger &&
-        (QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
-        {
-        uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
-        return;
-        }
+    if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger)
+		{
+		if ((QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
+			{
+			uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
+			return;
+			}
+		LogMsg("Ignoring Unicast Message from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+			   srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
+			   msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
+			   msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+			   msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
+			   msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		return;
+		}
 	
 	mDNS_Lock(m);
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
@@ -4951,10 +4966,15 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	// then we do a multicast query on that interface, even for unicast domains.
     if (question->InterfaceID || IsLocalDomain(&question->qname))
     	{
+		question->LongLived = mDNSfalse;
 		question->uDNS_info.id = zeroID;
 		return(mDNS_StartQuery(m, question));
 		}
-	else return uDNS_StartQuery(m, question);
+	else
+		{
+		question->LongLived = mDNStrue;
+		return uDNS_StartQuery(m, question);
+		}
 	}
 
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -6187,7 +6207,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	mDNSu32 slot;
 	NetworkInterfaceInfo *intf;
 	mDNS_Lock(m);
-
+	
 	m->mDNS_shutdown = mDNStrue;
 
 	rrcache_totalused = m->rrcache_totalused;
@@ -6227,6 +6247,8 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 			}
 		}
+
+	uDNS_SuspendLLQs(m);
 
 	if (m->ResourceRecords) debugf("mDNS_Close: Sending final packets for deregistering records");
 	else debugf("mDNS_Close: No deregistering records remain");
