@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.381  2004/06/05 00:57:30  cheshire
+Remove incorrect LogMsg()
+
 Revision 1.380  2004/06/05 00:04:26  cheshire
 <rdar://problem/3668639>: wide-area domains should be returned in reg. domain enumeration
 
@@ -4670,19 +4673,10 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	// If we accept and try to process a packet with zero or all-ones source address, that could really mess things up
 	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 
-    if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger)
+	if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroup.NotAnInteger &&
+		(QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
 		{
-		if ((QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
-			{
-			uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
-			return;
-			}
-		LogMsg("Ignoring Unicast Message from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
-			   srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
-			   msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
-			   msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
-			   msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
-			   msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
 		return;
 		}
 	
