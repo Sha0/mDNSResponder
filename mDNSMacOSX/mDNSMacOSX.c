@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.266  2004/12/17 23:49:38  cheshire
+<rdar://problem/3922754> Computer Name change is slow
+Also treat changes to "Setup:/Network/DynamicDNS" the same way
+
 Revision 1.265  2004/12/17 23:37:47  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 (and other repetitive configuration changes)
@@ -2698,7 +2702,8 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		{
 		int c1 = (CFArrayContainsValue(changedKeys, range, k1) != 0);	// See if ComputerName changed
 		int c2 = (CFArrayContainsValue(changedKeys, range, k2) != 0);	// See if Local Hostname changed
-		if (c && c - c1 - c2 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
+		int c3 = (CFArrayContainsValue(changedKeys, range, CFSTR("Setup:/Network/DynamicDNS")) != 0);
+		if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
 		}
 	if (k1) CFRelease(k1);
 	if (k2) CFRelease(k2);
