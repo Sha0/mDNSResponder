@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.118  2004/11/18 22:58:37  ksekar
+Removed old comment.
+
 Revision 1.117  2004/11/18 18:04:21  ksekar
 Restore checkins lost due to repository disk failure: Update comments & <rdar://problem/3880688>
 
@@ -2593,8 +2596,6 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	if (!ptr) return mDNSfalse;
 	pktQ.uDNS_info.id = msg->h.id;
 	
-	// !!!KRS we should do a table lookup to quickly determine if this packet is for an LLQ
-   
 	q = u->ActiveQueries;
 	while (q)
 		{
