@@ -899,7 +899,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
 		if (port.NotAnInteger)
 			CheckForDuplicateRegistrations(x, &t, &d, port);
-		err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port, txtinfo, data_len, RegCallback, x);
+		err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port, txtinfo, data_len, mDNSInterface_Any, RegCallback, x);
 	
 		if (err) AbortClient(client, x);
 		else EnableDeathNotificationForClient(client, x);
@@ -913,16 +913,20 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		}
 	}
 	
-void NetworkChanged(void)
+mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
-	DNSServiceRegistration *r;
-	for (r = DNSServiceRegistrationList; r; r=r->next)
-		if (r->autoname && !SameDomainLabel(r->name.c, mDNSStorage.nicelabel.c))
-			{
-			debugf("NetworkChanged renaming %#s to %#s", &r->name, &mDNSStorage.nicelabel);
-			r->autorename = mDNStrue;
-			mDNS_DeregisterService(&mDNSStorage, &r->s);
-			}
+	(void)m; // Unused
+	if (result == mStatus_ConfigChanged)
+		{
+		DNSServiceRegistration *r;
+		for (r = DNSServiceRegistrationList; r; r=r->next)
+			if (r->autoname && !SameDomainLabel(r->name.c, mDNSStorage.nicelabel.c))
+				{
+				debugf("NetworkChanged renaming %#s to %#s", &r->name, &mDNSStorage.nicelabel);
+				r->autorename = mDNStrue;
+				mDNS_DeregisterService(&mDNSStorage, &r->s);
+				}
+		}
 	}
 
 //*************************************************************************************************************
@@ -1271,7 +1275,6 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 
 mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	{
-	extern void (*NotifyClientNetworkChanged)(void);	// Temp fix for catching name changes
 	mStatus            err;
 	CFRunLoopTimerContext myCFRunLoopTimerContext = { 0, &mDNSStorage, NULL, NULL, NULL };
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
@@ -1309,7 +1312,7 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		rrcachestorage, RR_CACHE_SIZE,
 		mDNS_Init_AdvertiseLocalAddresses,
-		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
+		mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext);
 	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);
@@ -1322,8 +1325,6 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFRelease(s_rls);
 	CFRelease(e_rls);
 	if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
-
-	NotifyClientNetworkChanged = NetworkChanged;
 
 	return(err);
 	}

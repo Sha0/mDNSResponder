@@ -66,6 +66,10 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.5  2003/02/20 06:48:36  cheshire
+Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
+Reviewed by: Josh Graessley, Bob Bradley
+
 Revision 1.4  2003/01/28 03:07:46  cheshire
 Add extra parameter to mDNS_RenameAndReregisterService(),
 and add support for specifying a domain other than dot-local.
@@ -578,6 +582,7 @@ static mStatus RegisterOneService(const char *  richTextHostName,
                 NULL,
                 port, 
                 text, textLen,
+                mDNSInterface_Any,
                 RegistrationCallback, thisServ);
     }
     if (status == mStatus_NoError) {

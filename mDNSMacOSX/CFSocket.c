@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.54  2003/02/20 06:48:35  cheshire
+Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
+Reviewed by: Josh Graessley, Bob Bradley
+
 Revision 1.53  2003/01/29 02:21:23  cheshire
 Return mStatus_Invalid if can't send packet because socket not available
 
@@ -87,8 +91,6 @@ Minor code tidying
 // A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
 // AAAA and A records over both IPv4 and IPv6.
 #define AAAA_OVER_V4	1
-
-void (*NotifyClientNetworkChanged)(void);
 
 #include "mDNSClientAPI.h"          // Defines the interface provided to the client layer above
 #include "mDNSPlatformFunctions.h"	// Defines the interface to the supporting layer below
@@ -169,7 +171,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	struct sockaddr_storage to;
 	int s, err;
 
-	if (InterfaceID == 0) { debugf("mDNSPlatformSendUDP ERROR! Cannot send from zero source address"); return mStatus_BadParamErr; }
+	if (InterfaceID == 0) { debugf("mDNSPlatformSendUDP ERROR! Cannot send from zero InterfaceID"); return mStatus_BadParamErr; }
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
@@ -695,7 +697,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	
 	ClearInterfaceList(m);
 	SetupInterfaceList(m);
-	if (NotifyClientNetworkChanged) NotifyClientNetworkChanged();
+	if (m->Callback) m->Callback(m, mStatus_ConfigChanged);
 	mDNSCoreSleep(m, false);
 	}
 

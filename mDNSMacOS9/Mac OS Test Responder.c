@@ -79,7 +79,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	else
 		txtbuffer[0] = 0;
 
-	mDNS_RegisterService(m, recordset, n, &t, &d, mDNSNULL, port, txtbuffer, 1, Callback, mDNSNULL);
+	mDNS_RegisterService(m, recordset, n, &t, &d, mDNSNULL, port, txtbuffer, (mDNSu16)(1+txtbuffer[0]), mDNSInterface_Any, Callback, mDNSNULL);
 
 	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.name, buffer);
 	printf("Made Service Records for %s\n", buffer);
@@ -146,12 +146,16 @@ mDNSlocal OSStatus mDNSResponderTestSetup(mDNS *m)
 	// Create example printer discovery records
 	//static ServiceRecordSet p1, p2;
 
-#if 1
-	RegisterFakeServiceForTesting(m, &p1, "lpq1", "Epson Stylus 900N", "_printer._tcp.", "local.");
-	RegisterFakeServiceForTesting(m, &p2, "lpq2", "HP LaserJet",       "_printer._tcp.", "local.");
+#define SRSET 0
+#if SRSET==0
+	RegisterFakeServiceForTesting(m, &p1, "path=/index.html", "Web Server One", "_http._tcp.", "local.");
+	RegisterFakeServiceForTesting(m, &p2, "path=/path.html",  "Web Server Two", "_http._tcp.", "local.");
+#elif SRSET==1
+	RegisterFakeServiceForTesting(m, &p1, "rn=lpq1", "Epson Stylus 900N", "_printer._tcp.", "local.");
+	RegisterFakeServiceForTesting(m, &p2, "rn=lpq2", "HP LaserJet",       "_printer._tcp.", "local.");
 #else
-	RegisterFakeServiceForTesting(m, &p1, "lpq3", "My Printer",        "_printer._tcp.", "local.");
-	RegisterFakeServiceForTesting(m, &p2, "lpq4", "My Other Printer",  "_printer._tcp.", "local.");
+	RegisterFakeServiceForTesting(m, &p1, "rn=lpq3", "My Printer",        "_printer._tcp.", "local.");
+	RegisterFakeServiceForTesting(m, &p2, "lrn=pq4", "My Other Printer",  "_printer._tcp.", "local.");
 #endif
 
 	// If AFP Server is running, register a record for it

@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.33  2003/02/20 06:48:32  cheshire
+Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
+Reviewed by: Josh Graessley, Bob Bradley
+
 Revision 1.32  2003/01/31 03:35:59  cheshire
 Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
 When there were *two* active questions in the list, they were incorrectly
@@ -254,6 +258,7 @@ enum
 	mStatus_NameConflict      = -65548,
 	mStatus_Invalid           = -65549,
 	
+	mStatus_ConfigChanged     = -65791,
 	mStatus_MemFree           = -65792		// 0xFFFE FF00
 	};
 
@@ -364,6 +369,7 @@ struct ResourceRecord_struct
 	mDNSu8              HostTarget;		// AR: Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 
 	// Field Group 2: Transient state for Authoritative Records
+	mDNSu8          RRInterfaceActive;	// AR: Set if InterfaceID is zero, or if InterfaceID references an active interface
 	mDNSu8          Acknowledged;		// AR: Set if we've given the success callback to the client
 	mDNSu8          ProbeCount;			// AR: Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// AR: Number of announcements remaining (kDNSRecordTypeShared)
@@ -647,20 +653,20 @@ extern void    mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set
 extern mStatus mDNS_RegisterService  (mDNS *const m, ServiceRecordSet *sr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
                const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
-               mDNSServiceCallback Callback, void *Context);
+               const mDNSOpaqueID InterfaceID, mDNSServiceCallback Callback, void *Context);
 extern mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl);
 extern mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname);
 extern void    mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
 extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
-				const domainlabel *const name, const domainname *const type, const domainname *const domain,
-				mDNSRecordCallback Callback, void *Context);
+               const domainlabel *const name, const domainname *const type, const domainname *const domain,
+               const mDNSOpaqueID InterfaceID, mDNSRecordCallback Callback, void *Context);
 #define        mDNS_DeregisterNoSuchService mDNS_Deregister
 
 extern mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
-				const domainname *const srv, const domainname *const domain,
-				const mDNSOpaqueID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
+               const domainname *const srv, const domainname *const domain,
+               const mDNSOpaqueID InterfaceID, mDNSQuestionCallback *Callback, void *Context);
 #define        mDNS_StopBrowse mDNS_StopQuery
 
 extern mStatus mDNS_StartResolveService(mDNS *const m, ServiceInfoQuery *query, ServiceInfo *info, ServiceInfoQueryCallback *Callback, void *Context);

@@ -146,7 +146,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	else
 		buffer[0] = 0;
 	
-	mDNS_RegisterService(m, recordset, &n, &t, &d, host, port, buffer, buffer[0]+1, ServiceCallback, mDNSNULL);
+	mDNS_RegisterService(m, recordset, &n, &t, &d, host, port, buffer, buffer[0]+1, mDNSInterface_Any, ServiceCallback, mDNSNULL);
 
 	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.name, buffer);
 	printf("Made Service Records for %s\n", buffer);
@@ -177,7 +177,7 @@ mDNSlocal void NoSuchServiceCallback(mDNS *const m, ResourceRecord *const rr, mS
 		ConvertDomainNameToCString_unescaped(&rr->name, buffer1);
 		DeconstructServiceName(&rr->name, &n, &t, &d);
 		IncrementLabelSuffix(&n, mDNStrue);
-		mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, NoSuchServiceCallback, mDNSNULL);
+		mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, mDNSInterface_Any, NoSuchServiceCallback, mDNSNULL);
 		ConvertDomainNameToCString_unescaped(&rr->name, buffer2);
 		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
 		}
@@ -192,7 +192,7 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr,
 	ConvertCStringToDomainLabel(name, &n);
 	ConvertCStringToDomainName(type, &t);
 	ConvertCStringToDomainName(domain, &d);
-	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, NoSuchServiceCallback, mDNSNULL);
+	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, mDNSInterface_Any, NoSuchServiceCallback, mDNSNULL);
 	ConvertDomainNameToCString_unescaped(&rr->name, buffer);
 	printf("Made Non-existence Record for %s\n", buffer);
 	}
