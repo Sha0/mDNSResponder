@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.253  2003/08/06 20:43:57  cheshire
+<rdar://problem/3335473> Need to check validity of TXT (and other) records
+Created ValidateDomainName() and ValidateRData(), used by mDNS_Register_internal() and mDNS_Update()
+
 Revision 1.252  2003/08/06 20:35:47  cheshire
 Enhance debugging routine GetRRDisplayString() so it can also be used to display
 other RDataBody objects, not just the one currently attached the given ResourceRecord
@@ -2046,6 +2050,49 @@ mDNSlocal void CompleteProbing(mDNS *const m, ResourceRecord *const rr)
 		}
 	}
 
+#define ValidateDomainName(N) (DomainNameLength(N) <= MAX_DOMAIN_NAME)
+
+mDNSlocal mDNSBool ValidateRData(const mDNSu16 rrtype, const RData *const rd)
+	{
+	mDNSu16 len;
+	switch(rrtype)
+		{
+		case kDNSType_A:	return(rd->RDLength == sizeof(mDNSv4Addr));
+
+		case kDNSType_NS:	// Same as PTR
+		case kDNSType_MD:	// Same as PTR
+		case kDNSType_MF:	// Same as PTR
+		case kDNSType_CNAME:// Same as PTR
+		//case kDNSType_SOA not checked
+		case kDNSType_MB:	// Same as PTR
+		case kDNSType_MG:	// Same as PTR
+		case kDNSType_MR:	// Same as PTR
+		//case kDNSType_NULL not checked (no specified format, so always valid)
+		//case kDNSType_WKS not checked
+		case kDNSType_PTR:	len = DomainNameLength(&rd->u.name);
+							return(len <= MAX_DOMAIN_NAME && rd->RDLength == len);
+
+		case kDNSType_HINFO:// Same as TXT (roughly)
+		case kDNSType_MINFO:// Same as TXT (roughly)
+		case kDNSType_TXT:  {
+							const mDNSu8 *ptr = rd->u.txt.c;
+							const mDNSu8 *end = rd->u.txt.c + rd->RDLength;
+							while (ptr < end) ptr += 1 + ptr[0];
+							return (ptr == end);
+							}
+
+		case kDNSType_AAAA:	return(rd->RDLength == sizeof(mDNSv6Addr));
+
+		case kDNSType_MX:   len = DomainNameLength(&rd->u.mx.exchange);
+							return(len <= MAX_DOMAIN_NAME && rd->RDLength == 2+len);
+
+		case kDNSType_SRV:	len = DomainNameLength(&rd->u.srv.target);
+							return(len <= MAX_DOMAIN_NAME && rd->RDLength == 6+len);
+
+		default:			return(mDNStrue);	// Allow all other types without checking
+		}
+	}
+
 // Two records qualify to be local duplicates if the RecordTypes are the same, or if one is Unique and the other Verified
 #define RecordLDT(A,B) ((A)->RecordType == (B)->RecordType || ((A)->RecordType | (B)->RecordType) == (kDNSRecordTypeUnique | kDNSRecordTypeVerified))
 #define RecordIsLocalDuplicate(A,B) ((A)->InterfaceID == (B)->InterfaceID && RecordLDT((A),(B)) && IdenticalResourceRecord((A), (B)))
@@ -2158,6 +2205,13 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 		rr->rdata->RDLength = GetRDLength(rr, mDNSfalse);
 		rr->rdestimate      = GetRDLength(rr, mDNStrue);
 		}
+
+	if (!ValidateDomainName(&rr->name))
+		{ LogMsg("Attempt to register record with invalid name: %s", GetRRDisplayString(m, rr)); return(mStatus_Invalid); }
+
+	// Don't do this until *after* we've set rr->rdata->RDLength
+	if (!ValidateRData(rr->rrtype, rr->rdata))
+		{ LogMsg("Attempt to register record with invalid rdata: %s", GetRRDisplayString(m, rr)); return(mStatus_Invalid); }
 
 	// Now that's we've finished building our new record, make sure it's not identical to one we already have
 	for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
@@ -5513,6 +5567,10 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, ResourceRecord *const rr, mDNSu32 
 	RData *const newrdata, mDNSRecordUpdateCallback *Callback)
 	{
 	mDNS_Lock(m);
+
+	if (!ValidateRData(rr->rrtype, newrdata))
+		{ LogMsg("Attempt to update record with invalid rdata: %s", GetRRDisplayString_rdb(m, rr, &newrdata->u)); return(mStatus_Invalid); }
+	else LogMsg("Updating: %s", GetRRDisplayString_rdb(m, rr, &newrdata->u));
 
 	// If TTL is unspecified, leave TTL unchanged
 	if (newttl == 0) newttl = rr->rroriginalttl;
