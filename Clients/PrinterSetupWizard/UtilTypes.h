@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.9  2005/02/01 01:16:12  shersche
+Change window owner from CSecondPage to CPrinterSetupWizardSheet
+
 Revision 1.8  2005/01/06 08:18:26  shersche
 Add protocol field to service, add EmptyQueues() function to service
 
@@ -62,7 +65,7 @@ First checked in
 #include <list>
 #include <DebugServices.h>
 
-class CSecondPage;
+class CPrinterSetupWizardSheet;
 
 #define	kDefaultPriority	50
 #define kDefaultQTotal		1
@@ -76,6 +79,7 @@ namespace PrinterSetupWizard
 	struct Model;
 
 	typedef std::list<Queue*>	Queues;
+	typedef std::list<Printer*>	Printers;
 	typedef std::list<Service*>	Services;
 	typedef std::list<Model*>	Models;
 
@@ -91,7 +95,7 @@ namespace PrinterSetupWizard
 			const std::string	&	type
 			);
 
-		CSecondPage	*	window;
+		CPrinterSetupWizardSheet	*	window;
 		HTREEITEM		item;
 
 		//
