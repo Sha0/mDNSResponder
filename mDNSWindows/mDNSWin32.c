@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.60  2004/11/05 22:41:56  shersche
+Determine subnet mask when populating network interface data structures
+Submitted by: Pavel Repin <prepin@gmail.com>
+Reviewed by:
+
 Revision 1.59  2004/10/28 03:24:42  cheshire
 Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
 
@@ -348,6 +353,7 @@ mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInter
 
 #if( MDNS_WINDOWS_USE_IPV6_IF_ADDRS )
 	mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs );
+	mDNSlocal int	getifnetmask_ipv6( struct ifaddrs * ifa );
 #endif
 
 #if( !TARGET_OS_WINDOWS_CE )
@@ -2620,6 +2626,12 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 					ifa->ifa_addr = (struct sockaddr *) calloc( 1, (size_t) addr->Address.iSockaddrLength );
 					require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
 					memcpy( ifa->ifa_addr, addr->Address.lpSockaddr, (size_t) addr->Address.iSockaddrLength );
+
+					ifa->ifa_netmask = (struct sockaddr *) calloc( 1, sizeof(struct sockaddr) );
+					require_action( ifa->ifa_netmask, exit, err = WSAENOBUFS );
+					err = getifnetmask_ipv6(ifa);
+					require_noerr(err, exit);
+
 					break;
 				
 				default:
@@ -2647,6 +2659,60 @@ exit:
 		free( iaaList );
 	}
 	return( (int) err );
+}
+
+mDNSlocal int
+getifnetmask_ipv6( struct ifaddrs * ifa )
+{
+	PMIB_IPADDRTABLE	pIPAddrTable	=	NULL;
+	DWORD				dwSize			=	0;
+	DWORD				dwRetVal;
+	DWORD				i;
+	int					err				=	0;
+
+	// Make an initial call to GetIpAddrTable to get the
+	// necessary size into the dwSize variable
+
+	dwRetVal = GetIpAddrTable(NULL, &dwSize, 0);
+	require_action( dwRetVal == ERROR_INSUFFICIENT_BUFFER, exit, err = WSAENOBUFS );
+
+	pIPAddrTable = (MIB_IPADDRTABLE *) malloc ( dwSize );
+	require_action( pIPAddrTable != NULL, exit, err = WSAENOBUFS );
+
+	// Make a second call to GetIpAddrTable to get the
+	// actual data we want
+
+	dwRetVal = GetIpAddrTable( pIPAddrTable, &dwSize, 0 );
+	require_action(dwRetVal == NO_ERROR, exit, err = WSAENOBUFS);
+
+	// Now try and find the correct IP Address
+
+	for (i = 0; i < pIPAddrTable->dwNumEntries; i++)
+	{
+		struct sockaddr_in sa;
+
+		memset(&sa, 0, sizeof(sa));
+		sa.sin_family = AF_INET;
+		sa.sin_addr.s_addr = pIPAddrTable->table[i].dwAddr;
+
+		if (memcmp(ifa->ifa_addr, &sa, sizeof(sa)) == 0)
+		{
+			// Found the right one, so copy the subnet mask information
+
+			sa.sin_addr.s_addr = pIPAddrTable->table[i].dwMask;
+			memcpy( ifa->ifa_netmask, &sa, sizeof(sa) );
+			break;
+		}
+	}
+
+exit:
+
+	if ( pIPAddrTable != NULL )
+	{
+		free(pIPAddrTable);
+	}
+
+	return err;
 }
 #endif	// MDNS_WINDOWS_USE_IPV6_IF_ADDRS
 
@@ -2744,6 +2810,12 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 				ifa->ifa_addr = (struct sockaddr *) calloc( 1, sizeof( *sa4 ) );
 				require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
 				memcpy( ifa->ifa_addr, sa4, sizeof( *sa4 ) );
+
+				sa4 = &ifInfo->iiNetmask.AddressIn;
+				ifa->ifa_netmask = (struct sockaddr*) calloc(1, sizeof( *sa4 ) );
+				require_action( ifa->ifa_netmask, exit, err = WSAENOBUFS );
+				memcpy( ifa->ifa_netmask, sa4, sizeof( *sa4 ) );
+
 				break;
 			}
 			
