@@ -969,23 +969,23 @@ mDNSlocal mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg, mDNSu8 *ptr
 mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
 	const mDNSu16 rrtype, const RData *const rdata)
 	{
-	mDNSu32 rdlength = rdata->RDLength;
-	if (ptr + rdlength > limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
 	switch (rrtype)
 		{
-		case kDNSType_A:	if (rdlength != 4) { debugf("putRData: Illegal length %d for kDNSType_A", rdlength); return(mDNSNULL); }
+		case kDNSType_A:	if (rdata->RDLength != 4)
+								{ debugf("putRData: Illegal length %d for kDNSType_A", rdata->RDLength); return(mDNSNULL); }
+							if (ptr + rdata->RDLength > limit) return(mDNSNULL);
 							*ptr++ = rdata->u.ip.b[0];
 							*ptr++ = rdata->u.ip.b[1];
 							*ptr++ = rdata->u.ip.b[2];
-							*ptr++ = rdata->u.ip.b[3]; break;
+							*ptr++ = rdata->u.ip.b[3];
+							return(ptr);
 
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	ptr = putDomainNameAsLabels(msg, ptr, limit, &rdata->u.name);
-							break;
+		case kDNSType_PTR:	return(putDomainNameAsLabels(msg, ptr, limit, &rdata->u.name));
 
-		case kDNSType_TXT:  mDNSPlatformMemCopy(rdata->u.data, ptr, rdlength);
-							ptr += rdlength;
-							break;
+		case kDNSType_TXT:  if (ptr + rdata->RDLength > limit) return(mDNSNULL);
+							mDNSPlatformMemCopy(rdata->u.data, ptr, rdata->RDLength);
+							return(ptr + rdata->RDLength);
 
 		case kDNSType_SRV:	*ptr++ = (mDNSu8)(rdata->u.srv.priority >> 8);
 							*ptr++ = (mDNSu8)(rdata->u.srv.priority     );
@@ -993,15 +993,13 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 							*ptr++ = (mDNSu8)(rdata->u.srv.weight       );
 							*ptr++ = rdata->u.srv.port.b[0];
 							*ptr++ = rdata->u.srv.port.b[1];
-							ptr = putDomainNameAsLabels(msg, ptr, limit, &rdata->u.srv.target);
-							break;
+							return(putDomainNameAsLabels(msg, ptr, limit, &rdata->u.srv.target));
 
-		default:			debugf("putRData: Warning! Writing resource type %d as raw data", rrtype);
-							mDNSPlatformMemCopy(rdata->u.data, ptr, rdlength);
-							ptr += rdlength;
-							break;
+		default:			if (ptr + rdata->RDLength > limit) return(mDNSNULL);
+							debugf("putRData: Warning! Writing resource type %d as raw data", rrtype);
+							mDNSPlatformMemCopy(rdata->u.data, ptr, rdata->RDLength);
+							return(ptr + rdata->RDLength);
 		}
-	return(ptr);
 	}
 
 // Put a domain name, type, class, ttl, length, and type-specific data
@@ -1026,7 +1024,7 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 		}
 
 	ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->name);
-	if (!ptr || ptr + 10 + rr->rdestimate >= limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
+	if (!ptr || ptr + 10 >= limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
 	ptr[0] = (mDNSu8)(rr->rrtype  >> 8);
 	ptr[1] = (mDNSu8)(rr->rrtype      );
 	ptr[2] = (mDNSu8)(rr->rrclass >> 8);
@@ -1039,7 +1037,7 @@ mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 	if (!endofrdata) { debugf("Ran out of space in putResourceRecord!"); return(mDNSNULL); }
 
 	// Go back and fill in the actual number of data bytes we wrote
-	// (actualLength could be less than rdlength if we implement domain name compression)
+	// (actualLength can be less than rdlength when domain name compression is used)
 	actualLength = (mDNSu32)(endofrdata - ptr - 10);
 	ptr[8] = (mDNSu8)(actualLength >> 8);
 	ptr[9] = (mDNSu8)(actualLength     );
@@ -1307,7 +1305,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 							break;
 		}
 
-	rr->rdata->RDLength          = GetRDLength(rr, mDNSfalse);
+	rr->rdata->RDLength   = GetRDLength(rr, mDNSfalse);
 	rr->rdestimate        = GetRDLength(rr, mDNStrue);
 	return(ptr + pktrdlength);
 	}
