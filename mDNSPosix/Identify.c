@@ -1,5 +1,6 @@
-/*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+/* -*- Mode: C; tab-width: 4 -*-
+ *
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -36,6 +37,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.33  2004/11/30 22:37:00  cheshire
+Update copyright dates and add "Mode: C; tab-width: 4" headers
+
 Revision 1.32  2004/10/19 21:33:21  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name

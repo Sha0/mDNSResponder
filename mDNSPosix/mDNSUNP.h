@@ -1,5 +1,6 @@
-/*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+/* -*- Mode: C; tab-width: 4 -*-
+ *
+ * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.15  2004/11/30 22:37:01  cheshire
+Update copyright dates and add "Mode: C; tab-width: 4" headers
+
 Revision 1.14  2004/10/16 00:17:01  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
