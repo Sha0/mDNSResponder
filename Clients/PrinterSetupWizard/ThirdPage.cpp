@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.3  2004/06/25 02:27:58  shersche
+Do a CListCtrl::FindItem() before calling CListCtrl::SetItemState().
+Submitted by: herscher
+
 Revision 1.2  2004/06/23 18:09:23  shersche
 Normalize tag names when parsing inf files.
 Submitted by: herscher
@@ -128,18 +132,6 @@ CThirdPage::SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * 
 	check( manufacturer != NULL );
 	check( model != NULL );
 
-
-	//
-	// this is to work around a UI bug that I need to take a closer
-	// look at.  The item member of the manufacturer object gets 
-	// changed, so when we go to select it, the wrong manufacturer
-	// lights up in the UI.  So to work around this, we'll create a
-	// temporary manufacturers list, and just put the one manufacturer
-	// in it.  In some ways, this might be preferable, because there's
-	// less to look at in the UI.  Also, if you know the printer is
-	// a certain manufacturer, why show the other manufacturers?  I
-	// might end up keeping this change.
-	//
 	Manufacturers manufacturers;
 	manufacturers[manufacturer->name] = manufacturer;
 
@@ -148,12 +140,19 @@ CThirdPage::SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * 
 	//
 	// select the manufacturer
 	//
-	m_manufacturerListCtrl.EnsureVisible(manufacturer->item, FALSE);
-	m_manufacturerListCtrl.SetItemState(manufacturer->item, LVIS_SELECTED, LVIS_SELECTED);
+	info.flags	= LVFI_STRING;
+	info.psz	= manufacturer->name;
+
+	nIndex = m_manufacturerListCtrl.FindItem(&info);
+	
+	if (nIndex != -1)
+	{
+		m_manufacturerListCtrl.SetItemState(nIndex, LVIS_SELECTED, LVIS_SELECTED);
+		m_manufacturerListCtrl.EnsureVisible(nIndex, FALSE);
+	}
 
 	//
-	// the item numbers seem to shift around a bit, so let's do
-	// a search on the text so we know we have the right one
+	// select the model
 	//
 	info.flags	= LVFI_STRING;
 	info.psz	= model->name;
@@ -163,7 +162,7 @@ CThirdPage::SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * 
 	if (nIndex != -1)
 	{
 		m_modelListCtrl.SetItemState(nIndex, LVIS_SELECTED, LVIS_SELECTED);
-		m_modelListCtrl.EnsureVisible(nIndex, TRUE);
+		m_modelListCtrl.EnsureVisible(nIndex, FALSE);
 
 		m_modelListCtrl.SetFocus();
 	}
@@ -319,6 +318,14 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					//
 					key.Remove('%');
 					key.Remove('"');
+
+					//
+					// why is there no consistency in inf files?
+					//
+					if (val.GetLength() == 0)
+					{
+						val = key;
+					}
 
 					//
 					// fix the manufacturer name if necessary
@@ -681,8 +688,22 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 		//
 		if (manufacturer != NULL)
 		{
-			m_manufacturerListCtrl.EnsureVisible(manufacturer->item, FALSE);
-			m_manufacturerListCtrl.SetItemState(manufacturer->item, LVIS_SELECTED, LVIS_SELECTED);
+			LVFINDINFO	info;
+			int			nIndex;
+
+			//
+			// select the manufacturer
+			//
+			info.flags	= LVFI_STRING;
+			info.psz	= manufacturer->name;
+
+			nIndex = m_manufacturerListCtrl.FindItem(&info);
+	
+			if (nIndex != -1)
+			{
+				m_manufacturerListCtrl.SetItemState(nIndex, LVIS_SELECTED, LVIS_SELECTED);
+				m_manufacturerListCtrl.EnsureVisible(nIndex, FALSE);
+			}
 		}
 	}
 
@@ -914,11 +935,13 @@ CThirdPage::PopulateUI(Manufacturers & manufacturers)
 
 	for (iter = manufacturers.begin(); iter != manufacturers.end(); iter++)
 	{
+		int nIndex;
+
 		Manufacturer * manufacturer = iter->second;
 
-		manufacturer->item = m_manufacturerListCtrl.InsertItem(0, manufacturer->name);
+		nIndex = m_manufacturerListCtrl.InsertItem(0, manufacturer->name);
 
-		m_manufacturerListCtrl.SetItemData(manufacturer->item, (DWORD_PTR) manufacturer);
+		m_manufacturerListCtrl.SetItemData(nIndex, (DWORD_PTR) manufacturer);
 	}
 
 	return 0;
