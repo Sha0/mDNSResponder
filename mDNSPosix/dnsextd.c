@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.16  2004/11/25 02:02:28  ksekar
+Fixed verbose log message argument
+
 Revision 1.15  2004/11/19 02:35:02  ksekar
 <rdar://problem/3886317> Wide Area Security: Add LLQ-ID to events
 
@@ -1363,7 +1366,7 @@ mDNSlocal void GenLLQEvents(DaemonInfo *d)
 			if (e->expire < t.tv_sec)
 				{
 				inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
-				VLog("Expiring LLQ $##s from %s", e->qname.c, addr);
+				VLog("Expiring LLQ %##s from %s", e->qname.c, addr);
 				tmp = e;
 				e = e->next;
 				DeleteLLQ(d, tmp);
