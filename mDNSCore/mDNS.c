@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.490  2004/12/10 20:06:25  cheshire
+<rdar://problem/3915074> Reduce egregious stack space usage
+Reduced SendDelayedUnicastResponse() stack frame from 9K to 112 bytes
+
 Revision 1.489  2004/12/10 20:03:43  cheshire
 <rdar://problem/3915074> Reduce egregious stack space usage
 Reduced mDNSCoreReceiveQuery() stack frame from 9K to 144 bytes
@@ -2632,10 +2636,9 @@ mDNSlocal void SendDelayedUnicastResponse(mDNS *const m, const mDNSAddr *const d
 
 	while (ResponseRecords)
 		{
-		DNSMessage response;
-		mDNSu8 *responseptr = response.data;
+		mDNSu8 *responseptr = m->omsg.data;
 		mDNSu8 *newptr;
-		InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
+		InitializeDNSMessage(&m->omsg.h, zeroID, ResponseFlags);
 		
 		// Put answers in the packet
 		while (ResponseRecords && ResponseRecords->NR_AnswerTo)
@@ -2643,9 +2646,9 @@ mDNSlocal void SendDelayedUnicastResponse(mDNS *const m, const mDNSAddr *const d
 			rr = ResponseRecords;
 			if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 				rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
-			newptr = PutResourceRecord(&response, responseptr, &response.h.numAnswers, &rr->resrec);
+			newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec);
 			rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
-			if (!newptr && response.h.numAnswers) break;	// If packet full, send it now
+			if (!newptr && m->omsg.h.numAnswers) break;	// If packet full, send it now
 			if (newptr) responseptr = newptr;
 			ResponseRecords = rr->NextResponse;
 			rr->NextResponse    = mDNSNULL;
@@ -2660,11 +2663,11 @@ mDNSlocal void SendDelayedUnicastResponse(mDNS *const m, const mDNSAddr *const d
 			rr = ResponseRecords;
 			if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 				rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
-			newptr = PutResourceRecord(&response, responseptr, &response.h.numAdditionals, &rr->resrec);
+			newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &rr->resrec);
 			rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 			
 			if (newptr) responseptr = newptr;
-			if (newptr && response.h.numAnswers) rr->RequireGoodbye = mDNStrue;
+			if (newptr && m->omsg.h.numAnswers) rr->RequireGoodbye = mDNStrue;
 			else if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask) rr->ImmedAnswer = mDNSInterfaceMark;
 			ResponseRecords = rr->NextResponse;
 			rr->NextResponse    = mDNSNULL;
@@ -2672,7 +2675,7 @@ mDNSlocal void SendDelayedUnicastResponse(mDNS *const m, const mDNSAddr *const d
 			rr->NR_AdditionalTo = mDNSNULL;
 			}
 
-		if (response.h.numAnswers) mDNSSendDNSMessage(m, &response, responseptr, mDNSInterface_Any, dest, MulticastDNSPort, -1, mDNSNULL);
+		if (m->omsg.h.numAnswers) mDNSSendDNSMessage(m, &m->omsg, responseptr, mDNSInterface_Any, dest, MulticastDNSPort, -1, mDNSNULL);
 		}
 	}
 
