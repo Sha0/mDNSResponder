@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: Identify.c,v $
+ * Revision 1.4  2003/08/04 17:24:48  cheshire
+ * Combine the three separate A/AAAA/HINFO queries into a single qtype "ANY" query
+ *
  * Revision 1.3  2003/08/04 17:14:08  cheshire
  * Do both AAAA queries in parallel
  *
@@ -122,38 +125,35 @@ static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 	mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
 	}
 
-static void AddrCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
-	{
-	(void)m;		// Unused
-	(void)question;	// Unused
-	if (!id.NotAnInteger) id = lastid;
-	NumAnswers++;
-	NumAddr++;
-	mprintf("%##s %s %.4a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ip);
-	}
-
-static void AAAACallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
-	{
-	(void)m;		// Unused
-	(void)question;	// Unused
-	if (!id.NotAnInteger) id = lastid;
-	NumAnswers++;
-	NumAAAA++;
-	mprintf("%##s %s %.16a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ipv6);
-	}
-
 static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
 	{
-	mDNSu8 *p = answer->rdata->u.data;
 	(void)m;		// Unused
 	(void)question;	// Unused
-	strncpy(hardware, p+1, p[0]);
-	hardware[p[0]] = 0;
-	p += 1 + p[0];
-	strncpy(software, p+1, p[0]);
-	software[p[0]] = 0;
-	NumAnswers++;
-	NumHINFO++;
+	if (answer->rrtype == kDNSType_A)
+		{
+		if (!id.NotAnInteger) id = lastid;
+		NumAnswers++;
+		NumAddr++;
+		mprintf("%##s %s %.4a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ip);
+		}
+	else if (answer->rrtype == kDNSType_AAAA)
+		{
+		if (!id.NotAnInteger) id = lastid;
+		NumAnswers++;
+		NumAAAA++;
+		mprintf("%##s %s %.16a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ipv6);
+		}
+	else if (answer->rrtype == kDNSType_HINFO)
+		{
+		mDNSu8 *p = answer->rdata->u.data;
+		strncpy(hardware, p+1, p[0]);
+		hardware[p[0]] = 0;
+		p += 1 + p[0];
+		strncpy(software, p+1, p[0]);
+		software[p[0]] = 0;
+		NumAnswers++;
+		NumHINFO++;
+		}
 	}
 
 mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
@@ -193,7 +193,7 @@ mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, mDNSQue
 	q->QuestionCallback = callback;
 	q->QuestionContext  = NULL;
 
-	mprintf("%##s %s ?\n", q->qname.c, DNSTypeName(qtype));
+	//mprintf("%##s %s ?\n", q->qname.c, DNSTypeName(qtype));
 	return(mDNS_StartQuery(&mDNSStorage, q));
 	}
 
@@ -240,11 +240,10 @@ mDNSexport int main(int argc, char **argv)
 	struct in6_addr s6;
 
 	char buffer[256];
-	DNSQuestion qAddr, qAAAA, qHINFO;
+	DNSQuestion q;
 
 	if (inet_pton(AF_INET, argv[1], &s4) == 1)
 		{
-		DNSQuestion q;
 		mDNSu8 *p = (mDNSu8 *)&s4;
 		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p[3], p[2], p[1], p[0]);
 		printf("%s\n", buffer);
@@ -278,14 +277,7 @@ mDNSexport int main(int argc, char **argv)
 		strcpy(hostname, argv[1]);
 
 	// Now we have the host name; get its A, AAAA, and HINFO
-	StartQuery(&qAddr,  hostname, kDNSType_A,     AddrCallback);
-	StartQuery(&qAAAA,  hostname, kDNSType_AAAA,  AAAACallback);
-	StartQuery(&qHINFO, hostname, kDNSType_HINFO, InfoCallback);
-	WaitForAnswer(&mDNSStorage, 4);
-	mDNS_StopQuery(&mDNSStorage, &qAddr);
-	mDNS_StopQuery(&mDNSStorage, &qAAAA);
-	mDNS_StopQuery(&mDNSStorage, &qHINFO);
-	if (StopNow == 2) goto exit;	// Interrupted with Ctrl-C
+	if (DoQuery(&q, hostname, kDNSQType_ANY, InfoCallback) == 2) goto exit;	// Interrupted with Ctrl-C
 
 	if (hardware[0] || software[0])
 		{
@@ -305,6 +297,6 @@ exit:
 	return(0);
 
 usage:
-	fprintf(stderr, "%s <hostname> or <IPv4 address> or <IPv6 address>\n", argv[0]);
+	fprintf(stderr, "%s <dot-local hostname> or <IPv4 address> or <IPv6 address>\n", argv[0]);
 	return(-1);
 	}
