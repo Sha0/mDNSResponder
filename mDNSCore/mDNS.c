@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.201  2003/07/04 01:09:41  cheshire
+<rdar://problem/3315775> Need to implement subtype queries
+Modified ConstructServiceName() to allow three-part service types
+
 Revision 1.200  2003/07/03 23:55:26  cheshire
 Minor change to wording of syslog warning messages
 
@@ -1378,12 +1382,27 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 	}
 
 mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
-	const domainlabel *name, const domainname *const type, const domainname *const domain)
+	const domainlabel *name, const domainname *type, const domainname *const domain)
 	{
 	int i, len;
 	mDNSu8 *dst = fqdn->c;
 	const mDNSu8 *src;
 	const char *errormsg;
+
+	// In the case where there is no name (and ONLY in that case),
+	// a single-label subtype is allowed as the first label of a three-part "type"
+	if (!name)
+		{
+		const mDNSu8 *s2 = type->c + 1 + type->c[0];
+		if (type->c[0]  > 0 && type->c[0]  < 0x40 &&
+			s2[0]       > 0 && s2[0]       < 0x40 &&
+			s2[1+s2[0]] > 0 && s2[1+s2[0]] < 0x40)
+			{
+			debugf("********************************** Service type with subtype %##s", type->c);
+			name = (domainlabel *)type;
+			type = (domainname  *)s2;
+			}
+		}
 
 	if (name && name->c[0])
 		{
