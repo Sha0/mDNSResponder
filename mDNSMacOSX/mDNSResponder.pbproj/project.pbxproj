@@ -22,7 +22,7 @@
 				PRODUCT_NAME = mDNSResponder.debug;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = "-Wall -Wno-four-char-constants -Wno-unknown-pragmas";
+				WARNING_CFLAGS = "-W -Wall -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
 			);
@@ -339,7 +339,7 @@
 				PRODUCT_NAME = mDNSResponder;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = "-Wall -Wno-four-char-constants -Wno-unknown-pragmas";
+				WARNING_CFLAGS = "-W -Wall -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
 			);
@@ -679,7 +679,7 @@
 				PRODUCT_NAME = mDNS;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = "-Wall -Wno-four-char-constants -Wno-unknown-pragmas";
+				WARNING_CFLAGS = "-W -Wall -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
 			);
