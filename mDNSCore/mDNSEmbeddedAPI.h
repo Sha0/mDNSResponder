@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.227  2004/10/22 20:52:07  ksekar
+<rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
+
 Revision 1.226  2004/10/20 01:50:40  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Implemented ForceMCast mode for AuthRecords as well as for Questions
@@ -1505,17 +1508,20 @@ typedef struct
 
 typedef enum
 	{
+	// Setup states
 	LLQ_UnInit            = 0,
 	LLQ_GetZoneInfo       = 1,
 	LLQ_InitialRequest    = 2,
 	LLQ_SecondaryRequest  = 3,
-	LLQ_Established       = 4,
-	LLQ_Refresh           = 5,
-	LLQ_Retry             = 6,
-	LLQ_Suspended         = 7,   
-	LLQ_SuspendDeferred   = 8, // suspend once we get zone info
-	LLQ_SuspendedPoll     = 9, // suspended from polling state
-	// safe to re-start LLQ before this point
+	LLQ_Refresh           = 4,
+	LLQ_Retry             = 5,
+	LLQ_Suspended         = 6,   
+	LLQ_SuspendDeferred   = 7, // suspend once we get zone info
+	LLQ_SuspendedPoll     = 8, // suspended from polling state
+	LLQ_NatMapWait        = 9,
+	
+	// Established/error states
+	LLQ_Established       = 15,
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,
 	LLQ_Error             = 18,
@@ -1534,6 +1540,7 @@ typedef struct
 	mDNSs16 ntries;
 	mDNSu8 id[8];
 	mDNSBool deriveRemovesOnResume;
+    mDNSBool NATMap;        // does this LLQ use the global LLQ NAT mapping?
 	} LLQ_Info;
 
 // LLQ constants
@@ -1748,6 +1755,7 @@ typedef struct
 	mDNSAddr         Router;
 	mDNSAddr         PrimaryIP;          // Address of primary interface
 	mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
+    NATTraversalInfo *LLQNatInfo;        // Nat port mapping to receive LLQ events
     mDNSInterfaceID  PrimaryIf;          // ID used to send explicitly on primary interface
     mDNSIPPort       PrimaryPort;        // Port on primary interface we send/receive on
     domainlabel      hostlabel;          // label identifying computer, prepended to "hostname zone" to generate fqdn
@@ -2236,7 +2244,7 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, domainname *zone, domainname *key,
 extern void mDNS_AddDynDNSHostDomain(mDNS *m, const domainname *domain, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostDomain(mDNS *m, const domainname *domain);
 extern void mDNS_SetDynDNSComputerName(mDNS *m, const domainlabel *hostlabel);
-extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port);
+extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port, const mDNSAddr *router);
 
 // Routines called by the core, exported by DNSDigest.c
 

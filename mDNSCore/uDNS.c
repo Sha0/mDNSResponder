@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.101  2004/10/22 20:52:07  ksekar
+<rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
+
 Revision 1.100  2004/10/20 02:16:41  cheshire
 Improve "could not confirm existence of NS record" error message
 Don't call newRR->RecordCallback if it is NULL
@@ -420,6 +423,8 @@ mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs);
 mDNSlocal void UpdateServiceTargets(mDNS *const m);
 mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);
 mDNSlocal void RestartQueries(mDNS *m);
+mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info);
+mDNSlocal void llqResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *context);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -731,7 +736,8 @@ mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, NATResponseH
 mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 	{
 	NATTraversalInfo *ptr, *prev = mDNSNULL;
-
+	
+	if (n == m->uDNS_info.LLQNatInfo) m->uDNS_info.LLQNatInfo = mDNSNULL;
 	ptr = m->uDNS_info.NATTraversals;
 	while (ptr)
 		{
@@ -774,9 +780,7 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	else if (info->RetryInterval * 2 > NATMAP_MAX_RETRY) info->RetryInterval = NATMAP_MAX_RETRY;
 	else info->RetryInterval *= 2;
 	info->retry = mDNSPlatformTimeNow(m) + info->RetryInterval;
-
 	}
-
 
 mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
@@ -899,11 +903,42 @@ mDNSlocal void RefreshNATMapping(NATTraversalInfo *n, mDNS *m)
 	SendNATMsg(n, m);
 	}
 
+mDNSlocal void LLQNatMapComplete(mDNS *m)
+	{
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	LLQ_Info *llqInfo;
+	NATTraversalInfo *n = u->LLQNatInfo;
+	
+	if (!n) { LogMsg("Error: LLQNatMapComplete called with NULL LLQNatInfo"); return; }
+	if (n->state != NATState_Established && n->state != NATState_Legacy && n->state != NATState_Error)
+		{ LogMsg("LLQNatMapComplete - bad nat state %d", n->state); return; }
+
+	u->CurrentQuery = u->ActiveQueries;
+	while (u->CurrentQuery)
+		{
+		DNSQuestion *q = u->CurrentQuery;
+		u->CurrentQuery = u->CurrentQuery->next;
+		llqInfo = q->uDNS_info.llq;
+		if (q->LongLived && llqInfo->state == LLQ_NatMapWait)
+			{
+			if (n->state == NATState_Error)
+				{
+				llqInfo->NATMap = mDNSfalse;
+				llqInfo->question->uDNS_info.responseCallback = llqResponseHndlr;
+				llqInfo->state = LLQ_Poll;
+				llqInfo->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
+				llqInfo->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+				}
+			else { llqInfo->state = LLQ_GetZoneInfo; startLLQHandshake(m, llqInfo); }	
+			}
+		}
+	}
+
 mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
 	NATErr_t err;
 	ServiceRecordSet *srs;
-	mDNSIPPort priv, pub;
+	mDNSIPPort priv, pktpriv, pub;
 	mDNSOpaque32 lease;
 	mDNSBool deletion;
 	
@@ -917,22 +952,23 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	// it to determine the public port to delete in the SRV record.
 	
 	srs = n->reg.ServiceRegistration;
-	if (!srs)
+	if (!srs && n != m->uDNS_info.LLQNatInfo)
 		{
 		debugf("ReceivePortMapReply: registration cancelled");
 		FreeNATInfo(m, n);
 		return;
 		}
 	
+	priv = srs ? srs->RR_SRV.resrec.rdata->u.srv.port : m->uDNS_info.PrimaryPort;
+	
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
 		int ntries = 0;
 		mStatus err;
-		mDNSBool tcp = DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp");
+		mDNSBool tcp = (srs && DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp"));
 
-		priv = srs->RR_SRV.resrec.rdata->u.srv.port;  // initially request priv == pub
-		pub = srs->RR_SRV.resrec.rdata->u.srv.port;
+		pub = priv; // initially request priv == pub
 		while (1)
 			{
 			err = LNT_MapPort(priv, pub, tcp);
@@ -965,8 +1001,8 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	err = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
 	if (err) { LogMsg("ReceivePortMapReply: received error %d", err);  goto end; }
 
-	priv.b[0] = pkt[4];
-	priv.b[1] = pkt[5];
+	pktpriv.b[0] = pkt[4];
+	pktpriv.b[1] = pkt[5];
 	pub.b[0]  = pkt[6];
 	pub.b[1]  = pkt[7];
 
@@ -975,7 +1011,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	lease.b[2] = pkt[10];
 	lease.b[3] = pkt[11];
 		
-	if (priv.NotAnInteger !=  srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger)
+	if (priv.NotAnInteger != pktpriv.NotAnInteger)
 		{ LogMsg("ReceivePortMapReply: reply private port does not match requested private port");  goto end; }
 	
 	if (n->state == NATState_Refresh && pub.NotAnInteger != n->PublicPort.NotAnInteger) 					
@@ -993,6 +1029,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 		{
 		LogMsg("NAT Port Mapping: timeout");
 		n->state = NATState_Error;
+		if (!srs) { LLQNatMapComplete(m); return; }
 		FreeNATInfo(m, n);
 		srs->uDNS_info.NATinfo = mDNSNULL;
 		unlinkSRS(&m->uDNS_info, srs);
@@ -1002,19 +1039,50 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 		}
 
 	LogMsg("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
+	if (!srs) { LLQNatMapComplete(m); return; }
 	srs->uDNS_info.state = regState_FetchingZoneData;
 	startGetZoneData(&srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
 	}
 
+mDNSlocal void FormatPortMaprequest(NATTraversalInfo *info, mDNSIPPort port)
+	{
+	mDNSu8 *msg = info->request;
+	mDNSOpaque32 lease = mDNSOpaque32fromIntVal(NATMAP_DEFAULT_LEASE);
+	
+	msg[0] = NATMAP_VERS;
+	msg[1] = info->op;
+	msg[2] = 0; // reserved
+	msg[3] = 0; // reserved
+	msg[4] = port.b[0];  // private port
+	msg[5] = port.b[1];
+	msg[6] = port.b[0];  // requested pub. port
+	msg[7] = port.b[1];
+	
+	msg[8]  = lease.b[0];
+	msg[9]  = lease.b[1];
+	msg[10] = lease.b[2];
+	msg[11] = lease.b[3];
+	}
+
+mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
+	{
+	if (!m->uDNS_info.Router.ip.v4.NotAnInteger)
+		{
+		debugf("No router.  Will retry NAT traversal in %ld seconds", NATMAP_INIT_RETRY);
+		info->retry = mDNSPlatformTimeNow(m) + NATMAP_INIT_RETRY;
+		info->RetryInterval = NATMAP_INIT_RETRY;
+		return;
+		}
+    SendNATMsg(info, m);
+	return;
+	}
+
 mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	{
-	mDNSu8 *msg;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
 	NATOp_t op;
 	NATTraversalInfo *info;
-	mDNSOpaque32 lease;
-	
-	if (DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp")) op = NATOp_MapTCP;
+
+   	if (DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp")) op = NATOp_MapTCP;
 	else if (DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_udp")) op = NATOp_MapUDP;
 	else { LogMsg("StartNATPortMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name.c); goto error; }
 
@@ -1024,36 +1092,70 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	info->state = NATState_Request;
 	info->requestlen = PORTMAP_PKTLEN;
 	
-	// format message	
-	msg = info->request;	
-	msg[0] = NATMAP_VERS;
-	msg[1] = op;
-	msg[2] = 0; // reserved
-	msg[3] = 0; // reserved
-	msg[4] = srs->RR_SRV.resrec.rdata->u.srv.port.b[0];  // private port
-	msg[5] = srs->RR_SRV.resrec.rdata->u.srv.port.b[1];
-	msg[6] = srs->RR_SRV.resrec.rdata->u.srv.port.b[0];  // requested pub. port
-	msg[7] = srs->RR_SRV.resrec.rdata->u.srv.port.b[1];
-	
-	lease   = mDNSOpaque32fromIntVal(NATMAP_DEFAULT_LEASE);
-	msg[8]  = lease.b[0];
-	msg[9]  = lease.b[1];
-	msg[10] = lease.b[2];
-	msg[11] = lease.b[3];
-	
-	if (!u->Router.ip.v4.NotAnInteger)
-		{
-		debugf("No router.  Will retry NAT traversal in %ld seconds", NATMAP_INIT_RETRY);
-		info->retry = mDNSPlatformTimeNow(m) + NATMAP_INIT_RETRY;
-		info->RetryInterval = NATMAP_INIT_RETRY;
-		return;
-		}
-
-    SendNATMsg(info, m);
+	FormatPortMaprequest(info, srs->RR_SRV.resrec.rdata->u.srv.port);
+	SendInitialPMapReq(m, info);
 	return;
 	
 	error:
 	startGetZoneData(&srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
+	}
+
+mDNSlocal void DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat, ServiceRecordSet *srs)
+	{
+	if (nat->state == NATState_Established)  // let other edge-case states expire for simplicity
+		{
+		// zero lease
+		nat->request[8]  = 0;
+		nat->request[9]  = 0;
+		nat->request[10] = 0 ;
+		nat->request[11] = 0;
+		nat->state = NATState_Request;
+		SendNATMsg(nat, m); 
+		}
+#ifdef _LEGACY_NAT_TRAVERSAL_
+	else if (nat->state == NATState_Legacy)
+		{
+		mStatus err = mStatus_NoError;
+		mDNSBool tcp = srs ? DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp") : mDNSfalse;
+		err = LNT_UnmapPort(nat->PublicPort, tcp);
+		if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
+		}
+#else
+	(void)srs; // unused
+#endif // _LEGACY_NAT_TRAVERSAL_
+	}
+
+mDNSlocal void StartLLQNatMap(mDNS *m)
+	{
+	NATTraversalInfo *info = AllocNATInfo(m, NATOp_MapUDP, ReceivePortMapReply);
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	
+	u->LLQNatInfo = info;
+
+	info->reg.RecordRegistration = mDNSNULL;	
+	info->reg.ServiceRegistration = mDNSNULL;
+    info->state = NATState_Request;
+	info->requestlen = PORTMAP_PKTLEN;
+	FormatPortMaprequest(info, u->PrimaryPort);
+    SendInitialPMapReq(m, info);
+	return;
+	}
+
+// if  LLQ NAT context unreferenced, delete the mapping
+mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
+	{
+	NATTraversalInfo *nat = m->uDNS_info.LLQNatInfo;
+	DNSQuestion *q;
+	
+	if (!nat) return;
+
+	for (q = m->uDNS_info.ActiveQueries; q; q = q->next)
+		if (q->LongLived && q->uDNS_info.llq->NATMap) return;
+
+	//to avoid race condition if we need to recreate before this finishes, we do one-shot deregistration
+	if (nat->state == NATState_Established || nat->state == NATState_Legacy)
+		DeleteNATPortMapping(m, nat, mDNSNULL); // for simplicity we allow other states to expire
+	FreeNATInfo(m, nat); // note: this clears the global LLQNatInfo pointer
 	}
 
  // ***************************************************************************
@@ -1288,33 +1390,46 @@ exit:
 	mDNS_Unlock(m);
 	}
 
-mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port)
+mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, mDNSInterfaceID id, const mDNSAddr *addr, mDNSIPPort port, const mDNSAddr *router)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-	mDNSBool AddrChanged, PortChanged;
-	
-	if (!addr) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed NULL argument"); return; }
-	if (addr->type !=mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 address.  Discarding."); return; }
-
+	mDNSBool AddrChanged, PortChanged, RouterChanged;
+   
+	if (addr && addr->type !=mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 address.  Discarding."); return; }
+	if (router && router->type !=mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 address.  Discarding."); return; }
 	mDNS_Lock(m);
 
-	AddrChanged = (addr->ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger);
+	AddrChanged = addr ? (addr->ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger) : u->PrimaryIP.ip.v4.NotAnInteger;
 	PortChanged = (u->PrimaryPort.NotAnInteger != port.NotAnInteger);
-
+	RouterChanged = router ? (router->ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger) : u->Router.ip.v4.NotAnInteger;
+	
 #if MDNS_DEBUGMSGS
-	if (!AddrChanged && !PortChanged && u->PrimaryIf != id) debugf("mDNS_SetPrimaryInterfaceInfo: IP/Port unchanged but InterfaceID different!");
-	if (AddrChanged || PortChanged)
+    if (!AddrChanged && !PortChanged && u->PrimaryIf != id) debugf("mDNS_SetPrimaryInterfaceInfo: IP/Port unchanged but InterfaceID different!");
+	if (addr && (AddrChanged || PortChanged))
 		LogMsg("mDNS_SetPrimaryInterfaceInfo: address changed from %d.%d.%d.%d:%d to %d.%d.%d.%d:%d",
 			   u->PrimaryIP.ip.v4.b[0], u->PrimaryIP.ip.v4.b[1], u->PrimaryIP.ip.v4.b[2], u->PrimaryIP.ip.v4.b[3], mDNSVal16(u->PrimaryPort),
 			   addr->ip.v4.b[0], addr->ip.v4.b[1], addr->ip.v4.b[2], addr->ip.v4.b[3], mDNSVal16(port));
 #endif // MDNS_DEBUGMSGS
 										   	
-	u->PrimaryIP = *addr;
+	if (addr)   u->PrimaryIP = *addr;
+	if (router) u->Router = *router;
+	else        u->Router.ip.v4.NotAnInteger = 0; // setting router to zero indicates that nat mappings must be reestablished when router is reset
 	u->PrimaryPort = port;
 	u->PrimaryIf = id;      // Note - if ID changes but the address/port do not, we do not update registrations/LLQs
 	
-	if (AddrChanged) UpdateHostnameRegistrations(m);
-	if (AddrChanged || PortChanged) { SuspendLLQs(m, mDNSfalse);  RestartQueries(m); }
+	
+	if (addr && AddrChanged) UpdateHostnameRegistrations(m);
+	if (AddrChanged || PortChanged || RouterChanged)
+		{
+		if (u->LLQNatInfo)
+			{
+			NATTraversalInfo *nat = u->LLQNatInfo;
+			u->LLQNatInfo = mDNSNULL;
+			DeleteNATPortMapping(m, nat, mDNSNULL);
+			}
+		SuspendLLQs(m, mDNSfalse);
+		RestartQueries(m);
+		}
 
 	mDNS_Unlock(m);
 	}
@@ -2288,8 +2403,6 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
 
-
-
 mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	{
 	DNSMessage msg;
@@ -2298,15 +2411,26 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	DNSQuestion *q = info->question; 
 	mStatus err;
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
+	uDNS_GlobalInfo *u = &m->uDNS_info;
+	
+	if (IsPrivateV4Addr(&u->PrimaryIP))
+		{
+		if (!u->LLQNatInfo)
+			{
+			info->state = LLQ_NatMapWait;
+			StartLLQNatMap(m);
+			return;
+			}
+		if (u->LLQNatInfo->state == NATState_Error) goto poll;		
+		if (u->LLQNatInfo->state != NATState_Established && u->LLQNatInfo->state != NATState_Legacy)
+			{ info->state = LLQ_NatMapWait; info->NATMap = mDNStrue; return; }
+		info->NATMap = mDNStrue;  // this llq references the global llq nat mapping
+		}
 	
 	if (info->ntries++ >= kLLQ_MAX_TRIES)
 		{
 		debugf("startLLQHandshake: %d failed attempts for LLQ %##s.  Polling.", kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
-		info->question->uDNS_info.responseCallback = llqResponseHndlr;
-		info->state = LLQ_Poll;
-		info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
-		info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
-		return;
+		goto poll;
 		}	
 	
     // set llq rdata
@@ -2336,6 +2460,13 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	q->LastQTime = timenow;
 	q->uDNS_info.responseCallback = recvSetupResponse;
 	q->uDNS_info.internal = mDNStrue;
+	return;
+
+	poll:
+	info->question->uDNS_info.responseCallback = llqResponseHndlr;
+	info->state = LLQ_Poll;
+	info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
+	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	}
 
 // wrapper for startLLQHandshake, invoked by async op callback
@@ -2482,7 +2613,7 @@ mDNSexport mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalI
 
 // stopLLQ happens IN ADDITION to stopQuery
 mDNSlocal void stopLLQ(mDNS *m, DNSQuestion *question)
-	{	
+	{
 	LLQ_Info *info = question->uDNS_info.llq;
 	(void)m;  // unused
 
@@ -2504,17 +2635,19 @@ mDNSlocal void stopLLQ(mDNS *m, DNSQuestion *question)
 		case LLQ_Refresh:
 			// refresh w/ lease 0
 			sendLLQRefresh(m, question, 0);
-			goto free_info;	
+			goto end;	
 		default:			
 			debugf("stopLLQ - silently discarding LLQ in state %d", info->state);				
-			goto free_info;
+			goto end;
 		}
 	
-	free_info:
+	end:
+	if (info->NATMap) info->NATMap = mDNSfalse;
+	CheckForUnreferencedLLQMapping(m);
 	info->question = mDNSNULL;
 	ufree(info);
 	question->uDNS_info.llq = mDNSNULL;
-	
+	question->LongLived = mDNSfalse;
 	}
 
 mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
@@ -3777,28 +3910,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 			return mStatus_NoError;
 		}
 
-	if (nat)
-		{
-		if (nat->state == NATState_Established)  // let other edge-case states expire for simplicity
-			{
-			// zero lease
-			nat->request[8]  = 0;
-			nat->request[9]  = 0;
-			nat->request[10] = 0 ;
-			nat->request[11] = 0;
-			nat->state = NATState_Request;
-			SendNATMsg(nat, m); 
-			}
-#ifdef _LEGACY_NAT_TRAVERSAL_
-		else if (nat->state == NATState_Legacy)
-			{
-			mStatus err = mStatus_NoError;
-			mDNSBool tcp = DomainContainsLabelString(&srs->RR_PTR.resrec.name, "_tcp");
-			err = LNT_UnmapPort(nat->PublicPort, tcp);
-			if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
-			}
-#endif // _LEGACY_NAT_TRAVERSAL_
-		}
+	if (nat) DeleteNATPortMapping(m, nat, srs);
 
 	srs->uDNS_info.state = regState_DeregPending;
 	SendServiceDeregistration(m, srs);
@@ -4162,8 +4274,10 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 				else llq->state = LLQ_Suspended;
 				}
 			else if (llq->state == LLQ_Poll) llq->state = LLQ_SuspendedPoll;
+			if (llq->NATMap) llq->NATMap = mDNSfalse;  // may not need nat mapping if we restart in new location
 			}
 		}
+	CheckForUnreferencedLLQMapping(m);
 	}
 
 mDNSlocal void RestartQueries(mDNS *m)
@@ -4181,7 +4295,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 		if (q->LongLived)
 			{
 			if (!llqInfo) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; } 
-			if (llqInfo->state == LLQ_Suspended)		
+			if (llqInfo->state == LLQ_Suspended || llqInfo->state == LLQ_NatMapWait)		
 				{ llqInfo->ntries = 0; llqInfo->deriveRemovesOnResume = mDNStrue; startLLQHandshake(m, llqInfo); }
 			else if (llqInfo->state == LLQ_SuspendDeferred)
 				llqInfo->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual

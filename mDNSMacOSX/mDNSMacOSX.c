@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.212  2004/10/22 20:52:08  ksekar
+<rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
+
 Revision 1.211  2004/10/22 01:07:11  cheshire
 <rdar://problem/3375328> select() says data is waiting; recvfrom() says there is no data
 Log error message if socket() ever returns file descriptors 0, 1 or 2 (stdin/stdout/stderr).
@@ -2222,6 +2225,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	char buf[256];
 	domainlabel hostlabel;
 	domainname zone;
+	mDNSAddr r;
 	
 	if (DynDNSConfigInitialized && (!changes || CFArrayGetCount(changes) == 0)) return;
 	DynDNSConfigInitialized = mDNStrue;  // set flag once we have initial configuration
@@ -2269,19 +2273,18 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
 	dict = SCDynamicStoreCopyValue(session, key);
 	CFRelease(key);
-	if (!dict) return;
+	if (!dict)
+		{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, zeroIPPort, NULL); return; } // lost v4
 
 	// handle router changes
+	r.type = mDNSAddrType_IPv4;
+	r.ip.v4.NotAnInteger = 0;
 	router  = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
 	if (router)
 		{
 		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
 			LogMsg("Could not convert router to CString");
-		else
-			{
-			m->uDNS_info.Router.type = mDNSAddrType_IPv4;
-			inet_aton(buf, (struct in_addr *)&m->uDNS_info.Router.ip.v4);
-			}
+		else inet_aton(buf, (struct in_addr *)&r.ip.v4);
 		}
 
 	// handle primary interface changes
@@ -2321,7 +2324,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 						if (SetupSocket(&info->ss, zeroIPPort, &ip, AF_INET)) goto error;
 						if (getsockname(info->ss.sktv4, (struct sockaddr *)&saddr, &namelen) < 0)
 							{ LogMsg("Error: getsockname error %d (%s)", errno, strerror(errno)); goto error; }
-						mDNS_SetPrimaryInterfaceInfo(m, (mDNSInterfaceID)info, &ip, *(mDNSIPPort *)&saddr.sin_port);
+						mDNS_SetPrimaryInterfaceInfo(m, (mDNSInterfaceID)info, &ip, *(mDNSIPPort *)&saddr.sin_port, r.ip.v4.NotAnInteger ? &r : NULL);
 						}					
 					break;
 				}

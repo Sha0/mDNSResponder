@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.453  2004/10/22 20:52:06  ksekar
+<rdar://problem/3799260> Create NAT port mappings for Long Lived Queries
+
 Revision 1.452  2004/10/20 01:50:40  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Implemented ForceMCast mode for AuthRecords as well as for Questions
@@ -4943,7 +4946,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	mDNSIPPort NATPort = mDNSOpaque16fromIntVal(NATMAP_PORT);
 	const mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	
-	if (srcport.NotAnInteger == NATPort.NotAnInteger) { uDNS_ReceiveNATMap(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt)); return; }
+	if (srcport.NotAnInteger == NATPort.NotAnInteger)
+		{
+		mDNS_Lock(m);
+		uDNS_ReceiveNATMap(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+		mDNS_Unlock(m);
+		return;
+		}
 #endif		
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
 	msg = (DNSMessage *)pkt;
