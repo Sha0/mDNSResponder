@@ -22,6 +22,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.64  2003/04/15 16:48:06  jgraessl
+
+Bug #: 3228833
+Modified code in CFSocket notifier function to read all packets on the socket
+instead of reading only one packet every time the notifier was called.
+
 Revision 1.63  2003/04/15 16:33:50  jgraessl
 
 Bug #: 3221880
@@ -141,6 +147,7 @@ Minor code tidying
 #include <sys/uio.h>
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <fcntl.h>
 
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
@@ -329,7 +336,7 @@ static ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	n = recvmsg(s, &msg, 0);
 	if (n<0)
 		{
-		if (numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) returned error %d errno %d", s, n, errno);
+		if (errno != EWOULDBLOCK && numLogMessages++ < 100) LogMsg("CFSocket.c: recvmsg(%d) returned error %d errno %d", s, n, errno);
 		return(-1);
 		}
 	if (msg.msg_controllen < sizeof(struct cmsghdr))
@@ -388,6 +395,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	size_t fromlen = sizeof(from);
 	char packetifname[IF_NAMESIZE] = "";
 	int err, s1 = -1, skt = CFSocketGetNative(cfs);
+	int count = 0;
 	
 	(void)address;	// Parameter not used
 	(void)data;		// Parameter not used
@@ -408,49 +416,51 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		LogMsg("myCFSocketCallBack: skt53 %d, sktv4 %d, sktv6 %d", info->skt53, info->sktv4, info->sktv6);
 		}
 
-	err = myrecvfrom(s1, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname);
-
-	if (err < 0) { LogMsg("myCFSocketCallBack recvfrom(%d) error %d errno %d", s1, err, errno); return; }
-
-	if (from.ss_family == AF_INET)
+	while ((err = myrecvfrom(s1, &packet, sizeof(packet), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname)) >= 0)
 		{
-		struct sockaddr_in *sin = (struct sockaddr_in*)&from;
-		senderAddr.type = mDNSAddrType_IPv4;
-		senderAddr.addr.ipv4.NotAnInteger = sin->sin_addr.s_addr;
-		senderPort.NotAnInteger = sin->sin_port;
+		count++;
+		if (from.ss_family == AF_INET)
+			{
+			struct sockaddr_in *sin = (struct sockaddr_in*)&from;
+			senderAddr.type = mDNSAddrType_IPv4;
+			senderAddr.addr.ipv4.NotAnInteger = sin->sin_addr.s_addr;
+			senderPort.NotAnInteger = sin->sin_port;
+			}
+		else if (from.ss_family == AF_INET6)
+			{
+			struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&from;
+			senderAddr.type = mDNSAddrType_IPv6;
+			senderAddr.addr.ipv6 = *(mDNSv6Addr*)&sin6->sin6_addr;
+			senderPort.NotAnInteger = sin6->sin6_port;
+			}
+		else
+			{
+			LogMsg("myCFSocketCallBack from is unknown address family %d", from.ss_family);
+			return;
+			}
+		
+		// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
+		// sockets API means that even though this socket has only officially joined the multicast group
+		// on one specific interface, the kernel will still deliver multicast packets to it no matter which
+		// interface they arrive on. According to the official Unix Powers That Be, this is Not A Bug.
+		// To work around this weirdness, we use the IP_RECVIF option to find the name of the interface
+		// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
+		if (strcmp(info->ifa_name, packetifname))
+			{
+			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
+				&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name, packetifname);
+			return;
+			}
+		else
+			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s",
+				&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name);
+		
+		if (err < (int)sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
+		
+		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, info->ifinfo.InterfaceID);
 		}
-	else if (from.ss_family == AF_INET6)
-		{
-		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&from;
-		senderAddr.type = mDNSAddrType_IPv6;
-		senderAddr.addr.ipv6 = *(mDNSv6Addr*)&sin6->sin6_addr;
-		senderPort.NotAnInteger = sin6->sin6_port;
-		}
-	else
-		{
-		LogMsg("myCFSocketCallBack from is unknown address family %d", from.ss_family);
-		return;
-		}
-
-	// Even though we indicated a specific interface in the IP_ADD_MEMBERSHIP call, a weirdness of the
-	// sockets API means that even though this socket has only officially joined the multicast group
-	// on one specific interface, the kernel will still deliver multicast packets to it no matter which
-	// interface they arrive on. According to the official Unix Powers That Be, this is Not A Bug.
-	// To work around this weirdness, we use the IP_RECVIF option to find the name of the interface
-	// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
-	if (strcmp(info->ifa_name, packetifname))
-		{
-		verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
-			&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name, packetifname);
-		return;
-		}
-	else
-		verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s",
-			&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name);
-
-	if (err < (int)sizeof(DNSMessageHeader)) { debugf("myCFSocketCallBack packet length (%d) too short", err); return; }
-	
-	mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, info->ifinfo.InterfaceID);
+	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
+		LogMsg("myCFSocketCallBack recvfrom(%d) error %d errno %d", s1, err, errno);
 	}
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
@@ -584,7 +594,8 @@ mDNSlocal mStatus SetupSocket(struct ifaddrs* ifa, mDNSIPPort port, int *s, CFSo
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
 		if (err) { perror("bind"); return(err); }
 		}
-
+	
+	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
 	*s = skt;
 	*c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, context);
 	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
