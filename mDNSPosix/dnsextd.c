@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.8  2004/11/01 17:48:14  cheshire
+Changed SOA serial number back to signed. RFC 1035 may describe it as "unsigned", but
+it's wrong. The SOA serial is a modular counter, as explained in "DNS & BIND", page
+137. Since C doesn't have a modular type, we used signed, C's closest approximation.
+
 Revision 1.7  2004/10/30 00:06:58  ksekar
 <rdar://problem/3722535> Support Long Lived Queries in DNS Extension daemon
 
@@ -1324,7 +1329,7 @@ mDNSlocal void *LLQEventMonitor(void *DInfoPtr)
 	const mDNSu8 *ptr;
 	mDNSOpaque16 id, flags = QueryFlags;
 	PktMsg reply;
-	mDNSu32 serial = 0;
+	mDNSs32 serial = 0;
 	mDNSBool SerialInitialized = mDNSfalse;;
 	int sd;
      LargeCacheRecord lcr;
