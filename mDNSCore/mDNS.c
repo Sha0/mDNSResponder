@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.436  2004/09/28 01:27:04  cheshire
+Update incorrect log message
+
 Revision 1.435  2004/09/25 02:41:39  cheshire
 <rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
 
@@ -3547,10 +3550,10 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 
 	debugf("AnswerNewLocalOnlyQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
-	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 
-	if (m->CurrentRecord) LogMsg("AnswerNewQuestion ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->LocalOnlyRecords;
 	while (m->CurrentRecord && m->CurrentRecord != m->NewLocalOnlyRecords)
 		{
