@@ -1582,8 +1582,11 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
     );
 
 #ifdef __APPLE_API_PRIVATE
-// OS X internal functionality
-// 3rd party clients of this API should not depend on future support or availability of this routine
+
+/*
+ * Mac OS X specific functionality
+ * 3rd party clients of this API should not depend on future support or availability of this routine
+ */
 
 /* DNSServiceSetDefaultDomainForUser()
  *
@@ -1592,12 +1595,11 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
  * register in this wide-area domain in addition to .local.  In addition, this
  * domain will be returned as a Browse domain via domain enumeration calls.
  * 
- * Calling this routine more than once for a single user overwrites the previous
- * domain value.  Pass NULL to clear the default for a user.
  *
  * Parameters:
  *
- * flags:           Currently unused, reserved for future use.
+ * flags:           Pass kDNSServiceFlagsAdd to add a domain for a user.  Call without
+ *                  this flag set to clear a previously added domain.
  *
  * domain:          The domain to be used for the caller's UID.
  *
