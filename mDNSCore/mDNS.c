@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.83  2003/03/04 23:48:52  cheshire
+Bug #: 3188865 Double probes after wake from sleep
+Don't reset record type to kDNSRecordTypeUnique if record is DependentOn another
+
 Revision 1.82  2003/03/04 23:38:29  cheshire
 Bug #: 3099194 mDNSResponder needs performance improvements
 Only set rr->CRActiveQuestion to point to the
@@ -3011,7 +3015,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			{
-			if (rr->RecordType == kDNSRecordTypeVerified) rr->RecordType = kDNSRecordTypeUnique;
+			if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
 			rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
 			rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
 			rr->NextSendTime      = timenow;
@@ -3557,6 +3561,11 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							debugf("mDNSCoreReceiveResponse: Our Data %.16a", &rr->rdata->u.ipv6);
 							debugf("mDNSCoreReceiveResponse: Pkt Data %.16a", &pktrr.rdata->u.ipv6);
 							}
+
+						// If this record is marked DependentOn another record for conflict detection purposes,
+						// then *that* record has to be bumped back to probing state to resolve the conflict
+						while (rr->DependentOn) rr = rr->DependentOn;
+
 						// If we've just whacked this record's ProbeCount, don't need to do it again
 						if (rr->ProbeCount <= DefaultProbeCountForTypeUnique)
 							{
@@ -4235,7 +4244,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			if (rr->InterfaceID == set->InterfaceID)
 				{
 				rr->RRInterfaceActive = mDNStrue;
-				if (rr->RecordType == kDNSRecordTypeVerified) rr->RecordType = kDNSRecordTypeUnique;
+				if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
 				rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
 				rr->NextSendTime      = timenow;
