@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.343  2003/12/23 00:07:47  cheshire
+Make port number in debug message be five-character field, left justified
+
 Revision 1.342  2003/12/20 01:34:28  cheshire
 <rdar://problem/3515876>: Error putting additional records into packets
 Another fix from Rampi: responseptr needs to be updated inside the "for" loop,
@@ -4214,7 +4217,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	DNSMessage    response;
 	const mDNSu8 *responseend    = mDNSNULL;
 	
-	verbosedebugf("Received Query from %#-15a:%d to %#-15a:%d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+	verbosedebugf("Received Query from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr, (mDNSu16)srcport.b[0]<<8 | srcport.b[1],
 		dstaddr, (mDNSu16)dstport.b[0]<<8 | dstport.b[1],
 		InterfaceID,
