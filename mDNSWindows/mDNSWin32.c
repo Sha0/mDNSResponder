@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.39  2004/05/18 23:51:27  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.38  2004/05/13 04:57:48  ksekar
 Removed unnecessary FreeSearchList function
 
@@ -147,7 +150,7 @@ Revision 1.7  2003/03/15 04:40:38  cheshire
 Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
 Revision 1.6  2003/02/21 01:54:10  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
 
 Revision 1.5  2003/02/20 00:59:03  cheshire

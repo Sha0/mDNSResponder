@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.18  2004/05/18 23:51:27  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.17  2004/05/06 18:42:58  ksekar
 General dns_sd.h API cleanup, including the following radars:
 <rdar://problem/3592068>: Remove flags with zero value
@@ -45,7 +48,7 @@ Revision 1.13  2004/01/19 21:46:52  cheshire
 Fix compiler warning
 
 Revision 1.12  2003/12/23 20:46:47  ksekar
-Bug #: <rdar://problem/3497428>: sync dnssd files between libinfo & mDNSResponder
+<rdar://problem/3497428>: sync dnssd files between libinfo & mDNSResponder
 
 Revision 1.11  2003/12/08 21:11:42  rpantos
 Changes necessary to support mDNSResponder on Linux.

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.36  2004/05/18 23:51:25  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.35  2004/05/07 23:01:04  ksekar
 Cleaned up list traversal in deriveGoodbyes - removed unnecessary
 conditional assignment.
@@ -76,10 +79,10 @@ Added const to params where needed to match prototypes. Changed SetNewRData call
 of -1 for unused size to fix warning. Disable assignment within conditional warnings with Visual C++.
 
 Revision 1.20  2004/03/13 02:07:26  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.19  2004/03/13 01:57:33  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.18  2004/02/21 08:34:15  bradley
 Added casts from void * to specific type for C++ builds. Changed void * l-value cast
@@ -145,7 +148,7 @@ Revision 1.2  2004/01/22 03:48:41  cheshire
 Make sure uDNS client doesn't accidentally use query ID zero
 
 Revision 1.1  2003/12/13 03:05:27  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
  */
 

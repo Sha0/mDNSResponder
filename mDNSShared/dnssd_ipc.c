@@ -23,8 +23,11 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.9  2004/05/18 23:51:27  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.8  2003/11/05 22:44:57  ksekar
-Bug #: <rdar://problem/3335230>: No bounds checking when reading data from client
+<rdar://problem/3335230>: No bounds checking when reading data from client
 Reviewed by: Stuart Cheshire
 
 Revision 1.7  2003/08/12 19:56:25  cheshire

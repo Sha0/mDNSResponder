@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.23  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.22  2004/04/20 22:43:28  cheshire
 Use _services._dns-sd._udp query, as documented in
 <http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd-02.txt>
@@ -67,7 +70,7 @@ Changed mDNSNetMonitor and mDNSIdentify to link the object files
 instead of #including the "DNSCommon.c" "uDNS.c" and source files
 
 Revision 1.13  2003/12/13 03:05:28  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 Revision 1.12  2003/11/14 21:27:09  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder

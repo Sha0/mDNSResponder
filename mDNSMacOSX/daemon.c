@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.168  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.167  2004/05/14 16:39:47  ksekar
 Browse for iChat locally for now.
 
@@ -81,7 +84,7 @@ Revision 1.156  2004/03/19 18:19:19  ksekar
 Fixed daemon.c to compile with malloc debugging turned on.
 
 Revision 1.155  2004/03/13 01:57:34  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.154  2004/03/12 08:42:47  cheshire
 <rdar://problem/3548256>: Should not allow empty string for resolve domain
@@ -117,7 +120,7 @@ Revision 1.145  2003/12/05 22:08:07  cheshire
 Update version string to "mDNSResponder-61", including new mechanism to allow dots (e.g. 58.1)
 
 Revision 1.144  2003/11/19 23:21:08  ksekar
-Bug #: <rdar://problem/3486646>: config change handler not called for dns-sd services
+<rdar://problem/3486646>: config change handler not called for dns-sd services
 
 Revision 1.143  2003/11/14 21:18:32  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
@@ -193,8 +196,7 @@ Revision 1.122  2003/07/23 00:00:04  cheshire
 Add comments
 
 Revision 1.121  2003/07/20 03:38:51  ksekar
-Bug #: 3320722
-Completed support for Unix-domain socket based API.
+<rdar://problem/3320722> Completed support for Unix-domain socket based API.
 
 Revision 1.120  2003/07/18 00:30:00  cheshire
 <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
@@ -223,7 +225,7 @@ standard error file descriptors to /dev/null just like any other
 well behaved daemon
 
 Revision 1.112  2003/06/25 23:42:19  ksekar
-Bug #: <rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
+<rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
 Reviewed by: Stuart Cheshire
 Added files necessary to implement Unix domain sockets based enhanced
 Rendezvous APIs, and integrated with existing Mach-port based daemon.
@@ -269,7 +271,7 @@ Revision 1.101  2003/05/22 00:26:55  cheshire
 Modify error message to explain that this is technically legal, but may indicate a bug.
 
 Revision 1.100  2003/05/21 21:02:24  ksekar
-Bug #: <rdar://problem/3247035>: Service should be prefixed
+<rdar://problem/3247035>: Service should be prefixed
 Changed kmDNSBootstrapName to "com.apple.mDNSResponderRestart" since we're changing the main
 Mach message port to "com.apple.mDNSResponder.
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.13  2004/05/18 23:51:25  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.12  2004/04/22 04:03:59  cheshire
 Headers should use "extern" declarations, not "mDNSexport"
 
@@ -30,7 +33,7 @@ Revision 1.11  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
 Revision 1.10  2004/03/13 01:57:33  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.9  2004/02/21 08:56:58  bradley
 Wrap prototypes with extern "C" for C++ builds.
@@ -61,7 +64,7 @@ Revision 1.2  2004/01/21 21:12:23  cheshire
 Add missing newline at end of file to make Unix tools happier
 
 Revision 1.1  2003/12/13 03:05:27  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
  
  */

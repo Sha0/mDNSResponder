@@ -23,17 +23,20 @@
     Change History (most recent first):
 
 $Log: BrowserController.h,v $
+Revision 1.12  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.11  2003/11/07 19:34:58  rpantos
-3282283/6: Display multiple IP addresses. Connect using host rather than IP addr.
+<rdar://problem/3282283>/6: Display multiple IP addresses. Connect using host rather than IP addr.
 
 Revision 1.10  2003/10/29 05:17:26  rpantos
 Checkpoint: transition from DNSServiceDiscovery.h to dns_sd.h
 
 Revision 1.9  2003/10/28 02:25:26  rpantos
-3282283/9,10: Cancel pending resolve when focus changes or service disappears.
+<rdar://problem/3282283>/9,10: Cancel pending resolve when focus changes or service disappears.
 
 Revision 1.8  2003/10/28 01:28:54  rpantos
-3282283/4,5: Restructure a bit to make arrow keys work & views behave better.
+<rdar://problem/3282283>/4,5: Restructure a bit to make arrow keys work & views behave better.
 
 Revision 1.7  2003/08/12 19:55:07  cheshire
 Update to APSL 2.0

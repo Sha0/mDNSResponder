@@ -23,8 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.7  2004/05/18 23:51:25  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.6  2004/03/13 01:57:33  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.5  2004/02/21 08:56:58  bradley
 Wrap prototypes with extern "C" for C++ builds.
@@ -40,7 +43,7 @@ Revision 1.2  2004/01/23 23:23:15  ksekar
 Added TCP support for truncated unicast messages.
 
 Revision 1.1  2003/12/13 03:05:27  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
  
  */

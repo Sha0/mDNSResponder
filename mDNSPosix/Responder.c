@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.20  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.19  2004/03/12 08:03:14  cheshire
 Update comments
 
@@ -66,7 +69,7 @@ Revision 1.6  2003/03/08 00:35:56  cheshire
 Switched to using new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
 Revision 1.5  2003/02/20 06:48:36  cheshire
-Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
+<rdar://problem/3169535> Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
 
 Revision 1.4  2003/01/28 03:07:46  cheshire

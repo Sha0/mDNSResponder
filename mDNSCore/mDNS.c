@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.377  2004/05/18 23:51:25  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.376  2004/05/05 18:30:44  ksekar
 Restored surpressed Cache Tail debug messages.
 
@@ -82,7 +85,7 @@ Revision 1.365  2004/03/19 23:51:22  cheshire
 Change to use symbolic constant kUpdateCreditRefreshInterval instead of (mDNSPlatformOneSecond * 60)
 
 Revision 1.364  2004/03/13 01:57:33  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.363  2004/03/12 21:00:51  cheshire
 Also show port numbers when logging "apparent spoof mDNS Response" messages
@@ -169,7 +172,7 @@ layer has been initialized. Protect mDNS_reentrancy when completing the core ini
 fix a race condition during async initialization. Fixed buffer overrun for 1 byte mDNS_snprintf.
 
 Revision 1.338  2003/12/13 03:05:27  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 Revision 1.337  2003/12/01 21:46:05  cheshire
 mDNS_StartQuery returns mStatus_BadInterfaceErr if the specified interface does not exist
@@ -427,7 +430,7 @@ Revision 1.271  2003/08/14 02:17:05  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
 Revision 1.270  2003/08/13 17:07:28  ksekar
-Bug #: <rdar://problem/3376458>: Extra RR linked to list even if registration fails - causes crash
+<rdar://problem/3376458>: Extra RR linked to list even if registration fails - causes crash
 Added check to result of mDNS_Register() before linking extra record into list.
 
 Revision 1.269  2003/08/12 19:56:23  cheshire
@@ -932,7 +935,7 @@ Revision 1.128  2003/05/23 01:55:13  cheshire
 <rdar://problem/3267127> After name change, mDNSResponder needs to re-probe for name uniqueness
 
 Revision 1.127  2003/05/23 01:02:15  ksekar
-Bug #: <rdar://problem/3032577>: mDNSResponder needs to include unique id in default name
+<rdar://problem/3032577>: mDNSResponder needs to include unique id in default name
 
 Revision 1.126  2003/05/22 02:29:22  cheshire
 <rdar://problem/2984918> SendQueries needs to handle multihoming better
@@ -952,7 +955,7 @@ Revision 1.122  2003/05/21 19:59:04  cheshire
 Minor refinements; make sure we don't truncate in the middle of a multi-byte UTF-8 character
 
 Revision 1.121  2003/05/21 17:54:07  ksekar
-Bug #: <rdar://problem/3148431> ER: Tweak responder's default name conflict behavior
+<rdar://problem/3148431> ER: Tweak responder's default name conflict behavior
 New rename behavior - domain name "foo" becomes "foo--2" on conflict, richtext name becomes "foo (2)"
 
 Revision 1.120  2003/05/19 22:14:14  ksekar
@@ -1018,22 +1021,21 @@ Revision 1.104  2003/04/21 19:15:52  cheshire
 Fix some compiler warnings
 
 Revision 1.103  2003/04/19 02:26:35  cheshire
-Bug #: <rdar://problem/3233804> Incorrect goodbye packet after conflict
+<rdar://problem/3233804> Incorrect goodbye packet after conflict
 
 Revision 1.102  2003/04/17 03:06:28  cheshire
-Bug #: <rdar://problem/3231321> No need to query again when a service goes away
+<rdar://problem/3231321> No need to query again when a service goes away
 Set UnansweredQueries to 2 when receiving a "goodbye" packet
 
 Revision 1.101  2003/04/15 20:58:31  jgraessl
-Bug #: 3229014
-Added a hash to lookup records in the cache.
+<rdar://problem/3229014> Added a hash to lookup records in the cache.
 
 Revision 1.100  2003/04/15 18:53:14  cheshire
-Bug #: <rdar://problem/3229064> Bug in ScheduleNextTask
+<rdar://problem/3229064> Bug in ScheduleNextTask
 mDNS.c 1.94 incorrectly combined two "if" statements into one.
 
 Revision 1.99  2003/04/15 18:09:13  jgraessl
-Bug #: 3228892
+<rdar://problem/3228892>
 Reviewed by: Stuart Cheshire
 Added code to keep track of when the next cache item will expire so we can
 call TidyRRCache only when necessary.
@@ -1090,41 +1092,41 @@ Revision 1.86  2003/03/06 20:44:33  cheshire
 Comment tidyup
 
 Revision 1.85  2003/03/05 03:38:35  cheshire
-Bug #: 3185731 Bogus error message in console: died or deallocated, but no record of client can be found!
+<rdar://problem/3185731> Bogus error message in console: died or deallocated, but no record of client can be found!
 Fixed by leaving client in list after conflict, until client explicitly deallocates
 
 Revision 1.84  2003/03/05 01:27:30  cheshire
-Bug #: 3185482 Different TTL for multicast versus unicast responses
+<rdar://problem/3185482> Different TTL for multicast versus unicast responses
 When building unicast responses, record TTLs are capped to 10 seconds
 
 Revision 1.83  2003/03/04 23:48:52  cheshire
-Bug #: 3188865 Double probes after wake from sleep
+<rdar://problem/3188865> Double probes after wake from sleep
 Don't reset record type to kDNSRecordTypeUnique if record is DependentOn another
 
 Revision 1.82  2003/03/04 23:38:29  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Only set rr->CRActiveQuestion to point to the
 currently active representative of a question set
 
 Revision 1.81  2003/02/21 03:35:34  cheshire
-Bug #: 3179007 mDNSResponder needs to include AAAA records in additional answer section
+<rdar://problem/3179007> mDNSResponder needs to include AAAA records in additional answer section
 
 Revision 1.80  2003/02/21 02:47:53  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Several places in the code were calling CacheRRActive(), which searched the entire
 question list every time, to see if this cache resource record answers any question.
 Instead, we now have a field "CRActiveQuestion" in the resource record structure
 
 Revision 1.79  2003/02/21 01:54:07  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
 
 Revision 1.78  2003/02/20 06:48:32  cheshire
-Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
+<rdar://problem/3169535> Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
 
 Revision 1.77  2003/01/31 03:35:59  cheshire
-Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+<rdar://problem/3147097> mDNSResponder sometimes fails to find the correct results
 When there were *two* active questions in the list, they were incorrectly
 finding *each other* and *both* being marked as duplicates of another question
 
@@ -1139,19 +1141,19 @@ Revision 1.75  2003/01/29 01:47:40  cheshire
 Rename 'Active' to 'CRActive' or 'InterfaceActive' for improved clarity
 
 Revision 1.74  2003/01/28 05:26:25  cheshire
-Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+<rdar://problem/3147097> mDNSResponder sometimes fails to find the correct results
 Add 'Active' flag for interfaces
 
 Revision 1.73  2003/01/28 03:45:12  cheshire
 Fixed missing "not" in "!mDNSAddrIsDNSMulticast(dstaddr)"
 
 Revision 1.72  2003/01/28 01:49:48  cheshire
-Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+<rdar://problem/3147097> mDNSResponder sometimes fails to find the correct results
 FindDuplicateQuestion() was incorrectly finding the question itself in the list,
 and incorrectly marking it as a duplicate (of itself), so that it became inactive.
 
 Revision 1.71  2003/01/28 01:41:44  cheshire
-Bug #: 3153091 Race condition when network change causes bad stuff
+<rdar://problem/3153091> Race condition when network change causes bad stuff
 When an interface goes away, interface-specific questions on that interface become orphaned.
 Orphan questions cause HaveQueries to return true, but there's no interface to send them on.
 Fix: mDNS_DeregisterInterface() now calls DeActivateInterfaceQuestions()
@@ -1160,30 +1162,30 @@ Revision 1.70  2003/01/23 19:00:20  cheshire
 Protect against infinite loops in mDNS_Execute
 
 Revision 1.69  2003/01/21 22:56:32  jgraessl
-Bug #: 3124348  service name changes are not properly handled
+<rdar://problem/3124348>  service name changes are not properly handled
 Submitted by: Stuart Cheshire
 Reviewed by: Joshua Graessley
 Applying changes for 3124348 to main branch. 3124348 changes went in to a
 branch for SU.
 
 Revision 1.68  2003/01/17 04:09:27  cheshire
-Bug #: 3141038 mDNSResponder Resolves are unreliable on multi-homed hosts
+<rdar://problem/3141038> mDNSResponder Resolves are unreliable on multi-homed hosts
 
 Revision 1.67  2003/01/17 03:56:45  cheshire
 Default 24-hour TTL is far too long. Changing to two hours.
 
 Revision 1.66  2003/01/13 23:49:41  jgraessl
 Merged changes for the following fixes in to top of tree:
-3086540  computer name changes not handled properly
-3124348  service name changes are not properly handled
-3124352  announcements sent in pairs, failing chattiness test
+<rdar://problem/3086540>  computer name changes not handled properly
+<rdar://problem/3124348>  service name changes are not properly handled
+<rdar://problem/3124352>  announcements sent in pairs, failing chattiness test
 
 Revision 1.65  2002/12/23 22:13:28  jgraessl
 Reviewed by: Stuart Cheshire
 Initial IPv6 support for mDNSResponder.
 
 Revision 1.64  2002/11/26 20:49:06  cheshire
-Bug #: 3104543 RFC 1123 allows the first character of a name label to be either a letter or a digit
+<rdar://problem/3104543> RFC 1123 allows the first character of a name label to be either a letter or a digit
 
 Revision 1.63  2002/09/21 20:44:49  zarzycki
 Added APSL info

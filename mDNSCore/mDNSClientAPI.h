@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.170  2004/05/18 23:51:25  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.169  2004/05/13 04:54:20  ksekar
 Unified list copy/free code.  Added symetric list for
 
@@ -77,7 +80,7 @@ Revision 1.154  2004/03/20 01:05:49  cheshire
 Test __LP64__ and __ILP64__ to compile properly on a wider range of 64-bit architectures
 
 Revision 1.153  2004/03/13 01:57:33  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.152  2004/03/09 02:27:16  cheshire
 Remove erroneous underscore in 'packed_struct' (makes no difference now, but might in future)
@@ -161,7 +164,7 @@ Revision 1.130  2003/12/14 05:05:29  cheshire
 Add comments explaining mDNS_Init_NoCache and mDNS_Init_ZeroCacheSize
 
 Revision 1.129  2003/12/13 03:05:27  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 Revision 1.128  2003/12/01 21:44:23  cheshire
 Add mStatus_BadInterfaceErr = -65552 for consistency with dns_sd.h
@@ -323,7 +326,7 @@ Revision 1.87  2003/07/22 23:57:20  cheshire
 Move platform-layer function prototypes from mDNSClientAPI.h to mDNSPlatformFunctions.h where they belong
 
 Revision 1.86  2003/07/20 03:52:02  ksekar
-Bug #: <rdar://problem/3320722>: Feature: New Rendezvous APIs (#7875) (mDNSResponder component)
+<rdar://problem/3320722>: Feature: New Rendezvous APIs (#7875) (mDNSResponder component)
 Added error type for incompatibility between daemon and client versions
 
 Revision 1.85  2003/07/19 03:23:13  cheshire
@@ -480,12 +483,11 @@ Revision 1.43  2003/04/25 01:45:56  cheshire
 
 Revision 1.42  2003/04/15 20:58:31  jgraessl
 
-Bug #: 3229014
-Added a hash to lookup records in the cache.
+<rdar://problem/3229014> Added a hash to lookup records in the cache.
 
 Revision 1.41  2003/04/15 18:09:13  jgraessl
 
-Bug #: 3228892
+<rdar://problem/3228892>
 Reviewed by: Stuart Cheshire
 Added code to keep track of when the next cache item will expire so we can
 call TidyRRCache only when necessary.
@@ -510,25 +512,25 @@ Revision 1.37  2003/03/14 21:34:11  cheshire
 Increase size of cache rdata from 512 to 768
 
 Revision 1.36  2003/03/05 03:38:35  cheshire
-Bug #: 3185731 Bogus error message in console: died or deallocated, but no record of client can be found!
+<rdar://problem/3185731> Bogus error message in console: died or deallocated, but no record of client can be found!
 Fixed by leaving client in list after conflict, until client explicitly deallocates
 
 Revision 1.35  2003/02/21 02:47:54  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Several places in the code were calling CacheRRActive(), which searched the entire
 question list every time, to see if this cache resource record answers any question.
 Instead, we now have a field "CRActiveQuestion" in the resource record structure
 
 Revision 1.34  2003/02/21 01:54:08  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
 
 Revision 1.33  2003/02/20 06:48:32  cheshire
-Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
+<rdar://problem/3169535> Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
 
 Revision 1.32  2003/01/31 03:35:59  cheshire
-Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+<rdar://problem/3147097> mDNSResponder sometimes fails to find the correct results
 When there were *two* active questions in the list, they were incorrectly
 finding *each other* and *both* being marked as duplicates of another question
 
@@ -543,7 +545,7 @@ Revision 1.30  2003/01/29 01:47:08  cheshire
 Rename 'Active' to 'CRActive' or 'InterfaceActive' for improved clarity
 
 Revision 1.29  2003/01/28 05:23:43  cheshire
-Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
+<rdar://problem/3147097> mDNSResponder sometimes fails to find the correct results
 Add 'Active' flag for interfaces
 
 Revision 1.28  2003/01/28 01:35:56  cheshire
@@ -551,9 +553,9 @@ Revise comment about ThisQInterval to reflect new semantics
 
 Revision 1.27  2003/01/13 23:49:42  jgraessl
 Merged changes for the following fixes in to top of tree:
-3086540  computer name changes not handled properly
-3124348  service name changes are not properly handled
-3124352  announcements sent in pairs, failing chattiness test
+<rdar://problem/3086540>  computer name changes not handled properly
+<rdar://problem/3124348>  service name changes are not properly handled
+<rdar://problem/3124352>  announcements sent in pairs, failing chattiness test
 
 Revision 1.26  2002/12/23 22:13:28  jgraessl
 

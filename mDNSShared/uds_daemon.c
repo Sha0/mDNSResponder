@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.51  2004/05/18 23:51:27  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.50  2004/05/14 16:39:47  ksekar
 Browse for iChat locally for now.
 
@@ -45,7 +48,7 @@ Revision 1.45  2004/03/12 08:49:28  cheshire
 #include <sys/socket.h>
 
 Revision 1.44  2004/02/25 01:25:27  ksekar
-Bug #: <rdar://problem/3569212>: DNSServiceRegisterRecord flags not error-checked
+<rdar://problem/3569212>: DNSServiceRegisterRecord flags not error-checked
 
 Revision 1.43  2004/02/24 01:46:40  cheshire
 Manually reinstate lost checkin 1.36
@@ -74,22 +77,22 @@ Revision 1.36  2003/12/04 23:40:57  cheshire
 Fix some more code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
 
 Revision 1.35  2003/12/03 19:10:22  ksekar
-Bug #: <rdar://problem/3498644>: malloc'd data not zero'd
+<rdar://problem/3498644>: malloc'd data not zero'd
 
 Revision 1.34  2003/12/03 02:00:01  ksekar
-Bug #: <rdar://problem/3498644>: malloc'd data not zero'd
+<rdar://problem/3498644>: malloc'd data not zero'd
 
 Revision 1.33  2003/11/22 01:18:46  ksekar
-Bug #: <rdar://problem/3486646>: config change handler not called for dns-sd services
+<rdar://problem/3486646>: config change handler not called for dns-sd services
 
 Revision 1.32  2003/11/20 21:46:12  ksekar
-Bug #: <rdar://problem/3486635>: leak: DNSServiceRegisterRecord
+<rdar://problem/3486635>: leak: DNSServiceRegisterRecord
 
 Revision 1.31  2003/11/20 20:33:05  ksekar
-Bug #: <rdar://problem/3486635>: leak: DNSServiceRegisterRecord
+<rdar://problem/3486635>: leak: DNSServiceRegisterRecord
 
 Revision 1.30  2003/11/20 02:10:55  ksekar
-Bug #: <rdar://problem/3486643>: cleanup DNSServiceAdd/RemoveRecord
+<rdar://problem/3486643>: cleanup DNSServiceAdd/RemoveRecord
 
 Revision 1.29  2003/11/14 21:18:32  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
@@ -99,24 +102,24 @@ Revision 1.28  2003/11/08 22:18:29  cheshire
 <rdar://problem/3477870>: Don't need to show process ID in *every* mDNSResponder syslog message
 
 Revision 1.27  2003/11/05 22:44:57  ksekar
-Bug #: <rdar://problem/3335230>: No bounds checking when reading data from client
+<rdar://problem/3335230>: No bounds checking when reading data from client
 Reviewed by: Stuart Cheshire
 
 Revision 1.26  2003/10/23 17:51:04  ksekar
-Bug #: <rdar://problem/3335216>: handle blocked clients more efficiently
+<rdar://problem/3335216>: handle blocked clients more efficiently
 Changed gettimeofday() to mDNSPlatformTimeNow()
 
 Revision 1.25  2003/10/22 23:37:49  ksekar
-Bug #: <rdar://problem/3459141>: crash/hang in abort_client
+<rdar://problem/3459141>: crash/hang in abort_client
 
 Revision 1.24  2003/10/21 20:59:40  ksekar
-Bug #: <rdar://problem/3335216>: handle blocked clients more efficiently
+<rdar://problem/3335216>: handle blocked clients more efficiently
 
 Revision 1.23  2003/09/23 02:12:43  cheshire
 Also include port number in list of services registered via new UDS API
 
 Revision 1.22  2003/08/19 16:03:55  ksekar
-Bug #: <rdar://problem/3380097>: ER: SIGINFO dump should include resolves started by DNSServiceQueryRecord
+<rdar://problem/3380097>: ER: SIGINFO dump should include resolves started by DNSServiceQueryRecord
 Check termination_context for NULL before dereferencing.
 
 Revision 1.21  2003/08/19 05:39:43  cheshire
@@ -134,17 +137,17 @@ We want to avoid touching the rdata pages, so we don't page them in.
    compute a hash of the rdata and store the hash in the ResourceRecord object.
 
 Revision 1.18  2003/08/15 00:38:00  ksekar
-Bug #: <rdar://problem/3377005>: Bug: buffer overrun when reading long rdata from client
+<rdar://problem/3377005>: Bug: buffer overrun when reading long rdata from client
 
 Revision 1.17  2003/08/14 02:18:21  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
 Revision 1.16  2003/08/13 23:58:52  ksekar
-Bug #: <rdar://problem/3374911>: Bug: UDS Sub-type browsing works, but not sub-type registration
+<rdar://problem/3374911>: Bug: UDS Sub-type browsing works, but not sub-type registration
 Fixed pointer increment error, moved subtype reading for-loop for easier error bailout.
 
 Revision 1.15  2003/08/13 17:30:33  ksekar
-Bug #: <rdar://problem/3374671>: DNSServiceAddRecord doesn't work
+<rdar://problem/3374671>: DNSServiceAddRecord doesn't work
 Fixed various problems with handling the AddRecord request and freeing the ExtraResourceRecords.
 
 Revision 1.14  2003/08/12 19:56:25  cheshire

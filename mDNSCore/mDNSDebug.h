@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.23  2004/05/18 23:51:25  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.22  2004/04/22 04:27:42  cheshire
 Spacing tidyup
 
@@ -36,7 +39,7 @@ Revision 1.19  2004/03/15 18:57:59  cheshire
 Undo last checkin that accidentally made verbose debugging the default for all targets
 
 Revision 1.18  2004/03/13 01:57:33  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.17  2004/01/28 21:14:23  cheshire
 Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)

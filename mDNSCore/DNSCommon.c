@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.29  2004/05/18 23:51:25  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.28  2004/05/13 04:54:20  ksekar
 Unified list copy/free code.  Added symetric list for
 
@@ -115,7 +118,7 @@ Made local ptr const to fix error when assigning from const structure. Disable b
 expression is constant warning when building with Microsoft compilers.
 
 Revision 1.1  2003/12/13 03:05:27  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
  */
 

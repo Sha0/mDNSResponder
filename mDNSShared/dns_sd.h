@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.13  2004/05/18 23:51:27  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.12  2004/05/07 21:11:07  ksekar
 API Update: Exposed new core error codes.  Added constants for
 InterfaceIndexAny and InterfaceIndexLocalOnly.  Added flag for
@@ -51,7 +54,7 @@ Revision 1.6  2003/12/04 06:24:33  cheshire
 Clarify meaning of MoreComing/Finished flag
 
 Revision 1.5  2003/11/13 23:35:35  ksekar
-Bug #: <rdar://problem/3483020>: Header doesn't say that add/remove are possible values for flags
+<rdar://problem/3483020>: Header doesn't say that add/remove are possible values for flags
 Bringing mDNSResponder project copy of dns_sd.h header up to date with
 Libinfo copy
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.35  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.34  2004/05/12 22:03:09  ksekar
 Made GetSearchDomainList a true platform-layer call (declaration moved
 from mDNSMacOSX.h to mDNSClientAPI.h), impelemted to return "local"
@@ -92,8 +95,7 @@ Revision 1.15  2003/08/05 00:32:28  cheshire
 <rdar://problem/3326712> Time to turn off MACOSX_MDNS_MALLOC_DEBUGGING
 
 Revision 1.14  2003/07/20 03:38:51  ksekar
-Bug #: 3320722
-Completed support for Unix-domain socket based API.
+<rdar://problem/3320722> Completed support for Unix-domain socket based API.
 
 Revision 1.13  2003/07/18 00:30:00  cheshire
 <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
@@ -106,7 +108,7 @@ Revision 1.11  2003/07/02 21:19:51  cheshire
 <rdar://problem/3313413> Update copyright notices, etc., in source code comments
 
 Revision 1.10  2003/06/25 23:42:19  ksekar
-Bug #: <rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
+<rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
 Reviewed by: Stuart Cheshire
 Added files necessary to implement Unix domain sockets based enhanced
 Rendezvous APIs, and integrated with existing Mach-port based daemon.
@@ -126,13 +128,13 @@ Revision 1.7  2003/04/26 02:39:24  cheshire
 Remove extern void LogMsg(const char *format, ...);
 
 Revision 1.6  2003/03/05 21:59:56  cheshire
-Bug #: 3189097 Additional debugging code in mDNSResponder
+<rdar://problem/3189097> Additional debugging code in mDNSResponder
 
 Revision 1.5  2003/03/05 01:50:38  cheshire
-Bug #: 3189097 Additional debugging code in mDNSResponder
+<rdar://problem/3189097> Additional debugging code in mDNSResponder
 
 Revision 1.4  2003/02/21 01:54:10  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
 
 Revision 1.3  2002/09/21 20:44:51  zarzycki

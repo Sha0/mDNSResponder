@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.63  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.62  2004/03/16 18:24:25  cheshire
 If packet destination was not multicast, then display it
 
@@ -72,7 +75,7 @@ Revision 1.52  2003/12/17 00:21:51  cheshire
 If we received one, display host's HINFO record in final summary
 
 Revision 1.51  2003/12/13 03:05:28  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 Revision 1.50  2003/12/08 20:47:02  rpantos
 Add support for mDNSResponder on Linux.

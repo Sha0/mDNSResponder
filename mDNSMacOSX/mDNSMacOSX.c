@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.152  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.151  2004/05/17 21:46:34  cheshire
 <rdar://problem/3616426>: When interface is turned off, browse "remove" events are delivered with interface index zero
 Take care to correctly update InterfaceIDs when a dormant interface comes back to life
@@ -82,7 +85,7 @@ Revision 1.135  2004/03/19 01:01:03  ksekar
 Fixed config file parsing to chop newline
 
 Revision 1.134  2004/03/13 01:57:34  ksekar
-Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+<rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
 Revision 1.133  2004/02/02 22:46:56  cheshire
 Move "CFRelease(dict);" inside the "if (dict)" check
@@ -124,7 +127,7 @@ Revision 1.122  2003/12/17 20:43:59  cheshire
 <rdar://problem/3496728>: Syslog messages saying "sendto failed"
 
 Revision 1.121  2003/12/13 03:05:28  ksekar
-Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
+<rdar://problem/3192548>: DynDNS: Unicast query of service records
 
 Revision 1.120  2003/12/08 21:00:46  rpantos
 Changes to support mDNSResponder on Linux.
@@ -203,7 +206,7 @@ Revision 1.99  2003/08/05 20:13:52  cheshire
 Ignore interfaces with the IN6_IFF_NOTREADY flag set
 
 Revision 1.98  2003/07/20 03:38:51  ksekar
-Bug #: 3320722
+<rdar://problem/3320722>
 Completed support for Unix-domain socket based API.
 
 Revision 1.97  2003/07/19 03:15:16  cheshire
@@ -296,7 +299,7 @@ it should say "%lu", etc.) and improve error logging (use strerror()
 to include textual error message as well as numeric error in log messages).
 
 Revision 1.73  2003/05/21 17:56:29  ksekar
-Bug #: <rdar://problem/3191277>: mDNSResponder doesn't watch for IPv6 address changes
+<rdar://problem/3191277>: mDNSResponder doesn't watch for IPv6 address changes
 
 Revision 1.72  2003/05/14 18:48:41  cheshire
 <rdar://problem/3159272> mDNSResponder should be smarter about reconfigurations
@@ -331,12 +334,12 @@ Revision 1.65  2003/04/26 02:34:01  cheshire
 Add missing mDNSexport
 
 Revision 1.64  2003/04/15 16:48:06  jgraessl
-Bug #: 3228833
+<rdar://problem/3228833>
 Modified code in CFSocket notifier function to read all packets on the socket
 instead of reading only one packet every time the notifier was called.
 
 Revision 1.63  2003/04/15 16:33:50  jgraessl
-Bug #: 3221880
+<rdar://problem/3221880>
 Switched to our own copy of if_indextoname to improve performance.
 
 Revision 1.62  2003/03/28 01:55:44  cheshire
@@ -354,25 +357,25 @@ Revision 1.60  2003/03/15 04:40:38  cheshire
 Change type called "mDNSOpaqueID" to the more descriptive name "mDNSInterfaceID"
 
 Revision 1.59  2003/03/11 01:23:26  cheshire
-Bug #: 3194246 mDNSResponder socket problems
+<rdar://problem/3194246> mDNSResponder socket problems
 
 Revision 1.58  2003/03/06 01:43:04  cheshire
-Bug #: 3189097 Additional debugging code in mDNSResponder
+<rdar://problem/3189097> Additional debugging code in mDNSResponder
 Improve "LIST_ALL_INTERFACES" output
 
 Revision 1.57  2003/03/05 22:36:27  cheshire
-Bug #: 3186338 Loopback doesn't work with mDNSResponder-27
+<rdar://problem/3186338> Loopback doesn't work with mDNSResponder-27
 Temporary workaround: Skip loopback interface *only* if we found at least one v4 interface to use
 
 Revision 1.56  2003/03/05 01:50:38  cheshire
-Bug #: 3189097 Additional debugging code in mDNSResponder
+<rdar://problem/3189097> Additional debugging code in mDNSResponder
 
 Revision 1.55  2003/02/21 01:54:09  cheshire
-Bug #: 3099194 mDNSResponder needs performance improvements
+<rdar://problem/3099194> mDNSResponder needs performance improvements
 Switched to using new "mDNS_Execute" model (see "Implementer Notes.txt")
 
 Revision 1.54  2003/02/20 06:48:35  cheshire
-Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
+<rdar://problem/3169535> Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
 
 Revision 1.53  2003/01/29 02:21:23  cheshire
@@ -386,16 +389,16 @@ Fixed backwards comparison in SearchForInterfaceByName
 
 Revision 1.50  2003/01/13 23:49:44  jgraessl
 Merged changes for the following fixes in to top of tree:
-3086540  computer name changes not handled properly
-3124348  service name changes are not properly handled
-3124352  announcements sent in pairs, failing chattiness test
+<rdar://problem/3086540>  computer name changes not handled properly
+<rdar://problem/3124348>  service name changes are not properly handled
+<rdar://problem/3124352>  announcements sent in pairs, failing chattiness test
 
 Revision 1.49  2002/12/23 22:13:30  jgraessl
 Reviewed by: Stuart Cheshire
 Initial IPv6 support for mDNSResponder.
 
 Revision 1.48  2002/11/22 01:37:52  cheshire
-Bug #: 3108426 mDNSResponder is monitoring ServiceEntities instead of InterfaceEntities
+<rdar://problem/3108426> mDNSResponder is monitoring ServiceEntities instead of InterfaceEntities
 
 Revision 1.47  2002/09/21 20:44:51  zarzycki
 Added APSL info

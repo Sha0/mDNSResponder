@@ -23,32 +23,35 @@
     Change History (most recent first):
 
 $Log: BrowserController.m,v $
+Revision 1.28  2004/05/18 23:51:26  cheshire
+Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
+
 Revision 1.27  2003/11/19 18:49:48  rpantos
-3282283: couple of little tweaks to previous checkin
+<rdar://problem/3282283>: couple of little tweaks to previous checkin
 
 Revision 1.26  2003/11/07 19:35:20  rpantos
-3282283/6: Display multiple IP addresses. Connect using host rather than IP addr.
+<rdar://problem/3282283>/6: Display multiple IP addresses. Connect using host rather than IP addr.
 
 Revision 1.25  2003/10/29 05:16:54  rpantos
 Checkpoint: transition from DNSServiceDiscovery.h to dns_sd.h
 
 Revision 1.24  2003/10/28 02:25:45  rpantos
-3282283/9,10: Cancel pending resolve when focus changes or service disappears.
+<rdar://problem/3282283>/9,10: Cancel pending resolve when focus changes or service disappears.
 
 Revision 1.23  2003/10/28 01:29:15  rpantos
-3282283/4,5: Restructure a bit to make arrow keys work & views behave better.
+<rdar://problem/3282283>/4,5: Restructure a bit to make arrow keys work & views behave better.
 
 Revision 1.22  2003/10/28 01:23:27  rpantos
-3282283/11: Bail if mDNS cannot be initialized at startup.
+<rdar://problem/3282283>/11: Bail if mDNS cannot be initialized at startup.
 
 Revision 1.21  2003/10/28 01:19:45  rpantos
-3282283/3,11: Do not put a trailing '.' on service names. Handle PATH for HTTP txtRecords.
+<rdar://problem/3282283>/3,11: Do not put a trailing '.' on service names. Handle PATH for HTTP txtRecords.
 
 Revision 1.20  2003/10/28 01:13:49  rpantos
-3282283/2: Remove filter when displaying browse results.
+<rdar://problem/3282283>/2: Remove filter when displaying browse results.
 
 Revision 1.19  2003/10/28 01:10:14  rpantos
-3282283/1: Change 'compare' to 'caseInsensitiveCompare' to fix sort order.
+<rdar://problem/3282283>/1: Change 'compare' to 'caseInsensitiveCompare' to fix sort order.
 
 Revision 1.18  2003/08/12 19:55:07  cheshire
 Update to APSL 2.0
