@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: SecondPage.cpp,v $
+Revision 1.5  2005/04/05 04:15:46  shersche
+RegQueryString was returning uninitialized strings if the registry key couldn't be found, so always initialize strings before checking the registry key.
+
 Revision 1.4  2005/04/05 03:52:14  shersche
 <rdar://problem/4066485> Registering with shared secret key doesn't work. Additionally, mDNSResponder wasn't dynamically re-reading it's DynDNS setup after setting a shared secret key.
 
@@ -494,6 +497,7 @@ CSecondPage::RegQueryString( HKEY key, CString valueName, CString & value )
 
 		string = (TCHAR*) malloc( stringLen );
 		require_action( string, exit, err = kUnknownErr );
+		*string = '\0';
 
 		err = RegQueryValueEx( key, valueName, 0, NULL, (LPBYTE) string, &stringLen );
 
