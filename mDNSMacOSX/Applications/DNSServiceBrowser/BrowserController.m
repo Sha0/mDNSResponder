@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserController.m,v $
+Revision 1.22  2003/10/28 01:23:27  rpantos
+3282283/11: Bail if mDNS cannot be initialized at startup.
+
 Revision 1.21  2003/10/28 01:19:45  rpantos
 3282283/3,11: Do not put a trailing '.' on service names. Handle PATH for HTTP txtRecords.
 
@@ -328,6 +331,15 @@ void resolve_reply (
          enum_reply,
          nil
          );
+
+    if ( dns_client == NULL) {
+        NSAlert *alert = [NSAlert alertWithMessageText:@"Rendezvous could not be initialized!"
+                        defaultButton:@"Quit" alternateButton:nil otherButton:nil informativeTextWithFormat:
+                        @"DNSServiceDomainEnumerationCreate() failed."];
+        if ( alert != NULL)
+            [alert runModal];
+        exit( kDNSServiceDiscoveryNotInitializedErr);
+    }
 
     port = DNSServiceDiscoveryMachPort(dns_client);
 
