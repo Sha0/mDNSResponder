@@ -88,6 +88,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.186  2003/06/10 04:24:39  cheshire
+<rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
+Some additional refinements:
+Don't try to do this for unicast-reply queries
+better tracking of Qs and KAs in multi-packet KA lists
+
 Revision 1.185  2003/06/10 03:52:49  cheshire
 Update comments and debug messages
 
@@ -1893,8 +1899,10 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->CRActiveQuestion  = mDNSNULL;	// Not strictly relevant for a local record
 	rr->UnansweredQueries = 0;			// Not strictly relevant for a local record
 	rr->LastUnansweredTime= 0;			// Not strictly relevant for a local record
-	rr->UnansweredTCQ     = 0;			// Not strictly relevant for a local record
-	rr->UnansweredTCKA    = 0;			// Not strictly relevant for a local record
+	rr->MPUnansweredQ     = 0;			// Not strictly relevant for a local record
+	rr->MPLastUnansweredQT= 0;			// Not strictly relevant for a local record
+	rr->MPUnansweredKA    = 0;			// Not strictly relevant for a local record
+	rr->MPExpectingKA     = mDNSfalse;	// Not strictly relevant for a local record
 	rr->FreshData         = mDNSfalse;	// Not strictly relevant for a local record
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -2471,8 +2479,10 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->CRActiveQuestion  = mDNSNULL;
 	rr->UnansweredQueries = 0;
 	rr->LastUnansweredTime= 0;
-	rr->UnansweredTCQ     = 0;
-	rr->UnansweredTCKA    = 0;
+	rr->MPUnansweredQ     = 0;
+	rr->MPLastUnansweredQT= 0;
+	rr->MPUnansweredKA    = 0;
+	rr->MPExpectingKA     = mDNSfalse;
 	rr->FreshData         = mDNStrue;
 
 	// Field Group 4: The actual information pertaining to this resource record
@@ -3022,6 +3032,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 				ResourceRecordAnswersQuestion(rr, q))						// which answers our question
 					{
 					rr->UnansweredQueries++;								// indicate that we're expecting a response
+					rr->LastUnansweredTime = m->timenow;
 					SetNextCacheCheckTime(m, rr);
 					}
 
@@ -4142,7 +4153,7 @@ mDNSlocal ResourceRecord *FindIdenticalRecordInCache(const mDNS *const m, Resour
 	{
 	ResourceRecord *rr;
 	for (rr = m->rrcache_hash[HashSlot(&pktrr->name)]; rr; rr=rr->next)
-		if (IdenticalResourceRecord(pktrr, rr)) break;
+		if (pktrr->InterfaceID == rr->InterfaceID && IdenticalResourceRecord(pktrr, rr)) break;
 	return(rr);
 	}
 
@@ -4203,21 +4214,40 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// so use random delay on response to reduce collisions
 		if (NumAnswersForThisQuestion == 0) delayresponse = mDNStrue;
 
-		// Make a list indicating which of our own cache records we expect to see updated as a result of this query		
-		for (rr = m->rrcache_hash[HashSlot(&pktq.qname)]; rr; rr=rr->next)
-			if (ResourceRecordAnswersQuestion(rr, &pktq) && !rr->NextInKAList && eap != &rr->NextInKAList)
-				{ *eap = rr; eap = &rr->NextInKAList; }
-
-		// Check if this question is the same as any of mine.
-		// We only do this for non-truncated queries. Right now it would be too complicated to try
-		// to keep track of duplicate suppression state between multiple packets, especially when we
-		// can't guarantee to receive all of the Known Answer packets that go with a particular query.
-		if (!(query->h.flags.b[0] & kDNSFlag0_TC))
-			for (q = m->Questions; q; q=q->next)
-				if (ActiveQuestion(q))
-					if (!q->InterfaceID || q->InterfaceID == InterfaceID)
-						if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && SameDomainName(&q->qname, &pktq.qname))
-							{ *dqp = q; dqp = &q->NextInDQList; }
+		// We only do the following accelerated cache expiration processing and duplicate question suppression processing
+		// for multicast queries with multicast responses.
+		// For legacy queries (multicast query / unicast response) we don't do this because we can't assume we will
+		// necessarily see the reply to this query if the responder in question decides to send it only via unicast
+		if (!replyunicast)
+			{
+			// Make a list indicating which of our own cache records we expect to see updated as a result of this query		
+			for (rr = m->rrcache_hash[HashSlot(&pktq.qname)]; rr; rr=rr->next)
+				if (ResourceRecordAnswersQuestion(rr, &pktq) && !rr->NextInKAList && eap != &rr->NextInKAList)
+					{
+					*eap = rr;
+					eap = &rr->NextInKAList;
+					if (rr->MPUnansweredQ == 0 || m->timenow - rr->MPLastUnansweredQT >= mDNSPlatformOneSecond)
+						{
+						// Although MPUnansweredQ is only really used for multi-packet query processing,
+						// we increment it for both single-packet and multi-packet queries, so that it stays in sync
+						// with the MPUnansweredKA value, which by necessity is incremented for all both query types.
+						rr->MPUnansweredQ++;
+						rr->MPLastUnansweredQT = m->timenow;
+						rr->MPExpectingKA = mDNStrue;
+						}
+					}
+	
+			// Check if this question is the same as any of mine.
+			// We only do this for non-truncated queries. Right now it would be too complicated to try
+			// to keep track of duplicate suppression state between multiple packets, especially when we
+			// can't guarantee to receive all of the Known Answer packets that go with a particular query.
+			if (!(query->h.flags.b[0] & kDNSFlag0_TC))
+				for (q = m->Questions; q; q=q->next)
+					if (ActiveQuestion(q))
+						if (!q->InterfaceID || q->InterfaceID == InterfaceID)
+							if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && SameDomainName(&q->qname, &pktq.qname))
+								{ *dqp = q; dqp = &q->NextInDQList; }
+			}
 		}
 
 	// ***
@@ -4262,7 +4292,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
 		// Get the record...
-		ResourceRecord pktrr, *rr;
+		ResourceRecord pktrr, *rr, *ourcacherr;
 		ptr = GetResourceRecord(m, query, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pktrr, mDNSNULL);
 		if (!ptr) goto exit;
 
@@ -4289,14 +4319,20 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				}
 			}
 
-		// See if this Known-Answer suppresses any answers we were expecting for our cache records
-		if (query->h.flags.b[0] & kDNSFlag0_TC)
+		if (!replyunicast)
 			{
-			rr = FindIdenticalRecordInCache(m, &pktrr);
-			if (rr) rr->UnansweredTCKA++;
-			}
-		else
-			{
+			// See if this Known-Answer suppresses any answers we were expecting for our cache records. We do this always,
+			// even if the TC bit is not set (the TC bit will *not* be set in the *last* packet of a multi-packet KA list).
+			ourcacherr = FindIdenticalRecordInCache(m, &pktrr);
+			if (ourcacherr && ourcacherr->MPExpectingKA && m->timenow - ourcacherr->MPLastUnansweredQT < mDNSPlatformOneSecond)
+				{
+				ourcacherr->MPUnansweredKA++;
+				ourcacherr->MPExpectingKA = mDNSfalse;
+				}
+	
+			// Having built our ExpectedAnswers list from the questions in this packet, we can definitively
+			// remove from our ExpectedAnswers list any records that are suppressed in the very same packet.
+			// For answers that are suppressed in subsequent KA list packets, we rely on the MPQ/MPKA counting to track them.
 			eap = &ExpectedAnswers;
 			while (*eap)
 				{
@@ -4305,19 +4341,18 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					{ *eap = rr->NextInKAList; rr->NextInKAList = mDNSNULL; }
 				else eap = &rr->NextInKAList;
 				}
-			}
-		
-		// See if this Known-Answer is a surprise to us. If so, we shouldn't suppress our own query.
-		if (!(query->h.flags.b[0] & kDNSFlag0_TC))
-			{
-			dqp = &DupQuestions;
-			while (*dqp)
+			
+			// See if this Known-Answer is a surprise to us. If so, we shouldn't suppress our own query.
+			if (!ourcacherr)
 				{
-				DNSQuestion *q = *dqp;
-				if (ResourceRecordAnswersQuestion(&pktrr, q) && !FindIdenticalRecordInCache(m, &pktrr))
-					{ *dqp = q->NextInDQList; q->NextInDQList = mDNSNULL; }
-				else
-					dqp = &q->NextInDQList;
+				dqp = &DupQuestions;
+				while (*dqp)
+					{
+					DNSQuestion *q = *dqp;
+					if (ResourceRecordAnswersQuestion(&pktrr, q))
+						{ *dqp = q->NextInDQList; q->NextInDQList = mDNSNULL; }
+					else dqp = &q->NextInDQList;
+					}
 				}
 			}
 		}
@@ -4433,21 +4468,51 @@ exit:
 		rr = ExpectedAnswers;
 		ExpectedAnswers = rr->NextInKAList;
 		rr->NextInKAList = mDNSNULL;
-		if (query->h.flags.b[0] & kDNSFlag0_TC)
-			rr->UnansweredTCQ++;
-		else
-			{
-			if (rr->UnansweredQueries == 0 || m->timenow - rr->LastUnansweredTime > mDNSPlatformOneSecond)
+		
+		// For non-truncated queries, we can definitively say that we should expect
+		// to be seeing a response for any records still left in the ExpectedAnswers list
+		if (!(query->h.flags.b[0] & kDNSFlag0_TC))
+			if (rr->UnansweredQueries == 0 || m->timenow - rr->LastUnansweredTime >= mDNSPlatformOneSecond)
+				{
 				rr->UnansweredQueries++;
-			rr->LastUnansweredTime = m->timenow;
-			}
+				rr->LastUnansweredTime = m->timenow;
+				verbosedebugf("ProcessQuery: UAQ %lu MPQ %lu MPKA %lu %s",
+					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+				SetNextCacheCheckTime(m, rr);
+				}
 
-		// We multiply TCQ by 3 and TCKA by four, to allow for possible packet loss
-		// of up to 25% of the additional KA packets
-		if (rr->UnansweredQueries >= 4 || rr->UnansweredTCQ * 3 > rr->UnansweredTCKA * 4 + 6)
+		// If we've seen two definite queries for this record,
+		// then mark it to expire in five seconds if we don't get a reply by then.
+		if (rr->UnansweredQueries >= 2 )
 			{
-			debugf("ProcessQuery: mDNS_Reconfirm() for %s", GetRRDisplayString(m, rr));
-			mDNS_Reconfirm(m, rr);
+			debugf("ProcessQuery: UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
+				rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+			mDNS_Reconfirm_internal(m, rr, 0);
+			}
+		// Make a guess, based on the multi-packet query / known answer counts, whether we think we
+		// should have seen an answer for this. (We multiply MPQ by 4 and MPKA by 5, to allow for
+		// possible packet loss of up to 20% of the additional KA packets.)
+		else if (rr->MPUnansweredQ * 4 > rr->MPUnansweredKA * 5 + 8)
+			{
+			// We want to do this conservatively.
+			// If there are so many machines on the network that they have to use multi-packet known-answer lists,
+			// then we don't want them to all hit the network simultaneously with their final expiration queries.
+			// By setting the record to expire in five minutes, we achieve two things:
+			// (a) the 90-95% final expiration queries will be less bunched together
+			// (b) we allow some time for us to witness enough other failed queries that we don't have to do our own
+			mDNSs32 remain = (rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond - m->timenow) / 4;
+			if (remain > 300 * mDNSPlatformOneSecond)
+				remain = 300 * mDNSPlatformOneSecond;
+			
+			debugf("ProcessQuery: UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
+				rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
+
+			rr->UnansweredQueries++;		// Treat this as equivalent to one definite unanswered query
+			rr->MPUnansweredQ  = 0;			// Clear MPQ/MPKA statistics
+			rr->MPUnansweredKA = 0;
+			rr->MPExpectingKA  = mDNSfalse;
+			
+			mDNS_Reconfirm_internal(m, rr, remain);
 			}
 		}
 	
@@ -4637,8 +4702,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						{
 						rr->rroriginalttl = pktrr.rroriginalttl;
 						rr->UnansweredQueries = 0;
-						rr->UnansweredTCQ     = 0;
-						rr->UnansweredTCKA    = 0;
+						rr->MPUnansweredQ     = 0;
+						rr->MPUnansweredKA    = 0;
+						rr->MPExpectingKA     = mDNSfalse;
 						}
 					else
 						{
