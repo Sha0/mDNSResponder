@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.28  2005/02/14 20:37:53  shersche
+<rdar://problem/4003944> Populate comment field with the model name that users see in the wizard UI.
+
 Revision 1.27  2005/02/09 05:04:03  shersche
 <rdar://problem/3946587> Use TXTRecordGetValuePtr() API in ParseTextRecord
 
@@ -438,7 +441,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	pInfo.pShareName			=	NULL;
 	pInfo.pPortName				=	printer->portName.GetBuffer();
 	pInfo.pDriverName			=	printer->modelName.GetBuffer();
-	pInfo.pComment				=	printer->modelName.GetBuffer();
+	pInfo.pComment				=	printer->displayModelName.GetBuffer();
 	pInfo.pLocation				=	service->location.GetBuffer();
 	pInfo.pDevMode				=	NULL;
 	pInfo.pDevMode				=	NULL;
@@ -497,6 +500,7 @@ CPrinterSetupWizardSheet::InstallPrinterIPP(Printer * printer, Service * service
 	pInfo.pDriverName		= printer->modelName.GetBuffer();
 	pInfo.pPrintProcessor	= L"winprint";
 	pInfo.pLocation			= service->location.GetBuffer();
+	pInfo.pComment			= printer->displayModelName.GetBuffer();
 	pInfo.Attributes		= PRINTER_ATTRIBUTE_NETWORK | PRINTER_ATTRIBUTE_LOCAL;
 	
 	hPrinter = AddPrinter(NULL, 2, (LPBYTE)&pInfo);
