@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.8  2003/11/05 22:44:57  ksekar
+Bug #: <rdar://problem/3335230>: No bounds checking when reading data from client
+Reviewed by: Stuart Cheshire
+
 Revision 1.7  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -100,7 +104,6 @@ int put_string(const char *str, char **ptr)
     return 0;
     }
 
-// !!!KRS we don't properly handle the case where the string is longer than the buffer!!!	
 int get_string(char **ptr, char *buffer, int buflen)
     {
     int overrun;

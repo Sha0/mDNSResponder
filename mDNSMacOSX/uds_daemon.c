@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.27  2003/11/05 22:44:57  ksekar
+Bug #: <rdar://problem/3335230>: No bounds checking when reading data from client
+Reviewed by: Stuart Cheshire
+
 Revision 1.26  2003/10/23 17:51:04  ksekar
 Bug #: <rdar://problem/3335216>: handle blocked clients more efficiently
 Changed gettimeofday() to mDNSPlatformTimeNow()
@@ -240,9 +244,10 @@ static request_state *all_requests = NULL;
 
 
 #define MAX_OPENFILES 1024
-#define MAX_TIME_BLOCKED 60    // try to send data to a blocked client for 60 seconds before
-                                // terminating connection
- 
+#define MAX_TIME_BLOCKED 60   // try to send data to a blocked client for 60 seconds before
+                              // terminating connection
+#define MSG_PAD_BYTES 5       // pad message buffer (read from client) with n zero'd bytes to guarantee
+                              // n get_string() calls w/o buffer overrun    
 // private function prototypes
 static void connect_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i);
 static int read_msg(request_state *rs);
@@ -286,6 +291,8 @@ static void my_perror(char *errmsg);
 static void unlink_request(request_state *rs);
 static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 static void resolve_termination_callback(void *context);
+static int validate_message(request_state *rstate);
+
 
 // initialization, setup/teardown functions
 
@@ -621,6 +628,16 @@ static void request_callback(CFSocketRef sr, CFSocketCallBackType t, CFDataRef d
         unlink_request(rstate);
         return;
     }
+    
+    if (validate_message(rstate) < 0)
+	{
+	// note that we cannot deliver an error message if validation fails, since the path to the error socket
+	// may be contained in the (invalid) message body for some message types
+	abort_request(rstate);
+	unlink_request(rstate);
+	LogMsg("Invalid message sent by client - may indicate a malicious program running on this machine!");
+	return;
+	}    
     
     // check if client wants silent operation
     if (rstate->hdr.flags & IPC_FLAGS_NOREPLY) rstate->no_reply = 1;
@@ -1952,7 +1969,7 @@ static int read_msg(request_state *rs)
         
         if (!rs->msgbuf)  // allocate the buffer first time through
             {
-            rs->msgbuf = mallocL("read_msg", rs->hdr.datalen);
+            rs->msgbuf = mallocL("read_msg", rs->hdr.datalen + MSG_PAD_BYTES);
             if (!rs->msgbuf)
             	{
                 my_perror("ERROR: malloc");
@@ -1961,6 +1978,7 @@ static int read_msg(request_state *rs)
             	}
             rs->msgdata = rs->msgbuf;
             }
+            bzero(rs->msgbuf, rs->hdr.datalen + MSG_PAD_BYTES);
         nleft = rs->hdr.datalen - rs->data_bytes;
         nread = recv(rs->sd, rs->msgbuf + rs->data_bytes, nleft, 0);
         if (nread == 0)  	{ rs->ts = t_terminated;  return t_terminated; 	}
@@ -2228,6 +2246,66 @@ static void unlink_request(request_state *rs)
 static void my_perror(char *errmsg)
     {
     LogMsg("%s: %s", errmsg, strerror(errno));
+    }
+
+// check that the message delivered by the client is sufficiently long to extract the required data from the buffer
+// without overrunning it.
+// returns 0 on success, -1 on error.
+
+static int validate_message(request_state *rstate)
+    {
+    uint32_t min_size;
+    
+    switch(rstate->hdr.op.request_op)
+    	{
+        case resolve_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
+						sizeof(uint32_t) + 		// interface
+						(3 * sizeof(char));           	// name, regtype, domain
+						break;  
+        case query_request: min_size = 		sizeof(DNSServiceFlags) + 	// flags
+						sizeof(uint32_t) +		// interface
+						sizeof(char) + 			// fullname
+						(2 * sizeof(uint16_t)); 	// type, class
+						break;
+        case browse_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
+						sizeof(uint32_t) +		// interface
+						(2 * sizeof(char)); 		// regtype, domain
+						break;
+        case reg_service_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
+						sizeof(uint32_t) +		// interface
+						(4 * sizeof(char)) + 		// name, type, domain, host
+						(2 * sizeof(uint16_t));		// port, textlen	
+						break;	
+        case enumeration_request: min_size =	sizeof(DNSServiceFlags) +	// flags
+						sizeof(uint32_t); 		// interface
+						break;
+        case reg_record_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
+						sizeof(uint32_t) + 		// interface
+						sizeof(char) + 			// fullname
+						(3 * sizeof(uint16_t)) +	// type, class, rdlen
+						sizeof(uint32_t);		// ttl
+						break;
+        case add_record_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
+						(2 * sizeof(uint16_t)) + 	// type, rdlen
+						sizeof(uint32_t);		// ttl
+						break;
+        case update_record_request: min_size =	sizeof(DNSServiceFlags) +	// flags
+						sizeof(uint16_t) +		// rdlen
+						sizeof(uint32_t); 		// ttl
+						break;
+        case remove_record_request: min_size =	sizeof(DNSServiceFlags);	// flags
+						break;
+        case reconfirm_record_request: min_size=sizeof(DNSServiceFlags) +	// flags
+						sizeof(uint32_t) + 		// interface
+						sizeof(char) + 			// fullname
+						(3 * sizeof(uint16_t));		// type, class, rdlen
+        default:
+            LogMsg("ERROR: validate_message - unsupported request type: %d", rstate->hdr.op.request_op);	    
+	    return -1;
+	}    
+    
+	return (rstate->data_bytes >= min_size ? 0 : -1);
+    
     }
 
 
