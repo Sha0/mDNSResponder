@@ -193,8 +193,11 @@ mDNSlocal void GetUserSpecifiedComputerName(domainlabel *const namelabel)
 	{
 	CFStringEncoding encoding = kCFStringEncodingUTF8;
 	CFStringRef cfs = SCDynamicStoreCopyComputerName(NULL, &encoding);
-	CFStringGetPascalString(cfs, namelabel->c, sizeof(*namelabel), kCFStringEncodingUTF8);
-	CFRelease(cfs);
+	if (cfs)
+		{
+		CFStringGetPascalString(cfs, namelabel->c, sizeof(*namelabel), kCFStringEncodingUTF8);
+		CFRelease(cfs);
+		}
 	}
 
 mDNSlocal mStatus SetupSocket(struct sockaddr_in *ifa_addr, mDNSIPPort port, int *s, CFSocketRef *c, CFSocketContext *context)
