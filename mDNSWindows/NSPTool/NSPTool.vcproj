@@ -48,20 +48,14 @@
 			<Tool
 				Name="VCMIDLTool"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Debug\InstallTools GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Debug\InstallTools
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\InstallTools
-:END"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
 				Name="VCPreLinkEventTool"/>
 			<Tool
-				Name="VCResourceCompilerTool"/>
+				Name="VCResourceCompilerTool"
+				AdditionalIncludeDirectories="..\"/>
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
@@ -69,8 +63,8 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\InstallTools
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory="Release"
-			IntermediateDirectory="Release"
+			OutputDirectory=".\Release\Root\InstallTools"
+			IntermediateDirectory=".\Release"
 			ConfigurationType="1"
 			CharacterSet="2">
 			<Tool
@@ -90,6 +84,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\InstallTools
 				OutputFile="$(OutDir)/NSPTool.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="TRUE"
+				ProgramDatabaseFile="$(IntDir)/$(ProjectName).pdb"
 				SubSystem="1"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
@@ -97,20 +92,14 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\InstallTools
 			<Tool
 				Name="VCMIDLTool"/>
 			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Copying To Build Tree..."
-				CommandLine="IF &quot;%DNSSD_BUILD_ROOT%&quot; == &quot;&quot; GOTO END
-IF EXIST %DNSSD_BUILD_ROOT%\Release\InstallTools GOTO COPY
-mkdir %DNSSD_BUILD_ROOT%\Release\InstallTools
-:COPY
-copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\InstallTools
-:END"/>
+				Name="VCPostBuildEventTool"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
 				Name="VCPreLinkEventTool"/>
 			<Tool
-				Name="VCResourceCompilerTool"/>
+				Name="VCResourceCompilerTool"
+				AdditionalIncludeDirectories="..\"/>
 			<Tool
 				Name="VCWebServiceProxyGeneratorTool"/>
 			<Tool
