@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.134  2003/05/26 04:54:54  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+Accidentally deleted '%' case from the switch statement
+
 Revision 1.133  2003/05/26 03:21:27  cheshire
 Tidy up address structure naming:
 mDNSIPAddr         => mDNSv4Addr (for consistency with mDNSv6Addr)
@@ -710,6 +714,10 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 	
 				default:	s = mDNS_VACB;
 							i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "<<UNKNOWN FORMAT CONVERSION CODE %%%c>>", c);
+
+				case '%' :	*sbuffer++ = (char)c;
+							if (++nwritten >= buflen) goto exit;
+							break;
 				}
 	
 			if (i < F.fieldWidth && !F.leftJustify)			// Pad on the left
@@ -737,7 +745,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 
 mDNSexport mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...)
 	{
-	unsigned int length;
+	mDNSu32 length;
 	
     va_list ptr;
 	va_start(ptr,fmt);
