@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServiceBrowser.cs,v $
+Revision 1.4  2004/09/13 19:38:17  shersche
+Changed code to reflect namespace and type changes to dnssd.NET library
+
 Revision 1.3  2004/09/11 00:38:14  shersche
 DNSService APIs now assume port in host format. Check for null text record in resolve callback.
 
@@ -43,6 +46,7 @@ using System.ComponentModel;
 using System.Windows.Forms;
 using System.Data;
 using System.Text;
+using Apple.DNSSD;
 
 namespace DNSServiceBrowser_NET
 {
@@ -53,8 +57,8 @@ namespace DNSServiceBrowser_NET
 	{
 		private System.Windows.Forms.ComboBox typeBox;
 		private System.Windows.Forms.ListBox browseList;
-		private DNSService.ServiceRef browser = null;
-		private DNSService.ServiceRef resolver = null;
+		private ServiceRef browser = null;
+		private ServiceRef resolver = null;
 		/// <summary>
 		/// Required designer variable.
 		/// </summary>
@@ -508,7 +512,7 @@ namespace DNSServiceBrowser_NET
 			public int		InterfaceIndex;
 			public String	FullName;
 			public String	HostName;
-			public ushort	Port;
+			public int		Port;
 			public Byte[]	TxtRecord;
 
 			public override String
@@ -537,12 +541,12 @@ namespace DNSServiceBrowser_NET
 		
 			if (resolveData.TxtRecord != null)
 			{
-				for (ushort idx = 0; idx < DNSService.TextRecord.GetCount(resolveData.TxtRecord); idx++)
+				for (int idx = 0; idx < TextRecord.GetCount(resolveData.TxtRecord); idx++)
 				{
 					String	key;
 					Byte[]	bytes;
 				
-					bytes	= DNSService.TextRecord.GetItemAtIndex(resolveData.TxtRecord, idx, out key);
+					bytes	= TextRecord.GetItemAtIndex(resolveData.TxtRecord, idx, out key);
 
 					if (key.Length > 0)
 					{
@@ -667,16 +671,16 @@ namespace DNSServiceBrowser_NET
 		//
 		private void OnBrowseReply
 								(
-								DNSService.ServiceRef	sdRef,
-								DNSService.ServiceFlags	flags,
-								int						interfaceIndex,
-								DNSService.ErrorCode	errorCode,
-								String					name,
-								String					type,
-								String					domain
+								ServiceRef		sdRef,
+								ServiceFlags	flags,
+								int				interfaceIndex,
+								ErrorCode		errorCode,
+								String			name,
+								String			type,
+								String			domain
 								)
 		{
-			if (errorCode == DNSService.ErrorCode.NoError)
+			if (errorCode == ErrorCode.NoError)
 			{
 				BrowseData data = new BrowseData();
 
@@ -685,12 +689,12 @@ namespace DNSServiceBrowser_NET
 				data.Type = type;
 				data.Domain = domain;
 	
-				if ((flags & DNSService.ServiceFlags.Add) != 0)
+				if ((flags & ServiceFlags.Add) != 0)
 				{
 					Invoke(addServiceCallback, new Object[]{data});
 					
 				}
-				else if ((flags == 0) || ((flags & DNSService.ServiceFlags.MoreComing) != 0))
+				else if ((flags == 0) || ((flags & ServiceFlags.MoreComing) != 0))
 				{
 					Invoke(removeServiceCallback, new Object[]{data});
 				}
@@ -703,17 +707,17 @@ namespace DNSServiceBrowser_NET
 
 		private void OnResolveReply
 								(
-								DNSService.ServiceRef		sdRef,  
-								DNSService.ServiceFlags	flags,
-								int								interfaceIndex,
-								DNSService.ErrorCode		errorCode,
-								String							fullName,
-								String							hostName,
-								ushort								port,
-								Byte[]							txtRecord
+								ServiceRef		sdRef,  
+								ServiceFlags	flags,
+								int				interfaceIndex,
+								ErrorCode		errorCode,
+								String			fullName,
+								String			hostName,
+								int				port,
+								Byte[]			txtRecord
 								)
 		{
-			if (errorCode == DNSService.ErrorCode.NoError)
+			if (errorCode == ErrorCode.NoError)
 			{
 				ResolveData data = new ResolveData();
 
