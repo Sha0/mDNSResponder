@@ -24,7 +24,7 @@
 ;
 ;
     
-LIBRARY	"Rendezvous"
+LIBRARY	"Bonjour"
 
 EXPORTS
 	CPlApplet
