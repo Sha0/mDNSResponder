@@ -20,9 +20,11 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: makefile,v $
-# Revision 1.1  2004/04/30 16:38:20  rpantos
-# First checked in.
+# Revision 1.2  2004/05/01 00:31:41  rpantos
+# Change line endings for CVS.
 #
+# Revision 1.1  2004/04/30 16:32:34  rpantos
+# First checked in.
 #
 # This Makefile builds a .jar file and accompanying JNI support library
 # containing the DNSSD implementation for Java and support classes.
