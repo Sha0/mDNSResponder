@@ -11,8 +11,17 @@ if [ -e /sbin/start-stop-daemon ]; then
 	START=start-stop-daemon --start --quiet --exec
 	STOP=start-stop-daemon --stop -s TERM --quiet --oknodo --exec
 else
+	# Source function library.
+	if [ -e /etc/init.d/functions ]; then 
+		. /etc/init.d/functions
+	else
+		. /etc/rc.d/init.d/functions
+	fi
+	killprocterm() {
+		killproc $1 -TERM
+	}
 	START=
-	STOP=killproc -TERM
+	STOP=killprocterm
 fi
 
 case "$1" in
