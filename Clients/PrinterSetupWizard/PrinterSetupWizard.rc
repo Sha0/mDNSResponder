@@ -137,10 +137,10 @@ STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Rendezvous Printer Wizard"
 FONT 8, "MS Shell Dlg", 0, 0, 0x0
 BEGIN
-    LTEXT           "Welcome to the Rendezvous Printer Wizard",IDC_GREETING,
+    LTEXT           "Welcome to the Rendezvous Printer Setup Wizard",IDC_GREETING,
                     114,7,171,46
-    LTEXT           "To continue, click Next.",IDC_STATIC,115,188,143,8
-    LTEXT           "This wizard helps you connect to a shared printer using Rendezvous.  Be sure your printer is powered up, and connected to your network.",
+    LTEXT           "Click next to continue.",IDC_STATIC,115,188,143,8
+    LTEXT           "This wizard helps you connect to a shared printer using Rendezvous.  Make sure your printer is turned on and connected to your network.",
                     IDC_STATIC,146,60,139,62
     ICON            IDI_INFO,IDC_STATIC,118,60,21,20,SS_REALSIZEIMAGE,
                     WS_EX_TRANSPARENT
@@ -287,10 +287,10 @@ IDR_MANIFEST            RT_MANIFEST             "res\\PrinterSetupWizard.manifes
 STRINGTABLE 
 BEGIN
     IDS_ABOUTBOX            "&About Printer Setup Wizard..."
-    IDS_GOODBYE             "Completing the Rendezvous Printer Wizard."
-    IDS_GREETING            "Welcome to the Rendezvous Printer Wizard"
+    IDS_GOODBYE             "Completing the Rendezvous Printer Setup Wizard."
+    IDS_GREETING            "Welcome to the Rendezvous Printer Setup Wizard"
     IDS_BROWSE_TITLE        "Browse for Rendezvous Printers"
-    IDS_BROWSE_SUBTITLE     "When the list of printers appears, select the one you want to use."
+    IDS_BROWSE_SUBTITLE     "Select the printer you want to use from the list below."
     IDS_CAPTION             "Rendezvous Printer Wizard"
     IDS_GOODBYE_GOOD1       "You have successfully completed the Rendezvous Printer Wizard.  The printer has the following settings:"
     IDS_SEARCHING           "Searching for printers..."
