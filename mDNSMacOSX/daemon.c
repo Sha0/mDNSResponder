@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.139  2003/10/21 00:10:18  rpantos
+<rdar://problem/3409401>: mDNSResponder should not run as root
+
 Revision 1.138  2003/10/07 20:16:58  cheshire
 Shorten syslog message a bit
 
@@ -208,6 +211,7 @@ Add $Log header
 #include <unistd.h>
 #include <paths.h>
 #include <fcntl.h>
+#include <pwd.h>
 
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
@@ -1657,6 +1661,13 @@ mDNSexport int main(int argc, char **argv)
 	
 	LogMsg("%s starting", mDNSResponderVersionString);
 	status = mDNSDaemonInitialize();
+
+	// Now that we're finished with anything privileged, switch over to running as "nobody"
+	const struct passwd *pw = getpwnam( "nobody");
+	if ( pw != NULL)
+		setuid( pw->pw_uid);
+	else
+		status = mStatus_Incompatible;		// refuse to run as root
 
 	if (status == 0)
 		{
