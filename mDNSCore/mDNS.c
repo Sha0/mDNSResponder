@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.187  2003/06/10 04:30:44  cheshire
+<rdar://problem/3286234> Need to re-probe/re-announce on configuration change
+Only interface-specific records were re-probing and re-announcing, not non-specific records.
+
 Revision 1.186  2003/06/10 04:24:39  cheshire
 <rdar://problem/3283637> React when we observe other people query unsuccessfully for a record that's in our cache
 Some additional refinements:
@@ -5503,9 +5507,10 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				if (ActiveQuestion(q)) m->NextScheduledQuery = m->timenow;
 				}
 		
-		// Reactivate any dormant authoritative records specific to this interface
+		// For all our non-specific authoritative resource records (and any dormant records specific to this interface)
+		// we now need them to re-probe if necessary, and then re-announce.
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->InterfaceID == set->InterfaceID)
+			if (!rr->InterfaceID || rr->InterfaceID == set->InterfaceID)
 				{
 				rr->RRInterfaceActive = mDNStrue;
 				if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
