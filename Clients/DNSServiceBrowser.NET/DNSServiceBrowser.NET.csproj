@@ -85,7 +85,7 @@
                 <Reference
                     Name = "dnssd.NET"
                     AssemblyName = "dnssd.NET"
-                    HintPath = "..\..\mDNSWindows\DLL.NET\Debug\dnssd.NET.dll"
+                    HintPath = "..\..\mDNSWindows\DLL.NET\Release\dnssd.NET.dll"
                 />
             </References>
         </Build>
