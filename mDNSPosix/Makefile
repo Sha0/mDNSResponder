@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.33  2004/04/30 16:46:32  rpantos
+# Add support for building Java libraries.
+#
 # Revision 1.32  2004/04/14 23:09:29  ksekar
 # Support for TSIG signed dynamic updates.
 #
@@ -108,7 +111,7 @@
 #
 
 # This Makefile builds an mDNSResponder daemon and a libmdns.so shared library 
-# for Linux. It also builds several example programs for embedded systems.
+# for Linux. It also builds several example programs for embedded systems. 
 #
 # Make with no arguments to build all production targets.
 # 'make DEBUG=1' to build debugging targets.
@@ -128,6 +131,7 @@ LIBVERS = 1
 
 COREDIR = ../mDNSCore
 SHAREDDIR = ../mDNSShared
+JDK = /usr/jdk
 
 CC = cc
 LD = ld
@@ -137,6 +141,7 @@ LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\"
 LDFLAGS = -shared
 LDSUFFIX = so
+JAVACFLAGS_OS = -fPIC -shared -lmdns
 
 # Set up diverging paths for debug vs. prod builds
 DEBUG=0
@@ -158,6 +163,7 @@ CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -D_XPG4_2 -D__EXTENSIONS__ -DHAV
 else
 ifeq ($(os),linux)
 CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK
+JAVACFLAGS_OS += -I$(JDK)/include/linux
 else
 ifeq ($(os),netbsd)
 CFLAGS_OS =
@@ -181,12 +187,16 @@ CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
 LD = libtool
 LDFLAGS = -dynamic -lSystem
 LDSUFFIX = dylib
+JDK = /System/Library/Frameworks/JavaVM.framework/Home
+JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
 else
 ifeq ($(os),panther)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp
 LD = libtool
 LDFLAGS = -dynamic -lSystem
 LDSUFFIX = dylib
+JDK = /System/Library/Frameworks/JavaVM.framework/Home
+JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
 else
 $(error ERROR: Must specify target OS on command-line: "make os={jaguar,panther,linux,netbsd,freebsd,openbsd,solaris} [target]") 
 endif
@@ -304,6 +314,59 @@ ifdef RUNLEVELSCRIPTSDIR
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc0.d/K16mdns
 	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc6.d/K16mdns
 endif
+
+#############################################################################
+
+# The following targets build Java wrappers for the dns-sd.h API.
+
+JAVAC = $(JDK)/bin/javac
+JAVAH = $(JDK)/bin/javah
+JAVADOC = $(JDK)/bin/javadoc
+JAR = $(JDK)/bin/jar
+JAVACFLAGS = $(CFLAGS) $(JAVACFLAGS_OS) -I$(JDK)/include
+
+Java: setup $(BUILDDIR)/dns_sd.jar $(BUILDDIR)/libjdns_sd.$(LDSUFFIX)
+	@echo "Java wrappers done"
+
+JAVASRC	= $(SHAREDDIR)/Java
+JARCONTENTS =	$(OBJDIR)/com/apple/dnssd/DNSSDService.class \
+				$(OBJDIR)/com/apple/dnssd/DNSRecord.class \
+				$(OBJDIR)/com/apple/dnssd/DNSSDException.class \
+				$(OBJDIR)/com/apple/dnssd/TXTRecord.class \
+				$(OBJDIR)/com/apple/dnssd/DNSSDRegistration.class \
+				$(OBJDIR)/com/apple/dnssd/BaseListener.class \
+				$(OBJDIR)/com/apple/dnssd/BrowseListener.class \
+				$(OBJDIR)/com/apple/dnssd/ResolveListener.class \
+				$(OBJDIR)/com/apple/dnssd/RegisterListener.class \
+				$(OBJDIR)/com/apple/dnssd/QueryListener.class \
+				$(OBJDIR)/com/apple/dnssd/DomainListener.class \
+				$(OBJDIR)/com/apple/dnssd/DNSSD.class
+
+$(BUILDDIR)/dns_sd.jar: $(JARCONTENTS)
+	$(JAR) -cf $@ -C $(OBJDIR) com
+
+$(BUILDDIR)/libjdns_sd.$(LDSUFFIX): $(JAVASRC)/JNISupport.c $(OBJDIR)/DNSSD.java.h
+	$(CC) -o $@ $< $(JAVACFLAGS) -I$(OBJDIR)
+
+$(OBJDIR)/com/apple/dnssd/%.class:	$(JAVASRC)/%.java
+	$(JAVAC) -d $(OBJDIR) -classpath $(OBJDIR) $<
+
+$(OBJDIR)/DNSSD.java.h: $(OBJDIR)/com/apple/dnssd/DNSSD.class
+	$(JAVAH) -force -classpath $(OBJDIR) -o $@ \
+		com.apple.dnssd.AppleDNSSD \
+		com.apple.dnssd.AppleBrowser \
+		com.apple.dnssd.AppleResolver \
+		com.apple.dnssd.AppleRegistration \
+		com.apple.dnssd.AppleQuery \
+		com.apple.dnssd.AppleDomainEnum \
+		com.apple.dnssd.AppleService 
+
+#############################################################################
+
+# The following target builds documentation for the Java wrappers.
+
+JavaDoc: setup Java
+	$(JAVADOC) $(JAVASRC)/*.java -classpath $(OBJDIR) -d $(BUILDDIR) -public
 
 #############################################################################
 
