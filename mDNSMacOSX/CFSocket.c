@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.130  2004/01/27 22:28:40  cheshire
+<rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
+Additional lingering port 53 code deleted
+
 Revision 1.129  2004/01/27 20:15:23  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -464,6 +468,10 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
 	#pragma unused(m)
+	
+	// Note: For this platform we've adopted the convention that InterfaceIDs are secretly pointers
+	// to the NetworkInterfaceInfoOSX structure that holds the active sockets. The mDNSCore code
+	// doesn't know that and doesn't need to know that -- it just treats InterfaceIDs as opaque identifiers.
 	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
 	struct sockaddr_storage to;
 	int s, err;
@@ -623,7 +631,8 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 	(void)address; // Parameter not used
 	(void)data;    // Parameter not used
 	
-	if (CallBackType != kCFSocketReadCallBack) LogMsg("myCFSocketCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
+	if (CallBackType != kCFSocketReadCallBack)
+		LogMsg("myCFSocketCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
 
 	if      (cfs == info->cfsv4) s1 = info->sktv4;
 	else if (cfs == info->cfsv6) s1 = info->sktv6;
@@ -967,13 +976,7 @@ mDNSlocal mStatus SetupSocket(NetworkInterfaceInfoOSX *i, mDNSIPPort port, int *
 		listening_sockaddr.sin_port        = port.NotAnInteger;
 		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
-		if (err)
-			{
-			// If we fail to bind to port 53 (because we're not root), that's okay, just tidy up and silently continue
-			if (port.NotAnInteger == UnicastDNSPort.NotAnInteger) { close(skt); err = 0; }
-			else LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno));
-			return(err);
-			}
+		if (err) { LogMsg("bind error %ld errno %d (%s)", err, errno, strerror(errno)); return(err); }
 		}
 	else if (i->sa_family == AF_INET6)
 		{
