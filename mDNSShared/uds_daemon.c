@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.145  2004/12/16 21:39:46  cheshire
+Include CacheGroup objects in CacheUsed count
+
 Revision 1.144  2004/12/16 21:27:38  ksekar
 Fixed build failures when compiled with verbose debugging messages
 
@@ -948,17 +951,22 @@ void udsserver_info(mDNS *const m)
 
     LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 
-	FORALL_CACHERECORDS(slot, cg, rr)
-		{
-		mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
-		CacheUsed++;
-		if (rr->CRActiveQuestion) CacheActive++;
-		LogMsgNoIdent("%s%6ld %s%-6s%-6s%s",
-			rr->CRActiveQuestion ? "*" : " ", remain,
-			(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
-			((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, CRDisplayString(m, rr));
-		usleep(1000);	// Limit rate a little so we don't flood syslog too fast
-		}
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for(cg = m->rrcache_hash[slot]; cg; cg=cg->next)
+			{
+			CacheUsed++;	// Count one cache entity for the CacheGroup object
+			for (rr = cg->members; rr; rr=rr->next)
+				{
+				mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
+				CacheUsed++;
+				if (rr->CRActiveQuestion) CacheActive++;
+				LogMsgNoIdent("%s%6ld %s%-6s%-6s%s",
+					rr->CRActiveQuestion ? "*" : " ", remain,
+					(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
+					((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, CRDisplayString(m, rr));
+				usleep(1000);	// Limit rate a little so we don't flood syslog too fast
+				}
+			}
 
 	if (m->rrcache_totalused != CacheUsed)
 		LogMsgNoIdent("Cache use mismatch: rrcache_totalused is %lu, true count %lu", m->rrcache_totalused, CacheUsed);
