@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.24  2003/11/08 22:13:00  cheshire
+Move extern declarations inside '#ifdef __cplusplus extern "C" {' section
+
 Revision 1.23  2003/09/23 16:38:25  cheshire
 When LogAllOperations is false, treat LogOperation() like debugf()
 (i.e. show in debug builds), rather than unconditionally ignoring
@@ -185,10 +188,6 @@ extern void freeL(char *msg, void *x);
 #define PORT_AS_NUM(P) (((mDNSu16)(P).b[0]) << 8 | (P).b[1])
 #define SRS_PORT_AS_NUM(S) PORT_AS_NUM((S)->RR_SRV.resrec.rdata->u.srv.port)
 
-#ifdef  __cplusplus
-    }
-#endif
-
 // UDS Server <-> daemon crossover routines/globals
 extern mDNS mDNSStorage;            
 extern int udsserver_init(void);
@@ -198,5 +197,9 @@ extern mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled e
 extern void udsserver_info(void);
 extern void udsserver_handle_configchange(void);
 extern int udsserver_exit(void);
+
+#ifdef  __cplusplus
+    }
+#endif
 
 #endif
