@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.198  2003/07/03 22:19:30  cheshire
+<rdar://problem/3314346> Bug fix in 3274153 breaks TiVo
+Make exception to allow _tivo_servemedia._tcp.
+
 Revision 1.197  2003/07/02 22:33:05  cheshire
 <rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
 Minor refinements:
@@ -1390,7 +1394,12 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	if (src[1] != '_') { errormsg="Service application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
 		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-')
-			{ errormsg="Service application protocol name must contain only letters, digits, and hyphens"; goto fail; }
+			{
+			// TiVo has already shipped products using a service type that's not strictly legal, so we make a special
+			// exception for that. This exception will be removed once TiVo has had time to update their software.
+			if (!SameDomainLabel(type->c, "\x10_tivo_servemedia"))
+				{ errormsg="Service application protocol name must contain only letters, digits, and hyphens"; goto fail; }
+			}
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
@@ -4929,8 +4938,9 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	if (*q) *q = (*q)->next;
 	else
 		{
-		LogMsg("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
-			question->qname.c, DNSTypeName(question->qtype));
+		if (question->ThisQInterval >= 0)	// Only log error message if the query was supposed to be active
+			LogMsg("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
+				question->qname.c, DNSTypeName(question->qtype));
 		return(mStatus_BadReferenceErr);
 		}
 
@@ -5007,12 +5017,13 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	const domainname *const srv, const domainname *const domain,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
+	question->ThisQInterval     = -1;				// Indicate that query is not yet active
 	question->InterfaceID       = InterfaceID;
-	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 	question->qtype             = kDNSType_PTR;
 	question->qclass            = kDNSClass_IN;
 	question->QuestionCallback  = Callback;
 	question->QuestionContext   = Context;
+	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 	return(mDNS_StartQuery(m, question));
 	}
 
