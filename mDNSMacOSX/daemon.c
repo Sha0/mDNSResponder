@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.160  2004/04/06 19:51:24  cheshire
+<rdar://problem/3605898> mDNSResponder will not launch if "nobody" user doesn't exist.
+After more discussion, we've decided to use userid -2 if "nobody" user doesn't exist.
+
 Revision 1.159  2004/04/03 01:36:55  cheshire
 <rdar://problem/3605898> mDNSResponder will not launch if "nobody" user doesn't exist.
 If "nobody" user doesn't exist, log a message and continue as "root"
@@ -1797,7 +1801,7 @@ mDNSexport int main(int argc, char **argv)
 	if (pw != NULL)
 		setuid(pw->pw_uid);
 	else
-		LogMsg("WARNING: User \"nobody\" does not appear to exist; will run as \"root\" instead");
+		setuid(-2);		// User "nobody" is -2; use that value if "nobody" does not appear in the password database
 
 	if (status == 0)
 		{
