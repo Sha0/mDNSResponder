@@ -97,7 +97,7 @@ class	SimpleChat implements	ResolveListener, RegisterListener, QueryListener,
 
 		browser = DNSSD.browse( 0, 0, kChatExampleRegType, "", new SwingBrowseListener( targetList));
 
-		registration = DNSSD.register( 0, 0, ourName, kChatExampleRegType, "", "", inSocket.getLocalPort(), tRec, this);
+		registration = DNSSD.register( 0, 0, ourName, kChatExampleRegType, "", "", inSocket.getLocalPort(), null, this);
 
 		new ListenerThread( this, inSocket, dataPacket).start();
 	}
