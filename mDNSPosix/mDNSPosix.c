@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.32  2004/01/20 01:49:28  rpantos
+Tweak error handling of last checkin a bit.
+
 Revision 1.31  2004/01/20 01:39:27  rpantos
 Respond to If changes by rebuilding interface list.
 
@@ -1101,18 +1104,21 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	// Tell mDNS core about the network interfaces on this machine.
 	err = SetupInterfaceList(m);
 
-	err = WatchForInterfaceChange(m);
-	// Failure to observe interface changes is non-fatal.
-	if ( err != 0)
+	if ( err == mStatus_NoError)
 		{
-		fprintf(stderr, "mDNS(%d) WARNING: Unable to detect interface changes (%d).\n", getpid(), err);
-		err = 0;
+		err = WatchForInterfaceChange(m);
+		// Failure to observe interface changes is non-fatal.
+		if ( err != mStatus_NoError)
+			{
+			fprintf(stderr, "mDNS(%d) WARNING: Unable to detect interface changes (%d).\n", getpid(), err);
+			err = mStatus_NoError;
+			}
 		}
 
 	// We don't do asynchronous initialization on the Posix platform, so by the time
 	// we get here the setup will already have succeeded or failed.  If it succeeded,
 	// we should just call mDNSCoreInitComplete() immediately.
-	if (err == 0)
+	if (err == mStatus_NoError)
 		mDNSCoreInitComplete(m, mStatus_NoError);
 
 	return PosixErrorToStatus(err);
