@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.158  2004/04/02 19:38:33  cheshire
+Update comment about typical RR TTLs
+
 Revision 1.157  2004/04/02 19:35:53  cheshire
 Add clarifying comments about legal mDNSInterfaceID values
 
@@ -829,7 +832,7 @@ typedef packedstruct
 // -- The majority of Resource Records are of this type
 // -- If two entities on the network have RRs with the same name but different RDATA, this is a conflict
 // -- Responses may be sent immediately, because only one host should be responding to any particular query
-// -- These RRs typically have low TTLs (e.g. ten seconds)
+// -- These RRs typically have low TTLs (e.g. a few minutes)
 // -- On startup and after topology changes, a host issues queries to verify uniqueness
 
 // * Known Unique Resource Records are treated like Unique Resource Records, except that mDNS does
