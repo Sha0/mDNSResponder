@@ -88,6 +88,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.163  2003/06/03 19:58:14  cheshire
+<rdar://problem/3277665> mDNS_DeregisterService() fixes:
+When forcibly deregistering after a conflict, ensure we don't send an incorrect goodbye packet.
+Guard against a couple of possible mDNS_DeregisterService() race conditions.
+
 Revision 1.162  2003/06/03 19:30:39  cheshire
 Minor addition refinements for
 <rdar://problem/3277080> Duplicate registrations not handled as efficiently as they should be
@@ -5298,7 +5303,13 @@ mDNSlocal void ServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus 
 		}
 
 	// If we got a name conflict on either SRV or TXT, forcibly deregister this service, and record that we did that
-	if (result == mStatus_NameConflict) { sr->Conflict = mDNStrue; mDNS_DeregisterService(m, sr); return; }
+	if (result == mStatus_NameConflict)
+		{
+		sr->Conflict = mDNStrue;							// Record that this service set had a conflict
+		sr->RR_PTR.AnnounceCount = InitialAnnounceCount;	// Make sure we don't send a goodbye for the PTR record
+		mDNS_DeregisterService(m, sr);						// Unlink the records from our list
+		return;
+		}
 	
 	// If this ServiceRecordSet was forcibly deregistered, and now it's memory is ready for reuse,
 	// then we can now report the NameConflict to the client
@@ -5471,34 +5482,47 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
-	mStatus status;
-	ExtraResourceRecord *e;
-	mDNS_Lock(m);
-	e = sr->Extras;
-
-	// We use mDNS_Dereg_repeat because, in the event of a collision, some or all of the
-	// SRV, TXT, or Extra records could have already been automatically deregistered, and that's okay
-	mDNS_Deregister_internal(m, &sr->RR_SRV, mDNS_Dereg_repeat);
-	mDNS_Deregister_internal(m, &sr->RR_TXT, mDNS_Dereg_repeat);
-	
-	mDNS_Deregister_internal(m, &sr->RR_ADV, mDNS_Dereg_normal);
-
-	// We deregister all of the extra records, but we leave the sr->Extras list intact
-	// in case the client wants to do a RenameAndReregister and reinstate the registration
-	while (e)
+	if (sr->RR_PTR.RecordType == kDNSRecordTypeUnregistered)
 		{
-		mDNS_Deregister_internal(m, &e->r, mDNS_Dereg_repeat);
-		e = e->next;
+		debugf("Service set for %##s already deregistered", sr->RR_PTR.name.c);
+		return(mStatus_BadReferenceErr);
 		}
-
-	// Be sure to deregister the PTR last!
-	// Deregistering this record is what triggers the mStatus_MemFree callback to ServiceCallback,
-	// which in turn passes on the mStatus_MemFree (or mStatus_NameConflict) back to the client callback,
-	// which is then at liberty to free the ServiceRecordSet memory at will. We need to make sure
-	// we've deregistered all our records and done any other necessary cleanup before that happens.
-	status = mDNS_Deregister_internal(m, &sr->RR_PTR, mDNS_Dereg_normal);
-	mDNS_Unlock(m);
-	return(status);
+	else if (sr->RR_PTR.RecordType == kDNSRecordTypeDeregistering)
+		{
+		debugf("Service set for %##s already in the process of deregistering", sr->RR_PTR.name.c);
+		return(mStatus_NoError);
+		}
+	else
+		{
+		mStatus status;
+		ExtraResourceRecord *e;
+		mDNS_Lock(m);
+		e = sr->Extras;
+	
+		// We use mDNS_Dereg_repeat because, in the event of a collision, some or all of the
+		// SRV, TXT, or Extra records could have already been automatically deregistered, and that's okay
+		mDNS_Deregister_internal(m, &sr->RR_SRV, mDNS_Dereg_repeat);
+		mDNS_Deregister_internal(m, &sr->RR_TXT, mDNS_Dereg_repeat);
+		
+		mDNS_Deregister_internal(m, &sr->RR_ADV, mDNS_Dereg_normal);
+	
+		// We deregister all of the extra records, but we leave the sr->Extras list intact
+		// in case the client wants to do a RenameAndReregister and reinstate the registration
+		while (e)
+			{
+			mDNS_Deregister_internal(m, &e->r, mDNS_Dereg_repeat);
+			e = e->next;
+			}
+	
+		// Be sure to deregister the PTR last!
+		// Deregistering this record is what triggers the mStatus_MemFree callback to ServiceCallback,
+		// which in turn passes on the mStatus_MemFree (or mStatus_NameConflict) back to the client callback,
+		// which is then at liberty to free the ServiceRecordSet memory at will. We need to make sure
+		// we've deregistered all our records and done any other necessary cleanup before that happens.
+		status = mDNS_Deregister_internal(m, &sr->RR_PTR, mDNS_Dereg_normal);
+		mDNS_Unlock(m);
+		return(status);
+		}
 	}
 
 // Create a registration that asserts that no such service exists with this name.
