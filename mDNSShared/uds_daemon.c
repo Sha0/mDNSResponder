@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.107  2004/11/02 19:39:23  ksekar
+<rdar://problem/3862646> We no longer need to browse .Mac domains by default
+
 Revision 1.106  2004/11/02 02:12:21  cheshire
 <rdar://problem/3839111> Remove unnecessary memory allocations
 
@@ -555,7 +558,7 @@ typedef struct
     client_context_t client_context;
     } regrecord_callback_context;
 
-#ifdef __MACOSX__
+#if 0
 typedef struct default_browse_list_t
 	{
     struct default_browse_list_t *next;
@@ -564,7 +567,7 @@ typedef struct default_browse_list_t
 	} default_browse_list_t;
 
 static default_browse_list_t *default_browse_list = NULL;
-#endif // __MACOSX__
+#endif // 0
 
 // globals
 mDNSexport mDNS mDNSStorage;
@@ -1521,7 +1524,7 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 	}
 
 
-#ifdef __MACOSX__
+#if 0
 static void free_defdomain(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
@@ -1536,7 +1539,7 @@ static void handle_setdomain_request(request_state *request)
 	char domainstr[MAX_ESCAPED_DOMAIN_NAME];
 	domainname domain;
 	DNSServiceFlags flags;
-#ifdef __MACOSX__
+#if 0
 	struct xucred xuc;
 	socklen_t xuclen;
 #endif
@@ -1559,9 +1562,9 @@ static void handle_setdomain_request(request_state *request)
 	freeL("handle_setdomain_request", request->msgbuf);
     request->msgbuf = NULL;
 
-	LogOperation("%3d: DNSServiceSetDefaultDomainForUser(%##s)", request->sd, domain.c);
+	debugf("%3d: DNSServiceSetDefaultDomainForUser(%##s)", request->sd, domain.c);
 
-#ifdef __MACOSX__
+#if 0
     // this functionality currently only used for Apple-specific configuration, so we don't burned other platforms by mandating
 	// the existence of this socket option
 	xuclen = sizeof(xuc);
@@ -1608,8 +1611,8 @@ static void handle_setdomain_request(request_state *request)
 		if (!ptr) { LogMsg("Attempt to remove nonexistent domain %s for UID %d", domainstr, xuc.cr_uid); err = mStatus_Invalid; }
 		}		
 #else
-	err = mStatus_UnsupportedErr;
-#endif // __MACOSX__
+	err = mStatus_NoError;
+#endif // 0
 	
 	end:
     deliver_error(request, err);
@@ -1621,7 +1624,7 @@ static mStatus add_domain_to_browser(browser_info_t *info, const domainname *d)
 	{
 	browser_t *b, *p;
 	mStatus err;
-	
+   
 	for (p = info->browsers; p; p = p->next)
 		{
 		if (SameDomainName(&p->domain, d))
