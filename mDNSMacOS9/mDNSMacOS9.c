@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.37  2004/09/17 00:19:10  cheshire
+For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
+
 Revision 1.36  2004/09/16 21:59:16  cheshire
 For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
 
@@ -249,7 +252,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 
 	#if OTCARBONAPPLICATION
 	// IP_RCVDSTADDR is known to fail on OS X Carbon, so we'll just assume the packet was probably multicast
-	destaddr.ip.v4  = AllDNSLinkGroup;
+	destaddr.ip.v4  = AllDNSLinkGroupv4;
 	#endif
 
 	if (recvdata.opt.len)

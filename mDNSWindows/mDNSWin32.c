@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.53  2004/09/17 00:19:11  cheshire
+For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
+
 Revision 1.52  2004/09/16 00:24:50  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -1657,7 +1660,7 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		
 		// Join the all-DNS multicast group so we receive Multicast DNS packets.
 		
-		mreqv4.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
+		mreqv4.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
 		mreqv4.imr_interface.s_addr = ipv4.NotAnInteger;
 		err = setsockopt( sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreqv4, sizeof( mreqv4 ) );
 		check_translated_errno( err == 0, errno_compat(), kOptionErr );

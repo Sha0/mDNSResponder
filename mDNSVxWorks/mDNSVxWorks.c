@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.22  2004/09/17 00:19:11  cheshire
+For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
+
 Revision 1.21  2004/09/16 00:24:50  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -1198,7 +1201,7 @@ mDNSlocal mStatus
 		// Join the all-DNS multicast group so we receive Multicast DNS packets.
 		
 		ip.NotAnInteger 			= ipv4->sin_addr.s_addr;
-		mreq.imr_multiaddr.s_addr 	= AllDNSLinkGroup.NotAnInteger;
+		mreq.imr_multiaddr.s_addr 	= AllDNSLinkGroupv4.NotAnInteger;
 		mreq.imr_interface.s_addr 	= ip.NotAnInteger;
 		err = setsockopt( socketRef, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof( mreq ) );
 		check_errno( err, errno );
@@ -1208,7 +1211,7 @@ mDNSlocal mStatus
 		memset( &addr, 0, sizeof( addr ) );
 		addr.sin_family 		= AF_INET;
 		addr.sin_port 			= inPort.NotAnInteger;
-		addr.sin_addr.s_addr 	= AllDNSLinkGroup.NotAnInteger;
+		addr.sin_addr.s_addr 	= AllDNSLinkGroupv4.NotAnInteger;
 		err = bind( socketRef, (struct sockaddr *) &addr, sizeof( addr ) );
 		check_errno( err, errno );
 		
@@ -1723,7 +1726,7 @@ mDNSlocal void	TaskProcessPacket( mDNS *inMDNS, MDNSInterfaceItem *inItem, MDNSS
 		srcAddr.ip.v4.NotAnInteger 	= addr.sin_addr.s_addr;
 		srcPort.NotAnInteger		= addr.sin_port;
 		dstAddr.type				= mDNSAddrType_IPv4;
-		dstAddr.ip.v4				= AllDNSLinkGroup;
+		dstAddr.ip.v4				= AllDNSLinkGroupv4;
 		dstPort						= MulticastDNSPort;
 		
 		dlog( kDebugLevelChatty, DEBUG_NAME "packet received\n" );

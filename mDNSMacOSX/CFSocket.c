@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.184  2004/09/17 00:19:10  cheshire
+For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
+
 Revision 1.183  2004/09/17 00:15:56  cheshire
 Rename mDNSPlatformInit_ReceiveUnicast to mDNSPlatformInit_CanReceiveUnicast
 
@@ -632,7 +635,7 @@ static KeychainDomain *KeychainHostDomains = NULL;  // List of domains in which 
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
 
 #define mDNSAddressIsAllDNSLinkGroup(X) (                                                     \
-	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroup  )) || \
+	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroupv4)) || \
 	((X)->type == mDNSAddrType_IPv6 && mDNSSameIPv6Address((X)->ip.v6, AllDNSLinkGroupv6))    )
 
 // ***************************************************************************
@@ -1263,7 +1266,7 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 			{
 			struct in_addr addr = { ifaddr->ip.v4.NotAnInteger };
 			struct ip_mreq imr;
-			imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
+			imr.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
 			imr.imr_interface        = addr;
 			err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 			if (err < 0) { errstr = "setsockopt - IP_ADD_MEMBERSHIP"; goto fail; }

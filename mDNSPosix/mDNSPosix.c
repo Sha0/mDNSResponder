@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.57  2004/09/17 00:19:11  cheshire
+For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
+
 Revision 1.56  2004/09/17 00:15:56  cheshire
 Rename mDNSPlatformInit_ReceiveUnicast to mDNSPlatformInit_CanReceiveUnicast
 
@@ -437,7 +440,7 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 			if ( (destAddr.NotAnInteger == 0) && (flags & MSG_MCAST) )
 				{
 				destAddr.type = senderAddr.type;
-				if      (senderAddr.type == mDNSAddrType_IPv4) destAddr.ip.v4 = AllDNSLinkGroup;
+				if      (senderAddr.type == mDNSAddrType_IPv4) destAddr.ip.v4 = AllDNSLinkGroupv4;
 				else if (senderAddr.type == mDNSAddrType_IPv6) destAddr.ip.v6 = AllDNSLinkGroupv6;
 				}
 		#endif
@@ -709,7 +712,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 		// Add multicast group membership on this interface
 		if (err == 0 && port.NotAnInteger)
 			{
-			imr.imr_multiaddr.s_addr = AllDNSLinkGroup.NotAnInteger;
+			imr.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
 			imr.imr_interface        = ((struct sockaddr_in*)intfAddr)->sin_addr;
 			err = setsockopt(*sktPtr, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 			if (err < 0) { err = errno; perror("setsockopt - IP_ADD_MEMBERSHIP"); }

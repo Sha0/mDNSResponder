@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.200  2004/09/17 00:19:10  cheshire
+For consistency with AllDNSLinkGroupv6, rename AllDNSLinkGroup to AllDNSLinkGroupv4
+
 Revision 1.199  2004/09/16 21:59:16  cheshire
 For consistency with zerov6Addr, rename zeroIPAddr to zerov4Addr
 
@@ -1729,7 +1732,7 @@ extern const mDNSInterfaceID mDNSInterface_ForceMCast;		// (mDNSInterfaceID)-2;
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      MulticastDNSPort;
 extern const mDNSv4Addr      AllDNSAdminGroup;
-extern const mDNSv4Addr      AllDNSLinkGroup;
+extern const mDNSv4Addr      AllDNSLinkGroupv4;
 extern const mDNSv6Addr      AllDNSLinkGroupv6;
 extern const mDNSAddr        AllDNSLinkGroup_v4;
 extern const mDNSAddr        AllDNSLinkGroup_v6;
