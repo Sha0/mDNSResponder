@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.188  2004/09/20 21:45:27  ksekar
+Mach IPC cleanup
+
 Revision 1.187  2004/09/17 01:08:52  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -1221,12 +1224,20 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 	}
 
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
-	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
+	DNSCString name, DNSCString regtype, DNSCString domain, IPPort IpPort, DNSCString txtRecord)
 	{
 	// Check client parameter
 	(void)unusedserver;		// Unused
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
+
+	// older versions of this code passed the port via mach IPC as an int.
+	// we continue to pass it as 4 bytes to maintain binary compatibility,
+	// but now ensure that the network byte order is preserved by using a struct
+	mDNSIPPort port;
+	port.b[0] = IpPort.bytes[2];
+	port.b[1] = IpPort.bytes[3];
+
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
 
@@ -1243,9 +1254,6 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }
 	if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
-
-	mDNSIPPort port;
-	port.NotAnInteger = notAnIntPort;
 
 	unsigned char txtinfo[1024] = "";
 	unsigned int data_len = 0;
@@ -1345,7 +1353,7 @@ badparam:
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceRegister(\"%s\", \"%s\", \"%s\", %d) failed: %s (%ld)",
-		   client, name, regtype, domain, notAnIntPort, errormsg, err);
+		   client, name, regtype, domain, mDNSVal16(port), errormsg, err);
 	return(err);
 	}
 
