@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.3  2004/06/24 15:28:53  shersche
+Automatically setup routes to link-local addresses upon interface list change events.
+Submitted by: herscher
+
 Revision 1.2  2004/06/23 16:56:00  shersche
 <rdar://problem/3697326> locked call to udsserver_idle().
 Bug #: 3697326
@@ -148,6 +152,14 @@ static mStatus		EventSourceFinalize(Win32EventSource * source);
 static void			EventSourceLock();
 static void			EventSourceUnlock();
 static mDNSs32		udsIdle(mDNS * const inMDNS, mDNSs32 interval);
+static void			InterfaceListChanged(mDNS * const inMDNS);
+static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
+static bool			HaveLLRoute(PMIB_IPFORWARDROW rowExtant);
+static OSStatus		SetLLRoute();
+
+#define kLLNetworkAddr      "169.254.0.0"
+#define kLLNetworkAddrMask  "255.255.0.0"
+
 
 #include	"mDNSClientAPI.h"
 
@@ -847,6 +859,7 @@ static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
 	memset( &gMDNSRecord, 0, sizeof gMDNSRecord);
 	memset( &gPlatformStorage, 0, sizeof gPlatformStorage);
 
+	gPlatformStorage.interfaceListChangedCallback = InterfaceListChanged;
 	gPlatformStorage.idleThreadCallback = udsIdle;
 
 	InitializeCriticalSection(&gEventSourceLock);
@@ -860,6 +873,12 @@ static OSStatus	ServiceSpecificInitialize( int argc, char *argv[] )
 
 	err = udsserver_init(&gMDNSRecord);
 	require_noerr( err, exit);
+
+	//
+	// set a route to link local addresses (169.254.0.0)
+	//
+	SetLLRoute();
+
 exit:
 	if( err != kNoErr )
 	{
@@ -933,7 +952,17 @@ static void	ServiceSpecificFinalize( int argc, char *argv[] )
 
 	//
 	// clean up the event sources mutex...no one should be using it now
+	//
 	DeleteCriticalSection(&gEventSourceLock);
+}
+
+
+static void
+InterfaceListChanged(mDNS * const inMDNS)
+{
+	DEBUG_UNUSED( inMDNS );
+
+	SetLLRoute();
 }
 
 
@@ -1115,7 +1144,7 @@ udsSupportRemoveFDFromEventLoop( SocketRef fd)
 	}
 
 	//
-	// if we found him, remove him from list
+	// if we found him, finalize him
 	//
 	if (source != NULL)
 	{
@@ -1271,3 +1300,205 @@ EventSourceUnlock()
 {
 	LeaveCriticalSection(&gEventSourceLock);
 }
+
+
+//===========================================================================================================================
+//	HaveLLRoute
+//===========================================================================================================================
+
+static bool
+HaveLLRoute(PMIB_IPFORWARDROW rowExtant)
+{
+	PMIB_IPFORWARDTABLE	pIpForwardTable	= NULL;
+	DWORD				dwSize			= 0;
+	BOOL				bOrder			= FALSE;
+	OSStatus			err;
+	bool				found			= false;
+	unsigned long int	i;
+
+	//
+	// Find out how big our buffer needs to be.
+	//
+	err = GetIpForwardTable(NULL, &dwSize, bOrder);
+	require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, err = kUnknownErr );
+
+	//
+	// Allocate the memory for the table
+	//
+	pIpForwardTable = (PMIB_IPFORWARDTABLE) malloc( dwSize );
+	require_action( pIpForwardTable, exit, err = kNoMemoryErr );
+  
+	//
+	// Now get the table.
+	//
+	err = GetIpForwardTable(pIpForwardTable, &dwSize, bOrder);
+	require_noerr( err, exit );
+
+	//
+	// Search for the row in the table we want.
+	//
+	for ( i = 0; i < pIpForwardTable->dwNumEntries; i++)
+	{
+		if (pIpForwardTable->table[i].dwForwardDest == inet_addr(kLLNetworkAddr))
+		{
+			memcpy( rowExtant, &(pIpForwardTable->table[i]), sizeof(*rowExtant) );
+			found = true;
+			break;
+		}
+	}
+
+exit:
+
+	if ( pIpForwardTable != NULL ) 
+	{
+		free(pIpForwardTable);
+	}
+    
+	return found;
+}
+
+
+//===========================================================================================================================
+//	SetLLRoute
+//===========================================================================================================================
+
+static OSStatus
+SetLLRoute()
+{
+	DWORD				ifIndex;
+	MIB_IPFORWARDROW	rowExtant;
+	bool				addRoute;
+	MIB_IPFORWARDROW	row;
+	OSStatus			err;
+
+	ZeroMemory(&row, sizeof(row));
+
+	err = GetRouteDestination(&ifIndex, &row.dwForwardNextHop);
+	require_noerr( err, exit );
+	row.dwForwardDest		= inet_addr(kLLNetworkAddr);
+	row.dwForwardIfIndex	= ifIndex;
+	row.dwForwardMask		= inet_addr(kLLNetworkAddrMask);
+	row.dwForwardType		= 3;
+	row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
+	row.dwForwardAge		= 0;
+	row.dwForwardPolicy		= 0;
+	row.dwForwardMetric1	= 30;
+	row.dwForwardMetric2	= (DWORD) - 1;
+	row.dwForwardMetric3	= (DWORD) - 1;
+	row.dwForwardMetric4	= (DWORD) - 1;
+	row.dwForwardMetric5	= (DWORD) - 1;
+
+	addRoute = true;
+
+	//
+	// check to make sure we don't already have a route
+	//
+	if (HaveLLRoute(&rowExtant))
+	{
+		//
+		// set the age to 0 so that we can do a memcmp.
+		//
+		rowExtant.dwForwardAge = 0;
+
+		//
+		// check to see if this route is the same as our route
+		//
+		if (memcmp(&row, &rowExtant, sizeof(row)) != 0)
+		{
+			//
+			// if it isn't then delete this entry
+			//
+			DeleteIpForwardEntry(&rowExtant);
+		}
+		else
+		{
+			//
+			// else it is, so we don't want to create another route
+			//
+			addRoute = false;
+		}
+	}
+
+	if (addRoute && row.dwForwardNextHop)
+	{
+		err = CreateIpForwardEntry(&row);
+
+		require_noerr( err, exit );
+	}
+
+exit:
+
+	return ( err );
+}
+
+
+//===========================================================================================================================
+//	GetRouteDestination
+//===========================================================================================================================
+
+static OSStatus
+GetRouteDestination(DWORD * ifIndex, DWORD * address)
+{
+	struct in_addr		ia;
+	IP_ADAPTER_INFO	*	pAdapterInfo	=	NULL;
+	IP_ADAPTER_INFO	*	pAdapter		=	NULL;
+	ULONG				bufLen;
+	OSStatus			err;
+
+	//
+	// GetBestInterface will fail if there is no default gateway
+	// configured.  If that happens, we will just take the first
+	// interface in the list. MSDN support says there is no surefire
+	// way to manually determine what the best interface might
+	// be for a particular network address.
+	//
+	ia.s_addr	=	inet_addr(kLLNetworkAddr);
+	err			=	GetBestInterface(*(IPAddr*) &ia, ifIndex);
+
+	if (err)
+	{
+		*ifIndex = 0;
+	}
+
+	//
+	// Make an initial call to GetAdaptersInfo to get
+	// the necessary size into the bufLen variable
+	//
+	err = GetAdaptersInfo( NULL, &bufLen);
+	require_action( err == ERROR_BUFFER_OVERFLOW, exit, err = kUnknownErr );
+
+	pAdapterInfo = (IP_ADAPTER_INFO*) malloc( bufLen );
+	require_action( pAdapterInfo, exit, err = kNoMemoryErr );
+	
+	err = GetAdaptersInfo( pAdapterInfo, &bufLen);
+	require_noerr( err, exit );
+	
+	pAdapter	=	pAdapterInfo;
+	err			=	kUnknownErr;
+			
+	while (pAdapter)
+	{
+		//
+		// if we don't have an interface selected, choose the first one
+		//
+		if (!(*ifIndex) || (pAdapter->Index == (*ifIndex)))
+		{
+			*address =	inet_addr( pAdapter->IpAddressList.IpAddress.String );
+			*ifIndex =  pAdapter->Index;
+			err		 =	kNoErr;
+			break;
+		}
+	
+		pAdapter = pAdapter->Next;
+	}
+
+exit:
+
+	if ( pAdapterInfo != NULL )
+	{
+		free( pAdapterInfo );
+	}
+
+	return( err );
+}
+
