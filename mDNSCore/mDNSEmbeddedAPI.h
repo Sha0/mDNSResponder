@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.127  2003/12/01 18:26:37  cheshire
+Also pack the OpaqueXX union types. Otherwise, on some systems, mDNSOpaque16 is four bytes!
+
 Revision 1.126  2003/12/01 18:23:48  cheshire
 <rdar://problem/3464646>: Scalar size problem in mDNS code on some 64-bit architectures
 
@@ -467,8 +470,10 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #ifndef packed_struct
  #ifdef __GNUC__
   #define packedstruct struct __attribute__((__packed__))
+  #define packedunion  union  __attribute__((__packed__))
  #else
   #define packedstruct struct
+  #define packedunion  union
  #endif
 #endif
 
@@ -549,9 +554,9 @@ typedef struct mDNSInterfaceID_dummystruct { void *dummy; } *mDNSInterfaceID;
 // less than, add, multiply, increment, decrement, etc., are undefined for opaque identifiers,
 // and if you make the mistake of trying to do those using the NotAnInteger field, then you'll
 // find you get code that doesn't work consistently on big-endian and little-endian machines.
-typedef union { mDNSu8 b[2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
-typedef union { mDNSu8 b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
-typedef union { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
+typedef packedunion { mDNSu8 b[2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
+typedef packedunion { mDNSu8 b[4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
+typedef packedunion { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
 typedef mDNSOpaque32  mDNSv4Addr;		// An IP address is a four-byte opaque identifier (not an integer)
