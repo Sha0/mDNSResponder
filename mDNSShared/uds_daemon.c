@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.65  2004/06/26 03:17:14  shersche
+implement cross-platform strerror function
+
+Submitted by: herscher
+
 Revision 1.64  2004/06/25 00:26:27  rpantos
 Changes to fix the Posix build on Solaris.
 
@@ -200,6 +205,8 @@ Update to APSL 2.0
 
 #if defined(_WIN32)
 #include <process.h>
+#define dnssd_strerror(X)	win32_strerror(X)
+static char * win32_strerror(int inErrorCode);
 #else
 #include <fcntl.h>
 #include <errno.h>
@@ -207,6 +214,7 @@ Update to APSL 2.0
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#define dnssd_strerror(X)	strerror(X)
 #endif
 
 #include <stdlib.h>
@@ -2750,7 +2758,7 @@ static void unlink_request(request_state *rs)
 //hack to search-replace perror's to LogMsg's
 static void my_perror(char *errmsg)
     {
-    LogMsg("%s: %s", errmsg, strerror(dnssd_errno()));
+    LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno()));
     }
 
 // check that the message delivered by the client is sufficiently long to extract the required data from the buffer
@@ -2825,3 +2833,37 @@ static uint32_t dnssd_htonl(uint32_t l)
 
 	return ret;
 	}
+
+
+#if defined(_WIN32)
+
+static char * win32_strerror(int inErrorCode)
+	{
+	static char buffer[1024];
+	DWORD       n;
+
+	memset(buffer, 0, sizeof(buffer));
+
+	n = FormatMessageA( 
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 
+			NULL, 
+			(DWORD) inErrorCode,
+			MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),
+			buffer,
+			sizeof( buffer ),
+			NULL );
+
+	if( n > 0 )
+		{
+		// Remove any trailing CR's or LF's since some messages have them.
+
+		while( ( n > 0 ) && isspace( ( (unsigned char *) buffer)[ n - 1 ] ) )
+			{
+			buffer[ --n ] = '\0';
+			}
+		}
+
+	return buffer;
+	}
+
+#endif
