@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.64  2004/10/13 00:24:02  cheshire
+Disable "array is too small to include a terminating null character" warning on Windows
+
 Revision 1.63  2004/10/10 06:57:14  cheshire
 Change definition of "localdomain" to make code compile a little smaller
 
@@ -246,6 +249,9 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	// Otherwise, this generates warnings for the perfectly natural construct "while(1)"
 	// If someone knows a variant way of writing "while(1)" that doesn't generate warning messages, please let us know
 	#pragma warning(disable:4127)
+	// Disable "array is too small to include a terminating null character" warning
+	// -- domain labels have an initial length byte, not a terminating null character
+	#pragma warning(disable:4295)
 #endif
 
 // ***************************************************************************
