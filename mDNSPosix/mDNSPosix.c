@@ -36,6 +36,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.52  2004/08/25 16:42:13  ksekar
+Fix Posix build - change mDNS_SetFQDNs to mDNS_SetFQDN, remove unicast
+hostname parameter.
+
 Revision 1.51  2004/08/14 03:22:42  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -1241,7 +1245,7 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	GetUserSpecifiedRFC1034ComputerName(&m->hostlabel);
 	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
 
-	mDNS_SetFQDNs(m, (domainname*)"");
+	mDNS_SetFQDN(m);
 
 	sa.sa_family = AF_INET;
 	m->p->unicastSocket4 = -1;
