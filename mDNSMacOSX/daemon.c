@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.184  2004/08/19 19:04:12  ksekar
+<rdar://problem/3767546>: mDNSResponder crashes when adding a record to a service
+
 Revision 1.183  2004/08/14 03:22:42  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -1266,7 +1269,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	// Allocate memory, and handle failure
 	DNSServiceRegistration *x = mallocL("DNSServiceRegistration", sizeof(*x) - sizeof(RDataBody) + size);
 	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
-
+	bzero(x, sizeof(*x) - sizeof(RDataBody) + size);
 	AuthRecord *SubTypes = AllocateSubTypes(NumSubTypes, regtype);
 	if (NumSubTypes && !SubTypes)
 		{ freeL("DNSServiceRegistration", x); err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
