@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Responder.c,v $
+Revision 1.21  2004/03/12 21:30:25  cheshire
+Build a System-Context Shared Library from mDNSCore, for the benefit of developers
+like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
+
 Revision 1.20  2004/02/09 23:23:32  cheshire
 Advertise "IL 2\4th Floor.apple.com." as another test "browse domain"
 
@@ -102,7 +106,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 		mDNSNULL, mDNSOpaque16fromIntVal(PortAsNumber),
 		txtbuffer, (mDNSu16)(1+txtbuffer[0]),		// TXT data, length
 		mDNSNULL, 0,								// Subtypes (none)
-		mDNSInterface_Any,							// Interace ID
+		mDNSInterface_Any,							// Interface ID
 		Callback, mDNSNULL);						// Callback and context
 
 	ConvertDomainNameToCString(&recordset->RR_SRV.resrec.name, buffer);
@@ -207,16 +211,13 @@ mDNSlocal Boolean YieldSomeTime(UInt32 milliseconds)
 
 int main()
 	{
-	extern void mDNSPlatformIdle(mDNS *const m);	// Only needed for debugging version
 	mStatus err;
 	Boolean DoneSetup = false;
 
 	SIOUXSettings.asktosaveonclose = false;
 	SIOUXSettings.userwindowtitle = "\pMulticast DNS Responder";
 
-	printf("Prototype Multicast DNS Responder\n\n");
-	printf("WARNING! This is experimental software.\n\n");
-	printf("Multicast DNS is currently an experimental protocol.\n\n");
+	printf("Multicast DNS Responder\n\n");
 	printf("This software reports errors using MacsBug breaks,\n");
 	printf("so if you don't have MacsBug installed your Mac may crash.\n\n");
 	printf("******************************************************************************\n");
@@ -230,9 +231,12 @@ int main()
 
 	while (!YieldSomeTime(35))
 		{
-		// For debugging, use "#define __ONLYSYSTEMTASK__ 1" and call mDNSPlatformIdle() periodically.
-		// For shipping code, don't define __ONLYSYSTEMTASK__, and you don't need to call mDNSPlatformIdle()
+#if MDNS_ONLYSYSTEMTASK
+		// For debugging, use "#define MDNS_ONLYSYSTEMTASK 1" and call mDNSPlatformIdle() periodically.
+		// For shipping code, don't define MDNS_ONLYSYSTEMTASK, and you don't need to call mDNSPlatformIdle()
+		extern void mDNSPlatformIdle(mDNS *const m);
 		mDNSPlatformIdle(&m);	// Only needed for debugging version
+#endif
 		if (m.mDNSPlatformStatus == mStatus_NoError && !DoneSetup)
 			{
 			DoneSetup = true;

@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.16  2004/03/12 21:30:25  cheshire
+Build a System-Context Shared Library from mDNSCore, for the benefit of developers
+like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
+
 Revision 1.15  2004/01/24 23:55:15  cheshire
 Change to use mDNSOpaque16fromIntVal/mDNSVal16 instead of shifting and masking
 
@@ -146,7 +150,7 @@ static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRe
 	info->i.name          = answer->rdata->u.name;
 	info->i.InterfaceID   = answer->InterfaceID;
 	info->i.ip.type		  = mDNSAddrType_IPv4;
-	info->i.ip.ip.v4  = zeroIPAddr;
+	info->i.ip.ip.v4      = zeroIPAddr;
 	info->i.port          = zeroIPPort;
 	info->add             = AddRecord;
 	info->dom             = mDNSfalse;
@@ -179,7 +183,7 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	info->i.name          = answer->rdata->u.name;
 	info->i.InterfaceID   = answer->InterfaceID;
 	info->i.ip.type		  = mDNSAddrType_IPv4;
-	info->i.ip.ip.v4  = zeroIPAddr;
+	info->i.ip.ip.v4      = zeroIPAddr;
 	info->i.port          = zeroIPPort;
 	info->add             = AddRecord;
 	info->dom             = mDNStrue;
@@ -199,18 +203,16 @@ static Boolean YieldSomeTime(UInt32 milliseconds)
 
 int main()
 	{
-	extern void mDNSPlatformIdle(mDNS *const m);	// Only needed for debugging version
 	mStatus err;
 	Boolean DoneSetup = false;
+	void *tempmem;
 
 	SIOUXSettings.asktosaveonclose = false;
 	SIOUXSettings.userwindowtitle  = "\pMulticast DNS Searcher";
 	SIOUXSettings.rows             = 40;
 	SIOUXSettings.columns          = 132;
 
-	printf("Prototype Multicast DNS Searcher\n\n");
-	printf("WARNING! This is experimental software.\n\n");
-	printf("Multicast DNS is currently an experimental protocol.\n\n");
+	printf("Multicast DNS Searcher\n\n");
 	printf("This software reports errors using MacsBug breaks,\n");
 	printf("so if you don't have MacsBug installed your Mac may crash.\n\n");
 	printf("******************************************************************************\n");
@@ -222,15 +224,23 @@ int main()
 		mDNS_Init_DontAdvertiseLocalAddresses, mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (err) return(err);
 
+	// Make sure OT has a large enough memory pool for us to draw from at OTNotifier (interrupt) time
+	tempmem = OTAllocMem(0x10000);
+	if (tempmem) OTFreeMem(tempmem);
+	else printf("**** Warning: OTAllocMem couldn't pre-allocate 64K for us.\n");
+
 	services.serviceinfolist.fHead = NULL;
 	services.headerPrinted         = false;
 	services.lostRecords           = false;
 
 	while (!YieldSomeTime(35))
 		{
-		// For debugging, use "#define __ONLYSYSTEMTASK__ 1" and call mDNSPlatformIdle() periodically.
-		// For shipping code, don't define __ONLYSYSTEMTASK__, and you don't need to call mDNSPlatformIdle()
+#if MDNS_ONLYSYSTEMTASK
+		// For debugging, use "#define MDNS_ONLYSYSTEMTASK 1" and call mDNSPlatformIdle() periodically.
+		// For shipping code, don't define MDNS_ONLYSYSTEMTASK, and you don't need to call mDNSPlatformIdle()
+		extern void mDNSPlatformIdle(mDNS *const m);
 		mDNSPlatformIdle(&mDNSStorage);	// Only needed for debugging version
+#endif
 		if (mDNSStorage.mDNSPlatformStatus == mStatus_NoError && !DoneSetup)
 			{
 			domainname srvtype, srvdom;
