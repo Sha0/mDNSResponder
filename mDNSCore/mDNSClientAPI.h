@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.128  2003/12/01 21:44:23  cheshire
+Add mStatus_BadInterfaceErr = -65552 for consistency with dns_sd.h
+
 Revision 1.127  2003/12/01 18:26:37  cheshire
 Also pack the OpaqueXX union types. Otherwise, on some systems, mDNSOpaque16 is four bytes!
 
@@ -603,12 +606,14 @@ enum
 	mStatus_AlreadyRegistered = -65547,
 	mStatus_NameConflict      = -65548,
 	mStatus_Invalid           = -65549,
-	mStatus_GrowCache         = -65550,
+	//                        = -65550,
 	mStatus_Incompatible      = -65551,
+	mStatus_BadInterfaceErr   = -65552,
 
-	// -65552 - -65790 currently unused
+	// -65553 - -65789 currently unused
 
 	// Non-error values:
+	mStatus_GrowCache         = -65790,
 	mStatus_ConfigChanged     = -65791,
 	mStatus_MemFree           = -65792		// 0xFFFE FF00
 	};
