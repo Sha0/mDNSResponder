@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.516  2005/01/28 06:06:32  cheshire
+Update comment
+
 Revision 1.515  2005/01/27 00:21:49  cheshire
 <rdar://problem/3973798> Remove mDNSResponder sleep/wake syslog message
 
@@ -6589,7 +6592,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 	
 	if (result == mStatus_MemFree)
 		{
-		// If the PTR record or any of the subtype PTR record are still in the process of deregistering,
+		// If the PTR record or any of the subtype PTR records are still in the process of deregistering,
 		// don't pass on the NameConflict/MemFree message until every record is finished cleaning up.
 		mDNSu32 i;
 		if (sr->RR_PTR.resrec.RecordType != kDNSRecordTypeUnregistered) return;
