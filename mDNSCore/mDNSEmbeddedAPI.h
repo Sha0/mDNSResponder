@@ -233,7 +233,8 @@ typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 struct NetworkInterfaceInfo_struct
 	{
 	NetworkInterfaceInfo *next;
-	mDNSIPAddr ip;
+	mDNSIPAddr     ip;
+	mDNSBool       Advertise;		// Set Advertise to false if you are only searching on this interface
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
 	ResourceRecord RR_A1;			// 'A' (address) record for our ".local" name
 	ResourceRecord RR_A2;			// 'A' record for our ".local.arpa" name

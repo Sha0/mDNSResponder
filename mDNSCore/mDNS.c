@@ -16,6 +16,11 @@
 #include "mDNSPlatformFunctions.h"		// Defines the interface required of the supporting layer below
 #include "mDNSsprintf.h"
 
+#if(defined(_MSC_VER))
+	// Disable warnings about Microsoft Visual Studio/C++ not understanding "pragma unused"
+    #pragma warning( disable:4068 )
+#endif
+
 // ***************************************************************************
 #if 0
 #pragma mark - DNS Protocol Constants
@@ -409,7 +414,8 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 		{
 		// Delete apostrophes from source name
 		if (src[0] == '\'') { src++; continue; }		// Standard straight single quote
-		if (src[0] == 0xE2 && src[1] == 0x80 && src[2] == 0x99) { src+=3; continue; }	// Unicode curly apostrophe
+		if (src + 2 < end && src[0] == 0xE2 && src[1] == 0x80 && src[2] == 0x99)
+			{ src += 3; continue; }	// Unicode curly apostrophe
 		if (ptr < lim)
 			{
 			if (mdnsValidHostChar(*src, (ptr > &hostlabel->c[1]), (src < end-1))) *ptr++ = *src;
@@ -1332,7 +1338,7 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 			mDNSs32 t1 = t0 - onetenth;
 			mDNSs32 t2 = t1 - onetenth;
 
-			if (timenow - t1 >= 0 || rr->UnansweredQueries < 1 && timenow - t2 >= 0)
+			if (timenow - t1 >= 0 || (rr->UnansweredQueries < 1 && timenow - t2 >= 0))
 				{
 				DNSQuestion *q = CacheRRActive(m, rr);
 				if (q) q->NextQTime = timenow;
@@ -1488,7 +1494,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketQuestions(mDNS *const m, DNSMessage *query, mD
 	return(queryptr);
 	}
 
-mDNSlocal mDNSu8 *BuildQueryPacketAnswers(mDNS *const m, DNSMessage *query, mDNSu8 *queryptr,
+mDNSlocal mDNSu8 *BuildQueryPacketAnswers(DNSMessage *query, mDNSu8 *queryptr,
 	ResourceRecord **dups_ptr, const mDNSs32 timenow)
 	{
 	const mDNSu8 *const limit = query->data + sizeof(query->data);
@@ -1532,7 +1538,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketProbes(mDNS *const m, DNSMessage *query, mDNSu
 	return(queryptr);
 	}
 
-mDNSlocal mDNSu8 *BuildQueryPacketUpdates(mDNS *const m, DNSMessage *query, mDNSu8 *queryptr, const mDNSs32 timenow)
+mDNSlocal mDNSu8 *BuildQueryPacketUpdates(mDNS *const m, DNSMessage *query, mDNSu8 *queryptr)
 	{
 	const mDNSu8 *const limit = query->data + sizeof(query->data);
 	ResourceRecord *rr;
@@ -1572,8 +1578,8 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 			baselimit = BuildQueryPacketQuestions(m, &query, baselimit, &dups, &answerforecast, zeroIPAddr, timenow);
 			baselimit = BuildQueryPacketProbes(m, &query, baselimit, &answerforecast, zeroIPAddr, timenow);
 			}
-		baselimit = BuildQueryPacketAnswers(m, &query, baselimit, &NextDupSuppress, timenow);
-		baselimit = BuildQueryPacketUpdates(m, &query, baselimit, timenow);
+		baselimit = BuildQueryPacketAnswers(&query, baselimit, &NextDupSuppress, timenow);
+		baselimit = BuildQueryPacketUpdates(m, &query, baselimit);
 		baseheader = query.h;
 		
 		if (NextDupSuppress) debugf("SendQueries: NextDupSuppress still set... Will continue in next packet");
@@ -1596,8 +1602,8 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 						queryptr = BuildQueryPacketQuestions(m, &query, queryptr, &dups2, &answerforecast2, intf->ip, timenow);
 						queryptr = BuildQueryPacketProbes(m, &query, queryptr, &answerforecast2, intf->ip, timenow);
 						}
-					queryptr = BuildQueryPacketAnswers(m, &query, queryptr, &NextDupSuppress2, timenow);
-					queryptr = BuildQueryPacketUpdates(m, &query, queryptr, timenow);
+					queryptr = BuildQueryPacketAnswers(&query, queryptr, &NextDupSuppress2, timenow);
+					queryptr = BuildQueryPacketUpdates(m, &query, queryptr);
 					}
 	
 				if (queryptr > query.data)
@@ -2898,11 +2904,17 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 		}
 	}
 
+mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
+	{
+	NetworkInterfaceInfo *i;
+	for (i=m->HostInterfaces; i; i=i->next) if (i->Advertise) break;
+	return(i);
+	}
+
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
-	char buffer[256];
-	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	const mDNSs32 timenow = mDNS_Lock(m);
+	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	
 	while (*p && *p != set) p=&(*p)->next;
 	if (*p)
@@ -2912,40 +2924,44 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		return(mStatus_AlreadyRegistered);
 		}
 
-	set->next = mDNSNULL;
-
-	mDNS_SetupResourceRecord(&set->RR_A1,  set->ip, kDNSType_A,   10, kDNSRecordTypeUnique,      HostNameCallback, set);
-	mDNS_SetupResourceRecord(&set->RR_A2,  set->ip, kDNSType_A,   10, kDNSRecordTypeUnique,      HostNameCallback, set);
-	mDNS_SetupResourceRecord(&set->RR_PTR, set->ip, kDNSType_PTR, 10, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-
-	// 1. Set up primary Address record to map from primary host name ("foo.local.arpa.") to IP address
-	set->RR_A1.name     = m->hostname1;
-	set->RR_A1.rdata.ip = set->ip;
-
-	// 2. Set up secondary Address record to map from secondary host name ("foo.local.") to IP address
-	set->RR_A2.name     = m->hostname2;
-	set->RR_A2.rdata.ip = set->ip;
-
-	// 3. Set up reverse-lookup PTR record to map from our address back to our primary host name
-	// Setting HostTarget tells DNS that the target of this PTR is to be automatically kept in sync if our host name changes
-	// Note: This is reverse order compared to a normal dotted-decimal IP address
-	mDNS_sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", set->ip.b[3], set->ip.b[2], set->ip.b[1], set->ip.b[0]);
-	ConvertCStringToDomainName(buffer, &set->RR_PTR.name);
-	set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
-
-	if (m->HostInterfaces)
+	if (set->Advertise)
 		{
-		set->RR_A1.RRSet = &m->HostInterfaces->RR_A1;
-		set->RR_A2.RRSet = &m->HostInterfaces->RR_A2;
+		char buffer[256];
+		NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
+		
+		mDNS_SetupResourceRecord(&set->RR_A1,  set->ip, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
+		mDNS_SetupResourceRecord(&set->RR_A2,  set->ip, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
+		mDNS_SetupResourceRecord(&set->RR_PTR, set->ip, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	
+		// 1. Set up primary Address record to map from primary host name ("foo.local.arpa.") to IP address
+		set->RR_A1.name     = m->hostname1;
+		set->RR_A1.rdata.ip = set->ip;
+	
+		// 2. Set up secondary Address record to map from secondary host name ("foo.local.") to IP address
+		set->RR_A2.name     = m->hostname2;
+		set->RR_A2.rdata.ip = set->ip;
+	
+		// 3. Set up reverse-lookup PTR record to map from our address back to our primary host name
+		// Setting HostTarget tells DNS that the target of this PTR is to be automatically kept in sync if our host name changes
+		// Note: This is reverse order compared to a normal dotted-decimal IP address
+		mDNS_sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", set->ip.b[3], set->ip.b[2], set->ip.b[1], set->ip.b[0]);
+		ConvertCStringToDomainName(buffer, &set->RR_PTR.name);
+		set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
+	
+		if (primary)
+			{
+			set->RR_A1.RRSet = &primary->RR_A1;
+			set->RR_A2.RRSet = &primary->RR_A2;
+			}
+	
+		mDNS_Register_internal(m, &set->RR_A1,  timenow);
+		mDNS_Register_internal(m, &set->RR_A2,  timenow);
+		mDNS_Register_internal(m, &set->RR_PTR, timenow);
+	
+		// ... Add an HINFO record?
 		}
-
+	set->next = mDNSNULL;
 	*p = set;
-	mDNS_Register_internal(m, &set->RR_A1,  timenow);
-	mDNS_Register_internal(m, &set->RR_A2,  timenow);
-	mDNS_Register_internal(m, &set->RR_PTR, timenow);
-
-	// ... Add an HINFO record?
-
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
 	}
@@ -2954,6 +2970,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	{
 	NetworkInterfaceInfo *i;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
+	NetworkInterfaceInfo *primary;
+	ResourceRecord *A1 = mDNSNULL, *A2 = mDNSNULL;
 	mDNS_Lock(m);
 
 	// Find this record in our list
@@ -2964,10 +2982,16 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	*p = (*p)->next;
 	
 	// If we still have address records referring to this one, update them
+	primary = FindFirstAdvertisedInterface(m);
+	if (primary)
+		{
+		A1 = &primary->RR_A1;
+		A2 = &primary->RR_A2;
+		}
 	for (i=m->HostInterfaces; i; i=i->next)
 		{
-		if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = &m->HostInterfaces->RR_A1;
-		if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = &m->HostInterfaces->RR_A2;
+		if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = A1;
+		if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = A2;
 		}
 
 	// Unregister these records
@@ -3016,8 +3040,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr, mDN
 	sr->Context  = Context;
 	sr->Conflict = mDNSfalse;
 	
-	mDNS_SetupResourceRecord(&sr->RR_SRV, zeroIPAddr, kDNSType_SRV, 10,      kDNSRecordTypeUnique, ServiceCallback, sr);
- 	mDNS_SetupResourceRecord(&sr->RR_TXT, zeroIPAddr, kDNSType_TXT, 10,      kDNSRecordTypeUnique, ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_SRV, zeroIPAddr, kDNSType_SRV, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
+ 	mDNS_SetupResourceRecord(&sr->RR_TXT, zeroIPAddr, kDNSType_TXT, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_PTR, zeroIPAddr, kDNSType_PTR, 24*3600, kDNSRecordTypeShared, ServiceCallback, sr);
 
 	ConstructServiceName(&sr->RR_SRV.name, name,     type, domain);
