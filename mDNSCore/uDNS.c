@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.186  2005/02/04 21:56:29  ksekar
+<rdar://problem/3984374> Simultaneous port map requests sometimes fail
+- Refinement to previous checkin.
+
 Revision 1.185  2005/02/03 23:48:22  ksekar
 <rdar://problem/3984374> Simultaneous port map requests sometimes fail
 
@@ -1261,11 +1265,11 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 
-	if (len < sizeof(*reply)) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); goto end; }
-	if (reply->vers != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto end; }
-	if (reply->opcode != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto end; }
-	if (reply->err.NotAnInteger) { LogMsg("ReceivePortMapReply: received error %d", mDNSVal16(reply->err));  goto end; }
-	if (priv.NotAnInteger != reply->priv.NotAnInteger) return;  
+	if (len < sizeof(*reply)) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); return; }
+	if (reply->vers != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  return; }
+	if (reply->opcode != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); return; }
+	if (reply->err.NotAnInteger) { LogMsg("ReceivePortMapReply: received error %d", mDNSVal16(reply->err));  return; }
+	if (priv.NotAnInteger != reply->priv.NotAnInteger) return;  // packet does not match this request
 		
 
 	lease = (mDNSu32)mDNSVal32(reply->lease);
