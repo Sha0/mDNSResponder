@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.3  2004/04/06 22:02:06  cheshire
+Also show interface id when showing browse add/remove events
+
 Revision 1.2  2004/03/25 05:40:56  cheshire
 Changes from Marc Krochmal: Fix inconsistent use of space/tab
 
@@ -121,9 +124,9 @@ static void browse_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t i
 	(void)interface;    // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
-	if (num_printed++ == 0) printf("Timestamp     A/R Flags %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
+	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
-	printf("%s%6X %-24s %-24s %s\n", op, flags, replyDomain, replyType, replyName);
+	printf("%s%6X%3d %-24s %-24s %s\n", op, flags, interface, replyDomain, replyType, replyName);
 	}
 
 static void resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t interface, DNSServiceErrorType errorCode,
