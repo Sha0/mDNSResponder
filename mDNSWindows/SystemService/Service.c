@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.14  2004/09/15 09:37:25  shersche
+Add SharedAccess to dependency list, call CheckFirewall after sending status back to SCM
+
 Revision 1.13  2004/09/13 07:35:10  shersche
 <rdar://problem/3762235> Add mDNSResponder to Windows Firewall application list if SP2 is detected and app hasn't been added before
 Bug #: 3762235
@@ -115,7 +118,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #define	DEBUG_NAME					"[Server] "
 #define	kServiceName				"Apple mDNSResponder"
 #define kServiceNameL				L"Apple mDNSResponder"
-#define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
+#define	kServiceDependencies		"Tcpip\0winmgmt\0SharedAccess\0\0"
 #define kServiceManageLLRouting		"ManageLLRouting"
 #define kServiceCacheEntryCount		"CacheEntryCount"
 #define kServiceManageFirewall		"ManageFirewall"
@@ -1054,12 +1057,12 @@ static OSStatus	ServiceRun( int argc, char *argv[] )
 	require_noerr( err, exit );
 	initialized = TRUE;
 	
-	err = CheckFirewall();
-	check_noerr( err );
-	
 	gServiceStatus.dwCurrentState = SERVICE_RUNNING;
 	ok = SetServiceStatus( gServiceStatusHandle, &gServiceStatus );
 	check_translated_errno( ok, GetLastError(), kParamErr );
+	
+	err = CheckFirewall();
+	check_noerr( err );
 	
 	// Run the service-specific stuff. This does not return until the service quits or is stopped.
 	
