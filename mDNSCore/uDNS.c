@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.205  2005/03/21 00:33:51  shersche
+<rdar://problem/4021486> Fix build warnings on Win32 platform
+
 Revision 1.204  2005/03/16 00:42:32  ksekar
 <rdar://problem/4012279> Long-lived queries not working on Windows
 
@@ -2639,9 +2642,11 @@ mDNSlocal mDNSBool getLLQAtIndex(mDNS *m, DNSMessage *msg, const mDNSu8 *end, LL
 	int i;
 	const mDNSu8 *ptr;
 	
+	ubzero(&lcr, sizeof(lcr));
+	
 	ptr = LocateAdditionals(msg, end);
 	if (!ptr) return mDNSfalse;
-
+	
 	// find the last additional
 	for (i = 0; i < msg->h.numAdditionals; i++)
 //		{ ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr); if (!ptr) return mDNSfalse; }
@@ -3952,6 +3957,8 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	AuthRecord *srv = &srs->RR_SRV;
 	mDNSu32 i;
 	
+	ubzero(&privport, sizeof(privport));
+	
 	if (!rInfo->ns.ip.v4.NotAnInteger) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
 	id = newMessageID(u);
@@ -4947,7 +4954,7 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 		}
 	}
 
-mDNSexport void uDNS_Init(mDNS *const m)
+mDNSexport void uDNS_Init(mDNS * m)
 	{
 	mDNSPlatformMemZero(&m->uDNS_info, sizeof(uDNS_GlobalInfo));
 	m->uDNS_info.nextevent = m->timenow_last + 0x78000000;

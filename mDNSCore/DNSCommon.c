@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.90  2005/03/21 00:33:51  shersche
+<rdar://problem/4021486> Fix build warnings on Win32 platform
+
 Revision 1.89  2005/03/17 18:59:38  ksekar
 <rdar://problem/4012279> Properly parse multiple LLQ Options per packet on Windows
 
@@ -1034,7 +1037,7 @@ mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichT
 
 	while (val >= divisor * 10) { divisor *= 10; chars++; }
 
-	name->c[0] = TruncateUTF8ToLength(name->c+1, name->c[0], MAX_DOMAIN_LABEL - chars);
+	name->c[0] = (mDNSu8) TruncateUTF8ToLength(name->c+1, name->c[0], MAX_DOMAIN_LABEL - chars);
 
 	if (RichText) { name->c[++name->c[0]] = ' '; name->c[++name->c[0]] = '('; }
 	else          { name->c[++name->c[0]] = '-'; }
