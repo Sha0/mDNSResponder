@@ -24,12 +24,10 @@ endif
 
 CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS)
 
-COMMON = objects/mDNSPosix.c.o objects/ExampleClientApp.c.o objects/mDNSUNP.c.o objects/mDNS.c.o objects/mDNSsprintf.c.o
+COMMON = objects/mDNSPosix.c.o objects/ExampleClientApp.c.o objects/mDNSUNP.c.o objects/mDNS.c.o
 
 HEADERS = Makefile mDNSUNP.h mDNSPosix.h   \
 ../mDNSCore/mDNSDebug.h                    \
-../mDNSCore/mDNSsprintf.h                  \
-../mDNSCore/mDNSvsprintf.h                 \
 ../mDNSCore/mDNSClientAPI.h                \
 ../mDNSCore/mDNSPlatformFunctions.h
 
@@ -77,9 +75,6 @@ objects/mDNSUNP.c.o: $(HEADERS) mDNSUNP.c
 
 objects/mDNS.c.o: $(HEADERS) ../mDNSCore/mDNS.c
 	$(CC) -c $(CFLAGS) -o objects/mDNS.c.o ../mDNSCore/mDNS.c
-
-objects/mDNSsprintf.c.o: $(HEADERS) ../mDNSCore/mDNSsprintf.c
-	$(CC) -c $(CFLAGS) -o objects/mDNSsprintf.c.o ../mDNSCore/mDNSsprintf.c
 
 clean:
 	-rm -rf objects
