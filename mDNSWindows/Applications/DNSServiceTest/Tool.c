@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.9  2003/10/22 02:00:20  bradley
+Fixed proxy IP setup to be in network byte order so it works on Mac and Windows.
+
 Revision 1.8  2003/10/04 04:47:08  bradley
 Changed DNSServiceRegistrationCreate to treat the port in network byte order for end-to-end consistency.
 
@@ -453,7 +456,7 @@ static int ProcessArgs( int argc, char* argv[] )
 		{
 			DNSHostRegistrationFlags		hostFlags;
 			
-			// 'r'egister 'p'roxy 's'ervice <name> <type> <domain> <port> <txt>
+			// 'r'egister 'p'roxy 's'ervice <host> <ip> <name> <type> <domain> <port> <txt>
 						
 			require_action_string( argc > ( i + 7 ), exit, err = kDNSBadParamErr, "missing arguments" );
 			++i;
@@ -471,8 +474,11 @@ static int ProcessArgs( int argc, char* argv[] )
 			}
 			
 			sscanf( ip, "%u.%u.%u.%u", &b[ 0 ], &b[ 1 ], &b[ 2 ], &b[ 3 ] );
-			addr.addressType 		= kDNSNetworkAddressTypeIPv4;
-			addr.u.ipv4.addr.v32 	= (DNSUInt32)( ( b[ 0 ] << 24 ) | ( b[ 1 ] << 16 ) | ( b[ 2 ] <<  8 ) | ( b[ 3 ] <<  0 ) );
+			addr.addressType 			= kDNSNetworkAddressTypeIPv4;
+			addr.u.ipv4.addr.v8[ 0 ] 	= (DNSUInt8) b[ 0 ];
+			addr.u.ipv4.addr.v8[ 1 ] 	= (DNSUInt8) b[ 1 ];
+			addr.u.ipv4.addr.v8[ 2 ] 	= (DNSUInt8) b[ 2 ];
+			addr.u.ipv4.addr.v8[ 3 ] 	= (DNSUInt8) b[ 3 ];
 			
 			fprintf( stdout, "registering proxy service \"%s.%s.%s\" port %d text \"%s\"\n", name, type, domain, port, text );
 			
