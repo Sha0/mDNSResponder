@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.251  2004/12/06 22:30:31  cheshire
+Added debugging log message
+
 Revision 1.250  2004/12/06 06:59:08  ksekar
 RegisterSplitDNS should return Unsupported error when compiled on Panther
 
@@ -2090,6 +2093,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 	if (!config) { LogMsg("Error: dns_configuration_copy returned NULL"); return mStatus_UnknownErr; }
 	mDNS_DeleteDNSServers(m);
 
+	LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
 	for (i = 0; i < config->n_resolver; i++)		
 		{
 		int j, n;
