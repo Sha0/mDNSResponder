@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.h,v $
+Revision 1.3  2005/01/25 08:57:28  shersche
+<rdar://problem/3911084> Add m_printerControl member for dynamic loading of icons from resource DLLs
+Bug #: 3911084
+
 Revision 1.2  2004/12/29 18:53:38  shersche
 <rdar://problem/3725106>
 <rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
@@ -134,5 +138,6 @@ private:
 	CButton m_defaultPrinterCtrl;
 public:
 	CStatic m_printerSelectionText;
+	CStatic	*	m_printerImage;
 	afx_msg void OnBnClickedHaveDisk();
 };
