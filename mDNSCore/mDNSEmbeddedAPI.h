@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.233  2004/10/28 03:24:41  cheshire
+Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
+
 Revision 1.232  2004/10/26 06:20:23  cheshire
 Add mDNSAddressIsValidNonZero() macro
 
@@ -1785,7 +1788,7 @@ struct mDNS_struct
 
 	mDNS_PlatformSupport *p;			// Pointer to platform-specific data of indeterminite size
 	mDNSu32  KnownBugs;
-	mDNSBool CanReceiveUnicast;
+	mDNSBool CanReceiveUnicastOn5353;
 	mDNSBool AdvertiseLocalAddresses;
 	mStatus mDNSPlatformStatus;
 	mDNSIPPort UnicastPort4;

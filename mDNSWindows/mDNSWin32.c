@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.59  2004/10/28 03:24:42  cheshire
+Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
+
 Revision 1.58  2004/10/16 00:17:01  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -420,7 +423,7 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	supported = ( ( LOBYTE( wsaData.wVersion ) == kWinSockMajorMin ) && ( HIBYTE( wsaData.wVersion ) == kWinSockMinorMin ) );
 	require_action( supported, exit, err = mStatus_UnsupportedErr );
 	
-	inMDNS->CanReceiveUnicast = CanReceiveUnicast();
+	inMDNS->CanReceiveUnicastOn5353 = CanReceiveUnicast();
 	
 	// Setup the HINFO HW/SW strings.
 	

@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.221  2004/10/28 03:24:41  cheshire
+Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
+
 Revision 1.220  2004/10/28 00:53:57  cheshire
 Export mDNSMacOSXNetworkChanged() so it's callable from outside this mDNSMacOSX.c;
 Add LogOperation() call to record when we get network change events
@@ -2860,7 +2863,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	char HINFO_SWstring[256] = "";
 	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
-	if (mDNSPlatformInit_CanReceiveUnicast())            m->CanReceiveUnicast = mDNStrue;
+	if (mDNSPlatformInit_CanReceiveUnicast())            m->CanReceiveUnicastOn5353 = mDNStrue;
 
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
 	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);

@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.62  2004/10/28 03:24:42  cheshire
+Rename m->CanReceiveUnicastOn as m->CanReceiveUnicastOn5353
+
 Revision 1.61  2004/10/16 00:17:01  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -1272,7 +1275,7 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	struct sockaddr sa;
 	assert(m != NULL);
 
-	if (mDNSPlatformInit_CanReceiveUnicast()) m->CanReceiveUnicast = mDNStrue;
+	if (mDNSPlatformInit_CanReceiveUnicast()) m->CanReceiveUnicastOn5353 = mDNStrue;
 
 	// Tell mDNS core the names of this machine.
 
