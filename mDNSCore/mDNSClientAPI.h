@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.117  2003/11/08 23:32:24  cheshire
+Gave name to anonymous struct, to avoid errors on certain compilers.
+(Thanks to ramaprasad.kr@hp.com for reporting this.)
+
 Revision 1.116  2003/11/07 03:32:56  cheshire
 <rdar://problem/3472153> mDNSResponder delivers answers in inconsistent order
 This is the real fix. Checkin 1.312 was overly simplistic; Calling GetFreeCacheRR() can sometimes
@@ -487,7 +491,7 @@ typedef unsigned long  mDNSu32;
 // To enforce useful type checking, we make mDNSInterfaceID be a pointer to a dummy struct
 // This way, mDNSInterfaceIDs can be assigned, and compared with each other, but not with other types
 // Declaring the type to be the typical generic "void *" would lack this type checking
-typedef struct { void *dummy; } *mDNSInterfaceID;
+typedef struct mDNSInterfaceID_dummystruct { void *dummy; } *mDNSInterfaceID;
 
 // These types are for opaque two- and four-byte identifiers.
 // The "NotAnInteger" fields of the unions allow the value to be conveniently passed around in a
