@@ -29,7 +29,7 @@
 				BufferSecurityCheck="TRUE"
 				TreatWChar_tAsBuiltInType="TRUE"
 				UsePrecompiledHeader="0"
-				WarningLevel="3"
+				WarningLevel="4"
 				Detect64BitPortabilityProblems="TRUE"
 				DebugInformationFormat="4"
 				CallingConvention="0"/>
@@ -69,7 +69,7 @@
 			OutputDirectory="Release"
 			IntermediateDirectory="Release"
 			ConfigurationType="1"
-			UseOfMFC="2"
+			UseOfMFC="1"
 			CharacterSet="2">
 			<Tool
 				Name="VCCLCompilerTool"
@@ -80,13 +80,14 @@
 				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;WINVER=0x0400;UNICODE;_UNICODE"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
-				RuntimeLibrary="2"
+				RuntimeLibrary="0"
 				EnableFunctionLevelLinking="TRUE"
 				TreatWChar_tAsBuiltInType="TRUE"
 				UsePrecompiledHeader="0"
-				WarningLevel="3"
+				WarningLevel="4"
 				Detect64BitPortabilityProblems="TRUE"
-				DebugInformationFormat="3"/>
+				DebugInformationFormat="3"
+				DisableSpecificWarnings="4702"/>
 			<Tool
 				Name="VCCustomBuildTool"/>
 			<Tool
