@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.212  2004/11/23 05:15:37  cheshire
+<rdar://problem/3875830> Computer Name in use message garbled
+
 Revision 1.211  2004/11/23 05:00:41  cheshire
 <rdar://problem/3874629> Name conflict log message should not have ".local" appended
 
@@ -1571,18 +1574,19 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlab
 	char newname[MAX_DOMAIN_LABEL+1];
 	ConvertDomainLabelToCString_unescaped(n1, oldname);
 	ConvertDomainLabelToCString_unescaped(n2, newname);
-	const CFStringRef      cfnewname = CFStringCreateWithCString(NULL, newname, kCFStringEncodingUTF8);
-	const CFStringRef      f0        = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
-	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%s%s” ",  kCFStringEncodingUTF8);
-	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%s%s”. ", kCFStringEncodingUTF8);
+	const CFStringRef      cfoldname = CFStringCreateWithCString(NULL, oldname,    kCFStringEncodingUTF8);
+	const CFStringRef      cfnewname = CFStringCreateWithCString(NULL, newname,    kCFStringEncodingUTF8);
+	const CFStringRef      f0        = CFStringCreateWithCString(NULL, msg,        kCFStringEncodingUTF8);
+	const CFStringRef      f1        = CFStringCreateWithCString(NULL, "“%@%s” ",  kCFStringEncodingUTF8);
+	const CFStringRef      f2        = CFStringCreateWithCString(NULL, "“%@%s”. ", kCFStringEncodingUTF8);
 	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
 	*n1 = *n2;
-	if (!cfnewname || !f0 || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
+	if (!cfoldname || !cfnewname || !f0 || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
 		LogMsg("RecordUpdatedName: ERROR: Couldn't create SCPreferences session");
 	else
 		{
-		const CFStringRef       s1           = CFStringCreateWithFormat(NULL, NULL, f1, oldname, suffix);
-		const CFStringRef       s2           = CFStringCreateWithFormat(NULL, NULL, f2, newname, suffix);
+		const CFStringRef       s1           = CFStringCreateWithFormat(NULL, NULL, f1, cfoldname, suffix);
+		const CFStringRef       s2           = CFStringCreateWithFormat(NULL, NULL, f2, cfnewname, suffix);
 		const CFMutableArrayRef alertMessage = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 		Boolean result;
 		if (n2 == &m->hostlabel) result = SCPreferencesSetLocalHostName(session, cfnewname);
@@ -1607,6 +1611,7 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, domainlabel *n1, domainlab
 		if (alertMessage) CFRelease(alertMessage);
 		SCPreferencesUnlock(session);
 		}
+	if (cfoldname) CFRelease(cfoldname);
 	if (cfnewname) CFRelease(cfnewname);
 	if (f0)        CFRelease(f0);
 	if (f1)        CFRelease(f1);
