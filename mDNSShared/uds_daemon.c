@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.77  2004/09/15 00:19:18  cheshire
+<rdar://problem/3785823> read_rr_from_ipc_msg should use mDNS_SetupResourceRecord()
+
 Revision 1.76  2004/09/02 06:39:52  cheshire
 Minor textual cleanup for clarity
 
@@ -2390,19 +2393,15 @@ static AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_flag
         }
     bzero(rr, sizeof(AuthRecord));  // ok if oversized rdata not zero'd
     
-    // SHOULD CALL mDNS_SetupResourceRecord() HERE TO ENSURE FIELDS ARE INITIALIZED CORRECTLY
+    mDNS_SetupResourceRecord(rr, mDNSNULL, mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex),
+		type, 0, (flags & kDNSServiceFlagsShared) ? kDNSRecordTypeShared : kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
     
-    rr->resrec.rdata = &rr->rdatastorage;
-    rr->resrec.InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (!MakeDomainNameFromDNSNameString(&rr->resrec.name, name))
     	{
         LogMsg("ERROR: bad name: %s", name);
         freeL("read_rr_from_ipc_msg", rr);
         return NULL;
     	}
-    rr->resrec.rrtype = type;
-    if (flags & kDNSServiceFlagsShared          ) rr->resrec.RecordType = kDNSRecordTypeShared;
-    if (flags & kDNSServiceFlagsUnique          ) rr->resrec.RecordType = kDNSRecordTypeUnique;
     if (flags & kDNSServiceFlagsAllowRemoteQuery) rr->AllowRemoteQuery  = mDNStrue;
     rr->resrec.rrclass = class;
     rr->resrec.rdlength = rdlen;
