@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.163  2004/12/17 03:51:53  ksekar
+<rdar://problem/3920991> Don't update TXT record if service registration fails
+
 Revision 1.162  2004/12/17 01:29:11  ksekar
 <rdar://problem/3920598> Questions can go deaf on location changes
 
@@ -1958,9 +1961,8 @@ mDNSlocal mStatus checkUpdateResult(domainname *displayname, mDNSu8 rcode, mDNS 
 	}
 
 mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mStatus err)
-	{
-	mDNSBool InvokeCallback = mDNSfalse;
-	AuthRecord *UpdateR = mDNSNULL;
+	{	
+	mDNSBool InvokeCallback = mDNSfalse;	
 	uDNS_RegInfo *info = &srs->uDNS_info;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
 	ExtraResourceRecord **e = &srs->Extras;
@@ -2041,20 +2043,10 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 				return;
 				}
 		case regState_UpdatePending:
-			// find the record being updated
-			UpdateR = &srs->RR_TXT;
-			if (err)
-				{
-				LogMsg("hndlServiceUpdateReply: error updating resource record");
-				UpdateR->uDNS_info.state = regState_Unregistered;
-				InvokeCallback = mDNStrue;        // signal error via service callback
-				}
-			else
-				{
-				UpdateR->uDNS_info.state = regState_Registered;
-				SwapRData(m, UpdateR, mDNStrue);
-				}
+			// mDNS clients don't expect asyncronoud UpdateRecord errors, so we just log (rare) failures
+			if (err) LogMsg("hndlServiceUpdateReply: error updating TXT record for service %##s", srs->RR_SRV.resrec.name->c);
 			info->state = regState_Registered;
+			SwapRData(m, &srs->RR_TXT, mDNStrue);  // deallocate old rdata
 			break;
 		case regState_FetchingZoneData:
 		case regState_Registered:
@@ -2100,11 +2092,22 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 		else e = &(*e)->next;
 		}
 
-	srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.
-	if (srs->RR_TXT.uDNS_info.UpdateQueued) SendRecordUpdate(m, &srs->RR_TXT, &srs->uDNS_info);
-
 	if (info->state == regState_Unregistered) unlinkSRS(&m->uDNS_info, srs);
-
+	else if (srs->RR_TXT.uDNS_info.UpdateQueued && !err)
+		{
+		if (InvokeCallback)
+			{
+			// if we were supposed to give a client callback, we'll do it after we update the primary txt record
+			info->ClientCallbackDeferred = mDNStrue;
+			info->DeferredStatus = err;
+			}
+		srs->RR_TXT.uDNS_info.UpdateQueued = mDNSfalse;
+		info->state = regState_UpdatePending;
+		SendServiceRegistration(m, srs);
+		return;
+		}
+	else srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.
+	
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (InvokeCallback) srs->ServiceCallback(m, srs, err);
 	else if (info->ClientCallbackDeferred)
@@ -3777,7 +3780,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		if (!(ptr = putDeleteRRSet(&msg, ptr, srs->RR_TXT.resrec.name, srs->RR_TXT.resrec.rrtype)))       goto error;
 		}
 	
-	else if (srs->uDNS_info.state != regState_Refresh)
+	else if (srs->uDNS_info.state != regState_Refresh && srs->uDNS_info.state != regState_UpdatePending)
 		{
 		// use SRV name for prereq
 		ptr = putPrereqNameNotInUse(srv->resrec.name, &msg, ptr, end);
@@ -3786,7 +3789,17 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	
 	//!!!KRS  Need to do bounds checking and use TCP if it won't fit!!!
 	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec, srs->RR_PTR.resrec.rroriginalttl))) goto error;
-	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) goto error;
+
+	if (rInfo->state == regState_UpdatePending)
+		{
+		// we're updating the txt record - delete old, add new
+		if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_TXT.resrec))) goto error;  // delete old rdata
+		SwapRData(m, &srs->RR_TXT, mDNSfalse); // add the new rdata
+		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) goto error;
+		SwapRData(m, &srs->RR_TXT, mDNSfalse); // replace old rdata in case we need to retransmit
+		}
+	else
+		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) goto error;
 
 	 if (!GetServiceTarget(u, srv, &target))
 		{
@@ -3813,7 +3826,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForZone(u, &rInfo->zone));
 	if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
-	if (rInfo->state != regState_Refresh && rInfo->state != regState_DeregDeferred)
+	if (rInfo->state != regState_Refresh && rInfo->state != regState_DeregDeferred && srs->uDNS_info.state != regState_UpdatePending)
 		rInfo->state = regState_Pending;
 
 	SetRecordRetry(m, &srs->RR_SRV);
@@ -4180,7 +4193,6 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	return mStatus_BadReferenceErr;
 	}
 
-// note that the RegInfo will be either for the record, or for the parent ServiceRecordSet
 mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	{
 	DNSMessage msg;
@@ -4190,6 +4202,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	mDNSOpaque16 id;
 	mStatus err = mStatus_UnknownErr;
 	
+	if (info != &rr->uDNS_info) LogMsg("ERROR: SendRecordUpdate - incorrect info struct!");
 	rr->uDNS_info.UpdateQueued = mDNSfalse;  // if this was queued, clear flag
 	id = newMessageID(u);
 	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
@@ -4301,7 +4314,8 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 			return mStatus_NoError;
 			
 		case regState_Registered:
-			SendRecordUpdate(m, rr, info);
+			if (parent) { info->state = regState_UpdatePending; SendServiceRegistration(m, parent); }
+			else SendRecordUpdate(m, rr, info); 				
 			return mStatus_NoError;
 
 		case regState_NoTarget:
@@ -4491,8 +4505,8 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 		// and then if we tried to do srs = srs->next at the end we'd be referencing a dead object
 		s = s->next;
 		
-		rInfo = &srs->uDNS_info;
-		if (rInfo->state == regState_Pending || rInfo->state == regState_DeregPending || rInfo->state == regState_DeregDeferred || rInfo->state == regState_Refresh)
+		rInfo = &srs->uDNS_info;	
+		if (rInfo->state == regState_Pending || rInfo->state == regState_DeregPending || rInfo->state == regState_DeregDeferred || rInfo->state == regState_Refresh  || rInfo->state == regState_UpdatePending)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - timenow < 0)
 				{
@@ -4501,6 +4515,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 				if (rInfo->state == regState_Pending) op = "registration";
 				else if (rInfo->state == regState_DeregPending) op = "deregistration";
 				else if (rInfo->state == regState_Refresh) op = "refresh";
+				else if (rInfo->state == regState_UpdatePending) op = "txt record update";
 				debugf("Retransmit service %s %##s", op, srs->RR_SRV.resrec.name->c);
 #endif
 				if (rInfo->state == regState_DeregPending) { SendServiceDeregistration(m, srs); continue; }
