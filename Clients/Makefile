@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.2  2004/02/11 20:59:26  cheshire
+# Fix Makefile so it creates the "build" directory if necessary
+#
 # Revision 1.1  2004/02/06 03:19:09  cheshire
 # Check in code to make command-line "dns-sd" testing tool
 #
@@ -29,9 +32,16 @@
 # $< means "The name of the first prerequisite"
 # $+ means "The names of all the prerequisites, with spaces between them, exactly as given"
 # For more magic automatic variables, see
-# <http://www.gnu.org/manual/make-3.80/html_chapter/make_10.html#SEC111>
+# <http://www.gnu.org/software/make/manual/html_chapter/make_10.html#SEC111>
 
 #############################################################################
 
+targets: build/dns-sd
+
+build:
+	mkdir build
+
+build/dns-sd: build
+
 build/dns-sd: dns-sd.c
-	cc $+ -o $@
+	cc $(filter %.c %.o, $+) -o $@
