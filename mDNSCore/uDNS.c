@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.196  2005/02/24 21:52:28  ksekar
+<rdar://problem/3922768> Remove "deferred deregistration" logic for hostnames
+
 Revision 1.195  2005/02/22 17:53:08  ksekar
 Changed successful NAT Traversals from LogMsg to LogOperation
 
@@ -1670,34 +1673,17 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
-	AuthRecord *new;
 	uDNS_HostnameInfo *i;
 
 	for (i = u->Hostnames; i; i = i->next)
 		{
-		// only allocate new record if existing record is actually registered (i.e. it wasn't pending the hostname or IP being set)
-		if (i->ar->uDNS_info.state == regState_Unregistered) new = i->ar;
-		else
-			{
-			new = umalloc(sizeof(AuthRecord));
-			if (!new) { LogMsg("ERROR: UpdateHostnameRegistration - malloc"); return; }
-			mDNS_SetupResourceRecord(new, mDNSNULL, 0, kDNSType_A, kWideAreaTTL, kDNSRecordTypeKnownUnique, HostnameCallback, i);
-			}
+		// unlink and clear uDNS state (old registrations just get overwritten)
+		if (i->ar->uDNS_info.state != regState_Unregistered) unlinkAR(&u->RecordRegistrations, i->ar);
+		ubzero(&i->ar->uDNS_info, sizeof(i->ar->uDNS_info));
 
-		// setup new record
-		AssignDomainName(new->resrec.name, i->ar->resrec.name);
-		new->resrec.rdata->u.ipv4 = u->PrimaryIP.ip.v4;
-
-		if (i->ar->uDNS_info.state != regState_Unregistered)
-			{
-			// delete old record
-			i->ar->RecordContext = mDNSNULL;  // clear backpointer to HostnameInfo
-			uDNS_DeregisterRecord(m, i->ar);
-			i->ar = new;
-			}
-		
-		// advertise new
-		AdvertiseHostname(m, i);
+		// set rdata and register
+		i->ar->resrec.rdata->u.ipv4 = u->PrimaryIP.ip.v4;
+		AdvertiseHostname(m, i);		
 		}
 	}
 
