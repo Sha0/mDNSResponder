@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.21  2004/12/01 20:57:20  ksekar
+<rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
+
 Revision 1.20  2004/12/01 04:28:43  cheshire
 <rdar://problem/3872803> Darwin patches for Solaris and Suse
 Use version of daemon() provided in mDNSUNP.c instead of local copy
@@ -134,14 +137,15 @@ static int ParseDNSServers(mDNS *m, const char *filePath)
 	while (fgets(line,sizeof(line),fp))
 		{
 		struct in_addr ina;
-		mDNSv4Addr DNSAddr;
 		line[255]='\0';		// just to be safe
 		if (sscanf(line,"%10s %15s", keyword, nameserver) != 2) continue;	// it will skip whitespaces
 		if (strncmp(keyword,"nameserver",10)) continue;
 		if (inet_aton(nameserver, (struct in_addr *)&ina) != 0)
 			{
-			DNSAddr.NotAnInteger = ina.s_addr;
-			mDNS_RegisterDNS(m,&DNSAddr);
+			mDNSAddr DNSAddr;
+			DNSAddr.type = mDNSAddrType_IPv4;
+			DNSAddr.ip.v4.NotAnInteger = ina.s_addr;
+			mDNS_AddDNSServer(m, &DNSAddr, NULL);
 			numOfServers++;
 			}
 		}  
@@ -152,7 +156,7 @@ static void Reconfigure(mDNS *m)
 	{
 	mDNSAddr DynDNSIP;
 	mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL);
-	mDNS_DeregisterDNSList(m);
+	mDNS_DeleteDNSServers(m);
 	if (ParseDNSServers(m, uDNS_SERVERS_FILE) < 0)
 		LogMsg("Unable to parse DNS server list. Unicast DNS-SD unavailable");
 	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &DynDNSHostname, &DynDNSZone);

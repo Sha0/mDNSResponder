@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.248  2004/12/01 20:57:20  ksekar
+<rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
+
 Revision 1.247  2004/12/01 03:26:58  cheshire
 Remove unused variables
 
@@ -773,6 +776,7 @@ Minor code tidying
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 
 #include <Security/Security.h>
+#include <dnsinfo.h>
 
 // Code contributed by Dave Heller:
 // Define RUN_ON_PUMA_WITHOUT_IFADDRS to compile code that will
@@ -2062,17 +2066,65 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m)
 	return count;
 	}
 
+mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
+	{
+	int i;
+	dns_config_t *config = dns_configuration_copy();
+
+	if (!config) { LogMsg("Error: dns_configuration_copy returned NULL"); return mStatus_UnknownErr; }
+	mDNS_DeleteDNSServers(m);
+
+	for (i = 0; i < config->n_resolver; i++)		
+		{
+		int j, n;
+		domainname d;
+		dns_resolver_t *r = config->resolver[i];
+		if (r->port == MulticastDNSPort.NotAnInteger) continue; // ignore configurations for .local
+		if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
+		else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
+
+		// check if this is the lowest-weighted server for the domain
+		for (j = 0; j < config->n_resolver; j++)
+			{
+			dns_resolver_t *p = config->resolver[j];
+			if (p->port == MulticastDNSPort.NotAnInteger) continue;
+			if (p->search_order <= r->search_order)
+				{
+				domainname tmp;				
+				if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
+				else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
+				if (SameDomainName(&d, &tmp))
+					if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
+				}
+			}
+		if (j < config->n_resolver) // found a lower-weighted resolver for this domain
+			{ debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j); continue; }
+		// we're using this resolver - find the first IPv4 address
+		for (n = 0; n < r->n_nameserver; n++)
+			{
+			if (r->nameserver[n]->sa_family == AF_INET)
+				{
+				mDNSAddr saddr;
+				if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
+				debugf("Adding dns server from slot %d %d.%d.%d.%d for domain %##s", i, saddr.ip.v4.b[0], saddr.ip.v4.b[1], saddr.ip.v4.b[2], saddr.ip.v4.b[3], d.c);
+				mDNS_AddDNSServer(m, &saddr, &d);
+				break;  // !!!KRS if we ever support round-robin servers, don't break here
+				}
+			}
+		}
+	dns_configuration_free(config);
+	return mStatus_NoError;
+	}
 
 mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
 	{
 	int i, count;
 	CFArrayRef values;
-	char            buf[256];
-	mDNSv4Addr      saddr;
+	char buf[256];
+	mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 0 } } } };
 	CFStringRef s;
 
-
-	mDNS_DeregisterDNSList(m); // deregister orig list
+	mDNS_DeleteDNSServers(m); // deregister orig list
 	values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
 	if (!values) return mStatus_NoError;
 
@@ -2086,12 +2138,12 @@ mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
 			LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
 			continue;
 			}
-		if (!inet_aton(buf, (struct in_addr *)saddr.b))
+		if (!inet_aton(buf, (struct in_addr *)saddr.ip.v4.b))
 			{
 			LogMsg("ERROR: RegisterNameServers - invalid address string %s", buf);
 			continue;
 			}
-		mDNS_RegisterDNS(m, &saddr);
+		mDNS_AddDNSServer(m, &saddr, NULL);
 		}
 	return mStatus_NoError;
 	}
@@ -2403,12 +2455,10 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	CFRelease(key);
 
 	// handle any changes to search domains and DNS server addresses
-	if (dict)
-		{
-		RegisterSearchDomains(m, dict);
-		RegisterNameServers(m, dict);
-		CFRelease(dict);
-		}
+	if (RegisterSplitDNS(m) != mStatus_NoError)
+		if (dict) RegisterNameServers(m, dict);  // fall back to non-split DNS aware configuration on failure
+	RegisterSearchDomains(m, dict);  // note that we register name servers *before* search domains
+	if (dict) CFRelease(dict);
 
 	// get IPv4 settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);

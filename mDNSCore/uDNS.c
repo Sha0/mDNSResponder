@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.132  2004/12/01 20:57:19  ksekar
+<rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
+
 Revision 1.131  2004/12/01 19:59:27  cheshire
 <rdar://problem/3882643> Crash in mDNSPlatformTCPConnect
 If a TCP response has the TC bit set, don't respond by just trying another TCP connection
@@ -553,6 +556,15 @@ mDNSlocal mDNSs32 mDNSPlatformTimeNow(mDNS *m)
 #pragma mark - General Utility Functions
 #endif
 
+mDNSlocal int CountLabels(const domainname *d)
+	{
+	int count = 0;
+	const mDNSu8 *ptr;
+	
+	for (ptr = d->c; *ptr; ptr = ptr + ptr[0] + 1) count++;
+	return count;
+	}
+
 mDNSlocal mDNSOpaque16 newMessageID(uDNS_GlobalInfo *u)
 	{
 	static mDNSBool randomized = mDNSfalse;
@@ -633,89 +645,52 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr)
 #pragma mark - Name Server List Management
 #endif
 
-mDNSexport void mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr)
+mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const domainname *d)
     {
-    //!!!KRS do this dynamically!
+	DNSServer *s, *p;
     uDNS_GlobalInfo *u = &m->uDNS_info;
-    int i;
-
-	if (!dnsAddr->NotAnInteger)
-        {
-        LogMsg("ERROR: attempt to register DNS with IP address 0");
-        return;
-        }
-
+	
 	mDNS_Lock(m);
+	if (!d) d = (domainname *)"";
 
-    for (i = 0; i < 32; i++)
-        {
-        if (!u->Servers[i].ip.v4.NotAnInteger)
-            {
-            u->Servers[i].ip.v4.NotAnInteger = dnsAddr->NotAnInteger;
-			u->Servers[i].type = mDNSAddrType_IPv4;
-            goto exit;
-            }
-        if (u->Servers[i].ip.v4.NotAnInteger == dnsAddr->NotAnInteger)
-            {
-            debugf("ERROR: mDNS_RegisterDNS - DNS already registered");
-            goto exit;
-            }
-        }
-    if (i == 32) {  LogMsg("ERROR: mDNS_RegisterDNS - too many registered servers");  }
-exit:
+	// make sure server is unique
+	p = u->Servers;
+	while (p && !mDNSSameAddress(&p->addr, addr) && !SameDomainName(&p->domain, d)) p = p->next;
+	if (p) { LogMsg("Duplicate registration of DNS for domain %##s", d->c); goto end; }
+
+	// allocate, add to list
+	s = umalloc(sizeof(*s));
+	if (!s) { LogMsg("Error: mDNS_AddDNSServer - malloc"); goto end; }
+	s->addr = *addr;
+	AssignDomainName(s->domain, *d);
+	s->next = u->Servers;
+	u->Servers = s;
+	
+	end:
 	mDNS_Unlock(m);
     }
 
-mDNSexport void mDNS_DeregisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr)
+mDNSexport void mDNS_DeleteDNSServers(mDNS *const m)
     {
-    uDNS_GlobalInfo *u = &m->uDNS_info;
-    int i;
-
-    if (!dnsAddr->NotAnInteger)
-        {
-        LogMsg("ERROR: attempt to deregister DNS with IP address 0");
-        return;
-        }
-
+	DNSServer *s;
 	mDNS_Lock(m);
 
-    for (i = 0; i < 32; i++)
-        {
+	s = m->uDNS_info.Servers;
+	m->uDNS_info.Servers = mDNSNULL;
+	while (s)
+		{
+		DNSServer *tmp = s;
+		s = s->next;
+		ufree(tmp);
+		}
 
-        if (u->Servers[i].ip.v4.NotAnInteger == dnsAddr->NotAnInteger)
-            {
-            u->Servers[i].ip.v4.NotAnInteger = 0;
-            goto exit;
-            }
-        }
-    if (i == 32) {  LogMsg("ERROR: mDNS_DeregisterDNS - no such DNS registered");  }
- exit:
-	mDNS_Unlock(m);
-   }
-
-mDNSexport void mDNS_DeregisterDNSList(mDNS *const m)
-    {
-	mDNS_Lock(m);
-    ubzero(m->uDNS_info.Servers, 32 * sizeof(mDNSAddr));
 	mDNS_Unlock(m);
     }
-
-mDNSexport mDNSBool mDNS_DNSRegistered(mDNS *const m)
-	{
-	int i;
-	mDNS_Lock(m);
-	for (i = 0; i < 32; i++) if (m->uDNS_info.Servers[i].ip.v4.NotAnInteger)
-		{ mDNS_Unlock(m); return mDNStrue; }
-	mDNS_Unlock(m);
-	return mDNSfalse;
-	}
-	   
 
  // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - authorization management
 #endif
-
 
 mDNSlocal uDNS_AuthInfo *GetAuthInfoForZone(const uDNS_GlobalInfo *u, const domainname *zone)
 	{
@@ -1262,6 +1237,9 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 #pragma mark - host name and interface management
 #endif
 
+
+
+
 //!!!KRS change this to longest-match logic
 // find the target in our list of hostnames for an SRV record
 // e.g. for service example._xxx._tcp.example.foo.com, return target mycomputer.example.foo.com.
@@ -1274,17 +1252,13 @@ mDNSlocal const domainname *GetServiceTarget(uDNS_GlobalInfo *u, AuthRecord *srv
 	
 	if (srv->resrec.rrtype != kDNSType_SRV) { LogMsg("GetServiceTarget: bad rrtype %d", srv->resrec.rrtype); return mDNSNULL; }
 
-	// count labels in service name
-	for (ptr = srv->resrec.name.c; *ptr; ptr = ptr + ptr[0] + 1) nsrvlabels++;	
-	
+	nsrvlabels = CountLabels(&srv->resrec.name);
+
 	for (hi = u->Hostnames; hi; hi = hi->next)
 		{		
 		target = &hi->ar->resrec.name;
 		targetzone = (domainname *)(target->c + 1 + target->c[0]); // chop hostlabel
-
-		// count labels in target zone
-		nzonelabels = 0; 
-		for (ptr = targetzone->c; *ptr; ptr = ptr + ptr[0] + 1) nzonelabels++;
+		nzonelabels = CountLabels(targetzone); 		
 
 		if (nsrvlabels >= nzonelabels)
 			{
@@ -2121,16 +2095,35 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	debugf("Received unexpected response: ID %d matches no active records", mDNSVal16(msg->h.id));
 	}
 
-		
-//!!!KRS this should go away (don't just pick one randomly!)
-mDNSlocal const mDNSAddr *getInitializedDNS(uDNS_GlobalInfo *u)
+// lookup a DNS Server, matching by name in split-dns configurations.  Result stored in addr parameter if successful
+mDNSlocal mDNSBool GetServerForName(uDNS_GlobalInfo *u, const domainname *name, mDNSAddr *addr)
     {
-    int i;
-    for (i = 0; i < 32; i++)
-		if (u->Servers[i].ip.v4.NotAnInteger) return &u->Servers[i];
+	DNSServer *curmatch = mDNSNULL, *p = u->Servers;
+	int i, ncount, scount, curmatchlen = -1;
 
-	return mDNSNULL;
-    }
+	*addr = zeroAddr;
+	ncount = name ? CountLabels(name) : 0;
+	while (p)
+		{		
+		scount = CountLabels(&p->domain);
+		if (scount <= ncount && scount > curmatchlen)
+			{
+			// only inspect if server's domain is longer than current best match and shorter than the name itself
+			const domainname *tail = name;
+			for (i = 0; i < ncount - scount; i++)
+				tail = (domainname *)(tail->c + 1 + tail->c[0]);  // find "tail" (scount labels) of name
+			if (SameDomainName(tail, &p->domain)) { curmatch = p; curmatchlen = scount; }
+			}
+		p = p->next;
+		}
+
+	if (curmatch)
+		{
+		*addr = curmatch->addr;
+		return mDNStrue;
+		}
+	else return mDNSfalse;
+	}
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -2752,7 +2745,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
     DNSMessage msg;
     mDNSu8 *endPtr;
     mStatus err = mStatus_NoError;
-	const mDNSAddr *server;
+	mDNSAddr server;
 	
     //!!!KRS we should check if the question is already in our acivequestion list
 	if (!ValidateDomainName(&question->qname))
@@ -2780,10 +2773,9 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	LinkActiveQuestion(u, question);
 	question->uDNS_info.knownAnswers = mDNSNULL;
 
-	server = getInitializedDNS(u);
-	if (server)
+	if (GetServerForName(u, &question->qname, &server))
 		{
-		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, server, UnicastDNSPort, -1, mDNSNULL);
+		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
 		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
 		}
 
@@ -4164,9 +4156,6 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 	DNSMessage msg;
 	mStatus err;
 	mDNSu8 *end;
-	const mDNSAddr *server = getInitializedDNS(&m->uDNS_info);
-
-	if (!server) { debugf("uDNS_Execute - no DNS server"); return nextevent; }	
 
 	u->CurrentQuery = u->ActiveQueries;
 	while (u->CurrentQuery)
@@ -4221,14 +4210,18 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 			sendtime = q->LastQTime + q->ThisQInterval;
 			if (sendtime - timenow < 0)
 				{
-				err = constructQueryMsg(&msg, &end, q);
-				if (err)  LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %##s", q->qname.c);
-				else
+				mDNSAddr server;
+				if (GetServerForName(&m->uDNS_info, &q->qname, &server))
 					{
-					err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, server, UnicastDNSPort, -1, mDNSNULL);
-					if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); } // surpress syslog messages if we have no network
-					q->LastQTime = timenow;
-					if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;
+					err = constructQueryMsg(&msg, &end, q);
+					if (err)  LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %##s", q->qname.c);
+					else
+						{
+						err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
+						if (err) { debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); } // surpress syslog messages if we have no network
+						q->LastQTime = timenow;
+						if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;
+						}
 					}
 				}
 			else if (sendtime - nextevent < 0) nextevent = sendtime;
@@ -4334,8 +4327,6 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	mDNSs32 nexte, timenow = mDNSPlatformTimeNow(m);	
 
 	u->nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
-	if (!getInitializedDNS(&m->uDNS_info)) return; 	// return immediately if we don't have a DNS server
-		
 	
 	nexte = CheckNATMappings(m, timenow);
 	if (nexte - u->nextevent < 0) u->nextevent = nexte;

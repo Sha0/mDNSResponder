@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.247  2004/12/01 20:57:19  ksekar
+<rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
+
 Revision 1.246  2004/11/29 23:26:32  cheshire
 Added NonZeroTime() function, which usually returns the value given, with the exception
 that if the value given is zero, it returns one instead. For timer values where zero is
@@ -1483,6 +1486,13 @@ typedef struct uDNS_HostnameInfo
 	const void *StatusContext;                // Client Context
 	} uDNS_HostnameInfo;
 
+typedef struct DNSServer
+	{
+    struct DNSServer *next;
+    mDNSAddr addr;
+    domainname domain;       // name->server matching for "split dns"
+	} DNSServer;
+
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 
 // A NetworkInterfaceInfo_struct serves two purposes:
@@ -1818,7 +1828,7 @@ typedef struct
 	AuthRecord       *RecordRegistrations;
 	NATTraversalInfo *NATTraversals;
 	mDNSu16          NextMessageID;
-	mDNSAddr         Servers[32];
+    DNSServer        *Servers;           // list of DNS servers
 	mDNSAddr         Router;
 	mDNSAddr         PrimaryIP;          // Address of primary interface
 	mDNSAddr         MappedPrimaryIP;    // Cache of public address if PrimaryIP is behind a NAT
@@ -2484,10 +2494,8 @@ extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 extern void     mDNS_SetFQDN(mDNS *const m);
 extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
-extern void     mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);
-extern void     mDNS_DeregisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);
-extern void     mDNS_DeregisterDNSList(mDNS *const m);
-extern mDNSBool mDNS_DNSRegistered(mDNS *const m);
+extern void     mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
+extern void     mDNS_DeleteDNSServers(mDNS *const m);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
