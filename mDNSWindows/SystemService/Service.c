@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.23  2005/01/25 08:14:15  shersche
+Change CacheRecord to CacheEntity
+
 Revision 1.22  2004/12/10 13:18:40  cheshire
 Create no-op function RecordUpdatedNiceLabel(), required by uds_daemon.c
 
@@ -155,7 +158,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #define	kDNSServiceCacheEntryCountDefault	512
 
 #define RR_CACHE_SIZE 500
-static CacheRecord gRRCache[RR_CACHE_SIZE];
+static CacheEntity gRRCache[RR_CACHE_SIZE];
 #if 0
 #pragma mark == Structures ==
 #endif
