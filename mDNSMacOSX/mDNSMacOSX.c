@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.191  2004/09/21 19:19:36  cheshire
+<rdar://problem/3760923> Combine WatchForDynDNSChanges() into WatchForNetworkChanges()
+
 Revision 1.190  2004/09/21 19:04:45  cheshire
 Strip trailing white space from the ends of lines
 
@@ -2120,56 +2123,6 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	CFRelease(dict);
 	}
 
-// change notification for events that specifically affect dynamic dns / unicast settings
-mDNSlocal mStatus WatchForDynDNSChanges(mDNS *const m)
-    {
-    CFStringRef			    DNSkey, v4key, hostkey;
-	CFStringRef             scprefkey = CFSTR("Setup:/Network/DynamicDNS");
-    CFMutableArrayRef		keyList;
-    CFRunLoopSourceRef		rls;
-    SCDynamicStoreRef 		session;
-	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
-
-	
-	session = SCDynamicStoreCreate(NULL, CFSTR("WatchForDynDNSChanges"), DynDNSConfigChanged, &context);
-	if (!session) {  LogMsg("ERROR: WatchForDynDNSChanges - SCDynamicStoreCreate");  return mStatus_UnknownErr;  }
-
-    keyList = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-    if (!keyList) {  LogMsg("ERROR: WatchForDynDNSChanges - CFArrayCreateMutable");  return mStatus_UnknownErr;  }
-    
-    // create a pattern that matches the global DNS dictionary key
-    DNSkey = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-	v4key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	hostkey = SCDynamicStoreKeyCreateHostNames(NULL);
-    if (!DNSkey || !v4key) { LogMsg("ERROR: WatchForDynDNSChanges - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return mStatus_UnknownErr; }
-    
-    CFArrayAppendValue(keyList, DNSkey);
-    CFArrayAppendValue(keyList, v4key);
-	CFArrayAppendValue(keyList, hostkey);
-	CFArrayAppendValue(keyList, scprefkey);
-    CFRelease(DNSkey);
-	CFRelease(v4key);
-	CFRelease(hostkey);
-	// scprefkey doesn't need to be released
-
-    SCDynamicStoreSetNotificationKeys(session, keyList, NULL);
-    CFRelease(keyList);
-    
-    // create a CFRunLoopSource for our DynamicStore session
-    rls = SCDynamicStoreCreateRunLoopSource(NULL, session, 0);
-    if (!rls) {  LogMsg("ERROR: WatchForDNSChanges - SCDynamicStoreCreateRunLoopSource");  return mStatus_UnknownErr;  }
-    
-    // add the run loop source to our current run loop
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-    CFRelease(rls);
-
-	// get initial configuration
-	DynDNSZone.c[0] = '\0';
-    DynDNSConfigChanged(session, NULL, m);
-
-    return mStatus_NoError;
-    }
-
 mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{
 	(void)store;        // Parameter not used
@@ -2184,6 +2137,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	UpdateInterfaceList(m);
 	ClearInactiveInterfaces(m);
 	SetupActiveInterfaces(m);
+	DynDNSConfigChanged(store, changedKeys, context);
 	
 	if (m->MainCallback)
 		m->MainCallback(m, mStatus_ConfigChanged);
@@ -2198,6 +2152,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
 	CFStringRef           key4     = SCDynamicStoreKeyCreateHostNames(NULL);
+	CFStringRef           key5     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	CFStringRef           pattern1 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
 	CFStringRef           pattern2 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
 
@@ -2211,6 +2166,8 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(keys, key2);
 	CFArrayAppendValue(keys, key3);
 	CFArrayAppendValue(keys, key4);
+	CFArrayAppendValue(keys, key5);
+	CFArrayAppendValue(keys, CFSTR("Setup:/Network/DynamicDNS"));
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
@@ -2232,6 +2189,7 @@ exit:
 	if (key2)     CFRelease(key2);
 	if (key3)     CFRelease(key3);
 	if (key4)     CFRelease(key4);
+	if (key5)     CFRelease(key5);
 	if (pattern1) CFRelease(pattern1);
 	if (pattern2) CFRelease(pattern2);
 	if (keys)     CFRelease(keys);
@@ -2667,8 +2625,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = WatchForPowerChanges(m);
 	if (err) return err;
 
-	err = WatchForDynDNSChanges(m);
-	if (err) return err;
+	DynDNSZone.c[0] = '\0';						// Get initial DNS configuration
+	DynDNSConfigChanged(m->p->Store, NULL, m);
 
 	GetUserSpecifiedRFC1034ComputerName(&m->uDNS_info.hostlabel);
 	if (!m->uDNS_info.hostlabel.c[0]) MakeDomainLabelFromLiteralString(&m->uDNS_info.hostlabel, "Macintosh");
