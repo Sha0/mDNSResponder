@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.48  2004/12/07 01:31:31  cheshire
+mDNSMacOSXSystemBuildNumber() returns int, not mDNSBool
+
 Revision 1.47  2004/11/30 03:24:03  cheshire
 <rdar://problem/3854544> Defer processing network configuration changes until configuration has stabilized
 
@@ -246,7 +249,7 @@ struct mDNS_PlatformSupport_struct
     };
 
 extern void mDNSMacOSXNetworkChanged(mDNS *const m);
-extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
+extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
 
