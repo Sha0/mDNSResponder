@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.167  2005/02/02 02:19:32  cheshire
+Add comment explaining why unlink(MDNS_UDS_SERVERPATH); fails
+
 Revision 1.166  2005/02/01 19:58:52  ksekar
 Shortened cryptic "broken pipe" syslog message
 
@@ -939,7 +942,11 @@ int udsserver_exit(void)
 	dnssd_close(listenfd);
 
 #if !defined(USE_TCP_LOOPBACK)
-	unlink(MDNS_UDS_SERVERPATH);
+	// Currently, we're unable to remove /var/run/mdnsd because we've changed to userid "nobody"
+	// to give up unnecessary privilege, but we need to be root to remove this Unix Domain Socket.
+	// It would be nice if we could find a solution to this problem
+	if (unlink(MDNS_UDS_SERVERPATH))
+		debugf("Unable to remove %s", MDNS_UDS_SERVERPATH);
 #endif
 
     return 0;
