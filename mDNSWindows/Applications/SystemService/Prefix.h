@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Prefix.h,v $
+Revision 1.2  2004/04/30 02:40:23  bradley
+Define DNS_SD_CLIENT_ENABLED=0 so DNSSD.c can be included without linking the client IPC code.
+
 Revision 1.1  2004/01/30 02:58:39  bradley
 mDNSResponder Windows Service. Provides global Rendezvous support with an IPC interface.
 
@@ -37,5 +40,7 @@ mDNSResponder Windows Service. Provides global Rendezvous support with an IPC in
 #else
 	#define	DEBUG					0
 #endif
+
+#define	DNS_SD_CLIENT_ENABLED		0
 
 #endif	// __PREFIX__
