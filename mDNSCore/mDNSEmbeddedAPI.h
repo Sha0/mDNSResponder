@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.154  2004/03/20 01:05:49  cheshire
+Test __LP64__ and __ILP64__ to compile properly on a wider range of 64-bit architectures
+
 Revision 1.153  2004/03/13 01:57:33  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -627,9 +630,21 @@ typedef   signed char  mDNSs8;
 typedef unsigned char  mDNSu8;
 typedef   signed short mDNSs16;
 typedef unsigned short mDNSu16;
-#if _LP64
+
+// <http://gcc.gnu.org/onlinedocs/gcc-3.3.3/cpp/Common-Predefined-Macros.html> says
+//   __LP64__ _LP64
+//   These macros are defined, with value 1, if (and only if) the compilation is
+//   for a target where long int and pointer both use 64-bits and int uses 32-bit.
+// <http://www.intel.com/software/products/compilers/clin/docs/ug/lin1077.htm> says
+//   Macro Name __LP64__ Value 1
+// A quick Google search for "defined(__LP64__)" OR "#ifdef __LP64__" gives 2590 hits and
+// a search for "#if __LP64__" gives only 12, so I think we'll go with the majority and use defined()
+#if defined(_LP64) || defined(__LP64__)
 typedef   signed int   mDNSs32;
 typedef unsigned int   mDNSu32;
+#elif defined(_ILP64) || defined(__ILP64__)
+typedef   signed int32 mDNSs32;
+typedef unsigned int32 mDNSu32;
 #else
 typedef   signed long  mDNSs32;
 typedef unsigned long  mDNSu32;
