@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.347  2004/01/22 03:50:49  cheshire
+If the client has specified an explicit InterfaceID, then do query by multicast, not unicast
+
 Revision 1.346  2004/01/22 03:48:41  cheshire
 Make sure uDNS client doesn't accidentally use query ID zero
 
@@ -4585,7 +4588,9 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 	question->InterfaceID = mDNSInterface_LocalOnly;
 #endif
 
-    if (IsLocalDomain(&question->qname))
+	// If the client has specified an explicit InterfaceID,
+	// then we do a multicast query on that interface, even for unicast domains.
+    if (question->InterfaceID || IsLocalDomain(&question->qname))
     	question->uDNS_info.id = zeroID;
     else return uDNS_StartQuery(m, question);
 
