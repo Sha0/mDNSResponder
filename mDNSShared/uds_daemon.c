@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.111  2004/11/05 22:47:37  shersche
+Conditionally compile usleep(1000) to be Sleep(1) on Windows
+Submitted by: Pavel Repin <prepin@gmail.com>
+
 Revision 1.110  2004/11/05 19:56:56  ksekar
 <rdar://problem/3862646> We no longer need to browse .Mac domains by
 default - changed #if 0 to more descriptive #ifdef _HAVE_SETDOMAIN_SUPPORT_
@@ -856,7 +860,11 @@ void udsserver_info(mDNS *const m)
 				rr->CRActiveQuestion ? "*" : " ", remain,
 				(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, CRDisplayString(m, rr));
+#if defined(_WIN32)
+			Sleep(1);
+#else
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
+#endif
 			}
 		if (m->rrcache_used[slot] != SlotUsed)
 			LogMsgNoIdent("Cache use mismatch: rrcache_used[slot] is %lu, true count %lu", m->rrcache_used[slot], SlotUsed);
