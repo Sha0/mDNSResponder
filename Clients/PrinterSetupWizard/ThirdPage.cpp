@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.19  2005/02/23 02:08:51  shersche
+<rdar://problem/4012275> If we can't match the manufacturer, and select a generic printer, then show all the manufacturers in the manufacturer pane, not just "Generic".
+
 Revision 1.18  2005/02/15 07:02:51  shersche
 <rdar://problem/4003724> Display different UI text when generic printer drivers are selected
 
@@ -1030,18 +1033,24 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	}
 	else if ( MatchGeneric( printer, service, &genericManufacturer, &genericModel ) )
 	{
+		Manufacturers *	pManufacturers;
+		Manufacturers	manufacturers;
+		
 		text.LoadString(IDS_PRINTER_MATCH_MAYBE);
 		
-		Manufacturers manufacturers;
-
-		manufacturers[genericManufacturer->name] = genericManufacturer;
-
 		if ( manufacturer )
 		{
-			manufacturers[manufacturer->name] = manufacturer;
+			manufacturers[genericManufacturer->name]	= genericManufacturer;
+			manufacturers[manufacturer->name]			= manufacturer;
+
+			pManufacturers = &manufacturers;
+		}
+		else
+		{
+			pManufacturers = &m_manufacturers;
 		}
 
-		SelectMatch( printer, service, manufacturers, genericManufacturer, genericModel );
+		SelectMatch( printer, service, *pManufacturers, genericManufacturer, genericModel );
 	}
 	else
 	{
