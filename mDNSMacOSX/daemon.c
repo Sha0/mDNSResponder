@@ -5,7 +5,7 @@
  *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
-                                                               * "License").  You may not use this file except in compliance with the
+ * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
  *
@@ -20,256 +20,342 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <ctype.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/param.h>
 #include <mach/mach.h>
-#include <net/if_types.h>
-#include <libc.h>
 #include <mach/mach_error.h>
-#include <mach/message.h>
 #include <servers/bootstrap.h>
-#include <mach/mach_error.h>
-#include <pthread.h>
-#include <assert.h>
-#include <netdb.h>
-
-#include <DNSServiceDiscovery/DNSServiceDiscovery.h>
-
-#include "DNSServiceDiscovery/DNSServiceDiscoveryDefines.h"
 
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
 
-#include "mDNSEnvironment.h"
 #include "mDNSClientAPI.h"				// Defines the interface to the client layer above
+#include "mDNSPlatformEnvironment.h"	// Defines the specific types needed to run mDNS on this platform
 
 // Globals
-static mDNS m;
-static mDNS_PlatformSupport p;
+static mDNS mDNSStorage;
+static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 500
 static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
 
+#if DEBUGBREAKS
+static int debug_mode = 1;
+#else
 static int debug_mode = 0;
+#endif
+int use_53 = 1;
 
-static CFMachPortRef client_death_port;
+//*************************************************************************************************************
+// Client Death Detection
 
-/* Enable dead name notifications for the given port (send them to our global notification port) */
-
-static kern_return_t EnableDeathNotificationForClient(mach_port_t port)
-{
-    kern_return_t r;
-    mach_port_t oldPort;
-
-    r = mach_port_request_notification(mach_task_self(), port, MACH_NOTIFY_DEAD_NAME, 0, CFMachPortGetPort(client_death_port), MACH_MSG_TYPE_MAKE_SEND_ONCE, &oldPort);
-    if ( r != KERN_SUCCESS)
-    {
-        /* 5/20/99 - This can happen if the client died after sending the message but before we received it */
-        printf("(%s:%d) failed to set up death notifications for port %d: {0x%x} %s\n", __FILE__, __LINE__, (int)port, r, mach_error_string(r));
-    }
-
-    return r;
-
-} // EnableDeathNotifications
-
-static mach_port_t NotificationDeathPort(const mach_msg_header_t *msg)
-{
-    if ( MACH_NOTIFY_DEAD_NAME == msg->msgh_id )
-    {
-        const mach_dead_name_notification_t *deathMessage = (const mach_dead_name_notification_t *)msg;
-        return deathMessage->not_port;
-    }
-    return MACH_PORT_NULL;
-
-} // MessageIsNotificationDeath
-
-
-
-local void FoundService(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, void *context)
+typedef struct DNSServiceDomainEnumeration_struct DNSServiceDomainEnumeration;
+struct DNSServiceDomainEnumeration_struct
 	{
-	#pragma unused (question)
-	mach_port_t client = (mach_port_t)context;
-	int resultType = DNSServiceBrowserReplyAddInstance;
+	DNSServiceDomainEnumeration *next;
+	DNSQuestion dom;	// Question asking for domains
+	DNSQuestion def;	// Question asking for default domain
+	mach_port_t port;
+	};
 
+typedef struct DNSServiceBrowser_struct DNSServiceBrowser;
+struct DNSServiceBrowser_struct
+	{
+	DNSServiceBrowser *next;
+	DNSQuestion q;
+	mach_port_t port;
+	};
+
+typedef struct DNSServiceResolver_struct DNSServiceResolver;
+struct DNSServiceResolver_struct
+	{
+	DNSServiceResolver *next;
+    ServiceInfoQuery q;
+	ServiceInfo      i;
+	mach_port_t port;
+	};
+
+typedef struct DNSServiceRegistration_struct DNSServiceRegistration;
+struct DNSServiceRegistration_struct
+	{
+	DNSServiceRegistration *next;
+    ServiceRecordSet s;
+	mach_port_t port;
+	};
+
+static DNSServiceDomainEnumeration *DNSServiceDomainEnumerationList = NULL;
+static DNSServiceBrowser           *DNSServiceBrowserList           = NULL;
+static DNSServiceResolver          *DNSServiceResolverList          = NULL;
+static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
+
+static mach_port_t client_death_port;
+
+static void AbortClient(mach_port_t port)
+	{
+	DNSServiceDomainEnumeration **e = &DNSServiceDomainEnumerationList;
+	DNSServiceBrowser           **b = &DNSServiceBrowserList;
+	DNSServiceResolver          **l = &DNSServiceResolverList;
+	DNSServiceRegistration      **r = &DNSServiceRegistrationList;
+
+	while (*e && (*e)->port != port) e = &(*e)->next;
+	if (*e)
+		{
+		DNSServiceDomainEnumeration *x = *e;
+		*e = (*e)->next;
+		debugf("Aborting %d", port);
+		mDNS_StopGetDomains(&mDNSStorage, &x->dom);
+		mDNS_StopGetDomains(&mDNSStorage, &x->def);
+		free(x);
+		return;
+		}
+
+	while (*b && (*b)->port != port) b = &(*b)->next;
+	if (*b)
+		{
+		DNSServiceBrowser *x = *b;
+		*b = (*b)->next;
+		debugf("Aborting DNSServiceBrowser %d", port);
+		mDNS_StopBrowse(&mDNSStorage, &x->q);
+		free(x);
+		return;
+		}
+
+	while (*l && (*l)->port != port) l = &(*l)->next;
+	if (*l)
+		{
+		DNSServiceResolver *x = *l;
+		*l = (*l)->next;
+		debugf("Aborting DNSServiceResolver %d", port);
+		mDNS_StopResolveService(&mDNSStorage, &x->q);
+		free(x);
+		return;
+		}
+
+	while (*r && (*r)->port != port) r = &(*r)->next;
+	if (*r)
+		{
+		DNSServiceRegistration *x = *r;
+		*r = (*r)->next;
+		debugf("Aborting DNSServiceRegistration %d", port);
+		mDNS_DeregisterService(&mDNSStorage, &x->s);
+		free(x);
+		return;
+		}
+	}
+
+static void ClientDeathCallback(CFMachPortRef port, void *voidmsg, CFIndex size, void *info)
+	{
+	mach_msg_header_t *msg = (mach_msg_header_t *)voidmsg;
+	if (msg->msgh_id == MACH_NOTIFY_DEAD_NAME)
+		{
+		const mach_dead_name_notification_t *const deathMessage = (mach_dead_name_notification_t *)msg;
+		debugf("Client on port %d died or deallocated", deathMessage->not_port);
+		AbortClient(deathMessage->not_port);
+		}
+	}
+
+static void EnableDeathNotificationForClient(mach_port_t port)
+	{
+    mach_port_t prev;
+    kern_return_t r = mach_port_request_notification(mach_task_self(), port, MACH_NOTIFY_DEAD_NAME, 0,
+													 client_death_port, MACH_MSG_TYPE_MAKE_SEND_ONCE, &prev);
+	// If the port already died while we were thinking about it, then abort the operation right away
+    if (r != KERN_SUCCESS) AbortClient(port);
+	}
+
+//*************************************************************************************************************
+// Domain Enumeration
+
+static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+	{
+	#pragma unused(m)
+	char buffer[256];
+	DNSServiceDomainEnumerationReplyResultType rt;
+	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->Context;
+
+	debugf("FoundDomain %##s PTR %##s", answer->name.c, answer->rdata.name.c);
+	if (answer->rrtype != kDNSType_PTR) return;
+	if (!x) { debugf("FoundDomain: DNSServiceDomainEnumeration is NULL"); return; }
+
+	if (answer->rrremainingttl > 0)
+		{
+		if (question == &x->dom) rt = DNSServiceDomainEnumerationReplyAddDomain;
+		else                     rt = DNSServiceDomainEnumerationReplyAddDomainDefault;
+		}
+	else
+		{
+		if (question == &x->dom) rt = DNSServiceDomainEnumerationReplyRemoveDomain;
+		else return;
+		}
+
+	ConvertDomainNameToCString(&answer->rdata.name, buffer);
+	DNSServiceDomainEnumerationReply_rpc(x->port, rt, buffer, 0);
+	}
+
+kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t server, mach_port_t client, int regDom)
+	{
+	mStatus err;
+    mDNS_DomainType dt1 = regDom ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
+    mDNS_DomainType dt2 = regDom ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
+	DNSServiceDomainEnumeration *x = malloc(sizeof(*x));
+    if (!x) { debugf("provide_DNSServiceDomainEnumerationCreate_rpc: No memory!"); return(-1); }
+	x->port = client;
+	x->next = DNSServiceDomainEnumerationList;
+	DNSServiceDomainEnumerationList = x;
+	
+    debugf("Client %d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
+	// We always give local.arpa. as the initial default browse domain, and then look for more
+    DNSServiceDomainEnumerationReply_rpc(x->port, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.arpa.", 0);
+    err           = mDNS_GetDomains(&mDNSStorage, &x->dom, dt1, zeroIPAddr, FoundDomain, x);
+    if (!err) err = mDNS_GetDomains(&mDNSStorage, &x->def, dt2, zeroIPAddr, FoundDomain, x);
+    if (!err) EnableDeathNotificationForClient(client);
+    else debugf("provide_DNSServiceDomainEnumerationCreate_rpc: Error %d", err);
+    return(err);
+	}
+
+//*************************************************************************************************************
+// Browse for services
+
+mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer)
+	{
+	DNSServiceBrowser *x = (DNSServiceBrowser *)question->Context;
+	int resultType = DNSServiceBrowserReplyAddInstance;
 	domainlabel name;
 	domainname type, domain;
 	char c_name[256], c_type[256], c_dom[256];
-	
 	if (answer->rrtype != kDNSType_PTR) return;
-
-	debugf("FoundService %##s", answer->rdata.name.c);
-
+	debugf("FoundInstance %##s", answer->rdata.name.c);
 	DeconstructServiceName(&answer->rdata.name, &name, &type, &domain);
 	ConvertDomainLabelToCString_unescaped(&name, c_name);
 	ConvertDomainNameToCString(&type, c_type);
 	ConvertDomainNameToCString(&domain, c_dom);
-
 	if (answer->rrremainingttl == 0) resultType = DNSServiceBrowserReplyRemoveInstance;
-
 	debugf("DNSServiceBrowserReply_rpc sending reply for %s", c_name);
-
-	DNSServiceBrowserReply_rpc(client, resultType, c_name, c_type, c_dom, 0);
+	DNSServiceBrowserReply_rpc(x->port, resultType, c_name, c_type, c_dom, 0);
 	}
 
-kern_return_t provide_DNSServiceBrowserCreate_rpc
-(
-	mach_port_t server,
-	mach_port_t client,
-	DNSCString regtype,
-	DNSCString domain
- )
-{
+kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_t client,
+	DNSCString regtype, DNSCString domain)
+	{
 	mStatus err;
-    DNSQuestion *q = malloc(sizeof(DNSQuestion));
-    if (!q) { debugf("provide_DNSServiceBrowserCreate_rpc: No memory!"); return(-1); }
+    domainname t, d;
+    DNSServiceBrowser *x = malloc(sizeof(*x));
+    if (!x) { debugf("provide_DNSServiceBrowserCreate_rpc: No memory!"); return(-1); }
+	x->port = client;
+	x->next = DNSServiceBrowserList;
+	DNSServiceBrowserList = x;
 
-    if (debug_mode) {
-        printf("Create a browser, %s, %s\n", regtype, domain);
-    }
-    err = mDNS_StartBrowse(&m, q, regtype, domain, zeroIPAddr, FoundService, (void*)client);
-    if (err) { debugf("provide_DNSServiceBrowserCreate_rpc: mDNS_StartBrowse failed"); return(err); }
+    ConvertCStringToDomainName(regtype, &t);
+    if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
+	else ConvertCStringToDomainName("local.arpa.", &d);
 
-    EnableDeathNotificationForClient(client);
+    debugf("Client %d: Browse for Services %##s.%##s", client, &t, &d);
+    err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, zeroIPAddr, FoundInstance, x);
+    if (!err) EnableDeathNotificationForClient(client);
+    else debugf("provide_DNSServiceBrowserCreate_rpc: mDNS_StartBrowse failed");
+    return(err);
+	}
 
-    // reply
-    // 
-    return 0;
-}
+//*************************************************************************************************************
+// Resolve Service Info
 
+static void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
+	{
+	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
+	struct sockaddr_in interface;
+	struct sockaddr_in address;
 
-kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc
-(
-	mach_port_t server,
-	mach_port_t client,
-	int registrationDomains
- )
-{
-    if (debug_mode) {
-        printf("Enumerate %s domains\n", registrationDomains ? "registration" : "browsing");
-    }
-    DNSServiceDomainEnumerationReply_rpc(client, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.arpa.", 0);
-	if (!registrationDomains)
-		DNSServiceDomainEnumerationReply_rpc(client, DNSServiceDomainEnumerationReplyAddDomain, "apple.com.", 0);
-    EnableDeathNotificationForClient(client);
-    return 0;
-}
+	interface.sin_len         = sizeof(interface);
+	interface.sin_family      = AF_INET;
+	interface.sin_port        = 0;
+	interface.sin_addr.s_addr = query->info->InterfaceAddr.NotAnInteger;
+	
+	address.sin_len           = sizeof(address);
+	address.sin_family        = AF_INET;
+	address.sin_port          = query->info->port.NotAnInteger;
+	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
+	
+	DNSServiceResolverReply_rpc(x->port, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0);
+	}
 
-kern_return_t provide_DNSServiceRegistrationCreate_rpc
-(
-	mach_port_t server,
-	mach_port_t client,
-	DNSCString name,
-	DNSCString regtype,
-	DNSCString domain,
-	int notAnIntPort,
-	DNSCString txtRecord
- )
-{
-    char buffer[256];
+kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_port_t client,
+	DNSCString name, DNSCString regtype, DNSCString domain)
+	{
+	mStatus err;
     domainlabel n;
     domainname t, d;
-    IPPort port;
-    ServiceRecordSet *srs = malloc(sizeof(ServiceRecordSet));
-    if (!srs) { debugf("DNSServiceRegistrationRegister: No memory!"); return(-1); }
-
-    if (debug_mode) {
-
-        printf("Received Service Registration from local client\n");
-        printf("Name    = %s\n", name);
-        printf("RegType = %s\n", regtype);
-        printf("Domain  = %s\n", domain);
-        printf("Port    = %d\n", notAnIntPort);
-        if (txtRecord && txtRecord[0]) printf("txtRecord   = %s\n", txtRecord);
-    }
+	DNSServiceResolver *x = malloc(sizeof(*x));
+    if (!x) { debugf("provide_DNSServiceResolverResolve_rpc: No memory!"); return(-1); }
+	x->port = client;
+	x->next = DNSServiceResolverList;
+	DNSServiceResolverList = x;
 
     ConvertCStringToDomainLabel(name, &n);
     ConvertCStringToDomainName(regtype, &t);
-    ConvertCStringToDomainName(domain, &d);
+    if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
+	else ConvertCStringToDomainName("local.arpa.", &d);
+	ConstructServiceName(&x->i.name, &n, &t, &d);
+	x->i.InterfaceAddr = zeroIPAddr;
+
+    debugf("Client %d: Resolve Service %##s", client, &x->i.name);
+	err = mDNS_StartResolveService(&mDNSStorage, &x->q, &x->i, FoundInstanceInfo, x);
+    if (!err) EnableDeathNotificationForClient(client);
+    else debugf("provide_DNSServiceResolverResolve_rpc: mDNS_StartResolveService failed");
+    return(err);
+	}
+
+//*************************************************************************************************************
+// Registration
+
+// This sample Callback just calls mDNS_RenameAndReregisterService to automatically pick a new
+// unique name for the service. For a device such as a printer, this may be appropriate.
+// For a device with a user interface, and a screen, and a keyboard, the appropriate
+// response may be to prompt the user and ask them to choose a new name for the service.
+mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus result)
+	{
+	DNSServiceRegistration *x = (DNSServiceRegistration*)sr->Context;
+	mach_port_t port = x->port;
+	switch (result)
+		{
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   sr->RR_SRV.name.c); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     sr->RR_SRV.name.c); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       sr->RR_SRV.name.c); break;
+		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
+		}
+	if (result == mStatus_NoError) DNSServiceRegistrationReply_rpc(port, result);
+	if (result == mStatus_NameConflict) { AbortClient(port); DNSServiceRegistrationReply_rpc(port, result); }
+//	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr);
+	}
+
+kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
+	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
+	{
+	mStatus err;
+    domainlabel n;
+    domainname t, d;
+    mDNSIPPort port;
+    DNSServiceRegistration *x = malloc(sizeof(*x));
+    if (!x) { debugf("DNSServiceRegistrationRegister: No memory!"); return(-1); }
+	x->port = client;
+	x->next = DNSServiceRegistrationList;
+	DNSServiceRegistrationList = x;
+
+    if (*name && *name != '.') ConvertCStringToDomainLabel(name, &n);
+	else n = mDNSStorage.nicelabel;
+    ConvertCStringToDomainName(regtype, &t);
+    if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
+	else ConvertCStringToDomainName("local.arpa.", &d);
     port.NotAnInteger = notAnIntPort;
-    mDNS_RegisterService(&m, srs, port, txtRecord, &n, &t, &d);
-    ConvertDomainNameToCString_unescaped(&srs->RR_SRV.name, buffer);
-    if (debug_mode) {
-        printf("Made Service Record Set for %s\n", buffer);
-    }
 
-	// For now, return immediate success to client
-    DNSServiceRegistrationReply_rpc(client, 0);
+    debugf("Client %d: Register Service %s.%s%s %d %s", client, name, regtype, domain, port.b[0] << 8 | port.b[1], txtRecord);
+    err = mDNS_RegisterService(&mDNSStorage, &x->s, port, txtRecord, &n, &t, &d, Callback, x);
+    if (!err) EnableDeathNotificationForClient(client);
+    debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
+    return(err);
+	}
 
-    EnableDeathNotificationForClient(client);
-
-    return 0;
-
-}
-
-kern_return_t provide_DNSServiceResolverResolve_rpc
-(
-	mach_port_t server,
-	mach_port_t client,
-	DNSCString name,
-	DNSCString regtype,
-	DNSCString domain
- )
-{
-    struct sockaddr_in	return_address;
-    struct sockaddr_in	return_interface;
-
-    char *buffer1;
-    char *buffer2;
-
-    struct hostent *h;
-
-    if (debug_mode) {
-        printf("Resolve a request, %s, %s, %s\n", name, regtype, domain);
-    }
-
-    h = gethostbyname("www.apple.com");
-    return_address.sin_len = 16;
-    return_address.sin_family = h->h_addrtype;
-    memcpy((char *)&return_address.sin_addr.s_addr, h->h_addr_list[0], h->h_length);
-    return_address.sin_port = htons(80);
-
-    h = gethostbyname("www.epicware.com");
-    return_interface.sin_len = 16;
-    return_interface.sin_family = h->h_addrtype;
-    memcpy((char *)&return_interface.sin_addr.s_addr, h->h_addr_list[0], h->h_length);
-    return_interface.sin_port = htons(2000);
-
-    buffer1 = malloc(return_address.sin_len);
-    buffer2 = malloc(return_interface.sin_len);
-
-    bzero(buffer1, return_address.sin_len);
-    bzero(buffer2, return_interface.sin_len);
-
-    bcopy(&return_address, buffer1, return_address.sin_len);
-    bcopy(&return_interface, buffer2, return_interface.sin_len);
-
-    printf("address = %d\n", return_address.sin_len);
-    printf("address port = %d\n", return_address.sin_port);
-    printf("address addr = %s\n", inet_ntoa(return_address.sin_addr));
-    printf("interface = %d\n", return_interface.sin_len);
-    printf("interface port = %d\n", return_interface.sin_port);
-    printf("interface addr = %s\n", inet_ntoa(return_interface.sin_addr));
-
-    // reply
-    DNSServiceResolverReply_rpc(client, buffer1, buffer2, "Resolver data for apple.com, epicware.com", 0);
-    return 0;
-}
+//*************************************************************************************************************
+// Support Code
 
 void
-clientDeathCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
-{
-
-    mach_port_t deadPort = NotificationDeathPort(msg);
-    printf("The client on port %d died or deallocated\n", deadPort);
-}
-    
-
-void
-dnsserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 {
     mig_reply_error_t		*request = msg;
     mig_reply_error_t		*reply;
@@ -353,82 +439,35 @@ dnsserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
     CFAllocatorDeallocate(NULL, reply);
 }
 
-void
-start(const char *bundleName, const char *bundleDir)
-{
-    kern_return_t 		status = KERN_SUCCESS;
-    mach_port_t			host_priv;
-    CFMachPortRef		server_port;
-    CFRunLoopSourceRef	rls;
-
-	mStatus err = mDNS_Init(&m, &p, rrcachestorage, RR_CACHE_SIZE, NULL);
-	if (err) { debugf("Daemon start: mDNS_Init failed"); return; }
-
-    /* Getting host_priv port */
-    host_priv = mach_host_self();
-
-    if (status != KERN_SUCCESS) {
-        return;
-    }
-
-    /* Create the primary / new connection port */
-    server_port = CFMachPortCreate(NULL, dnsserverCallback, NULL, NULL);
-
-    /* Create a port for client death notifications */
-    client_death_port = CFMachPortCreate(NULL, clientDeathCallback, NULL, NULL);
-
-    /* Create and add a run loop source for the ports */
-    rls = CFMachPortCreateRunLoopSource(NULL, server_port, 0);
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-    CFRelease(rls);
-
-    rls = CFMachPortCreateRunLoopSource(NULL, client_death_port, 0);
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-    CFRelease(rls);
-    
-    // Register the server port with the bootstrap server so clients can find it
-
-    status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, CFMachPortGetPort(server_port));
-    if (status != KERN_SUCCESS)
+void start(const char *bundleName, const char *bundleDir)
     {
-        return;
+	mStatus            err    = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL);
+    CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
+    CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
+	mach_port_t        m_port = CFMachPortGetPort(s_port);
+    kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
+    CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
+    CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
+    if (status) { fprintf(stderr, "Bootstrap_register failed(): %s", mach_error_string(status)); return; }
+	if (err)    { fprintf(stderr, "Daemon start: mDNS_Init failed"); return; }
+	client_death_port = CFMachPortGetPort(d_port);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
+    CFRelease(d_rls);
+    CFRelease(s_rls);
+    if (debug_mode) printf("Service registered with port %d\n", m_port);
     }
 
-    (void)mach_port_deallocate(mach_task_self(), host_priv);
-
-    switch (status) {
-        case KERN_SUCCESS :
-            if (debug_mode) {
-                printf("service registered with port %d\n", CFMachPortGetPort(server_port));
-            }
-
-            /* service not currently registered, "a good thing" (tm) */
-            break;
-        default :
-            printf("bootstrap_register failed(): %s", mach_error_string(status));
-            return;
-    }
-
-    return;
-}
-
-int
-main(int argc, char ** argv)
-{
-    if (argc > 1) {
-        // command line arguments
-        if (!strcmp(argv[1], "-d")) {
-            debug_mode = 1;
-        }
-    }
-
-    if (!debug_mode) {
-        daemon(0,0);
-    }
-
+int main(int argc, char **argv)
+    {
+	int i;
+	for (i=1; i<argc; i++)
+		{
+		if (!strcmp(argv[i], "-d")) debug_mode = 1;
+		if (!strcmp(argv[i], "-no53")) use_53 = 0;
+		}
+    if (!debug_mode) daemon(0,0);
     start(NULL, NULL);
     CFRunLoopRun();
-    /* not reached */
-    exit(0);
-    return 0;
-}
+    return(0);
+    }
