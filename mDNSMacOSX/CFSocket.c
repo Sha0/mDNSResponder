@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.100  2003/08/05 21:18:50  cheshire
+<rdar://problem/3363185> mDNSResponder should ignore 6to4
+Only use interfaces that are marked as multicast-capable (IFF_MULTICAST)
+
 Revision 1.99  2003/08/05 20:13:52  cheshire
 <rdar://problem/3294080> mDNSResponder using IPv6 interfaces before they are ready
 Ignore interfaces with the IN6_IFF_NOTREADY flag set
@@ -918,6 +922,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
 		if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) &&
+			(ifa->ifa_flags & IFF_MULTICAST) &&
 		    (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_POINTOPOINT))
 			{
 			int	ifru_flags6 = 0;
