@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.138  2004/12/13 18:23:18  ksekar
+<rdar://problem/3915805> mDNSResponder error when quitting iChat -
+don't close sockets delivering errors to blocked clients
+
 Revision 1.137  2004/12/13 00:09:22  ksekar
 <rdar://problem/3915805> mDNSResponder error when quitting iChat
 
@@ -3233,13 +3237,11 @@ static transfer_state send_undelivered_error(request_state *rs)
         else
             {
             my_perror("ERROR: send - unable to deliver error to client\n");
-            if (rs->u_err->sd == rs->sd) dnssd_close(rs->u_err->sd);
             return t_error;
             }
         }
     if (nwritten + rs->u_err->nwritten == sizeof(mStatus))
         {
-        if (rs->u_err->sd == rs->sd) dnssd_close(rs->u_err->sd);
         freeL("send_undelivered_error", rs->u_err);
         rs->u_err = NULL;
         return t_complete;
