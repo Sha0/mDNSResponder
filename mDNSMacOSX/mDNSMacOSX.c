@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.288  2005/01/25 17:42:26  ksekar
+Renamed FoundDefBrowseDomain -> FoundLegacyBrowseDomain,
+cleaned up duplicate log messages when adding/removing browse domains
+
 Revision 1.287  2005/01/25 16:59:23  ksekar
 <rdar://problem/3971138> sa_len not set checking reachability for TCP connections
 
@@ -3100,15 +3104,17 @@ mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 	}
 
 // Callback for the _legacy._browse queries - add answer to list of domains to search for empty-string browses
-mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundLegacyBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	DNameListElem *ptr, *prev, *new;
 	(void)m; // unused;
 	(void)question;  // unused
 
+	LogMsg("%s legacy browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
+	
 	if (AddRecord)
 		{
-		new = mallocL("FoundDefBrowseDomain", sizeof(DNameListElem));
+		new = mallocL("FoundLegacyBrowseDomain", sizeof(DNameListElem));
 		if (!new) { LogMsg("ERROR: malloc"); return; }
 		AssignDomainName(&new->name, &answer->rdata->u.name);
 		new->next = DefBrowseList;
@@ -3129,13 +3135,13 @@ mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const 
 				udsserver_default_browse_domain_changed(&ptr->name, mDNSfalse);
 				if (prev) prev->next = ptr->next;
 				else DefBrowseList = ptr->next;
-				freeL("FoundDefBrowseDomain", ptr);				
+				freeL("FoundLegacyBrowseDomain", ptr);				
 				return;
 				}
 			prev = ptr;
 			ptr = ptr->next;
 			}
-		LogMsg("FoundDefBrowseDomain: Got remove event for domain %s not in list", answer->rdata->u.name.c);
+		LogMsg("FoundLegacyBrowseDomain: Got remove event for domain %s not in list", answer->rdata->u.name.c);
 		}
 	}
 
@@ -3185,7 +3191,7 @@ mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 // Also register a non-legacy _browse PTR record so that the domain appears in enumeration lists
 mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
 	{
-	LogMsg("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+	debugf("SetSCPrefsBrowseDomain: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 	
 	if (add)
 		{
@@ -3214,7 +3220,7 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 	mStatus err;
 
 	// start query for domains to be used in default (empty string domain) browses
-	err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, NULL, mDNSInterface_LocalOnly, FoundDefBrowseDomain, NULL);
+	err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, NULL, mDNSInterface_LocalOnly, FoundLegacyBrowseDomain, NULL);
 
 	// provide .local automatically
 	SetSCPrefsBrowseDomain(m, &localdomain, mDNStrue);
