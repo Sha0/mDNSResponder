@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.466  2004/11/23 21:08:07  ksekar
+Don't use ID to demux multicast/unicast now that unicast uses random IDs
+
 Revision 1.465  2004/11/15 20:09:21  ksekar
 <rdar://problem/3719050> Wide Area support for Add/Remove record
 
@@ -2336,7 +2339,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 
 #ifndef UNICAST_DISABLED
-    if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || rr->ForceMCast || IsLocalDomain(&rr->resrec.name) || !rr->uDNS_info.id.NotAnInteger))
+    if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || rr->ForceMCast || IsLocalDomain(&rr->resrec.name)))
 		return uDNS_DeregisterRecord(m, rr);
 #endif
 	
@@ -5004,7 +5007,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 
 #ifndef UNICAST_DISABLED	
 	if (dstaddr->type == mDNSAddrType_IPv4 && dstaddr->ip.v4.NotAnInteger != AllDNSLinkGroupv4.NotAnInteger &&
-		(QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
+		(QR_OP == StdR || QR_OP == UpdateR ))
 		{
 		mDNS_Lock(m);
 		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
