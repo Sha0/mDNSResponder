@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.20  2004/10/16 00:16:59  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.19  2004/09/17 01:08:49  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -131,8 +134,8 @@ extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
-const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
+	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
+	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 
 extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 	

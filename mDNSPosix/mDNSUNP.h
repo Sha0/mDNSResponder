@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.14  2004/10/16 00:17:01  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.13  2004/03/20 05:37:09  cheshire
 Fix contributed by Terry Lambert & Alfred Perlstein:
 Don't use uint8_t -- it requires stdint.h, which doesn't exist on FreeBSD 4.x
@@ -126,6 +129,7 @@ struct ifi_info {
   short   ifi_myflags;          /* our own IFI_xxx flags */
   int     ifi_index;            /* interface index */
   struct sockaddr  *ifi_addr;   /* primary address */
+  struct sockaddr  *ifi_netmask;
   struct sockaddr  *ifi_brdaddr;/* broadcast address */
   struct sockaddr  *ifi_dstaddr;/* destination address */
   struct ifi_info  *ifi_next;   /* next of these structures */

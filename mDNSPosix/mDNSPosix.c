@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.61  2004/10/16 00:17:01  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.60  2004/09/26 23:20:36  ksekar
 <rdar://problem/3813108> Allow default registrations in multiple wide-area domains
 
@@ -498,7 +501,7 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 
 	if (packetLen >= 0)
 		mDNSCoreReceive(m, &packet, (mDNSu8 *)&packet + packetLen,
-			&senderAddr, senderPort, &destAddr, MulticastDNSPort, InterfaceID, ttl);
+			&senderAddr, senderPort, &destAddr, MulticastDNSPort, InterfaceID);
 	}
 
 mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
@@ -877,7 +880,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 
 // Creates a PosixNetworkInterface for the interface whose IP address is
 // intfAddr and whose name is intfName and registers it with mDNS core.
-mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const char *intfName, int intfIndex)
+mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, struct sockaddr *intfMask, const char *intfName, int intfIndex)
 	{
 	int err = 0;
 	PosixNetworkInterface *intf;
@@ -886,6 +889,7 @@ mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const 
 	assert(m != NULL);
 	assert(intfAddr != NULL);
 	assert(intfName != NULL);
+	assert(intfMask != NULL);
 
 	// Allocate the interface structure itself.
 	intf = (PosixNetworkInterface*)malloc(sizeof(*intf));
@@ -902,6 +906,8 @@ mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const 
 		{
 		// Set up the fields required by the mDNS core.
 		SockAddrTomDNSAddr(intfAddr, &intf->coreIntf.ip, NULL);
+		SockAddrTomDNSAddr(intfMask, &intf->coreIntf.mask, NULL);
+		//LogMsg("SetupOneInterface: %#a %#a",  &intf->coreIntf.ip,  &intf->coreIntf.mask);
 		strncpy(intf->coreIntf.ifname, intfName, sizeof(intf->coreIntf.ifname));
 		intf->coreIntf.ifname[sizeof(intf->coreIntf.ifname)-1] = 0;
 		intf->coreIntf.Advertise = m->AdvertiseLocalAddresses;
@@ -997,7 +1003,7 @@ mDNSlocal int SetupInterfaceList(mDNS *const m)
 					}
 				else
 					{
-					if (SetupOneInterface(m, i->ifi_addr, i->ifi_name, i->ifi_index) == 0)
+					if (SetupOneInterface(m, i->ifi_addr, i->ifi_netmask, i->ifi_name, i->ifi_index) == 0)
 						if (i->ifi_addr->sa_family == AF_INET)
 							foundav4 = mDNStrue;
 					}
@@ -1011,7 +1017,7 @@ mDNSlocal int SetupInterfaceList(mDNS *const m)
 		// In the interim, we skip loopback interface only if we found at least one v4 interface to use
 		// if ( (m->HostInterfaces == NULL) && (firstLoopback != NULL) )
 		if ( !foundav4 && firstLoopback )
-			(void) SetupOneInterface(m, firstLoopback->ifi_addr, firstLoopback->ifi_name, firstLoopback->ifi_index);
+			(void) SetupOneInterface(m, firstLoopback->ifi_addr, firstLoopback->ifi_netmask, firstLoopback->ifi_name, firstLoopback->ifi_index);
 		}
 
 	// Clean up.

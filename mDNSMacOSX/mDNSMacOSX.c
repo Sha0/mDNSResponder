@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.209  2004/10/16 00:17:00  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.208  2004/10/15 23:00:18  ksekar
 <rdar://problem/3799242> Need to update LLQs on location changes
 
@@ -1079,7 +1082,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			return;
 			}
 		
-		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID, ttl);
+		mDNSCoreReceive(m, &packet, (unsigned char*)&packet + err, &senderAddr, senderPort, &destAddr, destPort, InterfaceID);
 		}
 
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
@@ -1590,6 +1593,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
+	SetupAddr(&i->ifinfo.mask, ifa->ifa_netmask);
 	strncpy(i->ifinfo.ifname, ifa->ifa_name, sizeof(i->ifinfo.ifname));
 	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;

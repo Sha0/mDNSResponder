@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.58  2004/10/16 00:17:01  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.57  2004/10/11 21:53:15  shersche
 <rdar://problem/3832450> Change GetWindowsVersionString link scoping from static to non-static so that it can be accessed from other compilation units. The information returned in this function will be used to determine what service dependencies to use when calling CreateService().
 Bug #: 3832450
@@ -1558,6 +1561,9 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	err = SockAddrToMDNSAddr( inIFA->ifa_addr, &ifd->interfaceInfo.ip, NULL );
 	require_noerr( err, exit );
 	
+	err = SockAddrToMDNSAddr( inIFA->ifa_netmask, &ifd->interfaceInfo.mask, NULL );
+	require_noerr( err, exit );
+	
 	ifd->interfaceInfo.Advertise = inMDNS->AdvertiseLocalAddresses;
 	
 	err = mDNS_RegisterInterface( inMDNS, &ifd->interfaceInfo );
@@ -2338,7 +2344,7 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 	dlog( kDebugLevelChatty, DEBUG_NAME "\n" );
 	
 	end = ( (mDNSu8 *) &packet ) + n;
-	mDNSCoreReceive( inMDNS, &packet, end, &srcAddr, srcPort, &dstAddr, dstPort, inIFD->interfaceInfo.InterfaceID, ttl );
+	mDNSCoreReceive( inMDNS, &packet, end, &srcAddr, srcPort, &dstAddr, dstPort, inIFD->interfaceInfo.InterfaceID );
 	
 exit:
 	return;

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.224  2004/10/16 00:16:59  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.223  2004/10/15 23:00:17  ksekar
 <rdar://problem/3799242> Need to update LLQs on location changes
 
@@ -1430,6 +1433,7 @@ struct NetworkInterfaceInfo_struct
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
 	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
+	mDNSAddr        mask;
 	char            ifname[16];
 	mDNSBool        Advertise;			// False if you are only searching on this interface
 	mDNSBool        McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
@@ -2394,7 +2398,7 @@ extern mDNSBool mDNS_DNSRegistered(mDNS *const m);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
-								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
+								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.41  2004/10/16 00:17:00  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.40  2004/09/27 23:56:27  cheshire
 Fix infinite loop where mDNSPlatformUnlock() called mDNS_TimeNow(),
 and then mDNS_TimeNow() called mDNSPlatformUnlock()
@@ -284,7 +287,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 
 	if      (flags & T_MORE)                                debugf("ERROR: OTRcvUData() buffer too small (T_MORE set)");
 	else if (recvdata.addr.len < sizeof(InetAddress))       debugf("ERROR: recvdata.addr.len (%d) too short", recvdata.addr.len);
-	else mDNSCoreReceive(m, &packet, recvdata.udata.buf + recvdata.udata.len, &senderaddr, senderport, &destaddr, MulticastDNSPort, interface, 255);
+	else mDNSCoreReceive(m, &packet, recvdata.udata.buf + recvdata.udata.len, &senderaddr, senderport, &destaddr, MulticastDNSPort, interface);
 	
 	return(err);
 	}
@@ -361,12 +364,14 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			if (err) { LogMsg("OTInetGetInterfaceInfo failed %d", err); mDNSinitComplete(m, err); return; }
 
 			// Make our basic standard host resource records (address, PTR, etc.)
-			m->p->interface.InterfaceID           = (mDNSInterfaceID)&m->p->interface;
-			m->p->interface.ip.type               = mDNSAddrType_IPv4;
-			m->p->interface.ip.ip.v4.NotAnInteger = interfaceinfo.fAddress;
-			m->p->interface.ifname[0]             = 0;
-			m->p->interface.Advertise             = m->AdvertiseLocalAddresses;
-			m->p->interface.McastTxRx             = mDNStrue;
+			m->p->interface.InterfaceID             = (mDNSInterfaceID)&m->p->interface;
+			m->p->interface.ip  .type               = mDNSAddrType_IPv4;
+			m->p->interface.ip  .ip.v4.NotAnInteger = interfaceinfo.fAddress;
+			m->p->interface.mask.type               = mDNSAddrType_IPv4;
+			m->p->interface.mask.ip.v4.NotAnInteger = interfaceinfo.fMask;
+			m->p->interface.ifname[0]               = 0;
+			m->p->interface.Advertise               = m->AdvertiseLocalAddresses;
+			m->p->interface.McastTxRx               = mDNStrue;
 			}
 			
 		case T_OPTMGMTCOMPLETE:

@@ -23,14 +23,13 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.20  2004/10/16 00:17:01  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.19  2004/07/20 01:47:36  rpantos
 NOT_HAVE_SA_LEN applies to v6, too. And use more-portable s6_addr.
 
 Revision 1.18  2004/07/08 21:30:21  rpantos
-
-Bug #:
-Submitted by:
-Reviewed by:
 
 Revision 1.17  2004/06/25 00:26:27  rpantos
 Changes to fix the Posix build on Solaris.
@@ -119,12 +118,15 @@ First checkin
     #include <net/if_dl.h>
 #endif
 
+#if defined(AF_INET6) && HAVE_IPV6
+#include <netinet6/in6_var.h>
+#endif
 
 struct ifi_info *get_ifi_info(int family, int doaliases)
 {
     int                 junk;
     struct ifi_info     *ifi, *ifihead, **ifipnext;
-    int                 sockfd, len, lastlen, flags, myflags;
+    int                 sockfd, sockf6, len, lastlen, flags, myflags;
 #ifdef NOT_HAVE_IF_NAMETOINDEX
     int                 index = 200;
 #endif
@@ -138,11 +140,17 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
 #endif
 
     sockfd = -1;
+    sockf6 = -1;
     buf = NULL;
     ifihead = NULL;
     
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
+        goto gotError;
+    }
+
+    sockf6 = socket(AF_INET6, SOCK_DGRAM, 0);
+    if (sockf6 < 0) {
         goto gotError;
     }
 
@@ -235,6 +243,14 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
                 }
                 memcpy(ifi->ifi_addr, sinptr, sizeof(struct sockaddr_in));
 
+#ifdef  SIOCGIFNETMASK
+				if (ioctl(sockfd, SIOCGIFNETMASK, &ifrcopy) < 0) goto gotError;
+				ifi->ifi_netmask = (struct sockaddr*)calloc(1, sizeof(struct sockaddr_in));
+				if (ifi->ifi_netmask == NULL) goto gotError;
+				sinptr = (struct sockaddr_in *) &ifrcopy.ifr_addr;
+				memcpy(ifi->ifi_netmask, sinptr, sizeof(struct sockaddr_in));
+#endif
+
 #ifdef  SIOCGIFBRDADDR
                 if (flags & IFF_BROADCAST) {
                     if (ioctl(sockfd, SIOCGIFBRDADDR, &ifrcopy) < 0) {
@@ -279,6 +295,20 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
                 if (IN6_IS_ADDR_LINKLOCAL(&sinptr6->sin6_addr))
                 	sinptr6->sin6_addr.s6_addr[2] = sinptr6->sin6_addr.s6_addr[3] = 0;
                 memcpy(ifi->ifi_addr, sinptr6, sizeof(struct sockaddr_in6));
+
+#ifdef  SIOCGIFNETMASK_IN6
+				{
+				struct in6_ifreq ifr6;
+				bzero(&ifr6, sizeof(ifr6));
+				memcpy(&ifr6.ifr_name,           &ifr->ifr_name, sizeof(ifr6.ifr_name          ));
+				memcpy(&ifr6.ifr_ifru.ifru_addr, &ifr->ifr_addr, sizeof(ifr6.ifr_ifru.ifru_addr));
+				if (ioctl(sockf6, SIOCGIFNETMASK_IN6, &ifr6) < 0) goto gotError;
+				ifi->ifi_netmask = (struct sockaddr*)calloc(1, sizeof(struct sockaddr_in6));
+				if (ifi->ifi_netmask == NULL) goto gotError;
+				sinptr6 = (struct sockaddr_in6 *) &ifr6.ifr_ifru.ifru_addr;
+				memcpy(ifi->ifi_netmask, sinptr6, sizeof(struct sockaddr_in6));
+				}
+#endif
             }
             break;
 #endif
@@ -301,6 +331,10 @@ done:
     }
     if (sockfd != -1) {
         junk = close(sockfd);
+        assert(junk == 0);
+    }
+    if (sockf6 != -1) {
+        junk = close(sockf6);
         assert(junk == 0);
     }
     return(ifihead);    /* pointer to first structure in linked list */

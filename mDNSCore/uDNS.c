@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.98  2004/10/16 00:16:59  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.97  2004/10/15 23:00:18  ksekar
 <rdar://problem/3799242> Need to update LLQs on location changes
 
@@ -1868,7 +1871,7 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr,
-	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
+	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID)
 	{
 	DNSQuestion *qptr;
 	AuthRecord *rptr;
@@ -1886,7 +1889,6 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	(void)srcport;
 	(void)dstaddr;
 	(void)dstport;
-	(void)ttl;
 	(void)InterfaceID;
 	
 	if (QR_OP == StdR)
@@ -1942,14 +1944,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 mDNSlocal void receiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSInterfaceID InterfaceID)
 	{
-	mDNSAddr *sa = mDNSNULL, *da = mDNSNULL;
-	mDNSIPPort sp, dp;
-	mDNSu8 ttl = 0;
-
-	sp.NotAnInteger = 0;
-	dp.NotAnInteger = 0;
 	mDNS_Lock(m);
-	uDNS_ReceiveMsg(m, msg, end, sa, sp, da, dp, InterfaceID, ttl);
+	uDNS_ReceiveMsg(m, msg, end, mDNSNULL, zeroIPPort, mDNSNULL, zeroIPPort, InterfaceID);
 	mDNS_Unlock(m);
 	}
 

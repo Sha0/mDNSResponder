@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.31  2004/10/16 00:17:00  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.30  2004/09/21 23:29:51  cheshire
 <rdar://problem/3680045> DNSServiceResolve should delay sending packets
 
@@ -199,16 +202,16 @@ mDNSlocal mDNSu32 mprintf(const char *format, ...)
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
-	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
+	const mDNSInterfaceID InterfaceID)
 	{
+	(void)dstaddr; // Unused
 	// Snag copy of header ID, then call through
 	lastid = msg->h.id;
 	lastsrc = *srcaddr;
 
 	// We *want* to allow off-net unicast responses here.
-	// For now, the simplest way to allow that is to smash the TTL to 255 so that mDNSCore doesn't reject the packet
-	ttl = 255;
-	__MDNS__mDNSCoreReceive(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
+	// For now, the simplest way to allow that is to pretend it was received via multicast so that mDNSCore doesn't reject the packet
+	__MDNS__mDNSCoreReceive(m, msg, end, srcaddr, srcport, &AllDNSLinkGroup_v4, dstport, InterfaceID);
 	}
 
 static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)

@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.448  2004/10/16 00:16:59  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.447  2004/10/15 00:51:21  cheshire
 <rdar://problem/3711302> Seen in console: Ignored apparent spoof mDNS Response with TTL 1
 
@@ -4599,12 +4602,41 @@ exit:
 	return(responseptr);
 	}
 
+mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID InterfaceID, const mDNSAddr *addr)
+	{
+	NetworkInterfaceInfo *intf;
+
+	if (addr->type == mDNSAddrType_IPv4)
+		{
+		if (addr->ip.v4.b[0] == 169 && addr->ip.v4.b[1] == 254) return(mDNStrue);
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID)
+				if (((intf->ip.ip.v4.NotAnInteger ^ addr->ip.v4.NotAnInteger) & intf->mask.ip.v4.NotAnInteger) == 0)
+					return(mDNStrue);
+		}
+
+	if (addr->type == mDNSAddrType_IPv6)
+		{
+		if (addr->ip.v6.b[0] == 0xFE && addr->ip.v6.b[1] == 0x80) return(mDNStrue);
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID)
+				if ((((intf->ip.ip.v6.l[0] ^ addr->ip.v6.l[0]) & intf->mask.ip.v6.l[0]) == 0) &&
+					(((intf->ip.ip.v6.l[1] ^ addr->ip.v6.l[1]) & intf->mask.ip.v6.l[1]) == 0) &&
+					(((intf->ip.ip.v6.l[2] ^ addr->ip.v6.l[2]) & intf->mask.ip.v6.l[2]) == 0) &&
+					(((intf->ip.ip.v6.l[3] ^ addr->ip.v6.l[3]) & intf->mask.ip.v6.l[3]) == 0))
+						return(mDNStrue);
+		}
+
+	return(mDNSfalse);
+	}
+
 mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID)
 	{
-	DNSMessage    response;
-	mDNSu8 *responseend    = mDNSNULL;
+	DNSMessage response;
+	mDNSu8    *responseend = mDNSNULL;
+	mDNSBool   QueryWasLocalUnicast = !mDNSAddrIsDNSMulticast(dstaddr) && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	
 	if (!InterfaceID)
 		{
@@ -4625,7 +4657,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 	
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID,
-		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), mDNSfalse, &response);
+		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), QueryWasLocalUnicast, &response);
 
 	if (responseend)	// If responseend is non-null, that means we built a unicast response packet
 		{
@@ -4644,7 +4676,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const DNSMessage *const response, const mDNSu8 *end,
 	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
-	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
+	const mDNSInterfaceID InterfaceID)
 	{
 	static mDNSu32 NumPktsAccepted = 0, NumPktsIgnored = 0;
 	int i;
@@ -4667,12 +4699,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
 	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
-	if (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2))
+	if (!mDNSAddrIsDNSMulticast(dstaddr))
+		if (!AddressIsLocalSubnet(m, InterfaceID, srcaddr) || (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2))
 		{
 		mDNSBool ignoredlots = (++NumPktsIgnored > NumPktsAccepted + 10);
 		if (ignoredlots || NumPktsIgnored <= 10)
-			LogMsg("Ignored apparent spoof mDNS Response with TTL %d from %#-15a:%-5d to %#-15a:%-5d on %p with %2d Q %2d Ans %2d Auth %2d Add",
-				ttl, srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
+			LogMsg("Ignored apparent spoof mDNS Response from %#-15a:%-5d to %#-15a:%-5d on %p with %2d Q %2d Ans %2d Auth %2d Add",
+				srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 				response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
 		if (ignoredlots)
 			LogMsg("WARNING: Have ignored %lu packets out of %lu; this may indicate an error in the platform support layer.",
@@ -4891,11 +4924,11 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
-	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
+	const mDNSInterfaceID InterfaceID)
 	{
-	DNSMessage *msg = mDNSNULL;	
-	const mDNSu8 StdQ    = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
-	const mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	DNSMessage  *msg  = mDNSNULL;	
+	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	mDNSu8 QR_OP;
 	mDNSu8 *ptr = mDNSNULL;
 
@@ -4926,7 +4959,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		(QR_OP == StdR || QR_OP == UpdateR ) && msg->h.id.NotAnInteger)
 		{
 		mDNS_Lock(m);
-		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
+		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
 		mDNS_Unlock(m);
 		return;
 		}
@@ -4935,7 +4968,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	mDNS_Lock(m);
 	m->PktNum++;
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
+	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
 	else LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
 		msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
 
@@ -5826,6 +5859,10 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	{
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
+
+	if (!mDNSAddressIsValid(&set->mask))
+		{ LogMsg("Error! Tried to register a NetworkInterfaceInfo with invalid mask"); return(mStatus_Invalid); }
+
 	mDNS_Lock(m);
 	
 	// Assume this interface will be active

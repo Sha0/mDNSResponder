@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.25  2004/10/16 00:17:01  cheshire
+<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
+
 Revision 1.24  2004/09/21 21:02:56  cheshire
 Set up ifname before calling mDNS_RegisterInterface()
 
@@ -1053,13 +1056,14 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inA
 	mStatus							err;
 	MDNSInterfaceItem *				item;
 	MDNSSocketRef					socketRef;
-	const struct sockaddr_in *		ipv4;
+	const struct sockaddr_in *		ipv4, *mask;
 	
 	dlog( kDebugLevelVerbose, DEBUG_NAME "setting up interface (name=%s)\n", inAddr->ifa_name );
 	check( inMDNS );
 	check( inAddr );
 	check( inAddr->ifa_addr );
 	ipv4 = (const struct sockaddr_in *) inAddr->ifa_addr;
+	mask = (const struct sockaddr_in *) inAddr->ifa_netmask;
 	check( outItem );
 	
 	// Allocate memory for the info item.
@@ -1084,12 +1088,14 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inA
 	
 	// Register this interface with mDNS.
 	
-	item->hostSet.InterfaceID 			= (mDNSInterfaceID) item;
-	item->hostSet.ip.type 				= mDNSAddrType_IPv4;
-	item->hostSet.ip.ip.v4.NotAnInteger	= ipv4->sin_addr.s_addr;
-	item->hostSet.ifname[0]             = 0;
-	item->hostSet.Advertise       		= inMDNS->AdvertiseLocalAddresses;
-	item->hostSet.McastTxRx       		= mDNStrue;
+	item->hostSet.InterfaceID             = (mDNSInterfaceID) item;
+	item->hostSet.ip  .type               = mDNSAddrType_IPv4;
+	item->hostSet.ip  .ip.v4.NotAnInteger = ipv4->sin_addr.s_addr;
+	item->hostSet.mask.type               = mDNSAddrType_IPv4;
+	item->hostSet.mask.ip.v4.NotAnInteger = mask->sin_addr.s_addr;
+	item->hostSet.ifname[0]               = 0;
+	item->hostSet.Advertise               = inMDNS->AdvertiseLocalAddresses;
+	item->hostSet.McastTxRx               = mDNStrue;
 
 	err = mDNS_RegisterInterface( inMDNS, &item->hostSet );
 	require_noerr( err, exit );
@@ -1753,7 +1759,7 @@ mDNSlocal void	TaskProcessPacket( mDNS *inMDNS, MDNSInterfaceItem *inItem, MDNSS
 		// Dispatch the packet to mDNS.
 		
 		packetEndPtr = ( (mDNSu8 *) &packet ) + n;
-		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inItem->hostSet.InterfaceID, 255 );
+		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inItem->hostSet.InterfaceID );
 	}
 	
 	// Update counters.
