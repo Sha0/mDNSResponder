@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.441  2004/10/08 03:25:01  ksekar
+<rdar://problem/3831716> domain enumeration should use LLQs
+
 Revision 1.440  2004/10/06 01:44:19  cheshire
 <rdar://problem/3813936> Resolving too quickly sometimes returns stale TXT record
 
@@ -5468,7 +5471,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->Target           = zeroAddr;
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
-	question->LongLived        = mDNSfalse;
+	question->LongLived        = mDNStrue;
 	question->ExpectUnique     = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
