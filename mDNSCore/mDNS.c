@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.367  2004/03/20 03:16:10  cheshire
+Minor refinement to "Excessive update rate" message
+
 Revision 1.366  2004/03/20 03:12:57  cheshire
 <rdar://problem/3587619>: UpdateCredits not granted promptly enough
 
@@ -5226,7 +5229,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 			if (!rr->UpdateBlocked) rr->UpdateBlocked = (m->timenow + delay * mDNSPlatformOneSecond) | 1;
 			rr->LastAPTime = rr->UpdateBlocked;
 			rr->ThisAPInterval *= 4;
-			LogMsg("Excessive update rate for %##s; delaying announcement by %d seconds", rr->resrec.name.c, delay);
+			LogMsg("Excessive update rate for %##s; delaying announcement by %d second%s", rr->resrec.name.c, delay, delay > 1 ? "s" : "");
 			}
 		rr->resrec.rroriginalttl = newttl;
 		}
