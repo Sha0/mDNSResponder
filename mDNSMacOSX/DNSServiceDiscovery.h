@@ -42,6 +42,30 @@ enum {
     kDNSServiceDiscoveryMoreRepliesImmediately	= 1 << 0,
 };
 
+
+/* possible error code values */
+enum
+{
+    kDNSServiceDiscoveryWaiting     = 1,
+    kDNSServiceDiscoveryNoError     = 0,
+      // mDNS Error codes are in the range
+      // FFFE FF00 (-65792) to FFFE FFFF (-65537)
+    kDNSServiceDiscoveryUnknownErr        = -65537,       // 0xFFFE FFFF
+    kDNSServiceDiscoveryNoSuchNameErr     = -65538,
+    kDNSServiceDiscoveryNoMemoryErr       = -65539,
+    kDNSServiceDiscoveryBadParamErr       = -65540,
+    kDNSServiceDiscoveryBadReferenceErr   = -65541,
+    kDNSServiceDiscoveryBadStateErr       = -65542,
+    kDNSServiceDiscoveryBadFlagsErr       = -65543,
+    kDNSServiceDiscoveryUnsupportedErr    = -65544,
+    kDNSServiceDiscoveryNotInitializedErr = -65545,
+    kDNSServiceDiscoveryNoCache           = -65546,
+    kDNSServiceDiscoveryAlreadyRegistered = -65547,
+    kDNSServiceDiscoveryNameConflict      = -65548,
+    kDNSServiceDiscoveryInvalid           = -65549,
+    kDNSServiceDiscoveryMemFree           = -65792        // 0xFFFE FF00
+};
+
 /*!
 @function DNSServiceResolver_handleReply
  @description This function should be called with the Mach message sent
@@ -55,7 +79,7 @@ void DNSServiceDiscovery_handleReply(void *replyMsg);
 /* Service Registration */
 
 typedef void (*DNSServiceRegistrationReply) (
-    int 		errorCode,		// -1 name collision, 0 successful registration, other uDNS error code 
+    int 		errorCode,
     void		*context
 );
 
