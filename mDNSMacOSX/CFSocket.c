@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.114  2003/08/27 02:55:13  cheshire
+<rdar://problem/3387910>:	Bug: Don't report mDNSPlatformSendUDP sendto errno 64 (Host is down)
+
 Revision 1.113  2003/08/19 22:20:00  cheshire
 <rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
 More minor refinements
@@ -359,6 +362,16 @@ Minor code tidying
 static mDNSu32 clockdivisor = 0;
 
 // ***************************************************************************
+// Macros
+
+#define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
+#define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
+
+#define mDNSAddressIsAllDNSLinkGroup(X) (                                                     \
+	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroup  )) || \
+	((X)->type == mDNSAddrType_IPv6 && mDNSSameIPv6Address((X)->ip.v6, AllDNSLinkGroupv6))    )
+
+// ***************************************************************************
 // Functions
 
 // Note, this uses mDNS_vsnprintf instead of standard "vsnprintf", because mDNS_vsnprintf knows
@@ -518,6 +531,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, to.ss_len);
 	if (err < 0)
 		{
+		// Don't report EHOSTDOWN (i.e. ARP failure) to unicast destinations
+		if (errno == EHOSTDOWN && !mDNSAddressIsAllDNSLinkGroup(dst)) return(err);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %s/%ld to %#a:%d skt %d error %d errno %d (%s)",
 			InterfaceID, info->ifa_name, dst->type, dst, (mDNSu16)dstPort.b[0]<<8 | dstPort.b[1], s, err, errno, strerror(errno));
 		return(err);
