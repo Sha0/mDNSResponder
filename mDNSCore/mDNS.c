@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.457  2004/10/26 06:28:36  cheshire
+Now that we don't check IP TTL any more, remove associated log message
+
 Revision 1.456  2004/10/26 06:21:42  cheshire
 Adjust mask validity check to allow an all-ones mask (for IPv6 ::1 loopback address)
 
@@ -4694,7 +4697,6 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID)
 	{
-	static mDNSu32 NumPktsAccepted = 0, NumPktsIgnored = 0;
 	int i;
 	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
 	CacheRecord *CacheFlushRecords = mDNSNULL;
@@ -4720,18 +4722,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
 	if (!mDNSAddrIsDNSMulticast(dstaddr))
 		if (!AddressIsLocalSubnet(m, InterfaceID, srcaddr) || (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2))
-		{
-		mDNSBool ignoredlots = (++NumPktsIgnored > NumPktsAccepted + 10);
-		if (ignoredlots || NumPktsIgnored <= 10)
-			debugf("Ignored apparent spoof mDNS Response from %#-15a:%-5d to %#-15a:%-5d on %p with %2d Q %2d Ans %2d Auth %2d Add",
-				srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
-				response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
-		if (ignoredlots)
-			LogMsg("WARNING: Have ignored %lu packets out of %lu; this may indicate an error in the platform support layer.",
-				NumPktsIgnored, NumPktsIgnored + NumPktsAccepted);
-		return;
-		}
-	NumPktsAccepted++;
+			return;
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
