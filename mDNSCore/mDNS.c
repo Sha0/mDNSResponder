@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.303  2003/09/05 19:55:02  cheshire
+<rdar://problem/3409533> Include address records when announcing SRV records
+
 Revision 1.302  2003/09/05 00:01:36  cheshire
 <rdar://problem/3407549> Don't accelerate queries that have large KA lists
 
@@ -3287,6 +3290,18 @@ mDNSlocal void SendResponses(mDNS *const m)
 			TimeToAnnounceThisRecord(rr, m->timenow + rr->ThisAPInterval/2) &&
 			ResourceRecordIsValidAnswer(rr)))
 			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
+
+	// When sending SRV records (particularly when announcing a new service) automatically add the related Address record(s)
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->ImmedAnswer && rr->resrec.rrtype == kDNSType_SRV)
+			for (r2=m->ResourceRecords; r2; r2=r2->next)				// Scan list of resource records
+				if (RRIsAddressType(r2) &&								// For all address records (A/AAAA) ...
+					ResourceRecordIsValidAnswer(r2) &&					// ... which are valid for answer ...
+					rr->LastMCTime - r2->LastMCTime >= 0 &&				// ... which we have not sent recently ...
+					rr->resrec.rdnamehash == r2->resrec.namehash &&		// ... whose name is the name of the SRV target
+					SameDomainName(&rr->resrec.rdata->u.srv.target, &r2->resrec.name) &&
+					(rr->ImmedAnswer == mDNSInterfaceMark || rr->ImmedAnswer == r2->resrec.InterfaceID))
+					r2->ImmedAnswer = mDNSInterfaceMark;				// ... then mark this address record for sending too
 
 	// If there's a record which is supposed to be unique that we're going to send, then make sure that we give
 	// the whole RRSet as an atomic unit. That means that if we have any other records with the same name/type/class
