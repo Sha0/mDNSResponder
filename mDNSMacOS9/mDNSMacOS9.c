@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.39  2004/09/21 21:02:54  cheshire
+Set up ifname before calling mDNS_RegisterInterface()
+
 Revision 1.38  2004/09/17 01:08:50  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -357,6 +360,7 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			m->p->interface.InterfaceID           = (mDNSInterfaceID)&m->p->interface;
 			m->p->interface.ip.type               = mDNSAddrType_IPv4;
 			m->p->interface.ip.ip.v4.NotAnInteger = interfaceinfo.fAddress;
+			m->p->interface.ifname[0]             = 0;
 			m->p->interface.Advertise             = m->AdvertiseLocalAddresses;
 			m->p->interface.McastTxRx             = mDNStrue;
 			}

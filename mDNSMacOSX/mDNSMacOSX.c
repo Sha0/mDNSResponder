@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.192  2004/09/21 21:02:55  cheshire
+Set up ifname before calling mDNS_RegisterInterface()
+
 Revision 1.191  2004/09/21 19:19:36  cheshire
 <rdar://problem/3760923> Combine WatchForDynDNSChanges() into WatchForNetworkChanges()
 
@@ -998,7 +1001,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 				"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
 
 		sleep(1);		// After logging this error, rate limit so we don't flood syslog
-		} 
+		}
 	}
 
 // TCP socket support for unicast DNS and Dynamic DNS Update
@@ -1447,6 +1450,8 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
+	strncpy(i->ifinfo.ifname, ifa->ifa_name, sizeof(i->ifinfo.ifname));
+	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 	

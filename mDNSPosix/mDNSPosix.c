@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.59  2004/09/21 21:02:55  cheshire
+Set up ifname before calling mDNS_RegisterInterface()
+
 Revision 1.58  2004/09/17 01:08:54  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -891,6 +894,8 @@ mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const 
 		{
 		// Set up the fields required by the mDNS core.
 		SockAddrTomDNSAddr(intfAddr, &intf->coreIntf.ip, NULL);
+		strncpy(intf->coreIntf.ifname, intfName, sizeof(intf->coreIntf.ifname));
+		intf->coreIntf.ifname[sizeof(intf->coreIntf.ifname)-1] = 0;
 		intf->coreIntf.Advertise = m->AdvertiseLocalAddresses;
 		intf->coreIntf.McastTxRx = mDNStrue;
 

@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.24  2004/09/21 21:02:56  cheshire
+Set up ifname before calling mDNS_RegisterInterface()
+
 Revision 1.23  2004/09/17 01:08:57  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -1084,6 +1087,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inA
 	item->hostSet.InterfaceID 			= (mDNSInterfaceID) item;
 	item->hostSet.ip.type 				= mDNSAddrType_IPv4;
 	item->hostSet.ip.ip.v4.NotAnInteger	= ipv4->sin_addr.s_addr;
+	item->hostSet.ifname[0]             = 0;
 	item->hostSet.Advertise       		= inMDNS->AdvertiseLocalAddresses;
 	item->hostSet.McastTxRx       		= mDNStrue;
 

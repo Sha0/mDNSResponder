@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.55  2004/09/21 21:02:57  cheshire
+Set up ifname before calling mDNS_RegisterInterface()
+
 Revision 1.54  2004/09/17 01:08:57  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -1439,7 +1442,10 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	check( strlen( inIFA->ifa_name ) < sizeof( ifd->name ) );
 	strncpy( ifd->name, inIFA->ifa_name, sizeof( ifd->name ) - 1 );
 	ifd->name[ sizeof( ifd->name ) - 1 ] = '\0';
-
+	
+	strncpy(ifd->interfaceInfo.ifname, inIFA->ifa_name, sizeof(ifd->interfaceInfo.ifname));
+	ifd->interfaceInfo.ifname[sizeof(ifd->interfaceInfo.ifname)-1] = 0;
+	
 	// We always send and receive using IPv4, but to reduce traffic, we send and receive using IPv6 only on interfaces 
 	// that have no routable IPv4 address. Having a routable IPv4 address assigned is a reasonable indicator of being 
 	// on a large configured network, which means there's a good chance that most or all the other devices on that 
