@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.65  2003/04/26 02:34:01  cheshire
+Add missing mDNSexport
+
 Revision 1.64  2003/04/15 16:48:06  jgraessl
 
 Bug #: 3228833
@@ -208,7 +211,7 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	fflush(stderr);
 	}
 
-void LogMsg(const char *format, ...)
+mDNSexport void LogMsg(const char *format, ...)
 	{
 	unsigned char buffer[512];
 	va_list ptr;
