@@ -1,3 +1,4 @@
+no_module:start
 no_module:__call_mod_init_funcs
 no_module:__start
 no_module:__dyld_func_lookup
