@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.238  2003/07/22 00:10:20  cheshire
+<rdar://problem/3337355> ConvertDomainLabelToCString() needs to escape escape characters
+
 Revision 1.237  2003/07/19 03:23:13  cheshire
 <rdar://problem/2986147> mDNSResponder needs to receive and cache larger records
 
@@ -1445,7 +1448,7 @@ mDNSexport char *ConvertDomainLabelToCString_withescape(const domainlabel *const
 		mDNSu8 c = *src++;
 		if (esc)
 			{
-			if (c == '.')										// If character is a dot,
+			if (c == '.' || c == esc)							// If character is a dot or the escape character
 				*ptr++ = esc;									// Output escape character
 			else if (c <= ' ')									// If non-printing ascii,
 				{												// Output decimal escape sequence
