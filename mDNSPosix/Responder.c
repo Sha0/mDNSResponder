@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.6  2003/03/08 00:35:56  cheshire
+Switched to using new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
 Revision 1.5  2003/02/20 06:48:36  cheshire
 Bug #: 3169535 Xserve RAID needs to do interface-specific registrations
 Reviewed by: Josh Graessley, Bob Bradley
@@ -895,7 +898,7 @@ int main(int argc, char **argv)
 		else
 			{
 			// 5. Call mDNSPosixProcessFDSet to let the mDNSPosix layer do its work
-			mDNSPosixProcessFDSet(&mDNSStorage, result, &readfds);
+			mDNSPosixProcessFDSet(&mDNSStorage, &readfds);
 			
 			// 6. This example client has no other work it needs to be doing,
 			// but a real client would do its work here

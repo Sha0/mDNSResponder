@@ -83,7 +83,7 @@ mDNSexport void ExampleClientEventLoop(mDNS *const m)
 		else
 			{
 			// 5. Call mDNSPosixProcessFDSet to let the mDNSPosix layer do its work
-			mDNSPosixProcessFDSet(m, result, &readfds);
+			mDNSPosixProcessFDSet(m, &readfds);
 			
 			// 6. This example client has no other work it needs to be doing,
 			// but a real client would do its work here

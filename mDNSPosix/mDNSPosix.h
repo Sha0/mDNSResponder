@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.5  2003/03/08 00:35:56  cheshire
+Switched to using new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
+
 Revision 1.4  2002/12/23 22:13:31  jgraessl
 
 Reviewed by: Stuart Cheshire
@@ -98,7 +101,7 @@ extern int gMDNSPlatformPosixVerboseLevel;
 
 struct mDNS_PlatformSupport_struct
 	{
-    struct timeval NextEvent;
+    // No additional data required for Posix at this time
 	};
 
 extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m);
@@ -110,8 +113,8 @@ extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m);
 // Set timeout->tv_sec to 0x3FFFFFFF if you want to have effectively no timeout
 // After calling mDNSPosixGetFDSet(), call select(nfds, &readfds, NULL, NULL, &timeout); as usual
 // After select() returns, call mDNSPosixProcessFDSet() to let mDNSCore do its work
-extern void mDNSPosixGetFDSet(const mDNS *const m, int *nfds, fd_set *readfds, struct timeval *timeout);
-extern void mDNSPosixProcessFDSet(mDNS *const m, int selectresult, fd_set *readfds);
+extern void mDNSPosixGetFDSet(mDNS *const m, int *nfds, fd_set *readfds, struct timeval *timeout);
+extern void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds);
 
 #ifdef  __cplusplus
     }
