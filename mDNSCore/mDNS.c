@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.174  2003/06/07 01:46:38  cheshire
+<rdar://problem/3283540> When query produces zero results, call mDNS_Reconfirm() on any antecedent records
+
 Revision 1.173  2003/06/07 01:22:13  cheshire
 <rdar://problem/3283516> mDNSResponder needs an mDNS_Reconfirm() function
 
@@ -2942,6 +2945,17 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		}
 	}
 
+mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name)
+	{
+	mDNSs32 slot;
+	ResourceRecord *rr;
+	domainname *target;
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+			if ((target = GetRRDomainNameTarget(rr)) && SameDomainName(target, name))
+				mDNS_Reconfirm(m, rr);
+	}
+
 // How Standard Queries are generated:
 // 1. The Question Section contains the question
 // 2. The Additional Section contains answers we already know, to suppress duplicate replies
@@ -2992,6 +3006,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 					q->ThisQInterval *= 2;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
+					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * 8)
+						{
+						debugf("SendQueries: Zero current answers for %##s (%s); will reconfirm antecedents", q->qname.c, DNSTypeName(q->qtype));
+						ReconfirmAntecedents(m, &q->qname);		// If sending third query, and no answers yet, time to begin doubting the source
+						}
 					}
 				q->LastQTime     = m->timenow;
 				q->RecentAnswers = 0;
@@ -3171,26 +3190,21 @@ mDNSlocal void SendQueries(mDNS *const m)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr)
 	{
-#if MDNS_DEBUGMSGS > 1
 	if (rr->rrremainingttl)
-		{
-		if (rr->rrtype == kDNSType_TXT)
-			debugf("AnswerQuestionWithResourceRecord Add %##s TXT %#.20s remaining ttl %lu",
-				rr->name.c, rr->rdata->u.txt.c, rr->rrremainingttl);
-		else
-			debugf("AnswerQuestionWithResourceRecord Add %##s (%s) remaining ttl %lu",
-				rr->name.c, DNSTypeName(rr->rrtype), rr->rrremainingttl);
-		}
+		q->CurrentAnswers++;
 	else
 		{
-		if (rr->rrtype == kDNSType_TXT)
-			debugf("AnswerQuestionWithResourceRecord Del %##s TXT %#.20s UnansweredQueries %lu",
-				rr->name.c, rr->rdata->u.txt.c, rr->UnansweredQueries);
-		else
-			debugf("AnswerQuestionWithResourceRecord Del %##s (%s) UnansweredQueries %lu",
-				rr->name.c, DNSTypeName(rr->rrtype), rr->UnansweredQueries);
+		q->CurrentAnswers--;
+		if (q->CurrentAnswers == 0)
+			{
+			debugf("AnswerQuestionWithResourceRecord: Zero current answers for %##s (%s); will reconfirm antecedents",
+				q->qname.c, DNSTypeName(q->qtype));
+			ReconfirmAntecedents(m, &q->qname);
+			}
 		}
-#endif
+
+	debugf("AnswerQuestionWithResourceRecord:%4lu %s TTL%6lu %##s (%s)",
+		q->CurrentAnswers, rr->rrremainingttl ? "Add" : "Rmv", rr->rrremainingttl, rr->name.c, DNSTypeName(rr->rrtype));
 
 	rr->LastUsed = m->timenow;
 	rr->UseCount++;
@@ -4637,6 +4651,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->ThisQInterval  = InitialQuestionInterval;  // MUST be > zero for an active question
 		question->LastQTime      = m->timenow;
 		question->RecentAnswers  = 0;
+		question->CurrentAnswers = 0;
 		question->DuplicateOf    = FindDuplicateQuestion(m, question);
 		// question->InterfaceID must be already set by caller
 		question->SendQNow       = mDNSNULL;

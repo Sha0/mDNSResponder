@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.68  2003/06/07 01:46:38  cheshire
+<rdar://problem/3283540> When query produces zero results, call mDNS_Reconfirm() on any antecedent records
+
 Revision 1.67  2003/06/07 01:22:14  cheshire
 <rdar://problem/3283516> mDNSResponder needs an mDNS_Reconfirm() function
 
@@ -663,6 +666,7 @@ struct DNSQuestion_struct
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list
 	mDNSu32               RecentAnswers;	// Number of answers since the last time we sent this query
+	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
 	DNSQuestion          *DuplicateOf;
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
