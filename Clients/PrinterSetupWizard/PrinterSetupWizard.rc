@@ -306,7 +306,7 @@ BEGIN
     IDS_ERROR_SELECTING_PRINTER_CAPTION "Error"
     IDS_INSTALL_ERROR_CAPTION "Error"
     IDS_INSTALL_ERROR_MESSAGE 
-                            "There was an error while installing the printer."
+                            "You do not have sufficient access to your computer to connect to the selected printer."
     IDS_MANUFACTURER_HEADING "Manufacturer"
     IDS_MODEL_HEADING       "Model"
     IDS_NO_RENDEZVOUS_PRINTERS "No Rendezvous Printers are available"
