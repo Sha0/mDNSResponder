@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.160  2004/04/09 17:40:26  cheshire
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+
 Revision 1.159  2004/04/09 16:37:15  cheshire
 Suggestion from Bob Bradley:
 Move NumCacheRecordsForInterfaceID() to DNSCommon.c so it's available to all platform layers
@@ -1114,7 +1117,6 @@ struct NetworkInterfaceInfo_struct
 	mDNSAddr        ip;
 	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
 	mDNSBool        TxAndRx;			// Set to false if not sending and receiving packets on this interface
-    mDNSBool        Multicast;          // Set to true if the interface is capable of sending/receiving multicast
 	};
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;

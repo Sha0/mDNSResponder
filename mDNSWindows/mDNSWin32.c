@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.32  2004/04/09 17:40:26  cheshire
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+
 Revision 1.31  2004/04/09 00:40:46  bradley
 Re-enable IPv6 support, AAAA records over IPv4, and IPv4 routable IPv6 exclusion support.
 
@@ -1198,7 +1201,6 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	// devices on a large configured network, so we are willing to make that sacrifice.
 	
 	ifd->interfaceInfo.TxAndRx		= mDNStrue;
-	ifd->interfaceInfo.Multicast	= mDNStrue;
 	
 #if( MDNS_WINDOWS_EXCLUDE_IPV4_ROUTABLE_IPV6 )
 	if( inIFA->ifa_addr->sa_family != AF_INET )

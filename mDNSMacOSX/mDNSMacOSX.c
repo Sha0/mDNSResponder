@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.139  2004/04/09 17:40:26  cheshire
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+
 Revision 1.138  2004/04/09 16:37:16  cheshire
 Suggestion from Bob Bradley:
 Move NumCacheRecordsForInterfaceID() to DNSCommon.c so it's available to all platform layers
@@ -1120,7 +1123,7 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 		}
 	}
 
-mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa, mDNSBool multicast)
+mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	{
 	mDNSu32 scope_id = if_nametoindex(ifa->ifa_name);
 	mDNSAddr ip;
@@ -1146,12 +1149,12 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa, mDNSBoo
 	i->ifinfo.ip          = ip;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.TxAndRx     = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
-	i->ifinfo.Multicast   = multicast;
 	
 	i->next            = mDNSNULL;
 	i->CurrentlyActive = mDNStrue;
 	i->scope_id        = scope_id;
 	i->sa_family       = ifa->ifa_addr->sa_family;
+	i->Multicast       = (ifa->ifa_flags & IFF_MULTICAST) && !(ifa->ifa_flags & IFF_POINTOPOINT);
 
 	i->ss.m     = m;
 	i->ss.info  = i;
@@ -1160,7 +1163,6 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa, mDNSBoo
 	i->ss.sktv6 = -1;
 	i->ss.cfsv6 = NULL;
 	
-	if (!i->ifa_name) return(-1);
 	*p = i;
 	return(0);
 	}
@@ -1177,7 +1179,6 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	{
-	mDNSBool multicast          = mDNStrue;
 	mDNSBool foundav4           = mDNSfalse;
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
 	struct ifaddrs *theLoopback = NULL;
@@ -1237,8 +1238,6 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		    (ifa->ifa_flags & IFF_UP))
 			{
 			int ifru_flags6 = 0;
-			if (!(ifa->ifa_flags & IFF_MULTICAST) || (ifa->ifa_flags & IFF_POINTOPOINT))
-				multicast = mDNSfalse;
 			if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 				{
 				struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
@@ -1256,7 +1255,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 					theLoopback = ifa;
 				else
 					{
-					AddInterfaceToList(m, ifa, multicast);
+					AddInterfaceToList(m, ifa);
 					if (ifa->ifa_addr->sa_family == AF_INET)
 						foundav4 = mDNStrue;
 					}
@@ -1268,7 +1267,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
     //  Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
     //  In the interim, we skip loopback interface only if we found at least one v4 interface to use
 	if (!foundav4 && theLoopback)
-		AddInterfaceToList(m, theLoopback, multicast);
+		AddInterfaceToList(m, theLoopback);
 
 	// Now the list is complete, set the TxAndRx setting for each interface.
 	// We always send and receive using IPv4.
@@ -1282,7 +1281,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->CurrentlyActive)
 			{
-			mDNSBool txrx = ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
+			mDNSBool txrx = i->Multicast && ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
 			if (i->ifinfo.TxAndRx != txrx)
 				{
 				i->ifinfo.TxAndRx = txrx;

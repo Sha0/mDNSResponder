@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.31  2004/04/09 17:40:26  cheshire
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+
 Revision 1.30  2004/01/28 02:30:08  ksekar
 Added default Search Domains to unicast browsing, controlled via
 Networking sharing prefs pane.  Stopped sending unicast messages on
@@ -164,6 +167,7 @@ struct NetworkInterfaceInfoOSX_struct
 	char                    *ifa_name;			// Memory for this is allocated using malloc
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	u_short                  sa_family;
+	mDNSBool                 Multicast;
 	CFSocketSet              ss;
 	};
 

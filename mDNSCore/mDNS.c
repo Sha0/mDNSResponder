@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.370  2004/04/09 17:40:26  cheshire
+Remove unnecessary "Multicast" field -- it duplicates the semantics of the existing TxAndRx field
+
 Revision 1.369  2004/04/09 16:34:00  cheshire
 Debugging code for later; currently unused
 
@@ -5294,7 +5297,6 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 
 	// Send dynamic update for non-linklocal IPv4 Addresses
 	uDNS_AdvertiseInterface(m, set);
-	if (!set->Multicast) { debugf("Interface not multicast capable.  Registering via unicast only"); return; }
 	mDNS_SetupResourceRecord(&set->RR_A,     mDNSNULL, set->InterfaceID, kDNSType_A,     kDefaultTTLforUnique, kDNSRecordTypeUnique,      mDNS_HostNameCallback, set);
 	mDNS_SetupResourceRecord(&set->RR_PTR,   mDNSNULL, set->InterfaceID, kDNSType_PTR,   kDefaultTTLforUnique, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	mDNS_SetupResourceRecord(&set->RR_HINFO, mDNSNULL, set->InterfaceID, kDNSType_HINFO, kDefaultTTLforUnique, kDNSRecordTypeUnique,      mDNSNULL, mDNSNULL);
