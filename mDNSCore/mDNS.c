@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.372  2004/04/21 02:38:51  cheshire
+Add debugging checks
+
 Revision 1.371  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -2471,6 +2474,9 @@ mDNSlocal void SendResponses(mDNS *const m)
 		rr = m->CurrentRecord;
 		m->CurrentRecord = rr->next;
 
+		if (rr->SendRNow)
+			{ LogMsg("SendResponses: No active interface to send: %s", GetRRDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
+
 		if (rr->NewRData) CompleteRDataUpdate(m,rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
 
 		if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
@@ -3013,6 +3019,14 @@ mDNSlocal void SendQueries(mDNS *const m)
 			#endif
 			intf = next;
 			}
+		}
+
+	// Final sanity check for debugging purposes
+		{
+		AuthRecord *rr;
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->SendRNow)
+				{ LogMsg("SendQueries: No active interface to send: %s", GetRRDisplayString(m, rr)); rr->SendRNow = mDNSNULL; }
 		}
 	}
 
