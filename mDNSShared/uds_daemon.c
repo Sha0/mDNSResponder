@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.122  2004/11/24 17:55:01  ksekar
+Added log message clarifying <rdar://problem/3869241> For unicast operations, verify that service types are legal
+
 Revision 1.121  2004/11/24 04:45:52  cheshire
 Spelling mistake
 
@@ -1708,8 +1711,12 @@ static void handle_browse_request(request_state *request)
     if (!regtype[0] || !AppendDNSNameString(&typedn, regtype)) { err = mStatus_BadParamErr;  goto error; }
 
 	if (!MakeDomainNameFromDNSNameString(&temp, regtype)) { err = mStatus_BadParamErr;  goto error; }
-	if (temp.c[0] > 15 && domain[0] == 0) strcpy(domain, "local."); // For over-long service types, we only allow domain "local"
-
+	if (temp.c[0] > 15 && domain[0] == 0)
+		{
+		LogMsg("Overly long application protocol name %s (max 14 characters).  Limiting browse to local domain", regtype);
+		strcpy(domain, "local."); // For over-long service types, we only allow domain "local"
+		}
+	
 	// allocate and set up browser info
 	info = mallocL("browser_info_t", sizeof(*info));
 	if (!info) { err = mStatus_NoMemoryErr; goto error; }

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.217  2004/11/24 17:55:01  ksekar
+Added log message clarifying <rdar://problem/3869241> For unicast operations, verify that service types are legal
+
 Revision 1.216  2004/11/24 00:10:44  cheshire
 <rdar://problem/3869241> For unicast operations, verify that service types are legal
 
@@ -1107,8 +1110,12 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	if (!regtype[0] || !AppendDNSNameString(&t, regtype)) { errormsg = "Illegal regtype";     goto badparam; }
 	domainname temp;
 	if (!MakeDomainNameFromDNSNameString(&temp, regtype)) { errormsg = "Illegal regtype";     goto badparam; }
-	if (temp.c[0] > 15 && (!domain || domain[0] == 0)) domain = "local."; // For over-long service types, we only allow domain "local"
-
+	if (temp.c[0] > 15 && (!domain || domain[0] == 0))
+		{
+		LogMsg("Overly long application protocol name %s (max 14 characters).  Limiting browse to local domain", regtype);
+		domain = "local."; // For over-long service types, we only allow domain "local"
+		}
+	
 	// Allocate memory, and handle failure
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
 	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
