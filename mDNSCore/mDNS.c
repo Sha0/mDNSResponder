@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.226  2003/07/16 04:51:44  cheshire
+Fix use of constant 'mDNSPlatformOneSecond' where it should have said 'InitialQuestionInterval'
+
 Revision 1.225  2003/07/16 04:46:41  cheshire
 Minor wording cleanup: The correct DNS term is "response", not "reply"
 
@@ -3488,11 +3491,11 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, ResourceRecord *rr)
 			// If this question is one that's actively sending queries, and it's received three answers within
 			// one second of sending the query packet, then reset its exponential backoff back to the start
 			if (ActiveQuestion(q) && ++q->RecentAnswers >= 3 &&
-				q->ThisQInterval > mDNSPlatformOneSecond && m->timenow - q->LastQTime < mDNSPlatformOneSecond)
+				q->ThisQInterval > InitialQuestionInterval*2 && m->timenow - q->LastQTime < mDNSPlatformOneSecond)
 				{
 				debugf("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 					q->qname.c, DNSTypeName(q->qtype));
-				q->ThisQInterval = mDNSPlatformOneSecond;
+				q->ThisQInterval = InitialQuestionInterval;
 				SetNextQueryTime(m,q);
 				}
 			verbosedebugf("CacheRecordAdd %p %##s (%s) %lu", rr, rr->name.c, DNSTypeName(rr->rrtype), rr->rrremainingttl);
@@ -4477,7 +4480,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			if (MustSendRecord(rr) && ShouldSuppressKnownAnswer(&pktrr, rr))
 				{ rr->NR_AnswerTo = mDNSNULL; rr->NR_AdditionalTo = mDNSNULL; }
 
-		// See if this Known-Answer suppresses any previously scheduled answers
+		// See if this Known-Answer suppresses any previously scheduled answers (for multi-packet KA suppression)
 		for (rr=m->ResourceRecords; rr; rr=rr->next)
 			{
 			// If we're planning to send this answer on this interface, and only on this interface, then allow KA suppression
@@ -4623,7 +4626,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 8. If query is from a legacy client, generate a unicast reply too
+	// *** 8. If query is from a legacy client, generate a unicast response too
 	// ***
 	if (HaveAtLeastOneAnswer && replyunicast)
 		responseptr = GenerateUnicastResponse(query, end, InterfaceID, replyunicast, ResponseRecords);
@@ -4660,7 +4663,7 @@ exit:
 				}
 
 		// If we've seen two definite queries for this record,
-		// then mark it to expire in five seconds if we don't get a reply by then.
+		// then mark it to expire in five seconds if we don't get a response by then.
 		if (rr->UnansweredQueries >= MaxUnansweredQueries)
 			{
 			debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
