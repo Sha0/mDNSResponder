@@ -511,7 +511,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	port.NotAnInteger = notAnIntPort;
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
-	debugf("Client %d: Register Service: %#s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
+	debugf("Client %d: Register Service: %#s.%##s%##s %d %.30s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
 	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtinfo, data_len, RegistrationCallback, x);
 
 	if (err) AbortClient(client);

@@ -26,10 +26,14 @@ typedef struct
 	mDNSu16 numAdditionals;
 	} DNSMessageHeader;
 
+// We can send and receive packets up to 9000 bytes (Ethernet Jumbo Frame size, if that ever becomes widely used)
+// However, in the normal case we try to limit packets to 1500 bytes so that we don't get IP fragmentation on standard Ethernet
+#define AbsoluteMaxDNSMessageData 8960
+#define NormalMaxDNSMessageData 1460
 typedef struct
 	{
-	DNSMessageHeader h;		// Note: Size 12 bytes
-	mDNSu8 data[1460];		// Total packet size 1500 = 20 (IP) + 8 (UDP) + 12 (header) + 1460 (data)
+	DNSMessageHeader h;						// Note: Size 12 bytes
+	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 20 (IP) + 8 (UDP) + 12 (header) + 8960 (data) = 9000
 	} DNSMessage;
 
 // ***************************************************************************

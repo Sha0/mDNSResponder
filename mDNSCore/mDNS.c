@@ -969,11 +969,17 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 // Put a domain name, type, class, ttl, length, and type-specific data
 // domainname is a fully-qualified name
 // Only pass the "m" and "timenow" parameters in cases where the LastSendTime is to be updated, and the kDNSClass_UniqueRRSet bit set
-mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
+mDNSlocal mDNSu8 *putResourceRecord(DNSMessage *const msg, mDNSu8 *ptr,
 	mDNSu16 *count, ResourceRecord *rr, mDNS *const m, const mDNSs32 timenow)
 	{
 	mDNSu8 *endofrdata;
 	mDNSu32 actualLength;
+	const mDNSu8 *limit = msg->data + AbsoluteMaxDNSMessageData;
+	
+	// If we have a single large record to put in the packet, then we allow the packet to be up to 9K bytes,
+	// but in the normal case we try to keep the packets below 1500 to avoid IP fragmentation on standard Ethernet
+	if (msg->h.numAnswers || msg->h.numAuthorities || msg->h.numAdditionals)
+		limit = msg->data + NormalMaxDNSMessageData;
 
 	if (rr->RecordType == kDNSRecordTypeUnregistered)
 		{
@@ -1397,7 +1403,6 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSs32 timenow)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu8 *responseptr, const mDNSIPAddr InterfaceAddr, const mDNSs32 timenow)
 	{
-	const mDNSu8 *const limit = response->data + sizeof(response->data);
 	ResourceRecord *rr;
 	mDNSu8 *newptr;
 	int numDereg    = 0;
@@ -1416,7 +1421,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 			m->CurrentRecord = rr->next;
 			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
 				rr->RecordType == kDNSRecordTypeShared && rr->rrremainingttl == 0 &&
-				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, mDNSNULL, 0)))
+				(newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0)))
 				{
 				numDereg++;
 				responseptr = newptr;
@@ -1439,7 +1444,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 					if (ResourceRecordIsValidAnswer(rr))		// First see if we have to de-register the old data
 						{
 						rr->rrremainingttl = 0;					// Clear rroriginalttl before putting record
-						newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, mDNSNULL, 0);
+						newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0);
 						if (newptr)
 							{
 							numDereg++;
@@ -1452,7 +1457,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 					if (rr->UpdateCallback) rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
 					}
 				if (rr->RecordType == kDNSRecordTypeDeregistering &&
-					(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, mDNSNULL, 0)))
+					(newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, mDNSNULL, 0)))
 					{
 					numDereg++;
 					responseptr = newptr;
@@ -1468,31 +1473,51 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 			{
 			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
 				rr->AnnounceCount && ResourceRecordIsValidAnswer(rr) &&
-				timenow + mDNSPlatformOneSecond - rr->NextSendTime >= 0 &&
-				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, m, timenow)))
+				timenow + mDNSPlatformOneSecond - rr->NextSendTime >= 0)
 					{
-					numAnnounce++;
-					responseptr = newptr;
-					rr->SendPriority      = 0;
-					rr->Requester         = zeroIPAddr;
-					rr->AnnounceCount--;
-					rr->NextSendTime     += rr->NextSendInterval;
-					if (rr->NextSendTime - (timenow + rr->NextSendInterval/2) < 0)
-						rr->NextSendTime = (timenow + rr->NextSendInterval/2);
-					rr->NextSendInterval *= 2;
+					newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
+					if (newptr)
+						{
+						numAnnounce++;
+						responseptr = newptr;
+						}
+					// If we were able to put the record, then update the state variables
+					// If we were unable to put the record because it is too large to fit, even though there are no other answers in the packet,
+					// then pretent we succeeded anyway, or we'll end up in an infinite loop trying to send a record that will never fit
+					if (response->h.numAnswers == 0) debugf("BuildResponse announcements failed");
+					if (newptr || response->h.numAnswers == 0)
+						{
+						rr->SendPriority      = 0;
+						rr->Requester         = zeroIPAddr;
+						rr->AnnounceCount--;
+						rr->NextSendTime     += rr->NextSendInterval;
+						if (rr->NextSendTime - (timenow + rr->NextSendInterval/2) < 0)
+							rr->NextSendTime = (timenow + rr->NextSendInterval/2);
+						rr->NextSendInterval *= 2;
+						}
 					}
 			}
 	
 		// 3. Look for answers we need to send
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
-				rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr) &&
-				(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAnswers, rr, m, timenow)))
+				rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
 					{
-					numAnswer++;
-					responseptr = newptr;
-					rr->SendPriority = 0;
-					rr->Requester    = zeroIPAddr;
+					newptr = putResourceRecord(response, responseptr, &response->h.numAnswers, rr, m, timenow);
+					if (newptr)
+						{
+						numAnswer++;
+						responseptr = newptr;
+						}
+					// If we were able to put the record, then update the state variables
+					// If we were unable to put the record because it is too large to fit, even though there are no other answers in the packet
+					// then pretent we succeeded anyway, or we'll end up in an infinite loop trying to send a record that will never fit
+					if (response->h.numAnswers == 0) debugf("BuildResponse answers failed");
+					if (newptr || response->h.numAnswers == 0)
+						{
+						rr->SendPriority = 0;
+						rr->Requester    = zeroIPAddr;
+						}
 					}
 	
 		// 4. Add additionals, if there's space
@@ -1501,7 +1526,7 @@ mDNSlocal mDNSu8 *BuildResponse(mDNS *const m, DNSMessage *const response, mDNSu
 				rr->SendPriority == kDNSSendPriorityAdditional)
 				{
 				if (ResourceRecordIsValidAnswer(rr) &&
-					(newptr = putResourceRecord(response, responseptr, limit, &response->h.numAdditionals, rr, m, timenow)))
+					(newptr = putResourceRecord(response, responseptr, &response->h.numAdditionals, rr, m, timenow)))
 						responseptr = newptr;
 				rr->SendPriority = 0;	// Clear SendPriority anyway, even if we didn't put the additional in the packet
 				rr->Requester    = zeroIPAddr;
@@ -1600,7 +1625,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 		}
 	else
 		{
-		const mDNSu8 *const limit = query->data + sizeof(query->data);
+		const mDNSu8 *const limit = query->data + ((query->h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 		mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &rr->name, kDNSQType_ANY, rr->rrclass);
 		// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 		mDNSu32 forecast = *answerforecast + 12 + rr->rdestimate;
@@ -1615,7 +1640,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 		else
 			{
 			debugf("BuildProbe retracting Question %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
-			query->h.numAnswers--;
+			query->h.numQuestions--;
 			}
 		}
 	}
@@ -1630,7 +1655,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, DNSQuestion *q,
 	ResourceRecord ***dups_ptr, mDNSu32 *answerforecast, const mDNSs32 timenow)
 	{
-	const mDNSu8 *const limit = query->data + sizeof(query->data);
+	const mDNSu8 *const limit = query->data + (query->h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->name, q->rrtype, q->rrclass);
 	if (!newptr)
 		debugf("BuildQuestion: No more space for queries");
@@ -1723,7 +1748,6 @@ mDNSlocal mDNSu8 *BuildQueryPacketQuestions(mDNS *const m, DNSMessage *query, mD
 mDNSlocal mDNSu8 *BuildQueryPacketAnswers(DNSMessage *query, mDNSu8 *queryptr,
 	ResourceRecord **dups_ptr, const mDNSs32 timenow)
 	{
-	const mDNSu8 *const limit = query->data + sizeof(query->data);
 	while (*dups_ptr)
 		{
 		ResourceRecord *rr = *dups_ptr;
@@ -1731,7 +1755,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketAnswers(DNSMessage *query, mDNSu8 *queryptr,
 		mDNSu8 *newptr;
 		// Need to update rrremainingttl correctly before we put this cache record in the packet
 		rr->rrremainingttl = rr->rroriginalttl - timesincercvd / mDNSPlatformOneSecond;
-		newptr = putResourceRecord(query, queryptr, limit, &query->h.numAnswers, rr, mDNSNULL, 0);
+		newptr = putResourceRecord(query, queryptr, &query->h.numAnswers, rr, mDNSNULL, 0);
 		if (newptr)
 			{
 			*dups_ptr = rr->NextDupSuppress;
@@ -1766,12 +1790,11 @@ mDNSlocal mDNSu8 *BuildQueryPacketProbes(mDNS *const m, DNSMessage *query, mDNSu
 
 mDNSlocal mDNSu8 *BuildQueryPacketUpdates(mDNS *const m, DNSMessage *query, mDNSu8 *queryptr)
 	{
-	const mDNSu8 *const limit = query->data + sizeof(query->data);
 	ResourceRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->IncludeInProbe)
 			{
-			mDNSu8 *newptr = putResourceRecord(query, queryptr, limit, &query->h.numAuthorities, rr, mDNSNULL, 0);
+			mDNSu8 *newptr = putResourceRecord(query, queryptr, &query->h.numAuthorities, rr, mDNSNULL, 0);
 			rr->IncludeInProbe = mDNSfalse;
 			if (newptr)
 				queryptr = newptr;
@@ -2315,13 +2338,13 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 			{
 			if (rr->NR_AnswerTo)
 				{
-				mDNSu8 *p = putResourceRecord(reply, responseptr, limit, &reply->h.numAnswers, rr, mDNSNULL, 0);
+				mDNSu8 *p = putResourceRecord(reply, responseptr, &reply->h.numAnswers, rr, mDNSNULL, 0);
 				if (p) responseptr = p;
 				else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); reply->h.flags.b[0] |= kDNSFlag0_TC; }
 				}
 			else
 				{
-				mDNSu8 *p = putResourceRecord(reply, responseptr, limit, &reply->h.numAdditionals, rr, mDNSNULL, 0);
+				mDNSu8 *p = putResourceRecord(reply, responseptr, &reply->h.numAdditionals, rr, mDNSNULL, 0);
 				if (p) responseptr = p;
 				else debugf("GenerateUnicastResponse: No more space for additionals");
 				}
@@ -3377,6 +3400,11 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, zeroIPAddr, kDNSType_PTR, 24*3600, kDNSRecordTypeShared, ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, zeroIPAddr, kDNSType_SRV, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
  	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, zeroIPAddr, kDNSType_TXT, 60,      kDNSRecordTypeUnique, ServiceCallback, sr);
+	
+	// If the client is registering an oversized TXT record,
+	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it
+	if (sr->RR_TXT.rdata->MaxRDLength < txtlen)
+		sr->RR_TXT.rdata->MaxRDLength = txtlen;
 
 	ConstructServiceName(&sr->RR_PTR.name, mDNSNULL, type, domain);
 	ConstructServiceName(&sr->RR_SRV.name, name,     type, domain);
