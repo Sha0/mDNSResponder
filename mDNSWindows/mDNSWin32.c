@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.84  2005/03/29 19:19:47  shersche
+<rdar://problem/4055599> Windows is not accepting unicast responses.  This bug was a result of an error in obtaining the subnet mask for IPv4 interfaces.
+
 Revision 1.83  2005/03/07 18:27:42  shersche
 <rdar://problem/4037940> Fix problem when ControlPanel commits changes to the browse domain list
 
@@ -458,6 +461,7 @@ mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInter
 	mDNSlocal int	getifaddrs_ce( struct ifaddrs **outAddrs );
 #endif
 
+mDNSlocal mStatus			AddressToIndexAndMask( struct sockaddr * address, uint32_t * index, struct sockaddr * mask );
 mDNSlocal mDNSBool	CanReceiveUnicast( void );
 
 mDNSlocal mStatus			StringToAddress( mDNSAddr * ip, LPSTR string );
@@ -3913,20 +3917,19 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			{
 				case AF_INET:
 				{
-					struct sockaddr_in *		sa4;
-					
-					require_action( prefixLength <= 32, exit, err = ERROR_INVALID_DATA );
+					uint32_t				index;
+					struct sockaddr_in	*	sa4;
 					
 					sa4 = (struct sockaddr_in *) calloc( 1, sizeof( *sa4 ) );
 					require_action( sa4, exit, err = WSAENOBUFS );
 					
 					sa4->sin_family = AF_INET;
-					if( prefixLength == 0 )
-					{
-						dlog( kDebugLevelWarning, DEBUG_NAME "%s: IPv4 netmask 0, defaulting to 255.255.255.255\n", __ROUTINE__ );
-						prefixLength = 32;
-					}
-					sa4->sin_addr.s_addr = htonl( 0xFFFFFFFFU << ( 32 - prefixLength ) );
+
+					err = AddressToIndexAndMask( ifa->ifa_addr, &index, (struct sockaddr*) sa4 );
+					require_noerr( err, exit );
+
+					dlog( kDebugLevelInfo, DEBUG_NAME "%s: IPv4 index = %d, mask = %s\n", __ROUTINE__, index, inet_ntoa( sa4->sin_addr ) );
+
 					ifa->ifa_netmask = (struct sockaddr *) sa4;
 					break;
 				}
@@ -4073,32 +4076,26 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 		
 		// Get addresses.
 		
-		switch( ifInfo->iiAddress.Address.sa_family )
+		if ( ifInfo->iiAddress.Address.sa_family == AF_INET )
 		{
-			case AF_INET:
-			{
-				struct sockaddr_in *		sa4;
-				
-				sa4 = &ifInfo->iiAddress.AddressIn;
-				ifa->ifa_addr = (struct sockaddr *) calloc( 1, sizeof( *sa4 ) );
-				require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
-				memcpy( ifa->ifa_addr, sa4, sizeof( *sa4 ) );
-
-				sa4 = &ifInfo->iiNetmask.AddressIn;
-				ifa->ifa_netmask = (struct sockaddr*) calloc(1, sizeof( *sa4 ) );
-				require_action( ifa->ifa_netmask, exit, err = WSAENOBUFS );
-				memcpy( ifa->ifa_netmask, sa4, sizeof( *sa4 ) );
-
-				break;
-			}
+			struct sockaddr_in *		sa4;
 			
-			default:
-				break;
+			sa4 = &ifInfo->iiAddress.AddressIn;
+			ifa->ifa_addr = (struct sockaddr *) calloc( 1, sizeof( *sa4 ) );
+			require_action( ifa->ifa_addr, exit, err = WSAENOBUFS );
+			memcpy( ifa->ifa_addr, sa4, sizeof( *sa4 ) );
+
+			ifa->ifa_netmask = (struct sockaddr*) calloc(1, sizeof( *sa4 ) );
+			require_action( ifa->ifa_netmask, exit, err = WSAENOBUFS );
+			err = AddressToIndexAndMask( ifa->ifa_addr, &ifa->ifa_extra.index, ifa->ifa_netmask );
+			require_noerr( err, exit );
 		}
+		else
+		{
+			// Emulate an interface index.
 		
-		// Emulate an interface index.
-		
-		ifa->ifa_extra.index = (uint32_t)( i + 1 );
+			ifa->ifa_extra.index = (uint32_t)( i + 1 );
+		}
 	}
 	
 	// Success!
@@ -4296,6 +4293,58 @@ void	freeifaddrs( struct ifaddrs *inIFAs )
 		free( p );
 	}
 }
+
+
+//===========================================================================================================================
+//	AddressToIndexAndMask
+//===========================================================================================================================
+
+mDNSlocal mStatus
+AddressToIndexAndMask( struct sockaddr * addr, uint32_t * ifIndex, struct sockaddr * mask  )
+{
+	// Before calling AddIPAddress we use GetIpAddrTable to get
+	// an adapter to which we can add the IP.
+	
+	PMIB_IPADDRTABLE	pIPAddrTable	= NULL;
+	DWORD				dwSize			= 0;
+	mStatus				err				= mStatus_UnknownErr;
+	DWORD				i;
+
+	// For now, this is only for IPv4 addresses.  That is why we can safely cast
+	// addr's to sockaddr_in.
+
+	require_action( addr->sa_family == AF_INET, exit, err = mStatus_UnknownErr );
+
+	// Make an initial call to GetIpAddrTable to get the
+	// necessary size into the dwSize variable
+
+	while ( GetIpAddrTable(pIPAddrTable, &dwSize, 0 ) == ERROR_INSUFFICIENT_BUFFER )
+	{
+		pIPAddrTable = (MIB_IPADDRTABLE *) realloc( pIPAddrTable, dwSize );
+		require_action( pIPAddrTable, exit, err = WSAENOBUFS );
+	}
+
+	for ( i = 0; i < ( dwSize / sizeof( MIB_IPADDRTABLE ) ); i++ )
+	{
+		if ( ( ( struct sockaddr_in* ) addr )->sin_addr.s_addr == pIPAddrTable->table[i].dwAddr )
+		{
+			*ifIndex											= pIPAddrTable->table[i].dwIndex;
+			( ( struct sockaddr_in*) mask )->sin_addr.s_addr	= pIPAddrTable->table[i].dwMask;
+			err													= mStatus_NoError;
+			break;
+		}
+	}
+
+exit:
+
+	if ( pIPAddrTable )
+	{
+		free( pIPAddrTable );
+	}
+
+	return err;
+}
+
 
 //===========================================================================================================================
 //	CanReceiveUnicast
