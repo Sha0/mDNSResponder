@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.84  2004/09/18 00:30:39  cheshire
+<rdar://problem/3806643> Infinite loop in CheckServiceRegistrations
+
 Revision 1.83  2004/09/17 00:31:51  cheshire
 For consistency with ipv6, renamed rdata field 'ip' to 'ipv4'
 
@@ -1452,26 +1455,13 @@ mDNSlocal void llqResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	pktResponseHndlr(m, msg, end, question, mDNStrue);
 	}
 
-
-
 mDNSlocal void unlinkSRS(uDNS_GlobalInfo *u, ServiceRecordSet *srs)
 	{
-	ServiceRecordSet *ptr, *prev = mDNSNULL;
-	
-	for (ptr = u->ServiceRegistrations; ptr; ptr = ptr->next)
-		{
-		if (ptr == srs)
-			{
-			if (prev) prev->next = ptr->next;
-			else u->ServiceRegistrations = ptr->next;
-			ptr->next = mDNSNULL;
-			return;
-			}
-		prev = ptr;
-		}
+	ServiceRecordSet **p;
+	for (p = &u->ServiceRegistrations; *p; p = &(*p)->next)
+		if (*p == srs) { *p = srs->next; srs->next = mDNSNULL; return; }
 	LogMsg("ERROR: unlinkSRS - SRS not found in ServiceRegistrations list");
 	}
-
 
 mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode, const DNSMessage *msg)
 	{	
@@ -3549,13 +3539,13 @@ mDNSlocal mStatus RegisterService(mDNS *m, ServiceRecordSet *srs)
 	
 mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
+	// Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
+	ServiceRecordSet **p = &m->uDNS_info.ServiceRegistrations;
+	while (*p && *p != srs) p=&(*p)->next;
+	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name.c); return(mStatus_AlreadyRegistered); }
 	ubzero(&srs->uDNS_info, sizeof(uDNS_RegInfo));
-
-	// link into list, set state
-	srs->next = m->uDNS_info.ServiceRegistrations;
-	m->uDNS_info.ServiceRegistrations = srs;
 	srs->uDNS_info.state = regState_Unregistered;
-
+	*p = srs;
 	return RegisterService(m, srs);
 	}	
 
@@ -3953,24 +3943,29 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 //!!!KRS need to implement service retransmissions!
 mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 	{
-	ServiceRecordSet *srs;
+	ServiceRecordSet *s = m->uDNS_info.ServiceRegistrations;
 	uDNS_RegInfo *rInfo;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
 	
-	//!!!KRS list should be pre-sorted by expiration
-	for (srs = u->ServiceRegistrations; srs; srs = srs->next)
+	// Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
+	while (s)
 		{
+		ServiceRecordSet *srs = s;
+		// NOTE: Must advance s here -- SendServiceDeregistration may delete the object we're looking at,
+		// and then if we tried to do srs = srs->next at the end we'd be referencing a dead object
+		s = s->next;
+		
 		rInfo = &srs->uDNS_info;	
 		if (rInfo->state == regState_Pending || rInfo->state == regState_DeregPending || rInfo->state == regState_DeregDeferred || rInfo->state == regState_Refresh)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - timenow < 0)
 				{
 				debugf("Retransmit service %##s", srs->RR_SRV.resrec.name.c);
-				if (rInfo->state == regState_DeregPending) SendServiceDeregistration(m, srs);
-				else                                       SendServiceRegistration(m, srs);
+				if (rInfo->state == regState_DeregPending) { SendServiceDeregistration(m, srs); continue; }
+				else                                         SendServiceRegistration  (m, srs);
 				}
-			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - nextevent < 0) nextevent = srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval;
+			if (nextevent - srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval > 0)
+				nextevent = srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval;
 			}			
 
 		if (rInfo->lease && rInfo->state == regState_Registered && rInfo->expire > 0)
