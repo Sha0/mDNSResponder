@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.121  2004/11/19 04:24:08  ksekar
+<rdar://problem/3682609> Security: Enforce a "window" on one-shot wide-area queries
+
 Revision 1.120  2004/11/19 02:32:43  ksekar
 <rdar://problem/3682608> Wide-Area Security: Add LLQ-ID to events
 
@@ -2038,7 +2041,9 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	mDNSu8 rcode   = (mDNSu8)(msg->h.flags.b[1] & kDNSFlag1_RC);
-   	
+
+	mDNSs32 timenow = mDNSPlatformTimeNow(m);
+	
     // unused
 	(void)srcaddr;
 	(void)srcport;
@@ -2056,6 +2061,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			//!!!KRS we should have a hashtable, hashed on message id
 			if (qptr->uDNS_info.id.NotAnInteger == msg->h.id.NotAnInteger)
 				{
+				if (timenow - (qptr->LastQTime + RESPONSE_WINDOW) > 0)
+					{ LogMsg("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
 				if (msg->h.flags.b[0] & kDNSFlag0_TC)
 					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
 				else
@@ -3256,7 +3263,10 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 	tcpInfo_t *info = (tcpInfo_t *)context;
 	DNSQuestion *question = info->question;
 	int n;
+	mDNS *m = info->m;
 
+	mDNS_Lock(m);
+	
 	question->uDNS_info.id.NotAnInteger = (mDNSu16)~0;
 
 	if (ConnectionEstablished)
@@ -3265,9 +3275,9 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 		msg = (DNSMessage *)&msgbuf;
 		err = constructQueryMsg(msg, &end, question);
 		if (err) { LogMsg("ERROR: conQueryCallback: constructQueryMsg - %ld", err);  goto error; }
-		err = mDNSSendDNSMessage(info->m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, mDNSNULL);
+		err = mDNSSendDNSMessage(m, msg, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sd, mDNSNULL);
+		question->LastQTime = mDNSPlatformTimeNow(m);
 		if (err) { LogMsg("ERROR: conQueryCallback: mDNSSendDNSMessage_tcp - %ld", err);  goto error; }
-		return;
 		}
 	else
 		{
@@ -3287,18 +3297,21 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 		if (info->nread == info->replylen)
 			{
 			// finished reading message
-			receiveMsg(info->m, &info->reply, ((mDNSu8 *)&info->reply) + info->replylen, question->InterfaceID);
+			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback (callback can't/won't touch info struct)
+			receiveMsg(m, &info->reply, ((mDNSu8 *)&info->reply) + info->replylen, question->InterfaceID);
+			m->mDNS_reentrancy--; 
 			mDNSPlatformTCPCloseConnection(sd);
 			ufree(info);
-			return;
 			}
-		else return;
 		}
+
+	mDNS_Unlock(m);
 	return;
 
 	error:
 	mDNSPlatformTCPCloseConnection(sd);
 	ufree(info);
+	mDNS_Unlock(m);
 	}
 
 mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, mDNS *m)

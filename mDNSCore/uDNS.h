@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.24  2004/11/19 04:24:08  ksekar
+<rdar://problem/3682609> Security: Enforce a "window" on one-shot wide-area queries
+
 Revision 1.23  2004/11/18 18:04:21  ksekar
 Add INIT_REFRESH constant
 
@@ -114,6 +117,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	                                                        // which typically heal quickly, so we start agressively and exponentially back off
 #define INIT_REFRESH (1/2)  // refresh leases 1/2 way to expiration
 #define MAX_UCAST_POLL_INTERVAL (15 * 60 * mDNSPlatformOneSecond)
+#define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)        // require server responses within one minute of request
 #define UPDATE_PORT_NAME "_dns-update._udp."
 #define LLQ_PORT_NAME "_dns-llq._udp"
 	
