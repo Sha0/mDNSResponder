@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.507  2005/01/18 01:12:07  cheshire
+<rdar://problem/3956258> Logging into VPN causes mDNSResponder to reissue multicast probes
+
 Revision 1.506  2005/01/17 23:28:53  cheshire
 Fix compile error
 
@@ -6370,7 +6373,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	// Therefore, when registering an interface, we want to re-trigger our questions and re-probe our Resource Records,
 	// even if we believe that we previously had an active representative of this interface.
-	if ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || FirstOfType || set->InterfaceActive)
+	if (set->McastTxRx && ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || FirstOfType || set->InterfaceActive))
 		{
 		DNSQuestion *q;
 		AuthRecord *rr;
