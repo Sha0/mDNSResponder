@@ -20,9 +20,49 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
 
+
+   NOTE:
+   If you're building an application that uses DNS Service Discovery
+   this is probably NOT the header file you're looking for.
+   In most cases you will want to use /usr/include/dns_sd.h instead.
+
+   This header file defines the lowest level raw interface to mDNSCore,
+   which is appropriate *only* on tiny embedded systems where everything
+   runs in a single address space and memory is extremely constrained.
+   All the APIs here are malloc-free, which means that the caller is
+   responsible for passing in a pointer to the relevant storage that
+   will be used in the execution of that call, and (when called with
+   correct parameters) all the calls are guaranteed to succeed. There
+   is never a case where a call can suffer intermittent failures because
+   the implementation calls malloc() and sometimes malloc() returns NULL
+   because memory is so limited that no more is available.
+   This is primarily for devices that need to have precisely known fixed
+   memory requirements, with absolutely no uncertainty or run-time variation,
+   but that certainty comes at a cost of more difficult programming.
+   
+   For applications running on general-purpose desktop operating systems
+   (Mac OS, Linux, Solaris, Windows, etc.) the API you should use is
+   /usr/include/dns_sd.h, which defines the API by which multiple
+   independent client processes communicate their DNS Service Discovery
+   requests to a single "mdnsd" daemon running in the background.
+   
+   Even on platforms that don't run multiple independent processes in
+   multiple independent address spaces, you can still use the preferred
+   dns_sd.h APIs by linking in "dnssd_clientshim.c", which implements
+   the standard "dns_sd.h" API calls, allocates any required storage
+   using malloc(), and then calls through to the low-level malloc-free
+   mDNSCore routines defined here. This has the benefit that even though
+   you're running on a small embedded system with a single address space,
+   you can still use the exact same client C code as you'd use on a
+   general-purpose desktop system.
+
+
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.184  2004/08/11 17:09:31  cheshire
+Add comment clarifying the applicability of these APIs
+
 Revision 1.183  2004/08/10 23:19:14  ksekar
 <rdar://problem/3722542>: DNS Extension daemon for Wide Area Rendezvous
 Moved routines/constants to allow extern access for garbage collection daemon
