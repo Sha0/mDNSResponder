@@ -22,6 +22,11 @@
 
     Change History (most recent first):
 
+$Log: ConfigPropertySheet.cpp,v $
+Revision 1.3  2005/03/03 19:55:22  shersche
+<rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
+
+
 */
 
 #include "ConfigPropertySheet.h"
