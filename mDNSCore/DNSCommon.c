@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.56  2004/09/24 20:57:39  cheshire
+<rdar://problem/3680902> Eliminate inappropriate casts that cause misaligned-address errors
+
 Revision 1.55  2004/09/17 01:08:48  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -1184,6 +1187,15 @@ mDNSlocal mDNSu8 *putVal16(mDNSu8 *ptr, mDNSu16 val)
 	return ptr + sizeof(mDNSOpaque16);
 	}
 
+mDNSlocal mDNSu8 *putVal32(mDNSu8 *ptr, mDNSu32 val)
+	{
+	ptr[0] = (mDNSu8)((val >> 24) & 0xFF);
+	ptr[1] = (mDNSu8)((val >> 16) & 0xFF);
+	ptr[2] = (mDNSu8)((val >>  8) & 0xFF);
+	ptr[3] = (mDNSu8)((val      ) & 0xFF);
+	return ptr + sizeof(mDNSu32);
+	}
+
 mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr)
 	{
 	int nput = 0;
@@ -1205,15 +1217,13 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 			ptr = putVal16(ptr, opt->OptData.llq.err);
 			mDNSPlatformMemCopy(opt->OptData.llq.id, ptr, 8);  // 8-byte id
 			ptr += 8;
-			*(mDNSOpaque32 *)ptr = mDNSOpaque32fromIntVal(opt->OptData.llq.lease);
-			ptr += sizeof(mDNSOpaque32);
+			ptr = putVal32(ptr, opt->OptData.llq.lease);
 			nput += sizeof(LLQOptData);
 			}
 		else if (opt->opt == kDNSOpt_Lease)
 			{
 			if (ptr + sizeof(mDNSs32) > limit) goto space_err;
-			*(mDNSOpaque32 *)ptr = mDNSOpaque32fromIntVal(opt->OptData.lease);
-			ptr += sizeof(mDNSs32);
+			ptr = putVal32(ptr, opt->OptData.lease);
 			nput += sizeof(mDNSs32);
 			}
 		else { LogMsg("putOptRData - unknown option %d", opt->opt); return mDNSNULL; }
@@ -1409,10 +1419,10 @@ mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, co
 	{
 	ptr = putDomainNameAsLabels(msg, ptr, limit, zone);
 	if (!ptr || ptr + 4 > limit) return mDNSNULL;		// If we're out-of-space, return NULL
-	((mDNSOpaque16 *)ptr)->NotAnInteger = kDNSType_SOA;
-	ptr += 2;
-	((mDNSOpaque16 *)ptr)->NotAnInteger = zoneClass.NotAnInteger;
-	ptr += 2;
+	*ptr++ = (mDNSu8)(kDNSType_SOA  >> 8);
+	*ptr++ = (mDNSu8)(kDNSType_SOA  &  0xFF);
+	*ptr++ = zoneClass.b[0];
+	*ptr++ = zoneClass.b[1];
 	msg->h.mDNS_numZones++;
 	return ptr;
 	}
@@ -1600,7 +1610,7 @@ mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 
 	}
 
 mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr,
-    const mDNSu8 * const end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr)
+    const mDNSu8 *end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr)
 	{
 	CacheRecord *rr = &largecr->r;
 	mDNSu16 pktrdlength;
@@ -1640,6 +1650,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 		rr->resrec.RecordType |= kDNSRecordTypePacketUniqueMask;
 	ptr += 10;
 	if (ptr + pktrdlength > end) { debugf("GetResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
+	end = ptr + pktrdlength;		// Adjust end to indicate the end of the rdata for this resource record
 
 	rr->resrec.rdata = (RData*)&rr->rdatastorage;
 	rr->resrec.rdata->MaxRDLength = MaximumRDSize;
@@ -1683,16 +1694,16 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							//debugf("%##s SRV %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.srv.target.c, pktrdlength);
 							break;
 
-		case kDNSType_SOA:  if (!getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.mname) ||
-							   !getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname))
-                			   { debugf("GetResourceRecord: Malformed SOA RDATA mname/rname"); return mDNSNULL; }
-			                if ((unsigned)(end - ptr) < 5 * sizeof(mDNSOpaque32))
-								{ debugf("GetResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
-                			rr->resrec.rdata->u.soa.serial.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;   ptr += 4;
-			                rr->resrec.rdata->u.soa.refresh.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;  ptr += 4;
-			                rr->resrec.rdata->u.soa.retry.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;    ptr += 4;
-			                rr->resrec.rdata->u.soa.expire.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;   ptr += 4;
-			                rr->resrec.rdata->u.soa.min.NotAnInteger = ((mDNSOpaque32 *)ptr)->NotAnInteger;
+		case kDNSType_SOA:  ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.mname);
+							if (!ptr) { debugf("GetResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
+							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname);
+							if (!ptr) { debugf("GetResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
+			                if (ptr + 0x14 >= end) { debugf("GetResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
+                			rr->resrec.rdata->u.soa.serial  = (mDNSu32) ((mDNSu32)ptr[0x00] << 24 | (mDNSu32)ptr[0x01] << 16 | (mDNSu32)ptr[0x02] << 8 | ptr[0x03]);
+			                rr->resrec.rdata->u.soa.refresh = (mDNSu32) ((mDNSu32)ptr[0x04] << 24 | (mDNSu32)ptr[0x05] << 16 | (mDNSu32)ptr[0x06] << 8 | ptr[0x07]);
+			                rr->resrec.rdata->u.soa.retry   = (mDNSu32) ((mDNSu32)ptr[0x08] << 24 | (mDNSu32)ptr[0x09] << 16 | (mDNSu32)ptr[0x0A] << 8 | ptr[0x0B]);
+			                rr->resrec.rdata->u.soa.expire  = (mDNSu32) ((mDNSu32)ptr[0x0C] << 24 | (mDNSu32)ptr[0x0D] << 16 | (mDNSu32)ptr[0x0E] << 8 | ptr[0x0F]);
+			                rr->resrec.rdata->u.soa.min     = (mDNSu32) ((mDNSu32)ptr[0x10] << 24 | (mDNSu32)ptr[0x11] << 16 | (mDNSu32)ptr[0x12] << 8 | ptr[0x13]);
 			                break;
 
 		case kDNSType_OPT:  getOptRdata(ptr, end, &rr->resrec, pktrdlength); break;

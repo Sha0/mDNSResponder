@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.212  2004/09/24 20:57:39  cheshire
+<rdar://problem/3680902> Eliminate inappropriate casts that cause misaligned-address errors
+
 Revision 1.211  2004/09/24 20:33:22  cheshire
 Remove unused DNSDigest_MD5 declaration
 
@@ -1113,8 +1116,16 @@ enum
 
 typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target;   } rdataSRV;
 typedef packedstruct { mDNSu16 preference;                                domainname exchange; } rdataMX;
-typedef packedstruct { domainname mname; domainname rname; mDNSOpaque32 serial; mDNSOpaque32 refresh;
-                       mDNSOpaque32 retry; mDNSOpaque32 expire; mDNSOpaque32 min;              } rdataSOA;
+typedef packedstruct
+	{
+	domainname mname;
+	domainname rname;
+	mDNSs32 serial;		// Modular counter; increases when zone changes
+	mDNSs32 refresh;	// Time in seconds that a slave waits after successful replication of the database before it attempts replication again
+	mDNSu32 retry;		// Time in seconds that a slave waits after an unsuccessful replication attempt before it attempts replication again
+	mDNSu32 expire;		// Time in seconds that a slave holds on to old data while replication attempts remain unsuccessful
+	mDNSu32 min;		// Nominally the minimum record TTL for this zone, in seconds; also used for negative caching.
+	} rdataSOA;
 
 typedef packedstruct
 	{
