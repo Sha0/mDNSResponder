@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.234  2004/11/17 00:32:56  ksekar
+<rdar://problem/3880773> mDNSResponder will not discover zones contained both in Search Domains and DHCP Domain option
+
 Revision 1.233  2004/11/12 03:16:45  rpantos
 rdar://problem/3809541 Add mDNSPlatformGetInterfaceByName, mDNSPlatformGetInterfaceName
 
@@ -2155,7 +2158,11 @@ mDNSlocal void MarkSearchListElem(domainname *domain)
 	
 	// if domain is in list, mark as pre-existent (0)
 	for (ptr = SearchList; ptr; ptr = ptr->next)
-		if (SameDomainName(&ptr->domain, domain)) { ptr->flag = 0; break; }
+		if (SameDomainName(&ptr->domain, domain))
+			{
+			if (ptr->flag != 1) ptr->flag = 0;  // gracefully handle duplicates - if it is already marked as add, don't bump down to preexistent
+			break;
+			}
 	
 	// if domain not in list, add to list, mark as add (1)
 	if (!ptr)
