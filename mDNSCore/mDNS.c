@@ -235,15 +235,15 @@ mDNSexport void AppendDomainNameToName(domainname *const name, const domainname 
 	{
 	int i;
 	mDNSu8 *ptr = name->c + DomainNameLength(name) - 1;
-    const mDNSu8 *src = append->c;
+	const mDNSu8 *src = append->c;
 	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME;
-    while(src[0])
-        {
-        if (ptr + 1 + src[0] + 1 >= lim) return;
-        for (i=0; i<=src[0]; i++) *ptr++ = src[i];
-        *ptr = 0;	// Put the null root label on the end
-        src += i;
-        }
+	while(src[0])
+		{
+		if (ptr + 1 + src[0] + 1 >= lim) return;
+		for (i=0; i<=src[0]; i++) *ptr++ = src[i];
+		*ptr = 0;	// Put the null root label on the end
+		src += i;
+		}
 	}
 
 // AppendStringNameToName appends zero or more labels to an existing (possibly empty) domainname.
@@ -407,9 +407,9 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 	const mDNSu8 *const lim  = &hostlabel->c[1] + MAX_DOMAIN_LABEL;
 	while (src < end)
 		{
-        // Delete apostrophes from source name
-        if (src[0] == '\'') { src++; continue; }		// Standard straight single quote
-        if (src[0] == 0xE2 && src[1] == 0x80 && src[2] == 0x99) { src+=3; continue; }	// Unicode curly apostrophe
+		// Delete apostrophes from source name
+		if (src[0] == '\'') { src++; continue; }		// Standard straight single quote
+		if (src[0] == 0xE2 && src[1] == 0x80 && src[2] == 0x99) { src+=3; continue; }	// Unicode curly apostrophe
 		if (ptr < lim)
 			{
 			if (mdnsValidHostChar(*src, (ptr > &hostlabel->c[1]), (src < end-1))) *ptr++ = *src;
@@ -540,7 +540,7 @@ mDNSlocal void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 #define ResourceRecordIsValidAnswer(RR) ( ((RR)->             RecordType & kDNSRecordTypeActiveMask)  && \
 		((RR)->Additional1 == mDNSNULL || ((RR)->Additional1->RecordType & kDNSRecordTypeActiveMask)) && \
 		((RR)->Additional2 == mDNSNULL || ((RR)->Additional2->RecordType & kDNSRecordTypeActiveMask)) && \
-    	((RR)->DependentOn == mDNSNULL || ((RR)->DependentOn->RecordType & kDNSRecordTypeActiveMask))  )
+		((RR)->DependentOn == mDNSNULL || ((RR)->DependentOn->RecordType & kDNSRecordTypeActiveMask))  )
 
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 
@@ -696,9 +696,10 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 //	rr->Context           = already set in mDNS_SetupResourceRecord
 
 //	rr->RecordType        = already set in mDNS_SetupResourceRecord
+	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = (rr->RecordType == kDNSRecordTypeUnique) ? DefaultProbeCountForTypeUnique : (mDNSu8)0;
 	rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
-//	rr->IncludeInProbe    = already set in mDNS_SetupResourceRecord
+	rr->IncludeInProbe    = mDNSfalse;
 	rr->SendPriority      = 0;
 	rr->Requester         = zeroIPAddr;
 
@@ -793,12 +794,6 @@ mDNSlocal void InitializeDNSMessage(DNSMessageHeader *h, mDNSOpaque16 id, mDNSOp
 mDNSlocal const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const mDNSu8 *const end, const mDNSu8 *const domname)
 	{
 	const mDNSu8 *result = end - *domname - 1;
-
-#if 0
-	char buffer[256];
-	ConvertDomainNameToCString((domainname *)domname, buffer);
-	debugf("FindCompressionPointer searching for %s", buffer);
-#endif
 
 	if (*domname == 0) return(mDNSNULL);	// There's no point trying to match just the root label
 	
@@ -1026,6 +1021,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->Callback          = mDNSNULL;
 	rr->Context           = mDNSNULL;
 	rr->RecordType        = RecordType;
+	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = 0;
 	rr->AnnounceCount     = 0;
 	rr->IncludeInProbe    = mDNSfalse;
@@ -1067,7 +1063,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 							rr->rdata.ip.b[1] = ptr[1];
 							rr->rdata.ip.b[2] = ptr[2];
 							rr->rdata.ip.b[3] = ptr[3];
-                            break;
+							break;
 
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	getDomainName(msg, ptr, end, &rr->rdata.name);
@@ -1320,7 +1316,7 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 		}
 	}
 
-#define TimeToSendThisQuestion(Q,time) (!(Q)->DuplicateOf && time - (Q)->NextSendTime >= 0)
+#define TimeToSendThisQuestion(Q,time) (!(Q)->DuplicateOf && time - (Q)->NextQTime >= 0)
 
 mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 	{
@@ -1331,12 +1327,15 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 	for (rr = m->rrcache; rr; rr=rr->next)
 		if (rr->UnansweredQueries < 2)
 			{
-			mDNSs32 expire = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-			mDNSs32 ultimatequery = expire - (mDNSs32)rr->rroriginalttl/10 * mDNSPlatformOneSecond;
-			if (timenow - ultimatequery >= 0)
+			mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
+			mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+			mDNSs32 t1 = t0 - onetenth;
+			mDNSs32 t2 = t1 - onetenth;
+
+			if (timenow - t1 >= 0 || rr->UnansweredQueries < 1 && timenow - t2 >= 0)
 				{
 				DNSQuestion *q = CacheRRActive(m, rr);
-				if (q) q->NextSendTime = timenow;
+				if (q) q->NextQTime = timenow;
 				}
 			}
 	
@@ -1364,7 +1363,8 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 		rr->RecordType    = kDNSRecordTypeVerified;
 		rr->AnnounceCount = DefaultAnnounceCountForRecordType(rr->RecordType);
 		debugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
-		if (rr->Callback) rr->Callback(m, rr, mStatus_NoError);
+		if (!rr->Acknowledged && rr->Callback)	
+			{ rr->Acknowledged = mDNStrue; rr->Callback(m, rr, mStatus_NoError); }
 		}
 	else
 		{
@@ -1389,7 +1389,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr,
 	}
 
 #define MaxQuestionInterval         (3600 * mDNSPlatformOneSecond)
-#define GetNextSendInterval(X)      (((X)*2) <= MaxQuestionInterval ? ((X)*2) : MaxQuestionInterval)
+#define GetNextQInterval(X)         (((X)*2) <= MaxQuestionInterval ? ((X)*2) : MaxQuestionInterval)
 #define GetNextSendTime(T,EARLIEST) (((T) - (EARLIEST) >= 0) ? (T) : (EARLIEST) )
 
 // BuildQuestion puts a question into a DNS Query packet and if successful, updates the value of queryptr.
@@ -1407,7 +1407,7 @@ mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr
 		mDNSu32 forecast = *answerforecast;
 		ResourceRecord *rr;
 		ResourceRecord **d = *dups_ptr;
-		mDNSs32 nst = timenow + GetNextSendInterval(q->ThisSendInterval);
+		mDNSs32 nst = timenow + q->NextQInterval;
 
 		// If we have a resource record in our cache,
 		// which is not already in the duplicate suppression list
@@ -1418,11 +1418,12 @@ mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr
 				ResourceRecordAnswersQuestion(rr, q))
 				{
 				// Work out the latest time we should ask about this record to refresh it before it expires
-				mDNSs32 expire = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-				mDNSs32 penultimatequery = expire - (mDNSs32)rr->rroriginalttl/5 * mDNSPlatformOneSecond;
+				mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
+				mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+				mDNSs32 t3 = t0 - onetenth*3;
 
 				// If we'll ask again at least twice before it expires, okay to suppress it this time
-				if (penultimatequery - nst >= 0)
+				if (t3 - nst >= 0)
 					{
 					*d = rr;	// Link this record into our duplicate suppression chain
 					d = &rr->NextDupSuppress;
@@ -1447,8 +1448,9 @@ mDNSlocal void BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr
 			*queryptr       = newptr;		// Update the packet pointer
 			*answerforecast = forecast;		// Update the forecast
 			*dups_ptr       = d;			// Update the dup suppression pointer
-			q->NextSendTime     = nst;
-			q->ThisSendInterval = GetNextSendInterval(q->ThisSendInterval);
+			q->NextQTime     = nst;
+			q->ThisQInterval = q->NextQInterval;
+			q->NextQInterval = GetNextQInterval(q->ThisQInterval);
 			}
 		}
 	}
@@ -1480,7 +1482,7 @@ mDNSlocal mDNSu8 *BuildQueryPacketQuestions(mDNS *const m, DNSMessage *query, mD
 	// See which questions are more than half way to their NextSendTime, and send them too, if we have space
 	for (q = m->ActiveQuestions; q; q=q->next)
 		if (q->InterfaceAddr.NotAnInteger == InterfaceAddr.NotAnInteger &&
-			TimeToSendThisQuestion(q, timenow + q->ThisSendInterval/2))
+			TimeToSendThisQuestion(q, timenow + q->ThisQInterval/2))
 			BuildQuestion(m, query, &queryptr, q, dups_ptr, answerforecast, timenow);
 
 	return(queryptr);
@@ -1617,21 +1619,21 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 #pragma mark - RR List Management & Task Management
 #endif
 
-// rr is a ResourceRecord in our cache (kDNSRecordTypePacketAnswer or kDNSRecordTypePacketAdditional)
-mDNSlocal void UpdateQuestionTimes(mDNS *const m, const ResourceRecord *const rr, const mDNSs32 timenow)
+// rr is a new ResourceRecord just received into our cache
+// (type kDNSRecordTypePacketAnswer or kDNSRecordTypePacketAdditional)
+mDNSlocal void TriggerImmediateQuestions(mDNS *const m, const ResourceRecord *const rr, const mDNSs32 timenow)
 	{
-	// If we just received a record off the wire, we want to make sure we ask about it again at least
-	// by the time we get half-way to its expiration time
-	//mDNSs32 needquery = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond / 2;
-	
-	// If we just received a record off the wire, we want to ask our question again soon, and keep
-	// doing that repeatedly (with duplicate suppression) until we stop getting any more responses
+	// If we just received a new record off the wire that we've never seen before, we want to ask our question again
+	// soon, and keep doing that repeatedly (with duplicate suppression) until we stop getting any more responses
 	mDNSs32 needquery = timenow + mDNSPlatformOneSecond;
-	
 	DNSQuestion *q;
 	for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
-		if (!q->DuplicateOf && q->NextSendTime - needquery > 0 && ResourceRecordAnswersQuestion(rr, q))
-			q->NextSendTime = needquery;
+		if (!q->DuplicateOf && q->NextQTime - needquery > 0 && ResourceRecordAnswersQuestion(rr, q))
+			{
+			q->NextQTime     = needquery;
+			// As long as responses are still coming in, don't do the exponential backoff
+			q->NextQInterval = q->ThisQInterval;
+			}
 	}
 
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr, const mDNSs32 timenow)
@@ -1822,17 +1824,23 @@ mDNSlocal void ScheduleNextTask(const mDNS *const m)
 		// 3. Scan cache to see if any resource records are going to expire
 		for (rr = m->rrcache; rr; rr=rr->next)
 			{
-			mDNSs32 expire = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-			if (rr->UnansweredQueries < 2 &&
-				nextevent - (expire - (mDNSs32)rr->rroriginalttl/10 * mDNSPlatformOneSecond) > 0 &&
-				CacheRRActive(m, rr))
+			mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
+			mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+			mDNSs32 t1 = t0 - onetenth;
+			mDNSs32 t2 = t1 - onetenth;
+			if (rr->UnansweredQueries < 1 && nextevent - t2 > 0 && CacheRRActive(m, rr))
 				{
-				nextevent = expire - (mDNSs32)rr->rroriginalttl/10 * mDNSPlatformOneSecond;
+				nextevent = t2;
+				msg = "Penultimate Query";
+				}
+			else if (rr->UnansweredQueries < 2 && nextevent - t1 > 0 && CacheRRActive(m, rr))
+				{
+				nextevent = t1;
 				msg = "Final Expiration Query";
 				}
-			else if (nextevent - expire > 0)
+			else if (nextevent - t0 > 0)
 				{
-				nextevent = expire;
+				nextevent = t0;
 				msg = "Cache Tidying";
 				}
 			}
@@ -1851,9 +1859,9 @@ mDNSlocal void ScheduleNextTask(const mDNS *const m)
 			{
 			// 5. Scan list of active questions to see if we need to send any queries
 			for (q = m->ActiveQuestions; q; q=q->next)
-                if (TimeToSendThisQuestion(q, nextevent))
+				if (TimeToSendThisQuestion(q, nextevent))
 					{
-					nextevent = q->NextSendTime;
+					nextevent = q->NextQTime;
 					msg = "Send Questions";
 					}
 
@@ -1991,6 +1999,8 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 		}
 	else
 		{
+		DNSQuestion *q;
+
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			{
 			if (rr->RecordType == kDNSRecordTypeVerified) rr->RecordType = kDNSRecordTypeUnique;
@@ -1999,6 +2009,13 @@ mDNSexport void mDNSCoreSleep(mDNS *const m, mDNSBool sleepstate)
 			rr->NextSendInterval  = DefaultSendIntervalForRecordType(rr->RecordType);
 			rr->NextSendTime      = timenow;
 			}
+		for (q = m->ActiveQuestions; q; q=q->next)		// Scan our list of questions
+			if (!q->DuplicateOf)
+				{
+				q->NextQTime     = timenow;
+				q->ThisQInterval = 0;
+				q->NextQInterval = mDNSPlatformOneSecond;
+				}
 		}
 
 	mDNS_Unlock(m);
@@ -2484,11 +2501,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 					// debugf("Found RR %##s already in cache", pktrr.name.c);
 					rr->TimeRcvd = timenow;
 					rr->UnansweredQueries = 0;
-					rr->rroriginalttl = pktrr.rroriginalttl;
 					// If we're deleting a record, push it out one second into the future
 					// to give other hosts on the network a chance to protest
-					if (rr->rroriginalttl == 0) rr->rroriginalttl = 1;
-					UpdateQuestionTimes(m, rr, timenow);
+					if (pktrr.rroriginalttl == 0) rr->rroriginalttl = 1;
+					else rr->rroriginalttl = pktrr.rroriginalttl;
 					break;
 					}
 				}
@@ -2504,7 +2520,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m, const DNSMessage *const re
 					*rr = pktrr;
 					rr->next = m->rrcache;
 					m->rrcache = rr;
-					UpdateQuestionTimes(m, rr, timenow);
+					TriggerImmediateQuestions(m, rr, timenow);
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
 					AnswerLocalQuestions(m, rr, timenow);
 					}
@@ -2561,15 +2577,18 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 	return(mDNSNULL);
 	}
 
+// This is called after a question is deleted, in case other identical questions were being
+// suppressed as duplicates
 mDNSlocal void UpdateQuestionDuplicates(const mDNS *const m, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
 	for (q = m->ActiveQuestions; q; q=q->next)	// Scan our list of questions
 		if (q->DuplicateOf == question)			// To see if any questions were referencing this as their duplicate
 			{
-			q->NextSendTime     = question->NextSendTime;
-			q->ThisSendInterval = question->ThisSendInterval;
-			q->DuplicateOf      = FindDuplicateQuestion(m, q);
+			q->NextQTime     = question->NextQTime;
+			q->ThisQInterval = question->ThisQInterval;
+			q->NextQInterval = question->NextQInterval;
+			q->DuplicateOf   = FindDuplicateQuestion(m, q);
 			}
 	}
 
@@ -2588,10 +2607,11 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			return(mStatus_AlreadyRegistered);
 			}
 
-		question->next             = mDNSNULL;
-		question->NextSendTime     = timenow;
-		question->ThisSendInterval = mDNSPlatformOneSecond/2;
-		question->DuplicateOf      = FindDuplicateQuestion(m, question);
+		question->next          = mDNSNULL;
+		question->NextQTime     = timenow;
+		question->ThisQInterval = 0;
+		question->NextQInterval = mDNSPlatformOneSecond;
+		question->DuplicateOf   = FindDuplicateQuestion(m, question);
 		*q = question;
 		
 		if (!m->NewQuestions) m->NewQuestions = question;
@@ -2610,7 +2630,8 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 	UpdateQuestionDuplicates(m, question);
 
 	question->next = mDNSNULL;
-	question->ThisSendInterval = 0;
+	question->ThisQInterval = 0;
+	question->NextQInterval = 0;
 	
 	// If we just deleted the question that AnswerLocalQuestions() is about to look at,
 	// bump its pointer forward one question.
@@ -2644,12 +2665,12 @@ mDNSexport void mDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 	}
 
 mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
-    const domainname *const srv, const domainname *const domain,
-    const mDNSIPAddr InterfaceAddr, mDNSQuestionCallback *Callback, void *Context)
+	const domainname *const srv, const domainname *const domain,
+	const mDNSIPAddr InterfaceAddr, mDNSQuestionCallback *Callback, void *Context)
 	{
 	question->InterfaceAddr = InterfaceAddr;
 	question->name = *srv;
-    AppendDomainNameToName(&question->name, domain);
+	AppendDomainNameToName(&question->name, domain);
 	question->rrtype    = kDNSType_PTR;
 	question->rrclass   = kDNSClass_IN;
 	question->Callback  = Callback;
@@ -2751,9 +2772,9 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *query)
 	{
 	mDNS_Lock(m);
-	if (query->qSRV.ThisSendInterval) mDNS_StopQuery_internal(m, &query->qSRV);
-	if (query->qTXT.ThisSendInterval) mDNS_StopQuery_internal(m, &query->qTXT);
-	if (query->qADD.ThisSendInterval) mDNS_StopQuery_internal(m, &query->qADD);
+	if (query->qSRV.ThisQInterval) mDNS_StopQuery_internal(m, &query->qSRV);
+	if (query->qTXT.ThisQInterval) mDNS_StopQuery_internal(m, &query->qTXT);
+	if (query->qADD.ThisQInterval) mDNS_StopQuery_internal(m, &query->qADD);
 	mDNS_Unlock(m);
 	}
 
@@ -2794,7 +2815,6 @@ mDNSexport void mDNS_SetupResourceRecord(ResourceRecord *rr,
 	rr->Context           = Context;
 
 	rr->RecordType        = RecordType;
-	rr->IncludeInProbe    = mDNSfalse;
 	rr->HostTarget        = mDNSfalse;
 
 	rr->InterfaceAddr     = InterfaceAddr;
@@ -2892,7 +2912,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		return(mStatus_AlreadyRegistered);
 		}
 
-    set->next = mDNSNULL;
+	set->next = mDNSNULL;
 
 	mDNS_SetupResourceRecord(&set->RR_A1,  set->ip, kDNSType_A,   10, kDNSRecordTypeUnique,      HostNameCallback, set);
 	mDNS_SetupResourceRecord(&set->RR_A2,  set->ip, kDNSType_A,   10, kDNSRecordTypeUnique,      HostNameCallback, set);
@@ -2932,15 +2952,30 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
+	NetworkInterfaceInfo *i;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	mDNS_Lock(m);
+
+	// Find this record in our list
 	while (*p && *p != set) p=&(*p)->next;
-	if (*p) *p = (*p)->next;
-	else debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list");
+	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); return; }
+
+	// Unlink this record from our list
+	*p = (*p)->next;
+	
+	// If we still have address records referring to this one, update them
+	for (i=m->HostInterfaces; i; i=i->next)
+		{
+		if (i->RR_A1.RRSet == &set->RR_A1) i->RR_A1.RRSet = &m->HostInterfaces->RR_A1;
+		if (i->RR_A2.RRSet == &set->RR_A2) i->RR_A2.RRSet = &m->HostInterfaces->RR_A2;
+		}
+
+	// Unregister these records
 	set->next = mDNSNULL;
 	mDNS_Deregister_internal(m, &set->RR_A1);
 	mDNS_Deregister_internal(m, &set->RR_A2);
 	mDNS_Deregister_internal(m, &set->RR_PTR);
+
 	mDNS_Unlock(m);
 	}
 
@@ -3099,10 +3134,15 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 
 	result = mDNSPlatformInit(m);
 	
-	// This lock/unlock causes a ScheduleNextTask(m) to get things started
-	mDNS_Lock(m);
-	mDNS_Unlock(m);
 	return(result);
+	}
+
+extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
+	{
+	m->mDNSPlatformStatus = result;
+	if (m->Callback) m->Callback(m, mStatus_NoError);
+	mDNS_Lock(m);	// This lock/unlock causes a ScheduleNextTask(m) to get things started
+	mDNS_Unlock(m);
 	}
 
 extern void mDNS_Close(mDNS *const m)

@@ -57,6 +57,7 @@ struct mDNS_PlatformSupport_struct
 
 // Headers needed for code on this platform
 #include <CoreFoundation/CoreFoundation.h>
+#include <SystemConfiguration/SystemConfiguration.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
@@ -64,6 +65,7 @@ struct mDNS_PlatformSupport_struct
 struct mDNS_PlatformSupport_struct
 	{
 	CFRunLoopTimerRef cftimer;
+	SCDynamicStoreRef store;
 	};
 
 // ***************************************************************************
