@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.46  2004/09/24 21:15:25  cheshire
+# <rdar://problem/3724985> Library "libmdns" misnamed; should be "libdns_sd"
+#
 # Revision 1.45  2004/09/22 16:23:41  cheshire
 # Modify installation for compatibility with Gentoo Linux
 # (Thanks to David Black for this information)
@@ -154,13 +157,13 @@
 # Added NetMonitor.c
 #
 
-# This Makefile builds an mDNSResponder daemon and a libmdns.so shared library 
+# This Makefile builds an mDNSResponder daemon and a libdns_sd.so shared library 
 # for Linux. It also builds several example programs for embedded systems. 
 #
 # Make with no arguments to build all production targets.
 # 'make DEBUG=1' to build debugging targets.
 # 'make clean' or 'make clean DEBUG=1' to delete prod/debug objects & targets
-# 'sudo make install [DEBUG=1]' to install mdnsd daemon and libmdns.
+# 'sudo make install [DEBUG=1]' to install mdnsd daemon and libdns_sd.
 #
 # Notes:
 # $@ means "The file name of the target of the rule"
@@ -186,7 +189,7 @@ CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/m
 LIBFLAGS =
 DNSEXT_FLAGS = -D_REENTRANT -g -Wall -lpthread
 LDSUFFIX = so
-JAVACFLAGS_OS = -fPIC -shared -lmdns
+JAVACFLAGS_OS = -fPIC -shared -ldns_sd
 
 # Set up diverging paths for debug vs. prod builds
 DEBUG=0
@@ -315,7 +318,7 @@ CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS) $(CFLAGS_DEBUG)
 
 #############################################################################
 
-all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor dnsextd $(OPTIONALTARG)
+all: setup Daemon libdns_sd Client Responder ProxyResponder Identify NetMonitor dnsextd $(OPTIONALTARG)
 
 install: setup InstalledDaemon InstalledLib InstalledStartup InstalledManPages $(OPTINSTALL)
 
@@ -345,13 +348,13 @@ $(BUILDDIR)/mdnsd: $(DAEMONOBJS)
 	$(CC) -o $@ $+ $(CFLAGS) $(LIBFLAGS)
 	@$(STRIP) $@
 
-# libmdns target builds the client library
-libmdns: setup $(BUILDDIR)/libmdns.$(LDSUFFIX)
+# libdns_sd target builds the client library
+libdns_sd: setup $(BUILDDIR)/libdns_sd.$(LDSUFFIX)
 	@echo "Client library done"
 
 CLIENTLIBOBJS = $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
 
-$(BUILDDIR)/libmdns.$(LDSUFFIX): $(CLIENTLIBOBJS)
+$(BUILDDIR)/libdns_sd.$(LDSUFFIX): $(CLIENTLIBOBJS)
 	@$(LD) $(LIBFLAGS) -o $@ $+
 	@$(STRIP) $@
 
@@ -369,7 +372,7 @@ $(BUILDDIR)/$(NSSLIBFILE): $(CLIENTLIBOBJS) $(OBJDIR)/nss_mdns.c.so.o
 InstalledDaemon: $(INSTBASE)/sbin/mdnsd
 	@echo $+ " installed"
 
-InstalledLib: $(INSTBASE)/lib/libmdns.$(LDSUFFIX).$(LIBVERS) $(INSTBASE)/include/dns_sd.h
+InstalledLib: $(INSTBASE)/lib/libdns_sd.$(LDSUFFIX).$(LIBVERS) $(INSTBASE)/include/dns_sd.h
 	@echo $+ " installed"
 
 InstalledStartup: $(STARTUPSCRIPTDIR)/$(STARTUPSCRIPTNAME)
@@ -384,9 +387,9 @@ InstalledManPages: $(MANPATH)/man8/mdnsd.8
 $(INSTBASE)/sbin/mdnsd: $(BUILDDIR)/mdnsd
 	$(CP) $< $@
 
-$(INSTBASE)/lib/libmdns.$(LDSUFFIX).$(LIBVERS): $(BUILDDIR)/libmdns.$(LDSUFFIX)
+$(INSTBASE)/lib/libdns_sd.$(LDSUFFIX).$(LIBVERS): $(BUILDDIR)/libdns_sd.$(LDSUFFIX)
 	$(CP) $< $@
-	$(LN) $@ $(INSTBASE)/lib/libmdns.$(LDSUFFIX)
+	$(LN) $@ $(INSTBASE)/lib/libdns_sd.$(LDSUFFIX)
 ifdef LDCONFIG
     # -m means 'merge into existing database', -R means 'rescan directories'
 	$(LDCONFIG) -mR

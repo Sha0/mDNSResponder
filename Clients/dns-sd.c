@@ -55,7 +55,7 @@ OS X:
 gcc dns-sd.c -o dns-sd
 
 POSIX systems:
-gcc dns-sd.c -o dns-sd -I../mDNSShared -lmdns
+gcc dns-sd.c -o dns-sd -I../mDNSShared -ldns_sd
 
 Windows:
 cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib ..\mDNSWindows\DLL\Release\dnssd.lib
