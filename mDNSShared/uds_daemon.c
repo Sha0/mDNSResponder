@@ -1,4 +1,5 @@
-/*
+/* -*- Mode: C; tab-width: 4 -*-
+ *
  * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
@@ -23,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.98  2004/10/14 01:59:33  cheshire
+<rdar://problem/3839208> UDS resolves don't work for uDNS services
+
 Revision 1.97  2004/10/13 00:58:35  cheshire
 <rdar://problem/3832738> Registering a proxy doesn't work
 
@@ -519,8 +523,14 @@ typedef struct
     
 typedef struct resolve_result_t
     {
-    const ResourceRecord *txt;
-    const ResourceRecord *srv;
+    // const ResourceRecord *txt;
+    // const ResourceRecord *srv;
+    mDNSBool   srv;
+    mDNSBool   txt;
+    domainname target;
+    mDNSIPPort port;
+    mDNSu16    txtlen;
+    mDNSu8     txtdata[AbsoluteMaxDNSMessageData];
     } resolve_result_t;
 
 typedef struct
@@ -1034,7 +1044,6 @@ static void request_callback(void *info)
 #if defined(USE_TCP_LOOPBACK)
 		{
 		mDNSOpaque16 port;
-
 		port.b[0] = rstate->msgdata[0];
 		port.b[1] = rstate->msgdata[1];
         rstate->msgdata += 2;
@@ -1322,20 +1331,38 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     resolve_result_t *res = rs->resolve_results;
     (void)m; // Unused
     
+    // This code used to do this trick of just keeping a copy of the pointer to
+    // the answer record in the cache, but the unicast query code doesn't currently
+    // put its answer records in the cache, so for now we can't do this.
+    
 	if (!AddRecord)
 		{
-		if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
-		if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
+		// if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
+		// if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
 		return;
 		}
 
-    if (answer->rrtype == kDNSType_TXT) res->txt = answer;
-    if (answer->rrtype == kDNSType_SRV) res->srv = answer;
+    // if (answer->rrtype == kDNSType_TXT) res->txt = answer;
+    // if (answer->rrtype == kDNSType_SRV) res->srv = answer;
+
+    if (answer->rrtype == kDNSType_SRV)
+    	{
+    	AssignDomainName(res->target, answer->rdata->u.srv.target);
+    	res->port = answer->rdata->u.srv.port;
+    	res->srv = mDNStrue;
+    	}
+    if (answer->rrtype == kDNSType_TXT)
+    	{
+    	if (answer->rdlength > AbsoluteMaxDNSMessageData) return;
+    	res->txtlen = answer->rdlength;
+    	mDNSPlatformMemCopy(answer->rdata->u.data, res->txtdata, res->txtlen);
+    	res->txt = mDNStrue;
+    	}
 
     if (!res->txt || !res->srv) return;		// only deliver result to client if we have both answers
     
     ConvertDomainNameToCString(&answer->name, fullname);
-    ConvertDomainNameToCString(&res->srv->rdata->u.srv.target, target);
+    ConvertDomainNameToCString(&res->target, target);
 
     // calculate reply length
     len += sizeof(DNSServiceFlags);
@@ -1344,12 +1371,12 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     len += strlen(fullname) + 1;
     len += strlen(target) + 1;
     len += 2 * sizeof(uint16_t);  // port, txtLen
-    len += res->txt->rdlength;
+    len += res->txtlen;
     
     // allocate/init reply header
     rep =  create_reply(resolve_reply, len, rs);
     rep->rhdr->flags = dnssd_htonl(0);
-    rep->rhdr->ifi =  dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
+    rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
     rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
     data = rep->sdata;
@@ -1357,9 +1384,10 @@ static void resolve_result_callback(mDNS *const m, DNSQuestion *question, const 
     // write reply data to message
     put_string(fullname, &data);
     put_string(target, &data);
-    put_short(res->srv->rdata->u.srv.port.NotAnInteger, &data);
-    put_short(res->txt->rdlength, &data);
-    put_rdata(res->txt->rdlength, res->txt->rdata->u.txt.c, &data);
+    *data++ = res->port.b[0];
+    *data++ = res->port.b[1];
+    put_short(res->txtlen, &data);
+    put_rdata(res->txtlen, res->txtdata, &data);
     
     result = send_msg(rep);
     if (result == t_error || result == t_terminated) 
@@ -1921,8 +1949,9 @@ static void handle_regservice_request(request_state *request)
         get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
         goto bad_param;
         
-    service->port.NotAnInteger = get_short(&ptr);
-    service->txtlen = get_short(&ptr);
+    service->port.b[0] = *ptr++;
+    service->port.b[1] = *ptr++;
+    service->txtlen  = get_short(&ptr);
     service->txtdata = get_rdata(&ptr, service->txtlen);
 
 	// Check for sub-types after the service type
