@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.8  2004/11/30 23:51:05  cheshire
+Remove double semicolons
+
 Revision 1.7  2004/11/23 08:12:04  shersche
 Implement if_nametoindex and if_indextoname for Win32 platforms
 
@@ -192,7 +195,7 @@ static OpContext	*NewContext( JNIEnv *pEnv, jobject owner, const char *ownerClas
 								const char *callbackName, const char *callbackSig)
 // Create and initialize a new OpContext.
 {
-	OpContext				*pContext = (OpContext*) malloc( sizeof *pContext);;
+	OpContext				*pContext = (OpContext*) malloc( sizeof *pContext);
 
 	if ( pContext != NULL)
 	{

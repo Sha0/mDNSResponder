@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.129  2004/11/30 23:51:06  cheshire
+Remove double semicolons
+
 Revision 1.128  2004/11/25 01:48:30  ksekar
 <rdar://problem/3878991> Logging into VPN does not trigger registration of address record
 
@@ -3890,7 +3893,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
-	ExtraResourceRecord *e = srs->Extras, *tmp;;
+	ExtraResourceRecord *e = srs->Extras, *tmp;
 
 	while(e)
 		{

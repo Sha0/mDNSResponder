@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.18  2004/11/30 23:51:06  cheshire
+Remove double semicolons
+
 Revision 1.17  2004/11/30 22:37:01  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -1334,7 +1337,7 @@ mDNSlocal void PrintLLQTable(DaemonInfo *d)
 	char addr[32];
 	int i;
 	
-	Log("Printing LLQ table contents");;
+	Log("Printing LLQ table contents");
 
 	for (i = 0; i < LLQ_TABLESIZE; i++)
 		{
@@ -1395,7 +1398,7 @@ mDNSlocal void *LLQEventMonitor(void *DInfoPtr)
 	mDNSOpaque16 id, flags = QueryFlags;
 	PktMsg reply;
 	mDNSs32 serial = 0;
-	mDNSBool SerialInitialized = mDNSfalse;;
+	mDNSBool SerialInitialized = mDNSfalse;
 	int sd;
      LargeCacheRecord lcr;
 	ResourceRecord *rr = &lcr.r.resrec;
