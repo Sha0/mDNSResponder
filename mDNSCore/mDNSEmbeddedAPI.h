@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.105  2003/08/19 02:33:37  cheshire
+Update comments
+
 Revision 1.104  2003/08/19 02:31:11  cheshire
 <rdar://problem/3378386> mDNSResponder overenthusiastic with final expiration queries
 Final expiration queries now only mark the question for sending on the particular interface
@@ -814,8 +817,8 @@ struct DNSQuestion_struct
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	DNSQuestion          *next;
 	mDNSu32               qnamehash;
-	mDNSs32               LastQTime;		// In platform time units
-	mDNSs32               ThisQInterval;	// In platform time units
+	mDNSs32               LastQTime;		// Last scheduled tranmission of this Q on *all* applicable interfaces
+	mDNSs32               ThisQInterval;	// LastQTime + ThisQInterval is the next scheduled tranmission of this Q
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question that's been removed from the list

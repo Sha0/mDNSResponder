@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.280  2003/08/19 02:33:36  cheshire
+Update comments
+
 Revision 1.279  2003/08/19 02:31:11  cheshire
 <rdar://problem/3378386> mDNSResponder overenthusiastic with final expiration queries
 Final expiration queries now only mark the question for sending on the particular interface
@@ -3464,10 +3467,10 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		CacheRecord **ka = *kalistptrptr;	// Make a working copy of the pointer we're going to update
 
 		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// If we have a resource record in our cache,
-			if (rr->resrec.InterfaceID == q->SendQNow &&							// received on this interface
+			if (rr->resrec.InterfaceID == q->SendQNow &&					// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
 				rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
-				ResourceRecordAnswersQuestion(&rr->resrec, q) &&						// which answers our question
+				ResourceRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
 				rr->NextRequiredQuery - (m->timenow + q->ThisQInterval) > 0)// and we'll ask at least once again before NextRequiredQuery
 				{
 				*ka = rr;	// Link this record into our known answer chain
@@ -3493,9 +3496,9 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		if (ucast) m->ExpectUnicastResponse = m->timenow;
 
 		for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)		// For every resource record in our cache,
-			if (rr->resrec.InterfaceID == q->SendQNow &&							// received on this interface
+			if (rr->resrec.InterfaceID == q->SendQNow &&					// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not in the known answer list
-				ResourceRecordAnswersQuestion(&rr->resrec, q))						// which answers our question
+				ResourceRecordAnswersQuestion(&rr->resrec, q))				// which answers our question
 					{
 					rr->UnansweredQueries++;								// indicate that we're expecting a response
 					rr->LastUnansweredTime = m->timenow;
@@ -3582,7 +3585,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		for (q = m->Questions; q; q=q->next)
 			if (TimeToSendThisQuestion(q, m->timenow))
 				{
-				q->SendQNow = mDNSInterfaceMark;		// Mark this question for sending
+				q->SendQNow = mDNSInterfaceMark;		// Mark this question for sending on all interfaces
 				if (maxExistingQuestionInterval < q->ThisQInterval)
 					maxExistingQuestionInterval = q->ThisQInterval;
 				}
@@ -3947,7 +3950,9 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
 					event = rr->NextRequiredQuery;				// then just record when we want the next query
 				else											// else trigger our question to go out now
 					{
-					m->NextScheduledQuery = m->timenow;	// And adjust NextScheduledQuery so it will happen
+					// Set NextScheduledQuery to timenow so that SendQueries() will run.
+					// SendQueries() will see that we have records close to expiration, and send FEQs for them.
+					m->NextScheduledQuery = m->timenow;
 					// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
 					// which will correctly update m->NextCacheCheck for us
 					event = m->timenow + 0x3FFFFFFF;
