@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.146  2004/01/30 02:20:24  bradley
+Map inline to __inline when building with Microsoft C compilers since they do not support C99 inline.
+
 Revision 1.145  2004/01/29 02:59:17  ksekar
 Unicast DNS: Changed from a resource record oriented question/response
 matching to packet based matching.  New callback architecture allows
@@ -627,8 +630,14 @@ typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier
 typedef mDNSOpaque32  mDNSv4Addr;              // An IP address is a four-byte opaque identifier (not an integer)
 typedef mDNSOpaque128 mDNSv6Addr;		// An IPv6 address is a 16-byte opaque identifier (not an integer)
 
-mDNSlocal inline mDNSu16      mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
-mDNSlocal inline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
+#if(defined(_MSC_VER))
+	#define	mDNSinline	__inline
+#else
+	#define	mDNSinline	inline
+#endif
+
+mDNSlocal mDNSinline mDNSu16      mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
+mDNSlocal mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 	{ mDNSOpaque16 x; x.b[0] = (mDNSu8)(v >> 8); x.b[1] = (mDNSu8)(v & 0xFF); return(x); }
 
 enum
