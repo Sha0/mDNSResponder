@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.87  2004/09/21 22:18:33  cheshire
+In SIGINFO output, display a '-' next to records that have the Unique bit set
+
 Revision 1.86  2004/09/21 21:05:11  cheshire
 Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
 into mDNSShared/uds_daemon.c
@@ -763,7 +766,9 @@ void udsserver_info(mDNS *const m)
 			CacheUsed++;
 			SlotUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
-			LogMsgNoIdent("%s%6ld %-6s%-6s%s", rr->CRActiveQuestion ? "*" : " ", remain, DNSTypeName(rr->resrec.rrtype),
+			LogMsgNoIdent("%s%6ld %s%-6s%-6s%s",
+				rr->CRActiveQuestion ? "*" : ".", remain,
+				(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
 				((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, GetRRDisplayString(m, rr));
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 			}
