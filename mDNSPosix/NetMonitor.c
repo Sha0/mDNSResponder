@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.7  2003/05/07 00:16:01  cheshire
+ * More detailed decoding of Resource Records
+ *
  * Revision 1.6  2003/05/05 21:16:16  cheshire
  * <rdar://problem/3241281> Change timenow from a local variable to a structure member
  *
@@ -228,6 +231,27 @@ mDNSlocal void DisplayTimestamp(void)
 	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
 	}
 
+mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *const op, const ResourceRecord *const pktrr)
+	{
+	RDataBody *rd = &pktrr->rdata->u;
+	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdata->RDLength;
+	mDNSu8 *t = rd->txt.c;
+	mprintf("%#-16a %-4s %-5s %##s", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->name.c);
+
+	switch(pktrr->rrtype)
+		{
+		case kDNSType_A:	mprintf(" -> %.4a", &rd->ip); break;
+		case kDNSType_PTR:	mprintf(" -> %##s", &rd->name); break;
+		case kDNSType_HINFO:// same as kDNSType_TXT below
+		case kDNSType_TXT:	while (t < rdend) { mprintf(" -> %#s", t); t += 1+t[0]; }
+							break;
+		case kDNSType_AAAA:	mprintf(" -> %.16a", &rd->ipv6); break;
+		case kDNSType_SRV:	mprintf(" -> %##s:%d", &rd->srv.target, ((mDNSu16)rd->srv.port.b[0] << 8) | rd->srv.port.b[1]); break;
+		}
+	
+	mprintf("\n");
+	}
+
 mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
@@ -242,11 +266,11 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		{
 		DNSQuestion q;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
+		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
 		if (FindUpdate(m, msg, auth, end, &q, &pktrr))
 			{
 			NumProbes++;
-			mprintf("%#-16a (P)  %-5s %##s\n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
+			DisplayResourceRecord(srcaddr, "(P)", &pktrr);
 			recordstat(&q.name, OP_probe, q.rrtype);
 			}
 		else
@@ -260,9 +284,8 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
 		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
-		mprintf("%#-16a (KA) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
-		if (pktrr.rrtype == kDNSType_PTR) mprintf(" -> %##s", pktrr.rdata->u.name.c);
-		mprintf("\n");
+		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ KNOWN ANSWER **** \n", srcaddr); return; }
+		DisplayResourceRecord(srcaddr, "(KA)", &pktrr);
 		}
 	}
 
@@ -279,40 +302,37 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 		{
 		DNSQuestion q;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
+		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE Q IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(q.rrtype), q.name.c);
 		}
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
-		const char *op = "AN";
+		const char *op;
 		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
+		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr); return; }
 		NumAnswers++;
-		if (pktrr.rroriginalttl == 0) op = "DE";
-		mprintf("%#-16a (%s) %-5s %##s", srcaddr, op, DNSTypeName(pktrr.rrtype), pktrr.name.c);
-		if (pktrr.rrtype == kDNSType_PTR) mprintf(" -> %##s", pktrr.rdata->u.name.c);
-		mprintf("\n");
+		if      (pktrr.rroriginalttl == 0)                    op = "(DE)";
+		else if (pktrr.RecordType & kDNSRecordTypeUniqueMask) op = "(AN)";
+		else                                                  op = "(A+)";
+		DisplayResourceRecord(srcaddr, op, &pktrr);
 		recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
 		}
 
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
 		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ AUTHORITY **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
+		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ AUTHORITY **** \n", srcaddr); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
 		}
 
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
 		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
-		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
+		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr); return; }
 		NumAdditionals++;
-		mprintf("%#-16a (AD) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
-		if (pktrr.rrtype == kDNSType_PTR) mprintf(" -> %##s", pktrr.rdata->u.name.c);
-		mprintf("\n");
+		DisplayResourceRecord(srcaddr, "(AD)", &pktrr);
 		}
-
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
@@ -401,7 +421,8 @@ usage:
 	fprintf(stderr, "(P)            Probe Question (new service starting)\n");
 	fprintf(stderr, "(Q)            Query Question\n");
 	fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
-	fprintf(stderr, "(AN)           Answer to question (or periodic announcment)\n");
+	fprintf(stderr, "(AN)           Answer to question (or periodic announcment) (entire RR Set)\n");
+	fprintf(stderr, "(A+)           Answer to question (or periodic announcment) (add to existing RR Set members)\n");
 	fprintf(stderr, "(AD)           Additional record\n");
 	fprintf(stderr, "(DE)           Deletion (record going away)\n");
 	return(-1);
