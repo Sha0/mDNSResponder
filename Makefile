@@ -16,8 +16,10 @@
 
 include /Developer/Makefiles/pb_makefiles/platform.make
 
+MVERS=33
+
 install:
-	cd "$(SRCROOT)/mDNSMacOSX"; pbxbuild install OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT)
+	cd "$(SRCROOT)/mDNSMacOSX"; pbxbuild install     OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT) MVERS=$(MVERS)
 
 installsrc:
 	ditto mDNSCore ${SRCROOT}/mDNSCore
@@ -25,7 +27,7 @@ installsrc:
 	ditto Makefile $(SRCROOT)
 
 installhdrs::
-	cd "$(SRCROOT)/mDNSMacOSX"; pbxbuild installhdrs OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT)
+	cd "$(SRCROOT)/mDNSMacOSX"; pbxbuild installhdrs OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT) MVERS=$(MVERS)
 															
 clean::
 	echo clean

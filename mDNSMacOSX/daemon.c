@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.95  2003/05/07 19:20:17  cheshire
+ * <rdar://problem/3251391> Add version number to mDNSResponder builds
+ *
  * Revision 1.94  2003/05/07 00:28:18  cheshire
  * <rdar://problem/3250330> Need to make mDNSResponder more defensive against bad clients
  *
@@ -59,6 +62,15 @@
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
+
+//*************************************************************************************************************
+// Macros
+
+// Note: The C preprocessor stringify operator ('#') makes a string from its argument, without macro expansion
+// e.g. If "version" is #define'd to be "4", then STRINGIFY_AWE(version) will return the string "version", not "4"
+// To expand "version" to its value before making the string, use STRINGIFY(version) instead
+#define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s 
+#define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
 
 //*************************************************************************************************************
 // Globals
@@ -1278,7 +1290,7 @@ mDNSexport int main(int argc, char **argv)
 		fclose(fp);
 		}
 	
-	LogMsg("%s", "mDNSResponder (" __DATE__ " " __TIME__ ") starting");
+	LogMsg("%s", "mDNSResponder " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ") starting");
 	status = start(NULL, NULL);
 
 	if (status == 0)
