@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.442  2004/10/08 20:25:10  cheshire
+Change of plan for <rdar://problem/3831716> -- we're not going to do that at this time
+
 Revision 1.441  2004/10/08 03:25:01  ksekar
 <rdar://problem/3831716> domain enumeration should use LLQs
 
@@ -5471,7 +5474,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->Target           = zeroAddr;
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
-	question->LongLived        = mDNStrue;
+	question->LongLived        = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
