@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.8  2004/03/19 17:50:40  cheshire
+Clarify comment about kDNSServiceMaxDomainName
+
 Revision 1.7  2004/03/12 08:00:06  cheshire
 Minor comment changes, headers, and wrap file in extern "C" for the benefit of C++ clients
 
@@ -137,6 +140,7 @@ enum
     
 
 /* Maximum length, in bytes, of a domain name represented as an escaped C-String */
+/* including the final trailing dot, and the C-String terminating NULL at the end */
 #define kDNSServiceMaxDomainName 1005
 
 
@@ -783,7 +787,7 @@ DNSServiceErrorType DNSServiceResolve
  * Parameters:
  *
  * fullName:        A pointer to a buffer that where the resulting full domain name is to be written.
- *                  The buffer must be kDNSServiceDiscoveryMaxDomainName (1005) bytes in length to 
+ *                  The buffer must be kDNSServiceMaxDomainName (1005) bytes in length to 
  * 		            accommodate the longest legal domain name without buffer overrun.
  *
  * service:         The service name - any dots or slashes must NOT be escaped.
