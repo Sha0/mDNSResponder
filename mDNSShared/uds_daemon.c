@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.45  2004/03/12 08:49:28  cheshire
+#include <sys/socket.h>
+
 Revision 1.44  2004/02/25 01:25:27  ksekar
 Bug #: <rdar://problem/3569212>: DNSServiceRegisterRecord flags not error-checked
 
@@ -131,16 +134,18 @@ Update to APSL 2.0
 
  */
 
-#include "mDNSClientAPI.h"
-#include "uds_daemon.h"
-#include "dns_sd.h"
-#include "dnssd_ipc.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
+
+#include "mDNSClientAPI.h"
+#include "uds_daemon.h"
+#include "dns_sd.h"
+#include "dnssd_ipc.h"
 
 // convenience definition 
 #define	_UNUSED	__attribute__ ((unused))
