@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.222  2004/10/12 02:49:20  ksekar
+<rdar://problem/3831228> Clean up LLQ sleep/wake, error handling
+
 Revision 1.221  2004/10/10 06:57:15  cheshire
 Change definition of "localdomain" to make code compile a little smaller
 
@@ -1493,6 +1496,8 @@ typedef enum
 	LLQ_Refresh           = 5,
 	LLQ_Retry             = 6,
 	LLQ_Suspended         = 7,
+	LLQ_SuspendDeferred   = 8,
+		
 	// safe to re-start LLQ before this point
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.94  2004/10/12 02:49:20  ksekar
+<rdar://problem/3831228> Clean up LLQ sleep/wake, error handling
+
 Revision 1.93  2004/10/08 04:17:25  ksekar
 <rdar://problem/3831819> Don't use DNS extensions if the server does not advertise required SRV record
 
@@ -2250,7 +2253,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info)
 	mStatus err;
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	
-	if (info->ntries++ == kLLQ_MAX_TRIES)
+	if (info->ntries++ >= kLLQ_MAX_TRIES)
 		{
 		LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s. Will re-try in %d minutes",
 			   kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
@@ -2294,35 +2297,30 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	{
 	LLQ_Info *info = (LLQ_Info *)llqInfo;
 	const zoneData_t *zoneInfo = mDNSNULL;
-
+	
     // check state first to make sure it is OK to touch question object
 	if (info->state == LLQ_Cancelled)
 		{
 		// StopQuery was called while we were getting the zone info
-		LogMsg("startLLQHandshake - LLQ Cancelled.");
+		debugf("startLLQHandshake - LLQ Cancelled.");
 		info->question = mDNSNULL;  // question may be deallocated
 		ufree(info);
 		return;
 		}
 
-	if (err)
-		{
-		LogMsg("ERROR: startLLQHandshakeCallback invoked with error code %ld", err);
-		goto poll;
-		}
-
-	if (!result)
-		{
-		LogMsg("ERROR: startLLQHandshakeCallback invoked with NULL result and no error code");
-		goto poll;
-		}
-	else zoneInfo = &result->zoneData;
+	if (!info->question)
+		{ LogMsg("ERROR: startLLQHandshakeCallback invoked with NULL question"); goto error; }
 
 	if (info->state != LLQ_GetZoneInfo)
-		{
-		LogMsg("ERROR: startLLQHandshake - bad state %d", info->state);
-        goto poll;
-		}
+		{ LogMsg("ERROR: startLLQHandshake - bad state %d", info->state); goto error; }
+
+	if (err)
+		{ LogMsg("ERROR: startLLQHandshakeCallback invoked with error code %ld", err); goto poll; }
+
+	if (!result)
+		{ LogMsg("ERROR: startLLQHandshakeCallback invoked with NULL result and no error code"); goto error; }
+	
+	zoneInfo = &result->zoneData;
 
 	if (!zoneInfo->llqPort.NotAnInteger)
 		{ debugf("LLQ port lookup failed - reverting to polling"); goto poll; }
@@ -2332,7 +2330,9 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	info->servAddr.ip.v4.NotAnInteger = zoneInfo->primaryAddr.ip.v4.NotAnInteger;
 	info->servPort.NotAnInteger = zoneInfo->llqPort.NotAnInteger;
     info->ntries = 0;
-	startLLQHandshake(m, info);
+
+	if (info->state == LLQ_SuspendDeferred) info->state = LLQ_Suspended;
+	else startLLQHandshake(m, info);
 	return;
 
 	poll:
@@ -2340,6 +2340,10 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	info->state = LLQ_Poll;
 	info->question->LastQTime = mDNSPlatformTimeNow(m) - (2 * INIT_UCAST_POLL_INTERVAL);  // trigger immediate poll
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+	return;
+
+	error:
+	info->state = LLQ_Error;
 	}
 
 mDNSlocal mStatus startLLQ(mDNS *m, DNSQuestion *question)
@@ -2446,6 +2450,7 @@ mDNSlocal void stopLLQ(mDNS *m, DNSQuestion *question)
 			//!!!KRS should we unlink info<->question here?
 			return;
 		case LLQ_GetZoneInfo:
+		case LLQ_SuspendDeferred:		
 			info->question = mDNSNULL; // remove ref to question, as it may be freed when we get called back from async op
 			info->state = LLQ_Cancelled;
 			return;			
@@ -3926,7 +3931,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq->state != LLQ_Poll)
 			{
-			if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Suspended)
+			if (llq->state >= LLQ_InitialRequest && llq->state < LLQ_Suspended)
 				{
 				if (llq->retry - timenow < 0)				
 					{
@@ -4100,8 +4105,8 @@ mDNSlocal void SuspendLLQs(mDNS *m)
 			{
 			if (llq->state == LLQ_Established || llq->state == LLQ_Refresh)
 				sendLLQRefresh(m, q, 0);
-			// note that we suspend LLQs in setup states too			
-			if (llq->state != LLQ_Retry) llq->state = LLQ_Suspended;
+			if (llq->state == LLQ_GetZoneInfo) llq->state = LLQ_SuspendDeferred;  // suspend once we're done getting zone info
+			else llq->state = LLQ_Suspended;
 			}
 		}
 	}
@@ -4118,8 +4123,13 @@ mDNSlocal void RestartLLQs(mDNS *m)
 		q = u->CurrentQuery;
 		u->CurrentQuery = u->CurrentQuery->next;
 		llqInfo = q->uDNS_info.llq;
-		if (q->LongLived && llqInfo && llqInfo->state == LLQ_Suspended)		
-			{ llqInfo->ntries = 0; llqInfo->deriveRemovesOnResume = mDNStrue; startLLQHandshake(m, llqInfo); }
+		if (q->LongLived && llqInfo)
+			{
+			if (llqInfo->state == LLQ_Suspended)		
+				{ llqInfo->ntries = 0; llqInfo->deriveRemovesOnResume = mDNStrue; startLLQHandshake(m, llqInfo); }
+			else if (llqInfo->state == LLQ_SuspendDeferred)
+				llqInfo->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
+            }
 		}
 	}
 
