@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.50  2004/12/01 01:14:20  cheshire
+# Add $(LIBFLAGS) to cc command to build dnsextd (required for Solaris)
+#
 # Revision 1.49  2004/11/11 01:44:52  cheshire
 # Updated error message
 #
@@ -550,7 +553,7 @@ $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
 
 $(BUILDDIR)/dnsextd:          $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.o
-	$(CC) $+ -o $@ $(DNSEXT_FLAGS)
+	$(CC) $+ -o $@ $(LIBFLAGS) $(DNSEXT_FLAGS)
 
 #############################################################################
 
