@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.497  2004/12/17 03:20:58  cheshire
+<rdar://problem/3925168> Don't send unicast replies we know will be ignored
+
 Revision 1.496  2004/12/16 22:18:26  cheshire
 Make AddressIsLocalSubnet() a little more selective -- ignore point-to-point interfaces
 
@@ -2011,6 +2014,82 @@ mDNSlocal CacheGroup *CacheGroupForName(const mDNS *const m, const mDNSu32 slot,
 mDNSlocal CacheGroup *CacheGroupForRecord(const mDNS *const m, const mDNSu32 slot, const ResourceRecord *const rr)
 	{
 	return(CacheGroupForName(m, slot, rr->namehash, rr->name));
+	}
+
+mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID InterfaceID, const mDNSAddr *addr)
+	{
+	NetworkInterfaceInfo *intf;
+
+	if (addr->type == mDNSAddrType_IPv4)
+		{
+		if (addr->ip.v4.b[0] == 169 && addr->ip.v4.b[1] == 254) return(mDNStrue);
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID && intf->McastTxRx)
+				if (((intf->ip.ip.v4.NotAnInteger ^ addr->ip.v4.NotAnInteger) & intf->mask.ip.v4.NotAnInteger) == 0)
+					return(mDNStrue);
+		}
+
+	if (addr->type == mDNSAddrType_IPv6)
+		{
+		if (addr->ip.v6.b[0] == 0xFE && addr->ip.v6.b[1] == 0x80) return(mDNStrue);
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID && intf->McastTxRx)
+				if ((((intf->ip.ip.v6.l[0] ^ addr->ip.v6.l[0]) & intf->mask.ip.v6.l[0]) == 0) &&
+					(((intf->ip.ip.v6.l[1] ^ addr->ip.v6.l[1]) & intf->mask.ip.v6.l[1]) == 0) &&
+					(((intf->ip.ip.v6.l[2] ^ addr->ip.v6.l[2]) & intf->mask.ip.v6.l[2]) == 0) &&
+					(((intf->ip.ip.v6.l[3] ^ addr->ip.v6.l[3]) & intf->mask.ip.v6.l[3]) == 0))
+						return(mDNStrue);
+		}
+
+	return(mDNSfalse);
+	}
+
+// Set up a AuthRecord with sensible default values.
+// These defaults may be overwritten with new values before mDNS_Register is called
+mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
+	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
+	{
+	  mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
+	// Don't try to store a TTL bigger than we can represent in platform time units
+	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
+		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
+	else if (ttl == 0)		// And Zero TTL is illegal
+		ttl = DefaultTTLforRRType(rrtype);
+
+	// Field Group 1: The actual information pertaining to this resource record
+	rr->resrec.RecordType        = RecordType;
+	rr->resrec.InterfaceID       = InterfaceID;
+	rr->resrec.name              = &rr->namestorage;
+	rr->resrec.rrtype            = rrtype;
+	rr->resrec.rrclass           = kDNSClass_IN;
+	rr->resrec.rroriginalttl     = ttl;
+//	rr->resrec.rdlength          = MUST set by client and/or in mDNS_Register_internal
+//	rr->resrec.rdestimate        = set in mDNS_Register_internal
+//	rr->resrec.rdata             = MUST be set by client
+
+	if (RDataStorage)
+		rr->resrec.rdata = RDataStorage;
+	else
+		{
+		rr->resrec.rdata = &rr->rdatastorage;
+		rr->resrec.rdata->MaxRDLength = sizeof(RDataBody);
+		}
+
+	// Field Group 2: Persistent metadata for Authoritative Records
+	rr->Additional1       = mDNSNULL;
+	rr->Additional2       = mDNSNULL;
+	rr->DependentOn       = mDNSNULL;
+	rr->RRSet             = mDNSNULL;
+	rr->RecordCallback    = Callback;
+	rr->RecordContext     = Context;
+
+	rr->HostTarget        = mDNSfalse;
+	rr->AllowRemoteQuery  = mDNSfalse;
+	rr->ForceMCast        = mDNSfalse;
+
+	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
+	
+	rr->namestorage.c[0]  = 0;		// MUST be set by client before calling mDNS_Register()
 	}
 
 // ***************************************************************************
@@ -4543,6 +4622,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, mDNSBool QueryWasMulticast, mDNSBool QueryWasLocalUnicast,
 	DNSMessage *const response)
 	{
+	mDNSBool      FromLocalSubnet    = AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	AuthRecord   *ResponseRecords    = mDNSNULL;
 	AuthRecord  **nrp                = &ResponseRecords;
 	CacheRecord  *ExpectedAnswers    = mDNSNULL;			// Records in our cache we expect to see updated
@@ -4602,7 +4682,10 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					// NR_AnswerTo pointing into query packet means "answer via immediate legacy unicast" (may also choose to multicast as well)
 					// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier)
 					// NR_AnswerTo == (mDNSu8*)~0             means "definitely answer via multicast" (can't downgrade to unicast later)
-					if (QuestionNeedsMulticastResponse)
+					// If we're not multicasting this record because the kDNSQClass_UnicastResponse bit was set,
+					// but the multicast querier is not on a matching subnet (e.g. because of overalyed subnets on one link)
+					// then we'll multicast it anyway (if we unicast, the receiver will ignore it because it has an apparently non-local source)
+					if (QuestionNeedsMulticastResponse || (!FromLocalSubnet && QueryWasMulticast && !LegacyQuery))
 						{
 						// We only mark this question for sending if it is at least one second since the last time we multicast it
 						// on this interface. If it is more than a second, or LastMCInterface is different, then we should multicast it.
@@ -4945,34 +5028,6 @@ exit:
 		}
 	
 	return(responseptr);
-	}
-
-mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID InterfaceID, const mDNSAddr *addr)
-	{
-	NetworkInterfaceInfo *intf;
-
-	if (addr->type == mDNSAddrType_IPv4)
-		{
-		if (addr->ip.v4.b[0] == 169 && addr->ip.v4.b[1] == 254) return(mDNStrue);
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID && intf->McastTxRx)
-				if (((intf->ip.ip.v4.NotAnInteger ^ addr->ip.v4.NotAnInteger) & intf->mask.ip.v4.NotAnInteger) == 0)
-					return(mDNStrue);
-		}
-
-	if (addr->type == mDNSAddrType_IPv6)
-		{
-		if (addr->ip.v6.b[0] == 0xFE && addr->ip.v6.b[1] == 0x80) return(mDNStrue);
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID && intf->McastTxRx)
-				if ((((intf->ip.ip.v6.l[0] ^ addr->ip.v6.l[0]) & intf->mask.ip.v6.l[0]) == 0) &&
-					(((intf->ip.ip.v6.l[1] ^ addr->ip.v6.l[1]) & intf->mask.ip.v6.l[1]) == 0) &&
-					(((intf->ip.ip.v6.l[2] ^ addr->ip.v6.l[2]) & intf->mask.ip.v6.l[2]) == 0) &&
-					(((intf->ip.ip.v6.l[3] ^ addr->ip.v6.l[3]) & intf->mask.ip.v6.l[3]) == 0))
-						return(mDNStrue);
-		}
-
-	return(mDNSfalse);
 	}
 
 mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
@@ -5879,54 +5934,6 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 #pragma mark -
 #pragma mark - Responder Functions
 #endif
-
-// Set up a AuthRecord with sensible default values.
-// These defaults may be overwritten with new values before mDNS_Register is called
-mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
-	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
-	{
-	  mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
-	// Don't try to store a TTL bigger than we can represent in platform time units
-	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
-		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
-	else if (ttl == 0)		// And Zero TTL is illegal
-		ttl = DefaultTTLforRRType(rrtype);
-
-	// Field Group 1: The actual information pertaining to this resource record
-	rr->resrec.RecordType        = RecordType;
-	rr->resrec.InterfaceID       = InterfaceID;
-	rr->resrec.name              = &rr->namestorage;
-	rr->resrec.rrtype            = rrtype;
-	rr->resrec.rrclass           = kDNSClass_IN;
-	rr->resrec.rroriginalttl     = ttl;
-//	rr->resrec.rdlength          = MUST set by client and/or in mDNS_Register_internal
-//	rr->resrec.rdestimate        = set in mDNS_Register_internal
-//	rr->resrec.rdata             = MUST be set by client
-
-	if (RDataStorage)
-		rr->resrec.rdata = RDataStorage;
-	else
-		{
-		rr->resrec.rdata = &rr->rdatastorage;
-		rr->resrec.rdata->MaxRDLength = sizeof(RDataBody);
-		}
-
-	// Field Group 2: Persistent metadata for Authoritative Records
-	rr->Additional1       = mDNSNULL;
-	rr->Additional2       = mDNSNULL;
-	rr->DependentOn       = mDNSNULL;
-	rr->RRSet             = mDNSNULL;
-	rr->RecordCallback    = Callback;
-	rr->RecordContext     = Context;
-
-	rr->HostTarget        = mDNSfalse;
-	rr->AllowRemoteQuery  = mDNSfalse;
-	rr->ForceMCast        = mDNSfalse;
-
-	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
-	
-	rr->namestorage.c[0]  = 0;		// MUST be set by client before calling mDNS_Register()
-	}
 
 mDNSexport mStatus mDNS_Register(mDNS *const m, AuthRecord *const rr)
 	{
