@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.29  2003/12/11 18:53:22  cheshire
+Fix compiler warning reported by Paul Guyot
+
 Revision 1.28  2003/12/11 03:03:51  rpantos
 Clean up mDNSPosix so that it builds on OS X again.
 
@@ -704,7 +707,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 	assert(intfName != NULL);
 
 	// Allocate the interface structure itself.
-	intf = malloc(sizeof(*intf));
+	intf = (PosixNetworkInterface*)malloc(sizeof(*intf));
 	if (intf == NULL) { assert(0); err = ENOMEM; }
 
 	// And make a copy of the intfName.

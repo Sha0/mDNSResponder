@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.14  2003/12/11 18:53:40  cheshire
+Fix compiler warning reported by Paul Guyot
+
 Revision 1.13  2003/12/08 20:47:02  rpantos
 Add support for mDNSResponder on Linux.
 
@@ -124,7 +127,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     lastlen = 0;
     len = 100 * sizeof(struct ifreq);   /* initial buffer size guess */
     for ( ; ; ) {
-        buf = malloc(len);
+        buf = (char*)malloc(len);
         if (buf == NULL) {
             goto gotError;
         }
@@ -178,7 +181,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
         if ((flags & IFF_UP) == 0)
             continue;   /* ignore if interface not up */
 
-        ifi = calloc(1, sizeof(struct ifi_info));
+        ifi = (struct ifi_info*)calloc(1, sizeof(struct ifi_info));
         if (ifi == NULL) {
             goto gotError;
         }
@@ -196,7 +199,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
         case AF_INET:
             sinptr = (struct sockaddr_in *) &ifr->ifr_addr;
             if (ifi->ifi_addr == NULL) {
-                ifi->ifi_addr = calloc(1, sizeof(struct sockaddr_in));
+                ifi->ifi_addr = (struct sockaddr*)calloc(1, sizeof(struct sockaddr_in));
                 if (ifi->ifi_addr == NULL) {
                     goto gotError;
                 }
@@ -208,7 +211,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
                         goto gotError;
                     }
                     sinptr = (struct sockaddr_in *) &ifrcopy.ifr_broadaddr;
-                    ifi->ifi_brdaddr = calloc(1, sizeof(struct sockaddr_in));
+                    ifi->ifi_brdaddr = (struct sockaddr*)calloc(1, sizeof(struct sockaddr_in));
                     if (ifi->ifi_brdaddr == NULL) {
                         goto gotError;
                     }
@@ -222,7 +225,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
                         goto gotError;
                     }
                     sinptr = (struct sockaddr_in *) &ifrcopy.ifr_dstaddr;
-                    ifi->ifi_dstaddr = calloc(1, sizeof(struct sockaddr_in));
+                    ifi->ifi_dstaddr = (struct sockaddr*)calloc(1, sizeof(struct sockaddr_in));
                     if (ifi->ifi_dstaddr == NULL) {
                         goto gotError;
                     }
@@ -317,9 +320,9 @@ recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
     memset(&msg, 0, sizeof(msg));   /* make certain msg_accrightslen = 0 */
 #endif /* CMSG_FIRSTHDR */
 
-    msg.msg_name = (void *) sa;
+    msg.msg_name = (char *) sa;
     msg.msg_namelen = *salenptr;
-    iov[0].iov_base = ptr;
+    iov[0].iov_base = (char *)ptr;
     iov[0].iov_len = nbytes;
     msg.msg_iov = iov;
     msg.msg_iovlen = 1;
