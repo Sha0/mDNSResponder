@@ -264,7 +264,7 @@ BEGIN
     IDS_NO_MDNSRESPONDER_SERVICE_CAPTION "Error"
     IDS_PRINTER_MATCH_GOOD  "The Rendezvous Printer Wizard has auto-selected the following printer settings.  Click 'Next' to continue installing this printer."
     IDS_PRINTER_MATCH_BAD   "The Rendezvous Printer Wizard cannot find a driver for this printer.  Manually select from the list, or click 'Have Disk' if your printer came with an installation disk. "
-    IDS_PRINTER_MATCH_MAYBE "The Rendezvous Printer Wizard has selected a generic printer driver for this printer. Generic printer drivers do not work with all printers. If your printer came with an installation disk, click 'Have Disk' now to load the manufacturer's drivers."
+    IDS_PRINTER_MATCH_MAYBE "The Rendezvous Printer Wizard has selected a generic printer driver for this printer. The generic printer driver does not work with all printers. If your printer came with an installation disk, click 'Have Disk' now to load the manufacturer's drivers."
     IDS_YES                 "Yes"
     IDS_NO                  "No"
     IDS_LARGE_FONT          "MS Sans Serif"
