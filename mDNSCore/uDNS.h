@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.29  2005/01/11 22:50:53  ksekar
+Fixed constant naming (was using kLLQ_DefLease for update leases)
+
 Revision 1.28  2004/12/22 00:13:49  ksekar
 <rdar://problem/3873993> Change version, port, and polling interval for LLQ
 
@@ -133,6 +136,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)        // require server responses within one minute of request
 #define UPDATE_PORT_NAME "_dns-update._udp."
 #define LLQ_PORT_NAME "_dns-llq._udp"
+#define DEFAULT_UPDATE_LEASE 7200
 	
 // Entry points into unicast-specific routines
 

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.269  2005/01/11 22:50:52  ksekar
+Fixed constant naming (was using kLLQ_DefLease for update leases)
+
 Revision 1.268  2004/12/22 22:25:47  ksekar
 <rdar://problem/3734265> NAT-PMP: handle location changes
 
@@ -1715,7 +1718,6 @@ typedef struct
 #define kDNSOpt_Lease  2
 #define kLLQ_Vers      1
 #define kLLQ_DefLease  7200 // 2 hours
-#define kUpdate_DefLease 7200
 #define kLLQ_MAX_TRIES 3    // retry an operation 3 times max
 #define kLLQ_INIT_RESEND 2 // resend an un-ack'd packet after 2 seconds, then double for each additional
 #define kLLQ_DEF_RETRY 1800 // retry a failed operation after 30 minutes

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.172  2005/01/11 22:50:52  ksekar
+Fixed constant naming (was using kLLQ_DefLease for update leases)
+
 Revision 1.171  2005/01/10 04:52:49  ksekar
 Changed LogMsg to debugf
 
@@ -3727,7 +3730,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	if (!ptr) goto error;
 
 	if (rr->uDNS_info.lease)
-		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
+		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	   	
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &regInfo->ns, regInfo->port, -1, GetAuthInfoForZone(u, &regInfo->zone));
 	if (err) LogMsg("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
@@ -3900,7 +3903,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	// !!!KRS do subtypes/extras etc.
 
 	if (srs->uDNS_info.lease)
-		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
+		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	   
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rInfo->ns, rInfo->port, -1, GetAuthInfoForZone(u, &rInfo->zone));
 	if (err) { LogMsg("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err); goto error; }
@@ -4283,7 +4286,7 @@ mDNSlocal void SendRecordUpdate(mDNS *m, AuthRecord *rr, uDNS_RegInfo *info)
 	if (!ptr) goto error;         // (rdata gets changed permanently on success)
 
 	if (info->lease)
-		{ ptr = putUpdateLease(&msg, ptr, kLLQ_DefLease); if (!ptr) goto error; }
+		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) goto error; }
 	
 	// don't report send errors - retransmission will occurr if necessary
 	err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &info->ns, info->port, -1, GetAuthInfoForZone(u, &info->zone));
