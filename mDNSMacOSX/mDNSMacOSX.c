@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.279  2005/01/17 20:40:34  ksekar
+SCPreferences changes should remove exactly one browse and one legacy browse domain for each remove event
+
 Revision 1.278  2005/01/17 19:53:34  ksekar
 Refinement to previous fix - register _legacy._browse records for SCPreference domains to achieve correct reference counting
 
@@ -3017,6 +3020,27 @@ mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 		}
 	}
 
+mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
+	{
+	ARListElem *remove, **ptr = &SCPrefBrowseDomains;
+	domainname lhs; // left-hand side of PTR, for comparison
+	
+	MakeDomainNameFromDNSNameString(&lhs, mDNS_DomainTypeNames[type]);
+	AppendDNSNameString            (&lhs, "local");
+
+	while (*ptr)
+		{
+		if (SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, d) && SameDomainName((*ptr)->ar.resrec.name, &lhs))
+			{
+			remove = *ptr;
+			*ptr = (*ptr)->next;
+			mDNS_Deregister(m, &remove->ar);
+			return;
+			}
+		else ptr = &(*ptr)->next;
+		}
+	}
+
 // Add or remove a user-specified domain to the list of empty-string browse domains
 // Also register a non-legacy _browse PTR record so that the domain appears in enumeration lists
 mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
@@ -3030,15 +3054,10 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 		}
 	else
 		{
-		ARListElem *remove, **ptr = &SCPrefBrowseDomains;
-		while (*ptr && !SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, d)) ptr = &(*ptr)->next;
-		if (!*ptr) return;
-		remove = *ptr;
-		*ptr = (*ptr)->next;
-		mDNS_Deregister(m, &remove->ar);
+		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
+		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
 		}
 	}
-
 
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
 // 1) query for b._dns-sd._udp.local on LocalOnly interface
