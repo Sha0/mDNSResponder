@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.294  2005/01/27 21:30:23  cheshire
+<rdar://problem/3952067> "Can't assign requested address" message after AirPort turned off
+Don't write syslog messages for EADDRNOTAVAIL if we know network configuration changes are happening
+
 Revision 1.293  2005/01/27 19:15:41  cheshire
 Remove extraneous LogMsg() call
 
@@ -1218,6 +1222,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
 		if (errno == EHOSTUNREACH && (mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return(err);
+		// Don't report EADDRNOTAVAIL ("Can't assign requested address") if we're in the middle of a network configuration change
+		if (errno == EADDRNOTAVAIL && m->p->NetworkChanged) return(err);
 		LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %5s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 		return(err);
