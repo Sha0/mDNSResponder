@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.384  2004/06/15 04:31:23  cheshire
+Make sure to clear m->CurrentRecord at the end of AnswerNewLocalOnlyQuestion()
+
 Revision 1.383  2004/06/11 00:04:59  cheshire
 <rdar://problem/3595602> TTL must be greater than zero for DNSServiceRegisterRecord
 
@@ -3308,6 +3311,7 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 
+	if (m->CurrentRecord) LogMsg("AnswerNewQuestion ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->LocalOnlyRecords;
 	while (m->CurrentRecord && m->CurrentRecord != m->NewLocalOnlyRecords)
 		{
@@ -3322,6 +3326,7 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 		}
 
 	m->CurrentQuestion = mDNSNULL;
+	m->CurrentRecord   = mDNSNULL;
 	}
 
 mDNSlocal void AnswerLocalOnlyQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddRecord)
