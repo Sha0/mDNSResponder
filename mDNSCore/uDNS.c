@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.20  2004/03/13 02:07:26  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.19  2004/03/13 01:57:33  ksekar
 Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
 
@@ -1690,6 +1693,14 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 
 mDNSexport mStatus uDNS_RegisterService(mDNS *m, ServiceRecordSet *srs)
 	{
+	if (!*m->uDNS_info.regdomain)
+		{
+		LogMsg("ERROR: uDNS_RegisterService - cannot register unicast service "
+			   "without setting the regdomain via mDNSResponder.conf");
+		srs->uDNS_info.state = regState_Unregistered;
+		return mStatus_UnknownErr;
+		}
+	
 	srs->RR_SRV.resrec.rroriginalttl = 3;
 	srs->RR_TXT.resrec.rroriginalttl = 3;
 	srs->RR_PTR.resrec.rroriginalttl = 3;
