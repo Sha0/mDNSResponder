@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.86  2003/05/28 02:41:52  cheshire
+<rdar://problem/3034346> Time to remove Mac OS 9 UDP Port 53 legacy support
+
 Revision 1.85  2003/05/28 02:39:47  cheshire
 Minor change to debugging messages
 
@@ -202,7 +205,7 @@ Minor code tidying
 // it to also listen and answer queries on UDP port 53. Now that Transport 2.8 (included in
 // the Classic subsystem of Mac OS X 10.2 Jaguar) has been corrected to issue Multicast DNS
 // queries on UDP port 5353, this backwards-compatibility legacy support is no longer needed.
-#define mDNS_AllowPort53 1
+#define mDNS_AllowPort53 0
 
 // For debugging, set LIST_ALL_INTERFACES to 1 to display all found interfaces,
 // including ones that mDNSResponder chooses not to use.
