@@ -21,7 +21,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared;C:\WINDDK\2600.1106\inc;C:\WINDDK\2600.1106\inc\wxp"
-				PreprocessorDefinitions="WIN32;_WINDOWS;_DEBUGS;DEBUG=1;WINVER=0x0400;UNICODE;_UNICODE"
+				PreprocessorDefinitions="WIN32;_WINDOWS;_DEBUGS;DEBUG=1;WINVER=0x0501;UNICODE;_UNICODE"
 				StringPooling="TRUE"
 				MinimalRebuild="TRUE"
 				BasicRuntimeChecks="3"
@@ -57,7 +57,8 @@ IF EXIST %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot; GOTO COPY
 mkdir %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;
 :COPY
 copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Files&quot;
-:END"/>
+:END
+"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
@@ -85,7 +86,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Debug\Root\&quot;Program Fil
 				InlineFunctionExpansion="1"
 				OmitFramePointers="TRUE"
 				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared;C:\WINDDK\2600.1106\inc;C:\WINDDK\2600.1106\inc\wxp"
-				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;WINVER=0x0400;UNICODE;_UNICODE"
+				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;WINVER=0x0501;UNICODE;_UNICODE"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"
 				RuntimeLibrary="0"
@@ -121,7 +122,8 @@ IF EXIST %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot; GOTO COPY
 mkdir %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;
 :COPY
 copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program Files&quot;
-:END"/>
+:END
+"/>
 			<Tool
 				Name="VCPreBuildEventTool"/>
 			<Tool
@@ -188,9 +190,6 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program F
 				RelativePath="PrinterSetupWizardSheet.h">
 			</File>
 			<File
-				RelativePath="Resource.h">
-			</File>
-			<File
 				RelativePath="SecondPage.h">
 			</File>
 			<File
@@ -203,6 +202,12 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program F
 				RelativePath=".\UtilTypes.h">
 			</File>
 			<File
+				RelativePath="resource.h">
+			</File>
+			<File
+				RelativePath="resource_exe.h">
+			</File>
+			<File
 				RelativePath="stdafx.h">
 			</File>
 		</Filter>
@@ -210,25 +215,13 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program F
 			Name="Resource Files"
 			Filter="rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;jpg;jpeg;jpe;manifest">
 			<File
-				RelativePath=".\res\Info.ico">
+				RelativePath="res\Info.ico">
 			</File>
 			<File
-				RelativePath=".\res\NetworkPrinter.ico">
+				RelativePath="res\NetworkPrinter.ico">
 			</File>
 			<File
-				RelativePath=".\res\Print.ico">
-			</File>
-			<File
-				RelativePath=".\res\Printer.bmp">
-			</File>
-			<File
-				RelativePath=".\res\Printer.ico">
-			</File>
-			<File
-				RelativePath=".\res\Printer2.ico">
-			</File>
-			<File
-				RelativePath="res\PrinterSetupWizard.ico">
+				RelativePath="res\Print.ico">
 			</File>
 			<File
 				RelativePath="res\PrinterSetupWizard.manifest">
@@ -237,10 +230,7 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program F
 				RelativePath="PrinterSetupWizard.rc">
 			</File>
 			<File
-				RelativePath="res\PrinterSetupWizard.rc2">
-			</File>
-			<File
-				RelativePath=".\res\about.bmp">
+				RelativePath="res\about.bmp">
 			</File>
 			<File
 				RelativePath="res\banner_icon.bmp">
@@ -269,6 +259,21 @@ copy $(OutDir)\$(TargetFileName) %DNSSD_BUILD_ROOT%\Release\Root\&quot;Program F
 			</File>
 			<File
 				RelativePath="..\..\mDNSShared\dns_sd.h">
+			</File>
+			<File
+				RelativePath="..\..\mDNSWindows\isocode.h">
+			</File>
+			<File
+				RelativePath="..\..\mDNSWindows\loclibrary.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						DisableSpecificWarnings="4201"/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\..\mDNSWindows\loclibrary.h">
 			</File>
 		</Filter>
 		<File
