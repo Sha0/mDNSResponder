@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.154  2004/12/14 20:52:27  cheshire
+Add question->qnamehash and cr->resrec.namehash to log message
+
 Revision 1.153  2004/12/14 20:45:02  cheshire
 Improved error logging in "unexpected answer" message
 
@@ -1843,8 +1846,8 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			}			
 		else if (!followedCName || !SameDomainName(&cr->resrec.name, &origname))
 			LogMsg("Question %##s %X %s %##s- unexpected answer %##s %X %s",
-				question->qname.c, DNSTypeName(question->qtype), origname.c,
-				cr->resrec.name.c, DNSTypeName(cr->resrec.rrtype));
+				question->qname.c, question->qnamehash, DNSTypeName(question->qtype), origname.c,
+				cr->resrec.name.c, cr->resrec.namehash, DNSTypeName(cr->resrec.rrtype));
 		}
 	
 	if (!llq || llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume)
