@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.107  2003/04/25 00:41:31  cheshire
+<rdar://problem/3239912> Create single routine PurgeCacheResourceRecord(), to avoid bugs in future
+
 Revision 1.106  2003/04/22 03:14:45  cheshire
 <rdar://problem/3232229> Include Include instrumented mDNSResponder in panther now
 
@@ -1951,6 +1954,8 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->rroriginalttl     = (mDNSu32) ((mDNSu32)ptr[4] << 24 | (mDNSu32)ptr[5] << 16 | (mDNSu32)ptr[6] << 8 | ptr[7]);
 	if (rr->rroriginalttl > 0x70000000UL / mDNSPlatformOneSecond)
 		rr->rroriginalttl = 0x70000000UL / mDNSPlatformOneSecond;
+	// Note: We don't have to adjust m->NextCacheTidyTime here -- this is just getting a record into memory for
+	// us to look at. If we decide to copy it into the cache, then we'll update m->NextCacheTidyTime accordingly.
 	rr->rrremainingttl    = 0;
 	pktrdlength           = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
 	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8))
@@ -2964,6 +2969,18 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 	return(r);
 	}
 
+mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, ResourceRecord *rr, const mDNSs32 timenow)
+	{
+	// Make sure we mark this record as thoroughly expired -- we don't ever want to give
+	// a positive answer using an expired record (e.g. from an interface that has gone away)
+	rr->TimeRcvd          = timenow - mDNSPlatformOneSecond * 60;
+	rr->UnansweredQueries = 2;
+	rr->rroriginalttl     = 0;
+	
+	// Set m->NextCacheTidyTime so that we will immediately clear these records
+	m->NextCacheTidyTime = timenow;
+	}
+
 extern void LogMsg(const char *format, ...);
 static mDNSs32 gNextEventScheduledAt;
 static const char *gNextEventMsg = "None yet";
@@ -3008,12 +3025,14 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 				{ nextevent = t1; gNextEventMsg = "Final Expiration Query"; }
 			else if (nextevent - t0 > 0)
 				{
+				// Note: This section is only a sanity check for m->NextCacheTidyTime
+				// Later it should be deleted
 				nextevent = t0; gNextEventMsg = "Cache Tidying";
 				if (m->NextCacheTidyTime - nextevent > 0)
 					{
 					LogMsg("************ ScheduleNextTask: why is m->NextCacheTidyTime > nextevent (%d)?",
 						m->NextCacheTidyTime - nextevent);
-					m->NextCacheTidyTime = nextevent;
+					((mDNS *)m)->NextCacheTidyTime = nextevent;
 					}
 				}
 			}
@@ -3855,28 +3874,18 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// and purge them if they are more than one second old.
 	if (m->rrcache_size)
 		{
-		ResourceRecord *rr;
+		ResourceRecord *rr, *r;
 		mDNSs32 slot;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-			{
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
-				{
 				if (rr->NewData)
 					{
 					rr->NewData = mDNSfalse;
 					if (rr->RecordType & kDNSRecordTypeUniqueMask)
-						{
-						ResourceRecord *r;
 						for (r = m->rrcache_hash[slot]; r; r=r->next)
 							if (SameResourceRecordSignature(rr, r) && timenow - r->TimeRcvd > mDNSPlatformOneSecond)
-								{
-								r->rroriginalttl = 0;
-								m->NextCacheTidyTime = timenow;
-								}
-						}
+								PurgeCacheResourceRecord(m, rr, timenow);
 					}
-				}
-			}
 		}
 	}
 
@@ -4611,7 +4620,6 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			}
 		else
 			{
-			mDNSu32 count = 0;
 			ResourceRecord *rr;
 			DNSQuestion *q;
 			mDNSs32 slot;
@@ -4624,20 +4632,9 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 			// 2. Flush any cache records received on this interface
 			for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-				{
 				for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 					if (rr->InterfaceID == set->InterfaceID)
-						{
-						// Make sure we mark this record as thoroughly expired -- we don't ever want
-						// to give a positive answer using a record from an interface that has gone away.
-						rr->TimeRcvd          = timenow - mDNSPlatformOneSecond * 60;
-						rr->UnansweredQueries = 2;
-						rr->rroriginalttl     = 0;
-						count++;
-						m->NextCacheTidyTime = timenow;
-						}
-				}
-			if (count) debugf("mDNS_DeregisterInterface: Flushing %d Cache Entries on interface %X", count, set->InterfaceID);
+						PurgeCacheResourceRecord(m, rr, timenow);
 
 			// 3. Deactivate any authoritative records specific to this interface
 			// Any records that are in kDNSRecordTypeDeregistering state will be automatically discarded
