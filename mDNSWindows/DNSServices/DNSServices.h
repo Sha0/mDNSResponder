@@ -23,6 +23,25 @@
     Change History (most recent first):
     
 $Log: DNSServices.h,v $
+Revision 1.8  2003/08/20 06:44:24  bradley
+Updated to latest internal version of the Rendezvous for Windows code: Added support for interface
+specific registrations; Added support for no-such-service registrations; Added support for host
+name registrations; Added support for host proxy and service proxy registrations; Added support for
+registration record updates (e.g. TXT record updates); Added support for using either a single C
+string TXT record, a raw, pre-formatted TXT record potentially containing multiple character string
+entries, or a C-string containing a Mac OS X-style \001-delimited set of TXT record character
+strings; Added support in resolve callbacks for providing both a simplified C-string for TXT records
+and a ptr/size for the raw TXT record data; Added utility routines for dynamically building TXT
+records from a variety of sources (\001-delimited, individual strings, etc.) and converting TXT
+records to various formats for use in apps; Added utility routines to validate DNS names, DNS
+service types, and TXT records; Moved to portable address representation unions (byte-stream vs host
+order integer) for consistency, to avoid swapping between host and network byte order, and for IPv6
+support; Removed dependence on modified mDNSCore: define structures and prototypes locally; Added
+support for automatically renaming services on name conflicts; Detect and correct TXT records from
+old versions of mDNS that treated a TXT record as an arbitrary block of data, but prevent other
+malformed TXT records from being accepted; Added many more error codes; Added complete HeaderDoc for
+all constants, structures, typedefs, macros, and functions. Various other minor cleanup and fixes.
+
 Revision 1.7  2003/08/12 19:56:29  cheshire
 Update to APSL 2.0
 
@@ -58,6 +77,8 @@ DNS Services for Windows
 #ifndef	__DNS_SERVICES__
 #define	__DNS_SERVICES__
 
+#include	<stddef.h>
+
 #ifdef	__cplusplus
 	extern "C" {
 #endif
@@ -66,20 +87,117 @@ DNS Services for Windows
 #pragma mark == General ==
 #endif
 
-// dns_check_compile_time - Lets you perform a compile-time check of something such as the size of an int.
-//
-// This declares a unique array with a size that is determined by dividing 1 by the result of the compile-time 
-// expression passed to the macro. If the expression evaluates to 0, this expression results in a divide by 
-// zero, which is illegal and generates a compile-time error.
-//
-// For example:
-//
-// dns_check_compile_time( sizeof( int ) == 4 )
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	dns_check_compile_time
+	
+	@abstract	Performs a compile-time check of something such as the size of an int.
+	
+	@discussion	
+	
+	This declares a unique array with a size that is determined by dividing 1 by the result of the compile-time expression 
+	passed to the macro. If the expression evaluates to 0, this expression results in a divide by zero, which is illegal 
+	and generates a compile-time error.
 
-#define	dns_check_compile_time( X )			extern int DNSDebugUniqueName[ 1 / ( int )( ( X ) ) ]
-#define	DNSDebugUniqueName					DNSDebugMakeNameWrapper( __LINE__ )
-#define	DNSDebugMakeNameWrapper( X )		DNSDebugMakeName( X )
-#define	DNSDebugMakeName( X )				dns_check_compile_time_ ## X
+	For example:
+	
+	dns_check_compile_time( sizeof( int ) == 4 );
+	
+	Note: This only works with compile-time expressions.
+	Note: This only works in places where extern declarations are allowed (e.g. global scope).
+	
+	References:
+	
+	<http://www.jaggersoft.com/pubs/CVu11_3.html>
+	<http://www.jaggersoft.com/pubs/CVu11_5.html>
+	
+	Note: The following macros differ from the macros on the www.jaggersoft.com web site because those versions do not
+	work with GCC due to GCC allow a zero-length array. Using a divide-by-zero condition turned out to be more portable.
+*/
+
+#define	dns_check_compile_time( X )		extern int dns_unique_name[ 1 / (int)( ( X ) ) ]
+
+#define	dns_unique_name					dns_make_name_wrapper( __LINE__ )
+#define	dns_make_name_wrapper( X )		dns_make_name( X )
+#define	dns_make_name( X )				dns_check_compile_time_ ## X
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	dns_check_compile_time_code
+	
+	@abstract	Perform a compile-time check, suitable for placement in code, of something such as the size of an int.
+	
+	@discussion	
+	
+	This creates a switch statement with an existing case for 0 and an additional case using the result of a 
+	compile-time expression. A switch statement cannot have two case labels with the same constant so if the
+	compile-time expression evaluates to 0, it is illegal and generates a compile-time error. If the compile-time
+	expression does not evaluate to 0, the resulting value is used as the case label and it compiles without error.
+
+	For example:
+	
+	dns_check_compile_time_code( sizeof( int ) == 4 );
+	
+	Note: This only works with compile-time expressions.
+	Note: This does not work in a global scope so it must be inside a function.
+	
+	References:
+	
+	<http://www.jaggersoft.com/pubs/CVu11_3.html>
+	<http://www.jaggersoft.com/pubs/CVu11_5.html>
+*/
+
+#define	dns_check_compile_time_code( X )	switch( 0 ) { case 0: case X:; }
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	DNS_LOCAL
+	
+	@abstract	Macro to make variables and functions static when debugging is off, but exported when debugging is on.
+	
+	@discussion	
+	
+	Rather than using "static" directly, using this macros allows you to access these variables external while 
+	debugging without being penalized for production builds.
+*/
+
+#if( DEBUG )
+	#define	DNS_LOCAL
+#else
+	#define	DNS_LOCAL	static
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	DNS_EXPORT
+	
+	@abstract	Macro to provide a visual clue that a variable or function is globally visible.
+*/
+
+#define	DNS_EXPORT
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	DNS_DEBUG_USE_ONLY
+	@abstract	Macro to mark a variable as unused when debugging is turned off.
+	@discussion	
+	
+	Variables are sometimes needed only for debugging. When debugging is turned off, these debug-only variables
+	generate compiler warnings about unused variables. To eliminate these warnings, use the DNS_DEBUG_USE_ONLY macro 
+	to indicate the variables are for debugging only.
+*/
+
+#if( DEBUG )
+	#define	DNS_DEBUG_USE_ONLY( X )
+#else
+	#define	DNS_DEBUG_USE_ONLY( X )		(void)( X )
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	DNS_UNUSED
+	@abstract	Macro to mark a variable as unused.
+	@discussion	
+	
+	There is no universally supported pragma/attribute for indicating a variable is unused. DNS_UNUSED lets 
+	indicate a variable is unused in a manner that is supported by most compilers.
+*/
+
+#define	DNS_UNUSED( X )			(void)( X )
 
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@typedef	DNSUInt8
@@ -112,6 +230,58 @@ typedef unsigned long		DNSUInt32;
 dns_check_compile_time( sizeof( DNSUInt32 ) == 4 );
 
 //---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	DNSSInt32
+
+	@abstract	32-bit signed data type.
+*/
+
+typedef signed long		DNSSInt32;
+
+dns_check_compile_time( sizeof( DNSSInt32 ) == 4 );
+
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	DNSOpaque16
+
+	@abstract	16-bit opaque data type with 8-bit and 16-bit accessors.
+*/
+
+typedef union DNSOpaque16	DNSOpaque16;
+union	DNSOpaque16
+{
+	DNSUInt8		v8[ 2 ];
+	DNSUInt16		v16;
+};
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	DNSOpaque32
+
+	@abstract	32-bit opaque data type with 8-bit, 16-bit, and 32-bit accessors.
+*/
+
+typedef union DNSOpaque32	DNSOpaque32;
+union	DNSOpaque32
+{
+	DNSUInt8		v8[ 4 ];
+	DNSUInt16		v16[ 2 ];
+	DNSUInt32		v32;
+};
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	DNSOpaque128
+
+	@abstract	128-bit opaque data type with 8-bit, 16-bit, and 32-bit accessors.
+*/
+
+typedef union DNSOpaque128	DNSOpaque128;
+union	DNSOpaque128
+{
+	DNSUInt8		v8[ 16 ];
+	DNSUInt16		v16[ 8 ];
+	DNSUInt32		v32[ 4 ];
+};
+
+//---------------------------------------------------------------------------------------------------------------------------
 /*!	@typedef	DNSCount
 
 	@abstract	Count of at least 32-bits.
@@ -119,57 +289,48 @@ dns_check_compile_time( sizeof( DNSUInt32 ) == 4 );
 
 typedef DNSUInt32		DNSCount;
 
+#if 0
+#pragma mark == Errors ==
+#endif
+
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@enum		DNSStatus
 
 	@abstract	DNS Service status code.
 
-	@constant	kDNSNoErr
-					Success. No error occurred.
-
-	@constant	kDNSUnknownErr
-					An unknown error occurred.
-
-	@constant	kDNSNoSuchNameErr
-					The name could not be found on the network.
-
-	@constant	kDNSNoMemoryErr
-					Not enough memory was available.
-
-	@constant	kDNSBadParamErr
-					A invalid or inappropriate parameter was specified.
-
-	@constant	kDNSBadReferenceErr
-					A invalid or inappropriate reference was specified. For example, passing in a reference to an 
-					object that has already been deleted.
-
-	@constant	kDNSBadStateErr
-					The current state does not allow the specified operation. For example, trying to stop browsing 
-					when no browsing is currently occurring.
-
-	@constant	kDNSBadFlagsErr
-					An invalid, inappropriate, or unsupported flag was specified.
-
-	@constant	kDNSUnsupportedErr
-					The specified feature is not currently supported.
-
-	@constant	kDNSNotInitializedErr
-					DNS Service has not been initialized. No calls can be made until after initialization.
-
-	@constant	kDNSNoCacheErr
-					No cache was specified.
-
-	@constant	kDNSAlreadyRegisteredErr
-					Service or host name is already registered.
-
-	@constant	kDNSNameConflictErr
-					Name conflicts with another on the network.
-
-	@constant	kDNSInvalidErr
-					A general error to indicate something is invalid.
+	@constant	kDNSNoErr					(0)      Success. No error occurred.
+	@constant	kDNSUnknownErr				(-65537) An unknown error occurred.
+	@constant	kDNSNoSuchNameErr			(-65538) The name could not be found on the network.
+	@constant	kDNSNoMemoryErr				(-65539) Not enough memory was available.
+	@constant	kDNSBadParamErr				(-65540) A invalid or inappropriate parameter was specified.
+	@constant	kDNSBadReferenceErr			(-65541) A invalid or inappropriate reference was specified.
+	@constant	kDNSBadStateErr				(-65542) The current state does not allow the specified operation.
+	@constant	kDNSBadFlagsErr				(-65543) An invalid, inappropriate, or unsupported flag was specified.
+	@constant	kDNSUnsupportedErr			(-65544) The specified feature is not currently supported.
+	@constant	kDNSNotInitializedErr		(-65545) DNS Service has not been initialized.
+	@constant	kDNSNoCacheErr				(-65546) No cache was specified.
+	@constant	kDNSAlreadyRegisteredErr	(-65547) Service or host name is already registered.
+	@constant	kDNSNameConflictErr			(-65548) Name conflicts with another on the network.
+	@constant	kDNSInvalidErr				(-65549) A general error to indicate something is invalid.
+	@constant	kDNSGrowCache				(-65550) Cache needs to be grown (not used).
+	@constant	kDNSIncompatibleErr			(-65551) Version is incompatible.
+	
+	@constant	kDNSSizeErr					(-65600) Size was too small or too big.
+	@constant	kDNSMismatchErr				(-65601) A data, version, etc. mismatch occurred.
+	@constant	kDNSReadErr					(-65602) Read failed.
+	@constant	kDNSWriteErr				(-65603) Write failed.
+	@constant	kDNSCanceledErr				(-65604) Operation was canceled.
+	@constant	kDNSTimeoutErr				(-65605) Operation timed out.
+	@constant	kDNSConnectionErr			(-65606) A disconnect or other connection error occurred.
+	@constant	kDNSInUseErr				(-65607) Object is in use (e.g. cannot reuse active param blocks).
+	@constant	kDNSNoResourcesErr			(-65608) Resources unavailable to perform the operation.
+	@constant	kDNSEndingErr				(-65609) Connection, session, or something is ending.
+	
+	@constant	kDNSConfigChanged			(-65791) Configuration changed (not used).
+	@constant	kDNSMemFree					(-65792) Memory can be freed.
 */
 
-typedef long				DNSStatus;
+typedef DNSSInt32		DNSStatus;
 enum
 {
 	kDNSNoErr					= 0, 
@@ -191,7 +352,23 @@ enum
 	kDNSAlreadyRegisteredErr	= -65547, 
 	kDNSNameConflictErr			= -65548, 
 	kDNSInvalidErr				= -65549, 
+	kDNSGrowCache				= -65550, 	// Reserved for mDNSCore
+	kDNSIncompatibleErr			= -65551, 
 	
+	kDNSSizeErr					= -65600, 	
+	kDNSMismatchErr				= -65601, 
+	kDNSReadErr					= -65602, 
+	kDNSWriteErr				= -65603, 
+	kDNSCanceledErr				= -65604, 
+	kDNSTimeoutErr				= -65605, 
+	kDNSConnectionErr			= -65606, 
+	kDNSInUseErr				= -65607, 
+	kDNSNoResourcesErr			= -65608, 
+	kDNSEndingErr				= -65609, 
+	
+	kDNSConfigChanged			= -65791,	// Reserved for mDNSCore
+	kDNSMemFree					= -65792,	// Reserved for mDNSCore
+
 	kDNSEndErr					= -65792	// 0xFFFE FF00
 };
 
@@ -244,37 +421,51 @@ enum
 	
 	@constant	kDNSNetworkAddressTypeIPv4
 					IPv4 address data.
+
+	@constant	kDNSNetworkAddressTypeIPv6
+					IPv6 address data.
 */
 
 typedef DNSUInt32	DNSNetworkAddressType;
-enum
-{
-	kDNSNetworkAddressTypeInvalid	= 0, 
-	kDNSNetworkAddressTypeIPv4 		= 1
-};
+
+#define kDNSNetworkAddressTypeInvalid		0
+#define kDNSNetworkAddressTypeIPv4			4
+#define kDNSNetworkAddressTypeIPv6			6
+#define kDNSNetworkAddressTypeAny			0xFFFFFFFF
 
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@struct		DNSNetworkAddressIPv4
 
-	@field		address
-					32-bit IPv4 address in network byte order (e.g. 0x11FE03B7 -> 17.254.3.183).
+	@field		addr
+					32-bit IPv4 address in network byte order.
 	
 	@field		port
-					16-bit port number.
-	
-	@field		pad
-					Reserved pad to 32-bit boundary. Must be zero.
+					16-bit port number in network byte order.
 */
 
 typedef struct	DNSNetworkAddressIPv4	DNSNetworkAddressIPv4;
 struct	DNSNetworkAddressIPv4
 {
-	DNSUInt32		address;
-	DNSUInt16		port;
-	DNSUInt16		pad;
+	DNSOpaque32		addr;
+	DNSOpaque16		port;
 };
 
-dns_check_compile_time( sizeof( DNSNetworkAddressIPv4 ) == 8 );
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@struct		DNSNetworkAddressIPv6
+
+	@field		addr
+					128-bit IPv6 address in network byte order.
+	
+	@field		port
+					16-bit port number in network byte order.
+*/
+
+typedef struct	DNSNetworkAddressIPv6	DNSNetworkAddressIPv6;
+struct	DNSNetworkAddressIPv6
+{
+	DNSOpaque128		addr;
+	DNSOpaque16			port;
+};
 
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@struct		DNSNetworkAddress
@@ -289,8 +480,6 @@ dns_check_compile_time( sizeof( DNSNetworkAddressIPv4 ) == 8 );
 					Reserved data (pads structure to allow for future growth). Unused portions must be zero.
 */
 
-// NOTE: DNSNetworkAddress should really just be the same as mDNSAddr.
-// There's no need to have two of these types
 typedef struct	DNSNetworkAddress	DNSNetworkAddress;
 struct	DNSNetworkAddress
 {
@@ -298,7 +487,7 @@ struct	DNSNetworkAddress
 	union
 	{
 		DNSNetworkAddressIPv4		ipv4;
-		DNSUInt8					reserved[ 16 ];
+		DNSNetworkAddressIPv6		ipv6;
 	} u;
 };
 
@@ -436,8 +625,14 @@ enum
 	@field		domain
 					Ptr to UTF-8 string containing the resolved domain of the service.
 
-	@field		interfaceAddr
-					Network address of the interface that received the resolver information.
+	@field		interfaceID
+					Network interface that received the event.
+	
+	@field		interfaceName
+					Network interface that received the event. May be empty if interface is no longer available.
+
+	@field		interfaceIP
+					IP of network interface that received the event. May be invalid if interface is no longer available.
 	
 	@field		address
 					Network address of the service. Used to communicate with the service.
@@ -447,6 +642,12 @@ enum
 
 	@field		flags
 					Flags used to augment the event data.
+
+	@field		textRecordRaw
+					Ptr to raw TXT record data. May be needed if a custom TXT record format is used.
+
+	@field		textRecordRawSize
+					Number of bytes in raw TXT record. May be needed if a custom TXT record format is used.
 */
 
 typedef struct	DNSResolverEventResolveData		DNSResolverEventResolveData;
@@ -455,10 +656,14 @@ struct	DNSResolverEventResolveData
 	const char *			name;
 	const char *			type;
 	const char *			domain;
-	DNSNetworkAddress		interfaceAddr;
+	void *					interfaceID;
+	const char *			interfaceName;
+	DNSNetworkAddress		interfaceIP;
 	DNSNetworkAddress		address;
 	const char *			textRecord;
 	DNSResolverFlags		flags;
+	const void *			textRecordRaw;
+	DNSCount				textRecordRawSize;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -521,13 +726,14 @@ typedef void
 					Flags to control the resolving process.
 
 	@param		inName
-					Ptr to UTF-8 string containing the service name to resolve.
+					Ptr to UTF-8 string containing the service name to resolve (e.g. "My Printer").
 	
 	@param		inType
-					Ptr to UTF-8 string containing the service type of the service to resolve.
+					Ptr to UTF-8 string containing the service type of the service to resolve (e.g. "_printer._tcp").
 
 	@param		inDomain
-					Ptr to UTF-8 string containing the domain of the service to resolve.
+					Ptr to UTF-8 string containing the domain of the service to resolve (e.g. "apple.com"). Use NULL 
+					to indicate the local domain.
 
 	@param		inCallBack
 					CallBack routine to call when a resolver event occurs.
@@ -658,9 +864,15 @@ enum
 
 	@abstract	Data structure referenced by callback routines when a domain-related event occurs.
 
-	@field		interfaceAddr
-					Address of the interface that received the browser event.
-					
+	@field		interfaceID
+					Network interface that received the event.
+	
+	@field		interfaceName
+					Network interface that received the event. May be empty if interface is no longer available.
+
+	@field		interfaceIP
+					IP of network interface that received the event. May be invalid if interface is no longer available.
+	
 	@field		domain
 					Ptr to UTF-8 string containing the domain name. NULL if no domain name is available or applicable.
 
@@ -671,7 +883,9 @@ enum
 typedef struct	DNSBrowserEventDomainData	DNSBrowserEventDomainData;
 struct	DNSBrowserEventDomainData
 {
-	DNSNetworkAddress		interfaceAddr;
+	void *					interfaceID;
+	const char *			interfaceName;
+	DNSNetworkAddress		interfaceIP;
 	const char *			domain;
 	DNSBrowserFlags			flags;
 };
@@ -680,9 +894,15 @@ struct	DNSBrowserEventDomainData
 /*!	@struct		DNSBrowserEventServiceData
 
 	@abstract	Data structure passed to callback routines when a service-related event occurs.
+
+	@field		interfaceID
+					Network interface that received the event.
 	
-	@field		interfaceAddr
-					Address of the interface that received the browser event.
+	@field		interfaceName
+					Network interface that received the event. May be empty if interface is no longer available.
+
+	@field		interfaceIP
+					IP of network interface that received the event. May be invalid if interface is no longer available.
 	
 	@field		name
 					Ptr to UTF-8 string containing the service name. NULL if no service name is available or applicable.
@@ -700,7 +920,9 @@ struct	DNSBrowserEventDomainData
 typedef struct	DNSBrowserEventServiceData	DNSBrowserEventServiceData;
 struct	DNSBrowserEventServiceData
 {
-	DNSNetworkAddress		interfaceAddr;
+	void *					interfaceID;
+	const char *			interfaceName;
+	DNSNetworkAddress		interfaceIP;
 	const char *			name;
 	const char *			type;
 	const char *			domain;
@@ -865,10 +1087,11 @@ DNSStatus	DNSBrowserStopDomainSearch( DNSBrowserRef inRef, DNSBrowserFlags inFla
 					Flags to control the search process.
 
 	@param		inType
-					Ptr to UTF-8 string containing the service type to search for.
+					Ptr to UTF-8 string containing the service type to search for (e.g. "_printer._tcp").
 
 	@param		inDomain
-					Ptr to UTF-8 string containing the domain to search in.
+					Ptr to UTF-8 string containing the domain to search in (e.g. "apple.com"). Use NULL to indicate 
+					the local domain.
 
 	@result		Error code indicating failure reason or kDNSNoErr if successful.
 */
@@ -913,16 +1136,39 @@ DNSStatus	DNSBrowserStopServiceSearch( DNSBrowserRef inRef, DNSBrowserFlags inFl
 typedef struct	DNSRegistration *		DNSRegistrationRef;
 
 //---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	DNSRegistrationRecordRef
+
+	@abstract	Reference to a DNS record object.
+*/
+
+typedef struct	DNSRegistrationRecord *		DNSRegistrationRecordRef;
+
+//---------------------------------------------------------------------------------------------------------------------------
 /*!	@enum		DNSRegistrationFlags
 
 	@abstract	Flags used to control registration operations.
+	
+	@constant	kDNSRegistrationFlagPreFormattedTextRecord
+					Text record is pre-formatted and should be used directly without interpretation.
+
+	@constant	kDNSRegistrationFlagAutoRenameOnConflict
+					Automatically uniquely rename and re-register the service when a name conflict occurs.
 */
 
 typedef DNSUInt32		DNSRegistrationFlags;
 enum
 {
-	kDNSRegistrationFlagNone = 0
+	kDNSRegistrationFlagPreFormattedTextRecord 	= ( 1 << 0 ), 
+	kDNSRegistrationFlagAutoRenameOnConflict 	= ( 1 << 1 )
 };
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@enum		DNSRecordFlags
+
+	@abstract	Flags used to control record operations.
+*/
+
+typedef DNSUInt32		DNSRecordFlags;
 
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@enum		DNSRegistrationEventType
@@ -1010,20 +1256,30 @@ typedef void
 					Flags to control the registration process.
 
 	@param		inName
-					Ptr to UTF-8 string containing the service name to register.
+					Ptr to UTF-8 string containing the service name to register (e.g. "My Printer").
 	
 	@param		inType
-					Ptr to UTF-8 string containing the service type of the service to registration.
+					Ptr to UTF-8 string containing the service type of the service to registration (e.g. "_printer._tcp").
 
 	@param		inDomain
-					Ptr to UTF-8 string containing the domain of the service to register.
+					Ptr to UTF-8 string containing the domain of the service to register (e.g. "apple.com"). Use NULL 
+					to indicate the local domain.
 	
 	@param		inPort
-					TCP/UDP port where the service is being offered.
+					TCP/UDP port where the service is being offered (e.g. 80 for an HTTP service).
 
 	@param		inTextRecord
 					Ptr to UTF-8 string containing any additional text to provide when the service is resolved.
 
+	@param		inTextRecordSize
+					Size to text record.
+
+	@param		inHost
+					Name of the host to associate with the registration. Use NULL to use the default host name.
+	
+	@field		inInterfaceName
+					Name of an interface to restrict service registration to. Use NULL to register service on all interfaces.
+					
 	@param		inCallBack
 					CallBack routine to call when a registration event occurs.
 
@@ -1038,15 +1294,62 @@ typedef void
 
 DNSStatus
 	DNSRegistrationCreate( 
-		DNSRegistrationFlags	inFlags, 
-		const char *			inName, 
-		const char *			inType, 
-		const char *			inDomain, 
-		DNSPort					inPort, 
-		const char *			inTextRecord, 
-		DNSRegistrationCallBack	inCallBack, 
-		void *					inCallBackContext, 
-		DNSRegistrationRef *	outRef );
+		DNSRegistrationFlags		inFlags, 
+		const char *				inName, 
+		const char *				inType, 
+		const char *				inDomain, 
+		DNSPort						inPort, 
+		const void *				inTextRecord, 
+		DNSCount					inTextRecordSize, 
+		const char *				inHost, 
+		const char *				inInterfaceName, 
+		DNSRegistrationCallBack		inCallBack, 
+		void *						inCallBackContext, 
+		DNSRegistrationRef *		outRef );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSNoSuchServiceRegistrationCreate
+
+	@abstract	Creates a registration object and publish the registration to assert non-existence of a particular service.
+
+	@param		inFlags
+					Flags to control the registration process.
+
+	@param		inName
+					Ptr to UTF-8 string containing the service name to register (e.g. "My Printer").
+	
+	@param		inType
+					Ptr to UTF-8 string containing the service type of the service to registration (e.g. "_printer._tcp").
+
+	@param		inDomain
+					Ptr to UTF-8 string containing the domain of the service to register (e.g. "apple.com"). Use NULL 
+					to indicate the local domain.
+	
+	@field		inInterfaceName
+					Name of an interface to restrict service registration to. Use NULL to register service on all interfaces.
+					
+	@param		inCallBack
+					CallBack routine to call when a registration event occurs.
+
+	@param		inCallBackContext
+					Context pointer to pass to CallBack routine when an event occurs. Not inspected by DNS Services.
+
+	@param		outRef
+					Ptr to receive reference to registration object. May be null.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.			
+*/
+
+DNSStatus
+	DNSNoSuchServiceRegistrationCreate( 
+		DNSRegistrationFlags		inFlags, 
+		const char *				inName, 
+		const char *				inType, 
+		const char *				inDomain, 
+		const char *				inInterfaceName, 
+		DNSRegistrationCallBack		inCallBack, 
+		void *						inCallBackContext, 
+		DNSRegistrationRef *		outRef );
 
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@function	DNSRegistrationRelease
@@ -1063,6 +1366,38 @@ DNSStatus
 */
 
 DNSStatus	DNSRegistrationRelease( DNSRegistrationRef inRef, DNSRegistrationFlags inFlags );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSRegistrationUpdate
+
+	@abstract	Updates an individual record for a registration.
+	
+	@param		inRef
+					Reference to the registration object to update.
+
+	@param		inRecord
+					Record to update. Use NULL for the standard TXT record.
+
+	@param		inData
+					New record data.
+
+	@param		inSize
+					Size of new record data.
+
+	@param		inNewTTL
+					New time-to-live (TTL) in seconds for the updated data (e.g. 120 for 2 minutes).
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+*/
+
+DNSStatus
+	DNSRegistrationUpdate( 
+		DNSRegistrationRef 			inRef, 
+		DNSRecordFlags				inFlags, 
+		DNSRegistrationRecordRef 	inRecord, 
+		const void *				inData, 
+		DNSCount					inSize, 
+		DNSUInt32					inNewTTL );
 
 #if 0
 #pragma mark == Domain Registration ==
@@ -1130,7 +1465,7 @@ enum
 					Flags to control the registration process.
 
 	@param		inName
-					Ptr to string containing the domain name to register.
+					Ptr to string containing the domain name to register (e.g. "apple.com").
 	
 	@param		inType
 					Type of domain registration.
@@ -1163,6 +1498,412 @@ DNSStatus
 */
 
 DNSStatus	DNSDomainRegistrationRelease( DNSDomainRegistrationRef inRef, DNSDomainRegistrationFlags inFlags );
+
+#if 0
+#pragma mark == Host Registration ==
+#endif
+
+//===========================================================================================================================
+//	Host Registration
+//===========================================================================================================================
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	DNSHostRegistrationRef
+
+	@abstract	Reference to a DNS host registration object.
+*/
+
+typedef struct	DNSHostRegistration *		DNSHostRegistrationRef;
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@enum		DNSHostRegistrationFlags
+
+	@abstract	Flags used to control registration operations.
+	
+	@constant	kDNSHostRegistrationFlagOnlyIfNotFound
+					Only creates the object and registers the host if it was not already found in the list.
+
+	@constant	kDNSHostRegistrationFlagAutoRenameOnConflict
+					Automatically uniquely rename and re-register the host when a name conflict occurs.
+
+*/
+
+typedef DNSUInt32		DNSHostRegistrationFlags;
+enum
+{
+	kDNSHostRegistrationFlagNone 					= 0, 
+	kDNSHostRegistrationFlagOnlyIfNotFound 			= ( 1 << 0 ), 
+	kDNSHostRegistrationFlagAutoRenameOnConflict 	= ( 1 << 1 )
+};
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSHostRegistrationCallBack
+
+	@abstract	CallBack routine used to indicate a host registration event.
+	
+	@param		inContext
+					User-supplied context for callback (specified when browser is created).
+
+	@param		inRef
+					Reference to resolver object generating the event.
+
+	@param		inStatusCode
+					Status of the event.
+
+	@param		inData
+					Data associated with the event.	
+*/
+
+typedef void
+	( *DNSHostRegistrationCallBack )( 
+		void *					inContext, 
+		DNSHostRegistrationRef 	inRef, 
+		DNSStatus 				inStatusCode, 
+		void *					inData );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSHostRegistrationCreate
+
+	@abstract	Creates a host registration object and publishes the host.
+
+	@param		inFlags
+					Flags to control the registration process.
+
+	@param		inName
+					Name of the host to register (e.g. "My Web Server").
+	
+	@param		inDomain
+					Domain of the host to register (e.g. "apple.com"). Use NULL to indicate the local domain.
+	
+	@param		inAddr
+					IP address of host to register.
+	
+	@field		inInterfaceName
+					Name of an interface to restrict registration to. Use NULL to register on all interfaces.
+					
+	@param		inCallBack
+					CallBack routine to call when an event occurs.
+
+	@param		inCallBackContext
+					Context pointer to pass to callback routine when an event occurs. Not inspected by DNS Services.	
+	
+	@param		outRef
+					Ptr to receive reference to host registration object. May be null.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.			
+*/
+
+DNSStatus
+	DNSHostRegistrationCreate( 
+		DNSHostRegistrationFlags	inFlags, 
+		const char *				inName, 
+		const char *				inDomain, 
+		const DNSNetworkAddress *	inAddr, 
+		const char *				inInterfaceName, 
+		DNSHostRegistrationCallBack	inCallBack, 
+		void *						inCallBackContext, 
+		DNSHostRegistrationRef *	outRef );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSHostRegistrationRelease
+
+	@abstract	Releases a host registration object.
+	
+	@param		inRef
+					Reference to the host registration object to release.
+
+	@param		inFlags
+					Flags to control the release process.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+*/
+
+DNSStatus	DNSHostRegistrationRelease( DNSHostRegistrationRef inRef, DNSHostRegistrationFlags inFlags );
+
+#if 0
+#pragma mark == Utilities ==
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	kDNSTextRecordNoValue
+
+	@abstract	Value to use when no value is desired for a name/value pair (e.g. "color" instead of "color=").
+*/
+
+#define	kDNSTextRecordNoValue		( (const void *) -1 )
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	kDNSTextRecordStringNoValue
+
+	@abstract	Value to use when no value is desired for a name/value pair (e.g. "color" instead of "color=").
+*/
+
+#define	kDNSTextRecordStringNoValue		( (const char *) -1 )
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@defined	kDNSTextRecordNoValue
+
+	@abstract	Size value to use when no value is desired for a name/value pair (e.g. "color" instead of "color=").
+*/
+
+#define	kDNSTextRecordNoSize		( (size_t) -1 )
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSDynamicTextRecordBuildEscaped
+
+	@abstract	Builds a TXT record from a string with \001 escape sequences to separate strings within the TXT record.
+	
+	@param		inFormat		C-string TXT record with \001 escape sequences as record separators.
+	@param		outTextRecord	Receives a ptr to a built TXT record. Must free with DNSDynamicTextRecordRelease.
+	@param		outSize			Receive actual size of the built TXT record. Use NULL if you don't need the size.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+	
+	@discussion
+	
+	A DNS TXT record consists of a packed array of length-prefixed strings with each string being up to 255 characters. 
+	To allow this to be described with a null-terminated C-string, a special escape sequence of \001 is used to separate 
+	individual character strings within the C-string.
+	
+	For example, to represent the following 3 segments "test1=1", "test2=2", and "test3=3", you would use the following:
+	
+	DNSUInt8 *		txt;
+	size_t			size;
+	
+	txt = NULL;
+	
+	err = DNSDynamicTextRecordBuildEscaped( "test1=1\001test2=2\001test3=3", &txt, &size );
+	require_noerr( err, exit );
+	
+	... use text record
+	
+exit:
+	DNSDynamicTextRecordRelease( txt );
+*/
+
+DNSStatus	DNSDynamicTextRecordBuildEscaped( const char *inFormat, void *outTextRecord, size_t *outSize );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSDynamicTextRecordAppendCString
+
+	@abstract	Appends a name/value pair with the value being a C-string to a dynamic DNS TXT record data section.
+	
+	@param		ioTxt			Input: Ptr to a ptr to TXT record to append to.
+								Output: Receives newly allocated ptr to the new TXT record.
+								Note: Use a ptr to NULL the first time this is called.
+	
+	@param		ioTxtSize		Input: Ptr to size of existing TXT record.
+								Output: Receives new size of TXT record.
+	
+	@param		inName			C-string name in the name/value pair (e.g. "path" for HTTP).
+
+	@param		inValue			C-string value in the name/value pair (e.g. "/index.html for HTTP).
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+	
+	@discussion
+	
+	This can be used to easily build dynamically-resized TXT records containing multiple name/value pairs of C-strings. 
+	For example, the following adds "name=Ryknow", "age=30", and "job=Musician":
+	
+	DNSUInt8 *		txt;
+	size_t			size;
+	
+	txt = NULL;
+	size = 0;
+	
+	err = DNSDynamicTextRecordAppendCString( &txt, &size, "name", "Ryknow" );
+	require_noerr( err, exit );
+	
+	err = DNSDynamicTextRecordAppendCString( &txt, &size, "age", "30" );
+	require_noerr( err, exit );
+	
+	err = DNSDynamicTextRecordAppendCString( &txt, &size, "job", "Musician" );
+	require_noerr( err, exit );
+	
+	... use text record
+
+exit:
+	DNSDynamicTextRecordRelease( txt );
+*/
+
+DNSStatus	DNSDynamicTextRecordAppendCString( void *ioTxt, size_t *ioTxtSize, const char *inName, const char *inValue );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSDynamicTextRecordAppendData
+
+	@abstract	Appends a name/value pair to a dynamic DNS TXT record data section.
+	
+	@param		ioTxt			Input: Ptr to a ptr to TXT record to append to.
+								Output: Receives newly allocated ptr to the new TXT record.
+								Note: Use a ptr to NULL the first time this is called.
+	
+	@param		ioTxtSize		Input: Ptr to size of existing TXT record.
+								Output: Receives new size of TXT record.
+	
+	@param		inName			C-string name in the name/value pair (e.g. "path" for HTTP).
+
+	@param		inValue			Value data to associate with the name. Use kDNSTextRecordNoValue for no value.
+
+	@param		inValueSize		Size of value data. Use kDNSTextRecordNoSize for no value.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+*/
+
+DNSStatus
+	DNSDynamicTextRecordAppendData( 
+		void *			ioTxt, 
+		size_t * 		ioTxtSize, 
+		const char *	inName, 
+		const void *	inValue, 
+		size_t			inValueSize );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSDynamicTextRecordRelease
+
+	@abstract	Releases a dynamically allocated TXT record.
+	
+	@param		inTxt	Dynamic TXT record to release.
+	
+	@discussion
+	
+	This API may only be used with TXT records generated with DNSDynamicTextRecordAppendCString and 
+	DNSDynamicTextRecordAppendData.
+*/
+
+void	DNSDynamicTextRecordRelease( void *inTxt );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSTextRecordAppendCString
+
+	@abstract	Appends a name/value pair with the value being a C-string to DNS TXT record data section.
+	
+	@param		inTxt			TXT record to append to.
+	@param		inTxtSize		Size of existing TXT record.
+	@param		inTxtMaxSize	Maximum size of TXT record (i.e. size of buffer).
+	@param		inName			C-string name in the name/value pair (e.g. "path" for HTTP).
+	@param		inValue			C-string value in the name/value pair (e.g. "/index.html for HTTP).
+	@param		outTxtSize		Receives resulting size of TXT record. Pass NULL if not needed.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+	
+	@discussion
+	
+	This can be used to easily build TXT records containing multiple name/value pairs of C-strings. For example, the
+	following adds "name=Ryknow", "age=30", and "job=Musician":
+	
+	DNSUInt8		txt[ 256 ];
+	size_t			size;
+	
+	size = 0;
+	
+	err = DNSTextRecordAppendCString( txt, size, sizeof( txt ), "name", "Ryknow", &size );
+	require_noerr( err, exit );
+	
+	err = DNSTextRecordAppendCString( txt, size, sizeof( txt ), "age", "30", &size );
+	require_noerr( err, exit );
+	
+	err = DNSTextRecordAppendCString( txt, size, sizeof( txt ), "job", "Musician", &size );
+	require_noerr( err, exit );
+*/
+
+DNSStatus
+	DNSTextRecordAppendCString( 
+		void *			inTxt, 
+		size_t 			inTxtSize, 
+		size_t 			inTxtMaxSize, 
+		const char *	inName, 
+		const char *	inValue, 
+		size_t *		outTxtSize );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSTextRecordAppendData
+
+	@abstract	Appends a name/value pair to a DNS TXT record data section.
+	
+	@param		inTxt			TXT record to append to.
+	@param		inTxtSize		Size of existing TXT record.
+	@param		inTxtMaxSize	Maximum size of TXT record (i.e. size of buffer).
+	@param		inName			C-string name in the name/value pair (e.g. "path" for HTTP).
+	@param		inValue			Value data to associate with the name. Use kDNSTextRecordNoValue for no value.
+	@param		inValueSize		Size of value data. Use kDNSTextRecordNoSize for no value.
+	@param		outTxtSize		Receives resulting size of TXT record. Pass NULL if not needed.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+*/
+
+DNSStatus
+	DNSTextRecordAppendData( 
+		void *			inTxt, 
+		size_t 			inTxtSize, 
+		size_t 			inTxtMaxSize, 
+		const char *	inName, 
+		const void *	inValue, 
+		size_t			inValueSize, 
+		size_t *		outTxtSize );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSTextRecordEscape
+
+	@abstract	Converts a raw TXT record into a single, null-terminated string with \001 to delimit records.
+	
+	@param		inTextRecord		Raw TXT record to escape.
+	@param		inTextSize			Number of bytes in the raw TXT record to escape.
+	@param		outEscapedString	Receives ptr to escaped, \001-delimited, null-terminated string.
+
+	@result		Error code indicating failure reason or kDNSNoErr if successful.
+*/
+
+DNSStatus	DNSTextRecordEscape( const void *inTextRecord, size_t inTextSize, char **outEscapedString );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSNameValidate
+
+	@abstract	Validates a DNS name for correctness.
+	
+	@param		inName	C-string DNS name to validate.
+
+	@result		Error code indicating failure reason or kDNSNoErr if valid.
+*/
+
+DNSStatus	DNSNameValidate( const char *inName );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSServiceTypeValidate
+
+	@abstract	Validates a service type for correctness.
+	
+	@param		inServiceType	C-string service type to validate.
+
+	@result		Error code indicating failure reason or kDNSNoErr if valid.
+*/
+
+DNSStatus	DNSServiceTypeValidate( const char *inServiceType );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@function	DNSTextRecordValidate
+
+	@abstract	Validates a text record for correctness and optionally builds the TXT reocrd, and returns the actual size.
+	
+	@param		inText			C-string TXT record to validate. Use \001 escape sequence as record separator.
+	@param		inMaxSize		Maximum size of the TXT record. Use a large number if a max size is not appropriate.
+	@param		outRecord		Buffer to receive built TXT record. Use NULL if you don't need a built TXT record.
+	@param		outActualSize	Ptr to receive actual size of TXT record. Use NULL if you don't need the actual size.
+	
+	@result		Error code indicating failure reason or kDNSNoErr if valid.
+	
+	@discussion
+		
+	A DNS TXT record consists of a packed array of length-prefixed strings with each string being up to 255 characters. 
+	To allow this to be described with a null-terminated C-string, a special escape sequence of \001 is used to separate 
+	individual character strings within the C-string.
+	
+	For example, to represent the following 3 segments "test1=1", "test2=2", and "test3=3", you would use the following:
+	
+	"test1=1\001test2=2\001test3=3"
+*/
+
+DNSStatus	DNSTextRecordValidate( const char *inText, size_t inMaxSize, void *outRecord, size_t *outActualSize );
 
 #ifdef	__cplusplus
 	}

@@ -23,6 +23,25 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.15  2003/08/20 06:44:24  bradley
+Updated to latest internal version of the Rendezvous for Windows code: Added support for interface
+specific registrations; Added support for no-such-service registrations; Added support for host
+name registrations; Added support for host proxy and service proxy registrations; Added support for
+registration record updates (e.g. TXT record updates); Added support for using either a single C
+string TXT record, a raw, pre-formatted TXT record potentially containing multiple character string
+entries, or a C-string containing a Mac OS X-style \001-delimited set of TXT record character
+strings; Added support in resolve callbacks for providing both a simplified C-string for TXT records
+and a ptr/size for the raw TXT record data; Added utility routines for dynamically building TXT
+records from a variety of sources (\001-delimited, individual strings, etc.) and converting TXT
+records to various formats for use in apps; Added utility routines to validate DNS names, DNS
+service types, and TXT records; Moved to portable address representation unions (byte-stream vs host
+order integer) for consistency, to avoid swapping between host and network byte order, and for IPv6
+support; Removed dependence on modified mDNSCore: define structures and prototypes locally; Added
+support for automatically renaming services on name conflicts; Detect and correct TXT records from
+old versions of mDNS that treated a TXT record as an arbitrary block of data, but prevent other
+malformed TXT records from being accepted; Added many more error codes; Added complete HeaderDoc for
+all constants, structures, typedefs, macros, and functions. Various other minor cleanup and fixes.
+
 Revision 1.14  2003/08/14 02:19:56  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -74,19 +93,22 @@ DNS Services for Windows
 
 */
 
+#include	<stddef.h>
+#include	<stdlib.h>
 #include	<string.h>
 
 #if( __MACH__ )
 	#include	<CoreServices/CoreServices.h>
 #endif
 
-#include	"DNSServicesPlatformSupport.h"
+#include	"mDNSClientAPI.h"
 #include	"mDNSPlatformFunctions.h"
 
 #include	"DNSServices.h"
 
-#define	WIN32_LEAN_AND_MEAN				// Needed to avoid redefinitions by Windows interfaces.
-#include	"mDNSWin32.h"
+#ifdef	__cplusplus
+	extern "C" {
+#endif
 
 #if 0
 #pragma mark == Preprocessor ==
@@ -114,23 +136,46 @@ DNS Services for Windows
 enum
 {
 	kDNSInitializeValidFlags 				= kDNSFlagAdvertise, 
+	
+	// Browser
+	
 	kDNSBrowserCreateValidFlags 			= 0, 
 	kDNSBrowserReleaseValidFlags 			= 0, 
 	kDNSBrowserStartDomainSearchValidFlags 	= kDNSBrowserFlagRegistrationDomainsOnly, 
 	kDNSBrowserStopDomainSearchValidFlags 	= 0, 
 	kDNSBrowserStartServiceSearchValidFlags = kDNSBrowserFlagAutoResolve, 
 	kDNSBrowserStopServiceSearchValidFlags 	= 0, 
+	
+	// Resolver
+	
 	kDNSResolverCreateValidFlags		 	= kDNSResolverFlagOneShot 			| 
 											  kDNSResolverFlagOnlyIfUnique 		| 
 											  kDNSResolverFlagAutoReleaseByName, 
 	kDNSResolverReleaseValidFlags		 	= 0, 
-	kDNSRegistrationCreateValidFlags	 	= 0, 
-	kDNSRegistrationReleaseValidFlags	 	= 0, 
+	
+	// Service Registration
+	
+	kDNSRegistrationCreateValidFlags			 	= kDNSRegistrationFlagPreFormattedTextRecord 	|
+													  kDNSRegistrationFlagAutoRenameOnConflict, 
+	kDNSNoSuchServiceRegistrationCreateValidFlags 	= 0, 
+	kDNSRegistrationReleaseValidFlags	 			= 0, 
+	kDNSRegistrationUpdateValidFlags	 			= 0, 
+	
+	kDNSRegistrationFlagPrivateNoSuchService		= ( 1 << 16 ), 
+	
+	// Domain Registration
+	
 	kDNSDomainRegistrationCreateValidFlags	= 0, 
-	kDNSDomainRegistrationReleaseValidFlags	= 0
+	kDNSDomainRegistrationReleaseValidFlags	= 0, 
+	
+	// Host Registration
+	
+	kDNSHostRegistrationCreateValidFlags	= kDNSHostRegistrationFlagOnlyIfNotFound | 
+											  kDNSHostRegistrationFlagAutoRenameOnConflict, 
+	kDNSHostRegistrationReleaseValidFlags	= 0
 };
 
-#define	kDNSCountCacheEntryCountDefault		500
+#define	kDNSCountCacheEntryCountDefault		64
 
 #if 0
 #pragma mark == Structures ==
@@ -162,7 +207,7 @@ struct	DNSBrowser
 
 // Resolver
 
-typedef struct	DNSResolver	DNSResolver;
+typedef struct	DNSResolver		DNSResolver;
 struct	DNSResolver
 {
 	DNSResolver *			next;
@@ -180,14 +225,17 @@ struct	DNSResolver
 
 // Registration
 
-typedef struct	DNSRegistration	DNSRegistration;
+typedef struct	DNSRegistration		DNSRegistration;
 struct	DNSRegistration
 {
 	DNSRegistration *			next;
 	DNSRegistrationFlags		flags;
 	DNSRegistrationCallBack		callback;
 	void *						callbackContext;
+	char						interfaceName[ 256 ];
 	ServiceRecordSet			set;
+	
+	// WARNING: Do not add fields after the ServiceRecordSet. This is where oversized TXT record space is allocated.
 };
 
 // Domain Registration
@@ -197,7 +245,24 @@ struct	DNSDomainRegistration
 {
 	DNSDomainRegistration *			next;
 	DNSDomainRegistrationFlags		flags;
-	AuthRecord					rr;
+	AuthRecord						rr;
+};
+
+// Domain Registration
+
+typedef struct	DNSHostRegistration	DNSHostRegistration;
+struct	DNSHostRegistration
+{
+	DNSHostRegistration *			next;
+	domainlabel						name;
+	domainlabel						domain;
+	long							refCount;
+	DNSHostRegistrationCallBack		callback;
+	void *							callbackContext;
+	DNSHostRegistrationFlags		flags;
+	char							interfaceName[ 256 ];
+	AuthRecord						RR_A;
+	AuthRecord						RR_PTR;
 };
 
 #if 0
@@ -208,8 +273,6 @@ struct	DNSDomainRegistration
 //	Macros
 //===========================================================================================================================
 
-#define	DNS_UNUSED( X )		(void)( X )
-
 // Emulate Mac OS debugging macros for non-Mac platforms.
 
 #if( !TARGET_OS_MAC )
@@ -218,17 +281,15 @@ struct	DNSDomainRegistration
 	#define check_noerr(err)
 	#define check_noerr_string( error, cstring )
 	#define debug_string( cstring )
-	#define require( assertion, label )                             	do { if( !(assertion) ) goto label; } while(0)
+	#define require( assertion, label )									do { if( !(assertion) ) goto label; } while(0)
 	#define require_string( assertion, label, string )					require(assertion, label)
-	#define require_quiet( assertion, label )							require( assertion, label )
 	#define require_noerr( error, label )								do { if( (error) != 0 ) goto label; } while(0)
-	#define require_noerr_quiet( assertion, label )						require_noerr( assertion, label )
 	#define require_noerr_action( error, label, action )				do { if( (error) != 0 ) { {action;}; goto label; } } while(0)
-	#define require_noerr_action_quiet( assertion, label, action )		require_noerr_action( assertion, label, action )
 	#define require_action( assertion, label, action )					do { if( !(assertion) ) { {action;}; goto label; } } while(0)
-	#define require_action_quiet( assertion, label, action )			require_action( assertion, label, action )
 	#define require_action_string( assertion, label, action, cstring )	do { if( !(assertion) ) { {action;}; goto label; } } while(0)
 #endif
+
+#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC).c, (DST).c, DomainNameLength(&(SRC)))
 
 #if 0
 #pragma mark == Prototypes ==
@@ -243,6 +304,7 @@ struct	DNSDomainRegistration
 mDNSlocal void	DNSServicesLock( void );
 mDNSlocal void	DNSServicesUnlock( void );
 mDNSlocal void	DNSServicesMDNSCallBack( mDNS *const inMDNS, mStatus inStatus );
+mDNSlocal void	DNSServicesUpdateInterfaceSpecificObjects( mDNS *const inMDNS );
 
 // Browser
 
@@ -250,8 +312,8 @@ mDNSlocal void
 	DNSBrowserPrivateCallBack( 
 		mDNS * const 					inMDNS, 
 		DNSQuestion *					inQuestion, 
-		const ResourceRecord * const 	inAnswer,
-		mDNSBool AddRecord );
+		const ResourceRecord * const 	inAnswer, 
+		mDNSBool						inAddRecord );
 
 mDNSlocal void
 	DNSBrowserPrivateResolverCallBack( 
@@ -280,11 +342,44 @@ mDNSlocal void
 		ServiceRecordSet * const 	inSet, 
 		mStatus 					inResult );
 
+mDNSlocal void
+	DNSNoSuchServiceRegistrationPrivateCallBack( 
+		mDNS * const 		inMDNS, 
+		AuthRecord * const 	inRR, 
+		mStatus 			inResult );
+
+mDNSlocal void	DNSRegistrationUpdateCallBack( mDNS * const inMDNS, AuthRecord * const inRR, RData *inOldData );
+
+mDNSlocal DNSRegistrationRef *	DNSRegistrationFindObject( DNSRegistrationRef inRef );
 mDNSlocal DNSRegistrationRef	DNSRegistrationRemoveObject( DNSRegistrationRef inRef );
 
 // Domain Registration
 
 mDNSlocal DNSDomainRegistrationRef	DNSDomainRegistrationRemoveObject( DNSDomainRegistrationRef inRef );
+
+// Host Registration
+
+mDNSlocal DNSHostRegistrationRef *	DNSHostRegistrationFindObject( DNSHostRegistrationRef inRef );
+mDNSlocal DNSHostRegistrationRef	DNSHostRegistrationFindObjectByName( const domainname *inName );
+mDNSlocal void	DNSHostRegistrationPrivateCallBack( mDNS * const inMDNS, AuthRecord *const inRR, mStatus inResult );
+
+// Utilities
+
+mDNSlocal DNSStatus	DNSMemAlloc( size_t inSize, void *outMem );
+mDNSlocal void		DNSMemFree( void *inMem );
+mDNSlocal void		MDNSAddrToDNSAddress( const mDNSAddr *inAddr, DNSNetworkAddress *outAddr );
+
+// Platform Accessors
+
+typedef struct mDNSPlatformInterfaceInfo	mDNSPlatformInterfaceInfo;
+struct	mDNSPlatformInterfaceInfo
+{
+	const char *		name;
+	mDNSAddr			ip;
+};
+
+mDNSexport mStatus	mDNSPlatformInterfaceNameToID( mDNS * const inMDNS, const char *inName, mDNSInterfaceID *outID );
+mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInterfaceID inID, mDNSPlatformInterfaceInfo *outInfo );
 
 #if 0
 #pragma mark == Globals ==
@@ -294,11 +389,14 @@ mDNSlocal DNSDomainRegistrationRef	DNSDomainRegistrationRemoveObject( DNSDomainR
 //	Globals
 //===========================================================================================================================
 
+mDNSexport mDNS							gMDNS;
 mDNSlocal mDNS *						gMDNSPtr 					= mDNSNULL;
+mDNSlocal CacheRecord *					gMDNSCache 					= mDNSNULL;
 mDNSlocal DNSBrowserRef					gDNSBrowserList				= mDNSNULL;
 mDNSlocal DNSResolverRef				gDNSResolverList			= mDNSNULL;
 mDNSlocal DNSRegistrationRef			gDNSRegistrationList		= mDNSNULL;
 mDNSlocal DNSDomainRegistrationRef		gDNSDomainRegistrationList	= mDNSNULL;
+mDNSlocal DNSHostRegistrationRef		gDNSHostRegistrationList	= mDNSNULL;
 
 #if 0
 #pragma mark -
@@ -312,19 +410,41 @@ mDNSlocal DNSDomainRegistrationRef		gDNSDomainRegistrationList	= mDNSNULL;
 DNSStatus	DNSServicesInitialize( DNSFlags inFlags, DNSCount inCacheEntryCount )
 {
 	DNSStatus		err;
+	mDNSBool		advertise;
 	
 	require_action( ( inFlags & ~kDNSInitializeValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
+	
+	// Allocate the record cache.
 	
 	if( inCacheEntryCount == 0 )
 	{
 		inCacheEntryCount = kDNSCountCacheEntryCountDefault;
 	}
-	err = DNSPlatformInitialize( inFlags, inCacheEntryCount, &gMDNSPtr );
+	gMDNSCache = (CacheRecord *) malloc( inCacheEntryCount * sizeof( *gMDNSCache ) );
+	require_action( gMDNSCache, exit, err = kDNSNoMemoryErr );
+	
+	// Initialize mDNS.
+	
+	if( inFlags & kDNSFlagAdvertise )
+	{
+		advertise = mDNS_Init_AdvertiseLocalAddresses;
+	}
+	else
+	{
+		advertise = mDNS_Init_DontAdvertiseLocalAddresses;
+	}
+	err = mDNS_Init( &gMDNS, mDNSNULL, gMDNSCache, inCacheEntryCount, advertise, DNSServicesMDNSCallBack, mDNSNULL );
+	require_noerr( err, exit );
+	err = gMDNS.mDNSPlatformStatus;
 	require_noerr( err, exit );
 	
-	gMDNSPtr->MainCallback = DNSServicesMDNSCallBack;
+	gMDNSPtr = &gMDNS;
 	
 exit:
+	if( err )
+	{
+		DNSServicesFinalize();
+	}
 	return( err );
 }
 
@@ -334,28 +454,52 @@ exit:
 
 void	DNSServicesFinalize( void )
 {
-	check( gMDNSPtr );
 	if( gMDNSPtr )
 	{
-		DNSRegistrationRef		registrationRef;
-		DNSBrowserRef			browserRef;
-		DNSResolverRef			resolverRef;
+		mDNSPlatformLock( &gMDNS );
 		
-		DNSPlatformLock();
-		
-		// Clean up any dangling registrations.
+		// Clean up any dangling service registrations.
 		
 		while( gDNSRegistrationList )
 		{
-			registrationRef = gDNSRegistrationList;
-			DNSRegistrationRelease( registrationRef, 0 );
-			check_string( registrationRef != gDNSRegistrationList, "dangling registration cannot be cleaned up" );
+			DNSRegistrationRef		serviceRef;
+			
+			serviceRef = gDNSRegistrationList;
+			DNSRegistrationRelease( serviceRef, 0UL );
+			check_string( serviceRef != gDNSRegistrationList, "dangling service registration cannot be cleaned up" );
+		}
+
+		// Clean up any dangling domain registrations.
+		
+		while( gDNSDomainRegistrationList )
+		{
+			DNSDomainRegistrationRef		domainRef;
+			
+			domainRef = gDNSDomainRegistrationList;
+			DNSDomainRegistrationRelease( domainRef, 0 );
+			check_string( domainRef != gDNSDomainRegistrationList, "dangling domain registration cannot be cleaned up" );
+		}
+
+		// Clean up any dangling host registrations.
+		
+		while( gDNSHostRegistrationList )
+		{
+			DNSHostRegistrationRef		hostRef;
+			long						refCount;
+			
+			hostRef = gDNSHostRegistrationList;
+			refCount = hostRef->refCount;
+			DNSHostRegistrationRelease( hostRef, 0 );
+			check_string( ( refCount > 1 ) || ( hostRef != gDNSHostRegistrationList ), 
+						  "dangling host registration cannot be cleaned up" );
 		}
 		
 		// Clean up any dangling browsers.
 		
 		while( gDNSBrowserList )
 		{
+			DNSBrowserRef			browserRef;
+			
 			browserRef = gDNSBrowserList;
 			DNSBrowserRelease( browserRef, 0 );
 			check_string( browserRef != gDNSBrowserList, "dangling browser cannot be cleaned up" );
@@ -365,6 +509,8 @@ void	DNSServicesFinalize( void )
 		
 		while( gDNSResolverList )
 		{
+			DNSResolverRef			resolverRef;
+			
 			resolverRef = gDNSResolverList;
 			DNSResolverRelease( resolverRef, 0 );
 			check_string( resolverRef != gDNSResolverList, "dangling resolver cannot be cleaned up" );
@@ -373,11 +519,16 @@ void	DNSServicesFinalize( void )
 		// Null out our MDNS ptr before releasing the lock so no other threads can sneak in and start operations.
 		
 		gMDNSPtr = mDNSNULL;
-		DNSPlatformUnlock();
+		mDNSPlatformUnlock( &gMDNS );
 		
-		// Tell the platform layer to clean up.
+		// Tear down mDNS.
 		
-		DNSPlatformFinalize();
+		mDNS_Close( &gMDNS );
+	}
+	if( gMDNSCache )
+	{
+		free( gMDNSCache );
+		gMDNSCache = mDNSNULL;
 	}
 }
 
@@ -389,7 +540,7 @@ mDNSlocal void	DNSServicesLock( void )
 {
 	if( gMDNSPtr )
 	{
-		DNSPlatformLock();
+		mDNSPlatformLock( gMDNSPtr );
 	}
 }
 
@@ -401,7 +552,7 @@ mDNSlocal void	DNSServicesUnlock( void )
 {
 	if( gMDNSPtr )
 	{
-		DNSPlatformUnlock();
+		mDNSPlatformUnlock( gMDNSPtr );
 	}
 }
 
@@ -416,6 +567,47 @@ mDNSlocal void	DNSServicesMDNSCallBack( mDNS *const inMDNS, mStatus inStatus )
 	check( inMDNS );
 	
 	debugf( DEBUG_NAME "MDNS callback (status=%ld)", inStatus );
+	
+	if( inStatus == mStatus_ConfigChanged )
+	{
+		DNSServicesUpdateInterfaceSpecificObjects( inMDNS );
+	}
+}
+
+//===========================================================================================================================
+//	DNSServicesUpdateInterfaceSpecificObjects
+//===========================================================================================================================
+
+mDNSlocal void	DNSServicesUpdateInterfaceSpecificObjects( mDNS *const inMDNS )
+{
+	DNSRegistration *		serviceRegistration;
+	
+	DNSServicesLock();
+	
+	// Update interface-specific service registrations.
+	
+	for( serviceRegistration = gDNSRegistrationList; serviceRegistration; serviceRegistration = serviceRegistration->next )
+	{
+		if( serviceRegistration->interfaceName[ 0 ] != '\0' )
+		{
+			mStatus				err;
+			mDNSInterfaceID		interfaceID;
+			
+			err = mDNSPlatformInterfaceNameToID( inMDNS, serviceRegistration->interfaceName, &interfaceID );
+			check_noerr( err );
+			if( err == mStatus_NoError )
+			{
+				// Update all the resource records with the new interface ID.
+				
+				serviceRegistration->set.RR_ADV.resrec.InterfaceID = interfaceID;
+				serviceRegistration->set.RR_PTR.resrec.InterfaceID = interfaceID;
+				serviceRegistration->set.RR_SRV.resrec.InterfaceID = interfaceID;
+				serviceRegistration->set.RR_TXT.resrec.InterfaceID = interfaceID;
+			}
+		}
+	}
+	
+	DNSServicesUnlock();
 }
 
 #if 0
@@ -444,7 +636,7 @@ DNSStatus
 	
 	// Allocate the object and set it up.
 	
-	err = DNSPlatformMemAlloc( sizeof( *objectPtr ), &objectPtr );
+	err = DNSMemAlloc( sizeof( *objectPtr ), &objectPtr );
 	require_noerr( err, exit );
 	memset( objectPtr, 0, sizeof( *objectPtr ) );
 	
@@ -501,7 +693,7 @@ DNSStatus	DNSBrowserRelease( DNSBrowserRef inRef, DNSBrowserFlags inFlags )
 	
 	// Release the memory used by the object.
 	
-	DNSPlatformMemFree( inRef );
+	DNSMemFree( inRef );
 	err = kDNSNoErr;
 	
 exit:
@@ -583,7 +775,11 @@ DNSStatus	DNSBrowserStopDomainSearch( DNSBrowserRef inRef, DNSBrowserFlags inFla
 	require_action( gMDNSPtr, exit, err = kDNSNotInitializedErr );
 	require_action( inRef && DNSBrowserFindObject( inRef ), exit, err = kDNSBadReferenceErr );
 	require_action( ( inFlags & ~kDNSBrowserStopDomainSearchValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
-	require_action( inRef->isDomainBrowsing, exit, err = kDNSBadStateErr );
+	if( !inRef->isDomainBrowsing )
+	{
+		err = kDNSBadStateErr;
+		goto exit;
+	}
 	
 	// Stop the browse operations.
 	
@@ -664,7 +860,11 @@ DNSStatus	DNSBrowserStopServiceSearch( DNSBrowserRef inRef, DNSBrowserFlags inFl
 	require_action( gMDNSPtr, exit, err = kDNSNotInitializedErr );
 	require_action( inRef && DNSBrowserFindObject( inRef ), exit, err = kDNSBadReferenceErr );
 	require_action( ( inFlags & ~kDNSBrowserStopServiceSearchValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
-	require_action( inRef->isServiceBrowsing, exit, err = kDNSBadStateErr );
+	if( !inRef->isServiceBrowsing )
+	{
+		err = kDNSBadStateErr;
+		goto exit;
+	}
 	
 	// Stop the browse operation with mDNS. Remove any resolvers dependent on browser since we are no longer searching.
 	
@@ -686,8 +886,8 @@ mDNSlocal void
 	DNSBrowserPrivateCallBack( 
 		mDNS * const 					inMDNS, 
 		DNSQuestion *					inQuestion, 
-		const ResourceRecord * const 	inAnswer,
-		mDNSBool AddRecord )
+		const ResourceRecord * const 	inAnswer, 
+		mDNSBool						inAddRecord )
 {
 	DNSBrowserRef		objectPtr;
 	domainlabel			name;
@@ -697,8 +897,8 @@ mDNSlocal void
 	char				typeString[ 256 ];
 	char				domainString[ 256 ];
 	DNSBrowserEvent		event;
+	mStatus				err;
 	
-	DNS_UNUSED( inMDNS );
 	check( inMDNS );
 	check( inQuestion );
 	check( inAnswer );
@@ -721,7 +921,6 @@ mDNSlocal void
 	{
 		DNSBrowserEventServiceData *		serviceDataPtr;
 		DNSBrowserFlags						browserFlags;
-		mDNSInterfaceInfo *					infoPtr = (mDNSInterfaceInfo *)inAnswer->InterfaceID;
 		
 		// Extract name, type, and domain from the resource record.
 	
@@ -733,7 +932,7 @@ mDNSlocal void
 		// Fill in the event data. A TTL of zero means the service is no longer available. If the service instance is going
 		// away (ttl == 0), remove any resolvers dependent on the name since it is no longer valid.
 		
-		if( !AddRecord )
+		if( !inAddRecord )
 		{
 			DNSResolverRemoveDependentByName( &inAnswer->rdata->u.name );
 			
@@ -745,12 +944,27 @@ mDNSlocal void
 			event.type 		= kDNSBrowserEventTypeAddService;
 			serviceDataPtr 	= &event.data.addService;
 		}
-		serviceDataPtr->interfaceAddr.addressType		= kDNSNetworkAddressTypeIPv4;
-		serviceDataPtr->interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.ip.v4.NotAnInteger;
-		serviceDataPtr->name							= nameString;
-		serviceDataPtr->type 							= typeString;
-		serviceDataPtr->domain 							= domainString;
-		serviceDataPtr->flags 							= 0;
+		serviceDataPtr->interfaceName = "";
+		if( inAnswer->InterfaceID != mDNSInterface_Any )
+		{
+			mDNSPlatformInterfaceInfo		info;
+			
+			err = mDNSPlatformInterfaceIDToInfo( inMDNS, inAnswer->InterfaceID, &info );
+			if( err == mStatus_NoError )
+			{
+				serviceDataPtr->interfaceName = info.name;
+				MDNSAddrToDNSAddress( &info.ip, &serviceDataPtr->interfaceIP );
+			}
+			else
+			{
+				serviceDataPtr->interfaceName = "";
+			}
+		}
+		serviceDataPtr->interfaceID	= inAnswer->InterfaceID;
+		serviceDataPtr->name		= nameString;
+		serviceDataPtr->type 		= typeString;
+		serviceDataPtr->domain 		= domainString;
+		serviceDataPtr->flags 		= 0;
 		
 		// Call the callback.
 		
@@ -759,7 +973,7 @@ mDNSlocal void
 		
 		// Automatically resolve newly discovered names if the auto-resolve option is enabled.
 		
-		if( ( browserFlags & kDNSBrowserFlagAutoResolve ) && ( AddRecord ) )
+		if( ( browserFlags & kDNSBrowserFlagAutoResolve ) && inAddRecord )
 		{
 			DNSStatus				err;
 			DNSResolverFlags		flags;
@@ -773,14 +987,13 @@ mDNSlocal void
 	else
 	{
 		DNSBrowserEventDomainData *		domainDataPtr;
-		mDNSInterfaceInfo *				infoPtr = (mDNSInterfaceInfo *)inAnswer->InterfaceID;
 		
 		// Determine the event type. A TTL of zero means the domain is no longer available.
 		
 		domainDataPtr = mDNSNULL;
 		if( inQuestion == &objectPtr->domainQuestion )
 		{
-			if( !AddRecord )
+			if( !inAddRecord )
 			{
 				event.type = kDNSBrowserEventTypeRemoveDomain;
 				domainDataPtr = &event.data.removeDomain;
@@ -793,7 +1006,7 @@ mDNSlocal void
 		}
 		else if( inQuestion == &objectPtr->defaultDomainQuestion )
 		{
-			if( !AddRecord )
+			if( !inAddRecord )
 			{
 				event.type = kDNSBrowserEventTypeRemoveDomain;
 				domainDataPtr = &event.data.removeDomain;
@@ -809,10 +1022,26 @@ mDNSlocal void
 		// Extract domain name from the resource record and fill in the event data.
 		
 		ConvertDomainNameToCString( &inAnswer->rdata->u.name, domainString );
-		domainDataPtr->interfaceAddr.addressType	= kDNSNetworkAddressTypeIPv4;
-		domainDataPtr->interfaceAddr.u.ipv4.address = infoPtr->hostSet.ip.ip.v4.NotAnInteger;
-		domainDataPtr->domain 						= domainString;
-		domainDataPtr->flags						= 0;
+		
+		domainDataPtr->interfaceName = "";
+		if( inAnswer->InterfaceID != mDNSInterface_Any )
+		{
+			mDNSPlatformInterfaceInfo		info;
+			
+			err = mDNSPlatformInterfaceIDToInfo( inMDNS, inAnswer->InterfaceID, &info );
+			if( err == mStatus_NoError )
+			{
+				domainDataPtr->interfaceName = info.name;
+				MDNSAddrToDNSAddress( &info.ip, &domainDataPtr->interfaceIP );
+			}
+			else
+			{
+				domainDataPtr->interfaceName = "";
+			}
+		}
+		domainDataPtr->interfaceID	= inAnswer->InterfaceID;
+		domainDataPtr->domain 		= domainString;
+		domainDataPtr->flags		= 0;
 		
 		// Call the callback.
 		
@@ -854,9 +1083,10 @@ mDNSlocal void
 			verbosedebugf( DEBUG_NAME "    name:   \"%s\"", 	inEvent->data.resolved.name );
 			verbosedebugf( DEBUG_NAME "    type:   \"%s\"", 	inEvent->data.resolved.type );
 			verbosedebugf( DEBUG_NAME "    domain: \"%s\"", 	inEvent->data.resolved.domain );
-			verbosedebugf( DEBUG_NAME "    if:     %.4a", 		&inEvent->data.resolved.interfaceAddr.u.ipv4.address );
-			verbosedebugf( DEBUG_NAME "    ip:     %.4a:%u", 	&inEvent->data.resolved.address.u.ipv4.address, 
-															 	inEvent->data.resolved.address.u.ipv4.port );
+			verbosedebugf( DEBUG_NAME "    if:     %.4a", 		&inEvent->data.resolved.interfaceIP.u.ipv4.addr.v32 );
+			verbosedebugf( DEBUG_NAME "    ip:     %.4a:%u", 	&inEvent->data.resolved.address.u.ipv4.addr.v32, 
+															 	( inEvent->data.resolved.address.u.ipv4.port.v8[ 0 ] << 8 ) |
+															 	  inEvent->data.resolved.address.u.ipv4.port.v8[ 1 ] );
 			verbosedebugf( DEBUG_NAME "    text:   \"%s\"", 	inEvent->data.resolved.textRecord );
 			
 			// Re-package the resolver event as a browser event and call the callback.
@@ -998,7 +1228,7 @@ DNSStatus
 	
 	// Allocate the object and set it up.
 	
-	err = DNSPlatformMemAlloc( sizeof( *objectPtr ), &objectPtr );
+	err = DNSMemAlloc( sizeof( *objectPtr ), &objectPtr );
 	require_noerr( err, exit );
 	memset( objectPtr, 0, sizeof( *objectPtr ) );
 	
@@ -1006,7 +1236,7 @@ DNSStatus
 	objectPtr->callback 			= inCallBack;
 	objectPtr->callbackContext 		= inCallBackContext;
 	objectPtr->owner				= inOwner;
-	objectPtr->info.name			= fullName;
+	AssignDomainName( objectPtr->info.name, fullName );
 	objectPtr->info.InterfaceID 	= mDNSInterface_Any;
 	
 	// Save off the resolve info so the callback can get it.
@@ -1040,7 +1270,7 @@ exit:
 	if( err && objectPtr )
 	{
 		DNSResolverRemoveObject( objectPtr );
-		DNSPlatformMemFree( objectPtr );
+		DNSMemFree( objectPtr );
 	}
 	DNSServicesUnlock();
 	return( err );
@@ -1081,7 +1311,7 @@ DNSStatus	DNSResolverRelease( DNSResolverRef inRef, DNSResolverFlags inFlags )
 	
 	// Release the memory used by the object.
 	
-	DNSPlatformMemFree( inRef );
+	DNSMemFree( inRef );
 	err = kDNSNoErr;
 	
 exit:
@@ -1112,6 +1342,7 @@ mDNSlocal DNSResolverRef	DNSResolverFindObject( DNSResolverRef inRef )
 	}
 	return( p );
 }
+
 //===========================================================================================================================
 //	DNSResolverFindObjectByName
 //
@@ -1142,14 +1373,11 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 {
 	DNSResolverRef			objectPtr;
 	DNSResolverEvent		event;
-	char					s[ 256 ];
-	const mDNSu8 *			p;
-	size_t					n;
-	mDNSInterfaceInfo *		infoPtr = (mDNSInterfaceInfo *)inQuery->info->InterfaceID;
+	char *					txtString;
+	mStatus					err;
+	mDNSBool				release;
 	
-	DNS_UNUSED( inMDNS );
-	
-	if (inQuery->info->ip.type != mDNSAddrType_IPv4) return;	// For now, we don't do IPv6
+	txtString = NULL;
 	
 	DNSServicesLock();
 	
@@ -1158,25 +1386,10 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	objectPtr = DNSResolverFindObject( (DNSResolverRef) inQuery->ServiceInfoQueryContext );
 	require( objectPtr, exit );
 	
-	// Copy the sized buffer of text to a local null terminated string. Older versions of Rendezvous treated the TXT 
-	// record as a raw chunk of text rather than a packed array of length-prefixed strings so check if the total size
-	// of the TXT record is exactly 1 more than the length-prefix byte and if so, assume it is an old-style record.
-	// Old-style TXT records will never be larger than 255 bytes so assume a new-style if it is larger than that too.
+	// Convert the raw TXT record into a null-terminated string with \001-delimited records for Mac OS X-style clients.
 	
-	p = inQuery->info->TXTinfo;
-	n = inQuery->info->TXTlen;
-	if( n > 0 )
-	{
-		if( ( n > 255 ) || ( n == (size_t)( inQuery->info->TXTinfo[ 0 ] + 1 ) ) )
-		{
-			++p;
-			--n;
-		}
-	}
-	check( n < sizeof( s ) );
-	n = ( n < sizeof( s ) ) ? n : ( sizeof( s ) - 1 );
-	memcpy( s, p, n );
-	s[ n ] = '\0';
+	err = DNSTextRecordEscape( inQuery->info->TXTinfo, inQuery->info->TXTlen, &txtString );
+	check_noerr( err );
 	
 	// Package up the results and call the callback.
 	
@@ -1185,27 +1398,46 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	event.data.resolved.name							= objectPtr->resolveName;
 	event.data.resolved.type							= objectPtr->resolveType;
 	event.data.resolved.domain							= objectPtr->resolveDomain;
-	event.data.resolved.interfaceAddr.addressType		= kDNSNetworkAddressTypeIPv4;
-	event.data.resolved.interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.ip.v4.NotAnInteger;
+	event.data.resolved.interfaceName = "";
+	if( inQuery->info->InterfaceID != mDNSInterface_Any )
+	{
+		mDNSPlatformInterfaceInfo		info;
+			
+		err = mDNSPlatformInterfaceIDToInfo( inMDNS, inQuery->info->InterfaceID, &info );
+		if( err == mStatus_NoError )
+		{
+			event.data.resolved.interfaceName = info.name;
+			MDNSAddrToDNSAddress( &info.ip, &event.data.resolved.interfaceIP );
+		}
+		else
+		{
+			event.data.resolved.interfaceName = "";
+		}
+	}
+	event.data.resolved.interfaceID						= inQuery->info->InterfaceID;
 	event.data.resolved.address.addressType				= kDNSNetworkAddressTypeIPv4;
-	event.data.resolved.address.u.ipv4.address 			= inQuery->info->ip.ip.v4.NotAnInteger;
-	event.data.resolved.address.u.ipv4.port				= (DNSUInt16)
-														  ( ( inQuery->info->port.b[ 0 ] << 8 ) | 
-															( inQuery->info->port.b[ 1 ] << 0 ) );
-	event.data.resolved.address.u.ipv4.pad				= 0;
-	event.data.resolved.textRecord						= s;
+	event.data.resolved.address.u.ipv4.addr.v32 		= inQuery->info->ip.ip.v4.NotAnInteger;
+	event.data.resolved.address.u.ipv4.port.v16			= inQuery->info->port.NotAnInteger;
+	event.data.resolved.textRecord						= txtString ? txtString : "";
 	event.data.resolved.flags 							= 0;
+	event.data.resolved.textRecordRaw					= (const void *) inQuery->info->TXTinfo;
+	event.data.resolved.textRecordRawSize				= (DNSCount) inQuery->info->TXTlen;
+	release												= (mDNSBool)( ( objectPtr->flags & kDNSResolverFlagOneShot ) != 0 );
 	objectPtr->callback( objectPtr->callbackContext, objectPtr, kDNSNoErr, &event );
 	
 	// Auto-release the object if needed.
 	
-	if( objectPtr->flags & kDNSResolverFlagOneShot )
+	if( release )
 	{
 		DNSResolverRelease( objectPtr, 0 );
 	}
 
 exit:
 	DNSServicesUnlock();
+	if( txtString )
+	{
+		free( txtString );
+	}
 }
 
 //===========================================================================================================================
@@ -1304,25 +1536,31 @@ mDNSlocal void	DNSResolverRemoveDependentByName( const domainname *inName )
 
 DNSStatus
 	DNSRegistrationCreate( 
-		DNSRegistrationFlags	inFlags, 
-		const char *			inName, 
-		const char *			inType, 
-		const char *			inDomain, 
-		DNSPort					inPort, 
-		const char *			inTextRecord, 
-		DNSRegistrationCallBack	inCallBack, 
-		void *					inCallBackContext, 
-		DNSRegistrationRef *	outRef )
+		DNSRegistrationFlags		inFlags, 
+		const char *				inName, 
+		const char *				inType, 
+		const char *				inDomain, 
+		DNSPort						inPort, 
+		const void *				inTextRecord, 
+		DNSCount					inTextRecordSize, 
+		const char *				inHost, 
+		const char *				inInterfaceName, 
+		DNSRegistrationCallBack		inCallBack, 
+		void *						inCallBackContext, 
+		DNSRegistrationRef *		outRef )
 {	
 	DNSStatus				err;
+	size_t					size;
 	DNSRegistration *		objectPtr;
+	mDNSInterfaceID			interfaceID;
 	domainlabel				name;
 	domainname				type;
 	domainname				domain;
 	mDNSIPPort				port;
-	mDNSu8					text[ 256 ];
-	mDNSu8 *				textPtr;
-	mDNSu16					textSize;
+	mDNSu8					textRecord[ 256 ];
+	const mDNSu8 *			textRecordPtr;
+	domainname *			host;
+	domainname				tempHost;
 	
 	objectPtr = mDNSNULL;
 	
@@ -1331,10 +1569,13 @@ DNSStatus
 	DNSServicesLock();
 	require_action( gMDNSPtr, exit, err = kDNSNotInitializedErr );
 	require_action( ( inFlags & ~kDNSRegistrationCreateValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
-	require_action( inName, exit, err = kDNSBadParamErr );
 	require_action( inType, exit, err = kDNSBadParamErr );
-	require_action( inCallBack, exit, err = kDNSBadParamErr );
-		
+	require_action( inTextRecord || ( inTextRecordSize == 0 ), exit, err = kDNSBadParamErr );
+	require_action( ( inFlags & kDNSRegistrationFlagPreFormattedTextRecord ) || 
+					( inTextRecordSize < sizeof( textRecord ) ), exit, err = kDNSBadParamErr );
+	require_action( !inInterfaceName || 
+					( strlen( inInterfaceName ) < sizeof( objectPtr->interfaceName ) ), exit, err = kDNSBadParamErr );
+	
 	// Default to the local domain when null is passed in.
 	
 	if( !inDomain )
@@ -1342,59 +1583,91 @@ DNSStatus
 		inDomain = kDNSLocalDomain;
 	}
 	
-	// Convert the input text record null-terminated string to a length-prefixed string.
-
-	textPtr	 = mDNSNULL;
-	textSize = 0;
-	if( inTextRecord )
+	// Set up the text record. If the pre-formatted flag is used, the input text is assumed to be a valid text record 
+	// and is used directly. Otherwise, the input text is assumed to be raw text and is converted to a text record.
+	
+	textRecordPtr = (const mDNSu8 *) inTextRecord;
+	if( !( inFlags & kDNSRegistrationFlagPreFormattedTextRecord ) )
 	{
-		mDNSu8 *		p;
+		// Convert the raw input text to a length-prefixed text record.
 		
-		text[ 0 ] = 0;
-		p = text;
-		while( *inTextRecord != '\0' )
+		if( inTextRecordSize > 0 )
 		{
-			++textSize;
-			require_action( textSize < sizeof( text ), exit, err = kDNSBadParamErr );
-			require_action( p[ 0 ] < 255, exit, err = kDNSBadParamErr );
-			
-			p[ ++p[ 0 ] ] = *inTextRecord++;
+			textRecord[ 0 ] = (mDNSu8) inTextRecordSize;
+			memcpy( &textRecord[ 1 ], inTextRecord, inTextRecordSize );
+			textRecordPtr = textRecord;
+			inTextRecordSize += 1;
 		}
-		++textSize;
 	}
 	
-	// Allocate the object and set it up.
+	// Allocate the object and set it up. If the TXT record is larger than the standard RDataBody, allocate more space.
 	
-	err = DNSPlatformMemAlloc( sizeof( *objectPtr ), &objectPtr );
+	size = sizeof( *objectPtr );
+	if( inTextRecordSize > sizeof( RDataBody ) )
+	{
+		size += ( inTextRecordSize - sizeof( RDataBody ) );
+	}
+	
+	err = DNSMemAlloc( size, &objectPtr );
 	require_noerr( err, exit );
-	memset( objectPtr, 0, sizeof( *objectPtr ) );
+	memset( objectPtr, 0, size );
 	
 	objectPtr->flags 			= inFlags;
 	objectPtr->callback 		= inCallBack;
 	objectPtr->callbackContext 	= inCallBackContext;
+	
+	// Set up the interface for interface-specific operations.
+	
+	if( inInterfaceName && ( *inInterfaceName != '\0' ) )
+	{
+		strcpy( objectPtr->interfaceName, inInterfaceName );
+		
+		err = mDNSPlatformInterfaceNameToID( gMDNSPtr, inInterfaceName, &interfaceID );
+		require_noerr( err, exit );
+	}
+	else
+	{
+		interfaceID = mDNSInterface_Any;
+	}
 	
 	// Add the object to the list.
 	
 	objectPtr->next = gDNSRegistrationList;
 	gDNSRegistrationList = objectPtr;
 	
-	// Convert the name, type, domain, and port for mDNS.
+	// Convert the name, type, domain, and port to a format suitable for mDNS. If the name is NULL or an empty string, 
+	// use the UTF-8 name of the system as the service name to make it easy for clients to use the standard name.
+	// If we're using the system name (i.e. name is NULL), automatically rename on conflicts to keep things in sync.
 	
-	MakeDomainLabelFromLiteralString( &name, inName );
+	if( !inName || ( *inName == '\0' ) )
+	{
+		name = gMDNSPtr->nicelabel;
+		inFlags |= kDNSRegistrationFlagAutoRenameOnConflict;
+	}
+	else
+	{
+		MakeDomainLabelFromLiteralString( &name, inName );
+	}
 	MakeDomainNameFromDNSNameString( &type, inType );
 	MakeDomainNameFromDNSNameString( &domain, inDomain );
 	port.b[ 0 ] = ( mDNSu8 )( inPort >> 8 );
 	port.b[ 1 ] = ( mDNSu8 )( inPort >> 0 );
+	
+	// Set up the host name (if not using the default).
+	
+	host = mDNSNULL;
+	if( inHost )
+	{
+		host = &tempHost;
+		MakeDomainNameFromDNSNameString( host, inHost );
+		AppendDomainName( host, &domain );
+	}
 		
 	// Register the service with mDNS.
 	
-	err = mDNS_RegisterService( gMDNSPtr, &objectPtr->set,
-		&name, &type, &domain,							// Name, type, domain
-		mDNSNULL, port, 								// Host and port
-		text, textSize,									// TXT data, length
-		mDNSNULL, 0,									// Subtypes
-		mDNSInterface_Any,								// Interace ID
-		DNSRegistrationPrivateCallBack, objectPtr );	// Callback and context
+	err = mDNS_RegisterService( gMDNSPtr, &objectPtr->set, &name, &type, &domain, host, port, textRecordPtr, 
+								(mDNSu16) inTextRecordSize, NULL, 0, interfaceID, 
+								DNSRegistrationPrivateCallBack, objectPtr );
 	require_noerr( err, exit );
 	
 	if( outRef )
@@ -1406,7 +1679,115 @@ exit:
 	if( err && objectPtr )
 	{
 		DNSRegistrationRemoveObject( objectPtr );
-		DNSPlatformMemFree( objectPtr );
+		DNSMemFree( objectPtr );
+	}
+	DNSServicesUnlock();
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSNoSuchServiceRegistrationCreate
+//===========================================================================================================================
+
+DNSStatus
+	DNSNoSuchServiceRegistrationCreate( 
+		DNSRegistrationFlags		inFlags, 
+		const char *				inName, 
+		const char *				inType, 
+		const char *				inDomain, 
+		const char *				inInterfaceName, 
+		DNSRegistrationCallBack		inCallBack, 
+		void *						inCallBackContext, 
+		DNSRegistrationRef *		outRef )
+{	
+	DNSStatus				err;
+	size_t					size;
+	DNSRegistration *		objectPtr;
+	mDNSInterfaceID			interfaceID;
+	domainlabel				name;
+	domainname				type;
+	domainname				domain;
+	
+	objectPtr = mDNSNULL;
+	
+	// Check parameters.
+	
+	DNSServicesLock();
+	require_action( gMDNSPtr, exit, err = kDNSNotInitializedErr );
+	require_action( ( inFlags & ~kDNSNoSuchServiceRegistrationCreateValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
+	inFlags |= kDNSRegistrationFlagPrivateNoSuchService;
+	require_action( inType, exit, err = kDNSBadParamErr );
+	require_action( !inInterfaceName || 
+					( strlen( inInterfaceName ) < sizeof( objectPtr->interfaceName ) ), exit, err = kDNSBadParamErr );
+	
+	// Default to the local domain when null is passed in.
+	
+	if( !inDomain )
+	{
+		inDomain = kDNSLocalDomain;
+	}
+	
+	// Allocate the object and set it up. If the TXT record is larger than the standard RDataBody, allocate more space.
+	
+	size = sizeof( *objectPtr );
+	
+	err = DNSMemAlloc( size, &objectPtr );
+	require_noerr( err, exit );
+	memset( objectPtr, 0, size );
+	
+	objectPtr->flags 			= inFlags;
+	objectPtr->callback 		= inCallBack;
+	objectPtr->callbackContext 	= inCallBackContext;
+	
+	// Set up the interface for interface-specific operations.
+	
+	if( inInterfaceName && ( *inInterfaceName != '\0' ) )
+	{
+		strcpy( objectPtr->interfaceName, inInterfaceName );
+		
+		err = mDNSPlatformInterfaceNameToID( gMDNSPtr, inInterfaceName, &interfaceID );
+		require_noerr( err, exit );
+	}
+	else
+	{
+		interfaceID = mDNSInterface_Any;
+	}
+	
+	// Add the object to the list.
+	
+	objectPtr->next = gDNSRegistrationList;
+	gDNSRegistrationList = objectPtr;
+	
+	// Convert the name, type, domain, and port to a format suitable for mDNS. If the name is NULL or an empty string, 
+	// use the UTF-8 name of the system as the service name to make it easy for clients to use the standard name.
+	
+	if( !inName || ( *inName == '\0' ) )
+	{
+		name = gMDNSPtr->nicelabel;
+	}
+	else
+	{
+		MakeDomainLabelFromLiteralString( &name, inName );
+	}
+	MakeDomainNameFromDNSNameString( &type, inType );
+	MakeDomainNameFromDNSNameString( &domain, inDomain );
+	
+	// Register the service with mDNS.
+	
+	err = mDNS_RegisterNoSuchService( gMDNSPtr, &objectPtr->set.RR_SRV, &name, &type, &domain, mDNSNULL, 
+									  interfaceID, DNSNoSuchServiceRegistrationPrivateCallBack, objectPtr );
+	require_noerr( err, exit );
+	
+	if( outRef )
+	{
+		*outRef = objectPtr;
+	}
+	
+exit:
+	if( err && objectPtr )
+	{
+		DNSRegistrationRemoveObject( objectPtr );
+		DNSMemFree( objectPtr );
 	}
 	DNSServicesUnlock();
 	return( err );
@@ -1430,20 +1811,100 @@ DNSStatus	DNSRegistrationRelease( DNSRegistrationRef inRef, DNSRegistrationFlags
 	
 	inRef = DNSRegistrationRemoveObject( inRef );
 	require_action( inRef, exit, err = kDNSBadReferenceErr );
-		
-	memset( &event, 0, sizeof( event ) );
-	event.type = kDNSRegistrationEventTypeRelease;
-	check( inRef->callback );
-	inRef->callback( inRef->callbackContext, inRef, kDNSNoErr, &event );
+	
+	if( inRef->callback )
+	{
+		memset( &event, 0, sizeof( event ) );
+		event.type = kDNSRegistrationEventTypeRelease;
+		inRef->callback( inRef->callbackContext, inRef, kDNSNoErr, &event );
+	}
 	
 	// Deregister from mDNS after everything else since it will call us back to free the memory.
 	
-	mDNS_DeregisterService( gMDNSPtr, &inRef->set );
-	err = kDNSNoErr;
+	if( !( inRef->flags & kDNSRegistrationFlagPrivateNoSuchService ) )
+	{
+		err = mDNS_DeregisterService( gMDNSPtr, &inRef->set );
+		require_noerr( err, exit );
+	}
+	else
+	{
+		err = mDNS_DeregisterNoSuchService( gMDNSPtr, &inRef->set.RR_SRV );
+		require_noerr( err, exit );
+	}
 	
 	// Note: Don't free here. Wait for mDNS to call us back with a mem free result.
 	
 exit:
+	DNSServicesUnlock();
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSRegistrationUpdate
+//===========================================================================================================================
+
+DNSStatus
+	DNSRegistrationUpdate( 
+		DNSRegistrationRef 			inRef, 
+		DNSRecordFlags				inFlags, 
+		DNSRegistrationRecordRef 	inRecord, 
+		const void *				inData, 
+		DNSCount					inSize, 
+		DNSUInt32					inNewTTL )
+{
+	DNSStatus			err;
+	AuthRecord *		rr;
+	size_t				maxRDLength;
+	RData *				newRData;
+	
+	newRData = mDNSNULL;
+	
+	DNSServicesLock();
+	require_action( gMDNSPtr, exit, err = kDNSNotInitializedErr );
+	require_action( DNSRegistrationFindObject( inRef ), exit, err = kDNSBadReferenceErr );
+	require_action( ( inFlags & ~kDNSRegistrationUpdateValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
+	require_action( inData || ( inSize == 0 ), exit, err = kDNSBadParamErr );
+	
+	// If a non-NULL record is specified, update it. Otherwise, use the standard TXT record.
+	
+	if( inRecord )
+	{
+		// $$$ TO DO: Add support for updating extra records (support adding and removing them too).
+		
+		rr = mDNSNULL;
+		err = kDNSUnsupportedErr;
+		require_noerr( err, exit );
+	}
+	else
+	{
+		rr = &inRef->set.RR_TXT;
+	}
+	
+	// Allocate storage for the new data and set it up.
+	
+	maxRDLength = sizeof( RDataBody );
+	if( inSize > maxRDLength )
+	{
+		maxRDLength = inSize;
+	}
+	err = DNSMemAlloc( ( sizeof( *newRData ) - sizeof( RDataBody ) ) + maxRDLength, &newRData );
+	require_noerr( err, exit );
+	
+	newRData->MaxRDLength = (mDNSu16) maxRDLength;
+	memcpy( &newRData->u, inData, inSize );
+	
+	// Update the record with mDNS.
+	
+	err = mDNS_Update( gMDNSPtr, rr, inNewTTL, (mDNSu16) inSize, newRData, DNSRegistrationUpdateCallBack );
+	require_noerr( err, exit );
+	
+	newRData = mDNSNULL;
+	
+exit:
+	if( newRData )
+	{
+		DNSMemFree( newRData );
+	}
 	DNSServicesUnlock();
 	return( err );
 }
@@ -1475,41 +1936,75 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 			
 			// Notify the client of a successful registration.
 			
-			memset( &event, 0, sizeof( event ) );
-			event.type = kDNSRegistrationEventTypeRegistered;
-			check( object->callback );
-			object->callback( object->callbackContext, object, kDNSNoErr, &event );			
+			if( object->callback )
+			{
+				memset( &event, 0, sizeof( event ) );
+				event.type = kDNSRegistrationEventTypeRegistered;
+				object->callback( object->callbackContext, object, kDNSNoErr, &event );
+			}
 			break;
 		
 		case mStatus_NameConflict:
+		{
+			DNSStatus		err;
+			mDNSBool		remove;
+			
 			debugf( DEBUG_NAME "registration callback: \"%##s\" name conflict", inSet->RR_SRV.resrec.name.c );
 			
-			// Notify the client of the name conflict. Remove the object first so they cannot try to use it in the callback.
+			// Name conflict. If the auto-rename option is enabled, uniquely rename the service and re-register it. Otherwise, 
+			// remove the object so they cannot try to use it in the callback and notify the client of the name conflict.
 			
-			object = DNSRegistrationRemoveObject( object );
-			require( object, exit );
-		
-			memset( &event, 0, sizeof( event ) );
-			event.type = kDNSRegistrationEventTypeNameCollision;
-			check( object->callback );
-			object->callback( object->callbackContext, object, kDNSNoErr, &event );
-			
-			// Notify the client that the registration is being released.
-			
-			memset( &event, 0, sizeof( event ) );
-			event.type = kDNSRegistrationEventTypeRelease;
-			check( object->callback );
-			object->callback( object->callbackContext, object, kDNSNoErr, &event );
-			
-			// When a name conflict occurs, mDNS will not send a separate mem free result so free the memory here.
-			
-			DNSPlatformMemFree( object );
+			remove = mDNStrue;
+			if( object->flags & kDNSRegistrationFlagAutoRenameOnConflict )
+			{
+				err = mDNS_RenameAndReregisterService( inMDNS, inSet, mDNSNULL );
+				check_noerr( err );
+				if( err == mStatus_NoError )
+				{
+					debugf( DEBUG_NAME "registration callback: auto-renamed to \"%##s\"", inSet->RR_SRV.resrec.name.c );
+					remove = mDNSfalse;
+				}
+			}
+			if( remove )
+			{
+				object = DNSRegistrationRemoveObject( object );
+				require( object, exit );
+				
+				// Notify the client of the name collision.
+				
+				if( object->callback )
+				{
+					memset( &event, 0, sizeof( event ) );
+					event.type = kDNSRegistrationEventTypeNameCollision;
+					object->callback( object->callbackContext, object, kDNSNoErr, &event );
+				}
+				
+				// Notify the client that the registration is being released.
+				
+				if( object->callback )
+				{
+					memset( &event, 0, sizeof( event ) );
+					event.type = kDNSRegistrationEventTypeRelease;
+					object->callback( object->callbackContext, object, kDNSNoErr, &event );
+				}
+				
+				// When a name conflict occurs, mDNS will not send a separate mem free result so free the memory here.
+				
+				DNSMemFree( object );
+			}
 			break;
+		}
 		
 		case mStatus_MemFree:
 			debugf( DEBUG_NAME "registration callback: \"%##s\" memory free", inSet->RR_SRV.resrec.name.c );
 			
-			DNSPlatformMemFree( object );
+			if( object->set.RR_TXT.resrec.rdata != &object->set.RR_TXT.rdatastorage )
+			{
+				// Standard TXT record was updated with new data so free that data separately.
+				
+				DNSMemFree( object->set.RR_TXT.resrec.rdata );
+			}
+			DNSMemFree( object );
 			break;
 		
 		default:
@@ -1519,6 +2014,131 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 
 exit:
 	DNSServicesUnlock();
+}
+
+//===========================================================================================================================
+//	DNSNoSuchServiceRegistrationPrivateCallBack
+//===========================================================================================================================
+
+mDNSlocal void	DNSNoSuchServiceRegistrationPrivateCallBack( mDNS * const inMDNS, AuthRecord * const inRR, mStatus inResult )
+{	
+	DNSRegistrationRef			object;
+	DNSRegistrationEvent		event;
+	
+	DNS_UNUSED( inMDNS );
+	
+	DNSServicesLock();
+	
+	// Exit if object is no longer valid. Should never happen.
+	
+	object = (DNSRegistrationRef) inRR->RecordContext;
+	require( object, exit );
+	
+	// Dispatch based on the status code.
+	
+	switch( inResult )
+	{
+		case mStatus_NoError:
+			debugf( DEBUG_NAME "registration callback: \"%##s\" name successfully registered", inRR->resrec.name.c );
+			
+			// Notify the client of a successful registration.
+			
+			if( object->callback )
+			{
+				memset( &event, 0, sizeof( event ) );
+				event.type = kDNSRegistrationEventTypeRegistered;
+				object->callback( object->callbackContext, object, kDNSNoErr, &event );
+			}
+			break;
+		
+		case mStatus_NameConflict:
+		{
+			debugf( DEBUG_NAME "registration callback: \"%##s\" name conflict", inRR->resrec.name.c );
+			
+			// Name conflict. Name conflicts for no-such-service registrations often do not make sense since the main goal 
+			// is to assert that no other service exists with a name. Because of this, name conflicts should be handled by
+			// the code registering the no-such-service since it is likely that if another service is already using the 
+			// name that the service registering the no-such-service should rename its other services as well. The name
+			// collision client callback invoked here can do any of this client-specific behavior. It may be worth adding
+			// support for the auto-rename feature in the future though, if that becomes necessary.
+			
+			object = DNSRegistrationRemoveObject( object );
+			require( object, exit );
+			
+			// Notify the client of the name collision.
+			
+			if( object->callback )
+			{
+				memset( &event, 0, sizeof( event ) );
+				event.type = kDNSRegistrationEventTypeNameCollision;
+				object->callback( object->callbackContext, object, kDNSNoErr, &event );
+			}
+			
+			// Notify the client that the registration is being released.
+			
+			if( object->callback )
+			{
+				memset( &event, 0, sizeof( event ) );
+				event.type = kDNSRegistrationEventTypeRelease;
+				object->callback( object->callbackContext, object, kDNSNoErr, &event );
+			}
+			
+			// When a name conflict occurs, mDNS will not send a separate mem free result so free the memory here.
+			
+			DNSMemFree( object );
+			break;
+		}
+		
+		case mStatus_MemFree:
+			debugf( DEBUG_NAME "registration callback: \"%##s\" memory free", inRR->resrec.name.c );
+			
+			DNSMemFree( object );
+			break;
+		
+		default:
+			debugf( DEBUG_NAME "registration callback: \"%##s\" unknown result %d", inRR->resrec.name.c, inResult );
+			break;
+	}
+
+exit:
+	DNSServicesUnlock();
+}
+
+//===========================================================================================================================
+//	DNSRegistrationUpdateCallBack
+//===========================================================================================================================
+
+mDNSlocal void	DNSRegistrationUpdateCallBack( mDNS * const inMDNS, AuthRecord * const inRR, RData *inOldData )
+{
+	DNS_UNUSED( inMDNS );
+	
+	check( inRR );
+	check( inOldData );
+	
+	if( inOldData != &inRR->rdatastorage )
+	{
+		DNSMemFree( inOldData );
+	}
+}
+
+//===========================================================================================================================
+//	DNSRegistrationFindObject
+//
+//	Warning: Assumes the DNS lock is held.
+//===========================================================================================================================
+
+mDNSlocal DNSRegistrationRef *	DNSRegistrationFindObject( DNSRegistrationRef inRef )
+{
+	DNSRegistration **		p;
+	
+	for( p = &gDNSRegistrationList; *p; p = &( *p )->next )
+	{
+		if( *p == inRef )
+		{
+			break;
+		}
+	}
+	return( p );
 }
 
 //===========================================================================================================================
@@ -1578,7 +2198,7 @@ DNSStatus
 	
 	// Allocate the object and set it up.
 	
-	err = DNSPlatformMemAlloc( sizeof( *objectPtr ), &objectPtr );
+	err = DNSMemAlloc( sizeof( *objectPtr ), &objectPtr );
 	require_noerr( err, exit );
 	memset( objectPtr, 0, sizeof( *objectPtr ) );
 	
@@ -1591,7 +2211,7 @@ DNSStatus
 	
 	// Register the domain with mDNS.
 	
-	err = mDNS_AdvertiseDomains( gMDNSPtr, &objectPtr->rr, (mDNSu8) inType, mDNSInterface_Any, (char *) inName );
+	err = mDNS_AdvertiseDomains( gMDNSPtr, &objectPtr->rr, (mDNS_DomainType) inType, mDNSInterface_Any, (char *) inName );
 	require_noerr( err, exit );
 	
 	if( outRef )
@@ -1603,7 +2223,7 @@ exit:
 	if( err && objectPtr )
 	{
 		DNSDomainRegistrationRemoveObject( objectPtr );
-		DNSPlatformMemFree( objectPtr );
+		DNSMemFree( objectPtr );
 	}
 	DNSServicesUnlock();
 	return( err );
@@ -1622,18 +2242,16 @@ DNSStatus	DNSDomainRegistrationRelease( DNSDomainRegistrationRef inRef, DNSDomai
 	require_action( inRef, exit, err = kDNSBadReferenceErr );
 	require_action( ( inFlags & ~kDNSDomainRegistrationReleaseValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
 	
-	// Notify the client of the registration release. Remove the object first so they cannot try to use it in the callback.
+	// Remove the object and deregister the domain with mDNS.
 	
 	inRef = DNSDomainRegistrationRemoveObject( inRef );
 	require_action( inRef, exit, err = kDNSBadReferenceErr );
-	
-	// Deregister domain with mDNS.
 	
 	mDNS_StopAdvertiseDomains( gMDNSPtr, &inRef->rr );
 	
 	// Release the memory used by the object.
 	
-	DNSPlatformMemFree( inRef );
+	DNSMemFree( inRef );
 	err = kDNSNoErr;
 	
 exit:
@@ -1666,3 +2284,875 @@ mDNSlocal DNSDomainRegistrationRef	DNSDomainRegistrationRemoveObject( DNSDomainR
 	}
 	return( found );
 }
+
+#if 0
+#pragma mark -
+#pragma mark == Domain Registration ==
+#endif
+
+//===========================================================================================================================
+//	DNSHostRegistrationCreate
+//===========================================================================================================================
+
+DNSStatus
+	DNSHostRegistrationCreate( 
+		DNSHostRegistrationFlags	inFlags, 
+		const char *				inName, 
+		const char *				inDomain, 
+		const DNSNetworkAddress *	inAddr, 
+		const char *				inInterfaceName, 
+		DNSHostRegistrationCallBack	inCallBack, 
+		void *						inCallBackContext, 
+		DNSHostRegistrationRef *	outRef )
+{
+	DNSStatus					err;
+	domainname					name;
+	DNSHostRegistration *		object;
+	mDNSInterfaceID				interfaceID;
+	mDNSv4Addr					ip;
+	char						buffer[ 64 ];
+	
+	object = mDNSNULL;
+	
+	// Check parameters.
+	
+	DNSServicesLock();
+	require_action( gMDNSPtr, exit, err = kDNSNotInitializedErr );
+	require_action( ( inFlags & ~kDNSHostRegistrationCreateValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
+	require_action( inName, exit, err = kDNSBadParamErr );
+	require_action( inAddr && ( inAddr->addressType == kDNSNetworkAddressTypeIPv4 ), exit, err = kDNSUnsupportedErr );
+	require_action( !inInterfaceName || 
+					( strlen( inInterfaceName ) < sizeof( object->interfaceName ) ), exit, err = kDNSBadParamErr );
+	
+	// Default to the local domain when null is passed in.
+	
+	if( !inDomain )
+	{
+		inDomain = kDNSLocalDomain;
+	}
+	
+	// If the caller only wants to add if not found, check if a host with this name was already registered.
+	
+	MakeDomainNameFromDNSNameString( &name, inName );
+	AppendDNSNameString( &name, inDomain );
+	
+	if( inFlags & kDNSHostRegistrationFlagOnlyIfNotFound )
+	{
+		object = DNSHostRegistrationFindObjectByName( &name );
+		if( object )
+		{
+			++object->refCount;
+			if( outRef )
+			{
+				*outRef = object;
+			}
+			object = mDNSNULL;
+			err = kDNSNoErr;
+			goto exit;
+		}
+	}
+	
+	// Allocate the object and set it up.
+	
+	err = DNSMemAlloc( sizeof( *object ), &object );
+	require_noerr( err, exit );
+	memset( object, 0, sizeof( *object ) );
+	
+	MakeDomainLabelFromLiteralString( &object->name, inName );
+	MakeDomainLabelFromLiteralString( &object->domain, inDomain );
+	object->refCount		= 1;
+	object->flags 			= inFlags;
+	object->callback		= inCallBack;
+	object->callbackContext	= inCallBackContext;
+	
+	// Set up the interface for interface-specific operations.
+	
+	if( inInterfaceName && ( *inInterfaceName != '\0' ) )
+	{
+		strcpy( object->interfaceName, inInterfaceName );
+		
+		err = mDNSPlatformInterfaceNameToID( gMDNSPtr, inInterfaceName, &interfaceID );
+		require_noerr( err, exit );
+	}
+	else
+	{
+		interfaceID = mDNSInterface_Any;
+	}
+	
+	// Convert the IP address to a format suitable for mDNS.
+	
+	ip.NotAnInteger = inAddr->u.ipv4.addr.v32;
+
+	// Set up the resource records and name.
+	
+	mDNS_SetupResourceRecord( &object->RR_A,   mDNSNULL, interfaceID, kDNSType_A,   60, kDNSRecordTypeUnique, 
+							  DNSHostRegistrationPrivateCallBack, object );
+	mDNS_SetupResourceRecord( &object->RR_PTR, mDNSNULL, interfaceID, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, 
+							  DNSHostRegistrationPrivateCallBack, object );
+	
+	AssignDomainName( object->RR_A.resrec.name, name );
+	
+	mDNS_snprintf( buffer, sizeof( buffer ), "%d.%d.%d.%d.in-addr.arpa.", ip.b[ 3 ], ip.b[ 2 ], ip.b[ 1 ], ip.b[ 0 ] );
+	MakeDomainNameFromDNSNameString( &object->RR_PTR.resrec.name, buffer );
+	
+	object->RR_A.resrec.rdata->u.ip = ip;
+	AssignDomainName( object->RR_PTR.resrec.rdata->u.name, object->RR_A.resrec.name );
+	
+	// Add the object to the list.
+	
+	object->next = gDNSHostRegistrationList;
+	gDNSHostRegistrationList = object;
+	
+	// Register with mDNS.
+
+	err = mDNS_Register( gMDNSPtr, &object->RR_A );
+	require_noerr( err, exit );
+	
+	err = mDNS_Register( gMDNSPtr, &object->RR_PTR );
+	if( err != mStatus_NoError )
+	{
+		mDNS_Deregister( gMDNSPtr, &object->RR_A );
+	}
+	require_noerr( err, exit );
+	
+	if( outRef )
+	{
+		*outRef = object;
+	}
+	
+exit:
+	if( err && object )
+	{
+		DNSHostRegistration **		p;
+		
+		p = DNSHostRegistrationFindObject( object );
+		*p = object->next;
+		DNSMemFree( object );
+	}
+	DNSServicesUnlock();
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSHostRegistrationRelease
+//===========================================================================================================================
+
+DNSStatus	DNSHostRegistrationRelease( DNSHostRegistrationRef inRef, DNSHostRegistrationFlags inFlags )
+{
+	DNSStatus						err;
+	DNSHostRegistrationRef *		p;
+	
+	DNSServicesLock();
+	require_action( gMDNSPtr, exit, err = kDNSNotInitializedErr );
+	require_action( inRef, exit, err = kDNSBadReferenceErr );
+	require_action( ( inFlags & ~kDNSHostRegistrationReleaseValidFlags ) == 0, exit, err = kDNSBadFlagsErr );
+	
+	// Decrement the reference count and if it drops to 0, remove the object and deregister with mDNS.
+	
+	p = DNSHostRegistrationFindObject( inRef );
+	inRef = *p;
+	require_action( inRef, exit, err = kDNSBadReferenceErr );
+	
+	check( inRef->refCount > 0 );
+	if( --inRef->refCount == 0 )
+	{
+		*p = inRef->next;
+		
+		mDNS_Deregister( gMDNSPtr, &inRef->RR_A );
+		mDNS_Deregister( gMDNSPtr, &inRef->RR_PTR );
+	
+		// Release the memory used by the object.
+		
+		DNSMemFree( inRef );
+	}
+	err = kDNSNoErr;
+	
+exit:
+	DNSServicesUnlock();
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSHostRegistrationFindObject
+//
+//	Warning: Assumes the DNS lock is held.
+//===========================================================================================================================
+
+mDNSlocal DNSHostRegistrationRef *	DNSHostRegistrationFindObject( DNSHostRegistrationRef inRef )
+{
+	DNSHostRegistration **		p;
+	
+	for( p = &gDNSHostRegistrationList; *p; p = &( *p )->next )
+	{
+		if( *p == inRef )
+		{
+			break;
+		}
+	}
+	return( p );
+}
+
+//===========================================================================================================================
+//	DNSHostRegistrationFindObjectByName
+//
+//	Warning: Assumes the DNS lock is held.
+//===========================================================================================================================
+
+mDNSlocal DNSHostRegistrationRef	DNSHostRegistrationFindObjectByName( const domainname *inName )
+{
+	DNSHostRegistration *		p;
+	
+	check( inName );
+	
+	for( p = gDNSHostRegistrationList; p; p = p->next )
+	{
+		if( SameDomainName( &p->RR_A.resrec.name, inName ) )
+		{
+			break;
+		}
+	}
+	return( p );
+}
+
+//===========================================================================================================================
+//	DNSHostRegistrationPrivateCallBack
+//===========================================================================================================================
+
+mDNSlocal void	DNSHostRegistrationPrivateCallBack( mDNS * const inMDNS, AuthRecord *const inRR, mStatus inResult )
+{	
+	DNSHostRegistrationRef		object;
+	
+	DNS_UNUSED( inMDNS );
+	
+	DNSServicesLock();
+	
+	// Exit if object is no longer valid. Should never happen.
+	
+	object = (DNSHostRegistrationRef) inRR->RecordContext;
+	require( object, exit );
+	
+	// Dispatch based on the status code.
+	
+	if( inResult == mStatus_NoError )
+	{
+		debugf( DEBUG_NAME "host registration callback: \"%##s\" name successfully registered", inRR->resrec.name.c );
+		if( object->callback )
+		{
+			object->callback( object->callbackContext, object, kDNSNoErr, mDNSNULL );
+		}
+	}
+	else if( inResult == mStatus_NameConflict )
+	{
+		debugf( DEBUG_NAME "host registration callback: \"%##s\" name conflict", inRR->resrec.name.c );
+		
+		if( object->flags & kDNSHostRegistrationFlagAutoRenameOnConflict )
+		{
+			DNSStatus		err;
+			domainname		name;
+			
+			// De-register any resource records still registered.
+			
+			if( object->RR_A.resrec.RecordType )
+			{
+				mDNS_Deregister( gMDNSPtr, &object->RR_A );
+			}
+			if( object->RR_PTR.resrec.RecordType )
+			{
+				mDNS_Deregister( gMDNSPtr, &object->RR_PTR );
+			}
+			
+			// Rename the host and re-register to try again.
+			
+			IncrementLabelSuffix( &object->name, mDNSfalse );
+			name.c[ 0 ] = 0;
+			AppendDomainLabel( &name, &object->name );
+			AppendDomainLabel( &name, &object->domain );
+			AssignDomainName( object->RR_PTR.resrec.name, name );
+			
+			err = mDNS_Register( gMDNSPtr, &object->RR_A );
+			check_noerr( err );
+			
+			err = mDNS_Register( gMDNSPtr, &object->RR_PTR );
+			check_noerr( err );
+		}
+		else
+		{
+			if( object->callback )
+			{
+				object->callback( object->callbackContext, object, kDNSNameConflictErr, mDNSNULL );
+			}
+		}
+	}
+	else
+	{
+		debugf( DEBUG_NAME "host registration callback: \"%##s\" unknown result", inRR->resrec.name.c, inResult );
+	}
+	
+exit:
+	DNSServicesUnlock();
+}
+
+#if 0
+#pragma mark -
+#pragma mark == Utilities ==
+#endif
+
+//===========================================================================================================================
+//	DNSMemAlloc
+//===========================================================================================================================
+
+mDNSlocal DNSStatus	DNSMemAlloc( size_t inSize, void *outMem )
+{
+	void *		mem;
+	
+	check( inSize > 0 );
+	check( outMem );
+	
+	mem = malloc( inSize );
+	*( (void **) outMem ) = mem;
+	if( mem )
+	{
+		return( kDNSNoErr );
+	}
+	return( kDNSNoMemoryErr );
+}
+
+//===========================================================================================================================
+//	DNSMemFree
+//===========================================================================================================================
+
+mDNSlocal void	DNSMemFree( void *inMem )
+{
+	check( inMem );
+	
+	free( inMem );
+}
+
+//===========================================================================================================================
+//	DNSDynamicTextRecordBuildEscaped
+//===========================================================================================================================
+
+DNSStatus	DNSDynamicTextRecordBuildEscaped( const char *inFormat, void *outTextRecord, size_t *outSize )
+{
+	DNSStatus		err;
+	size_t			size;
+	void *			textRecord;
+	
+	textRecord = NULL;
+
+	// Calculate the size of the built text record, allocate a buffer for it, then build it in that buffer.
+	
+	err = DNSTextRecordValidate( inFormat, 0x7FFFFFFF, NULL, &size );
+	require_noerr( err, exit );
+	
+	textRecord = malloc( size );
+	require_action( textRecord, exit, err = kDNSNoMemoryErr );
+	
+	err = DNSTextRecordValidate( inFormat, size, textRecord, &size );
+	require_noerr( err, exit );
+	
+	// Success!
+	
+	if( outTextRecord )
+	{
+		*( (void **) outTextRecord ) = textRecord;
+		textRecord = NULL;
+	}
+	if( outSize )
+	{
+		*outSize = size;
+	}
+	
+exit:
+	if( textRecord )
+	{
+		free( textRecord );
+	}
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSDynamicTextRecordAppendCString
+//===========================================================================================================================
+
+DNSStatus	DNSDynamicTextRecordAppendCString( void *ioTxt, size_t *ioTxtSize, const char *inName, const char *inValue )
+{
+	DNSStatus		err;
+	size_t			valueSize;
+	
+	require_action( inName, exit, err = kDNSBadParamErr );
+	require_action( inValue, exit, err = kDNSBadParamErr );
+	
+	if( inValue != kDNSTextRecordStringNoValue )
+	{
+		valueSize = strlen( inValue );
+	}
+	else
+	{
+		valueSize = kDNSTextRecordNoSize;
+	}
+	err = DNSDynamicTextRecordAppendData( ioTxt, ioTxtSize, inName, inValue, valueSize );
+	require_noerr( err, exit );
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSDynamicTextRecordAppendData
+//===========================================================================================================================
+
+DNSStatus
+	DNSDynamicTextRecordAppendData( 
+		void *			ioTxt, 
+		size_t * 		ioTxtSize, 
+		const char *	inName, 
+		const void *	inValue, 
+		size_t			inValueSize )
+{
+	DNSStatus		err;
+	size_t			oldSize;
+	size_t			newSize;
+	int				hasName;
+	int				hasValue;
+	void **			bufferPtr;
+	void *			newBuffer;
+	
+	require_action( ioTxt, exit, err = kDNSBadParamErr );
+	require_action( ioTxtSize, exit, err = kDNSBadParamErr );
+	require_action( inName, exit, err = kDNSBadParamErr );
+	
+	// Check for special flags to indicate no name or no value is used (e.g. "color" instead of "color=").
+	
+	hasName	 = ( inName != kDNSTextRecordStringNoValue ) && ( *inName != '\0' );
+	hasValue = ( inValue != kDNSTextRecordNoValue ) && ( inValueSize != kDNSTextRecordNoSize );
+	require_action( hasName || hasValue, exit, err = kDNSUnsupportedErr );
+	
+	// Calculate the size needed for the new data (old size + length byte + name size + '=' + value size).
+	
+	oldSize = *ioTxtSize;
+	newSize = oldSize + 1;				// add length byte size
+	if( hasName )
+	{
+		newSize += strlen( inName );	// add name size
+		if( hasValue )
+		{
+			newSize += 1;				// add '=' size
+		}
+	}
+	if( hasValue )
+	{
+		newSize += inValueSize;			// add value size
+	}
+	
+	// Reallocate the buffer to make room for the new data.
+	
+	bufferPtr = (void **) ioTxt;
+	newBuffer = realloc( *bufferPtr, newSize );
+	require_action( newBuffer, exit, err = kDNSNoMemoryErr );
+	*bufferPtr = newBuffer;
+	
+	err = DNSTextRecordAppendData( newBuffer, oldSize, newSize, inName, inValue, inValueSize, &newSize );
+	require_noerr( err, exit );
+	
+	// Success!
+	
+	*ioTxtSize = newSize;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSDynamicTextRecordRelease
+//===========================================================================================================================
+
+void	DNSDynamicTextRecordRelease( void *inTxt )
+{
+	if( inTxt )
+	{
+		free( inTxt );
+	}
+}
+
+//===========================================================================================================================
+//	DNSTextRecordAppendCString
+//===========================================================================================================================
+
+DNSStatus
+	DNSTextRecordAppendCString( 
+		void *			inTxt, 
+		size_t 			inTxtSize, 
+		size_t 			inTxtMaxSize, 
+		const char *	inName, 
+		const char *	inValue, 
+		size_t *		outTxtSize )
+{
+	DNSStatus		err;
+	size_t			valueSize;
+	
+	require_action( inName, exit, err = kDNSBadParamErr );
+	require_action( inValue, exit, err = kDNSBadParamErr );
+	
+	if( inValue != kDNSTextRecordStringNoValue )
+	{
+		valueSize = strlen( inValue );
+	}
+	else
+	{
+		valueSize = kDNSTextRecordNoSize;
+	}
+	err = DNSTextRecordAppendData( inTxt, inTxtSize, inTxtMaxSize, inName, inValue, valueSize, outTxtSize );
+	require_noerr( err, exit );
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSTextRecordAppendData
+//===========================================================================================================================
+
+DNSStatus
+	DNSTextRecordAppendData( 
+		void *			inTxt, 
+		size_t 			inTxtSize, 
+		size_t 			inTxtMaxSize, 
+		const char *	inName, 
+		const void *	inValue, 
+		size_t			inValueSize, 
+		size_t *		outTxtSize )
+{
+	DNSStatus			err;
+	mDNSu8 *			p;
+	int					hasName;
+	int					hasValue;
+	size_t 				size;
+	size_t				newSize;
+	const mDNSu8 *		q;
+	
+	require_action( inTxt, exit, err = kDNSBadParamErr );
+	require_action( inName, exit, err = kDNSBadParamErr );
+	
+	// Check for special flags to indicate no name or no value is used (e.g. "color" instead of "color=").
+	
+	hasName	 = ( inName != kDNSTextRecordStringNoValue ) && ( *inName != '\0' );
+	hasValue = ( inValue != kDNSTextRecordNoValue ) && ( inValueSize != kDNSTextRecordNoSize );
+	require_action( hasName || hasValue, exit, err = kDNSUnsupportedErr );
+	
+	// Calculate the size and make sure there is enough total room and enough room in an individual segment.
+
+	size = 0;
+	if( hasName )
+	{
+		size += strlen( inName );		// add name size
+		if( hasValue )
+		{
+			size += 1;					// add '=' size
+		}
+	}
+	if( hasValue )
+	{
+		size += inValueSize;			// add value size
+	}
+	newSize = inTxtSize + 1 + size;		// old size + length byte + new data
+	
+	require_action( size < 256, exit, err = kDNSNoMemoryErr );
+	require_action( newSize <= inTxtMaxSize, exit, err = kDNSNoMemoryErr );
+	
+	// Write the length-prefix byte containing the size of this segment.
+	
+	p = ( (mDNSu8 *) inTxt ) + inTxtSize;
+	*p++ = (mDNSu8) size;
+	
+	// Copy the name.
+	
+	if( hasName )
+	{
+		q = (const mDNSu8 *) inName;
+		while( *q != '\0' )
+		{
+			*p++ = *q++;
+		}
+		if( hasValue )
+		{
+			*p++ = '=';
+		}
+	}
+	if( hasValue )
+	{
+		// Copy the value.
+		
+		q = (const mDNSu8 *) inValue;
+		while( inValueSize-- > 0 )
+		{
+			*p++ = *q++;
+		}
+	}
+	
+	// Success!
+	
+	if( outTxtSize )
+	{
+		*outTxtSize = newSize;
+	}
+	err = kDNSNoErr;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSTextRecordEscape
+//===========================================================================================================================
+
+DNSStatus	DNSTextRecordEscape( const void *inTextRecord, size_t inTextSize, char **outEscapedString )
+{
+	DNSStatus				err;
+	const DNSUInt8 *		src;
+	const DNSUInt8 *		end;
+	DNSUInt8 *				dstStorage;
+	DNSUInt8 *				dst;
+	int						size;
+	
+	check( inTextRecord || ( inTextSize == 0 ) );
+	
+	// Mac OS X uses a single null-terminated string to hold all the text record data with a \001 byte to delimit 
+	// individual records within the entire block. The following code converts a packed array of length-prefixed 
+	// records into a single \001-delimited, null-terminated string. Allocate size + 1 for the null terminator.
+	
+	dstStorage = (DNSUInt8 *) malloc( inTextSize + 1 );
+	require_action( dstStorage, exit, err = kDNSNoMemoryErr );
+	dst = dstStorage;
+	
+	if( inTextSize > 0 )
+	{
+		src	= (const DNSUInt8 *) inTextRecord;
+		end = src + inTextSize;
+		while( src < end )
+		{
+			size = *src++;
+			if( ( src + size ) > end )
+			{
+				// Malformed TXT record. Most likely an old-style TXT record.
+				
+				src = NULL;
+				break;
+			}
+			while( size-- > 0 )
+			{
+				*dst++ = *src++;
+			}
+			*dst++ = '\001';	// \001 record separator. May be overwritten later if this is the last record.
+		}
+		check( ( dst - dstStorage ) <= inTextSize );
+		if( src != end )
+		{
+			// Malformed TXT record. Assume an old-style TXT record and use the TXT record as a whole.
+			
+			memcpy( dstStorage, inTextRecord, inTextSize );
+			dstStorage[ inTextSize ] = '\0';
+		}
+		else
+		{
+			dstStorage[ inTextSize - 1 ] = '\0';
+		}
+	}
+	else
+	{
+		// No text record data so just return an empty string.
+		
+		*dst = '\0';
+	}
+	
+	// Success!
+	
+	if( outEscapedString )
+	{
+		*outEscapedString = (char *) dstStorage;
+		dstStorage = NULL;
+	}
+	err = kDNSNoErr;
+
+exit:
+	if( dstStorage )
+	{
+		free( dstStorage );
+	}
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSNameValidate
+//===========================================================================================================================
+
+DNSStatus	DNSNameValidate( const char *inName )
+{
+	DNSStatus		err;
+	mDNSu8 *		p;
+	domainname		name;
+		
+	p = MakeDomainNameFromDNSNameString( &name, inName );
+	if( p )
+	{
+		err = kDNSNoErr;
+	}
+	else
+	{
+		err = kDNSBadParamErr;
+	}
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSServiceTypeValidate
+//===========================================================================================================================
+
+DNSStatus	DNSServiceTypeValidate( const char *inServiceType )
+{
+	DNSStatus		err;
+	mDNSu8 *		p;
+	domainname		type;
+	domainname		domain;
+	domainname		fqdn;
+	
+	// Construct a fake fully-qualified domain name with a known good domain and the service type to be verified since 
+	// there is currently no canned way to test just a service type by itself.
+	
+	p = MakeDomainNameFromDNSNameString( &type, inServiceType );
+	if( !p )
+	{
+		err = kDNSBadParamErr;
+		goto exit;
+	}
+	
+	p = MakeDomainNameFromDNSNameString( &domain, "local." );
+	if( !p )
+	{
+		err = kDNSBadParamErr;
+		goto exit;
+	}
+	
+	p = ConstructServiceName( &fqdn, mDNSNULL, &type, &domain );
+	if( !p )
+	{
+		err = kDNSBadParamErr;
+		goto exit;
+	}
+	
+	err = kDNSNoErr;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	DNSTextRecordValidate
+//===========================================================================================================================
+
+DNSStatus	DNSTextRecordValidate( const char *inText, size_t inMaxSize, void *outRecord, size_t *outActualSize )
+{
+	DNSStatus			err;
+	const mDNSu8 *		p;
+	size_t				totalSize;
+	mDNSu8				sectionSize;
+	mDNSu8 *			dst;
+	mDNSu8 *			section;
+	
+	require_action( inText, exit, err = kDNSBadParamErr );
+	
+	// A DNS TXT record consists of a packed block of length-prefixed strings of up to 255 characters each. To allow 
+	// this to be described with a null-terminated C-string, a special escape sequence of \001 is used to separate 
+	// individual character strings within the C-string.
+	
+	totalSize 	= 0;
+	sectionSize = 0;
+	dst			= (mDNSu8 *) outRecord;
+	section		= dst;
+	
+	p = (const mDNSu8 *) inText;	
+	while( *p != '\0' )
+	{
+		++totalSize;
+		if( totalSize >= inMaxSize )
+		{
+			err = kDNSBadParamErr;
+			goto exit;
+		}
+				
+		if( *p == '\001' )
+		{
+			// Separator Escape sequence, start a new string section.
+			
+			if( sectionSize <= 0 )
+			{
+				err = kDNSBadParamErr;
+				goto exit;
+			}
+			sectionSize = 0;
+			if( section )
+			{
+				section = &dst[ totalSize ];
+				section[ 0 ] = 0;
+			}
+		}
+		else
+		{
+			if( sectionSize >= 255 )
+			{
+				err = kDNSBadParamErr;
+				goto exit;
+			}
+			++sectionSize;
+			if( section )
+			{
+				section[ 0 ] = sectionSize;
+				section[ sectionSize ] = *p;
+			}
+		}
+		++p;
+	}
+	++totalSize;
+	
+	// Success!
+	
+	if( outActualSize )
+	{
+		*outActualSize = totalSize;
+	}
+	err = kDNSNoErr;
+	
+exit:
+	return( err );
+}
+
+//===========================================================================================================================
+//	MDNSAddrToDNSAddress
+//===========================================================================================================================
+
+mDNSlocal void	MDNSAddrToDNSAddress( const mDNSAddr *inAddr, DNSNetworkAddress *outAddr )
+{
+	switch( inAddr->type )
+	{
+		case mDNSAddrType_IPv4:
+			outAddr->addressType		= kDNSNetworkAddressTypeIPv4;
+			outAddr->u.ipv4.addr.v32 	= inAddr->ip.v4.NotAnInteger;
+			break;
+		
+		case mDNSAddrType_IPv6:
+			outAddr->addressType			= kDNSNetworkAddressTypeIPv6;
+			outAddr->u.ipv6.addr.v32[ 0 ] 	= inAddr->ip.v6.l[ 0 ];
+			outAddr->u.ipv6.addr.v32[ 1 ] 	= inAddr->ip.v6.l[ 1 ];
+			outAddr->u.ipv6.addr.v32[ 2 ] 	= inAddr->ip.v6.l[ 2 ];
+			outAddr->u.ipv6.addr.v32[ 3 ] 	= inAddr->ip.v6.l[ 3 ];
+			break;
+		
+		default:
+			outAddr->addressType = kDNSNetworkAddressTypeInvalid;
+			break;
+	}
+}
+
+#ifdef	__cplusplus
+	}
+#endif
