@@ -33,7 +33,10 @@
 #define IDS_YES                         123
 #define IDS_NO                          124
 #define IDS_LARGE_FONT                  125
+#define IDS_FIREWALL                    126
+#define IDS_ERROR_CAPTION               127
 #define IDR_MAINFRAME                   128
+#define IDS_FIREWALL_CAPTION            128
 #define IDB_BANNER_ICON                 129
 #define IDD_THIRD_PAGE                  130
 #define IDB_WATERMARK                   131
@@ -58,6 +61,7 @@
 #define IDC_PRINTER_MODEL               1020
 #define IDC_GOODBYE                     1021
 #define IDC_PRINTER_PORT                1022
+#define IDC_PRINTER_PROTOCOL            1022
 #define IDC_PRINTER_DEFAULT             1023
 #define IDC_PRINTER_SELECTION_TEXT      1024
 #define IDC_HAVE_DISK                   1025
