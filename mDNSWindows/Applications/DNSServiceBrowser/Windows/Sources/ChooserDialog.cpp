@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ChooserDialog.cpp,v $
+Revision 1.9  2004/03/07 05:51:04  bradley
+Updated service type list table to include all service types from dns-sd.org as of 2004-03-06.
+Added separate Service Type and Service Description columns so both are show in the window.
+
 Revision 1.8  2004/01/30 02:56:32  bradley
 Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
 
@@ -117,29 +121,25 @@ enum
 
 // Domain List
 	
-#define kDomainListDefaultDomainColumnIndex			0
-#define kDomainListDefaultDomainColumnWidth		 	164 
+#define kDomainListDefaultDomainColumnWidth		 		164 
 	
 // Service List
-	
-#define kServiceListDefaultServiceColumnIndex		0
-#define kServiceListDefaultServiceColumnWidth		164
+
+#define kServiceListDefaultServiceColumnTypeWidth		146
+#define kServiceListDefaultServiceColumnDescWidth		230
 	
 // Chooser List
 	
-#define kChooserListDefaultNameColumnIndex			0
-#define kChooserListDefaultNameColumnWidth			190
-	
-#define kChooserListDefaultIPColumnIndex			1
-#define kChooserListDefaultIPColumnWidth			120
+#define kChooserListDefaultNameColumnWidth				190
+#define kChooserListDefaultIPColumnWidth				120
 
 // Windows User Messages
 
-#define	WM_USER_DOMAIN_ADD							( WM_USER + 0x100 )
-#define	WM_USER_DOMAIN_REMOVE						( WM_USER + 0x101 )
-#define	WM_USER_SERVICE_ADD							( WM_USER + 0x102 )
-#define	WM_USER_SERVICE_REMOVE						( WM_USER + 0x103 )
-#define	WM_USER_RESOLVE								( WM_USER + 0x104 )
+#define	WM_USER_DOMAIN_ADD								( WM_USER + 0x100 )
+#define	WM_USER_DOMAIN_REMOVE							( WM_USER + 0x101 )
+#define	WM_USER_SERVICE_ADD								( WM_USER + 0x102 )
+#define	WM_USER_SERVICE_REMOVE							( WM_USER + 0x103 )
+#define	WM_USER_RESOLVE									( WM_USER + 0x104 )
 
 #if 0
 #pragma mark == Constants - Service Table ==
@@ -159,54 +159,138 @@ struct	KnownServiceEntry
 
 static const KnownServiceEntry		kKnownServiceTable[] =
 {
-	{ "_async._tcp", 			"address-o-sync", 					"", 			false },
-	{ "_airport._tcp.", 		"AirPort Base Station",				"acp://", 		false }, 
-	{ "_afpovertcp._tcp.", 		"Apple File Sharing (AFP)", 		"afp://", 		false },
-	{ "_apple-sasl._tcp.", 		"Apple Password Server", 			"", 			false },
-	{ "_aquamon._tcp.", 		"AquaMon", 							"", 			false },
-	{ "_teamlist._tcp", 		"ARTIS Team Task",					"", 			false },
-	{ "_clipboard._tcp", 		"Clipboard Sharing", 				"", 			false },
-	{ "_cvspserver._tcp", 		"CVS PServer", 						"", 			false },
-	{ "_distcc._tcp", 			"Distributed Compiler", 			"", 			false },
-	{ "_ftp._tcp.", 			"File Transfer (FTP)", 				"ftp://", 		false }, 
-	{ "_chfts._tcp", 			"Fluid Theme Server", 				"", 			false },
-	{ "_hotwayd._tcp", 			"Hotwayd", 							"", 			false },
-	{ "_ichalkboard._tcp.", 	"iChalk",							"", 			false }, 
-	{ "_ichat._tcp.", 			"iChat",				 			"ichat://",		false }, 
-	{ "_presence._tcp", 		"iChat AV", 						"", 			false },
-	{ "_iconquer._tcp.",	 	"iConquer",							"", 			false }, 
-	{ "_ica-networking._tcp.", 	"Image Capture Networking",			"", 			false }, 
-	{ "_istorm._tcp", 			"iStorm", 							"", 			false },
-	{ "_daap._tcp.", 			"iTunes Music Sharing (DAAP)",		"daap://",		false }, 
-	{ "_workstation._tcp", 		"Macintosh Manager",				"", 			false },
-	{ "_mp3sushi._tcp", 		"MP3 Sushi", 						"", 			false },
-	{ "_nfs._tcp", 				"NFS", 								"", 			false },
-	{ "_shoutcast._tcp", 		"Nicecast", 						"", 			false },
-	{ "_ptp._tcp.", 			"Picture Transfer (PTP)", 			"ptp://", 		false },
-	{ "_pop3._tcp", 			"POP3 Server", 						"", 			false },
-	{ "_postgresql._tcp", 		"PostgreSQL Server", 				"", 			false },
-	{ "_tce._tcp", 				"Power Card", 						"", 			false },
-	{ "_ipp._tcp.", 			"Printer (IPP)", 					"ipp://", 		false },
-	{ "_printer._tcp.", 		"Printer (LPR)", 					"lpr://", 		false }, 
-	{ "_pdl-datastream._tcp.", 	"Printer (PDL)", 					"pdl://", 		false }, 
-	{ "_chess._tcp", 			"Project Gridlock", 				"", 			false },
-	{ "_eppc._tcp.", 			"Remote AppleEvents", 				"eppc://", 		false }, 
-	{ "_rendezvouspong._tcp", 	"RendezvousPong", 					"", 			false },
-	{ "_safarimenu._tcp", 		"Safari Menu", 						"", 			false },
-	{ "_ssscreenshare._tcp", 	"Screen Sharing", 					"", 			false },
-	{ "_ssh._tcp.", 			"Secure Shell (SSH)", 				"ssh://", 		false }, 
-	{ "_hydra._tcp", 			"SubEthaEdit", 						"", 			false },
-	{ "_sybase-tds._tcp", 		"Sybase Server", 					"", 			false },
-	{ "_telnet._tcp.", 			"Telnet", 							"telnet://", 	false }, 
-	{ "_tivo_servemedia._tcp", 	"TiVo",								"", 			false },
-	{ "_tftp._tcp.", 			"Trivial File Transfer (TFTP)", 	"tftp://", 		false }, 
-	{ "_rfb._tcp.",				"VNC Remote Frame Buffer",			"vnc://",		false },
-	{ "_vue4rendercow._tcp",	"VueProRenderCow",					"", 			false },
-	{ "_webdav._tcp.", 			"WebDAV", 							"webdav://",	false  }, 
-	{ "_http._tcp.", 			"Web Server (HTTP)", 				"http://", 		true  }, 
-	{ "_smb._tcp.", 			"Windows File Sharing (SMB)", 		"smb://", 		false }, 
-	{ "_xserveraid._tcp.", 		"Xserve RAID",						"xsr://", 		false }, 
-	{ NULL,						NULL,								NULL,			false }, 
+	{ "_accountedge._tcp.",	 		"MYOB AccountEdge", 										"", 			false },
+	{ "_aecoretech._tcp.", 			"Apple Application Engineering Services",					"", 			false },
+	{ "_afpovertcp._tcp.", 			"Apple File Sharing (AFP)", 								"afp://", 		false },
+	{ "_airport._tcp.", 			"AirPort Base Station",										"", 			false }, 
+	{ "_apple-sasl._tcp.", 			"Apple Password Server", 									"", 			false },
+	{ "_aquamon._tcp.", 			"AquaMon", 													"", 			false },
+	{ "_async._tcp", 				"address-o-sync", 											"", 			false },
+	{ "_auth._tcp.", 				"Authentication Service",									"", 			false },
+	{ "_bootps._tcp.", 				"Bootstrap Protocol Server",								"", 			false },
+	{ "_bousg._tcp.", 				"Bag Of Unusual Strategy Games",							"", 			false },
+	{ "_browse._udp.", 				"DNS Service Discovery",									"", 			false },
+	{ "_cheat._tcp.", 				"The Cheat",												"", 			false },
+	{ "_chess._tcp", 				"Project Gridlock", 										"", 			false },
+	{ "_chfts._tcp", 				"Fluid Theme Server", 										"", 			false },
+	{ "_clipboard._tcp", 			"Clipboard Sharing", 										"", 			false },
+	{ "_contactserver._tcp.", 		"Now Up-to-Date & Contact",									"", 			false },
+	{ "_cvspserver._tcp", 			"CVS PServer", 												"", 			false },
+	{ "_cytv._tcp.", 				"CyTV Network streaming for Elgato EyeTV",					"", 			false },
+	{ "_daap._tcp.", 				"Digital Audio Access Protocol (iTunes)",					"daap://",		false }, 
+	{ "_distcc._tcp", 				"Distributed Compiler", 									"", 			false },
+	{ "_dns-sd._udp", 				"DNS Service Discovery", 									"", 			false },
+	{ "_dpap._tcp.", 				"Digital Picture Access Protocol (iPhoto)",					"", 			false },
+	{ "_earphoria._tcp.", 			"Earphoria",												"", 			false },
+	{ "_ecbyesfsgksc._tcp.", 		"Net Monitor Anti-Piracy Service",							"",				false },
+	{ "_eheap._tcp.", 				"Interactive Room Software",								"",				false },
+	{ "_embrace._tcp.", 			"DataEnvoy",												"",				false },
+	{ "_eppc._tcp.", 				"Remote AppleEvents", 										"eppc://", 		false }, 
+	{ "_exec._tcp.", 				"Remote Process Execution",									"",				false },
+	{ "_facespan._tcp.", 			"FaceSpan",													"",				false },
+	{ "_fjork._tcp.", 				"Fjork",													"",				false },
+	{ "_ftp._tcp.", 				"File Transfer (FTP)", 										"ftp://", 		false }, 
+	{ "_ftpcroco._tcp.", 			"Crocodile FTP Server",										"",				false },
+	{ "_gbs-smp._tcp.", 			"SnapMail",													"",				false },
+	{ "_gbs-stp._tcp.", 			"SnapTalk",													"",				false },
+	{ "_grillezvous._tcp.", 		"Roxio ToastAnywhere(tm) Recorder Sharing",					"",				false },
+	{ "_h323._tcp.", 				"H.323",													"",				false },
+	{ "_hotwayd._tcp", 				"Hotwayd", 													"", 			false },
+	{ "_http._tcp.", 				"Web Server (HTTP)", 										"http://", 		true  }, 
+	{ "_hydra._tcp", 				"SubEthaEdit", 												"", 			false },
+	{ "_ica-networking._tcp.", 		"Image Capture Networking",									"", 			false }, 
+	{ "_ichalkboard._tcp.", 		"iChalk",													"", 			false }, 
+	{ "_ichat._tcp.", 				"iChat",				 									"ichat://",		false }, 
+	{ "_iconquer._tcp.",	 		"iConquer",													"", 			false }, 
+	{ "_imap._tcp.", 				"Internet Message Access Protocol",							"",				false },
+	{ "_imidi._tcp.", 				"iMidi",													"",				false },
+	{ "_ipp._tcp.", 				"Printer (IPP)", 											"ipp://", 		false },
+	{ "_ishare._tcp.", 				"iShare",													"",				false },
+	{ "_isparx._tcp.", 				"iSparx",													"",				false },
+	{ "_istorm._tcp", 				"iStorm", 													"", 			false },
+	{ "_iwork._tcp.", 				"iWork Server",												"",				false },
+	{ "_liaison._tcp.", 			"Liaison",													"",				false },
+	{ "_login._tcp.", 				"Remote Login a la Telnet",									"",				false },
+	{ "_lontalk._tcp.", 			"LonTalk over IP (ANSI 852)",								"",				false },
+	{ "_lonworks._tcp.", 			"Echelon LNS Remote Client",								"",				false },
+	{ "_macfoh-remote._tcp.", 		"MacFOH Remote",											"",				false },
+	{ "_moneyworks._tcp.", 			"MoneyWorks",												"",				false },
+	{ "_mp3sushi._tcp", 			"MP3 Sushi", 												"", 			false },
+	{ "_mttp._tcp.", 				"MenuTunes Sharing",										"",				false },
+	{ "_ncbroadcast._tcp.", 		"Network Clipboard Broadcasts",								"",				false },
+	{ "_ncdirect._tcp.", 			"Network Clipboard Direct Transfers",						"",				false },
+	{ "_ncsyncserver._tcp.", 		"Network Clipboard Sync Server",							"",				false },
+	{ "_newton-dock._tcp.", 		"Escale",													"",				false },
+	{ "_nfs._tcp", 					"NFS", 														"", 			false },
+	{ "_nssocketport._tcp.", 		"DO over NSSocketPort",										"",				false },
+	{ "_omni-bookmark._tcp.", 		"OmniWeb",													"",				false },
+	{ "_openbase._tcp.", 			"OpenBase SQL",												"",				false },
+	{ "_p2pchat._tcp.", 			"Peer-to-Peer Chat",										"",				false },
+	{ "_pdl-datastream._tcp.", 		"Printer (PDL)", 											"pdl://", 		false }, 
+	{ "_poch._tcp.", 				"Parallel OperatiOn and Control Heuristic",					"",				false },
+	{ "_pop_2_ambrosia._tcp.",		"Pop-Pop",													"",				false },
+	{ "_pop3._tcp", 				"POP3 Server", 												"", 			false },
+	{ "_postgresql._tcp", 			"PostgreSQL Server", 										"", 			false },
+	{ "_presence._tcp", 			"iChat AV", 												"", 			false },
+	{ "_printer._tcp.", 			"Printer (LPR)", 											"lpr://", 		false }, 
+	{ "_ptp._tcp.", 				"Picture Transfer (PTP)", 									"ptp://", 		false },
+	{ "_register._tcp", 			"DNS Service Discovery", 									"", 			false },
+	{ "_rendezvouspong._tcp",	 	"RendezvousPong", 											"", 			false },
+	{ "_rfb._tcp.", 				"Remote Frame Buffer",										"",				false },
+	{ "_riousbprint._tcp.", 		"Remote I/O USB Printer Protocol",							"",				false },
+	{ "_rtsp._tcp.", 				"Real Time Stream Control Protocol",						"",				false },
+	{ "_safarimenu._tcp", 			"Safari Menu", 												"", 			false },
+	{ "_scone._tcp", 				"Scone", 													"", 			false },
+	{ "_sdsharing._tcp.", 			"Speed Download",											"",				false },
+	{ "_seeCard._tcp.", 			"seeCard",													"",				false },
+	{ "_services._udp.", 			"DNS Service Discovery",									"",				false },
+	{ "_shell._tcp.", 				"like exec, but automatic authentication",					"",				false },
+	{ "_shout._tcp.", 				"Shout",													"",				false },
+	{ "_shoutcast._tcp", 			"Nicecast", 												"", 			false },
+	{ "_smb._tcp.", 				"Windows File Sharing (SMB)", 								"smb://", 		false }, 
+	{ "_soap._tcp.", 				"Simple Object Access Protocol", 							"", 			false }, 
+	{ "_spincrisis._tcp.", 			"Spin Crisis",												"",				false },
+	{ "_spl-itunes._tcp.", 			"launchTunes",												"",				false },
+	{ "_spr-itunes._tcp.", 			"netTunes",													"",				false },
+	{ "_ssh._tcp.", 				"Secure Shell (SSH)", 										"ssh://", 		false }, 
+	{ "_ssscreenshare._tcp", 		"Screen Sharing", 											"", 			false },
+	{ "_sge-exec._tcp", 			"Sun Grid Engine (Execution Host)", 						"", 			false },
+	{ "_sge-qmaster._tcp", 			"Sun Grid Engine (Master)", 								"", 			false },
+	{ "_stickynotes._tcp", 			"Sticky Notes", 											"", 			false },
+	{ "_strateges._tcp", 			"Strateges", 												"", 			false },
+	{ "_sxqdea._tcp", 				"Synchronize! Pro X", 										"", 			false },
+	{ "_sybase-tds._tcp", 			"Sybase Server", 											"", 			false },
+	{ "_tce._tcp", 					"Power Card", 												"", 			false },
+	{ "_teamlist._tcp", 			"ARTIS Team Task",											"", 			false },
+	{ "_teleport._tcp", 			"teleport",													"", 			false },
+	{ "_telnet._tcp.", 				"Telnet", 													"telnet://", 	false }, 
+	{ "_tftp._tcp.", 				"Trivial File Transfer (TFTP)", 							"tftp://", 		false }, 
+	{ "_tinavigator._tcp.", 		"TI Navigator", 											"", 			false }, 
+	{ "_tivo_servemedia._tcp", 		"TiVo",														"", 			false },
+	{ "_upnp._tcp.", 				"Universal Plug and Play", 									"", 			false }, 
+	{ "_utest._tcp.", 				"uTest", 													"", 			false }, 
+	{ "_vue4rendercow._tcp",		"VueProRenderCow",											"", 			false },
+	{ "_webdav._tcp.", 				"WebDAV", 													"webdav://",	false }, 
+	{ "_whamb._tcp.", 				"Whamb", 													"",				false }, 
+	{ "_workstation._tcp", 			"Macintosh Manager",										"", 			false },
+	{ "_ws._tcp", 					"Web Services",												"", 			false },
+	{ "_xserveraid._tcp.", 			"Xserve RAID",												"xsr://", 		false }, 
+	{ "_xsync._tcp.",	 			"Xserve RAID Synchronization",								"",		 		false }, 
+	
+	{ "",	 						"",															"",		 		false }, 
+	
+	// Unofficial and invalid service types that will be phased out:
+	
+	{ "_clipboardsharing._tcp.",			"ClipboardSharing",									"",		 		false }, 
+	{ "_MacOSXDupSuppress._tcp.",			"Mac OS X Duplicate Suppression",					"",		 		false }, 
+	{ "_netmonitorserver._tcp.",			"Net Monitor Server",								"",		 		false }, 
+	{ "_networkclipboard._tcp.",			"Network Clipboard",								"",		 		false }, 
+	{ "_slimdevices_slimp3_cli._tcp.",		"SliMP3 Server Command-Line Interface",				"",		 		false }, 
+	{ "_slimdevices_slimp3_http._tcp.",		"SliMP3 Server Web Interface",						"",		 		false }, 
+	{ "_tieducationalhandhelddevice._tcp.",	"TI Connect Manager",								"",		 		false }, 
+	{ "_tivo_servemedia._tcp.",				"TiVo",												"",		 		false }, 
+	
+	{ NULL,							NULL,														NULL,			false }, 
 };
 
 #if 0
@@ -370,9 +454,13 @@ BOOL	ChooserDialog::OnInitDialog( void )
 	
 	// Set up the Service List.
 	
-	result = tempString.LoadString( IDS_CHOOSER_SERVICE_COLUMN_NAME );
+	result = tempString.LoadString( IDS_CHOOSER_SERVICE_COLUMN_TYPE );
 	assert( result );
-	mServiceList.InsertColumn( 0, tempString, LVCFMT_LEFT, kServiceListDefaultServiceColumnWidth );
+	mServiceList.InsertColumn( 0, tempString, LVCFMT_LEFT, kServiceListDefaultServiceColumnTypeWidth );
+	
+	result = tempString.LoadString( IDS_CHOOSER_SERVICE_COLUMN_DESC );
+	assert( result );
+	mServiceList.InsertColumn( 1, tempString, LVCFMT_LEFT, kServiceListDefaultServiceColumnDescWidth );
 	
 	PopulateServicesList();
 	
@@ -566,13 +654,17 @@ void	ChooserDialog::OnServiceListChanged( NMHDR *pNMHDR, LRESULT *pResult )
 	
 	if( ( selectedType >= 0 ) && ( selectedDomain >= 0 ) )
 	{
-		CString			s;
-		std::string		utf8;
+		CString				s;
+		std::string			utf8;
+		const char *		type;
 		
 		s = mDomainList.GetItemText( selectedDomain, 0 );
 		StringObjectToUTF8String( s, utf8 );
-		
-		StartBrowsing( mServiceTypes[ selectedType ].serviceType.c_str(), utf8.c_str() );
+		type = mServiceTypes[ selectedType ].serviceType.c_str();
+		if( *type != '\0' )
+		{
+			StartBrowsing( type, utf8.c_str() );
+		}
 	}
 	
 	if( pResult )
@@ -720,7 +812,9 @@ void ChooserDialog::OnCancel()
 void	ChooserDialog::PopulateServicesList( void )
 {
 	ServiceTypeVector::iterator		i;
-	CString							name;
+	CString							type;
+	CString							desc;
+	std::string						tmp;
 	
 	// Add a fixed list of known services.
 	
@@ -743,8 +837,22 @@ void	ChooserDialog::PopulateServicesList( void )
 	
 	for( i = mServiceTypes.begin(); i != mServiceTypes.end(); ++i )
 	{
-		UTF8StringToStringObject( ( *i ).description.c_str(), name );
-		mServiceList.InsertItem( mServiceList.GetItemCount(), name );
+		const char *		p;
+		const char *		q;
+		
+		p  = ( *i ).serviceType.c_str();
+		if( *p == '_' ) ++p;							// Skip leading '_'.
+		q  = strchr( p, '.' );							// Find first '.'.
+		if( q )	tmp.assign( p, (size_t)( q - p ) );		// Use only up to the first '.'.
+		else	tmp.assign( p );						// No '.' so use the entire string.
+		UTF8StringToStringObject( tmp.c_str(), type );
+		UTF8StringToStringObject( ( *i ).description.c_str(), desc );
+		
+		int		n;
+		
+		n = mServiceList.GetItemCount();
+		mServiceList.InsertItem( n, type );
+		mServiceList.SetItemText( n, 1, desc );
 	}
 	
 	// Select the first service type by default.
