@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.134  2003/08/21 20:01:37  cheshire
+<rdar://problem/3387941> Traffic reduction: Detect long-lived Resolve() calls, and report them in syslog
+
 Revision 1.133  2003/08/20 23:39:31  cheshire
 <rdar://problem/3344098> Review syslog messages, and remove as appropriate
 
@@ -281,6 +284,7 @@ struct DNSServiceResolver_struct
 	mach_port_t ClientMachPort;
 	ServiceInfoQuery q;
 	ServiceInfo      i;
+	mDNSs32          ReportTime;
 	};
 
 typedef struct DNSServiceRegistration_struct DNSServiceRegistration;
@@ -830,6 +834,11 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 	x->ClientMachPort = client;
 	x->i.InterfaceID = mDNSInterface_Any;
 	x->i.name = srv;
+	x->ReportTime = (mDNSPlatformTimeNow() + 130 * mDNSPlatformOneSecond) | 1;
+	// Don't report errors for old iChat ("_ichat._tcp") service.
+	// New iChat ("_presence._tcp") uses DNSServiceQueryRecord() (from /usr/include/dns_sd.h) instead,
+	// and so should other applications that have valid reasons to be doing ongoing record monitoring.
+	if (SameDomainLabel(t.c, (mDNSu8*)"\x6_ichat")) x->ReportTime = 0;
 	x->next = DNSServiceResolverList;
 	DNSServiceResolverList = x;
 
@@ -1536,6 +1545,8 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 	// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
 	mDNSs32 nextevent = mDNS_Execute(&mDNSStorage);
 
+	mDNSs32 now = mDNSPlatformTimeNow();
+
 	// 2. Deliver any waiting browse messages to clients
 	DNSServiceBrowser *b = DNSServiceBrowserList;
 
@@ -1548,7 +1559,6 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 		b = b->next;
 		if (x->results)			// Try to deliver the list of results
 			{
-			mDNSs32 now = mDNSPlatformTimeNow();
 			while (x->results)
 				{
 				DNSServiceBrowserResult *const r = x->results;
@@ -1573,6 +1583,15 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 				AbortBlockedClient(x->ClientMachPort, "browse", x);
 			}
 		}
+
+	DNSServiceResolver *l;
+	for (l = DNSServiceResolverList; l; l=l->next)
+		if (l->ReportTime && now - l->ReportTime >= 0)
+			{
+			l->ReportTime = 0;
+			LogMsg("%5d: DNSServiceResolver(%##s) has remained active for over two minutes. "
+				"This places considerable burden on the network.", l->ClientMachPort, l->i.name.c);
+			}
 
 	return(nextevent);
 	}
