@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.h,v $
+Revision 1.2  2004/06/27 14:59:59  shersche
+reference count service info to handle multi-homed hosts
+
 Revision 1.1  2004/06/18 04:34:59  rpantos
 Move to Clients from mDNSWindows
 
@@ -68,6 +71,7 @@ struct	ServiceInfo
 	uint32_t					ifi;
 	HTREEITEM					item;
 	ServiceHandlerEntry *		handler;
+	DWORD						refs;
 	
 	ServiceInfo( void )
 	{

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.3  2004/06/27 14:59:59  shersche
+reference count service info to handle multi-homed hosts
+
 Revision 1.2  2004/06/23 16:09:34  shersche
 Add the resolve DNSServiceRef to list of extant refs.  This fixes the "doesn't resolve when double clicking" problem
 
@@ -405,6 +408,8 @@ void DNSSD_API
 		
 		service->ifi 		= inInterfaceIndex;
 		service->handler	= obj;
+
+		service->refs		= 1;
 		
 		if (inFlags & kDNSServiceFlagsAdd)
 		{
@@ -460,12 +465,10 @@ LONG	ExplorerBarWindow::OnServiceAdd( ServiceInfo * service )
 		
 		index -= 1;
 		check( index < handler->array.GetSize() );
-		
-		service->item = handler->array[ index ]->item;
-		delete handler->array[ index ];
-		handler->array[ index ] = service;
-		mTree.SetItemText( service->item, service->displayName );
-		mTree.SetItemData( service->item, (DWORD_PTR) service );
+
+		handler->array[ index ]->refs++;
+
+		delete service;
 	}
 	else
 	{
@@ -508,7 +511,7 @@ LONG	ExplorerBarWindow::OnServiceRemove( ServiceInfo * service )
 	
 	cmp = FindServiceArrayIndex( handler->array, *service, index );
 	check( cmp == 0 );
-	if( cmp == 0 )
+	if( ( cmp == 0 ) && ( --handler->array[ index ]->refs == 0 ) )
 	{
 		// Found a match remove the item. The index is index + 1 so subtract 1.
 		
@@ -519,6 +522,7 @@ LONG	ExplorerBarWindow::OnServiceRemove( ServiceInfo * service )
 		delete handler->array[ index ];
 		handler->array.RemoveAt( index );
 	}
+
 	delete service;
 	return( 0 );
 }
@@ -542,7 +546,7 @@ OSStatus	ExplorerBarWindow::StartResolve( ServiceInfo *inService )
 	StopResolve();
 	
 	// Resolve the service.
-	err = DNSServiceResolve( &mResolveServiceRef, 0, inService->ifi, 
+	err = DNSServiceResolve( &mResolveServiceRef, 0, 0, 
 		inService->name, inService->type, inService->domain, (DNSServiceResolveReply) ResolveCallBack, inService->handler );
 	require_noerr( err, exit );
 
@@ -763,10 +767,12 @@ DEBUG_LOCAL int	FindServiceArrayIndex( const ServiceInfoArray &inArray, const Se
 	{
 		mid = ( lo + hi ) / 2;
 		result = inService.displayName.CompareNoCase( inArray[ mid ]->displayName );
+/*
 		if( result == 0 )
 		{
 			result = ( (int) inService.ifi ) - ( (int) inArray[ mid ]->ifi );
 		}
+*/
 		if( result == 0 )
 		{
 			break;
