@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.123  2003/11/20 22:53:01  cheshire
+Add comment about MAX_ESCAPED_DOMAIN_LABEL
+
 Revision 1.122  2003/11/20 20:49:53  cheshire
 Another fix from HP: Use packedstruct macro to ensure proper packing for on-the-wire packet structures
 
@@ -612,6 +615,8 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // If every character has to be represented as a four-byte escape sequence, then this makes the maximum textual form four labels
 // plus the C-string terminating NULL as shown below:
 // 63*4+1 + 63*4+1 + 63*4+1 + 61*4+1 + 1 = 1005.
+// Note that MAX_ESCAPED_DOMAIN_LABEL is not normally used: If you're only decoding a single label, escaping is usually not required.
+// It is for domain names, where dots are used as label separators, that proper escaping is vital.
 #define MAX_ESCAPED_DOMAIN_LABEL 254
 #define MAX_ESCAPED_DOMAIN_NAME 1005
 
