@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.49  2004/08/25 16:43:29  ksekar
+Fix Windows build - change mDNS_SetFQDNs to mDNS_SetFQDN, remove unicast
+hostname parameter.
+
 Revision 1.48  2004/08/14 03:22:43  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -1150,7 +1154,7 @@ mDNSlocal mStatus	SetupHostName( mDNS * const inMDNS )
 
 	check( inMDNS->hostlabel.c[ 0 ] != 0 );
 	
-	mDNS_SetFQDNs( inMDNS, (domainname*)"" );
+	mDNS_SetFQDN( inMDNS );
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "host name \"%.*s\"\n", inMDNS->hostlabel.c[ 0 ], &inMDNS->hostlabel.c[ 1 ] );
 	
