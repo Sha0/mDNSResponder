@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.289  2005/01/25 18:08:31  ksekar
+Removed redundant debug output
+
 Revision 1.288  2005/01/25 17:42:26  ksekar
 Renamed FoundDefBrowseDomain -> FoundLegacyBrowseDomain,
 cleaned up duplicate log messages when adding/removing browse domains
@@ -2756,7 +2759,7 @@ mDNSlocal void SetSCPrefsBrowseDomainsFromCFArray(mDNS *m, CFArrayRef browseDoma
 					domainname BrowseDomain;
 					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) || !MakeDomainNameFromDNSNameString(&BrowseDomain, buf) || !BrowseDomain.c[0])
 						LogMsg("SetSCPrefsBrowseDomainsFromCFArray SCDynamicStore bad DDNS browse domain: %s", buf[0] ? buf : "(unknown)");
-					else { debugf("SetSCPrefsBrowseDomainsFromCFArray: %s", buf); SetSCPrefsBrowseDomain(m, &BrowseDomain, add); }
+					else SetSCPrefsBrowseDomain(m, &BrowseDomain, add);
 					}
 				}
 			}
