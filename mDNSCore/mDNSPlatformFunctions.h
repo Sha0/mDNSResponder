@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPlatformFunctions.h,v $
+Revision 1.21  2003/08/15 20:16:57  cheshire
+Update comment for <rdar://problem/3366590> mDNSResponder takes too much RPRVT
+
 Revision 1.20  2003/08/12 19:56:24  cheshire
 Update to APSL 2.0
 
@@ -117,8 +120,8 @@ typedef struct
 // Every platform support module must provide the following functions.
 // Note: mDNSPlatformMemAllocate/mDNSPlatformMemFree are only required for handling oversized resource records.
 // If your target platform has a well-defined specialized application, and you know that all the records it uses
-// are StandardRDSize or less, then you can just make a simple mDNSPlatformMemAllocate() stub that always returns
-// NULL. StandardRDSize is a compile-time constant, which is set by default to 264. If you need to handle records
+// are InlineCacheRDSize or less, then you can just make a simple mDNSPlatformMemAllocate() stub that always returns
+// NULL. InlineCacheRDSize is a compile-time constant, which is set by default to 64. If you need to handle records
 // a little larger than this and you don't want to have to implement run-time allocation and freeing, then you
 // can raise the value of this constant to a suitable value (at the expense of increased memory usage).
 extern mStatus  mDNSPlatformInit   (mDNS *const m);
