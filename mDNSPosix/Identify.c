@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.11  2003/10/30 19:26:38  cheshire
+Fix warnings on certain compilers
+
 Revision 1.10  2003/09/02 20:38:57  cheshire
 #include <signal.h> for Linux
 
@@ -171,10 +174,10 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 	else if (answer->rrtype == kDNSType_HINFO)
 		{
 		mDNSu8 *p = answer->rdata->u.data;
-		strncpy(hardware, p+1, p[0]);
+		strncpy(hardware, (char*)(p+1), p[0]);
 		hardware[p[0]] = 0;
 		p += 1 + p[0];
-		strncpy(software, p+1, p[0]);
+		strncpy(software, (char*)(p+1), p[0]);
 		software[p[0]] = 0;
 		NumAnswers++;
 		NumHINFO++;
@@ -248,7 +251,11 @@ mDNSlocal void HandleSIG(int signal)
 mDNSexport int main(int argc, char **argv)
 	{
 	mStatus status;
-	
+	struct in_addr s4;
+	struct in6_addr s6;
+	char buffer[256];
+	DNSQuestion q;
+
 	if (argc < 2) goto usage;
 	
     // Initialise the mDNS core.
@@ -260,12 +267,6 @@ mDNSexport int main(int argc, char **argv)
 
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIG);
-
-	struct in_addr s4;
-	struct in6_addr s6;
-
-	char buffer[256];
-	DNSQuestion q;
 
 	if (inet_pton(AF_INET, argv[1], &s4) == 1)
 		{
