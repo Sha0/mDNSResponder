@@ -66,7 +66,7 @@ void resolve_reply (
 												   @"_printer._tcp.",      @"_afpovertcp._tcp.",  @"_MacOSXDupSuppress._tcp.",     @"_ichat._tcp.",
 												   @"_eppc._tcp.",         nil];
     NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Secure Shell (ssh)", @"Trivial File Transfer (tftp)", @"Web Server (http)",
-	                                               @"Printer (lpd)",       @"AppleShare Server",  @"Nonsense Service",             @"iChat",
+	                                               @"Printer (lpd)",       @"AppleShare Server",  @"Mystery Service",              @"iChat",
 												   @"Remote AppleEvents",  nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
