@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.41  2003/10/30 22:52:57  cheshire
+<rdar://problem/3468977> Browse output misaligned in mDNS command-line tool
+
 Revision 1.40  2003/09/26 01:07:06  cheshire
 Added test case to test fix for <rdar://problem/3427923>
 
@@ -162,7 +165,7 @@ static void browse_reply(DNSServiceBrowserReplyResultType resultType,
 	{
 	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Add" : "Rmv";
     (void)context; // Unused
-	if (num_printed++ == 0) printf("A/R Flags %-8s %-20s %s\n", "Domain", "Service Type", "Instance Name");
+	if (num_printed++ == 0) printf("Timestamp     A/R Flags %-8s %-20s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
 	printf("%s%6X %-8s %-20s %s\n", op, flags, replyDomain, replyType, replyName);
 	}
