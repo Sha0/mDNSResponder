@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.148  2004/12/13 01:18:04  ksekar
+Fixed unused variable warning for non-debug builds
+
 Revision 1.147  2004/12/12 23:51:42  ksekar
 <rdar://problem/3845683> Wide-area registrations should fallback to using DHCP hostname as target
 
@@ -1439,6 +1442,7 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 	{
 	const domainname *pktname = &answer->rdata->u.name;
 	domainname *storedname = &m->uDNS_info.StaticHostname;
+	(void)question;
 	
 	debugf("FoundStaticHostname: %##s -> %##s (%s)", question->qname.c, answer->rdata->u.name.c, AddRecord ? "added" : "removed");
 	if (AddRecord && !SameDomainName(pktname, storedname))
