@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.32  2003/11/20 21:46:12  ksekar
+Bug #: <rdar://problem/3486635>: leak: DNSServiceRegisterRecord
+
 Revision 1.31  2003/11/20 20:33:05  ksekar
 Bug #: <rdar://problem/3486635>: leak: DNSServiceRegisterRecord
 
@@ -1542,15 +1545,20 @@ malloc_error:
 
 static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result)
     {
-    regrecord_callback_context *rcc;
+    regrecord_callback_context *rcc = rr->RecordContext;
     int len;
     reply_state *reply;
     transfer_state ts;
 
     #pragma unused(m)
-
-    if (result == mStatus_MemFree) 	{ freeL("regrecord_callback", rr);  return; }
-    rcc = rr->RecordContext;
+    if (result == mStatus_MemFree) 	
+        { 
+        freeL("regrecord_callback", rcc);
+        rr->RecordContext = NULL;        
+        freeL("regrecord_callback", rr);
+        return; 
+        }
+    
 
     // format result, add to the list for the request, including the client context in the header
     len = sizeof(DNSServiceFlags);
@@ -1575,17 +1583,19 @@ static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus resu
 
 static void connected_registration_termination(void *context)
     {
+    int shared;
     registered_record_entry *fptr, *ptr = ((request_state *)context)->reg_recs;
     while(ptr)
         {
-        mDNS_Deregister(&mDNSStorage, ptr->rr);
         fptr = ptr;
         ptr = ptr->next;
-        freeL("connected_registration_termination", fptr->rr->RecordContext);
-        fptr->rr->RecordContext = NULL;
-        if (fptr->rr->resrec.RecordType != kDNSRecordTypeShared)
+        shared = fptr->rr->resrec.RecordType == kDNSRecordTypeShared;
+        mDNS_Deregister(&mDNSStorage, fptr->rr);
+        if (!shared)
             // shared records free'd via callback w/ mStatus_MemFree
             {
+            freeL("connected_registration_termination", fptr->rr->RecordContext);
+            fptr->rr->RecordContext = NULL;            
             freeL("connected_registration_termination", fptr->rr);
             fptr->rr = NULL;
             }
@@ -1620,6 +1630,7 @@ static mStatus remove_record(request_state *rstate)
     registered_record_entry *reptr, *prev = NULL;
     mStatus err = mStatus_UnknownErr;
     reptr = rstate->reg_recs;
+    int shared;
 
     while(reptr)
     	{
@@ -1627,17 +1638,18 @@ static mStatus remove_record(request_state *rstate)
             {
             if (prev) prev->next = reptr->next;
             else rstate->reg_recs = reptr->next;
+            shared = reptr->rr->resrec.RecordType == kDNSRecordTypeShared;
             err  = mDNS_Deregister(&mDNSStorage, reptr->rr);
 	        if (err) 
 	            {
 	            LogMsg("ERROR: remove_record, mDNS_Deregister: %d", err);
 	            return err;	// this should not happen.  don't try to free memory if there's an error
 	            }
-            freeL("remove_record", reptr->rr->RecordContext);
-            reptr->rr->RecordContext = NULL;
-            if (reptr->rr->resrec.RecordType != kDNSRecordTypeShared)
+            if (!shared)
 	            // shared records free'd via callback w/ mStatus_MemFree		
 	            {
+                freeL("remove_record", reptr->rr->RecordContext);
+                reptr->rr->RecordContext = NULL;
 	            freeL("remove_record", reptr->rr);
 	            reptr->rr = NULL;
 	            }
