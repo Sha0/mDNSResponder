@@ -23,6 +23,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.2  2004/05/20 22:22:21  cheshire
+Enable code that was bracketed by "#if 0"
+
 Revision 1.1  2004/03/12 21:30:29  cheshire
 Build a System-Context Shared Library from mDNSCore, for the benefit of developers
 like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code.
@@ -35,20 +38,39 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 #pragma export on
 #endif
 
-#if 0
+#define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
 
-static int domain_ends_in_dot(const char *dom)
+static int strlen(const char *str)
 	{
-	while(*dom && *(dom + 1))
+	const char *s = str;
+	while (*s) s++;
+	return(s - str);
+	}
+
+static int strncmp(const char *s1, const char *s2, int n)
+	{
+	while (n)
 		{
-		if (*dom == '\\') // advance past escaped byte sequence
-			{
-			if (*(dom + 1) >= '0' && *(dom + 1) <= '9') dom += 4;
-			else dom += 2;
-			}
-		else dom++; // else read one character
+		if (*s1 != *s2++) return (*(const unsigned char *)s1 - *(const unsigned char *)(s2 - 1));
+		if (*s1++ == 0) return (0);
+		n--;
 		}
-	return (*dom == '.');
+	return (0);
+	}
+
+static int DomainEndsInDot(const char *dom)
+	{
+	while (dom[0] && dom[1])
+		{
+		if (dom[0] == '\\') // advance past escaped byte sequence
+			{
+			if (mdnsIsDigit(dom[1]) && mdnsIsDigit(dom[2]) && mdnsIsDigit(dom[3]))
+				dom += 4;			// If "\ddd"    then skip four
+			else dom += 2;			// else if "\x" then skip two
+			}
+		else dom++;					// else goto next character
+		}
+	return (dom[0] == '.');
 	}
 
 int DNSServiceConstructFullName
@@ -86,21 +108,15 @@ int DNSServiceConstructFullName
 
 	if (!regtype) return -1;
 	len = strlen(regtype);
-	if (domain_ends_in_dot(regtype)) len--;
-	if (len < 4) return -1; // regtype must end in _udp or _tcp
+	if (DomainEndsInDot(regtype)) len--;
+	if (len < 6) return -1; // regtype must be at least "x._udp" or "x._tcp"
 	if (strncmp((regtype + len - 4), "_tcp", 4) && strncmp((regtype + len - 4), "_udp", 4)) return -1;
-	while(*r)
-		*fn++ = *r++;
-	if (!domain_ends_in_dot(regtype)) *fn++ = '.';
+	while(*r) *fn++ = *r++;
+	if (!DomainEndsInDot(regtype)) *fn++ = '.';
 
-	if (!domain) return -1;
-	len = strlen(domain);
-	if (!len) return -1;
-	while(*d)
-		*fn++ = *d++;
-	if (!domain_ends_in_dot(domain)) *fn++ = '.';
+	if (!domain || !domain[0]) return -1;
+	while(*d) *fn++ = *d++;
+	if (!DomainEndsInDot(domain)) *fn++ = '.';
 	*fn = '\0';
 	return 0;
 	}
-
-#endif
