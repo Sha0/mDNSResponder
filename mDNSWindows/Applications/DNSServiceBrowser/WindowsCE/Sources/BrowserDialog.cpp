@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: BrowserDialog.cpp,v $
+Revision 1.3  2003/10/14 03:28:50  bradley
+Insert services in sorted order to make them easier to find. Defer service adds/removes to the main
+thread to avoid potential problems with multi-threaded MFC message map access. Added some asserts.
+
 Revision 1.2  2003/10/10 03:43:34  bradley
 Added support for launching a web browser to go to the browsed web site on a single-tap.
 
@@ -46,12 +50,21 @@ static char THIS_FILE[] = __FILE__;
 #endif
 
 //===========================================================================================================================
+//	Constants
+//===========================================================================================================================
+
+#define	WM_USER_SERVICE_ADD			( WM_USER + 0x100 )
+#define	WM_USER_SERVICE_REMOVE		( WM_USER + 0x101 )
+
+//===========================================================================================================================
 //	Message Map
 //===========================================================================================================================
 
 BEGIN_MESSAGE_MAP(BrowserDialog, CDialog)
 	//{{AFX_MSG_MAP(BrowserDialog)
 	ON_NOTIFY(NM_CLICK, IDC_BROWSE_LIST, OnBrowserListDoubleClick)
+	ON_MESSAGE( WM_USER_SERVICE_ADD, OnServiceAdd )
+	ON_MESSAGE( WM_USER_SERVICE_REMOVE, OnServiceRemove )
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
 
@@ -71,6 +84,7 @@ BrowserDialog::BrowserDialog( CWnd *inParent )
 	// Note that LoadIcon does not require a subsequent DestroyIcon in Win32.
 	
 	mIcon = AfxGetApp()->LoadIcon( IDR_MAINFRAME );
+	ASSERT( mIcon );
 }
 
 //===========================================================================================================================
@@ -114,7 +128,7 @@ BOOL	BrowserDialog::OnInitDialog()
 
 	DNSStatus		err;
 
-	err = DNSBrowserCreate( 0, BrowserCallBack, this, &mBrowser );
+	err = DNSBrowserCreate( 0, OnBrowserCallBack, this, &mBrowser );
 	if( err )
 	{
 		AfxMessageBox( IDP_SOCKETS_INIT_FAILED );
@@ -141,7 +155,7 @@ void	BrowserDialog::OnBrowserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 {
 	int		selectedItem;
 
-	(void) pNMHDR;
+	(void) pNMHDR;	// Unused
 
 	selectedItem = mBrowserList.GetNextItem( -1, LVNI_SELECTED );
 	if( selectedItem >= 0 )
@@ -185,20 +199,23 @@ void	BrowserDialog::OnBrowserListDoubleClick( NMHDR *pNMHDR, LRESULT *pResult )
 }
 
 //===========================================================================================================================
-//	BrowserCallBack [static]
+//	OnBrowserCallBack [static]
 //===========================================================================================================================
 
 void
-	BrowserDialog::BrowserCallBack( 
+	BrowserDialog::OnBrowserCallBack( 
 		void *					inContext, 
 		DNSBrowserRef			inRef, 
 		DNSStatus				inStatusCode,
 		const DNSBrowserEvent *	inEvent )
 {
 	BrowserDialog *		dialog;
+	BrowserEntry *		entry;
+	BOOL				posted;
 	
 	DNS_UNUSED( inStatusCode );
 	dialog = reinterpret_cast < BrowserDialog * > ( inContext );
+	ASSERT( dialog );
 	
 	switch( inEvent->type )
 	{
@@ -213,12 +230,39 @@ void
 				inEvent->data.resolved->address.u.ipv4.addr.v8[ 3 ], 
 				( inEvent->data.resolved->address.u.ipv4.port.v8[ 0 ] << 8 ) | 
 				  inEvent->data.resolved->address.u.ipv4.port.v8[ 1 ] );
-			dialog->BrowserAddService( inEvent->data.resolved->name, ip, inEvent->data.resolved->textRecord );
+			
+			entry = new BrowserEntry;
+			ASSERT( entry );
+			if( entry )
+			{
+				UTF8StringToStringObject( inEvent->data.resolved->name, entry->name );
+				UTF8StringToStringObject( ip, entry->ip );
+				UTF8StringToStringObject( inEvent->data.resolved->textRecord, entry->text );
+				
+				posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_SERVICE_ADD, 0, (LPARAM) entry );
+				ASSERT( posted );
+				if( !posted )
+				{
+					delete entry;
+				}
+			}
 			break;
 		}
 
 		case kDNSBrowserEventTypeRemoveService:
-			dialog->BrowserRemoveService( inEvent->data.removeService.name );
+			entry = new BrowserEntry;
+			ASSERT( entry );
+			if( entry )
+			{
+				UTF8StringToStringObject( inEvent->data.removeService.name, entry->name );
+				
+				posted = ::PostMessage( dialog->GetSafeHwnd(), WM_USER_SERVICE_REMOVE, 0, (LPARAM) entry );
+				ASSERT( posted );
+				if( !posted )
+				{
+					delete entry;
+				}
+			}
 			break;
 		
 		default:
@@ -230,60 +274,103 @@ void
 //	BrowserAddService
 //===========================================================================================================================
 
-void	BrowserDialog::BrowserAddService( const char *inName, const char *inIP, const char *inText )
+LONG	BrowserDialog::OnServiceAdd( WPARAM inWParam, LPARAM inLParam )
 {
-	BrowserEntry		newEntry;
-	INT_PTR				n;
-	INT_PTR				i;
+	BrowserEntry *		entry;
+	INT_PTR				lo;
+	INT_PTR				hi;
+	INT_PTR				mid;
+	int					result;
 	
-	UTF8StringToStringObject( inName, newEntry.name );
-	UTF8StringToStringObject( inIP, newEntry.ip );
-	UTF8StringToStringObject( inText, newEntry.text );
-
-	n = mBrowserEntries.GetSize();
-	for( i = 0; i < n; ++i )
+	(void) inWParam;	// Unused
+	
+	entry = reinterpret_cast < BrowserEntry * > ( inLParam );
+	ASSERT( entry );
+	
+	result 	= -1;
+	mid		= 0;
+	lo 		= 0;
+	hi 		= mBrowserEntries.GetSize() - 1;
+	while( lo <= hi )
 	{
-		BrowserEntry &		entry = mBrowserEntries.ElementAt( i );
-
-		if( entry.name.CompareNoCase( newEntry.name ) == 0 )
+		mid = ( lo + hi ) / 2;
+		result = entry->name.CompareNoCase( mBrowserEntries[ mid ].name );
+		if( result == 0 )
 		{
 			break;
 		}
+		else if( result < 0 )
+		{
+			hi = mid - 1;
+		}
+		else
+		{
+			lo = mid + 1;
+		}
 	}
-	if( i >= n )
+	if( result == 0 )
 	{
-		mBrowserEntries.Add( newEntry );
-		mBrowserList.InsertItem( i, newEntry.name );
+		mBrowserEntries[ mid ].ip	= entry->ip;
+		mBrowserEntries[ mid ].text	= entry->text;
 	}
+	else
+	{
+		if( result > 0 )
+		{
+			mid += 1;
+		}
+		mBrowserEntries.InsertAt( mid, *entry );
+		mBrowserList.InsertItem( mid, entry->name );
+	}
+	delete entry;
+	return( 0 );
 }
 
 //===========================================================================================================================
-//	BrowserRemoveService
+//	OnServiceRemove
 //===========================================================================================================================
 
-void	BrowserDialog::BrowserRemoveService( const char *inName )
+LONG	BrowserDialog::OnServiceRemove( WPARAM inWParam, LPARAM inLParam )
 {
-	BrowserEntry		newEntry;
-	INT_PTR				n;
-	INT_PTR				i;
+	BrowserEntry *		entry;
+	INT_PTR				hi;
+	INT_PTR				lo;
+	INT_PTR				mid;
+	int					result;
+
+	(void) inWParam;	// Unused
 	
-	UTF8StringToStringObject( inName, newEntry.name );
-
-	n = mBrowserEntries.GetSize();
-	for( i = 0; i < n; ++i )
+	entry = reinterpret_cast < BrowserEntry * > ( inLParam );
+	ASSERT( entry );
+	
+	result 	= -1;
+	mid		= 0;
+	lo 		= 0;
+	hi 		= mBrowserEntries.GetSize() - 1;
+	while( lo <= hi )
 	{
-		BrowserEntry &		entry = mBrowserEntries.ElementAt( i );
-
-		if( entry.name.CompareNoCase( newEntry.name ) == 0 )
+		mid = ( lo + hi ) / 2;
+		result = entry->name.CompareNoCase( mBrowserEntries[ mid ].name );
+		if( result == 0 )
 		{
 			break;
 		}
+		else if( result < 0 )
+		{
+			hi = mid - 1;
+		}
+		else
+		{
+			lo = mid + 1;
+		}
 	}
-	if( i < n )
+	if( result == 0 )
 	{
-		mBrowserEntries.RemoveAt( i );
-		mBrowserList.DeleteItem( i );
+		mBrowserList.DeleteItem( mid );
+		mBrowserEntries.RemoveAt( mid );
 	}
+	delete entry;
+	return( 0 );
 }
 
 #if 0
