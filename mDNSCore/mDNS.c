@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.243  2003/07/25 02:26:09  cheshire
+Typo: FIxed missing semicolon
+
 Revision 1.242  2003/07/25 01:18:41  cheshire
 Fix memory leak on shutdown in mDNS_Close() (detected in Windows version)
 
@@ -6202,7 +6205,7 @@ extern void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 extern void mDNS_Close(mDNS *const m)
 	{
 	mDNSu32 rrcache_active = 0;
-	mDNSu32 rrcache_totalused = 0
+	mDNSu32 rrcache_totalused = 0;
 	mDNSu32 slot;
 	NetworkInterfaceInfo *intf;
 	mDNS_Lock(m);
