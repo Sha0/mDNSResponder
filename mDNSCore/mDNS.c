@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.306  2003/09/09 03:00:03  cheshire
+<rdar://problem/3413099> Services take a long time to disappear when switching networks.
+Added two constants: kDefaultReconfirmTimeForNoAnswer and kDefaultReconfirmTimeForCableDisconnect
+
 Revision 1.305  2003/09/09 02:49:31  cheshire
 <rdar://problem/3413975> Initial probes and queries not grouped on wake-from-sleep
 
@@ -3559,10 +3563,14 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 		m->NextCacheCheck = (rr->NextRequiredQuery + CacheCheckGracePeriod(rr));
 	}
 
+#define kDefaultReconfirmTimeForNoAnswer        ((mDNSu32)mDNSPlatformOneSecond * 45)
+#define kDefaultReconfirmTimeForCableDisconnect ((mDNSu32)mDNSPlatformOneSecond *  5)
+#define kMinimumReconfirmTime                   ((mDNSu32)mDNSPlatformOneSecond *  5)
+
 mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, mDNSu32 interval)
 	{
-	if (interval < (mDNSu32)mDNSPlatformOneSecond * 45)
-		interval = (mDNSu32)mDNSPlatformOneSecond * 45;
+	if (interval < kMinimumReconfirmTime)
+		interval = kMinimumReconfirmTime;
 	if (interval > 0x10000000)	// Make sure interval doesn't overflow when we multiply by four below
 		interval = 0x10000000;
 
@@ -3680,7 +3688,7 @@ mDNSlocal void ReconfirmAntecedents(mDNS *const m, DNSQuestion *q)
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 			if ((target = GetRRDomainNameTarget(&rr->resrec)) && rr->resrec.rdnamehash == q->qnamehash && SameDomainName(target, &q->qname))
-				mDNS_Reconfirm_internal(m, rr, 0);
+				mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
 	}
 
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
@@ -4646,7 +4654,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		m->NextCacheCheck  = m->timenow;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (cr = m->rrcache_hash[slot]; cr; cr=cr->next)
-				mDNS_Reconfirm_internal(m, cr, 0);
+				mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForCableDisconnect);
 
 		// 3. Retrigger probing and announcing for all our authoritative records
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -5245,7 +5253,7 @@ exit:
 			if (RRExpireTime(rr) - m->timenow > 4 * mDNSPlatformOneSecond)
 				debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
 					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, GetRRDisplayString(m, rr));
-			mDNS_Reconfirm_internal(m, rr, 0);
+			mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
 			}
 		// Make a guess, based on the multi-packet query / known answer counts, whether we think we
 		// should have seen an answer for this. (We multiply MPQ by 4 and MPKA by 5, to allow for
@@ -5273,6 +5281,8 @@ exit:
 			rr->MPUnansweredKA = 0;
 			rr->MPExpectingKA  = mDNSfalse;
 			
+			if (remain < kDefaultReconfirmTimeForNoAnswer)
+				remain = kDefaultReconfirmTimeForNoAnswer;
 			mDNS_Reconfirm_internal(m, rr, remain);
 			}
 		}
@@ -5803,7 +5813,7 @@ mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, CacheRecord *const rr)
 	{
 	mStatus status;
 	mDNS_Lock(m);
-	status = mDNS_Reconfirm_internal(m, rr, 0);
+	status = mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
 	mDNS_Unlock(m);
 	return(status);
 	}
@@ -5814,7 +5824,7 @@ mDNSexport mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr
 	CacheRecord *cr;
 	mDNS_Lock(m);
 	cr = FindIdenticalRecordInCache(m, rr);
-	if (cr) status = mDNS_Reconfirm_internal(m, cr, 0);
+	if (cr) status = mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
 	mDNS_Unlock(m);
 	return(status);
 	}
@@ -6505,7 +6515,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == set->InterfaceID)
-					mDNS_Reconfirm_internal(m, rr, 0);
+					mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForCableDisconnect);
 		}
 
 	mDNS_Unlock(m);
