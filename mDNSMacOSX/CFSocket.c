@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.58  2003/03/06 01:43:04  cheshire
+Bug #: 3189097 Additional debugging code in mDNSResponder
+Improve "LIST_ALL_INTERFACES" output
+
 Revision 1.57  2003/03/05 22:36:27  cheshire
 Bug #: 3186338 Loopback doesn't work with mDNSResponder-27
 Temporary workaround: Skip loopback interface *only* if we found at least one v4 interface to use
@@ -639,7 +643,7 @@ mDNSlocal mStatus SetupInterface(mDNS *const m, NetworkInterfaceInfo2 *info, str
 		}
 
 
-	debugf("SetupInterface: %s index %d Flags %04X %#a Registered",
+	debugf("SetupInterface: %4s(%d) Flags %04X %#a Registered",
 		ifa->ifa_name, info->ifinfo.scope_id, ifa->ifa_flags, &info->ifinfo.ip);
 
 	return(err);
@@ -688,15 +692,24 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	while (ifa)
 		{
 #if LIST_ALL_INTERFACES
-		if (ifa->ifa_addr->sa_family != AF_INET && ifa->ifa_addr->sa_family != AF_INET6)
-			debugf("SetupInterface: %s Flags %04X Family %d not AF_INET or AF_INET6",
-				ifa->ifa_name, ifa->ifa_flags, ifa->ifa_addr->sa_family);
+		if (ifa->ifa_addr->sa_family == AF_APPLETALK)
+			debugf("SetupInterface: %4s(%d) Flags %04X Family %2d is AF_APPLETALK",
+				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
+		else if (ifa->ifa_addr->sa_family == AF_LINK)
+			debugf("SetupInterface: %4s(%d) Flags %04X Family %2d is AF_LINK",
+				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
+		else if (ifa->ifa_addr->sa_family != AF_INET && ifa->ifa_addr->sa_family != AF_INET6)
+			debugf("SetupInterface: %4s(%d) Flags %04X Family %2d not AF_INET (2) or AF_INET6 (30)",
+				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (!(ifa->ifa_flags & IFF_UP))
-			debugf("SetupInterface: %s Flags %04X Interface not IFF_UP", ifa->ifa_name, ifa->ifa_flags);
-		if (ifa->ifa_flags & IFF_LOOPBACK)
-			debugf("SetupInterface: %s Flags %04X Interface IFF_LOOPBACK", ifa->ifa_name, ifa->ifa_flags);
+			debugf("SetupInterface: %4s(%d) Flags %04X Family %2d Interface not IFF_UP",
+				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 		if (ifa->ifa_flags & IFF_POINTOPOINT)
-			debugf("SetupInterface: %s Flags %04X Interface IFF_POINTOPOINT", ifa->ifa_name, ifa->ifa_flags);
+			debugf("SetupInterface: %4s(%d) Flags %04X Family %2d Interface IFF_POINTOPOINT",
+				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
+		if (ifa->ifa_flags & IFF_LOOPBACK)
+			debugf("SetupInterface: %4s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
+				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
 		if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) &&
 		    (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_POINTOPOINT))
