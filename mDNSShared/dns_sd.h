@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.9  2004/03/20 05:43:39  cheshire
+Fix contributed by Terry Lambert & Alfred Perlstein:
+On FreeBSD 4.x we need to include <sys/types.h> instead of <stdint.h>
+
 Revision 1.8  2004/03/19 17:50:40  cheshire
 Clarify comment about kDNSServiceMaxDomainName
 
@@ -54,7 +58,12 @@ Update to APSL 2.0
 	extern "C" {
 #endif
 
+#if defined(__FreeBSD__) && (__FreeBSD_version < 500000)
+// stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead
+#include <sys/types.h>
+#else
 #include <stdint.h>
+#endif
 
 /* DNSServiceRef, DNSRecordRef
  *
