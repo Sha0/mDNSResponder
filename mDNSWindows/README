@@ -3,6 +3,9 @@ This directory contains support files for running mDNS on Microsoft Windows.
 mDNSWin32.c & mDNSWin32.h are the Platform Support files that go below
 mDNS Core.
 
+DNSServices is a higher-level API for using mDNS. It manages memory, tracks 
+browers and registrations, etc.
+
 Tool.c is an example client that uses the services of mDNS Core.
 
 ToolWin32.mcp is a CodeWarrior project (CodeWarrior for Windows version 8)
