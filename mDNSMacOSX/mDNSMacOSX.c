@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.262  2004/12/17 04:48:32  cheshire
+<rdar://problem/3922754> Computer Name change is slow
+
 Revision 1.261  2004/12/17 02:40:08  cheshire
 Undo last change -- it was too strict
 
@@ -2642,10 +2645,30 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	{
 	(void)store;        // Parameter not used
 	(void)changedKeys;  // Parameter not used
-	LogOperation("***   NetworkChanged   ***");
 	mDNS *const m = (mDNS *const)context;
 	mDNS_Lock(m);
-	m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
+
+	mDNSs32 delay = mDNSPlatformOneSecond * 2;							// Start off assuming a two-second delay
+
+	int c = CFArrayGetCount(changedKeys);								// Count changes
+	CFRange range = { 0, c };
+	CFStringRef k1 = SCDynamicStoreKeyCreateComputerName(NULL);
+	CFStringRef k2 = SCDynamicStoreKeyCreateHostNames(NULL);
+	if (k1 && k2)
+		{
+		int c1 = (CFArrayContainsValue(changedKeys, range, k1) != 0);	// See if ComputerName changed
+		int c2 = (CFArrayContainsValue(changedKeys, range, k2) != 0);	// See if Local Hostname changed
+		if (c && c - c1 - c2 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
+		}
+	if (k1) CFRelease(k1);
+	if (k2) CFRelease(k2);
+
+	LogOperation("***   NetworkChanged   *** %d change%s, delay %d", c, c>1?"s":"", delay);
+
+	if (!m->p->NetworkChanged ||
+		m->p->NetworkChanged - (m->timenow + delay) < 0)
+		m->p->NetworkChanged = (m->timenow + delay);
+	
 	if (!m->SuppressSending ||
 		m->SuppressSending - m->p->NetworkChanged < 0)
 		m->SuppressSending = m->p->NetworkChanged;
