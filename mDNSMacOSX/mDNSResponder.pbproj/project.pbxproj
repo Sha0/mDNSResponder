@@ -174,6 +174,7 @@
 				SECTORDER_FLAGS = "";
 			};
 			dependencies = (
+				FF25795106C9AB1D00376F7B,
 				00AD62BC032D7A160CCA2C71,
 				00AD62BD032D7A1B0CCA2C71,
 				00AD62BE032D7A1D0CCA2C71,
@@ -251,6 +252,7 @@
 				6575FC1C022EB76000000109,
 				DB2CC4530662DD6800335AB3,
 				DB2CC4660662DF5C00335AB3,
+				FF25792906C9A70800376F7B,
 			);
 		};
 		08FB7794FE84155DC02AAC07 = {
@@ -284,6 +286,9 @@
 				FF485D5105632E0000130380,
 				7F18A9F60587CEF6001880B3,
 				7F18A9F70587CEF6001880B3,
+				FF25794606C9A8BF00376F7B,
+				FF25794C06C9A9D500376F7B,
+				FF25794F06C9AA8B00376F7B,
 			);
 			isa = PBXGroup;
 			name = "mDNS Server Sources";
@@ -420,6 +425,7 @@
 				00AD62B8032D799A0CCA2C71,
 				DB2CC4670662DF5C00335AB3,
 				FFD41DDA0664157900F0C438,
+				FF25794406C9A70800376F7B,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -1261,6 +1267,227 @@
 			isa = PBXBuildFile;
 			settings = {
 			};
+		};
+		FF25792906C9A70800376F7B = {
+			buildPhases = (
+				FF25792A06C9A70800376F7B,
+				FF25792D06C9A70800376F7B,
+				FF25793A06C9A70800376F7B,
+				FF25793F06C9A70800376F7B,
+				FF25794006C9A70800376F7B,
+				FF25794206C9A70800376F7B,
+			);
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				HEADER_SEARCH_PATHS = "\"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\"";
+				INSTALL_PATH = /usr/sbin;
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.2;
+				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS)";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = dnsextd;
+				REZ_EXECUTABLE = YES;
+				SECTORDER_FLAGS = "";
+				STRIPFLAGS = "-S";
+				WARNING_CFLAGS = "-W -Wall -Wmissing-prototypes -Wno-four-char-constants -Wno-unknown-pragmas";
+			};
+			dependencies = (
+			);
+			isa = PBXToolTarget;
+			name = dnsextd;
+			productInstallPath = /usr/sbin;
+			productName = mDNSResponder;
+			productReference = FF25794406C9A70800376F7B;
+		};
+		FF25792A06C9A70800376F7B = {
+			buildActionMask = 2147483647;
+			files = (
+				FF25792B06C9A70800376F7B,
+				FF25792C06C9A70800376F7B,
+			);
+			isa = PBXHeadersBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF25792B06C9A70800376F7B = {
+			fileRef = 6575FBFF022EAFBA00000109;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25792C06C9A70800376F7B = {
+			fileRef = F5E11B5B04A28126019798ED;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25792D06C9A70800376F7B = {
+			buildActionMask = 2147483647;
+			files = (
+				FF25793606C9A70800376F7B,
+				FF25793806C9A70800376F7B,
+				FF25794706C9A8BF00376F7B,
+				FF25794906C9A97400376F7B,
+				FF25794A06C9A98700376F7B,
+				FF25794D06C9A9D500376F7B,
+				FF25794E06C9AA3000376F7B,
+				FF25795006C9AA8B00376F7B,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF25793606C9A70800376F7B = {
+			fileRef = 7F18A9F60587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25793806C9A70800376F7B = {
+			fileRef = 7F461DB5062DBF2900672BF3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25793A06C9A70800376F7B = {
+			buildActionMask = 2147483647;
+			files = (
+				FF25793B06C9A70800376F7B,
+				FF25793C06C9A70800376F7B,
+				FF25793D06C9A70800376F7B,
+				FF25793E06C9A70800376F7B,
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF25793B06C9A70800376F7B = {
+			fileRef = 09AB6884FE841BABC02AAC07;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25793C06C9A70800376F7B = {
+			fileRef = 65713D46025A293200000109;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25793D06C9A70800376F7B = {
+			fileRef = 00CA213D02786FC30CCA2C71;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25793E06C9A70800376F7B = {
+			fileRef = 7F869685066EE02400D2A2DC;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25793F06C9A70800376F7B = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXRezBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF25794006C9A70800376F7B = {
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man8;
+			dstSubfolderSpec = 0;
+			files = (
+				FF25794106C9A70800376F7B,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		FF25794106C9A70800376F7B = {
+			fileRef = FF485D5105632E0000130380;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25794206C9A70800376F7B = {
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man1;
+			dstSubfolderSpec = 0;
+			files = (
+				FF25794306C9A70800376F7B,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		FF25794306C9A70800376F7B = {
+			fileRef = FF0E0B5D065ADC7600FE4D9C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25794406C9A70800376F7B = {
+			isa = PBXExecutableFileReference;
+			path = dnsextd;
+			refType = 3;
+		};
+		FF25794606C9A8BF00376F7B = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = dnsextd.c;
+			path = ../mDNSPosix/dnsextd.c;
+			refType = 2;
+		};
+		FF25794706C9A8BF00376F7B = {
+			fileRef = FF25794606C9A8BF00376F7B;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25794906C9A97400376F7B = {
+			fileRef = 7F18A9F70587CEF6001880B3;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25794A06C9A98700376F7B = {
+			fileRef = DBAAFE29057E8F4D0085CAD0;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25794C06C9A9D500376F7B = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = mDNSPosix.c;
+			path = ../mDNSPosix/mDNSPosix.c;
+			refType = 2;
+		};
+		FF25794D06C9A9D500376F7B = {
+			fileRef = FF25794C06C9A9D500376F7B;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25794E06C9AA3000376F7B = {
+			fileRef = DBAAFE2C057E8F660085CAD0;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25794F06C9AA8B00376F7B = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = mDNSUNP.c;
+			path = ../mDNSPosix/mDNSUNP.c;
+			refType = 2;
+		};
+		FF25795006C9AA8B00376F7B = {
+			fileRef = FF25794F06C9AA8B00376F7B;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF25795106C9AB1D00376F7B = {
+			isa = PBXTargetDependency;
+			target = FF25792906C9A70800376F7B;
 		};
 		FF485D5105632E0000130380 = {
 			fileEncoding = 4;
