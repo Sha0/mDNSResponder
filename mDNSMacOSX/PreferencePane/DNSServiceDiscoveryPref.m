@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.5  2005/02/25 02:29:28  cheshire
+Show yellow dot for "update in progress"
+
 Revision 1.4  2005/02/16 00:18:33  cheshire
 Bunch o' fixes
 
@@ -271,8 +274,9 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 -(void)updateStatusImageView
 {
     int value = [self statusForHostName:currentHostName];
-    if (value == 0) [statusImageView setImage:successImage];
-    else [statusImageView setImage:failureImage];
+    if      (value == 0) [statusImageView setImage:successImage];
+    else if (value >  0) [statusImageView setImage:inprogressImage];
+    else                 [statusImageView setImage:failureImage];
 }
 
 
@@ -305,23 +309,18 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 {
 	SCDynamicStoreRef store       = SCDynamicStoreCreate(NULL, CFSTR("statusForHostName"), NULL, NULL);
     NSString     *lowercaseDomain = [domain lowercaseString];
-    NSDictionary *dynamicDNS;
-    NSDictionary *hostNames;
-    NSDictionary *infoDict;
-    int status = -1;
+    int status = 1;
     
     assert(store != NULL);
         
-    dynamicDNS = (NSDictionary *)SCDynamicStoreCopyValue(store, SC_DYNDNS_STATE_KEY);
-    if (dynamicDNS) {
-        hostNames = [dynamicDNS objectForKey:(NSString *)SC_DYNDNS_HOSTNAMES_KEY];
-        infoDict  = [hostNames objectForKey:lowercaseDomain];
-
+    NSDictionary *dynamicDNS = (NSDictionary *)SCDynamicStoreCopyValue(store, SC_DYNDNS_STATE_KEY);
+    if (dynamicDNS)
+    	{
+        NSDictionary *hostNames = [dynamicDNS objectForKey:(NSString *)SC_DYNDNS_HOSTNAMES_KEY];
+        NSDictionary *infoDict  = [hostNames objectForKey:lowercaseDomain];
         if (infoDict) status = [[infoDict objectForKey:(NSString*)SC_DYNDNS_STATUS_KEY] intValue];
-        else          status = -1;
-        
         CFRelease(dynamicDNS);
-    }
+	    }
     CFRelease(store);
 
     return status;
@@ -551,13 +550,15 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 	browseDomainsArray        = nil;
     justStartedEditing        = YES;
     currentWideAreaState      = NO;
-	NSString *successPath     = [[NSBundle bundleForClass:[self class]] pathForResource:@"success" ofType:@"tiff"];
-	NSString *failurePath     = [[NSBundle bundleForClass:[self class]] pathForResource:@"failure" ofType:@"tiff"];
+	NSString *successPath     = [[NSBundle bundleForClass:[self class]] pathForResource:@"success"    ofType:@"tiff"];
+	NSString *inprogressPath  = [[NSBundle bundleForClass:[self class]] pathForResource:@"inprogress" ofType:@"tiff"];
+	NSString *failurePath     = [[NSBundle bundleForClass:[self class]] pathForResource:@"failure"    ofType:@"tiff"];
 
     registrationDataSource    = [[NSMutableArray alloc] init];
     browseDataSource          = [[NSMutableArray alloc] init];
 	defaultBrowseDomainsArray = [[NSMutableArray alloc] init];
 	successImage              = [[NSImage alloc] initWithContentsOfFile:successPath];
+	inprogressImage           = [[NSImage alloc] initWithContentsOfFile:inprogressPath];
 	failureImage              = [[NSImage alloc] initWithContentsOfFile:failurePath];
 
     [tabView selectFirstTabViewItem:self];

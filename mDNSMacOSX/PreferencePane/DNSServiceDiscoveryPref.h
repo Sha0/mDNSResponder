@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: DNSServiceDiscoveryPref.h,v $
+Revision 1.4  2005/02/25 02:29:28  cheshire
+Show yellow dot for "update in progress"
+
 Revision 1.3  2005/02/10 22:35:19  cheshire
 <rdar://problem/3727944> Update name
 
@@ -110,6 +113,7 @@ typedef struct MyDNSServiceState {
 	BOOL           browseDomainListEnabled;
     BOOL           justStartedEditing;
 	NSImage        *successImage;
+	NSImage        *inprogressImage;
 	NSImage        *failureImage;
     
     MyDNSServiceState regQuery;
