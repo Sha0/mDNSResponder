@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.10  2003/09/02 20:38:57  cheshire
+#include <signal.h> for Linux
+
 Revision 1.9  2003/08/14 23:57:46  cheshire
 Report if there is no answer at all from the target host
 
@@ -87,6 +90,7 @@ Add mDNSIdentify tool, used to discover what version of mDNSResponder a particul
 #include <netinet/in_systm.h>		// For n_long, required by <netinet/ip.h> below
 #include <netinet/ip.h>				// For IPTOS_LOWDELAY etc.
 #include <arpa/inet.h>
+#include <signal.h>
 
 #include "mDNSClientAPI.h"// Defines the interface to the mDNS core code
 #include "mDNSPosix.h"    // Defines the specific types needed to run mDNS on this platform
