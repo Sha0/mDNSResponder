@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.34  2004/09/17 22:36:13  cheshire
+Add comment explaining that deliver_request frees the message it sends
+
 Revision 1.33  2004/09/17 01:17:31  ksekar
 Remove double-free of msg header, freed automatically by deliver_request()
 
@@ -676,18 +679,17 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
     {
     DNSServiceRef sdr;
     DNSServiceErrorType err;
-    char *msg = NULL, *ptr = NULL;
+    char *ptr = NULL;
     size_t len = sizeof(flags) + strlen(domain) + 1;
     ipc_msg_hdr *hdr = create_hdr(setdomain_request, &len, &ptr, 1);
 
     if (!hdr) return kDNSServiceErr_Unknown;
-    msg = (char *)hdr;
     put_flags(flags, &ptr);
     put_string(domain, &ptr);
 
     sdr = connect_to_server();
     if (!sdr) { free(hdr); return kDNSServiceErr_Unknown; }
-    err = deliver_request(msg, sdr, 1);
+    err = deliver_request((char *)hdr, sdr, 1);		// deliver_request frees the message for us
 	DNSServiceRefDeallocate(sdr);
 	return err;
     }
