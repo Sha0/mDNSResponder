@@ -28,21 +28,24 @@
                       (X) == DNSServiceDomainEnumerationReplyAddDomainDefault ? "(Default)" :          \
                       (X) == DNSServiceDomainEnumerationReplyRemoveDomain     ? "Removed"   : "Unknown")
 
-void regdom_reply(int resultType, char *replyDomain, int flags, void *context)
+void regdom_reply(DNSServiceDomainEnumerationReplyResultType resultType, const char *replyDomain,
+    DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
 	printf("Recommended Registration Domain %s %s", replyDomain, DomainMsg(resultType));
 	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
 	}
 
-void browsedom_reply(int resultType, char *replyDomain, int flags, void *context)
+void browsedom_reply(DNSServiceDomainEnumerationReplyResultType resultType, const char *replyDomain,
+    DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
 	printf("Recommended Browsing Domain %s %s", replyDomain, DomainMsg(resultType));
 	if (flags) printf(" Flags: %X", flags);
 	printf("\n");
 	}
 
-void browse_reply(int resultType, char *replyName, char *replyType, char *replyDomain, int flags, void *context)
+void browse_reply(DNSServiceBrowserReplyResultType resultType,
+    const char *replyName, const char *replyType, const char *replyDomain, DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
 	char *op = (resultType == DNSServiceBrowserReplyAddInstance) ? "Found" : "Removed";
 	printf("Service \"%s\", type \"%s\", domain \"%s\" %s", replyName, replyType, replyDomain, op);
@@ -50,7 +53,7 @@ void browse_reply(int resultType, char *replyName, char *replyType, char *replyD
 	printf("\n");
 	}
 
-void resolve_reply(struct sockaddr *interface, struct sockaddr *address, char *txtRecord, int flags, void *context)
+void resolve_reply(struct sockaddr *interface, struct sockaddr *address, const char *txtRecord, DNSServiceDiscoveryReplyFlags flags, void *context)
 	{
 	if (address->sa_family != AF_INET)
 		printf("Unknown address family %d\n", address->sa_family);
@@ -67,7 +70,7 @@ void resolve_reply(struct sockaddr *interface, struct sockaddr *address, char *t
 		}
 	}
 
-void reg_reply(int errorCode, void *context)
+void reg_reply(DNSServiceRegistrationReplyErrorType errorCode, void *context)
 	{
 	if (errorCode)
 		printf("Got a reply from the server with error %d\n", errorCode);
