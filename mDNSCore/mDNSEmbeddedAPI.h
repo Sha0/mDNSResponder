@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.164  2004/04/21 02:55:03  cheshire
+Update comments describing 'InterfaceActive' field
+
 Revision 1.163  2004/04/21 02:49:11  cheshire
 To reduce future confusion, renamed 'TxAndRx' to 'McastTxRx'
 
@@ -1104,16 +1107,21 @@ typedef struct
     domainname regname;                 // the name registered to the update server
 	} uDNS_NetworkInterfaceInfo;
 
+// A NetworkInterfaceInfo_struct serves two purposes:
+// 1. It holds the address, PTR and HINFO records to advertise a given IP address on a given physical interface
+// 2. It tells mDNSCore which physical interfaces are available; each physical interface has its own unique InterfaceID.
+//    Since there may be multiple IP addresses on a single physical interface,
+//    there may be multiple NetworkInterfaceInfo_structs with the same InterfaceID.
+//    In this case, to avoid sending the same packet n times, when there's more than one
+//    struct with the same InterfaceID, mDNSCore picks one member of the set to be the
+//    active representative of the set; all others have the 'InterfaceActive' flag unset.
+
 struct NetworkInterfaceInfo_struct
 	{
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	NetworkInterfaceInfo *next;
 
-	mDNSBool        InterfaceActive;	// InterfaceActive is set if interface is sending & receiving packets
-										// InterfaceActive is clear if interface is here to represent an address with A
-										// and/or AAAA records, but there is already an earlier representative for this
-										// physical interface which will be used for the actual sending & receiving
-										// packets (this status may change as interfaces are added and removed)
+	mDNSBool        InterfaceActive;	// Set if interface is sending & receiving packets (see comment above)
 	mDNSBool        IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
 	mDNSBool        IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
 
@@ -1125,9 +1133,9 @@ struct NetworkInterfaceInfo_struct
     uDNS_NetworkInterfaceInfo uDNS_info;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
-	mDNSInterfaceID InterfaceID;		// MUST NOT be 0, -1, or -2
-	mDNSAddr        ip;
-	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
+	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
+	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
+	mDNSBool        Advertise;			// False if you are only searching on this interface
 	mDNSBool        McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	};
 
