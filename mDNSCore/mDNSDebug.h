@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.22  2004/04/22 04:27:42  cheshire
+Spacing tidyup
+
 Revision 1.21  2004/04/14 23:21:41  ksekar
 Removed accidental checkin of MALLOC_DEBUGING flag in 1.20
 
@@ -103,9 +106,9 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #define debugf debugf_
 extern void debugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #else // If debug breaks are off, use a preprocessor trick to optimize those calls out of the code
-	#if( defined( __GNUC__ ) )
+	#if (defined(__GNUC__))
 		#define	debugf( ARGS... ) ((void)0)
-	#elif( defined( __MWERKS__ ) )
+	#elif (defined(__MWERKS__))
 		#define	debugf( ... )
 	#else
 		#define debugf 1 ? ((void)0) : (void)
@@ -116,9 +119,9 @@ extern void debugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #define verbosedebugf verbosedebugf_
 extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #else
-	#if( defined( __GNUC__ ) )
+	#if (defined(__GNUC__))
 		#define	verbosedebugf( ARGS... ) ((void)0)
-	#elif( defined( __MWERKS__ ) )
+	#elif (defined(__MWERKS__))
 		#define	verbosedebugf( ... )
 	#else
 		#define verbosedebugf 1 ? ((void)0) : (void)
@@ -146,9 +149,9 @@ extern void freeL(char *msg, void *x);
 #if MACOSX_MDNS_MALLOC_DEBUGGING >= 2
 #define LogMalloc LogMsg
 #else
-	#if( defined( __GNUC__ ) )
+	#if (defined( __GNUC__ ))
 		#define	LogMalloc(ARGS...) ((void)0)
-	#elif( defined( __MWERKS__ ) )
+	#elif (defined( __MWERKS__ ))
 		#define	LogMalloc( ... )
 	#else
 		#define LogMalloc 1 ? ((void)0) : (void)
