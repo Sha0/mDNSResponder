@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.45  2003/09/04 00:16:20  cheshire
+Only show count of unique source addresses seen on network if we're not filtering
+
 Revision 1.44  2003/09/02 22:13:28  cheshire
 Show total host count in final summary table
 
@@ -819,7 +822,7 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	localtime_r((time_t*)&tv_end.tv_sec, &tm);
 	mprintf("End          %3d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv_end.tv_usec);
 	mprintf("Captured for %3d:%02d:%02d.%06d\n", h, m, s, tv_interval.tv_usec);
-	mprintf("Unique source addresses seen on network: %d\n", IPv4HostList.num + IPv6HostList.num);
+	if (!Filters) mprintf("Unique source addresses seen on network: %d\n", IPv4HostList.num + IPv6HostList.num);
 	mprintf("\n");
 	mprintf("Modern Query        Packets:      %7d   (avg%5d/min)\n", NumPktQ,        NumPktQ        * mul / div);
 	mprintf("Legacy Query        Packets:      %7d   (avg%5d/min)\n", NumPktL,        NumPktL        * mul / div);
