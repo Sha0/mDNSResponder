@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.52  2003/01/28 19:39:43  jgraessl
+
+Enabling AAAA over IPv4 support.
+
 Revision 1.51  2003/01/28 05:11:23  cheshire
 Fixed backwards comparison in SearchForInterfaceByName
 
@@ -79,7 +83,7 @@ Minor code tidying
 // For enabling AAAA records over IPv4. Setting this to 0 sends only
 // A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
 // AAAA and A records over both IPv4 and IPv6.
-#define AAAA_OVER_V4	0
+#define AAAA_OVER_V4	1
 
 void (*NotifyClientNetworkChanged)(void);
 
