@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.93  2003/08/08 18:55:48  cheshire
+<rdar://problem/3370365> Guard against time going backwards
+
 Revision 1.92  2003/08/08 18:36:04  cheshire
 <rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
 
@@ -835,6 +838,8 @@ struct mDNS_struct
 
 	// Task Scheduling variables
 	mDNSs32  timenow;					// The time that this particular activation of the mDNS code started
+	mDNSs32  timenow_last;				// The time the last time we ran
+	mDNSs32  timenow_adjust;			// Correction applied if we ever discover time went backwards
 	mDNSs32  NextScheduledEvent;		// Derived from values below
 	mDNSs32  SuppressSending;			// Don't send *any* packets during this time
 	mDNSs32  NextCacheCheck;			// Next time to refresh cache record before it expires

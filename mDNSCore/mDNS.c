@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.260  2003/08/08 18:55:48  cheshire
+<rdar://problem/3370365> Guard against time going backwards
+
 Revision 1.259  2003/08/08 18:36:04  cheshire
 <rdar://problem/3344154> Only need to revalidate on interface removal on platforms that have the PhantomInterfaces bug
 
@@ -4007,16 +4010,24 @@ mDNSlocal void mDNS_Lock(mDNS *const m)
 	if (m->mDNS_busy == 0)
 		{
 		if (m->timenow)
-			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNSPlatformTimeNow() - m->timenow);
-		m->timenow = mDNSPlatformTimeNow();
+			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNSPlatformTimeNow() + m->timenow_adjust);
+		m->timenow = mDNSPlatformTimeNow() + m->timenow_adjust;
 		if (m->timenow == 0) m->timenow = 1;
 		}
 	else if (m->timenow == 0)
 		{
 		LogMsg("mDNS_Lock: m->mDNS_busy is %ld but m->timenow not set", m->mDNS_busy);
-		m->timenow = mDNSPlatformTimeNow();
+		m->timenow = mDNSPlatformTimeNow() + m->timenow_adjust;
 		if (m->timenow == 0) m->timenow = 1;
 		}
+
+	if (m->timenow_last - m->timenow > 0)
+		{
+		m->timenow_adjust += m->timenow_last - m->timenow;
+		LogMsg("mDNSPlatformTimeNow went backwards by %ld ticks; setting correction factor to %ld", m->timenow_last - m->timenow, m->timenow_adjust);
+		m->timenow = m->timenow_last;
+		}
+	m->timenow_last = m->timenow;
 
 	// Increment mDNS_busy so we'll recognise re-entrant calls
 	m->mDNS_busy++;
@@ -6305,6 +6316,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 
 	// Task Scheduling variables
 	m->timenow                 = 0;		// MUST only be set within mDNS_Lock/mDNS_Unlock section
+	m->timenow_last            = timenow;
+	m->timenow_adjust          = 0;
 	m->NextScheduledEvent      = timenow;
 	m->SuppressSending         = timenow;
 	m->NextCacheCheck          = timenow + 0x78000000;
