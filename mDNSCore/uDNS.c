@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.50  2004/06/10 00:55:13  ksekar
+<rdar://problem/3686213>: crash on network reconnect
+
 Revision 1.49  2004/06/10 00:10:50  ksekar
 <rdar://problem/3686174>: Infinite Loop in uDNS_Execute()
 
@@ -2008,12 +2011,9 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     query->qtype = kDNSType_SOA;
     query->qclass = kDNSClass_IN;
     err = startInternalQuery(query, context->m, getZoneData, context);
-	if (err && err != mStatus_NotInitializedErr)
-		{ LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  return smError;  }
-	if (err == mStatus_NotInitializedErr)
-		LogMsg("hndlLookupSOA: startQuery called prior to initialization.  Question in list for retransmission");
-   
 	context->questionActive = mDNStrue;
+	if (err) LogMsg("hndlLookupSOA: startInternalQuery returned error %d (breaking until next periodic retransmission)", err);
+
     return smBreak;     // break from state machine until we receive another packet	
     }
 
@@ -2042,8 +2042,8 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 		query->qtype = kDNSType_NS;
 		query->qclass = kDNSClass_IN;
 		err = startInternalQuery(query, context->m, getZoneData, context);
-		if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
 		context->questionActive = mDNStrue;	   
+		if (err) LogMsg("confirmNS: startInternalQuery returned error %d (breaking until next periodic retransmission", err);
 		context->state = lookupNS;
 		return smBreak;  // break from SM until we receive another packet
 		}
@@ -2076,8 +2076,8 @@ mDNSlocal smAction queryNSAddr(ntaContext *context)
 	query->qtype = kDNSType_A;
 	query->qclass = kDNSClass_IN;
 	err = startInternalQuery(query, context->m, getZoneData, context);
-	if (err) { LogMsg("confirmNS: startInternalQuery returned error %d", err);  return smError; }
-	context->questionActive = mDNStrue;
+	context->questionActive = mDNStrue;	
+	if (err) LogMsg("confirmNS: startInternalQuery returned error %d (breaking until next periodic retransmission)", err);
 	context->state = lookupA;
 	return smBreak;
 	}
@@ -2178,8 +2178,8 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     q->qtype = kDNSType_SRV;
     q->qclass = kDNSClass_IN;
     err = startInternalQuery(q, context->m, getZoneData, context);
-    if (err) { LogMsg("hndlLookupSOA: startInternalQuery returned error %d", err);  return smError;  }
 	context->questionActive = mDNStrue;
+    if (err) LogMsg("hndlLookupSOA: startInternalQuery returned error %d (breaking until next periodic retransmission)", err);
     return smBreak;     // break from state machine until we receive another packet	
 	}
 
