@@ -68,6 +68,12 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.53  2003/05/23 02:15:37  cheshire
+Fixed misleading use of the term "duplicate suppression" where it should have
+said "known answer suppression". (Duplicate answer suppression is something
+different, and duplicate question suppression is yet another thing, so the use
+of the completely vague term "duplicate suppression" was particularly bad.)
+
 Revision 1.52  2003/05/22 02:29:22  cheshire
 <rdar://problem/2984918> SendQueries needs to handle multihoming better
 Complete rewrite of SendQueries. Works much better now :-)
@@ -487,7 +493,7 @@ struct ResourceRecord_struct
 	mDNSRecordUpdateCallback *UpdateCallback;
 
 	// Field Group 3: Transient state for Cache Records
-	ResourceRecord *NextDupSuppress;	// CR: Link to the next element in the chain of duplicate suppression answers to send
+	ResourceRecord *NextInKAList;		// CR: Link to the next element in the chain of known answers to send
 	mDNSs32         TimeRcvd;			// CR: In platform time units
 	mDNSs32         LastUsed;			// CR: In platform time units
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question

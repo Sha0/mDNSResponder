@@ -88,6 +88,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.129  2003/05/23 02:15:37  cheshire
+Fixed misleading use of the term "duplicate suppression" where it should have
+said "known answer suppression". (Duplicate answer suppression is something
+different, and duplicate question suppression is yet another thing, so the use
+of the completely vague term "duplicate suppression" was particularly bad.)
+
 Revision 1.128  2003/05/23 01:55:13  cheshire
 <rdar://problem/3267127> After name change, mDNSResponder needs to re-probe for name uniqueness
 
@@ -1435,14 +1441,14 @@ mDNSlocal mDNSBool IdenticalResourceRecordAnyInterface(const ResourceRecord *con
 	return(SameRData(r1->rrtype, r2->rrtype, r1->rdata, r2->rdata));
 	}
 
-// ResourceRecord *ds is the ResourceRecord from the duplicate suppression section of the query
+// ResourceRecord *ds is the ResourceRecord from the known answer list in the query
 // This is the information that the requester believes to be correct
 // ResourceRecord *rr is the answer we are proposing to give, if not suppressed
 // This is the information that we believe to be correct
-mDNSlocal mDNSBool SuppressDuplicate(const ResourceRecord *const ds, const ResourceRecord *const rr)
+mDNSlocal mDNSBool ShouldSuppressKnownAnswer(const ResourceRecord *const ka, const ResourceRecord *const rr)
 	{
-	// If RR signature is different, or data is different, then don't suppress
-	if (!IdenticalResourceRecord(ds,rr)) return(mDNSfalse);
+	// If RR signature is different, or data is different, then don't suppress our answer
+	if (!IdenticalResourceRecord(ka,rr)) return(mDNSfalse);
 	
 	// If the requester's indicated TTL is less than half the real TTL,
 	// we need to give our answer before the requester's copy expires.
@@ -1453,7 +1459,7 @@ mDNSlocal mDNSBool SuppressDuplicate(const ResourceRecord *const ds, const Resou
 	// (If two responders on the network are offering the same information,
 	// that's okay, and if they are offering the information with different TTLs,
 	// the one offering the lower TTL should defer to the one offering the higher TTL.)
-	return(ds->rroriginalttl >= rr->rroriginalttl / 2);
+	return(ka->rroriginalttl >= rr->rroriginalttl / 2);
 	}
 
 mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
@@ -1599,7 +1605,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->UpdateCallback    = mDNSNULL;
 
 	// Field Group 3: Transient state for Cache Records
-	rr->NextDupSuppress   = mDNSNULL;	// Not strictly relevant for a local record
+	rr->NextInKAList      = mDNSNULL;	// Not strictly relevant for a local record
 	rr->TimeRcvd          = 0;			// Not strictly relevant for a local record
 	rr->LastUsed          = 0;			// Not strictly relevant for a local record
 	rr->UseCount          = 0;			// Not strictly relevant for a local record
@@ -2125,7 +2131,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->UpdateCallback    = mDNSNULL;
 
 	// Field Group 3: Transient state for Cache Records
-	rr->NextDupSuppress   = mDNSNULL;
+	rr->NextInKAList      = mDNSNULL;
 	rr->TimeRcvd          = m->timenow;
 	rr->LastUsed          = m->timenow;
 	rr->UseCount          = 0;
@@ -2590,10 +2596,10 @@ mDNSlocal void SendResponses(mDNS *const m)
 #define MaxQuestionInterval         (3600 * mDNSPlatformOneSecond)
 
 // BuildQuestion puts a question into a DNS Query packet and if successful, updates the value of queryptr.
-// It also appends to the list of duplicate suppression records that need to be included,
-// and updates the forcast for the size of the duplicate suppression (answer) section.
+// It also appends to the list of known answer records that need to be included,
+// and updates the forcast for the size of the known answer section.
 mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, DNSQuestion *q,
-	ResourceRecord ***dups_ptr, mDNSu32 *answerforecast)
+	ResourceRecord ***kalistptrptr, mDNSu32 *answerforecast)
 	{
 	const mDNSu8 *const limit = query->data + (query->h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->name, q->rrtype, q->rrclass);
@@ -2606,12 +2612,12 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		{
 		mDNSu32 forecast = *answerforecast;
 		ResourceRecord *rr;
-		ResourceRecord **d = *dups_ptr;
+		ResourceRecord **ka = *kalistptrptr;	// Make a working copy of the pointer we're going to update
 
-		for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)			// If we have a resource record in our cache,
-			if (rr->InterfaceID == q->SendQNow &&								// received on this interface
-				rr->NextDupSuppress == mDNSNULL && d != &rr->NextDupSuppress &&	// which is not already in the duplicate suppression list
-				ResourceRecordAnswersQuestion(rr, q))							// which answers our question, then add it
+		for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)		// If we have a resource record in our cache,
+			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
+				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
+				ResourceRecordAnswersQuestion(rr, q))						// which answers our question, then add it
 				{
 				// Work out the latest time we should ask about this record to refresh it before it expires
 				mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
@@ -2620,8 +2626,8 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 				// its 80% final expiration query, then we should suppress it this time.
 				if ((expire - onetenth*2) - (m->timenow + q->ThisQInterval) > 0)
 					{
-					*d = rr;	// Link this record into our duplicate suppression chain
-					d = &rr->NextDupSuppress;
+					*ka = rr;	// Link this record into our known answer chain
+					ka = &rr->NextInKAList;
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					forecast += 12 + rr->rdestimate;
 					// If we're trying to put more than one question in this packet, and it doesn't fit
@@ -2630,8 +2636,8 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 						{
 						debugf("BuildQuestion retracting question %##s answerforecast %ld", q->name.c, *answerforecast);
 						query->h.numQuestions--;
-						d = *dups_ptr;		// Go back to where we started and retract these answer records
-						while (*d) { ResourceRecord *rr = *d; *d = mDNSNULL; d = &rr->NextDupSuppress; }
+						ka = *kalistptrptr;		// Go back to where we started and retract these answer records
+						while (*ka) { ResourceRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
 						return(mDNSfalse);
 						}
 					}
@@ -2640,13 +2646,13 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		// Success! Update our state pointers, increment UnansweredQueries as appropriate, and return
 		*queryptr        = newptr;				// Update the packet pointer
 		*answerforecast  = forecast;			// Update the forecast
-		*dups_ptr        = d;					// Update the known answer list pointer
+		*kalistptrptr    = ka;					// Update the known answer list pointer
 
-		for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)			// For every resource record in our cache,
-			if (rr->InterfaceID == q->SendQNow &&								// received on this interface
-				rr->NextDupSuppress == mDNSNULL && d != &rr->NextDupSuppress &&	// which is not in the duplicate suppression list
-				ResourceRecordAnswersQuestion(rr, q))							// which answers our question
-					rr->UnansweredQueries++;									// indicate that we're expecting a response
+		for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)		// For every resource record in our cache,
+			if (rr->InterfaceID == q->SendQNow &&							// received on this interface
+				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not in the known answer list
+				ResourceRecordAnswersQuestion(rr, q))						// which answers our question
+					rr->UnansweredQueries++;								// indicate that we're expecting a response
 
 		return(mDNStrue);
 		}
@@ -2671,7 +2677,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 	// For explanation of maxExistingQuestionInterval logic, see comments for maxExistingAnnounceInterval
 	mDNSs32 maxExistingQuestionInterval = 0;
 	const NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
-	ResourceRecord *NextDupSuppress = mDNSNULL;
+	ResourceRecord *KnownAnswerList = mDNSNULL;
 
 	// 1. If time for a query, work out what we need to do
 	if (m->timenow - m->NextScheduledQuery >= 0)
@@ -2760,11 +2766,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 		DNSMessage query;
 		mDNSu8 *queryptr = query.data;
 		InitializeDNSMessage(&query.h, zeroID, QueryFlags);
-		if (NextDupSuppress) debugf("SendQueries: NextDupSuppress set... Will continue from previous packet");
-		if (!NextDupSuppress)
+		if (KnownAnswerList) debugf("SendQueries: KnownAnswerList set... Will continue from previous packet");
+		if (!KnownAnswerList)
 			{
 			// Start a new known-answer list
-			ResourceRecord **dups = &NextDupSuppress;
+			ResourceRecord **kalistptr = &KnownAnswerList;
 			mDNSu32 answerforecast = 0;
 			
 			// Put query questions in this packet
@@ -2773,7 +2779,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					debugf("SendQueries: Putting question for %##s int %ld max %ld", q->name.c, q->ThisQInterval, maxExistingQuestionInterval);
 					// If we successfully put this question, update its SendQNow state
-					if (BuildQuestion(m, &query, &queryptr, q, &dups, &answerforecast))
+					if (BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
 						q->SendQNow = (q->InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
 
@@ -2802,20 +2808,20 @@ mDNSlocal void SendQueries(mDNS *const m)
 				}
 
 		// Put our known answer list (either new one from this question or questions, or remainder of old one from last time)
-		while (NextDupSuppress)
+		while (KnownAnswerList)
 			{
-			ResourceRecord *rr = NextDupSuppress;
+			ResourceRecord *rr = KnownAnswerList;
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
 			mDNSu8 *newptr = putResourceRecordTTL(&query, queryptr, &query.h.numAnswers, rr, rr->rroriginalttl - SecsSinceRcvd, mDNSNULL);
 			if (newptr)
 				{
 				queryptr = newptr;
-				NextDupSuppress = rr->NextDupSuppress;
-				rr->NextDupSuppress = mDNSNULL;
+				KnownAnswerList = rr->NextInKAList;
+				rr->NextInKAList = mDNSNULL;
 				}
 			else
 				{
-				debugf("BuildQueryPacketAnswers: Put %d answers; No more space for duplicate suppression", query.h.numAnswers);
+				debugf("BuildQueryPacketAnswers: Put %d answers; No more space for known answers", query.h.numAnswers);
 				query.h.flags.b[0] |= kDNSFlag0_TC;
 				break;
 				}
@@ -3691,7 +3697,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	ResourceRecord  *rr, *rr2;
 	int i;
 
-	// If TC flag is set, it means we should expect additional duplicate suppression info may be coming in another packet.
+	// If TC flag is set, it means we should expect that additional known answers may be coming in another packet.
 	if (query->h.flags.b[0] & kDNSFlag0_TC) delayresponse = mDNStrue;
 
 	// ***
@@ -3768,7 +3774,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 4. Parse Answer Section and cancel any records disallowed by duplicate suppression
+	// *** 4. Parse Answer Section and cancel any records disallowed by known answer list
 	// ***
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
@@ -3779,16 +3785,16 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 
 		// See if it suppresses any of our planned answers
 		for (rr=ResponseRecords; rr; rr=rr->NextResponse)
-			if (MustSendRecord(rr) && SuppressDuplicate(&pktrr, rr))
+			if (MustSendRecord(rr) && ShouldSuppressKnownAnswer(&pktrr, rr))
 				{ rr->NR_AnswerTo = mDNSNULL; rr->NR_AdditionalTo = mDNSNULL; }
 
 		// And see if it suppresses any previously scheduled answers
 		for (rr=m->ResourceRecords; rr; rr=rr->next)
 			{
 			// If this record has been requested by exactly one client, and that client is
-			// the same one sending this query, then allow inter-packet duplicate suppression
+			// the same one sending this query, then allow an inter-packet known answer list
 			if (mDNSSameAddress(&rr->Requester, srcaddr))
-				if (SuppressDuplicate(&pktrr, rr))
+				if (ShouldSuppressKnownAnswer(&pktrr, rr))
 					{
 					rr->SendPriority = 0;
 					rr->Requester    = zeroAddr;
@@ -3822,7 +3828,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 
 			if (replymulticast && !LargeRecordWithUnicastReply)
 				{
-				// If this query has additional duplicate suppression info
+				// If this query has additional known answers
 				// coming in another packet, then remember the requesting IP address
 				if (query->h.flags.b[0] & kDNSFlag0_TC)
 					{
