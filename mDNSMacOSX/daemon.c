@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.197  2004/10/12 23:38:59  ksekar
+<rdar://problem/3837065> remove unnecessary log message
+
 Revision 1.196  2004/10/04 05:56:04  cheshire
 <rdar://problem/3824730> mDNSResponder doesn't respond to certain AirPort changes
 
@@ -972,7 +975,7 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 	{
 	DNSServiceBrowser *ptr;
 
-	LogMsg("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+	debugf("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 	for (ptr = DNSServiceBrowserList; ptr; ptr = ptr->next)
 		{
 		if (ptr->DefaultDomain)
