@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.115  2004/11/13 00:12:53  ksekar
+Fixed some LogOperation printf converstions for debug builds.
+
 Revision 1.114  2004/11/12 18:25:45  shersche
 Tidy up cross platform usleep code fragment.
 
@@ -2186,7 +2189,7 @@ static void handle_add_request(request_state *rstate)
 		else { LogMsg("Don't know how to get default ttl for record.  Using default for Unique"); ttl = kDefaultTTLforUnique; }
 		}
 	
-	LogOperation("%3d: DNSServiceAddRecord(%##s)", rstate->sd, rstate->service_registration->name.c);
+	LogOperation("%3d: DNSServiceAddRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
 
 	for (i = rstate->service_registration->instances; i; i = i->next)
 		{
@@ -2254,7 +2257,7 @@ static void handle_update_request(request_state *rstate)
 
 	// update a record from a service record set
 	if (!srvinfo) { result = mStatus_BadReferenceErr;  goto end; }
-	LogOperation("%3d: DNSServiceUpdateRecord(%##s)", rstate->sd, rstate->service_registration->name.c);
+	LogOperation("%3d: DNSServiceUpdateRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
 	for (i = srvinfo->instances; i; i = i->next)
 		{
 		AuthRecord *rr = NULL;
@@ -2493,7 +2496,7 @@ static void handle_removerecord_request(request_state *rstate)
     ptr = rstate->msgdata;
     get_flags(&ptr);	// flags unused
 
-	LogOperation("%3d: DNSServiceRemoveRecord(%##s)", rstate->sd, rstate->service_registration->name.c);
+	LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
 
 	if (rstate->reg_recs)  err = remove_record(rstate);  // remove individually registered record
 	
