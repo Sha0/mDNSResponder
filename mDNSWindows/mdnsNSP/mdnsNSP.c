@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.3  2004/07/07 17:03:49  shersche
+<rdar://problem/3715582> Check for LUP_RETURN_ADDR as well as LUP_RETURN_BLOB in NSPLookupServiceBegin
+Bug #: 3715582
+
 Revision 1.2  2004/06/24 19:18:07  shersche
 Change RendezvousNSP to mdnsNSP
 Submitted by: herscher
@@ -418,7 +422,7 @@ DEBUG_LOCAL int WSPAPI
 	// Check if we can handle this type of request and if we support any of the protocols being requested.
 	// We only support the DNS namespace, TCP and UDP protocols, and IPv4. Only blob results are supported.
 	
-	require_action_quiet( inFlags & LUP_RETURN_BLOB, exit, err = WSASERVICE_NOT_FOUND );
+	require_action_quiet( inFlags & (LUP_RETURN_ADDR|LUP_RETURN_BLOB), exit, err = WSASERVICE_NOT_FOUND );
 	
 	type = inQuerySet->dwNameSpace;
 	require_action_quiet( ( type == NS_DNS ) || ( type == NS_ALL ), exit, err = WSASERVICE_NOT_FOUND );
