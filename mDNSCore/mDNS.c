@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.522  2005/03/04 21:48:12  cheshire
+<rdar://problem/4037283> Fractional time rounded down instead of up on platforms with coarse clock granularity
+
 Revision 1.521  2005/02/25 04:21:00  cheshire
 <rdar://problem/4015377> mDNS -F returns the same domain multiple times with different casing
 
@@ -3765,7 +3768,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				m->omsg.h.numAuthorities, m->omsg.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
 			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
 			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
-			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + mDNSPlatformOneSecond/10);
+			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+9)/10);
 			if (++pktcount >= 1000)
 				{ LogMsg("SendQueries exceeded loop limit %d: giving up", pktcount); break; }
 			// There might be more records left in the known answer list, or more questions to send
