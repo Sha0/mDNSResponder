@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.12  2004/06/18 05:22:16  rpantos
+Integrate Scott's changes
+
 Revision 1.11  2004/01/30 02:44:32  bradley
 Added support for IPv6 (v4 & v6, v4-only, v6-only, AAAA over v4, etc.). Added support for DNS-SD
 InterfaceID<->Interface Index mappings. Added support for loopback usage when no other interfaces
@@ -108,6 +111,12 @@ struct	mDNSInterfaceData
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
+/*!	@struct		mDNSInterfaceData
+
+	@abstract	Structure containing interface-specific data.
+*/
+typedef mDNSs32 (*IdleThreadCallback)(mDNS * const inMDNS, mDNSs32 interval);
+//---------------------------------------------------------------------------------------------------------------------------
 /*!	@struct		mDNS_PlatformSupport_struct
 
 	@abstract	Structure containing platform-specific data.
@@ -126,7 +135,9 @@ struct	mDNS_PlatformSupport_struct
 	SocketRef					interfaceListChangedSocket;
 	int							interfaceCount;
 	mDNSInterfaceData *			interfaceList;
+	mDNSInterfaceData *			inactiveInterfaceList;
 	DWORD						threadID;
+	IdleThreadCallback			idleThreadCallback;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------

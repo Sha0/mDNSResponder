@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.41  2004/06/18 05:22:16  rpantos
+Integrate Scott's changes
+
 Revision 1.40  2004/05/26 09:06:07  bradley
 Retry while building the interface list if it returns an error since the two-step process required to
 get the interface list could allow a subsequent interface change to come in that window and change the
@@ -404,6 +407,7 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 	
 	err = TearDownInterfaceList( inMDNS );
 	check_noerr( err );
+	check( !inMDNS->p->inactiveInterfaceList );
 		
 	err = TearDownSynchronizationObjects( inMDNS );
 	check_noerr( err );
@@ -764,12 +768,27 @@ mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( const mDNS * const inMDNS, mD
 	{
 		mDNSInterfaceData *		ifd;
 		
+		// Search active interfaces.
 		for( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
 		{
 			if( (mDNSInterfaceID) ifd == inID )
 			{
 				index = ifd->scopeID;
 				break;
+			}
+		}
+		
+		// Search inactive interfaces too so remove events for inactive interfaces report the old interface index.
+		
+		if( !ifd )
+		{
+			for( ifd = inMDNS->p->inactiveInterfaceList; ifd; ifd = ifd->next )
+			{
+				if( (mDNSInterfaceID) ifd == inID )
+				{
+					index = ifd->scopeID;
+					break;
+				}
 			}
 		}
 		check( ifd );
@@ -903,6 +922,7 @@ void	verbosedebugf_( const char *inFormat, ... )
 //	LogMsg
 //===========================================================================================================================
 
+/*
 void	LogMsg( const char *inFormat, ... )
 {
 	char		buffer[ 512 ];
@@ -915,6 +935,7 @@ void	LogMsg( const char *inFormat, ... )
 	
 	dlog( kDebugLevelWarning, "%s\n", buffer );
 }
+*/
 
 #if 0
 #pragma mark -
@@ -1195,11 +1216,31 @@ exit:
 mDNSlocal mStatus	TearDownInterfaceList( mDNS * const inMDNS )
 {
 	mStatus					err;
+	mDNSInterfaceData **		p;
 	mDNSInterfaceData *		ifd;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "tearing down interface list\n" );
 	check( inMDNS );
 	check( inMDNS->p );
+	
+	// Free any interfaces that were previously marked inactive and are no longer referenced by the mDNS cache.
+	// Interfaces are marked inactive, but not deleted immediately if they were still referenced by the mDNS cache
+	// so that remove events that occur after an interface goes away can still report the correct interface.
+
+	p = &inMDNS->p->inactiveInterfaceList;
+	while( *p )
+	{
+		ifd = *p;
+		if( NumCacheRecordsForInterfaceID( inMDNS, (mDNSInterfaceID) ifd ) > 0 )
+		{
+			p = &ifd->next;
+			continue;
+		}
+		
+		dlog( kDebugLevelInfo, DEBUG_NAME "freeing unreferenced, inactive interface %#p %#a\n", ifd, &ifd->interfaceInfo.ip );
+		*p = ifd->next;
+		free( ifd );
+	}
 	
 	// Tear down interface list change notifications.
 	
@@ -1406,10 +1447,21 @@ mDNSlocal mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inI
 	{
 		close_compat( sock );
 	}
-		
-	// Free the memory used by the interface info.
 	
-	free( inIFD );	
+	// If the interface is still referenced by items in the mDNS cache then put it on the inactive list. This keeps 
+	// the InterfaceID valid so remove events report the correct interface. If it is no longer referenced, free it.
+
+	if( NumCacheRecordsForInterfaceID( inMDNS, (mDNSInterfaceID) inIFD ) > 0 )
+	{
+		inIFD->next = inMDNS->p->inactiveInterfaceList;
+		inMDNS->p->inactiveInterfaceList = inIFD;
+		dlog( kDebugLevelInfo, DEBUG_NAME "deferring free of interface %#p %#a\n", inIFD, &inIFD->interfaceInfo.ip );
+	}
+	else
+	{
+		dlog( kDebugLevelInfo, DEBUG_NAME "freeing interface %#p %#a immediately\n", inIFD, &inIFD->interfaceInfo.ip );
+		free( inIFD );
+	}
 	return( mStatus_NoError );
 }
 
@@ -1812,6 +1864,10 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 			// Give the mDNS core a chance to do its work and determine next event time.
 			
 			mDNSs32 interval = mDNS_Execute(m) - mDNSPlatformTimeNow();
+			if (m->p->idleThreadCallback)
+			{
+				interval = m->p->idleThreadCallback(m, interval);
+			}
 			if      (interval < 0)						interval = 0;
 			else if (interval > (0x7FFFFFFF / 1000))	interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
 			else										interval = (interval * 1000) / mDNSPlatformOneSecond;
