@@ -5,28 +5,6 @@
 	};
 	objectVersion = 36;
 	objects = {
-		00B103B70252D1900CCA2C71 = {
-			isa = PBXFrameworkReference;
-			name = CoreServices.framework;
-			path = /Volumes/Jaguar6B33/System/Library/Frameworks/CoreServices.framework;
-			refType = 0;
-		};
-		00B1048A0252D1970CCA2C71 = {
-			fileRef = 00B103B70252D1900CCA2C71;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-//000
-//001
-//002
-//003
-//004
-//010
-//011
-//012
-//013
-//014
 		014CEA490018CE3211CA2923 = {
 			buildRules = (
 			);
@@ -112,7 +90,7 @@
 		08FB779DFE84155DC02AAC07 = {
 			children = (
 				09AB6884FE841BABC02AAC07,
-				00B103B70252D1900CCA2C71,
+				65713D46025A293200000109,
 			);
 			isa = PBXGroup;
 			name = "External Frameworks and Libraries";
@@ -126,7 +104,7 @@
 				08FB77A5FE84155DC02AAC07,
 			);
 			buildSettings = {
-				FRAMEWORK_SEARCH_PATHS = /Volumes/Jaguar6B33/System/Library/Frameworks;
+				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = "\"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\"";
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = "";
@@ -170,7 +148,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				09AB6885FE841BABC02AAC07,
-				00B1048A0252D1970CCA2C71,
+				65713D66025A293200000109,
 			);
 			isa = PBXFrameworksBuildPhase;
 		};
@@ -231,6 +209,18 @@
 //652
 //653
 //654
+		65713D46025A293200000109 = {
+			isa = PBXFrameworkReference;
+			name = SystemConfiguration.framework;
+			path = /System/Library/Frameworks/SystemConfiguration.framework;
+			refType = 0;
+		};
+		65713D66025A293200000109 = {
+			fileRef = 65713D46025A293200000109;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		6575FBE9022EAF5A00000109 = {
 			indentWidth = 4;
 			isa = PBXFileReference;

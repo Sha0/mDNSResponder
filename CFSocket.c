@@ -35,6 +35,8 @@
 #include <net/if.h>
 #include <ifaddrs.h>
 
+#include <SystemConfiguration/SystemConfiguration.h>
+
 // ***************************************************************************
 // Constants
 
@@ -117,8 +119,9 @@ mDNSlocal void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 
 mDNSlocal void GetUserSpecifiedComputerName(domainlabel *const namelabel)
 	{
-	CFStringRef cfs = CSCopyMachineName();
-	CFStringGetPascalString(cfs, namelabel->c, sizeof(*namelabel), kCFStringEncodingUTF8);
+	CFStringEncoding encoding;
+	CFStringRef cfs = SCDynamicStoreCopyComputerName(NULL, &encoding);
+	CFStringGetPascalString(cfs, namelabel->c, sizeof(*namelabel), encoding);
 	CFRelease(cfs);
 	}
 
