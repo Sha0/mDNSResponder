@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.25  2004/04/08 09:31:17  bradley
+Renamed local variable to avoid hiding a system global in some libraries.
+
 Revision 1.24  2004/01/30 02:56:34  bradley
 Updated to support full Unicode display. Added support for all services on www.dns-sd.org.
 
@@ -1001,7 +1004,6 @@ mDNSlocal void
 		
 		if( ( browserFlags & kDNSBrowserFlagAutoResolve ) && inAddRecord )
 		{
-			DNSStatus				err;
 			DNSResolverFlags		flags;
 			
 			flags = kDNSResolverFlagOnlyIfUnique | kDNSResolverFlagAutoReleaseByName;
@@ -1962,14 +1964,14 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 		case mStatus_NameConflict:
 		{
 			DNSStatus		err;
-			mDNSBool		remove;
+			mDNSBool		removeIt;
 			
 			debugf( DEBUG_NAME "registration callback: \"%##s\" name conflict", inSet->RR_SRV.resrec.name.c );
 			
 			// Name conflict. If the auto-rename option is enabled, uniquely rename the service and re-register it. Otherwise, 
 			// remove the object so they cannot try to use it in the callback and notify the client of the name conflict.
 			
-			remove = mDNStrue;
+			removeIt = mDNStrue;
 			if( object->flags & kDNSRegistrationFlagAutoRenameOnConflict )
 			{
 				err = mDNS_RenameAndReregisterService( inMDNS, inSet, mDNSNULL );
@@ -1977,10 +1979,10 @@ mDNSlocal void	DNSRegistrationPrivateCallBack( mDNS * const inMDNS, ServiceRecor
 				if( err == mStatus_NoError )
 				{
 					debugf( DEBUG_NAME "registration callback: auto-renamed to \"%##s\"", inSet->RR_SRV.resrec.name.c );
-					remove = mDNSfalse;
+					removeIt = mDNSfalse;
 				}
 			}
-			if( remove )
+			if( removeIt )
 			{
 				object = DNSRegistrationRemoveObject( object );
 				require( object, exit );
@@ -2960,7 +2962,7 @@ DNSStatus	DNSTextRecordEscape( const void *inTextRecord, size_t inTextSize, char
 			}
 			*dst++ = '\001';	// \001 record separator. May be overwritten later if this is the last record.
 		}
-		check( ( dst - dstStorage ) <= inTextSize );
+		check( (size_t)( dst - dstStorage ) <= inTextSize );
 		if( src != end )
 		{
 			// Malformed TXT record. Assume an old-style TXT record and use the TXT record as a whole.
