@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.195  2004/09/24 19:21:45  cheshire
+<rdar://problem/3671626> Report "Address already in use" errors
+
 Revision 1.194  2004/09/24 19:16:54  cheshire
 Remove "mDNS *const m" parameter from NotifyOfElusiveBug();
 Refine error message to say "Flaw in Kernel (select/recvfrom mismatch)"
@@ -1407,6 +1410,10 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 
 fail:
 	LogMsg("%s error %ld errno %d (%s)", errstr, err, errno, strerror(errno));
+	if (!strcmp(errstr, "bind") && errno == EADDRINUSE)
+		NotifyOfElusiveBug("Flaw in Kernel (Zombie PCB)", 3814904,
+			"Alternatively, you can send email to radar-3387020@group.apple.com. "
+			"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
 	close(skt);
 	return(err);
 	}
