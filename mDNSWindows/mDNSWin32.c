@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.56  2004/09/26 23:20:36  ksekar
+<rdar://problem/3813108> Allow default registrations in multiple wide-area domains
+
 Revision 1.55  2004/09/21 21:02:57  cheshire
 Set up ifname before calling mDNS_RegisterInterface()
 
@@ -936,6 +939,14 @@ mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
 	return mDNS_CopyDNameList(&tmp);
 	}
 
+//===========================================================================================================================
+//	mDNSPlatformGetRegDomainList
+//===========================================================================================================================
+
+mDNSexport DNameListElem *mDNSPlatformGetRegDomainList(void)
+	{
+	return NULL;
+	}
 
 
 #if 0

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.200  2004/09/26 23:20:35  ksekar
+<rdar://problem/3813108> Allow default registrations in multiple wide-area domains
+
 Revision 1.199  2004/09/24 23:54:55  cheshire
 <rdar://problem/3787102> Don't use kCFSocketCloseOnInvalidate
 
@@ -659,10 +662,12 @@ static mDNSu32 clockdivisor = 0;
 static mDNSBool DNSConfigInitialized = mDNSfalse;
 #define MAX_SEARCH_DOMAINS 32
 
-// for domain enumeration and default browsing
+// for domain enumeration and default browsing/registration
 static SearchListElem *SearchList = NULL;    // where we search for _browse domains
 static DNSQuestion DefBrowseDomainQ;         // our local enumeration query for _browse domains
 static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
+static DNameListElem *DefRegList = NULL;     // manually generated list of domains where we register for empty string registrations
+
 
 static mDNSBool LegacyNATInitialized = mDNSfalse;
 
@@ -689,6 +694,58 @@ static KeychainDomain *KeychainHostDomains = NULL;  // List of domains in which 
 
 // ***************************************************************************
 // Functions
+
+
+// routines to allow access to default domain lists from daemon layer
+
+mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
+	{
+	return mDNS_CopyDNameList(DefBrowseList);
+	}
+
+mDNSexport DNameListElem *mDNSPlatformGetRegDomainList(void)
+	{
+	return mDNS_CopyDNameList(DefRegList);
+	}
+
+// utility routines to manage registration domain lists
+
+mDNSlocal void AddDefRegDomain(domainname *d)
+	{
+	DNameListElem *newelem = NULL, *ptr;
+
+	// make sure name not already in list
+	for (ptr = DefRegList; ptr; ptr = ptr->next)
+		{
+		if (SameDomainName(&ptr->name, d))
+			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
+		}
+	
+	newelem = mallocL("DNameListElem", sizeof(*newelem));
+	if (!newelem) { LogMsg("Error - malloc"); return; }
+	AssignDomainName(newelem->name, *d);
+	newelem->next = DefRegList;
+	DefRegList = newelem;
+	}
+
+mDNSlocal void RemoveDefRegDomain(domainname *d)
+	{
+	DNameListElem *ptr = DefRegList, *prev = NULL;
+
+	while (ptr)
+		{
+		if (SameDomainName(&ptr->name, d))
+			{
+			if (prev) prev->next = ptr->next;
+			else DefRegList = ptr->next;
+			freeL("DNameListElem", ptr);
+			return;
+			}
+		prev = ptr;
+		ptr = ptr->next;
+		}
+	debugf("Requested removal of default registration domain %##s not in contained in list", d->c); 
+	}
 
 mDNSlocal void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const char *msg)
 	{
@@ -2017,7 +2074,6 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 
 mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
 	char buf[MAX_ESCAPED_DOMAIN_NAME];
 	char secret[1024];
 	int slen;
@@ -2044,16 +2100,16 @@ mDNSlocal void ReadZoneFromConfFile(mDNS *const m)
 		}
 
 	if (!DynDNSZone.c[0]) return;
+	AddDefRegDomain(&DynDNSZone); 	//set default (empty-string) service registration domain
 
-	// set default (empty-string) service registration domain
-	AssignDomainName(u->ServiceRegDomain, DynDNSZone);         //!!!KRS this needs to go away for multi-users
-	if (secret[0] && u->ServiceRegDomain.c[0])
+	if (secret[0])
 		{
 		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
 		slen = strlen(secret);
-		err = mDNS_SetSecretForZone(m, &u->ServiceRegDomain, &u->ServiceRegDomain, secret, slen, mDNStrue);
-		if (err) LogMsg("ERROR: mDNS_SetSecretForZone returned %d for domain %#s", err, &u->ServiceRegDomain);
+		err = mDNS_SetSecretForZone(m, &DynDNSZone, &DynDNSZone, secret, slen, mDNStrue);
+		if (err) LogMsg("ERROR: mDNS_SetSecretForZone returned %d for domain %##s", err, DynDNSZone.c);
 		}
+
 	mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
 	
 	// update _browse/_register domain list
@@ -2082,13 +2138,17 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 	GetUserSpecifiedDDNSZone(&zone);
 	if (!SameDomainName(&zone, &DynDNSZone))
 		{
-		if (DynDNSZone.c[0]) mDNS_RemoveDynDNSHostDomain(m, &DynDNSZone);
+		if (DynDNSZone.c[0])
+			{
+			RemoveDefRegDomain(&DynDNSZone);
+			mDNS_RemoveDynDNSHostDomain(m, &DynDNSZone);
+			}
 		AssignDomainName(DynDNSZone, zone);
 		if (DynDNSZone.c[0])
 			{
 			mDNS_AddDynDNSHostDomain(m, &DynDNSZone, SCPrefsDynDNSCallback, NULL);
 			SetDDNSNameStatus(&DynDNSZone, 1);
-			AssignDomainName(m->uDNS_info.ServiceRegDomain, zone);  //!!!KRS temporary until we have multi-user support
+			AddDefRegDomain(&zone);
 			}
 		}
 
@@ -2378,7 +2438,8 @@ mDNSlocal void AddKeychainHostDomains(mDNS *m)
 			new->browse = malloc(sizeof(AuthRecord));
 			new->reg = malloc(sizeof(AuthRecord));
 			if (!new->browse || !new->reg) { LogMsg("ERROR: malloc"); return; }
-
+			AddDefRegDomain(&zone);
+			
 			// set up _browse
 			mDNS_SetupResourceRecord(new->browse, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, KeychainEnumRRCallback, mDNSNULL);
 			MakeDomainNameFromDNSNameString(&new->browse->resrec.name, "_default._browse._dns-sd._udp.local.");
@@ -2408,7 +2469,6 @@ mDNSlocal void AddKeychainHostDomains(mDNS *m)
 			mDNS_SetSecretForZone(m, &zone, &zone, secret, secretlen, mDNStrue);
 			mDNS_AddDynDNSHostDomain(m, &zone, DynDNSRegCallback, NULL);
 
-			AssignDomainName(m->uDNS_info.ServiceRegDomain, zone);  //!!!KRS temporary until we have multi-user support
 			}
 
 		if (secret) free(secret);
@@ -2457,6 +2517,7 @@ mDNSlocal void RemoveKeychainDomains(mDNS *m)
 		{
 		if (ptr->flag) 	// delete
 			{
+			RemoveDefRegDomain(&ptr->domain);
 			mDNS_Deregister(m, ptr->reg);
 			mDNS_Deregister(m, ptr->browse);
 			mDNS_RemoveDynDNSHostDomain(m, &ptr->domain);
@@ -2524,25 +2585,6 @@ mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 	return(err == 0);
 	}
 
-mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
-	{
-	return mDNS_CopyDNameList(DefBrowseList);
-	}
-
-mDNSexport DNameListElem *mDNSPlatformGetRegDomainList(void)
-	{
-	static DNameListElem tmp;
-	static mDNSBool init = mDNSfalse;
-
-	if (!init)
-		{
-		MakeDomainNameFromDNSNameString(&tmp.name, "local.");
-		tmp.next = NULL;
-		init = mDNStrue;
-		}
-	return mDNS_CopyDNameList(&tmp);
-	}
-	
 mDNSlocal void FoundDefBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	DNameListElem *ptr, *prev, *new;

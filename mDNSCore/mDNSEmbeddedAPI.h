@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.215  2004/09/26 23:20:35  ksekar
+<rdar://problem/3813108> Allow default registrations in multiple wide-area domains
+
 Revision 1.214  2004/09/25 02:41:39  cheshire
 <rdar://problem/3637266> Deliver near-pending "remove" events before new "add" events
 
@@ -1410,6 +1413,7 @@ typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
 struct ExtraResourceRecord_struct
 	{
 	ExtraResourceRecord *next;
+    mDNSu32 ClientID;  // Opaque ID field to be used by client to map an AddRecord call to a set of Extra records
 	AuthRecord r;
 	// Note: Add any additional fields *before* the AuthRecord in this structure, not at the end.
 	// In some cases clients can allocate larger chunks of memory and set r->rdata->MaxRDLength to indicate
