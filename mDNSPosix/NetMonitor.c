@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.6  2003/05/05 21:16:16  cheshire
+ * <rdar://problem/3241281> Change timenow from a local variable to a structure member
+ *
  * Revision 1.5  2003/04/19 01:16:22  cheshire
  * Add filter option, to monitor only packets from a single specified source address
  *
@@ -204,12 +207,12 @@ mDNSlocal void printstats(void)
 		}
 	}
 
-mDNSlocal mDNSBool FindUpdate(const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, ResourceRecord *pktrr)
+mDNSlocal mDNSBool FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end, DNSQuestion *q, ResourceRecord *pktrr)
 	{
 	int i;
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
-		ptr = getResourceRecord(query, ptr, end, q->InterfaceID, 0, 0, pktrr, mDNSNULL);
+		ptr = getResourceRecord(m, query, ptr, end, q->InterfaceID, 0, pktrr, mDNSNULL);
 		if (!ptr) break;
 		if (ResourceRecordAnswersQuestion(pktrr, q)) return(mDNStrue);
 		}
@@ -225,7 +228,7 @@ mDNSlocal void DisplayTimestamp(void)
 	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
 	}
 
-mDNSlocal void DisplayQuery(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
+mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
@@ -240,7 +243,7 @@ mDNSlocal void DisplayQuery(const DNSMessage *const msg, const mDNSu8 *const end
 		DNSQuestion q;
 		ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ QUESTION **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
-		if (FindUpdate(msg, auth, end, &q, &pktrr))
+		if (FindUpdate(m, msg, auth, end, &q, &pktrr))
 			{
 			NumProbes++;
 			mprintf("%#-16a (P)  %-5s %##s\n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
@@ -256,14 +259,14 @@ mDNSlocal void DisplayQuery(const DNSMessage *const msg, const mDNSu8 *const end
 
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
-		ptr = getResourceRecord(msg, ptr, end, InterfaceID, 0, 0, &pktrr, mDNSNULL);
+		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		mprintf("%#-16a (KA) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
 		if (pktrr.rrtype == kDNSType_PTR) mprintf(" -> %##s", pktrr.rdata->u.name.c);
 		mprintf("\n");
 		}
 	}
 
-mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
+mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
 	const mDNSu8 *ptr = msg->data;
@@ -283,7 +286,7 @@ mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, c
 	for (i=0; i<msg->h.numAnswers; i++)
 		{
 		const char *op = "AN";
-		ptr = getResourceRecord(msg, ptr, end, InterfaceID, 0, 0, &pktrr, mDNSNULL);
+		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ANSWER **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
 		NumAnswers++;
 		if (pktrr.rroriginalttl == 0) op = "DE";
@@ -295,14 +298,14 @@ mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, c
 
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
-		ptr = getResourceRecord(msg, ptr, end, InterfaceID, 0, 0, &pktrr, mDNSNULL);
+		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ AUTHORITY **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
 		mprintf("%#-16a (?)  **** ERROR: SHOULD NOT HAVE AUTHORITY IN mDNS RESPONSE **** %-5s %##s\n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
 		}
 
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
-		ptr = getResourceRecord(msg, ptr, end, InterfaceID, 0, 0, &pktrr, mDNSNULL);
+		ptr = getResourceRecord(m, msg, ptr, end, InterfaceID, 0, &pktrr, mDNSNULL);
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
 		NumAdditionals++;
 		mprintf("%#-16a (AD) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
@@ -332,8 +335,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 			msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
 			
 			mDNS_Lock(m);
-			if      (QR_OP == StdQ) DisplayQuery   (msg, end, srcaddr, InterfaceID);
-			else if (QR_OP == StdR) DisplayResponse(msg, end, srcaddr, InterfaceID);
+			if      (QR_OP == StdQ) DisplayQuery   (m, msg, end, srcaddr, InterfaceID);
+			else if (QR_OP == StdR) DisplayResponse(m, msg, end, srcaddr, InterfaceID);
 			else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
 			mDNS_Unlock(m);
 			}
