@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.12  2005/03/21 00:42:45  shersche
+<rdar://problem/4021486> Fix build warnings on Win32 platform
+
 Revision 1.11  2005/03/16 03:04:51  shersche
 <rdar://problem/4050633> Don't issue multicast query multilabel dot-local names
 
@@ -603,10 +606,10 @@ DEBUG_LOCAL int WSPAPI
 	}
 	else
 	{
-		char			*	replyDomain;
+		const char	*	replyDomain;
 		int				labels		= 0;
 		const char	*	label[128];
-		char				text[64];
+		char			text[64];
 
 		// <rdar://problem/3936771>
 		//
@@ -629,7 +632,7 @@ DEBUG_LOCAL int WSPAPI
 		while ( *replyDomain )
 		{
 			label[labels++]	= replyDomain;
-			replyDomain			= GetNextLabel(replyDomain, text);
+			replyDomain		= GetNextLabel(replyDomain, text);
 		}
 
 		require_action( labels == 2, exit, err = WSASERVICE_NOT_FOUND );

@@ -26,6 +26,7 @@
 
 #include "dDNS.h"
 #include "DNSCommon.h"
+#include "uds_daemon.h"
 #include <winsock2.h>
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
@@ -471,7 +472,7 @@ mDNSlocal void SetSCPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, m
 		{
 			if ( !browseDomain->name.c[0] )
 				{
-				LogMsg("SetSCPrefsBrowseDomains bad DDNS browse domain: %s", browseDomain->name.c[0] ? browseDomain->name.c : "(unknown)");
+				LogMsg("SetSCPrefsBrowseDomains bad DDNS browse domain: %s", browseDomain->name.c[0] ? (char*) browseDomain->name.c : "(unknown)");
 				}
 			else
 				{

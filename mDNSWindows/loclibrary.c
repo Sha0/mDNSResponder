@@ -72,7 +72,7 @@ static int _getISOCode(LANGID wLangID, char *isoLangCode, int codeLen) {
 		int startIndex = i * MODULO_ISOCODES;
 		
 		langCode = (ISOCODES[startIndex] << 8);
-		langCode += ( (unsigned short) (ISOCODES[startIndex + 1]) );
+		langCode = langCode + ( (unsigned short) (ISOCODES[startIndex + 1]) );
 
 		if (langCode == wLangID) {
 			char *langStr = (char *)&(ISOCODES[startIndex+2]);

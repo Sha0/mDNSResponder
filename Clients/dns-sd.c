@@ -550,7 +550,7 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	for (i = 0; i < argc; i++)
 		{
 		unsigned char *len = ptr++;
-		*len = strlen(argv[i]);
+		*len = (unsigned char) strlen(argv[i]);
 		strcpy((char*)ptr, argv[i]);
 		ptr += *len;
 		}
@@ -558,7 +558,7 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	printf("Registering Service %s.%s%s", nam, typ, dom);
 	if (host && *host) printf(" host %s", host);
 	printf(" port %s %s\n", port, txt);
-	return(DNSServiceRegister(sdRef, /* kDNSServiceFlagsAllowRemoteQuery */ 0, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, ptr-txt, txt, reg_reply, NULL));
+	return(DNSServiceRegister(sdRef, /* kDNSServiceFlagsAllowRemoteQuery */ 0, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
 	}
 
 int main(int argc, char **argv)

@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.46  2005/03/21 00:39:31  shersche
+<rdar://problem/4021486> Fix build warnings on Win32 platform
+
 Revision 1.45  2005/02/01 01:25:06  shersche
 Define sleep() to be Sleep() for Windows compatibility
 
@@ -271,6 +274,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
     if (!reuse_socket)
         {
 #if defined(USE_TCP_LOOPBACK)
+		ctrl_path[0];	// Unused
 		*len += 2;	// Allocate space for two-byte port number
 #else
 		struct timeval time;
@@ -369,7 +373,7 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
     char *data = (char *)msg + sizeof(ipc_msg_hdr);
     dnssd_sock_t listenfd = dnssd_InvalidSocket, errsd = dnssd_InvalidSocket;
 	int ret;
-	unsigned int len = sizeof(caddr);
+	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(caddr);
     DNSServiceErrorType err = kDNSServiceErr_Unknown;
 
     if (!hdr || sdr->sockfd < 0) return kDNSServiceErr_Unknown;
