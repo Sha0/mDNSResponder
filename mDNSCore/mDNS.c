@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.263  2003/08/09 00:35:29  cheshire
+Moved AnswerNewQuestion() later in the file, in preparation for next checkin
+
 Revision 1.262  2003/08/08 19:50:33  cheshire
 <rdar://problem/3370332> Remove "Cache size now xxx" messages
 
@@ -3765,58 +3768,6 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, ResourceRecord *rr)
 	m->CurrentQuestion = mDNSNULL;
 	}
 
-mDNSlocal void AnswerNewQuestion(mDNS *const m)
-	{
-	mDNSBool ShouldQueryImmediately = mDNStrue;
-	ResourceRecord *rr;
-	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
-	m->NewQuestions = q->next;				// Advance NewQuestions to the next (if any)
-
-	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-
-	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
-	// This should be safe, because calling the client's question callback may cause the
-	// question list to be modified, but should not ever cause the rrcache list to be modified.
-	// If the client's question callback deletes the question, then m->CurrentQuestion will
-	// be advanced, and we'll exit out of the loop
-	m->lock_rrcache = 1;
-	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
-	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
-	for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)
-		if (ResourceRecordAnswersQuestion(rr, q))
-			{
-			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
-			// That means we will round up the rrremainingttl:
-			// If the rroriginalttl was 1 second, and we received the record 0.999 seconds ago,
-			// we'll report a rrremainingttl of 1, which is what we want, not zero.
-			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-			if (rr->rroriginalttl <= SecsSinceRcvd)
-				{
-				LogMsg("AnswerNewQuestion: How is rr->rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
-					rr->rroriginalttl, SecsSinceRcvd, rr->name.c, DNSTypeName(rr->rrtype));
-				continue;	// Go to next one in loop
-				}
-
-			// If this record set is marked unique, then that means we can reasonably assume we have the whole set
-			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
-			if (rr->RecordType & kDNSRecordTypePacketUniqueMask) ShouldQueryImmediately = mDNSfalse;
-			rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
-			q->CurrentAnswers++;
-			if (rr->rdata->RDLength > SmallRecordLimit) q->LargeAnswers++;
-			AnswerQuestionWithResourceRecord(m, q, rr);
-			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
-			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
-			}
-
-	if (ShouldQueryImmediately && m->CurrentQuestion == q)
-		{
-		q->LastQTime = m->timenow - q->ThisQInterval;
-		m->NextScheduledQuery = m->timenow;
-		}
-	m->CurrentQuestion = mDNSNULL;
-	m->lock_rrcache = 0;
-	}
-
 mDNSlocal void ReleaseCacheRR(mDNS *const m, ResourceRecord *r)
 	{
 	if (r->rdata && r->rdata != &r->rdatastorage)
@@ -3892,6 +3843,58 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 						}
 		}
 
+	m->lock_rrcache = 0;
+	}
+
+mDNSlocal void AnswerNewQuestion(mDNS *const m)
+	{
+	mDNSBool ShouldQueryImmediately = mDNStrue;
+	ResourceRecord *rr;
+	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
+	m->NewQuestions = q->next;				// Advance NewQuestions to the next (if any)
+
+	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+
+	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
+	// This should be safe, because calling the client's question callback may cause the
+	// question list to be modified, but should not ever cause the rrcache list to be modified.
+	// If the client's question callback deletes the question, then m->CurrentQuestion will
+	// be advanced, and we'll exit out of the loop
+	m->lock_rrcache = 1;
+	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
+	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
+	for (rr=m->rrcache_hash[HashSlot(&q->qname)]; rr; rr=rr->next)
+		if (ResourceRecordAnswersQuestion(rr, q))
+			{
+			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
+			// That means we will round up the rrremainingttl:
+			// If the rroriginalttl was 1 second, and we received the record 0.999 seconds ago,
+			// we'll report a rrremainingttl of 1, which is what we want, not zero.
+			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
+			if (rr->rroriginalttl <= SecsSinceRcvd)
+				{
+				LogMsg("AnswerNewQuestion: How is rr->rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
+					rr->rroriginalttl, SecsSinceRcvd, rr->name.c, DNSTypeName(rr->rrtype));
+				continue;	// Go to next one in loop
+				}
+
+			// If this record set is marked unique, then that means we can reasonably assume we have the whole set
+			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
+			if (rr->RecordType & kDNSRecordTypePacketUniqueMask) ShouldQueryImmediately = mDNSfalse;
+			rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
+			q->CurrentAnswers++;
+			if (rr->rdata->RDLength > SmallRecordLimit) q->LargeAnswers++;
+			AnswerQuestionWithResourceRecord(m, q, rr);
+			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
+			}
+
+	if (ShouldQueryImmediately && m->CurrentQuestion == q)
+		{
+		q->LastQTime = m->timenow - q->ThisQInterval;
+		m->NextScheduledQuery = m->timenow;
+		}
+	m->CurrentQuestion = mDNSNULL;
 	m->lock_rrcache = 0;
 	}
 
@@ -5848,10 +5851,10 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	set->next = mDNSNULL;
 	*p = set;
 
-	if (set->InterfaceActive)
-		debugf("mDNS_RegisterInterface: InterfaceID %p not represented in list; marking active and retriggering queries", set->InterfaceID);
-	else
-		debugf("mDNS_RegisterInterface: InterfaceID %p already represented in list; marking inactive for now", set->InterfaceID);
+	debugf("mDNS_RegisterInterface: InterfaceID %p %#a %s", set->InterfaceID, &set->ip,
+		set->InterfaceActive ?
+			"not represented in list; marking active and retriggering queries" :
+			"already represented in list; marking inactive for now");
 
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
