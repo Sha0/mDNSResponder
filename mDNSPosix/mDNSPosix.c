@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.22  2003/08/06 18:46:15  cheshire
+LogMsg() errors are serious -- always report them to stderr, regardless of debugging level
+
 Revision 1.21  2003/08/06 18:20:51  cheshire
 Makefile cleanup
 
@@ -189,8 +192,7 @@ mDNSexport void LogMsg(const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
-	if (gMDNSPlatformPosixVerboseLevel >= 1)
-		fprintf(stderr, "%s\n", buffer);
+	fprintf(stderr, "%s\n", buffer);
 	fflush(stderr);
 	}
 
@@ -553,7 +555,7 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 			{
 			bindAddr.sin_family      = AF_INET;
 			bindAddr.sin_port        = port.NotAnInteger;
-			bindAddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
+			bindAddr.sin_addr.s_addr = INADDR_ANY; // Want to receive multicasts AND unicasts on this socket
 			err = bind(*sktPtr, (struct sockaddr *) &bindAddr, sizeof(bindAddr));
 			if (err < 0) { err = errno; perror("bind"); fflush(stderr); }
 			}
