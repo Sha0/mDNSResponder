@@ -88,6 +88,13 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.95  2003/04/01 23:46:05  cheshire
+<rdar://problem/3214832> mDNSResponder can get stuck in infinite loop after many location cycles
+mDNS_DeregisterInterface() flushes the RR cache by marking all records received on that interface
+to expire in one second. However, if a mDNS_StartResolveService() call is made in that one-second
+window, it can get an SRV answer from one of those soon-to-be-deleted records, resulting in
+FoundServiceInfoSRV() making an interface-specific query on the interface that was just removed.
+
 Revision 1.94  2003/03/29 01:55:19  cheshire
 <rdar://problem/3212360> mDNSResponder sometimes suffers false self-conflicts when it sees its own packets
 Solution: Major cleanup of packet timing and conflict handling rules
@@ -593,7 +600,7 @@ char *DNSTypeName(mDNSu16 rrtype)
 	{
 	switch (rrtype)
 		{
-		case kDNSType_A:	return("Address");
+		case kDNSType_A:	return("Addr");
 		case kDNSType_CNAME:return("CNAME");
 		case kDNSType_PTR:	return("PTR");
 		case kDNSType_TXT:  return("TXT");
@@ -2065,7 +2072,7 @@ mDNSlocal void UpdateAnnouncedRecord(ResourceRecord *const rr, const mDNSs32 tim
 
 // If we're sleeping, only send deregistrations
 mDNSlocal mDNSu8 *BuildSleepResponse(mDNS *const m,
-	DNSMessage *const response, mDNSu8 *responseptr, const mDNSInterfaceID InterfaceID, const mDNSs32 timenow)
+	DNSMessage *const response, mDNSu8 *responseptr, const mDNSInterfaceID InterfaceID)
 	{
 	ResourceRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -2277,7 +2284,7 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 
 	// First build the generic part of the message
 	InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
-	if (m->SleepState) baselimit = BuildSleepResponse(m, &response, response.data, mDNSInterface_Any, timenow);
+	if (m->SleepState) baselimit = BuildSleepResponse(m, &response, response.data, mDNSInterface_Any);
 	else               baselimit = BuildResponse     (m, &response, response.data, mDNSInterface_Any, timenow);
 	baseheader = response.h;
 
@@ -2287,7 +2294,7 @@ mDNSlocal void SendResponses(mDNS *const m, const mDNSs32 timenow)
 			// Restore the header to the counts for the generic records
 			response.h = baseheader;
 			// Now add any records specific to this interface
-			if (m->SleepState) responseptr = BuildSleepResponse(m, &response, baselimit, intf->InterfaceID, timenow);
+			if (m->SleepState) responseptr = BuildSleepResponse(m, &response, baselimit, intf->InterfaceID);
 			else               responseptr = BuildResponse     (m, &response, baselimit, intf->InterfaceID, timenow);
 			if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
 				{
@@ -2739,7 +2746,12 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m, const mDNSs32 timenow)
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
 			if (rr->rroriginalttl <= SecsSinceRcvd) rr->rrremainingttl = 0;
 			else rr->rrremainingttl = rr->rroriginalttl - SecsSinceRcvd;
-			AnswerQuestionWithResourceRecord(m, q, rr, timenow);
+			
+			// We only give positive responses to new questions.
+			// Since this question is new, it has not received any answers yet, so there's no point
+			// telling it about records that are going away that it never heard about in the first place.
+			if (rr->rrremainingttl > 0)
+				AnswerQuestionWithResourceRecord(m, q, rr, timenow);
 			// MUST NOT touch q again after calling AnswerQuestionWithResourceRecord()
 			}
 	m->CurrentQuestion = mDNSNULL;
@@ -3720,11 +3732,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport, mDNSInterfaceID InterfaceID)
+	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
+	const mDNSInterfaceID InterfaceID)
 	{
-	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
-	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
-	mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
+	const mDNSu8 StdQ  = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 StdR  = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
 	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
@@ -4458,12 +4471,14 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			for (rr = m->rrcache; rr; rr=rr->next)
 				if (rr->InterfaceID == set->InterfaceID)
 					{
-					rr->TimeRcvd          = timenow - mDNSPlatformOneSecond;
+					// Make sure we mark this record as thoroughly expired -- we don't ever want
+					// to give a positive answer using a record from an interface that has gone away.
+					rr->TimeRcvd          = timenow - mDNSPlatformOneSecond * 60;
 					rr->UnansweredQueries = 2;
-					rr->rroriginalttl     = 1;
+					rr->rroriginalttl     = 0;
 					count++;
 					}
-			if (count) debugf("mDNS_DeregisterInterface: Flushing %d Cache Entries on interface 0x%.4X", count, set->InterfaceID);
+			if (count) debugf("mDNS_DeregisterInterface: Flushing %d Cache Entries on interface %X", count, set->InterfaceID);
 
 			// 3. Deactivate any authoritative records specific to this interface
 			// Any records that are in kDNSRecordTypeDeregistering state will be automatically discarded
