@@ -56,6 +56,39 @@ static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
 
 static int debug_mode = 0;
 
+static CFMachPortRef client_death_port;
+
+/* Enable dead name notifications for the given port (send them to our global notification port) */
+
+static kern_return_t EnableDeathNotificationForClient(mach_port_t port)
+{
+    kern_return_t r;
+    mach_port_t oldPort;
+
+    r = mach_port_request_notification(mach_task_self(), port, MACH_NOTIFY_DEAD_NAME, 0, CFMachPortGetPort(client_death_port), MACH_MSG_TYPE_MAKE_SEND_ONCE, &oldPort);
+    if ( r != KERN_SUCCESS)
+    {
+        /* 5/20/99 - This can happen if the client died after sending the message but before we received it */
+        printf("(%s:%d) failed to set up death notifications for port %d: {0x%x} %s\n", __FILE__, __LINE__, (int)port, r, mach_error_string(r));
+    }
+
+    return r;
+
+} // EnableDeathNotifications
+
+static mach_port_t NotificationDeathPort(const mach_msg_header_t *msg)
+{
+    if ( MACH_NOTIFY_DEAD_NAME == msg->msgh_id )
+    {
+        const mach_dead_name_notification_t *deathMessage = (const mach_dead_name_notification_t *)msg;
+        return deathMessage->not_port;
+    }
+    return MACH_PORT_NULL;
+
+} // MessageIsNotificationDeath
+
+
+
 local void FoundService(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, void *context)
 	{
 	#pragma unused (question)
@@ -100,6 +133,8 @@ kern_return_t provide_DNSServiceBrowserCreate_rpc
     err = mDNS_StartBrowse(&m, q, regtype, domain, zeroIPAddr, FoundService, (void*)client);
     if (err) { debugf("provide_DNSServiceBrowserCreate_rpc: mDNS_StartBrowse failed"); return(err); }
 
+    EnableDeathNotificationForClient(client);
+
     // reply
     // 
     return 0;
@@ -119,6 +154,7 @@ kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc
     DNSServiceDomainEnumerationReply_rpc(client, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.arpa.", 0);
 	if (!registrationDomains)
 		DNSServiceDomainEnumerationReply_rpc(client, DNSServiceDomainEnumerationReplyAddDomain, "apple.com.", 0);
+    EnableDeathNotificationForClient(client);
     return 0;
 }
 
@@ -162,6 +198,9 @@ kern_return_t provide_DNSServiceRegistrationCreate_rpc
 
 	// For now, return immediate success to client
     DNSServiceRegistrationReply_rpc(client, 0);
+
+    EnableDeathNotificationForClient(client);
+
     return 0;
 
 }
@@ -188,11 +227,13 @@ kern_return_t provide_DNSServiceResolverResolve_rpc
     }
 
     h = gethostbyname("www.apple.com");
+    return_address.sin_len = 16;
     return_address.sin_family = h->h_addrtype;
     memcpy((char *)&return_address.sin_addr.s_addr, h->h_addr_list[0], h->h_length);
     return_address.sin_port = htons(80);
 
     h = gethostbyname("www.epicware.com");
+    return_interface.sin_len = 16;
     return_interface.sin_family = h->h_addrtype;
     memcpy((char *)&return_interface.sin_addr.s_addr, h->h_addr_list[0], h->h_length);
     return_interface.sin_port = htons(2000);
@@ -206,10 +247,26 @@ kern_return_t provide_DNSServiceResolverResolve_rpc
     bcopy(&return_address, buffer1, return_address.sin_len);
     bcopy(&return_interface, buffer2, return_interface.sin_len);
 
+    printf("address = %d\n", return_address.sin_len);
+    printf("address port = %d\n", return_address.sin_port);
+    printf("address addr = %s\n", inet_ntoa(return_address.sin_addr));
+    printf("interface = %d\n", return_interface.sin_len);
+    printf("interface port = %d\n", return_interface.sin_port);
+    printf("interface addr = %s\n", inet_ntoa(return_interface.sin_addr));
+
     // reply
-    // DNSServiceResolverReply_rpc(client, buffer1, buffer2, "Resolver data for apple.com, epicware.com", 0);
+    DNSServiceResolverReply_rpc(client, buffer1, buffer2, "Resolver data for apple.com, epicware.com", 0);
     return 0;
 }
+
+void
+clientDeathCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+{
+
+    mach_port_t deadPort = NotificationDeathPort(msg);
+    printf("The client on port %d died or deallocated\n", deadPort);
+}
+    
 
 void
 dnsserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
@@ -317,11 +374,18 @@ start(const char *bundleName, const char *bundleDir)
     /* Create the primary / new connection port */
     server_port = CFMachPortCreate(NULL, dnsserverCallback, NULL, NULL);
 
-    /* Create and add a run loop source for the port */
+    /* Create a port for client death notifications */
+    client_death_port = CFMachPortCreate(NULL, clientDeathCallback, NULL, NULL);
+
+    /* Create and add a run loop source for the ports */
     rls = CFMachPortCreateRunLoopSource(NULL, server_port, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
     CFRelease(rls);
 
+    rls = CFMachPortCreateRunLoopSource(NULL, client_death_port, 0);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
+    CFRelease(rls);
+    
     // Register the server port with the bootstrap server so clients can find it
 
     status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, CFMachPortGetPort(server_port));
