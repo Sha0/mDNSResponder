@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.231  2004/11/06 00:59:33  ksekar
+Don't log ENETDOWN errors for unicast destinations (pollutes log on
+wake from sleep)
+
 Revision 1.230  2004/11/05 01:04:10  ksekar
 <rdar://problem/3774577> LegacyNATDestroy() called too enthusiastically
 
@@ -972,8 +976,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, to.ss_len);
 	if (err < 0)
 		{
-        // Don't report EHOSTDOWN (i.e. ARP failure) to unicast destinations
-		if (errno == EHOSTDOWN && !mDNSAddressIsAllDNSLinkGroup(dst)) return(err);
+        // Don't report EHOSTDOWN (i.e. ARP failure) or ENETDOWN to unicast destinations
+		if ((errno == EHOSTDOWN || errno == ENETDOWN) && !mDNSAddressIsAllDNSLinkGroup(dst)) return(err);
 		// Don't report EHOSTUNREACH in the first three minutes after boot
 		// This is because mDNSResponder intentionally starts up early in the boot process (See <rdar://problem/3409090>)
 		// but this means that sometimes it starts before configd has finished setting up the multicast routing entries.
