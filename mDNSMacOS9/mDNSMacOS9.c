@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.23  2004/02/09 23:24:43  cheshire
+Need to set TTL 255 to interoperate with peers that check TTL (oops!)
+
 Revision 1.22  2004/01/27 20:15:23  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -61,6 +64,12 @@ static const TSetBooleanOption kReusePortOption =
 // IP_RCVDSTADDR gives error #-3151 (kOTBadOptionErr)
 static const TSetBooleanOption kRcvDestAddrOption =
 	{ sizeof(TSetBooleanOption),      INET_IP, IP_REUSEPORT,     0, true };
+
+static const TSetByteOption kSetUnicastTTLOption =
+	{ sizeof(TSetByteOption),        INET_IP, IP_TTL,            0, 255 };
+
+static const TSetByteOption kSetMulticastTTLOption =
+	{ sizeof(TSetByteOption),        INET_IP, IP_MULTICAST_TTL,  0, 255 };
 
 static const TIPAddMulticastOption kAddLinkMulticastOption  =
 	{ sizeof(TIPAddMulticastOption), INET_IP, IP_ADD_MEMBERSHIP, 0, { 224,  0,  0,251 }, { 0,0,0,0 } };
@@ -265,6 +274,8 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 				{
 				case mOT_ReusePort:		m->p->optBlock.b = kReusePortOption;         mDNSOptionManagement(m); break;
 				case mOT_RcvDestAddr:	m->p->optBlock.b = kRcvDestAddrOption;       mDNSOptionManagement(m); break;
+				case mOT_SetUTTL:		m->p->optBlock.i = kSetUnicastTTLOption;     mDNSOptionManagement(m); break;
+				case mOT_SetMTTL:		m->p->optBlock.i = kSetMulticastTTLOption;   mDNSOptionManagement(m); break;
 				case mOT_LLScope:		m->p->optBlock.m = kAddLinkMulticastOption;  mDNSOptionManagement(m); break;
 				case mOT_AdminScope:	m->p->optBlock.m = kAddAdminMulticastOption; mDNSOptionManagement(m); break;
 				case mOT_Bind:			OTBind(m->p->ep, (TBind*)&mDNSbindReq, NULL); break;

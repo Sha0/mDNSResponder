@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.h,v $
+Revision 1.9  2004/02/09 23:25:35  cheshire
+Need to set TTL 255 to interoperate with peers that check TTL (oops!)
+
 Revision 1.8  2003/08/12 19:56:24  cheshire
 Update to APSL 2.0
 
@@ -41,6 +44,8 @@ typedef enum
 	mOT_Start,
 	mOT_ReusePort,
 	mOT_RcvDestAddr,
+	mOT_SetUTTL,
+	mOT_SetMTTL,
 	mOT_LLScope,
 	mOT_AdminScope,
 	mOT_Bind,
@@ -48,11 +53,12 @@ typedef enum
 	} mOT_State;
 
 typedef struct { TOptionHeader h; mDNSv4Addr multicastGroupAddress; mDNSv4Addr InterfaceAddress; } TIPAddMulticastOption;
+typedef struct { TOptionHeader h; UInt8 val; } TSetByteOption;
 typedef struct { TOptionHeader h; UInt32 flag; } TSetBooleanOption;
 
 // TOptionBlock is a union of various types.
 // What they all have in common is that they all start with a TOptionHeader.
-typedef union  { TOptionHeader h; TIPAddMulticastOption m; TSetBooleanOption b; } TOptionBlock;
+typedef union  { TOptionHeader h; TIPAddMulticastOption m; TSetByteOption i; TSetBooleanOption b; } TOptionBlock;
 
 struct mDNS_PlatformSupport_struct
 	{
