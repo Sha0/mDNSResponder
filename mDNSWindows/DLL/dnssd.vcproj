@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-        Version="7.10"
+        Version="7.00"
 	Name="DLL"
 	ProjectGUID="{AB581101-18F0-46F6-B56A-83A6B1EA657E}"
 	Keyword="Win32Proj">
