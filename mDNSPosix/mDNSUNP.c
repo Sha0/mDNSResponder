@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.21  2004/11/08 22:13:59  rpantos
+Create sockf6 lazily when v6 interface found.
+
 Revision 1.20  2004/10/16 00:17:01  cheshire
 <rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
 
@@ -146,11 +149,6 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        goto gotError;
-    }
-
-    sockf6 = socket(AF_INET6, SOCK_DGRAM, 0);
-    if (sockf6 < 0) {
         goto gotError;
     }
 
@@ -299,6 +297,8 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
 #ifdef  SIOCGIFNETMASK_IN6
 				{
 				struct in6_ifreq ifr6;
+				if (sockf6 == -1)
+					sockf6 = socket(AF_INET6, SOCK_DGRAM, 0);
 				bzero(&ifr6, sizeof(ifr6));
 				memcpy(&ifr6.ifr_name,           &ifr->ifr_name, sizeof(ifr6.ifr_name          ));
 				memcpy(&ifr6.ifr_ifru.ifru_addr, &ifr->ifr_addr, sizeof(ifr6.ifr_ifru.ifru_addr));
