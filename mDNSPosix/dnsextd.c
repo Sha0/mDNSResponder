@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.10  2004/11/12 00:35:28  ksekar
+<rdar://problem/3876705> dnsextd: uninitialized pointer can cause crash
+
 Revision 1.9  2004/11/10 20:38:17  ksekar
 <rdar://problem/3874168> dnsextd: allow a "fudge" in LLQ lease echo
 
@@ -1413,7 +1416,8 @@ mDNSlocal LLQEntry *NewLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qn
 	e->qtype = qtype;
 	memset(e->id, 0, 8);
 	e->state = RequestReceived;
-
+	e->KnownAnswers = NULL;
+	
 	if (lease < LLQ_MIN_LEASE) lease = LLQ_MIN_LEASE;
 	else if (lease > LLQ_MAX_LEASE) lease = LLQ_MIN_LEASE;
 	gettimeofday(&t, NULL);
