@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.36  2004/01/24 04:59:16  cheshire
+Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
+
 Revision 1.35  2004/01/23 21:37:08  cheshire
 For consistency, rename multicastSocket to multicastSocket4, and multicastSocketv6 to multicastSocket6
 
@@ -408,6 +411,39 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 	if (packetLen >= 0)
 		mDNSCoreReceive(m, &packet, (mDNSu8 *)&packet + packetLen,
 			&senderAddr, senderPort, &destAddr, MulticastDNSPort, intf->coreIntf.InterfaceID, ttl);
+	}
+
+mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context, int *descriptor)
+	{
+	(void)dst;			// Unused
+	(void)dstport;		// Unused
+	(void)InterfaceID;	// Unused
+	(void)callback;		// Unused
+	(void)context;		// Unused
+	(void)descriptor;	// Unused
+	return(mStatus_UnsupportedErr);
+	}
+
+mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
+	{
+	(void)sd;			// Unused
+	}
+
+mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+	{
+	(void)sd;			// Unused
+	(void)buf;			// Unused
+	(void)buflen;			// Unused
+	return(0);
+	}
+
+mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+	{
+	(void)sd;			// Unused
+	(void)msg;			// Unused
+	(void)len;			// Unused
+	return(0);
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK

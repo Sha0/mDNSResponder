@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.11  2004/01/24 04:59:16  cheshire
+Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
+
 Revision 1.10  2003/11/14 21:27:09  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
 Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
@@ -509,6 +512,43 @@ exit:
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send UDP done\n" );
 	return( err );
 }
+
+//===========================================================================================================================
+//	Connection-oriented (TCP) functions
+//===========================================================================================================================
+
+mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context, int *descriptor)
+	{
+	(void)dst;			// Unused
+	(void)dstport;		// Unused
+	(void)InterfaceID;	// Unused
+	(void)callback;		// Unused
+	(void)context;		// Unused
+	(void)descriptor;	// Unused
+	return(mStatus_UnsupportedErr);
+	}
+
+mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
+	{
+	(void)sd;			// Unused
+	}
+
+mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+	{
+	(void)sd;			// Unused
+	(void)buf;			// Unused
+	(void)buflen;			// Unused
+	return(0);
+	}
+
+mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+	{
+	(void)sd;			// Unused
+	(void)msg;			// Unused
+	(void)len;			// Unused
+	return(0);
+	}
 
 //===========================================================================================================================
 //	mDNSPlatformLock

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.26  2004/01/24 04:59:16  cheshire
+Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
+
 Revision 1.25  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -571,6 +574,43 @@ exit:
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send UDP done\n" );
 	return( err );
 }
+
+//===========================================================================================================================
+//	Connection-oriented (TCP) functions
+//===========================================================================================================================
+
+mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context, int *descriptor)
+	{
+	(void)dst;			// Unused
+	(void)dstport;		// Unused
+	(void)InterfaceID;	// Unused
+	(void)callback;		// Unused
+	(void)context;		// Unused
+	(void)descriptor;	// Unused
+	return(mStatus_UnsupportedErr);
+	}
+
+mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
+	{
+	(void)sd;			// Unused
+	}
+
+mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+	{
+	(void)sd;			// Unused
+	(void)buf;			// Unused
+	(void)buflen;			// Unused
+	return(0);
+	}
+
+mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+	{
+	(void)sd;			// Unused
+	(void)msg;			// Unused
+	(void)len;			// Unused
+	return(0);
+	}
 
 //===========================================================================================================================
 //	mDNSPlatformLock

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.138  2004/01/24 04:59:15  cheshire
+Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
+
 Revision 1.137  2004/01/24 03:40:56  cheshire
 Move mDNSAddrIsDNSMulticast() from DNSCommon.h to mDNSEmbeddedAPI.h so clients can use it
 
@@ -1519,15 +1522,6 @@ extern void mDNSPlatformTCPCloseConnection(int sd);
 extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
 extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 
-extern void mDNSPlatformAssert(mDNSBool exp);
-
-// Byte order conversion functions
-extern mDNSu16 mDNSPlatformNtoHS(mDNSu16 s);
-extern mDNSu16 mDNSPlatformHtoNS(mDNSu32 s);
-extern mDNSu32 mDNSPlatformNtoHL(mDNSu32 l);
-extern mDNSu32 mDNSPlatformHtoHL(mDNSu32 l);
-	
-	
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())

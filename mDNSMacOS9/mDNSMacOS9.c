@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.21  2004/01/24 04:59:16  cheshire
+Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
+
 Revision 1.20  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
 Best solution is just to combine mDNSClientAPI.h and mDNSPlatformFunctions.h into a single file.
@@ -177,6 +180,38 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	return(err);
 	}
 
+mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context, int *descriptor)
+	{
+	(void)dst;			// Unused
+	(void)dstport;		// Unused
+	(void)InterfaceID;	// Unused
+	(void)callback;		// Unused
+	(void)context;		// Unused
+	(void)descriptor;	// Unused
+	return(mStatus_UnsupportedErr);
+	}
+
+mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
+	{
+	(void)sd;			// Unused
+	}
+
+mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+	{
+	(void)sd;			// Unused
+	(void)buf;			// Unused
+	(void)buflen;			// Unused
+	return(0);
+	}
+
+mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+	{
+	(void)sd;			// Unused
+	(void)msg;			// Unused
+	(void)len;			// Unused
+	return(0);
+	}
 
 mDNSlocal void mDNSOptionManagement(mDNS *const m)
 	{

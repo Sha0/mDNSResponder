@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.127  2004/01/24 04:59:16  cheshire
+Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
+
 Revision 1.126  2004/01/23 23:23:15  ksekar
 Added TCP support for truncated unicast messages.
 
@@ -394,9 +397,6 @@ Minor code tidying
 #include <IOKit/IOMessage.h>
 #include <mach/mach_time.h>
 
-#include <assert.h>
-
-
 // ***************************************************************************
 // Globals
 
@@ -730,7 +730,6 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 		} 
 	}
 
-
 // TCP socket support for unicast DNS and Dynamic DNS Update
 
 typedef struct
@@ -755,7 +754,6 @@ mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType Callbac
 	info->callback(CFSocketGetNative(cfs), info->context, connect);
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!  
 	}
-
 
 mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
 										  TCPConnectionCallback callback, void *context, int *descriptor)
@@ -876,6 +874,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	close(sd);
 	freeL("mDNSPlatformTCPCloseConnection", info);	
 	}
+
 mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
 	{
 	int nread = recv(sd, buf, buflen, 0);
@@ -900,13 +899,6 @@ mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
 		}
 	return nsent;
 	}
-
-mDNSexport mDNSu16 mDNSPlatformNtoHS(mDNSu16 s)  { return ntohs(s); }
-mDNSexport mDNSu16 mDNSPlatformHtoNS(mDNSu32 s)  { return htons(s); }
-mDNSexport mDNSu32 mDNSPlatformNtoHL(mDNSu32 l)  { return ntohl(l); }
-mDNSexport mDNSu32 mDNSPlatformHtoHL(mDNSu32 l)  { return htonl(l); }
-
-mDNSexport void mDNSPlatformAssert(mDNSBool exp) { assert(exp); }
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
 mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
@@ -1385,7 +1377,6 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 			p = &i->next;
 		}
 	}
-
 
 static mDNSBool DNSConfigInitialized = mDNSfalse;
 

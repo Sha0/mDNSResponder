@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.6  2004/01/24 04:59:15  cheshire
+Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
+
 Revision 1.5  2004/01/23 23:23:14  ksekar
 Added TCP support for truncated unicast messages.
 
@@ -1266,12 +1269,13 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 	{
 	mStatus status;
 	int nsent;
-	mDNSu16 msglen;
+	mDNSs32 msglen;
 	mDNSu8 lenbuf[2];
 	mDNSu16 numQuestions   = msg->h.numQuestions;
 	mDNSu16 numAnswers     = msg->h.numAnswers;
 	mDNSu16 numAuthorities = msg->h.numAuthorities;
 	mDNSu16 numAdditionals = msg->h.numAdditionals;
+	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
 
 	if (tcp && sd < 0)
 		{
@@ -1280,7 +1284,6 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 		}
 
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
-	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
 	*ptr++ = (mDNSu8)(numQuestions   >> 8);
 	*ptr++ = (mDNSu8)(numQuestions       );
 	*ptr++ = (mDNSu8)(numAnswers     >> 8);
@@ -1297,7 +1300,7 @@ mDNSlocal mStatus sendDNSMessage(const mDNS *const m, DNSMessage *const msg, con
 		msglen = end - (mDNSu8 *)msg; 
 		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
 		lenbuf[1] = (mDNSu8)(msglen);
-		nsent = mDNSPlatformWriteTCP(sd, lenbuf, 2);
+		nsent = mDNSPlatformWriteTCP(sd, (char*)lenbuf, 2);
 		//!!!KRS make sure kernel is sending these as 1 packet!
 		if (nsent != 2) goto tcp_error;
 		nsent = mDNSPlatformWriteTCP(sd, (char *)msg, msglen);
