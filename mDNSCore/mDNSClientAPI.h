@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.85  2003/07/19 03:23:13  cheshire
+<rdar://problem/2986147> mDNSResponder needs to receive and cache larger records
+
 Revision 1.84  2003/07/18 23:52:12  cheshire
 To improve consistency of field naming, global search-and-replace:
 NextProbeTime    -> NextScheduledProbe
@@ -515,9 +518,13 @@ enum
 
 typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target; } rdataSRV;
 
+// Standard RData size is 264 (256+8), which is large enough to hold a maximum-sized SRV record
+#define StandardRDSize 264
+#define MaximumRDSize 8192
+
 typedef union
 	{
-	mDNSu8      data[768];	// Generic untyped data (temporarily set 768 for the benefit of Airport Extreme printing)
+	mDNSu8      data[StandardRDSize];
 	mDNSv4Addr  ip;			// For 'A' record
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	domainname  name;		// For PTR and CNAME records
@@ -531,6 +538,7 @@ typedef struct
 	mDNSu16    RDLength;	// Size of the rdata currently stored here
 	RDataBody  u;
 	} RData;
+#define sizeofRDataHeader (sizeof(RData) - sizeof(RDataBody))
 
 typedef struct ResourceRecord_struct ResourceRecord;
 typedef struct DNSQuestion_struct DNSQuestion;
@@ -618,7 +626,16 @@ struct ResourceRecord_struct
 	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
 	RData           *rdata;				// Pointer to storage for this rdata
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
+	// rdatastorage MUST be the last thing in the structure -- when using oversized ResourceRecords, extra bytes
+	// are appended after the end of the ResourceRecord, logically augmenting the size of the rdatastorage
+	// DO NOT ADD ANY MORE FIELDS HERE
 	};
+
+typedef struct
+	{
+	ResourceRecord r;
+	mDNSu8 _extradata[MaximumRDSize-StandardRDSize];		// Glue on the necessary number of extra bytes
+	} LargeResourceRecord;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 

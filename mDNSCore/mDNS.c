@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.237  2003/07/19 03:23:13  cheshire
+<rdar://problem/2986147> mDNSResponder needs to receive and cache larger records
+
 Revision 1.236  2003/07/19 03:04:55  cheshire
 Fix warnings; some debugf message improvements
 
@@ -2620,6 +2623,9 @@ mDNSlocal const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *
 	return(ptr + pktrdlength);
 	}
 
+#define GetLargeResourceRecord(m, msg, p, e, i, t, L) \
+	(((L)->r.rdatastorage.MaxRDLength = MaximumRDSize), GetResourceRecord((m), (msg), (p), (e), (i), (t), &(L)->r, &(L)->r.rdatastorage))
+
 mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end,
 	const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, ResourceRecord *rr, RData *RDataStorage)
 	{
@@ -3654,6 +3660,16 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	m->lock_rrcache = 0;
 	}
 
+mDNSlocal void ReleaseCacheRR(mDNS *const m, ResourceRecord *r)
+	{
+	if (r->rdata && r->rdata != &r->rdatastorage)
+		mDNSPlatformMemFree(r->rdata);
+	r->rdata = mDNSNULL;
+	r->next = m->rrcache_free;
+	m->rrcache_free = r;
+	m->rrcache_totalused--;
+	}
+
 mDNSlocal void CheckCacheExpiration(mDNS *const m)
 	{
 	mDNSu32 slot;
@@ -3680,9 +3696,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 					m->rrcache_active--;
 					}
 				m->rrcache_used[slot]--;
-				m->rrcache_totalused--;
-				rr->next = m->rrcache_free;	// and move it back to the free list
-				m->rrcache_free = rr;
+				ReleaseCacheRR(m, rr);
 				}
 			else							// else, not expired; see if we need to query
 				{
@@ -3724,7 +3738,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 	m->lock_rrcache = 0;
 	}
 
-mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
+mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 	{
 	ResourceRecord *r = mDNSNULL;
 
@@ -3776,9 +3790,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 					ResourceRecord *r = *rr;
 					*rr = (*rr)->next;			// Cut record from list
 					m->rrcache_used[slot]--;	// Decrement counts
-					m->rrcache_totalused--;
-					r->next = m->rrcache_free;	// Move record to free list
-					m->rrcache_free = r;
+					ReleaseCacheRR(m, r);
 					}
 				}
 			}
@@ -3791,17 +3803,29 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 		{
 		r = m->rrcache_free;
 		m->rrcache_free = r->next;
-		if (m->rrcache_totalused+1 >= m->rrcache_report)
+		}
+
+	if (r)
+		{
+		if (++m->rrcache_totalused >= m->rrcache_report)
 			{
-			debugf("RR Cache now using %ld records", m->rrcache_totalused+1);
+			debugf("RR Cache now using %ld records", m->rrcache_totalused);
 			if (m->rrcache_report < 100) m->rrcache_report += 10;
 			else                         m->rrcache_report += 100;
+			}
+		mDNSPlatformMemZero(r, sizeof(*r));
+		r->rdata = &r->rdatastorage;		// By default, assume we're usually going to be using local storage
+	
+		if (RDLength > StandardRDSize)		// If RDLength is too big, allocate extra storage
+			{
+			r->rdata = (RData*)mDNSPlatformMemAllocate(sizeofRDataHeader + RDLength);
+			if (r->rdata) r->rdata->MaxRDLength = r->rdata->RDLength = RDLength;
+			else { ReleaseCacheRR(m, r); r = mDNSNULL; }
 			}
 		}
 
 	m->lock_rrcache = 0;
 
-	if (r) mDNSPlatformMemZero(r, sizeof(*r));
 	return(r);
 	}
 
@@ -4236,17 +4260,17 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 
 	for (i = 0; i < query->h.numAuthorities; i++)
 		{
-		ResourceRecord pktrr;
-		ptr = GetResourceRecord(m, query, ptr, end, q->InterfaceID, 0, &pktrr, mDNSNULL);
+		LargeResourceRecord pkt;
+		ptr = GetLargeResourceRecord(m, query, ptr, end, q->InterfaceID, 0, &pkt);
 		if (!ptr) break;
-		if (ResourceRecordAnswersQuestion(&pktrr, q))
+		if (ResourceRecordAnswersQuestion(&pkt.r, q))
 			{
 			FoundUpdate = mDNStrue;
-			if (PacketRRConflict(m, our, &pktrr))
+			if (PacketRRConflict(m, our, &pkt.r))
 				{
-				int result          = (int)our->rrclass - (int)pktrr.rrclass;
-				if (!result) result = (int)our->rrtype  - (int)pktrr.rrtype;
-				if (!result) result = CompareRData(our, &pktrr);
+				int result          = (int)our->rrclass - (int)pkt.r.rrclass;
+				if (!result) result = (int)our->rrtype  - (int)pkt.r.rrtype;
+				if (!result) result = CompareRData(our, &pkt.r);
 				switch (result)
 					{
 					case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",  our->name.c, DNSTypeName(our->rrtype));
@@ -4429,20 +4453,21 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
 		// Get the record...
-		ResourceRecord pktrr, *rr, *ourcacherr;
-		ptr = GetResourceRecord(m, query, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pktrr, mDNSNULL);
+		LargeResourceRecord pkt;
+		ResourceRecord *rr, *ourcacherr;
+		ptr = GetLargeResourceRecord(m, query, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pkt);
 		if (!ptr) goto exit;
 
 		// See if this Known-Answer suppresses any of our currently planned answers
 		for (rr=ResponseRecords; rr; rr=rr->NextResponse)
-			if (MustSendRecord(rr) && ShouldSuppressKnownAnswer(&pktrr, rr))
+			if (MustSendRecord(rr) && ShouldSuppressKnownAnswer(&pkt.r, rr))
 				{ rr->NR_AnswerTo = mDNSNULL; rr->NR_AdditionalTo = mDNSNULL; }
 
 		// See if this Known-Answer suppresses any previously scheduled answers (for multi-packet KA suppression)
 		for (rr=m->ResourceRecords; rr; rr=rr->next)
 			{
 			// If we're planning to send this answer on this interface, and only on this interface, then allow KA suppression
-			if (rr->ImmedAnswer == InterfaceID && ShouldSuppressKnownAnswer(&pktrr, rr))
+			if (rr->ImmedAnswer == InterfaceID && ShouldSuppressKnownAnswer(&pkt.r, rr))
 				{
 				if (srcaddr->type == mDNSAddrType_IPv4)
 					{
@@ -4458,7 +4483,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 
 		// See if this Known-Answer suppresses any answers we were expecting for our cache records. We do this always,
 		// even if the TC bit is not set (the TC bit will *not* be set in the *last* packet of a multi-packet KA list).
-		ourcacherr = FindIdenticalRecordInCache(m, &pktrr);
+		ourcacherr = FindIdenticalRecordInCache(m, &pkt.r);
 		if (ourcacherr && ourcacherr->MPExpectingKA && m->timenow - ourcacherr->MPLastUnansweredQT < mDNSPlatformOneSecond)
 			{
 			ourcacherr->MPUnansweredKA++;
@@ -4472,7 +4497,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		while (*eap)
 			{
 			ResourceRecord *rr = *eap;
-			if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
+			if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pkt.r, rr))
 				{ *eap = rr->NextInKAList; rr->NextInKAList = mDNSNULL; }
 			else eap = &rr->NextInKAList;
 			}
@@ -4484,7 +4509,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			while (*dqp)
 				{
 				DNSQuestion *q = *dqp;
-				if (ResourceRecordAnswersQuestion(&pktrr, q))
+				if (ResourceRecordAnswersQuestion(&pkt.r, q))
 					{ *dqp = q->NextInDQList; q->NextInDQList = mDNSNULL; }
 				else dqp = &q->NextInDQList;
 				}
@@ -4731,9 +4756,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
-		ResourceRecord pktrr;
+		LargeResourceRecord pkt;
 		const mDNSu8 RecordType = (mDNSu8)((i < response->h.numAnswers) ? kDNSRecordTypePacketAns : kDNSRecordTypePacketAdd);
-		ptr = GetResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &pktrr, mDNSNULL);
+		ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &pkt);
 		if (!ptr) return;
 
 		// 1. Check that this packet resource record does not conflict with any of ours
@@ -4743,13 +4768,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			{
 			ResourceRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (PacketRRMatchesSignature(&pktrr, rr))		// If interface, name, type (if verified) and class match...
+			if (PacketRRMatchesSignature(&pkt.r, rr))		// If interface, name, type (if verified) and class match...
 				{
 				// ... check to see if rdata is identical
-				if (SameRData(pktrr.rrtype, rr->rrtype, pktrr.rdata, rr->rdata))
+				if (SameRData(pkt.r.rrtype, rr->rrtype, pkt.r.rdata, rr->rdata))
 					{
 					// If the RR in the packet is identical to ours, just check they're not trying to lower the TTL on us
-					if (pktrr.rroriginalttl >= rr->rroriginalttl/2 || m->SleepState)
+					if (pkt.r.rroriginalttl >= rr->rroriginalttl/2 || m->SleepState)
 						{
 						// If we were planning to send on this -- and only this -- interface, then we don't need to any more
 						if (rr->ImmedAnswer == InterfaceID) rr->ImmedAnswer = mDNSNULL;
@@ -4763,10 +4788,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				else
 					{
 					// else, the packet RR has different rdata -- check to see if this is a conflict
-					if (pktrr.rroriginalttl > 0 && PacketRRConflict(m, rr, &pktrr))
+					if (pkt.r.rroriginalttl > 0 && PacketRRConflict(m, rr, &pkt.r))
 						{
 						debugf("mDNSCoreReceiveResponse: Our Record: %s", GetRRDisplayString(m, rr));
-						debugf("mDNSCoreReceiveResponse: Pkt Record: %s", GetRRDisplayString(m, &pktrr));
+						debugf("mDNSCoreReceiveResponse: Pkt Record: %s", GetRRDisplayString(m, &pkt.r));
 
 						// If this record is marked DependentOn another record for conflict detection purposes,
 						// then *that* record has to be bumped back to probing state to resolve the conflict
@@ -4813,20 +4838,22 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// 2. See if we want to add this packet resource record to our cache
 		if (m->rrcache_size)	// Only try to cache answers if we have a cache to put them in
 			{
-			mDNSu32 slot = HashSlot(&pktrr.name);
+			mDNSu32 slot = HashSlot(&pkt.r.name);
 			ResourceRecord *rr;
 			// 2a. Check if this packet resource record is already in our cache
 			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				{
 				// If we found this exact resource record, refresh its TTL
-				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
+				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pkt.r, rr))
 					{
-					//debugf("Found RR %##s size %d already in cache", pktrr.name.c, pktrr.rdata->RDLength);
+					if (pkt.r.rdata->RDLength > StandardRDSize)
+						debugf("Found record size %5d interface %p already in cache: %s",
+							pkt.r.rdata->RDLength, InterfaceID, GetRRDisplayString(m, &pkt.r));
 					rr->TimeRcvd  = m->timenow;
 					rr->FreshData = mDNStrue;
-					if (pktrr.rroriginalttl > 0)
+					if (pkt.r.rroriginalttl > 0)
 						{
-						rr->rroriginalttl = pktrr.rroriginalttl;
+						rr->rroriginalttl = pkt.r.rroriginalttl;
 						rr->UnansweredQueries = 0;
 						rr->MPUnansweredQ     = 0;
 						rr->MPUnansweredKA    = 0;
@@ -4849,19 +4876,22 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 			// If packet resource record not in our cache, add it now
 			// (unless it is just a deletion of a record we never had, in which case we don't care)
-			if (!rr && pktrr.rroriginalttl > 0)
+			if (!rr && pkt.r.rroriginalttl > 0)
 				{
-				rr = GetFreeCacheRR(m);
-				if (!rr) debugf("No cache space to add record for %#s", pktrr.name.c);
+				rr = GetFreeCacheRR(m, pkt.r.rdata->RDLength);
+				if (!rr) debugf("No cache space to add record for %#s", pkt.r.name.c);
 				else
 					{
-					*rr = pktrr;
-					rr->rdata = &rr->rdatastorage;	// For now, all cache records use local storage
+					RData *saveptr = rr->rdata;		// Save the rr->rdata pointer
+					*rr = pkt.r;
+					rr->rdata = saveptr;			// and then restore it after the structure assignment
+					// If this is an oversized record with external storage allocated, copy rdata to external storage
+					if (pkt.r.rdata->RDLength > StandardRDSize)
+						mDNSPlatformMemCopy(pkt.r.rdata, rr->rdata, sizeofRDataHeader + pkt.r.rdata->RDLength);
 					rr->next = m->rrcache_hash[slot];
 					m->rrcache_hash[slot] = rr;
 					m->rrcache_used[slot]++;
-					m->rrcache_totalused++;
-					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
+					//debugf("Adding RR %##s to cache (%d)", pkt.r.name.c, m->rrcache_used);
 					CacheRecordAdd(m, rr);
 					// MUST do this AFTER CacheRecordAdd(), because that's what sets CRActiveQuestion for us
 					SetNextCacheCheckTime(m, rr);

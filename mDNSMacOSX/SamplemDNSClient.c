@@ -35,6 +35,9 @@
  *  Change History (most recent first):
  *
  * $Log: SamplemDNSClient.c,v $
+ * Revision 1.36  2003/07/19 03:23:13  cheshire
+ * <rdar://problem/2986147> mDNSResponder needs to receive and cache larger records
+ *
  * Revision 1.35  2003/07/11 01:57:18  cheshire
  * Add checkin history header
  *
@@ -357,7 +360,7 @@ int main(int argc, char **argv)
 
         case 'T':	{
                     Opaque16 registerPort = { { 0x23, 0x45 } };
-                    char TXT[512];
+                    char TXT[1000];
                     unsigned int i;
                     for (i=0; i<sizeof(TXT)-1; i++)
                         if ((i & 0x1F) == 0x1F) TXT[i] = 1; else TXT[i] = 'A' + (i >> 5);
