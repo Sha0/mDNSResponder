@@ -118,18 +118,19 @@ BEGIN
     PUSHBUTTON      "Cancel",IDCANCEL,77,70,44,14
 END
 
-IDD_ABOUT DIALOGEX 0, 0, 265, 133
+
+IDD_ABOUT DIALOGEX 0, 0, 219, 87
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_RTLREADING | WS_EX_LEFTSCROLLBAR
 CAPTION "About Rendezvous"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     CONTROL         119,IDC_STATIC,"Static",SS_BITMAP | SS_REALSIZEIMAGE,0,0,
-                    265,131
+                    220,86
     CONTROL         MASTER_PROD_VERS_STR3,IDC_COMPONENT,"Static",SS_SIMPLE | 
-                    WS_GROUP,102,50,122,8
+                    WS_GROUP,92,10,122,8
     LTEXT           "Copyright (c) 2004 Apple Computer, Inc. All rights reserved. Apple and the Apple logo are trademarks of Apple Computer, Inc., registered in the U.S. and other countries.",
-                    IDC_LEGAL,102,78,121,50,0,WS_EX_RTLREADING
+                    IDC_LEGAL,92,31,123,50,0,WS_EX_RTLREADING
 END
 
 
