@@ -187,7 +187,7 @@ static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceReco
 	DNSServiceDomainEnumerationReplyResultType rt;
 	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->Context;
 
-	debugf("FoundDomain %##s PTR %##s", answer->name.c, answer->rdata.name.c);
+	debugf("FoundDomain: %##s PTR %##s", answer->name.c, answer->rdata.name.c);
 	if (answer->rrtype != kDNSType_PTR) return;
 	if (!x) { debugf("FoundDomain: DNSServiceDomainEnumeration is NULL"); return; }
 
@@ -238,7 +238,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	domainname type, domain;
 	char c_name[256], c_type[256], c_dom[256];
 	if (answer->rrtype != kDNSType_PTR) return;
-	debugf("FoundInstance %##s", answer->rdata.name.c);
+	debugf("FoundInstance: %##s", answer->rdata.name.c);
 	DeconstructServiceName(&answer->rdata.name, &name, &type, &domain);
 	ConvertDomainLabelToCString_unescaped(&name, c_name);
 	ConvertDomainNameToCString(&type, c_type);
@@ -264,7 +264,8 @@ kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_
 	if (*domain && *domain != '.') ConvertCStringToDomainName(domain, &d);
 	else ConvertCStringToDomainName("local.arpa.", &d);
 
-	debugf("Client %d: Browse for Services %##s%##s", client, &t, &d);
+	debugf("Client %d: provide_DNSServiceBrowserCreate_rpc", client);
+	debugf("Client %d: Browse for Services: %##s%##s", client, &t, &d);
 	err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, zeroIPAddr, FoundInstance, x);
 	if (!err) EnableDeathNotificationForClient(client);
 	else debugf("provide_DNSServiceBrowserCreate_rpc: mDNS_StartBrowse failed");
@@ -313,7 +314,8 @@ kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_por
 	ConstructServiceName(&x->i.name, &n, &t, &d);
 	x->i.InterfaceAddr = zeroIPAddr;
 
-	debugf("Client %d: Resolve Service %##s", client, &x->i.name);
+	debugf("Client %d: provide_DNSServiceResolverResolve_rpc", client);
+	debugf("Client %d: Resolve Service: %##s", client, &x->i.name);
 	err = mDNS_StartResolveService(&mDNSStorage, &x->q, &x->i, FoundInstanceInfo, x);
 	if (!err) EnableDeathNotificationForClient(client);
 	else debugf("provide_DNSServiceResolverResolve_rpc: mDNS_StartResolveService failed");
@@ -340,7 +342,7 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 		}
 	if (result == mStatus_NoError) DNSServiceRegistrationReply_rpc(port, result);
 //	if (result == mStatus_NameConflict) mDNS_RenameAndReregisterService(m, sr);
-	if (result == mStatus_NameConflict) { AbortClient(port); DNSServiceRegistrationReply_rpc(port, result); }
+	if (result == mStatus_NameConflict) { AbortClient(port); DNSServiceRegistrationReply_rpc(port, result); free(x); }
 	if (result == mStatus_MemFree) { debugf("Freeing DNSServiceRegistration %d", x->port); free(x); }
 	}
 
@@ -365,7 +367,8 @@ kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_
 	else ConvertCStringToDomainName("local.arpa.", &d);
 	port.NotAnInteger = notAnIntPort;
 
-	debugf("Client %d: Register Service %##s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
+	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
+	debugf("Client %d: Register Service: %#s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
 	err = mDNS_RegisterService(&mDNSStorage, &x->s, port, txtRecord, &n, &t, &d, Callback, x);
 	if (!err) EnableDeathNotificationForClient(client);
 	debugf("Made Service Record Set for %##s", &x->s.RR_SRV.name);
