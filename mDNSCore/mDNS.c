@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.489  2004/12/10 20:03:43  cheshire
+<rdar://problem/3915074> Reduce egregious stack space usage
+Reduced mDNSCoreReceiveQuery() stack frame from 9K to 144 bytes
+
 Revision 1.488  2004/12/10 19:50:41  cheshire
 <rdar://problem/3915074> Reduce egregious stack space usage
 Reduced SendResponses() stack frame from 9K to 176 bytes
@@ -4870,7 +4874,6 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID)
 	{
-	DNSMessage response;
 	mDNSu8    *responseend = mDNSNULL;
 	mDNSBool   QueryWasLocalUnicast = !mDNSAddrIsDNSMulticast(dstaddr) && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	
@@ -4893,16 +4896,16 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 	
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID,
-		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), QueryWasLocalUnicast, &response);
+		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), QueryWasLocalUnicast, &m->omsg);
 
 	if (responseend)	// If responseend is non-null, that means we built a unicast response packet
 		{
 		debugf("Unicast Response: %d Question%s, %d Answer%s, %d Additional%s to %#-15a:%d on %p/%ld",
-			response.h.numQuestions,   response.h.numQuestions   == 1 ? "" : "s",
-			response.h.numAnswers,     response.h.numAnswers     == 1 ? "" : "s",
-			response.h.numAdditionals, response.h.numAdditionals == 1 ? "" : "s",
+			m->omsg.h.numQuestions,   m->omsg.h.numQuestions   == 1 ? "" : "s",
+			m->omsg.h.numAnswers,     m->omsg.h.numAnswers     == 1 ? "" : "s",
+			m->omsg.h.numAdditionals, m->omsg.h.numAdditionals == 1 ? "" : "s",
 			srcaddr, mDNSVal16(srcport), InterfaceID, srcaddr->type);
-		mDNSSendDNSMessage(m, &response, responseend, InterfaceID, srcaddr, srcport, -1, mDNSNULL);
+		mDNSSendDNSMessage(m, &m->omsg, responseend, InterfaceID, srcaddr, srcport, -1, mDNSNULL);
 		}
 	}
 
