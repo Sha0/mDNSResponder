@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.244  2003/08/01 23:55:32  cheshire
+Fix for compiler warnings on Windows, submitted by Bob Bradley
+
 Revision 1.243  2003/07/25 02:26:09  cheshire
 Typo: FIxed missing semicolon
 
@@ -3193,7 +3196,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 	ResourceRecord ***kalistptrptr, mDNSu32 *answerforecast)
 	{
 	mDNSBool ucast = q->LargeAnswers || q->ThisQInterval <= InitialQuestionInterval*2;
-	mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : (mDNSu16)0;
+	mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
 	const mDNSu8 *const limit = query->data + NormalMaxDNSMessageData;
 	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, (mDNSu16)(q->qclass | ucbit));
 	if (!newptr)
@@ -3436,7 +3439,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				if (rr->SendRNow == intf->InterfaceID)
 					{
 					mDNSBool ucast = rr->ProbeCount >= DefaultProbeCountForTypeUnique-1;
-					mDNSu16 ucbit = ucast ? kDNSQClass_UnicastResponse : (mDNSu16)0;
+					mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
 					const mDNSu8 *const limit = query.data + ((query.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 					mDNSu8 *newptr = putQuestion(&query, queryptr, limit, &rr->name, kDNSQType_ANY, (mDNSu16)(rr->rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
