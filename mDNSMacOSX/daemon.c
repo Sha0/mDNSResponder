@@ -325,9 +325,10 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
-	int len = query->info->TXTlen;
 	struct sockaddr_in interface;
 	struct sockaddr_in address;
+	char cstring[256];
+	int i;
 
 	interface.sin_len         = sizeof(interface);
 	interface.sin_family      = AF_INET;
@@ -339,12 +340,12 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	address.sin_port          = query->info->port.NotAnInteger;
 	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
 
-	// Need to put a NULL on the end for the MIG API
-	if (len >= sizeof(query->info->TXTinfo) - 1)
-		len = sizeof(query->info->TXTinfo) - 1;
-	query->info->TXTinfo[len] = 0;
+	// Need to convert DNS TXT record pascal string to C string for MIG API
+	for (i=0; i<query->info->TXTinfo[0]; i++)
+		cstring[i] = query->info->TXTinfo[i+1];
+	cstring[i] = 0;		// Put the terminating NULL on the end
 	
-	status = DNSServiceResolverReply_rpc(x->ClientMachPort, (char*)&interface, (char*)&address, query->info->TXTinfo, 0, 10);
+	status = DNSServiceResolverReply_rpc(x->ClientMachPort, (char*)&interface, (char*)&address, cstring, 0, 10);
 	if (status == MACH_SEND_TIMED_OUT)
 		AbortBlockedClient(x->ClientMachPort, "resolve");
 	}
@@ -445,7 +446,18 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	domainlabel n;
 	domainname t, d;
 	mDNSIPPort port;
-	DNSServiceRegistration *x = malloc(sizeof(*x));
+	unsigned char pstring[256];
+	char *ptr = txtRecord;
+	DNSServiceRegistration *x;
+	
+	pstring[0] = 0;		// Convert our C string parameter to a Pascal string for the DNS TXT record
+	while (*ptr)
+		{
+		if (pstring[0] == 255) return(mStatus_BadParamErr);
+		pstring[++pstring[0]] = *ptr++;
+		}
+
+	x = malloc(sizeof(*x));
 	if (!x) { debugf("provide_DNSServiceRegistrationCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
 	x->ClientMachPort = client;
 	x->next = DNSServiceRegistrationList;
@@ -460,7 +472,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
 	debugf("Client %d: Register Service: %#s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
-	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtRecord, strlen(txtRecord), RegistrationCallback, x);
+	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, pstring, 1 + (int)pstring[0], RegistrationCallback, x);
 
 	if (err) AbortClient(client);
 	else EnableDeathNotificationForClient(client);
