@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.68  2004/08/10 06:24:56  cheshire
+Use types with precisely defined sizes for 'op' and 'reg_index', for better
+compatibility if the daemon and the client stub are built using different compilers
+
 Revision 1.67  2004/07/27 07:14:16  shersche
 make error socket non-blocking after call to connect()
 
@@ -246,14 +250,14 @@ typedef void (*req_termination_fn)(void *);
 
 typedef struct registered_record_entry
     {
-    int key;
+    uint32_t key;
     AuthRecord *rr;
     struct registered_record_entry *next;
     } registered_record_entry;
     
 typedef struct extra_record_entry
     {
-    int key;
+    uint32_t key;
     struct extra_record_entry *next;
     ExtraResourceRecord e;
     } extra_record_entry;
@@ -894,7 +898,7 @@ static void request_callback(void *info)
             }        
 		}
 
-    switch(rstate->hdr.op.request_op)
+    switch(rstate->hdr.op)
     	{
         case resolve_request: handle_resolve_request(rstate); break;
         case query_request: handle_query_request(rstate);  break;
@@ -2615,7 +2619,7 @@ static reply_state *create_reply(reply_op_t op, size_t datalen, request_state *r
     reply->rhdr = (reply_hdr *)(reply->msgbuf + sizeof(ipc_msg_hdr));
     reply->sdata = reply->msgbuf + sizeof(ipc_msg_hdr) + sizeof(reply_hdr);
     reply->mhdr->version = VERSION;
-    reply->mhdr->op.reply_op = op;
+    reply->mhdr->op = op;
     reply->mhdr->datalen = totallen - sizeof(ipc_msg_hdr);
     return reply;
     }
@@ -2777,7 +2781,7 @@ static int validate_message(request_state *rstate)
     {
     uint32_t min_size;
     
-    switch(rstate->hdr.op.request_op)
+    switch(rstate->hdr.op)
     	{
         case resolve_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
 						sizeof(uint32_t) + 		// interface
@@ -2821,7 +2825,7 @@ static int validate_message(request_state *rstate)
 						sizeof(char) + 			// fullname
 						(3 * sizeof(uint16_t));		// type, class, rdlen
         default:
-            LogMsg("ERROR: validate_message - unsupported request type: %d", rstate->hdr.op.request_op);	    
+            LogMsg("ERROR: validate_message - unsupported request type: %d", rstate->hdr.op);	    
 	    return -1;
 	}    
     

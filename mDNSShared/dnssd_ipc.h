@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.11  2004/08/10 06:24:56  cheshire
+Use types with precisely defined sizes for 'op' and 'reg_index', for better
+compatibility if the daemon and the client stub are built using different compilers
+
 Revision 1.10  2004/07/07 17:39:25  shersche
 Change MDNS_SERVERPORT from 5533 to 5354.
 
@@ -104,7 +108,7 @@ Update to APSL 2.0
 #endif
 
 // General UDS constants
-#define TXT_RECORD_INDEX -1	// record index for default text record
+#define TXT_RECORD_INDEX ((uint32_t)(-1))	// record index for default text record
 
 // IPC data encoding constants and types
 #define VERSION 1
@@ -161,18 +165,12 @@ typedef struct ipc_msg_hdr_struct
     uint32_t version;
     uint32_t datalen;
     uint32_t flags;
-    union
-    	{
-        request_op_t request_op;
-        reply_op_t reply_op;
-    	} op;
+    uint32_t op;		// request_op_t or reply_op_t
     client_context_t client_context; // context passed from client, returned by server in corresponding reply
-    int reg_index;                   // identifier for a record registered via DNSServiceRegisterRecord() on a
+    uint32_t reg_index;            // identifier for a record registered via DNSServiceRegisterRecord() on a
     // socket connected by DNSServiceConnect().  Must be unique in the scope of the connection, such that and
     // index/socket pair uniquely identifies a record.  (Used to select records for removal by DNSServiceRemoveRecord())
     } ipc_msg_hdr_struct;
-
-
 
 // it is advanced to point to the next field, or the end of the message
 // routines to write to and extract data from message buffers.
