@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.13  2003/07/23 00:00:04  cheshire
+Add comments
+
 Revision 1.12  2003/07/15 01:55:16  cheshire
 <rdar://problem/3315777> Need to implement service registration with subtypes
 
@@ -565,13 +568,12 @@ static mStatus RegisterOneService(const char *  richTextHostName,
         port.b[0] = (portNumber >> 8) & 0x0FF;
         port.b[1] = (portNumber >> 0) & 0x0FF;;
         status = mDNS_RegisterService(&mDNSStorage, &thisServ->coreServ,
-                &name, &type, &domain,
-                NULL,
-                port, 
-                text, textLen,
-                NULL, 0,
-                mDNSInterface_Any,
-                RegistrationCallback, thisServ);
+                &name, &type, &domain,				// Name, type, domain
+                NULL, port, 						// Host and port
+                text, textLen,						// TXT data, length
+                NULL, 0,							// Subtypes
+                mDNSInterface_Any,					// Interace ID
+                RegistrationCallback, thisServ);	// Callback and context
     }
     if (status == mStatus_NoError) {
         thisServ->serviceID = gServiceID;

@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.122  2003/07/23 00:00:04  cheshire
+ * Add comments
+ *
  * Revision 1.121  2003/07/20 03:38:51  ksekar
  * Bug #: 3320722
  * Completed support for Unix-domain socket based API.
@@ -993,8 +996,15 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	// a port number of zero. When two instances of the protected client are allowed to run on one
 	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
 	if (port.NotAnInteger) CheckForDuplicateRegistrations(x, &srv, port);
-	err = mDNS_RegisterService(&mDNSStorage, &x->s, &x->name, &t, &d, mDNSNULL, port,
-		txtinfo, data_len, SubTypes, NumSubTypes, mDNSInterface_Any, RegCallback, x);
+
+	err = mDNS_RegisterService(&mDNSStorage, &x->s,
+		&x->name, &t, &d,		// Name, type, domain
+		mDNSNULL, port,			// Host and port
+		txtinfo, data_len,		// TXT data, length
+		SubTypes, NumSubTypes,	// Subtypes
+		mDNSInterface_Any,		// Interace ID
+		RegCallback, x);		// Callback and context
+
 	if (err) { AbortClient(client, x); errormsg = "mDNS_RegisterService"; goto fail; }
 
 	// Succeeded: Wrap up and return
