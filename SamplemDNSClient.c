@@ -156,11 +156,11 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
         switch (addtest)
             {
             case 0: printf("Adding Test HINFO record\n");		// RR type 13 is HINFO
-                    record = DNSServiceRegistrationAddRecord(client, 13, sizeof(myhinfo9), &myhinfo9[0]);
+                    record = DNSServiceRegistrationAddRecord(client, 13, sizeof(myhinfo9), &myhinfo9[0], 120);
                     addtest = 1;
                     break;
             case 1: printf("Updating Test HINFO record\n");
-                    DNSServiceRegistrationUpdateRecord(client, record, 0, sizeof(myhinfoX), &myhinfoX[0]);
+                    DNSServiceRegistrationUpdateRecord(client, record, sizeof(myhinfoX), &myhinfoX[0], 120);
                     addtest = 2;
                     break;
             case 2: printf("Removing Test HINFO record\n");
@@ -174,7 +174,7 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
         if (updatetest[1] != 'Z') updatetest[1]++;
         else                      updatetest[1] = 'A';
         printf("Updating Test TXT record to %c\n", updatetest[1]);
-        DNSServiceRegistrationUpdateRecord(client, 0, 0, sizeof(updatetest), &updatetest[0]);
+        DNSServiceRegistrationUpdateRecord(client, 0, sizeof(updatetest), &updatetest[0], 120);
         }
     }
 
