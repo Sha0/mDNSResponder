@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.3  2004/01/24 03:38:27  cheshire
+Fix minor syntactic error: Headers should use "extern" declarations, not "mDNSexport"
+
 Revision 1.2  2004/01/23 23:23:15  ksekar
 Added TCP support for truncated unicast messages.
 
@@ -38,25 +41,20 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 #include "mDNSClientAPI.h"
 #include "DNSCommon.h"
 
-
 // Entry points into unicast-specific routines, invoked in mDNS.c
 
-mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
+extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 
 // returns true if OK to call StopQuery
-mDNSexport mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_data_t *u);
-mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
-
+extern mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_data_t *u);
+extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 
 // integer fields of msg header must be in HOST byte order before calling this routine
-mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
+extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
 	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 
-
-
 // return the time of the next schedule unicast-specific event
-mDNSexport mDNSs32 uDNS_GetNextEventTime(const mDNS *const m);
-
+extern mDNSs32 uDNS_GetNextEventTime(const mDNS *const m);
 
 #endif // __UDNS_H_

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.4  2004/01/24 03:38:27  cheshire
+Fix minor syntactic error: Headers should use "extern" declarations, not "mDNSexport"
+
 Revision 1.3  2004/01/23 23:23:14  ksekar
 Added TCP support for truncated unicast messages.
 
@@ -91,11 +94,11 @@ typedef enum
 #pragma mark - General Utility Functions
 #endif
 
-mDNSexport const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf);
-mDNSexport mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
+extern const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf);
+extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
-mDNSexport mDNSu32 mDNSRandom(mDNSu32 max);
-mDNSexport mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
+extern mDNSu32 mDNSRandom(mDNSu32 max);
+extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
@@ -134,11 +137,11 @@ mDNSexport mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 #define mdnsValidHostChar(X, notfirst, notlast) (mdnsIsLetter(X) || mdnsIsDigit(X) || ((notfirst) && (notlast) && (X) == '-') )
 
-mDNSexport mDNSu16 CompressedDomainNameLength(const domainname *const name, const domainname *parent);
+extern mDNSu16 CompressedDomainNameLength(const domainname *const name, const domainname *parent);
 
-mDNSexport mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText);
-mDNSexport mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText);
-mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText);
+extern mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText);
+extern mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText);
+extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText);
 
 #define ValidateDomainName(N) (DomainNameLength(N) <= MAX_DOMAIN_NAME)
 
@@ -149,14 +152,14 @@ mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichT
 #pragma mark - Resource Record Utility Functions
 #endif
 
-mDNSexport mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const rdb);
+extern mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const rdb);
 
-mDNSexport mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2);
+extern mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2);
 
-mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
+extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
 
 
-mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
+extern mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
 
 
 #define GetRRDomainNameTarget(RR) (                                                                          \
@@ -171,22 +174,22 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 #pragma mark - DNS Message Creation Functions
 #endif
 
-mDNSexport void InitializeDNSMessage(DNSMessageHeader *h, mDNSOpaque16 id, mDNSOpaque16 flags);
-mDNSexport const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const mDNSu8 *const end, const mDNSu8 *const domname);
+extern void InitializeDNSMessage(DNSMessageHeader *h, mDNSOpaque16 id, mDNSOpaque16 flags);
+extern const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const mDNSu8 *const end, const mDNSu8 *const domname);
 
-mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name);
+extern mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name);
 	
-mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr);
+extern mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr);
 
-mDNSexport mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl);
+extern mDNSu8 *PutResourceRecordTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl);
 
-mDNSexport mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl);
+extern mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl);
 
 #if 0
-mDNSexport mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, mDNSu16 *count, const AuthRecord *rr);
+extern mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, mDNSu16 *count, const AuthRecord *rr);
 #endif
 
-mDNSexport mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass);
+extern mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass);
 
 #define PutResourceRecord(MSG, P, C, RR) PutResourceRecordTTL((MSG), (P), (C), (RR), (RR)->rroriginalttl)
 
@@ -197,29 +200,29 @@ mDNSexport mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 
 #pragma mark - DNS Message Parsing Functions
 #endif
 
-mDNSexport mDNSu32 DomainNameHashValue(const domainname *const name);
+extern mDNSu32 DomainNameHashValue(const domainname *const name);
 
-mDNSexport void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 rdlength);
+extern void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 rdlength);
 
 
-mDNSexport const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end);
+extern const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end);
 
-mDNSexport const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end,
+extern const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end,
 	domainname *const name);
 	
-mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
+extern const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
 
-mDNSexport const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr, 
+extern const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr, 
     const mDNSu8 * const end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, CacheRecord *rr, RData *RDataStorage);
 
-mDNSexport const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
+extern const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
 
-mDNSexport const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSInterfaceID InterfaceID,
+extern const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSInterfaceID InterfaceID,
 	DNSQuestion *question);
 	
-mDNSexport const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *const end);
+extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *const end);
 
-mDNSexport const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
+extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
 
 #define GetLargeResourceRecord(m, msg, p, e, i, t, L) \
 	(((L)->r.rdatastorage.MaxRDLength = MaximumRDSize), GetResourceRecord((m), (msg), (p), (e), (i), (t), &(L)->r, (RData*)&(L)->r.rdatastorage))
@@ -231,8 +234,8 @@ mDNSexport const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mD
 #pragma mark - Packet Sending Functions
 #endif
 
-mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
-mDNSexport mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd);
+extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID, mDNSIPPort srcport, const mDNSAddr *dst, mDNSIPPort dstport);
+extern mStatus mDNSSendDNSMessage_tcp(const mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, int sd);
 
 
 #endif // __DNSCOMMON_H_

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.136  2004/01/24 03:38:27  cheshire
+Fix minor syntactic error: Headers should use "extern" declarations, not "mDNSexport"
+
 Revision 1.135  2004/01/23 23:23:15  ksekar
 Added TCP support for truncated unicast messages.
 
@@ -476,11 +479,14 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 // ***************************************************************************
 // Function scope indicators
 
-// If you see "mDNSlocal" before a function name, it means the function is not callable outside this file
+// If you see "mDNSlocal" before a function name in a C file, it means the function is not callable outside this file
 #ifndef mDNSlocal
 #define mDNSlocal static
 #endif
-// If you see "mDNSexport" before a symbol, it means the symbol is exported for use by clients
+// If you see "mDNSexport" before a symbol in a C file, it means the symbol is exported for use by clients
+// For every "mDNSexport" in a C file, there needs to be a corresponding "extern" declaration in some header file
+// (When a C file #includes a header file, the "extern" declarations tell the compiler:
+// "This symbol exists -- but not necessarily in this C file.")
 #ifndef mDNSexport
 #define mDNSexport
 #endif
@@ -1504,7 +1510,7 @@ extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 // event loop.  CloseConnectin may be called at any time, including in a ConnectionCallback.
 	
 typedef void (*TCPConnectionCallback)(int sd, void *context, mDNSBool ConnectionEstablished);
-mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+extern mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
 										  TCPConnectionCallback callback, void *context, int *descriptor);
 extern void mDNSPlatformTCPCloseConnection(int sd);
 extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
