@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dns_sd.h,v $
+Revision 1.21  2004/06/18 04:51:42  rpantos
+Add platform stuff. Use _WIN32 instead of less-defined WIN32. Add DNSSD_API to DNSServiceReconfirmRecord().
+
 Revision 1.20  2004/06/15 04:44:34  cheshire
 Use "privatedata" instead of "private" -- "private" is a reserved word in C++
 
@@ -98,7 +101,7 @@ Update to APSL 2.0
 #endif
 
 // standard calling convention under Win32 is __stdcall
-#if defined(WIN32)
+#if defined(_WIN32)
 #	define DNSSD_API	__stdcall
 #else
 #	define DNSSD_API
@@ -107,6 +110,16 @@ Update to APSL 2.0
 #if defined(__FreeBSD__) && defined(__FreeBSD_version) && (__FreeBSD_version < 500000)
 /* stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead */
 #include <sys/types.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#define _UNUSED
+#define bzero(a, b)	memset(a, 0, b)
+typedef UINT8		uint8_t;
+typedef INT8		int8_t;
+typedef UINT16		uint16_t;
+typedef INT16		int16_t;
+typedef UINT32		uint32_t;
+typedef INT32		int32_t;
 #else
 #include <stdint.h>
 #endif
@@ -1093,7 +1106,7 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
  *
  */
 
-void DNSServiceReconfirmRecord
+void DNSSD_API	DNSServiceReconfirmRecord
     (
     DNSServiceFlags                    flags,
     uint32_t                           interfaceIndex,
@@ -1335,7 +1348,7 @@ uint16_t DNSSD_API TXTRecordGetLength
  *
  */
 
-const void DNSSD_API * TXTRecordGetBytesPtr
+const void * DNSSD_API TXTRecordGetBytesPtr
     (
     const TXTRecordRef *txtRecord
     );
@@ -1419,7 +1432,7 @@ int DNSSD_API TXTRecordContainsKey
  *                  For non-empty value, valueLen will be length of value data.
  */
 
-const void DNSSD_API * TXTRecordGetValuePtr
+const void * DNSSD_API TXTRecordGetValuePtr
     (
     uint16_t         txtLen,
     const void       *txtRecord,
