@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
@@ -24,6 +23,13 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.145  2004/01/29 02:59:17  ksekar
+Unicast DNS: Changed from a resource record oriented question/response
+matching to packet based matching.  New callback architecture allows
+collections of records in a response to be processed differently
+depending on the nature of the request, and allows the same structure
+to be used for internal and client-driven queries with different processing needs.
+
 Revision 1.144  2004/01/28 20:20:45  ksekar
 Unified ActiveQueries and ActiveInternalQueries lists, using a flag to
 demux them.  Check-in includes work-in-progress code, #ifdef'd out.
@@ -815,7 +821,6 @@ enum
 	kDNSRecordTypePacketAddUnique  = 0xA0,	// Received in the Additional Section of a DNS Response with kDNSClass_UniqueRRSet set
 	kDNSRecordTypePacketAns        = 0xC0,	// Received in the Answer Section of a DNS Response
 	kDNSRecordTypePacketAnsUnique  = 0xE0,	// Received in the Answer Section of a DNS Response with kDNSClass_UniqueRRSet set
-	kDNSRecordTypePacketAuth       = 0x100, // Received in the Authority Section of a DNS Response
 
 	kDNSRecordTypePacketAnsMask    = 0x40,	// True for PacketAns       and PacketAnsUnique
 	kDNSRecordTypePacketUniqueMask = 0x20	// True for PacketAddUnique and PacketAnsUnique
@@ -1054,13 +1059,14 @@ typedef struct
 	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
 
-typedef void (*InternalResponseHndlr)(DNSMessage *msg, void *context);
+typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *internalContext);
 typedef struct
     {
     mDNSOpaque16          id;
     mDNSs32               timestamp;
     mDNSBool              internal;
-    InternalResponseHndlr internalQuestionCallback;   // NULL if internal field is false
+    InternalResponseHndlr responseCallback;   // NULL if internal field is false
+    void *context;
     } uDNS_QuestionInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
