@@ -36,6 +36,7 @@
  */
 
 #include <libc.h>
+#include <arpa/nameser.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
@@ -160,8 +161,8 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
             {
             switch (addtest)
                 {
-                case 0: printf("Adding Test HINFO record\n");		// RR type 13 is HINFO
-                        record = DNSServiceRegistrationAddRecord(client, 13, sizeof(myhinfo9), &myhinfo9[0], 120);
+                case 0: printf("Adding Test HINFO record\n");
+                        record = DNSServiceRegistrationAddRecord(client, T_HINFO, sizeof(myhinfo9), &myhinfo9[0], 120);
                         addtest = 1;
                         break;
                 case 1: printf("Updating Test HINFO record\n");
@@ -188,7 +189,7 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
         case 'N':
             {
             printf("Adding big NULL record\n");
-            DNSServiceRegistrationAddRecord(client, 10, sizeof(bigNULL), &bigNULL[0], 120);
+            DNSServiceRegistrationAddRecord(client, T_NULL, sizeof(bigNULL), &bigNULL[0], 120);
             CFRunLoopRemoveTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopDefaultMode);
             }
             break;
@@ -223,7 +224,7 @@ int main(int argc, char **argv)
 	char *dom;
 
 	if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
-    operation = getopt(argc, (char * const *)argv, "EFBLRAUNT");
+    operation = getopt(argc, (char * const *)argv, "EFBLRAUNTM");
 	if (operation == -1) goto Fail;
 
     switch (operation)
@@ -287,6 +288,16 @@ int main(int argc, char **argv)
                     break;
                     }
 
+        case 'M':	{
+                    Opaque16 registerPort = { { 0x23, 0x45 } };
+                    static const char TXT1[] = "First String\001Second String\001Third String";
+                    static const char TXT2[] = "\x0D" "Fourth String" "\x0C" "Fifth String" "\x0C" "Sixth String";
+                    printf("Registering Service Test._testdualtxt._tcp.local.\n");
+                    client = DNSServiceRegistrationCreate("Test", "_testdualtxt._tcp.", "", registerPort.NotAnInteger, TXT1, reg_reply, nil);
+                    record = DNSServiceRegistrationAddRecord(client, T_TXT, sizeof(TXT2), TXT2, 120);
+                    break;
+                    }
+
         default: goto Exit;
         }
 
@@ -306,12 +317,13 @@ Exit:
 Fail:
 	fprintf(stderr, "%s -E             (Enumerate recommended registration domains)\n", argv[0]);
 	fprintf(stderr, "%s -F                 (Enumerate recommended browsing domains)\n", argv[0]);
-	fprintf(stderr, "%s -B        <Type> <Domain>   (Browse for Services Instances)\n", argv[0]);
-	fprintf(stderr, "%s -L <Name> <Type> <Domain>      (Look Up a Service Instance)\n", argv[0]);
-	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> (Register a Service)\n", argv[0]);
+	fprintf(stderr, "%s -B        <Type> <Domain>   (Browse for services instances)\n", argv[0]);
+	fprintf(stderr, "%s -L <Name> <Type> <Domain>      (Look up a service instance)\n", argv[0]);
+	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> <TXT> (Register a service)\n", argv[0]);
 	fprintf(stderr, "%s -A                 (Test Adding/Updating/Deleting a record)\n", argv[0]);
-	fprintf(stderr, "%s -U                             (Test Updating a TXT record)\n", argv[0]);
-	fprintf(stderr, "%s -N                        (Test Adding a Large NULL record)\n", argv[0]);
-	fprintf(stderr, "%s -T                       (Test Creating a Large TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -U                             (Test updating a TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -N                        (Test adding a large NULL record)\n", argv[0]);
+	fprintf(stderr, "%s -T                       (Test creating a large TXT record)\n", argv[0]);
+	fprintf(stderr, "%s -M (Test creating a registration with multiple TXT records)\n", argv[0]);
 	return 0;
 	}
