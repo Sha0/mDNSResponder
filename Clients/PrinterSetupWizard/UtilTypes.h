@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.7  2005/01/04 21:07:29  shersche
+add description member to service object.  this member corresponds to the 'ty' key in a printer text record
+
 Revision 1.6  2004/12/30 01:24:02  shersche
 <rdar://problem/3906182> Remove references to description key
 Bug #: 3906182
@@ -145,6 +148,7 @@ namespace PrinterSetupWizard
 		unsigned short	portNumber;
 		CString			usb_MFG;
 		CString			usb_MDL;
+		CString			description;
 		CString			location;
 		CString			product;
 		unsigned short	qtotal;
@@ -237,6 +241,8 @@ namespace PrinterSetupWizard
 	inline
 	Service::~Service()
 	{
+		check( serviceRef == NULL );
+
 		while ( queues.size() > 0 )
 		{
 			Queue * q = queues.front();
