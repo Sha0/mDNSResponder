@@ -88,6 +88,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.195  2003/07/02 19:56:58  cheshire
+<rdar://problem/2986146> mDNSResponder needs to start with a smaller cache and then grow it as needed
+Minor refinement: m->rrcache_active was not being decremented when
+an active record was deleted because its TTL expired
+
 Revision 1.194  2003/07/02 18:47:40  cheshire
 Minor wording change to log messages
 
@@ -3503,7 +3508,11 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 				{
 				*rp = rr->next;				// Cut it from the list
 				verbosedebugf("CheckCacheExpiration: Deleting %s", GetRRDisplayString(m, rr));
-				CacheRecordRmv(m, rr);
+				if (rr->CRActiveQuestion)	// If this record has one or more active questions, tell them it's going away
+					{
+					CacheRecordRmv(m, rr);
+					m->rrcache_active--;
+					}
 				m->rrcache_used[slot]--;
 				m->rrcache_totalused--;
 				rr->next = m->rrcache_free;	// and move it back to the free list
