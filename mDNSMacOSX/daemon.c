@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.229  2004/12/16 21:51:36  cheshire
+Remove some startup messages
+
 Revision 1.228  2004/12/16 20:13:01  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -2327,11 +2330,6 @@ mDNSexport int main(int argc, char **argv)
 	int i;
 	kern_return_t status;
 
-	LogMsg("sizeof(struct CacheRecord_struct) = %d", sizeof(struct CacheRecord_struct));
-	LogMsg("sizeof(struct CacheGroup_struct) = %d", sizeof(struct CacheGroup_struct));
-	LogMsg("sizeof(rrcachestorage) = %d", sizeof(rrcachestorage));
-	LogMsg("RR_CACHE_SIZE = %d", RR_CACHE_SIZE);
-	
 	for (i=1; i<argc; i++)
 		{
 		if (!strcmp(argv[i], "-d")) mDNS_DebugMode = mDNStrue;
