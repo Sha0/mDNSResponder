@@ -20,6 +20,9 @@
 .\" @APPLE_LICENSE_HEADER_END@
 .\"
 .\" $Log: dns-sd.1,v $
+.\" Revision 1.2  2004/09/24 18:33:05  cheshire
+.\" <rdar://problem/3561780> Update man pages to clarify that mDNS and dns-sd are not intended for script use
+.\"
 .\" Revision 1.1  2004/09/22 22:46:25  cheshire
 .\" Man page for dns-sd command-line tool
 .\"
@@ -45,16 +48,15 @@ The
 .Nm
 command is a network diagnostic tool, much like
 .Xr ping 8
-.br
 or
 .Xr traceroute 8 .
-Unlike those tools, most of its functionality
-.br
-is implemented in library code that is available to any application.
-.br
-The API that it uses is described in
+However, unlike those tools, most of its functionality is not implemented in the
+.Nm
+executable itself, but in library code that is available to any application.
+The library API that
+.Nm
+uses is documented in
 .Pa /usr/include/dns_sd.h .
-.br
 The
 .Nm
 command replaces the older
@@ -66,7 +68,7 @@ The
 command is primarily intended for interactive use.
 Because its command-line arguments and output format are subject to change,
 invoking it from a shell script will generally be fragile. Additionally,
-the asynchronous nature of Multicast DNS Service Discovery does
+the asynchronous nature of DNS Service Discovery does
 not lend itself easily to script-oriented programming. For example,
 calls like "browse" never complete; the action of performing a "browse"
 sets in motion machinery to notify the client whenever instances of
@@ -77,6 +79,18 @@ explicitly terminates the call. This style of asynchronous interaction
 works best with applications that are either multi-threaded, or use a
 main event-handling loop to receive keystrokes, network data, and other
 asynchronous event notifications as they happen.
+.br
+If you wish to perform DNS Service Discovery operations from a
+scripting language, then the best way to do this is not to execute the
+.Nm
+command and then attempt to decipher the textual output, but instead to
+directly call the DNS-SD APIs using a binding for your chosen language.
+.br
+For example, if you are programming in Ruby, then you can
+directly call DNS-SD APIs using the dnssd package documented at
+.Pa <http://rubyforge.org/projects/dnssd/> .
+.br
+Similar bindings for other languages are also in development.
 .Pp
 .Bl -tag -width R
 .It Nm Fl R Ar name type domain port Op Ar key=value ...
