@@ -139,40 +139,62 @@ static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, 
 	else
 		{
         const char *src = txtRecord;
+		struct timeval tv;
+		struct tm tm;
+		gettimeofday(&tv, NULL);
+		localtime_r((time_t*)&tv.tv_sec, &tm);
+		printf("%d:%02d:%02d.%06d ", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
+
         if (address->sa_family == AF_INET)
             {
             struct sockaddr_in *ip = (struct sockaddr_in *)address;
             union { uint32_t l; u_char b[4]; } addr = { ip->sin_addr.s_addr };
             union { uint16_t s; u_char b[2]; } port = { ip->sin_port };
             uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
-            printf("Service can be reached at %d.%d.%d.%d:%u", addr.b[0], addr.b[1], addr.b[2], addr.b[3], PortAsNumber);
+            char ipstring[16];
+            sprintf(ipstring, "%d.%d.%d.%d", addr.b[0], addr.b[1], addr.b[2], addr.b[3]);
+            printf("Service can be reached at   %-15s:%u", ipstring, PortAsNumber);
             }
         else if (address->sa_family == AF_INET6)
             {
             struct sockaddr_in6 *ip6 = (struct sockaddr_in6 *)address;
+            u_int16_t *w = ip6->sin6_addr.__u6_addr.__u6_addr16;
             union { uint16_t s; u_char b[2]; } port = { ip6->sin6_port };
             uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
-            char buffer[256];
-            char ifname[IF_NAMESIZE + 1];
-            ifname[0] = 0;
-            if (ip6->sin6_scope_id)
-                {
-                ifname[0] = '%';
-                if_indextoname(ip6->sin6_scope_id, &ifname[1]);
-                }
-            printf("Service can be reached at [%s%s]:%u", inet_ntop(AF_INET6, &ip6->sin6_addr, buffer, sizeof(buffer)), ifname, PortAsNumber);
-            }
-        while (*src)
-            {
-            char txtInfo[256];
-            char *dst = txtInfo;
-            const char *const lim = &txtInfo[sizeof(txtInfo)];
-            while (*src && *src != 1 && dst < lim-1) *dst++ = *src++;
-            *dst++ = 0;
-            printf(" TXT \"%s\"", txtInfo);
-            if (*src == 1) src++;
+            char ipstring[40];
+            char ifname[IF_NAMESIZE + 1] = "";
+            sprintf(ipstring, "%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X", w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]);
+            if (ip6->sin6_scope_id) { ifname[0] = '%';  if_indextoname(ip6->sin6_scope_id, &ifname[1]); }
+            printf("%s%s:%u", ipstring, ifname, PortAsNumber);
             }
 		if (flags) printf(" Flags: %X", flags);
+        if (*src)
+            {
+            char txtInfo[64];								// Display at most first 64 characters of TXT record
+            char *dst = txtInfo;
+            const char *const lim = &txtInfo[sizeof(txtInfo)];
+            while (*src && dst < lim-1)
+            	{
+            	if (*src >= ' ') *dst++ = *src++;			// Display normal characters as-is
+            	else
+            		{
+            		*dst++ = '\\';							// Otherwise, display a backslash
+            		if      (*src == '\\') *dst++ = '\\';	// '\' displays as "\\"
+            		else if (*src ==    1) *dst++ = ' ';	// String boundary displayed as "\ "
+            		else									// Other chararacters displayed as "\0xHH"
+            			{
+            			static const char hexchars[16] = "0123456789ABCDEF";
+            			*dst++ = '0';
+            			*dst++ = 'x';
+            			*dst++ = hexchars[*src >> 4];
+            			*dst++ = hexchars[*src & 0xF];
+            			}
+					src++;
+            		}
+            	}
+            *dst++ = 0;
+            printf(" TXT %s", txtInfo);
+            }
 		printf("\n");
 		}
 	}
