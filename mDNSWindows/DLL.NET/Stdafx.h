@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Stdafx.h,v $
+Revision 1.3  2005/02/05 02:40:59  cheshire
+Convert newlines to Unix-style (ASCII 10)
+
 Revision 1.2  2005/02/05 02:37:01  cheshire
 Convert newlines to Unix-style (ASCII 10)
 
