@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.446  2004/10/14 00:43:34  cheshire
+<rdar://problem/3815984> Services continue to announce SRV and HINFO
+
 Revision 1.445  2004/10/12 21:07:09  cheshire
 Set up m->p in mDNS_Init() before calling mDNSPlatformTimeInit()
 
@@ -4693,10 +4696,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			{
 			AuthRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (PacketRRMatchesSignature(&pkt.r, rr))		// If interface, name, type (if verified) and class match...
+			if (PacketRRMatchesSignature(&pkt.r, rr))		// If interface, name, type (if shared record) and class match...
 				{
-				// ... check to see if rdata is identical
-				if (SameRData(&pkt.r.resrec, &rr->resrec))
+				// ... check to see if type and rdata are identical
+				if (pkt.r.resrec.rrtype == rr->resrec.rrtype && SameRData(&pkt.r.resrec, &rr->resrec))
 					{
 					// If the RR in the packet is identical to ours, just check they're not trying to lower the TTL on us
 					if (pkt.r.resrec.rroriginalttl >= rr->resrec.rroriginalttl/2 || m->SleepState)
@@ -4710,58 +4713,57 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						else if (rr->ImmedAnswer != InterfaceID) { rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
 						}
 					}
-				else
+				// else, the packet RR has different type or different rdata -- check to see if this is a conflict
+				else if (pkt.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &pkt.r))
 					{
-					// else, the packet RR has different rdata -- check to see if this is a conflict
-					if (pkt.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &pkt.r))
+					debugf("mDNSCoreReceiveResponse: Our Record: %08lX %08lX %s", rr->  resrec.rdatahash, rr->  resrec.rdnamehash, GetRRDisplayString(m, rr));
+					debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %08lX %s", pkt.r.resrec.rdatahash, pkt.r.resrec.rdnamehash, GetRRDisplayString(m, &pkt.r));
+
+					// If this record is marked DependentOn another record for conflict detection purposes,
+					// then *that* record has to be bumped back to probing state to resolve the conflict
+					while (rr->DependentOn) rr = rr->DependentOn;
+
+					// If we've just whacked this record's ProbeCount, don't need to do it again
+					if (rr->ProbeCount <= DefaultProbeCountForTypeUnique)
 						{
-						debugf("mDNSCoreReceiveResponse: Our Record: %08lX %08lX %s", rr->  resrec.rdatahash, rr->  resrec.rdnamehash, GetRRDisplayString(m, rr));
-						debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %08lX %s", pkt.r.resrec.rdatahash, pkt.r.resrec.rdnamehash, GetRRDisplayString(m, &pkt.r));
-
-						// If this record is marked DependentOn another record for conflict detection purposes,
-						// then *that* record has to be bumped back to probing state to resolve the conflict
-						while (rr->DependentOn) rr = rr->DependentOn;
-
-						// If we've just whacked this record's ProbeCount, don't need to do it again
-						if (rr->ProbeCount <= DefaultProbeCountForTypeUnique)
+						// If we'd previously verified this record, put it back to probing state and try again
+						if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 							{
-							// If we'd previously verified this record, put it back to probing state and try again
-							if (rr->resrec.RecordType == kDNSRecordTypeVerified)
-								{
-								debugf("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-								rr->resrec.RecordType     = kDNSRecordTypeUnique;
-								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
-								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
-								InitializeLastAPTime(m, rr);
-								RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
-								}
-							// If we're probing for this record, we just failed
-							else if (rr->resrec.RecordType == kDNSRecordTypeUnique)
-								{
-								debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
-								}
-							// We assumed this record must be unique, but we were wrong.
-							// (e.g. There are two mDNSResponders on the same machine giving
-							// different answers for the reverse mapping record.)
-							// This is simply a misconfiguration, and we don't try to recover from it.
-							else if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
-								{
-								debugf("mDNSCoreReceiveResponse: Unexpected conflict on %##s (%s) -- discarding our record",
-									rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
-								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
-								}
-							else
-								debugf("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
-									rr->resrec.RecordType, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+							debugf("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+							rr->resrec.RecordType     = kDNSRecordTypeUnique;
+							rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
+							rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
+							InitializeLastAPTime(m, rr);
+							RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
 							}
+						// If we're probing for this record, we just failed
+						else if (rr->resrec.RecordType == kDNSRecordTypeUnique)
+							{
+							debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+							mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
+							}
+						// We assumed this record must be unique, but we were wrong.
+						// (e.g. There are two mDNSResponders on the same machine giving
+						// different answers for the reverse mapping record.)
+						// This is simply a misconfiguration, and we don't try to recover from it.
+						else if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
+							{
+							debugf("mDNSCoreReceiveResponse: Unexpected conflict on %##s (%s) -- discarding our record",
+								rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+							mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
+							}
+						else
+							debugf("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
+								rr->resrec.RecordType, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 						}
-					// Else, matching signature, different rdata, but not a considered a conflict.
-					// If the packet record has the cache-flush bit set, then we check to see if we have to re-assert our record(s)
-					// to rescue them (see note about "multi-homing and bridged networks" at the end of this function).
-					else if ((pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) && m->timenow - rr->LastMCTime > mDNSPlatformOneSecond/2)
-						{ rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
 					}
+				// Else, matching signature, different type or rdata, but not a considered a conflict.
+				// If the packet record has the cache-flush bit set, then we check to see if we
+				// have any record(s) of the same type that we should re-assert to rescue them
+				// (see note about "multi-homing and bridged networks" at the end of this function).
+				else if (pkt.r.resrec.rrtype == rr->resrec.rrtype)
+					if ((pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) && m->timenow - rr->LastMCTime > mDNSPlatformOneSecond/2)
+						{ rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
 				}
 			}
 
