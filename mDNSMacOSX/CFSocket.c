@@ -110,8 +110,11 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		{
 		if (info->ifinfo.ip.NotAnInteger == src.NotAnInteger)
 			{
-			int s = (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? info->socket1 : info->socket2;
-			int err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, sizeof(to));
+			int s, err;
+			if      (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) s = info->socket1;
+			else if (srcport.NotAnInteger == UnicastDNSPort.NotAnInteger  ) s = info->socket2;
+			else { debugf("Source port %d not allowed", (mDNSu16)srcport.b[0]<<8 | srcport.b[1]); return(-1); }
+			err = sendto(s, msg, (UInt8*)end - (UInt8*)msg, 0, (struct sockaddr *)&to, sizeof(to));
 			if (err < 0) { perror("mDNSPlatformSendUDP sendto"); return(err); }
 			}
 		info = (NetworkInterfaceInfo2 *)(info->ifinfo.next);
