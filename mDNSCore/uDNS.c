@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.77  2004/09/14 23:27:47  cheshire
+Fix compile errors
+
 Revision 1.76  2004/09/14 22:22:00  ksekar
 <rdar://problem/3800920> Legacy browses broken against some BIND versions
 
@@ -386,7 +389,7 @@ mDNSlocal void LinkActiveQuestion(uDNS_GlobalInfo *u, DNSQuestion *q)
 mDNSlocal void SwapRData(mDNS *m, AuthRecord *rr, mDNSBool DeallocOld)
 	{
 	RData *oldrd = rr->resrec.rdata;
-	int oldrdlen = rr->resrec.rdlength;
+	mDNSu16 oldrdlen = rr->resrec.rdlength;
 
 	if (!rr->uDNS_info.UpdateRData) { LogMsg("SwapRData invoked with NULL UpdateRData field"); return; }
 	SetNewRData(&rr->resrec, rr->uDNS_info.UpdateRData, rr->uDNS_info.UpdateRDLen);
@@ -699,7 +702,7 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 			n->state = NATState_Error;
 			goto end;
 			}
-		err = (int)pkt[2] << 8 | pkt[3] ;
+		err = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
 		if (err) { LogMsg("ReceiveAddrResponse: received error %d", err);  n->state = NATState_Error; goto end; }
 
 		n->state = NATState_Established;
@@ -819,7 +822,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	if (len < PORTMAP_PKTLEN) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); goto register_service; }
 	if (pkt[0] != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto register_service; }
 	if (pkt[1] != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto register_service; }
-	err = (int)pkt[2] << 8 | pkt[3] ;
+	err = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
 	if (err) { LogMsg("ReceivePortMapReply: received error %d", err);  goto register_service; }
 
 	priv.b[0] = pkt[4];
@@ -840,7 +843,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
       	// !!!KRS we need to update the SRV here!
 	n->PublicPort = pub;
 
-	n->retry = mDNSPlatformTimeNow() + (mDNSVal32(lease) * mDNSPlatformOneSecond / 2);  // retry half way to expiration
+	n->retry = mDNSPlatformTimeNow() + ((mDNSs32)mDNSVal32(lease) * mDNSPlatformOneSecond / 2);  // retry half way to expiration
 	
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return; }
 	n->state = NATState_Established;

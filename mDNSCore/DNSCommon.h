@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.17  2004/09/14 23:27:46  cheshire
+Fix compile errors
+
 Revision 1.16  2004/08/13 23:46:58  cheshire
 "asyncronous" -> "asynchronous"
 
@@ -241,7 +244,7 @@ extern mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *
 
 extern mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr);
 
-extern mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSs32 lease);
+extern mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease);
 	
 #define PutResourceRecord(MSG, P, C, RR) PutResourceRecordTTL((MSG), (P), (C), (RR), (RR)->rroriginalttl)
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.48  2004/09/14 23:27:46  cheshire
+Fix compile errors
+
 Revision 1.47  2004/08/25 02:50:04  cheshire
 <rdar://problem/3561220> Browses are no longer piggybacking on other browses
 Make mDNSSameAddress() recognise that two mDNSAddrType_None addresses are necessarily equal
@@ -1410,7 +1413,7 @@ mDNSexport mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecor
 	}
 
 // for dynamic updates
-mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSs32 lease)
+mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	{
 	AuthRecord rr;
 	ResourceRecord *opt = &rr.resrec; 

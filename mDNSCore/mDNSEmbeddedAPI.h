@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.195  2004/09/14 23:27:46  cheshire
+Fix compile errors
+
 Revision 1.194  2004/09/10 00:49:57  cheshire
 <rdar://problem/3787644> Add error code kDNSServiceErr_Firewall, for future use
 
@@ -1184,7 +1187,7 @@ typedef struct
     // uDNS_UpdateRecord support fields
     mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
     RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
-    int          UpdateRDLen;  // length of above field
+    mDNSu16      UpdateRDLen;  // length of above field
     mDNSRecordUpdateCallback *UpdateRDCallback; // client callback to free old rdata
 	} uDNS_RegInfo;
 	
@@ -1540,7 +1543,7 @@ typedef enum
 	NATOp_MapTCP      = 2
 	} NATOp_t;
 
-typedef enum
+enum
    	{
    	NATErr_None = 0,
    	NATErr_Vers = 1,
@@ -1548,7 +1551,9 @@ typedef enum
    	NATErr_NetFail = 3,
    	NATErr_Res = 4,
    	NATErr_Opcode = 5
-   	} NATErr_t;
+   	};
+
+typedef mDNSu16 NATErr_t;
 
 typedef enum
 	{

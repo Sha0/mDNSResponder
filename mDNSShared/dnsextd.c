@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.4  2004/09/14 23:27:48  cheshire
+Fix compile errors
+
 Revision 1.3  2004/09/02 01:39:40  cheshire
 For better readability, follow consistent convention that QR bit comes first, followed by OP bits
 
@@ -894,7 +897,7 @@ mDNSlocal void UpdateLeaseTable(PktMsg *pkt, DaemonInfo *d, mDNSs32 lease)
 
 // Given a successful reply from a server, create a new reply that contains lease information
 // Replies are currently not signed !!!KRS change this
-mDNSlocal PktMsg *FormatLeaseReply(DaemonInfo *d, PktMsg *orig, mDNSs32 lease)
+mDNSlocal PktMsg *FormatLeaseReply(DaemonInfo *d, PktMsg *orig, mDNSu32 lease)
 	{
 	PktMsg *reply;
 	mDNSu8 *ptr, *end;

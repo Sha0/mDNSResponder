@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.401  2004/09/14 23:27:46  cheshire
+Fix compile errors
+
 Revision 1.400  2004/09/02 03:48:47  cheshire
 <rdar://problem/3709039> Disable targeted unicast query support by default
 1. New flag kDNSServiceFlagsAllowRemoteQuery to indicate we want to allow remote queries for this record
@@ -4755,7 +4758,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	mDNSIPPort NATPort = mDNSOpaque16fromIntVal(NATMAP_PORT);
 	const mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	
-	if (srcport.NotAnInteger == NATPort.NotAnInteger) { uDNS_ReceiveNATMap(m, pkt, end - (mDNSu8 *)pkt); return; }
+	if (srcport.NotAnInteger == NATPort.NotAnInteger) { uDNS_ReceiveNATMap(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt)); return; }
 #endif		
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
 	msg = (DNSMessage *)pkt;
