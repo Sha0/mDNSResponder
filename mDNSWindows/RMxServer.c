@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: RMxServer.c,v $
+Revision 1.2  2004/03/16 22:09:03  bradley
+Skip socket creation failures to handle local IPv6 addresses being returned by Windows even when
+they are not actually supported by the OS; Log a message and only fail if no sockets can be created.
+
 Revision 1.1  2004/01/30 02:35:13  bradley
 Rendezvous Message Exchange implementation for DNS-SD IPC on Windows.
 
@@ -396,7 +400,13 @@ DEBUG_LOCAL OSStatus	RMxServerRunInitialize( void )
 		
 		gRMxServerSockets[ nAddrs ] = socket( addr->ai_family, addr->ai_socktype, addr->ai_protocol );
 		err = translate_errno( IsValidSocket( gRMxServerSockets[ nAddrs ] ), errno_compat(), kNoResourcesErr );
-		require_noerr( err, exit );
+		if( err != kNoErr )
+		{
+			dlog( kDebugLevelNotice, DEBUG_NAME "%s socket not supported (%d %m)\n", 
+				( addr->ai_family == AF_INET ) ? "AF_INET" : ( addr->ai_family == AF_INET6 ) ? "AF_INET6" : "<unknown>", 
+				err, err );
+			continue;
+		}
 		
 		// Enable the address-reuse option so the server can be stopped and re-started without the TIME_WAIT delay.
 		
