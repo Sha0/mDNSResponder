@@ -36,6 +36,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.39  2004/01/28 21:12:15  cheshire
+Reconcile mDNSIPv6Support & HAVE_IPV6 into a single flag (HAVE_IPV6)
+
 Revision 1.38  2004/01/27 20:15:23  cheshire
 <rdar://problem/3541288>: Time to prune obsolete code for listening on port 53
 
@@ -244,7 +247,7 @@ static void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipAddr
 			break;
 			}
 
-#ifdef mDNSIPv6Support
+#if HAVE_IPV6
 		case AF_INET6:
 			{
 			struct sockaddr_in6* sin6        = (struct sockaddr_in6*)sa;
@@ -281,7 +284,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	assert(msg != NULL);
 	assert(end != NULL);
 	assert( (((char *) end) - ((char *) msg)) > 0 );
-	assert(dstPort.NotAnInteger != 0);     // Nor from a zero source port
+	assert(dstPort.NotAnInteger != 0);
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
@@ -295,7 +298,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sendingsocket           = thisIntf ? thisIntf->multicastSocket4 : m->p->unicastSocket4;
 		}
 
-#ifdef mDNSIPv6Support
+#if HAVE_IPV6
 	else if (dst->type == mDNSAddrType_IPv6)
 		{
 		struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&to;
@@ -304,7 +307,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 		sin6->sin6_family         = AF_INET6;
 		sin6->sin6_port           = dstPort.NotAnInteger;
 		sin6->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
-		sendingsocket           = thisIntf ? thisIntf->multicastSocket6 : m->p->unicastSocket6;
+		sendingsocket             = thisIntf ? thisIntf->multicastSocket6 : m->p->unicastSocket6;
 		}
 #endif
 
@@ -571,7 +574,7 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 
 	// Open the socket...
 	if       (intfAddr->sa_family == AF_INET) *sktPtr = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-#ifdef mDNSIPv6Support
+#if HAVE_IPV6
 	else if (intfAddr->sa_family == AF_INET6) *sktPtr = socket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 #endif
 	else return EINVAL;
@@ -669,7 +672,7 @@ static int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interface
 			}
 		} // endif (intfAddr->sa_family == AF_INET)
 
-#ifdef mDNSIPv6Support
+#if HAVE_IPV6
 	else if (intfAddr->sa_family == AF_INET6)
 		{
 		struct ipv6_mreq imr6;
@@ -819,7 +822,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 		{
 		if (alias->multicastSocket4 == -1 && intfAddr->sa_family == AF_INET)
 			err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocket4);
-#ifdef mDNSIPv6Support
+#if HAVE_IPV6
 		else if (alias->multicastSocket6 == -1 && intfAddr->sa_family == AF_INET6)
 			err = SetupSocket(intfAddr, MulticastDNSPort, intf->index, &alias->multicastSocket6);
 #endif
@@ -862,7 +865,7 @@ static int SetupInterfaceList(mDNS *const m)
 
 	if (intfList == NULL) err = ENOENT;
 
-#ifdef mDNSIPv6Support
+#if HAVE_IPV6
 	if (err == 0)		/* Link the IPv6 list to the end of the IPv4 list */
 		{
 		struct ifi_info **p = &intfList;
@@ -877,7 +880,7 @@ static int SetupInterfaceList(mDNS *const m)
 		while (i)
 			{
 			if (     ((i->ifi_addr->sa_family == AF_INET)
-#ifdef mDNSIPv6Support
+#if HAVE_IPV6
 					  || (i->ifi_addr->sa_family == AF_INET6)
 #endif
 				) &&  (i->ifi_flags & IFF_UP) && !(i->ifi_flags & IFF_POINTOPOINT) )
@@ -1222,7 +1225,6 @@ extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m)
 	return PosixErrorToStatus(err);
 	}
 
-
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Locking
 #endif
@@ -1381,7 +1383,6 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 		}
 	}
 
-
 // update gMaxFD
 static void	DetermineMaxEventFD( void )
 	{
@@ -1421,7 +1422,6 @@ mStatus mDNSPosixAddFDToEventLoop( int fd, mDNSPosixEventCallback callback, void
 
 	return mStatus_NoError;
 	}
-
 
 // Remove a file descriptor from the set that mDNSPosixRunEventLoopOnce() listens to.
 mStatus mDNSPosixRemoveFDFromEventLoop( int fd)
@@ -1518,6 +1518,3 @@ mStatus mDNSPosixRunEventLoopOnce( mDNS *m, const struct timeval *pTimeout,
 
 	return mStatus_NoError;
 	}
-
-
-

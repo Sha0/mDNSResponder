@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.12  2004/01/28 21:12:15  cheshire
+Reconcile mDNSIPv6Support & HAVE_IPV6 into a single flag (HAVE_IPV6)
+
 Revision 1.11  2003/12/13 05:43:09  bradley
 Fixed non-sa_len and non-IPv6 version of GET_SA_LEN macro to cast as sockaddr to access
 sa_family so it works with any sockaddr-compatible address structure (e.g. sockaddr_storage).
@@ -85,7 +88,7 @@ First checkin
 #ifndef NOT_HAVE_SA_LEN
 #define GET_SA_LEN(X) (sizeof(struct sockaddr) > ((struct sockaddr*)&(X))->sa_len ? \
                        sizeof(struct sockaddr) : ((struct sockaddr*)&(X))->sa_len   )
-#elif mDNSIPv6Support
+#elif HAVE_IPV6
 #define GET_SA_LEN(X) (((struct sockaddr*)&(X))->sa_family == AF_INET  ? sizeof(struct sockaddr_in) : \
                        ((struct sockaddr*)&(X))->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr))
 #else

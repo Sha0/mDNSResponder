@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.14  2004/01/28 21:12:15  cheshire
+Reconcile mDNSIPv6Support & HAVE_IPV6 into a single flag (HAVE_IPV6)
+
 Revision 1.13  2004/01/24 05:12:03  cheshire
 <rdar://problem/3534352>: Need separate socket for issuing unicast queries
 
@@ -71,10 +74,6 @@ First checkin
 
 #include <signal.h>
 #include <sys/time.h>
-
-#if HAVE_IPV6
-#define mDNSIPv6Support 1
-#endif
 
 #ifdef  __cplusplus
     extern "C" {
