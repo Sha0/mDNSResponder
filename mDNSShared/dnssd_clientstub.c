@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.29  2004/09/16 21:46:38  ksekar
+<rdar://problem/3665304> Need SPI for LoginWindow to associate a UID with a Wide Area domain
+
 Revision 1.28  2004/08/11 17:10:04  cheshire
 Fix signed/unsigned warnings
 
@@ -643,6 +646,35 @@ error:
     if (*sdRef) { free(*sdRef);  *sdRef = NULL; }
     return kDNSServiceErr_Unknown;
     }
+
+DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
+(
+ DNSServiceFlags                    flags,
+ const char                         *domain
+ )
+    {
+    char *msg = NULL, *ptr;
+    size_t len;
+    ipc_msg_hdr *hdr;
+    DNSServiceRef sdr;
+    DNSServiceErrorType err;
+
+    len = sizeof(flags);
+    len += strlen(domain) + 1;
+
+    hdr = create_hdr(setdomain_request, &len, &ptr, 1);
+    if (!hdr) return kDNSServiceErr_Unknown;
+    msg = (char *)hdr;
+    put_flags(flags, &ptr);
+    put_string(domain, &ptr);
+
+    sdr = connect_to_server();
+    if (!sdr) return kDNSServiceErr_Unknown;
+    err = deliver_request(msg, sdr, 1);
+	DNSServiceRefDeallocate(sdr);
+	return err;
+    }
+
 
 static void handle_regservice_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
     {

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.81  2004/09/16 21:46:38  ksekar
+<rdar://problem/3665304> Need SPI for LoginWindow to associate a UID with a Wide Area domain
+
 Revision 1.80  2004/09/16 01:58:23  cheshire
 Fix compiler warnings
 
@@ -280,6 +283,14 @@ static char * win32_strerror(int inErrorCode);
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
 
+// Apple specific configuration functionality, not required for other platforms
+#ifdef __MACOSX__
+#include <sys/ucred.h>
+#ifndef LOCAL_PEERCRED
+#define LOCAL_PEERCRED 0x001 /* retrieve peer credentials */
+#endif // LOCAL_PEERCRED
+#endif //__MACOSX__
+
 // Types and Data Structures
 // ----------------------------------------------------------------------
 
@@ -511,6 +522,7 @@ static mStatus remove_extra_rr_from_service(request_state *rstate);
 static mStatus remove_record(request_state *rstate);
 static void free_service_registration(registered_service *srv);
 static uint32_t dnssd_htonl(uint32_t l);
+static void handle_setdomain_request(request_state *rstate);
 
 // initialization, setup/teardown functions
 
@@ -956,6 +968,7 @@ static void request_callback(void *info)
         case update_record_request: handle_update_request(rstate); break;
         case remove_record_request: handle_removerecord_request(rstate); break;
         case reconfirm_record_request: handle_reconfirm_request(rstate); break;
+		case setdomain_request: handle_setdomain_request(rstate); break;
         default:
             debugf("ERROR: udsserver_recv_request - unsupported request type: %d", rstate->hdr.op);
     	}
@@ -1357,6 +1370,54 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 		}
 	return(st);
 	}
+
+static void handle_setdomain_request(request_state *request)
+	{
+	mStatus err = mStatus_NoError;
+	char *ptr;
+	char domainstr[MAX_ESCAPED_DOMAIN_NAME];
+	domainname domain;
+	DNSServiceFlags flags;
+#ifdef __MACOSX__
+	struct xucred xuc;
+	socklen_t xuclen;
+#endif
+	
+	if (request->ts != t_complete)
+        {
+        LogMsg("ERROR: handle_setdomain_request - transfer state != t_complete");
+        abort_request(request);
+        unlink_request(request);
+        return;
+        }
+
+    // extract flags/domain from message
+    ptr = request->msgdata;
+    flags = get_flags(&ptr);
+    if (get_string(&ptr, domainstr, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
+		!MakeDomainNameFromDNSNameString(&domain, domainstr))
+		{ err = mStatus_BadParamErr; goto end; }
+
+	freeL("handle_setdomain_request", request->msgbuf);
+    request->msgbuf = NULL;
+
+#ifdef __MACOSX__
+    // this functionality currently only used for Apple-specific configuration, so we don't burned other platforms by mandating
+	// the existence of this socket option
+	xuclen = sizeof(xuc);
+	if (getsockopt(request->sd, 0, LOCAL_PEERCRED, &xuc, &xuclen))
+		{ my_perror("ERROR: getsockopt, LOCAL_PEERCRED"); err = mStatus_UnknownErr; goto end; }
+	if (xuc.cr_version != XUCRED_VERSION) { LogMsg("getsockopt, LOCAL_PEERCRED - bad version"); err = mStatus_UnknownErr; goto end; }
+	LogMsg("Default domain %s set for UID %d", domainstr, xuc.cr_uid);	
+#else
+	err = mStatus_UnsupportedErr;
+#endif // __MACOSX__
+	
+	end:
+    deliver_error(request, err);
+    abort_request(request);
+    unlink_request(request);
+    }
 
 static void handle_browse_request(request_state *request)
     {
@@ -2892,7 +2953,10 @@ static int validate_message(request_state *rstate)
 						sizeof(uint32_t) + 		// interface
 						sizeof(char) + 			// fullname
 						(3 * sizeof(uint16_t));		// type, class, rdlen
-        default:
+			            break;
+		case setdomain_request: min_size = sizeof(DNSServiceFlags) + sizeof(char);  // flags + domain
+			break; 
+		default:
             LogMsg("ERROR: validate_message - unsupported request type: %d", rstate->hdr.op);	    
 	    return -1;
 	}    

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.12  2004/09/16 21:46:38  ksekar
+<rdar://problem/3665304> Need SPI for LoginWindow to associate a UID with a Wide Area domain
+
 Revision 1.11  2004/08/10 06:24:56  cheshire
 Use types with precisely defined sizes for 'op' and 'reg_index', for better
 compatibility if the daemon and the client stub are built using different compilers
@@ -128,7 +131,8 @@ typedef enum
     query_request,
     reconfirm_record_request,
     add_record_request,
-    update_record_request
+    update_record_request,
+    setdomain_request	
     } request_op_t;
 
 typedef enum
