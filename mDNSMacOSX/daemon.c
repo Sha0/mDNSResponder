@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.196  2004/10/04 05:56:04  cheshire
+<rdar://problem/3824730> mDNSResponder doesn't respond to certain AirPort changes
+
 Revision 1.195  2004/09/30 00:24:59  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -1966,11 +1969,11 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 		{
 		if (!i->Exists)
-			LogMsgNoIdent("Interface: %s %5s(%lu) DORMANT",
-				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id);
+			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a DORMANT",
+				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID);
 		else
-			LogMsgNoIdent("Interface: %s %5s(%lu) %s %s %2d %s %2d InterfaceID %p %s %s %#a",
-				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id,
+			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %2d %s %2d InterfaceID %p %s %s %#a",
+				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
 				i->ifinfo.InterfaceActive ? "Active" : "      ",
 				i->ifinfo.IPv4Available ? "v4" : "  ", i->ss.sktv4,
 				i->ifinfo.IPv6Available ? "v6" : "  ", i->ss.sktv6,

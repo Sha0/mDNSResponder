@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.202  2004/10/04 05:56:04  cheshire
+<rdar://problem/3824730> mDNSResponder doesn't respond to certain AirPort changes
+
 Revision 1.201  2004/09/30 00:24:59  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -1515,21 +1518,46 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 		}
 	}
 
+mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
+	{
+	mDNSEthAddr eth = zeroEthAddr;
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetBSSID"), NULL, NULL);
+	if (store)
+		{
+		CFStringRef entityname = CFStringCreateWithFormat(NULL, NULL, CFSTR("State:/Network/Interface/%s/AirPort"), ifa_name);
+		if (entityname)
+			{
+			CFDictionaryRef dict = SCDynamicStoreCopyValue(store, entityname);
+			if (dict)
+				{
+				CFRange range = { 0, 6 };		// Offset, length
+				CFDataRef data = CFDictionaryGetValue(dict, CFSTR("BSSID"));
+				if (data && CFDataGetLength(data) == 6) CFDataGetBytes(data, range, eth.b);
+				CFRelease(dict);
+				}
+			CFRelease(entityname);
+			}
+		CFRelease(store);
+		}
+	return(eth);
+	}
+
 mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	{
-	mDNSu32 scope_id = if_nametoindex(ifa->ifa_name);
+	mDNSu32 scope_id  = if_nametoindex(ifa->ifa_name);
+	mDNSEthAddr bssid = GetBSSID(ifa->ifa_name);
 	mDNSAddr ip;
 	SetupAddr(&ip, ifa->ifa_addr);
 	NetworkInterfaceInfoOSX **p;
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
-		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip))
+		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip) && mDNSSameEthAddress(&bssid, &(*p)->BSSID))
 			{
-			debugf("AddInterfaceToList: Found existing interface %u with address %#a", scope_id, &ip);
+			debugf("AddInterfaceToList: Found existing interface %u %.6a with address %#a", scope_id, &bssid, &ip);
 			(*p)->Exists = mDNStrue;
 			return(*p);
 			}
 
-	debugf("AddInterfaceToList: Making   new   interface %u with address %#a", scope_id, &ip);
+	debugf("AddInterfaceToList: Making   new   interface %u %.6a with address %#a", scope_id, &bssid, &ip);
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
 	bzero(i, sizeof(NetworkInterfaceInfoOSX));
 	if (!i) return(mDNSNULL);
@@ -1547,6 +1575,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->next            = mDNSNULL;
 	i->Exists          = mDNStrue;
 	i->scope_id        = scope_id;
+	i->BSSID           = bssid;
 	i->sa_family       = ifa->ifa_addr->sa_family;
 	i->Multicast       = (ifa->ifa_flags & IFF_MULTICAST) && !(ifa->ifa_flags & IFF_POINTOPOINT);
 
@@ -2269,6 +2298,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(keys, CFSTR("Setup:/Network/DynamicDNS"));
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
+	CFArrayAppendValue(patterns, CFSTR("State:/Network/Interface/[^/]+/AirPort"));
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
 		{ LogMsg("SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
 

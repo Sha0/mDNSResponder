@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.42  2004/10/04 05:56:04  cheshire
+<rdar://problem/3824730> mDNSResponder doesn't respond to certain AirPort changes
+
 Revision 1.41  2004/09/30 00:24:59  ksekar
 <rdar://problem/3695802> Dynamically update default registration domains on config change
 
@@ -205,6 +208,7 @@ struct NetworkInterfaceInfoOSX_struct
 												// 2 = exists, but McastTxRx state changed
 	char                    *ifa_name;			// Memory for this is allocated using malloc
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
+	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable
 	u_short                  sa_family;
 	mDNSBool                 Multicast;
 	CFSocketSet              ss;
