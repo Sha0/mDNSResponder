@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.153  2004/05/26 17:06:33  cheshire
+<rdar://problem/3668515>: Don't rely on CFSocketInvalidate() to remove RunLoopSource
+
 Revision 1.152  2004/05/18 23:51:26  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -1024,8 +1027,9 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
 mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *ifaddr, u_short sa_family)
 	{
-	int         *s = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
-	CFSocketRef *c = (sa_family == AF_INET) ? &cp->cfsv4 : &cp->cfsv6;
+	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
+	CFSocketRef *c        = (sa_family == AF_INET) ? &cp->cfsv4 : &cp->cfsv6;
+	CFRunLoopSourceRef *r = (sa_family == AF_INET) ? &cp->rlsv4 : &cp->rlsv6;
 	const int on = 1;
 	const int twofivefive = 255;
 	mStatus err = mStatus_NoError;
@@ -1159,9 +1163,8 @@ mDNSlocal mStatus SetupSocket(CFSocketSet *cp, mDNSIPPort port, const mDNSAddr *
 	*s = skt;
 	CFSocketContext myCFSocketContext = { 0, cp, NULL, NULL, NULL };
 	*c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, &myCFSocketContext);
-	CFRunLoopSourceRef rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-	CFRelease(rls);
+	*r = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), *r, kCFRunLoopDefaultMode);
 	
 	return(err);
 
@@ -1230,11 +1233,10 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 
 	i->ss.m     = m;
 	i->ss.info  = i;
-	i->ss.sktv4 = -1;
-	i->ss.cfsv4 = NULL;
-	i->ss.sktv6 = -1;
-	i->ss.cfsv6 = NULL;
-	
+	i->ss.sktv4 = i->ss.sktv6 = -1;
+	i->ss.cfsv4 = i->ss.cfsv6 = NULL;
+	i->ss.rlsv4 = i->ss.rlsv6 = NULL;
+
 	*p = i;
 	return(i);
 	}
@@ -1436,10 +1438,11 @@ mDNSlocal void CloseSocketSet(CFSocketSet *ss)
 	// Note: MUST NOT close the underlying native BSD sockets.
 	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
 	// because it first has to unhook the sockets from its select() call, before it can safely close them.
-	if (ss->cfsv4) { CFSocketInvalidate(ss->cfsv4); CFRelease(ss->cfsv4); }
-	if (ss->cfsv6) { CFSocketInvalidate(ss->cfsv6); CFRelease(ss->cfsv6); }
+	if (ss->cfsv4) { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), ss->rlsv4, kCFRunLoopDefaultMode); CFRelease(ss->rlsv4); CFSocketInvalidate(ss->cfsv4); CFRelease(ss->cfsv4); }
+	if (ss->cfsv6) { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), ss->rlsv6, kCFRunLoopDefaultMode); CFRelease(ss->rlsv6); CFSocketInvalidate(ss->cfsv6); CFRelease(ss->cfsv6); }
 	ss->sktv4 = ss->sktv6 = -1;
 	ss->cfsv4 = ss->cfsv6 = NULL;
+	ss->rlsv4 = ss->rlsv6 = NULL;
 	}
 
 mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
@@ -2080,11 +2083,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
  	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;
-	m->p->unicastsockets.sktv4 = -1;
-
-	m->p->unicastsockets.cfsv4 = NULL;
-	m->p->unicastsockets.sktv6 = -1;
-	m->p->unicastsockets.cfsv6 = NULL;
+	m->p->unicastsockets.sktv4 = m->p->unicastsockets.sktv6 = -1;
+	m->p->unicastsockets.cfsv4 = m->p->unicastsockets.cfsv6 = NULL;
+	m->p->unicastsockets.rlsv4 = m->p->unicastsockets.rlsv6 = NULL;
+	
 	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET);
 	err = SetupSocket(&m->p->unicastsockets, zeroIPPort, &zeroAddr, AF_INET6);
 

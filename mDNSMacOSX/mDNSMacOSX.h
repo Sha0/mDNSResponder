@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.36  2004/05/26 17:06:33  cheshire
+<rdar://problem/3668515>: Don't rely on CFSocketInvalidate() to remove RunLoopSource
+
 Revision 1.35  2004/05/18 23:51:26  cheshire
 Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
 
@@ -170,8 +173,10 @@ typedef struct
 	NetworkInterfaceInfoOSX *info;
 	int                      sktv4;
 	CFSocketRef              cfsv4;
+	CFRunLoopSourceRef       rlsv4;
 	int                      sktv6;
 	CFSocketRef	             cfsv6;
+	CFRunLoopSourceRef       rlsv6;
 	} CFSocketSet;
 
 struct NetworkInterfaceInfoOSX_struct
