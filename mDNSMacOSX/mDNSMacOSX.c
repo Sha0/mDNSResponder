@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.302  2005/02/25 02:34:14  cheshire
+<rdar://problem/4017292> Should not indicate successful dynamic update if no network connection
+Show status as 1 (in progress) while we're trying
+
 Revision 1.301  2005/02/24 21:55:57  ksekar
 <rdar://problem/4017292> Should not indicate successful dynamic update if no network connection
 
@@ -2942,7 +2946,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 		if (DynDNSHostname.c[0])
 			{
 			SetSecretForDomain(m, &fqdn); // no-op if "zone" secret, above, is to be used for hostname
-			SetDDNSNameStatus(&DynDNSHostname, -1);
+			SetDDNSNameStatus(&DynDNSHostname, 1);		// Set status to 1 to indicate "in progress"
 			mDNS_AddDynDNSHostName(m, &DynDNSHostname, SCPrefsDynDNSCallback, NULL);
 			}
 		}
@@ -2968,11 +2972,10 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	dict = SCDynamicStoreCopyValue(store, key);
 	CFRelease(key);
 	CFRelease(store);
-	if (!dict)		
+	if (!dict)				// lost v4
 		{
-		// lost v4
 		mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL);
-		if (DynDNSHostname.c[0]) SetDDNSNameStatus(&DynDNSHostname, -1);
+		if (DynDNSHostname.c[0]) SetDDNSNameStatus(&DynDNSHostname, 1);	// Set status to 1 to indicate temporary failure
 		return;
 		} 
 
