@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.316  2003/11/08 23:37:54  cheshire
+Give explicit zero initializers to blank static structure, required by certain compilers.
+(Thanks to ramaprasad.kr@hp.com for reporting this.)
+
 Revision 1.315  2003/11/07 03:32:56  cheshire
 <rdar://problem/3472153> mDNSResponder delivers answers in inconsistent order
 This is the real fix. Checkin 1.312 was overly simplistic; Calling GetFreeCacheRR() can sometimes
@@ -1020,11 +1024,6 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 	// If someone knows a variant way of writing "while(1)" that doesn't generate warning messages, please let us know
 	#pragma warning(disable:4127)
 	
-	// Disable "const object should be initialized"
-	// We know that static/globals are defined to be zeroed in ANSI C, and to avoid this warning would require some
-	// *really* ugly chunk of zeroes and curly braces to initialize zeroRR and mDNSprintf_format_default to all zeroes
-	#pragma warning(disable:4132)
-	
 	// Disable "assignment within conditional expression".
 	// Other compilers understand the convention that if you place the assignment expression within an extra pair
 	// of parentheses, this signals to the compiler that you really intended an assignment and no warning is necessary.
@@ -1083,7 +1082,6 @@ typedef enum
 #pragma mark - Program Constants
 #endif
 
-mDNSexport const ResourceRecord  zeroRR;
 mDNSexport const mDNSIPPort      zeroIPPort        = { { 0 } };
 mDNSexport const mDNSv4Addr      zeroIPAddr        = { { 0 } };
 mDNSexport const mDNSv6Addr      zerov6Addr        = { { 0 } };
@@ -1145,7 +1143,7 @@ static const struct mDNSprintf_format
 	char          sign;		// +, - or space
 	unsigned int  fieldWidth;
 	unsigned int  precision;
-	} mDNSprintf_format_default;
+	} mDNSprintf_format_default = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg)
 	{
