@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.231  2003/07/18 00:06:37  cheshire
+To make code a little easier to read in GetRDLength(), search-and-replace "rr->rdata->u." with "rd->"
+
 Revision 1.230  2003/07/17 18:16:54  cheshire
 <rdar://problem/3319418> Rendezvous services always in a state of flux
 In preparation for working on this, made some debugf messages a little more selective
@@ -1861,15 +1864,16 @@ mDNSlocal mDNSBool ShouldSuppressKnownAnswer(const ResourceRecord *const ka, con
 
 mDNSlocal mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate)
 	{
+	RDataBody *rd = &rr->rdata->u;
 	const domainname *const name = estimate ? &rr->name : mDNSNULL;
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	return(sizeof(rr->rdata->u.ip)); break;
+		case kDNSType_A:	return(sizeof(rd->ip)); break;
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	return(CompressedDomainNameLength(&rr->rdata->u.name, name));
+		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
 		case kDNSType_TXT:  return(rr->rdata->RDLength); // TXT is not self-describing, so have to just trust rdlength
-		case kDNSType_AAAA:	return(sizeof(rr->rdata->u.ipv6)); break;
-		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rr->rdata->u.srv.target, name));
+		case kDNSType_AAAA:	return(sizeof(rd->ipv6)); break;
+		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdata->RDLength);
 		}
