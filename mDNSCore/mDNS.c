@@ -117,8 +117,13 @@ static const char *const mDNS_DomainTypeNames[] =
 #pragma mark - General Utility Functions
 #endif
 
-#if MDNS_DEBUGMSGS
-mDNSlocal char *DNSTypeName(mDNSu16 rrtype)
+// We define DNSTypeName this way because if we declare it as a static (local) function
+// then some compilers give "static function defined but not used" warnings in non-debug builds.
+// Conditionalizing it with "#if MDNS_DEBUGMSGS" so that it is not present in non-debug builds
+// fixes the warning on those compilers, but doesn't work on other compilers that don't strip
+// unreachable code, which then give "undefined function" errors.
+extern char *DNSTypeName(mDNSu16 rrtype);
+char *DNSTypeName(mDNSu16 rrtype)
 	{
 	switch (rrtype)
 		{
@@ -134,7 +139,6 @@ mDNSlocal char *DNSTypeName(mDNSu16 rrtype)
 							}
 		}
 	}
-#endif
 
 mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 	{
