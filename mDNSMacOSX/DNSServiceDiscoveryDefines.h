@@ -20,5 +20,16 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <DNSServiceDiscovery/DNSServiceDiscoveryDefines.h>
+#ifndef __DNS_SERVICE_DISCOVERY_DEFINES_H
+#define __DNS_SERVICE_DISCOVERY_DEFINES_H
 
+#include <mach/mach_types.h>
+
+#define DNS_SERVICE_DISCOVERY_SERVER "DNSServiceDiscoveryServer"
+
+typedef char    DNSCString[1024];
+typedef char    sockaddr_t[128];
+
+typedef const char * record_data_t;
+
+#endif	/* __DNS_SERVICE_DISCOVERY_DEFINES_H */

@@ -20,4 +20,65 @@
  * @APPLE_LICENSE_HEADER_END@
  */
  
- #import "/AppleInternal/Developer/Headers/DNSServiceDiscovery/DNSServiceDiscoveryRequest.defs"
+subsystem
+	DNSServiceDiscoveryRequest 7200;
+
+ServerPrefix provide_;
+
+#include <mach/std_types.defs>
+#include <mach/mach_types.defs>
+
+import "DNSServiceDiscoveryDefines.h";
+
+type DNSCString = c_string[*:1024];
+type record_data = ^ array [] of MACH_MSG_TYPE_BYTE
+				ctype: record_data_t;
+
+simpleroutine DNSServiceBrowserCreate_rpc(
+				server: mach_port_t;
+                        in	client: mach_port_t;
+						in	regtype: DNSCString;
+						in	domain: DNSCString);
+                                                
+
+simpleroutine DNSServiceDomainEnumerationCreate_rpc(
+				server: mach_port_t;
+                        in	client: mach_port_t;
+						in	registrationDomains: int);
+
+simpleroutine DNSServiceRegistrationCreate_rpc(
+				server: mach_port_t;
+                        in	client: mach_port_t;
+                        in	name: DNSCString;
+                        in	regtype: DNSCString;
+                        in	domain: DNSCString;
+                        in	port: int;
+                        in	txtRecord: DNSCString);
+
+                        
+simpleroutine DNSServiceResolverResolve_rpc(
+				server: mach_port_t;
+                        in	client: mach_port_t;
+                        in	name: DNSCString;
+                        in	regtype: DNSCString;
+                        in	domain: DNSCString);
+
+routine DNSServiceRegistrationAddRecord_rpc(
+				server: mach_port_t;
+						in client: mach_port_t;
+						in record_type: int;
+						in record_data: record_data;
+						in ttl: uint32_t;
+						out record_reference: natural_t);
+
+simpleroutine DNSServiceRegistrationUpdateRecord_rpc(
+				server: mach_port_t;
+						in client: mach_port_t;
+                                                in record_reference: natural_t;
+						in record_data: record_data;
+						in ttl: uint32_t);
+
+simpleroutine DNSServiceRegistrationRemoveRecord_rpc(
+				server: mach_port_t;
+						in client: mach_port_t;
+						in record_reference: natural_t);
