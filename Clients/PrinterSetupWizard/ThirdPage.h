@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: ThirdPage.h,v $
+Revision 1.2  2004/12/29 18:53:38  shersche
+<rdar://problem/3725106>
+<rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
+Bug #: 3725106, 3737413
+
 Revision 1.1  2004/06/18 04:36:58  rpantos
 First checked in
 
@@ -88,7 +93,7 @@ private:
 	//
 	// Tries to match printer based on manufacturer and model
 	//
-	OSStatus MatchPrinter(Manufacturers & manufacturers, Printer * printer);
+	OSStatus MatchPrinter(Manufacturers & manufacturers, Printer * printer, Service * service);
 
 	//
 	// OnInitPage
@@ -106,8 +111,8 @@ private:
 
 	Manufacturer	*	MatchManufacturer( Manufacturers & manufacturer, const CString & name );
 	Model			*	MatchModel( Manufacturer * manufacturer, const CString & name );
-	void				SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * model);
-	void				CopyPrinterSettings(Printer * printer, Manufacturer * manufacturer, Model * model);
+	void				SelectMatch(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
+	void				CopyPrinterSettings(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
 
 	Manufacturers		m_manufacturers;
 	

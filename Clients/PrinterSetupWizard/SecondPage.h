@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: SecondPage.h,v $
+Revision 1.3  2004/12/29 18:53:38  shersche
+<rdar://problem/3725106>
+<rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
+Bug #: 3725106, 3737413
+
 Revision 1.2  2004/09/13 21:23:42  shersche
 <rdar://problem/3796483> Add moreComing argument to OnAddPrinter and OnRemovePrinter callbacks
 Bug #: 3796483
@@ -47,7 +52,7 @@ using namespace PrinterSetupWizard;
 
 // CSecondPage dialog
 
-class CSecondPage : public CPropertyPage, public EventHandler
+class CSecondPage : public CPropertyPage
 {
 	DECLARE_DYNAMIC(CSecondPage)
 
@@ -58,19 +63,43 @@ public:
 // Dialog Data
 	enum { IDD = IDD_SECOND_PAGE };
 
-	virtual void
-	OnAddPrinter(
-			Printer	*	printer,
-			bool			moreComing);
+	static void DNSSD_API
+	OnBrowse(
+		DNSServiceRef 			inRef,
+		DNSServiceFlags 		inFlags,
+		uint32_t 				inInterfaceIndex,
+		DNSServiceErrorType 	inErrorCode,
+		const char *			inName,	
+		const char *			inType,	
+		const char *			inDomain,	
+		void *					inContext );
 
-	virtual void
-	OnRemovePrinter(
-			Printer	*	printer,
-			bool			moreComing);
+	static void DNSSD_API
+	OnResolve(
+		DNSServiceRef			inRef,
+		DNSServiceFlags			inFlags,
+		uint32_t				inInterfaceIndex,
+		DNSServiceErrorType		inErrorCode,
+		const char *			inFullName,	
+		const char *			inHostName, 
+		uint16_t 				inPort,
+		uint16_t 				inTXTSize,
+		const char *			inTXT,
+		void *					inContext );
 
-	virtual void
-	OnResolvePrinter(
-			Printer * printer);
+	static void DNSSD_API
+	OnQuery(
+		DNSServiceRef			inRef, 
+		DNSServiceFlags			inFlags, 
+		uint32_t				inInterfaceIndex, 
+		DNSServiceErrorType		inErrorCode,
+		const char			*	inFullName, 
+		uint16_t				inRRType, 
+		uint16_t				inRRClass, 
+		uint16_t				inRDLen, 
+		const void			*	inRData, 
+		uint32_t				inTTL, 
+		void				*	inContext);
 
 protected:
 
@@ -79,6 +108,7 @@ protected:
 	afx_msg BOOL OnSetCursor(CWnd * pWnd, UINT nHitTest, UINT message);
 	virtual BOOL OnSetActive();
 	virtual BOOL OnKillActive();
+	virtual void OnTimer(UINT_PTR nIDEvent);
 
 	DECLARE_MESSAGE_MAP()
 
@@ -91,5 +121,72 @@ public:
 	bool			m_initialized;
 	bool			m_waiting;
 	
-	afx_msg void OnTvnSelchangedBrowseList(NMHDR *pNMHDR, LRESULT *pResult);
+	LONG			OnServiceEvent(WPARAM inWParam, LPARAM inLParam);
+	afx_msg void	OnTvnSelchangedBrowseList(NMHDR *pNMHDR, LRESULT *pResult);
+
+private:
+
+	OSStatus
+	LoadPrinterNames();
+
+	Printer*
+	Lookup( const char * name );
+
+	OSStatus
+	StartOperation( DNSServiceRef ref );
+
+	OSStatus
+	StopOperation( DNSServiceRef & ref );
+
+	OSStatus
+	StartBrowse();
+
+	OSStatus
+	StopBrowse();
+
+	OSStatus
+	StartResolve( Printer * printer );
+
+	OSStatus
+	StopResolve( Printer * printer );
+
+	OSStatus
+	StopResolve( Service * service );
+
+	OSStatus
+	OnAddPrinter(
+			uint32_t		inInterfaceIndex,
+			const char *	inName,	
+			const char *	inType,	
+			const char *	inDomain,
+			bool			moreComing);
+
+	OSStatus
+	OnRemovePrinter(
+			const char *	inName,	
+			const char *	inType,	
+			const char *	inDomain,
+			bool			moreComing);
+
+	void
+	OnResolveService( Service * service );
+
+	static bool
+	OrderServiceFunc( const Service * a, const Service * b );
+
+	static bool
+	OrderQueueFunc( const Queue * q1, const Queue * q2 );
+
+	typedef std::map<CString,CString>	PrinterNameMap;
+	typedef std::list<DNSServiceRef>	ServiceRefList;
+
+	PrinterNameMap	m_printerNames;
+	ServiceRefList	m_serviceRefList;
+	DNSServiceRef	m_pdlBrowser;
+	DNSServiceRef	m_lprBrowser;
+	DNSServiceRef	m_ippBrowser;
+
+	std::string		m_selectedPrinter;
+
+	UINT_PTR		m_timer;
 };

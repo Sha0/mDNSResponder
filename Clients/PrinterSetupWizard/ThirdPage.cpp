@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.11  2004/12/29 18:53:38  shersche
+<rdar://problem/3725106>
+<rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
+Bug #: 3725106, 3737413
+
 Revision 1.10  2004/10/11 22:55:34  shersche
 <rdar://problem/3827624> Use the IP port number when deriving the printer port name.
 Bug #: 3827624
@@ -153,7 +158,7 @@ CThirdPage::~CThirdPage()
 //
 // ----------------------------------------------------
 void
-CThirdPage::SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * model)
+CThirdPage::SelectMatch(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model)
 {
 	LVFINDINFO	info;
 	int			nIndex;
@@ -197,7 +202,7 @@ CThirdPage::SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * 
 		m_modelListCtrl.SetFocus();
 	}
 
-	CopyPrinterSettings( printer, manufacturer, model );
+	CopyPrinterSettings( printer, service, manufacturer, model );
 }
 
 
@@ -209,13 +214,35 @@ CThirdPage::SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * 
 // --------------------------------------------------------
 
 void
-CThirdPage::CopyPrinterSettings( Printer * printer, Manufacturer * manufacturer, Model * model )
+CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufacturer * manufacturer, Model * model )
 {
 	printer->manufacturer		=	manufacturer->name;
 	printer->model				=	model->name;
 	printer->driverInstalled	=	model->driverInstalled;
 	printer->infFileName		=	model->infFileName;
-	printer->portName.Format(L"IP_%s.%d", static_cast<LPCTSTR>(printer->hostname), printer->portNumber);
+
+	if ( service->type == kPDLServiceType )
+	{
+		printer->portName.Format(L"IP_%s.%d", static_cast<LPCTSTR>(service->hostname), service->portNumber);
+	}
+	else if ( service->type == kLPRServiceType )
+	{
+		printer->portName.Format(L"LPR_%s.%d", static_cast<LPCTSTR>(service->hostname), service->portNumber);
+	}
+	else if ( service->type == kIPPServiceType )
+	{
+		Queue * q = service->queues.front();
+		check( q );
+
+		if ( q->name.GetLength() > 0 )
+		{
+			printer->portName.Format(L"http://%s:%d/printers/%s", static_cast<LPCTSTR>(service->hostname), service->portNumber, static_cast<LPCTSTR>(q->name) );
+		}
+		else
+		{
+			printer->portName.Format(L"http://%s:%d/", static_cast<LPCTSTR>(service->hostname), service->portNumber );
+		}
+	}
 }
 
 
@@ -764,7 +791,7 @@ CThirdPage::NormalizeManufacturerName( const CString & name )
 // MatchManufacturer and MatchModel in turn.
 //
 
-OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * printer)
+OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * printer, Service * service)
 {
 	CString					normalizedProductName;
 	Manufacturer		*	manufacturer	=	NULL;
@@ -776,17 +803,17 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	//
 	// first look to see if we have a usb_MFG descriptor
 	//
-	if (printer->usb_MFG.GetLength() > 0)
+	if (service->usb_MFG.GetLength() > 0)
 	{
-		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( printer->usb_MFG ) );
+		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( service->usb_MFG ) );
 	}
 
 	if ( manufacturer == NULL )
 	{
-		printer->product.Remove('(');
-		printer->product.Remove(')');
+		service->product.Remove('(');
+		service->product.Remove(')');
 
-		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( printer->product ) );
+		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( service->product ) );
 	}
 	
 	//
@@ -794,22 +821,22 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	//
 	if ( manufacturer != NULL )
 	{
-		if (printer->usb_MDL.GetLength() > 0)
+		if (service->usb_MDL.GetLength() > 0)
 		{
-			model = MatchModel ( manufacturer, ConvertToModelName ( printer->usb_MDL ) );
+			model = MatchModel ( manufacturer, ConvertToModelName ( service->usb_MDL ) );
 		}
 
 		if ( model == NULL )
 		{
-			printer->product.Remove('(');
-			printer->product.Remove(')');
+			service->product.Remove('(');
+			service->product.Remove(')');
 
-			model = MatchModel ( manufacturer, ConvertToModelName ( printer->product ) );
+			model = MatchModel ( manufacturer, ConvertToModelName ( service->product ) );
 		}
 
 		if ( model != NULL )
 		{
-			SelectMatch(printer, manufacturer, model);
+			SelectMatch(printer, service, manufacturer, model);
 			found = true;
 		}
 	}
@@ -1021,6 +1048,7 @@ CThirdPage::OnSetActive()
 {
 	CPrinterSetupWizardSheet	*	psheet;
 	Printer						*	printer;
+	Service						*	service;
 
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
@@ -1037,6 +1065,9 @@ CThirdPage::OnSetActive()
 
 	printer = psheet->GetSelectedPrinter();
 	require_quiet( printer, exit );
+
+	service = printer->services.front();
+	require_quiet( service, exit );
 
 	//
 	// call OnInitPage once
@@ -1061,7 +1092,7 @@ CThirdPage::OnSetActive()
 	//
 	// and try and match the printer
 	//
-	MatchPrinter( m_manufacturers, printer );
+	MatchPrinter( m_manufacturers, printer, service );
 
 exit:
 
@@ -1144,12 +1175,16 @@ void CThirdPage::OnLvnItemchangedPrinterModel(NMHDR *pNMHDR, LRESULT *pResult)
 	
 	CPrinterSetupWizardSheet	*	psheet;
 	Printer						*	printer;
+	Service						*	service;
 
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
 
 	printer = psheet->GetSelectedPrinter();
 	require_quiet( printer, exit );
+
+	service = printer->services.front();
+	require_quiet( service, exit );
 
 	check ( m_manufacturerSelected );
 
@@ -1160,7 +1195,7 @@ void CThirdPage::OnLvnItemchangedPrinterModel(NMHDR *pNMHDR, LRESULT *pResult)
 	{
 		m_modelSelected = (Model*) m_modelListCtrl.GetItemData(nSelected);
 
-		CopyPrinterSettings( printer, m_manufacturerSelected, m_modelSelected );
+		CopyPrinterSettings( printer, service, m_manufacturerSelected, m_modelSelected );
 
 		psheet->SetWizardButtons(PSWIZB_BACK|PSWIZB_NEXT);
 	}
@@ -1197,6 +1232,7 @@ void CThirdPage::OnBnClickedHaveDisk()
 {
 	CPrinterSetupWizardSheet	*	psheet;
 	Printer						*	printer;
+	Service						*	service;
 
 	CFileDialog dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY|OFN_FILEMUSTEXIST, L"Setup Information (*.inf)|*.inf||", this);
 
@@ -1206,6 +1242,9 @@ void CThirdPage::OnBnClickedHaveDisk()
 	printer = psheet->GetSelectedPrinter();
 	require_quiet( printer, exit );
 	
+	service = printer->services.front();
+	require_quiet( service, exit );
+
 	if ( dlg.DoModal() == IDOK )
 	{
 		Manufacturers	manufacturers;
@@ -1215,7 +1254,7 @@ void CThirdPage::OnBnClickedHaveDisk()
    
 		PopulateUI( manufacturers );
 
-		MatchPrinter( manufacturers, printer );
+		MatchPrinter( manufacturers, printer, service );
 	}
 
 exit:

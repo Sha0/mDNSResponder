@@ -23,6 +23,11 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.5  2004/12/29 18:53:38  shersche
+<rdar://problem/3725106>
+<rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
+Bug #: 3725106, 3737413
+
 Revision 1.4  2004/07/13 21:24:23  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -71,14 +76,8 @@ public:
 
 	CPrinterSetupWizardSheet(UINT nIDCaption, CWnd* pParentWnd = NULL, UINT iSelectPage = 0);
 	virtual ~CPrinterSetupWizardSheet();
-	
-	int
-	InstallEventHandler(EventHandler * handler);
 
-	int
-	RemoveEventHandler(EventHandler * handler);
-
-	OSStatus
+	void
 	SetSelectedPrinter(Printer * printer);
 
 	Printer*
@@ -89,12 +88,6 @@ public:
 
 	HCURSOR
 	GetCursor();
-
-	//
-	// handles socket events for DNSService operations
-	//
-	virtual LONG
-	OnServiceEvent(WPARAM inWParam, LPARAM inLParam);
 
 	//
 	// handles end of process event
@@ -117,6 +110,10 @@ public:
 	afx_msg void
 	OnOK();
 
+	HCURSOR					m_active;
+	HCURSOR					m_arrow;
+	HCURSOR					m_wait;
+
 protected:
 	DECLARE_MESSAGE_MAP()
 	CFirstPage		m_pgFirst;
@@ -124,72 +121,29 @@ protected:
 	CThirdPage		m_pgThird;
 	CFourthPage		m_pgFourth;
 
-	static void DNSSD_API
-	OnBrowse(
-		DNSServiceRef 			inRef,
-		DNSServiceFlags 		inFlags,
-		uint32_t 				inInterfaceIndex,
-		DNSServiceErrorType 	inErrorCode,
-		const char *			inName,	
-		const char *			inType,	
-		const char *			inDomain,	
-		void *					inContext );
-
-	static void DNSSD_API
-	OnResolve(
-		DNSServiceRef			inRef,
-		DNSServiceFlags			inFlags,
-		uint32_t				inInterfaceIndex,
-		DNSServiceErrorType		inErrorCode,
-		const char *			inFullName,	
-		const char *			inHostName, 
-		uint16_t 				inPort,
-		uint16_t 				inTXTSize,
-		const char *			inTXT,
-		void *					inContext );
+	void
+	OnServiceResolved(
+		Service				*	service);
 
 	void Init(void);
 
 private:
 
 	OSStatus
-	LoadPrinterNames();
-
-	OSStatus
-	StartResolve(Printer * printer);
-
-	OSStatus
-	StopResolve(Printer * printer);
-
-	Printer*
-	LookUp(const char * inName);
-
-	OSStatus
 	InstallPrinter(Printer * printer);
 
+	OSStatus
+	InstallPrinterPDLAndLPR(Printer * printer, Service * service, DWORD protocol);
+
+	OSStatus
+	InstallPrinterIPP(Printer * printer, Service * service);
+
 	static unsigned WINAPI
-	InstallPrinterThread( LPVOID inParam );
-
-
-	typedef std::list<Printer*>			PrinterList;
-	typedef std::list<EventHandler*>	EventHandlerList;
-	typedef std::list<DNSServiceRef>	ServiceRefList;
-	typedef std::map<CString,CString>	PrinterNameMap;
+	InstallDriverThread( LPVOID inParam );
 
 	Printer	*	m_selectedPrinter;
-	
-	PrinterNameMap			m_printerNames;
-	PrinterList				m_printerList;
-	EventHandlerList		m_eventHandlerList;
-	ServiceRefList			m_serviceRefList;
-
-	bool					m_processFinished;
-
-	HCURSOR					m_active;
-	HCURSOR					m_arrow;
-	HCURSOR					m_wait;
-
-	DNSServiceRef			m_pdlBrowser;
+	bool		m_driverThreadFinished;
+	DWORD		m_driverThreadExitCode;
 };
 
 
@@ -205,3 +159,10 @@ CPrinterSetupWizardSheet::GetCursor()
 {
 	return m_active;
 }
+
+
+// Service Types
+
+#define	kPDLServiceType		"_pdl-datastream._tcp."
+#define kLPRServiceType		"_printer._tcp."
+#define kIPPServiceType		"_ipp._tcp."
