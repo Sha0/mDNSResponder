@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.149  2004/12/20 23:20:35  cheshire
+<rdar://problem/3928361> mDNSResponder crashes repeatedly when printer sharing is enabled
+Make sure to call mDNS_SetupResourceRecord() for all newly created AuthRecords
+
 Revision 1.148  2004/12/20 20:37:35  cheshire
 AllowRemoteQuery not set for the extras in a ServiceRecordSet
 
@@ -1613,6 +1617,7 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 		if (!st) return(mDNSNULL);
 		for (i = 0; i < NumSubTypes; i++)
 			{
+			mDNS_SetupResourceRecord(&st[i], mDNSNULL, mDNSInterface_Any, kDNSQType_ANY, kStandardTTL, 0, mDNSNULL, mDNSNULL);
 			while (*p) p++;
 			p++;
 			if (!MakeDomainNameFromDNSNameString(st[i].resrec.name, p))
