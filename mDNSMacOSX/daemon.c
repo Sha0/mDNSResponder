@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.128  2003/08/14 19:30:36  cheshire
+<rdar://problem/3378473> Include list of cache records in SIGINFO output
+
 Revision 1.127  2003/08/14 02:18:21  cheshire
 <rdar://problem/3375491> Split generic ResourceRecord type into two separate types: AuthRecord and CacheRecord
 
@@ -1417,6 +1420,8 @@ mDNSlocal void INFOCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 			{
 			CacheUsed++;
 			if (rr->CRActiveQuestion) CacheActive++;
+			LogMsg("%s %-5s%-6s%s", rr->CRActiveQuestion ? "Active:  " : "Inactive:", DNSTypeName(rr->resrec.rrtype),
+				((NetworkInterfaceInfoOSX *)rr->resrec.InterfaceID)->ifa_name, GetRRDisplayString(&mDNSStorage, rr));
 			}
 	if (mDNSStorage.rrcache_totalused != CacheUsed)
 		LogMsg("Cache use mismatch: rrcache_totalused is %lu, true count %lu", mDNSStorage.rrcache_totalused, CacheUsed);
