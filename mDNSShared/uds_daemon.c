@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.42  2004/02/05 19:39:29  cheshire
+Move creation of /var/run/mDNSResponder.pid to uds_daemon.c,
+so that all platforms get this functionality
+
 Revision 1.41  2004/02/03 18:59:02  cheshire
 Change "char *domain" parameter for format_enumeration_reply to "const char *domain"
 
@@ -348,6 +352,11 @@ static mStatus remove_record(request_state *rstate);
 
 // initialization, setup/teardown functions
 
+// If a platform specifies its own PID file name, we use that
+#ifndef PID_FILE
+#define PID_FILE "/var/run/mDNSResponder.pid"
+#endif
+
 int udsserver_init( mDNS *globalInstance)  
     {
     mode_t mask;
@@ -357,6 +366,18 @@ int udsserver_init( mDNS *globalInstance)
     if ( !globalInstance)
         goto error;
 	gmDNS = globalInstance;
+
+	// If a particular platform wants to opt out of having a PID file, define PID_FILE to be ""
+	if (PID_FILE[0])
+		{
+		FILE *fp = fopen(PID_FILE, "w");
+		if (fp != NULL)
+			{
+			fprintf(fp, "%d\n", getpid());
+			fclose(fp);
+			}
+		}
+
     if ((listenfd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0) 
         goto error;
     unlink(MDNS_UDS_SERVERPATH);  //OK if this fails

@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.152  2004/02/05 19:39:29  cheshire
+Move creation of /var/run/mDNSResponder.pid to uds_daemon.c,
+so that all platforms get this functionality
+
 Revision 1.151  2004/02/03 22:35:34  cheshire
 <rdar://problem/3548256>: Should not allow empty string for resolve domain
 
@@ -264,8 +268,6 @@ Add $Log header
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
-#define ENABLE_UDS 1
-
 //*************************************************************************************************************
 // Macros
 
@@ -285,7 +287,6 @@ mDNSexport mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 64
 static CacheRecord rrcachestorage[RR_CACHE_SIZE];
-static const char PID_FILE[] = "/var/run/mDNSResponder.pid";
 
 static const char kmDNSBootstrapName[] = "com.apple.mDNSResponderRestart";
 static mach_port_t client_death_port = MACH_PORT_NULL;
@@ -1515,9 +1516,7 @@ mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *i
 
 	debugf("ExitCallback: mDNS_Close");
 	mDNS_Close(&mDNSStorage);
-#if ENABLE_UDS
 	if (udsserver_exit() < 0) LogMsg("ExitCallback: udsserver_exit failed");
-#endif
 	exit(0);
 	}
 
@@ -1652,10 +1651,8 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFRelease(e_rls);
 	CFRelease(i_rls);
 	if (mDNS_DebugMode) printf("Service registered with Mach Port %d\n", m_port);
-#if ENABLE_UDS
 	err = udsserver_init(&mDNSStorage);
 	if (err) { LogMsg("Daemon start: udsserver_init failed"); return err; }
-#endif
 	return(err);
 	}
 
@@ -1728,7 +1725,6 @@ mDNSexport int main(int argc, char **argv)
 	{
 	int i;
 	kern_return_t status;
-	FILE *fp;
 
 	for (i=1; i<argc; i++)
 		{
@@ -1760,13 +1756,6 @@ mDNSexport int main(int argc, char **argv)
 			}
 		}
 
-	fp = fopen(PID_FILE, "w");
-	if (fp != NULL)
-		{
-		fprintf(fp, "%d\n", getpid());
-		fclose(fp);
-		}
-	
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 	status = mDNSDaemonInitialize();
 
@@ -1793,9 +1782,7 @@ mDNSexport int main(int argc, char **argv)
 			// 1. Before going into a blocking wait call and letting our process to go sleep,
 			// call mDNSDaemonIdle to allow any deferred work to be completed.
 			mDNSs32 nextevent = mDNSDaemonIdle();
-#if ENABLE_UDS
 			nextevent = udsserver_idle(nextevent);
-#endif
 
 			// 2. Work out how long we expect to sleep before the next scheduled task
 			mDNSs32 ticks = nextevent - mDNSPlatformTimeNow();
