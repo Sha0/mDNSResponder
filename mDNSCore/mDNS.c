@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.300  2003/09/03 02:40:37  cheshire
+<rdar://problem/3404842> mDNSResponder complains about '_'s
+Underscores are not supposed to be legal in standard DNS names, but IANA appears
+to have allowed them in previous service name registrations, so we should too.
+
 Revision 1.299  2003/09/03 02:33:09  cheshire
 <rdar://problem/3404795> CacheRecordRmv ERROR
 Don't update m->NewQuestions until *after* CheckCacheExpiration();
@@ -1800,13 +1805,8 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	if (len < 2 || len >= 0x40)  { errormsg="Invalid service application protocol name"; goto fail; }
 	if (src[1] != '_') { errormsg="Service application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
-		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-')
-			{
-			// TiVo has already shipped products using a service type that's not strictly legal, so we make a special
-			// exception for that. This exception will be removed once TiVo has had time to update their software.
-			if (!SameDomainLabel(type->c, (mDNSu8*)"\x10_tivo_servemedia"))
-				{ errormsg="Service application protocol name must contain only letters, digits, and hyphens"; goto fail; }
-			}
+		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-' && src[i] != '_')
+			{ errormsg="Service application protocol name must contain only letters, digits, and hyphens"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
