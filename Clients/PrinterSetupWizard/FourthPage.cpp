@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: FourthPage.cpp,v $
+Revision 1.3  2004/07/12 06:59:03  shersche
+<rdar://problem/3723695> Use resource strings for Yes/No
+Bug #: 3723695
+
 Revision 1.2  2004/06/26 23:27:12  shersche
 support for installing multiple printers of the same name
 
@@ -88,6 +92,7 @@ CFourthPage::OnSetActive()
 	CPrinterSetupWizardSheet	*	psheet;
 	CString							goodbyeText;
 	Printer						*	printer;
+	CString							defaultText;
 
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
@@ -113,7 +118,16 @@ CFourthPage::OnSetActive()
 	m_printerModelCtrl.SetWindowText ( printer->model );
 	m_printerPortCtrl.SetWindowText ( printer->portName );
 
-	m_printerDefault.SetWindowText ( printer->deflt ? L"Yes" : L"No" );
+	if (printer->deflt)
+	{
+		defaultText.LoadString(IDS_YES);
+	}
+	else
+	{
+		defaultText.LoadString(IDS_NO);
+	}
+
+	m_printerDefault.SetWindowText ( defaultText );
 
 exit:
 
