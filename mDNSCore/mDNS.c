@@ -983,6 +983,8 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 	mDNSu8       *np = name->c;							// Name pointer
 	const mDNSu8 *const limit = np + MAX_DOMAIN_NAME;	// Limit so we don't overrun buffer
 
+	if (ptr < (mDNSu8*)msg || ptr >= end) { debugf("getDomainName: Illegal ptr not within packet boundaries"); return(mDNSNULL); }
+
 	*np = 0;						// Tentatively place the root label here (may be overwritten if we have more labels)
 
 	while (ptr < end)				// Read sequence of labels
@@ -1010,6 +1012,8 @@ mDNSlocal const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 
 			case 0xC0:	offset = (mDNSu16)((((mDNSu16)(len & 0x3F)) << 8) | *ptr++);
 						if (!nextbyte) nextbyte = ptr;	// Record where we got to before we started following pointers
 						ptr = (mDNSu8 *)msg + offset;
+						if (ptr < (mDNSu8*)msg || ptr >= end)
+							{ debugf("getDomainName: Illegal compression pointer not within packet boundaries"); return(mDNSNULL); }
 						if (*ptr & 0xC0) { debugf("Compression pointer must point to real label"); return(mDNSNULL); }
 						break;
 			}
