@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.20  2004/01/28 19:04:38  cheshire
+Fix Ctrl-C handling when multiple targets are specified
+
 Revision 1.19  2004/01/28 03:49:30  cheshire
 Enhanced mDNSIdentify to make use of new targeted-query capability
 
@@ -328,7 +331,8 @@ mDNSexport int main(int argc, char **argv)
 			printf("%s\n", buffer);
 			target.type = mDNSAddrType_IPv4;
 			target.ip.v4.NotAnInteger = s4.s_addr;
-			if (DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback) != 1) continue;
+			DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback);
+			if (StopNow == 2) break; else if (StopNow == 0) continue;
 			}
 		else if (inet_pton(AF_INET6, arg, &s6) == 1)
 			{
@@ -345,13 +349,15 @@ mDNSexport int main(int argc, char **argv)
 			mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
 			target.type = mDNSAddrType_IPv6;
 			bcopy(&s6, &target.ip.v6, sizeof(target.ip.v6));
-			if (DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback) != 1) continue;
+			DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback);
+			if (StopNow == 2) break; else if (StopNow == 0) continue;
 			}
 		else
 			strcpy(hostname, arg);
 	
 		// Now we have the host name; get its A, AAAA, and HINFO
-		if (DoQuery(&q, hostname, kDNSQType_ANY, &target, InfoCallback) == 2) continue;	// Interrupted with Ctrl-C
+		DoQuery(&q, hostname, kDNSQType_ANY, &target, InfoCallback);
+		if (StopNow == 2) break; else if (StopNow == 0) continue;
 	
 		if (hardware[0] || software[0])
 			{
