@@ -242,11 +242,11 @@
 			);
 			PBXWorkspaceGeometries = (
 				{
-					ContentSize = "{365, 578}";
+					ContentSize = "{311, 457}";
 					LeftSlideOut = {
 						ActiveTab = 0;
 						Collapsed = YES;
-						Frame = "{{0, 0}, {365, 578}}";
+						Frame = "{{0, 0}, {311, 457}}";
 						Split0 = {
 							Collapsed = NO;
 							Frame = "{{1e+06, 1e+06}, {0, 578}}";
@@ -309,12 +309,12 @@
 						};
 						SplitCount = 1;
 						Tab0 = {
-							Frame = "{{0, 0}, {341, 578}}";
+							Frame = "{{0, 0}, {287, 457}}";
 							GroupTreeTableConfiguration = (
 								TargetStatusColumn,
 								18,
 								MainColumn,
-								308,
+								254,
 							);
 						};
 						Tab1 = {
@@ -361,7 +361,7 @@
 					StatusViewVisible = NO;
 					Template = F5E465990156DFB90DCA290F;
 					ToolbarVisible = YES;
-					WindowLocation = "{1, 106}";
+					WindowLocation = "{21, 461}";
 				},
 				{
 					ContentSize = "{586, 222}";
@@ -483,7 +483,7 @@
 					StatusViewVisible = NO;
 					Template = F5314676015831810DCA290F;
 					ToolbarVisible = YES;
-					WindowLocation = "{564, 462}";
+					WindowLocation = "{1007, 407}";
 				},
 				{
 					ContentSize = "{594, 303}";
@@ -605,7 +605,7 @@
 					StatusViewVisible = NO;
 					Template = F5534CB2020F3F8A0DCA290F;
 					ToolbarVisible = YES;
-					WindowLocation = "{557, 94}";
+					WindowLocation = "{1001, 41}";
 				},
 			);
 			PBXWorkspaceStateSaveDate = 46286396;
