@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.26  2005/02/08 21:45:06  shersche
+<rdar://problem/3947490> Default to Generic PostScript or PCL if unable to match driver
+
 Revision 1.25  2005/02/08 18:54:17  shersche
 <rdar://problem/3987680> Default queue name is "lp" when rp key is not specified.
 
@@ -431,8 +434,8 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	pInfo.pServerName			=	NULL;
 	pInfo.pShareName			=	NULL;
 	pInfo.pPortName				=	printer->portName.GetBuffer();
-	pInfo.pDriverName			=	printer->model.GetBuffer();
-	pInfo.pComment				=	printer->model.GetBuffer();
+	pInfo.pDriverName			=	printer->modelName.GetBuffer();
+	pInfo.pComment				=	printer->modelName.GetBuffer();
 	pInfo.pLocation				=	service->location.GetBuffer();
 	pInfo.pDevMode				=	NULL;
 	pInfo.pDevMode				=	NULL;
@@ -488,7 +491,7 @@ CPrinterSetupWizardSheet::InstallPrinterIPP(Printer * printer, Service * service
 	
 	pInfo.pPrinterName		= printer->actualName.GetBuffer();
 	pInfo.pPortName			= printer->portName.GetBuffer();
-	pInfo.pDriverName		= printer->model.GetBuffer();
+	pInfo.pDriverName		= printer->modelName.GetBuffer();
 	pInfo.pPrintProcessor	= L"winprint";
 	pInfo.pLocation			= service->location.GetBuffer();
 	pInfo.Attributes		= PRINTER_ATTRIBUTE_NETWORK | PRINTER_ATTRIBUTE_LOCAL;
@@ -734,7 +737,7 @@ CPrinterSetupWizardSheet::InstallDriverThread( LPVOID inParam )
 		si.cb = sizeof(si);
 		ZeroMemory( &pi, sizeof(pi) );
 
-		command.Format(L"rundll32.exe printui.dll,PrintUIEntry /ia /m \"%s\" /f \"%s\"", (LPCTSTR) printer->model, (LPCTSTR) printer->infFileName );
+		command.Format(L"rundll32.exe printui.dll,PrintUIEntry /ia /m \"%s\" /f \"%s\"", (LPCTSTR) printer->modelName, (LPCTSTR) printer->infFileName );
 
 		ok = CreateProcess(NULL, command.GetBuffer(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
 		err = translate_errno( ok, errno_compat(), kUnknownErr );
@@ -1504,14 +1507,13 @@ CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize
 	// <rdar://problem/3946587> Use TXTRecord APIs declared in dns_sd.h
 	
 	bool		qtotalDefined	= false;
-	bool		rpOnly			= true;
 	OSStatus	err				= kNoErr;
 	uint16_t	count			= TXTRecordGetCount( inTXTSize, inTXT );
 	uint16_t	i;
 
 	// <rdar://problem/3987680> Default to queue "lp"
 
-	qname = "lp";
+	qname = L"lp";
 
 	for ( i = 0; i < count; i++ )
 	{
@@ -1545,6 +1547,10 @@ CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize
 		if ( key == L"rp" )
 		{
 			qname = val;
+		}
+		else if ( key == L"pdl" )
+		{
+			service->pdl = val;
 		}
 		else if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
 		{

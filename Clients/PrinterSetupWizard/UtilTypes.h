@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.10  2005/02/08 21:45:06  shersche
+<rdar://problem/3947490> Default to Generic PostScript or PCL if unable to match driver
+
 Revision 1.9  2005/02/01 01:16:12  shersche
 Change window owner from CSecondPage to CPrinterSetupWizardSheet
 
@@ -124,7 +127,8 @@ namespace PrinterSetupWizard
 		bool			driverInstalled;
 		CString			infFileName;
 		CString			manufacturer;
-		CString			model;
+		CString			displayModelName;
+		CString			modelName;
 		CString			portName;
 		bool			deflt;
 
@@ -156,6 +160,7 @@ namespace PrinterSetupWizard
 		DNSServiceRef	serviceRef;
 		CString			hostname;
 		unsigned short	portNumber;
+		CString			pdl;
 		CString			usb_MFG;
 		CString			usb_MDL;
 		CString			description;
@@ -201,6 +206,7 @@ namespace PrinterSetupWizard
 	{
 		bool		driverInstalled;
 		CString		infFileName;
+		CString		displayName;
 		CString		name;
 	};
 
