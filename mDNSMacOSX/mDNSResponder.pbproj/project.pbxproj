@@ -95,9 +95,9 @@
 		08FB7795FE84155DC02AAC07 = {
 			children = (
 				6575FBEC022EAF7200000109,
+				6575FBEB022EAF7200000109,
 				6575FBE9022EAF5A00000109,
 				6575FC12022EB27800000109,
-				6575FBEB022EAF7200000109,
 				654BE64F02B63B93000001D1,
 				654BE65002B63B93000001D1,
 				654BE65102B63B93000001D1,
@@ -107,6 +107,7 @@
 			);
 			isa = PBXGroup;
 			name = "mDNS Server Sources";
+			path = "";
 			refType = 4;
 		};
 		08FB779DFE84155DC02AAC07 = {
@@ -246,37 +247,37 @@
 		654BE64F02B63B93000001D1 = {
 			isa = PBXFileReference;
 			name = mDNSClientAPI.h;
-			path = mDNSCore/mDNSClientAPI.h;
+			path = ../mDNSCore/mDNSClientAPI.h;
 			refType = 4;
 		};
 		654BE65002B63B93000001D1 = {
 			isa = PBXFileReference;
 			name = mDNSDebug.h;
-			path = mDNSCore/mDNSDebug.h;
+			path = ../mDNSCore/mDNSDebug.h;
 			refType = 4;
 		};
 		654BE65102B63B93000001D1 = {
 			isa = PBXFileReference;
 			name = mDNSPlatformEnvironment.h;
-			path = mDNSCore/mDNSPlatformEnvironment.h;
+			path = ../mDNSCore/mDNSPlatformEnvironment.h;
 			refType = 4;
 		};
 		654BE65202B63B93000001D1 = {
 			isa = PBXFileReference;
 			name = mDNSPlatformFunctions.h;
-			path = mDNSCore/mDNSPlatformFunctions.h;
+			path = ../mDNSCore/mDNSPlatformFunctions.h;
 			refType = 4;
 		};
 		654BE65302B63B93000001D1 = {
 			isa = PBXFileReference;
 			name = mDNSsprintf.h;
-			path = mDNSCore/mDNSsprintf.h;
+			path = ../mDNSCore/mDNSsprintf.h;
 			refType = 4;
 		};
 		654BE65402B63B93000001D1 = {
 			isa = PBXFileReference;
 			name = mDNSvsprintf.h;
-			path = mDNSCore/mDNSvsprintf.h;
+			path = ../mDNSCore/mDNSvsprintf.h;
 			refType = 4;
 		};
 		654BE65502B63B93000001D1 = {
@@ -331,7 +332,7 @@
 			indentWidth = 4;
 			isa = PBXFileReference;
 			name = mDNS.c;
-			path = mDNSCore/mDNS.c;
+			path = ../mDNSCore/mDNS.c;
 			refType = 4;
 			tabWidth = 4;
 			usesTabs = 1;
@@ -423,7 +424,7 @@
 		6575FC12022EB27800000109 = {
 			isa = PBXFileReference;
 			name = mDNSsprintf.c;
-			path = mDNSCore/mDNSsprintf.c;
+			path = ../mDNSCore/mDNSsprintf.c;
 			refType = 4;
 		};
 		6575FC15022EB27800000109 = {
