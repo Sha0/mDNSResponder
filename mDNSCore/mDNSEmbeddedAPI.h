@@ -68,6 +68,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.64  2003/06/06 21:38:55  cheshire
+Renamed 'NewData' as 'FreshData' (The data may not be new data, just a refresh of data that we
+already had in our cache. This refreshes our TTL on the data, but the data itself stays the same.)
+
 Revision 1.63  2003/06/06 17:20:14  cheshire
 For clarity, rename question fields name/rrtype/rrclass as qname/qtype/qclass
 (Global search-and-replace; no functional change to code execution.)
@@ -568,7 +572,7 @@ struct ResourceRecord_struct
 	mDNSu32         UseCount;			// CR: Number of times this RR has been used to answer a question
 	DNSQuestion    *CRActiveQuestion;	// CR: Points to an active question referencing this answer
 	mDNSu32         UnansweredQueries;	// CR: Number of times we've issued a query for this record without getting an answer
-	mDNSBool        NewData;			// CR: Set if this is a record we just received
+	mDNSBool        FreshData;			// CR: Set if this is a record we just received
 
 	// Field Group 4: The actual information pertaining to this resource record
 	mDNSInterfaceID InterfaceID;		// --: Set if this RR is specific to one interface (e.g. a linklocal address)

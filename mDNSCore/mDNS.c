@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.170  2003/06/06 21:38:55  cheshire
+Renamed 'NewData' as 'FreshData' (The data may not be new data, just a refresh of data that we
+already had in our cache. This refreshes our TTL on the data, but the data itself stays the same.)
+
 Revision 1.169  2003/06/06 21:35:55  cheshire
 Fix mis-named macro: GetRRHostNameTarget is really GetRRDomainNameTarget
 (the target is a domain name, but not necessarily a host name)
@@ -1819,7 +1823,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->UseCount          = 0;			// Not strictly relevant for a local record
 	rr->CRActiveQuestion  = mDNSNULL;	// Not strictly relevant for a local record
 	rr->UnansweredQueries = 0;			// Not strictly relevant for a local record
-	rr->NewData           = mDNSfalse;	// Not strictly relevant for a local record
+	rr->FreshData         = mDNSfalse;	// Not strictly relevant for a local record
 
 	// Field Group 4: The actual information pertaining to this resource record
 //	rr->interface         = already set in mDNS_SetupResourceRecord
@@ -2393,7 +2397,7 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->UseCount          = 0;
 	rr->CRActiveQuestion  = mDNSNULL;
 	rr->UnansweredQueries = 0;
-	rr->NewData           = mDNStrue;
+	rr->FreshData         = mDNStrue;
 
 	// Field Group 4: The actual information pertaining to this resource record
 	rr->InterfaceID       = InterfaceID;
@@ -4431,8 +4435,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				if (rr->InterfaceID == InterfaceID && IdenticalResourceRecord(&pktrr, rr))
 					{
 					//debugf("Found RR %##s size %d already in cache", pktrr.name.c, pktrr.rdata->RDLength);
-					rr->TimeRcvd = m->timenow;
-					rr->NewData = mDNStrue;
+					rr->TimeRcvd  = m->timenow;
+					rr->FreshData = mDNStrue;
 					if (pktrr.rroriginalttl > 0)
 						{
 						rr->rroriginalttl = pktrr.rroriginalttl;
@@ -4477,7 +4481,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		}
 
 	// If we have a cache, then run through all the new records that we've just added,
-	// clear their 'NewData' flags, and if they were marked as unique in the packet,
+	// clear their 'FreshData' flags, and if they were marked as unique in the packet,
 	// then search our cache for any records with the same name/type/class,
 	// and purge them if they are more than one second old.
 	if (m->rrcache_size)
@@ -4486,9 +4490,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		mDNSs32 slot;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			for (r1 = m->rrcache_hash[slot]; r1; r1=r1->next)
-				if (r1->NewData)
+				if (r1->FreshData)
 					{
-					r1->NewData = mDNSfalse;
+					r1->FreshData = mDNSfalse;
 					if (r1->RecordType & kDNSRecordTypeUniqueMask)
 						for (r2 = m->rrcache_hash[slot]; r2; r2=r2->next)
 							if (SameResourceRecordSignature(r1, r2) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)
