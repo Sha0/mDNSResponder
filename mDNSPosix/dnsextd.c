@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.20  2004/12/01 04:27:28  cheshire
+<rdar://problem/3872803> Darwin patches for Solaris and Suse
+Don't use uint32_t, etc. -- they require stdint.h, which doesn't exist on FreeBSD 4.x, Solaris, etc.
+
 Revision 1.19  2004/12/01 01:16:29  cheshire
 Solaris compatibility fixes
 
@@ -145,7 +149,7 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #define INFO_SIGNAL SIGUSR1
 #endif
 
-#define SAME_INADDR(x,y) (*((uint32_t *)&x) == *((uint32_t *)&y))
+#define SAME_INADDR(x,y) (*((mDNSu32 *)&x) == *((mDNSu32 *)&y))
 #define ZERO_LLQID(x) (!memcmp(x, "\x0\x0\x0\x0", 8))
 
 //
@@ -187,8 +191,8 @@ typedef struct LLQEntry
     mDNSu16 qtype;
     mDNSu8 id[8];
     LLQState state;
-    uint32_t lease;           // original lease, in seconds
-    int32_t expire;           // expiration, absolute, in seconds since epoch
+    mDNSu32 lease;            // original lease, in seconds
+    mDNSs32 expire;           // expiration, absolute, in seconds since epoch
     CacheRecord *KnownAnswers;// !!!KRS this should be shared amongst identical questions
 	} LLQEntry;
 
@@ -375,10 +379,8 @@ mDNSlocal int MySend(int sd, const void *msg, int len)
 // Transmit a DNS message, prefixed by its length, over TCP, blocking if necessary
 mDNSlocal int SendTCPMsg(int sd, PktMsg *pkt)
 	{
-	uint16_t len;
-
 	// send the lenth, in network byte order
-	len = htons((uint16_t)pkt->len);
+	mDNSu16 len = htons((mDNSu16)pkt->len);
 	if (MySend(sd, &len, sizeof(len)) < 0) return -1;
 
 	// send the message
@@ -413,7 +415,7 @@ static int my_recv(const int sd, void *const buf, const int len)
 mDNSlocal PktMsg *ReadTCPMsg(int sd, PktMsg *storage)
 	{	
 	int nread, allocsize;
-	uint16_t msglen = 0;	
+	mDNSu16 msglen = 0;	
 	PktMsg *pkt = NULL;
 	int srclen;
 	
@@ -734,7 +736,7 @@ mDNSlocal int SetPort(DaemonInfo *d, char *PortAsString)
 
 	l = strtol(PortAsString, NULL, 10);                    // convert string to long
 	if ((!l && errno == EINVAL) || l > 65535) return -1;   // error check conversion
-	d->port.NotAnInteger = htons((uint16_t)l);             // set to network byte order
+	d->port.NotAnInteger = htons((mDNSu16)l);              // set to network byte order
 	return 0;
 	}
 	
@@ -1580,7 +1582,7 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
 	{
 	struct timeval t;
-	uint32_t randval;
+	mDNSu32 randval;
 	PktMsg challenge;
 	mDNSu8 *end = challenge.msg.data;
 	AuthRecord opt;

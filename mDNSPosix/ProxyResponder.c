@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.34  2004/12/01 04:27:28  cheshire
+<rdar://problem/3872803> Darwin patches for Solaris and Suse
+Don't use uint32_t, etc. -- they require stdint.h, which doesn't exist on FreeBSD 4.x, Solaris, etc.
+
 Revision 1.33  2004/11/30 22:37:01  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -118,7 +122,7 @@ Add "$Log" header
 
 // Compatibility workaround: Solaris 2.5 has no INADDR_NONE
 #ifndef	INADDR_NONE
-#define	INADDR_NONE	(uint32_t)0xffffffff
+#define	INADDR_NONE	(mDNSu32)0xffffffff
 #endif
 
 //*************************************************************************************************************

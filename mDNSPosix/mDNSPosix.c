@@ -37,6 +37,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.66  2004/12/01 04:27:28  cheshire
+<rdar://problem/3872803> Darwin patches for Solaris and Suse
+Don't use uint32_t, etc. -- they require stdint.h, which doesn't exist on FreeBSD 4.x, Solaris, etc.
+
 Revision 1.65  2004/11/30 22:37:01  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -254,7 +258,6 @@ First checkin
 #include "mDNSEmbeddedAPI.h"           // Defines the interface provided to the client layer above
 #include "mDNSPosix.h"				 // Defines the specific types needed to run mDNS on this platform
 
-#include <stdint.h>
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -618,7 +621,7 @@ extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *con
 
 	assert(m != NULL);
 
-	if (index == (uint32_t)~0) return(mDNSInterface_LocalOnly);
+	if (index == (mDNSu32)~0) return(mDNSInterface_LocalOnly);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
 	while ( (intf != NULL) && (mDNSu32) intf->index != index) 
@@ -1098,14 +1101,14 @@ mDNSlocal void		PrintNetLinkMsg( const struct nlmsghdr *pNLMsg)
 	}
 #endif
 
-mDNSlocal uint32_t		ProcessRoutingNotification( int sd)
+mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
 // Read through the messages on sd and if any indicate that any interface records should
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
 	ssize_t					readCount;
 	char					buff[ 4096];	
 	struct nlmsghdr			*pNLMsg = (struct nlmsghdr*) buff;
-	uint32_t				result = 0;
+	mDNSu32				result = 0;
 	
 	// The structure here is more complex than it really ought to be because,
 	// unfortunately, there's no good way to size a buffer in advance large
@@ -1187,14 +1190,14 @@ mDNSlocal void		PrintRoutingSocketMsg( const struct ifa_msghdr *pRSMsg)
 	}
 #endif
 
-mDNSlocal uint32_t		ProcessRoutingNotification( int sd)
+mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
 // Read through the messages on sd and if any indicate that any interface records should
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
 	ssize_t					readCount;
 	char					buff[ 4096];	
 	struct ifa_msghdr		*pRSMsg = (struct ifa_msghdr*) buff;
-	uint32_t				result = 0;
+	mDNSu32				result = 0;
 
 	readCount = read( sd, buff, sizeof buff);
 	if ( readCount < (ssize_t) sizeof( struct ifa_msghdr))
@@ -1224,7 +1227,7 @@ mDNSlocal void InterfaceChangeCallback( void *context)
 	{
 	IfChangeRec		*pChgRec = (IfChangeRec*) context;
 	fd_set			readFDs;
-	uint32_t		changedInterfaces = 0;
+	mDNSu32		changedInterfaces = 0;
 	struct timeval	zeroTimeout = { 0, 0 };
 	
 	FD_ZERO( &readFDs);
