@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.126  2003/12/01 18:23:48  cheshire
+<rdar://problem/3464646>: Scalar size problem in mDNS code on some 64-bit architectures
+
 Revision 1.125  2003/11/22 00:18:27  cheshire
 Add compile-time asserts to verify correct sizes of mDNSu32, mDNSOpaque16, etc.
 
@@ -526,8 +529,13 @@ typedef   signed char  mDNSs8;
 typedef unsigned char  mDNSu8;
 typedef   signed short mDNSs16;
 typedef unsigned short mDNSu16;
+#if _LP64
+typedef   signed int   mDNSs32;
+typedef unsigned int   mDNSu32;
+#else
 typedef   signed long  mDNSs32;
 typedef unsigned long  mDNSu32;
+#endif
 
 // To enforce useful type checking, we make mDNSInterfaceID be a pointer to a dummy struct
 // This way, mDNSInterfaceIDs can be assigned, and compared with each other, but not with other types
