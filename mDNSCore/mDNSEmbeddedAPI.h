@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.277  2005/02/09 23:31:12  ksekar
+<rdar://problem/3984374> NAT-PMP response callback should return a boolean indicating if the packet matched the request
+
 Revision 1.276  2005/02/01 19:33:29  ksekar
 <rdar://problem/3985239> Keychain format too restrictive
 
@@ -1941,7 +1944,7 @@ typedef packedstruct
 	} NATPortMapReply;
 	
 // Pass NULL for pkt on error (including timeout)
-typedef void (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len);
+typedef mDNSBool (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 
 struct NATTraversalInfo_struct
 	{
