@@ -1,5 +1,5 @@
 /*
-	$Id: Application.cpp,v 1.1 2002/09/20 06:12:51 bradley Exp $
+	$Id: Application.cpp,v 1.2 2002/09/20 08:37:34 bradley Exp $
 
 	Contains:	Rendezvous Browser for Windows.
 	
@@ -47,6 +47,9 @@
     Change History (most recent first):
     
         $Log: Application.cpp,v $
+        Revision 1.2  2002/09/20 08:37:34  bradley
+        Increased the DNS record cache from the default of 64 to 512 entries for larger networks.
+
         Revision 1.1  2002/09/20 06:12:51  bradley
         Rendezvous Browser for Windows
 
@@ -125,7 +128,7 @@ BOOL	Application::InitInstance()
 	
 	// Set up DNS Services.
 	
-	err = DNSServicesInitialize( 0, 0 );
+	err = DNSServicesInitialize( 0, 512 );
 	assert( err == kDNSNoErr );
 	
 	// Create the chooser dialog.
