@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserApp.java,v $
+Revision 1.4  2004/07/02 05:04:33  rpantos
+Change service meta-query to _dns-sd._tcp.
+
 Revision 1.3  2004/05/26 01:41:58  cheshire
 Pass proper flags to DNSSD.enumerateDomains
 
@@ -73,7 +76,7 @@ class	BrowserApp implements ListSelectionListener, ResolveListener
 		try {
 			domainBrowser = DNSSD.enumerateDomains( DNSSD.BROWSE_DOMAINS, 0, domainList);
 
-			servicesBrowser = DNSSD.browse( 0, 0, "_services._mdns._udp.", "", servicesList);
+			servicesBrowser = DNSSD.browse( 0, 0, "_services._dns-sd._udp.", "", servicesList);
 			serviceBrowser = null;
 		}
 		catch ( Exception ex) { terminateWithException( ex); }
