@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.175  2004/06/04 00:15:06  cheshire
+Move misplaced brackets
+
 Revision 1.174  2004/06/03 23:30:16  cheshire
 Remove extraneous blank lines and white space
 
@@ -1550,7 +1553,7 @@ extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 
 #ifdef mDNSinline
 
-mDNSinline mDNSu16 mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
+mDNSinline mDNSu16 mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)x.b[0] <<  8 | x.b[1]); }
 mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | x.b[3]); }
 
 mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
