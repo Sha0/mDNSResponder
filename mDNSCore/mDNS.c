@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.286  2003/08/20 02:18:51  cheshire
+<rdar://problem/3344098> Cleanup: Review syslog messages
+
 Revision 1.285  2003/08/20 01:59:06  cheshire
 <rdar://problem/3384478> rdatahash and rdnamehash not updated after changing rdata
 Made new routine SetNewRData() to update rdlength, rdestimate, rdatahash and rdnamehash in one place
@@ -2455,7 +2458,8 @@ mDNSlocal void RecordProbeFailure(mDNS *const m, const AuthRecord *const rr)
 	// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
 	if (m->NumFailedProbes >= 10) m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
 	if (m->NumFailedProbes >= 16)
-		LogMsg("Warning: Name probe unsuccessful for %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
+		LogMsg("Name in use: %##s (%s); need to choose another (%d)",
+			rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), m->NumFailedProbes);
 	}
 
 // mDNS_Dereg_normal is used for most calls to mDNS_Deregister_internal
@@ -2571,9 +2575,9 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 			{
 			RData *OldRData = rr->resrec.rdata;
 			SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);	// Update our rdata
-			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
+			rr->NewRData = mDNSNULL;									// Clear the NewRData pointer ...
 			if (rr->UpdateCallback)
-				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
+				rr->UpdateCallback(m, rr, OldRData);					// ... and let the client know
 			}
 		
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
@@ -3406,9 +3410,9 @@ mDNSlocal void SendResponses(mDNS *const m)
 			{
 			RData *OldRData = rr->resrec.rdata;
 			SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);	// Update our rdata
-			rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
+			rr->NewRData = mDNSNULL;									// Clear the NewRData pointer ...
 			if (rr->UpdateCallback)
-				rr->UpdateCallback(m, rr, OldRData);	// ... and let the client know
+				rr->UpdateCallback(m, rr, OldRData);					// ... and let the client know
 			}
 
 		if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
@@ -5263,8 +5267,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// else, the packet RR has different rdata -- check to see if this is a conflict
 					if (pkt.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &pkt.r))
 						{
-						debugf("mDNSCoreReceiveResponse: Our Record: %s", GetRRDisplayString(m, rr));
-						debugf("mDNSCoreReceiveResponse: Pkt Record: %s", GetRRDisplayString(m, &pkt.r));
+						debugf("mDNSCoreReceiveResponse: Our Record: %08X %08X %s", rr->  resrec.rdatahash, rr->  resrec.rdnamehash, GetRRDisplayString(m, rr));
+						debugf("mDNSCoreReceiveResponse: Pkt Record: %08X %08X %s", pkt.r.resrec.rdatahash, pkt.r.resrec.rdnamehash, GetRRDisplayString(m, &pkt.r));
 
 						// If this record is marked DependentOn another record for conflict detection purposes,
 						// then *that* record has to be bumped back to probing state to resolve the conflict
@@ -5961,9 +5965,9 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	if (rr->NewRData)
 		{
 		RData *n = rr->NewRData;
-		rr->NewRData = mDNSNULL;	// Clear the NewRData pointer ...
+		rr->NewRData = mDNSNULL;			// Clear the NewRData pointer ...
 		if (rr->UpdateCallback)
-			rr->UpdateCallback(m, rr, n); // ...and let the client free this memory, if necessary
+			rr->UpdateCallback(m, rr, n);	// ...and let the client free this memory, if necessary
 		}
 	
 	if (rr->AnnounceCount < ReannounceCount)
