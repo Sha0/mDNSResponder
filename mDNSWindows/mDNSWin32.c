@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.4 2002/09/21 20:44:54 zarzycki Exp $
+    $Id: mDNSWin32.c,v 1.5 2003/02/20 00:59:03 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,11 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.5  2003/02/20 00:59:03  cheshire
+        Brought Windows code up to date so it complies with
+        Josh Graessley's interface changes for IPv6 support.
+        (Actual support for IPv6 on Windows will come later.)
+
         Revision 1.4  2002/09/21 20:44:54  zarzycki
         Added APSL info
 
@@ -436,13 +441,13 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 mStatus	mDNSPlatformSendUDP( const mDNS * const			inMDNS, 
 							 const DNSMessage * const	inMsg, 
 							 const mDNSu8 * const		inMsgEnd, 
-							 mDNSIPAddr 				inSrcIP, 
+							 mDNSOpaqueID 				inInterfaceID, 
 							 mDNSIPPort					inSrcPort, 
-							 mDNSIPAddr					inDstIP, 
+							 const mDNSAddr *			inDstIP, 
 							 mDNSIPPort 				inDstPort )
 {
 	mStatus					err;
-	mDNSInterfaceInfo *		infoPtr;
+	mDNSInterfaceInfo *		infoPtr = (mDNSInterfaceInfo *)inInterfaceID;
 	SocketAddressInet		addr;
 	int						n;
 	
@@ -453,33 +458,27 @@ mStatus	mDNSPlatformSendUDP( const mDNS * const			inMDNS,
 	check( inMsg );
 	check( inMsgEnd );
 	
-	// Send the packet out each interface.
-	
-	for( infoPtr = inMDNS->p->interfaceList; infoPtr; infoPtr = infoPtr->next )
-	{		
-		// Check if this packet is intended for this interface.
-		
-		if( inSrcIP.NotAnInteger != infoPtr->hostSet.ip.NotAnInteger )
+	if (inDstIP->type != mDNSAddrType_IPv4)
 		{
-			continue;
+		debugf("inDstIP is not an IPv4 address!\n");
+		return mStatus_BadParamErr;
 		}
-		
-		// Send the packet.
-		
-		check( IsValidSocket( infoPtr->multicastSocketRef ) );
-		
-		addr.sin_family 		= AF_INET;
-		addr.sin_port 			= inDstPort.NotAnInteger;
-		addr.sin_addr.s_addr 	= inDstIP.NotAnInteger;
+
+	// Send the packet.
 	
-		n = (int)( inMsgEnd - ( (const mDNSu8 * const) inMsg ) );
-		n = sendto( infoPtr->multicastSocketRef, (char *) inMsg, n, 0, ( SocketAddress * ) &addr, sizeof( addr ) );
-		check_errno( n, errno_compat() );
-		
-		infoPtr->sendErrorCounter 		+= ( n < 0 );
-		infoPtr->sendMulticastCounter 	+= ( inDstPort.NotAnInteger == MulticastDNSPort.NotAnInteger );
-		infoPtr->sendUnicastCounter 	+= ( inDstPort.NotAnInteger != MulticastDNSPort.NotAnInteger );
-	}
+	check( IsValidSocket( infoPtr->multicastSocketRef ) );
+	
+	addr.sin_family 		= AF_INET;
+	addr.sin_port 			= inDstPort.NotAnInteger;
+	addr.sin_addr.s_addr 	= inDstIP->addr.ipv4.NotAnInteger;
+
+	n = (int)( inMsgEnd - ( (const mDNSu8 * const) inMsg ) );
+	n = sendto( infoPtr->multicastSocketRef, (char *) inMsg, n, 0, ( SocketAddress * ) &addr, sizeof( addr ) );
+	check_errno( n, errno_compat() );
+	
+	infoPtr->sendErrorCounter 		+= ( n < 0 );
+	infoPtr->sendMulticastCounter 	+= ( inDstPort.NotAnInteger == MulticastDNSPort.NotAnInteger );
+	infoPtr->sendUnicastCounter 	+= ( inDstPort.NotAnInteger != MulticastDNSPort.NotAnInteger );
 	err = mStatus_NoError;
 	
 	dlog( kDebugLevelChatty, DEBUG_NAME "platform send UDP done\n" );
@@ -612,6 +611,7 @@ mDNSs32	mDNSPlatformTimeNow( void )
 //	debugf_
 //===========================================================================================================================
 
+#if MDNS_DEBUGMSGS
 void debugf_( const char *format, ... )
 {
 	char		buffer[ 512 ];
@@ -626,11 +626,13 @@ void debugf_( const char *format, ... )
 	fprintf( stderr, "%s\n", buffer );
 	fflush( stderr );
 }
+#endif
 
 //===========================================================================================================================
 //	verbosedebugf_
 //===========================================================================================================================
 
+#if MDNS_DEBUGMSGS > 1
 void verbosedebugf_( const char *format, ... )
 {
 	char		buffer[ 512 ];
@@ -645,6 +647,7 @@ void verbosedebugf_( const char *format, ... )
 	fprintf( stderr, "%s\n", buffer );
 	fflush( stderr );
 }
+#endif
 
 //===========================================================================================================================
 //	DebugLog
@@ -1116,13 +1119,15 @@ static mStatus	SetupInterface( mDNS * const inMDNS, const SocketAddressInet *inA
 	
 	// Register this interface with mDNS.
 	
-	infoPtr->hostSet.ip.NotAnInteger = inAddress->sin_addr.s_addr;
+	infoPtr->hostSet.InterfaceID = infoPtr;
+	infoPtr->hostSet.ip.type = mDNSAddrType_IPv4;
+	infoPtr->hostSet.ip.addr.ipv4.NotAnInteger = inAddress->sin_addr.s_addr;
 	infoPtr->hostSet.Advertise       = inMDNS->p->advertise;
 	err = mDNS_RegisterInterface( inMDNS, &infoPtr->hostSet );
 	require_noerr( err, exit );
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "Registered IP address: %d.%d.%d.%d\n", 
-		  infoPtr->hostSet.ip.b[ 0 ], infoPtr->hostSet.ip.b[ 1 ], infoPtr->hostSet.ip.b[ 2 ], infoPtr->hostSet.ip.b[ 3 ] );
+		  infoPtr->hostSet.ip.addr.ipv4.b[ 0 ], infoPtr->hostSet.ip.addr.ipv4.b[ 1 ], infoPtr->hostSet.ip.addr.ipv4.b[ 2 ], infoPtr->hostSet.ip.addr.ipv4.b[ 3 ] );
 	
 	// Success!
 	
@@ -1168,7 +1173,7 @@ static mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceInfo *inInfo
 	// Deregister this interface with mDNS.
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "Deregistering IP address: %d.%d.%d.%d\n", 
-		  inInfoPtr->hostSet.ip.b[ 0 ], inInfoPtr->hostSet.ip.b[ 1 ], inInfoPtr->hostSet.ip.b[ 2 ], inInfoPtr->hostSet.ip.b[ 3 ] );
+		  inInfoPtr->hostSet.ip.addr.ipv4.b[ 0 ], inInfoPtr->hostSet.ip.addr.ipv4.b[ 1 ], inInfoPtr->hostSet.ip.addr.ipv4.b[ 2 ], inInfoPtr->hostSet.ip.addr.ipv4.b[ 3 ] );
 	
 	mDNS_DeregisterInterface( inMDNS, &inInfoPtr->hostSet );
 	
@@ -1596,11 +1601,10 @@ static void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceInfo *inIn
 	SocketAddressInet		addr;
 	int						addrSize;
 	mDNSu8 *				packetEndPtr;
-	mDNSIPAddr				srcAddr;
+	mDNSAddr				srcAddr;
 	mDNSIPPort				srcPort;
-	mDNSIPAddr				dstAddr;
+	mDNSAddr				dstAddr;
 	mDNSIPPort				dstPort;
-	mDNSIPAddr				interfaceAddr;
 	
 	// Receive the packet.
 	
@@ -1611,26 +1615,25 @@ static void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceInfo *inIn
 	{
 		// Set up the src/dst/interface info.
 		
-		srcAddr.NotAnInteger 		= addr.sin_addr.s_addr;
-		srcPort.NotAnInteger		= addr.sin_port;
-		dstAddr						= ( inSocketRef == inInfoPtr->multicastSocketRef ) ? AllDNSLinkGroup  : inInfoPtr->hostSet.ip;
-		dstPort						= ( inSocketRef == inInfoPtr->multicastSocketRef ) ? MulticastDNSPort : UnicastDNSPort;
-		interfaceAddr.NotAnInteger	= inInfoPtr->hostSet.ip.NotAnInteger;
+		srcAddr.type					= mDNSAddrType_IPv4;
+		srcAddr.addr.ipv4.NotAnInteger 	= addr.sin_addr.s_addr;
+		srcPort.NotAnInteger			= addr.sin_port;
+		dstAddr.type					= mDNSAddrType_IPv4;
+		dstAddr.addr.ipv4				= ( inSocketRef == inInfoPtr->multicastSocketRef ) ? AllDNSLinkGroup  : inInfoPtr->hostSet.ip.addr.ipv4;
+		dstPort							= ( inSocketRef == inInfoPtr->multicastSocketRef ) ? MulticastDNSPort : UnicastDNSPort;
 		
 		dlog( kDebugLevelChatty, DEBUG_NAME "packet received\n" );
 		dlog( kDebugLevelChatty, DEBUG_NAME "    size      = %d\n", n );
 		dlog( kDebugLevelChatty, DEBUG_NAME "    src       = %d.%d.%d.%d:%d\n", 
-			  srcAddr.b[ 0 ], srcAddr.b[ 1 ], srcAddr.b[ 2 ], srcAddr.b[ 3 ], ntohs( srcPort.NotAnInteger ) );
+			  srcAddr.addr.ipv4.b[ 0 ], srcAddr.addr.ipv4.b[ 1 ], srcAddr.addr.ipv4.b[ 2 ], srcAddr.addr.ipv4.b[ 3 ], ntohs( srcPort.NotAnInteger ) );
 		dlog( kDebugLevelChatty, DEBUG_NAME "    dst       = %d.%d.%d.%d:%d\n", 
-			  dstAddr.b[ 0 ], dstAddr.b[ 1 ], dstAddr.b[ 2 ], dstAddr.b[ 3 ], ntohs( dstPort.NotAnInteger ) );
-		dlog( kDebugLevelChatty, DEBUG_NAME "    interface = %d.%d.%d.%d\n", 
-			  interfaceAddr.b[ 0 ], interfaceAddr.b[ 1 ], interfaceAddr.b[ 2 ], interfaceAddr.b[ 3 ] );
+			  dstAddr.addr.ipv4.b[ 0 ], dstAddr.addr.ipv4.b[ 1 ], dstAddr.addr.ipv4.b[ 2 ], dstAddr.addr.ipv4.b[ 3 ], ntohs( dstPort.NotAnInteger ) );
 		dlog( kDebugLevelChatty, DEBUG_NAME "--\n" );
 		
 		// Dispatch the packet to mDNS.
 		
 		packetEndPtr = ( (mDNSu8 *) &packet ) + n;
-		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, srcAddr, srcPort, dstAddr, dstPort, interfaceAddr );
+		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inInfoPtr->hostSet.InterfaceID );
 	}
 	
 	// Update counters.

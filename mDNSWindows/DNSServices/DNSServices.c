@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServices.c,v 1.4 2002/09/21 20:44:56 zarzycki Exp $
+	$Id: DNSServices.c,v 1.5 2003/02/20 00:59:04 cheshire Exp $
 
 	Contains:	DNS Services implementation.
 	
@@ -68,6 +68,11 @@
     Change History (most recent first):
     
         $Log: DNSServices.c,v $
+        Revision 1.5  2003/02/20 00:59:04  cheshire
+        Brought Windows code up to date so it complies with
+        Josh Graessley's interface changes for IPv6 support.
+        (Actual support for IPv6 on Windows will come later.)
+
         Revision 1.4  2002/09/21 20:44:56  zarzycki
         Added APSL info
 
@@ -89,6 +94,9 @@
 #include	"mDNSPlatformFunctions.h"
 
 #include	"DNSServices.h"
+
+#define	WIN32_LEAN_AND_MEAN				// Needed to avoid redefinitions by Windows interfaces.
+#include	"mDNSWin32.h"
 
 #if 0
 #pragma mark == Preprocessor ==
@@ -559,11 +567,11 @@ DNSStatus	DNSBrowserStartDomainSearch( DNSBrowserRef inRef, DNSBrowserFlags inFl
 	
 	// Start the browse operations.
 	
-	err = mDNS_GetDomains( gMDNSPtr, &inRef->domainQuestion, type, zeroIPAddr, DNSBrowserPrivateCallBack, inRef );
+	err = mDNS_GetDomains( gMDNSPtr, &inRef->domainQuestion, type, mDNSInterface_Any, DNSBrowserPrivateCallBack, inRef );
 	require_noerr( err, exit );
 	isDomainBrowsing = mDNStrue;
 	
-	err = mDNS_GetDomains( gMDNSPtr, &inRef->defaultDomainQuestion, defaultType, zeroIPAddr, DNSBrowserPrivateCallBack, inRef );
+	err = mDNS_GetDomains( gMDNSPtr, &inRef->defaultDomainQuestion, defaultType, mDNSInterface_Any, DNSBrowserPrivateCallBack, inRef );
 	require_noerr( err, exit );
 	
 	inRef->domainSearchFlags 	= inFlags;
@@ -656,7 +664,7 @@ DNSStatus
 	ConvertCStringToDomainName( inType, &type );
 	ConvertCStringToDomainName( inDomain, &domain );
 	
-	err = mDNS_StartBrowse( gMDNSPtr, &inRef->serviceBrowseQuestion, &type, &domain, zeroIPAddr, 
+	err = mDNS_StartBrowse( gMDNSPtr, &inRef->serviceBrowseQuestion, &type, &domain, mDNSInterface_Any, 
 							DNSBrowserPrivateCallBack, inRef );
 	require_noerr( err, exit );
 	
@@ -735,6 +743,7 @@ mDNSlocal void
 	{
 		DNSBrowserEventServiceData *		serviceDataPtr;
 		DNSBrowserFlags						browserFlags;
+		mDNSInterfaceInfo *					infoPtr = (mDNSInterfaceInfo *)inAnswer->InterfaceID;
 		
 		// Extract name, type, and domain from the resource record.
 	
@@ -759,11 +768,7 @@ mDNSlocal void
 			serviceDataPtr 	= &event.data.addService;
 		}
 		serviceDataPtr->interfaceAddr.addressType		= kDNSNetworkAddressTypeIPv4;
-		serviceDataPtr->interfaceAddr.u.ipv4.address 	= (DNSUInt32)
-														  ( inAnswer->InterfaceAddr.b[ 0 ] << 24 ) | 
-														  ( inAnswer->InterfaceAddr.b[ 1 ] << 16 ) | 
-														  ( inAnswer->InterfaceAddr.b[ 2 ] <<  8 ) | 
-														  ( inAnswer->InterfaceAddr.b[ 3 ] <<  0 );
+		serviceDataPtr->interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.addr.ipv4.NotAnInteger;
 		serviceDataPtr->name							= nameString;
 		serviceDataPtr->type 							= typeString;
 		serviceDataPtr->domain 							= domainString;
@@ -790,6 +795,7 @@ mDNSlocal void
 	else
 	{
 		DNSBrowserEventDomainData *		domainDataPtr;
+		mDNSInterfaceInfo *				infoPtr = (mDNSInterfaceInfo *)inAnswer->InterfaceID;
 		
 		// Determine the event type. A TTL of zero means the domain is no longer available.
 		
@@ -826,11 +832,7 @@ mDNSlocal void
 		
 		ConvertDomainNameToCString( &inAnswer->rdata->u.name, domainString );
 		domainDataPtr->interfaceAddr.addressType	= kDNSNetworkAddressTypeIPv4;
-		domainDataPtr->interfaceAddr.u.ipv4.address = (DNSUInt32)
-													  ( inAnswer->InterfaceAddr.b[ 0 ] << 24 ) | 
-													  ( inAnswer->InterfaceAddr.b[ 1 ] << 16 ) | 
-													  ( inAnswer->InterfaceAddr.b[ 2 ] <<  8 ) | 
-													  ( inAnswer->InterfaceAddr.b[ 3 ] <<  0 );
+		domainDataPtr->interfaceAddr.u.ipv4.address = infoPtr->hostSet.ip.addr.ipv4.NotAnInteger;
 		domainDataPtr->domain 						= domainString;
 		domainDataPtr->flags						= 0;
 		
@@ -1027,7 +1029,7 @@ DNSStatus
 	objectPtr->callbackContext 		= inCallBackContext;
 	objectPtr->owner				= inOwner;
 	objectPtr->info.name			= fullName;
-	objectPtr->info.InterfaceAddr 	= zeroIPAddr;
+	objectPtr->info.InterfaceID 	= mDNSInterface_Any;
 	
 	// Save off the resolve info so the callback can get it.
 	
@@ -1165,6 +1167,7 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	char					s[ 256 ];
 	const mDNSu8 *			p;
 	size_t					n;
+	mDNSInterfaceInfo *		infoPtr = (mDNSInterfaceInfo *)inQuery->info->InterfaceID;
 	
 	DNS_UNUSED( inMDNS );
 	
@@ -1203,17 +1206,9 @@ mDNSlocal void	DNSResolverPrivateCallBack( mDNS * const inMDNS, ServiceInfoQuery
 	event.data.resolved.type							= objectPtr->resolveType;
 	event.data.resolved.domain							= objectPtr->resolveDomain;
 	event.data.resolved.interfaceAddr.addressType		= kDNSNetworkAddressTypeIPv4;
-	event.data.resolved.interfaceAddr.u.ipv4.address 	= (DNSUInt32)
-														  ( inQuery->info->InterfaceAddr.b[ 0 ] << 24 ) | 
-														  ( inQuery->info->InterfaceAddr.b[ 1 ] << 16 ) | 
-														  ( inQuery->info->InterfaceAddr.b[ 2 ] <<  8 ) | 
-														  ( inQuery->info->InterfaceAddr.b[ 3 ] <<  0 );
+	event.data.resolved.interfaceAddr.u.ipv4.address 	= infoPtr->hostSet.ip.addr.ipv4.NotAnInteger;
 	event.data.resolved.address.addressType				= kDNSNetworkAddressTypeIPv4;
-	event.data.resolved.address.u.ipv4.address 			= (DNSUInt32)
-														  ( inQuery->info->ip.b[ 0 ] << 24 ) | 
-														  ( inQuery->info->ip.b[ 1 ] << 16 ) | 
-														  ( inQuery->info->ip.b[ 2 ] <<  8 ) | 
-														  ( inQuery->info->ip.b[ 3 ] <<  0 );
+	event.data.resolved.address.u.ipv4.address 			= inQuery->info->ip.addr.ipv4.NotAnInteger;
 	event.data.resolved.address.u.ipv4.port				= (DNSUInt16)
 														  ( ( inQuery->info->port.b[ 0 ] << 8 ) | 
 															( inQuery->info->port.b[ 1 ] << 0 ) );
@@ -1414,7 +1409,7 @@ DNSStatus
 	// Register the service with mDNS.
 	
 	err = mDNS_RegisterService( gMDNSPtr, &objectPtr->set, &name, &type, &domain, mDNSNULL, port, 
-								text, textSize, DNSRegistrationPrivateCallBack, objectPtr );
+								text, textSize, mDNSInterface_Any, DNSRegistrationPrivateCallBack, objectPtr );
 	require_noerr( err, exit );
 	
 	if( outRef )
@@ -1611,7 +1606,7 @@ DNSStatus
 	
 	// Register the domain with mDNS.
 	
-	err = mDNS_AdvertiseDomains( gMDNSPtr, &objectPtr->rr, (mDNSu8) inType, zeroIPAddr, (char *) inName );
+	err = mDNS_AdvertiseDomains( gMDNSPtr, &objectPtr->rr, (mDNSu8) inType, mDNSInterface_Any, (char *) inName );
 	require_noerr( err, exit );
 	
 	if( outRef )

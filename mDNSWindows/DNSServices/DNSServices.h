@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServices.h,v 1.3 2002/09/21 20:44:57 zarzycki Exp $
+	$Id: DNSServices.h,v 1.4 2003/02/20 00:59:05 cheshire Exp $
 
 	Contains:	DNS Services interfaces.
 	
@@ -68,6 +68,11 @@
     Change History (most recent first):
     
         $Log: DNSServices.h,v $
+        Revision 1.4  2003/02/20 00:59:05  cheshire
+        Brought Windows code up to date so it complies with
+        Josh Graessley's interface changes for IPv6 support.
+        (Actual support for IPv6 on Windows will come later.)
+
         Revision 1.3  2002/09/21 20:44:57  zarzycki
         Added APSL info
 
@@ -320,6 +325,8 @@ dns_check_compile_time( sizeof( DNSNetworkAddressIPv4 ) == 8 );
 					Reserved data (pads structure to allow for future growth). Unused portions must be zero.
 */
 
+// NOTE: DNSNetworkAddress should really just be the same as mDNSAddr.
+// There's no need to have two of these types
 typedef struct	DNSNetworkAddress	DNSNetworkAddress;
 struct	DNSNetworkAddress
 {
