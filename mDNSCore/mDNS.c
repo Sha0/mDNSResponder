@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.492  2004/12/16 08:03:24  shersche
+Fix compilation error when UNICAST_DISABLED is set
+
 Revision 1.491  2004/12/11 01:52:11  cheshire
 <rdar://problem/3785820> Support kDNSServiceFlagsAllowRemoteQuery for registering services too
 
@@ -5169,11 +5172,11 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	mDNSu8 QR_OP;
 	mDNSu8 *ptr = mDNSNULL;
+	const mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 
 #ifndef UNICAST_DISABLED	
 	mDNSIPPort NATPort = mDNSOpaque16fromIntVal(NATMAP_PORT);
-	const mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
-	
+
 	if (srcport.NotAnInteger == NATPort.NotAnInteger)
 		{
 		mDNS_Lock(m);
