@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.3  2004/03/12 08:05:32  cheshire
+# Add a "make clean" target
+#
 # Revision 1.2  2004/02/11 20:59:26  cheshire
 # Fix Makefile so it creates the "build" directory if necessary
 #
@@ -38,10 +41,11 @@
 
 targets: build/dns-sd
 
+clean:
+	rm build/*
+
 build:
 	mkdir build
 
-build/dns-sd: build
-
-build/dns-sd: dns-sd.c
+build/dns-sd: build dns-sd.c
 	cc $(filter %.c %.o, $+) -o $@
