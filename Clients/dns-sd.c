@@ -49,49 +49,6 @@
  * understand why variable y is not of type "char*" just proves the point that poor code
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
 
-   Change History (most recent first):
-
-$Log: dns-sd.c,v $
-Revision 1.13  2004/07/16 22:29:23  rpantos
-Cleanup sample code for Windows SDK.
-
-Revision 1.12  2004/07/14 01:16:50  rpantos
-Bullet-proof the POSIX build comment a bit.
-
-Revision 1.11  2004/07/08 02:24:53  rpantos
-Changes to allow dns-sd tool to be built on Windows.
-
-Revision 1.10  2004/06/29 01:28:43  cheshire
-Fixes to compile properly on Linux
-
-Revision 1.9  2004/06/15 05:44:09  cheshire
-Add ability to use symbolic rrtype names like "ptr" and "srv" with "dns-sd -Q ..." command
-
-Revision 1.8  2004/06/15 02:39:47  cheshire
-When displaying error message, only show command name, not entire path
-
-Revision 1.7  2004/05/28 02:20:06  cheshire
-If we allow dot or empty string for domain when resolving a service,
-it should be a synonym for "local"
-
-Revision 1.6  2004/05/21 19:57:19  cheshire
-Add -Q option to exercise DNSServiceQueryRecord() API call
-
-Revision 1.5  2004/05/21 17:39:27  cheshire
-Include extra headers to fix Xcode build
-
-Revision 1.4  2004/05/21 17:25:56  cheshire
-Fixes to make sample client work on Linux
-
-Revision 1.3  2004/04/06 22:02:06  cheshire
-Also show interface id when showing browse add/remove events
-
-Revision 1.2  2004/03/25 05:40:56  cheshire
-Changes from Marc Krochmal: Fix inconsistent use of space/tab
-
-Revision 1.1  2004/02/06 03:19:09  cheshire
-Check in code to make command-line "dns-sd" testing tool
-
 To build this tool, copy and paste the following into a command line:
 
 OS X:
