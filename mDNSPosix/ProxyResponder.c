@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ProxyResponder.c,v $
+ * Revision 1.14  2003/04/25 01:45:57  cheshire
+ * <rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
+ *
  * Revision 1.13  2003/04/18 22:46:12  cheshire
  * Fix mistake in 1.8 -- INADDR_NONE is 0xFFFFFFFF, not 0
  *
@@ -166,8 +169,17 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	printf("Made Service Records for %s\n", buffer);
 	}
 
+//*************************************************************************************************************
+// Service non-existence assertion
+// (claiming a service name without actually providing a service at that name, to prevent anyone else using that name)
+// This is useful to avoid confusion between similar services
+// e.g. A printer that implements IPP printing service using the name "My Printer", but doesn't implement LPR service,
+// should also claim the LPR service name "My Printer" to stop a different printer offering LPR service under the same name,
+// since it would be confusing to users to have two equivalent services with the same name.
+
 mDNSlocal void NoSuchServiceCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
+	domainname *proxyhostname = (domainname *)rr->RecordContext;
 	switch (result)
 		{
 		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &rr->name); break;
@@ -191,13 +203,13 @@ mDNSlocal void NoSuchServiceCallback(mDNS *const m, ResourceRecord *const rr, mS
 		ConvertDomainNameToCString_unescaped(&rr->name, buffer1);
 		DeconstructServiceName(&rr->name, &n, &t, &d);
 		IncrementLabelSuffix(&n, mDNStrue);
-		mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, mDNSInterface_Any, NoSuchServiceCallback, mDNSNULL);
+		mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, proxyhostname, mDNSInterface_Any, NoSuchServiceCallback, mDNSNULL);
 		ConvertDomainNameToCString_unescaped(&rr->name, buffer2);
 		printf("Name Conflict! %s renamed as %s\n", buffer1, buffer2);
 		}
 	}
 
-mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr,
+mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr, domainname *proxyhostname,
 	const char name[], const char type[], const char domain[])
 	{
 	domainlabel n;
@@ -206,7 +218,7 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr,
 	ConvertCStringToDomainLabel(name, &n);
 	ConvertCStringToDomainName(type, &t);
 	ConvertCStringToDomainName(domain, &d);
-	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, mDNSInterface_Any, NoSuchServiceCallback, mDNSNULL);
+	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, proxyhostname, mDNSInterface_Any, NoSuchServiceCallback, proxyhostname);
 	ConvertDomainNameToCString_unescaped(&rr->name, buffer);
 	printf("Made Non-existence Record for %s\n", buffer);
 	}
@@ -228,8 +240,13 @@ mDNSexport int main(int argc, char **argv)
 
 	if (!strcmp(argv[1], "-"))
 		{
+		domainname proxyhostname;
 		ResourceRecord proxyrecord;
-		RegisterNoSuchService(&mDNSStorage, &proxyrecord, argv[2], argv[3], "local.");
+		if (argc < 5) goto usage;
+		proxyhostname.c[0] = 0;
+		AppendStringLabelToName(&proxyhostname, argv[2]);
+		AppendStringLabelToName(&proxyhostname, "local");
+		RegisterNoSuchService(&mDNSStorage, &proxyrecord, &proxyhostname, argv[3], argv[4], "local.");
 		ExampleClientEventLoop(&mDNSStorage);
 		mDNS_Close(&mDNSStorage);
 		}
@@ -265,8 +282,15 @@ mDNSexport int main(int argc, char **argv)
 	return(0);
 
 usage:
-	fprintf(stderr, "%s ip hostlabel srvname srvtype port txt [txt ...]\n", argv[0]);
-	fprintf(stderr, "e.g. %s 169.254.12.34 thehost \"My Printer\" _printer._tcp. 515 rp=lpt1 pdl=application/postscript\n", argv[0]);
-	fprintf(stderr, "or   %s - \"My Printer\" _printer._tcp. (assertion of non-existence)\n", argv[0]);
+	fprintf(stderr, "%s ip hostlabel [srvname srvtype port txt [txt ...]]\n", argv[0]);
+	fprintf(stderr, "ip        Real IP address (or valid host name) of the host where the service actually resides\n");
+	fprintf(stderr, "hostlabel First label of the dot-local host name to create for this host, e.g. \"foo\" for \"foo.local.\"\n");
+	fprintf(stderr, "srvname   Descriptive name of service, e.g. \"Stuart's Ink Jet Printer\"\n");
+	fprintf(stderr, "srvtype   IANA service type, e.g. \"_ipp._tcp\" or \"_ssh._tcp\", etc.\n");
+	fprintf(stderr, "port      Port number where the service resides (1-65535)\n");
+	fprintf(stderr, "txt       Additional name/value pairs specified in service definition, e.g. \"pdl=application/postscript\"\n");
+	fprintf(stderr, "e.g. %s 169.254.12.34 thehost                                (just create a dot-local host name)\n", argv[0]);
+	fprintf(stderr, "or   %s 169.254.12.34 thehost \"My Printer\" _printer._tcp. 515 rp=lpt1 pdl=application/postscript\n", argv[0]);
+	fprintf(stderr, "or   %s -             thehost \"My Printer\" _printer._tcp.           (assertion of non-existence)\n", argv[0]);
 	return(-1);
 	}

@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.43  2003/04/25 01:45:56  cheshire
+<rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
+
 Revision 1.42  2003/04/15 20:58:31  jgraessl
 
 Bug #: 3229014
@@ -730,6 +733,7 @@ extern mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr);
 
 extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
                const domainlabel *const name, const domainname *const type, const domainname *const domain,
+               const domainname *const host,
                const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context);
 #define        mDNS_DeregisterNoSuchService mDNS_Deregister
 

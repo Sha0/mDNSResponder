@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.108  2003/04/25 01:45:56  cheshire
+<rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
+
 Revision 1.107  2003/04/25 00:41:31  cheshire
 <rdar://problem/3239912> Create single routine PurgeCacheResourceRecord(), to avoid bugs in future
 
@@ -4885,6 +4888,7 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 // could inadvertently advertise its service under the same name "Stuart's Printer", which might be confusing for users.
 mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *const rr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
+	const domainname *const host,
 	const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context)
 	{
 	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_SRV, 60, kDNSRecordTypeUnique, Callback, Context);
@@ -4892,7 +4896,8 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *con
 	rr->rdata->u.srv.priority    = 0;
 	rr->rdata->u.srv.weight      = 0;
 	rr->rdata->u.srv.port        = zeroIPPort;
-	rr->rdata->u.srv.target.c[0] = 0;
+	if (host && host->c[0]) rr->rdata->u.srv.target = *host;
+	else rr->HostTarget = mDNStrue;
 	return(mDNS_Register(m, rr));
 	}
 

@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.10  2003/04/25 01:45:57  cheshire
+<rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
+
 Revision 1.9  2003/03/20 21:10:31  cheshire
 Fixes done at IETF 56 to make mDNSProxyResponderPosix run on Solaris
 
@@ -137,6 +140,18 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
 	va_end(ptr);
 	if (gMDNSPlatformPosixVerboseLevel >= 2)
+		fprintf(stderr, "%s\n", buffer);
+	fflush(stderr);
+	}
+
+mDNSexport void LogMsg(const char *format, ...)
+	{
+	unsigned char buffer[512];
+	va_list ptr;
+	va_start(ptr,format);
+	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	va_end(ptr);
+	if (gMDNSPlatformPosixVerboseLevel >= 1)
 		fprintf(stderr, "%s\n", buffer);
 	fflush(stderr);
 	}
