@@ -20,6 +20,10 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.43  2004/09/17 00:30:11  cheshire
+# Added some '@' signs to make build output less verbose --
+# when there's too much on the screen it's easy to miss build errors and warnings
+#
 # Revision 1.42  2004/08/24 22:04:37  cheshire
 # Need to specify -lpthread for building dnsextd
 #
@@ -163,7 +167,7 @@ COREDIR = ../mDNSCore
 SHAREDDIR = ../mDNSShared
 JDK = /usr/jdk
 
-CC = cc
+CC = @cc
 LD = ld -shared
 CP = cp
 RM = rm
@@ -329,7 +333,7 @@ Daemon: setup $(BUILDDIR)/mdnsd
 
 $(BUILDDIR)/mdnsd: $(DAEMONOBJS)
 	$(CC) -o $@ $+ $(CFLAGS) $(LIBFLAGS)
-	$(STRIP) $@
+	@$(STRIP) $@
 
 # libmdns target builds the client library
 libmdns: setup $(BUILDDIR)/libmdns.$(LDSUFFIX)
@@ -338,16 +342,16 @@ libmdns: setup $(BUILDDIR)/libmdns.$(LDSUFFIX)
 CLIENTLIBOBJS = $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
 
 $(BUILDDIR)/libmdns.$(LDSUFFIX): $(CLIENTLIBOBJS)
-	$(LD) $(LIBFLAGS) -o $@ $+
-	$(STRIP) $@
+	@$(LD) $(LIBFLAGS) -o $@ $+
+	@$(STRIP) $@
 
 # nss_mdns target builds the Name Service Switch module
 nss_mdns: setup $(BUILDDIR)/$(NSSLIBFILE)
 	@echo "Name Service Switch module done"
 
 $(BUILDDIR)/$(NSSLIBFILE): $(CLIENTLIBOBJS) $(OBJDIR)/nss_mdns.c.so.o
-	$(LD) $(LIBFLAGS) -o $@ $+
-	$(STRIP) $@
+	@$(LD) $(LIBFLAGS) -o $@ $+
+	@$(STRIP) $@
 
 #############################################################################
 
