@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.19  2004/12/31 07:23:53  shersche
+Don't modify the button setting in SetSelectedPrinter()
+
 Revision 1.18  2004/12/29 18:53:38  shersche
 <rdar://problem/3725106>
 <rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
@@ -155,11 +158,6 @@ void
 CPrinterSetupWizardSheet::SetSelectedPrinter(Printer * printer)
 {
 	check( !printer || ( printer != m_selectedPrinter ) );
-
-	if ( printer )
-	{
-		SetWizardButtons( PSWIZB_BACK|PSWIZB_NEXT );	
-	}
 
 	m_selectedPrinter = printer;
 }
