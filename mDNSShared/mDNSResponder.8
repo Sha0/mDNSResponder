@@ -20,6 +20,9 @@
 .\" @APPLE_LICENSE_HEADER_END@
 .\"
 .\" $Log: mDNSResponder.8,v $
+.\" Revision 1.4  2004/05/18 18:14:36  cheshire
+.\" Minor wording update
+.\"
 .\" Revision 1.3  2004/04/22 02:56:08  cheshire
 .\" <rdar://problem/3619494>: mDNSResponder man page format error
 .\"
@@ -54,14 +57,19 @@ When it receives a query for which it knows an answer,
 issues the appropriate Multicast DNS Reply packet.
 .Pp
 .Nm
+also performs Multicast DNS Queries on behalf of client processes,
+and maintains a cache of the replies.
+.Pp
+.Nm
 has no user-specifiable command-line argument, and users should not run
 .Nm
 manually.
 .Pp
 To examine
-.Nm Ns 's internal state, for debugging and disagnostic purposes, send it
-a SIGINFO signal, and it will then dump a snapshot summary of its internal state to
-.Pa /var/log/system.log , e.g.
+.Nm Ns 's internal state, for debugging and disagnostic purposes,
+send it a SIGINFO signal, and it will then dump a snapshot summary
+of its internal state to
+.Pa /var/log/system.log Ns , e.g.
 .Pp
 .Dl sudo killall -INFO mDNSResponder
 .Sh FILES
@@ -76,8 +84,8 @@ For information on Multicast DNS, see
 For information on DNS Service Discovery, see
 .Pa http://www.dns-sd.org/
 .Pp
-For information on how to use the Multicast DNS and the DNS Service Discovery
-APIs on Mac OS X and other platforms, see
+For information on how to use the Multicast DNS and the
+DNS Service Discovery APIs on Mac OS X and other platforms, see
 .Pa http://developer.apple.com/macosx/rendezvous/
 .Pp
 For the source code to
@@ -92,6 +100,9 @@ bugs are tracked in Apple Radar component "mDNSResponder".
 The
 .Nm
 daemon first appeared in Mac OS X 10.2 (Jaguar).
+.Pp
+Also available from the Darwin open source repository
+(though not officially supported by Apple) are 
 .Nm
-daemons are also available (though not shipped by Apple) for Mac OS 9,
-Microsoft Windows, Linux, FreeBSD, NetBSD, Solaris, and other Posix systems.
+daemons for other platforms, including Mac OS 9, Microsoft Windows,
+Linux, FreeBSD, NetBSD, Solaris, and other POSIX systems.
