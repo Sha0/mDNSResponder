@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.112  2003/08/19 03:04:43  cheshire
+<rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
+
 Revision 1.111  2003/08/18 22:53:37  cheshire
 <rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
 
@@ -488,7 +491,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	if (srcPort.NotAnInteger == MulticastDNSPort.NotAnInteger)
 		{
 		if (dst->type == mDNSAddrType_IPv4) s = info->sktv4;
-		else s = info->sktv6;
+		else if (!info->HasIPv4Routable) s = info->sktv6;
+		else s = -1;
 		}
 #if mDNS_AllowPort53
 	else if (srcPort.NotAnInteger == UnicastDNSPort.NotAnInteger && dst->type == mDNSAddrType_IPv4)
@@ -929,6 +933,7 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	i->scope_id        = scope_id;
 	i->CurrentlyActive = mDNStrue;
 	i->sa_family       = ifa->ifa_addr->sa_family;
+	i->HasIPv4Routable = mDNSfalse;
 	#if mDNS_AllowPort53
 	i->skt53 = -1;
 	i->cfs53 = NULL;
@@ -1071,6 +1076,8 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 				i->ifa_name, i->scope_id, alias, &n->ip, n->InterfaceActive ? " (Primary)" : "");
 			}
 
+		if (i->sa_family == AF_INET && !(n->ip.ip.v4.b[0] == 169 && n->ip.ip.v4.b[1] != 254)) alias->HasIPv4Routable = mDNStrue;
+
 		if (i->sa_family == AF_INET && alias->sktv4 == -1)
 			{
 			#if mDNS_AllowPort53
@@ -1130,6 +1137,7 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 		// Note: MUST NOT close the underlying native BSD sockets.
 		// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
 		// because it first has to unhook the sockets from its select() call, before it can safely close them.
+		i->HasIPv4Routable = mDNSfalse;
 		#if mDNS_AllowPort53
 		if (i->cfs53) { CFSocketInvalidate(i->cfs53); CFRelease(i->cfs53); }
 		i->skt53 = -1;

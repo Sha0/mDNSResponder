@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.18  2003/08/19 03:04:43  cheshire
+<rdar://problem/3376721> Don't use IPv6 on interfaces that have a routable IPv4 address configured
+
 Revision 1.17  2003/08/12 19:56:25  cheshire
 Update to APSL 2.0
 
@@ -109,6 +112,7 @@ struct NetworkInterfaceInfoOSX_struct
 	char                    *ifa_name;					// Memory for this is allocated using malloc
 	mDNSu32                  scope_id;					// interface index / IPv6 scope ID
 	u_short                  sa_family;
+	mDNSBool                 HasIPv4Routable;
 #if mDNS_AllowPort53
 	int                      skt53;
 	CFSocketRef              cfs53;
