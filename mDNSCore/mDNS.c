@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.318  2003/11/13 00:33:26  cheshire
+Change macro "RRIsAddressType" to "RRTypeIsAddressType"
+
 Revision 1.317  2003/11/13 00:10:49  cheshire
 <rdar://problem/3436412>: Verify that rr data is different before updating.
 
@@ -2032,7 +2035,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 #pragma mark - Resource Record Utility Functions
 #endif
 
-#define RRIsAddressType(RR) ((RR)->resrec.rrtype == kDNSType_A || (RR)->resrec.rrtype == kDNSType_AAAA)
+#define RRTypeIsAddressType(T) ((T) == kDNSType_A || (T) == kDNSType_AAAA)
 
 #define ResourceRecordIsValidAnswer(RR) ( ((RR)->             resrec.RecordType & kDNSRecordTypeActiveMask)  && \
 		((RR)->Additional1 == mDNSNULL || ((RR)->Additional1->resrec.RecordType & kDNSRecordTypeActiveMask)) && \
@@ -3356,7 +3359,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->ImmedAnswer && rr->resrec.rrtype == kDNSType_SRV)
 			for (r2=m->ResourceRecords; r2; r2=r2->next)				// Scan list of resource records
-				if (RRIsAddressType(r2) &&								// For all address records (A/AAAA) ...
+				if (RRTypeIsAddressType(r2->resrec.rrtype) &&			// For all address records (A/AAAA) ...
 					ResourceRecordIsValidAnswer(r2) &&					// ... which are valid for answer ...
 					rr->LastMCTime - r2->LastMCTime >= 0 &&				// ... which we have not sent recently ...
 					rr->resrec.rdnamehash == r2->resrec.namehash &&		// ... whose name is the name of the SRV target
@@ -5101,7 +5104,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// For SRV records, automatically add the Address record(s) for the target host
 		if (rr->resrec.rrtype == kDNSType_SRV)
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
-				if (RRIsAddressType(rr2) &&										// For all address records (A/AAAA) ...
+				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
 					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
 					rr->resrec.rdnamehash == rr2->resrec.namehash &&			// ... whose name is the name of the SRV target
 					SameDomainName(&rr->resrec.rdata->u.srv.target, &rr2->resrec.name))
