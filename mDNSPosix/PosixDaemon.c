@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.7  2004/02/14 06:34:57  cheshire
+Use LogMsg instead of fprintf( stderr
+
 Revision 1.6  2004/02/14 01:10:42  rpantos
 Allow daemon to run if 'nobody' is not defined, with a warning. (For Roku HD1000.)
 
@@ -95,11 +98,11 @@ int		main( int argc, char **argv)
 	// Now that we're finished with anything privileged, switch over to running as "nobody"
 	if ( mStatus_NoError == err)
 	{
-		const struct passwd *pw = getpwnam( "nobody");
+		const struct passwd *pw = getpwnam("nobody");
 		if ( pw != NULL)
 			setuid( pw->pw_uid);
 		else
-			fprintf( stderr, "%s: WARNING user 'nobody' is not defined. Will continue to run as root.\n", argv[0]);
+			LogMsg("WARNING: mdnsd continuing as root because user \"nobody\" does not exist");
 	}
 
 	if ( mStatus_NoError == err)
