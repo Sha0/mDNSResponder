@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.10  2003/05/22 01:10:32  cheshire
+ * Indicate when the TC bit is set on a query packet
+ *
  * Revision 1.9  2003/05/21 03:56:00  cheshire
  * Improve display of Probe queries
  *
@@ -275,10 +278,12 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	const mDNSu8 *ptr = msg->data;
 	const mDNSu8 *auth = LocateAuthorities(msg, end);
 	const mDNSu8 *p2;
+	const char *const tcmsg = (msg->h.flags.b[0] & kDNSFlag0_TC) ? "   Truncated (KA list continues in next packet)" : "";
 	ResourceRecord pktrr;
 
 	DisplayTimestamp();
-	mprintf("%#-16a -Q-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d\n", srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
+	mprintf("%#-16a -Q-        Q:%3d  Ans:%3d  Auth:%3d  Add:%3d%s\n",
+		srcaddr, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals, tcmsg);
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
