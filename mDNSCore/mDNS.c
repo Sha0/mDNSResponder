@@ -88,6 +88,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.101  2003/04/15 20:58:31  jgraessl
+Bug #: 3229014
+Added a hash to lookup records in the cache.
+
 Revision 1.100  2003/04/15 18:53:14  cheshire
 Bug #: <rdar://problem/3229064> Bug in ScheduleNextTask
 mDNS.c 1.94 incorrectly combined two "if" statements into one.
@@ -1171,6 +1175,20 @@ mDNSlocal mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr,
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->rrtype  && q->rrtype  != kDNSQType_ANY ) return(mDNSfalse);
 	if (                                rr->rrclass != q->rrclass && q->rrclass != kDNSQClass_ANY) return(mDNSfalse);
 	return(SameDomainName(&rr->name, &q->name));
+	}
+
+mDNSlocal mDNSs32 HashSlot(const domainname *name)
+	{
+	mDNSu16	sum = 0;
+	const mDNSu8	*c;
+
+	for (c = name->c; c[0] != 0 && c[1] != 0; c += 2)
+		{
+		sum += ((c[0] >= 'A' && c[0] <= 'Z' ? c[0] + 'a' - 'A' : c[0]) << 8) |
+			   (c[1] >= 'A' && c[1] <= 'Z' ? c[1] + 'a' - 'A' : c[1]);
+		}
+	if (c[0]) sum += ((c[0] >= 'A' && c[0] <= 'Z' ? c[0] + 'a' - 'A' : c[0]) << 8);
+	return sum % CACHE_HASH_SLOTS;
 	}
 
 // SameResourceRecordSignature returns true if two resources records have the same interface, name, type, and class.
@@ -2332,21 +2350,25 @@ mDNSlocal mDNSBool HaveQueries(const mDNS *const m, const mDNSs32 timenow)
 	{
 	ResourceRecord *rr;
 	DNSQuestion *q;
+	mDNSs32	slot;
 
 	// 1. See if we've got any cache records in danger of expiring
-	for (rr = m->rrcache; rr; rr=rr->next)
-		if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
-			{
-			mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
-			mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-			mDNSs32 t1 = t0 - onetenth;
-			mDNSs32 t2 = t1 - onetenth;
-
-			if (timenow - t1 >= 0 || (rr->UnansweredQueries < 1 && timenow - t2 >= 0))
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		{
+		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+			if (rr->CRActiveQuestion && rr->UnansweredQueries < 2)
 				{
-				rr->CRActiveQuestion->LastQTime = timenow - rr->CRActiveQuestion->ThisQInterval;
+				mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
+				mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+				mDNSs32 t1 = t0 - onetenth;
+				mDNSs32 t2 = t1 - onetenth;
+	
+				if (timenow - t1 >= 0 || (rr->UnansweredQueries < 1 && timenow - t2 >= 0))
+					{
+					rr->CRActiveQuestion->LastQTime = timenow - rr->CRActiveQuestion->ThisQInterval;
+					}
 				}
-			}
+		}
 	
 	// 2. Scan our list of questions to see if it's time to send any of them
 	for (q = m->Questions; q; q=q->next)
@@ -2434,7 +2456,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		// which is not already in the duplicate suppression list
 		// which answers our question,
 		// then add it to the duplicate suppression list
-		for (rr=m->rrcache; rr; rr=rr->next)
+		for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr; rr=rr->next)
 			if (rr->NextDupSuppress == mDNSNULL && d != &rr->NextDupSuppress &&
 				ResourceRecordAnswersQuestion(rr, q))
 				{
@@ -2761,7 +2783,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m, const mDNSs32 timenow)
 	m->lock_rrcache = 1;
 	if (m->CurrentQuestion) debugf("AnswerNewQuestion ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
-	for (rr=m->rrcache; rr && m->CurrentQuestion == q; rr=rr->next)
+	for (rr=m->rrcache_hash[HashSlot(&q->name)]; rr && m->CurrentQuestion == q; rr=rr->next)
 		if (ResourceRecordAnswersQuestion(rr, q))
 			{
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
@@ -2788,29 +2810,35 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m, const mDNSs32 timenow)
 mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 	{
 	mDNSu32 count = 0;
-	ResourceRecord **rr = &m->rrcache;
+	ResourceRecord **rr;
 	ResourceRecord *deletelist = mDNSNULL;
-	mDNSs32	nextToExpire = timenow + 0x70000000UL;	
+	mDNSs32	nextToExpire = timenow + 0x70000000UL;
+	mDNSs32	slot;
 	if (m->lock_rrcache) { debugf("TidyRRCache ERROR! Cache already locked!"); return; }
 	m->lock_rrcache = 1;
 	
-	while (*rr)
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
-		mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - (*rr)->TimeRcvd)) / mDNSPlatformOneSecond;
-		if ((*rr)->rroriginalttl > SecsSinceRcvd)
+		rr = &(m->rrcache_hash[slot]);
+		while (*rr)
 			{
-			mDNSs32 timeExpire = (*rr)->TimeRcvd + ((*rr)->rroriginalttl * mDNSPlatformOneSecond);
-			if ((nextToExpire - timenow) > (timeExpire - timenow))
-				nextToExpire = timeExpire;
-			rr=&(*rr)->next;			// If TTL is greater than time elapsed, save this record
-			}
-		else
-			{
-			ResourceRecord *r = *rr;	// Else,
-			*rr = r->next;				// detatch this record from the cache list
-			r->next = deletelist;		// and move it onto the list of things to delete
-			deletelist = r;
-			count++;
+			mDNSu32 SecsSinceRcvd = ((mDNSu32)(timenow - (*rr)->TimeRcvd)) / mDNSPlatformOneSecond;
+			if ((*rr)->rroriginalttl > SecsSinceRcvd)
+				{
+				mDNSs32 timeExpire = (*rr)->TimeRcvd + ((*rr)->rroriginalttl * mDNSPlatformOneSecond);
+				if ((nextToExpire - timenow) > (timeExpire - timenow))
+					nextToExpire = timeExpire;
+				rr=&(*rr)->next;			// If TTL is greater than time elapsed, save this record
+				}
+			else
+				{
+				ResourceRecord *r = *rr;	// Else,
+				*rr = r->next;				// detatch this record from the cache list
+				r->next = deletelist;		// and move it onto the list of things to delete
+				deletelist = r;
+				m->rrcache_used[slot]--;
+				count++;
+				}
 			}
 		}
 
@@ -2827,7 +2855,7 @@ mDNSlocal void TidyRRCache(mDNS *const m, const mDNSs32 timenow)
 		AnswerLocalQuestions(m, r, timenow);
 		r->next = m->rrcache_free;	// and move it back to the free list
 		m->rrcache_free = r;
-		m->rrcache_used--;
+		m->rrcache_totalused--;
 		}
 	}
 
@@ -2841,8 +2869,8 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 	if (r)		// If there are records in the free list, take one
 		{
 		m->rrcache_free = r->next;
-		m->rrcache_used++;
-		if (m->rrcache_used >= m->rrcache_report)
+		m->rrcache_totalused++;
+		if (m->rrcache_totalused >= m->rrcache_report)
 			{
 			debugf("RR Cache now using %d records", m->rrcache_used);
 			m->rrcache_report *= 2;
@@ -2850,29 +2878,36 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 		}
 	else		// Else search for a candidate to recycle
 		{
-		ResourceRecord **rr = &m->rrcache;
+		mDNSs32 slot;
+		ResourceRecord **rr;
 		ResourceRecord **best = mDNSNULL;
 		mDNSs32 bestage = -1;
+		mDNSs32	bestslot = -1;
 
-		while (*rr)
+		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			{
-			// Records that answer still-active questions are not candidates for deletion
-			if (!(*rr)->CRActiveQuestion)
+			rr = &(m->rrcache_hash[slot]);
+			while (*rr)
 				{
-				// Work out a weighted age, which is the number of seconds since this record was last used,
-				// divided by the number of times it has been used (we want to keep frequently used records longer).
-				mDNSs32 count = (*rr)->UseCount < 100 ? 1 + (mDNSs32)(*rr)->UseCount : 100;
-				mDNSs32 age = (timenow - (*rr)->LastUsed) / count;
-				mDNSu8 rtype = (mDNSu8)(((*rr)->RecordType) & ~kDNSRecordTypeUniqueMask);
-				if (rtype == kDNSRecordTypePacketAnswer) age /= 2;		// Keep answer records longer than additionals
-				if (bestage < age) { best = rr; bestage = age; }
-				}
+				// Records that answer still-active questions are not candidates for deletion
+				if (!(*rr)->CRActiveQuestion)
+					{
+					// Work out a weighted age, which is the number of seconds since this record was last used,
+					// divided by the number of times it has been used (we want to keep frequently used records longer).
+					mDNSs32 count = (*rr)->UseCount < 100 ? 1 + (mDNSs32)(*rr)->UseCount : 100;
+					mDNSs32 age = (timenow - (*rr)->LastUsed) / count;
+					mDNSu8 rtype = (mDNSu8)(((*rr)->RecordType) & ~kDNSRecordTypeUniqueMask);
+					if (rtype == kDNSRecordTypePacketAnswer) age /= 2;					// Keep answer records longer than additionals
+					if (bestage < age) { best = rr; bestage = age; bestslot = slot; }
+					}
 
-			rr=&(*rr)->next;
+				rr=&(*rr)->next;
+				}
 			}
 
 		if (best)
 			{
+			m->rrcache_used[bestslot]--;
 			r = *best;							// Remember the record we chose
 			*best = r->next;					// And detatch it from the free list
 			}
@@ -2912,27 +2947,32 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 		}
 	else
 		{
+		mDNSs32	slot;
+		
 		// 3. Scan cache to see if any resource records are going to expire
-		for (rr = m->rrcache; rr; rr=rr->next)
+		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			{
-			mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
-			mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-			mDNSs32 t1 = t0 - onetenth;
-			mDNSs32 t2 = t1 - onetenth;
-			if (rr->CRActiveQuestion && rr->UnansweredQueries < 1 && nextevent - t2 > 0)
+			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				{
-				nextevent = t2;
-				msg = "Penultimate Query";
-				}
-			else if (rr->CRActiveQuestion && rr->UnansweredQueries < 2 && nextevent - t1 > 0)
-				{
-				nextevent = t1;
-				msg = "Final Expiration Query";
-				}
-			else if (nextevent - t0 > 0)
-				{
-				nextevent = t0;
-				msg = "Cache Tidying";
+				mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
+				mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+				mDNSs32 t1 = t0 - onetenth;
+				mDNSs32 t2 = t1 - onetenth;
+				if (rr->CRActiveQuestion && rr->UnansweredQueries < 1 && nextevent - t2 > 0)
+					{
+					nextevent = t2;
+					msg = "Penultimate Query";
+					}
+				else if (rr->CRActiveQuestion && rr->UnansweredQueries < 2 && nextevent - t1 > 0)
+					{
+					nextevent = t1;
+					msg = "Final Expiration Query";
+					}
+				else if (nextevent - t0 > 0)
+					{
+					nextevent = t0;
+					msg = "Cache Tidying";
+					}
 				}
 			}
 		
@@ -3705,9 +3745,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// 2. See if we want to add this packet resource record to our cache
 		if (m->rrcache_size)	// Only try to cache answers if we have a cache to put them in
 			{
+			mDNSs32	slot = HashSlot(&pktrr.name);
 			ResourceRecord *rr;
 			// 2a. Check if this packet resource record is already in our cache
-			for (rr = m->rrcache; rr; rr=rr->next)
+			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				{
 				// If we found this exact resource record, refresh its TTL
 				if (IdenticalResourceRecord(&pktrr, rr))
@@ -3736,8 +3777,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					{
 					*rr = pktrr;
 					rr->rdata = &rr->rdatastorage;	// For now, all cache records use local storage
-					rr->next = m->rrcache;
-					m->rrcache = rr;
+					rr->next = m->rrcache_hash[slot];
+					m->rrcache_hash[slot] = rr;
+					m->rrcache_used[slot]++;
 					//debugf("Adding RR %##s to cache (%d)", pktrr.name.c, m->rrcache_used);
 					if ((m->NextCacheTidyTime - timenow) > (mDNSs32)(rr->rroriginalttl * mDNSPlatformOneSecond))
 						m->NextCacheTidyTime = timenow + rr->rroriginalttl * mDNSPlatformOneSecond;
@@ -3754,20 +3796,24 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	if (m->rrcache_size)
 		{
 		ResourceRecord *rr;
-		for (rr = m->rrcache; rr; rr=rr->next)
+		mDNSs32 slot;
+		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			{
-			if (rr->NewData)
+			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 				{
-				rr->NewData = mDNSfalse;
-				if (rr->RecordType & kDNSRecordTypeUniqueMask)
+				if (rr->NewData)
 					{
-					ResourceRecord *r;
-					for (r = m->rrcache; r; r=r->next)
-						if (SameResourceRecordSignature(rr, r) && timenow - r->TimeRcvd > mDNSPlatformOneSecond)
-							{
-							r->rroriginalttl = 0;
-							m->NextCacheTidyTime = timenow;
-							}
+					rr->NewData = mDNSfalse;
+					if (rr->RecordType & kDNSRecordTypeUniqueMask)
+						{
+						ResourceRecord *r;
+						for (r = m->rrcache_hash[slot]; r; r=r->next)
+							if (SameResourceRecordSignature(rr, r) && timenow - r->TimeRcvd > mDNSPlatformOneSecond)
+								{
+								r->rroriginalttl = 0;
+								m->NextCacheTidyTime = timenow;
+								}
+						}
 					}
 				}
 			}
@@ -3907,7 +3953,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
-	for (rr = m->rrcache; rr; rr=rr->next)
+	for (rr = m->rrcache_hash[HashSlot(&question->name)]; rr; rr=rr->next)
 		{
 		if (rr->CRActiveQuestion == question)
 			{
@@ -4503,6 +4549,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			mDNSu32 count = 0;
 			ResourceRecord *rr;
 			DNSQuestion *q;
+			mDNSs32 slot;
 			verbosedebugf("mDNS_DeregisterInterface: Last representative of InterfaceID %X deregistered", set->InterfaceID);
 
 			// 1. Deactivate any questions specific to this interface
@@ -4511,16 +4558,19 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 					q->ThisQInterval = 0;
 
 			// 2. Flush any cache records received on this interface
-			for (rr = m->rrcache; rr; rr=rr->next)
-				if (rr->InterfaceID == set->InterfaceID)
-					{
-					// Make sure we mark this record as thoroughly expired -- we don't ever want
-					// to give a positive answer using a record from an interface that has gone away.
-					rr->TimeRcvd          = timenow - mDNSPlatformOneSecond * 60;
-					rr->UnansweredQueries = 2;
-					rr->rroriginalttl     = 0;
-					count++;
-					}
+			for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+				{
+				for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+					if (rr->InterfaceID == set->InterfaceID)
+						{
+						// Make sure we mark this record as thoroughly expired -- we don't ever want
+						// to give a positive answer using a record from an interface that has gone away.
+						rr->TimeRcvd          = timenow - mDNSPlatformOneSecond * 60;
+						rr->UnansweredQueries = 2;
+						rr->rroriginalttl     = 0;
+						count++;
+						}
+				}
 			if (count) debugf("mDNS_DeregisterInterface: Flushing %d Cache Entries on interface %X", count, set->InterfaceID);
 
 			// 3. Deactivate any authoritative records specific to this interface
@@ -4825,7 +4875,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NewQuestions            = mDNSNULL;
 	m->CurrentQuestion         = mDNSNULL;
 	m->rrcache_size            = rrcachesize;
-	m->rrcache_used            = 0;
+	for (i = 0; i < CACHE_HASH_SLOTS; i++) m->rrcache_used[i] = 0;
+	m->rrcache_totalused       = 0;
 	m->rrcache_report          = 10;
 	m->rrcache_free            = rrcachestorage;
 	if (rrcachesize)
@@ -4833,7 +4884,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 		for (i=0; i<rrcachesize; i++) rrcachestorage[i].next = &rrcachestorage[i+1];
 		rrcachestorage[rrcachesize-1].next = mDNSNULL;
 		}
-	m->rrcache = mDNSNULL;
+	for (i = 0; i < CACHE_HASH_SLOTS; i++) m->rrcache_hash[i] = mDNSNULL;
 
 	m->hostlabel.c[0]          = 0;
 	m->nicelabel.c[0]          = 0;
@@ -4868,8 +4919,10 @@ extern void mDNS_Close(mDNS *const m)
 #if MDNS_DEBUGMSGS
 	ResourceRecord *rr;
 	int rrcache_active = 0;
-	for (rr = m->rrcache; rr; rr=rr->next) if (rr->CRActiveQuestion) rrcache_active++;
-	debugf("mDNS_Close: RR Cache now using %d records, %d active", m->rrcache_used, rrcache_active);
+	mDNSs32	slot;
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next) if (rr->CRActiveQuestion) rrcache_active++;
+	debugf("mDNS_Close: RR Cache now using %d records, %d active", m->rrcache_totalused, rrcache_active);
 #endif
 
 	m->Questions = mDNSNULL;		// We won't be answering any more questions!
