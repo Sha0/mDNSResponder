@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.50  2004/09/16 01:58:14  cheshire
+Fix compiler warnings
+
 Revision 1.49  2004/09/14 23:42:35  cheshire
 <rdar://problem/3801296> Need to seed random number generator from platform-layer data
 
@@ -303,13 +306,13 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	mDNSu32 length = mDNS_snprintf(buffer, 79, "%4d %##s %s ", rr->rdlength, rr->name.c, DNSTypeName(rr->rrtype));
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	mDNS_snprintf(buffer+length, 79-length, "%.4a", &rd->ip);         break;
+		case kDNSType_A:	mDNS_snprintf(buffer+length, 79-length, "%.4a", &rd->ip);          break;
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	mDNS_snprintf(buffer+length, 79-length, "%##s", &rd->name);       break;
+		case kDNSType_PTR:	mDNS_snprintf(buffer+length, 79-length, "%##s", rd->name.c);       break;
 		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
-		case kDNSType_TXT:  mDNS_snprintf(buffer+length, 79-length, "%#s", rd->txt.c);        break;
-		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, 79-length, "%.16a", &rd->ipv6);      break;
-		case kDNSType_SRV:	mDNS_snprintf(buffer+length, 79-length, "%##s", &rd->srv.target); break;
+		case kDNSType_TXT:  mDNS_snprintf(buffer+length, 79-length, "%#s", rd->txt.c);         break;
+		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, 79-length, "%.16a", &rd->ipv6);       break;
+		case kDNSType_SRV:	mDNS_snprintf(buffer+length, 79-length, "%##s", rd->srv.target.c); break;
 		default:			mDNS_snprintf(buffer+length, 79-length, "RDLen %d: %s",
 								rr->rdlength, rd->data);  break;
 		}

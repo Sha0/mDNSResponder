@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.406  2004/09/16 01:58:14  cheshire
+Fix compiler warnings
+
 Revision 1.405  2004/09/16 00:24:48  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -2122,7 +2125,7 @@ mDNSlocal void RecordProbeFailure(mDNS *const m, const AuthRecord *const rr)
 	if (m->NumFailedProbes >= 10)
 		{
 		m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
-		LogMsg("Excessive name conflicts (%d) for %##s (%s); rate limiting in effect",
+		LogMsg("Excessive name conflicts (%lu) for %##s (%s); rate limiting in effect",
 			m->NumFailedProbes, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 		}
 	}
@@ -2603,7 +2606,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->v6Requester = zerov6Addr;
 			}
 		}
-	verbosedebugf("SendResponses: Next in %d ticks", m->NextScheduledResponse - m->timenow);
+	verbosedebugf("SendResponses: Next in %ld ticks", m->NextScheduledResponse - m->timenow);
 	}
 
 // Calling CheckCacheExpiration() is an expensive operation because it has to look at the entire cache,
@@ -3042,7 +3045,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			for (q = m->Questions; q; q=q->next)
 				if (q->SendQNow == intf->InterfaceID)
 					{
-					debugf("SendQueries: %s question for %##s (%s) at %lu forecast total %lu",
+					debugf("SendQueries: %s question for %##s (%s) at %d forecast total %d",
 						SuppressOnThisInterface(q->DupSuppress, intf) ? "Suppressing" : "Putting    ",
 						q->qname.c, DNSTypeName(q->qtype), queryptr - query.data, queryptr + answerforecast - query.data);
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
@@ -3085,7 +3088,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			mDNSu8 *newptr = PutResourceRecordTTL(&query, queryptr, &query.h.numAnswers, &rr->resrec, rr->resrec.rroriginalttl - SecsSinceRcvd);
 			if (newptr)
 				{
-				verbosedebugf("SendQueries:   Put %##s (%s) at %lu - %lu", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), queryptr - query.data, newptr - query.data);
+				verbosedebugf("SendQueries:   Put %##s (%s) at %d - %d", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), queryptr - query.data, newptr - query.data);
 				queryptr = newptr;
 				KnownAnswerList = rr->NextInKAList;
 				rr->NextInKAList = mDNSNULL;
@@ -3316,7 +3319,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
 			rp = &rr->next;
 			}
 		}
-	if (m->rrcache_tail[slot] != rp) verbosedebugf("CheckCacheExpiration: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
+	if (m->rrcache_tail[slot] != rp) verbosedebugf("CheckCacheExpiration: Updating m->rrcache_tail[%lu] from %p to %p", slot, m->rrcache_tail[slot], rp);
 	m->rrcache_tail[slot] = rp;
 	m->lock_rrcache = 0;
 	}
@@ -3506,7 +3509,7 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 					ReleaseCacheRR(m, rr);
 					}
 				}
-			if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
+			if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%lu] from %p to %p", slot, m->rrcache_tail[slot], rp);
 			m->rrcache_tail[slot] = rp;
 			}
 		#if MDNS_DEBUGMSGS
@@ -4497,7 +4500,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	
 	if (!InterfaceID)
 		{
-		LogMsg("Ignoring Query from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		LogMsg("Ignoring Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 			srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 			msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
 			msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
@@ -4506,7 +4509,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		return;
 		}
 	
-	verbosedebugf("Received Query from %#-15a:%-5d to %#-15a:%-5d on 0x%.8X with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+	verbosedebugf("Received Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
 		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
@@ -4610,8 +4613,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// else, the packet RR has different rdata -- check to see if this is a conflict
 					if (pkt.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &pkt.r))
 						{
-						debugf("mDNSCoreReceiveResponse: Our Record: %08X %08X %s", rr->  resrec.rdatahash, rr->  resrec.rdnamehash, GetRRDisplayString(m, rr));
-						debugf("mDNSCoreReceiveResponse: Pkt Record: %08X %08X %s", pkt.r.resrec.rdatahash, pkt.r.resrec.rdnamehash, GetRRDisplayString(m, &pkt.r));
+						debugf("mDNSCoreReceiveResponse: Our Record: %08lX %08lX %s", rr->  resrec.rdatahash, rr->  resrec.rdnamehash, GetRRDisplayString(m, rr));
+						debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %08lX %s", pkt.r.resrec.rdatahash, pkt.r.resrec.rdnamehash, GetRRDisplayString(m, &pkt.r));
 
 						// If this record is marked DependentOn another record for conflict detection purposes,
 						// then *that* record has to be bumped back to probing state to resolve the conflict
@@ -4883,7 +4886,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 	if (question->Target.type && !ValidQuestionTarget(question))
 		{
-		LogMsg("Warning! Target.type = %d port = %u (Client forgot to initialize before calling mDNS_StartQuery?)",
+		LogMsg("Warning! Target.type = %ld port = %u (Client forgot to initialize before calling mDNS_StartQuery?)",
 			question->Target.type, mDNSVal16(question->TargetPort));
 		question->Target.type = mDNSAddrType_None;
 		}
@@ -5018,7 +5021,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 			for (q = m->Questions; q; q=q->next)		// Scan our list of questions
 				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
 					break;
-			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %X", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), q);
+			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %p", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), q);
 			rr->CRActiveQuestion = q;		// Question used to be active; new value may or may not be null
 			if (!q) m->rrcache_active--;	// If no longer active, decrement rrcache_active count
 			}
@@ -5224,7 +5227,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	query->GotADD = mDNStrue;
 	query->info->InterfaceID = answer->InterfaceID;
 
-	verbosedebugf("FoundServiceInfo v%d: %##s GotTXT=%d", query->info->ip.type, query->info->name.c, query->GotTXT);
+	verbosedebugf("FoundServiceInfo v%ld: %##s GotTXT=%d", query->info->ip.type, query->info->name.c, query->GotTXT);
 
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
@@ -5462,7 +5465,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 			if (!rr->UpdateBlocked) rr->UpdateBlocked = (m->timenow + delay * mDNSPlatformOneSecond) | 1;
 			rr->LastAPTime = rr->UpdateBlocked;
 			rr->ThisAPInterval *= 4;
-			LogMsg("Excessive update rate for %##s; delaying announcement by %d second%s", rr->resrec.name.c, delay, delay > 1 ? "s" : "");
+			LogMsg("Excessive update rate for %##s; delaying announcement by %ld second%s", rr->resrec.name.c, delay, delay > 1 ? "s" : "");
 			}
 		rr->resrec.rroriginalttl = newttl;
 		}
@@ -5651,7 +5654,7 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 		mDNS_SetFQDN(m);
 		LogMsg("Host Name %#s already in use; new name %#s selected for this host.", oldlabel.c, m->hostlabel.c);
 		}
-	else LogMsg("mDNS_HostNameCallback: Unknown error %d for registration of record %s", result,  rr->resrec.name.c);
+	else LogMsg("mDNS_HostNameCallback: Unknown error %ld for registration of record %s", result,  rr->resrec.name.c);
 	}
 
 mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *active)
@@ -6238,7 +6241,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	if (result != mStatus_NoError) return(result);
 	timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
 	timenow = mDNSPlatformRawTime() + timenow_adjust;
-	LogMsg("Starting time value 0x%08X (%d)", timenow, timenow);
+	LogMsg("Starting time value 0x%08lX (%ld)", (mDNSu32)timenow, timenow);
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
@@ -6360,7 +6363,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 		// Reset tail pointer back to empty state (not that it really matters on exit, but we'll do it anyway, for the sake of completeness)
 		m->rrcache_tail[slot] = &m->rrcache_hash[slot];
 		}
-	debugf("mDNS_Close: RR Cache was using %ld records, %d active", rrcache_totalused, rrcache_active);
+	debugf("mDNS_Close: RR Cache was using %ld records, %lu active", rrcache_totalused, rrcache_active);
 	if (rrcache_active != m->rrcache_active)
 		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
 

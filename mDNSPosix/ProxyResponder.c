@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.29  2004/09/16 01:58:22  cheshire
+Fix compiler warnings
+
 Revision 1.28  2004/06/25 00:26:27  rpantos
 Changes to fix the Posix build on Solaris.
 
@@ -122,10 +125,10 @@ mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	{
 	ProxyHost *f = (ProxyHost*)rr->RecordContext;
 	if (result == mStatus_NoError)
-		debugf("Host name successfully registered: %##s", &rr->resrec.name);
+		debugf("Host name successfully registered: %##s", rr->resrec.name.c);
 	else
 		{
-		debugf("Host name conflict for %##s", &rr->resrec.name);
+		debugf("Host name conflict for %##s", rr->resrec.name.c);
 		mDNS_Deregister(m, &f->RR_A);
 		mDNS_Deregister(m, &f->RR_PTR);
 		exit(-1);
@@ -152,7 +155,7 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	mDNS_Register(m, &p->RR_A);
 	mDNS_Register(m, &p->RR_PTR);
 
-	debugf("Made Proxy Host Records for %##s", &p->RR_A.resrec.name);
+	debugf("Made Proxy Host Records for %##s", p->RR_A.resrec.name.c);
 	
 	return(mStatus_NoError);
 	}
@@ -168,10 +171,10 @@ mDNSlocal void ServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatu
 	{
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &sr->RR_SRV.resrec.name); break;
-		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &sr->RR_SRV.resrec.name); break;
-		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &sr->RR_SRV.resrec.name); break;
-		default:                   debugf("Callback: %##s Unknown Result %d", &sr->RR_SRV.resrec.name, result); break;
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",    sr->RR_SRV.resrec.name.c); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",      sr->RR_SRV.resrec.name.c); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",        sr->RR_SRV.resrec.name.c); break;
+		default:                   debugf("Callback: %##s Unknown Result %ld", sr->RR_SRV.resrec.name.c, result); break;
 		}
 
 	if (result == mStatus_NoError)
@@ -241,10 +244,10 @@ mDNSlocal void NoSuchServiceCallback(mDNS *const m, AuthRecord *const rr, mStatu
 	domainname *proxyhostname = (domainname *)rr->RecordContext;
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   &rr->resrec.name); break;
-		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     &rr->resrec.name); break;
-		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       &rr->resrec.name); break;
-		default:                   debugf("Callback: %##s Unknown Result %d", &rr->resrec.name, result); break;
+		case mStatus_NoError:      debugf("Callback: %##s Name Registered",    rr->resrec.name.c); break;
+		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",      rr->resrec.name.c); break;
+		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",        rr->resrec.name.c); break;
+		default:                   debugf("Callback: %##s Unknown Result %ld", rr->resrec.name.c, result); break;
 		}
 
 	if (result == mStatus_NoError)

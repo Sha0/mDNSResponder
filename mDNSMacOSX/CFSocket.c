@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.180  2004/09/16 01:58:22  cheshire
+Fix compiler warnings
+
 Revision 1.179  2004/09/16 00:24:49  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -738,10 +741,10 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		}
 
 	if (s >= 0)
-		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %X %s/%d to %#a:%d skt %d",
+		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %p %s/%d to %#a:%d skt %d",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s);
 	else
-		verbosedebugf("mDNSPlatformSendUDP: NOT sending on InterfaceID %X %s/%d (socket of this type not available)",
+		verbosedebugf("mDNSPlatformSendUDP: NOT sending on InterfaceID %p %s/%d (socket of this type not available)",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort));
 
 	// Note: When sending, mDNSCore may often ask us to send both a v4 multicast packet and then a v6 multicast packet

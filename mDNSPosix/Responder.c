@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.22  2004/09/16 01:58:22  cheshire
+Fix compiler warnings
+
 Revision 1.21  2004/06/15 03:48:07  cheshire
 Update mDNSResponderPosix to take multiple name=val arguments in a sane way
 
@@ -482,7 +485,7 @@ static void RegistrationCallback(mDNS *const m, ServiceRecordSet *const thisRegi
             break;
 
         default:                   
-            debugf("Callback: %##s Unknown Status %d", thisRegistration->RR_SRV.resrec.name.c, status); 
+            debugf("Callback: %##s Unknown Status %ld", thisRegistration->RR_SRV.resrec.name.c, status); 
             break;
     }
 }

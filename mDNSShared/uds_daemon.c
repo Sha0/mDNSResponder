@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.80  2004/09/16 01:58:23  cheshire
+Fix compiler warnings
+
 Revision 1.79  2004/09/16 00:24:49  cheshire
 <rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
 
@@ -675,10 +678,10 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
         if (result == t_morecoming)
         {	
 	    if (!req->time_blocked) req->time_blocked = now;
-	    debugf("udsserver_idle: client has been blocked for %d seconds", (now - req->time_blocked) / mDNSPlatformOneSecond);
+	    debugf("udsserver_idle: client has been blocked for %ld seconds", (now - req->time_blocked) / mDNSPlatformOneSecond);
 	    if (now - req->time_blocked >= MAX_TIME_BLOCKED)
 		{
-		LogMsg("Could not write data to client after %d seconds - aborting connection", MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
+		LogMsg("Could not write data to client after %ld seconds - aborting connection", MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
 		abort_request(req);
 		result = t_terminated;
 		}
@@ -726,7 +729,7 @@ void udsserver_info(void)
             LogMsgNoIdent("DNSServiceEnumerateDomains %##s", ((enum_termination_t *)   t)->all->question.qname.c);
         }
     timenow = mDNS_TimeNow(&mDNSStorage);
-    LogMsgNoIdent("Timenow 0x%08X (%d)", timenow, timenow);
+    LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)timenow, timenow);
     }
 
 
@@ -738,7 +741,7 @@ static void rename_service(registered_service *srv)
 		{
 		srv->rename_on_memfree = 1;
 		err = mDNS_DeregisterService(gmDNS, srv->srs);
-		if (err) LogMsg("ERROR: udsserver_handle_configchange: DeregisterService returned error %d.  Continuing.", err);
+		if (err) LogMsg("ERROR: udsserver_handle_configchange: DeregisterService returned error %ld.  Continuing.", err);
 		// error should never occur - safest to log and continue
 		}	
 	}
@@ -1675,7 +1678,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     if (!rs && (result != mStatus_MemFree && !r_srv->rename_on_memfree))
         {     
         // error should never happen - safest to log and continue
-        LogMsg("ERROR: regservice_callback: received result %d with a NULL request pointer\n");
+        LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer\n", result);
         return;
         }
 
@@ -1691,7 +1694,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
             r_srv->rename_on_memfree = 0;
             r_srv->name = gmDNS->nicelabel;
             err = mDNS_RenameAndReregisterService(gmDNS, srs, &r_srv->name);
-            if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %d", err);
+            if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %ld", err);
             // error should never happen - safest to log and continue
             }
         else 
@@ -1720,7 +1723,7 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     	} 
     else 
         {
-        LogMsg("ERROR: unknown result in regservice_callback: %d", result);
+        LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
         if (deliver_async_error(rs, reg_service_reply, result) < 0) 
             {
             abort_request(rs);
@@ -1815,7 +1818,7 @@ static mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uint32
     newrd->MaxRDLength = (mDNSu16) rdsize;
     memcpy(&newrd->u, rdata, rdlen);
     result = mDNS_Update(gmDNS, rr, ttl, rdlen, newrd, update_callback);
-	if (result) { LogMsg("ERROR: mDNS_Update - %d", result); freeL("handle_update_request", newrd); }
+	if (result) { LogMsg("ERROR: mDNS_Update - %ld", result); freeL("handle_update_request", newrd); }
 	return result;
 	}
 
@@ -2127,7 +2130,7 @@ static mStatus remove_record(request_state *rstate)
             err  = mDNS_Deregister(gmDNS, reptr->rr);
 	        if (err) 
 	            {
-	            LogMsg("ERROR: remove_record, mDNS_Deregister: %d", err);
+	            LogMsg("ERROR: remove_record, mDNS_Deregister: %ld", err);
 	            return err;	// this should not happen.  don't try to free memory if there's an error
 	            }
             if (!shared)

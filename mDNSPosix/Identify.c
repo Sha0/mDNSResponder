@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.27  2004/09/16 01:58:22  cheshire
+Fix compiler warnings
+
 Revision 1.26  2004/08/24 21:55:07  cheshire
 Don't try to build IPv6 code on systems that don't have IPv6
 
@@ -206,7 +209,7 @@ static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 		{
 		ConvertDomainNameToCString(&answer->rdata->u.name, hostname);
 		StopNow = 1;
-		mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
+		mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), answer->rdata->u.name.c);
 		}
 	}
 
@@ -264,7 +267,7 @@ static void ServicesCallback(mDNS *const m, DNSQuestion *question, const Resourc
 		{
 		NumAnswers++;
 		NumAddr++;
-		mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
+		mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), answer->rdata->u.name.c);
 		StopNow = 1;
 		}
 	}
@@ -340,7 +343,7 @@ mDNSlocal int DoQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, const mDNSAddr
 mDNSlocal void HandleSIG(int signal)
 	{
 	(void)signal;	// Unused
-	debugf("");
+	debugf("%s","");
 	debugf("HandleSIG");
 	StopNow = 2;
 	}

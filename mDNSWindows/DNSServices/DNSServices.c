@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSServices.c,v $
+Revision 1.28  2004/09/16 01:58:25  cheshire
+Fix compiler warnings
+
 Revision 1.27  2004/07/13 21:24:28  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -1124,11 +1127,11 @@ mDNSlocal void
 			break;
 		
 		case kDNSResolverEventTypeRelease:
-			verbosedebugf( DEBUG_NAME "private resolver callback: release (ref=0x%08X)", inRef );
+			verbosedebugf( DEBUG_NAME "private resolver callback: release (ref=0x%p)", inRef );
 			break;
 		
 		default:
-			verbosedebugf( DEBUG_NAME "private resolver callback: unknown event (ref=0x%08X, event=%ld)", inRef, inEvent->type );
+			verbosedebugf( DEBUG_NAME "private resolver callback: unknown event (ref=0x%p, event=%ld)", inRef, inEvent->type );
 			break;
 	}
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: Tool.c,v $
+Revision 1.3  2004/09/16 01:58:25  cheshire
+Fix compiler warnings
+
 Revision 1.2  2004/07/13 21:24:28  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -738,28 +741,28 @@ static void BrowserCallBack( void *inContext, DNSBrowserRef inRef, DNSStatus inS
 			break;
 			
 		case kDNSBrowserEventTypeAddDomain:			
-			fprintf( stdout, "domain         \"%s\" added on interface 0x%08X (%s)\n", 
+			fprintf( stdout, "domain         \"%s\" added on interface 0x%p (%s)\n", 
 					 inEvent->data.addDomain.domain, 
 					 (int) inEvent->data.addDomain.interfaceID, 
 					 IPv4ToString( inEvent->data.addDomain.interfaceIP.u.ipv4.addr, ifIP ) );
 			break;
 		
 		case kDNSBrowserEventTypeAddDefaultDomain:
-			fprintf( stdout, "default domain \"%s\" added on interface 0x%08X (%s)\n", 
+			fprintf( stdout, "default domain \"%s\" added on interface 0x%p (%s)\n", 
 					 inEvent->data.addDefaultDomain.domain, 
 					 (int) inEvent->data.addDefaultDomain.interfaceID, 
 					 IPv4ToString( inEvent->data.addDefaultDomain.interfaceIP.u.ipv4.addr, ifIP ) );
 			break;
 		
 		case kDNSBrowserEventTypeRemoveDomain:
-			fprintf( stdout, "domain         \"%s\" removed on interface 0x%08X (%s)\n", 
+			fprintf( stdout, "domain         \"%s\" removed on interface 0x%p (%s)\n", 
 					 inEvent->data.removeDomain.domain, 
 					 (int) inEvent->data.removeDomain.interfaceID, 
 					 IPv4ToString( inEvent->data.removeDomain.interfaceIP.u.ipv4.addr, ifIP ) );
 			break;
 		
 		case kDNSBrowserEventTypeAddService:
-			fprintf( stdout, "service        \"%s.%s%s\" added on interface 0x%08X (%s)\n", 
+			fprintf( stdout, "service        \"%s.%s%s\" added on interface 0x%p (%s)\n", 
 					 inEvent->data.addService.name, 
 					 inEvent->data.addService.type, 
 					 inEvent->data.addService.domain, 
@@ -768,7 +771,7 @@ static void BrowserCallBack( void *inContext, DNSBrowserRef inRef, DNSStatus inS
 			break;
 		
 		case kDNSBrowserEventTypeRemoveService:
-			fprintf( stdout, "service        \"%s.%s%s\" removed on interface 0x%08X (%s)\n", 
+			fprintf( stdout, "service        \"%s.%s%s\" removed on interface 0x%p (%s)\n", 
 					 inEvent->data.removeService.name, 
 					 inEvent->data.removeService.type, 
 					 inEvent->data.removeService.domain, 
@@ -782,7 +785,7 @@ static void BrowserCallBack( void *inContext, DNSBrowserRef inRef, DNSStatus inS
 			const uint8_t *		end;
 			int					i;
 			
-			fprintf( stdout, "resolved       \"%s.%s%s\" to \"%s\" (%s:%u) on interface 0x%08X (%s)%s\n", 
+			fprintf( stdout, "resolved       \"%s.%s%s\" to \"%s\" (%s:%u) on interface 0x%p (%s)%s\n", 
 					 inEvent->data.resolved->name, 
 					 inEvent->data.resolved->type, 
 					 inEvent->data.resolved->domain, 
@@ -845,7 +848,7 @@ static void ResolverCallBack( void *inContext, DNSResolverRef inRef, DNSStatus i
 			const uint8_t *		end;
 			int					i;
 			
-			fprintf( stdout, "resolved       \"%s.%s%s\" to \"%s\" (%s:%u) on interface 0x%08X (%s)%s\n", 
+			fprintf( stdout, "resolved       \"%s.%s%s\" to \"%s\" (%s:%u) on interface 0x%p (%s)%s\n", 
 					 inEvent->data.resolved.name, 
 					 inEvent->data.resolved.type, 
 					 inEvent->data.resolved.domain, 

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.65  2004/09/16 01:58:22  cheshire
+Fix compiler warnings
+
 Revision 1.64  2004/06/15 02:39:47  cheshire
 When displaying error message, only show command name, not entire path
 
@@ -564,7 +567,7 @@ mDNSlocal void ShowSortedHostList(HostList *list, int max)
 		{
 		int len = mprintf("%#-25a", &e->addr);
 		if (len > 25) mprintf("\n%25s", "");
-		mprintf("%8d %8d %8d %8d %8d %8d %8d", e->totalops,
+		mprintf("%8lu %8lu %8lu %8lu %8lu %8lu %8lu", e->totalops,
 			e->stat[OP_probe], e->stat[OP_goodbye],
 			e->stat[OP_browseq], e->stat[OP_browsea],
 			e->stat[OP_resolveq], e->stat[OP_resolvea]);
@@ -654,7 +657,7 @@ mDNSlocal void printstats(int max)
 		if (!m) return;
 		m->printed = mDNStrue;
 		if (i==0) mprintf("%-25s%s\n", "Service Type", OPBanner);
-		mprintf("%##-25s%8d %8d %8d %8d %8d %8d %8d\n", &m->srvtype, m->totalops, m->stat[OP_probe],
+		mprintf("%##-25s%8d %8d %8d %8d %8d %8d %8d\n", m->srvtype.c, m->totalops, m->stat[OP_probe],
 			m->stat[OP_goodbye], m->stat[OP_browseq], m->stat[OP_browsea], m->stat[OP_resolveq], m->stat[OP_resolvea]);
 		}
 	}
@@ -714,12 +717,12 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 
 	RDataBody *rd = &pktrr->rdata->u;
 	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdlength;
-	mDNSu32 n = mprintf("%#-16a %-5s %-5s%5d %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->rroriginalttl, pktrr->name.c);
+	int n = mprintf("%#-16a %-5s %-5s%5lu %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->rroriginalttl, pktrr->name.c);
 
 	switch(pktrr->rrtype)
 		{
 		case kDNSType_A:	n += mprintf("%.4a", &rd->ip); break;
-		case kDNSType_PTR:	n += mprintf("%##.*s", MaxWidth - n, &rd->name); break;
+		case kDNSType_PTR:	n += mprintf("%##.*s", MaxWidth - n, rd->name.c); break;
 		case kDNSType_HINFO:// same as kDNSType_TXT below
 		case kDNSType_TXT:	{
 							mDNSu8 *t = rd->txt.c;
@@ -746,7 +749,7 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 							n += mprintf("%.*s", MaxWidth - n, buffer);
 							} break;
 		case kDNSType_AAAA:	n += mprintf("%.16a", &rd->ipv6); break;
-		case kDNSType_SRV:	n += mprintf("%##s:%d", &rd->srv.target, mDNSVal16(rd->srv.port)); break;
+		case kDNSType_SRV:	n += mprintf("%##s:%d", rd->srv.target.c, mDNSVal16(rd->srv.port)); break;
 		default:			{
 							mDNSu8 *s = rd->data;
 							while (s < rdend && p < buffer+MaxWidth)
@@ -1054,7 +1057,7 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	localtime_r((time_t*)&tv_end.tv_sec, &tm);
 	mprintf("End          %3d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv_end.tv_usec);
 	mprintf("Captured for %3d:%02d:%02d.%06d\n", h, m, s, tv_interval.tv_usec);
-	if (!Filters) mprintf("Unique source addresses seen on network: %d\n", IPv4HostList.num + IPv6HostList.num);
+	if (!Filters) mprintf("Unique source addresses seen on network: %ld\n", IPv4HostList.num + IPv6HostList.num);
 	mprintf("\n");
 	mprintf("Modern Query        Packets:      %7d   (avg%5d/min)\n", NumPktQ,        NumPktQ        * mul / div);
 	mprintf("Legacy Query        Packets:      %7d   (avg%5d/min)\n", NumPktL,        NumPktL        * mul / div);

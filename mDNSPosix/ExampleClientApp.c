@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ExampleClientApp.c,v $
+Revision 1.10  2004/09/16 01:58:22  cheshire
+Fix compiler warnings
+
 Revision 1.9  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -58,7 +61,7 @@ static volatile mDNSBool StopNow;
 mDNSlocal void HandleSIG(int signal)
 	{
 	(void)signal;	// Unused
-	debugf("");
+	debugf("%s","");
 	debugf("HandleSIG");
 	StopNow = mDNStrue;
 	}
