@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.193  2004/09/23 23:35:27  cheshire
+Update error message
+
 Revision 1.192  2004/09/21 23:40:12  ksekar
 <rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
 
@@ -2007,8 +2010,8 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(void)
 		if (l->ReportTime && now - l->ReportTime >= 0)
 			{
 			l->ReportTime = 0;
-			LogMsg("%5d: DNSServiceResolver(%##s) active for over two minutes. "
-				"This places considerable burden on the network.", l->ClientMachPort, l->i.name.c);
+			LogMsgNoIdent("Client application bug: DNSServiceResolver(%##s) active for over two minutes. "
+				"This places considerable burden on the network.", l->i.name.c);
 			}
 
 	return(nextevent);
