@@ -118,6 +118,8 @@ struct DNSServiceRegistration_struct
 	mach_port_t ClientMachPort;
 	mDNSBool autoname;
 	ServiceRecordSet s;
+	// Don't add any fields after ServiceRecordSet.
+	// This is where the implicit extra space goes if we allocate an oversized ServiceRecordSet object
 	};
 
 static DNSServiceDomainEnumeration *DNSServiceDomainEnumerationList = NULL;
@@ -327,8 +329,10 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
 	struct sockaddr_in interface;
 	struct sockaddr_in address;
-	char cstring[256];
-	int i;
+	char cstring[1024];
+	int i, pstrlen = query->info->TXTinfo[0];
+
+	if (query->info->TXTlen > sizeof(cstring)) return;
 
 	interface.sin_len         = sizeof(interface);
 	interface.sin_family      = AF_INET;
@@ -340,10 +344,22 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	address.sin_port          = query->info->port.NotAnInteger;
 	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
 
-	// Need to convert DNS TXT record pascal string to C string for MIG API
-	for (i=0; i<query->info->TXTinfo[0]; i++)
-		cstring[i] = query->info->TXTinfo[i+1];
-	cstring[i] = 0;		// Put the terminating NULL on the end
+	// The OS X DNSServiceResolverResolve() API is defined using a C-string,
+	// but the mDNS_StartResolveService() call actually returns a packed block of P-strings.
+	// Hence we have to convert the P-string(s) to a C-string before returning the result to the client.
+	// ASCII-1 characters are used in the C-string as boundary markers,
+	// to indicate the boundaries between the original constituent P-strings.
+	for (i=1; i<query->info->TXTlen; i++)
+		{
+		if (--pstrlen >= 0)
+			cstring[i-1] = query->info->TXTinfo[i];
+		else
+			{
+			cstring[i-1] = 1;
+			pstrlen = query->info->TXTinfo[i];
+			}
+		}
+	cstring[i-1] = 0;		// Put the terminating NULL on the end
 	
 	status = DNSServiceResolverReply_rpc(x->ClientMachPort, (char*)&interface, (char*)&address, cstring, 0, 10);
 	if (status == MACH_SEND_TIMED_OUT)
@@ -446,18 +462,39 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	domainlabel n;
 	domainname t, d;
 	mDNSIPPort port;
-	unsigned char pstring[256];
+	unsigned char txtinfo[1024] = "";
+	int data_len = 0;
+	int size = sizeof(RDataBody);
+	unsigned char *pstring = &txtinfo[data_len];
 	char *ptr = txtRecord;
 	DNSServiceRegistration *x;
-	
-	pstring[0] = 0;		// Convert our C string parameter to a Pascal string for the DNS TXT record
+
+	// The OS X DNSServiceRegistrationCreate() API is defined using a C-string,
+	// but the mDNS_RegisterService() call actually requires a packed block of P-strings.
+	// Hence we have to convert the C-string to a P-string.
+	// ASCII-1 characters are allowed in the C-string as boundary markers,
+	// so that a single C-string can be used to represent one or more P-strings.
 	while (*ptr)
 		{
-		if (pstring[0] == 255) return(mStatus_BadParamErr);
-		pstring[++pstring[0]] = *ptr++;
+		if (++data_len >= sizeof(txtinfo)) return(mStatus_BadParamErr);
+		if (*ptr == 1)		// If this is our boundary marker, start a new P-string
+			{
+			pstring = &txtinfo[data_len];
+			pstring[0] = 0;
+			ptr++;
+			}
+		else
+			{
+			if (pstring[0] == 255) return(mStatus_BadParamErr);
+			pstring[++pstring[0]] = *ptr++;
+			}
 		}
 
-	x = malloc(sizeof(*x));
+	data_len++;
+	if (size < data_len)
+		size = data_len;
+
+	x = malloc(sizeof(*x) - sizeof(RDataBody) + size);
 	if (!x) { debugf("provide_DNSServiceRegistrationCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
 	x->ClientMachPort = client;
 	x->next = DNSServiceRegistrationList;
@@ -472,7 +509,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
 	debugf("Client %d: Register Service: %#s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
-	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, pstring, 1 + (int)pstring[0], RegistrationCallback, x);
+	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtinfo, data_len, RegistrationCallback, x);
 
 	if (err) AbortClient(client);
 	else EnableDeathNotificationForClient(client);
@@ -498,7 +535,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	if (!x) { debugf("provide_DNSServiceRegistrationAddRecord_rpc bad client %X", client); return(mStatus_BadReferenceErr); }
 
 	// Allocate storage for our new record
-	extra = malloc(sizeof(*extra) + size - sizeof(RDataBody));
+	extra = malloc(sizeof(*extra) - sizeof(RDataBody) + size);
 	if (!extra) return(mStatus_NoMemoryErr);
 
 	// Fill in type, length, and data
@@ -551,7 +588,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 		}
 
 	// Allocate storage for our new data
-	newrdata = malloc(sizeof(*newrdata) + size - sizeof(RDataBody));
+	newrdata = malloc(sizeof(*newrdata) - sizeof(RDataBody) + size);
 	if (!newrdata) return(mStatus_NoMemoryErr);
 
 	// Fill in new length, and data
