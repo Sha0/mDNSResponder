@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.28  2005/03/03 02:27:24  shersche
+Include the RegNames.h header file for names of registry keys
+
 Revision 1.27  2005/03/02 20:12:59  shersche
 Update name
 
@@ -133,6 +136,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #include	"CommonServices.h"
 #include	"DebugServices.h"
+#include	"RegNames.h"
 
 #include	"uds_daemon.h"
 #include	"GenLinkedList.h"
@@ -160,13 +164,9 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 //	Constants
 //===========================================================================================================================
 
-#define	DEBUG_NAME					"[Server] "
-#define	kServiceName				"Apple mDNSResponder"
-#define kServiceFirewallName		L"Bonjour"
-#define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
-#define kServiceManageLLRouting		"ManageLLRouting"
-#define kServiceCacheEntryCount		"CacheEntryCount"
-#define kServiceManageFirewall		"ManageFirewall"
+#define	DEBUG_NAME							"[Server] "
+#define kServiceFirewallName				L"Bonjour"
+#define	kServiceDependencies				"Tcpip\0winmgmt\0\0"
 #define	kDNSServiceCacheEntryCountDefault	512
 
 #define RR_CACHE_SIZE 500
