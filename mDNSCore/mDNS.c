@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.73  2003/01/28 03:45:12  cheshire
+Fixed missing "not" in "!mDNSAddrIsDNSMulticast(dstaddr)"
+
 Revision 1.72  2003/01/28 01:49:48  cheshire
 Bug #: 3147097 mDNSResponder sometimes fails to find the correct results
 FindDuplicateQuestion() was incorrectly finding the question itself in the list,
@@ -3407,7 +3410,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 	
 	// If this was a unicast query, or it was from an old (non-port-5353) client, then send a unicast response
-	if (mDNSAddrIsDNSMulticast(dstaddr) || srcport.NotAnInteger != MulticastDNSPort.NotAnInteger)
+	if (!mDNSAddrIsDNSMulticast(dstaddr) || srcport.NotAnInteger != MulticastDNSPort.NotAnInteger)
 		replyunicast = &response;
 	
 	// If this was a multicast query, then we need to send a multicast response
