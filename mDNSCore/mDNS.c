@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.246  2003/08/04 19:20:49  cheshire
+Add kDNSQType_ANY to list in DNSTypeName() so it can be displayed in debugging messages
+
 Revision 1.245  2003/08/02 01:56:29  cheshire
 For debugging: log message if we ever get more than one question in a truncated packet
 
@@ -1146,6 +1149,7 @@ char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_TXT:  return("TXT");
 		case kDNSType_AAAA: return("AAAA");
 		case kDNSType_SRV:  return("SRV");
+		case kDNSQType_ANY: return("ANY");
 		default:			{
 							static char buffer[16];
 							mDNS_snprintf(buffer, sizeof(buffer), "(%d)", rrtype);
