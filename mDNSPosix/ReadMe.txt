@@ -307,6 +307,6 @@ Networking, Communications, Hardware
 
 To Do List
 ----------
-¥ port to a System V that's not Solaris
-¥ use sig_atomic_t for signal to main thread flags
-¥ test and debug the daemon function, including properly logging
+â€¢ port to a System V that's not Solaris
+â€¢ use sig_atomic_t for signal to main thread flags
+â€¢ test and debug the daemon function, including properly logging
