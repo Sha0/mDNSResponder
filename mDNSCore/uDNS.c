@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.33  2004/05/05 17:40:06  ksekar
+Removed prerequisite from deregistration update - it does not work for
+shared records, and is unnecessary until we have more sophisticated
+name conflict management.
+
 Revision 1.32  2004/05/05 17:32:18  ksekar
 Prevent registration of loopback interface caused by removal of
 Multicast flag in interface structure.
@@ -1862,10 +1867,6 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 
 	// put zone
 	ptr = putZone(&msg, ptr, end, &rr->uDNS_info.zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
-	if (!ptr) goto error;
-
-	// prereq: record must exist (put record in prereq section w/ TTL 0)
-	ptr = PutResourceRecordTTL(&msg, ptr, &msg.h.mDNS_numPrereqs, &rr->resrec, 0);
 	if (!ptr) goto error;
 
 	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) goto error;
