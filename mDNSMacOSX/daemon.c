@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.108  2003/06/06 14:08:06  cheshire
+ * For clarity, pull body of main while() loop out into a separate function called mDNSDaemonIdle()
+ *
  * Revision 1.107  2003/05/29 05:44:55  cheshire
  * Minor fixes to log messages
  *
@@ -1306,7 +1309,7 @@ mDNSlocal void HandleSIGINFO(int signal)
 		{ LogMsg("HandleSIGTERM: mach_msg_send failed; Exiting immediately."); exit(-1); }
 	}
 
-mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
+mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	{
 	mStatus            err;
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
@@ -1319,8 +1322,6 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	CFRunLoopSourceRef e_rls  = CFMachPortCreateRunLoopSource(NULL, e_port, 0);
 	CFRunLoopSourceRef i_rls  = CFMachPortCreateRunLoopSource(NULL, i_port, 0);
-	(void)bundleName;		// Unused
-	(void)bundleDir;		// Unused
 	
 	if (status)
 		{
@@ -1354,6 +1355,52 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	return(err);
 	}
 
+mDNSlocal mDNSs32 mDNSDaemonIdle(void)
+	{
+	// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
+	mDNSs32 nextevent = mDNS_Execute(&mDNSStorage);
+
+	// 2. Deliver any waiting browse messages to clients
+	DNSServiceBrowser *b = DNSServiceBrowserList;
+
+	while (b)
+		{
+		// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
+		// event that the client Mach queue overflows, DeliverInstance() will call AbortBlockedClient()
+		// and that will cause the DNSServiceBrowser object's memory to be freed before it returns
+		DNSServiceBrowser *x = b;
+		b = b->next;
+		if (x->results)			// Try to deliver the list of results
+			{
+			mDNSs32 now = mDNSPlatformTimeNow();
+			while (x->results)
+				{
+				DNSServiceBrowserResult *const r = x->results;
+				DNSServiceDiscoveryReplyFlags flags = (r->next) ? DNSServiceDiscoverReplyFlagsMoreComing : 0;
+				kern_return_t status = DNSServiceBrowserReply_rpc(x->ClientMachPort, r->resultType, r->name, r->type, r->dom, flags, 1);
+				// If we failed to send the mach message, try again in one second
+				if (status == MACH_SEND_TIMED_OUT)
+					{
+					if (nextevent - now > mDNSPlatformOneSecond)
+						nextevent = now + mDNSPlatformOneSecond;
+					break;
+					}
+				else
+					{
+					x->lastsuccess = now;
+					x->results = x->results->next;
+					freeL("DNSServiceBrowserResult", r);
+					}
+				}
+			// If this client hasn't read a single message in the last 60 seconds, abort it
+			if (now - x->lastsuccess >= 60 * mDNSPlatformOneSecond)
+				AbortBlockedClient(x->ClientMachPort, "browse", x);
+			}
+		}
+
+	return(nextevent);
+	}
+
 mDNSexport int main(int argc, char **argv)
 	{
 	int i;
@@ -1384,7 +1431,7 @@ mDNSexport int main(int argc, char **argv)
 		}
 	
 	LogMsg("%s starting", mDNSResponderVersionString);
-	status = start(NULL, NULL);
+	status = mDNSDaemonInitialize();
 
 	if (status == 0)
 		{
@@ -1399,60 +1446,24 @@ mDNSexport int main(int argc, char **argv)
 		// (5) then when no more events remain, we go back to (1) to finish off any deferred work and do it all again
 		while (RunLoopStatus == kCFRunLoopRunTimedOut)
 			{
-			CFAbsoluteTime interval;
-
-			// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
-			mDNSs32 ticks, nextevent = mDNS_Execute(&mDNSStorage);
-
-			// 2. Deliver any waiting browse messages to clients
-			DNSServiceBrowser *b = DNSServiceBrowserList;
-
-			while (b)
-				{
-				// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
-				// event that the client Mach queue overflows, DeliverInstance() will call AbortBlockedClient()
-				// and that will cause the DNSServiceBrowser object's memory to be freed before it returns
-				DNSServiceBrowser *x = b;
-				b = b->next;
-				if (x->results)			// Try to deliver the list of results
-					{
-					mDNSs32 now = mDNSPlatformTimeNow();
-					while (x->results)
-						{
-						DNSServiceBrowserResult *const r = x->results;
-						DNSServiceDiscoveryReplyFlags flags = (r->next) ? DNSServiceDiscoverReplyFlagsMoreComing : 0;
-						kern_return_t status = DNSServiceBrowserReply_rpc(x->ClientMachPort, r->resultType, r->name, r->type, r->dom, flags, 1);
-						// If we failed to send the mach message, try again in one second
-						if (status == MACH_SEND_TIMED_OUT)
-							{
-							if (nextevent - now > mDNSPlatformOneSecond)
-								nextevent = now + mDNSPlatformOneSecond;
-							break;
-							}
-						else
-							{
-							x->lastsuccess = now;
-							x->results = x->results->next;
-							freeL("DNSServiceBrowserResult", r);
-							}
-						}
-					// If this client hasn't read a single message in the last 60 seconds, abort it
-					if (now - x->lastsuccess >= 60 * mDNSPlatformOneSecond)
-						AbortBlockedClient(x->ClientMachPort, "browse", x);
-					}
-				}
-		
-			// 3. Do a blocking "CFRunLoopRunInMode" until our next wakeup time, or an event occurs
+			// 1. Before going into a blocking wait call and letting our process to go sleep,
+			// call mDNSDaemonIdle to allow any deferred work to be completed.
+			mDNSs32 nextevent = mDNSDaemonIdle();
+			
+			// 2. Work out how long we expect to sleep before the next scheduled task
+			mDNSs32 ticks = nextevent - mDNSPlatformTimeNow();
+			if (ticks < 1) ticks = 1;
+			CFAbsoluteTime interval = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
+					
+			// 3. Now do a blocking "CFRunLoopRunInMode" call so we sleep until
+			// (a) our next wakeup time, or (b) an event occurs.
 			// The 'true' parameter makes it return after handling any event that occurs
 			// This gives us chance to regain control so we can call mDNS_Execute() before sleeping again
-			ticks     = nextevent - mDNSPlatformTimeNow();
-			if (ticks < 1) ticks = 1;
 			verbosedebugf("main: Handled %d events; now sleeping for %d ticks", numevents, ticks);
 			numevents = 0;
-			interval  = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
 			RunLoopStatus = CFRunLoopRunInMode(kCFRunLoopDefaultMode, interval, true);
 
-			// 4. Time to do some work? Handle all remaining events before returning to mDNS_Execute()
+			// 4. Time to do some work? Handle all remaining events as quickly as we can, before returning to mDNSDaemonIdle()
 			while (RunLoopStatus == kCFRunLoopRunHandledSource)
 				{
 				numevents++;
