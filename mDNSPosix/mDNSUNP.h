@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.11  2003/12/13 05:43:09  bradley
+Fixed non-sa_len and non-IPv6 version of GET_SA_LEN macro to cast as sockaddr to access
+sa_family so it works with any sockaddr-compatible address structure (e.g. sockaddr_storage).
+
 Revision 1.10  2003/12/11 03:03:51  rpantos
 Clean up mDNSPosix so that it builds on OS X again.
 
@@ -85,7 +89,7 @@ First checkin
 #define GET_SA_LEN(X) (((struct sockaddr*)&(X))->sa_family == AF_INET  ? sizeof(struct sockaddr_in) : \
                        ((struct sockaddr*)&(X))->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr))
 #else
-#define GET_SA_LEN(X) ((X).sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr))
+#define GET_SA_LEN(X) (((struct sockaddr*)&(X))->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr))
 #endif
 
 #define IFI_NAME    16          /* same as IFNAMSIZ in <net/if.h> */
