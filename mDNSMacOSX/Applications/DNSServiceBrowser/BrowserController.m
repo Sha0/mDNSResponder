@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: BrowserController.m,v $
+Revision 1.27  2003/11/19 18:49:48  rpantos
+3282283: couple of little tweaks to previous checkin
+
 Revision 1.26  2003/11/07 19:35:20  rpantos
 3282283/6: Display multiple IP addresses. Connect using host rather than IP addr.
 
@@ -356,9 +359,9 @@ static void	QueryRecordReply( DNSServiceRef DNSServiceRef, DNSServiceFlags flags
 		[fDomainBrowser addToCurrentRunLoop];
 	}
    else {
-        NSAlert *alert = [NSAlert alertWithMessageText:@"Rendezvous could not be initialized!"
+        NSAlert *alert = [NSAlert alertWithMessageText:@"Could not connect to mDNSResponder!"
                         defaultButton:@"Quit" alternateButton:nil otherButton:nil informativeTextWithFormat:
-                        @"DNSServiceEnumerateDomains() failed."];
+                        @"Check to see if mDNSResponder is still running."];
         if ( alert != NULL)
             [alert runModal];
         exit( err);
@@ -492,16 +495,18 @@ static void	QueryRecordReply( DNSServiceRef DNSServiceRef, DNSServiceFlags flags
     [portField setIntValue:port];
 
 	// kind of a hack: munge txtRecord so it's human-readable
-	char	*readableText = (char*) malloc( txtLen);
-	if ( readableText != nil) {
-		ByteCount   index, subStrLen;
-		memcpy( readableText, txtRecord, txtLen);
-		for ( index=0; index < txtLen - 1; index += subStrLen + 1) {
-			subStrLen = readableText[ index];
-			readableText[ index] = '\n';
+	if ( txtLen > 0) {
+		char	*readableText = (char*) malloc( txtLen);
+		if ( readableText != nil) {
+			ByteCount   index, subStrLen;
+			memcpy( readableText, txtRecord, txtLen);
+			for ( index=0; index < txtLen - 1; index += subStrLen + 1) {
+				subStrLen = readableText[ index];
+				readableText[ index] = '\n';
+			}
+			[textField setStringValue:[NSString stringWithCString:&readableText[1] length:txtLen - 1]];
+			free( readableText);
 		}
-		[textField setStringValue:[NSString stringWithCString:&readableText[1] length:txtLen - 1]];
-		free( readableText);
 	}
 }
 
