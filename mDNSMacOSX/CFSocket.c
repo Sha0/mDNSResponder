@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.175  2004/09/14 21:35:46  cheshire
+Minor code tidying, and added comments about CFRetainCounts
+
 Revision 1.174  2004/09/14 19:14:57  ksekar
 <rdar://problem/3192531> DynDNS: Discovery of DynDNS Zones via Reverse-Map PTR
 
@@ -1578,13 +1581,22 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m)
 		i->Exists = mDNSfalse;
 	}
 
+mDNSlocal void CloseRunLoopSourceSocket(CFRunLoopSourceRef rls, CFSocketRef cfs)
+	{
+	// Comments show retain counts (obtained via CFGetRetainCount()) after each call.	// rls 3 cfs 3
+	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);			// rls 2 cfs 3
+	CFRelease(rls);																		// rls ? cfs 3
+	CFSocketInvalidate(cfs);															// rls ? cfs 1
+	CFRelease(cfs);																		// rls ? cfs ?
+	}
+
 mDNSlocal void CloseSocketSet(CFSocketSet *ss)
 	{
 	// Note: MUST NOT close the underlying native BSD sockets.
 	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
 	// because it first has to unhook the sockets from its select() call, before it can safely close them.
-	if (ss->cfsv4) { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), ss->rlsv4, kCFRunLoopDefaultMode); CFRelease(ss->rlsv4); CFSocketInvalidate(ss->cfsv4); CFRelease(ss->cfsv4); }
-	if (ss->cfsv6) { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), ss->rlsv6, kCFRunLoopDefaultMode); CFRelease(ss->rlsv6); CFSocketInvalidate(ss->cfsv6); CFRelease(ss->cfsv6); }
+	if (ss->cfsv4) CloseRunLoopSourceSocket(ss->rlsv4, ss->cfsv4);
+	if (ss->cfsv6) CloseRunLoopSourceSocket(ss->rlsv6, ss->cfsv6);
 	ss->sktv4 = ss->sktv6 = -1;
 	ss->cfsv4 = ss->cfsv6 = NULL;
 	ss->rlsv4 = ss->rlsv6 = NULL;
@@ -2634,7 +2646,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	CloseSocketSet(&m->p->unicastsockets);
 	}
 
-mDNSexport mDNSs32  mDNSPlatformOneSecond = 1000;
+mDNSexport mDNSs32 mDNSPlatformOneSecond = 1000;
 
 mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
 	{
@@ -2664,7 +2676,7 @@ mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
 	return(mStatus_NoError);
 	}
 
-mDNSexport mDNSs32  mDNSPlatformTimeNow(void)
+mDNSexport mDNSs32 mDNSPlatformTimeNow(void)
 	{
 	if (clockdivisor == 0) { LogMsg("mDNSPlatformTimeNow called before mDNSPlatformTimeInit"); return(0); }
 	return((mDNSs32)(mach_absolute_time() / clockdivisor));
