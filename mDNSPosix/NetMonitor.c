@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.46  2003/09/05 02:33:48  cheshire
+Set output to be line buffered, so you can redirect to a file and "tail -f" the file in another window
+
 Revision 1.45  2003/09/04 00:16:20  cheshire
 Only show count of unique source addresses seen on network if we're not filtering
 
@@ -853,6 +856,8 @@ mDNSexport int main(int argc, char **argv)
 	int i;
 	mStatus status;
 	
+	setlinebuf(stdout);				// Want to see lines as they appear, not block buffered
+
 	for (i=1; i<argc; i++)
 		{
 		struct in_addr s4;
