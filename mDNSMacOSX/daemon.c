@@ -33,6 +33,11 @@
  * thinking that variables x and y are both of type "char*" -- and anyone who doesn't
  * understand why variable y is not of type "char*" just proves the point that poor code
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
+ *
+ * $Log: daemon.c,v $
+ * Revision 1.92  2003/04/04 20:38:57  cheshire
+ * Add $Log header
+ *
  */
 
 #include <mach/mach.h>
