@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.279  2003/08/19 02:31:11  cheshire
+<rdar://problem/3378386> mDNSResponder overenthusiastic with final expiration queries
+Final expiration queries now only mark the question for sending on the particular interface
+pertaining to the record that's expiring.
+
 Revision 1.278  2003/08/18 22:53:37  cheshire
 <rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
 
@@ -3519,6 +3524,12 @@ mDNSlocal void ExpireDupSuppressInfo(DupSuppressInfo ds[DupSuppressInfoSize], mD
 	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].Time - time < 0) ds[i].InterfaceID = mDNSNULL;
 	}
 
+mDNSlocal void ExpireDupSuppressInfoOnInterface(DupSuppressInfo ds[DupSuppressInfoSize], mDNSs32 time, mDNSInterfaceID InterfaceID)
+	{
+	int i;
+	for (i=0; i<DupSuppressInfoSize; i++) if (ds[i].InterfaceID == InterfaceID && ds[i].Time - time < 0) ds[i].InterfaceID = mDNSNULL;
+	}
+
 mDNSlocal mDNSBool SuppressOnThisInterface(DupSuppressInfo ds[DupSuppressInfoSize], mDNSInterfaceID InterfaceID)
 	{
 	int i;
@@ -3561,8 +3572,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 				if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 					if (m->timenow + TicksTTL(rr)/50 - rr->NextRequiredQuery >= 0)
 						{
-						rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
-						ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - TicksTTL(rr)/20);
+						q = rr->CRActiveQuestion;
+						ExpireDupSuppressInfoOnInterface(q->DupSuppress, m->timenow - TicksTTL(rr)/20, rr->resrec.InterfaceID);
+						if      (q->SendQNow == mDNSNULL)               q->SendQNow = rr->resrec.InterfaceID;
+						else if (q->SendQNow != rr->resrec.InterfaceID) q->SendQNow = mDNSInterfaceMark;
 						}
 
 		// Scan our list of questions to see which ones we're definitely going to send
@@ -3581,17 +3594,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			if (q->SendQNow || (q->ThisQInterval <= maxExistingQuestionInterval && TimeToSendThisQuestion(q, m->timenow + q->ThisQInterval/2)))
 				{
-				// Mark for sending. (If no active interfaces, then don't even try.)
-				q->SendQNow = !intf ? mDNSNULL : (q->InterfaceID) ? q->InterfaceID : intf->InterfaceID;
-
-				// If we recorded a duplicate suppression for this question less than half an interval ago,
-				// then we consider it recent enough that we don't need to do an identical query ourselves.
-				ExpireDupSuppressInfo(q->DupSuppress, m->timenow - q->ThisQInterval/2);
-
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, treat this as logically a repeat of the last transmission, without advancing the interval
 				if (m->timenow - (q->LastQTime + q->ThisQInterval/2) >= 0)
 					{
+					q->SendQNow = mDNSInterfaceMark;	// Mark this question for sending on all interfaces
 					q->ThisQInterval *= 2;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
@@ -3601,7 +3608,20 @@ mDNSlocal void SendQueries(mDNS *const m)
 						ReconfirmAntecedents(m, q);		// If sending third query, and no answers yet, time to begin doubting the source
 						}
 					}
-				q->LastQTime     = m->timenow;
+
+				// Mark for sending. (If no active interfaces, then don't even try.)
+				q->SendOnAll = (q->SendQNow == mDNSInterfaceMark);
+				if (q->SendOnAll)
+					{
+					q->SendQNow  = !intf ? mDNSNULL : (q->InterfaceID) ? q->InterfaceID : intf->InterfaceID;
+					q->LastQTime = m->timenow;
+					}
+
+				// If we recorded a duplicate suppression for this question less than half an interval ago,
+				// then we consider it recent enough that we don't need to do an identical query ourselves.
+				ExpireDupSuppressInfo(q->DupSuppress, m->timenow - q->ThisQInterval/2);
+
+				q->LastQTxTime   = m->timenow;
 				q->RecentAnswers = 0;
 				}
 			// For all questions (not just the ones we're sending) check what the next scheduled event will be
@@ -3686,7 +3706,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
 					if (SuppressOnThisInterface(q->DupSuppress, intf->InterfaceID) ||
 						BuildQuestion(m, &query, &queryptr, q, &kalistptr, &answerforecast))
-						q->SendQNow = (q->InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
+							q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
 
 			// Put probe questions in this packet
@@ -3831,7 +3851,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			// If this question is one that's actively sending queries, and it's received three answers within
 			// one second of sending the query packet, then reset its exponential backoff back to the start
 			if (ActiveQuestion(q) && ++q->RecentAnswers >= 3 &&
-				q->ThisQInterval > InitialQuestionInterval*2 && m->timenow - q->LastQTime < mDNSPlatformOneSecond)
+				q->ThisQInterval > InitialQuestionInterval*2 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 				{
 				debugf("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 					q->qname.c, DNSTypeName(q->qtype));
@@ -3927,8 +3947,6 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, mDNSu32 slot)
 					event = rr->NextRequiredQuery;				// then just record when we want the next query
 				else											// else trigger our question to go out now
 					{
-					rr->CRActiveQuestion->SendQNow = mDNSInterfaceMark;	// Mark question for immediate sending
-					ExpireDupSuppressInfo(rr->CRActiveQuestion->DupSuppress, m->timenow - TicksTTL(rr)/20);
 					m->NextScheduledQuery = m->timenow;	// And adjust NextScheduledQuery so it will happen
 					// After sending the query we'll increment UnansweredQueries and call SetNextCacheCheckTime(),
 					// which will correctly update m->NextCacheCheck for us
@@ -4760,7 +4778,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			// can't guarantee to receive all of the Known Answer packets that go with a particular query.
 			if (!(query->h.flags.b[0] & kDNSFlag0_TC))
 				for (q = m->Questions; q; q=q->next)
-					if (ActiveQuestion(q) && m->timenow - q->LastQTime > mDNSPlatformOneSecond / 4)
+					if (ActiveQuestion(q) && m->timenow - q->LastQTxTime > mDNSPlatformOneSecond / 4)
 						if (!q->InterfaceID || q->InterfaceID == InterfaceID)
 							if (q->NextInDQList == mDNSNULL && dqp != &q->NextInDQList)
 								if (q->qtype == pktq.qtype && q->qclass == pktq.qclass && q->qnamehash == pktq.qnamehash && SameDomainName(&q->qname, &pktq.qname))
@@ -5367,6 +5385,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 			q->LastQTime     = question->LastQTime;
 			q->RecentAnswers = 0;
 			q->DuplicateOf   = FindDuplicateQuestion(m, q);
+			q->LastQTxTime   = question->LastQTxTime;
 			SetNextQueryTime(m,q);
 			}
 	}
@@ -5427,6 +5446,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->DupSuppress[1].InterfaceID = mDNSNULL;
 		// question->InterfaceID must be already set by caller
 		question->SendQNow       = mDNSNULL;
+		question->SendOnAll      = mDNSfalse;
+		question->LastQTxTime    = m->timenow;
 
 		if (!question->DuplicateOf)
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s %s %p (%p) started",

@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.104  2003/08/19 02:31:11  cheshire
+<rdar://problem/3378386> mDNSResponder overenthusiastic with final expiration queries
+Final expiration queries now only mark the question for sending on the particular interface
+pertaining to the record that's expiring.
+
 Revision 1.103  2003/08/18 19:05:44  cheshire
 <rdar://problem/3382423> UpdateRecord not working right
 Added "newrdlength" field to hold new length of updated rdata
@@ -821,6 +826,8 @@ struct DNSQuestion_struct
 	DNSQuestion          *NextInDQList;
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
+	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
+	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue link-local queries only on a single specific IP interface
