@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.82  2005/01/19 03:27:03  cheshire
+<rdar://problem/3961051> CPU Spin in mDNSResponder
+GetNextScheduledEvent() needs to check LocalRecordReady()
+
 Revision 1.81  2004/12/18 03:13:45  cheshire
 <rdar://problem/3751638> kDNSServiceInterfaceIndexLocalOnly should return all local records
 
@@ -2017,9 +2021,9 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 		if (m->NewQuestions->DelayAnswering) e = m->NewQuestions->DelayAnswering;
 		else return(m->timenow);
 		}
-	if (m->NewLocalOnlyQuestions)   return(m->timenow);
-	if (m->NewLocalRecords)         return(m->timenow);
-	if (m->SuppressSending)         return(m->SuppressSending);
+	if (m->NewLocalOnlyQuestions)                                   return(m->timenow);
+	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords)) return(m->timenow);
+	if (m->SuppressSending)                                         return(m->SuppressSending);
 #ifndef UNICAST_DISABLED
 	if (e - m->uDNS_info.nextevent   > 0) e = m->uDNS_info.nextevent;
 #endif
