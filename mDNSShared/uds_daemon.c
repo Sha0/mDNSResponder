@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.169  2005/02/08 01:57:14  cheshire
+More detailed error reporting in udsserver_init()
+
 Revision 1.168  2005/02/03 00:44:37  cheshire
 <rdar://problem/3986663> DNSServiceUpdateRecord returns kDNSServiceErr_Invalid when rdlen=0, rdata=NULL
 
@@ -851,7 +854,10 @@ int udsserver_init(void)
 		}
 
 	if ((listenfd = socket(AF_DNSSD, SOCK_STREAM, 0)) == dnssd_InvalidSocket)
+		{
+		my_perror("ERROR: socket(AF_DNSSD, SOCK_STREAM, 0); failed");
 		goto error;
+		}
 
     bzero(&laddr, sizeof(laddr));
 
@@ -862,7 +868,10 @@ int udsserver_init(void)
 		laddr.sin_addr.s_addr	=	inet_addr(MDNS_TCP_SERVERADDR);
     	ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
 		if (ret < 0)
+			{
+			my_perror("ERROR: bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr)); failed");
 			goto error;
+			}
 		}
 	#else
 		{
@@ -878,7 +887,10 @@ int udsserver_init(void)
 		ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
 		umask(mask);
 		if (ret < 0)
+			{
+			my_perror("ERROR: bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr)); failed");
 			goto error;
+			}
 		}
 	#endif
 
@@ -892,10 +904,10 @@ int udsserver_init(void)
 	#else
     if (fcntl(listenfd, F_SETFL, O_NONBLOCK) != 0)
 	#endif
-	{
+		{
 		my_perror("ERROR: could not set listen socket to non-blocking mode");
 		goto error;
-	}
+		}
 
 	if (listen(listenfd, LISTENQ) != 0)
 		{
