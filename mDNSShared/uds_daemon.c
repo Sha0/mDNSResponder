@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.162  2005/01/27 23:59:20  cheshire
+Remove extraneous LogMsg
+
 Revision 1.161  2005/01/27 22:57:56  cheshire
 Fix compile errors on gcc4
 
@@ -1263,7 +1266,6 @@ static void request_callback(void *info)
 		if (nwritten < (int)sizeof(err))
 			LogMsg("ERROR: failed to write error response back to caller: %d %d %s",
 				nwritten, dnssd_errno(), dnssd_strerror(dnssd_errno()));
-		LogMsg("request_callback closing %d", errfd);
 		dnssd_close(errfd);
 		reset_connected_rstate(rstate);		// Reset ready to accept the next request on this pipe
 		}
