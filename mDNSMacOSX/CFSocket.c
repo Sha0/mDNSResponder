@@ -64,7 +64,6 @@ int mDNS_AdvertiseLocalAddresses = 1;
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOMessage.h>
-#include <IOKit/pwr_mgt/IOPMLib.h>
 
 // ***************************************************************************
 // Structures
@@ -646,8 +645,6 @@ exit:
 	return(err);
 	}
 
-io_connect_t PowerConnection;
-
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
 	{
 	mDNS *const m = (mDNS *const)refcon;
@@ -661,15 +658,14 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemHasPoweredOn: debugf("PowerChanged got kIOMessageSystemHasPoweredOn"); mDNSCoreSleep(m, false); break;
 		default:                           debugf("PowerChanged got unknown message %X", messageType); break;                       
 		}
-        IOAllowPowerChange(PowerConnection, (long)messageArgument);
+	IOAllowPowerChange(m->p->powerconnection, (long)messageArgument);
 	}
 
 mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 	{
 	IONotificationPortRef thePortRef;
-	io_object_t notifier;
-	PowerConnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &notifier);
-	if (PowerConnection)
+	m->p->powerconnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &m->p->powernotifier);
+	if (m->p->powerconnection)
 		{
 		CFRunLoopSourceRef rls = IONotificationPortGetRunLoopSource(thePortRef);
 		CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
@@ -710,7 +706,21 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 
 mDNSexport void mDNSPlatformClose(mDNS *const m)
 	{
+	if (m->p->powerconnection)
+		{
+		IODeregisterForSystemPower(&m->p->powernotifier);
+		m->p->powerconnection = NULL;
+		m->p->powernotifier = NULL;
+		}
+	
+	if (m->p->store)
+		{
+		CFRelease(m->p->store);
+		m->p->store = NULL;
+		}
+	
 	ClearInterfaceList(m);
+	
 	if (m->p->cftimer)
 		{
 	    CFRunLoopTimerInvalidate(m->p->cftimer);
