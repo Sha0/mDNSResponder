@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.2  2004/06/23 18:09:23  shersche
+Normalize tag names when parsing inf files.
+Submitted by: herscher
+
 Revision 1.1  2004/06/18 04:36:58  rpantos
 First checked in
 
@@ -124,10 +128,6 @@ CThirdPage::SelectMatch(Printer * printer, Manufacturer * manufacturer, Model * 
 	check( manufacturer != NULL );
 	check( model != NULL );
 
-OutputDebugString(manufacturer->name);
-OutputDebugString(L" -> ");
-OutputDebugString(model->name);
-OutputDebugString(L"\n");
 
 	//
 	// this is to work around a UI bug that I need to take a closer
@@ -245,7 +245,14 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 		//
 		if (s.Find('[') == 0)
 		{
-			if (s == L"[Manufacturer]")
+			//
+			// handle any capitalization issues here
+			//
+			CString tag = s;
+
+			tag.MakeLower();
+
+			if (tag == L"[manufacturer]")
 			{
 				state = ParsingManufacturers;
 			}
@@ -313,6 +320,12 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					key.Remove('%');
 					key.Remove('"');
 
+					//
+					// fix the manufacturer name if necessary
+					//
+					curPos	=	0;
+					val		=	val.Tokenize(L",", curPos);
+
 					manufacturer->name = NormalizeManufacturerName( key );
 					manufacturer->tag  = val;
 
@@ -354,8 +367,6 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					}
 
 					require_action( model, exit, err = kNoMemoryErr );
-
-					
 
 					model->infFileName		=	filename;
 					model->name				=	name;
@@ -400,9 +411,11 @@ CThirdPage::LoadPrintDriverDefs( Manufacturers & manufacturers )
 
 	//
 	// like a lot of win32 calls, we call this first to get the
-	// size of the buffer we need.  don't check the error return
+	// size of the buffer we need.
 	//
-	EnumPrinterDrivers(NULL, L"all", 6, NULL, 0, &bytesReceived, &numPrinters);
+	ok = EnumPrinterDrivers(NULL, L"all", 6, NULL, 0, &bytesReceived, &numPrinters);
+	err = translate_errno( ok, errno_compat(), kUnknownErr );
+	require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, kUnknownErr);
 
 	try
 	{
@@ -428,6 +441,17 @@ CThirdPage::LoadPrintDriverDefs( Manufacturers & manufacturers )
 		Manufacturer	*	manufacturer;
 		Model			*	model;
 		CString				name;
+
+		//
+		// skip over anything that doesn't have a manufacturer field.  This
+		// fixes a bug that I noticed that occurred after I installed 
+		// ProComm.  This program add a print driver with no manufacturer
+		// that screwed up this wizard.
+		//
+		if (info[i].pszMfgName == NULL)
+		{
+			continue;
+		}
 
 		//
 		// look for manufacturer
