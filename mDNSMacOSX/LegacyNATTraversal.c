@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.6  2004/10/26 20:59:20  cheshire
+<rdar://problem/3854314> Legacy NAT traversal code closes file descriptor 0
+
 Revision 1.5  2004/10/26 01:01:35  cheshire
 Use "#if 0" instead of commenting out code
 
@@ -83,6 +86,13 @@ Revision 1.1  2004/08/18 17:35:41  ksekar
 // TODO: remove later and do variable length
 #define MAX_SOAPMSGSIZE		65536
 
+static int safe_close(int fd)
+	{
+	if (fd < 3) { LogMsg("safe_close: ERROR sd %d < 3", fd); return(-1); }
+	return(close(fd));
+	}
+
+#define close safe_close
 
 ////////////////////////////////////////////////////////////////////////
 // NetAddr Functions
@@ -334,12 +344,12 @@ static FILE					*g_log;
 static int					g_fLogging;
 
 // Globally-accessible UDP socket
-static int					g_sUDP;
-static int					g_sUDPCancel;
+static int					g_sUDP       = -1;
+static int					g_sUDPCancel = -1;
 
 // Globally-accessible TCP socket
-static int					g_sTCP;
-static int					g_sTCPCancel;
+static int					g_sTCP       = -1;
+static int					g_sTCPCancel = -1;
 
 // Event Vars
 static int					g_fEventEnabled = FALSE;
@@ -2964,8 +2974,8 @@ int LegacyNATInit(void)
 int LegacyNATDestroy()
 {
 	g_fQuit = TRUE;
-	close(g_sTCPCancel);
-	close(g_sUDPCancel);
+	if (g_sTCPCancel >= 0) close(g_sTCPCancel);
+	if (g_sUDPCancel >= 0) close(g_sUDPCancel);
 	g_fFirstInit = TRUE;
 	g_fUPnPEnabled = FALSE;
 	g_fControlURLSet = FALSE;
@@ -2977,6 +2987,3 @@ int LegacyNATDestroy()
 
 	return NA_E_SUCCESS;
 }
-
-
-
