@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.96  2003/07/18 00:30:00  cheshire
+<rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
+
 Revision 1.95  2003/07/12 03:15:20  cheshire
 <rdar://problem/3324848> After SCDynamicStore notification, mDNSResponder updates
 m->hostlabel even if user hasn't actually actually changed their dot-local hostname
@@ -1133,6 +1136,18 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	mStatus err;
 
 	m->hostlabel.c[0]        = 0;
+	
+	static const char HINFO_HWstring[] = "Macintosh";
+	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
+	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);
+	if (hlen + slen < 254)
+		{
+		m->HIHardware.c[0] = hlen;
+		m->HISoftware.c[0] = slen;
+		mDNSPlatformMemCopy(HINFO_HWstring, &m->HIHardware.c[1], hlen);
+		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
+		}
+	
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
 	UpdateInterfaceList(m);

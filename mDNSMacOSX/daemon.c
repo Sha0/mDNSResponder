@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.120  2003/07/18 00:30:00  cheshire
+ * <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
+ *
  * Revision 1.119  2003/07/17 19:08:58  cheshire
  * <rdar://problem/3332153> Remove calls to enable obsolete UDS code
  *
@@ -171,6 +174,7 @@
 static const char mDNSResponderVersionString[];		// Forward declaration for string defined at the end of file
 
 mDNSexport mDNS mDNSStorage;
+mDNSexport char HINFO_SWstring[256];
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 64
 static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
@@ -1438,6 +1442,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	CFDictionaryRef vers = _CFCopySystemVersionDictionary();
 	CFStringRef cfstr = CFDictionaryGetValue(vers, _kCFSystemVersionBuildVersionKey);
 	CFStringGetCString(cfstr, buffer, sizeof(buffer), kCFStringEncodingUTF8);
+	sprintf(HINFO_SWstring, "Mac OS X %s, %s", buffer, mDNSResponderVersionString);
 	sscanf(buffer, "%d%c%d", &major, &letter, &minor);
 	if (major < 7 || (major == 7 && letter == 'A' && minor < 162))
 		MachServerName = "DNSServiceDiscoveryServer";

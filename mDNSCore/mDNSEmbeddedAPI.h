@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.83  2003/07/18 00:29:59  cheshire
+<rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
+
 Revision 1.82  2003/07/17 17:35:04  cheshire
 <rdar://problem/3325583> Rate-limit responses, to guard against packet flooding
 
@@ -509,12 +512,12 @@ typedef struct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname t
 
 typedef union
 	{
-	mDNSu8     data[768];	// Generic untyped data (temporarily set 768 for the benefit of Airport Extreme printing)
-	mDNSv4Addr ip;			// For 'A' record
-	mDNSv6Addr ipv6;		// For 'AAAA' record
-	domainname name;		// For PTR and CNAME records
-	UTF8str255 txt;			// For TXT record
-	rdataSRV   srv;			// For SRV record
+	mDNSu8      data[768];	// Generic untyped data (temporarily set 768 for the benefit of Airport Extreme printing)
+	mDNSv4Addr  ip;			// For 'A' record
+	mDNSv6Addr  ipv6;		// For 'AAAA' record
+	domainname  name;		// For PTR and CNAME records
+	UTF8str255  txt;		// For TXT record
+	rdataSRV    srv;		// For SRV record
 	} RDataBody;
 
 typedef struct
@@ -627,6 +630,7 @@ struct NetworkInterfaceInfo_struct
 	// Standard ResourceRecords that every Responder host should have (one per active IP address)
 	ResourceRecord RR_A;				// 'A' or 'AAAA' (address) record for our ".local" name
 	ResourceRecord RR_PTR;				// PTR (reverse lookup) record
+	ResourceRecord RR_HINFO;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;
@@ -804,6 +808,8 @@ struct mDNS_struct
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;				// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
 	domainname  hostname;				// Host Name, e.g. "Foo.local."
+	UTF8str255 HIHardware;
+	UTF8str255 HISoftware;
 	ResourceRecord *ResourceRecords;
 	ResourceRecord *DuplicateRecords;	// Records currently 'on hold' because they are duplicates of existing records
 	ResourceRecord *CurrentRecord;		// Next ResourceRecord about to be examined

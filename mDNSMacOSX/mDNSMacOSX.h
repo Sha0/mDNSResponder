@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.13  2003/07/18 00:30:00  cheshire
+<rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
+
 Revision 1.12  2003/07/12 03:15:20  cheshire
 <rdar://problem/3324848> After SCDynamicStore notification, mDNSResponder updates
 m->hostlabel even if user hasn't actually actually changed their dot-local hostname
@@ -114,6 +117,7 @@ struct mDNS_PlatformSupport_struct
     };
 
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
+extern char HINFO_SWstring[];
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()

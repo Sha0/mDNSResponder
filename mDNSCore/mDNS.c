@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.233  2003/07/18 00:29:59  cheshire
+<rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
+
 Revision 1.232  2003/07/18 00:11:38  cheshire
 Add extra case to switch statements to handle HINFO data for Get, Put and Display
 (In all but GetRDLength(), this is is just a fall-through to kDNSType_TXT)
@@ -795,19 +798,13 @@ mDNSexport const mDNSv6Addr AllDNSLinkGroupv6  = { { 0xFF,0x02,0x00,0x00, 0x00,0
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };
 
+static const mDNSOpaque16 zeroID = { { 0, 0 } };
 static const mDNSOpaque16 QueryFlags    = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
 static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
 #define zeroDomainNamePtr ((domainname*)"")
 
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
-
-#ifdef mDNSResponderVersion
-static const mDNSOpaque16 mDNS_MessageID = { { mDNSResponderVersion >> 8, mDNSResponderVersion & 0xFF } };
-#else
-static const mDNSOpaque16 zeroID = { { 0, 0 } };
-#define mDNS_MessageID zeroID
-#endif
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
@@ -2958,7 +2955,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		DNSMessage response;
 		mDNSu8 *responseptr = response.data;
 		mDNSu8 *newptr;
-		InitializeDNSMessage(&response.h, mDNS_MessageID, ResponseFlags);
+		InitializeDNSMessage(&response.h, zeroID, ResponseFlags);
 	
 		// First Pass. Look for:
 		// 1. Deregistering records that need to send their goodbye packet
@@ -3369,7 +3366,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		ResourceRecord *rr;
 		DNSMessage query;
 		mDNSu8 *queryptr = query.data;
-		InitializeDNSMessage(&query.h, mDNS_MessageID, QueryFlags);
+		InitializeDNSMessage(&query.h, zeroID, QueryFlags);
 		if (KnownAnswerList) verbosedebugf("SendQueries:   KnownAnswerList set... Will continue from previous packet");
 		if (!KnownAnswerList)
 			{
@@ -5579,8 +5576,9 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
 	if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
 	
-	mDNS_SetupResourceRecord(&set->RR_A,   mDNSNULL, set->InterfaceID, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, set);
-	mDNS_SetupResourceRecord(&set->RR_PTR, mDNSNULL, set->InterfaceID, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	mDNS_SetupResourceRecord(&set->RR_A,     mDNSNULL, set->InterfaceID, kDNSType_A,     60, kDNSRecordTypeUnique,      HostNameCallback, set);
+	mDNS_SetupResourceRecord(&set->RR_PTR,   mDNSNULL, set->InterfaceID, kDNSType_PTR,   60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	mDNS_SetupResourceRecord(&set->RR_HINFO, mDNSNULL, set->InterfaceID, kDNSType_HINFO, 60, kDNSRecordTypeUnique,      mDNSNULL, mDNSNULL);
 
 	// 1. Set up Address record to map from host name ("foo.local.") to IP address
 	// 2. Set up reverse-lookup PTR record to map from our address back to our host name
@@ -5617,7 +5615,21 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	mDNS_Register_internal(m, &set->RR_A);
 	mDNS_Register_internal(m, &set->RR_PTR);
 
-	// ... Add an HINFO record, etc.?
+	if (m->HIHardware.c[0] > 0 && m->HISoftware.c[0] > 0 && m->HIHardware.c[0] + m->HISoftware.c[0] <= 254)
+		{
+		mDNSu8 *p = set->RR_HINFO.rdata->u.data;
+		set->RR_HINFO.name = m->hostname;
+		set->RR_HINFO.DependentOn = &set->RR_A;
+		mDNSPlatformMemCopy(&m->HIHardware, p, 1 + m->HIHardware.c[0]);
+		p += 1 + p[0];
+		mDNSPlatformMemCopy(&m->HISoftware, p, 1 + m->HISoftware.c[0]);
+		mDNS_Register_internal(m, &set->RR_HINFO);
+		}
+	else
+		{
+		debugf("Not creating HINFO record: platform support layer provided no information");
+		set->RR_HINFO.RecordType = kDNSRecordTypeUnregistered;
+		}
 	}
 
 mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
@@ -5635,8 +5647,9 @@ mDNSlocal void mDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// support layer gets to call mDNS_DeregisterInterface, the address and PTR records have already been deregistered for it.
 	// Also, in the event of a name conflict, one or more of our records will have been forcibly deregistered.
 	// To avoid unnecessary and misleading warning messages, we check the RecordType before calling mDNS_Deregister_internal().
-	if (set->RR_A.  RecordType) mDNS_Deregister_internal(m, &set->RR_A,   mDNS_Dereg_normal);
-	if (set->RR_PTR.RecordType) mDNS_Deregister_internal(m, &set->RR_PTR, mDNS_Dereg_normal);
+	if (set->RR_A.    RecordType) mDNS_Deregister_internal(m, &set->RR_A,     mDNS_Dereg_normal);
+	if (set->RR_PTR.  RecordType) mDNS_Deregister_internal(m, &set->RR_PTR,   mDNS_Dereg_normal);
+	if (set->RR_HINFO.RecordType) mDNS_Deregister_internal(m, &set->RR_HINFO, mDNS_Dereg_normal);
 	}
 
 mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
@@ -6228,6 +6241,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->hostlabel.c[0]          = 0;
 	m->nicelabel.c[0]          = 0;
 	m->hostname.c[0]           = 0;
+	m->HIHardware.c[0]         = 0;
+	m->HISoftware.c[0]         = 0;
 	m->ResourceRecords         = mDNSNULL;
 	m->CurrentRecord           = mDNSNULL;
 	m->HostInterfaces          = mDNSNULL;
