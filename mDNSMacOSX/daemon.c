@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.255  2005/03/09 00:48:43  cheshire
+<rdar://problem/4015157> QU packets getting sent too early on wake from sleep
+Move "m->p->NetworkChanged = 0;" line from caller to callee
+
 Revision 1.254  2005/03/03 04:34:19  cheshire
 <rdar://problem/4025973> Bonjour name conflict dialog appears during MacBuddy
 
@@ -2396,7 +2400,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	// mDNS_Execute() generates packets, including multicasts that are looped back to ourself.
 	// If we call mDNS_Execute() first, and generate packets, and then call mDNSMacOSXNetworkChanged() immediately afterwards
 	// we then systematically lose our own looped-back packets.
-	if (m->p->NetworkChanged && now - m->p->NetworkChanged >= 0) { m->p->NetworkChanged = 0; mDNSMacOSXNetworkChanged(m); }
+	if (m->p->NetworkChanged && now - m->p->NetworkChanged >= 0) mDNSMacOSXNetworkChanged(m);
 
 	// 2. Call mDNS_Execute() to let mDNSCore do what it needs to do
 	mDNSs32 nextevent = mDNS_Execute(m);

@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.308  2005/03/09 00:48:44  cheshire
+<rdar://problem/4015157> QU packets getting sent too early on wake from sleep
+Move "m->p->NetworkChanged = 0;" line from caller to callee
+
 Revision 1.307  2005/03/03 03:12:02  cheshire
 Add comment about mDNSMacOSXSystemBuildNumber()
 
@@ -3063,6 +3067,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
    {
 	LogOperation("***   Network Configuration Change   ***");
+	m->p->NetworkChanged = 0;		// If we received a network change event and deferred processing, we're now dealing with it
 	mDNSs32 utc = mDNSPlatformUTC();
 	MarkAllInterfacesInactive(m, utc);
 	UpdateInterfaceList(m, utc);
@@ -3172,26 +3177,26 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	(void)service;    // Parameter not used
 	switch(messageType)
 		{
-		case kIOMessageCanSystemPowerOff:		debugf("PowerChanged kIOMessageCanSystemPowerOff (no action)");							break; // E0000240
-		case kIOMessageSystemWillPowerOff:		debugf("PowerChanged kIOMessageSystemWillPowerOff");
-												mDNSCoreMachineSleep(m, true); mDNSMacOSXNetworkChanged(m);								break; // E0000250
-		case kIOMessageSystemWillNotPowerOff:	debugf("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");						break; // E0000260
-		case kIOMessageCanSystemSleep:			debugf("PowerChanged kIOMessageCanSystemSleep (no action)");							break; // E0000270
-		case kIOMessageSystemWillSleep:			debugf("PowerChanged kIOMessageSystemWillSleep");
-												mDNSCoreMachineSleep(m, true); mDNSMacOSXNetworkChanged(m);								break; // E0000280
-		case kIOMessageSystemWillNotSleep:		debugf("PowerChanged kIOMessageSystemWillNotSleep (no action)");						break; // E0000290
-		case kIOMessageSystemHasPoweredOn:		debugf("PowerChanged kIOMessageSystemHasPoweredOn");
+		case kIOMessageCanSystemPowerOff:		debugf      ("PowerChanged kIOMessageCanSystemPowerOff (no action)");				break; // E0000240
+		case kIOMessageSystemWillPowerOff:		LogOperation("PowerChanged kIOMessageSystemWillPowerOff");
+												mDNSCoreMachineSleep(m, true); mDNSMacOSXNetworkChanged(m);							break; // E0000250
+		case kIOMessageSystemWillNotPowerOff:	debugf      ("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");			break; // E0000260
+		case kIOMessageCanSystemSleep:			debugf      ("PowerChanged kIOMessageCanSystemSleep (no action)");					break; // E0000270
+		case kIOMessageSystemWillSleep:			LogOperation("PowerChanged kIOMessageSystemWillSleep");
+												mDNSCoreMachineSleep(m, true); mDNSMacOSXNetworkChanged(m);							break; // E0000280
+		case kIOMessageSystemWillNotSleep:		debugf      ("PowerChanged kIOMessageSystemWillNotSleep (no action)");				break; // E0000290
+		case kIOMessageSystemHasPoweredOn:		LogOperation("PowerChanged kIOMessageSystemHasPoweredOn");
 												// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
 												if (m->SleepState) mDNSCoreMachineSleep(m, false);
 												// Just to be safe, also make sure our interface list is fully up to date, in case we
 												// haven't yet received the System Configuration Framework "network changed" event that
 												// we expect to receive some time shortly after the kIOMessageSystemWillPowerOn message
-												mDNSMacOSXNetworkChanged(m);															break; // E0000300
-		case kIOMessageSystemWillRestart:		debugf("PowerChanged kIOMessageSystemWillRestart (no action)");							break; // E0000310
-		case kIOMessageSystemWillPowerOn:		debugf("PowerChanged kIOMessageSystemWillPowerOn");
+												mDNSMacOSXNetworkChanged(m);														break; // E0000300
+		case kIOMessageSystemWillRestart:		debugf      ("PowerChanged kIOMessageSystemWillRestart (no action)");				break; // E0000310
+		case kIOMessageSystemWillPowerOn:		LogOperation("PowerChanged kIOMessageSystemWillPowerOn");
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
-												mDNSMacOSXNetworkChanged(m); mDNSCoreMachineSleep(m, false);							break; // E0000320
-		default:								debugf("PowerChanged unknown message %X", messageType);									break;
+												mDNSMacOSXNetworkChanged(m); mDNSCoreMachineSleep(m, false);						break; // E0000320
+		default:								LogOperation("PowerChanged unknown message %X", messageType);						break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
 	}
