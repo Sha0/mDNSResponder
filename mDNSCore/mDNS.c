@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.124  2003/05/22 01:41:50  cheshire
+DiscardDeregistrations doesn't need InterfaceID parameter
+
 Revision 1.123  2003/05/22 01:38:55  cheshire
 Change bracketing of #pragma mark
 
@@ -2267,7 +2270,7 @@ mDNSlocal void CompleteDeregistration(mDNS *const m, ResourceRecord *rr)
 // NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSInterfaceID InterfaceID)
+mDNSlocal void DiscardDeregistrations(mDNS *const m)
 	{
 	if (m->CurrentRecord) debugf("DiscardDeregistrations ERROR m->CurrentRecord already set");
 	m->CurrentRecord = m->ResourceRecords;
@@ -2276,8 +2279,7 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m, mDNSInterfaceID InterfaceID
 		{
 		ResourceRecord *rr = m->CurrentRecord;
 		m->CurrentRecord = rr->next;
-		if (rr->RecordType == kDNSRecordTypeDeregistering &&
-			(InterfaceID == mDNSInterface_Any || InterfaceID == rr->InterfaceID))
+		if (rr->RecordType == kDNSRecordTypeDeregistering)
 				CompleteDeregistration(m, rr);
 		}
 	}
@@ -3302,7 +3304,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			// If the platform code is currently non-operational,
 			// then we'll just complete deregistrations immediately,
 			// without waiting for the goodbye packet to be sent
-			DiscardDeregistrations(m, mDNSInterface_Any);
+			DiscardDeregistrations(m);
 			didwork |= 0x08;
 			}
 		else if (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0)
@@ -5268,7 +5270,7 @@ extern void mDNS_Close(mDNS *const m)
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError)
-		DiscardDeregistrations(m, mDNSInterface_Any);
+		DiscardDeregistrations(m);
 	else
 		while (m->ResourceRecords)
 			SendResponses(m);
