@@ -205,7 +205,6 @@ int main()
 	err = mDNS_Init(&m, &p, mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
 		mDNS_Init_AdvertiseLocalAddresses, mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (err) return(err);
-	mDNS_OS9Exec(&m);
 
 	while (!YieldSomeTime(35))
 		{
@@ -217,7 +216,6 @@ int main()
 			DoneSetup = true;
 			printf("\nListening for mDNS queries...\n");
 			mDNSResponderTestSetup(&m);
-			mDNS_OS9Exec(&m);
 			}
 		}
 	

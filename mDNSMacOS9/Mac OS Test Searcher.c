@@ -58,7 +58,7 @@ static void PrintServiceInfo(SearcherServices *services)
 
 		if (!services->headerPrinted)
 			{
-			printf("%-50s Type             Domain         IP Address       Port Info\n", "Name");
+			printf("%-55s Type             Domain         IP Address       Port Info\n", "Name");
 			services->headerPrinted = true;
 			}
 
@@ -66,14 +66,14 @@ static void PrintServiceInfo(SearcherServices *services)
 			{
 			char c_dom[256];
 			ConvertDomainNameToCString(&s->name, c_dom);
-			if (ls->add) printf("%-50s available for browsing\n", c_dom);
-			else         printf("%-50s no longer available for browsing\n", c_dom);
+			if (ls->add) printf("%-55s available for browsing\n", c_dom);
+			else         printf("%-55s no longer available for browsing\n", c_dom);
 			}
 		else
 			{
 			domainlabel name;
 			domainname type, domain;
-			UInt16 port = (UInt16)s->port.b[0] << 8 | s->port.b[1];
+			UInt16 port = (UInt16)((UInt16)s->port.b[0] << 8 | s->port.b[1]);
 			char c_name[64], c_type[256], c_dom[256], c_ip[20];
 			
 			DeconstructServiceName(&s->name, &name, &type, &domain);
@@ -82,7 +82,7 @@ static void PrintServiceInfo(SearcherServices *services)
 			ConvertDomainNameToCString(&domain, c_dom);
 			sprintf(c_ip, "%d.%d.%d.%d", s->ip.addr.ipv4.b[0], s->ip.addr.ipv4.b[1], s->ip.addr.ipv4.b[2], s->ip.addr.ipv4.b[3]);
 
-			printf("%-50s %-16s %-14s ", c_name, c_type, c_dom);
+			printf("%-55s %-16s %-14s ", c_name, c_type, c_dom);
 			if (ls->add) printf("%-15s %5d %#s\n", c_ip, port, s->TXTinfo);
 			else         printf("Removed\n");
 			}
@@ -205,7 +205,6 @@ int main()
 	err = mDNS_Init(&mDNSStorage, &PlatformSupportStorage, rrcachestorage, RR_CACHE_SIZE,
 		mDNS_Init_DontAdvertiseLocalAddresses, mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
 	if (err) return(err);
-	mDNS_OS9Exec(&mDNSStorage);
 
 	services.serviceinfolist.fHead = NULL;
 	services.headerPrinted         = false;
@@ -227,7 +226,6 @@ int main()
 			if (err) break;
 			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, mDNSInterface_Any, FoundDomain, &services);
 			if (err) break;
-			mDNS_OS9Exec(&mDNSStorage);
 			}
 
 		if (services.serviceinfolist.fHead)

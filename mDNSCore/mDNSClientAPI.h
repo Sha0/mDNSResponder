@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.44  2003/04/26 02:41:56  cheshire
+<rdar://problem/3241281> Change timenow from a local variable to a structure member
+
 Revision 1.43  2003/04/25 01:45:56  cheshire
 <rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
 
@@ -582,6 +585,8 @@ struct mDNS_struct
 	void         *MainContext;
 
 	mDNSu32 mDNS_busy;				// For debugging: To catch and report locking failures
+	mDNSu32 mDNS_reentrancy;		// Incremented when calling a client callback
+	mDNSs32 timenow;				// The time that this particular activation of the mDNS code started
 	mDNSs32 NextScheduledEvent;
 
 	mDNSu8 lock_rrcache;			// For debugging: Set at times when these lists may not be modified

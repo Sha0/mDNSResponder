@@ -67,7 +67,7 @@ mDNSexport void debugf_(const char *format, ...)
 	unsigned char buffer[256];
     va_list ptr;
 	va_start(ptr,format);
-	buffer[0] = mDNS_vsprintf((char*)buffer+1, format, ptr);
+	buffer[0] = (unsigned char)mDNS_vsprintf((char*)buffer+1, format, ptr);
 	va_end(ptr);
 #if __ONLYSYSTEMTASK__
 	buffer[1+buffer[0]] = 0;
@@ -78,6 +78,22 @@ mDNSexport void debugf_(const char *format, ...)
 #endif
 	}
 #endif
+
+mDNSexport void LogMsg(const char *format, ...)
+	{
+	unsigned char buffer[256];
+    va_list ptr;
+	va_start(ptr,format);
+	buffer[0] = (unsigned char)mDNS_vsprintf((char*)buffer+1, format, ptr);
+	va_end(ptr);
+#if __ONLYSYSTEMTASK__
+	buffer[1+buffer[0]] = 0;
+	fprintf(stderr, "%s\n", buffer+1);
+	fflush(stderr);
+#else
+	DebugStr(buffer);
+#endif
+	}
 
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, mDNSIPPort srcPort, const mDNSAddr *dst, mDNSIPPort dstPort)
@@ -214,7 +230,6 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 		case T_DATA:
 			//debugf("T_DATA");
 			while (readpacket(m) == kOTNoError) continue;	// Read packets until we run out
-			mDNS_OS9Exec(m);
 			break;
 
 		case kOTProviderWillClose:
@@ -249,9 +264,14 @@ mDNSlocal pascal void CallmDNSNotifier(void *contextPtr, OTEventCode code, OTRes
 	{
 	mDNS *const m = (mDNS *const)contextPtr;
 	if (!m) debugf("mDNSNotifier FATAL ERROR! No context");
+	
+	// Increment m->p->nesting to indicate to mDNSPlatformLock that there's no need
+	// to call OTEnterNotifier() (because we're already in OTNotifier context)
+	if (m->p->nesting) DebugStr("\pCallmDNSNotifier ERROR! OTEnterNotifier is supposed to suppress notifier callbacks");
 	m->p->nesting++;
 	mDNSNotifier(contextPtr, code, result, cookie);
 	m->p->nesting--;
+	ScheduleNextTimerCallback(m);
 	}
 
 #endif
@@ -367,10 +387,13 @@ static pascal void mDNSTimerTask(void *arg)
 	ONLYSYSTEMTASKevent = true;
 #else
 	mDNS *const m = (mDNS *const)arg;
+	// Increment m->p->nesting to indicate to mDNSPlatformLock that there's no need
+	// to call OTEnterNotifier() (because we're already in OTNotifier context)
 	if (m->p->nesting) DebugStr("\pmDNSTimerTask ERROR! OTEnterNotifier is supposed to suppress timer callbacks too");
 	m->p->nesting++;
-	mDNS_OS9Exec(m);
+	mDNS_Execute(m);
 	m->p->nesting--;
+	ScheduleNextTimerCallback(m);
 #endif
 	}
 
@@ -437,7 +460,7 @@ mDNSexport void mDNSPlatformIdle(mDNS *const m)
 	if (ONLYSYSTEMTASKevent)
 		{
 		ONLYSYSTEMTASKevent = false;
-		mDNS_OS9Exec(m);
+		mDNS_Execute(m);
 		}
 #endif
 
@@ -464,16 +487,6 @@ mDNSexport void mDNSPlatformIdle(mDNS *const m)
 
 	}
 
-mDNSexport void mDNS_OS9Exec(mDNS *const m)
-	{
-	SInt32 interval = mDNS_Execute(m) - mDNSPlatformTimeNow();
-	if      (interval < 0)                 interval = 0;
-	else if (interval > 0x7FFFFFFF / 1000) interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
-	else                                   interval = interval * 1000 / mDNSPlatformOneSecond;
-	//debugf("mDNSPlatformScheduleTask Interval %d", interval);
-	OTScheduleTimerTask(m->p->OTTimerTask, (OTTimeout)interval);
-	}
-
 mDNSexport void    mDNSPlatformLock(const mDNS *const m)
 	{
 	if (!m) { DebugStr("\pmDNSPlatformLock m NULL!"); return; }
@@ -483,7 +496,17 @@ mDNSexport void    mDNSPlatformLock(const mDNS *const m)
 	// If we try to call OTEnterNotifier and fail because we're already running at
 	// Notifier context, then make sure we don't do the matching OTLeaveNotifier() on exit.
 	if (m->p->nesting || OTEnterNotifier(m->p->ep) == false) m->p->nesting++;
-	if (m->p->nesting) debugf("mDNSPlatformLock m->p->nesting %d", m->p->nesting);
+	}
+
+mDNSlocal void ScheduleNextTimerCallback(const mDNS *const m)
+	{
+	SInt32 interval;
+	interval = m->NextScheduledEvent - mDNSPlatformTimeNow();
+	if      (interval < 0)                 interval = 0;
+	else if (interval > 0x7FFFFFFF / 1000) interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
+	else                                   interval = interval * 1000 / mDNSPlatformOneSecond;
+	//debugf("mDNSPlatformScheduleTask Interval %d", interval);
+	OTScheduleTimerTask(m->p->OTTimerTask, (OTTimeout)interval);
 	}
 
 mDNSexport void    mDNSPlatformUnlock(const mDNS *const m)
@@ -491,10 +514,12 @@ mDNSexport void    mDNSPlatformUnlock(const mDNS *const m)
 	if (!m) { DebugStr("\pmDNSPlatformUnlock m NULL!"); return; }
 	if (!m->p) { DebugStr("\pmDNSPlatformUnlock m->p NULL!"); return; }
 	if (!m->p->ep) { DebugStr("\pmDNSPlatformUnlock m->p->ep NULL!"); return; }
-
-	if (m->p->nesting) debugf("mDNSPlatformUnlock m->p->nesting %d", m->p->nesting);
 	if (m->p->nesting) m->p->nesting--;
-	else OTLeaveNotifier(m->p->ep);
+	else
+		{
+		ScheduleNextTimerCallback(m);
+		OTLeaveNotifier(m->p->ep);
+		}
 	}
 
 mDNSexport void    mDNSPlatformStrCopy(const void *src,       void *dst)             { OTStrCopy((char*)dst, (char*)src); }

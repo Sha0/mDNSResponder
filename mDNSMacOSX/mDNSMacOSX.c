@@ -22,17 +22,18 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.66  2003/04/26 02:41:58  cheshire
+<rdar://problem/3241281> Change timenow from a local variable to a structure member
+
 Revision 1.65  2003/04/26 02:34:01  cheshire
 Add missing mDNSexport
 
 Revision 1.64  2003/04/15 16:48:06  jgraessl
-
 Bug #: 3228833
 Modified code in CFSocket notifier function to read all packets on the socket
 instead of reading only one packet every time the notifier was called.
 
 Revision 1.63  2003/04/15 16:33:50  jgraessl
-
 Bug #: 3221880
 Switched to our own copy of if_indextoname to improve performance.
 
@@ -76,7 +77,6 @@ Revision 1.53  2003/01/29 02:21:23  cheshire
 Return mStatus_Invalid if can't send packet because socket not available
 
 Revision 1.52  2003/01/28 19:39:43  jgraessl
-
 Enabling AAAA over IPv4 support.
 
 Revision 1.51  2003/01/28 05:11:23  cheshire
@@ -89,7 +89,6 @@ Merged changes for the following fixes in to top of tree:
 3124352  announcements sent in pairs, failing chattiness test
 
 Revision 1.49  2002/12/23 22:13:30  jgraessl
-
 Reviewed by: Stuart Cheshire
 Initial IPv6 support for mDNSResponder.
 
