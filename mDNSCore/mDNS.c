@@ -43,6 +43,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.234  2003/07/18 23:52:11  cheshire
+To improve consistency of field naming, global search-and-replace:
+NextProbeTime    -> NextScheduledProbe
+NextResponseTime -> NextScheduledResponse
+
 Revision 1.233  2003/07/18 00:29:59  cheshire
 <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
 
@@ -1886,13 +1891,13 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const ResourceRecord *con
 	{
 	if (rr->RecordType == kDNSRecordTypeUnique)
 		{
-		if (m->NextProbeTime - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
-			m->NextProbeTime = (rr->LastAPTime + rr->ThisAPInterval);
+		if (m->NextScheduledProbe - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
+			m->NextScheduledProbe = (rr->LastAPTime + rr->ThisAPInterval);
 		}
 	else if (rr->AnnounceCount && ResourceRecordIsValidAnswer(rr))
 		{
-		if (m->NextResponseTime - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
-			m->NextResponseTime = (rr->LastAPTime + rr->ThisAPInterval);
+		if (m->NextScheduledResponse - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
+			m->NextScheduledResponse = (rr->LastAPTime + rr->ThisAPInterval);
 		}
 	}
 
@@ -2201,7 +2206,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 		rr->rroriginalttl   = 0;
 		rr->rrremainingttl  = 0;
 		rr->ImmedAnswer     = mDNSInterfaceMark;
-		m->NextResponseTime = m->timenow;
+		m->NextScheduledResponse = m->timenow;
 		}
 	else
 		{
@@ -2868,7 +2873,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 	mDNSs32 maxExistingAnnounceInterval = 0;
 	const NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 
-	m->NextResponseTime = m->timenow + 0x78000000;
+	m->NextScheduledResponse = m->timenow + 0x78000000;
 
 	// ***
 	// *** 1. Setup: Set the SendRNow and ImmedAnswer fields to indicate which interface(s) the records need to be sent on
@@ -3093,7 +3098,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->v6Requester = zerov6Addr;
 			}
 		}
-	verbosedebugf("SendResponses: Next in %d ticks", m->NextResponseTime - m->timenow);
+	verbosedebugf("SendResponses: Next in %d ticks", m->NextScheduledResponse - m->timenow);
 	}
 
 // Note: MUST call SetNextCacheCheckTime any time we change:
@@ -3308,9 +3313,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 		}
 
 	// 2. Scan our authoritative RR list to see what probes we might need to send
-	if (m->timenow - m->NextProbeTime >= 0)
+	if (m->timenow - m->NextScheduledProbe >= 0)
 		{
-		m->NextProbeTime = m->timenow + 0x78000000;
+		m->NextScheduledProbe = m->timenow + 0x78000000;
 
 		if (m->CurrentRecord) LogMsg("SendQueries:   ERROR m->CurrentRecord already set");
 		m->CurrentRecord = m->ResourceRecords;
@@ -3320,12 +3325,12 @@ mDNSlocal void SendQueries(mDNS *const m)
 			m->CurrentRecord = rr->next;
 			if (rr->RecordType == kDNSRecordTypeUnique)			// For all records that are still probing...
 				{
-				// 1. If it's not reached its probe time, just make sure we update m->NextProbeTime correctly
+				// 1. If it's not reached its probe time, just make sure we update m->NextScheduledProbe correctly
 				if (m->timenow - (rr->LastAPTime + rr->ThisAPInterval) < 0)
 					{
 					SetNextAnnounceProbeTime(m, rr);
 					}
-				// 2. else, if it has reached its probe time, mark it for sending and then update m->NextProbeTime correctly
+				// 2. else, if it has reached its probe time, mark it for sending and then update m->NextScheduledProbe correctly
 				else if (rr->ProbeCount)
 					{
 					// Mark for sending. (If no active interfaces, then don't even try.)
@@ -3334,7 +3339,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					rr->ProbeCount--;
 					SetNextAnnounceProbeTime(m, rr);
 					}
-				// else, if it has now finished probing, move it to state Verified, and update m->NextResponseTime so it will be announced
+				// else, if it has now finished probing, move it to state Verified, and update m->NextScheduledResponse so it will be announced
 				else
 					{
 					ResourceRecord *r2;
@@ -3948,7 +3953,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		if (m->NumFailedProbes && m->timenow - m->ProbeFailTime >= mDNSPlatformOneSecond * 10)
 			{ m->NumFailedProbes = 0; didwork |= 0x02; }
 		
-		// 3. First purge our cache of stale old records
+		// 3. Purge our cache of stale old records
 		// We want to do this before first, before AnswerNewQuestion(), so that
 		// AnswerNewQuestion() only has to deal with real live cache records, not dead expired ones
 		if (m->rrcache_size && m->timenow - m->NextCacheCheck >= 0)
@@ -4000,24 +4005,24 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			m->SuppressSending = 0;
 
 			// 6. Send Query packets. This may cause some probing records to advance to announcing state
-			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextProbeTime >= 0) { SendQueries(m); didwork |= 0x40; }
+			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextScheduledProbe >= 0) { SendQueries(m); didwork |= 0x40; }
 			if (m->timenow - m->NextScheduledQuery >= 0)
 				{
 				LogMsg("mDNS_Execute: SendQueries didn't send all its queries; will try again in one second");
 				m->NextScheduledQuery = m->timenow + mDNSPlatformOneSecond;
 				}
-			if (m->timenow - m->NextProbeTime >= 0)
+			if (m->timenow - m->NextScheduledProbe >= 0)
 				{
 				LogMsg("mDNS_Execute: SendQueries didn't send all its probes; will try again in one second");
-				m->NextProbeTime = m->timenow + mDNSPlatformOneSecond;
+				m->NextScheduledProbe = m->timenow + mDNSPlatformOneSecond;
 				}
 
 			// 7. Send Response packets, including probing records just advanced to announcing state
-			if (m->timenow - m->NextResponseTime >= 0) { SendResponses(m); didwork |= 0x80; }
-			if (m->timenow - m->NextResponseTime >= 0)
+			if (m->timenow - m->NextScheduledResponse >= 0) { SendResponses(m); didwork |= 0x80; }
+			if (m->timenow - m->NextScheduledResponse >= 0)
 				{
 				LogMsg("mDNS_Execute: SendResponses didn't send all its responses; will try again in one second");
-				m->NextResponseTime = m->timenow + mDNSPlatformOneSecond;
+				m->NextScheduledResponse = m->timenow + mDNSPlatformOneSecond;
 				}
 			}
 	
@@ -4630,13 +4635,13 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			if (rr->ImmedAnswer && rr->ImmedAnswer != InterfaceID)
 				{
 				rr->ImmedAnswer = mDNSInterfaceMark;
-				m->NextResponseTime = m->timenow;
+				m->NextScheduledResponse = m->timenow;
 				debugf("ProcessQuery: %##s (%s) : Will send on all interfaces", rr->name.c, DNSTypeName(rr->rrtype));
 				}
 			else
 				{
 				rr->ImmedAnswer = InterfaceID;			// Record interface to send it on
-				m->NextResponseTime = m->timenow;
+				m->NextScheduledResponse = m->timenow;
 				if (srcaddr->type == mDNSAddrType_IPv4)
 					{
 					if (mDNSIPv4AddressIsZero(rr->v4Requester)) rr->v4Requester = srcaddr->ip.v4;
@@ -4676,7 +4681,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			// If two clients on different interfaces do queries that invoke the same optional additional answer,
 			// then the earlier client is out of luck
 			rr->ImmedAdditional = InterfaceID;
-			// No need to set m->NextResponseTime here
+			// No need to set m->NextScheduledResponse here
 			// We'll send these additional records when we send them, or not, as the case may be
 			}
 		}
@@ -4868,8 +4873,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						}
 					else
 						{
-						if      (rr->ImmedAnswer == mDNSNULL)    { rr->ImmedAnswer = InterfaceID;       m->NextResponseTime = m->timenow; }
-						else if (rr->ImmedAnswer != InterfaceID) { rr->ImmedAnswer = mDNSInterfaceMark; m->NextResponseTime = m->timenow; }
+						if      (rr->ImmedAnswer == mDNSNULL)    { rr->ImmedAnswer = InterfaceID;       m->NextScheduledResponse = m->timenow; }
+						else if (rr->ImmedAnswer != InterfaceID) { rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
 						}
 					}
 				else
@@ -6212,8 +6217,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SuppressSending         = timenow;
 	m->NextCacheCheck          = timenow + 0x78000000;
 	m->NextScheduledQuery      = timenow + 0x78000000;
-	m->NextProbeTime           = timenow + 0x78000000;
-	m->NextResponseTime        = timenow + 0x78000000;
+	m->NextScheduledProbe      = timenow + 0x78000000;
+	m->NextScheduledResponse   = timenow + 0x78000000;
 	m->ExpectUnicastResponse   = timenow + 0x78000000;
 	m->SendDeregistrations     = mDNSfalse;
 	m->SendImmediateAnswers    = mDNSfalse;

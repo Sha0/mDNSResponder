@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.84  2003/07/18 23:52:12  cheshire
+To improve consistency of field naming, global search-and-replace:
+NextProbeTime    -> NextScheduledProbe
+NextResponseTime -> NextScheduledResponse
+
 Revision 1.83  2003/07/18 00:29:59  cheshire
 <rdar://problem/3268878> Remove mDNSResponder version from packet header and use HINFO record instead
 
@@ -785,8 +790,8 @@ struct mDNS_struct
 	mDNSs32  SuppressSending;			// Don't send *any* packets during this time
 	mDNSs32  NextCacheCheck;			// Next time to refresh cache record before it expires
 	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
-	mDNSs32  NextProbeTime;				// Next time to probe for new authoritative record
-	mDNSs32  NextResponseTime;			// Next time to send authoritative record(s) in responses
+	mDNSs32  NextScheduledProbe;		// Next time to probe for new authoritative record
+	mDNSs32  NextScheduledResponse;		// Next time to send authoritative record(s) in responses
 	mDNSs32  ExpectUnicastResponse;		// Set when we send a query with the kDNSQClass_UnicastResponse bit set
 	mDNSBool SendDeregistrations;		// Set if we need to send deregistrations (immediately)
 	mDNSBool SendImmediateAnswers;		// Set if we need to send answers (immediately -- or as soon as SuppressSending clears)
