@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.169  2004/08/18 17:35:41  ksekar
+<rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
+
 Revision 1.168  2004/08/17 03:16:24  ksekar
 Fixed checkin 1.166 - enumeration type changed for wrong invocation of mDNS_GetDomains
 
@@ -561,6 +564,8 @@ static mDNSBool RouterInitialized = mDNSfalse;
 static SearchListElem *SearchList = NULL;    // where we search for _browse domains
 static DNSQuestion DefBrowseDomainQ;         // our local enumeration query for _browse domains
 static DNameListElem *DefBrowseList = NULL;  // cache of answers to above query (where we search for empty string browses)
+
+static mDNSBool LegacyNATInitialized = mDNSfalse;
 
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
 #define LH_KEYCHAIN_DESC "Lighthouse Shared Secret"
@@ -1454,8 +1459,13 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 				i->ifinfo.McastTxRx = txrx;
 				i->Exists = 2; // State change; need to deregister and reregister this interface
 				}
+			if (IsPrivateV4Addr(&i->ifinfo.ip) && !LegacyNATInitialized)
+				{
+				mStatus err = LegacyNATInit();
+				if (err)  LogMsg("ERROR: LegacyNATInit\n");				
+				LegacyNATInitialized = mDNStrue;
+				}
 			}
-
 	if (InfoSocket >= 0) close(InfoSocket);
 	return(err);
 	}
@@ -1895,6 +1905,9 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	debugf("***   Network Configuration Change   ***");
 
 	mDNS *const m = (mDNS *const)context;
+
+	if (LegacyNATInitialized) { LegacyNATDestroy(); LegacyNATInitialized = mDNSfalse; }
+	
 	MarkAllInterfacesInactive(m);
 	UpdateInterfaceList(m);
 	ClearInactiveInterfaces(m);

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.190  2004/08/18 17:35:41  ksekar
+<rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
+
 Revision 1.189  2004/08/14 03:22:41  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -1515,6 +1518,7 @@ typedef enum
 	NATState_Init,
 	NATState_Request,
 	NATState_Established,
+    NATState_Legacy,
 	NATState_Error,
 	NATState_Refresh
 	} NATState_t;
@@ -1961,6 +1965,7 @@ extern char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, cha
 #define GetRRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
+extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 private addresses
 
 // ***************************************************************************
 #if 0
@@ -2113,6 +2118,18 @@ extern DNameListElem *mDNSPlatformGetRegDomainList(void);
 extern DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig);
 extern void mDNS_FreeDNameList(DNameListElem *list);
 
+#ifdef _LEGACY_NAT_TRAVERSAL_
+// Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
+
+#define DYN_PORT_MIN 49152 // ephemeral port range
+#define DYN_PORT_MAX 65535
+#define LEGACY_NATMAP_MAX_TRIES 4 // if our desired mapping is taken, how many times we try mapping to a random port
+
+extern mStatus LNT_GetPublicIP(mDNSOpaque32 *ip);
+extern mStatus LNT_MapPort(mDNSIPPort priv, mDNSIPPort pub, mDNSBool tcp);
+extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
+#endif // _LEGACY_NAT_TRAVERSAL_
+	
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
 // mDNS_SetFQDNs() is called once on startup (typically from mDNSPlatformInit())

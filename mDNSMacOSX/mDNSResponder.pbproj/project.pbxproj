@@ -32,7 +32,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OPTIMIZATION_CFLAGS = "-O0";
-				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DMDNS_DEBUGMSGS=1 -DmDNSResponderVersion=$(MVERS)";
+				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DMDNS_DEBUGMSGS=1 -DmDNSResponderVersion=$(MVERS) -D_LEGACY_NAT_TRAVERSAL_";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder.debug;
@@ -81,6 +81,7 @@
 				7F18A9FB0587CEF6001880B3,
 				7F461DB7062DBF2900672BF3,
 				00AD62B1032D799A0CCA2C71,
+				7FC8F9D606D14E66007E879D,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -270,6 +271,7 @@
 		};
 		08FB7795FE84155DC02AAC07 = {
 			children = (
+				7FC8F9D406D14E66007E879D,
 				7F461DB5062DBF2900672BF3,
 				F525E72804AA167501F1CF4D,
 				F5E11B5A04A28126019798ED,
@@ -323,7 +325,7 @@
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS)";
+				OTHER_CFLAGS = "-no-cpp-precomp -D__MACOSX__ -DmDNSResponderVersion=$(MVERS) -D_LEGACY_NAT_TRAVERSAL_";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder;
@@ -364,6 +366,7 @@
 				7F18A9F90587CEF6001880B3,
 				7F461DB6062DBF2900672BF3,
 				6575FBEE022EAF7200000109,
+				7FC8F9D506D14E66007E879D,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -747,6 +750,24 @@
 		};
 		7F869687066EE02400D2A2DC = {
 			fileRef = 7F869685066EE02400D2A2DC;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7FC8F9D406D14E66007E879D = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			path = LegacyNATTraversal.c;
+			refType = 2;
+		};
+		7FC8F9D506D14E66007E879D = {
+			fileRef = 7FC8F9D406D14E66007E879D;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7FC8F9D606D14E66007E879D = {
+			fileRef = 7FC8F9D406D14E66007E879D;
 			isa = PBXBuildFile;
 			settings = {
 			};

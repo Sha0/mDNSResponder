@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.46  2004/08/18 17:35:40  ksekar
+<rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
+
 Revision 1.45  2004/08/15 18:26:00  cheshire
 Don't use strcpy() on "struct domainname" objects; use AssignDomainName() instead
 (A "struct domainname" is a collection of packed pascal strings, not a C string.)
@@ -227,6 +230,19 @@ mDNSexport void mDNS_FreeDNameList(DNameListElem *list)
 #pragma mark -
 #pragma mark - General Utility Functions
 #endif
+
+// return true for RFC1918 private addresses
+mDNSexport mDNSBool IsPrivateV4Addr(mDNSAddr *addr)
+	{
+	mDNSu8 *b;
+
+	if (addr->type != mDNSAddrType_IPv4) return mDNSfalse;
+	b = addr->ip.v4.b;
+		
+	return ((b[0] == 10) ||                              // 10/8 prefix
+			(b[0] == 172 && b[1] > 15 && b[1] < 32) ||   // 172.16/12 
+			(b[0] == 192 && b[1] == 168));               // 192.168/16
+	}
 
 mDNSexport const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf)
 	{

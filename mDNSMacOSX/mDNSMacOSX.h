@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.39  2004/08/18 17:35:41  ksekar
+<rdar://problem/3651443>: Feature #9586: Need support for Legacy NAT gateways
+
 Revision 1.38  2004/07/13 21:24:25  rpantos
 Fix for <rdar://problem/3701120>.
 
@@ -213,6 +216,10 @@ struct mDNS_PlatformSupport_struct
 extern mDNSBool mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
+
+// Legacy NAT Traversal Support Setup/Teardown
+extern int LegacyNATDestroy(void);
+extern int LegacyNATInit(void);
 
 #ifdef  __cplusplus
     }
