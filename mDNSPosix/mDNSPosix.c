@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.7  2003/03/13 03:46:21  cheshire
+Fixes to make the code build on Linux
+
 Revision 1.6  2003/03/08 00:35:56  cheshire
 Switched to using new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
@@ -181,7 +184,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	if (dst->type == mDNSAddrType_IPv4)
 		{
 		struct sockaddr_in *sin = (struct sockaddr_in*)&to;
+#if HAVE_SOCKADDR_SA_LEN
 		sin->sin_len            = sizeof(*sin);
+#endif
 		sin->sin_family         = AF_INET;
 		sin->sin_port           = dstPort.NotAnInteger;
 		sin->sin_addr.s_addr    = dst->addr.ipv4.NotAnInteger;
@@ -202,11 +207,11 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const DNSMessage *co
 	err = 0;
 	thisIntf = (PosixNetworkInterface *)(InterfaceID);
 	if (dst->type == mDNSAddrType_IPv4)
-		err = sendto(thisIntf->multicastSocket, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, to.ss_len);
+		err = sendto(thisIntf->multicastSocket, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, GET_SA_LEN(to));
 
 #ifdef mDNSIPv6Support
 	else if (dst->type == mDNSAddrType_IPv6)
-		err = sendto(thisIntf->multicastSocketv6, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, to.ss_len);
+		err = sendto(thisIntf->multicastSocketv6, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, GET_SA_LEN(to));
 #endif
 
 	if (err > 0) err = 0;
@@ -870,10 +875,10 @@ mDNSexport void mDNSPosixGetFDSet(mDNS *const m, int *nfds, fd_set *readfds, str
 
 mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 	{
+	PosixNetworkInterface *info;
 	assert(m       != NULL);
 	assert(readfds != NULL);
-
-	PosixNetworkInterface *info = (PosixNetworkInterface *)(m->HostInterfaces);
+	info = (PosixNetworkInterface *)(m->HostInterfaces);
 	while (info)
 		{
 		if (info->multicastSocket != -1 && FD_ISSET(info->multicastSocket, readfds))

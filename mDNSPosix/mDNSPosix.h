@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.6  2003/03/13 03:46:21  cheshire
+Fixes to make the code build on Linux
+
 Revision 1.5  2003/03/08 00:35:56  cheshire
 Switched to using new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
@@ -90,7 +93,9 @@ First checkin
 
 #include <sys/time.h>
 
+#if HAVE_IPV6
 #define mDNSIPv6Support 1
+#endif
 
 #ifdef  __cplusplus
     extern "C" {

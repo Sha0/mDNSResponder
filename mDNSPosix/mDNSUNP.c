@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.6  2003/03/13 03:46:21  cheshire
+Fixes to make the code build on Linux
+
 Revision 1.5  2003/02/07 03:02:02  cheshire
 Submitted by: Mitsutaka Watanabe
 The code saying "index += 1;" was effectively making up random interface index values.
@@ -117,8 +120,6 @@ First checkin
 #endif
 
 
-#define max(a,b)    ((a) > (b) ? (a) : (b))
-
 struct ifi_info *get_ifi_info(int family, int doaliases)
 {
     int                 junk;
@@ -169,21 +170,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     for (ptr = buf; ptr < buf + ifc.ifc_len; ) {
         ifr = (struct ifreq *) ptr;
 
-#ifdef  HAVE_SOCKADDR_SA_LEN
-        len = max(sizeof(struct sockaddr), ifr->ifr_addr.sa_len);
-#else
-        switch (ifr->ifr_addr.sa_family) {
-#ifdef  IPV6
-        case AF_INET6:  
-            len = sizeof(struct sockaddr_in6);
-            break;
-#endif
-        case AF_INET:   
-        default:    
-            len = sizeof(struct sockaddr);
-            break;
-        }
-#endif  /* HAVE_SOCKADDR_SA_LEN */
+		len = GET_SA_LEN(ifr->ifr_addr);
         ptr += sizeof(ifr->ifr_name) + len; /* for next one in buffer */
     
 //        fprintf(stderr, "intf %d name=%s AF=%d\n", index, ifr->ifr_name, ifr->ifr_addr.sa_family);
@@ -264,7 +251,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
             }
             break;
 
-#ifdef AF_INET6
+#if defined(AF_INET6) && defined(HAVE_IPV6)
         case AF_INET6:
             sinptr6 = (struct sockaddr_in6 *) &ifr->ifr_addr;
             if (ifi->ifi_addr == NULL) {
@@ -439,7 +426,7 @@ struct in_pktinfo
         }
 #endif
 
-#ifdef	IPV6_PKTINFO
+#if defined(IPV6_PKTINFO) && defined(HAVE_IPV6)
         if (cmptr->cmsg_level == IPPROTO_IPV6 && 
             cmptr->cmsg_type == IPV6_PKTINFO) {
             struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&pktp->ipi_addr;

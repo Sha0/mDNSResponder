@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.h,v $
+Revision 1.5  2003/03/13 03:46:21  cheshire
+Fixes to make the code build on Linux
+
 Revision 1.4  2002/12/23 22:13:32  jgraessl
 
 Reviewed by: Stuart Cheshire
@@ -96,6 +99,20 @@ First checkin
 
 #if !defined(HAVE_SOCKLEN_T)
     typedef unsigned int socklen_t;
+#endif
+
+#if !defined(_SS_MAXSIZE)
+    #define sockaddr_storage sockaddr
+#endif
+
+#if HAVE_SOCKADDR_SA_LEN
+#define GET_SA_LEN(X) (sizeof(struct sockaddr) > ((struct sockaddr*)&(X))->sa_len ? \
+                       sizeof(struct sockaddr) : ((struct sockaddr*)&(X))->sa_len   )
+#elif mDNSIPv6Support
+#define GET_SA_LEN(X) (((struct sockaddr*)&(X))->sa_family == AF_INET  ? sizeof(struct sockaddr_in) : \
+                       ((struct sockaddr*)&(X))->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr))
+#else
+#define GET_SA_LEN(X) ((X).sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr))
 #endif
 
 #define IFI_NAME    16          /* same as IFNAMSIZ in <net/if.h> */
