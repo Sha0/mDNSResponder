@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.151  2004/05/17 21:46:34  cheshire
+<rdar://problem/3616426>: When interface is turned off, browse "remove" events are delivered with interface index zero
+Take care to correctly update InterfaceIDs when a dormant interface comes back to life
+
 Revision 1.150  2004/05/13 04:54:20  ksekar
 Unified list copy/free code.  Added symetric list for
 
@@ -1377,7 +1381,7 @@ mDNSlocal void SetupActiveInterfaces(mDNS *const m)
 			{
 			NetworkInterfaceInfo *n = &i->ifinfo;
 			NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
-			if (!primary) primary = i;	// If first member of this set, it's its own primary
+			if (!primary) LogMsg("SetupActiveInterfaces ERROR! SearchForInterfaceByName didn't find %s", i->ifa_name);
 	
 			if (n->InterfaceID && n->InterfaceID != (mDNSInterfaceID)primary)	// Sanity check
 				{
@@ -1447,13 +1451,13 @@ mDNSlocal void ClearInactiveInterfaces(mDNS *const m)
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
-		// 1. If this interface is no longer active, or it's InterfaceID is changing, deregister it
-		NetworkInterfaceInfoOSX *primary = (NetworkInterfaceInfoOSX *)(i->ifinfo.InterfaceID);
+		// 1. If this interface is no longer active, or its InterfaceID is changing, deregister it
+		NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
 		if (i->ifinfo.InterfaceID)
-			if (i->Exists == 0 || i->Exists == 2 || (primary && !primary->Exists))
+			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
 				LogOperation("ClearInactiveInterfaces: Deregistering %s(%lu) InterfaceID %p %#a%s",
-					i->ifa_name, i->scope_id, primary, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
+					i->ifa_name, i->scope_id, i->ifinfo.InterfaceID, &i->ifinfo.ip, i->ifinfo.InterfaceActive ? " (Primary)" : "");
 				mDNS_DeregisterInterface(m, &i->ifinfo);
 				i->ifinfo.InterfaceID = mDNSNULL;
 				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
