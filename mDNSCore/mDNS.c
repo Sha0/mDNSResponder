@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.326  2003/11/17 22:27:02  cheshire
+Another fix from ramaprasad.kr@hp.com: Improve reply delay computation
+on platforms that have native clock rates below fifty ticks per second.
+
 Revision 1.325  2003/11/17 20:41:44  cheshire
 Fix some missing mDNS_Lock(m)/mDNS_Unlock(m) calls.
 
@@ -5265,7 +5269,12 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	if (delayresponse && !m->SuppressSending)
 		{
 		// Pick a random delay between 20ms and 120ms.
-		m->SuppressSending = m->timenow + (mDNSPlatformOneSecond*2 + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*10)) / 100;
+		// We first compute a random value in the range 1-6 seconds (an integer value with resolution determined by the platform clock rate)
+		// and then divide that by 50 to get a value in the range 20ms-120ms.
+		// The +49 is to ensure we round up, not down, to ensure that even on platforms where the native clock rate is less than
+		// fifty ticks per second, we still guarantee that the final calculated delay is at least one platform tick.
+		// We want to make sure we don't ever allow the delay to be zero ticks, because if that happens we'll fail the Rendezvous Conformance Test.
+		m->SuppressSending = m->timenow + (mDNSPlatformOneSecond + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*5) + 49) / 50;
 		if (m->SuppressSending == 0) m->SuppressSending = 1;
 		}
 
