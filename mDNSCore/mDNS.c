@@ -44,6 +44,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.342  2003/12/20 01:34:28  cheshire
+<rdar://problem/3515876>: Error putting additional records into packets
+Another fix from Rampi: responseptr needs to be updated inside the "for" loop,
+after every record, not once at the end.
+
 Revision 1.341  2003/12/18 22:56:12  cheshire
 <rdar://problem/3510798>: Reduce syslog messages about ignored spoof packets
 
@@ -2356,10 +2361,10 @@ mDNSlocal void SendResponses(mDNS *const m)
 							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
 						}
 					newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, &rr->resrec);
+					if (newptr) responseptr = newptr;
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					}
 				}
-		if (newptr) responseptr = newptr;
 	
 		if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
 			{
