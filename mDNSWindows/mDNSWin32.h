@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.16  2004/08/05 05:43:01  shersche
+<rdar://problem/3751566> Add HostDescriptionChangedCallback so callers can choose to handle it when mDNSWin32 core detects that the computer description string has changed
+Bug #: 3751566
+
 Revision 1.15  2004/07/26 05:42:50  shersche
 use "Computer Description" for nicename if available, track dynamic changes to "Computer Description"
 
@@ -140,6 +144,16 @@ typedef void (*InterfaceListChangedCallback)(mDNS * const inMDNS);
 
 
 //---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	HostDescriptionChangedCallback
+
+	@abstract	mDNSWin32 core will call out through this function pointer
+				after detecting that the computer description has changed
+*/
+typedef void (*HostDescriptionChangedCallback)(mDNS * const inMDNS);
+//---------------------------------------------------------------------------------------------------------------------------
+
+
+//---------------------------------------------------------------------------------------------------------------------------
 /*!	@struct		mDNS_PlatformSupport_struct
 
 	@abstract	Structure containing platform-specific data.
@@ -164,6 +178,7 @@ struct	mDNS_PlatformSupport_struct
 	DWORD						threadID;
 	IdleThreadCallback			idleThreadCallback;
 	InterfaceListChangedCallback	interfaceListChangedCallback;
+	HostDescriptionChangedCallback	hostDescriptionChangedCallback;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------

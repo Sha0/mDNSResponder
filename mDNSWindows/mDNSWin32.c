@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.46  2004/08/05 05:43:01  shersche
+<rdar://problem/3751566> Add HostDescriptionChangedCallback so callers can choose to handle it when mDNSWin32 core detects that the computer description string has changed
+Bug #: 3751566
+
 Revision 1.45  2004/07/26 22:49:31  ksekar
 <rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
 
@@ -2347,6 +2351,11 @@ mDNSlocal void	ProcessingThreadRegistryChanged( mDNS *inMDNS )
 
 	// redo the names
 	SetupNiceName( inMDNS );
+
+	if (inMDNS->p->hostDescriptionChangedCallback)
+	{
+		inMDNS->p->hostDescriptionChangedCallback(inMDNS);
+	}
 	
 	// and reset the event handler
 	if ((inMDNS->p->regKey != NULL) && (inMDNS->p->regEvent))
