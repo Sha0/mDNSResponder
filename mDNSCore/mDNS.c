@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.322  2003/11/14 19:47:52  cheshire
+Define symbol MAX_ESCAPED_DOMAIN_NAME to indicate recommended buffer size for ConvertDomainNameToCString
+
 Revision 1.321  2003/11/14 19:18:34  cheshire
 Move AssignDomainName macro to mDNSClientAPI.h to that client layers can use it too
 
@@ -1779,12 +1782,7 @@ mDNSexport char *ConvertDomainLabelToCString_withescape(const domainlabel *const
 	return(ptr);												// and return
 	}
 
-// Note, to guarantee that there will be no possible overrun, cstr must be at least 1005 bytes
-// The longest legal domain name is 255 bytes, in the form of three 64-byte labels, one 62-byte label,
-// and the null root label.
-// If every label character has to be escaped as a four-byte escape sequence, the maximum textual
-// ascii display of this is 63*4 + 63*4 + 63*4 + 61*4 = 1000 label characters,
-// plus four dots and the null at the end of the C string = 1005
+// Note: To guarantee that there will be no possible overrun, cstr must be at least MAX_ESCAPED_DOMAIN_NAME (1005 bytes)
 mDNSexport char *ConvertDomainNameToCString_withescape(const domainname *const name, char *ptr, char esc)
 	{
 	const mDNSu8 *src         = name->c;								// Domain name we're reading
