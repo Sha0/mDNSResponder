@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.414  2004/09/18 01:06:48  cheshire
+Add comments
+
 Revision 1.413  2004/09/17 01:08:48  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -5256,6 +5259,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	info->port      = zeroIPPort;
 	info->TXTlen    = 0;
 
+	// We use mDNS_StartQuery_internal here because we're already holding the lock
 	status = mDNS_StartQuery_internal(m, &query->qSRV);
 	if (status == mStatus_NoError) status = mDNS_StartQuery_internal(m, &query->qTXT);
 	if (status != mStatus_NoError) mDNS_StopResolveService(m, query);
@@ -5267,6 +5271,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *query)
 	{
 	mDNS_Lock(m);
+	// We use mDNS_StopQuery_internal here because we're already holding the lock
 	if (query->qSRV.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qSRV, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qSRV);
 	if (query->qTXT.ThisQInterval >= 0 || uDNS_IsActiveQuery(&query->qTXT, &m->uDNS_info))
