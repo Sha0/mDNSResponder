@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.3  2004/06/18 04:44:17  rpantos
+Adapt to API unification on Windows
+
 Revision 1.2  2004/05/28 23:34:42  ksekar
 <rdar://problem/3672903>: Java project build errors
 
@@ -32,9 +35,6 @@ First checked in.
 
 	This file contains the platform support for DNSSD and related Java classes.
 	It is used to shim through to the underlying <dns_sd.h> API.
-
-	To do:
-	- normalize code to eliminate USE_WIN_API
  */
 
 // AUTO_CALLBACKS should be set to 1 if the underlying mDNS implementation fires response
@@ -45,32 +45,21 @@ First checked in.
 #define	AUTO_CALLBACKS	0
 #endif
 
-// (Temporary, I hope - RNP)
-// USE_WIN_API should be set to 1 to use the DNSSD.h API (on Windows).
-// USE_WIN_API should be set to 0 to use the dns_sd.h API (on everything else).
-#ifndef	USE_WIN_API
-#define	USE_WIN_API	0
-#endif
+#if !AUTO_CALLBACKS
+#ifdef _WIN32
+#include <winsock2.h>
+#else //_WIN32
+#include <sys/types.h>
+#include <sys/select.h>
+#endif // _WIN32
+#endif // AUTO_CALLBACKS
+
+#include <dns_sd.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <jni.h>
-
-#if USE_WIN_API
-#include <DNSSD.h>
-#else
-#include <dns_sd.h>
-#endif
-
-#if !USE_WIN_API
-#define CALLBACK_COMPAT	
-#endif
-
-#if !AUTO_CALLBACKS
-#include <sys/types.h>
-#include <sys/select.h>
-#endif
 
 #include "DNSSD.java.h"
 
@@ -109,16 +98,6 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSSD_InitLibrary( JNIEnv *pEnv
 	/* Ensure that caller & interface versions match. */
 	if ( callerVersion != kInterfaceVersion)
 		return kDNSServiceErr_Incompatible;
-
-#if USE_WIN_API
-	{
-		DNSServiceErrorType		err;
-		
-		err = DNSServiceInitialize( kDNSServiceInitializeFlagsNone, 0);
-		if ( err != kDNSServiceErr_NoError)
-			return err;
-	}
-#endif
 
 #if AUTO_CALLBACKS
 	{
@@ -301,7 +280,7 @@ JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleService_ProcessResults( JNIEnv 
 }
 
 
-static void CALLBACK_COMPAT	ServiceBrowseReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
+static void DNSSD_API	ServiceBrowseReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
 								DNSServiceErrorType errorCode, const char *serviceName, const char *regtype, 
 								const char *replyDomain, void *context)
 {
@@ -366,7 +345,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleBrowser_CreateBrowser( JNIEnv *
 }
 
 
-static void CALLBACK_COMPAT	ServiceResolveReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
+static void DNSSD_API	ServiceResolveReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
 								DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, 
 								uint16_t port, uint16_t txtLen, const char *txtRecord, void *context)
 {
@@ -451,7 +430,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleResolver_CreateResolver( JNIEnv
 }
 
 
-static void CALLBACK_COMPAT	ServiceRegisterReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, 
+static void DNSSD_API	ServiceRegisterReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, 
 								DNSServiceErrorType errorCode, const char *fullname, 
 								const char *regType, const char *domain, void *context)
 {
@@ -617,7 +596,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_RemoveRecord( JNIE
 }
 
 
-static void CALLBACK_COMPAT	ServiceQueryReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
+static void DNSSD_API	ServiceQueryReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
 								DNSServiceErrorType errorCode, const char *serviceName,
 								uint16_t rrtype, uint16_t rrclass, uint16_t rdlen,
 								const void *rdata, uint32_t ttl, void *context)
@@ -683,7 +662,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleQuery_CreateQuery( JNIEnv *pEnv
 }
 
 
-static void CALLBACK_COMPAT	DomainEnumReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
+static void DNSSD_API	DomainEnumReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex, 
 								DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 {
 	OpContext		*pContext = (OpContext*) context;
