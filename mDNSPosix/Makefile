@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: Makefile,v $
+# Revision 1.26  2004/02/05 21:28:30  cheshire
+# Fixes so that "sudo make install" works on *BSD
+#
 # Revision 1.25  2004/02/05 20:00:22  cheshire
 # Define mdnsd's PID file to be /var/run/mdnsd.pid on Posix builds
 #
@@ -101,6 +104,8 @@
 # For more magic automatic variables, see
 # <http://www.gnu.org/manual/make-3.80/html_chapter/make_10.html#SEC111>
 
+#############################################################################
+
 LIBVERS = 1
 
 COREDIR = ../mDNSCore
@@ -120,12 +125,12 @@ DEBUG=0
 ifeq ($(DEBUG),1)
 CFLAGS_DEBUG = -g -DMDNS_DEBUGMSGS=2 
 OBJDIR = objects/debug
-TARGDIR = build/debug
+BUILDDIR = build/debug
 STRIP = echo 
 else
 CFLAGS_DEBUG = -Os -DMDNS_DEBUGMSGS=0 
 OBJDIR = objects/prod
-TARGDIR = build/prod
+BUILDDIR = build/prod
 STRIP = strip -S 
 endif
 
@@ -138,12 +143,15 @@ CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK
 else
 ifeq ($(os),netbsd)
 CFLAGS_OS =
+LDCONFIG = ldconfig
 else
 ifeq ($(os),freebsd)
 CFLAGS_OS =
+LDCONFIG = ldconfig
 else
 ifeq ($(os),openbsd)
 CFLAGS_OS = -DHAVE_BROKEN_RECVDSTADDR
+LDCONFIG = ldconfig
 else
 ifeq ($(os),jaguar)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
@@ -175,118 +183,141 @@ CFLAGS_OS += -DHAVE_IPV6=0
 endif
 endif
 
-
-# If directory /etc/rc.d/init.d/ exists, then we install into that,
-# else install into /etc/init.d/
-STARTUPSCRIPTSDIR = $(if $(wildcard /etc/rc.d/init.d/), /etc/rc.d, /etc)
+# If directory /etc/rc.d/init.d/ exists, then we install into that (old Linux)
+ifeq ($(wildcard /etc/rc.d/init.d/), /etc/rc.d/init.d/)
+STARTUPSCRIPTDIR = /etc/rc.d/init.d
+RUNLEVELSCRIPTSDIR = /etc/rc.d
+else
+# else if directory /etc/init.d/ exists, then we install into that (new Linux)
+ifeq ($(wildcard /etc/init.d/), /etc/init.d/)
+STARTUPSCRIPTDIR = /etc/init.d
+RUNLEVELSCRIPTSDIR = /etc
+else
+# else install into /etc/rc.d/ (*BSD)
+STARTUPSCRIPTDIR = /etc/rc.d
+endif
+endif
 
 CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_OS) $(CFLAGS_DEBUG)
+
+#############################################################################
 
 all: setup Daemon libmdns Client Responder ProxyResponder Identify NetMonitor
 
 install: setup InstalledDaemon InstalledLib InstalledStartup
 
-
 # 'setup' sets up the build directory structure the way we want
 setup:
-	if test ! -d objects ; then mkdir objects ; fi
-	if test ! -d build   ; then mkdir build   ; fi
-	if test ! -d $(OBJDIR) ; then mkdir $(OBJDIR) ; fi
-	if test ! -d $(TARGDIR)   ; then mkdir $(TARGDIR)   ; fi
-
+	@if test ! -d objects     ; then mkdir objects     ; fi
+	@if test ! -d build       ; then mkdir build       ; fi
+	@if test ! -d $(OBJDIR)   ; then mkdir $(OBJDIR)   ; fi
+	@if test ! -d $(BUILDDIR) ; then mkdir $(BUILDDIR) ; fi
 
 # clean removes targets and objects
 clean:
-	if test -d $(OBJDIR) ; then rm -r $(OBJDIR) ; fi
-	if test -d $(TARGDIR)   ; then rm -r $(TARGDIR)   ; fi
+	if test -d $(OBJDIR)   ; then rm -r $(OBJDIR)   ; fi
+	if test -d $(BUILDDIR) ; then rm -r $(BUILDDIR) ; fi
 
+#############################################################################
 
 # daemon target builds the daemon
 DAEMONOBJS = $(OBJDIR)/PosixDaemon.c.o $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNS.c.o \
              $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/uds_daemon.c.o \
              $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o 
 
-Daemon: setup $(TARGDIR)/mdnsd
+Daemon: setup $(BUILDDIR)/mdnsd
 	@echo "Responder daemon done"
 
-$(TARGDIR)/mdnsd: $(DAEMONOBJS)
+$(BUILDDIR)/mdnsd: $(DAEMONOBJS)
 	$(CC) -o $@ $+
 	$(STRIP) $@
 
-
 # libmdns target builds the client library
-libmdns: setup $(TARGDIR)/libmdns.$(LDSUFFIX)
+libmdns: setup $(BUILDDIR)/libmdns.$(LDSUFFIX)
 	@echo "Client library done"
 
-$(TARGDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
+$(BUILDDIR)/libmdns.$(LDSUFFIX): $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
 	$(LD) $(LDFLAGS) -o $@ $+
 	$(STRIP) $@
 
+#############################################################################
 
 # The Install targets place built stuff in their proper places
 InstalledDaemon: /usr/sbin/mdnsd
 	@echo $< " installed"
 
-/usr/sbin/mdnsd: $(TARGDIR)/mdnsd
-	$(CP) $(TARGDIR)/mdnsd $@
-
-InstalledLib: /usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS)
+InstalledLib: /usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS) /usr/include/dns_sd.h
 	@echo $< " installed"
 
-/usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS): $(TARGDIR)/libmdns.$(LDSUFFIX)
-	$(CP) $(TARGDIR)/libmdns.$(LDSUFFIX) $@
+InstalledStartup: $(STARTUPSCRIPTDIR)/mdns
+	@echo $< " installed"
+
+/usr/sbin/mdnsd: $(BUILDDIR)/mdnsd
+	$(CP) $< $@
+
+/usr/lib/libmdns.$(LDSUFFIX).$(LIBVERS): $(BUILDDIR)/libmdns.$(LDSUFFIX)
+	$(CP) $< $@
 	$(LN) $@ /usr/lib/libmdns.$(LDSUFFIX)
+ifdef LDCONFIG
+    # -m means 'merge into existing database', -R means 'rescan directories'
+	$(LDCONFIG) -mR
+endif
 
-InstalledStartup: $(STARTUPSCRIPTSDIR)/init.d/mDNS
-	@echo $< " installed"
+/usr/include/dns_sd.h: $(SHAREDDIR)/dns_sd.h
+	$(CP) $< $@
 
-$(STARTUPSCRIPTSDIR)/init.d/mDNS: mdnsd.sh $(STARTUPSCRIPTSDIR)/init.d
-	$(CP) mdnsd.sh $@
+$(STARTUPSCRIPTDIR)/mdns: mdnsd.sh $(STARTUPSCRIPTDIR)
+	$(CP) $< $@
 	chmod ugo+x $@
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc2.d/S52mDNS
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc3.d/S52mDNS
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc4.d/S52mDNS
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc5.d/S52mDNS
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc2.d/K16mDNS
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc3.d/K16mDNS
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc4.d/K16mDNS
-	$(LN) $@ $(STARTUPSCRIPTSDIR)/rc5.d/K16mDNS
+ifdef RUNLEVELSCRIPTSDIR
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc2.d/S52mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc3.d/S52mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc4.d/S52mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc5.d/S52mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc2.d/K16mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc3.d/K16mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc4.d/K16mdns
+	$(LN) $@ $(RUNLEVELSCRIPTSDIR)/rc5.d/K16mdns
+endif
+
+#############################################################################
 
 # The following targets build embedded example programs
 SPECIALOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o
 COMMONOBJ  = $(SPECIALOBJ) $(OBJDIR)/mDNS.c.o
 APPOBJ     = $(COMMONOBJ) $(OBJDIR)/ExampleClientApp.c.o
 
-Client: setup $(TARGDIR)/mDNSClientPosix
+Client: setup $(BUILDDIR)/mDNSClientPosix
 	@echo "Embedded Standalone Client done"
 
-Responder: setup $(TARGDIR)/mDNSResponderPosix
+Responder: setup $(BUILDDIR)/mDNSResponderPosix
 	@echo "Embedded Standalone Responder done"
 
-ProxyResponder: setup $(TARGDIR)/mDNSProxyResponderPosix
+ProxyResponder: setup $(BUILDDIR)/mDNSProxyResponderPosix
 	@echo "Embedded Standalone ProxyResponder done"
 
-Identify: setup $(TARGDIR)/mDNSIdentify
+Identify: setup $(BUILDDIR)/mDNSIdentify
 	@echo "Identify done"
 
-NetMonitor: setup $(TARGDIR)/mDNSNetMonitor
+NetMonitor: setup $(BUILDDIR)/mDNSNetMonitor
 	@echo "NetMonitor done"
 
-$(TARGDIR)/mDNSClientPosix:         $(APPOBJ)     $(OBJDIR)/Client.c.o
+$(BUILDDIR)/mDNSClientPosix:         $(APPOBJ)     $(OBJDIR)/Client.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSResponderPosix:      $(COMMONOBJ)  $(OBJDIR)/Responder.c.o
+$(BUILDDIR)/mDNSResponderPosix:      $(COMMONOBJ)  $(OBJDIR)/Responder.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSProxyResponderPosix: $(COMMONOBJ)  $(OBJDIR)/ProxyResponder.c.o
+$(BUILDDIR)/mDNSProxyResponderPosix: $(COMMONOBJ)  $(OBJDIR)/ProxyResponder.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
+$(BUILDDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
 	$(CC) $+ -o $@
 
-$(TARGDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
+$(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@
 
+#############################################################################
 
 # Implicit rules
 $(OBJDIR)/%.c.o:	%.c
