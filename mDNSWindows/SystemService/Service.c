@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.30  2005/04/06 00:52:43  shersche
+<rdar://problem/4079667> Only add default route if there are no other routable IPv4 addresses on any of the other interfaces. More work needs to be done to correctly configure the routing table when multiple interfaces are extant and none of them have routable IPv4 addresses.
+
 Revision 1.29  2005/03/06 05:21:56  shersche
 <rdar://problem/4037635> Fix corrupt UTF-8 name when non-ASCII system name used, enabled unicode support
 
@@ -257,8 +260,8 @@ static mDNSs32		udsIdle(mDNS * const inMDNS, mDNSs32 interval);
 static void			CoreCallback(mDNS * const inMDNS, mStatus result);
 static void			HostDescriptionChanged(mDNS * const inMDNS);
 static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
-static bool			HaveLLRoute(PMIB_IPFORWARDROW rowExtant);
-static OSStatus		SetLLRoute();
+static bool			HaveLLRoute(PMIB_IPFORWARDROW rowExtant );
+static OSStatus		SetLLRoute( mDNS * const inMDNS );
 
 #if defined(UNICODE)
 #	define StrLen(X)	wcslen(X)
@@ -1162,7 +1165,7 @@ static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 	//
 	if (gServiceManageLLRouting == true)
 	{
-		SetLLRoute();
+		SetLLRoute( &gMDNSRecord );
 	}
 
 exit:
@@ -1246,13 +1249,11 @@ static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 static void
 CoreCallback(mDNS * const inMDNS, mStatus status)
 {
-	DEBUG_UNUSED( inMDNS );
-
 	if (status == mStatus_ConfigChanged)
 	{
 		if (gServiceManageLLRouting == true)
 		{
-			SetLLRoute();
+			SetLLRoute( inMDNS );
 		}
 	}
 }
@@ -1718,7 +1719,7 @@ exit:
 //===========================================================================================================================
 
 static OSStatus
-SetLLRoute()
+SetLLRoute( mDNS * const inMDNS )
 {
 	DWORD				ifIndex;
 	MIB_IPFORWARDROW	rowExtant;
@@ -1782,30 +1783,56 @@ SetLLRoute()
 	}
 
 	//
-	// see if this address is a link local address
+	// Now we want to see if we should install a default route for this interface.
+	// We want to do this if the following are true:
 	//
-	if ((row.dwForwardNextHop & 0xFFFF) == row.dwForwardDest)
+	// 1. This interface has a link-local address
+	// 2. This is the only IPv4 interface
+	//
+
+	if ( ( row.dwForwardNextHop & 0xFFFF ) == row.dwForwardDest )
 	{
-		//
-		// if so, set up a route to ARP everything
-		//
-		row.dwForwardDest		= 0;
-		row.dwForwardIfIndex	= ifIndex;
-		row.dwForwardMask		= 0;
-		row.dwForwardType		= 3;
-		row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
-		row.dwForwardAge		= 0;
-		row.dwForwardPolicy		= 0;
-		row.dwForwardMetric1	= 1;
-		row.dwForwardMetric2	= (DWORD) - 1;
-		row.dwForwardMetric3	= (DWORD) - 1;
-		row.dwForwardMetric4	= (DWORD) - 1;
-		row.dwForwardMetric5	= (DWORD) - 1;
+		mDNSInterfaceData	*	ifd;
+		int						numLinkLocalInterfaces	= 0;
+		int						numInterfaces			= 0;
+	
+		for ( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
+		{
+			if ( ifd->defaultAddr.type == mDNSAddrType_IPv4 )
+			{
+				numInterfaces++;
 
-		err = CreateIpForwardEntry(&row);
+				if ( ( ifd->interfaceInfo.ip.ip.v4.b[0] == 169 ) && ( ifd->interfaceInfo.ip.ip.v4.b[1] == 254 ) )
+				{
+					numLinkLocalInterfaces++;
+				}
+			}
+		}
 
-		require_noerr( err, exit );
+		if ( numInterfaces == 1 )
+		{
+			//
+			// if so, set up a route to ARP everything
+			//
+			row.dwForwardDest		= 0;
+			row.dwForwardIfIndex	= ifIndex;
+			row.dwForwardMask		= 0;
+			row.dwForwardType		= 3;
+			row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
+			row.dwForwardAge		= 0;
+			row.dwForwardPolicy		= 0;
+			row.dwForwardMetric1	= 20;
+			row.dwForwardMetric2	= (DWORD) - 1;
+			row.dwForwardMetric3	= (DWORD) - 1;
+			row.dwForwardMetric4	= (DWORD) - 1;
+			row.dwForwardMetric5	= (DWORD) - 1;
+	
+			err = CreateIpForwardEntry(&row);
+	
+			require_noerr( err, exit );
+		}
 	}
+
 exit:
 
 	return ( err );
@@ -1910,4 +1937,3 @@ exit:
 
 	return( err );
 }
-
