@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.308  2003/09/23 01:05:01  cheshire
+Minor changes to comments and debugf() message
+
 Revision 1.307  2003/09/09 20:13:30  cheshire
 <rdar://problem/3411105> Don't send a Goodbye record if we never announced it
 Ammend checkin 1.304: Off-by-one error: By this place in the function we've already decremented
@@ -3411,7 +3414,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					{
 					RData *OldRData     = rr->resrec.rdata;
 					mDNSu16 oldrdlength = rr->resrec.rdlength;
-					// See if we should send a courtesy "goodbye" the old data before we replace it.
+					// See if we should send a courtesy "goodbye" for the old data before we replace it.
 					// We compare with "InitialAnnounceCount-1" instead of "InitialAnnounceCount" because by the time
 					// we get to this place in this routine we've we've already decremented rr->AnnounceCount
 					if (ResourceRecordIsValidAnswer(rr) && rr->AnnounceCount < InitialAnnounceCount-1)
@@ -5069,8 +5072,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
 				if (RRIsAddressType(rr2) &&										// For all address records (A/AAAA) ...
 					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
-					rr->resrec.rdnamehash == rr2->resrec.namehash &&
-					SameDomainName(&rr->resrec.rdata->u.srv.target, &rr2->resrec.name))		// ... whose name is the name of the SRV target
+					rr->resrec.rdnamehash == rr2->resrec.namehash &&			// ... whose name is the name of the SRV target
+					SameDomainName(&rr->resrec.rdata->u.srv.target, &rr2->resrec.name))
 					AddRecordToResponseList(&nrp, rr2, rr);
 		}
 
@@ -5372,12 +5375,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// Also, if we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
 	if (ttl < 254 || (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)mDNSPlatformOneSecond))
 		{
-		debugf("** Ignored apparent spoof mDNS Response from %#-15a to %#-15a TTL %d on %p with %2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		debugf("** Ignored apparent spoof mDNS Response from %#-15a to %#-15a TTL %d on %p with %2d Q %2d Ans %2d Auth %2d Add",
 		srcaddr, dstaddr, ttl, InterfaceID,
-		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", " : "s,",
-		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
-		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
-		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
+		response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
 		return;
 		}
 
