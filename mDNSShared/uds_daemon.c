@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.36  2003/12/04 23:40:57  cheshire
+<rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
+Fix some more code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+
 Revision 1.35  2003/12/03 19:10:22  ksekar
 Bug #: <rdar://problem/3498644>: malloc'd data not zero'd
 
@@ -782,7 +786,7 @@ static void handle_resolve_request(request_state *rstate)
     {
     DNSServiceFlags flags;
     uint32_t interfaceIndex;
-    char name[256], regtype[256], domain[256];  
+    char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];  
     char *ptr;  // message data pointer
     domainname fqdn;
     resolve_t *srv, *txt;
@@ -811,8 +815,8 @@ static void handle_resolve_request(request_state *rstate)
     mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
     if (interfaceIndex && !InterfaceID) goto bad_param;
     if (get_string(&ptr, name, 256) < 0 ||
-        get_string(&ptr, regtype, 256) < 0 ||
-        get_string(&ptr, domain, 256) < 0)
+        get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
+        get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
         goto bad_param;
 
     // free memory in rstate since we don't need it anymore
@@ -1063,7 +1067,7 @@ static void handle_browse_request(request_state *request)
     {
     DNSServiceFlags flags;
     uint32_t interfaceIndex;
-    char regtype[256], domain[256];
+    char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
     DNSQuestion *q;
     domainname typedn, domdn;
     char *ptr;
@@ -1088,8 +1092,8 @@ static void handle_browse_request(request_state *request)
     ptr = request->msgdata;
     flags = get_flags(&ptr);
     interfaceIndex = get_long(&ptr);
-    if (get_string(&ptr, regtype, 256) < 0 || 
-        get_string(&ptr, domain, 256) < 0)
+    if (get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
+        get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
         goto bad_param;
         
     freeL("handle_browse_request", request->msgbuf);
@@ -1151,7 +1155,7 @@ static void handle_regservice_request(request_state *request)
     {
     DNSServiceFlags flags;
     uint32_t ifi;
-    char name[256], regtype[256], domain[256], host[256];
+    char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME], host[MAX_ESCAPED_DOMAIN_NAME];
     uint16_t txtlen;
     mDNSIPPort port;
     void *txtdata;
@@ -1181,9 +1185,9 @@ static void handle_regservice_request(request_state *request)
     mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
     if (ifi && !InterfaceID) goto bad_param;
     if (get_string(&ptr, name, 256) < 0 ||
-        get_string(&ptr, regtype, 256) < 0 || 
-        get_string(&ptr, domain, 256) < 0 ||
-        get_string(&ptr, host, 256) < 0)
+        get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 || 
+        get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
+        get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
         goto bad_param;
         
     port.NotAnInteger = get_short(&ptr);
