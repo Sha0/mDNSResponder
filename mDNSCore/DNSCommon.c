@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.65  2004/10/20 02:15:09  cheshire
+Add case in GetRRDisplayString() to display NS rdata
+
 Revision 1.64  2004/10/13 00:24:02  cheshire
 Disable "array is too small to include a terminating null character" warning on Windows
 
@@ -357,14 +360,17 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	switch (rr->rrtype)
 		{
 		case kDNSType_A:	mDNS_snprintf(buffer+length, 79-length, "%.4a", &rd->ipv4);          break;
+
+		case kDNSType_NS:	// Same as PTR
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	mDNS_snprintf(buffer+length, 79-length, "%##s", rd->name.c);       break;
+
 		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
 		case kDNSType_TXT:  mDNS_snprintf(buffer+length, 79-length, "%#s", rd->txt.c);         break;
+
 		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, 79-length, "%.16a", &rd->ipv6);       break;
 		case kDNSType_SRV:	mDNS_snprintf(buffer+length, 79-length, "%##s", rd->srv.target.c); break;
-		default:			mDNS_snprintf(buffer+length, 79-length, "RDLen %d: %s",
-								rr->rdlength, rd->data);  break;
+		default:			mDNS_snprintf(buffer+length, 79-length, "RDLen %d: %s", rr->rdlength, rd->data);  break;
 		}
 	for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
 	return(buffer);
