@@ -42,6 +42,8 @@
 //*************************************************************************************************************
 // Globals
 
+typedef union { unsigned char b[2]; unsigned short NotAnInteger; } Opaque16;
+
 static char operation;
 static dns_service_discovery_ref client = NULL;
 static char addtest = 0;
@@ -259,7 +261,7 @@ int main(int argc, char **argv)
                     if (nam[0] == '.' && nam[1] == 0) nam[0] = 0;	// We allow '.' on the command line as a synonym for empty string
                     if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
                     printf("Registering Service %s.%s%s port %s %s\n", nam, typ, dom, argv[optind+3], txt);
-                    client = DNSServiceRegistrationCreate(nam, typ, dom, registerPort, txt, reg_reply, nil);
+                    client = DNSServiceRegistrationCreate(nam, typ, dom, registerPort.NotAnInteger, txt, reg_reply, nil);
                     break;
                     }
 
@@ -269,7 +271,7 @@ int main(int argc, char **argv)
                     Opaque16 registerPort = { { 0x12, 0x34 } };
                     static const char TXT[] = "First String\001Second String\001Third String";
                     printf("Registering Service Test._testupdate._tcp.local.\n");
-                    client = DNSServiceRegistrationCreate("Test", "_testupdate._tcp.", "", registerPort, TXT, reg_reply, nil);
+                    client = DNSServiceRegistrationCreate("Test", "_testupdate._tcp.", "", registerPort.NotAnInteger, TXT, reg_reply, nil);
                     break;
                     }
 
@@ -281,7 +283,7 @@ int main(int argc, char **argv)
                         if ((i & 0x1F) == 0x1F) TXT[i] = 1; else TXT[i] = 'A' + (i >> 5);
                     TXT[i] = 0;
                     printf("Registering Service Test._testlargetxt._tcp.local.\n");
-                    client = DNSServiceRegistrationCreate("Test", "_testlargetxt._tcp.", "", registerPort, TXT, reg_reply, nil);
+                    client = DNSServiceRegistrationCreate("Test", "_testlargetxt._tcp.", "", registerPort.NotAnInteger, TXT, reg_reply, nil);
                     break;
                     }
 
