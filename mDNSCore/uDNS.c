@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.88  2004/09/23 20:48:15  ksekar
+Clarify retransmission debugf messages.
+
 Revision 1.87  2004/09/22 00:41:59  cheshire
 Move tcp connection status codes into the legal range allocated for mDNS use
 
@@ -3951,7 +3954,13 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 			{
 			if (rr->LastAPTime + rr->ThisAPInterval - timenow < 0)
 				{
-				debugf("Retransmit record %##s", rr->resrec.name.c);
+#if MDNS_DEBUGMSGS				
+				char *op = "(unknown operation)";
+				if (rInfo->state == regState_Pending) op = "registration";
+				else if (rInfo->state == regState_DeregPending) op = "deregistration";
+				else if (rInfo->state == regState_Refresh) op = "refresh";
+				debugf("Retransmit record %s %##s", op, rr->resrec.name.c);
+#endif
 				//LogMsg("Retransmit record %##s", rr->resrec.name.c);
 				if      (rInfo->state == regState_DeregPending)   uDNS_DeregisterRecord(m, rr);
 				else if (rInfo->state == regState_UpdatePending)  SendRecordUpdate(m, rr, rInfo);
@@ -3993,7 +4002,13 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - timenow < 0)
 				{
-				debugf("Retransmit service %##s", srs->RR_SRV.resrec.name.c);
+#if MDNS_DEBUGMSGS				
+				char *op = "unknown";
+				if (rInfo->state == regState_Pending) op = "registration";
+				else if (rInfo->state == regState_DeregPending) op = "deregistration";
+				else if (rInfo->state == regState_Refresh) op = "refresh";
+				debugf("Retransmit service %s %##s", op, srs->RR_SRV.resrec.name.c);
+#endif
 				if (rInfo->state == regState_DeregPending) { SendServiceDeregistration(m, srs); continue; }
 				else                                         SendServiceRegistration  (m, srs);
 				}
