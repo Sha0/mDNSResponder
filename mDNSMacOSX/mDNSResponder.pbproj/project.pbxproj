@@ -366,6 +366,7 @@
 				DBAAFE29057E8F4D0085CAD0,
 				000753D303367C1C0CCA2C71,
 				DBAAFE2C057E8F660085CAD0,
+				FF0E0B5D065ADC7600FE4D9C,
 				FF485D5105632E0000130380,
 				7F18A9F60587CEF6001880B3,
 				7F18A9F70587CEF6001880B3,
@@ -392,6 +393,7 @@
 				08FB77A3FE84155DC02AAC07,
 				08FB77A5FE84155DC02AAC07,
 				FF5A0AE705632EA600743C27,
+				FF0E0B5C065ADC3800FE4D9C,
 			);
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -950,6 +952,29 @@
 //FF2
 //FF3
 //FF4
+		FF0E0B5C065ADC3800FE4D9C = {
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man1;
+			dstSubfolderSpec = 0;
+			files = (
+				FF0E0B5E065ADCA400FE4D9C,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		FF0E0B5D065ADC7600FE4D9C = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = mDNS.1;
+			path = ../mDNSShared/mDNS.1;
+			refType = 2;
+		};
+		FF0E0B5E065ADCA400FE4D9C = {
+			fileRef = FF0E0B5D065ADC7600FE4D9C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		FF485D5105632E0000130380 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
