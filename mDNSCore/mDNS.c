@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.88  2003/03/12 00:17:44  cheshire
+<rdar://problem/3195426> GetFreeCacheRR needs to be more willing to throw away recent records
+
 Revision 1.87  2003/03/11 01:27:20  cheshire
 Reduce debugging messages (reclassify some "debugf" as "verbosedebugf")
 
@@ -2784,9 +2787,8 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 
 		while (*rr)
 			{
-			// Records we've only just received are not candidates for deletion
-			// Hence, only consider records that are at least one tick old
-			if (timenow - (*rr)->TimeRcvd > 0)
+			// Records that answer still-active questions are not candidates for deletion
+			if (!(*rr)->CRActiveQuestion)
 				{
 				// Work out a weighted age, which is the number of seconds since this record was last used,
 				// divided by the number of times it has been used (we want to keep frequently used records longer).
@@ -2794,9 +2796,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 				mDNSs32 age = (timenow - (*rr)->LastUsed) / count;
 				mDNSu8 rtype = (mDNSu8)(((*rr)->RecordType) & ~kDNSRecordTypeUniqueMask);
 				if (rtype == kDNSRecordTypePacketAnswer) age /= 2;		// Keep answer records longer than additionals
-
-				// Records that answer still-active questions are not candidates for deletion
-				if (bestage < age && !(*rr)->CRActiveQuestion) { best = rr; bestage = age; }
+				if (bestage < age) { best = rr; bestage = age; }
 				}
 
 			rr=&(*rr)->next;
