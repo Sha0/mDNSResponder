@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.4  2004/10/10 06:51:36  cheshire
+Declared some strings "const" as appropriate
+
 Revision 1.3  2004/09/21 23:40:12  ksekar
 <rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
 
@@ -170,7 +173,7 @@ typedef struct tagHTTPResponse {
 ////////////////////////////////////////////////////////////////////////
 // GLOBAL Constants
 ////////////////////////////////////////////////////////////////////////
-static char szSSDPMsgDiscoverRoot[] =
+static const char szSSDPMsgDiscoverRoot[] =
 	"M-SEARCH * HTTP/1.1\r\n"
 	"Host:239.255.255.250:1900\r\n"
 	"ST:upnp:rootdevice\r\n"
@@ -178,7 +181,7 @@ static char szSSDPMsgDiscoverRoot[] =
 	"MX:3\r\n"
 	"\r\n";
 
-static char szSSDPMsgDiscoverIGD[] =
+static const char szSSDPMsgDiscoverIGD[] =
 	"M-SEARCH * HTTP/1.1\r\n"
 	"Host:239.255.255.250:1900\r\n"
 	"ST:urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n"
@@ -186,7 +189,7 @@ static char szSSDPMsgDiscoverIGD[] =
 	"MX:3\r\n"
 	"\r\n";
 
-static char szSSDPMsgDiscoverNAT[] =
+static const char szSSDPMsgDiscoverNAT[] =
 	"M-SEARCH * HTTP/1.1\r\n"
 	"Host:239.255.255.250:1900\r\n"
 	"ST:urn:schemas-upnp-org:service:WANIPConnection:1\r\n"
@@ -199,7 +202,7 @@ static char szSSDPMsgDiscoverNAT[] =
 // 2$s: local's host/port ("host:port")
 // 3$s: router's host/port ("host:port")
 // 4$d: subscription timeout in seconds
-static char szEventMsgSubscribeFMT[] =
+static const char szEventMsgSubscribeFMT[] =
 	"SUBSCRIBE %1$s HTTP/1.1\r\n"
 	"NT: upnp:event\r\n"
 	"Callback: <http://%2$s/notify>\r\n"
@@ -215,7 +218,7 @@ static char szEventMsgSubscribeFMT[] =
 // 2$s: SID (some uuid passed back during subscribe)
 // 3$s: router's host ("host")
 /*
-static char szEventMsgUnsubscribeFMT[] =
+static const char szEventMsgUnsubscribeFMT[] =
 	"UNSUBSCRIBE %1$s HTTP/1.1\r\n"
 	"SID: %2$s\r\n"
 	"User-Agent: Mozilla/4.0 (compatible; UPnP/1.0; Windows NT/5.1)\r\n"
@@ -230,7 +233,7 @@ static char szEventMsgUnsubscribeFMT[] =
 // 2$s: router's host/port ("host:port")
 // 3$s: action (string)
 // 4$d: content-length
-static char szSOAPMsgControlAHeaderFMT[] =
+static const char szSOAPMsgControlAHeaderFMT[] =
 	//"M-POST %1$s HTTP/1.1\r\n"
 	"POST %1$s HTTP/1.1\r\n"
 	"Content-Type: text/xml; charset=\"utf-8\"\r\n"
@@ -248,7 +251,7 @@ static char szSOAPMsgControlAHeaderFMT[] =
 
 // 1$: action (string)
 // 2$: argument list
-static char szSOAPMsgControlABodyFMT[] =
+static const char szSOAPMsgControlABodyFMT[] =
 	"<?xml version=\"1.0\"?>" CRLF
 	"<SOAP-ENV:Envelope" S_CRLF
 	" xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"" S_CRLF
@@ -267,13 +270,13 @@ static char szSOAPMsgControlABodyFMT[] =
 
 // 1$: argument name
 // 2$: argument value
-char szSOAPMsgControlAArgumentFMT[] =
+static const char szSOAPMsgControlAArgumentFMT[] =
 	"<%1$s>%2$s</%1$s>" S_CRLF;
 
 // 1$: argument name
 // 2$: argument value
 // 3$: argument type
-static char szSOAPMsgControlAArgumentFMT_t[] =
+static const char szSOAPMsgControlAArgumentFMT_t[] =
 	"<%1$s"
 	" xmlns:dt=\"urn:schemas-microsoft-com:datatypes\""
 	" dt:dt=\"%3$s\">%2$s</%1$s>" S_CRLF;
@@ -283,7 +286,7 @@ static char szSOAPMsgControlAArgumentFMT_t[] =
 // 1$s: control URL
 // 2$s: router's host/port ("host:port")
 // 3$d: content-length
-static char szSOAPMsgControlQHeaderFMT[] =
+static const char szSOAPMsgControlQHeaderFMT[] =
 	"M-POST %1$s HTTP/1.1\r\n"
 	//"POST %1$s HTTP/1.1\r\n"
 	"Host: %2$s\r\n"
@@ -295,7 +298,7 @@ static char szSOAPMsgControlQHeaderFMT[] =
 	"\r\n";
 
 // 1$: variable name
-static char szSOAPMsgControlQBodyFMT[] =
+static const char szSOAPMsgControlQBodyFMT[] =
 	"<s:Envelope" S_CRLF
 	" xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"" S_CRLF
 	" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">" S_CRLF
@@ -309,7 +312,7 @@ static char szSOAPMsgControlQBodyFMT[] =
 */
 // 1$: device description URL
 // 2$: host/port
-static char szSSDPMsgDescribeDeviceFMT[] =
+static const char szSSDPMsgDescribeDeviceFMT[] =
 	"GET %s HTTP/1.1\r\n"
 	"Accept: text/xml, application/xml\r\n"
 	"User-Agent: Mozilla/4.0 (compatible; UPnP/1.0; Windows NT/5.1)\r\n"
@@ -1520,7 +1523,7 @@ static void *UDPProc(void *in)
 	close(g_sUDP);
 }
 
-static void SendUDPMsg(char *msg) {
+static void SendUDPMsg(const char *msg) {
 	struct sockaddr_in	saSendTo;
 	int					iRet;
 	int					iLen;
