@@ -130,6 +130,7 @@
 				HEADER_SEARCH_PATHS = "\"$(APPLE_INTERNAL_DEVELOPER_DIR)/Headers\"";
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = "";
+				OTHER_CFLAGS = "-D__MACOSX__";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder;
