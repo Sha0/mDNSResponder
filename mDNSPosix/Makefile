@@ -1,4 +1,7 @@
 # $Log: Makefile,v $
+# Revision 1.12  2003/08/01 02:20:02  cheshire
+# Add mDNSIdentify tool, used to discover what version of mDNSResponder a particular host is running
+#
 # Revision 1.11  2003/07/14 18:11:54  cheshire
 # Fix stricter compiler warnings
 #
@@ -63,7 +66,7 @@ HEADERS = Makefile mDNSUNP.h mDNSPosix.h   \
 ../mDNSCore/mDNSClientAPI.h                \
 ../mDNSCore/mDNSPlatformFunctions.h
 
-all: setup Client Responder ProxyResponder NetMonitor
+all: setup Client Responder ProxyResponder Identify NetMonitor
 
 setup:
 	if test ! -d objects ; then mkdir objects ; fi
@@ -78,6 +81,9 @@ Responder: setup build/mDNSResponderPosix
 ProxyResponder: setup build/mDNSProxyResponderPosix
 	@echo "ProxyResponder done"
 
+Identify: setup build/mDNSIdentify
+	@echo "Identify done"
+
 NetMonitor: setup build/mDNSNetMonitor
 	@echo "NetMonitor done"
 
@@ -88,6 +94,9 @@ build/mDNSResponderPosix: $(COMMONOBJ) objects/mDNS.c.o objects/Responder.c.o
 	$(CC) $+ -o $@
 
 build/mDNSProxyResponderPosix: $(COMMONOBJ) objects/mDNS.c.o objects/ProxyResponder.c.o
+	$(CC) $+ -o $@
+
+build/mDNSIdentify: $(COMMONOBJ) objects/Identify.c.o
 	$(CC) $+ -o $@
 
 build/mDNSNetMonitor: $(COMMONOBJ) objects/NetMonitor.c.o
