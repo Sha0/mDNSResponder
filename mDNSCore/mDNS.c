@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.358  2004/02/20 08:18:34  cheshire
+<rdar://problem/3564799>: mDNSResponder sometimes announces AAAA records unnecessarily
+
 Revision 1.357  2004/02/18 01:47:41  cheshire
 <rdar://problem/3553472>: Insufficient delay waiting for multi-packet KA lists causes AirPort traffic storms
 
@@ -2379,7 +2382,16 @@ mDNSlocal void SendResponses(mDNS *const m)
 							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
 						}
 					newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, &rr->resrec);
-					if (newptr) responseptr = newptr;
+					if (newptr)
+						{
+						responseptr = newptr;
+						// If we successfully put this additional record in the packet, we record LastMCTime & LastMCInterface.
+						// This matters particularly in the case where we have more than one IPv6 (or IPv4) address, because otherwise,
+						// when we see our own multicast with the cache flush bit set, if we haven't set LastMCTime, then we'll get
+						// all concerned and re-announce our record again to make sure it doesn't get flushed from peer caches.
+						rr->LastMCTime      = m->timenow;
+						rr->LastMCInterface = intf->InterfaceID;
+						}
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					}
 				}
