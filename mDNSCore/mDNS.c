@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.194  2003/07/02 18:47:40  cheshire
+Minor wording change to log messages
+
 Revision 1.193  2003/07/02 02:44:13  cheshire
 Fix warning in non-debug build
 
@@ -3787,7 +3790,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				{
 				static mDNSs32 lastmsg = 0;
 				if ((mDNSu32)(m->timenow - lastmsg) < (mDNSu32)mDNSPlatformOneSecond/10)	// Yes, this *is* supposed to be unsigned
-					LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%lu); next in %ld ticks (this is benign if it happens only rarely)",
+					LogMsg("mDNS_Execute CheckCacheExpiration(m) did no work (%lu); next in %ld ticks (only bad if it happens more than a few times per minute)",
 						(mDNSu32)(m->timenow - lastmsg), m->NextCacheCheck - m->timenow);
 				lastmsg = m->timenow;
 				}
@@ -4443,7 +4446,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 							//     can't implement multi-packet known-answer suppression from an unbounded number of clients.
 							//if (query->h.flags.b[0] & kDNSFlag0_TC)
 							//	LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one"
-							//		" client at a time %.4a %.4a (this is benign if it happens only rarely)",
+							//		" client at a time %.4a %.4a (only bad if it happens more than a few times per minute)",
 							//		rr->name.c, DNSTypeName(rr->rrtype), &rr->v4Requester, &srcaddr->ip.v4);
 							rr->v4Requester = onesIPv4Addr;
 							}
@@ -4455,7 +4458,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 							{
 							if (query->h.flags.b[0] & kDNSFlag0_TC)
 								LogMsg("%##s (%s) : Cannot perform multi-packet known-answer suppression from more than one "
-									"client at a time %.16a %ld %.16a (this is benign if it happens only rarely)",
+									"client at a time %.16a %ld %.16a (only bad if it happens more than a few times per minute)",
 									rr->name.c, DNSTypeName(rr->rrtype), &rr->v6Requester, m->timenow - rr->v6RequesterTime, &srcaddr->ip.v6);
 							rr->v6Requester = onesIPv6Addr;
 							}
