@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.214  2003/07/13 01:47:53  cheshire
+Fix one error and one warning in the Windows build
+
 Revision 1.213  2003/07/12 04:25:48  cheshire
 Fix minor signed/unsigned warnings
 
@@ -3664,7 +3667,9 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 					}
 				}
 			}
+		#if MDNS_DEBUGMSGS
 		debugf("Clear unused records; m->rrcache_totalused was %lu; now %lu", oldtotalused, m->rrcache_totalused);
+		#endif
 		}
 	
 	if (m->rrcache_free)	// If there are records in the free list, take one

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.78  2003/07/13 01:47:53  cheshire
+Fix one error and one warning in the Windows build
+
 Revision 1.77  2003/07/11 01:32:38  cheshire
 Syntactic cleanup (no change to funcationality): Now that we only have one host name,
 rename field "hostname1" to "hostname", and field "RR_A1" to "RR_A".
@@ -982,7 +985,7 @@ extern char    *ConvertDomainNameToCString_withescape(const domainname *const na
 
 extern void     ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], domainlabel *const hostlabel);
 
-extern mDNSu8  *ConstructServiceName(domainname *const fqdn, const domainlabel *name, const domainname *const type, const domainname *const domain);
+extern mDNSu8  *ConstructServiceName(domainname *const fqdn, const domainlabel *name, const domainname *type, const domainname *const domain);
 extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel *const name, domainname *const type, domainname *const domain);
 
 // Note: Some old functions have been replaced by more sensibly-named versions.
