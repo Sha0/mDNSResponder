@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.134  2004/03/13 01:57:34  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.133  2004/02/02 22:46:56  cheshire
 Move "CFRelease(dict);" inside the "if (dict)" check
 
@@ -417,7 +420,7 @@ static mDNSu32 clockdivisor = 0;
 static mDNSBool DNSConfigInitialized = mDNSfalse;
 #define MAX_SEARCH_DOMAINS 32
 static domainname *SearchDomains[MAX_SEARCH_DOMAINS];
-
+#define CONFIG_FILE "/etc/mDNSResponder.conf"
 // ***************************************************************************
 // Macros
 
@@ -695,7 +698,7 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on unicast socket", &senderAddr, &destAddr);
 		else if (!strcmp(ss->info->ifa_name, packetifname))
 			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s",
-				&senderAddr, &destAddr, &info->ifinfo.ip, info->ifa_name);
+				&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
 		else
 			{
 			verbosedebugf("myCFSocketCallBack got a packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
@@ -1103,7 +1106,7 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 		}
 	}
 
-mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
+mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa, mDNSBool multicast)
 	{
 	mDNSu32 scope_id = if_nametoindex(ifa->ifa_name);
 	mDNSAddr ip;
@@ -1124,11 +1127,13 @@ mDNSlocal mStatus AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa)
 	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(-1); }
 	strcpy(i->ifa_name, ifa->ifa_name);
 
+	bzero(&i->ifinfo.uDNS_info, sizeof(uDNS_NetworkInterfaceInfo));
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.TxAndRx     = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
-
+	i->ifinfo.Multicast   = multicast;
+	
 	i->next            = mDNSNULL;
 	i->CurrentlyActive = mDNStrue;
 	i->scope_id        = scope_id;
@@ -1158,6 +1163,7 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	{
+	mDNSBool multicast          = mDNStrue;
 	mDNSBool foundav4           = mDNSfalse;
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
 	struct ifaddrs *theLoopback = NULL;
@@ -1185,6 +1191,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		debugf("Updating m->hostlabel to %#s", hostlabel.c);
 		m->p->userhostlabel = m->hostlabel = hostlabel;
 		mDNS_GenerateFQDN(m);
+		if (mDNS_DNSRegistered(m)) mDNS_GenerateGlobalFQDN(m);
 		}
 
 	while (ifa)
@@ -1210,10 +1217,11 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
 		if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) &&
-			(ifa->ifa_flags & IFF_MULTICAST) &&
-		    (ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_POINTOPOINT))
+		    (ifa->ifa_flags & IFF_UP))
 			{
 			int ifru_flags6 = 0;
+			if (!(ifa->ifa_flags & IFF_MULTICAST) || (ifa->ifa_flags & IFF_POINTOPOINT))
+				multicast = mDNSfalse;
 			if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 				{
 				struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
@@ -1231,7 +1239,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 					theLoopback = ifa;
 				else
 					{
-					AddInterfaceToList(m, ifa);
+					AddInterfaceToList(m, ifa, multicast);
 					if (ifa->ifa_addr->sa_family == AF_INET)
 						foundav4 = mDNStrue;
 					}
@@ -1240,10 +1248,10 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 		ifa = ifa->ifa_next;
 		}
 
-//  Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
-//  In the interim, we skip loopback interface only if we found at least one v4 interface to use
+    //  Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
+    //  In the interim, we skip loopback interface only if we found at least one v4 interface to use
 	if (!foundav4 && theLoopback)
-		AddInterfaceToList(m, theLoopback);
+		AddInterfaceToList(m, theLoopback, multicast);
 
 	// Now the list is complete, set the TxAndRx setting for each interface.
 	// We always send and receive using IPv4.
@@ -1545,6 +1553,8 @@ mDNSlocal void DNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes, v
 		RegisterDNSConfig(m, dict, kSCPropNetDNSSearchDomains);		
 		CFRelease(dict);
 		}		
+	if (mDNS_DNSRegistered(m)) mDNS_GenerateGlobalFQDN(m);
+	// no-op if label & domain are unchanged
 	}
 
 mDNSlocal mStatus WatchForDNSChanges(mDNS *const m)	
@@ -1726,12 +1736,35 @@ mDNSlocal mDNSBool mDNSPlatformInit_ReceiveUnicast(void)
 	return(err == 0);
 	}
 
+mDNSlocal void ReadRegDomainFromConfig(mDNS *const m)
+	{
+	FILE *fd;
+	char buf[1024];
+
+    // read registration domain (for dynamic updates) from config file
+    // !!!KRS these must go away once we can learn the reg domain from the network or prefs	
+	m->uDNS_info.regdomain[0] = '\0';
+	fd = fopen(CONFIG_FILE, "r");
+	if (!fd)
+		{
+		if (errno != ENOENT)  LogMsg("ERROR: Config file exists, but cannot be opened.");
+		return;
+		}
+	if (!fgets(buf, 1024, fd)) { LogMsg("ERROR: fgets"); fclose(fd); return; }
+	if (!strncmp(buf, "regdomain", strlen("regdomain"))) strcpy(m->uDNS_info.regdomain, buf + strlen("regdomain") + 1);
+	else LogMsg("Malformatted config file - no registration domain set");
+	if (!fgets(buf, 1024, fd)) { debugf("fgets - no default registration domain"); fclose(fd); return; }
+	if (!strncmp(buf, "defaultreg", strlen("defaultreg"))) strcpy(m->uDNS_info.defaultRegDomain, buf + strlen("defaultreg") + 1);
+	else LogMsg("Malformatted config file - no default registration domain set");
+	fclose(fd);
+	}
+
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
 
-	m->hostlabel.c[0]        = 0;
-
+   	m->hostlabel.c[0]        = 0;
+	
 	char *HINFO_HWstring = "Macintosh";
 	char HINFO_HWstring_buffer[256];
 	int    get_model[2] = { CTL_HW, HW_MODEL };
@@ -1752,6 +1785,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_HWstring, &m->HIHardware.c[1], hlen);
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
+
+	ReadRegDomainFromConfig(m);	
 
 	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;
@@ -1777,6 +1812,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	bzero(SearchDomains, sizeof(domainname *) * MAX_SEARCH_DOMAINS);
 	err = WatchForDNSChanges(m);
     DNSConfigInitialized = mDNStrue;
+   
 	return(err);
 	}
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.18  2004/03/13 01:57:33  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.17  2004/01/28 21:14:23  cheshire
 Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)
 
@@ -66,7 +69,9 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 // Set MDNS_DEBUGMSGS to 2 to generate verbose debugging messages
 // MDNS_DEBUGMSGS is normally set in the project options (or makefile) but can also be set here if desired
 
-//#define MDNS_DEBUGMSGS 2
+#ifndef MDNS_DEBUGMSGS
+#define MDNS_DEBUGMSGS 2
+#endif
 
 // Set MDNS_CHECK_PRINTF_STYLE_FUNCTIONS to 1 to enable extra GCC compiler warnings
 // Note: You don't normally want to do this, because it generates a bunch of

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.153  2004/03/13 01:57:33  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.152  2004/03/09 02:27:16  cheshire
 Remove erroneous underscore in 'packed_struct' (makes no difference now, but might in future)
 
@@ -706,8 +709,9 @@ enum
 	//                        = -65550,
 	mStatus_Incompatible      = -65551,
 	mStatus_BadInterfaceErr   = -65552,
-
-	// -65553 - -65789 currently unused
+	mStatus_Refused           = -65553,
+	mStatus_NoSuchRecord      = -65554,
+	// -65555 - -65789 currently unused
 
 	// Non-error values:
 	mStatus_GrowCache         = -65790,
@@ -846,9 +850,10 @@ enum
 
 	kDNSRecordTypeAdvisory         = 0x04,	// Like Shared, but no goodbye packet
 	kDNSRecordTypeShared           = 0x08,	// Shared means record name does not have to be unique -- use random delay on responses
+
 	kDNSRecordTypeVerified         = 0x10,	// Unique means mDNS should check that name is unique (and then send immediate responses)
 	kDNSRecordTypeKnownUnique      = 0x20,	// Known Unique means mDNS can assume name is unique without checking
-
+	                                        // For Dynamic Update records, Known Unique means the record must already exist on the server.
 	kDNSRecordTypeUniqueMask       = (kDNSRecordTypeUnique | kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique),
 	kDNSRecordTypeActiveMask       = (kDNSRecordTypeAdvisory | kDNSRecordTypeShared | kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique),
 
@@ -937,12 +942,28 @@ struct ResourceRecord_struct
 	RData           *rdata;				// Pointer to storage for this rdata
 	};
 
+enum
+	{
+	regState_FetchingZoneData  = 1,     // getting info - update not sent
+	regState_Pending           = 2,     // update sent, reply not received
+	regState_Registered        = 3,     // update sent, reply received 
+	regState_DeregPending      = 4,     // dereg sent, reply not received
+	regState_DeregDeferred     = 5,     // dereg requested while in Pending state - send dereg AFTER registration is confirmed
+	regState_Cancelled         = 6,     // update not sent, reg. cancelled by client
+	regState_TargetChange      = 7,     // host name change update pending
+	regState_Unregistered      = 8      // not in any list
+	};
+
+typedef mDNSu16 regState_t;		
+
 typedef struct
 	{
+    regState_t   state;
     mDNSOpaque16 id;
-    domainname zone;  // the zone that is updated
-    mDNSAddr ns;  // primary name server for the record's zone
-	} uDNS_ResRecInfo;
+    domainname   zone;  // the zone that is updated
+    mDNSAddr     ns;    // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
+    mDNSBool     add;   // !!!KRS this should really be an enumerated state
+	} uDNS_RegInfo;
 
 	
 struct AuthRecord_struct
@@ -954,7 +975,7 @@ struct AuthRecord_struct
 
 	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
 	ResourceRecord  resrec;
-    uDNS_ResRecInfo uDNS_info;
+    uDNS_RegInfo uDNS_info;
 
     // Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response
@@ -1027,6 +1048,13 @@ typedef struct
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
 
+typedef struct
+	{
+    AuthRecord RR_A;
+    mDNSBool registered;                // True if a name for the interface is globally registered
+    domainname regname;                 // the name registered to the update server
+	} uDNS_NetworkInterfaceInfo;
+
 struct NetworkInterfaceInfo_struct
 	{
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
@@ -1043,13 +1071,16 @@ struct NetworkInterfaceInfo_struct
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
 	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
 	AuthRecord RR_PTR;					// PTR (reverse lookup) record
-	AuthRecord RR_HINFO;
+	AuthRecord RR_HINFO; 
+
+    uDNS_NetworkInterfaceInfo uDNS_info;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
 	mDNSInterfaceID InterfaceID;
 	mDNSAddr        ip;
 	mDNSBool        Advertise;			// Set Advertise to false if you are only searching on this interface
 	mDNSBool        TxAndRx;			// Set to false if not sending and receiving packets on this interface
+    mDNSBool        Multicast;          // Set to true if the interface is capable of sending/receiving multicast
 	};
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
@@ -1062,6 +1093,7 @@ struct ExtraResourceRecord_struct
 	// that this extra memory is available, which would result in any fields after the AuthRecord getting smashed
 	};
 
+
 // Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
@@ -1070,7 +1102,9 @@ struct ServiceRecordSet_struct
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	// No fields need to be set up by the client prior to calling mDNS_RegisterService();
 	// all required data is passed as parameters to that function.
-	mDNSServiceCallback *ServiceCallback;
+    ServiceRecordSet    *next;
+    uDNS_RegInfo        uDNS_info;
+    mDNSServiceCallback *ServiceCallback;
 	void                *ServiceContext;
 	ExtraResourceRecord *Extras;	// Optional list of extra AuthRecords attached to this service registration
 	mDNSu32              NumSubTypes;
@@ -1110,6 +1144,7 @@ typedef struct
     mDNSs32               timestamp;
     mDNSBool              internal;
     InternalResponseHndlr responseCallback;   // NULL if internal field is false
+    CacheRecord           *knownAnswers;
     void *context;
     } uDNS_QuestionInfo;
 
@@ -1201,11 +1236,22 @@ enum
 
 typedef struct 
     {
-    DNSQuestion     *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
-    AuthRecord      *ActiveRegistrations;
-    mDNSu16         NextMessageID;
-    mDNSAddr        Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
-    } uDNS_data_t;  
+    mDNSs32          nextevent;
+    DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+    ServiceRecordSet *ServiceRegistrations;
+    AuthRecord       *RecordRegistrations;
+    mDNSu16          NextMessageID;
+    mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
+    domainname       hostname;           // global name for dynamic registration of address records
+    char             regdomain[MAX_ESCAPED_DOMAIN_NAME];
+                                         // domain in which above hostname is registered
+                                         // currently set by the platform layer at startup
+                                         // do not set if services / address records are not to be globally registered to an update server
+                                         // !!!KRS this must go away once we can learn the reg domain from the network or prefs
+    char       defaultRegDomain[MAX_ESCAPED_DOMAIN_NAME];
+                                         // if set, all services that don't explicitly specify a domain upon registration will be
+                                         // registered in this domain.  if not set, .local will be used by default
+    } uDNS_GlobalInfo;  
 
 struct mDNS_struct
 	{
@@ -1266,7 +1312,7 @@ struct mDNS_struct
 	domainlabel nicelabel;				// Rich text label encoded using canonically precomposed UTF-8
 	domainlabel hostlabel;				// Conforms to RFC 1034 "letter-digit-hyphen" ARPANET host name rules
 	domainname  hostname;				// Host Name, e.g. "Foo.local."
-	UTF8str255 HIHardware;
+    UTF8str255 HIHardware;
 	UTF8str255 HISoftware;
 	AuthRecord *ResourceRecords;
 	AuthRecord *DuplicateRecords;		// Records currently 'on hold' because they are duplicates of existing records
@@ -1280,7 +1326,7 @@ struct mDNS_struct
 	mDNSs32 SuppressProbes;
 
     // unicast-specific data
-    uDNS_data_t uDNS_data;
+    uDNS_GlobalInfo uDNS_info;
    
 	};
 
@@ -1618,6 +1664,12 @@ extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 // mDNS_GenerateFQDN() is called once on startup (typically from mDNSPlatformInit())
 // and then again on each subsequent change of the dot-local host name.
 //
+// !!!KRS
+// mDNS_GenerateGlobalFQDN() is called to register a domain name via Dynamic DNS update.  It should be
+// called on startup (after acquiring an IP address and DNS server) and on each change to the machine name
+// or registration domain.  The domain parameter is the domain in which the address record is to be registered,
+// e.g. "mycompany.com".  The full name is formed by appending this domain to the machine's host label.
+//
 // mDNS_RegisterInterface() is used by the platform support layer to inform mDNSCore of what
 // physical and/or logical interfaces are available for sending and receiving packets.
 // Typically it is called on startup for each available interface, but register/deregister may be
@@ -1628,11 +1680,14 @@ extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 // -- Address-to-name records (PTR)
 // -- Host information (HINFO)
 //
+// mDNS_SetDynamicRegistrationDomain is used to enable dynamic update registrations of address records
+// in the specified domain.
+//
 // mDNS_RegisterDNS() is used by the platform support layer to provide the core with the addresses of
 // available domain name servers for unicast queries/updates.  RegisterDNS() should be called once for
 // each name server, typically at startup, or when a new name server becomes available.  DeregiterDNS()
 // must be called whenever a registered name server becomes unavailable.  DeregisterDNSList deregisters
-// all registered servers.
+// all registered servers.  mDNS_DNSRegistered() returns true if one or more servers are registered in the core.
 //
 // mDNSCoreInitComplete() is called when the platform support layer is finished.
 // Typically this is at the end of mDNSPlatformInit(), but may be later
@@ -1645,11 +1700,13 @@ extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 // not lightweight second-by-second CPU power management modes.)
 
 extern void     mDNS_GenerateFQDN(mDNS *const m);
+extern  void    mDNS_GenerateGlobalFQDN(mDNS *const m);
 extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set);
 extern void     mDNS_RegisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);
 extern void     mDNS_DeregisterDNS(mDNS *const m, mDNSv4Addr *const dnsAddr);
 extern void     mDNS_DeregisterDNSList(mDNS *const m);
+extern mDNSBool mDNS_DNSRegistered(mDNS *const m);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,

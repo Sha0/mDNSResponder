@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.10  2004/03/13 01:57:33  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.9  2004/02/21 08:56:58  bradley
 Wrap prototypes with extern "C" for C++ builds.
 
@@ -163,7 +166,7 @@ extern mDNSu16 CompressedDomainNameLength(const domainname *const name, const do
 extern mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText);
 extern mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText);
 extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText);
-
+extern void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 #define ValidateDomainName(N) (DomainNameLength(N) <= MAX_DOMAIN_NAME)
 
 

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.364  2004/03/13 01:57:33  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.363  2004/03/12 21:00:51  cheshire
 Also show port numbers when logging "apparent spoof mDNS Response" messages
 
@@ -1803,13 +1806,11 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
 #endif
 
-#ifdef UNICAST_REGISTRATION
 	// If the client has specified an explicit InterfaceID,
-	// then we do a multicast query on that interface, even for unicast domains.
+	// then we do a multicast registration  on that interface, even for unicast domains.
     if (rr->resrec.InterfaceID || IsLocalDomain(&rr->resrec.name))
     	rr->uDNS_info.id = zeroID;
-    else return uDNS_Register(m, rr);
-#endif // UNICAST_REGISTRATION
+    else return uDNS_RegisterRecord(m, rr);
 
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
@@ -2004,10 +2005,8 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	mDNSu8 RecordType = rr->resrec.RecordType;
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 
-#ifdef UNICAST_REGISTRATION
     if (!rr->resrec.InterfaceID && !IsLocalDomain(&rr->resrec.name) && rr->uDNS_info.id.NotAnInteger)
-		return uDNS_Deregister(m, rr);
-#endif // UNICAST_REGISTRATION
+		return uDNS_DeregisterRecord(m, rr);
 	
 	if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly) p = &m->LocalOnlyRecords;
 	while (*p && *p != rr) p=&(*p)->next;
@@ -3342,7 +3341,7 @@ mDNSlocal CacheRecord *GetFreeCacheRR(mDNS *const m, mDNSu16 RDLength)
 					ReleaseCacheRR(m, rr);
 					}
 				}
-			if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
+			//!!!KRS uncomment before checkin if (m->rrcache_tail[slot] != rp) debugf("GetFreeCacheRR: Updating m->rrcache_tail[%d] from %p to %p", slot, m->rrcache_tail[slot], rp);
 			m->rrcache_tail[slot] = rp;
 			}
 		#if MDNS_DEBUGMSGS
@@ -3436,14 +3435,13 @@ mDNSlocal void mDNS_Lock(mDNS *const m)
 mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	{
 	mDNSs32 e = m->timenow + 0x78000000;
-	mDNSs32 uDNS_e = uDNS_GetNextEventTime(m);
 	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) return(e);
 	if (m->NewQuestions)            return(m->timenow);
 	if (m->NewLocalOnlyQuestions)   return(m->timenow);
 	if (m->NewLocalOnlyRecords)     return(m->timenow);
 	if (m->DiscardLocalOnlyRecords) return(m->timenow);
 	if (m->SuppressSending)         return(m->SuppressSending);
-	if (e - uDNS_e					 > 0) e = uDNS_e;
+	if (e - m->uDNS_info.nextevent   > 0) e = m->uDNS_info.nextevent;
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
 	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
@@ -3476,6 +3474,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
 	mDNS_Lock(m);	// Must grab lock before trying to read m->timenow
 
+	
 	if (m->timenow - m->NextScheduledEvent >= 0)
 		{
 		int i;
@@ -3567,6 +3566,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	// callback function should call mDNS_Execute() (and ignore the return value, which may already be stale
 	// by the time it gets to the timer callback function).
 
+	uDNS_Execute(m);
 	mDNS_Unlock(m);		// Calling mDNS_Unlock is what gives m->NextScheduledEvent its new value
 	return(m->NextScheduledEvent);
 	}
@@ -4766,7 +4766,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
 
-    if (IsActiveUnicastQuery(question, &m->uDNS_data)) return uDNS_StopQuery(m, question);
+    if (IsActiveUnicastQuery(question, &m->uDNS_info)) return uDNS_StopQuery(m, question);
 
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
@@ -4872,7 +4872,15 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
-	return(mDNS_StartQuery(m, question));
+
+	// If the client has specified an explicit InterfaceID,
+	// then we do a multicast query on that interface, even for unicast domains.
+    if (question->InterfaceID || IsLocalDomain(&question->qname))
+    	{
+		question->uDNS_info.id = zeroID;
+		return(mDNS_StartQuery(m, question));
+		}
+	else return uDNS_StartQuery(m, question);
 	}
 
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -5072,13 +5080,13 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *query)
 	{
 	mDNS_Lock(m);
-	if (query->qSRV.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qSRV, &m->uDNS_data))
+	if (query->qSRV.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qSRV, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qSRV);
-	if (query->qTXT.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qTXT, &m->uDNS_data))
+	if (query->qTXT.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qTXT, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qTXT);
-	if (query->qAv4.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv4, &m->uDNS_data))
+	if (query->qAv4.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv4, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qAv4);
-	if (query->qAv6.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv6, &m->uDNS_data))
+	if (query->qAv6.ThisQInterval >= 0 || IsActiveUnicastQuery(&query->qAv6, &m->uDNS_info))
 		mDNS_StopQuery_internal(m, &query->qAv6);
 	mDNS_Unlock(m);
 	}
@@ -5229,7 +5237,7 @@ mDNSexport mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr)
 	return(status);
 	}
 
-mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
+mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
 mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 	{
@@ -5244,8 +5252,11 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	char buffer[256];
 	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
 	if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
-	
-	mDNS_SetupResourceRecord(&set->RR_A,     mDNSNULL, set->InterfaceID, kDNSType_A,     kDefaultTTLforUnique, kDNSRecordTypeUnique,      HostNameCallback, set);
+
+	// Send dynamic update for non-linklocal IPv4 Addresses
+	uDNS_AdvertiseInterface(m, set);
+	if (!set->Multicast) { debugf("Interface not multicast capable.  Registering via unicast only"); return; }
+	mDNS_SetupResourceRecord(&set->RR_A,     mDNSNULL, set->InterfaceID, kDNSType_A,     kDefaultTTLforUnique, kDNSRecordTypeUnique,      mDNS_HostNameCallback, set);
 	mDNS_SetupResourceRecord(&set->RR_PTR,   mDNSNULL, set->InterfaceID, kDNSType_PTR,   kDefaultTTLforUnique, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	mDNS_SetupResourceRecord(&set->RR_HINFO, mDNSNULL, set->InterfaceID, kDNSType_HINFO, kDefaultTTLforUnique, kDNSRecordTypeUnique,      mDNSNULL, mDNSNULL);
 
@@ -5304,7 +5315,8 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 mDNSlocal void DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	NetworkInterfaceInfo *intf;
-	// If we still have address records referring to this one, update them
+	
+    // If we still have address records referring to this one, update them
 	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
 	AuthRecord *A = primary ? &primary->RR_A : mDNSNULL;
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
@@ -5321,48 +5333,69 @@ mDNSlocal void DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (set->RR_HINFO.resrec.RecordType) mDNS_Deregister_internal(m, &set->RR_HINFO, mDNS_Dereg_normal);
 	}
 
-mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
+mDNSlocal void GenerateFQDN(mDNS *const m, const char *domain, mDNSBool local)
 	{
 	domainname newname;
 	mDNS_Lock(m);
 
 	newname.c[0] = 0;
-	if (!AppendDomainLabel(&newname, &m->hostlabel))  LogMsg("ERROR! Cannot create dot-local hostname");
-	if (!AppendLiteralLabelString(&newname, "local")) LogMsg("ERROR! Cannot create dot-local hostname");
-	if (!SameDomainName(&m->hostname, &newname))
+	if (!AppendDomainLabel(&newname, &m->hostlabel))  LogMsg("ERROR: GenerateFQDN:  Cannot create hostname");
+	if (!AppendDNSNameString(&newname, domain)) LogMsg("ERROR: GenerateFQDN:  Cannot create hostname");
+		
+	if ((local && !SameDomainName(&m->hostname, &newname)) ||
+		(!local && !SameDomainName(&m->uDNS_info.hostname, &newname)))
 		{
 		NetworkInterfaceInfo *intf;
 		AuthRecord *rr;
 
-		m->hostname = newname;
+		if (local) m->hostname = newname;
+		else       m->uDNS_info.hostname = newname;
 
+		//!!!KRS for unicast, we can do the deadvertisements/new adverts in the same update message
 		// 1. Stop advertising our address records on all interfaces
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise) DeadvertiseInterface(m, intf);
+			if (intf->Advertise)
+				local ? DeadvertiseInterface(m, intf) : uDNS_DeadvertiseInterface(m, intf);
 
 		// 2. Start advertising our address records using the new name
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->Advertise) AdvertiseInterface(m, intf);
+			if (intf->Advertise)
+				local ? AdvertiseInterface(m, intf) : uDNS_AdvertiseInterface(m, intf);
 
 		// 3. Make sure that any SRV records (and the like) that reference our
 		// host name in their rdata get updated to reference this new host name
-		for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
-		for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
-		}
-
-	mDNS_Unlock(m);
+		if (local)
+			{
+			for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
+			for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
+			}
+		else uDNS_UpdateServiceTargets(m);			
+		}				
+		mDNS_Unlock(m);
 	}
 
-mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
+mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
+	{
+	GenerateFQDN(m, "local.", mDNStrue);
+	}
+
+mDNSexport void mDNS_GenerateGlobalFQDN(mDNS *const m)
+	{
+    if (!m->uDNS_info.regdomain[0]) return;
+    GenerateFQDN(m, m->uDNS_info.regdomain, mDNSfalse);
+	}
+
+
+mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)rr;	// Unused parameter
-
+	
 	#if MDNS_DEBUGMSGS
 		{
 		char *msg = "Unknown result";
 		if      (result == mStatus_NoError)      msg = "Name registered";
 		else if (result == mStatus_NameConflict) msg = "Name conflict";
-		debugf("HostNameCallback: %##s (%s) %s (%ld)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), msg, result);
+		debugf("mDNS_HostNameCallback: %##s (%s) %s (%ld)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype), msg, result);
 		}
 	#endif
 
@@ -5379,7 +5412,7 @@ mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	else if (result == mStatus_NameConflict)
 		{
 		domainlabel oldlabel = m->hostlabel;
-
+		mDNSBool local = (IsLocalDomain(&rr->resrec.name) || rr->resrec.InterfaceID);
 		// 1. First give the client callback a chance to pick a new name
 		if (m->MainCallback)
 			{
@@ -5391,12 +5424,24 @@ mDNSlocal void HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		// 2. If the client callback didn't do it, add (or increment) an index ourselves
 		if (SameDomainLabel(m->hostlabel.c, oldlabel.c))
 			IncrementLabelSuffix(&m->hostlabel, mDNSfalse);
-
+		
 		// 3. Generate the FQDNs from the hostlabel,
 		// and make sure all SRV records, etc., are updated to reference our new hostname
-		mDNS_GenerateFQDN(m);
-		LogMsg("Link-Local Host Name %#s.local. already in use; new name %#s.local. selected for this host.", oldlabel.c, m->hostlabel.c);
+		if (!local)
+			{
+			//!!!KRS clean this up
+			char regdomain[MAX_ESCAPED_DOMAIN_NAME];
+			ConvertDomainNameToCString_unescaped((domainname *)(rr->resrec.name.c + rr->resrec.name.c[0] + 1), regdomain);
+			mDNS_GenerateGlobalFQDN(m);
+			LogMsg("Host Name %s.%s already in use; new name %s.%s selected for this host", oldlabel.c, regdomain, m->hostlabel.c, regdomain);
+			}
+		else
+			{
+			mDNS_GenerateFQDN(m);
+			LogMsg("Link-Local Host Name %#s.local. already in use; new name %#s.local. selected for this host.", oldlabel.c, m->hostlabel.c);
+			}
 		}
+	else LogMsg("mDNS_HostNameCallback: Unknown error %d for registration of record %s", result,  rr->resrec.name.c);
 	}
 
 mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *active)
@@ -5452,6 +5497,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			"not represented in list; marking active and retriggering queries" :
 			"already represented in list; marking inactive for now");
 
+	
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	// Therefore, when registering an interface, we want to re-trigger our questions and re-probe our Resource Records,
@@ -5533,7 +5579,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				break;
 		if (intf)
 			{
-			debugf("mDNS_DeregisterInterface: Another representative of InterfaceID %p exists; making it active",
+			debugf("mDNS_DeregisterInterfac: Another representative of InterfaceID %p exists; making it active",
 				set->InterfaceID);
 			intf->InterfaceActive = mDNStrue;
 			UpdateInterfaceProtocols(m, intf);
@@ -5569,8 +5615,10 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 	// If we were advertising on this interface, deregister those address and reverse-lookup records now
 	if (set->Advertise)
+		{
 		DeadvertiseInterface(m, set);
-
+		uDNS_DeadvertiseInterface(m, set);
+		}
 	// If we have any cache records received on this interface that went away, then re-verify them.
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
@@ -5664,6 +5712,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, InterfaceID, kDNSType_SRV, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
 	
+	
 	// If the client is registering an oversized TXT record,
 	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it
 	if (sr->RR_TXT.resrec.rdata->MaxRDLength < txtlen)
@@ -5720,6 +5769,11 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 
+	// If the client has specified an explicit InterfaceID,
+	// then we do a multicast registration  on that interface, even for unicast domains.
+    if (!InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+		return uDNS_RegisterService(m, sr);
+
 	mDNS_Lock(m);
 	err = mDNS_Register_internal(m, &sr->RR_SRV);
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_TXT);
@@ -5731,8 +5785,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_ADV);
 	for (i=0; i<NumSubTypes; i++) if (!err) err = mDNS_Register_internal(m, &sr->SubTypes[i]);
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_PTR);
-	mDNS_Unlock(m);
 
+	mDNS_Unlock(m);
+	
 	if (err) mDNS_DeregisterService(m, sr);
 	return(err);
 	}
@@ -5827,6 +5882,9 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
+    if (!sr->RR_SRV.resrec.InterfaceID && !IsLocalDomain(&sr->RR_SRV.resrec.name))
+		return uDNS_DeregisterService(m, sr);
+
 	if (sr->RR_PTR.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
 		debugf("Service set for %##s already deregistered", sr->RR_PTR.resrec.name.c);
@@ -6011,7 +6069,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NumFailedProbes         = 0;
 	m->SuppressProbes          = 0;
 
-    mDNSPlatformMemZero(&m->uDNS_data, sizeof(uDNS_data_t));
+	uDNS_Init(m);
 	result = mDNSPlatformInit(m);
 
 	return(result);

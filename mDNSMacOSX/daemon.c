@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.155  2004/03/13 01:57:34  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.154  2004/03/12 08:42:47  cheshire
 <rdar://problem/3548256>: Should not allow empty string for resolve domain
 
@@ -287,8 +290,12 @@ Add $Log header
 #define	_UNUSED	__attribute__ ((unused))
 
 //*************************************************************************************************************
-// Globals
 
+
+
+// Globals
+#define LOCAL_DEFAULT_REG 1 // empty string means register in the local domain
+#define DEFAULT_REG_DOMAIN "apple.com." // used if the above flag is turned off
 mDNSexport mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 64
@@ -1006,7 +1013,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 				AbortBlockedClient(x->ClientMachPort, "registration conflict", x);
 			}
 		}
-
+	
 	else if (result == mStatus_MemFree)
 		{
 		if (x->autorename)
@@ -1088,7 +1095,10 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	domainname srv;
 	if (!name[0]) n = mDNSStorage.nicelabel;
 	else if (!MakeDomainLabelFromLiteralString(&n, name))                  { errormsg = "Bad Instance Name"; goto badparam; }
-	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }
+	if (!regtype[0] || !MakeDomainNameFromDNSNameString(&t, regtype))      { errormsg = "Bad Service Type";  goto badparam; }	
+
+	if (!*domain && mDNSStorage.uDNS_info.defaultRegDomain[0]) domain= mDNSStorage.uDNS_info.defaultRegDomain;
+	else if (!*domain) domain = "local.";		
 	if (!MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.")) { errormsg = "Bad Domain";        goto badparam; }
 	if (!ConstructServiceName(&srv, &n, &t, &d))                           { errormsg = "Bad Name";          goto badparam; }
 
@@ -1159,7 +1169,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (port.NotAnInteger) CheckForDuplicateRegistrations(x, &srv, port);
 
 	err = mDNS_RegisterService(&mDNSStorage, &x->s,
-		&x->name, &t, &d,		// Name, type, domain
+		&x->name, &t, &d,       // Name, type, domain
 		mDNSNULL, port,			// Host and port
 		txtinfo, data_len,		// TXT data, length
 		SubTypes, NumSubTypes,	// Subtypes
@@ -1178,7 +1188,7 @@ badparam:
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceRegister(\"%s\", \"%s\", \"%s\", %d) failed: %s (%ld)",
-		client, name, regtype, domain, notAnIntPort, errormsg, err);
+		   client, name, regtype, domain, notAnIntPort, errormsg, err);
 	return(err);
 	}
 	
@@ -1646,6 +1656,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 		rrcachestorage, RR_CACHE_SIZE,
 		mDNS_Init_AdvertiseLocalAddresses,
 		mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext);
+	
 	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);

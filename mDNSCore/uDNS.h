@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.6  2004/03/13 01:57:33  ksekar
+Bug #: <rdar://problem/3192546>: DynDNS: Dynamic update of service records
+
 Revision 1.5  2004/02/21 08:56:58  bradley
 Wrap prototypes with extern "C" for C++ builds.
 
@@ -52,24 +55,37 @@ Bug #: <rdar://problem/3192548>: DynDNS: Unicast query of service records
 	extern "C" {
 #endif
 
-// Entry points into unicast-specific routines, invoked in mDNS.c
+//!!!KRS these must go away once we have notifications
+#define UNICAST_POLL_INTERVAL 20         // polling rate for queries !!!KRS should go away w/ notifications
+#define NO_GOODBYE                       // will we receive goodbye packets from the server?
+
+	
+// Entry points into unicast-specific routines
+
+extern void uDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set);
+extern void uDNS_DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set);
 
 extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
-extern mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_data_t *u);  // returns true if OK to call StopQuery
+extern mDNSBool IsActiveUnicastQuery(DNSQuestion *const question, uDNS_GlobalInfo *u);  // returns true if OK to call StopQuery
 extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 
-extern mStatus uDNS_Register(mDNS *const m, AuthRecord *const rr);
-extern mStatus uDNS_Deregister(mDNS *const m, AuthRecord *const rr);
+extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
+extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
+extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
+extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
+extern void uDNS_UpdateServiceTargets(mDNS *const m);  // call following namechange
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
-	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
+const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
+const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID, mDNSu8 ttl);
 
-// return the time of the next schedule unicast-specific event
-extern mDNSs32 uDNS_GetNextEventTime(const mDNS *const m);
+// returns time of next scheduled event
+extern void uDNS_Execute(mDNS *const m);
 
+extern void uDNS_Init(mDNS *const m);
+	
 #ifdef	__cplusplus
 	}
 #endif
