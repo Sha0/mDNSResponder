@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.509  2005/01/19 03:08:49  cheshire
+<rdar://problem/3961051> CPU Spin in mDNSResponder
+Log messages to help catch and report CPU spins
+
 Revision 1.508  2005/01/18 18:56:32  cheshire
 <rdar://problem/3934245> QU responses not promoted to multicast responses when appropriate
 
@@ -4336,10 +4340,10 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			if (m->NewQuestions->DelayAnswering && m->timenow - m->NewQuestions->DelayAnswering < 0) break;
 			AnswerNewQuestion(m);
 			}
-		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
+		if (i >= 1000) LogMsg("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
 		
 		for (i=0; m->NewLocalOnlyQuestions && i<1000; i++) AnswerNewLocalOnlyQuestion(m);
-		if (i >= 1000) debugf("mDNS_Execute: AnswerNewLocalOnlyQuestion exceeded loop limit");
+		if (i >= 1000) LogMsg("mDNS_Execute: AnswerNewLocalOnlyQuestion exceeded loop limit");
 
 		for (i=0; i<1000 && m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords); i++)
 			{
@@ -4347,7 +4351,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			m->NewLocalRecords = m->NewLocalRecords->next;
 			AnswerLocalQuestions(m, rr, mDNStrue);
 			}
-		if (i >= 1000) debugf("mDNS_Execute: AnswerForNewLocalRecords exceeded loop limit");
+		if (i >= 1000) LogMsg("mDNS_Execute: AnswerForNewLocalRecords exceeded loop limit");
 
 		// 5. See what packets we need to send
 		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) DiscardDeregistrations(m);
