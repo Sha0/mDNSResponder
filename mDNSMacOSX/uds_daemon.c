@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.35  2003/12/03 19:10:22  ksekar
+Bug #: <rdar://problem/3498644>: malloc'd data not zero'd
+
 Revision 1.34  2003/12/03 02:00:01  ksekar
 Bug #: <rdar://problem/3498644>: malloc'd data not zero'd
 
@@ -1207,7 +1210,6 @@ static void handle_regservice_request(request_state *request)
     srs_size = sizeof(ServiceRecordSet) + (sizeof(RDataBody) > txtlen ? 0 : txtlen - sizeof(RDataBody));
     r_srv->srs = mallocL("handle_regservice_request", srs_size);
     if (!r_srv->srs) goto malloc_error;
-    r_srv->extras = NULL;
     if (num_subtypes > 0)
         {
         r_srv->subtypes = mallocL("handle_regservice_request", num_subtypes * sizeof(AuthRecord));
@@ -1228,6 +1230,7 @@ static void handle_regservice_request(request_state *request)
     else r_srv->subtypes = NULL;
     r_srv->request = request;
     
+    r_srv->extras = NULL;
     r_srv->autoname = (!name[0]);
     r_srv->rename_on_memfree = 0;
     r_srv->renameonconflict = !(flags & kDNSServiceFlagsNoAutoRename);
