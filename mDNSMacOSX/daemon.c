@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.254  2005/03/03 04:34:19  cheshire
+<rdar://problem/4025973> Bonjour name conflict dialog appears during MacBuddy
+
 Revision 1.253  2005/03/03 03:55:09  cheshire
 <rdar://problem/3862944> Name collision notifications should be localized
 
@@ -1788,16 +1791,23 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 			LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
 		else if (m->p->NotifyUser)
 			{
-			typedef void CFStringAppendFN(CFMutableStringRef theString, CFStringRef appendedString);
-			CFStringAppendFN *const append = (OSXVers < 8) ? &CFStringAppend : (CFStringAppendFN*)&CFArrayAppendValue;
-			append(alertHeader, s0);
-			append(alertHeader, s1);
-			append(alertHeader, CFSTR("is already in use on this network."));
-			append(alertHeader, CFSTR("  "));
-			append(alertHeader, CFSTR("The name has been changed to"));
-			append(alertHeader, s2);
-			append(alertHeader, CFSTR("automatically."));
-			ShowNameConflictNotification(alertHeader, subtext);
+			uid_t uid;
+			gid_t gid;
+			CFStringRef userName = SCDynamicStoreCopyConsoleUser(NULL, &uid, &gid);
+			if (userName)
+				{
+				CFRelease(userName);
+				typedef void CFStringAppendFN(CFMutableStringRef theString, CFStringRef appendedString);
+				CFStringAppendFN *const append = (OSXVers < 8) ? &CFStringAppend : (CFStringAppendFN*)&CFArrayAppendValue;
+				append(alertHeader, s0);
+				append(alertHeader, s1);
+				append(alertHeader, CFSTR("is already in use on this network."));
+				append(alertHeader, CFSTR("  "));
+				append(alertHeader, CFSTR("The name has been changed to"));
+				append(alertHeader, s2);
+				append(alertHeader, CFSTR("automatically."));
+				ShowNameConflictNotification(alertHeader, subtext);
+				}
 			}
 		if (s0)          CFRelease(s0);
 		if (s1)          CFRelease(s1);
