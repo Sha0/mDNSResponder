@@ -343,6 +343,7 @@ static void DNSSD_API reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNS
 static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 	{
+	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	const unsigned char *rd  = rdata;
 	const unsigned char *end = rdata + rdlen;
 	char rdb[1000];
@@ -363,7 +364,9 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint3
 					while (rd < end && p < lim) p += snprintf(p, lim-p, " %02X", *rd++);
 					break;
 		}
-	printf("%-30s%4d%4d  %s\n", fullname, rrtype, rrclass, rdb);
+	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
+	printtimestamp();
+	printf("%s%6X%3d %-30s%4d%4d %s\n", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
 	}
 
 //*************************************************************************************************************
