@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.5  2004/01/24 03:40:56  cheshire
+Move mDNSAddrIsDNSMulticast() from DNSCommon.h to mDNSClientAPI.h so clients can use it
+
 Revision 1.4  2004/01/24 03:38:27  cheshire
 Fix minor syntactic error: Headers should use "extern" declarations, not "mDNSexport"
 
@@ -98,7 +101,6 @@ extern const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfac
 extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
 extern mDNSu32 mDNSRandom(mDNSu32 max);
-extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
