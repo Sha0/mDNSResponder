@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.11  2003/05/06 00:00:50  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
 Revision 1.10  2003/04/25 01:45:57  cheshire
 <rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
 
@@ -354,7 +357,7 @@ static void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int skt)
 // or they can alternatively just require all registering services to provide an explicit name
 mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
 	{
-	ConvertCStringToDomainLabel("Fill in Default Service Name Here", namelabel);
+	MakeDomainLabelFromLiteralString(namelabel, "Fill in Default Service Name Here");
 	}
 
 // This gets the current hostname, truncating it at the first dot if necessary
@@ -770,12 +773,12 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	// Set up the nice label
 	m->nicelabel.c[0] = 0;
 	GetUserSpecifiedFriendlyComputerName(&m->nicelabel);
-	if (m->nicelabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->nicelabel);
+	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, "Macintosh");
 
 	// Set up the RFC 1034-compliant label
 	m->hostlabel.c[0] = 0;
 	GetUserSpecifiedRFC1034ComputerName(&m->hostlabel);
-	if (m->hostlabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->hostlabel);
+	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
 
 	mDNS_GenerateFQDN(m);
 

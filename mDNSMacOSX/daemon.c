@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.93  2003/05/06 00:00:49  cheshire
+ * <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+ *
  * Revision 1.92  2003/04/04 20:38:57  cheshire
  * Add $Log header
  *
@@ -552,8 +555,8 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		x->next = DNSServiceBrowserList;
 		DNSServiceBrowserList = x;
 	
-		ConvertCStringToDomainName(regtype, &t);
-		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
+		MakeDomainNameFromDNSNameString(&t, regtype);
+		MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.");
 	
 		LogOperation("%5d: DNSServiceBrowser(%##s%##s) START", client, &t, &d);
 		err = mDNS_StartBrowse(&mDNSStorage, &x->q, &t, &d, mDNSInterface_Any, FoundInstance, x);
@@ -680,9 +683,9 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 		x->next = DNSServiceResolverList;
 		DNSServiceResolverList = x;
 	
-		ConvertCStringToDomainLabel(name, &n);
-		ConvertCStringToDomainName(regtype, &t);
-		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
+		MakeDomainLabelFromLiteralString(&n, name);
+		MakeDomainNameFromDNSNameString(&t, regtype);
+		MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.");
 		ConstructServiceName(&x->i.name, &n, &t, &d);
 		x->i.InterfaceID = mDNSInterface_Any;
 	
@@ -845,9 +848,9 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 		x->autoname = (*name == 0);
 		x->autorename = mDNSfalse;
 		if (x->autoname) x->name = mDNSStorage.nicelabel;
-		else ConvertCStringToDomainLabel(name, &x->name);
-		ConvertCStringToDomainName(regtype, &t);
-		ConvertCStringToDomainName(*domain ? domain : "local.", &d);
+		else MakeDomainLabelFromLiteralString(&x->name, name);
+		MakeDomainNameFromDNSNameString(&t, regtype);
+		MakeDomainNameFromDNSNameString(&d, *domain ? domain : "local.");
 		port.NotAnInteger = notAnIntPort;
 	
 		// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with

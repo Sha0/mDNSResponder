@@ -409,12 +409,12 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	m->nicelabel.c[0] = 0;
 	GetUserSpecifiedComputerName(&m->nicelabel);
 //	m->nicelabel = *(domainlabel*)"\pStu";	// For conflict testing
-	if (m->nicelabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->nicelabel);
+	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, "Macintosh");
 
 	// Set up the RFC 1034-compliant label
 	m->hostlabel.c[0] = 0;
 	ConvertUTF8PstringToRFC1034HostLabel(m->nicelabel.c, &m->hostlabel);
-	if (m->hostlabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->hostlabel);
+	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
 
 	mDNS_GenerateFQDN(m);
 

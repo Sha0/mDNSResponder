@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.5  2003/05/06 00:00:50  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
 Revision 1.4  2002/12/23 22:13:31  jgraessl
 
 Reviewed by: Stuart Cheshire
@@ -249,8 +252,8 @@ int main(int argc, char **argv)
     
         // Construct and start the query.
         
-        ConvertCStringToDomainName(gServiceType, &type);
-        ConvertCStringToDomainName("local.", &domain);
+        MakeDomainNameFromDNSNameString(&type, gServiceType);
+        MakeDomainNameFromDNSNameString(&domain, "local.");
 
         status = mDNS_StartBrowse(&mDNSStorage, &question, &type, &domain, mDNSInterface_Any, BrowseCallback, NULL);
     

@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.112  2003/05/06 00:00:46  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
 Revision 1.111  2003/05/05 23:42:08  cheshire
 <rdar://problem/3245631> Resolves never succeed
 Was setting "rr->LastAPTime = timenow - rr->LastAPTime"
@@ -736,22 +739,8 @@ mDNSlocal mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 #pragma mark - Domain Name Utility Functions
 #endif
 
-// Returns length of a domain name INCLUDING the byte for the final null label
-// i.e. for the root label "." it returns one
-// For the FQDN "com." it returns 5 (length, three data bytes, final zero)
-// Legal results are 1 (just root label) to 255 (MAX_DOMAIN_NAME)
-// If the given domainname is invalid, result is 256
-mDNSexport mDNSu16 DomainNameLength(const domainname *const name)
-	{
-	const mDNSu8 *src = name->c;
-	while (*src)
-		{
-		if (*src > MAX_DOMAIN_LABEL) return(MAX_DOMAIN_NAME+1);
-		src += 1 + *src;
-		if (src - name->c >= MAX_DOMAIN_NAME) return(MAX_DOMAIN_NAME+1);
-		}
-	return((mDNSu16)(src - name->c + 1));
-	}
+#define mdnsIsLetter(X) (((X) >= 'A' && (X) <= 'Z') || ((X) >= 'a' && (X) <= 'z'))
+#define mdnsIsDigit(X) (((X) >= '0' && (X) <= '9'))
 
 mDNSexport mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
 	{
@@ -791,6 +780,23 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 	return(mDNStrue);
 	}
 
+// Returns length of a domain name INCLUDING the byte for the final null label
+// i.e. for the root label "." it returns one
+// For the FQDN "com." it returns 5 (length byte, three data bytes, final zero)
+// Legal results are 1 (just root label) to 255 (MAX_DOMAIN_NAME)
+// If the given domainname is invalid, result is 256
+mDNSexport mDNSu16 DomainNameLength(const domainname *const name)
+	{
+	const mDNSu8 *src = name->c;
+	while (*src)
+		{
+		if (*src > MAX_DOMAIN_LABEL) return(MAX_DOMAIN_NAME+1);
+		src += 1 + *src;
+		if (src - name->c >= MAX_DOMAIN_NAME) return(MAX_DOMAIN_NAME+1);
+		}
+	return((mDNSu16)(src - name->c + 1));
+	}
+
 // CompressedDomainNameLength returns the length of a domain name INCLUDING the byte
 // for the final null label i.e. for the root label "." it returns one.
 // E.g. for the FQDN "foo.com." it returns 9
@@ -814,147 +820,142 @@ mDNSlocal mDNSu16 CompressedDomainNameLength(const domainname *const name, const
 	return((mDNSu16)(src - name->c + 1));
 	}
 
-mDNSexport void AppendDomainLabelToName(domainname *const name, const domainlabel *const label)
-	{
-	int i;
-	mDNSu8 *ptr = name->c + DomainNameLength(name) - 1;
-	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME;
-	if (ptr + 1 + label->c[0] + 1 >= lim) return;
-	for (i=0; i<=label->c[0]; i++) *ptr++ = label->c[i];
-	*ptr++ = 0;										// Put the null root label on the end
-	}
-
-// AppendStringLabelToName appends a single label to an existing (possibly empty) domainname.
+// AppendLiteralLabelString appends a single label to an existing (possibly empty) domainname.
 // The C string contains the label as-is, with no escaping, etc.
 // Any dots in the name are literal dots, not label separators
-mDNSexport void AppendStringLabelToName(domainname *const name, const char *cstr)
+// If successful, AppendLiteralLabelString returns a pointer to the next unused byte
+// in the domainname bufer (i.e., the next byte after the terminating zero).
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// AppendLiteralLabelString returns mDNSNULL.
+mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *cstr)
 	{
-	mDNSu8 *lengthbyte;
-	mDNSu8 *ptr = name->c + DomainNameLength(name) - 1;
-	const mDNSu8 *lim = name->c + MAX_DOMAIN_NAME - 1;
-	if (lim > ptr + MAX_DOMAIN_LABEL + 1)
-		lim = ptr + MAX_DOMAIN_LABEL + 1;
-	lengthbyte = ptr++;
-	while (*cstr && ptr < lim) *ptr++ = (mDNSu8)*cstr++;
-	*lengthbyte = (mDNSu8)(ptr - lengthbyte - 1);
-	*ptr++ = 0;										// Put the null root label on the end
-	}
-
-mDNSexport void AppendDomainNameToName(domainname *const name, const domainname *const append)
-	{
-	int i;
-	mDNSu8 *ptr = name->c + DomainNameLength(name) - 1;
-	const mDNSu8 *src = append->c;
-	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME;
-	while(src[0])
-		{
-		if (ptr + 1 + src[0] + 1 >= lim) return;
-		for (i=0; i<=src[0]; i++) *ptr++ = src[i];
-		*ptr = 0;	// Put the null root label on the end
-		src += i;
-		}
-	}
-
-// AppendStringNameToName appends zero or more labels to an existing (possibly empty) domainname.
-// The C string contains the labels separated by dots, but otherwise as-is, with no escaping, etc.
-mDNSexport void AppendStringNameToName(domainname *const name, const char *cstr)
-	{
-	mDNSu8 *ptr = name->c + DomainNameLength(name) - 1;			// Find end of current name
-	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME - 1;		// Find limit of how much we can add
-	while (*cstr)
-		{
-		mDNSu8 *const lengthbyte = ptr++;
-		const mDNSu8 *const lim2 = ptr + MAX_DOMAIN_LABEL;
-		const mDNSu8 *const lim3 = (lim < lim2) ? lim : lim2;
-		while (*cstr && *cstr != '.' && ptr < lim3) *ptr++ = (mDNSu8)*cstr++;
-		*lengthbyte = (mDNSu8)(ptr - lengthbyte - 1);
-		if (*cstr == '.') cstr++;
-		}
+	mDNSu8       *      ptr  = name->c + DomainNameLength(name) - 1;	// Find end of current name
+	const mDNSu8 *const lim1 = name->c + MAX_DOMAIN_NAME - 1;			// Limit of how much we can add (not counting final zero)
+	const mDNSu8 *const lim2 = ptr + MAX_DOMAIN_LABEL;
+	const mDNSu8 *const lim  = (lim1 < lim2) ? lim1 : lim2;
+	mDNSu8       *lengthbyte = ptr++;									// Record where the length is going to go
 	
-	*ptr++ = 0;										// Put the null root label on the end
+	while (*cstr && ptr < lim) *ptr++ = (mDNSu8)*cstr++;	// Copy the data
+	*lengthbyte = (mDNSu8)(ptr - lengthbyte - 1);			// Fill in the length byte
+	*ptr++ = 0;												// Put the null root label on the end
+	if (*cstr) return(mDNSNULL);							// Failure: We didn't successfully consume all input
+	else return(ptr);										// Success: return new value of ptr
 	}
 
-//#define IsThreeDigit(X) (IsDigit((X)[1]) && IsDigit((X)[2]) && IsDigit((X)[3]))
-//#define ValidEscape(X) (X)[0] == '\\' && ((X)[1] == '\\' || (X)[1] == '\\' || IsThreeDigit(X))
-
-#define mdnsIsLetter(X) (((X) >= 'A' && (X) <= 'Z') || ((X) >= 'a' && (X) <= 'z'))
-#define mdnsIsDigit(X) (((X) >= '0' && (X) <= '9'))
-
-mDNSexport void ConvertCStringToDomainLabel(const char *src, domainlabel *label)
+// AppendDNSNameString appends zero or more labels to an existing (possibly empty) domainname.
+// The C string is in conventional DNS syntax:
+// Textual labels, escaped as necessary using the usual DNS '\' notation, separated by dots.
+// If successful, AppendDNSNameString returns a pointer to the next unused byte
+// in the domainname bufer (i.e., the next byte after the terminating zero).
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// AppendDNSNameString returns mDNSNULL.
+mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstr)
 	{
-	mDNSu8       *      ptr   = label->c + 1;					// Where we're putting it
-	const mDNSu8 *const limit = ptr + MAX_DOMAIN_LABEL;			// The maximum we can put
-	while (*src && ptr < limit)									// While we have characters in the label...
-		{
-		mDNSu8 c = (mDNSu8)*src++;								// Read the character
-		if (c == '\\')											// If escape character, check next character
-			{
-			if (*src == '\\' || *src == '.')					// If a second escape, or a dot,
-				c = (mDNSu8)*src++;								// just use the second character
-			else if (mdnsIsDigit(src[0]) && mdnsIsDigit(src[1]) && mdnsIsDigit(src[2]))
-				{												// else, if three decimal digits,
-				int v0 = src[0] - '0';							// then interpret as three-digit decimal
-				int v1 = src[1] - '0';
-				int v2 = src[2] - '0';
-				int val = v0 * 100 + v1 * 10 + v2;
-				if (val <= 255) { c = (mDNSu8)val; src += 3; }	// If valid value, use it
-				}
-			}
-		*ptr++ = c;												// Write the character
-		}
-	label->c[0] = (mDNSu8)(ptr - label->c - 1);
-	}
-
-mDNSexport mDNSu8 *ConvertCStringToDomainName(const char *const cstr, domainname *name)
-	{
-	const mDNSu8 *src         = (const mDNSu8 *)cstr;				// C string we're reading
-	mDNSu8       *ptr         = name->c;							// Where we're putting it
-	const mDNSu8 *const limit = ptr + MAX_DOMAIN_NAME;				// The maximum we can put
-
-	while (*src && ptr < limit)										// While more characters, and space to put them...
+	mDNSu8       *      ptr = name->c + DomainNameLength(name) - 1;	// Find end of current name
+	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME - 1;		// Limit of how much we can add (not counting final zero)
+	while (*cstr && ptr < lim)										// While more characters, and space to put them...
 		{
 		mDNSu8 *lengthbyte = ptr++;									// Record where the length is going to go
-		while (*src && *src != '.' && ptr < limit)					// While we have characters in the label...
+		while (*cstr && *cstr != '.' && ptr < lim)					// While we have characters in the label...
 			{
-			mDNSu8 c = *src++;										// Read the character
+			mDNSu8 c = (mDNSu8)*cstr++;								// Read the character
 			if (c == '\\')											// If escape character, check next character
 				{
-				if (*src == '\\' || *src == '.')					// If a second escape, or a dot,
-					c = *src++;										// just use the second character
-				else if (mdnsIsDigit(src[0]) && mdnsIsDigit(src[1]) && mdnsIsDigit(src[2]))
+				if (*cstr == '\\' || *cstr == '.')					// If a second escape, or a dot,
+					c = (mDNSu8)*cstr++;							// just use the second character
+				else if (mdnsIsDigit(cstr[0]) && mdnsIsDigit(cstr[1]) && mdnsIsDigit(cstr[2]))
 					{												// else, if three decimal digits,
-					int v0 = src[0] - '0';							// then interpret as three-digit decimal
-					int v1 = src[1] - '0';
-					int v2 = src[2] - '0';
+					int v0 = cstr[0] - '0';							// then interpret as three-digit decimal
+					int v1 = cstr[1] - '0';
+					int v2 = cstr[2] - '0';
 					int val = v0 * 100 + v1 * 10 + v2;
-					if (val <= 255) { c = (mDNSu8)val; src += 3; }	// If valid value, use it
+					if (val <= 255) { c = (mDNSu8)val; cstr += 3; }	// If valid value, use it
 					}
 				}
 			*ptr++ = c;												// Write the character
 			}
-		if (*src) src++;											// Skip over the trailing dot (if present)
-		if (ptr - lengthbyte - 1 > MAX_DOMAIN_LABEL) return(mDNSNULL);	// If illegal label, abort
-		*lengthbyte = (mDNSu8)(ptr - lengthbyte - 1);
+		if (*cstr) cstr++;											// Skip over the trailing dot (if present)
+		if (ptr - lengthbyte - 1 > MAX_DOMAIN_LABEL)				// If illegal label, abort
+			return(mDNSNULL);
+		*lengthbyte = (mDNSu8)(ptr - lengthbyte - 1);				// Fill in the length byte
 		}
 
-	if (ptr < limit)												// If we didn't run out of space
-		{
-		*ptr++ = 0;													// Put the final root label
-		return(ptr);												// and return
-		}
-
-	return(mDNSNULL);
+	*ptr++ = 0;														// Put the null root label on the end
+	if (*cstr) return(mDNSNULL);									// Failure: We didn't successfully consume all input
+	else return(ptr);												// Success: return new value of ptr
 	}
 
-//#define convertCstringtodomainname(C,D)        convertCstringtodomainname_withescape((C), (D), -1)
-//#define convertescapedCstringtodomainname(C,D) convertCstringtodomainname_withescape((C), (D), '\\')
+// AppendDomainLabel appends a single label to a name.
+// If successful, AppendDomainLabel returns a pointer to the next unused byte
+// in the domainname bufer (i.e., the next byte after the terminating zero).
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// AppendDomainLabel returns mDNSNULL.
+mDNSexport mDNSu8 *AppendDomainLabel(domainname *const name, const domainlabel *const label)
+	{
+	int i;
+	mDNSu8 *ptr = name->c + DomainNameLength(name) - 1;
+
+	// Check label is legal
+	if (label->c[0] > MAX_DOMAIN_LABEL) return(mDNSNULL);
+
+	// Check that ptr + length byte + data bytes + final zero does not exceed our limit
+	if (ptr + 1 + label->c[0] + 1 > name->c + MAX_DOMAIN_NAME) return(mDNSNULL);
+
+	for (i=0; i<=label->c[0]; i++) *ptr++ = label->c[i];	// Copy the label data
+	*ptr++ = 0;								// Put the null root label on the end
+	return(ptr);
+	}
+
+mDNSexport mDNSu8 *AppendDomainName(domainname *const name, const domainname *const append)
+	{
+	mDNSu8       *      ptr = name->c + DomainNameLength(name) - 1;	// Find end of current name
+	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME - 1;		// Limit of how much we can add (not counting final zero)
+	const mDNSu8 *      src = append->c;
+	while(src[0])
+		{
+		int i;
+		if (ptr + 1 + src[0] + 1 > lim) return(mDNSNULL);
+		for (i=0; i<=src[0]; i++) *ptr++ = src[i];
+		*ptr = 0;	// Put the null root label on the end
+		src += i;
+		}
+	return(ptr);
+	}
+
+// MakeDomainLabelFromLiteralString makes a single domain label from a single literal C string (with no escaping).
+// If successful, MakeDomainLabelFromLiteralString returns mDNStrue.
+// If unable to convert the whole string to a legal domain label (i.e. because length is more than 63 bytes) then
+// MakeDomainLabelFromLiteralString makes a legal domain label from the first 63 bytes of the string and returns mDNSfalse.
+// In some cases silently truncated oversized names to 63 bytes is acceptable, so the return result may be ignored.
+// In other cases silent truncation may not be acceptable, so in those cases the calling function needs to check the return result.
+mDNSexport mDNSBool MakeDomainLabelFromLiteralString(domainlabel *const label, const char *cstr)
+	{
+	mDNSu8       *      ptr   = label->c + 1;						// Where we're putting it
+	const mDNSu8 *const limit = ptr + MAX_DOMAIN_LABEL;				// The maximum we can put
+	while (*cstr && ptr < limit) *ptr++ = (mDNSu8)*cstr++;			// Copy the label
+	label->c[0] = (mDNSu8)(ptr - label->c - 1);						// Set the length byte
+	return(*cstr == 0);												// Return mDNStrue if we successfully consumed all input
+	}
+
+// MakeDomainNameFromDNSNameString makes a native DNS-format domainname from a C string.
+// The C string is in conventional DNS syntax:
+// Textual labels, escaped as necessary using the usual DNS '\' notation, separated by dots.
+// If successful, MakeDomainNameFromDNSNameString returns a pointer to the next unused byte
+// in the domainname bufer (i.e., the next byte after the terminating zero).
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// MakeDomainNameFromDNSNameString returns mDNSNULL.
+mDNSexport mDNSu8 *MakeDomainNameFromDNSNameString(domainname *name, const char *cstr)
+	{
+	name->c[0] = 0;									// Make an empty domain name
+	return(AppendDNSNameString(name, cstr));		// And then add this string to it
+	}
 
 mDNSexport char *ConvertDomainLabelToCString_withescape(const domainlabel *const label, char *ptr, char esc)
 	{
 	const mDNSu8 *      src = label->c;							// Domain label we're reading
 	const mDNSu8        len = *src++;							// Read length of this (non-null) label
-	const mDNSu8 *const end = src + len;							// Work out where the label ends
-	if (len > MAX_DOMAIN_LABEL) return(mDNSNULL);					// If illegal label, abort
+	const mDNSu8 *const end = src + len;						// Work out where the label ends
+	if (len > MAX_DOMAIN_LABEL) return(mDNSNULL);				// If illegal label, abort
 	while (src < end)											// While we have characters in the label
 		{
 		mDNSu8 c = *src++;
@@ -965,8 +966,8 @@ mDNSexport char *ConvertDomainLabelToCString_withescape(const domainlabel *const
 			else if (c <= ' ')									// If non-printing ascii,
 				{												// Output decimal escape sequence
 				*ptr++ = esc;
-				*ptr++ = (char) ('0' + (c / 100)     );
-				*ptr++ = (char) ('0' + (c /  10) % 10);
+				*ptr++ = (char)  ('0' + (c / 100)     );
+				*ptr++ = (char)  ('0' + (c /  10) % 10);
 				c      = (mDNSu8)('0' + (c      ) % 10);
 				}
 			}
@@ -1185,7 +1186,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 											(X) == kDNSRecordTypeVerified    ? DefaultAnnounceIntervalForTypeUnique : \
 											(X) == kDNSRecordTypeKnownUnique ? DefaultAnnounceIntervalForTypeUnique : 0)
 
-#define TimeToAnnounceThisRecord(RR,time) ((RR)->AnnounceCount && (RR)->LastAPTime + (RR)->ThisAPInterval - (time) <= 0)
+#define TimeToAnnounceThisRecord(RR,time) ((RR)->AnnounceCount && (time) - ((RR)->LastAPTime + (RR)->ThisAPInterval) >= 0)
 #define TimeToSendThisRecord(RR,time,level) \
 	((TimeToAnnounceThisRecord(RR,time) || (RR)->SendPriority >= (level)) && ResourceRecordIsValidAnswer(RR))
 
@@ -2474,7 +2475,7 @@ mDNSlocal void BuildProbe(mDNS *const m, DNSMessage *query, mDNSu8 **queryptr, R
 		rr->RecordType     = kDNSRecordTypeVerified;
 		rr->ThisAPInterval = DefaultAnnounceIntervalForTypeUnique;
 		rr->LastAPTime     = m->timenow - DefaultAnnounceIntervalForTypeUnique;
-		verbosedebugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
+		debugf("Probing for %##s (%s) complete", rr->name.c, DNSTypeName(rr->rrtype));
 		if (!rr->Acknowledged && rr->RecordCallback)
 			{
 			// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
@@ -2948,7 +2949,7 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m)
 		m->rrcache_totalused++;
 		if (m->rrcache_totalused >= m->rrcache_report)
 			{
-			debugf("RR Cache now using %d records", m->rrcache_used);
+			debugf("RR Cache now using %d records", m->rrcache_totalused);
 			m->rrcache_report *= 2;
 			}
 		}
@@ -3078,7 +3079,7 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 			if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - nextevent <= 0)
 				{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Probes"; }
 			else if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
-				{ nextevent = m->timenow;                             gNextEventMsg = "Send Answers"; }
+				{ nextevent = m->timenow;                          gNextEventMsg = "Send Answers"; }
 			else if (TimeToAnnounceThisRecord(rr,nextevent) && ResourceRecordIsValidAnswer(rr))
 				{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Announcements"; }
 			}
@@ -4178,7 +4179,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	{
 	question->InterfaceID       = InterfaceID;
 	question->name              = *srv;
-	AppendDomainNameToName(&question->name, domain);
+	AppendDomainName(&question->name, domain);
 	question->rrtype            = kDNSType_PTR;
 	question->rrclass           = kDNSClass_IN;
 	question->QuestionCallback  = Callback;
@@ -4359,7 +4360,7 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *que
 mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNSu8 DomainType,
 	const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
 	{
-	ConvertCStringToDomainName(mDNS_DomainTypeNames[DomainType], &question->name);
+	MakeDomainNameFromDNSNameString(&question->name, mDNS_DomainTypeNames[DomainType]);
 	question->InterfaceID      = InterfaceID;
 	question->rrtype           = kDNSType_PTR;
 	question->rrclass          = kDNSClass_IN;
@@ -4477,14 +4478,13 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 
 	// Set up the Primary mDNS FQDN
 	m->hostname1.c[0] = 0;
-	AppendDomainLabelToName(&m->hostname1, &m->hostlabel);
-	AppendStringLabelToName(&m->hostname1, "local");
+	AppendDomainLabel(&m->hostname1, &m->hostlabel);
+	AppendLiteralLabelString(&m->hostname1, "local");
 
 	// Set up the Secondary mDNS FQDN
 	m->hostname2.c[0] = 0;
-	AppendDomainLabelToName(&m->hostname2, &m->hostlabel);
-	AppendStringLabelToName(&m->hostname2, "local");
-	AppendStringLabelToName(&m->hostname2, "arpa");
+	AppendDomainLabel(&m->hostname2, &m->hostlabel);
+	AppendDNSNameString(&m->hostname2, "local.arpa.");
 
 	// Make sure that any SRV records (and the like) that reference our 
 	// host name in their rdata get updated to reference this new host name
@@ -4547,7 +4547,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		mDNS_sprintf(&buffer[i * 4], "ip6.arpa.");
 		}
 
-	ConvertCStringToDomainName(buffer, &set->RR_PTR.name);
+	MakeDomainNameFromDNSNameString(&set->RR_PTR.name, buffer);
 	set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
 
 	set->RR_A1.RRSet = &primary->RR_A1;	// May refer to self
@@ -4589,7 +4589,7 @@ mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus
 	switch (result)
 		{
 		case mStatus_NoError:
-			verbosedebugf("HostNameCallback: %##s (%s) Name registered",   rr->name.c, DNSTypeName(rr->rrtype));
+			debugf("HostNameCallback: %##s (%s) Name registered",   rr->name.c, DNSTypeName(rr->rrtype));
 			break;
 		case mStatus_NameConflict:
 			debugf("HostNameCallback: %##s (%s) Name conflict",     rr->name.c, DNSTypeName(rr->rrtype));
@@ -5005,8 +5005,8 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
 	mDNSu8 DomainType, const mDNSInterfaceID InterfaceID, char *domname)
 	{
 	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	ConvertCStringToDomainName(mDNS_DomainTypeNames[DomainType], &rr->name);
-	ConvertCStringToDomainName(domname, &rr->rdata->u.name);
+	if (!MakeDomainNameFromDNSNameString(&rr->name, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
+	if (!MakeDomainNameFromDNSNameString(&rr->rdata->u.name, domname))                 return(mStatus_BadParamErr);
 	return(mDNS_Register(m, rr));
 	}
 

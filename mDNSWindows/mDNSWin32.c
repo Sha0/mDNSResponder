@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.10 2003/04/29 00:06:09 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.11 2003/05/06 00:00:51 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.11  2003/05/06 00:00:51  cheshire
+        <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
         Revision 1.10  2003/04/29 00:06:09  cheshire
         <rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
 
@@ -898,7 +901,7 @@ static mStatus	SetupName( mDNS * const inMDNS )
 	{
 		// Nice name has no characters that are representable as an RFC1034 name (e.g. Japanese) so use the default.
 		
-		ConvertCStringToDomainLabel( kMDNSDefaultName, &inMDNS->hostlabel );
+		MakeDomainLabelFromLiteralString( &inMDNS->hostlabel, kMDNSDefaultName );
 	}
 	check( inMDNS->nicelabel.c[ 0 ] != 0 );
 	check( inMDNS->hostlabel.c[ 0 ] != 0 );

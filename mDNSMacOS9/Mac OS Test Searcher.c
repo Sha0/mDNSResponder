@@ -220,8 +220,8 @@ int main()
 			domainname srvtype, srvdom;
 			DoneSetup = true;
 			printf("\nSending mDNS service lookup queries and waiting for responses...\n\n");
-			ConvertCStringToDomainName("_http._tcp.", &srvtype);
-			ConvertCStringToDomainName("local.", &srvdom);
+			MakeDomainNameFromDNSNameString(&srvtype, "_http._tcp.");
+			MakeDomainNameFromDNSNameString(&srvdom, "local.");
 			err = mDNS_StartBrowse(&mDNSStorage, &browsequestion, &srvtype, &srvdom, mDNSInterface_Any, FoundInstance, &services);
 			if (err) break;
 			err = mDNS_GetDomains(&mDNSStorage, &domainquestion, mDNS_DomainTypeBrowse, mDNSInterface_Any, FoundDomain, &services);

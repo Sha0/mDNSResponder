@@ -68,8 +68,8 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 
 	port.b[0] = (UInt8)(PortAsNumber >> 8);
 	port.b[1] = (UInt8)(PortAsNumber     );
-	ConvertCStringToDomainName(type, &t);
-	ConvertCStringToDomainName(domain, &d);
+	MakeDomainNameFromDNSNameString(&t, type);
+	MakeDomainNameFromDNSNameString(&d, domain);
 	
 	if (txtinfo)
 		{
@@ -81,7 +81,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 
 	mDNS_RegisterService(m, recordset, n, &t, &d, mDNSNULL, port, txtbuffer, (mDNSu16)(1+txtbuffer[0]), mDNSInterface_Any, Callback, mDNSNULL);
 
-	ConvertDomainNameToCString_unescaped(&recordset->RR_SRV.name, buffer);
+	ConvertDomainNameToCString(&recordset->RR_SRV.name, buffer);
 	printf("Made Service Records for %s\n", buffer);
 	}
 
@@ -92,7 +92,7 @@ mDNSlocal void RegisterFakeServiceForTesting(mDNS *m, ServiceRecordSet *recordse
 	{
 	static UInt16 NextPort = 0xF000;
 	domainlabel n;
-	ConvertCStringToDomainLabel(name, &n);
+	MakeDomainLabelFromLiteralString(&n, name);
 	RegisterService(m, recordset, NextPort++, txtinfo, &n, type, domain);
 	}
 

@@ -66,6 +66,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.7  2003/05/06 00:00:50  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
 Revision 1.6  2003/03/08 00:35:56  cheshire
 Switched to using new "mDNS_Execute" model (see "mDNSCore/Implementer Notes.txt")
 
@@ -202,7 +205,7 @@ static mDNSBool CheckThatRichTextHostNameIsUsable(const char *richTextHostName, 
         result = mDNSfalse;
     }
     if (result) {
-        ConvertCStringToDomainLabel(richTextHostName, &richLabel);
+        MakeDomainLabelFromLiteralString(&richLabel, richTextHostName);
         ConvertUTF8PstringToRFC1034HostLabel(richLabel.c, &poorLabel);
         if (poorLabel.c[0] == 0) {
             if (printExplanation) {
@@ -575,9 +578,9 @@ static mStatus RegisterOneService(const char *  richTextHostName,
         status = mStatus_NoMemoryErr;
     }
     if (status == mStatus_NoError) {
-        ConvertCStringToDomainLabel(richTextHostName,  &name);
-        ConvertCStringToDomainName(serviceType, &type);
-        ConvertCStringToDomainName(serviceDomain, &domain);
+        MakeDomainLabelFromLiteralString(&name,  richTextHostName);
+        MakeDomainNameFromDNSNameString(&type, serviceType);
+        MakeDomainNameFromDNSNameString(&domain, serviceDomain);
         port.b[0] = (portNumber >> 8) & 0x0FF;
         port.b[1] = (portNumber >> 0) & 0x0FF;;
         status = mDNS_RegisterService(&mDNSStorage, &thisServ->coreServ,

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.68  2003/05/06 00:00:49  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
 Revision 1.67  2003/04/29 00:43:44  cheshire
 Fix compiler warnings
 
@@ -758,12 +761,12 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	// Set up the nice label
 	m->nicelabel.c[0] = 0;
 	GetUserSpecifiedFriendlyComputerName(&m->nicelabel);
-	if (m->nicelabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->nicelabel);
+	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, "Macintosh");
 
 	// Set up the RFC 1034-compliant label
 	m->hostlabel.c[0] = 0;
 	GetUserSpecifiedRFC1034ComputerName(&m->hostlabel);
-	if (m->hostlabel.c[0] == 0) ConvertCStringToDomainLabel("Macintosh", &m->hostlabel);
+	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
 
 	mDNS_GenerateFQDN(m);
 

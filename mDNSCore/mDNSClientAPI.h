@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.47  2003/05/06 00:00:46  cheshire
+<rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
 Revision 1.46  2003/04/30 20:39:09  cheshire
 Add comment
 
@@ -787,29 +790,55 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr, mDNSu8 D
 // work with DNS's native length-prefixed strings. For convenience in C, the following utility functions
 // are provided for converting between C's null-terminated strings and DNS's length-prefixed strings.
 
+// Comparison functions
 extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
 extern mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2);
 
-extern mDNSu16 DomainNameLength(const domainname *const name);
-extern void AppendDomainLabelToName(domainname *const name, const domainlabel *const label);
-extern void AppendStringLabelToName(domainname *const name, const char *cstr);
-extern void AppendDomainNameToName(domainname *const name, const domainname *const append);
-extern void AppendStringNameToName(domainname *const name, const char *cstr);
+// Get total length of domain name, in native DNS format, including terminal root label
+//   (e.g. length of "com." is 5 (length byte, three data bytes, final zero)
+extern mDNSu16  DomainNameLength(const domainname *const name);
 
-extern void   ConvertCStringToDomainLabel(const char *src, domainlabel *label);
-extern mDNSu8 *ConvertCStringToDomainName(const char *const cstr, domainname *name);
+// Append functions to append one or more labels to an existing native format domain name:
+//   AppendLiteralLabelString adds a single label from a literal C string, with no escape character interpretation.
+//   AppendDNSNameString      adds zero or more labels from a C string using conventional DNS dots-and-escaping interpretation
+//   AppendDomainLabel        adds a single label from a native format domainlabel
+//   AppendDomainName         adds zero or more labels from a native format domainname
+extern mDNSu8  *AppendLiteralLabelString(domainname *const name, const char *cstr);
+extern mDNSu8  *AppendDNSNameString     (domainname *const name, const char *cstr);
+extern mDNSu8  *AppendDomainLabel       (domainname *const name, const domainlabel *const label);
+extern mDNSu8  *AppendDomainName        (domainname *const name, const domainname *const append);
 
-extern char *ConvertDomainLabelToCString_withescape(const domainlabel *const name, char *cstr, char esc);
-#define      ConvertDomainLabelToCString_unescaped(D,C) ConvertDomainLabelToCString_withescape((D), (C), 0)
-#define      ConvertDomainLabelToCString(D,C)           ConvertDomainLabelToCString_withescape((D), (C), '\\')
+// Convert from null-terminated string to native DNS format:
+//   The DomainLabel form makes a single label from a literal C string, with no escape character interpretation.
+//   The DomainName form makes native format domain name from a C string using conventional DNS interpretation:
+//     dots separate labels, and within each label, '\.' represents a literal dot, '\\' represents a literal
+//     backslash and backslash with three decimal digits (e.g. \000) represents an arbitrary byte value.
+extern mDNSBool MakeDomainLabelFromLiteralString(domainlabel *const label, const char *cstr);
+extern mDNSu8  *MakeDomainNameFromDNSNameString (domainname  *const name,  const char *cstr);
 
-extern char *ConvertDomainNameToCString_withescape(const domainname *const name, char *cstr, char esc);
-#define      ConvertDomainNameToCString_unescaped(D,C) ConvertDomainNameToCString_withescape((D), (C), 0)
-#define      ConvertDomainNameToCString(D,C)           ConvertDomainNameToCString_withescape((D), (C), '\\')
-extern void  ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], domainlabel *const hostlabel);
+// Convert native format domainlabel or domainname back to C string format
+extern char    *ConvertDomainLabelToCString_withescape(const domainlabel *const name, char *cstr, char esc);
+#define         ConvertDomainLabelToCString_unescaped(D,C) ConvertDomainLabelToCString_withescape((D), (C), 0)
+#define         ConvertDomainLabelToCString(D,C)           ConvertDomainLabelToCString_withescape((D), (C), '\\')
+extern char    *ConvertDomainNameToCString_withescape(const domainname *const name, char *cstr, char esc);
+#define         ConvertDomainNameToCString_unescaped(D,C) ConvertDomainNameToCString_withescape((D), (C), 0)
+#define         ConvertDomainNameToCString(D,C)           ConvertDomainNameToCString_withescape((D), (C), '\\')
 
-extern mDNSu8    *ConstructServiceName(domainname *const fqdn, const domainlabel *const name, const domainname *const type, const domainname *const domain);
+extern void     ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], domainlabel *const hostlabel);
+
+extern mDNSu8  *ConstructServiceName(domainname *const fqdn, const domainlabel *const name, const domainname *const type, const domainname *const domain);
 extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel *const name, domainname *const type, domainname *const domain);
+
+// Note: Some old functions have been replaced by more sensibly-named versions.
+// You can uncomment the hash-defines below if you don't want to have to change your source code right away.
+// When updating your code, note that (unlike the old versions) *all* the new routines take the target object
+// as their first parameter.
+//#define ConvertCStringToDomainName(SRC,DST)  MakeDomainNameFromDNSNameString((DST),(SRC))
+//#define ConvertCStringToDomainLabel(SRC,DST) MakeDomainLabelFromLiteralString((DST),(SRC))
+//#define AppendStringLabelToName(DST,SRC)     AppendLiteralLabelString((DST),(SRC))
+//#define AppendStringNameToName(DST,SRC)      AppendDNSNameString((DST),(SRC))
+//#define AppendDomainLabelToName(DST,SRC)     AppendDomainLabel((DST),(SRC))
+//#define AppendDomainNameToName(DST,SRC)      AppendDomainName((DST),(SRC))
 
 // ***************************************************************************
 #if 0

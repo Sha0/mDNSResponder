@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ProxyResponder.c,v $
+ * Revision 1.15  2003/05/06 00:00:50  cheshire
+ * <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+ *
  * Revision 1.14  2003/04/25 01:45:57  cheshire
  * <rdar://problem/3240002> mDNS_RegisterNoSuchService needs to include a host name
  *
@@ -85,11 +88,11 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	mDNS_SetupResourceRecord(&p->RR_PTR, mDNSNULL, mDNSInterface_Any, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, HostNameCallback, p);
 
 	p->RR_A.name.c[0] = 0;
-	AppendDomainLabelToName(&p->RR_A.name, &p->hostlabel);
-	AppendStringLabelToName(&p->RR_A.name, "local");
+	AppendDomainLabel(&p->RR_A.name, &p->hostlabel);
+	AppendLiteralLabelString(&p->RR_A.name, "local");
 
 	mDNS_sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", p->ip.b[3], p->ip.b[2], p->ip.b[1], p->ip.b[0]);
-	ConvertCStringToDomainName(buffer, &p->RR_PTR.name);
+	MakeDomainNameFromDNSNameString(&p->RR_PTR.name, buffer);
 
 	p->RR_A.  rdata->u.ip   = p->ip;
 	p->RR_PTR.rdata->u.name = p->RR_A.name;
@@ -147,9 +150,9 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	mDNSIPPort port;
 	unsigned char buffer[1024], *bptr = buffer;
 
-	ConvertCStringToDomainLabel(name, &n);
-	ConvertCStringToDomainName(type, &t);
-	ConvertCStringToDomainName(domain, &d);
+	MakeDomainLabelFromLiteralString(&n, name);
+	MakeDomainNameFromDNSNameString(&t, type);
+	MakeDomainNameFromDNSNameString(&d, domain);
 	port.b[0] = (mDNSu8)(PortAsNumber >> 8);
 	port.b[1] = (mDNSu8)(PortAsNumber     );
 	while (argc)
@@ -215,9 +218,9 @@ mDNSlocal void RegisterNoSuchService(mDNS *m, ResourceRecord *const rr, domainna
 	domainlabel n;
 	domainname t, d;
 	unsigned char buffer[256];
-	ConvertCStringToDomainLabel(name, &n);
-	ConvertCStringToDomainName(type, &t);
-	ConvertCStringToDomainName(domain, &d);
+	MakeDomainLabelFromLiteralString(&n, name);
+	MakeDomainNameFromDNSNameString(&t, type);
+	MakeDomainNameFromDNSNameString(&d, domain);
 	mDNS_RegisterNoSuchService(m, rr, &n, &t, &d, proxyhostname, mDNSInterface_Any, NoSuchServiceCallback, proxyhostname);
 	ConvertDomainNameToCString_unescaped(&rr->name, buffer);
 	printf("Made Non-existence Record for %s\n", buffer);
@@ -244,8 +247,8 @@ mDNSexport int main(int argc, char **argv)
 		ResourceRecord proxyrecord;
 		if (argc < 5) goto usage;
 		proxyhostname.c[0] = 0;
-		AppendStringLabelToName(&proxyhostname, argv[2]);
-		AppendStringLabelToName(&proxyhostname, "local");
+		AppendLiteralLabelString(&proxyhostname, argv[2]);
+		AppendLiteralLabelString(&proxyhostname, "local");
 		RegisterNoSuchService(&mDNSStorage, &proxyrecord, &proxyhostname, argv[3], argv[4], "local.");
 		ExampleClientEventLoop(&mDNSStorage);
 		mDNS_Close(&mDNSStorage);
@@ -267,7 +270,7 @@ mDNSexport int main(int argc, char **argv)
 			return(-1);
 			}
 	
-		ConvertCStringToDomainLabel(argv[2], &proxyhost.hostlabel);
+		MakeDomainLabelFromLiteralString(&proxyhost.hostlabel, argv[2]);
 
 		mDNS_RegisterProxyHost(&mDNSStorage, &proxyhost);
 

@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-	$Id: DNSServices.c,v 1.7 2003/03/27 03:30:57 cheshire Exp $
+	$Id: DNSServices.c,v 1.8 2003/05/06 00:00:51 cheshire Exp $
 
 	Contains:	DNS Services implementation.
 	
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: DNSServices.c,v $
+        Revision 1.8  2003/05/06 00:00:51  cheshire
+        <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
+
         Revision 1.7  2003/03/27 03:30:57  cheshire
         <rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
         Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
@@ -658,8 +661,8 @@ DNSStatus
 	
 	// Start the browse operation with mDNS using our private callback.
 	
-	ConvertCStringToDomainName( inType, &type );
-	ConvertCStringToDomainName( inDomain, &domain );
+	MakeDomainNameFromDNSNameString( &type, inType );
+	MakeDomainNameFromDNSNameString( &domain, inDomain );
 	
 	err = mDNS_StartBrowse( gMDNSPtr, &inRef->serviceBrowseQuestion, &type, &domain, mDNSInterface_Any, 
 							DNSBrowserPrivateCallBack, inRef );
@@ -995,9 +998,9 @@ DNSStatus
 	
 	// Convert and package up the name, type, and domain into a single fully-qualified domain name to resolve.
 	
-	ConvertCStringToDomainLabel( inName, &name );
-	ConvertCStringToDomainName( inType, &type );
-	ConvertCStringToDomainName( inDomain, &domain );
+	MakeDomainLabelFromLiteralString( &name, inName );
+	MakeDomainNameFromDNSNameString( &type, inType );
+	MakeDomainNameFromDNSNameString( &domain, inDomain );
 	ConstructServiceName( &fullName, &name, &type, &domain );
 	
 	// If the caller only wants to add unique resolvers, check if a resolver for this name is already present.
@@ -1399,9 +1402,9 @@ DNSStatus
 	
 	// Convert the name, type, domain, and port for mDNS.
 	
-	ConvertCStringToDomainLabel( inName, &name );
-	ConvertCStringToDomainName( inType, &type );
-	ConvertCStringToDomainName( inDomain, &domain );
+	MakeDomainLabelFromLiteralString( &name, inName );
+	MakeDomainNameFromDNSNameString( &type, inType );
+	MakeDomainNameFromDNSNameString( &domain, inDomain );
 	port.b[ 0 ] = ( mDNSu8 )( inPort >> 8 );
 	port.b[ 1 ] = ( mDNSu8 )( inPort >> 0 );
 		
