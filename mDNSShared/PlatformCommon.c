@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.3  2004/12/13 17:46:52  cheshire
+Use sizeof(buf) instead of fixed constant 1024
+
 Revision 1.2  2004/12/01 03:30:29  cheshire
 <rdar://problem/3889346> Add Unicast DNS support to mDNSPosix
 
@@ -67,11 +70,11 @@ mDNSexport void FindDefaultRouteIP(mDNSAddr *a)
 // dst must be at least MAX_ESCAPED_DOMAIN_NAME bytes, and option must be less than 20 bytes in length
 mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	{
-	char buf[1024];
-	int len = strlen(option);
-	if (len + MAX_ESCAPED_DOMAIN_NAME > 1024) { LogMsg("GetConfigOption: option %s too long", option); return mDNSfalse; }
+	char buf[20+1+MAX_ESCAPED_DOMAIN_NAME];	// Option name, one space, option value
+	unsigned int len = strlen(option);
+	if (len + 1 + MAX_ESCAPED_DOMAIN_NAME > sizeof(buf)-1) { LogMsg("GetConfigOption: option %s too long", option); return mDNSfalse; }
 	fseek(f, 0, SEEK_SET);  // set position to beginning of stream
-	while (fgets(buf, 1024, f))
+	while (fgets(buf, sizeof(buf), f))		// Read at most sizeof(buf)-1 bytes from file, and append '\0' C-string terminator
 		{
 		if (!strncmp(buf, option, len))
 			{
