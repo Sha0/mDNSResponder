@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.258  2004/12/14 00:18:05  cheshire
+Don't log dns_configuration_copy() failures in the first three minutes after boot
+
 Revision 1.257  2004/12/10 19:45:46  cheshire
 <rdar://problem/3915074> Reduce egregious stack space usage
 Reduced myCFSocketCallBack() stack frame from 9K to 512 bytes
@@ -2131,6 +2134,13 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 		{
 		// When running on 10.3 (build 7xxx) and earlier, we don't expect dns_configuration_copy() to succeed
 		if (mDNSMacOSXSystemBuildNumber(NULL) < 8) return mStatus_UnsupportedErr;
+
+		// On 10.4, calls to dns_configuration_copy() early in the boot process often fail.
+		// Apparently this is expected behaviour -- "not a bug".
+		// Accordingly, we suppress syslog messages for the first three minutes after boot.
+		// If we are still getting failures after three minutes, then we log them.
+		if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return mStatus_UnknownErr;
+
 		LogMsg("RegisterSplitDNS: Error: dns_configuration_copy returned NULL");
 		return mStatus_UnknownErr;
 		}
