@@ -462,7 +462,7 @@ kern_return_t start(const char *bundleName, const char *bundleDir)
 		}
 	
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage, rrcachestorage, RR_CACHE_SIZE, NULL, NULL);
-	if (err) { fprintf(stderr, "Daemon start: mDNS_Init failed"); return(err); }
+	if (err) { fprintf(stderr, "Daemon start: mDNS_Init failed %ld\n", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
