@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Firewall.cpp,v $
+Revision 1.2  2004/09/15 09:39:53  shersche
+Retry the method INetFwPolicy::get_CurrentProfile on error
+
 Revision 1.1  2004/09/13 07:32:31  shersche
 Wrapper for Windows Firewall API code
 
@@ -39,11 +42,16 @@ Wrapper for Windows Firewall API code
 #include <oleauto.h>
 
 
+static const int kMaxTries			= 30;
+static const int kRetrySleepPeriod	= 1 * 1000; // 1 second
+
+
 static OSStatus
 mDNSFirewallInitialize(OUT INetFwProfile ** fwProfile)
 {
 	INetFwMgr		*	fwMgr		= NULL;
 	INetFwPolicy	*	fwPolicy	= NULL;
+	int					numRetries	= 0;
 	HRESULT				err			= kNoErr;
     
 	_ASSERT(fwProfile != NULL);
@@ -61,9 +69,24 @@ mDNSFirewallInitialize(OUT INetFwProfile ** fwProfile)
 	err = fwMgr->get_LocalPolicy(&fwPolicy);
 	require(SUCCEEDED(err), exit);
 
-	// Use the reference to get the extant profile
+	// Use the reference to get the extant profile. Empirical evidence
+	// suggests that there is the potential for a race condition when a system
+	// service whose startup type is automatic calls this method.
+	// This is true even when the service declares itself to be dependent
+	// on the firewall service. Re-trying the method will succeed within
+	// a few seconds.
 
-    err = fwPolicy->get_CurrentProfile(fwProfile);
+	do
+	{
+    	err = fwPolicy->get_CurrentProfile(fwProfile);
+
+		if (err)
+		{
+			Sleep(kRetrySleepPeriod);
+		}
+	}
+	while (err && (numRetries++ < kMaxTries));
+
 	require(SUCCEEDED(err), exit);
 
 	err = kNoErr;
