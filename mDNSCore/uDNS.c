@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.58  2004/07/27 07:35:38  shersche
+fix syntax error, variables declared in the middle of a block
+
 Revision 1.57  2004/07/26 22:49:30  ksekar
 <rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
 
@@ -3288,8 +3291,10 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 	{
 	NATTraversalInfo *ptr, *cur;
+	mDNSs32 nextevent;
+
 	ptr = m->uDNS_info.NATTraversals;
-	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+	nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
 	
 	while (ptr)
 		{
