@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.16  2003/08/13 23:58:52  ksekar
+Bug #: <rdar://problem/3374911>: Bug: UDS Sub-type browsing works, but not sub-type registration
+Fixed pointer increment error, moved subtype reading for-loop for easier error bailout.
+
 Revision 1.15  2003/08/13 17:30:33  ksekar
 Bug #: <rdar://problem/3374671>: DNSServiceAddRecord doesn't work
 Fixed various problems with handling the AddRecord request and freeing the ExtraResourceRecords.
@@ -1077,6 +1081,18 @@ static void handle_regservice_request(request_state *request)
         {
         r_srv->subtypes = mallocL("handle_regservice_request", num_subtypes * sizeof(ResourceRecord));
         if (!r_srv->subtypes) goto malloc_error;
+        sub = regtype + strlen(regtype) + 1;
+        for (i = 0; i < num_subtypes; i++)
+            {
+            if (!MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->name, sub))
+                {
+                freeL("handle_regservice_request", r_srv->subtypes);
+                freeL("handle_regservice_request", r_srv);
+                r_srv = NULL;
+                goto bad_param;
+                }
+            sub += strlen(sub) + 1;
+            }
         }
     else r_srv->subtypes = NULL;
     r_srv->request = request;
@@ -1089,13 +1105,6 @@ static void handle_regservice_request(request_state *request)
     request->terminate = regservice_termination_callback;
     request->service = r_srv;
     
-    sub = regtype;
-    for (i = 0; i < num_subtypes; i++)
-        {
-        MakeDomainNameFromDNSNameString(&(r_srv->subtypes + i)->name, sub);
-        sub += strlen(sub);
-        }
-
     result = mDNS_RegisterService(&mDNSStorage, r_srv->srs, &n, &t, &d, host[0] ? &h : NULL, port, txtdata, txtlen, r_srv->subtypes, num_subtypes, mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi), regservice_callback, r_srv);
     deliver_error(request, result);
     if (result != mStatus_NoError) 
