@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.134  2004/12/10 13:19:37  cheshire
+Add verbosedebugf() logging message in CountPeerRegistrations()
+
 Revision 1.133  2004/12/10 05:27:26  cheshire
 <rdar://problem/3909147> Guard against multiple autoname services of the same type on the same machine
 
@@ -1880,6 +1883,7 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(&rr->resrec.name, &r->name) && !SameRData(&rr->resrec, r))
 			count++;
+	verbosedebugf("%d peer registrations for %##s", count, r->name.c);
 	return(count);
 	}
 
