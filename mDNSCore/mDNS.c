@@ -44,6 +44,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.329  2003/11/19 22:19:24  cheshire
+Show log message when ignoring packets with bad TTL.
+This is to help diagnose problems on Linux versions that may not report the TTL reliably.
+
 Revision 1.328  2003/11/19 22:06:38  cheshire
 Show log messages when a service or hostname is renamed
 
@@ -5417,6 +5421,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSAddr *dstaddr,
 	const mDNSInterfaceID InterfaceID, mDNSu8 ttl)
 	{
+	static mDNSu32 NumPktsAccepted = 0, NumPktsIgnored = 0;
 	int i;
 	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
 	CacheRecord *CacheFlushRecords = mDNSNULL;
@@ -5443,11 +5448,16 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// Also, if we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
 	if (ttl < 254 || (!mDNSAddrIsDNSMulticast(dstaddr) && (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)mDNSPlatformOneSecond))
 		{
-		debugf("** Ignored apparent spoof mDNS Response from %#-15a to %#-15a TTL %d on %p with %2d Q %2d Ans %2d Auth %2d Add",
-		srcaddr, dstaddr, ttl, InterfaceID,
+		LogMsg("Ignored apparent spoof mDNS Response with TTL %d from %#-15a to %#-15a on %p with %2d Q %2d Ans %2d Auth %2d Add",
+		ttl, srcaddr, dstaddr, InterfaceID,
 		response->h.numQuestions, response->h.numAnswers, response->h.numAuthorities, response->h.numAdditionals);
+		NumPktsIgnored++;
+		if (NumPktsIgnored > NumPktsAccepted + 10)
+			LogMsg("WARNING: Have ignored %lu packets out of %lu; this may indicate an error in the platform support layer.",
+				NumPktsIgnored, NumPktsIgnored + NumPktsAccepted);
 		return;
 		}
+	NumPktsAccepted++;
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
