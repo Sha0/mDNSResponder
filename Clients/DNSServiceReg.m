@@ -45,11 +45,11 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
 {
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
-	NSArray *typeArray   = [NSArray arrayWithObjects:@"_ftp._tcp.",    @"_ssh._tcp.",  @"_tftp._tcp.",        @"_http._tcp.",  @"_printer._tcp.",  @"_afpovertcp._tcp.",         nil];
-	NSArray *nameArray   = [NSArray arrayWithObjects:@"My ftp Server", @"My Computer", @"Testing Boot Image", @"A Web Server", @"Steve’s Printer", @"Company AppleShare Server", nil];
-    NSArray *portArray   = [NSArray arrayWithObjects:@"21",            @"22",          @"69",                 @"80",           @"515",             @"548",                       nil];
-    NSArray *domainArray = [NSArray arrayWithObjects:@"local.",        @"local.",      @"local.",             @"local.",       @"local.",          @"local.",                    nil];
-    NSArray *textArray   = [NSArray arrayWithObjects:@"",              @"",            @"mybootimage",        @"index.html",   @"lpt1",            @"Public",                    nil];
+    NSArray *typeArray   = [NSArray arrayWithObjects:@"_ftp._tcp.",    @"_ssh._tcp.",  @"_tftp._tcp.",        @"_http._tcp.",      @"_printer._tcp.",  @"_afpovertcp._tcp.",         nil];
+    NSArray *nameArray   = [NSArray arrayWithObjects:@"My ftp Server", @"My Computer", @"Testing Boot Image", @"A Web Server",     @"Steve’s Printer", @"Company AppleShare Server", nil];
+    NSArray *portArray   = [NSArray arrayWithObjects:@"21",            @"22",          @"69",                 @"80",               @"515",             @"548",                       nil];
+    NSArray *domainArray = [NSArray arrayWithObjects:@"",              @"",            @"",                   @"",                 @"",                @"",                          nil];
+    NSArray *textArray   = [NSArray arrayWithObjects:@"",              @"",            @"image=mybootimage",  @"path=/index.html", @"rn=lpt1",         @"Vol=Public",                nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
     [regDict setObject:nameArray forKey:@"SrvNameKeys"];
