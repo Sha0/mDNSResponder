@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.293  2005/01/27 19:15:41  cheshire
+Remove extraneous LogMsg() call
+
 Revision 1.292  2005/01/27 17:48:38  cheshire
 Added comment about CFSocketInvalidate closing the underlying socket
 
@@ -3260,6 +3263,8 @@ mDNSlocal mStatus InitDNSConfig(mDNS *const m)
 
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
+	// In 10.4, mDNSResponder is launched very early in the boot process, while other subsystems are still in the process of starting up.
+	// If we can't read the user's preferences, then we sleep a bit and try again, for up to five seconds before we give up.
 	int i;
 	for (i=0; i<100; i++)
 		{
@@ -3267,7 +3272,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		testlabel.c[0] = 0;
 		GetUserSpecifiedLocalHostName(&testlabel);
 		if (testlabel.c[0]) break;
-		LogMsg("GetUserSpecifiedLocalHostName() failed");
 		usleep(50000);
 		}
 
