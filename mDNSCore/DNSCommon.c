@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.70  2004/12/03 19:52:44  ksekar
+Use PutResourceRecordTTLJumbo for putDeletionRecord()
+
 Revision 1.69  2004/12/03 07:20:50  ksekar
 <rdar://problem/3674208> Wide-Area: Registration of large TXT record fails
 
@@ -1476,7 +1479,7 @@ mDNSexport mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecor
 
 	origclass = rr->rrclass;
 	rr->rrclass = kDNSClass_NONE;
-	ptr = PutResourceRecordTTL(msg, ptr, &msg->h.mDNS_numUpdates, rr, 0);
+	ptr = PutResourceRecordTTLJumbo(msg, ptr, &msg->h.mDNS_numUpdates, rr, 0);
 	rr->rrclass = origclass;
 	return ptr;
 	}
