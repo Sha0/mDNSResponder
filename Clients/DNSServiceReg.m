@@ -71,7 +71,7 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
 {
     int selectedRow = [serviceDisplayTable selectedRow];
     CFRunLoopSourceRef	rls;
-    Opaque16	registerPort;
+    uint16_t	registerPort;
     CFMachPortRef           cfMachPort;
     CFMachPortContext       context;
     Boolean                 shouldFreeInfo;
@@ -89,7 +89,7 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
     context.release                 = NULL;
     context.copyDescription 	    = NULL;
 
-    registerPort.NotAnInteger = [[srvportKeys objectAtIndex:selectedRow] intValue];
+    registerPort = [[srvportKeys objectAtIndex:selectedRow] intValue];
     
     dns_client = DNSServiceRegistrationCreate
         (
@@ -118,9 +118,9 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
         printf("Could not obtain client port\n");
     }
 
-    foo = DNSServiceRegistrationAddRecord(dns_client, 12, 11, "Hello world");
-    DNSServiceRegistrationUpdateRecord(dns_client, foo, 13, 12, "Hello again2");
-    DNSServiceRegistrationRemoveRecord(dns_client, foo);
+    //foo = DNSServiceRegistrationAddRecord(dns_client, 12, 11, "Hello world");
+    //DNSServiceRegistrationUpdateRecord(dns_client, foo, 13, 12, "Hello again2");
+    //DNSServiceRegistrationRemoveRecord(dns_client, foo);
     
 }
 
