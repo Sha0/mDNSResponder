@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.427  2004/09/23 20:44:11  cheshire
+<rdar://problem/3813148> Reduce timeout before expiring records on failure
+
 Revision 1.426  2004/09/23 20:21:07  cheshire
 <rdar://problem/3426876> Refine "immediate answer burst; restarting exponential backoff sequence" logic
 Associate a unique sequence number with each received packet, and only increment the count of recent answer
@@ -2713,7 +2716,7 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 		m->NextCacheCheck = (rr->NextRequiredQuery + CacheCheckGracePeriod(rr));
 	}
 
-#define kDefaultReconfirmTimeForNoAnswer        ((mDNSu32)mDNSPlatformOneSecond * 45)
+#define kDefaultReconfirmTimeForNoAnswer        ((mDNSu32)mDNSPlatformOneSecond * 15)
 #define kDefaultReconfirmTimeForCableDisconnect ((mDNSu32)mDNSPlatformOneSecond *  5)
 #define kMinimumReconfirmTime                   ((mDNSu32)mDNSPlatformOneSecond *  5)
 
