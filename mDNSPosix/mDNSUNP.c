@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.12  2003/09/02 20:47:13  cheshire
+Fix signed/unsigned warning
+
 Revision 1.11  2003/08/12 19:56:26  cheshire
 Update to APSL 2.0
 
@@ -341,7 +344,7 @@ recvfrom_flags(int fd, void *ptr, size_t nbytes, int *flagsp,
 #else
 
     *flagsp = msg.msg_flags;        /* pass back results */
-    if (msg.msg_controllen < sizeof(struct cmsghdr) ||
+    if (msg.msg_controllen < (socklen_t)sizeof(struct cmsghdr) ||
         (msg.msg_flags & MSG_CTRUNC) || pktp == NULL)
         return(n);
 
