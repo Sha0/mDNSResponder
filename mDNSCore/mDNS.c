@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.293  2003/08/27 02:25:31  cheshire
+<rdar://problem/3395909> Traffic Reduction: Inefficiencies in DNSServiceResolverResolve()
+
 Revision 1.292  2003/08/21 19:27:36  cheshire
 <rdar://problem/3387878> Traffic reduction: No need to announce record for longer than TTL
 
@@ -5268,7 +5271,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		LargeCacheRecord pkt;
 		const mDNSu8 RecordType = (mDNSu8)((i < response->h.numAnswers) ? kDNSRecordTypePacketAns : kDNSRecordTypePacketAdd);
 		ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &pkt);
-		if (!ptr) return;
+		if (!ptr) break;		// Break out of the loop and clean up our CacheFlushRecords list before exiting
 
 		// 1. Check that this packet resource record does not conflict with any of ours
 		if (m->CurrentRecord) LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set");
@@ -5340,6 +5343,11 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 									rr->resrec.RecordType, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 							}
 						}
+					// Else, matching signature, different rdata, but not a considered a conflict.
+					// If the packet record has the cache-flush bit set, then we check to see if we have to re-assert our record(s)
+					// to rescue them (see note about "multi-homing and bridged networks" at the end of this function).
+					else if ((pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) && m->timenow - rr->LastMCTime > mDNSPlatformOneSecond/2)
+						{ rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
 					}
 				}
 			}
@@ -5360,14 +5368,14 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							pkt.r.resrec.rdlength, InterfaceID, GetRRDisplayString(m, &pkt.r));
 					rr->TimeRcvd  = m->timenow;
 					
-					if (pkt.r.resrec.RecordType & kDNSRecordTypeUniqueMask)
+					if (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask)
 						{
 						// If this packet record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
 						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList)
 							{ *cfp = rr; cfp = &rr->NextInCFList; }
 
 						// If this packet record is marked unique, and our previous cached copy was not, then fix it
-						if (!(rr->resrec.RecordType & kDNSRecordTypeUniqueMask))
+						if (!(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))
 							{
 							DNSQuestion *q;
 							for (q = m->Questions; q; q=q->next) if (ResourceRecordAnswersQuestion(&rr->resrec, q)) q->UniqueAnswers++;
@@ -5409,7 +5417,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					RData *saveptr = rr->resrec.rdata;		// Save the rr->resrec.rdata pointer
 					*rr = pkt.r;
 					rr->resrec.rdata = saveptr;			// and then restore it after the structure assignment
-					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+					if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)
 						{ *cfp = rr; cfp = &rr->NextInCFList; }
 					// If this is an oversized record with external storage allocated, copy rdata to external storage
 					if (pkt.r.resrec.rdlength > InlineCacheRDSize)
@@ -5437,7 +5445,21 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			if (SameResourceRecordSignature(&r1->resrec, &r2->resrec) && m->timenow - r2->TimeRcvd > mDNSPlatformOneSecond)
 				{
 				verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->resrec.name.c, DNSTypeName(r2->resrec.rrtype));
-				PurgeCacheResourceRecord(m, r2);
+				// We set stale records to expire in one second.
+				// This gives the owner a chance to rescue it if necessary.
+				// This is important in the case of multi-homing and bridged networks:
+				//   Suppose host X is on Ethernet. X then connects to an AirPort base station, which happens to be
+				//   bridged onto the same Ethernet. When X announces its AirPort IP address with the cache-flush bit
+				//   set, the AirPort packet will be bridged onto the Ethernet, and all other hosts on the Ethernet
+				//   will promptly delete their cached copies of the (still valid) Ethernet IP address record.
+				//   By delaying the deletion by one second, we give X a change to notice that this bridging has
+				//   happened, and re-announce its Ethernet IP address to rescue it from deletion from all our caches.
+				// We set UnansweredQueries to MaxUnansweredQueries to avoid expensive and unnecessary
+				// final expiration queries for this record.
+				r2->resrec.rroriginalttl = 1;
+				r2->TimeRcvd          = m->timenow;
+				r2->UnansweredQueries = MaxUnansweredQueries;
+				SetNextCacheCheckTime(m, r2);
 				}
 		}
 	}
@@ -5732,7 +5754,7 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
 	// If this is not our first answer, only re-issue the address query if the target host name has changed
-	else if (query->qAv4.InterfaceID != answer->InterfaceID ||
+	else if ((query->qAv4.InterfaceID != query->qSRV.InterfaceID && query->qAv4.InterfaceID != answer->InterfaceID) ||
 		!SameDomainName(&query->qAv4.qname, &answer->rdata->u.srv.target))
 		{
 		mDNS_StopQuery_internal(m, &query->qAv4);
@@ -5819,18 +5841,6 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	query->info->InterfaceID = answer->InterfaceID;
 
 	verbosedebugf("FoundServiceInfo v%d: %##s GotTXT=%d", query->info->ip.type, query->info->name.c, query->GotTXT);
-
-	// If query->GotTXT is 1 that means we already got a single TXT answer but didn't
-	// deliver it to the client at that time, so no further action is required.
-	// If query->GotTXT is 2 that means we either got more than one TXT answer,
-	// or we got a TXT answer and delivered it to the client at that time, so in either
-	// of these cases we may have lost information, so we should re-issue the TXT question.
-	if (query->GotTXT > 1)
-		{
-		debugf("FoundServiceInfo: Restarting TXT queries for %##s", query->qTXT.qname.c);
-		mDNS_StopQuery_internal(m, &query->qTXT);
-		mDNS_StartQuery_internal(m, &query->qTXT);
-		}
 
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
