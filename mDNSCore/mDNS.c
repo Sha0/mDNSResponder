@@ -717,7 +717,6 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = (rr->RecordType == kDNSRecordTypeUnique) ? DefaultProbeCountForTypeUnique : (mDNSu8)0;
 	rr->AnnounceCount     = DefaultAnnounceCountForRecordType(rr->RecordType);
-//	rr->Updating          = mDNSfalse;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->SendPriority      = 0;
 	rr->Requester         = zeroIPAddr;
@@ -1139,7 +1138,6 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = 0;
 	rr->AnnounceCount     = 0;
-//	rr->Updating          = mDNSfalse;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->SendPriority      = 0;
 	rr->Requester         = zeroIPAddr;
