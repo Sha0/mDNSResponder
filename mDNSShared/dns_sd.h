@@ -1291,6 +1291,11 @@ typedef struct _TXTRecordRef_t { char privatedata[16]; } TXTRecordRef;
  * Recommended size limits for DNS-SD TXT Records are discussed in
  * <http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd.txt>
  *
+ * Note: When passing parameters to and from these TXT record APIs,
+ * the key name does not include the '=' character. The '=' character
+ * is the separator between the key and value in the on-the-wire
+ * packet format; it is not part of either the key or the value.
+ *
  * txtRecord:       A pointer to an uninitialized TXTRecordRef.
  *
  * bufferLen:       The size of the storage provided in the "buffer" parameter.
