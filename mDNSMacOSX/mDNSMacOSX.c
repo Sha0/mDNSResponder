@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.241  2004/11/25 01:37:04  ksekar
+<rdar://problem/3894854> Config file and SCPreferences don't play well together
+
 Revision 1.240  2004/11/25 01:29:42  ksekar
 Remove unnecessary log messages
 
@@ -2328,7 +2331,7 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	return mDNSfalse;
 	}
 
-mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
+mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m, domainname *hostname, domainname *domain)
 	{
 	char zone[MAX_ESCAPED_DOMAIN_NAME], fqdn[MAX_ESCAPED_DOMAIN_NAME];
 	char secret[1024];
@@ -2337,14 +2340,13 @@ mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
 	FILE *f = NULL;
 	
 	secret[0] = 0;
-	DynDNSZone.c[0] = 0;
-	DynDNSHostname.c[0] = 0;
-
+    hostname->c[0] = 0;
+    domain->c[0] = 0;
 	f = fopen(CONFIG_FILE, "r");
 	if (f)
 		{
-		if (GetConfigOption(fqdn, "hostname", f) && !MakeDomainNameFromDNSNameString(&DynDNSHostname, fqdn)) goto badf;
-		if (GetConfigOption(zone, "zone", f) && !MakeDomainNameFromDNSNameString(&DynDNSZone, zone)) goto badf;
+		if (GetConfigOption(fqdn, "hostname", f) && !MakeDomainNameFromDNSNameString(hostname, fqdn)) goto badf;
+		if (GetConfigOption(zone, "zone", f) && !MakeDomainNameFromDNSNameString(domain, zone)) goto badf;
 		GetConfigOption(secret, "secret-64", f);  // failure means no authentication	   
 		fclose(f);
 		f = NULL;
@@ -2359,16 +2361,10 @@ mDNSlocal void ReadDDNSSettingsFromConfFile(mDNS *const m)
 		{
 		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
 		slen = strlen(secret);
-		err = mDNS_SetSecretForZone(m, &DynDNSZone, &DynDNSZone, secret, slen, mDNStrue);
+		err = mDNS_SetSecretForZone(m, domain, domain, secret, slen, mDNStrue);
 		if (err) LogMsg("ERROR: mDNS_SetSecretForZone returned %d for domain %##s", err, DynDNSZone.c);
 		}
 
-	// Note - set secret *before* passing hostname/zone to core
-	if (DynDNSZone.c[0]) AddDefRegDomain(&DynDNSZone); 	//set default (empty-string) service registration domain
-	if (DynDNSHostname.c[0]) mDNS_AddDynDNSHostName(m, &DynDNSHostname, SCPrefsDynDNSCallback, NULL);
-		
-	// Update _browse/_register domain list
-	RegisterSearchDomains(m, NULL); // passing NULL will only trigger query for DynDNSZone
 	return;
 
 	badf:
@@ -2432,6 +2428,8 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 
 	// get fqdn, zone from SCPrefs
 	GetUserSpecifiedDDNSConfig(&fqdn, &zone);
+	if (!fqdn.c[0] && !zone.c[0]) ReadDDNSSettingsFromConfFile(m, &fqdn, &zone);
+	
 	if (!SameDomainName(&zone, &DynDNSZone))
 		{		
 		if (DynDNSZone.c[0]) RemoveDefRegDomain(&DynDNSZone);
@@ -2450,9 +2448,7 @@ mDNSlocal void DynDNSConfigChanged(SCDynamicStoreRef session, CFArrayRef changes
 			SetDDNSNameStatus(&DynDNSHostname, 1);
 			}
 		}
-		
-	if (!DynDNSZone.c[0] && !DynDNSHostname.c[0]) ReadDDNSSettingsFromConfFile(m);
-	
+			
     // get DNS settings
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity");  return;  }
