@@ -35,6 +35,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: daemon.c,v $
+ * Revision 1.103  2003/05/23 23:07:44  cheshire
+ * <rdar://problem/3268199> Must not write to stderr when running as daemon
+ *
  * Revision 1.102  2003/05/22 01:32:31  cheshire
  * Fix typo in Log message format string
  *
@@ -124,9 +127,9 @@ static mach_port_t server_priv_port  = MACH_PORT_NULL;
 static int restarting_via_mach_init = 0;
 
 #if MDNS_DEBUGMSGS
-static int debug_mode = 1;
+int debug_mode = 1;
 #else
-static int debug_mode = 0;
+int debug_mode = 0;
 #endif
 
 //*************************************************************************************************************

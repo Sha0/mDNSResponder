@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.79  2003/05/23 23:07:44  cheshire
+<rdar://problem/3268199> Must not write to stderr when running as daemon
+
 Revision 1.78  2003/05/23 01:19:04  cheshire
 <rdar://problem/3267085> mDNSResponder needs to signal type of service to AirPort
 Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
@@ -228,7 +231,7 @@ mDNSexport void debugf_(const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
 	va_end(ptr);
-	fprintf(stderr, "%s\n", buffer);
+	fprintf(stderr,"%s\n", buffer);
 	fflush(stderr);
 	}
 #endif
@@ -241,7 +244,7 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
 	va_end(ptr);
-	fprintf(stderr, "%s\n", buffer);
+	fprintf(stderr,"%s\n", buffer);
 	fflush(stderr);
 	}
 #endif
@@ -253,11 +256,19 @@ mDNSexport void LogMsg(const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
 	va_end(ptr);
-	openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
-	fprintf(stderr, "%s\n", buffer);
-	syslog(LOG_ERR, "%s", buffer);
-	closelog();
-	fflush(stderr);
+	
+	extern int debug_mode;
+	if (debug_mode)		// In debug_mode we write to stderr
+		{
+		fprintf(stderr,"%s\n", buffer);
+		fflush(stderr);
+		}
+	else				// else, in production mode, we write to syslog
+		{
+		openlog("mDNSResponder", LOG_CONS | LOG_PERROR | LOG_PID, LOG_DAEMON);
+		syslog(LOG_ERR, "%s", buffer);
+		closelog();
+		}
 	}
 
 static struct ifaddrs* myGetIfAddrs(int refresh)
@@ -960,7 +971,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
-	if (!store) { fprintf(stderr, "SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
+	if (!store) { LogMsg("SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())); goto error; }
 	if (!key1 || !key2 || !key3 || !key4 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
 
 	CFArrayAppendValue(keys, key1);
@@ -970,10 +981,10 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
-		{ fprintf(stderr, "SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
+		{ LogMsg("SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())); goto error; }
 
 	m->p->StoreRLS = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
-	if (!m->p->StoreRLS) { fprintf(stderr, "SCDynamicStoreCreateRunLoopSource failed: %s\n", SCErrorString(SCError())); goto error; }
+	if (!m->p->StoreRLS) { LogMsg("SCDynamicStoreCreateRunLoopSource failed: %s\n", SCErrorString(SCError())); goto error; }
 
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), m->p->StoreRLS, kCFRunLoopDefaultMode);
 	m->p->Store = store;
