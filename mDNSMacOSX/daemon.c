@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.200  2004/10/22 01:03:55  cheshire
+<rdar://problem/3375328> select() says data is waiting; recvfrom() says there is no data
+Log error message if attempt to remap stdin/stdout/stderr to /dev/null fails
+
 Revision 1.199  2004/10/19 21:33:19  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
@@ -2153,14 +2157,14 @@ mDNSexport int main(int argc, char **argv)
 	if (!mDNS_DebugMode)
 		{
 		int fd = open(_PATH_DEVNULL, O_RDWR, 0);
-		if (fd != -1)
+		if (fd < 0) LogMsg("open(_PATH_DEVNULL, O_RDWR, 0) failed errno %d (%s)", errno, strerror(errno));
+		else
 			{
 			// Avoid unnecessarily duplicating a file descriptor to itself
-			if (fd != STDIN_FILENO) (void)dup2(fd, STDIN_FILENO);
-			if (fd != STDOUT_FILENO) (void)dup2(fd, STDOUT_FILENO);
-			if (fd != STDERR_FILENO) (void)dup2(fd, STDERR_FILENO);
-			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO)
-				(void)close (fd);
+			if (fd != STDIN_FILENO)  if (dup2(fd, STDIN_FILENO)  < 0) LogMsg("dup2(fd, STDIN_FILENO)  failed errno %d (%s)", errno, strerror(errno));
+			if (fd != STDOUT_FILENO) if (dup2(fd, STDOUT_FILENO) < 0) LogMsg("dup2(fd, STDOUT_FILENO) failed errno %d (%s)", errno, strerror(errno));
+			if (fd != STDERR_FILENO) if (dup2(fd, STDERR_FILENO) < 0) LogMsg("dup2(fd, STDERR_FILENO) failed errno %d (%s)", errno, strerror(errno));
+			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) (void)close(fd);
 			}
 		}
 
