@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.7  2004/11/23 08:12:04  shersche
+Implement if_nametoindex and if_indextoname for Win32 platforms
+
 Revision 1.6  2004/11/23 03:41:14  cheshire
 Change JNISupport.c to call if_indextoname & if_nametoindex directly.
 (May require some additional glue code to work on Windows.)
@@ -72,8 +75,16 @@ First checked in.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <iphlpapi.h>
+static char	*	if_indextoname( DWORD ifIndex, char * nameBuff);
+static DWORD	if_nametoindex( const char * nameStr );
+#define IF_NAMESIZE MAX_ADAPTER_NAME_LENGTH
+#else // _WIN32
 #include <sys/socket.h>
 #include <net/if.h>
+#endif // _WIN32
 #include <jni.h>
 
 #include "DNSSD.java.h"
@@ -805,4 +816,112 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSSD_GetIfIndexForName( JNIEnv
 }
 
 
+#if defined(_WIN32)
+static char*
+if_indextoname( DWORD ifIndex, char * nameBuff)
+{
+	PIP_ADAPTER_INFO	pAdapterInfo = NULL;
+	PIP_ADAPTER_INFO	pAdapter = NULL;
+	DWORD				dwRetVal = 0;
+	char			*	ifName = NULL;
+	ULONG				ulOutBufLen = 0;
+	
+	if (GetAdaptersInfo( NULL, &ulOutBufLen) != ERROR_BUFFER_OVERFLOW)
+	{
+		goto exit;
+	}
 
+	pAdapterInfo = (IP_ADAPTER_INFO *) malloc(ulOutBufLen); 
+
+	if (pAdapterInfo == NULL)
+	{
+		goto exit;
+	}
+
+	dwRetVal = GetAdaptersInfo( pAdapterInfo, &ulOutBufLen );
+	
+	if (dwRetVal != NO_ERROR)
+	{
+		goto exit;
+	}
+
+	pAdapter = pAdapterInfo;
+	while (pAdapter)
+	{
+		if (pAdapter->Index == ifIndex)
+		{
+			// It would be better if we passed in the length of nameBuff to this
+			// function, so we would have absolute certainty that no buffer
+			// overflows would occur.  Buffer overflows *shouldn't* occur because
+			// nameBuff is of size MAX_ADAPTER_NAME_LENGTH.
+			strcpy( nameBuff, pAdapter->AdapterName );
+			ifName = nameBuff;
+			break;
+		}
+  
+		pAdapter = pAdapter->Next;
+	}
+
+exit:
+
+	if (pAdapterInfo != NULL)
+	{
+		free( pAdapterInfo );
+		pAdapterInfo = NULL;
+	}
+
+	return ifName;
+}
+
+
+static DWORD
+if_nametoindex( const char * nameStr )
+{
+	PIP_ADAPTER_INFO	pAdapterInfo = NULL;
+	PIP_ADAPTER_INFO	pAdapter = NULL;
+	DWORD				dwRetVal = 0;
+	DWORD				ifIndex = 0;
+	ULONG				ulOutBufLen = 0;
+
+	if (GetAdaptersInfo( NULL, &ulOutBufLen) != ERROR_BUFFER_OVERFLOW)
+	{
+		goto exit;
+	}
+
+	pAdapterInfo = (IP_ADAPTER_INFO *) malloc(ulOutBufLen); 
+
+	if (pAdapterInfo == NULL)
+	{
+		goto exit;
+	}
+
+	dwRetVal = GetAdaptersInfo( pAdapterInfo, &ulOutBufLen );
+	
+	if (dwRetVal != NO_ERROR)
+	{
+		goto exit;
+	}
+
+	pAdapter = pAdapterInfo;
+	while (pAdapter)
+	{
+		if (strcmp(pAdapter->AdapterName, nameStr) == 0)
+		{
+			ifIndex = pAdapter->Index;
+			break;
+		}
+  
+		pAdapter = pAdapter->Next;
+	}
+
+exit:
+
+	if (pAdapterInfo != NULL)
+	{
+		free( pAdapterInfo );
+		pAdapterInfo = NULL;
+	}
+
+	return ifIndex;
+}
+#endif
