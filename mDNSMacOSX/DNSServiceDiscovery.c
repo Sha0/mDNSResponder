@@ -32,7 +32,7 @@
 
 #include <netinet/in.h>
 
-extern struct rpc_subsystem internal_DNSServiceDiscoveryReply_subsystem;
+extern struct mig_subsystem internal_DNSServiceDiscoveryReply_subsystem;
 
 extern boolean_t DNSServiceDiscoveryReply_server(
         mach_msg_header_t *InHeadP,
