@@ -19,18 +19,15 @@
  * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- */
 
-/*
-	Contains:	DNSServiceDiscovery emulation using DNSServices.
+    Change History (most recent first):
 
-	Copyright:  Copyright (C) 2003 by Apple Computer, Inc., All Rights Reserved.
+$Log: DNSServiceDiscovery.c,v $
+Revision 1.2  2003/08/20 07:06:34  bradley
+Update to APSL 2.0. Updated change history to match other mDNSResponder files.
 
-	Change History (most recent first):
-
-		$Log: DNSServiceDiscovery.c,v $
-		Revision 1.1  2003/08/20 06:04:45  bradley
-		Platform-neutral DNSServices-based emulation layer for the Mac OS X DNSServiceDiscovery API.
+Revision 1.1  2003/08/20 06:04:45  bradley
+Platform-neutral DNSServices-based emulation layer for the Mac OS X DNSServiceDiscovery API.
 		
 */
 

@@ -3,115 +3,34 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- */
 
-/*
-	Contains:	Rendezvous Test Tool.
+    Change History (most recent first):
 	
-	Written by: Bob Bradley
-	
-	Copyright:  Copyright (C) 2002-2003 by Apple Computer, Inc., All Rights Reserved.
+$Log: Tool.c,v $
+Revision 1.7  2003/08/20 07:06:34  bradley
+Update to APSL 2.0. Updated change history to match other mDNSResponder files.
 
-	Change History (most recent first):
-	
-		$Log: Tool.c,v $
-		Revision 1.6  2003/08/20 06:50:55  bradley
-		Updated to latest internal version of the Rendezvous for Windows code: Re-did everything to support
-		the latest DNSServices APIs (proxies, record updates, etc.); Added support for testing the platform
-		neutral DNSServices-based emulation layer for the Mac OS X DNSServiceDiscovery API.
-		
-		Revision 1.24  2003/06/25 01:24:58  bradley
-		Display the port when a service is resolved.
-		
-		Revision 1.23  2003/06/24 11:53:49  bradley
-		Added support for testing the DNSServiceDiscovery emulation APIs.
-		
-		Revision 1.22  2003/06/18 10:52:18  bradley
-		Added -q option to suppress TXT record output. Allow empty domain to mean local dot. Tightened up
-		usage. Fixed explicit resolves to use the correct event type so -lsi command works correctly.
+Revision 1.6  2003/08/20 06:50:55  bradley
+Updated to latest internal version of the Rendezvous for Windows code: Re-did everything to support
+the latest DNSServices APIs (proxies, record updates, etc.); Added support for testing the platform
+neutral DNSServices-based emulation layer for the Mac OS X DNSServiceDiscovery API.
 
-		Revision 1.21  2003/06/18 10:05:39  bradley
-		Print interface IDs and line up output to aid in debugging.
-
-		Revision 1.20  2003/04/23 15:55:06  bradley
-		Added support for no-such-service registrations (-rnss). Cleaned up usage/help text.
-
-		Revision 1.19  2003/04/01 02:39:39  bradley
-		Integrated from mdns-execute-branch: Rendezvous IPv6 infrastructure, mDNS_Execute model, changed
-		interface-specific queries and registrations for InterfaceIDs and names, scheduling changes, etc.
-
-		Revision 1.18.4.1  2003/03/30 16:18:46  bradley
-		Updated for IPv6 Rendezvous changes.
-
-		Revision 1.18  2003/03/29 14:52:25  bradley
-		Added support for host proxy conflict auto-renaming.
-
-		Revision 1.17  2003/03/26 10:58:38  bradley
-		Added pragmas and casts to fix warnings with Visual C++ with level 4 and 64-bit warnings enabled.
-
-		Revision 1.16  2003/03/26 08:33:20  bradley
-		Updated to work with Visual C++.
-
-		Revision 1.15  2003/02/13 01:35:15  bradley
-		Changed TXT record printing to parse each character string out and print separately for clarity.
-
-		Revision 1.14  2003/02/12 07:59:36  bradley
-		Updated to build with Project Builder.
-
-		Revision 1.13  2003/01/21 03:35:16  bradley
-		Updated DNS Services usage for change to use network byte order for all addresses and ports.
-
-		Revision 1.12  2003/01/15 10:03:21  bradley
-		Updated to support new host registration callbacks. Cleaned up types for stricter settings.
-
-		Revision 1.11  2003/01/11 05:57:51  bradley
-		Fixed parameter check for the -rps command to be require the full 7 parameters.
-
-		Revision 1.10  2003/01/10 08:06:49  bradley
-		Updated Rendezvous registration for new parameter (passes null for default host behavior).
-
-		Revision 1.9  2003/01/08 00:00:22  bradley
-		Added support for presets to quickly perform common operations (e.g. browsing for AirPort,
-		registering the apple.com domain, registering a fake web server, etc.).
-
-		Revision 1.8  2002/12/28 06:07:28  bradley
-		Added support for printing the full text record with non-printing characters normalized.
-
-		Revision 1.7  2002/12/02 07:07:59  bradley
-		Added support for building for Mac OS X.
-
-		Revision 1.6  2002/11/13 06:15:48  bradley
-		Updated ACP service registration for new interface address parameter (uses null for all interfaces).
-
-		Revision 1.5  2002/11/08 12:49:31  bradley
-		[3088322] Updated Rendezvous service registration for new text record size parameter.
-
-		Revision 1.4  2002/09/19 11:52:53  bradley
-		Define WIN32_LEAN_AND_MEAN to avoid problems with windows.h redefinitions.
-
-		Revision 1.3  2002/09/19 11:46:49  bradley
-		Print an error if an unknown parameter is used. Reduced the sleep time to 200ms for faster quits.
-
-		Revision 1.2  2002/09/19 07:19:23  bradley
-		Added a console control handler to intercept control-c and deregister before quitting.
-
-		Revision 1.1  2002/09/18 11:27:44  bradley
-		Quick & Dirty Rendezvous Test Tool.
 */
 
 #if( defined( _MSC_VER ) )
