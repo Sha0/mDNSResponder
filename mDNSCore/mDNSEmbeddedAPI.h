@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.151  2004/03/02 03:21:56  cheshire
+<rdar://problem/3549576> Properly support "_services._dns-sd._udp" meta-queries
+
 Revision 1.150  2004/02/21 02:06:24  cheshire
 Can't use anonymous unions -- they're non-standard and don't work on all compilers
 
@@ -1071,7 +1074,7 @@ struct ServiceRecordSet_struct
 	AuthRecord          *SubTypes;
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
 	domainname           Host;		// Set if this service record does not use the standard target host name
-	AuthRecord           RR_ADV;	// e.g. _services._mdns._udp.local. PTR _printer._tcp.local.
+	AuthRecord           RR_ADV;	// e.g. _services._dns-sd._udp.local. PTR _printer._tcp.local.
 	AuthRecord           RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
 	AuthRecord           RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target
 	AuthRecord           RR_TXT;	// e.g. Name._printer._tcp.local.   TXT PrintQueueName

@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.359  2004/03/02 03:21:56  cheshire
+<rdar://problem/3549576> Properly support "_services._dns-sd._udp" meta-queries
+
 Revision 1.358  2004/02/20 08:18:34  cheshire
 <rdar://problem/3564799>: mDNSResponder sometimes announces AAAA records unnecessarily
 
@@ -1223,10 +1226,10 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags={ { kDNSFlag0_OP_Update   | kDNSFl
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
-	"_browse._mdns._udp.local.",
-	"_default._browse._mdns._udp.local.",
-	"_register._mdns._udp.local.",
-	"_default._register._mdns._udp.local."
+	"_browse._dns-sd._udp.local.",
+	"_default._browse._dns-sd._udp.local.",
+	"_register._dns-sd._udp.local.",
+	"_default._register._dns-sd._udp.local."
 	};
 
 // ***************************************************************************
@@ -5655,7 +5658,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// Set up the record names
 	// For now we only create an advisory record for the main type, not for subtypes
 	// We need to gain some operational experience before we decide if there's a need to create them for subtypes too
-	if (ConstructServiceName(&sr->RR_ADV.resrec.name, (domainlabel*)"\x09_services", (domainname*)"\x05_mdns\x04_udp", domain) == mDNSNULL)
+	if (ConstructServiceName(&sr->RR_ADV.resrec.name, (domainlabel*)"\x09_services", (domainname*)"\x07_dns-sd\x04_udp", domain) == mDNSNULL)
 		return(mStatus_BadParamErr);
 	if (ConstructServiceName(&sr->RR_PTR.resrec.name, mDNSNULL, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
 	if (ConstructServiceName(&sr->RR_SRV.resrec.name, name,     type, domain) == mDNSNULL) return(mStatus_BadParamErr);
