@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.3  2004/06/28 00:51:47  shersche
+Move call to EnumPrinters out of browse callback into standalone function
+
 Revision 1.2  2004/06/24 20:12:07  shersche
 Remove reference to Rendezvous in source code
 Submitted by: herscher
@@ -43,6 +46,7 @@ First checked in
 #include "UtilTypes.h"
 #include "dns_sd.h"
 #include <stdexcept>
+#include <map>
 
 using namespace PrinterSetupWizard;
 
@@ -146,6 +150,9 @@ protected:
 private:
 
 	OSStatus
+	LoadPrinterNames();
+
+	OSStatus
 	StartResolve(Printer * printer);
 
 	OSStatus
@@ -160,12 +167,15 @@ private:
 	static unsigned WINAPI
 	InstallPrinterThread( LPVOID inParam );
 
+
 	typedef std::list<Printer*>			PrinterList;
 	typedef std::list<EventHandler*>	EventHandlerList;
 	typedef std::list<DNSServiceRef>	ServiceRefList;
+	typedef std::map<CString,CString>	PrinterNameMap;
 
 	Printer	*	m_selectedPrinter;
 	
+	PrinterNameMap			m_printerNames;
 	PrinterList				m_printerList;
 	EventHandlerList		m_eventHandlerList;
 	ServiceRefList			m_serviceRefList;

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.11  2004/06/28 00:51:47  shersche
+Move call to EnumPrinters out of browse callback into standalone function
+
 Revision 1.10  2004/06/27 23:06:47  shersche
 code cleanup, make sure EnumPrinters returns non-zero value
 
@@ -462,6 +465,8 @@ BOOL CPrinterSetupWizardSheet::OnInitDialog()
 	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(m_pdlBrowser), m_hWnd, WM_SERVICE_EVENT, FD_READ|FD_CLOSE);
 	require_noerr( err, exit );
 
+	LoadPrinterNames();
+
 exit:
 
 	if (err != kNoErr)
@@ -622,8 +627,6 @@ CPrinterSetupWizardSheet::OnBrowse(
 	Printer						*	printer;
 	EventHandlerList::iterator		it;
 	DWORD							printerNameCount;
-	PBYTE							buffer	=	NULL;
-	bool							found;
 
 	require_noerr( inErrorCode, exit );
 	
@@ -658,77 +661,21 @@ CPrinterSetupWizardSheet::OnBrowse(
 			printer->name		=	inName;
 			err = UTF8StringToStringObject(inName, printer->displayName);
 			check_noerr( err );
-			printer->actualName = printer->displayName;
+			printer->actualName	=	printer->displayName;
 
-			//
-			// rdar://problem/3701926 - Printer can't be installed twice
-			//
-			// First thing we want to do is make sure the printer isn't already installed.
-			// If the printer name is found, we'll try and rename it until we
-			// find a unique name
-			//
-			DWORD dwNeeded = 0, dwNumPrinters = 0;
-
-			BOOL ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, NULL, 0, &dwNeeded, &dwNumPrinters);
-			err = translate_errno( ok, errno_compat(), kUnknownErr );
-
-/*
-			require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, kUnknownErr);
-*/
-
-			if (dwNeeded > 0)
+			for (printerNameCount = 2; printerNameCount < 100; printerNameCount++)
 			{
-				try
+				PrinterNameMap::iterator it;
+
+				it = self->m_printerNames.find(printer->actualName);
+
+				if (it != self->m_printerNames.end())
 				{
-					buffer = new unsigned char[dwNeeded];
+					printer->actualName.Format(L"%s (%d)", printer->displayName, printerNameCount);
 				}
-				catch (...)
+				else
 				{
-					buffer = NULL;
-				}
-	
-				require_action( buffer, exit, kNoMemoryErr );
-				ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, buffer, dwNeeded, &dwNeeded, &dwNumPrinters);
-				err = translate_errno( ok, errno_compat(), kUnknownErr );
-				require_noerr( err, exit );
-	
-				printerNameCount = 2;
-	
-				for (;;)
-				{
-					found = false;
-	
-					//
-					// look for a name match
-					//
-    				for (DWORD index = 0; index < dwNumPrinters; index++)
-    				{
-						PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
-    	
-						if (printer->actualName == lppi4->pPrinterName)
-						{
-							found = true;
-							break;
-						}
-					}
-	
-					//
-					// if we found a match
-					//
-					if (found == true)
-					{
-						//
-						// try a new name
-						//
-						printer->actualName.Format(L"%s (%d)", printer->displayName, printerNameCount++);
-					}
-					else
-					{
-						//
-						// else we got it
-						//
-						break;
-					}
+					break;
 				}
 			}
 
@@ -789,11 +736,6 @@ CPrinterSetupWizardSheet::OnBrowse(
 	}
 
 exit:
-
-	if (buffer != NULL)
-	{
-		delete [] buffer;
-	}
 
 	return;
 }
@@ -908,6 +850,59 @@ CPrinterSetupWizardSheet::OnResolve(
 exit:
 
 	return;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::LoadPrinterNames()
+{
+	PBYTE		buffer	=	NULL;
+	OSStatus	err		= 0;
+
+	//
+	// rdar://problem/3701926 - Printer can't be installed twice
+	//
+	// First thing we want to do is make sure the printer isn't already installed.
+	// If the printer name is found, we'll try and rename it until we
+	// find a unique name
+	//
+	DWORD dwNeeded = 0, dwNumPrinters = 0;
+
+	BOOL ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, NULL, 0, &dwNeeded, &dwNumPrinters);
+	err = translate_errno( ok, errno_compat(), kUnknownErr );
+
+	if ((err == ERROR_INSUFFICIENT_BUFFER) && (dwNeeded > 0))
+	{
+		try
+		{
+			buffer = new unsigned char[dwNeeded];
+		}
+		catch (...)
+		{
+			buffer = NULL;
+		}
+	
+		require_action( buffer, exit, kNoMemoryErr );
+		ok = EnumPrinters(PRINTER_ENUM_LOCAL, NULL, 4, buffer, dwNeeded, &dwNeeded, &dwNumPrinters);
+		err = translate_errno( ok, errno_compat(), kUnknownErr );
+		require_noerr( err, exit );
+
+		for (DWORD index = 0; index < dwNumPrinters; index++)
+		{
+			PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
+
+			m_printerNames[lppi4->pPrinterName] = lppi4->pPrinterName;
+		}
+	}
+
+exit:
+
+	if (buffer != NULL)
+	{
+		delete [] buffer;
+	}
+
+	return err;
 }
 
 
