@@ -23,8 +23,6 @@
 #include "DNSServiceDiscovery.h"
 #include "DNSServiceDiscoveryDefines.h"
 
-#include "DNSServiceDiscoveryRequest.h"
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <servers/bootstrap.h>
@@ -40,6 +38,45 @@ extern struct rpc_subsystem internal_DNSServiceDiscoveryReply_subsystem;
 extern boolean_t DNSServiceDiscoveryReply_server(
         mach_msg_header_t *InHeadP,
         mach_msg_header_t *OutHeadP);
+
+extern
+kern_return_t DNSServiceBrowserCreate_rpc
+(
+    mach_port_t server,
+    mach_port_t client,
+    DNSCString regtype,
+    DNSCString domain
+);
+
+extern
+kern_return_t DNSServiceDomainEnumerationCreate_rpc
+(
+    mach_port_t server,
+    mach_port_t client,
+    int registrationDomains
+);
+
+extern
+kern_return_t DNSServiceRegistrationCreate_rpc
+(
+    mach_port_t server,
+    mach_port_t client,
+    DNSCString name,
+    DNSCString regtype,
+    DNSCString domain,
+    int port,
+    DNSCString txtRecord
+);
+
+extern
+kern_return_t DNSServiceResolverResolve_rpc
+(
+    mach_port_t server,
+    mach_port_t client,
+    DNSCString name,
+    DNSCString regtype,
+    DNSCString domain
+);
 
 struct a_requests {
     struct a_requests		*next;
