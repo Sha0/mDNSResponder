@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.3  2004/09/21 23:40:12  ksekar
+<rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
+
 Revision 1.2  2004/09/17 01:08:52  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -2666,12 +2669,12 @@ mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp)
 	resp = SendSOAPMsgControlAction(
 		"DeletePortMapping", 3, propArgs, FALSE);
 	if (resp == NULL) {
-		return mStatus_UnknownErr;
+		return mStatus_NATTraversal;
 	}
 
 	if (strcmp(resp->pszStatus, "200") != 0) {
 		DeleteHTTPResponse(resp);
-		return mStatus_UnknownErr;
+		return mStatus_NATTraversal;
 	}
 
 	DeleteHTTPResponse(resp);
@@ -2751,12 +2754,12 @@ extern mStatus LNT_MapPort(mDNSIPPort priv, mDNSIPPort pub, mDNSBool tcp)
 		"AddPortMapping", 8, propArgs, FALSE);
 
 	if (resp == NULL) {
-		return mStatus_UnknownErr;
+		return mStatus_NATTraversal;
 	}
 
 	if (strcmp(resp->pszStatus, "200") != 0) {
 		DeleteHTTPResponse(resp);
-		return mStatus_UnknownErr;
+		return mStatus_NATTraversal;
 	}
 
 	DeleteHTTPResponse(resp);
@@ -2836,7 +2839,7 @@ mStatus LNT_GetPublicIP(mDNSOpaque32 *IpPtr)
 		"GetExternalIPAddress", 0, NULL, FALSE);
 
 	if (resp == NULL)
-		return mStatus_UnknownErr;
+		return mStatus_NATTraversal;
 
 	if (FindTagContent(resp->pszBody, "NewExternalIPAddress", buf) == 0) {
 		if (g_fLogging & NALOG_INFO1)
@@ -2851,7 +2854,7 @@ mStatus LNT_GetPublicIP(mDNSOpaque32 *IpPtr)
 	}
 
 	DeleteHTTPResponse(resp);
-	return mStatus_UnknownErr;
+	return mStatus_NATTraversal;
 }
 
 static void SendDiscoveryMsg()

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.86  2004/09/21 23:40:11  ksekar
+<rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
+
 Revision 1.85  2004/09/21 22:38:27  ksekar
 <rdar://problem/3810286> PrimaryIP type uninitialized
 
@@ -427,6 +430,14 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 	return mStatus_UnknownErr;
 	}
 
+mDNSlocal void unlinkSRS(uDNS_GlobalInfo *u, ServiceRecordSet *srs)
+	{
+	ServiceRecordSet **p;
+	for (p = &u->ServiceRegistrations; *p; p = &(*p)->next)
+		if (*p == srs) { *p = srs->next; srs->next = mDNSNULL; return; }
+	LogMsg("ERROR: unlinkSRS - SRS not found in ServiceRegistrations list");
+	}
+
 mDNSlocal void LinkActiveQuestion(uDNS_GlobalInfo *u, DNSQuestion *q)
 	{
 	if (uDNS_IsActiveQuery(q, u))
@@ -723,10 +734,11 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 
 mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
-	NATErr_t err;
-	AuthRecord *rr;
-	mDNSv4Addr *ip;
-	
+	NATErr_t NatErr = NATErr_None;
+	mStatus err = mStatus_NoError;
+	AuthRecord *rr = mDNSNULL;
+	mDNSAddr addr; 
+
 	if (n->state != NATState_Request)
 		{ LogMsg("ReceiveNATAddrResponse: bad state %d", n->state);  return; }
 	
@@ -738,16 +750,19 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 		return;
 		}
 
-	ip = &rr->resrec.rdata->u.ipv4;
+	addr.type = mDNSAddrType_IPv4;
+	addr.ip.v4 = rr->resrec.rdata->u.ipv4;
+
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		mStatus err = LNT_GetPublicIP(ip);
-		if (err) n->state = NATState_Error;
+		err = LNT_GetPublicIP(&addr.ip.v4);
+		if (err) goto end;
 		else n->state = NATState_Legacy;
 #else
 		debugf("ReceiveNATAddrResponse: timeout");
-		n->state = NATState_Error;
+		err = mStatus_NATTraversal;
+		goto end;
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 	else
@@ -755,40 +770,51 @@ mDNSlocal void ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt,
 		if (len < ADDR_REPLY_PKTLEN)
 			{
 			LogMsg("ReceiveNATAddrResponse: response too short (%d bytes)", len);
-			n->state = NATState_Error;
+			err = mStatus_NATTraversal;
 			goto end;
 			}
 		if (pkt[0] != NATMAP_VERS)
 			{
 			LogMsg("ReceiveNATAddrResponse: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);
-			n->state = NATState_Error;
+			err = mStatus_NATTraversal;
 			goto end;
 			}
 		if (pkt[1] != (NATOp_AddrRequest | NATMAP_RESPONSE_MASK))
 			{
 			LogMsg("ReceiveNATAddrResponse: bad response code %d", pkt[1]);
-			n->state = NATState_Error;
+			err = mStatus_NATTraversal;
 			goto end;
 			}
-		err = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
-		if (err) { LogMsg("ReceiveAddrResponse: received error %d", err);  n->state = NATState_Error; goto end; }
-
+		NatErr = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
+		if (NatErr) { LogMsg("ReceiveAddrResponse: received error %d", err); err = mStatus_NATTraversal; goto end; }
+		
+		addr.ip.v4.b[0] = pkt[4];
+		addr.ip.v4.b[1] = pkt[5];
+		addr.ip.v4.b[2] = pkt[6];
+		addr.ip.v4.b[3] = pkt[7];
 		n->state = NATState_Established;
-		ip->b[0] = pkt[4];
-		ip->b[1] = pkt[5];
-		ip->b[2] = pkt[6];
-		ip->b[3] = pkt[7];
+		}
+	
+	if (IsPrivateV4Addr(&addr))
+		{
+		LogMsg("ReceiveNATAddrResponse: Double NAT");
+		err = mStatus_DblNAT;
+		goto end;
 		}
 	
 	end:
-	// !!!Once we can check for IGMP Port Unreachable, we should log a message here
-	if (n->state == NATState_Error)
+	if (err)
 		{
 		rr->uDNS_info.NATinfo = mDNSNULL;
 		FreeNATInfo(m, n);
+		rr->uDNS_info.state = regState_Unregistered;    // note that rr is not yet in global list
+		rr->RecordCallback(m, rr, mStatus_NATTraversal);
+		// note - unsafe to touch rr after callback
+		return;
 		}
-	else LogMsg("Received public IP address %d.%d.%d.%d from NAT.", ip->b[0], ip->b[1], ip->b[2], ip->b[3]);	
-	uDNS_RegisterRecord(m, rr);  // for now, we just register what may be a private addr
+	else LogMsg("Received public IP address %d.%d.%d.%d from NAT.", addr.ip.v4.b[0], addr.ip.v4.b[1], addr.ip.v4.b[2], addr.ip.v4.b[3]);	
+	rr->resrec.rdata->u.ipv4 = addr.ip.v4;  // replace rdata w/ public address
+	uDNS_RegisterRecord(m, rr);
 	}
 
 
@@ -868,12 +894,12 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 				{
 				n->PublicPort = pub;
 				n->state = NATState_Legacy;
-				goto register_service;
+				goto end;
 				}
 			else if (err != mStatus_AlreadyRegistered || ++ntries > LEGACY_NATMAP_MAX_TRIES)
 				{
 				n->state = NATState_Error;
-				goto register_service;
+				goto end;
 				}
 			else
 				{
@@ -883,15 +909,15 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 				}
 			}
 #else
-		goto register_service;
+		goto end;
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 
-	if (len < PORTMAP_PKTLEN) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); goto register_service; }
-	if (pkt[0] != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto register_service; }
-	if (pkt[1] != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto register_service; }
+	if (len < PORTMAP_PKTLEN) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); goto end; }
+	if (pkt[0] != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  goto end; }
+	if (pkt[1] != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); goto end; }
 	err = (NATErr_t)((NATErr_t)pkt[2] << 8 | (NATErr_t)pkt[3]);
-	if (err) { LogMsg("ReceivePortMapReply: received error %d", err);  goto register_service; }
+	if (err) { LogMsg("ReceivePortMapReply: received error %d", err);  goto end; }
 
 	priv.b[0] = pkt[4];
 	priv.b[1] = pkt[5];
@@ -904,7 +930,7 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	lease.b[3] = pkt[11];
 		
 	if (priv.NotAnInteger !=  srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger)
-		{ LogMsg("ReceivePortMapReply: reply private port does not match requested private port");  goto register_service; }
+		{ LogMsg("ReceivePortMapReply: reply private port does not match requested private port");  goto end; }
 	
 	if (n->state == NATState_Refresh && pub.NotAnInteger != n->PublicPort.NotAnInteger) 					
 		LogMsg("ReceivePortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(pub));
@@ -916,13 +942,20 @@ mDNSlocal void ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mD
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return; }
 	n->state = NATState_Established;
 
-	register_service:  	
+	end:
 	if (n->state != NATState_Established && n->state != NATState_Legacy)
 		{
 		LogMsg("NAT Port Mapping: timeout");
 		n->state = NATState_Error;
+		FreeNATInfo(m, n);
+		srs->uDNS_info.NATinfo = mDNSNULL;
+		unlinkSRS(&m->uDNS_info, srs);
+		srs->uDNS_info.state = regState_Unregistered;
+		srs->ServiceCallback(m, srs, mStatus_NATTraversal);
+		return;  // note - unsafe to touch srs here
 		}
-	else LogMsg("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
+
+	LogMsg("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
 	srs->uDNS_info.state = regState_FetchingZoneData;
 	startGetZoneData(&srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, serviceRegistrationCallback, srs);
 	}
@@ -1458,14 +1491,6 @@ mDNSlocal void llqResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	{
 	(void)context; // unused
 	pktResponseHndlr(m, msg, end, question, mDNStrue);
-	}
-
-mDNSlocal void unlinkSRS(uDNS_GlobalInfo *u, ServiceRecordSet *srs)
-	{
-	ServiceRecordSet **p;
-	for (p = &u->ServiceRegistrations; *p; p = &(*p)->next)
-		if (*p == srs) { *p = srs->next; srs->next = mDNSNULL; return; }
-	LogMsg("ERROR: unlinkSRS - SRS not found in ServiceRegistrations list");
 	}
 
 mDNSlocal mStatus checkUpdateResult(domainname *name, mDNSu8 rcode, const DNSMessage *msg)

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.192  2004/09/21 23:40:12  ksekar
+<rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
+
 Revision 1.191  2004/09/21 21:05:12  cheshire
 Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
 into mDNSShared/uds_daemon.c
@@ -1227,8 +1230,9 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus re
 
 	else
 		{
-		LogMsg("%5d: DNSServiceRegistration(%##s, %u) Unknown Result %ld",
-			x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT(sr), result);
+		if (result != mStatus_NATTraversal)
+			LogMsg("%5d: DNSServiceRegistration(%##s, %u) Unknown Result %ld",
+				   x->ClientMachPort, sr->RR_SRV.resrec.name.c, SRS_PORT(sr), result);
 		if (sr == x->gs) { freeL("RegCallback - ServiceRecordSet", x->gs); x->gs = NULL; }
 		}
 	}

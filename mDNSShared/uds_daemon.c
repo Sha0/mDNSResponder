@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.90  2004/09/21 23:40:12  ksekar
+<rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
+
 Revision 1.89  2004/09/21 23:29:51  cheshire
 <rdar://problem/3680045> DNSServiceResolve should delay sending packets
 
@@ -1904,7 +1907,13 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
     	} 
     else 
         {
-        LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
+        if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
+		if (r_srv == rs->servicepair.global)
+			{
+			// silently discard default-global registrations - we want .local to always work, and error may confuse clients
+			freeL("regservice_callback", r_srv);
+			rs->servicepair.global = NULL;
+			}
         if (deliver_async_error(rs, reg_service_reply, result) < 0) 
             {
             abort_request(rs);

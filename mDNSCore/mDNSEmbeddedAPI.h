@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.205  2004/09/21 23:40:11  ksekar
+<rdar://problem/3810349> mDNSResponder to return errors on NAT traversal failure
+
 Revision 1.204  2004/09/21 23:29:50  cheshire
 <rdar://problem/3680045> DNSServiceResolve should delay sending packets
 
@@ -920,7 +923,11 @@ enum
 	mStatus_BadInterfaceErr   = -65552,
 	mStatus_Refused           = -65553,
 	mStatus_NoSuchRecord      = -65554,
-	mStatus_NoAuth            = -65555,
+    mStatus_NoAuth            = -65555,
+    mStatus_NoSuchKey         = -65556,
+	mStatus_NATTraversal      = -65557,
+	mStatus_DblNAT            = -65558,
+	mStatus_BadTime           = -65559,
 	// -65556 - -65789 currently unused
 
 	// Non-error values:
