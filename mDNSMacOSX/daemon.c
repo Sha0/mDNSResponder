@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.206  2004/10/28 02:40:47  cheshire
+Add log message to confirm receipt of SIGUSR1 (simulate network configuration change event)
+
 Revision 1.205  2004/10/28 02:21:01  cheshire
 <rdar://problem/3856500> Improve mDNSResponder signal handling
 Added SIGHUP as a way to do a forced restart of the daemon (better than kill -9)
@@ -2032,15 +2035,15 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	(void)size;		// Unused
 	(void)info;		// Unused
 	mach_msg_header_t *m = (mach_msg_header_t *)msg;
-	LogMsg("SignalCallback: signal %d", m->msgh_id);
 	switch(m->msgh_id)
 		{
 		case SIGHUP:  
 		case SIGINT:  
-		case SIGTERM: ExitCallback(m->msgh_id); break;
-		case SIGINFO: INFOCallback(); break;
-		case SIGUSR1: mDNSMacOSXNetworkChanged(NULL, NULL, &mDNSStorage); break;
-		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id);
+		case SIGTERM:	ExitCallback(m->msgh_id); break;
+		case SIGINFO:	INFOCallback(); break;
+		case SIGUSR1:	LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
+						mDNSMacOSXNetworkChanged(NULL, NULL, &mDNSStorage); break;
+		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id); break;
 		}
 	}
 
