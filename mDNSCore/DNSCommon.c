@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.4  2004/01/22 02:15:33  cheshire
+<rdar://problem/3536597>: Link-local reverse-mapping domains need to be resolved using link-local multicast
+
 Revision 1.3  2004/01/21 21:16:29  cheshire
 Minor tidy-up: Deleted a bunch of blank lines, trailing spaces, tabs, etc.
 
@@ -167,16 +170,6 @@ mDNSexport mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b)
 	return(mDNStrue);
 	}
 
-mDNSexport mDNSBool IsLocalDomain(const domainname *d)
-    {
-    mDNSu8 l;
-    mDNSu8 localDomain[256] = { (char)5, 'l', 'o', 'c', 'a', 'l'};
-    const mDNSu8 *p = d->c;
-
-    for (l = *p;  p[l+1]; p += l+1, l = *p) ;
-    return SameDomainLabel(p, localDomain);
-    }
-
 mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2)
 	{
 	const mDNSu8 *      a   = d1->c;
@@ -193,6 +186,25 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 		}
 
 	return(mDNStrue);
+	}
+
+mDNSexport mDNSBool IsLocalDomain(const domainname *d)
+	{
+	const domainname *d1, *d2, *d3, *d4, *d5, *d6;	// Top-level domain, second-level domain, etc.
+	d1 = d2 = d3 = d4 = d5 = d6 = mDNSNULL;
+	while (d->c[0])
+		{
+		d6 = d5; d5 = d4; d4 = d3; d3 = d2; d2 = d1; d1 = d;
+		d = (domainname*)(d->c + 1 + d->c[0]);
+		}
+
+	// Domains that are defined to be resolved via link-local multicast are:
+	// local., 254.169.in-addr.arpa., and 0.8.E.F.ip6.arpa.
+	// Note that we use octal ('\ooo') instead of hex ('\xhh') because trying to use "\x3254" doesn't work.
+	if (d1 && SameDomainName(d1, (domainname*)"\005local")) return(mDNStrue);
+	if (d4 && SameDomainName(d4, (domainname*)"\003254\003169\007in-addr\004arpa")) return(mDNStrue);
+	if (d6 && SameDomainName(d6, (domainname*)"\0010\0018\001e\001f\003ip6\004arpa")) return(mDNStrue);
+	return(mDNSfalse);
 	}
 
 // Returns length of a domain name INCLUDING the byte for the final null label
