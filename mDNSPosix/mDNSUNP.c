@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.15  2004/02/14 01:09:45  rpantos
+Just use HAVE_IPV6 rather than defined(HAVE_IPV6).
+
 Revision 1.14  2003/12/11 18:53:40  cheshire
 Fix compiler warning reported by Paul Guyot
 
@@ -111,7 +114,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     struct ifreq        *ifr, ifrcopy;
     struct sockaddr_in  *sinptr;
     
-#if defined(AF_INET6) && defined(HAVE_IPV6)
+#if defined(AF_INET6) && HAVE_IPV6
     struct sockaddr_in6 *sinptr6;
 #endif
 
@@ -235,7 +238,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
             }
             break;
 
-#if defined(AF_INET6) && defined(HAVE_IPV6)
+#if defined(AF_INET6) && HAVE_IPV6
         case AF_INET6:
             sinptr6 = (struct sockaddr_in6 *) &ifr->ifr_addr;
             if (ifi->ifi_addr == NULL) {
@@ -422,7 +425,7 @@ struct in_pktinfo
         }
 #endif
 
-#if defined(IPV6_PKTINFO) && defined(HAVE_IPV6)
+#if defined(IPV6_PKTINFO) && HAVE_IPV6
         if (cmptr->cmsg_level == IPPROTO_IPV6 && 
             cmptr->cmsg_type == IPV6_PKTINFO) {
             struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&pktp->ipi_addr;
@@ -439,7 +442,7 @@ struct in_pktinfo
         }
 #endif
 
-#if defined(IPV6_HOPLIMIT) && defined(HAVE_IPV6)
+#if defined(IPV6_HOPLIMIT) && HAVE_IPV6
         if (cmptr->cmsg_level == IPPROTO_IPV6 && 
             cmptr->cmsg_type == IPV6_HOPLIMIT) {
 			*ttl = *(int*)CMSG_DATA(cmptr);
