@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.93  2003/03/28 01:54:36  cheshire
+Minor tidyup of IPv6 (AAAA) code
+
 Revision 1.92  2003/03/27 03:30:55  cheshire
 <rdar://problem/3210018> Name conflicts not handled properly, resulting in memory corruption, and eventual crash
 Problem was that HostNameCallback() was calling mDNS_DeregisterInterface(), which is not safe in a callback
@@ -1558,24 +1561,9 @@ mDNSlocal mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu
 								debugf("putRData: Illegal length %d for kDNSType_AAAA", rdata->RDLength);
 								return(mDNSNULL);
 								}
-							if (ptr + 16 > limit) return(mDNSNULL);
-							*ptr++ = rdata->u.ipv6.b[0];
-							*ptr++ = rdata->u.ipv6.b[1];
-							*ptr++ = rdata->u.ipv6.b[2];
-							*ptr++ = rdata->u.ipv6.b[3];
-							*ptr++ = rdata->u.ipv6.b[4];
-							*ptr++ = rdata->u.ipv6.b[5];
-							*ptr++ = rdata->u.ipv6.b[6];
-							*ptr++ = rdata->u.ipv6.b[7];
-							*ptr++ = rdata->u.ipv6.b[8];
-							*ptr++ = rdata->u.ipv6.b[9];
-							*ptr++ = rdata->u.ipv6.b[10];
-							*ptr++ = rdata->u.ipv6.b[11];
-							*ptr++ = rdata->u.ipv6.b[12];
-							*ptr++ = rdata->u.ipv6.b[13];
-							*ptr++ = rdata->u.ipv6.b[14];
-							*ptr++ = rdata->u.ipv6.b[15];
-							return(ptr);
+							if (ptr + sizeof(rdata->u.ipv6) > limit) return(mDNSNULL);
+							mDNSPlatformMemCopy(&rdata->u.ipv6, ptr, sizeof(rdata->u.ipv6));
+							return(ptr + sizeof(rdata->u.ipv6));
 
 		case kDNSType_SRV:	if (ptr + 6 > limit) return(mDNSNULL);
 							*ptr++ = (mDNSu8)(rdata->u.srv.priority >> 8);
@@ -1888,22 +1876,7 @@ mDNSlocal const mDNSu8 *getResourceRecord(const DNSMessage *msg, const mDNSu8 *p
 							mDNSPlatformMemCopy(ptr, rr->rdata->u.data, pktrdlength);
 							break;
 
-		case kDNSType_AAAA:	rr->rdata->u.ipv6.b[0] = ptr[0];
-							rr->rdata->u.ipv6.b[1] = ptr[1];
-							rr->rdata->u.ipv6.b[2] = ptr[2];
-							rr->rdata->u.ipv6.b[3] = ptr[3];
-							rr->rdata->u.ipv6.b[4] = ptr[4];
-							rr->rdata->u.ipv6.b[5] = ptr[5];
-							rr->rdata->u.ipv6.b[6] = ptr[6];
-							rr->rdata->u.ipv6.b[7] = ptr[7];
-							rr->rdata->u.ipv6.b[8] = ptr[8];
-							rr->rdata->u.ipv6.b[9] = ptr[9];
-							rr->rdata->u.ipv6.b[10] = ptr[10];
-							rr->rdata->u.ipv6.b[11] = ptr[11];
-							rr->rdata->u.ipv6.b[12] = ptr[12];
-							rr->rdata->u.ipv6.b[13] = ptr[13];
-							rr->rdata->u.ipv6.b[14] = ptr[14];
-							rr->rdata->u.ipv6.b[15] = ptr[15];
+		case kDNSType_AAAA:	mDNSPlatformMemCopy(ptr, &rr->rdata->u.ipv6, sizeof(rr->rdata->u.ipv6));
 							break;
 
 		case kDNSType_SRV:	rr->rdata->u.srv.priority = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
