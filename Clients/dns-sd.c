@@ -36,6 +36,9 @@
    Change History (most recent first):
 
 $Log: dns-sd.c,v $
+Revision 1.12  2004/07/14 01:16:50  rpantos
+Bullet-proof the POSIX build comment a bit.
+
 Revision 1.11  2004/07/08 02:24:53  rpantos
 Changes to allow dns-sd tool to be built on Windows.
 
@@ -76,7 +79,7 @@ OS X:
 gcc dns-sd.c -o dns-sd
 
 POSIX systems:
-gcc dns-sd.c -o dns-sd -lmdns
+gcc dns-sd.c -o dns-sd -I../mDNSShared -lmdns
 
 Windows:
 cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib ..\mDNSWindows\DLL\Release\dnssd.lib
