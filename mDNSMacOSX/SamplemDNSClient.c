@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.40  2003/09/26 01:07:06  cheshire
+Added test case to test fix for <rdar://problem/3427923>
+
 Revision 1.39  2003/08/18 19:05:45  cheshire
 <rdar://problem/3382423> UpdateRecord not working right
 Added "newrdlength" field to hold new length of updated rdata
@@ -307,7 +310,7 @@ int main(int argc, char **argv)
 	setlinebuf(stdout);				// Want to see lines as they appear, not block buffered
 
 	if (argc < 2) goto Fail;		// Minimum command line is the command name and one argument
-    operation = getopt(argc, (char * const *)argv, "EFBLRAUNTM");
+    operation = getopt(argc, (char * const *)argv, "EFBLRAUNTMI");
 	if (operation == -1) goto Fail;
 
     switch (operation)
@@ -397,6 +400,16 @@ int main(int argc, char **argv)
                     break;
                     }
 
+        case 'I':	{
+                    pid_t pid = getpid();
+                    Opaque16 registerPort = { { pid >> 8, pid & 0xFF } };
+                    static const char TXT[] = "\x09" "Test Data";
+                    printf("Registering Service Test._testtxt._tcp.local.\n");
+                    client = DNSServiceRegistrationCreate("", "_testtxt._tcp.", "", registerPort.NotAnInteger, "", reg_reply, nil);
+                    if (client) DNSServiceRegistrationUpdateRecord(client, 0, 1+TXT[0], &TXT[0], 120);
+                    break;
+                    }
+
         default: goto Exit;
         }
 
@@ -424,5 +437,6 @@ Fail:
 	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", argv[0]);
 	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", argv[0]);
 	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", argv[0]);
+	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", argv[0]);
 	return 0;
 	}
