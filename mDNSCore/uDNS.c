@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.16  2004/02/12 01:51:45  cheshire
+Don't try to send uDNS queries unless we have at least one uDNS server available
+
 Revision 1.15  2004/02/10 03:02:46  cheshire
 Fix compiler warning
 
@@ -433,7 +436,8 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	question->next = u->ActiveQueries;
 	u->ActiveQueries = question;
 
-	err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
+	if (getInitializedDNS(u))
+		err = mDNSSendDNSMessage(m, &msg, endPtr, question->InterfaceID, getInitializedDNS(u), UnicastDNSPort);
 	if (err) LogMsg("ERROR: mDNSSendDNSMessage - %d", err);
 	
 	return err;
