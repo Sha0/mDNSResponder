@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.228  2004/11/02 23:47:32  cheshire
+<rdar://problem/3863214> Default hostname and Computer Name should be unique
+
 Revision 1.227  2004/11/02 04:23:03  cheshire
 Change to more informative name "GetUserSpecifiedLocalHostName()"
 
@@ -687,6 +690,7 @@ Minor code tidying
 #include <stdio.h>
 #include <stdarg.h>                 // For va_list support
 #include <net/if.h>
+#include <net/if_types.h>			// For IFT_ETHER
 #include <net/if_dl.h>
 #include <sys/uio.h>
 #include <sys/param.h>
@@ -1711,32 +1715,11 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
 	struct ifaddrs *v4Loopback  = NULL;
 	struct ifaddrs *v6Loopback  = NULL;
+	mDNSEthAddr PrimaryMAC      = zeroEthAddr;
+	char defaultname[32];
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
 	if (InfoSocket < 3) LogMsg("UpdateInterfaceList: InfoSocket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
 	if (m->SleepState) ifa = NULL;
-
-	// Set up the nice label
-	m->nicelabel.c[0] = 0;
-	GetUserSpecifiedFriendlyComputerName(&m->nicelabel);
-	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, "Macintosh");
-
-	// Set up the RFC 1034-compliant label
-	domainlabel hostlabel;
-	hostlabel.c[0] = 0;
-	GetUserSpecifiedLocalHostName(&hostlabel);
-	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, "Macintosh");
-
-	// If the user has changed their dot-local host name since the last time we checked, then update our local copy.
-	// If the user has not changed their dot-local host name, then leave ours alone (m->hostlabel may have gone through
-	// repeated conflict resolution to get to its current value, and if we reset it, we'll have to go through all that again.)
-	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c))
-		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
-	else
-		{
-		debugf("Updating m->hostlabel to %#s", hostlabel.c);
-		m->p->userhostlabel = m->hostlabel = hostlabel;
-		mDNS_SetFQDN(m);
-		}
 
 	while (ifa)
 		{
@@ -1763,6 +1746,13 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 			debugf("UpdateInterfaceList: %5s(%d) Flags %04X Family %2d Interface IFF_LOOPBACK",
 				ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family);
 #endif
+
+		if (ifa->ifa_addr->sa_family == AF_LINK)
+			{
+			struct sockaddr_dl *sdl = (struct sockaddr_dl *)ifa->ifa_addr;
+			if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == sizeof(PrimaryMAC) && mDNSSameEthAddress(&PrimaryMAC, &zeroEthAddr))
+				mDNSPlatformMemCopy(sdl->sdl_data + sdl->sdl_nlen, PrimaryMAC.b, 6);
+			}
 
 		if (ifa->ifa_flags & IFF_UP && ifa->ifa_addr)
 			if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)
@@ -1842,6 +1832,33 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m)
 				}
 			}
 	if (InfoSocket >= 0) close(InfoSocket);
+
+	mDNS_snprintf(defaultname, sizeof(defaultname), "Macintosh-%02X%02X%02X%02X%02X%02X",
+		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
+
+	// Set up the nice label
+	m->nicelabel.c[0] = 0;
+	GetUserSpecifiedFriendlyComputerName(&m->nicelabel);
+	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, defaultname);
+
+	// Set up the RFC 1034-compliant label
+	domainlabel hostlabel;
+	hostlabel.c[0] = 0;
+	GetUserSpecifiedLocalHostName(&hostlabel);
+	if (hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&hostlabel, defaultname);
+
+	// If the user has changed their dot-local host name since the last time we checked, then update our local copy.
+	// If the user has not changed their dot-local host name, then leave ours alone (m->hostlabel may have gone through
+	// repeated conflict resolution to get to its current value, and if we reset it, we'll have to go through all that again.)
+	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c))
+		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
+	else
+		{
+		debugf("Updating m->hostlabel to %#s", hostlabel.c);
+		m->p->userhostlabel = m->hostlabel = hostlabel;
+		mDNS_SetFQDN(m);
+		}
+
 	return(mStatus_NoError);
 	}
 
