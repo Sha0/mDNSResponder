@@ -23,6 +23,9 @@
     Change History (most recent first):
 	
 $Log: NSPTool.c,v $
+Revision 1.3  2004/08/26 04:46:49  shersche
+Add -q switch for silent operation
+
 Revision 1.2  2004/06/23 16:39:14  shersche
 Fix extraneous warnings regarding implict casts
 
@@ -61,6 +64,8 @@ DEBUG_LOCAL OSStatus	ReorderNameSpaces( void );
 DEBUG_LOCAL WCHAR *		CharToWCharString( const char *inCharString, WCHAR *outWCharString );
 DEBUG_LOCAL char *		GUIDtoString( const GUID *inGUID, char *outString );
 DEBUG_LOCAL OSStatus	StringToGUID( const char *inCharString, GUID *outGUID );
+
+DEBUG_LOCAL BOOL gToolQuietMode = FALSE;
 
 //===========================================================================================================================
 //	main
@@ -107,6 +112,7 @@ DEBUG_LOCAL void	Usage( void )
 	
 	fprintf( stderr, "  -list                           - Lists Name Space Providers\n" );	
 	fprintf( stderr, "  -reorder                        - Reorders Name Space Providers\n" );
+	fprintf( stderr, "  -q                              - Enable quiet mode\n" );
 	fprintf( stderr, "  -h[elp]                         - Help\n" );
 	fprintf( stderr, "\n" );
 }
@@ -212,6 +218,10 @@ DEBUG_LOCAL int ProcessArgs( int argc, char* argv[] )
 			err = ReorderNameSpaces();
 			require_noerr( err, exit );
 		}
+		else if( strcmp( argv[ i ], "-q" ) == 0 )
+		{
+			gToolQuietMode = TRUE;
+		}
 		else if( ( strcmp( argv[ i ], "-help" ) == 0 ) || 
 				 ( strcmp( argv[ i ], "-h" ) == 0 ) )
 		{
@@ -276,7 +286,10 @@ OSStatus	InstallNSP( const char *inName, const char *inGUID, const char *inPath 
 	WSACleanup();
 	require_noerr( err, exit );
 	
-	fprintf( stderr, "Installed NSP \"%s\" (%s) at %s\n", inName, inGUID, inPath );
+	if (!gToolQuietMode)
+	{
+		fprintf( stderr, "Installed NSP \"%s\" (%s) at %s\n", inName, inGUID, inPath );
+	}
 	
 exit:
 	if( err != kNoErr )
@@ -310,7 +323,10 @@ DEBUG_LOCAL OSStatus	RemoveNSP( const char *inGUID )
 	WSACleanup();
 	require_noerr( err, exit );
 	
-	fprintf( stderr, "Removed NSP %s\n", inGUID );
+	if (!gToolQuietMode)
+	{
+		fprintf( stderr, "Removed NSP %s\n", inGUID );
+	}
 		
 exit:
 	if( err != kNoErr )
@@ -344,7 +360,10 @@ DEBUG_LOCAL OSStatus	EnableNSP( const char *inGUID, BOOL inEnable )
 	WSACleanup();
 	require_noerr( err, exit );
 	
-	fprintf( stderr, "Removed NSP %s\n", inGUID );
+	if (!gToolQuietMode)
+	{
+		fprintf( stderr, "Removed NSP %s\n", inGUID );
+	}
 		
 exit:
 	if( err != kNoErr )
