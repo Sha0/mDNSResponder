@@ -158,7 +158,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	if      (flags & T_MORE)                                debugf("ERROR: OTRcvUData() buffer too small (T_MORE set)");
 	else if (recvdata.addr.len < sizeof(InetAddress))       debugf("ERROR: recvdata.addr.len (%d) too short", recvdata.addr.len);
 	else if (recvdata.udata.len < sizeof(DNSMessageHeader)) debugf("ERROR: recvdata.udata.len (%d) too short", recvdata.udata.len);
-	else mDNSCoreReceive(m, &packet, recvdata.udata.buf + recvdata.udata.len, &senderaddr, senderport, &destaddr, MulticastDNSPort, interface);
+	else mDNSCoreReceive(m, &packet, recvdata.udata.buf + recvdata.udata.len, &senderaddr, senderport, &destaddr, MulticastDNSPort, interface, 255);
 	
 	return(err);
 	}

@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 		$Log: mDNSVxWorksIPv4Only.c,v $
+		Revision 1.2  2003/08/05 23:58:34  cheshire
+		Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+		Right now this platform layer just reports 255 instead of returning the real value -- we should fix this
+		
 		Revision 1.1  2003/08/02 10:06:48  bradley
 		mDNS platform plugin for VxWorks.
 		
@@ -1622,7 +1626,7 @@ mDNSlocal void	TaskProcessPacket( mDNS *inMDNS, MDNSInterfaceItem *inItem, MDNSS
 		// Dispatch the packet to mDNS.
 		
 		packetEndPtr = ( (mDNSu8 *) &packet ) + n;
-		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inItem->hostSet.InterfaceID );
+		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inItem->hostSet.InterfaceID, 255 );
 	}
 	
 	// Update counters.

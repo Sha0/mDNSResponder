@@ -22,6 +22,10 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.19  2003/08/05 23:58:18  cheshire
+        Update code to compile with the new mDNSCoreReceive() function that requires a TTL
+        Right now this platform layer just reports 255 instead of returning the real value -- we should fix this
+
         Revision 1.18  2003/07/23 21:16:30  cheshire
         Removed a couple of debugfs
 
@@ -1605,7 +1609,7 @@ static void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceInfo *inIn
 		// Dispatch the packet to mDNS.
 		
 		packetEndPtr = ( (mDNSu8 *) &packet ) + n;
-		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inInfoPtr->hostSet.InterfaceID );
+		mDNSCoreReceive( inMDNS, &packet, packetEndPtr, &srcAddr, srcPort, &dstAddr, dstPort, inInfoPtr->hostSet.InterfaceID, 255 );
 	}
 	
 	// Update counters.
