@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.174  2004/06/03 23:30:16  cheshire
+Remove extraneous blank lines and white space
+
 Revision 1.173  2004/06/03 03:09:58  ksekar
 <rdar://problem/3668626>: Garbage Collection for Dynamic Updates
 
@@ -598,7 +601,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #include <stdarg.h>		// stdarg.h is required for for va_list support for the mDNS_vsnprintf declaration
 #include "mDNSDebug.h"
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 	extern "C" {
 #endif
 
@@ -820,7 +823,6 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 #define MAX_ESCAPED_DOMAIN_LABEL 254
 #define MAX_ESCAPED_DOMAIN_NAME 1005
 
-
 // ***************************************************************************
 #if 0
 #pragma mark - DNS Message structures
@@ -851,7 +853,6 @@ typedef packedstruct
 	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 40 (IPv6) + 8 (UDP) + 12 (DNS header) + 8940 (data) = 9000
 	} DNSMessage;
 
-	
 // ***************************************************************************
 #if 0
 #pragma mark - Resource Record structures
@@ -947,7 +948,7 @@ typedef packedstruct
 	mDNSu16 err;
 	mDNSu8 id[8];
 	mDNSu32 lease;
-	} LLQOptData;  
+	} LLQOptData;
 
 // NOTE: rdataOpt format may be repeated an arbitrary number of times in a single resource record
 typedef packedstruct
@@ -956,8 +957,7 @@ typedef packedstruct
 	mDNSu16 optlen;
 	union { LLQOptData llq; mDNSs32 lease; } OptData;
 	} rdataOpt;
-	
-	
+
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
 #define StandardAuthRDSize 264
@@ -1002,7 +1002,7 @@ typedef struct DNSQuestion_struct DNSQuestion;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 
-// Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
+// Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
 // Note:
@@ -1018,7 +1018,7 @@ struct ResourceRecord_struct
 										// For records received off the wire, InterfaceID is *always* set to the receiving interface
 										// For our authoritative records, InterfaceID is usually zero, except for those few records
 										// that are interface-specific (e.g. address records, especially linklocal addresses)
-	domainname      name;				
+	domainname      name;
 	mDNSu16         rrtype;
 	mDNSu16         rrclass;
 	mDNSu32         rroriginalttl;		// In seconds
@@ -1034,7 +1034,7 @@ enum
 	{
 	regState_FetchingZoneData  = 1,     // getting info - update not sent
 	regState_Pending           = 2,     // update sent, reply not received
-	regState_Registered        = 3,     // update sent, reply received 
+	regState_Registered        = 3,     // update sent, reply received
 	regState_DeregPending      = 4,     // dereg sent, reply not received
 	regState_DeregDeferred     = 5,     // dereg requested while in Pending state - send dereg AFTER registration is confirmed
 	regState_Cancelled         = 6,     // update not sent, reg. cancelled by client
@@ -1043,7 +1043,7 @@ enum
 	regState_Refresh           = 9      // outstanding refresh message
 	};
 
-typedef mDNSu16 regState_t;		
+typedef mDNSu16 regState_t;
 
 typedef struct
 	{
@@ -1058,7 +1058,6 @@ typedef struct
     mDNSs32      expire; // expiration of lease (-1 for static)
 	} uDNS_RegInfo;
 
-	
 struct AuthRecord_struct
 	{
 	// For examples of how to set up this structure for use in mDNS_Register(),
@@ -1172,7 +1171,7 @@ struct NetworkInterfaceInfo_struct
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
 	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
 	AuthRecord RR_PTR;					// PTR (reverse lookup) record
-	AuthRecord RR_HINFO; 
+	AuthRecord RR_HINFO;
 
     uDNS_NetworkInterfaceInfo uDNS_info;
 
@@ -1193,8 +1192,7 @@ struct ExtraResourceRecord_struct
 	// that this extra memory is available, which would result in any fields after the AuthRecord getting smashed
 	};
 
-
-// Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
+// Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
 struct ServiceRecordSet_struct
@@ -1244,16 +1242,16 @@ typedef enum
 	LLQ_InitialRequest    = 2,
 	LLQ_SecondaryRequest  = 3,
 	LLQ_Established       = 4,
-	LLQ_Refresh           = 5,  
+	LLQ_Refresh           = 5,
 	LLQ_Retry             = 6,
     LLQ_Suspended         = 7,
     // safe to re-start LLQ before this point
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,
-	LLQ_Error             = 18,	
+	LLQ_Error             = 18,
 	LLQ_Cancelled         = 19,
 	} LLQ_State;
-	
+
 typedef struct
 	{
     LLQ_State state;
@@ -1270,20 +1268,20 @@ typedef struct
 
 // LLQ constants
 #define kDNSOpt_LLQ	   1 //!!!KRS
-#define kDNSOpt_Lease  2 //!!!KRS	
+#define kDNSOpt_Lease  2 //!!!KRS
 #define kLLQ_Vers      0 // prerelease
 #define kLLQ_DefLease  7200 // 2 hours
 #define kUpdate_DefLease 7200
 #define kLLQ_MAX_TRIES 3    // retry an operation 3 times max
 #define kLLQ_INIT_RESEND 2 // resend an un-ack'd packet after 2 seconds, then double for each additional
-#define kLLQ_DEF_RETRY 1800 // retry a failed operation after 30 minutes	
+#define kLLQ_DEF_RETRY 1800 // retry a failed operation after 30 minutes
 // LLQ Operation Codes
 #define kLLQ_Setup     1
 #define kLLQ_Refresh   2
 
 #define LLQ_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(LLQOptData)
 #define LEASE_OPT_SIZE (2 * sizeof(mDNSu16)) + sizeof(mDNSs32)
-						
+
 // LLQ Errror Codes
 enum
 	{
@@ -1295,8 +1293,7 @@ enum
 	LLQErr_BadVers = 5,
 	LLQErr_UnknownErr = 6,
 	};
-	
-	
+
 typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *internalContext);
 typedef struct
     {
@@ -1309,7 +1306,7 @@ typedef struct
     void *context;
     } uDNS_QuestionInfo;
 
-// Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
+// Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 struct DNSQuestion_struct
 	{
@@ -1331,7 +1328,7 @@ struct DNSQuestion_struct
 	mDNSInterfaceID       SendQNow;			// The interface this query is being sent on right now
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
-    uDNS_QuestionInfo     uDNS_info;        
+    uDNS_QuestionInfo     uDNS_info;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
@@ -1359,7 +1356,7 @@ typedef struct
 	mDNSu8          TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
 
-// Note: Within an mDNSServiceInfoQueryCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute() 
+// Note: Within an mDNSServiceInfoQueryCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef struct ServiceInfoQuery_struct ServiceInfoQuery;
 typedef void mDNSServiceInfoQueryCallback(mDNS *const m, ServiceInfoQuery *query);
 struct ServiceInfoQuery_struct
@@ -1397,7 +1394,7 @@ enum
 	mDNS_KnownBug_PhantomInterfaces = 1
 	};
 
-typedef struct 
+typedef struct
     {
     mDNSs32          nextevent;
     DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
@@ -1407,7 +1404,7 @@ typedef struct
     ServiceRecordSet *ServiceRegistrations;
     AuthRecord       *RecordRegistrations;
     mDNSu16          NextMessageID;
-    mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list           
+    mDNSAddr         Servers[32];        //!!!KRS this should be a dynamically allocated linked list
     domainname       hostname;           // global name for dynamic registration of address records
     char             NameRegDomain[MAX_ESCAPED_DOMAIN_NAME];
                                          // domain in which above hostname is registered
@@ -1418,7 +1415,7 @@ typedef struct
                                          // if set, all services that don't explicitly specify a domain upon registration will be
                                          // registered in this domain.  if not set, .local will be used by default
     struct uDNS_AuthInfo *AuthInfoList;  // list of domains required authentication for updates.  !!!KRS this shoudl be a hashtable
-    } uDNS_GlobalInfo;  
+    } uDNS_GlobalInfo;
 
 struct mDNS_struct
 	{
@@ -1467,7 +1464,7 @@ struct mDNS_struct
 	DNSQuestion *LocalOnlyQuestions;	// Questions with InterfaceID set to mDNSInterface_LocalOnly
 	DNSQuestion *NewLocalOnlyQuestions;	// Fresh local-only questions not yet answered
 	mDNSu32 rrcache_size;				// Total number of available cache entries
-	mDNSu32	rrcache_totalused;			// Number of cache entries currently occupied
+	mDNSu32 rrcache_totalused;			// Number of cache entries currently occupied
 	mDNSu32 rrcache_active;				// Number of cache entries currently occupied by records that answer active questions
 	mDNSu32 rrcache_report;
 	CacheRecord *rrcache_free;
@@ -1494,7 +1491,6 @@ struct mDNS_struct
 
     // unicast-specific data
     uDNS_GlobalInfo uDNS_info;
-   
 	};
 
 // ***************************************************************************
@@ -1525,7 +1521,7 @@ extern const mDNSOpaque16 zeroID;
 extern const mDNSOpaque16 QueryFlags;
 extern const mDNSOpaque16 ResponseFlags;
 extern const mDNSOpaque16 UpdateReqFlags;
-extern const mDNSOpaque16 UpdateRespFlags;	
+extern const mDNSOpaque16 UpdateRespFlags;
 
 // ***************************************************************************
 #if 0
@@ -1533,17 +1529,16 @@ extern const mDNSOpaque16 UpdateRespFlags;
 #endif
 
 #if (defined(_MSC_VER))
-	#define	mDNSinline static __inline
+	#define mDNSinline static __inline
 #elif ((__GNUC__ > 2) || ((__GNUC__ == 2) && (__GNUC_MINOR__ >= 9)))
-	#define	mDNSinline static inline
+	#define mDNSinline static inline
 #endif
 
 // If we're not doing inline functions, then this header needs to have the extern declarations
 #if !defined(mDNSinline)
 extern mDNSu16      mDNSVal16(mDNSOpaque16 x);
-extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
-
 extern mDNSu32      mDNSVal32(mDNSOpaque16 x);
+extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
 extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 #endif
 
@@ -1554,22 +1549,28 @@ extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 #endif
 
 #ifdef mDNSinline
-mDNSinline mDNSu16      mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
+
+mDNSinline mDNSu16 mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)(x.b[0]<<8 | x.b[1])); }
+mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | x.b[3]); }
+
 mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
-	{ mDNSOpaque16 x; x.b[0] = (mDNSu8)(v >> 8); x.b[1] = (mDNSu8)(v & 0xFF); return(x); }
-	
-	
-mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return ((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | x.b[3]); }
+	{
+	mDNSOpaque16 x;
+	x.b[0] = (mDNSu8)(v >> 8);
+	x.b[1] = (mDNSu8)(v & 0xFF);
+	return(x);
+	}
+
 mDNSinline mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v)
 	{
-	mDNSOpaque32 x; 
+	mDNSOpaque32 x;
 	x.b[0] = (mDNSu8) (v >> 24)        ;
-	x.b[1] = (mDNSu8)((v >> 16) & 0xFF); 
+	x.b[1] = (mDNSu8)((v >> 16) & 0xFF);
 	x.b[2] = (mDNSu8)((v >> 8 ) & 0xFF);
 	x.b[3] = (mDNSu8)((v      ) & 0xFF);
 	return x;
 	}
-   
+
 #endif
 
 // ***************************************************************************
@@ -1638,7 +1639,7 @@ extern mDNSs32 mDNS_Execute   (mDNS *const m);
 
 extern mStatus mDNS_Register  (mDNS *const m, AuthRecord *const rr);
 extern mStatus mDNS_Update    (mDNS *const m, AuthRecord *const rr, mDNSu32 newttl,
-								const mDNSu16 newrdlength, 
+								const mDNSu16 newrdlength,
 								RData *const newrdata, mDNSRecordUpdateCallback *Callback);
 extern mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr);
 
@@ -1820,8 +1821,8 @@ typedef struct
     mDNSu8 ipad[HMAC_LEN];
     mDNSu8 opad[HMAC_LEN];
    	} HMAC_Key;
-	
-// Internal data structure to maintain authentication information for an update domain	
+
+// Internal data structure to maintain authentication information for an update domain
 typedef struct uDNS_AuthInfo
 	{
     domainname zone;
@@ -1830,7 +1831,6 @@ typedef struct uDNS_AuthInfo
     struct uDNS_AuthInfo *next;
 	} uDNS_AuthInfo;
 
-	
 // Platform Support for computing MD5
 // mDNSPlatformUTC returns the time, in seconds, since Jan 1st 1970 UTC and is required for generating TSIG records
 
@@ -1845,19 +1845,18 @@ extern mDNSs32  mDNSPlatformUTC(void);
 //	The This routine is normally called once for each secure domain at startup, though it can be called at any time.
 
 // mDNS_ClearAuthenticationList clears from the core's internal structures all domains previously passed to
-// mDNS_UpdateDomainRequiresAuthentication.  
+// mDNS_UpdateDomainRequiresAuthentication.
 
 extern mStatus mDNS_UpdateDomainRequiresAuthentication(mDNS *m, domainname *zone, domainname *key,
     mDNSu8 *sharedSecret, mDNSu32 ssLen, mDNSBool base64);
 
 extern void mDNS_ClearAuthenticationList(mDNS *m);
 
-
 // Routines called by the core, exported by DNSDigest.c
 
 // Convert a base64 encoded key into a binary byte stream
 extern mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize);
-	
+
 // Convert an arbitrary binary key (of any length) into an HMAC key (stored in AuthInfo struct)
 extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32 len);
 
@@ -1866,10 +1865,10 @@ extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, mDNSu8 *key, mDNSu32
 // records in HOST byte order, which is incremented upon successful completion of this routine.  The function returns
 // the new end pointer on success, and NULL on failure.
 extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info);
-	
-// MD5 hash function used by the core for signing TSIG records (impemented in DNSDigest.c)	
+
+// MD5 hash function used by the core for signing TSIG records (impemented in DNSDigest.c)
 extern mStatus DNSDigest_MD5(const DNSMessage *msg, mDNSu32 msglen, mDNSOpaque16 *digest);
-	
+
 // ***************************************************************************
 #if 0
 #pragma mark - PlatformSupport interface
@@ -1910,7 +1909,7 @@ extern void     mDNSPlatformMemFree     (void *mem);
 extern mStatus  mDNSPlatformTimeInit    (mDNSs32 *timenow);
 
 // Platform support modules should provide the following functions to map between opaque interface IDs
-// and interface indexes in order to support the DNS-SD API. If your target platform does not support 
+// and interface indexes in order to support the DNS-SD API. If your target platform does not support
 // multiple interfaces and/or does not support the DNS-SD API, these functions can be empty.
 extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id);
@@ -1943,20 +1942,19 @@ extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 // The Get() functions must return a linked list of DNameListElem structs, allocated via mDNSPlatformMemAllocate.
 // Platforms may implement the Get() calls via the mDNS_CopyDNameList() helper routine.
 // Callers should free lists obtained via the Get() calls with th mDNS_FreeDNameList routine, provided by the core.
-	
+
 typedef struct DNameListElem
 	{
     domainname name;
     struct DNameListElem *next;
     } DNameListElem;
 
-extern DNameListElem *mDNSPlatformGetSearchDomainList(void);	
+extern DNameListElem *mDNSPlatformGetSearchDomainList(void);
 extern DNameListElem *mDNSPlatformGetRegDomainList(void);
 
 // Helper functions provided by the core
 extern DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig);
 extern void mDNS_FreeDNameList(DNameListElem *list);
-	
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times
 //
@@ -2046,7 +2044,7 @@ struct mDNS_CompileTimeAssertionChecks
 
 // ***************************************************************************
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 	}
 #endif
 
