@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.214  2004/11/23 22:13:59  cheshire
+<rdar://problem/3886293> Subtype advertising broken for Mach API
+
 Revision 1.213  2004/11/23 06:12:55  cheshire
 <rdar://problem/3871405> Update wording for name conflict dialogs
 
@@ -1093,10 +1096,10 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	domainname t, d;
 	t.c[0] = 0;
 	mDNSs32 NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
-	if (NumSubTypes < 0 || NumSubTypes > 1) { errormsg = "Bad Service SubType"; goto badparam; }
+	if (NumSubTypes < 0 || NumSubTypes > 1)               { errormsg = "Bad Service SubType"; goto badparam; }
 	if (NumSubTypes == 1 && !AppendDNSNameString(&t, regtype + strlen(regtype) + 1))
-	                                        { errormsg = "Bad Service SubType"; goto badparam; }
-	if (!regtype[0] || !AppendDNSNameString(&t, regtype))                  { errormsg = "Illegal regtype"; goto badparam; }
+	                                                      { errormsg = "Bad Service SubType"; goto badparam; }
+	if (!regtype[0] || !AppendDNSNameString(&t, regtype)) { errormsg = "Illegal regtype";     goto badparam; }
 
 	// Allocate memory, and handle failure
 	DNSServiceBrowser *x = mallocL("DNSServiceBrowser", sizeof(*x));
@@ -1444,7 +1447,6 @@ mDNSexport void DefaultRegDomainChanged(const domainname *d, mDNSBool add)
 mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
 	DNSCString name, DNSCString regtype, DNSCString domain, IPPort IpPort, DNSCString txtRecord)
 	{
-	// Check client parameter
 	(void)unusedserver;		// Unused
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
@@ -1460,6 +1462,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
 
     // Check for sub-types after the service type
+	size_t reglen = strlen(regtype) + 1;
+	if (reglen > MAX_ESCAPED_DOMAIN_NAME) { errormsg = "reglen too long"; goto badparam; }
 	mDNSs32 NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
 	if (NumSubTypes < 0) { errormsg = "Bad Service SubType"; goto badparam; }
 
@@ -1528,7 +1532,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	x->autoname = (!name[0]);
 	x->rdsize = size;
 	x->NumSubTypes = NumSubTypes;
-	strcpy(x->regtype, regtype);
+	memcpy(x->regtype, regtype, reglen);
 	x->name = n;
 	x->type = t;
 	x->port = port;
