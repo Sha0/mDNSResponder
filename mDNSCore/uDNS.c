@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.89  2004/09/24 19:14:53  cheshire
+Remove unused "extern mDNS mDNSStorage"
+
 Revision 1.88  2004/09/23 20:48:15  ksekar
 Clarify retransmission debugf messages.
 
@@ -393,7 +396,6 @@ mDNSlocal void UpdateServiceTargets(mDNS *const m);
 
 mDNSlocal mDNSs32 mDNSPlatformTimeNow(mDNS *m)
 	{
-	//extern mDNS mDNSStorage;
 	if (m->mDNS_busy && m->timenow) return(m->timenow);
 	LogMsg("ERROR: uDNS.c code executing without holding main mDNS lock");
 
