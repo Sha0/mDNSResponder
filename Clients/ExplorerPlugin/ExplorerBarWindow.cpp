@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ExplorerBarWindow.cpp,v $
+Revision 1.12  2004/10/26 00:56:03  cheshire
+Use "#if 0" instead of commenting out code
+
 Revision 1.11  2004/10/18 23:49:17  shersche
 <rdar://problem/3841564> Remove trailing dot from hostname, because some flavors of Windows have difficulty parsing hostnames with a trailing dot.
 Bug #: 3841564
@@ -805,12 +808,12 @@ DEBUG_LOCAL int	FindServiceArrayIndex( const ServiceInfoArray &inArray, const Se
 	{
 		mid = ( lo + hi ) / 2;
 		result = inService.displayName.CompareNoCase( inArray[ mid ]->displayName );
-/*
+#if 0
 		if( result == 0 )
 		{
 			result = ( (int) inService.ifi ) - ( (int) inArray[ mid ]->ifi );
 		}
-*/
+#endif
 		if( result == 0 )
 		{
 			break;
