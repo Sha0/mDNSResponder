@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.7  2003/08/20 05:58:54  bradley
+Removed dependence on modified mDNSCore: define structures/prototypes locally.
+
 Revision 1.6  2003/08/18 23:19:05  cheshire
 <rdar://problem/3382647> mDNSResponder divide by zero in mDNSPlatformTimeNow()
 
@@ -260,6 +263,26 @@ mDNSlocal void		TaskProcessPacket( mDNS *inMDNS, MDNSInterfaceItem *inItem, MDNS
 #if( TARGET_NON_APPLE )
 	mDNSlocal void	GenerateUniqueHostName( char *outName, long *ioSeed );
 	mDNSlocal void	GenerateUniqueDNSName( char *outName, long *ioSeed );
+#endif
+
+// Platform Accessors
+
+#ifdef	__cplusplus
+	extern "C" {
+#endif
+
+typedef struct mDNSPlatformInterfaceInfo	mDNSPlatformInterfaceInfo;
+struct	mDNSPlatformInterfaceInfo
+{
+	const char *		name;
+	mDNSAddr			ip;
+};
+
+mDNSexport mStatus	mDNSPlatformInterfaceNameToID( mDNS * const inMDNS, const char *inName, mDNSInterfaceID *outID );
+mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInterfaceID inID, mDNSPlatformInterfaceInfo *outInfo );
+
+#ifdef	__cplusplus
+	}
 #endif
 
 #if 0
@@ -619,12 +642,15 @@ mDNSexport void	mDNSPlatformMemFree( void *inMem )
 //	mDNSPlatformTimeInit
 //===========================================================================================================================
 
-mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
-	{
-	// No special setup is required on VxWorks -- we just use tickGet();
-	*timenow = mDNSPlatformTimeNow();
-	return(mStatus_NoError);
-	}
+mDNSexport mStatus mDNSPlatformTimeInit( mDNSs32 *outTimeNow )
+{
+	check( outTimeNow );
+	
+	// No special setup is required on VxWorks -- we just use tickGet().
+	
+	*outTimeNow = mDNSPlatformTimeNow();
+	return( mStatus_NoError );
+}
 
 //===========================================================================================================================
 //	mDNSPlatformTimeNow
@@ -632,7 +658,7 @@ mDNSexport mStatus mDNSPlatformTimeInit(mDNSs32 *timenow)
 
 mDNSs32	mDNSPlatformTimeNow( void )
 {
-	return( (mDNSs32)( tickGet() ) );
+	return( (mDNSs32) tickGet() );
 }
 
 //===========================================================================================================================
