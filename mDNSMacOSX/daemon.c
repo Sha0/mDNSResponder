@@ -49,8 +49,6 @@
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
-extern int mDNS_UsePort53;
-
 // Globals
 static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
@@ -91,35 +89,35 @@ typedef struct DNSServiceDomainEnumeration_struct DNSServiceDomainEnumeration;
 struct DNSServiceDomainEnumeration_struct
 	{
 	DNSServiceDomainEnumeration *next;
+	mach_port_t ClientMachPort;
 	DNSQuestion dom;	// Question asking for domains
 	DNSQuestion def;	// Question asking for default domain
-	mach_port_t ClientMachPort;
 	};
 
 typedef struct DNSServiceBrowser_struct DNSServiceBrowser;
 struct DNSServiceBrowser_struct
 	{
 	DNSServiceBrowser *next;
-	DNSQuestion q;
 	mach_port_t ClientMachPort;
+	DNSQuestion q;
 	};
 
 typedef struct DNSServiceResolver_struct DNSServiceResolver;
 struct DNSServiceResolver_struct
 	{
 	DNSServiceResolver *next;
+	mach_port_t ClientMachPort;
 	ServiceInfoQuery q;
 	ServiceInfo      i;
-	mach_port_t ClientMachPort;
 	};
 
 typedef struct DNSServiceRegistration_struct DNSServiceRegistration;
 struct DNSServiceRegistration_struct
 	{
 	DNSServiceRegistration *next;
+	mach_port_t ClientMachPort;
 	mDNSBool autoname;
 	ServiceRecordSet s;
-	mach_port_t ClientMachPort;
 	};
 
 static DNSServiceDomainEnumeration *DNSServiceDomainEnumerationList = NULL;
@@ -240,21 +238,23 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		AbortBlockedClient(x->ClientMachPort, "enumeration");
 	}
 
-mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t server, mach_port_t client, int regDom)
+mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
+	int regDom)
 	{
 	mStatus err;
 
 	mDNS_DomainType dt1 = regDom ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
 	mDNS_DomainType dt2 = regDom ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
+	const DNSServiceDomainEnumerationReplyResultType rt = DNSServiceDomainEnumerationReplyAddDomainDefault;
 	DNSServiceDomainEnumeration *x = malloc(sizeof(*x));
-	if (!x) { debugf("provide_DNSServiceDomainEnumerationCreate_rpc: No memory!"); return(-1); }
+	if (!x) { debugf("provide_DNSServiceDomainEnumerationCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
 	x->ClientMachPort = client;
 	x->next = DNSServiceDomainEnumerationList;
 	DNSServiceDomainEnumerationList = x;
 	
 	debugf("Client %d: Enumerate %s Domains", client, regDom ? "Registration" : "Browsing");
 	// We always give local. as the initial default browse domain, and then look for more
-	if (DNSServiceDomainEnumerationReply_rpc(x->ClientMachPort, DNSServiceDomainEnumerationReplyAddDomainDefault, "local.", 0, 10) == MACH_SEND_TIMED_OUT)
+	if (DNSServiceDomainEnumerationReply_rpc(x->ClientMachPort, rt, "local.", 0, 10) == MACH_SEND_TIMED_OUT)
 		{
 		AbortBlockedClient(x->ClientMachPort, "local enumeration");
 		return(mStatus_UnknownErr);
@@ -293,13 +293,13 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 		AbortBlockedClient(x->ClientMachPort, "browse");
 	}
 
-mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server, mach_port_t client,
+mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unusedserver, mach_port_t client,
 	DNSCString regtype, DNSCString domain)
 	{
 	mStatus err;
 	domainname t, d;
 	DNSServiceBrowser *x = malloc(sizeof(*x));
-	if (!x) { debugf("provide_DNSServiceBrowserCreate_rpc: No memory!"); return(-1); }
+	if (!x) { debugf("provide_DNSServiceBrowserCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
 	x->ClientMachPort = client;
 	x->next = DNSServiceBrowserList;
 	DNSServiceBrowserList = x;
@@ -323,7 +323,9 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t server,
 
 mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
+	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->Context;
+	int len = query->info->TXTlen;
 	struct sockaddr_in interface;
 	struct sockaddr_in address;
 
@@ -336,19 +338,25 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	address.sin_family        = AF_INET;
 	address.sin_port          = query->info->port.NotAnInteger;
 	address.sin_addr.s_addr   = query->info->ip.NotAnInteger;
+
+	// Need to put a NULL on the end for the MIG API
+	if (len >= sizeof(query->info->TXTinfo) - 1)
+		len = sizeof(query->info->TXTinfo) - 1;
+	query->info->TXTinfo[len] = 0;
 	
-	if (DNSServiceResolverReply_rpc(x->ClientMachPort, (char*)&interface, (char*)&address, query->info->txtinfo.c, 0, 10) == MACH_SEND_TIMED_OUT)
+	status = DNSServiceResolverReply_rpc(x->ClientMachPort, (char*)&interface, (char*)&address, query->info->TXTinfo, 0, 10);
+	if (status == MACH_SEND_TIMED_OUT)
 		AbortBlockedClient(x->ClientMachPort, "resolve");
 	}
 
-mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t server, mach_port_t client,
+mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unusedserver, mach_port_t client,
 	DNSCString name, DNSCString regtype, DNSCString domain)
 	{
 	mStatus err;
 	domainlabel n;
 	domainname t, d;
 	DNSServiceResolver *x = malloc(sizeof(*x));
-	if (!x) { debugf("provide_DNSServiceResolverResolve_rpc: No memory!"); return(-1); }
+	if (!x) { debugf("provide_DNSServiceResolverResolve_rpc: No memory!"); return(mStatus_NoMemoryErr); }
 	x->ClientMachPort = client;
 	x->next = DNSServiceResolverList;
 	DNSServiceResolverList = x;
@@ -373,20 +381,27 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t serve
 //*************************************************************************************************************
 // Registration
 
-// This sample Callback just calls mDNS_RenameAndReregisterService to automatically pick a new
-// unique name for the service. For a device such as a printer, this may be appropriate.
-// For a device with a user interface, and a screen, and a keyboard, the appropriate
-// response may be to prompt the user and ask them to choose a new name for the service.
-mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus result)
+mDNSlocal void FreeDNSServiceRegistration(DNSServiceRegistration *x)
+	{
+	while (x->s.Extras)
+		{
+		ExtraResourceRecord *extras = x->s.Extras;
+		x->s.Extras = x->s.Extras->next;
+		free(extras);
+		}
+	free(x);
+	}
+
+mDNSlocal void RegistrationCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result)
 	{
 	DNSServiceRegistration *x = (DNSServiceRegistration*)sr->Context;
 
 	switch (result)
 		{
-		case mStatus_NoError:      debugf("Callback: %##s Name Registered",   sr->RR_SRV.name.c); break;
-		case mStatus_NameConflict: debugf("Callback: %##s Name Conflict",     sr->RR_SRV.name.c); break;
-		case mStatus_MemFree:      debugf("Callback: %##s Memory Free",       sr->RR_SRV.name.c); break;
-		default:                   debugf("Callback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
+		case mStatus_NoError:      debugf("RegistrationCallback: %##s Name Registered",   sr->RR_SRV.name.c); break;
+		case mStatus_NameConflict: debugf("RegistrationCallback: %##s Name Conflict",     sr->RR_SRV.name.c); break;
+		case mStatus_MemFree:      debugf("RegistrationCallback: %##s Memory Free",       sr->RR_SRV.name.c); break;
+		default:                   debugf("RegistrationCallback: %##s Unknown Result %d", sr->RR_SRV.name.c, result); break;
 		}
 
 	if (result == mStatus_NoError)
@@ -406,18 +421,18 @@ mDNSlocal void Callback(mDNS *const m, ServiceRecordSet *const sr, mStatus resul
 			AbortClient(x->ClientMachPort); // This unlinks our DNSServiceRegistration from the list so we can safely free it
 			if (DNSServiceRegistrationReply_rpc(x->ClientMachPort, result, 10) == MACH_SEND_TIMED_OUT)
 				AbortBlockedClient(x->ClientMachPort, "registration conflict"); // Yes, this IS safe :-)
-			free(x);
+			FreeDNSServiceRegistration(x);
 			}
 		}
 
 	if (result == mStatus_MemFree)
 		{
 		debugf("Freeing DNSServiceRegistration %d", x->ClientMachPort);
-		free(x);
+		FreeDNSServiceRegistration(x);
 		}
 	}
 
-mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t server, mach_port_t client,
+mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t unusedserver, mach_port_t client,
 	DNSCString name, DNSCString regtype, DNSCString domain, int notAnIntPort, DNSCString txtRecord)
 	{
 	mStatus err;
@@ -425,7 +440,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	domainname t, d;
 	mDNSIPPort port;
 	DNSServiceRegistration *x = malloc(sizeof(*x));
-	if (!x) { debugf("DNSServiceRegistrationRegister: No memory!"); return(-1); }
+	if (!x) { debugf("provide_DNSServiceRegistrationCreate_rpc: No memory!"); return(mStatus_NoMemoryErr); }
 	x->ClientMachPort = client;
 	x->next = DNSServiceRegistrationList;
 	DNSServiceRegistrationList = x;
@@ -439,7 +454,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 
 	debugf("Client %d: provide_DNSServiceRegistrationCreate_rpc", client);
 	debugf("Client %d: Register Service: %#s.%##s%##s %d %s", client, &n, &t, &d, (int)port.b[0] << 8 | port.b[1], txtRecord);
-	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtRecord, Callback, x);
+	err = mDNS_RegisterService(&mDNSStorage, &x->s, &n, &t, &d, mDNSNULL, port, txtRecord, strlen(txtRecord), RegistrationCallback, x);
 
 	if (err) AbortClient(client);
 	else EnableDeathNotificationForClient(client);
@@ -450,32 +465,87 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t se
 	return(err);
 	}
 
-mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t server, mach_port_t client, int type, const char *data, mach_msg_type_number_t data_len, natural_t *reference)
+mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t unusedserver, mach_port_t client,
+	int type, const char *data, mach_msg_type_number_t data_len, natural_t *reference)
 	{
-	mStatus err = 0;
+	mStatus err;
+	DNSServiceRegistration *x = DNSServiceRegistrationList;
+	ExtraResourceRecord *extra;
+	
+	// Find this registered service
+	while (x && x->ClientMachPort != client) x = x->next;
+	if (!x) { debugf("provide_DNSServiceRegistrationAddRecord_rpc bad client %X", client); return(mStatus_BadReferenceErr); }
 
-	LogErrorMessage("Received a request to add the record(s) of type: %d length: %d data: %s, returned cookie 32", type, data_len, data);
-	*reference = 32;
+	// Allocate storage for our new record
+	extra = malloc(sizeof(*extra));
+	if (!extra) return(mStatus_NoMemoryErr);
+
+	// Fill in type, length, and data
+	extra->r.rrtype   = type;
+	extra->r.rdlength = data_len;
+	memcpy(&extra->r.rdata, data, data_len);
+	
+	// And register it
+	err = mDNS_AddRecordToService(&mDNSStorage, &x->s, extra);
+	*reference = (natural_t)extra;
+	debugf("Received a request to add the record of type: %d length: %d; returned reference %X", type, data_len, *reference);
 	return(err);
 	}
 
-mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference, int type, const char *data, mach_msg_type_number_t data_len)
+mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_port_t unusedserver, mach_port_t client,
+	natural_t reference, int type, const char *data, mach_msg_type_number_t data_len)
 	{
-	mStatus err = 0;
+	mStatus err;
+	DNSServiceRegistration *x = DNSServiceRegistrationList;
+	ResourceRecord *rr;
 
-	LogErrorMessage("Received a request to update the record(s) of type: %d length: %d data: %s for reference: %d", type, data_len, data, reference);
+	// Find this registered service, and check the record we're updating is real
+	while (x && x->ClientMachPort != client) x = x->next;
+	if (!x) { debugf("provide_DNSServiceRegistrationUpdateRecord_rpc bad client %X", client); return(mStatus_BadReferenceErr); }
+	
+	if (!reference)		// NULL reference means update the primary TXT record
+		rr = &x->s.RR_TXT;
+	else					// Else, scan our list to make sure we're updating a valid record that was previously added
+		{
+		ExtraResourceRecord *e = x->s.Extras;
+		while (e && e != (ExtraResourceRecord*)reference) e = e->next;
+		if (!e)
+			{
+			debugf("provide_DNSServiceRegistrationUpdateRecord_rpc failed to find record %X", reference);
+			return(mStatus_BadReferenceErr);
+			}
+		rr = &e->r;
+		}
+
+	err = mDNS_Update(&mDNSStorage, rr, data_len, data);
+	if (err)
+		{
+		debugf("Received a request to update the record of type: %d length: %d for reference: %X; failed %d",
+			type, data_len, reference, err);
+		return(err);
+		}
+
+	debugf("Received a request to update the record of type: %d length: %d for reference: %X", type, data_len, reference);
 	return(err);
 	}
 
-
-mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_port_t server, mach_port_t client, natural_t reference)
+mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_port_t unusedserver, mach_port_t client,
+	natural_t reference)
 	{
-	mStatus err = 0;
+	mStatus err;
+	DNSServiceRegistration *x = DNSServiceRegistrationList;
+	ExtraResourceRecord *extra = (ExtraResourceRecord*)reference;
+	
+	// Find this registered service
+	while (x && x->ClientMachPort != client) x = x->next;
+	if (!x) { debugf("provide_DNSServiceRegistrationRemoveRecord_rpc bad client %X", client); return(mStatus_BadReferenceErr); }
 
-	LogErrorMessage("Received a request to remove the record(s) of reference: %d", (int)reference);
+	err = mDNS_RemoveRecordFromService(&mDNSStorage, &x->s, extra);
+	if (!err) debugf("Received a request to remove the record of reference: %X", extra);
+	else debugf("Received a request to remove the record of reference: %X (failed %d)", extra, err);
+	free(extra);
 	return(err);
 	}
-
 
 //*************************************************************************************************************
 // Support Code
@@ -548,7 +618,6 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
 		      MACH_MSG_TIMEOUT_NONE,	/* timeout */
 		      MACH_PORT_NULL);		/* notify */
 
-
     /* Has a message error occurred? */
     switch (mr)
 		{
@@ -589,7 +658,8 @@ mDNSlocal kern_return_t registerBootstrapService()
 		}
 	else if (status == BOOTSTRAP_UNKNOWN_SERVICE)
 		{
-		status = bootstrap_create_server(bootstrap_port, "/usr/sbin/mDNSResponder", getuid(), FALSE /* relaunch immediately, not on demand */, &server_priv_port);
+		status = bootstrap_create_server(bootstrap_port, "/usr/sbin/mDNSResponder", getuid(),
+			FALSE /* relaunch immediately, not on demand */, &server_priv_port);
 		if (status != KERN_SUCCESS) return status;
 
 		status = bootstrap_create_service(server_priv_port, (char*)kmDNSBootstrapName, &service_send_port);
@@ -610,14 +680,14 @@ mDNSlocal kern_return_t registerBootstrapService()
 		}
 
 	/*
-	 * We have no intention of responding to requests on the service port.  We are not otherwise a
-	 * Mach port-based service.  We are just using this mechanism for relaunch facilities.  So, we	 * can dispose of all the rights we have for the service port.  We don't destroy the send right for the
-	 * server's privileged bootstrap port - in case we have to unregister later.
+	 * We have no intention of responding to requests on the service port.  We are not otherwise
+	 * a Mach port-based service.  We are just using this mechanism for relaunch facilities.
+	 * So, we can dispose of all the rights we have for the service port.  We don't destroy the
+	 * send right for the server's privileged bootstrap port - in case we have to unregister later.
 	 */
 	mach_port_destroy(mach_task_self(), service_rcv_port);
 	return status;
 	}
-
 
 mDNSlocal kern_return_t destroyBootstrapService()
 	{
@@ -625,7 +695,7 @@ mDNSlocal kern_return_t destroyBootstrapService()
 	return bootstrap_register(server_priv_port, (char*)kmDNSBootstrapName, MACH_PORT_NULL);
 	}
 
-mDNSlocal void exitCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
+mDNSlocal void ExitCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
 	debugf("Handling signal from mach msg");
 	mDNS_Close(&mDNSStorage);
@@ -638,7 +708,7 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	mStatus            err;
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
 	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
-	CFMachPortRef      e_port = CFMachPortCreate(NULL, exitCallback, NULL, NULL);
+	CFMachPortRef      e_port = CFMachPortCreate(NULL, ExitCallback, NULL, NULL);
 	mach_port_t        m_port = CFMachPortGetPort(s_port);
 	kern_return_t      status = bootstrap_register(bootstrap_port, DNS_SERVICE_DISCOVERY_SERVER, m_port);
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
@@ -671,7 +741,6 @@ mDNSlocal kern_return_t start(const char *bundleName, const char *bundleDir)
 	return(err);
 	}
 
-
 mDNSlocal void HandleSIG(int signal)
 	{
 	debugf("");
@@ -698,10 +767,10 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
+		extern int mDNS_UsePort53;
 		if (!strcmp(argv[i], "-d")) debug_mode = 1;
 		if (!strcmp(argv[i], "-no53")) mDNS_UsePort53 = 0;
 		}
-
 
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIG);
