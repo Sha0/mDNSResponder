@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: SecondPage.h,v $
+Revision 1.2  2004/09/13 21:23:42  shersche
+<rdar://problem/3796483> Add moreComing argument to OnAddPrinter and OnRemovePrinter callbacks
+Bug #: 3796483
+
 Revision 1.1  2004/06/18 04:36:57  rpantos
 First checked in
 
@@ -56,11 +60,13 @@ public:
 
 	virtual void
 	OnAddPrinter(
-			Printer * printer);
+			Printer	*	printer,
+			bool			moreComing);
 
 	virtual void
 	OnRemovePrinter(
-			Printer * printer);
+			Printer	*	printer,
+			bool			moreComing);
 
 	virtual void
 	OnResolvePrinter(

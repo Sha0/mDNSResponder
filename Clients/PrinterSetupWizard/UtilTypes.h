@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.4  2004/09/13 21:22:44  shersche
+<rdar://problem/3796483> Add moreComing argument to OnAddPrinter and OnRemovePrinter callbacks
+Bug #: 3796483
+
 Revision 1.3  2004/06/26 23:27:12  shersche
 support for installing multiple printers of the same name
 
@@ -125,11 +129,13 @@ namespace PrinterSetupWizard
 
 		virtual void
 		OnAddPrinter(
-				Printer * printer) = 0;
+				Printer	*	printer,
+				bool			moreComing) = 0;
 
 		virtual void
 		OnRemovePrinter(
-				Printer * printer) = 0;
+				Printer	*	printer,
+				bool			moreComing) = 0;
 
 		virtual void
 		OnResolvePrinter(
