@@ -444,8 +444,8 @@
 		654BE64F02B63B93000001D1 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
-			name = mDNSClientAPI.h;
-			path = ../mDNSCore/mDNSClientAPI.h;
+			name = mDNSEmbeddedAPI.h;
+			path = ../mDNSCore/mDNSEmbeddedAPI.h;
 			refType = 4;
 		};
 		654BE65002B63B93000001D1 = {
