@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.12  2003/05/21 03:49:18  cheshire
+Fix warning
+
 Revision 1.11  2003/05/06 00:00:50  cheshire
 <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
 
@@ -651,7 +654,7 @@ static int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, const cha
 		intf->multicastSocketv6    = -1;
 		alias                      = SearchForInterfaceByName(m, intf->intfName);
 		if (alias == NULL) alias   = intf;
-		intf->coreIntf.InterfaceID = alias;
+		intf->coreIntf.InterfaceID = (mDNSInterfaceID)alias;
 
 		if (alias != intf)
 			debugf("SetupOneInterface: %s %#a is an alias of %#a", intfName, &intf->coreIntf.ip, &alias->coreIntf.ip);
