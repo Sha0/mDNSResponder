@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.88  2004/09/21 23:12:46  cheshire
+Reorder initialization of question fields to match structure order
+
 Revision 1.87  2004/09/21 22:18:33  cheshire
 In SIGINFO output, display a '-' next to records that have the Unique bit set
 
@@ -1084,14 +1087,15 @@ static void handle_query_request(request_state *rstate)
     	}
     bzero(q, sizeof(DNSQuestion));	
 
+    q->InterfaceID      = InterfaceID;
+    q->Target           = zeroAddr;
     if (!MakeDomainNameFromDNSNameString(&q->qname, name)) { freeL("DNSQuestion", q); goto bad_param; }	
-    q->QuestionContext = rstate;
+    q->qtype            = rrtype;
+    q->qclass           = rrclass;
+    q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
     q->QuestionCallback = question_result_callback;
-    q->qtype = rrtype;
-    q->qclass = rrclass;
-    q->InterfaceID = InterfaceID;
-    q->Target = zeroAddr;
-	if (flags & kDNSServiceFlagsLongLivedQuery) q->LongLived = mDNStrue;
+    q->QuestionContext  = rstate;
+
     rstate->termination_context = q;
     rstate->terminate = question_termination_callback;
 
@@ -1166,21 +1170,21 @@ static void handle_resolve_request(request_state *rstate)
     txt->rstate = rstate;
     
     // format questions
-    srv->question.QuestionContext = rstate;
-    srv->question.QuestionCallback = resolve_result_callback;
+    srv->question.InterfaceID      = InterfaceID;
+    srv->question.Target           = zeroAddr;
     memcpy(&srv->question.qname, &fqdn, MAX_DOMAIN_NAME);
-    srv->question.qtype = kDNSType_SRV;
-    srv->question.qclass = kDNSClass_IN;
-    srv->question.InterfaceID = InterfaceID;
-    srv->question.Target      = zeroAddr;
+    srv->question.qtype            = kDNSType_SRV;
+    srv->question.qclass           = kDNSClass_IN;
+    srv->question.QuestionCallback = resolve_result_callback;
+    srv->question.QuestionContext  = rstate;
 
-    txt->question.QuestionContext = rstate;
-    txt->question.QuestionCallback = resolve_result_callback;
+    txt->question.InterfaceID      = InterfaceID;
+    txt->question.Target           = zeroAddr;
     memcpy(&txt->question.qname, &fqdn, MAX_DOMAIN_NAME);
-    txt->question.qtype = kDNSType_TXT;
-    txt->question.qclass = kDNSClass_IN;
-    txt->question.InterfaceID = InterfaceID;
-    txt->question.Target      = zeroAddr;
+    txt->question.qtype            = kDNSType_TXT;
+    txt->question.qclass           = kDNSClass_IN;
+    txt->question.QuestionCallback = resolve_result_callback;
+    txt->question.QuestionContext  = rstate;
 
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
