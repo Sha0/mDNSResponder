@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.13  2004/09/13 07:35:10  shersche
+<rdar://problem/3762235> Add mDNSResponder to Windows Firewall application list if SP2 is detected and app hasn't been added before
+Bug #: 3762235
+
 Revision 1.12  2004/09/11 21:18:32  shersche
 <rdar://problem/3779502> Add route to ARP everything when a 169.254.x.x address is selected
 Bug #: 3779502
@@ -90,6 +94,8 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #include	"mDNSClientAPI.h"
 #include	"mDNSWin32.h"
 
+#include	"Firewall.h"
+
 #if( !TARGET_OS_WINDOWS_CE )
 	#include	<mswsock.h>
 	#include	<process.h>
@@ -108,9 +114,11 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #define	DEBUG_NAME					"[Server] "
 #define	kServiceName				"Apple mDNSResponder"
+#define kServiceNameL				L"Apple mDNSResponder"
 #define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
 #define kServiceManageLLRouting		"ManageLLRouting"
 #define kServiceCacheEntryCount		"CacheEntryCount"
+#define kServiceManageFirewall		"ManageFirewall"
 #define	kDNSServiceCacheEntryCountDefault	512
 
 #define RR_CACHE_SIZE 500
@@ -172,6 +180,7 @@ static OSStatus		InstallService( const char *inName, const char *inDisplayName, 
 static OSStatus		RemoveService( const char *inName );
 static OSStatus		SetServiceParameters();
 static OSStatus		GetServiceParameters();
+static OSStatus		CheckFirewall();
 static OSStatus		SetServiceInfo( SC_HANDLE inSCM, const char *inServiceName, const char *inDescription );
 static void			ReportStatus( int inType, const char *inFormat, ... );
 static OSStatus		RunDirect( int argc, char *argv[] );
@@ -613,6 +622,91 @@ exit:
 }
 
 
+//===========================================================================================================================
+//	CheckFirewall
+//===========================================================================================================================
+
+static OSStatus CheckFirewall()
+{
+	DWORD 			value;
+	DWORD			valueLen;
+	DWORD			type;
+	const char	*	s;
+	HKEY			key;
+	OSStatus		err = kUnknownErr;
+	
+	key = NULL;
+
+	// Is the OS Windows XP ?
+
+	if (strcmp((const char*) &gMDNSRecord.HIHardware.c[1], "Windows XP") == 0)
+	{
+		// If so, then check the current service pack installed.
+		// Calling GetVersionEx and parsing the szCSDVersion string field
+		// is problematic for a variety of reasons, most notably
+		// because the field might be localized.  So we'll read the
+		// installed service pack directly from the registry.
+
+		s = "SYSTEM\\CurrentControlSet\\Control\\Windows";
+		err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+		require_noerr( err, exit );
+
+		valueLen = sizeof(DWORD);
+		err = RegQueryValueEx(key, "CSDVersion", 0, &type, (LPBYTE) &value, &valueLen);
+		require_noerr( err, exit );
+
+		RegCloseKey( key );
+		key = NULL;
+
+		// Is the service pack 2 or newer?
+
+		if (value >= 0x200)
+		{
+			// Then check to see if we've managed the firewall.
+			// This package might have been installed, then
+			// the OS was upgraded to SP2 or above.  If that's
+			// the case, then we need to manipulate the firewall
+			// so networking works correctly.
+
+			s = "SYSTEM\\CurrentControlSet\\Services\\" kServiceName "\\Parameters";
+			err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+			require_noerr( err, exit );
+	
+			valueLen = sizeof(DWORD);
+			err = RegQueryValueEx(key, kServiceManageFirewall, 0, &type, (LPBYTE) &value, &valueLen);
+			
+			if ((err != ERROR_SUCCESS) || (value == 0))
+			{
+				wchar_t	fullPath[ MAX_PATH ];
+				DWORD	size;
+
+				// Get a full path to the executable
+
+				size = GetModuleFileNameW( NULL, fullPath, sizeof( fullPath ) );
+				err = translate_errno( size > 0, (OSStatus) GetLastError(), kPathErr );
+				require_noerr( err, exit );
+
+				err = mDNSAddToFirewall(fullPath, kServiceNameL);
+				require_noerr( err, exit );
+
+				value = 1;
+				err = RegSetValueEx( key, kServiceManageFirewall, 0, REG_DWORD, (const LPBYTE) &value, sizeof( DWORD ) );
+				require_noerr( err, exit );
+			}
+		}
+	}
+	
+exit:
+
+	if ( key )
+	{
+		RegCloseKey( key );
+	}
+
+	return( err );
+}
+
+
 
 //===========================================================================================================================
 //	SetServiceInfo
@@ -959,6 +1053,9 @@ static OSStatus	ServiceRun( int argc, char *argv[] )
 	err = ServiceSpecificInitialize( argc, argv );
 	require_noerr( err, exit );
 	initialized = TRUE;
+	
+	err = CheckFirewall();
+	check_noerr( err );
 	
 	gServiceStatus.dwCurrentState = SERVICE_RUNNING;
 	ok = SetServiceStatus( gServiceStatusHandle, &gServiceStatus );
