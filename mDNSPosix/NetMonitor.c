@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.5  2003/04/19 01:16:22  cheshire
+ * Add filter option, to monitor only packets from a single specified source address
+ *
  * Revision 1.4  2003/04/18 00:45:21  cheshire
  * Distinguish announcements (AN) from deletions (DE)
  *
@@ -61,6 +64,9 @@
 
 #include <stdio.h>			// For printf()
 #include <stdlib.h>			// For malloc()
+#include <netinet/in.h>		// For INADDR_NONE
+#include <arpa/inet.h>		// For inet_addr()
+#include <netdb.h>			// For gethostbyname()
 
 #include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"
@@ -100,6 +106,8 @@ struct ActivityStat_struct
 
 static mDNS mDNSStorage;						// mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;	// Stores this platform's globals
+
+static mDNSAddr FilterAddr;
 
 static int NumQuestions;
 static int NumProbes;
@@ -250,7 +258,7 @@ mDNSlocal void DisplayQuery(const DNSMessage *const msg, const mDNSu8 *const end
 		{
 		ptr = getResourceRecord(msg, ptr, end, InterfaceID, 0, 0, &pktrr, mDNSNULL);
 		mprintf("%#-16a (KA) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
-		if (pktrr.rrtype == kDNSType_PTR) mprintf("-> %##s", pktrr.rdata->u.name.c);
+		if (pktrr.rrtype == kDNSType_PTR) mprintf(" -> %##s", pktrr.rdata->u.name.c);
 		mprintf("\n");
 		}
 	}
@@ -280,7 +288,7 @@ mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, c
 		NumAnswers++;
 		if (pktrr.rroriginalttl == 0) op = "DE";
 		mprintf("%#-16a (%s) %-5s %##s", srcaddr, op, DNSTypeName(pktrr.rrtype), pktrr.name.c);
-		if (pktrr.rrtype == kDNSType_PTR) mprintf("-> %##s", pktrr.rdata->u.name.c);
+		if (pktrr.rrtype == kDNSType_PTR) mprintf(" -> %##s", pktrr.rdata->u.name.c);
 		mprintf("\n");
 		recordstat(&pktrr.name, OP_answer, pktrr.rrtype);
 		}
@@ -298,7 +306,7 @@ mDNSlocal void DisplayResponse(const DNSMessage *const msg, const mDNSu8 *end, c
 		if (!ptr) { mprintf("%#-16a **** ERROR: FAILED TO READ ADDITIONAL **** \n", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c); return; }
 		NumAdditionals++;
 		mprintf("%#-16a (AD) %-5s %##s", srcaddr, DNSTypeName(pktrr.rrtype), pktrr.name.c);
-		if (pktrr.rrtype == kDNSType_PTR) mprintf("-> %##s", pktrr.rdata->u.name.c);
+		if (pktrr.rrtype == kDNSType_PTR) mprintf(" -> %##s", pktrr.rdata->u.name.c);
 		mprintf("\n");
 		}
 
@@ -310,24 +318,25 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	// For now we're only interested in monitoring IPv4 traffic.
 	// All IPv6 packets should just be duplicates of the v4 packets.
 	if (srcaddr->type == mDNSAddrType_IPv4)
-		{
-		const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
-		const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
-		const mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
-		
-		// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
-		mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
-		msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
-		msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
-		msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
-		msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
-		
-		mDNS_Lock(m);
-		if      (QR_OP == StdQ) DisplayQuery   (msg, end, srcaddr, InterfaceID);
-		else if (QR_OP == StdR) DisplayResponse(msg, end, srcaddr, InterfaceID);
-		else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
-		mDNS_Unlock(m);
-		}
+		if (FilterAddr.type == 0 || FilterAddr.addr.ipv4.NotAnInteger == srcaddr->addr.ipv4.NotAnInteger)
+			{
+			const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
+			const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+			const mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
+			
+			// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
+			mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
+			msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+			msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
+			msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
+			msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
+			
+			mDNS_Lock(m);
+			if      (QR_OP == StdQ) DisplayQuery   (msg, end, srcaddr, InterfaceID);
+			else if (QR_OP == StdR) DisplayResponse(msg, end, srcaddr, InterfaceID);
+			else debugf("Unknown DNS packet type %02X%02X (ignored)", msg->h.flags.b[0], msg->h.flags.b[1]);
+			mDNS_Unlock(m);
+			}
 	}
 
 mDNSlocal mStatus mDNSNetMonitor(void)
@@ -354,23 +363,43 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 
 mDNSexport int main(int argc, char **argv)
 	{
-	if (argc == 1)
+	mStatus status;
+	if (argc > 2) goto usage;
+	
+	if (argc == 2)
 		{
-		mStatus status = mDNSNetMonitor();
-		if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %ld\n", argv[0], status); return(status); }
+		FilterAddr.addr.ipv4.NotAnInteger = inet_addr(argv[1]);
+		if (FilterAddr.addr.ipv4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
+			{
+			struct hostent *h = gethostbyname(argv[1]);
+			if (h) FilterAddr.addr.ipv4.NotAnInteger = *(long*)h->h_addr;
+			}
+		if (FilterAddr.addr.ipv4.NotAnInteger == INADDR_NONE)	// INADDR_NONE is 0xFFFFFFFF
+			goto usage;
+		FilterAddr.type = mDNSAddrType_IPv4;
 		}
-	else
-		{
-		fprintf(stderr, "%s monitors network for mDNS traffic\n", argv[0]);
-		fprintf(stderr, "-Q-            Query Packet\n");
-		fprintf(stderr, "-R-            Response Packet\n");
-		fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet.\n");
-		fprintf(stderr, "(P)            Probe Question (new service starting)\n");
-		fprintf(stderr, "(Q)            Query Question\n");
-		fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
-		fprintf(stderr, "(AN)           Answer to question (or periodic announcment)\n");
-		fprintf(stderr, "(AD)           Additional record\n");
-		fprintf(stderr, "(DE)           Deletion (record going away)\n");
-		}
+	
+	status = mDNSNetMonitor();
+	if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %ld\n", argv[0], status); return(status); }
 	return(0);
+
+usage:
+	fprintf(stderr, "\n");
+	fprintf(stderr, "mDNS traffic monitor\n");
+	fprintf(stderr, "Usage: %s (<host>)\n", argv[0]);
+	fprintf(stderr, "Optional <host> parameter displays only packets from that host\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Output (per-packet header):\n");
+	fprintf(stderr, "-Q-            Query Packet\n");
+	fprintf(stderr, "-R-            Response Packet\n");
+	fprintf(stderr, "Q/Ans/Auth/Add Number of questions, answers, authority records and additional records in packet.\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Output (individual record display):\n");
+	fprintf(stderr, "(P)            Probe Question (new service starting)\n");
+	fprintf(stderr, "(Q)            Query Question\n");
+	fprintf(stderr, "(KA)           Known Answer (information querier already knows)\n");
+	fprintf(stderr, "(AN)           Answer to question (or periodic announcment)\n");
+	fprintf(stderr, "(AD)           Additional record\n");
+	fprintf(stderr, "(DE)           Deletion (record going away)\n");
+	return(-1);
 	}
