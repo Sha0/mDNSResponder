@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.33  2004/09/14 23:16:31  cheshire
+Fix compile error: mDNS_SetFQDNs has been renamed to mDNS_SetFQDN
+
 Revision 1.32  2004/09/14 21:03:16  cheshire
 Fix spacing
 
@@ -581,7 +584,7 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	ConvertUTF8PstringToRFC1034HostLabel(m->nicelabel.c, &m->hostlabel);
 	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
 
-	mDNS_SetFQDNs(m, (domainname*)"");
+	mDNS_SetFQDN(m);
 
 	// When it's finished mDNSOpenEndpoint asynchronously calls mDNSinitComplete() and then mDNS_RegisterInterface()
 	CallmDNSNotifierUPP = NewOTNotifyUPP(CallmDNSNotifier);
