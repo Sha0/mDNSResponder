@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.173  2005/02/18 01:26:42  cheshire
+<rdar://problem/4012162> "Could not write data to client after 60 seconds" message could be more helpful
+Log additional information about failed client
+
 Revision 1.172  2005/02/18 00:58:35  cheshire
 <rdar://problem/4012162> "Could not write data to client after 60 seconds" message could be more helpful
 
@@ -836,6 +840,32 @@ static void handle_setdomain_request(request_state *rstate);
 #define PID_FILE "/var/run/mDNSResponder.pid"
 #endif
 
+mDNSlocal void LogClientInfo(request_state *req)
+	{
+	void *t = req->termination_context;
+	if (t)
+		{
+		if (req->terminate == regservice_termination_callback)
+			{
+			service_instance *ptr;
+			for (ptr = ((service_info *)t)->instances; ptr; ptr = ptr->next)
+				LogMsgNoIdent("%3d: DNSServiceRegister         %##s %u", req->sd, ptr->srs.RR_SRV.resrec.name->c, SRS_PORT(&ptr->srs));
+			}
+		else if (req->terminate == browse_termination_callback)
+			{
+			browser_t *blist;
+			for (blist = req->browser_info->browsers; blist; blist = blist->next)
+				LogMsgNoIdent("%3d: DNSServiceBrowse           %##s", req->sd, blist->q.qname.c);
+			}
+		else if (req->terminate == resolve_termination_callback)
+			LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, ((resolve_termination_t *)t)->qsrv.qname.c);
+		else if (req->terminate == question_termination_callback)
+			LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, ((DNSQuestion *)          t)->qname.c);
+		else if (req->terminate == enum_termination_callback)
+			LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, ((enum_termination_t *)   t)->all->question.qname.c);
+		}
+	}
+
 static void FatalError(char *errmsg)
 	{
 	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno()));
@@ -1017,6 +1047,7 @@ mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			if (now - req->time_blocked >= MAX_TIME_BLOCKED)
 				{
 				LogMsg("Could not write data to client %d after %ld seconds - aborting connection", req->sd, MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
+				LogClientInfo(req);
 				abort_request(req);
 				result = t_terminated;
 				}
@@ -1075,28 +1106,7 @@ void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
 
     for (req = all_requests; req; req=req->next)
-        {
-        void *t = req->termination_context;
-        if (!t) continue;
-        if (req->terminate == regservice_termination_callback)
-			{
-			service_instance *ptr;
-			for (ptr = ((service_info *)t)->instances; ptr; ptr = ptr->next)
-				LogMsgNoIdent("%3d: DNSServiceRegister         %##s %u", req->sd, ptr->srs.RR_SRV.resrec.name->c, SRS_PORT(&ptr->srs));
-			}
-		else if (req->terminate == browse_termination_callback)
-			{
-			browser_t *blist;
-			for (blist = req->browser_info->browsers; blist; blist = blist->next)
-				LogMsgNoIdent("%3d: DNSServiceBrowse           %##s", req->sd, blist->q.qname.c);
-			}
-        else if (req->terminate == resolve_termination_callback)
-            LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, ((resolve_termination_t *)t)->qsrv.qname.c);
-        else if (req->terminate == question_termination_callback)
-            LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, ((DNSQuestion *)          t)->qname.c);
-        else if (req->terminate == enum_termination_callback)
-            LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, ((enum_termination_t *)   t)->all->question.qname.c);
-        }
+		LogClientInfo(req);
 
     now = mDNS_TimeNow(m);
     LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
