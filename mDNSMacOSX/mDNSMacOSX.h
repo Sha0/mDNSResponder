@@ -68,6 +68,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.10  2003/06/25 23:42:19  ksekar
+Bug #: <rdar://problem/3249292>: Feature: New Rendezvous APIs (#7875)
+Reviewed by: Stuart Cheshire
+Added files necessary to implement Unix domain sockets based enhanced
+Rendezvous APIs, and integrated with existing Mach-port based daemon.
+
 Revision 1.9  2003/06/10 01:14:11  cheshire
 <rdar://problem/3286004> New APIs require a mDNSPlatformInterfaceIDfromInterfaceIndex() call
 
@@ -176,5 +182,15 @@ extern void freeL(char *msg, void *x);
 #ifdef  __cplusplus
     }
 #endif
+
+// UDS Server <-> daemon crossover routines/globals
+extern mDNS mDNSStorage;            
+int udsserver_init(void);
+int udsserver_add_rl_source(void);
+mDNSs32 udsserver_idle(mDNSs32 nextevent);  // takes the next scheduled event time, does idle work,
+                                            // and returns the updated nextevent time
+int udsserver_exit(void);
+
+
 
 #endif
