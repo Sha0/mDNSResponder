@@ -33,6 +33,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.12  2003/05/26 03:01:28  cheshire
+ * <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+ *
  * Revision 1.11  2003/05/26 00:48:13  cheshire
  * If mDNS packet contains a non-zero message ID, then display it.
  *
@@ -148,13 +151,13 @@ static ActivityStat *stats;
 // Utilities
 
 // Special version of printf that knows how to print IP addresses, DNS-format name strings, etc.
-//mDNSlocal void mprintf(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+mDNSlocal void mprintf(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 mDNSlocal void mprintf(const char *format, ...)
 	{
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	printf("%s", buffer);
 	}

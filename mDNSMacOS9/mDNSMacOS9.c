@@ -67,7 +67,7 @@ mDNSexport void debugf_(const char *format, ...)
 	unsigned char buffer[256];
     va_list ptr;
 	va_start(ptr,format);
-	buffer[0] = (unsigned char)mDNS_vsprintf((char*)buffer+1, format, ptr);
+	buffer[0] = (unsigned char)mDNS_vsnprintf((char*)buffer+1, 255, format, ptr);
 	va_end(ptr);
 #if __ONLYSYSTEMTASK__
 	buffer[1+buffer[0]] = 0;
@@ -84,7 +84,7 @@ mDNSexport void LogMsg(const char *format, ...)
 	unsigned char buffer[256];
     va_list ptr;
 	va_start(ptr,format);
-	buffer[0] = (unsigned char)mDNS_vsprintf((char*)buffer+1, format, ptr);
+	buffer[0] = (unsigned char)mDNS_vsnprintf((char*)buffer+1, 255, format, ptr);
 	va_end(ptr);
 #if __ONLYSYSTEMTASK__
 	buffer[1+buffer[0]] = 0;
@@ -151,7 +151,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	senderport.NotAnInteger = sender.fPort;
 	destaddr.type = mDNSAddrType_IPv4;
 	destaddr.addr.ipv4  = AllDNSLinkGroup;		// For now, until I work out how to get the dest address, assume it was sent to AllDNSLinkGroup
-	interface = m->HostInterfaces;
+	interface = m->HostInterfaces->InterfaceID;
 	
 	if (recvdata.opt.len) debugf("readpacket: got some option data at %X, len %d", options, recvdata.opt.len);
 
@@ -202,7 +202,7 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			m->p->interface.ip.type = mDNSAddrType_IPv4;
 			m->p->interface.ip.addr.ipv4.NotAnInteger = interfaceinfo.fAddress;
 			m->p->interface.Advertise       = m->AdvertiseLocalAddresses;
-			m->p->interface.InterfaceID = &m->p->interface;
+			m->p->interface.InterfaceID = (mDNSInterfaceID)&m->p->interface;
 			mDNS_RegisterInterface(m, &m->p->interface);
 			}
 			

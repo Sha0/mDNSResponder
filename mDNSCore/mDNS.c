@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.132  2003/05/26 03:01:26  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
 Revision 1.131  2003/05/26 00:42:05  cheshire
 <rdar://problem/3268876> Temporarily include mDNSResponder version in packets
 
@@ -168,7 +171,7 @@ Was setting "rr->LastAPTime = timenow - rr->LastAPTime"
 instead of  "rr->LastAPTime = timenow - rr->ThisAPInterval"
 
 Revision 1.110  2003/04/30 21:09:59  cheshire
-<rdar://problem/3244727> mDNS_vsprintf needs to be more defensive against invalid domain names
+<rdar://problem/3244727> mDNS_vsnprintf needs to be more defensive against invalid domain names
 
 Revision 1.109  2003/04/26 02:41:56  cheshire
 <rdar://problem/3241281> Change timenow from a local variable to a structure member
@@ -371,7 +374,7 @@ Added mDNS_RegisterNoSuchService() function for assertion of non-existence
 of a particular named service
 
 Revision 1.59  2002/09/19 21:25:34  cheshire
-mDNS_sprintf() doesn't need to be in a separate file
+mDNS_snprintf() doesn't need to be in a separate file
 
 Revision 1.58  2002/09/19 04:20:43  cheshire
 Remove high-ascii characters that confuse some systems
@@ -484,10 +487,10 @@ static const char *const mDNS_DomainTypeNames[] =
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
-#pragma mark - Specialized mDNS version of vsprintf
+#pragma mark - Specialized mDNS version of vsnprintf
 #endif
 
-static const struct mDNSsprintf_format
+static const struct mDNSprintf_format
 	{
 	unsigned 		leftJustify : 1;
 	unsigned 		forceSign : 1;
@@ -497,231 +500,245 @@ static const struct mDNSsprintf_format
 	unsigned 		lSize : 1;
 	char	 		altForm;
 	char			sign;		// +, - or space
-	int				fieldWidth;
-	int				precision;
-	} mDNSsprintf_format_default;
+	unsigned int	fieldWidth;
+	unsigned int	precision;
+	} mDNSprintf_format_default;
 
-#define mDNS_vsprintf_BUFLEN			512
-
-mDNSexport int mDNS_vsprintf(char *sbuffer, const char *fmt, va_list arg)
+mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg)
 	{
-	int c, nwritten = 0;
+	mDNSu32 nwritten = 0;
+	int c;
+	buflen--;		// Pre-reserve one space in the buffer for the terminating nul
 
-	for (c = *fmt; c; c = *++fmt)
+	for (c = *fmt; c != 0 ; c = *++fmt)
 		{
-		int i=0, j;
-		char buf[mDNS_vsprintf_BUFLEN], *digits;
-		char *s = &buf[mDNS_vsprintf_BUFLEN];
-		struct mDNSsprintf_format F;
-		if (c != '%') goto copy1;
-		F = mDNSsprintf_format_default;
-
-		for (;;)	//  decode flags
+		if (c != '%')
 			{
-			c = *++fmt;
-			if      (c == '-')	F.leftJustify = 1;
-			else if (c == '+')	F.forceSign = 1;
-			else if (c == ' ')	F.sign = ' ';
-			else if (c == '#')	F.altForm++;
-			else if (c == '0')	F.zeroPad = 1;
-			else break;
-			}
-
-		if (c == '*')	//  decode field width
-			{
-			if ((F.fieldWidth = va_arg(arg, int)) < 0)
-				{
-				F.leftJustify = 1;
-				F.fieldWidth = -F.fieldWidth;
-				}
-			c = *++fmt;
+			*sbuffer++ = (char)c;
+			if (++nwritten >= buflen) goto exit;
 			}
 		else
 			{
-			for (; c >= '0' && c <= '9'; c = *++fmt)
-				F.fieldWidth = (10 * F.fieldWidth) + (c - '0');
-			}
-
-		if (c == '.')	//  decode precision
-			{
-			if ((c = *++fmt) == '*')
-				{ F.precision = va_arg(arg, int); c = *++fmt; }
-			else for (; c >= '0' && c <= '9'; c = *++fmt)
-					F.precision = (10 * F.precision) + (c - '0');
-			if (F.precision >= 0) F.havePrecision = 1;
-			}
-
-		if (F.leftJustify) F.zeroPad = 0;
-
-conv:	switch (c)	//  perform appropriate conversion
-			{
-			unsigned long n;
-			case 'h' :	F.hSize = 1; c = *++fmt; goto conv;
-			case 'l' :	// fall through
-			case 'L' :	F.lSize = 1; c = *++fmt; goto conv;
-			case 'd' :
-			case 'i' :	if (F.lSize) n = (unsigned long)va_arg(arg, long);
-						else n = (unsigned long)va_arg(arg, int);
-						if (F.hSize) n = (short) n;
-						if ((long) n < 0) { n = (unsigned long)-(long)n; F.sign = '-'; }
-						else if (F.forceSign) F.sign = '+';
-						goto decimal;
-			case 'u' :	if (F.lSize) n = va_arg(arg, unsigned long);
-						else n = va_arg(arg, unsigned int);
-						if (F.hSize) n = (unsigned short) n;
-						F.sign = 0;
-						goto decimal;
-			decimal:	if (!F.havePrecision)
-							{
-							if (F.zeroPad)
+			unsigned int i=0, j;
+			// The mDNS Vsprintf Argument Conversion Buffer is used as a temporary holding area for
+			// generating decimal numbers, hexdecimal numbers, IP addresses, domain name strings, etc.
+			// The size needs to be enough for a 256-byte domain name plus some error text.
+			#define mDNS_VACB_Size 300
+			char mDNS_VACB[mDNS_VACB_Size];
+			#define mDNS_VACB_Lim (&mDNS_VACB[mDNS_VACB_Size])
+			#define mDNS_VACB_Remain(s) ((mDNSu32)(mDNS_VACB_Lim - s))
+			char *s = mDNS_VACB_Lim, *digits;
+			struct mDNSprintf_format F = mDNSprintf_format_default;
+	
+			while(1)	//  decode flags
+				{
+				c = *++fmt;
+				if      (c == '-')	F.leftJustify = 1;
+				else if (c == '+')	F.forceSign = 1;
+				else if (c == ' ')	F.sign = ' ';
+				else if (c == '#')	F.altForm++;
+				else if (c == '0')	F.zeroPad = 1;
+				else break;
+				}
+	
+			if (c == '*')	//  decode field width
+				{
+				int f = va_arg(arg, int);
+				if (f < 0) { f = -f; F.leftJustify = 1; }
+				F.fieldWidth = (unsigned int)f;
+				c = *++fmt;
+				}
+			else
+				{
+				for (; c >= '0' && c <= '9'; c = *++fmt)
+					F.fieldWidth = (10 * F.fieldWidth) + (c - '0');
+				}
+	
+			if (c == '.')	//  decode precision
+				{
+				if ((c = *++fmt) == '*')
+					{ F.precision = va_arg(arg, unsigned int); c = *++fmt; }
+				else for (; c >= '0' && c <= '9'; c = *++fmt)
+						F.precision = (10 * F.precision) + (c - '0');
+				F.havePrecision = 1;
+				}
+	
+			if (F.leftJustify) F.zeroPad = 0;
+	
+			conv:
+			switch (c)	//  perform appropriate conversion
+				{
+				unsigned long n;
+				case 'h' :	F.hSize = 1; c = *++fmt; goto conv;
+				case 'l' :	// fall through
+				case 'L' :	F.lSize = 1; c = *++fmt; goto conv;
+				case 'd' :
+				case 'i' :	if (F.lSize) n = (unsigned long)va_arg(arg, long);
+							else n = (unsigned long)va_arg(arg, int);
+							if (F.hSize) n = (short) n;
+							if ((long) n < 0) { n = (unsigned long)-(long)n; F.sign = '-'; }
+							else if (F.forceSign) F.sign = '+';
+							goto decimal;
+				case 'u' :	if (F.lSize) n = va_arg(arg, unsigned long);
+							else n = va_arg(arg, unsigned int);
+							if (F.hSize) n = (unsigned short) n;
+							F.sign = 0;
+							goto decimal;
+				decimal:	if (!F.havePrecision)
 								{
-								F.precision = F.fieldWidth;
-								if (F.sign) --F.precision;
-								}
-							if (F.precision < 1) F.precision = 1;
-							}
-						for (i = 0; n; n /= 10, i++) *--s = (char)(n % 10 + '0');
-						for (; i < F.precision; i++) *--s = '0';
-						if (F.sign) { *--s = F.sign; i++; }
-						break;
-
-			case 'o' :	if (F.lSize) n = va_arg(arg, unsigned long);
-						else n = va_arg(arg, unsigned int);
-						if (F.hSize) n = (unsigned short) n;
-						if (!F.havePrecision)
-							{
-							if (F.zeroPad) F.precision = F.fieldWidth;
-							if (F.precision < 1) F.precision = 1;
-							}
-						for (i = 0; n; n /= 8, i++) *--s = (char)(n % 8 + '0');
-						if (F.altForm && i && *s != '0') { *--s = '0'; i++; }
-						for (; i < F.precision; i++) *--s = '0';
-						break;
-
-			case 'a' :	{
-						unsigned char *a = va_arg(arg, unsigned char *);
-						unsigned short *w = (unsigned short *)a;
-						mDNSAddr *ip = (mDNSAddr*)a;
-						s = buf;
-						if (F.altForm)
-							{
-							a = (unsigned char  *)&ip->addr.ipv4;
-							w = (unsigned short *)&ip->addr.ipv6;
-							switch (ip->type)
-								{
-								case mDNSAddrType_IPv4: F.precision =  4; break;
-								case mDNSAddrType_IPv6: F.precision = 16; break;
-								default:                F.precision =  0; break;
-								}
-							}
-						switch (F.precision)
-							{
-							case  4: i = mDNS_sprintf(s, "%d.%d.%d.%d", a[0], a[1], a[2], a[3]); break;
-							case  6: i = mDNS_sprintf(s, "%02X:%02X:%02X:%02X:%02X:%02X", a[0], a[1], a[2], a[3], a[4], a[5]); break;
-							case 16: i = mDNS_sprintf(s, "%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X",
-												w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]); break;
-							default: i = mDNS_sprintf(s, "%s", "<< ERROR: Must specify address size "
-												"(i.e. %.4a=IPv4, %.6a=Ethernet, %.16a=IPv6) >>"); break;
-							}
-						}
-						break;
-
-			case 'p' :	F.havePrecision = F.lSize = 1;
-						F.precision = 8;
-			case 'X' :	digits = "0123456789ABCDEF";
-						goto hexadecimal;
-			case 'x' :	digits = "0123456789abcdef";
-			hexadecimal:if (F.lSize) n = va_arg(arg, unsigned long);
-						else n = va_arg(arg, unsigned int);
-						if (F.hSize) n = (unsigned short) n;
-						if (!F.havePrecision)
-							{
-							if (F.zeroPad)
-								{
-								F.precision = F.fieldWidth;
-								if (F.altForm) F.precision -= 2;
-								}
-							if (F.precision < 1) F.precision = 1;
-							}
-						for (i = 0; n; n /= 16, i++) *--s = digits[n % 16];
-						for (; i < F.precision; i++) *--s = '0';
-						if (F.altForm) { *--s = (char)c; *--s = '0'; i += 2; }
-						break;
-
-			case 'c' :	*--s = (char)va_arg(arg, int); i = 1; break;
-
-			case 's' :	s = va_arg(arg, char *);
-						if (!s) { s = "<<NULL>>"; i=8; }
-						else switch (F.altForm)
-							{
-							case 0: { char *a=s; i=0; while(*a++) i++; break; }	// C string
-							case 1: i = (unsigned char) *s++; break;	// Pascal string
-							case 2: {									// DNS label-sequence name
-									unsigned char *a = (unsigned char *)s;
-									s = buf;
-									if (*a == 0) *s++ = '.';	// Special case for root DNS name
-									while (*a)
-										{
-										if (*a > 63) { s += mDNS_sprintf(s, "<<INVALID LABEL LENGTH %d>>", *a); break; }
-										if (s + *a >= &buf[254]) { s += mDNS_sprintf(s, "<<NAME TOO LONG>>"); break; }
-										s += mDNS_sprintf(s, "%#s.", a);
-										a += 1 + *a;
-										}
-									i = (int)(s - buf);
-									s = buf;
-									break;
+								if (F.zeroPad)
+									{
+									F.precision = F.fieldWidth;
+									if (F.sign) --F.precision;
 									}
+								if (F.precision < 1) F.precision = 1;
+								}
+							if (F.precision > mDNS_VACB_Size - 1)
+								F.precision = mDNS_VACB_Size - 1;
+							for (i = 0; n; n /= 10, i++) *--s = (char)(n % 10 + '0');
+							for (; i < F.precision; i++) *--s = '0';
+							if (F.sign) { *--s = F.sign; i++; }
+							break;
+	
+				case 'o' :	if (F.lSize) n = va_arg(arg, unsigned long);
+							else n = va_arg(arg, unsigned int);
+							if (F.hSize) n = (unsigned short) n;
+							if (!F.havePrecision)
+								{
+								if (F.zeroPad) F.precision = F.fieldWidth;
+								if (F.precision < 1) F.precision = 1;
+								}
+							if (F.precision > mDNS_VACB_Size - 1)
+								F.precision = mDNS_VACB_Size - 1;
+							for (i = 0; n; n /= 8, i++) *--s = (char)(n % 8 + '0');
+							if (F.altForm && i && *s != '0') { *--s = '0'; i++; }
+							for (; i < F.precision; i++) *--s = '0';
+							break;
+	
+				case 'a' :	{
+							unsigned char *a = va_arg(arg, unsigned char *);
+							unsigned short *w = (unsigned short *)a;
+							mDNSAddr *ip = (mDNSAddr*)a;
+							s = mDNS_VACB;	// Adjust s to point to the start of the buffer, not the end
+							if (F.altForm)
+								{
+								a = (unsigned char  *)&ip->addr.ipv4;
+								w = (unsigned short *)&ip->addr.ipv6;
+								switch (ip->type)
+									{
+									case mDNSAddrType_IPv4: F.precision =  4; break;
+									case mDNSAddrType_IPv6: F.precision = 16; break;
+									default:                F.precision =  0; break;
+									}
+								}
+							switch (F.precision)
+								{
+								case  4: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%d.%d.%d.%d",
+													a[0], a[1], a[2], a[3]); break;
+								case  6: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%02X:%02X:%02X:%02X:%02X:%02X",
+													a[0], a[1], a[2], a[3], a[4], a[5]); break;
+								case 16: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X",
+													w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]); break;
+								default: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%s", "<< ERROR: Must specify address size "
+													"(i.e. %.4a=IPv4, %.6a=Ethernet, %.16a=IPv6) >>"); break;
+								}
 							}
-						if (F.havePrecision && i > F.precision) i = F.precision;
-						break;
-
-			case 'n' :	s = va_arg(arg, char *);
-						if      (F.hSize) * (short *) s = (short)nwritten;
-						else if (F.lSize) * (long  *) s = (long)nwritten;
-						else              * (int   *) s = (int)nwritten;
-						continue;
-
-				//  oops - unknown conversion, abort
-
-			case 'M': case 'N': case 'O': case 'P': case 'Q':
-			case 'R': case 'S': case 'T': case 'U': case 'V':
-			// (extra cases force this to be an indexed switch)
-			default: goto done;
-
-			case '%' :
-			copy1    :	*sbuffer++ = (char)c; ++nwritten; continue;
+							break;
+	
+				case 'p' :	F.havePrecision = F.lSize = 1;
+							F.precision = 8;
+				case 'X' :	digits = "0123456789ABCDEF";
+							goto hexadecimal;
+				case 'x' :	digits = "0123456789abcdef";
+				hexadecimal:if (F.lSize) n = va_arg(arg, unsigned long);
+							else n = va_arg(arg, unsigned int);
+							if (F.hSize) n = (unsigned short) n;
+							if (!F.havePrecision)
+								{
+								if (F.zeroPad)
+									{
+									F.precision = F.fieldWidth;
+									if (F.altForm) F.precision -= 2;
+									}
+								if (F.precision < 1) F.precision = 1;
+								}
+							if (F.precision > mDNS_VACB_Size - 1)
+								F.precision = mDNS_VACB_Size - 1;
+							for (i = 0; n; n /= 16, i++) *--s = digits[n % 16];
+							for (; i < F.precision; i++) *--s = '0';
+							if (F.altForm) { *--s = (char)c; *--s = '0'; i += 2; }
+							break;
+	
+				case 'c' :	*--s = (char)va_arg(arg, int); i = 1; break;
+	
+				case 's' :	s = va_arg(arg, char *);
+							if (!s) { static char emsg[] = "<<NULL>>"; s = emsg; i = sizeof(emsg)-1; }
+							else switch (F.altForm)
+								{
+								case 0: { char *a=s; i=0; while(*a++) i++; break; }	// C string
+								case 1: i = (unsigned char) *s++; break;	// Pascal string
+								case 2: {									// DNS label-sequence name
+										unsigned char *a = (unsigned char *)s;
+										s = mDNS_VACB;	// Adjust s to point to the start of the buffer, not the end
+										if (*a == 0) *s++ = '.';	// Special case for root DNS name
+										while (*a)
+											{
+											if (*a > 63) { s += mDNS_snprintf(s, mDNS_VACB_Remain(s), "<<INVALID LABEL LENGTH %u>>", *a); break; }
+											if (s + *a >= &mDNS_VACB[254]) { s += mDNS_snprintf(s, mDNS_VACB_Remain(s), "<<NAME TOO LONG>>"); break; }
+											s += mDNS_snprintf(s, mDNS_VACB_Remain(s), "%#s.", a);
+											a += 1 + *a;
+											}
+										i = (mDNSu32)(s - mDNS_VACB);
+										s = mDNS_VACB;	// Reset s back to the start of the buffer
+										break;
+										}
+								}
+							if (F.havePrecision && i > F.precision) i = F.precision;
+							break;
+	
+				case 'n' :	s = va_arg(arg, char *);
+							if      (F.hSize) * (short *) s = (short)nwritten;
+							else if (F.lSize) * (long  *) s = (long)nwritten;
+							else              * (int   *) s = (int)nwritten;
+							continue;
+	
+				default:	s = mDNS_VACB;
+							i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "<<UNKNOWN FORMAT CONVERSION CODE %%%c>>", c);
+				}
+	
+			if (i < F.fieldWidth && !F.leftJustify)			// Pad on the left
+				do	{
+					*sbuffer++ = ' ';
+					if (++nwritten >= buflen) goto exit;
+					} while (i < --F.fieldWidth);
+	
+			if (i > buflen - nwritten) i = buflen - nwritten;
+			for (j=0; j<i; j++) *sbuffer++ = *s++;			// Write the converted result
+			nwritten += i;
+			if (nwritten >= buflen) goto exit;
+	
+			for (; i < F.fieldWidth; i++)					// Pad on the right
+				{
+				*sbuffer++ = ' ';
+				if (++nwritten >= buflen) goto exit;
+				}
 			}
-
-			//  pad on the left
-
-		if (i < F.fieldWidth && !F.leftJustify)
-			do { *sbuffer++ = ' '; ++nwritten; } while (i < --F.fieldWidth);
-
-			//  write the converted result
-
-		for (j=0; j<i; j++) *sbuffer++ = *s++;
-		nwritten += i;
-
-			//  pad on the right
-
-		for (; i < F.fieldWidth; i++)
-			{ *sbuffer++ = ' '; ++nwritten; }
 		}
-
-done: return(nwritten);
+	exit:
+	*sbuffer++ = 0;
+	return(nwritten);
 	}
 
-mDNSexport int mDNS_sprintf(char *sbuffer, const char *fmt, ...)
+mDNSexport mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...)
 	{
-	int	length;
+	unsigned int length;
 	
     va_list ptr;
 	va_start(ptr,fmt);
-	length = mDNS_vsprintf(sbuffer, fmt, ptr);
-	sbuffer[length] = 0;
+	length = mDNS_vsnprintf(sbuffer, buflen, fmt, ptr);
 	va_end(ptr);
 	
-	return length;
+	return(length);
 	}
 
 // ***************************************************************************
@@ -749,7 +766,7 @@ char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_SRV:	return("SRV");
 		default:			{
 							static char buffer[16];
-							mDNS_sprintf(buffer, "(%d)", rrtype);
+							mDNS_snprintf(buffer, sizeof(buffer), "(%d)", rrtype);
 							return(buffer);
 							}
 		}
@@ -760,7 +777,7 @@ mDNSlocal mDNSu32 mDNSRandom(mDNSu32 max)
 	static mDNSu32 seed = 0;
 	mDNSu32 mask = 1;
 	
-	if (!seed) seed = mDNSPlatformTimeNow();
+	if (!seed) seed = (mDNSu32)mDNSPlatformTimeNow();
 	while (mask < max) mask = (mask << 1) | 1;
 	do seed = seed * 21 + 1; while ((seed & mask) > max);
 	return (seed & mask);
@@ -1232,23 +1249,23 @@ mDNSlocal mDNSBool LabelContainsSuffix(const domainlabel *name, const mDNSBool R
 // removes an auto-generated suffix (appended on a name collision) from a label.  caller is
 // responsible for ensuring that the label does indeed contain a suffix.  returns the number 
 // from the suffix that was removed.
-mDNSlocal long RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
+mDNSlocal mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 	{
-	long  val = 0, multiplier = 1;
+	mDNSu32 val = 0, multiplier = 1;
 		
 	if (RichText) name->c[0]--;  // chop closing parentheses from RT suffix
 	// Get any existing numerical suffix off the name
 	while (mdnsIsDigit(name->c[name->c[0]])) 
 		{ val += (name->c[name->c[0]] - '0') * multiplier; multiplier *= 10; name->c[0]--; }	
 	name->c[0] -= 2;  // chop opening parentheses and whitespace (RT) or double-hyphen (RFC 1034)
-	return val;
+	return(val);
 	}
 
 // appends a numerical suffix to a label, with the number following a whitespace and enclosed 
 // in parentheses (rich text) or following two consecutive hyphens (RFC 1034 domain label).
-mDNSlocal void AppendLabelSuffix(domainlabel *name, long val, mDNSBool RichText)
+mDNSlocal void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 	{
-	long divisor = 1, chars = 3;	// Shortest possible RFC1034 name suffix is 3 characters ("--2")
+	mDNSu32 divisor = 1, chars = 3;	// Shortest possible RFC1034 name suffix is 3 characters ("--2")
 	if (RichText) chars = 4;		// Shortest possible RichText suffix is 4 characters (" (2)")
 	
 	// Truncate trailing spaces from RichText names
@@ -1279,7 +1296,7 @@ mDNSlocal void AppendLabelSuffix(domainlabel *name, long val, mDNSBool RichText)
 
 mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	{
-	long val = 0;
+	mDNSu32 val = 0;
 
 	if (LabelContainsSuffix(name, RichText)) 
 		val = RemoveLabelSuffix(name, RichText);
@@ -1287,9 +1304,9 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 	// If existing suffix, increment it, else start by renaming "Foo" as "Foo (2)" or "Foo--2" as appropriate.
 	// After sequentially trying each single-digit suffix, we try a random 2-digit suffix, then 3-digit, then
 	// continue generating random 4-digit integers.
-	if (!val)			val = 2;
-	else if (val < 9)	val++;
-	else if (val < 10)	val = mDNSRandom(89) + 10;
+	if      (val ==  0)	val = 2;
+	else if (val <   9)	val++;
+	else if (val <  10)	val = mDNSRandom(89) + 10;
 	else if (val < 100)	val = mDNSRandom(899) + 100;
 	else 			val = mDNSRandom(8999) + 1000;
 	
@@ -2978,7 +2995,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m)
 					{
 					// rr->UnansweredQueries is either 0 or 1. We want to query at 80% or 90% respectively.
 					mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
-					mDNSs32 qt = expire - onetenth * (2 - rr->UnansweredQueries);
+					mDNSs32 qt = expire - onetenth * (mDNSs32)(2 - rr->UnansweredQueries);
 
 					// If due to query now, do it now
 					if (m->timenow - qt >= 0)
@@ -3921,15 +3938,14 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const DNSMessage *const response, const mDNSu8 *end, const mDNSAddr *srcaddr, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID)
 	{
 	int i;
-	(void)srcaddr;	// Currently used only for display in debugging message
+	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
 	
-	// We ignore questions (if any) in a DNS response packet
-	const mDNSu8 *ptr = LocateAnswers(response, end);
-
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
 	// to guard against spoof replies, then the only credible protection against that is cryptographic
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
 	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
+
+	(void)srcaddr;	// Currently used only for display in debugging message
 
 	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p with %d Question%s, %d Answer%s, %d Authorit%s, %d Additional%s",
 		srcaddr, dstaddr, InterfaceID,
@@ -4653,7 +4669,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		set->RR_A2.rrtype = kDNSType_A;
 		set->RR_A1.rdata->u.ip = set->ip.addr.ipv4;
 		set->RR_A2.rdata->u.ip = set->ip.addr.ipv4;
-		mDNS_sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", set->ip.addr.ipv4.b[3],
+		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", set->ip.addr.ipv4.b[3],
 					 set->ip.addr.ipv4.b[2], set->ip.addr.ipv4.b[1], set->ip.addr.ipv4.b[0]);
 		}
 	else if (set->ip.type == mDNSAddrType_IPv6)
@@ -4671,7 +4687,7 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 			buffer[i * 4 + 2] = hexValues[set->ip.addr.ipv6.b[15 - i] >> 4];
 			buffer[i * 4 + 3] = '.';
 			}
-		mDNS_sprintf(&buffer[i * 4], "ip6.arpa.");
+		mDNS_snprintf(&buffer[32], sizeof(buffer)-32, "ip6.arpa.");
 		}
 
 	MakeDomainNameFromDNSNameString(&set->RR_PTR.name, buffer);

@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
-    $Id: mDNSWin32.c,v 1.12 2003/05/06 21:06:05 cheshire Exp $
+    $Id: mDNSWin32.c,v 1.13 2003/05/26 03:01:28 cheshire Exp $
 
     Contains:   Multicast DNS platform plugin for Win32.
 
@@ -68,6 +68,9 @@
     Change History (most recent first):
     
         $Log: mDNSWin32.c,v $
+        Revision 1.13  2003/05/26 03:01:28  cheshire
+        <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
         Revision 1.12  2003/05/06 21:06:05  cheshire
         <rdar://problem/3242673> mDNSWindows needs a wakeupEvent object to signal the main thread
 
@@ -598,7 +601,7 @@ void debugf_( const char *format, ... )
     int			length;
 	
 	va_start( args, format );
-	length = mDNS_vsprintf( buffer, format, args );
+	length = mDNS_vsnprintf( buffer, sizeof(buffer), format, args );
 	va_end( args );
 	buffer[ length ] = '\0';
 	
@@ -619,7 +622,7 @@ void verbosedebugf_( const char *format, ... )
     int			length;
 	
 	va_start( args, format );
-	length = mDNS_vsprintf( buffer, format, args );
+	length = mDNS_vsnprintf( buffer, sizeof(buffer), format, args );
 	va_end( args );
 	buffer[ length ] = '\0';
 	
@@ -713,7 +716,7 @@ void LogMsg( const char *format, ... )
     int			length;
 	
 	va_start( args, format );
-	length = mDNS_vsprintf( buffer, format, args );
+	length = mDNS_vsnprintf( buffer, sizeof(buffer), format, args );
 	va_end( args );
 	buffer[ length ] = '\0';
 	
@@ -1076,7 +1079,7 @@ static mStatus	SetupInterface( mDNS * const inMDNS, const SocketAddressInet *inA
 	
 	// Register this interface with mDNS.
 	
-	infoPtr->hostSet.InterfaceID = infoPtr;
+	infoPtr->hostSet.InterfaceID = (mDNSInterfaceID)infoPtr;
 	infoPtr->hostSet.ip.type = mDNSAddrType_IPv4;
 	infoPtr->hostSet.ip.addr.ipv4.NotAnInteger = inAddress->sin_addr.s_addr;
 	infoPtr->hostSet.Advertise       = inMDNS->p->advertise;

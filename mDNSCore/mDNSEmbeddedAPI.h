@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.56  2003/05/26 03:01:27  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
 Revision 1.55  2003/05/26 00:47:30  cheshire
 Comment clarification
 
@@ -206,7 +209,7 @@ Added mDNS_RegisterNoSuchService() function for assertion of non-existence
 of a particular named service
 
 Revision 1.23  2002/09/19 21:25:34  cheshire
-mDNS_sprintf() doesn't need to be in a separate file
+mDNS_snprintf() doesn't need to be in a separate file
 
 Revision 1.22  2002/09/19 04:20:43  cheshire
 Remove high-ascii characters that confuse some systems
@@ -222,7 +225,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #ifndef __mDNSClientAPI_h
 #define __mDNSClientAPI_h
 
-#include <stdarg.h>		// stdarg.h is required for for va_list support for the mDNS_vsprintf declaration
+#include <stdarg.h>		// stdarg.h is required for for va_list support for the mDNS_vsnprintf declaration
 #include "mDNSDebug.h"
 
 #ifdef	__cplusplus
@@ -887,8 +890,8 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 #endif
 
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
-extern int mDNS_sprintf(char *sbuffer, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
-extern int mDNS_vsprintf(char *sbuffer, const char *fmt, va_list arg);
+extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
+extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 
 #ifdef	__cplusplus

@@ -20,6 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * $Log: ProxyResponder.c,v $
+ * Revision 1.16  2003/05/26 03:01:28  cheshire
+ * <rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+ *
  * Revision 1.15  2003/05/06 00:00:50  cheshire
  * <rdar://problem/3248914> Rationalize naming of domainname manipulation functions
  *
@@ -91,7 +94,7 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	AppendDomainLabel(&p->RR_A.name, &p->hostlabel);
 	AppendLiteralLabelString(&p->RR_A.name, "local");
 
-	mDNS_sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", p->ip.b[3], p->ip.b[2], p->ip.b[1], p->ip.b[0]);
+	mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p->ip.b[3], p->ip.b[2], p->ip.b[1], p->ip.b[0]);
 	MakeDomainNameFromDNSNameString(&p->RR_PTR.name, buffer);
 
 	p->RR_A.  rdata->u.ip   = p->ip;

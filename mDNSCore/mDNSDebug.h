@@ -68,6 +68,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.12  2003/05/26 03:01:27  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
 Revision 1.11  2003/05/21 17:48:10  cheshire
 Add macro to enable GCC's printf format string checking
 
@@ -97,7 +100,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 
 // Set MDNS_CHECK_PRINTF_STYLE_FUNCTIONS to 1 to enable extra GCC compiler warnings
 // Note: You don't normally want to do this, because it generates a bunch of
-// spurious warnings for the following custom extensions implemented by mDNS_vsprintf:
+// spurious warnings for the following custom extensions implemented by mDNS_vsnprintf:
 //    warning: `#' flag used with `%s' printf format    (for %#s              -- pascal string format)
 //    warning: repeated `#' flag in format              (for %##s             -- DNS name string format)
 //    warning: double format, pointer arg (arg 2)       (for %.4a, %.16a, %#a -- IP address formats)

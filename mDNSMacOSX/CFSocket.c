@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: CFSocket.c,v $
+Revision 1.82  2003/05/26 03:01:27  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
 Revision 1.81  2003/05/24 02:06:42  cheshire
 <rdar://problem/3268480> IPv6 Multicast Loopback doesn't work
 Tried setting IPV6_MULTICAST_LOOP; it doesn't help.
@@ -160,7 +163,7 @@ Revision 1.47  2002/09/21 20:44:51  zarzycki
 Added APSL info
 
 Revision 1.46  2002/09/19 21:25:35  cheshire
-mDNS_sprintf() doesn't need to be in a separate file
+mDNS_snprintf() doesn't need to be in a separate file
 
 Revision 1.45  2002/09/17 01:45:13  cheshire
 Add LIST_ALL_INTERFACES symbol for debugging
@@ -231,7 +234,7 @@ Minor code tidying
 // ***************************************************************************
 // Functions
 
-// Note, this uses mDNS_vsprintf instead of standard "vsprintf", because mDNS_vsprintf knows
+// Note, this uses mDNS_vsnprintf instead of standard "vsnprintf", because mDNS_vsnprintf knows
 // how to print special data types like IP addresses and length-prefixed domain names
 #if MDNS_DEBUGMSGS
 mDNSexport void debugf_(const char *format, ...)
@@ -239,7 +242,7 @@ mDNSexport void debugf_(const char *format, ...)
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	fprintf(stderr,"%s\n", buffer);
 	fflush(stderr);
@@ -252,7 +255,7 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	fprintf(stderr,"%s\n", buffer);
 	fflush(stderr);
@@ -264,7 +267,7 @@ mDNSexport void LogMsg(const char *format, ...)
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	
 	extern int debug_mode;

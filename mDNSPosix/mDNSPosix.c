@@ -35,6 +35,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.13  2003/05/26 03:01:28  cheshire
+<rdar://problem/3268904> sprintf/vsprintf-style functions are unsafe; use snprintf/vsnprintf instead
+
 Revision 1.12  2003/05/21 03:49:18  cheshire
 Fix warning
 
@@ -67,7 +70,7 @@ Revision 1.3  2002/09/21 20:44:53  zarzycki
 Added APSL info
 
 Revision 1.2  2002/09/19 21:25:36  cheshire
-mDNS_sprintf() doesn't need to be in a separate file
+mDNS_snprintf() doesn't need to be in a separate file
 
 Revision 1.1  2002/09/17 06:24:34  cheshire
 First checkin
@@ -124,14 +127,14 @@ static int num_pkts_rejected = 0;
 
 int gMDNSPlatformPosixVerboseLevel = 0;
 
-// Note, this uses mDNS_vsprintf instead of standard "vsprintf", because mDNS_vsprintf knows
+// Note, this uses mDNS_vsnprintf instead of standard "vsnprintf", because mDNS_vsnprintf knows
 // how to print special data types like IP addresses and length-prefixed domain names
 mDNSexport void debugf_(const char *format, ...)
 	{
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	if (gMDNSPlatformPosixVerboseLevel >= 1)
 		fprintf(stderr, "%s\n", buffer);
@@ -143,7 +146,7 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	if (gMDNSPlatformPosixVerboseLevel >= 2)
 		fprintf(stderr, "%s\n", buffer);
@@ -155,7 +158,7 @@ mDNSexport void LogMsg(const char *format, ...)
 	unsigned char buffer[512];
 	va_list ptr;
 	va_start(ptr,format);
-	buffer[mDNS_vsprintf((char *)buffer, format, ptr)] = 0;
+	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	if (gMDNSPlatformPosixVerboseLevel >= 1)
 		fprintf(stderr, "%s\n", buffer);
