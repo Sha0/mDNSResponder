@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: DNSSDDirect.c,v $
+Revision 1.6  2004/05/08 12:25:50  bradley
+Changed to use symbolic enums to prevent some compilers from treating it as a sign conversion.
+
 Revision 1.5  2004/05/06 18:42:58  ksekar
 General dns_sd.h API cleanup, including the following radars:
 <rdar://problem/3592068>: Remove flags with zero value
@@ -624,7 +627,7 @@ DEBUG_LOCAL void
 	obj = (DNSServiceRef) inQuestion->QuestionContext;
 	check( obj );
 	
-	flags = inAddRecord ? kDNSServiceFlagsAdd : 0;
+	flags = inAddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsNone;
 	if( inAddRecord )
 	{
 		if( inQuestion == &obj->u.domain.defaultQuestion )
@@ -1239,7 +1242,7 @@ DEBUG_LOCAL void
 	obj = (DNSServiceRef) inQuestion->QuestionContext;
 	check( obj );
 
-	flags = inAddRecord ? kDNSServiceFlagsAdd : 0;
+	flags = inAddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsNone;
 	interfaceIndex = mDNSPlatformInterfaceIndexfromInterfaceID( &gMDNS, inAnswer->InterfaceID );
 	
 	ok = DeconstructServiceName( &inAnswer->rdata->u.name, &name, &type, &domain );
@@ -1788,7 +1791,7 @@ DEBUG_LOCAL void
 	check( obj );
 	check( inAnswer );
 		
-	flags = inAddRecord ? kDNSServiceFlagsAdd : 0;
+	flags = inAddRecord ? kDNSServiceFlagsAdd : kDNSServiceFlagsNone;
 	interfaceIndex = mDNSPlatformInterfaceIndexfromInterfaceID( &gMDNS, inAnswer->InterfaceID );
 	ConvertDomainNameToCString( &inAnswer->name, name );
 	obj->u.query.callback( obj, flags, interfaceIndex, kDNSServiceErr_NoError, name, inAnswer->rrtype, inAnswer->rrclass, 
