@@ -73,7 +73,7 @@ IDR_MAIN_ICON           ICON                    "Application.ico"
 // Dialog
 //
 
-IDD_CHOOSER_DIALOG DIALOGEX 0, 0, 332, 252
+IDD_CHOOSER_DIALOG DIALOGEX 0, 0, 356, 252
 STYLE DS_SETFONT | DS_CENTER | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | 
     WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
@@ -83,24 +83,24 @@ FONT 8, "MS Sans Serif", 0, 0, 0x0
 BEGIN
     CONTROL         "",IDC_CHOOSER_LIST,"SysListView32",LVS_REPORT | 
                     LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
-                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,116,8,208,136
+                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,140,8,208,136
     CONTROL         "",IDC_SERVICE_LIST,"SysListView32",LVS_REPORT | 
                     LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
-                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,8,100,136
+                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,8,124,136
     CONTROL         "",IDC_DOMAIN_LIST,"SysListView32",LVS_REPORT | 
                     LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | 
-                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,152,100,92
-    GROUPBOX        "Information",IDC_STATIC,116,148,208,96
-    RTEXT           "Name:",IDC_STATIC,122,164,38,8
-    LTEXT           "My Device",IDC_INFO_NAME_TEXT,164,164,152,10,SS_SUNKEN
-    RTEXT           "Text:",IDC_STATIC,122,203,38,8
-    LTEXT           "Information About My Device",IDC_INFO_TEXT_TEXT,164,203,
+                    LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP,8,152,124,92
+    GROUPBOX        "Information",IDC_STATIC,140,148,208,96
+    RTEXT           "Name:",IDC_STATIC,146,164,38,8
+    LTEXT           "My Device",IDC_INFO_NAME_TEXT,188,164,152,10,SS_SUNKEN
+    RTEXT           "Text:",IDC_STATIC,146,203,38,8
+    LTEXT           "Information About My Device",IDC_INFO_TEXT_TEXT,188,203,
                     152,34,SS_NOPREFIX | SS_SUNKEN
-    RTEXT           "IP address:",IDC_STATIC,122,177,38,8
-    LTEXT           "123.124.125.126:1234",IDC_INFO_IP_TEXT,164,177,152,10,
+    RTEXT           "IP address:",IDC_STATIC,146,177,38,8
+    LTEXT           "123.124.125.126:1234",IDC_INFO_IP_TEXT,188,177,152,10,
                     SS_SUNKEN
-    RTEXT           "Interface:",IDC_STATIC,122,190,38,8
-    LTEXT           "123.124.125.126",IDC_INFO_INTERFACE_TEXT,164,190,152,10,
+    RTEXT           "Interface:",IDC_STATIC,146,190,38,8
+    LTEXT           "123.124.125.126",IDC_INFO_INTERFACE_TEXT,188,190,152,10,
                     SS_SUNKEN
 END
 
@@ -141,12 +141,11 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "Comments", "Quick & Dirty 1 day hack by Bob Bradley"
             VALUE "CompanyName", "Apple Computer, Inc."
             VALUE "FileDescription", "Rendezvous Browser for Windows"
             VALUE "FileVersion", "1, 0, 0, 1"
             VALUE "InternalName", "Rendezvous Browser for Windows"
-            VALUE "LegalCopyright", "Copyright (C) Apple Computer, Inc. 2001"
+            VALUE "LegalCopyright", "Copyright (C) 2002-2003 Apple Computer, Inc."
             VALUE "OriginalFilename", "RendezvousBrowser.exe"
             VALUE "ProductName", "Rendezvous Browser for Windows"
             VALUE "ProductVersion", "1, 0, 0, 1"
@@ -235,6 +234,22 @@ BEGIN
     0x0d3e, 0x200a, 0x2020, 0x3c20, 0x642f, 0x7065, 0x6e65, 0x6564, 0x636e, 
     0x3e79, 0x0a0d, 0x2f3c, 0x7361, 0x6573, 0x626d, 0x796c, 0x0d3e, "\012" 
 END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_CHOOSER_DIALOG, DIALOG
+    BEGIN
+        RIGHTMARGIN, 312
+    END
+END
+#endif    // APSTUDIO_INVOKED
 
 
 /////////////////////////////////////////////////////////////////////////////
