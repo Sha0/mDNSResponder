@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.21  2004/11/10 04:03:41  shersche
+Remove SharedAccess dependency.  This causes problems on XP SP1, and isn't necessary for XP SP2 because we already are dependent on WMI, which itself is dependent on SharedAccess.
+
 Revision 1.20  2004/10/14 21:44:05  shersche
 <rdar://problem/3838237> Fix a race condition between the socket thread and the main processing thread that resulted in the socket thread accessing a previously deleted Win32EventSource object.
 Bug #: 3838237
@@ -143,7 +146,6 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 #define	kServiceName				"Apple mDNSResponder"
 #define kServiceFirewallName		L"Rendezvous"
 #define	kServiceDependencies		"Tcpip\0winmgmt\0\0"
-#define	kServiceDependenciesXP		"Tcpip\0winmgmt\0SharedAccess\0\0"
 #define kServiceManageLLRouting		"ManageLLRouting"
 #define kServiceCacheEntryCount		"CacheEntryCount"
 #define kServiceManageFirewall		"ManageFirewall"
@@ -446,8 +448,6 @@ static OSStatus	InstallService( const char *inName, const char *inDisplayName, c
 	SC_HANDLE		service;
 	BOOL			ok;
 	TCHAR			fullPath[ MAX_PATH ];
-	char			platform[ 256 ];
-	LPCTSTR			dependencies;
 	TCHAR *			namePtr;
 	DWORD			size;
 	
@@ -466,13 +466,8 @@ static OSStatus	InstallService( const char *inName, const char *inDisplayName, c
 	err = translate_errno( scm, (OSStatus) GetLastError(), kOpenErr );
 	require_noerr( err, exit );
 	
-	err = GetWindowsVersionString( platform, sizeof( platform ) );
-	require_noerr( err, exit );
-
-	dependencies = strstr( platform, "XP" ) ? kServiceDependenciesXP : kServiceDependencies;
-
 	service = CreateService( scm, inName, inDisplayName, SERVICE_ALL_ACCESS, SERVICE_WIN32_SHARE_PROCESS, 
-							 SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, fullPath, NULL, NULL, dependencies, 
+							 SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, fullPath, NULL, NULL, kServiceDependencies, 
 							 NULL, NULL );
 	err = translate_errno( service, (OSStatus) GetLastError(), kDuplicateErr );
 	require_noerr( err, exit );
