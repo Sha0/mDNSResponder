@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.12  2004/04/22 04:03:59  cheshire
+Headers should use "extern" declarations, not "mDNSexport"
+
 Revision 1.11  2004/04/14 23:09:28  ksekar
 Support for TSIG signed dynamic updates.
 
@@ -193,7 +196,7 @@ extern mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
 	                                                                 ? &(RR)->rdata->u.name       :          \
 	((RR)->rrtype == kDNSType_SRV                                  ) ? &(RR)->rdata->u.srv.target : mDNSNULL )
 
-mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd);
+extern mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd);
 
 
 // ***************************************************************************
