@@ -2073,6 +2073,27 @@
 			isa = PBXTargetDependency;
 			target = DB2CC4530662DD6800335AB3;
 		};
+		FFE6935007C2CA7F00283007 = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = ConfigurationAuthority.h;
+			path = PreferencePane/ConfigurationAuthority.h;
+			refType = 2;
+		};
+		FFE6935207C2CAA400283007 = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = DNSServiceDiscoveryPref.h;
+			path = PreferencePane/DNSServiceDiscoveryPref.h;
+			refType = 2;
+		};
+		FFE6935407C2CABD00283007 = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = PrivilegedOperations.h;
+			path = PreferencePane/PrivilegedOperations.h;
+			refType = 2;
+		};
 		FFF4F63A06CFE4DD00459EFD = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
@@ -2117,9 +2138,12 @@
 		};
 		FFFB0DA407B43BED00B88D48 = {
 			children = (
-				FFFB0DAC07B43CBA00B88D48,
-				FFFB0DAD07B43CBA00B88D48,
+				FFE6935007C2CA7F00283007,
 				FFFB0DAE07B43CBA00B88D48,
+				FFE6935207C2CAA400283007,
+				FFFB0DAC07B43CBA00B88D48,
+				FFE6935407C2CABD00283007,
+				FFFB0DAD07B43CBA00B88D48,
 				FFFB0DAF07B43CBA00B88D48,
 				FF260A2307B4463400CE10E5,
 			);
