@@ -23,6 +23,10 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.6  2004/06/12 01:09:45  cheshire
+To be callable from the broadest range of clients on Windows (e.g. Visual Basic, C#, etc.)
+API routines have to be declared as "__stdcall", instead of the C default, "__cdecl"
+
 Revision 1.5  2004/05/25 18:29:33  cheshire
 Move DNSServiceConstructFullName() from dnssd_clientstub.c to dnssd_clientlib.c,
 so that it's also accessible to dnssd_clientshim.c (single address space) clients.
@@ -101,7 +105,7 @@ static uint8_t *InternalTXTRecordSearch
  *
  *********************************************************************************************/
 
-int DNSServiceConstructFullName
+int DNSSD_API DNSServiceConstructFullName
 	(
 	char                      *fullName,
 	const char                *service,      /* may be NULL */
