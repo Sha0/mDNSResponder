@@ -19,11 +19,11 @@ MyHandleMachMessage ( CFMachPortRef port, void * msg, CFIndex size, void * info 
 }
 
 void browse_reply (
-                   int 	resultType,		// One of DNSServiceBrowserReplyResultType
-                   char  	*replyName,
-                   char  	*replyType,
-                   char  	*replyDomain,
-                   int 	flags,			// DNS Service Discovery reply flags information
+                   DNSServiceBrowserReplyResultType 	resultType,		// One of DNSServiceBrowserReplyResultType
+                   const char  	*replyName,
+                   const char  	*replyType,
+                   const char  	*replyDomain,
+                   DNSServiceDiscoveryReplyFlags 	flags,			// DNS Service Discovery reply flags information
                    void	*context
                    )
 {
@@ -32,9 +32,9 @@ void browse_reply (
 }
 
 void enum_reply (
-                 int 	resultType,
-                 char  	*replyDomain,
-                 int 	flags,
+                 DNSServiceDomainEnumerationReplyResultType 	resultType,
+                 const char  	*replyDomain,
+                 DNSServiceDiscoveryReplyFlags 	flags,
                  void	*context
                  )
 {
@@ -46,8 +46,8 @@ void enum_reply (
 void resolve_reply (
                     struct sockaddr 	*interface,
                     struct sockaddr 	*address,
-                    char 		*txtRecord,
-                    int 		flags,
+                    const char 		*txtRecord,
+                    DNSServiceDiscoveryReplyFlags 		flags,
                     void		*context
                     )
 {
@@ -62,8 +62,8 @@ void resolve_reply (
 {
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
-    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.",          @"_ssh._tcp.",         @"_tftp._tcp.",                  @"_http._tcp.",       @"_printer._tcp.", @"_afpovertcp._tcp.", nil];
-    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Secure Shell (ssh)", @"Trivial File Transfer (tftp)", @"Web Server (http)", @"Printer (lpd)",  @"AppleShare Server", nil];
+    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp.",          @"_ssh._tcp.",         @"_tftp._tcp.",                  @"_http._tcp.",       @"_printer._tcp.", @"_afpovertcp._tcp.", @"_MacOSXDupSuppress._tcp.", nil];
+    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)", @"Secure Shell (ssh)", @"Trivial File Transfer (tftp)", @"Web Server (http)", @"Printer (lpd)",  @"AppleShare Server", @"Nonsense Service",         nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
     [regDict setObject:nameArray forKey:@"SrvNameKeys"];
