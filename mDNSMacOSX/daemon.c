@@ -23,6 +23,8 @@
 #include <mach/mach.h>
 #include <mach/mach_error.h>
 #include <servers/bootstrap.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
@@ -35,6 +37,7 @@ static mDNS mDNSStorage;
 static mDNS_PlatformSupport PlatformStorage;
 #define RR_CACHE_SIZE 500
 static ResourceRecord rrcachestorage[RR_CACHE_SIZE];
+const char PID_FILE[] = "/var/run/mDNSResponder.pid";
 
 #if DEBUGBREAKS
 static int debug_mode = 1;
@@ -458,6 +461,18 @@ void start(const char *bundleName, const char *bundleDir)
     if (debug_mode) printf("Service registered with Mach Port %d\n", m_port);
     }
 
+void writepid()
+{
+	FILE *fp;
+
+	fp = fopen(PID_FILE, "w");
+	if (fp != NULL)
+	{
+		fprintf(fp, "%d\n", getpid());
+		fclose(fp);
+	}
+}
+
 int main(int argc, char **argv)
     {
 	int i;
@@ -469,6 +484,8 @@ int main(int argc, char **argv)
 		}
     if (!debug_mode)
 			daemon(0,0);
+    if (!debug_mode)
+			writepid();
     start(NULL, NULL);
 	CFRunLoopRun();
 
