@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.194  2004/09/10 00:49:57  cheshire
+<rdar://problem/3787644> Add error code kDNSServiceErr_Firewall, for future use
+
 Revision 1.193  2004/09/03 19:23:05  ksekar
 <rdar://problem/3788460>: Need retransmission mechanism for wide-area service registrations
 
@@ -881,7 +884,7 @@ enum
 	mStatus_AlreadyRegistered = -65547,
 	mStatus_NameConflict      = -65548,
 	mStatus_Invalid           = -65549,
-	//                        = -65550,
+	mStatus_Firewall          = -65550,
 	mStatus_Incompatible      = -65551,
 	mStatus_BadInterfaceErr   = -65552,
 	mStatus_Refused           = -65553,

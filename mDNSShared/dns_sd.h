@@ -207,6 +207,7 @@ enum
     kDNSServiceErr_AlreadyRegistered   = -65547,
     kDNSServiceErr_NameConflict        = -65548,
     kDNSServiceErr_Invalid             = -65549,
+    kDNSServiceErr_Firewall            = -65550,
     kDNSServiceErr_Incompatible        = -65551,        /* client library incompatible with daemon */
     kDNSServiceErr_BadInterfaceIndex   = -65552,
     kDNSServiceErr_Refused             = -65553,
