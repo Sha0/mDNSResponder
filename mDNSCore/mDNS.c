@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.473  2004/11/25 01:57:52  cheshire
+<rdar://problem/3484552> All unique records in a set should have the cache flush bit set
+
 Revision 1.472  2004/11/25 01:28:09  cheshire
 <rdar://problem/3557050> Need to implement random delay for 'QU' unicast replies (and set cache flush bit too)
 
@@ -2647,15 +2650,6 @@ mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
 	else rr->NextUpdateCredit = (rr->NextUpdateCredit + kUpdateCreditRefreshInterval) | 1;
 	}
 
-mDNSlocal mDNSBool HaveSentEntireRRSet(const mDNS *const m, const AuthRecord *const rr, mDNSInterfaceID InterfaceID)
-	{
-	// Try to find another member of this set that we're still planning to send on this interface
-	const AuthRecord *a;
-	for (a = m->ResourceRecords; a; a=a->next)
-		if (a->SendRNow == InterfaceID && a != rr && SameResourceRecordSignature(&a->resrec, &rr->resrec)) break;
-	return (a == mDNSNULL);		// If no more members of this set found, then we should set the cache flush bit
-	}
-
 // Note about acceleration of announcements to facilitate automatic coalescing of
 // multiple independent threads of announcements into a single synchronized thread:
 // The announcements in the packet may be at different stages of maturity;
@@ -2839,7 +2833,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
 					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
-					if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) && HaveSentEntireRRSet(m, rr, intf->InterfaceID))
+					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutResourceRecord(&response, responseptr, &response.h.numAnswers, &rr->resrec);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
@@ -2848,7 +2842,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				else
 					{
-					if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) && HaveSentEntireRRSet(m, rr, intf->InterfaceID))
+					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, m->SleepState ? 0 : rr->resrec.rroriginalttl);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
@@ -2868,24 +2862,15 @@ mDNSlocal void SendResponses(mDNS *const m)
 		newptr = responseptr;
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->ImmedAdditional == intf->InterfaceID)
-				{
-				// Since additionals are optional, we clear ImmedAdditional anyway, even if we subsequently find it doesn't fit in the packet
-				rr->ImmedAdditional = mDNSNULL;
-				if (newptr && ResourceRecordIsValidAnswer(rr))
+				if (ResourceRecordIsValidAnswer(rr))
 					{
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
-						{
-						// Try to find another member of this set that we're still planning to send on this interface
-						const AuthRecord *a;
-						for (a = m->ResourceRecords; a; a=a->next)
-							if (a->ImmedAdditional == intf->InterfaceID && SameResourceRecordSignature(&a->resrec, &rr->resrec)) break;
-						if (a == mDNSNULL)							// If no more members of this set found
-							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
-						}
-					newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, &rr->resrec);
+						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
+					if (newptr) newptr = PutResourceRecord(&response, newptr, &response.h.numAdditionals, &rr->resrec);
 					if (newptr)
 						{
 						responseptr = newptr;
+						rr->ImmedAdditional = mDNSNULL;
 						rr->RequireGoodbye = mDNStrue;
 						// If we successfully put this additional record in the packet, we record LastMCTime & LastMCInterface.
 						// This matters particularly in the case where we have more than one IPv6 (or IPv4) address, because otherwise,
@@ -2894,11 +2879,23 @@ mDNSlocal void SendResponses(mDNS *const m)
 						rr->LastMCTime      = m->timenow;
 						rr->LastMCInterface = intf->InterfaceID;
 						}
+					else if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+						{
+						// If this record is a unique one, and we've already sent at least one other member of the set
+						// (which will have had the cache flush bit set), then we can't neglect sending this one.
+						const AuthRecord *a;
+						for (a = m->ResourceRecords; a; a=a->next)
+							if (a->LastMCTime      == m->timenow &&
+								a->LastMCInterface == intf->InterfaceID &&
+								SameResourceRecordSignature(&a->resrec, &rr->resrec)) break;
+						if (a == mDNSNULL) rr->ImmedAdditional = mDNSNULL;	// None of this set was sent; don't need to send this either
+						}
+					else
+						rr->ImmedAdditional = mDNSNULL;
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					}
-				}
 	
-		if (response.h.numAnswers > 0)	// We *never* send a packet with only additionals in it
+		if (response.h.numAnswers > 0 || response.h.numAdditionals)
 			{
 			debugf("SendResponses: Sending %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s on %p",
 				numDereg,                  numDereg                  == 1 ? "" : "s",
