@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.250  2004/12/06 06:59:08  ksekar
+RegisterSplitDNS should return Unsupported error when compiled on Panther
+
 Revision 1.249  2004/12/04 00:29:46  cheshire
 Add "#ifdef MAC_OS_X_VERSION_10_4" around split-DNS code that can't be compiled on 10.3 systems
 (When compiled on 10.3, code will not include split-DNS support.)
@@ -2079,6 +2082,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 #ifndef MAC_OS_X_VERSION_10_4
 	(void)m;
 	LogMsg("Note: Compiled without Apple-specific split DNS support");
+    return mStatus_UnsupportedErr;
 #else
 	int i;
 	dns_config_t *config = dns_configuration_copy();
@@ -2125,8 +2129,8 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m)
 			}
 		}
 	dns_configuration_free(config);
-#endif
 	return mStatus_NoError;
+#endif	
 	}
 
 mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
