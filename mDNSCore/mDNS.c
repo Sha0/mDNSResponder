@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.215  2003/07/13 02:28:00  cheshire
+<rdar://problem/3325166> SendResponses didn't all its responses
+Delete all references to RRInterfaceActive -- it's now superfluous
+
 Revision 1.214  2003/07/13 01:47:53  cheshire
 Fix one error and one warning in the Windows build
 
@@ -1677,7 +1681,7 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 											(X) & (kDNSRecordTypeUnique                              ) ? DefaultProbeIntervalForTypeUnique    : \
 											(X) & (kDNSRecordTypeVerified | kDNSRecordTypeKnownUnique) ? DefaultAnnounceIntervalForTypeUnique : 0)
 
-#define TimeToAnnounceThisRecord(RR,time) ((RR)->RRInterfaceActive && (RR)->AnnounceCount && (time) - ((RR)->LastAPTime + (RR)->ThisAPInterval) >= 0)
+#define TimeToAnnounceThisRecord(RR,time) ((RR)->AnnounceCount && (time) - ((RR)->LastAPTime + (RR)->ThisAPInterval) >= 0)
 #define TimeToSendThisRecord(RR,time) ((TimeToAnnounceThisRecord(RR,time) || (RR)->ImmedAnswer) && ResourceRecordIsValidAnswer(RR))
 
 #define MaxUnansweredQueries 4
@@ -1959,7 +1963,6 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 //	rr->HostTarget        = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
 
 	// Field Group 2: Transient state for Authoritative Records
-	rr->RRInterfaceActive = mDNStrue;
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
 	rr->AnnounceCount     = InitialAnnounceCount;
@@ -2086,7 +2089,6 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 				dup->next = rr->next;		// And then...
 				rr->next  = dup;			// ... splice it in right after the record we're about to delete
 				dup->RecordType        = rr->RecordType;
-				dup->RRInterfaceActive = rr->RRInterfaceActive;
 				dup->ProbeCount        = rr->ProbeCount;
 				dup->AnnounceCount     = rr->AnnounceCount;
 				dup->ImmedAnswer       = rr->ImmedAnswer;
@@ -2119,7 +2121,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
-	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount && rr->RRInterfaceActive)
+	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
 		{
 		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
 		rr->RecordType      = kDNSRecordTypeDeregistering;
@@ -2546,7 +2548,6 @@ mDNSlocal const mDNSu8 *GetResourceRecord(mDNS *const m, const DNSMessage *msg, 
 	rr->HostTarget        = mDNSfalse;
 
 	// Field Group 2: Transient state for Authoritative Records
-	rr->RRInterfaceActive = mDNSfalse;
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = 0;
 	rr->AnnounceCount     = 0;
@@ -2843,12 +2844,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// Now set SendRNow state appropriately
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (!rr->RRInterfaceActive)						// Interface inactive:
-			{
-			rr->ImmedAnswer     = mDNSNULL;				// Can't send this record
-			rr->ImmedAdditional = mDNSNULL;
-			}
-		else if (rr->ImmedAnswer == mDNSInterfaceMark)	// Sending this record on all appropriate interfaces
+		if (rr->ImmedAnswer == mDNSInterfaceMark)		// Sending this record on all appropriate interfaces
 			{
 			rr->SendRNow = !intf ? mDNSNULL : (rr->InterfaceID) ? rr->InterfaceID : intf->InterfaceID;
 			rr->ImmedAdditional = mDNSNULL;				// No need to send as additional if sending as answer
@@ -2858,7 +2854,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				verbosedebugf("Announcing %##s (%s) %d", rr->name.c, DNSTypeName(rr->rrtype), rr->AnnounceCount);
+				debugf("Announcing %##s (%s) %d", rr->name.c, DNSTypeName(rr->rrtype), rr->AnnounceCount);
 				}
 			}
 		else if (rr->ImmedAnswer)						// Else, just respond to a single query on single interface:
@@ -3744,15 +3740,12 @@ mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 		{
 		if (rr->RecordType == kDNSRecordTypeDeregistering)
 			{ nextevent = m->timenow; gNextEventMsg = "Send Deregistrations"; }
-		if (rr->RRInterfaceActive)
-			{
-			if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - nextevent <= 0)
-				{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Probes"; }
-			else if (rr->ImmedAnswer && ResourceRecordIsValidAnswer(rr))
-				{ nextevent = m->timenow;                          gNextEventMsg = "Send Answers"; }
-			else if (TimeToAnnounceThisRecord(rr,nextevent) && ResourceRecordIsValidAnswer(rr))
-				{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Announcements"; }
-			}
+		if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - nextevent <= 0)
+			{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Probes"; }
+		else if (rr->ImmedAnswer && ResourceRecordIsValidAnswer(rr))
+			{ nextevent = m->timenow;                          gNextEventMsg = "Send Answers"; }
+		else if (TimeToAnnounceThisRecord(rr,nextevent) && ResourceRecordIsValidAnswer(rr))
+			{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Announcements"; }
 		}
 
 	interval = nextevent - m->timenow;
@@ -5628,7 +5621,6 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (!rr->InterfaceID || rr->InterfaceID == set->InterfaceID)
 				{
-				rr->RRInterfaceActive = mDNStrue;
 				if (rr->RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount        = DefaultProbeCountForRecordType(rr->RecordType);
 				if (rr->AnnounceCount < ReannounceCount)
@@ -5693,13 +5685,6 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
 					if (rr->InterfaceID == set->InterfaceID)
 						PurgeCacheResourceRecord(m, rr);
-
-			// 3. Deactivate any authoritative records specific to this interface
-			// Any records that are in kDNSRecordTypeDeregistering state will be automatically discarded
-			// when BuildResponse finds that their RRInterfaceActive flag is no longer set
-			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				if (rr->InterfaceID == set->InterfaceID)
-					rr->RRInterfaceActive = mDNSfalse;
 			}
 		}
 

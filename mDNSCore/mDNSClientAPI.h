@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSClientAPI.h,v $
+Revision 1.79  2003/07/13 02:28:00  cheshire
+<rdar://problem/3325166> SendResponses didn't all its responses
+Delete all references to RRInterfaceActive -- it's now superfluous
+
 Revision 1.78  2003/07/13 01:47:53  cheshire
 Fix one error and one warning in the Windows build
 
@@ -546,7 +550,6 @@ struct ResourceRecord_struct
 	mDNSu8              HostTarget;		// AR: Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 
 	// Field Group 2: Transient state for Authoritative Records
-	mDNSu8          RRInterfaceActive;	// AR: Set if InterfaceID is zero, or if InterfaceID references an active interface
 	mDNSu8          Acknowledged;		// AR: Set if we've given the success callback to the client
 	mDNSu8          ProbeCount;			// AR: Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// AR: Number of announcements remaining (kDNSRecordTypeShared)
