@@ -466,8 +466,7 @@ mDNSexport void mDNSPlatformIdle(mDNS *const m)
 
 mDNSexport void mDNS_OS9Exec(mDNS *const m)
 	{
-	SInt32 NextTaskTime = mDNS_Execute(m);
-	SInt32 interval = NextTaskTime - mDNSPlatformTimeNow();
+	SInt32 interval = mDNS_Execute(m) - mDNSPlatformTimeNow();
 	if      (interval < 0)                 interval = 0;
 	else if (interval > 0x7FFFFFFF / 1000) interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
 	else                                   interval = interval * 1000 / mDNSPlatformOneSecond;
