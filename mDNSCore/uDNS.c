@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.122  2004/11/19 18:00:34  ksekar
+<rdar://problem/3682646> Security: use random ID for one-shot unicast queries
+
 Revision 1.121  2004/11/19 04:24:08  ksekar
 <rdar://problem/3682609> Security: Enforce a "window" on one-shot wide-area queries
 
@@ -522,8 +525,9 @@ mDNSlocal mDNSs32 mDNSPlatformTimeNow(mDNS *m)
 
 mDNSlocal mDNSOpaque16 newMessageID(uDNS_GlobalInfo *u)
 	{
-	// if NextMessageID is 0 (ininitialized) or 0xffff (reserved for TCP packets) reset to 1
-	if (!u->NextMessageID || u->NextMessageID == (mDNSu16)~0) u->NextMessageID = 1;
+	static mDNSBool randomized = mDNSfalse;
+
+	if (!randomized) { u->NextMessageID = mDNSRandom(~0); randomized = mDNStrue; }
 	return mDNSOpaque16fromIntVal(u->NextMessageID++);
 	}
 
@@ -3267,8 +3271,6 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 
 	mDNS_Lock(m);
 	
-	question->uDNS_info.id.NotAnInteger = (mDNSu16)~0;
-
 	if (ConnectionEstablished)
 		{
 		// connection is established - send the message
@@ -3327,7 +3329,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	context->question = question;
 	context->m = m;
 
-	info->id.NotAnInteger = (mDNSu16)~0;             // all 1's indicates TCP queries
+	info->id = newMessageID(&m->uDNS_info);
 	info->timestamp = mDNSPlatformTimeNow(m);         // reset timestamp
 
 	connectionStatus = mDNSPlatformTCPConnect(src, UnicastDNSPort, question->InterfaceID, conQueryCallback, context, &sd);
