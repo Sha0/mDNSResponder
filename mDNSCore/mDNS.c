@@ -44,6 +44,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.423  2004/09/23 00:50:53  cheshire
+<rdar://problem/3419452> Don't send a (DE) if a service is unregistered after wake from sleep
+
 Revision 1.422  2004/09/22 02:34:46  cheshire
 Move definitions of default TTL times from mDNS.c to mDNSEmbeddedAPI.h
 
@@ -1777,15 +1780,7 @@ mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 #define DefaultProbeCountForRecordType(X)      ((X) == kDNSRecordTypeUnique ? DefaultProbeCountForTypeUnique : (mDNSu8)0)
 
-// For records that have *never* been announced on the wire, their AnnounceCount will be set to InitialAnnounceCount (10).
-// When de-registering these records we do not need to send any goodbye packet because we never announced them in the first
-// place. If AnnounceCount is less than InitialAnnounceCount that means we have announced them at least once, so a goodbye
-// packet is needed. For this reason, if we ever reset AnnounceCount (e.g. after an interface change) we set it to
-// ReannounceCount (9), not InitialAnnounceCount. If we were to reset AnnounceCount back to InitialAnnounceCount that would
-// imply that the record had never been announced on the wire (which is false) and if the client were then to immediately
-// deregister that record before it had a chance to announce, we'd fail to send its goodbye packet (which would be a bug).
 #define InitialAnnounceCount ((mDNSu8)10)
-#define ReannounceCount      ((mDNSu8)9)
 
 // Note that the announce intervals use exponential backoff, doubling each time. The probe intervals do not.
 // This means that because the announce interval is doubled after sending the first packet, the first
@@ -1953,11 +1948,11 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 		// If we've announced this record, we really should send a goodbye packet for the old rdata before
 		// changing to the new rdata. However, in practice, we only do SetTargetToHostName for unique records,
 		// so when we announce them we'll set the kDNSClass_UniqueRRSet and clear any stale data that way.
-		if (rr->AnnounceCount < InitialAnnounceCount && rr->resrec.RecordType == kDNSRecordTypeShared)
+		if (rr->RequireGoodbye && rr->resrec.RecordType == kDNSRecordTypeShared)
 			debugf("Have announced shared record %##s (%s) at least once: should have sent a goodbye packet before updating", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 
-		if (rr->AnnounceCount < ReannounceCount)
-			rr->AnnounceCount = ReannounceCount;
+		rr->AnnounceCount  = InitialAnnounceCount;
+		rr->RequireGoodbye = mDNSfalse;
 		rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 		InitializeLastAPTime(m,rr);
 		}
@@ -2065,6 +2060,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 	rr->AnnounceCount     = InitialAnnounceCount;
+	rr->RequireGoodbye    = mDNSfalse;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->ImmedAnswer       = mDNSNULL;
 	rr->ImmedAdditional   = mDNSNULL;
@@ -2240,18 +2236,19 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 				dup->next = rr->next;		// And then...
 				rr->next  = dup;			// ... splice it in right after the record we're about to delete
 				dup->resrec.RecordType        = rr->resrec.RecordType;
-				dup->ProbeCount        = rr->ProbeCount;
-				dup->AnnounceCount     = rr->AnnounceCount;
-				dup->ImmedAnswer       = rr->ImmedAnswer;
-				dup->ImmedAdditional   = rr->ImmedAdditional;
-				dup->v4Requester       = rr->v4Requester;
-				dup->v6Requester       = rr->v6Requester;
-				dup->ThisAPInterval    = rr->ThisAPInterval;
-				dup->AnnounceUntil     = rr->AnnounceUntil;
-				dup->LastAPTime        = rr->LastAPTime;
-				dup->LastMCTime        = rr->LastMCTime;
-				dup->LastMCInterface   = rr->LastMCInterface;
-				if (RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
+				dup->ProbeCount      = rr->ProbeCount;
+				dup->AnnounceCount   = rr->AnnounceCount;
+				dup->RequireGoodbye  = rr->RequireGoodbye;
+				dup->ImmedAnswer     = rr->ImmedAnswer;
+				dup->ImmedAdditional = rr->ImmedAdditional;
+				dup->v4Requester     = rr->v4Requester;
+				dup->v6Requester     = rr->v6Requester;
+				dup->ThisAPInterval  = rr->ThisAPInterval;
+				dup->AnnounceUntil   = rr->AnnounceUntil;
+				dup->LastAPTime      = rr->LastAPTime;
+				dup->LastMCTime      = rr->LastMCTime;
+				dup->LastMCInterface = rr->LastMCInterface;
+				rr->RequireGoodbye = mDNSfalse;
 				}
 			}
 		}
@@ -2261,7 +2258,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		p = &m->DuplicateRecords;
 		while (*p && *p != rr) p=&(*p)->next;
 		// If we found our record on the duplicate list, then make sure we don't send a goodbye for it
-		if (*p && RecordType == kDNSRecordTypeShared) rr->AnnounceCount = InitialAnnounceCount;
+		if (*p) rr->RequireGoodbye = mDNSfalse;
 		if (*p) debugf("DNS_Deregister_internal: Deleting DuplicateRecord %p %##s (%s)", rr, rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 		}
 
@@ -2275,7 +2272,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
-	if (RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
+	if (RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
 		{
 		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)", rr->resrec.name.c, DNSTypeName(rr->resrec.rrtype));
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
@@ -2346,10 +2343,10 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 
 mDNSlocal void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	{
-	// Setting AnnounceCount to InitialAnnounceCount signals mDNS_Deregister_internal()
+	// Clearing rr->RequireGoodbye signals mDNS_Deregister_internal()
 	// that it should go ahead and immediately dispose of this registration
-	rr->resrec.RecordType    = kDNSRecordTypeShared;
-	rr->AnnounceCount = InitialAnnounceCount;
+	rr->resrec.RecordType = kDNSRecordTypeShared;
+	rr->RequireGoodbye    = mDNSfalse;
 	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 	}
 
@@ -2543,9 +2540,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					RData *OldRData     = rr->resrec.rdata;
 					mDNSu16 oldrdlength = rr->resrec.rdlength;
 					// See if we should send a courtesy "goodbye" for the old data before we replace it.
-					// We compare with "InitialAnnounceCount-1" instead of "InitialAnnounceCount" because by the time
-					// we get to this place in this routine we've we've already decremented rr->AnnounceCount
-					if (ResourceRecordIsValidAnswer(rr) && rr->AnnounceCount < InitialAnnounceCount-1)
+					if (ResourceRecordIsValidAnswer(rr) && rr->RequireGoodbye)
 						{
 						newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, 0);
 						if (!newptr && response.h.numAnswers) break;
@@ -2568,6 +2563,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					newptr = PutResourceRecordTTL(&response, responseptr, &response.h.numAnswers, &rr->resrec, m->SleepState ? 0 : rr->resrec.rroriginalttl);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (!newptr && response.h.numAnswers) break;
+					rr->RequireGoodbye = !m->SleepState;
 					if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
 					responseptr = newptr;
 					}
@@ -2600,6 +2596,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					if (newptr)
 						{
 						responseptr = newptr;
+						rr->RequireGoodbye = mDNStrue;
 						// If we successfully put this additional record in the packet, we record LastMCTime & LastMCInterface.
 						// This matters particularly in the case where we have more than one IPv6 (or IPv4) address, because otherwise,
 						// when we see our own multicast with the cache flush bit set, if we haven't set LastMCTime, then we'll get
@@ -3439,7 +3436,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, mDNSBool AddRecord)
 	{
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
-	if (AddRecord) rr->AnnounceCount = InitialAnnounceCount - 1;
+	if (AddRecord) rr->RequireGoodbye = mDNStrue;
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
@@ -3761,7 +3758,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 #endif		
 		// Mark all the records we need to deregister and send them
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->AnnounceCount < InitialAnnounceCount)
+			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
 				rr->ImmedAnswer = mDNSInterfaceMark;
 		SendResponses(m);
 		}
@@ -3774,7 +3771,6 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 #ifndef UNICAST_DISABLED
 		uDNS_Wake(m);
 #endif
-		
         // 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
 			if (ActiveQuestion(q))
@@ -3796,13 +3792,11 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			{
 			if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
-			rr->ProbeCount        = DefaultProbeCountForRecordType(rr->resrec.RecordType);
-			if (rr->AnnounceCount < ReannounceCount)
-				rr->AnnounceCount = ReannounceCount;
-			rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
+			rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
+			rr->AnnounceCount  = InitialAnnounceCount;
+			rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 			InitializeLastAPTime(m, rr);
 			}
-
 		}
 
 	mDNS_Unlock(m);
@@ -5451,8 +5445,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		domainlabel name;
 		domainname type, domain;
 		DeconstructServiceName(&rr->resrec.name, &name, &type, &domain);
-		if (rr->AnnounceCount < ReannounceCount)
-			rr->AnnounceCount = ReannounceCount;
+		rr->AnnounceCount = InitialAnnounceCount;
 		// iChat often does suprious record updates where no data has changed. For the _presence service type, using
 		// name/value pairs, the mDNSPlatformMemSame() check above catches this and correctly suppresses the wasteful
 		// update. For the _ichat service type, the XML encoding introduces spurious noise differences into the data
@@ -5743,10 +5736,9 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			if (!rr->resrec.InterfaceID || rr->resrec.InterfaceID == set->InterfaceID)
 				{
 				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
-				rr->ProbeCount        = DefaultProbeCountForRecordType(rr->resrec.RecordType);
-				if (rr->AnnounceCount < ReannounceCount)
-					rr->AnnounceCount = ReannounceCount;
-				rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
+				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
+				rr->AnnounceCount  = InitialAnnounceCount;
+				rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 				InitializeLastAPTime(m, rr);
 				}
 		}
@@ -5870,9 +5862,9 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 	// If we got a name conflict on either SRV or TXT, forcibly deregister this service, and record that we did that
 	if (result == mStatus_NameConflict)
 		{
-		sr->Conflict = mDNStrue;							// Record that this service set had a conflict
-		sr->RR_PTR.AnnounceCount = InitialAnnounceCount;	// Make sure we don't send a goodbye for the PTR record
-		mDNS_DeregisterService(m, sr);						// Unlink the records from our list
+		sr->Conflict = mDNStrue;				// Record that this service set had a conflict
+		sr->RR_PTR.RequireGoodbye = mDNSfalse;	// Make sure we don't send a goodbye for the PTR record
+		mDNS_DeregisterService(m, sr);			// Unlink the records from our list
 		return;
 		}
 	

@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.208  2004/09/23 00:50:53  cheshire
+<rdar://problem/3419452> Don't send a (DE) if a service is unregistered after wake from sleep
+
 Revision 1.207  2004/09/22 02:34:46  cheshire
 Move definitions of default TTL times from mDNS.c to mDNSEmbeddedAPI.h
 
@@ -1267,6 +1270,7 @@ struct AuthRecord_struct
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
 	mDNSu8          ProbeCount;			// Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
+	mDNSu8          RequireGoodbye;		// Set if this RR has been announced on the wire and will require a goodbye packet
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 #if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
