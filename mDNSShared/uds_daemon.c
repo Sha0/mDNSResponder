@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.73  2004/08/25 02:30:40  cheshire
+<rdar://problem/3588761> Current method of doing subtypes causes name collisions
+
 Revision 1.72  2004/08/14 03:22:42  cheshire
 <rdar://problem/3762579> Dynamic DNS UI <-> mDNSResponder glue
 Add GetUserSpecifiedDDNSName() routine
@@ -1584,11 +1587,12 @@ static void handle_regservice_request(request_state *request)
     txtlen = get_short(&ptr);
     txtdata = get_rdata(&ptr, txtlen);
 
-    if (!*regtype || !MakeDomainNameFromDNSNameString(&t, regtype)) goto bad_param;
-
 	// Check for sub-types after the service type
 	num_subtypes = CountSubTypes(regtype);
 	if (num_subtypes < 0) goto bad_param;
+
+	// Don't try to construct "domainname t" until *after* CountSubTypes has worked its magic
+    if (!*regtype || !MakeDomainNameFromDNSNameString(&t, regtype)) goto bad_param;
 
     if (!name[0]) n = (gmDNS)->nicelabel;
     else if (!MakeDomainLabelFromLiteralString(&n, name))  
