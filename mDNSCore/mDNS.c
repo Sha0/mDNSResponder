@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.458  2004/10/26 20:45:28  cheshire
+Show mask in "invalid mask" message
+
 Revision 1.457  2004/10/26 06:28:36  cheshire
 Now that we don't check IP TTL any more, remove associated log message
 
@@ -5880,7 +5883,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 
 	if (!mDNSAddressIsValidNonZero(&set->mask))
-		{ LogMsg("Error! Tried to register a NetworkInterfaceInfo with invalid mask"); return(mStatus_Invalid); }
+		{ LogMsg("Error! Tried to register a NetworkInterfaceInfo with invalid mask %#a", &set->mask); return(mStatus_Invalid); }
 
 	mDNS_Lock(m);
 	
