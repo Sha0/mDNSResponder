@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dnssd_NET.cpp,v $
+Revision 1.2  2004/07/19 07:48:34  shersche
+fix bug in DNSService.Register when passing in NULL text record, add TextRecord APIs
+
 Revision 1.1  2004/06/26 04:01:22  shersche
 Initial revision
 
@@ -217,7 +220,7 @@ DNSService::ServiceRef::ResolveDispatch
 			ErrorCode		errorCode,
 			String		*	fullname,
 			String		*	hosttarget,
-			int				notAnIntPort,
+			unsigned short	notAnIntPort,
 			Byte			txtRecord[]
 			)
 {
@@ -691,20 +694,27 @@ DNSService::Register
 				String			*	regtype,
 				String			*	domain,
 				String			*	host,
-				int					notAnIntPort,
+				unsigned short		notAnIntPort,
 				Byte				txtRecord[],
 				RegisterReply	*	callback
 				)
 {
 	ServiceRef * ref = new ServiceRef(callback);
 
-	PString		*	pName	= new PString(name);
-	PString		*	pType	= new PString(regtype);
-	PString		*	pDomain	= new PString(domain);
-	PString		*	pHost	= new PString(host);
-	int				len		= txtRecord->Length;
-	Byte __pin	*	p		= &txtRecord[0];
-	void		*	v		= (void*) p;
+	PString		*	pName	=	new PString(name);
+	PString		*	pType	=	new PString(regtype);
+	PString		*	pDomain =	new PString(domain);
+	PString		*	pHost	=	new PString(host);
+	int				len		=	0;
+	Byte __pin	*	p		=	NULL;
+	void		*	v		=	NULL;
+
+	if (txtRecord != NULL)
+	{
+		len		= txtRecord->Length;
+		p		= &txtRecord[0];
+		v		= (void*) p;
+	}
 
 	int err = DNSServiceRegister(&ref->m_impl->m_ref, flags, interfaceIndex, pName->c_str(), pType->c_str(), pDomain->c_str(), pHost->c_str(), notAnIntPort, len, v, ServiceRef::ServiceRefImpl::RegisterCallback, ref->m_impl );
 
@@ -998,6 +1008,186 @@ DNSService::ReconfirmRecord
 	PString * pFullname = new PString(fullname);
 
 	DNSServiceReconfirmRecord(flags, interfaceIndex, pFullname->c_str(), rrtype, rrclass, rdata->Length, v);
+}
+
+
+DNSService::TextRecord*
+DNSService::TextRecord::Create
+		(
+		unsigned short buflen
+		)
+{
+	TextRecord * tr;
+
+	tr = new TextRecord();
+
+	TXTRecordCreate(&tr->m_impl->m_ref, buflen, NULL);
+
+	return tr;
+}
+
+
+void
+DNSService::TextRecord::SetValue
+		(
+		TextRecord	*	tr,
+		String		*	key,
+		Byte			value[]            /* may be NULL */
+		)
+{
+	PString			*	pKey = new PString(key);
+	Byte __pin		*	p	=	&value[0];
+	DNSServiceErrorType	err;
+
+	err = TXTRecordSetValue(&tr->m_impl->m_ref, pKey->c_str(), value->Length, p);
+
+	if (err != 0)
+	{
+		throw new DNSServiceException(err);
+	}
+}
+
+
+void
+DNSService::TextRecord::RemoveValue
+		(
+		TextRecord	*	tr,
+		String		*	key
+		)
+{
+	PString			*	pKey = new PString(key);
+	DNSServiceErrorType	err;
+
+	err = TXTRecordRemoveValue(&tr->m_impl->m_ref, pKey->c_str());
+
+	if (err != 0)
+	{
+		throw new DNSServiceException(err);
+	}
+}
+
+
+unsigned short
+DNSService::TextRecord::GetLength
+		(
+		TextRecord * tr
+		)
+{
+	return TXTRecordGetLength(&tr->m_impl->m_ref);
+}
+
+
+Byte
+DNSService::TextRecord::GetBytes
+		(
+		TextRecord * tr
+		) __gc[]
+{
+	const void	*	noGCBytes = NULL;
+	Byte			gcBytes[] = NULL;		
+
+	noGCBytes			=	TXTRecordGetBytesPtr(&tr->m_impl->m_ref);
+	unsigned short len	=	GetLength(tr);
+
+	if (noGCBytes && len)
+	{
+		gcBytes				=	new Byte[len];
+		Byte __pin	*	p	=	&gcBytes[0];
+		memcpy(p, noGCBytes, len);
+	}
+
+	return gcBytes;
+}
+
+
+bool
+DNSService::TextRecord::ContainsKey
+		(
+		Byte		txtRecord[],
+		String	*	key
+		)
+{
+	PString		*	pKey	= new PString(key);
+	Byte __pin	*	p		= &txtRecord[0];
+	
+	return (TXTRecordContainsKey(txtRecord->Length, p, pKey->c_str()) > 0) ? true : false;
+}
+
+
+Byte
+DNSService::TextRecord::GetValueBytes
+		(
+		Byte		txtRecord[],
+		String	*	key
+		) __gc[]
+{
+	uint8_t			valueLen;
+	Byte			ret[]	= NULL;
+	PString		*	pKey	= new PString(key);
+	Byte __pin	*	p1		= &txtRecord[0];
+	const void	*	v;
+
+	v = TXTRecordGetValuePtr(txtRecord->Length, p1, pKey->c_str(), &valueLen);
+
+	if (v != NULL)
+	{
+		ret					= new Byte[valueLen];
+		Byte __pin	*	p2	= &ret[0];
+
+		memcpy(p2, v, valueLen);
+	}
+
+	return ret;
+}
+
+
+unsigned short
+DNSService::TextRecord::GetCount
+		(
+		Byte txtRecord[]
+		)
+{
+	Byte __pin	*	p	= &txtRecord[0];
+
+	return TXTRecordGetCount(txtRecord->Length, p);
+}
+
+
+Byte
+DNSService::TextRecord::GetItemAtIndex
+		(
+		Byte				txtRecord[],
+		unsigned short		index,
+		[Out] String	**	key
+		) __gc[]
+{
+	char				keyBuf[255];
+	uint8_t				keyBufLen = 255;
+	uint8_t				valueLen;
+	void			*	value;
+	Byte				ret[]	= NULL;
+	DNSServiceErrorType	err;
+	Byte __pin		*	p1		= &txtRecord[0];
+	
+
+	err = TXTRecordGetItemAtIndex(txtRecord->Length, p1, index, keyBufLen, keyBuf, &valueLen, (const void**) &value);
+
+	if (err != 0)
+	{
+		throw new DNSServiceException(err);
+	}
+
+	*key = keyBuf;
+
+	if (valueLen)
+	{
+		ret					= new Byte[valueLen];
+		Byte __pin	*	p2	= &ret[0];
+
+		memcpy(p2, value, valueLen);
+	}
+
+	return ret;
 }
 
 
