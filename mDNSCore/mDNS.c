@@ -3665,6 +3665,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNSServiceCallback Callback, void *Context)
 	{
 	mDNSs32 timenow;
+	mStatus err;
 
 	sr->Callback = Callback;
 	sr->Context  = Context;
@@ -3715,17 +3716,18 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->Extras = mDNSNULL;
 
 	timenow = mDNS_Lock(m);
-	mDNS_Register_internal(m, &sr->RR_SRV, timenow);
-	mDNS_Register_internal(m, &sr->RR_TXT, timenow);
+	err = mDNS_Register_internal(m, &sr->RR_SRV, timenow);
+	if (!err) err = mDNS_Register_internal(m, &sr->RR_TXT, timenow);
 	// We register the RR_PTR last, because we want to be sure that in the event of a forced call to
 	// mDNS_Close, the RR_PTR will be the last one to be forcibly deregistered, since that is what triggers
 	// the mStatus_MemFree callback to ServiceCallback, which in turn passes on the mStatus_MemFree back to
 	// the client callback, which is then at liberty to free the ServiceRecordSet memory at will. We need to
 	// make sure we've deregistered all our records and done any other necessary cleanup before that happens.
-	mDNS_Register_internal(m, &sr->RR_PTR, timenow);
+	if (!err) err = mDNS_Register_internal(m, &sr->RR_PTR, timenow);
+	if (err) mDNS_DeregisterService(m, sr);
 	mDNS_Unlock(m);
 
-	return(mStatus_NoError);
+	return(err);
 	}
 
 mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
