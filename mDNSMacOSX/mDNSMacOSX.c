@@ -810,7 +810,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	}
 
 // To Do: Find out how to implement a proper modular time function in CF
-mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, SInt32 NextTaskTime)
+mDNSexport void mDNSPlatformScheduleTask(const mDNS *const m, mDNSs32 NextTaskTime)
 	{
 	if (m->p->CFTimer)
 		{
