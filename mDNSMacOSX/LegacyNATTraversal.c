@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.11  2004/12/03 03:34:20  ksekar
+<rdar://problem/3882674> LegacyNATTraversal.c leaks threads
+
 Revision 1.10  2004/12/01 02:43:49  cheshire
 Update copyright message
 
@@ -383,8 +386,8 @@ static struct sockaddr_in	g_saddrRouterBase;
 static char 				g_szRouterHostPortBase[1024];
 
 // the threads
-static pthread_t			g_UDPthread;
-static pthread_t			g_TCPthread;
+static pthread_t			g_UDPthread = NULL;
+static pthread_t			g_TCPthread = NULL;
 
 // Local IP
 static unsigned long		g_dwLocalIP = 0;
@@ -1294,9 +1297,8 @@ static void *TCPProc(void *in)
 	
 	(void)in; // unused
 	WaitUPnPFunction();
-
 	//TracePrint(ELL_TRACE, "UPnP: Begin TCPProc\n");
-
+	
 	// do the subscription
 	{
 		char callback[100];
@@ -1449,7 +1451,6 @@ cleanup:
 	g_fEventEnabled = FALSE;
 	if (g_sTCPCancel != -1) close(g_sTCPCancel);
 	g_sTCPCancel = -1;
-
 	return NULL;
 }
 
@@ -1469,8 +1470,6 @@ static void *UDPProc(void *in)
 	gettimeofday(&g_tvUPnPInitTime, NULL);
 	pthread_mutex_unlock(&g_xUPnP);
 
-	g_sUDPCancel = -1;
-
 	for (;;) {
 		ssize_t				n;
 		struct sockaddr_in	recvaddr;
@@ -1480,14 +1479,14 @@ static void *UDPProc(void *in)
 		//int					i;
 		int					sMax;
 
-		if (g_sUDPCancel != -1) close(g_sUDPCancel);
-		sMax = g_sUDPCancel = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-		if (sMax < g_sUDP) sMax = g_sUDP;
+		if (g_sUDPCancel < g_sUDP) sMax = g_sUDP;
+		else                       sMax = g_sUDPCancel;
 
 		FD_ZERO(&readfds);
 		FD_SET(g_sUDP, &readfds);
 		FD_SET(g_sUDPCancel, &readfds);
 		iRet = select(sMax+1, &readfds, NULL, NULL, NULL);
+
 		if (iRet <= 0) {
 			if (g_fQuit)
 			{
@@ -1500,6 +1499,7 @@ static void *UDPProc(void *in)
 			continue;
 		}
 
+		if (!FD_ISSET(g_sUDP, &readfds)) continue;
 		recvaddrlen = sizeof(recvaddr);
 		n = recvfrom(g_sUDP, buf, sizeof(buf), 0,
 			(struct sockaddr *)&recvaddr, &recvaddrlen);
@@ -2959,7 +2959,8 @@ int LegacyNATInit(void)
 	{
 		// initialize UDP socket for SSDP
 		g_sUDP = SSDPListen();
-		if (g_sUDP < 0) {
+		g_sUDPCancel = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); // sock to signal canccelation to UDP thread
+		if (g_sUDP < 0 || g_sUDPCancel < 0) {
 			if (g_fLogging & NALOG_ERROR)
 				fprintf(log, "UpnpInit - Failed to init multicast socket.\n");
 			return NA_E_INTERNAL_ERROR;
@@ -2995,19 +2996,15 @@ int LegacyNATInit(void)
 
 int LegacyNATDestroy()
 {
+    void *UDPThreadRetVal; 
 	g_fQuit = TRUE;
 	if (g_sTCPCancel >= 0) close(g_sTCPCancel);
 	if (g_sUDPCancel >= 0) close(g_sUDPCancel);
+	pthread_join(g_UDPthread, &UDPThreadRetVal);
 	g_sTCPCancel = -1;
 	g_sUDPCancel = -1;
 	g_fFirstInit = TRUE;
 	g_fUPnPEnabled = FALSE;
 	g_fControlURLSet = FALSE;
-
-	//TracePrint(ELL_TRACE, "UPnP shutdown\n");
-
-	//pthread_join(g_UDPthread, &pvRet);
-	//pthread_cancel(g_UDPthread);
-
 	return NA_E_SUCCESS;
 }
