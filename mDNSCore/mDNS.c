@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.90  2003/03/14 20:26:37  cheshire
+Reduce debugging messages (reclassify some "debugf" as "verbosedebugf")
+
 Revision 1.89  2003/03/12 19:57:50  cheshire
 Fixed typo in debug message
 
@@ -2613,7 +2616,7 @@ mDNSlocal void SendQueries(mDNS *const m, const mDNSs32 timenow)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, ResourceRecord *rr, const mDNSs32 timenow)
 	{
-#if MDNS_DEBUGMSGS
+#if MDNS_DEBUGMSGS > 1
 	if (rr->rrremainingttl)
 		{
 		if (rr->rrtype == kDNSType_TXT)
@@ -2678,7 +2681,7 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, ResourceRecord *rr, const mDN
 				// then reset its exponential backoff back to the start
 				if (ActiveQuestion(q) && ++q->RecentAnswers > 1 && timenow - q->LastQTime < mDNSPlatformOneSecond)
 					{
-					debugf("AnswerLocalQuestions: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
+					verbosedebugf("AnswerLocalQuestions: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 						q->name.c, DNSTypeName(q->rrtype));
 					q->ThisQInterval = mDNSPlatformOneSecond;
 					}
@@ -3782,7 +3785,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		*q = question;
 		
 		if (!m->NewQuestions)
-			debugf("mDNS_StartQuery_internal: Setting NewQuestions %##s (%s)", question->name.c, DNSTypeName(question->rrtype));
+			debugf("mDNS_StartQuery_internal: Setting NewQuestions to %##s (%s)", question->name.c, DNSTypeName(question->rrtype));
 		if (!m->NewQuestions) m->NewQuestions = question;
 
 		return(mStatus_NoError);
@@ -3813,7 +3816,7 @@ mDNSlocal void mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 			for (q = m->Questions; q; q=q->next)		// Scan our list of questions
 				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(rr, q))
 					break;
-			debugf("mDNS_StopQuery_internal: Cache RR %##s setting CRActiveQuestion to %X", rr->name.c, q);
+			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s setting CRActiveQuestion to %X", rr->name.c, q);
 			rr->CRActiveQuestion = q;
 			}
 		}
@@ -3912,7 +3915,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	query->info->TXTlen = answer->rdata->RDLength;
 	mDNSPlatformMemCopy(answer->rdata->u.txt.c, query->info->TXTinfo, answer->rdata->RDLength);
 
-	debugf("FoundServiceInfoTXT: %##s GotADD=%d", query->info->name.c, query->GotADD);
+	verbosedebugf("FoundServiceInfoTXT: %##s GotADD=%d", query->info->name.c, query->GotADD);
 
 	// CAUTION: MUST NOT do anything more with query after calling query->Callback(), because the client's
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
@@ -3944,7 +3947,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 	query->GotADD = mDNStrue;
 	query->info->InterfaceID = answer->InterfaceID;
 
-	debugf("FoundServiceInfo: v%d %##s GotTXT=%d", query->info->ip.type, query->info->name.c, query->GotTXT);
+	verbosedebugf("FoundServiceInfo v%d: %##s GotTXT=%d", query->info->ip.type, query->info->name.c, query->GotTXT);
 
 	// If query->GotTXT is 1 that means we already got a single TXT answer but didn't
 	// deliver it to the client at that time, so no further action is required.
