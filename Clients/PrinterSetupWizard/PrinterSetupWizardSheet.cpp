@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.24  2005/02/01 02:15:55  shersche
+<rdar://problem/3946587> Use TXTRecord parsing APIs in ParseTextRecord
+
 Revision 1.23  2005/01/31 23:54:30  shersche
 <rdar://problem/3947508> Start browsing when printer wizard starts. Move browsing logic from CSecondPage object to CPrinterSetupWizardSheet object.
 
@@ -1505,75 +1508,80 @@ exit:
 OSStatus
 CPrinterSetupWizardSheet::ParseTextRecord( Service * service, uint16_t inTXTSize, const char * inTXT, bool & qtotalDefined, CString & qname, uint32_t & qpriority )
 {
+	// <rdar://problem/3946587> Use TXTRecord APIs declared in dns_sd.h
+	
 	bool		rpOnly = true;
 	OSStatus	err = kNoErr;
-	
-	while (inTXTSize)
+	uint16_t	count	= TXTRecordGetCount( inTXTSize, inTXT );
+	uint16_t	i;
+
+	for ( i = 0; i < count; i++ )
 	{
-		char buf[256];
+		char		rawKey[ 256 ];
+		uint8_t		valLen;
+		void	*	tmp;
+		char		rawVal[256];
+		CString		key;
+		CString		val;
 
-		unsigned char num = *inTXT;
-		check( (int) num < inTXTSize );
+		// Get key and value
 
-		if ( num )
+		err = TXTRecordGetItemAtIndex( inTXTSize, inTXT, i, sizeof( rawKey ), rawKey, &valLen, (const void**) &tmp );
+		require_noerr( err, exit );
+
+		// Stringize val ( doesn't have trailing '\0' yet
+
+		memcpy( rawVal, tmp, valLen );
+		rawVal[valLen] = '\0';
+
+		// Convert to CString
+
+		err = UTF8StringToStringObject( rawKey, key );
+		require_noerr( err, exit );
+
+		err = UTF8StringToStringObject( rawVal, val );
+		require_noerr( err, exit );
+
+		key.MakeLower();
+
+		if ( key == L"rp" )
 		{
-			memset(buf, 0, sizeof(buf));
-			memcpy(buf, inTXT + 1, num);
+			qname = val;
+		}
+		else
+		{
+			rpOnly = false;
 
-			CString elem;
-
-			err = UTF8StringToStringObject( buf, elem );
-			require_noerr( err, exit );
-
-			int curPos = 0;
-
-			CString key = elem.Tokenize(L"=", curPos);
-			CString val = elem.Tokenize(L"=", curPos);
-
-			key.MakeLower();
-
-			if ( key == L"rp" )
+			if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
 			{
-				qname = val;
+				service->usb_MFG = val;
 			}
-			else
+			else if ((key == L"usb_mdl") || (key == L"usb_model"))
 			{
-				rpOnly = false;
-
-				if ((key == L"usb_mfg") || (key == L"usb_manufacturer"))
-				{
-					service->usb_MFG = val;
-				}
-				else if ((key == L"usb_mdl") || (key == L"usb_model"))
-				{
-					service->usb_MDL = val;
-				}
-				else if (key == L"ty")
-				{
-					service->description = val;
-				}
-				else if (key == L"product")
-				{
-					service->product = val;
-				}
-				else if (key == L"note")
-				{
-					service->location = val;
-				}
-				else if (key == L"qtotal")
-				{
-					service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
-					qtotalDefined = true;
-				}
-				else if (key == L"priority")
-				{
-					qpriority = _ttoi((LPCTSTR) val);
-				}
+				service->usb_MDL = val;
+			}
+			else if (key == L"ty")
+			{
+				service->description = val;
+			}
+			else if (key == L"product")
+			{
+				service->product = val;
+			}
+			else if (key == L"note")
+			{
+				service->location = val;
+			}
+			else if (key == L"qtotal")
+			{
+				service->qtotal = (unsigned short) _ttoi((LPCTSTR) val);
+				qtotalDefined = true;
+			}
+			else if (key == L"priority")
+			{
+				qpriority = _ttoi((LPCTSTR) val);
 			}
 		}
-
-		inTXTSize -= (num + 1);
-		inTXT += (num + 1);
 	}
 
 exit:
