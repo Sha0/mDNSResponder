@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.450  2004/10/19 17:42:59  ksekar
+Fixed compiler warnings for non-debug builds.
+
 Revision 1.449  2004/10/18 22:57:07  cheshire
 <rdar://problem/3711302> Seen in console: Ignored apparent spoof mDNS Response with TTL 1
 
@@ -4686,7 +4689,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
 	CacheRecord *CacheFlushRecords = mDNSNULL;
 	CacheRecord **cfp = &CacheFlushRecords;
-		
+
+	(void)srcport; // unused for non-debug builds
+	(void)dstport;
+	
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
 	// to guard against spoof responses, then the only credible protection against that is cryptographic
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
