@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.90  2004/09/25 00:22:13  ksekar
+<rdar://problem/3815534> Crash in uDNS_RegisterService
+
 Revision 1.89  2004/09/24 19:14:53  cheshire
 Remove unused "extern mDNS mDNSStorage"
 
@@ -3584,6 +3587,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	ubzero(&srs->uDNS_info, sizeof(uDNS_RegInfo));
 	srs->uDNS_info.state = regState_Unregistered;
 	*p = srs;
+	srs->next = mDNSNULL;
 	return RegisterService(m, srs);
 	}	
 
