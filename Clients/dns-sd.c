@@ -109,7 +109,9 @@ static char myhinfoX[ 9] = "\003Mac\004OS X";
 static char updatetest[3] = "\002AA";
 static char bigNULL[4096];
 
-#define LONG_TIME 0x4000000
+// Note: the select() implementation on Windows (Winsock2) fails with any timeout much larger than this
+#define LONG_TIME 100000000
+
 static volatile int stopNow = 0;
 static volatile int timeOut = LONG_TIME;
 
@@ -381,10 +383,15 @@ int	getfirstoption( int argc, char **argv, const char *optstr, int *pOptInd)
 
 int main(int argc, char **argv)
 	{
+#ifdef _WIN32
+	const char	kFilePathSep = '\\';
+#else
+	const char	kFilePathSep = '/';
+#endif
 	DNSServiceErrorType err;
 	char *dom;
 	int	optind;
-	const char *progname = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
+	const char *progname = strrchr(argv[0], kFilePathSep) ? strrchr(argv[0], kFilePathSep) + 1 : argv[0];
 #ifndef NOT_HAVE_SETLINEBUF
 	setlinebuf(stdout);             // Want to see lines as they appear, not block buffered
 #endif
