@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.237  2005/01/19 03:33:09  cheshire
+<rdar://problem/3945652> When changing Computer Name, we drop our own Goobye Packets
+
 Revision 1.236  2005/01/19 03:16:38  cheshire
 <rdar://problem/3961051> CPU Spin in mDNSResponder
 Improve detail of "Task Scheduling Error" diagnostic messages
@@ -2245,12 +2248,24 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 
 mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	{
-	// 1. Call mDNS_Execute() to let mDNSCore do what it needs to do
-	mDNSs32 nextevent = mDNS_Execute(m);
-
 	mDNSs32 now = mDNS_TimeNow(m);
 
-	// 2. Deliver any waiting browse messages to clients
+	// 1. If we have network change events to handle, do them FIRST, before calling mDNS_Execute()
+	// Detailed reason:
+	// mDNSMacOSXNetworkChanged() currently closes and re-opens its sockets. If there are received packets waiting, they are lost.
+	// mDNS_Execute() generates packets, including multicasts that are looped back to ourself.
+	// If we call mDNS_Execute() first, and generate packets, and then call mDNSMacOSXNetworkChanged() immediately afterwards
+	// we then systematically lose our own looped-back packets.
+	if (m->p->NetworkChanged && now - m->p->NetworkChanged >= 0) { m->p->NetworkChanged = 0; mDNSMacOSXNetworkChanged(m); }
+
+	// 2. Call mDNS_Execute() to let mDNSCore do what it needs to do
+	mDNSs32 nextevent = mDNS_Execute(m);
+
+	if (m->p->NetworkChanged)
+		if (nextevent - m->p->NetworkChanged > 0)
+			nextevent = m->p->NetworkChanged;
+
+	// 3. Deliver any waiting browse messages to clients
 	DNSServiceBrowser *b = DNSServiceBrowserList;
 
 	while (b)
@@ -2327,18 +2342,6 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 		else
 			if (nextevent - m->p->NotifyUser > 0)
 				nextevent = m->p->NotifyUser;
-		}
-
-	if (m->p->NetworkChanged)
-		{
-		if (m->p->NetworkChanged - now < 0)
-			{
-			m->p->NetworkChanged = 0;
-			mDNSMacOSXNetworkChanged(m);
-			}
-		else
-			if (nextevent - m->p->NetworkChanged > 0)
-				nextevent = m->p->NetworkChanged;
 		}
 
 	return(nextevent);
