@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.119  2004/11/23 23:54:17  ksekar
+<rdar://problem/3890318> Wide-Area DNSServiceRegisterRecord() failures
+can crash mDNSResponder
+
 Revision 1.118  2004/11/23 22:33:01  cheshire
 <rdar://problem/3654910> Remove temporary workaround code for iChat
 
@@ -433,6 +437,8 @@ typedef struct registered_record_entry
     uint32_t key;
     AuthRecord *rr;
     struct registered_record_entry *next;
+    client_context_t client_context;
+    struct request_state *rstate;
     } registered_record_entry;
 
 // A single registered service: ServiceRecordSet + bookkeeping
@@ -589,12 +595,6 @@ typedef struct
     mDNSu8     txtdata[AbsoluteMaxDNSMessageData];
     } resolve_termination_t;
     
-typedef struct
-    {
-    request_state *rstate;
-    client_context_t client_context;
-    } regrecord_callback_context;
-
 #ifdef _HAVE_SETDOMAIN_SUPPORT_
 typedef struct default_browse_list_t
 	{
@@ -2372,12 +2372,9 @@ static void regservice_termination_callback(void *context)
 	freeL("service_info", info);
 	}
 
-
-
 static void handle_regrecord_request(request_state *rstate)
     {
     AuthRecord *rr;
-    regrecord_callback_context *rcc;
     registered_record_entry *re;
     mStatus result;
     
@@ -2395,19 +2392,16 @@ static void handle_regrecord_request(request_state *rstate)
         deliver_error(rstate, mStatus_BadParamErr);
         return;
         }
-	
-    rcc = mallocL("handle_regrecord_request", sizeof(regrecord_callback_context));
-    if (!rcc) goto malloc_error;
-    rcc->rstate = rstate;
-    rcc->client_context = rstate->hdr.client_context;
-    rr->RecordContext = rcc;
-    rr->RecordCallback = regrecord_callback;
 
     // allocate registration entry, link into list
     re = mallocL("handle_regrecord_request", sizeof(registered_record_entry));
     if (!re) goto malloc_error;
     re->key = rstate->hdr.reg_index;
     re->rr = rr;
+    re->rstate = rstate;
+    re->client_context = rstate->hdr.client_context;
+    rr->RecordContext = re;
+    rr->RecordCallback = regrecord_callback;
     re->next = rstate->reg_recs;
     rstate->reg_recs = re;
 
@@ -2431,42 +2425,57 @@ malloc_error:
     return;
     }
 
-static void regrecord_callback(mDNS *const m, AuthRecord *const rr, mStatus result)
+static void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result)
     {
-    regrecord_callback_context *rcc = rr->RecordContext;
+    registered_record_entry *re = rr->RecordContext;
+	request_state *rstate = re ? re->rstate : NULL;
     int len;
     reply_state *reply;
     transfer_state ts;
     (void)m; // Unused
-	
-    if (result == mStatus_MemFree) 	
-        { 
-        freeL("regrecord_callback", rcc);
-        rr->RecordContext = NULL;        
-        freeL("regrecord_callback", rr);
-        return; 
-        }
 
+	if (!re)
+		{
+		// parent struct alreadt freed by termination callback
+		if (!result) LogMsg("Error: regrecord_callback: succesful registration of orphaned record");
+		else
+			{
+			if (result != mStatus_MemFree) LogMsg("regrecord_callback: error %d received after parent termination", result);
+			freeL("regrecord_callback", rr);
+			}			
+		return;
+		}
+	
     // format result, add to the list for the request, including the client context in the header
     len = sizeof(DNSServiceFlags);
     len += sizeof(uint32_t);                //interfaceIndex
     len += sizeof(DNSServiceErrorType);
     
-    reply = create_reply(reg_record_reply, len, rcc->rstate);
-    reply->mhdr->client_context = rcc->client_context;
+    reply = create_reply(reg_record_reply, len, rstate);
+    reply->mhdr->client_context = re->client_context;
     reply->rhdr->flags = dnssd_htonl(0);
     reply->rhdr->ifi = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID));
     reply->rhdr->error = dnssd_htonl(result);
 
+	if (result)
+		{
+		// unlink from list, free memory
+		registered_record_entry **ptr = &re->rstate->reg_recs;			
+		while (*ptr && (*ptr) != re) ptr = &(*ptr)->next;
+		if (!*ptr) { LogMsg("regrecord_callback - record not in list!"); return; }			
+		*ptr = (*ptr)->next;
+		freeL("regrecord_callback", re->rr);
+		re->rr = rr = NULL;
+		freeL("regrecord_callback", re);
+		re = NULL;
+		}
+	
     ts = send_msg(reply);
-    if (ts == t_error || ts == t_terminated)
-        {
-        abort_request(rcc->rstate);
-        unlink_request(rcc->rstate);
-        }
+	
+    if (ts == t_error || ts == t_terminated) { abort_request(rstate); unlink_request(rstate); }
     else if (ts == t_complete) freeL("regrecord_callback", reply);
-    else if (ts == t_morecoming) append_reply(rcc->rstate, reply);   // client is blocked, link reply into list
-    }
+    else if (ts == t_morecoming) append_reply(rstate, reply);   // client is blocked, link reply into list
+	}
 
 static void connected_registration_termination(void *context)
     {
@@ -2477,18 +2486,12 @@ static void connected_registration_termination(void *context)
         fptr = ptr;
         ptr = ptr->next;
         shared = fptr->rr->resrec.RecordType == kDNSRecordTypeShared;
-        mDNS_Deregister(gmDNS, fptr->rr);
-        if (!shared)
-            // shared records free'd via callback w/ mStatus_MemFree
-            {
-            freeL("connected_registration_termination", fptr->rr->RecordContext);
-            fptr->rr->RecordContext = NULL;            
-            freeL("connected_registration_termination", fptr->rr);
-            fptr->rr = NULL;
-            }
+		fptr->rr->RecordContext = NULL;
+        mDNS_Deregister(gmDNS, fptr->rr);		
+        if (!shared) freeL("connected_registration_termination", fptr->rr); // shared records free'd via callback w/ mStatus_MemFree
         freeL("connected_registration_termination", fptr);
-        }
-    }
+		}
+	}
     
 static void handle_removerecord_request(request_state *rstate)
     {
@@ -2499,7 +2502,7 @@ static void handle_removerecord_request(request_state *rstate)
     get_flags(&ptr);	// flags unused
 
 	if (rstate->reg_recs)  err = remove_record(rstate);  // remove individually registered record
-	
+	else if (!rstate->service_registration) LogOperation("%3d: DNSServiceRemoveRecord (bad ref)", rstate->sd);
     else
 		{
 		LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, rstate->service_registration->name.c);
@@ -2524,41 +2527,26 @@ static void handle_removerecord_request(request_state *rstate)
 static mStatus remove_record(request_state *rstate)
     {
     int shared;
-    registered_record_entry *reptr, *prev = NULL;
     mStatus err = mStatus_UnknownErr;
-    reptr = rstate->reg_recs;
-
-    while(reptr)
-    	{
-        if (reptr->key == rstate->hdr.reg_index)  // found match
-            {
-			LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, reptr->rr->resrec.name.c);
-            if (prev) prev->next = reptr->next;
-            else rstate->reg_recs = reptr->next;
-            shared = reptr->rr->resrec.RecordType == kDNSRecordTypeShared;
-            err  = mDNS_Deregister(gmDNS, reptr->rr);
-	        if (err) 
-	            {
-	            LogMsg("ERROR: remove_record, mDNS_Deregister: %ld", err);
-	            return err;	// this should not happen.  don't try to free memory if there's an error
-	            }
-            if (!shared)
-	            // shared records free'd via callback w/ mStatus_MemFree		
-	            {
-                freeL("remove_record", reptr->rr->RecordContext);
-                reptr->rr->RecordContext = NULL;
-	            freeL("remove_record", reptr->rr);
-	            reptr->rr = NULL;
-	            }
-            freeL("remove_record", reptr);  	    
-            break;
-            }
-        prev = reptr;
-        reptr = reptr->next;
-    	}
-
-	if (!reptr) LogOperation("%3d: DNSServiceRemoveRecord (bad reference)");
-    return err;
+    registered_record_entry *e, **ptr = &rstate->reg_recs;
+	
+    while(*ptr && (*ptr)->key != rstate->hdr.reg_index) ptr = &(*ptr)->next;
+	if (!*ptr) { LogMsg("DNSServiceRemoveRecord - bad reference"); return mStatus_BadReferenceErr; }
+	e = *ptr;
+	*ptr = e->next; // unlink
+	
+	LogOperation("%3d: DNSServiceRemoveRecord(%#s)", rstate->sd, e->rr->resrec.name.c);	
+	shared = e->rr->resrec.RecordType == kDNSRecordTypeShared;
+	e->rr->RecordContext = NULL;
+	err = mDNS_Deregister(gmDNS, e->rr);
+	if (err) LogMsg("ERROR: remove_record, mDNS_Deregister: %ld", err);
+	if (err || !shared)
+		{
+        // shared records free'd via callback w/ mStatus_MemFree		
+		freeL("remove_record", e->rr);
+		freeL("remove_record", e);
+		}
+	return err;
     }
 
 

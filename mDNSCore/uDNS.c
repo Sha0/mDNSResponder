@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.126  2004/11/23 23:54:17  ksekar
+<rdar://problem/3890318> Wide-Area DNSServiceRegisterRecord() failures
+can crash mDNSResponder
+
 Revision 1.125  2004/11/23 04:16:48  cheshire
 Removed receiveMsg() routine.
 
@@ -1903,7 +1907,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 		debugf("Received reply for deregister record %##s type %d", rr->resrec.name.c, rr->resrec.rrtype);
 		if (err) LogMsg("ERROR: Deregistration of record %##s type %d failed with error %ld",
 						rr->resrec.name.c, rr->resrec.rrtype, err);
-		else err = mStatus_MemFree;
+		err = mStatus_MemFree;
 		if (unlinkAR(&m->uDNS_info.RecordRegistrations, rr))
 			LogMsg("ERROR: Could not unlink resource record following deregistration");
 		rr->uDNS_info.state = regState_Unregistered;
