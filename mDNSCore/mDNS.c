@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.216  2003/07/13 03:13:17  cheshire
+<rdar://problem/3325169> Services on multiple interfaces not always resolving
+If we get an identical SRV reply on a second interface, convert address queries to non-specific
+
 Revision 1.215  2003/07/13 02:28:00  cheshire
 <rdar://problem/3325166> SendResponses didn't all its responses
 Delete all references to RRInterfaceActive -- it's now superfluous
@@ -5140,10 +5144,23 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 		{
 		mDNS_StopQuery_internal(m, &query->qAv4);
 		mDNS_StopQuery_internal(m, &query->qAv6);
-		query->qAv4.InterfaceID   = answer->InterfaceID;
-		query->qAv4.qname         = answer->rdata->u.srv.target;
-		query->qAv6.InterfaceID   = answer->InterfaceID;
-		query->qAv6.qname         = answer->rdata->u.srv.target;
+		if (SameDomainName(&query->qAv4.qname, &answer->rdata->u.srv.target) && !PortChanged)
+			{
+			// If we get here, it means:
+			// 1. This is not our first SRV answer
+			// 2. The interface ID is different, but the target host and port are the same
+			// This implies that we're seeing the exact same SRV record on more than one interface,
+			// so we should make our address queries non-specific so that we catch all the answers.
+			query->qAv4.InterfaceID = mDNSInterface_Any;
+			query->qAv6.InterfaceID = mDNSInterface_Any;
+			}
+		else
+			{
+			query->qAv4.InterfaceID   = answer->InterfaceID;
+			query->qAv4.qname         = answer->rdata->u.srv.target;
+			query->qAv6.InterfaceID   = answer->InterfaceID;
+			query->qAv6.qname         = answer->rdata->u.srv.target;
+			}
 		mDNS_StartQuery_internal(m, &query->qAv4);
 		mDNS_StartQuery_internal(m, &query->qAv6);
 		}
