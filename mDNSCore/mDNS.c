@@ -88,6 +88,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.106  2003/04/22 03:14:45  cheshire
+<rdar://problem/3232229> Include Include instrumented mDNSResponder in panther now
+
 Revision 1.105  2003/04/22 01:07:43  cheshire
 <rdar://problem/3176248> DNSServiceRegistrationUpdateRecord should support a default ttl
 If TTL parameter is zero, leave record TTL unchanged
@@ -2961,118 +2964,87 @@ mDNSlocal ResourceRecord *GetFreeCacheRR(mDNS *const m, const mDNSs32 timenow)
 	return(r);
 	}
 
+extern void LogMsg(const char *format, ...);
+static mDNSs32 gNextEventScheduledAt;
+static const char *gNextEventMsg = "None yet";
+
 mDNSlocal mDNSs32 ScheduleNextTask(const mDNS *const m)
 	{
 	const mDNSs32 timenow = mDNSPlatformTimeNow();
 	mDNSs32 nextevent = timenow + 0x78000000;
-	const char *msg = "No Event", *sign="";
+	const char *sign="";
 	mDNSs32 interval, fraction;
 
 	DNSQuestion *q;
+	mDNSs32	slot;
 	ResourceRecord *rr;
+	
+	gNextEventMsg = "No Event";
 	
 	if (m->mDNSPlatformStatus != mStatus_NoError)
 		return(nextevent);
 	
 	// 1. If sleeping, do nothing
 	if (m->SleepState)
+		{ debugf("ScheduleNextTask: Sleeping"); gNextEventMsg = "Sleeping"; return(nextevent); }
+	
+	// 2. If we're suppressing sending right now, don't bother searching for packet generation events --
+	// but do make sure we come back at the end of the suppression time to check again
+	if (m->SuppressSending)
+		{ debugf("ScheduleNextTask: Send Suppressed Packets"); gNextEventMsg = "Send Suppressed Packets"; return(m->SuppressSending); }
+
+	// 3. Scan cache to see if any resource records are going to expire
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
-		debugf("ScheduleNextTask: Sleeping");
-		return(nextevent);
+		for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
+			{
+			mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
+			mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
+			mDNSs32 t1 = t0 - onetenth;
+			mDNSs32 t2 = t1 - onetenth;
+			if (rr->CRActiveQuestion && rr->UnansweredQueries < 1 && nextevent - t2 > 0)
+				{ nextevent = t2; gNextEventMsg = "Penultimate Query"; }
+			else if (rr->CRActiveQuestion && rr->UnansweredQueries < 2 && nextevent - t1 > 0)
+				{ nextevent = t1; gNextEventMsg = "Final Expiration Query"; }
+			else if (nextevent - t0 > 0)
+				{
+				nextevent = t0; gNextEventMsg = "Cache Tidying";
+				if (m->NextCacheTidyTime - nextevent > 0)
+					{
+					LogMsg("************ ScheduleNextTask: why is m->NextCacheTidyTime > nextevent (%d)?",
+						m->NextCacheTidyTime - nextevent);
+					m->NextCacheTidyTime = nextevent;
+					}
+				}
+			}
 		}
 	
-	// 2. If we have new questions added to the list, we need to answer them from cache ASAP
-	if (m->NewQuestions)
-		{
-		nextevent = timenow;
-		msg = "New Questions";
-		}
-	else
-		{
-		mDNSs32	slot;
-		
-		// 3. Scan cache to see if any resource records are going to expire
-		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-			{
-			for (rr = m->rrcache_hash[slot]; rr; rr=rr->next)
-				{
-				mDNSs32 onetenth = ((mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond) / 10;
-				mDNSs32 t0 = rr->TimeRcvd + (mDNSs32)rr->rroriginalttl * mDNSPlatformOneSecond;
-				mDNSs32 t1 = t0 - onetenth;
-				mDNSs32 t2 = t1 - onetenth;
-				if (rr->CRActiveQuestion && rr->UnansweredQueries < 1 && nextevent - t2 > 0)
-					{
-					nextevent = t2;
-					msg = "Penultimate Query";
-					}
-				else if (rr->CRActiveQuestion && rr->UnansweredQueries < 2 && nextevent - t1 > 0)
-					{
-					nextevent = t1;
-					msg = "Final Expiration Query";
-					}
-				else if (nextevent - t0 > 0)
-					{
-					nextevent = t0;
-					msg = "Cache Tidying";
-					}
-				}
-			}
-		
-		// 4. If we're suppressing sending right now, don't bother searching for packet generation events --
-		// but do make sure we come back at the end of the suppression time to check again
-		if (m->SuppressSending)
-			{
-			if (nextevent - m->SuppressSending > 0)
-				{
-				nextevent = m->SuppressSending;
-				msg = "Send Suppressed Packets";
-				}
-			}
-		else
-			{
-			// 5. Scan list of active questions to see if we need to send any queries
-			for (q = m->Questions; q; q=q->next)
-				if (TimeToSendThisQuestion(q, nextevent))
-					{
-					nextevent = q->LastQTime + q->ThisQInterval;
-					msg = "Send Questions";
-					}
+	// 4. Scan list of active questions to see if we need to send any queries
+	for (q = m->Questions; q; q=q->next)
+		if (TimeToSendThisQuestion(q, nextevent))
+			{ nextevent = q->LastQTime + q->ThisQInterval; gNextEventMsg = "Send Questions"; }
 
-			// 6. Scan list of local resource records to see if we have any
-			// deregistrations, probes, announcements, or replies to send
-			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				{
-				if (rr->RecordType == kDNSRecordTypeDeregistering)
-					{
-					nextevent = timenow;
-					msg = "Send Deregistrations";
-					}
-				if (rr->RRInterfaceActive)
-					{
-					if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - nextevent <= 0)
-						{
-						nextevent = rr->LastAPTime + rr->ThisAPInterval;
-						msg = "Send Probes";
-						}
-					else if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
-						{
-						nextevent = timenow;
-						msg = "Send Answers";
-						}
-					else if (TimeToAnnounceThisRecord(rr,nextevent) && ResourceRecordIsValidAnswer(rr))
-						{
-						nextevent = rr->LastAPTime + rr->ThisAPInterval;
-						msg = "Send Announcements";
-						}
-					}
-				}
+	// 5. Scan list of local resource records to see if we have any
+	// deregistrations, probes, announcements, or replies to send
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
+		if (rr->RecordType == kDNSRecordTypeDeregistering)
+			{ nextevent = timenow; gNextEventMsg = "Send Deregistrations"; }
+		if (rr->RRInterfaceActive)
+			{
+			if (rr->RecordType == kDNSRecordTypeUnique && rr->LastAPTime + rr->ThisAPInterval - nextevent <= 0)
+				{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Probes"; }
+			else if (rr->SendPriority >= kDNSSendPriorityAnswer && ResourceRecordIsValidAnswer(rr))
+				{ nextevent = timenow;                             gNextEventMsg = "Send Answers"; }
+			else if (TimeToAnnounceThisRecord(rr,nextevent) && ResourceRecordIsValidAnswer(rr))
+				{ nextevent = rr->LastAPTime + rr->ThisAPInterval; gNextEventMsg = "Send Announcements"; }
 			}
 		}
 
 	interval = nextevent - timenow;
 	if (interval < 0) { interval = -interval; sign = "-"; }
 	fraction = interval % mDNSPlatformOneSecond;
-	verbosedebugf("ScheduleNextTask: Next event: <%s> in %s%d.%03d seconds", msg, sign,
+	verbosedebugf("ScheduleNextTask: Next event: <%s> in %s%d.%03d seconds", gNextEventMsg, sign,
 		interval / mDNSPlatformOneSecond, fraction * 1000 / mDNSPlatformOneSecond);
 
 	return(nextevent);
@@ -3095,6 +3067,7 @@ mDNSlocal void mDNS_Unlock(mDNS *const m)
 mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
 	const mDNSs32 timenow = mDNS_Lock(m);
+	int didwork = 0;
 	
 	// If we don't know when the next event is, or we know that the next event is already due,
 	// then process our work lists now
@@ -3106,14 +3079,14 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 
 		// If we're past the probe suppression time, we can clear it
 		if (m->SuppressProbes && timenow - m->SuppressProbes >= 0)
-			m->SuppressProbes = 0;
+			{ m->SuppressProbes = 0; didwork |= 0x01; }
 
 		// If it's been more than ten seconds since the last probe failure, we can clear the counter
 		if (m->NumFailedProbes && timenow - m->ProbeFailTime >= mDNSPlatformOneSecond * 10)
-			m->NumFailedProbes = 0;
+			{ m->NumFailedProbes = 0; didwork |= 0x02; }
 		
 		// 1. See if we can answer any of our new local questions from the cache
-		for (i=0; m->NewQuestions && i<1000; i++) AnswerNewQuestion(m, timenow);
+		for (i=0; m->NewQuestions && i<1000; i++) { AnswerNewQuestion(m, timenow); didwork |= 0x04; }
 		if (i >= 1000) debugf("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
 	
 		// 2. See what packets we need to send
@@ -3123,24 +3096,58 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			// then we'll just complete deregistrations immediately,
 			// without waiting for the goodbye packet to be sent
 			DiscardDeregistrations(m, mDNSInterface_Any, timenow);
+			didwork |= 0x08;
 			}
 		else if (m->SuppressSending == 0 || timenow - m->SuppressSending >= 0)
 			{
 			// If the platform code is ready,
 			// and we're not suppressing packet generation right now
 			// send our responses, probes, and questions
+			if (m->SuppressSending) didwork |= 0x10;
 			m->SuppressSending = 0;
-			for (i=0; HaveQueries  (m, timenow) && i<1000; i++) SendQueries  (m, timenow);
+			for (i=0; HaveQueries  (m, timenow) && i<1000; i++) { SendQueries  (m, timenow); didwork |= 0x20; }
 			if (i >= 1000) debugf("mDNS_Execute: SendQueries exceeded loop limit");
-			for (i=0; HaveResponses(m, timenow) && i<1000; i++) SendResponses(m, timenow);
+			for (i=0; HaveResponses(m, timenow) && i<1000; i++) { SendResponses(m, timenow); didwork |= 0x40; }
 			if (i >= 1000) debugf("mDNS_Execute: SendResponses exceeded loop limit");
 			}
 	
-		if (m->rrcache_size && m->NextCacheTidyTime - timenow <= 0) TidyRRCache(m, timenow);
+		if (m->rrcache_size && timenow - m->NextCacheTidyTime >= 0)
+			{
+			mDNSu32 used = m->rrcache_totalused;
+			TidyRRCache(m, timenow);
+			if (used != m->rrcache_totalused) didwork |= 0x80;
+			}
 	
+		if (!didwork)
+			{
+			if (m->NextScheduledEvent && timenow - m->NextScheduledEvent >= 0)
+				LogMsg("************ mDNS_Execute had no work to do (Scheduled task was \"%s\" %d in %d ticks)",
+					gNextEventMsg, gNextEventScheduledAt - timenow, m->NextScheduledEvent - timenow);
+			}
+/*
+		else if (m->NextScheduledEvent - timenow > 0)
+			{
+			if (didwork & 0x01) LogMsg("************ mDNS_Execute did AnswerNewQuestion");
+			if (didwork & 0x02) LogMsg("************ mDNS_Execute did DiscardDeregistrations");
+			if (didwork & 0x04) LogMsg("************ mDNS_Execute did m->SuppressSending = 0");
+			if (didwork & 0x08) LogMsg("************ mDNS_Execute did SendQueries");
+			if (didwork & 0x10) LogMsg("************ mDNS_Execute did SendResponses");
+			if (didwork & 0x20) LogMsg("************ mDNS_Execute did TidyRRCache");
+			}
+*/
+		{
+		mDNSs32 oldNextEvent = m->NextScheduledEvent;
+
 		// Zero is special, so be careful not to set m->NextScheduledEvent to zero
 		m->NextScheduledEvent = ScheduleNextTask(m);
 		if (m->NextScheduledEvent == 0) m->NextScheduledEvent = 1;
+		
+		if (m->NextScheduledEvent == oldNextEvent || m->NextScheduledEvent - timenow <= 0)
+			LogMsg("************ mDNSCoreTask next task \"%s\" %d ticks from last one, %d ticks from now",
+				gNextEventMsg, m->NextScheduledEvent - oldNextEvent, m->NextScheduledEvent - timenow);
+		gNextEventScheduledAt = mDNSPlatformTimeNow();
+		}
+
 		}
 
 	// Can't use standard "mDNS_Unlock(m)" here, because that also clears m->NextScheduledEvent
@@ -4627,6 +4634,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 						rr->UnansweredQueries = 2;
 						rr->rroriginalttl     = 0;
 						count++;
+						m->NextCacheTidyTime = timenow;
 						}
 				}
 			if (count) debugf("mDNS_DeregisterInterface: Flushing %d Cache Entries on interface %X", count, set->InterfaceID);
