@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.32  2004/10/26 03:59:41  cheshire
+Update comments
+
 Revision 1.31  2004/09/17 01:08:53  cheshire
 Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
   The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
@@ -95,18 +98,18 @@ Add "$Log" header
 
  */
 
-#include <stdio.h>			// For printf()
-#include <stdlib.h>			// For exit() etc.
-#include <string.h>			// For strlen() etc.
-#include <unistd.h>			// For select()
-#include <signal.h>			// For SIGINT, SIGTERM
-#include <errno.h>			// For errno, EINTR
-#include <arpa/inet.h>		// For inet_addr()
-#include <netinet/in.h>		// For INADDR_NONE
-#include <netdb.h>			// For gethostbyname()
+#include <stdio.h>				// For printf()
+#include <stdlib.h>				// For exit() etc.
+#include <string.h>				// For strlen() etc.
+#include <unistd.h>				// For select()
+#include <signal.h>				// For SIGINT, SIGTERM
+#include <errno.h>				// For errno, EINTR
+#include <arpa/inet.h>			// For inet_addr()
+#include <netinet/in.h>			// For INADDR_NONE
+#include <netdb.h>				// For gethostbyname()
 
-#include "mDNSEmbeddedAPI.h"  // Defines the interface to the client layer above
-#include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
+#include "mDNSEmbeddedAPI.h"	// Defines the interface to the client layer above
+#include "mDNSPosix.h"			// Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"
 
 // Compatibility workaround: Solaris 2.5 has no INADDR_NONE
