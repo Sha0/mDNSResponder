@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.57  2003/03/05 22:36:27  cheshire
+Bug #: 3186338 Loopback doesn't work with mDNSResponder-27
+Temporary workaround: Skip loopback interface *only* if we found at least one v4 interface to use
+
 Revision 1.56  2003/03/05 01:50:38  cheshire
 Bug #: 3189097 Additional debugging code in mDNSResponder
 
@@ -662,6 +666,7 @@ mDNSlocal void ClearInterfaceList(mDNS *const m)
 
 mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 	{
+	mDNSBool foundav4 = mDNSfalse;
 	struct ifaddrs *ifalist;
 	int err = getifaddrs(&ifalist);
 	struct ifaddrs *ifa = ifalist;
@@ -703,12 +708,17 @@ mDNSlocal mStatus SetupInterfaceList(mDNS *const m)
 				NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)mallocL("NetworkInterfaceInfo2", sizeof(*info));
 				if (!info) debugf("SetupInterfaceList: Out of Memory!");
 				else SetupInterface(m, info, ifa);
+				if (ifa->ifa_addr->sa_family == AF_INET)
+					foundav4 = mDNStrue;
 				}
 			}
 		ifa = ifa->ifa_next;
 		}
 
-	if (!m->HostInterfaces && theLoopback)
+//	Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
+//	In the interim, we skip loopback interface only if we found at least one v4 interface to use
+//	if (!m->HostInterfaces && theLoopback)
+	if (!foundav4 && theLoopback)
 		{
 		NetworkInterfaceInfo2 *info = (NetworkInterfaceInfo2 *)mallocL("NetworkInterfaceInfo2", sizeof(*info));
 		if (!info) debugf("SetupInterfaceList: (theLoopback) Out of Memory!");
