@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.204  2003/07/11 00:20:32  cheshire
+<rdar://problem/3320087> mDNSResponder should log a message after 16 unsuccessful probes
+
 Revision 1.203  2003/07/10 23:53:41  cheshire
 <rdar://problem/3320079> Hostname conflict naming should not use two hyphens
 
@@ -2000,6 +2003,17 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, ResourceRecord *const rr
 	return(mStatus_NoError);
 	}
 
+mDNSlocal void RecordProbeFailure(mDNS *const m, const ResourceRecord *const rr)
+	{
+	m->ProbeFailTime = m->timenow;
+	m->NumFailedProbes++;
+	// If we've had ten or more probe failures, rate-limit to one every five seconds
+	// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
+	if (m->NumFailedProbes >= 10) m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
+	if (m->NumFailedProbes >= 16)
+		LogMsg("Warning: Name probe unsuccessful for %##s (%s)", rr->name.c, DNSTypeName(rr->rrtype));
+	}
+
 // mDNS_Dereg_normal is used for most calls to mDNS_Deregister_internal
 // mDNS_Dereg_conflict is used to indicate that this record is being forcibly deregistered because of a conflict
 // mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
@@ -2126,11 +2140,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, ResourceRecord *const 
 			}
 		else if (drt == mDNS_Dereg_conflict)
 			{
-			m->ProbeFailTime = m->timenow;
-			// If we've had ten probe failures, rate-limit to one every five seconds
-			// The result is ORed with 1 to make sure SuppressProbes is not accidentally set to zero
-			if (m->NumFailedProbes < 9) m->NumFailedProbes++;
-			else m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
+			RecordProbeFailure(m, rr);
 			if (rr->RecordCallback)
 				rr->RecordCallback(m, rr, mStatus_NameConflict);
 			}
@@ -4734,12 +4744,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
 								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
 								InitializeLastAPTime(m, rr);
-
-								// We increment NumFailedProbes here to make sure that repeated late conflicts
-								// will also cause us to back off to the slower probing rate
-								m->ProbeFailTime = m->timenow;
-								if (m->NumFailedProbes < 9) m->NumFailedProbes++;
-								else m->SuppressProbes = (m->timenow + mDNSPlatformOneSecond * 5) | 1;
+								RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
 								}
 							// If we're probing for this record, we just failed
 							else if (rr->RecordType == kDNSRecordTypeUnique)
