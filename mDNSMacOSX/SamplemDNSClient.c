@@ -38,6 +38,7 @@
 #include <libc.h>
 #include <arpa/nameser.h>
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
@@ -153,7 +154,14 @@ static void resolve_reply(struct sockaddr *interface, struct sockaddr *address, 
             union { uint16_t s; u_char b[2]; } port = { ip6->sin6_port };
             uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
             char buffer[256];
-            printf("Service can be reached at %s:%u", inet_ntop(AF_INET6, &ip6->sin6_addr, buffer, sizeof(buffer)), PortAsNumber);
+            char ifname[IF_NAMESIZE + 1];
+            ifname[0] = 0;
+            if (ip6->sin6_scope_id)
+                {
+                ifname[0] = '%';
+                if_indextoname(ip6->sin6_scope_id, &ifname[1]);
+                }
+            printf("Service can be reached at [%s%s]:%u", inet_ntop(AF_INET6, &ip6->sin6_addr, buffer, sizeof(buffer)), ifname, PortAsNumber);
             }
         while (*src)
             {
