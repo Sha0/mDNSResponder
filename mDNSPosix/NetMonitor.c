@@ -33,6 +33,12 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  *
  * $Log: NetMonitor.c,v $
+ * Revision 1.16  2003/05/29 21:56:36  cheshire
+ * More improvements:
+ * Distinguish modern multicast queries from legacy multicast queries
+ * In addition to record counts, display packet counts of queries, legacy queries, and responses
+ * Include TTL in RR display
+ *
  * Revision 1.15  2003/05/29 20:03:57  cheshire
  * Various improvements:
  * Display start and end time, average rates in packets-per-minute,
@@ -155,9 +161,14 @@ struct timeval tv_start, tv_end, tv_interval;
 
 static mDNSAddr FilterAddr;
 
+static int NumPktQ;
+static int NumPktL;
+static int NumPktR;
+
 static int NumProbes;
 static int NumGoodbyes;
 static int NumQuestions;
+static int NumLegacy;
 static int NumAnswers;
 static int NumAdditionals;
 
@@ -281,7 +292,7 @@ mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSAddr *
 								(srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? "-Q- " : "-LQ-";
 
 	DisplayTimestamp();
-	mprintf("%#-16a %s       Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
+	mprintf("%#-16a %s            Q:%3d  Ans:%3d  Auth:%3d  Add:%3d",
 		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals);
 
 	if (msg->h.id.NotAnInteger) mprintf("  ID:%u", ((mDNSu16)msg->h.id.b[0])<<8 | msg->h.id.b[1]);
@@ -303,7 +314,7 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 
 	RDataBody *rd = &pktrr->rdata->u;
 	mDNSu8 *rdend = (mDNSu8 *)rd + pktrr->rdata->RDLength;
-	mDNSu32 n = mprintf("%#-16a %-4s %-5s %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->name.c);
+	mDNSu32 n = mprintf("%#-16a %-4s %-5s%5d %##s -> ", srcaddr, op, DNSTypeName(pktrr->rrtype), pktrr->rroriginalttl, pktrr->name.c);
 
 	switch(pktrr->rrtype)
 		{
@@ -369,6 +380,8 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	ResourceRecord pktrr;
 
 	DisplayPacketHeader(msg, srcaddr, srcport);
+	if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumPktQ++;
+	else NumPktL++;
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -385,8 +398,10 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 			}
 		else
 			{
-			NumQuestions++;
-			mprintf("%#-16a (Q)  %-5s %##s\n", srcaddr, DNSTypeName(q.rrtype), q.name.c);
+			const char *ptype = "(Q) ";
+			if (srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) NumQuestions++;
+			else { NumLegacy++; ptype = "(LQ)"; }
+			mprintf("%#-16a %s %-5s      %##s\n", srcaddr, ptype, DNSTypeName(q.rrtype), q.name.c);
 			recordstat(&q.name, OP_query, q.rrtype);
 			}
 		}
@@ -406,6 +421,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	ResourceRecord pktrr;
 
 	DisplayPacketHeader(msg, srcaddr, srcport);
+	NumPktR++;
 
 	for (i=0; i<msg->h.numQuestions; i++)
 		{
@@ -517,11 +533,16 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	mprintf("End          %3d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv_end.tv_usec);
 	mprintf("Captured for %3d:%02d:%02d.%06d\n", h, m, s, tv_interval.tv_usec);
 	mprintf("\n");
-	mprintf("Total New Service Probes:   %7d   (avg%4d/min)\n", NumProbes,      NumProbes      * mul / div);
-	mprintf("Total Goodbye Announcements:%7d   (avg%4d/min)\n", NumGoodbyes,    NumGoodbyes    * mul / div);
-	mprintf("Total Query Questions:      %7d   (avg%4d/min)\n", NumQuestions,   NumQuestions   * mul / div);
-	mprintf("Total Answers/Announcements:%7d   (avg%4d/min)\n", NumAnswers,     NumAnswers     * mul / div);
-	mprintf("Total Additional Records:   %7d   (avg%4d/min)\n", NumAdditionals, NumAdditionals * mul / div);
+	mprintf("Total Multicast Query Packets:    %7d   (avg%5d/min)\n", NumPktQ,        NumPktQ        * mul / div);
+	mprintf("Total Legacy Query Packets:       %7d   (avg%5d/min)\n", NumPktL,        NumPktL        * mul / div);
+	mprintf("Total Multicast Response Packets: %7d   (avg%5d/min)\n", NumPktR,        NumPktR        * mul / div);
+	mprintf("(Note: A single packet usually contains multiple Probes/Queries/Announcements etc.)\n");
+	mprintf("Total New Service Probes:         %7d   (avg%5d/min)\n", NumProbes,      NumProbes      * mul / div);
+	mprintf("Total Goodbye Announcements:      %7d   (avg%5d/min)\n", NumGoodbyes,    NumGoodbyes    * mul / div);
+	mprintf("Total Query Questions:            %7d   (avg%5d/min)\n", NumQuestions,   NumQuestions   * mul / div);
+	mprintf("Total Queries from Legacy Clients:%7d   (avg%5d/min)\n", NumLegacy,      NumLegacy      * mul / div);
+	mprintf("Total Answers/Announcements:      %7d   (avg%5d/min)\n", NumAnswers,     NumAnswers     * mul / div);
+	mprintf("Total Additional Records:         %7d   (avg%5d/min)\n", NumAdditionals, NumAdditionals * mul / div);
 	mprintf("\n");
 	printstats();
 
