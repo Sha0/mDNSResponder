@@ -135,7 +135,7 @@ enum
 
 enum
     {
-    kDNSServiceClass_IN       = 1,      /* Internet */
+    kDNSServiceClass_IN       = 1       /* Internet */
     };
 
 enum
@@ -187,7 +187,7 @@ enum
     kDNSServiceType_AXFR      = 252,    /* Transfer zone of authority. */
     kDNSServiceType_MAILB     = 253,    /* Transfer mailbox records. */
     kDNSServiceType_MAILA     = 254,    /* Transfer mail agent records. */
-    kDNSServiceType_ANY       = 255,    /* Wildcard match. */
+    kDNSServiceType_ANY       = 255     /* Wildcard match. */
     };
 
 
