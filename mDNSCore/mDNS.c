@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.255  2003/08/06 23:22:50  cheshire
+Add symbolic constants: kDefaultTTLforUnique (one minute) and kDefaultTTLforShared (two hours)
+
 Revision 1.254  2003/08/06 21:33:39  cheshire
 Fix compiler warnings on PocketPC 2003 (Windows CE)
 
@@ -876,6 +879,9 @@ static const mDNSOpaque16 ResponseFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_
 
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
+
+#define kDefaultTTLforUnique 60
+#define kDefaultTTLforShared (2*3600)
 
 static const char *const mDNS_DomainTypeNames[] =
 	{
@@ -5521,7 +5527,7 @@ mDNSexport void mDNS_SetupResourceRecord(ResourceRecord *rr, RData *RDataStorage
 	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
 		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
 	else if (ttl == 0)		// And Zero TTL is illegal
-		ttl = 1;
+		ttl = kDefaultTTLforShared;
 
 	// Field Group 1: Persistent metadata for Authoritative Records
 	rr->Additional1       = mDNSNULL;
@@ -5628,9 +5634,9 @@ mDNSlocal void mDNS_AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
 	if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
 	
-	mDNS_SetupResourceRecord(&set->RR_A,     mDNSNULL, set->InterfaceID, kDNSType_A,     60, kDNSRecordTypeUnique,      HostNameCallback, set);
-	mDNS_SetupResourceRecord(&set->RR_PTR,   mDNSNULL, set->InterfaceID, kDNSType_PTR,   60, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-	mDNS_SetupResourceRecord(&set->RR_HINFO, mDNSNULL, set->InterfaceID, kDNSType_HINFO, 60, kDNSRecordTypeUnique,      mDNSNULL, mDNSNULL);
+	mDNS_SetupResourceRecord(&set->RR_A,     mDNSNULL, set->InterfaceID, kDNSType_A,     kDefaultTTLforUnique, kDNSRecordTypeUnique,      HostNameCallback, set);
+	mDNS_SetupResourceRecord(&set->RR_PTR,   mDNSNULL, set->InterfaceID, kDNSType_PTR,   kDefaultTTLforUnique, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	mDNS_SetupResourceRecord(&set->RR_HINFO, mDNSNULL, set->InterfaceID, kDNSType_HINFO, kDefaultTTLforUnique, kDNSRecordTypeUnique,      mDNSNULL, mDNSNULL);
 
 	// 1. Set up Address record to map from host name ("foo.local.") to IP address
 	// 2. Set up reverse-lookup PTR record to map from our address back to our host name
@@ -5984,10 +5990,10 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	else sr->Host.c[0] = 0;
 	
 	// Initialize the ResourceRecord objects to sane values
-	mDNS_SetupResourceRecord(&sr->RR_ADV, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeAdvisory, ServiceCallback, sr);
-	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared,   ServiceCallback, sr);
-	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, InterfaceID, kDNSType_SRV, 60,     kDNSRecordTypeUnique,   ServiceCallback, sr);
-	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, 60,     kDNSRecordTypeUnique,   ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_ADV, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeAdvisory, ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared,   ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, InterfaceID, kDNSType_SRV, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
+	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, kDefaultTTLforUnique, kDNSRecordTypeUnique,   ServiceCallback, sr);
 	
 	// If the client is registering an oversized TXT record,
 	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it
@@ -6018,7 +6024,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	for (i=0; i<NumSubTypes; i++)
 		{
 		domainlabel s = *(domainlabel*)&sr->SubTypes[i].name;
-		mDNS_SetupResourceRecord(&sr->SubTypes[i], mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, ServiceCallback, sr);
+		mDNS_SetupResourceRecord(&sr->SubTypes[i], mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared, ServiceCallback, sr);
 		if (ConstructServiceName(&sr->SubTypes[i].name, &s, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
 		sr->SubTypes[i].rdata->u.name = sr->RR_SRV.name;
 		sr->SubTypes[i].Additional1 = &sr->RR_SRV;
@@ -6068,8 +6074,8 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	ExtraResourceRecord **e = &sr->Extras;
 	while (*e) e = &(*e)->next;
 
-	// If TTL is unspecified, make it 60 seconds, the same as the service's TXT and SRV default
-	if (ttl == 0) ttl = 60;
+	// If TTL is unspecified, make it the same as the service's TXT and SRV default
+	if (ttl == 0) ttl = kDefaultTTLforUnique;
 
 	extra->next          = mDNSNULL;
 	mDNS_SetupResourceRecord(&extra->r, rdata, sr->RR_PTR.InterfaceID, extra->r.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
@@ -6196,7 +6202,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *con
 	const domainname *const host,
 	const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context)
 	{
-	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_SRV, 60, kDNSRecordTypeUnique, Callback, Context);
+	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_SRV, kDefaultTTLforUnique, kDNSRecordTypeUnique, Callback, Context);
 	if (ConstructServiceName(&rr->name, name, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
 	rr->rdata->u.srv.priority    = 0;
 	rr->rdata->u.srv.weight      = 0;
@@ -6209,7 +6215,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, ResourceRecord *con
 mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, ResourceRecord *rr,
 	mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname)
 	{
-	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, 2*3600, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
+	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, kDefaultTTLforShared, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
 	if (!MakeDomainNameFromDNSNameString(&rr->name, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&rr->rdata->u.name, domname))                 return(mStatus_BadParamErr);
 	return(mDNS_Register(m, rr));
