@@ -5,8 +5,6 @@
 // duplicate the "#elif __SOME_OTHER_OS__" section (including its two-line comment
 // at the start) and add support for the new target platform in the new section.
 
-#pragma once
-
 #ifdef	__cplusplus
 	extern "C" {
 #endif
