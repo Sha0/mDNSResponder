@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.21  2004/01/28 21:38:57  cheshire
+Also ask target host for _services._mdns._udp.local. list
+
 Revision 1.20  2004/01/28 19:04:38  cheshire
 Fix Ctrl-C handling when multiple targets are specified
 
@@ -140,6 +143,7 @@ static CacheRecord gRRCache[RR_CACHE_SIZE];
 static volatile int StopNow;	// 0 means running, 1 means stop because we got an answer, 2 means stop because of Ctrl-C
 static volatile int NumAnswers, NumAddr, NumAAAA, NumHINFO;
 static char hostname[MAX_ESCAPED_DOMAIN_NAME], hardware[256], software[256];
+static mDNSAddr lastsrc, hostaddr, target;
 static mDNSOpaque16 lastid, id;
 
 //*************************************************************************************************************
@@ -168,6 +172,11 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	{
 	// Snag copy of header ID, then call through
 	lastid = msg->h.id;
+	lastsrc = *srcaddr;
+
+	// We *want* to allow off-net unicast responses here.
+	// For now, the simplest way to allow that is to smash the TTL to 255 so that mDNSCore doesn't reject the packet
+	ttl = 255;
 	__MDNS__mDNSCoreReceive(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID, ttl);
 	}
 
@@ -177,9 +186,12 @@ static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 	(void)question;	// Unused
 	(void)AddRecord;// Unused
 	if (!id.NotAnInteger) id = lastid;
-	ConvertDomainNameToCString(&answer->rdata->u.name, hostname);
-	StopNow = 1;
-	mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
+	if (answer->rrtype == kDNSType_PTR || answer->rrtype == kDNSType_CNAME)
+		{
+		ConvertDomainNameToCString(&answer->rdata->u.name, hostname);
+		StopNow = 1;
+		mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
+		}
 	}
 
 static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -193,6 +205,8 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 		NumAnswers++;
 		NumAddr++;
 		mprintf("%##s %s %.4a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ip);
+		hostaddr.type = mDNSAddrType_IPv4;	// Prefer v4 target to v6 target, for now
+		hostaddr.ip.v4 = answer->rdata->u.ip;
 		}
 	else if (answer->rrtype == kDNSType_AAAA)
 		{
@@ -200,6 +214,11 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 		NumAnswers++;
 		NumAAAA++;
 		mprintf("%##s %s %.16a\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.ipv6);
+		if (!hostaddr.type)	// Prefer v4 target to v6 target, for now
+			{
+			hostaddr.type = mDNSAddrType_IPv6;
+			hostaddr.ip.v6 = answer->rdata->u.ipv6;
+			}
 		}
 	else if (answer->rrtype == kDNSType_HINFO)
 		{
@@ -215,6 +234,23 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 
 	// If we've got everything we're looking for, don't need to wait any more
 	if (NumHINFO && (NumAddr || NumAAAA)) StopNow = 1;
+	}
+
+static void ServicesCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	(void)m;		// Unused
+	(void)question;	// Unused
+	(void)AddRecord;// Unused
+	// Right now the mDNSCore targeted-query code is incomplete --
+	// it issues targeted queries, but accepts answers from anywhere
+	// For now, we'll just filter responses here so we don't get confused by responses from someone else
+	if (answer->rrtype == kDNSType_PTR && mDNSSameAddress(&lastsrc, &target))
+		{
+		NumAnswers++;
+		NumAddr++;
+		mprintf("%##s %s %##s\n", answer->name.c, DNSTypeName(answer->rrtype), &answer->rdata->u.name.c);
+		StopNow = 1;
+		}
 	}
 
 mDNSexport void WaitForAnswer(mDNS *const m, int seconds)
@@ -301,9 +337,11 @@ mDNSexport int main(int argc, char **argv)
 	struct in6_addr s6;
 	char buffer[256];
 	DNSQuestion q;
-	mDNSAddr target = zeroAddr;
 
 	if (argc < 2) goto usage;
+	
+	// Since this is a special command-line tool, we want LogMsg() errors to go to stderr, not syslog
+	mDNS_DebugMode = mDNStrue;
 	
     // Initialise the mDNS core.
 	status = mDNS_Init(&mDNSStorage, &PlatformStorage,
@@ -320,8 +358,9 @@ mDNSexport int main(int argc, char **argv)
 		char *arg = argv[this_arg++];
 		if (this_arg > 2) printf("\n");
 
-		id.NotAnInteger = 0;
-		hardware[0] = software[0] = 0;
+		lastid = id = zeroID;
+		hostaddr = target = zeroAddr;
+		hostname[0] = hardware[0] = software[0] = 0;
 		NumAddr = NumAAAA = NumHINFO = 0;
 
 		if (inet_pton(AF_INET, arg, &s4) == 1)
@@ -332,7 +371,7 @@ mDNSexport int main(int argc, char **argv)
 			target.type = mDNSAddrType_IPv4;
 			target.ip.v4.NotAnInteger = s4.s_addr;
 			DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback);
-			if (StopNow == 2) break; else if (StopNow == 0) continue;
+			if (StopNow == 2) break;
 			}
 		else if (inet_pton(AF_INET6, arg, &s6) == 1)
 			{
@@ -350,19 +389,23 @@ mDNSexport int main(int argc, char **argv)
 			target.type = mDNSAddrType_IPv6;
 			bcopy(&s6, &target.ip.v6, sizeof(target.ip.v6));
 			DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback);
-			if (StopNow == 2) break; else if (StopNow == 0) continue;
+			if (StopNow == 2) break;
 			}
 		else
 			strcpy(hostname, arg);
 	
 		// Now we have the host name; get its A, AAAA, and HINFO
-		DoQuery(&q, hostname, kDNSQType_ANY, &target, InfoCallback);
-		if (StopNow == 2) break; else if (StopNow == 0) continue;
+		if (hostname[0]) DoQuery(&q, hostname, kDNSQType_ANY, &target, InfoCallback);
+		if (StopNow == 2) break;
 	
 		if (hardware[0] || software[0])
 			{
 			printf("HINFO Hardware: %s\n", hardware);
 			printf("HINFO Software: %s\n", software);
+			// We need to make sure the services query is targeted
+			if (target.type == 0) target = hostaddr;
+			DoQuery(&q, "_services._mdns._udp.local.", kDNSQType_ANY, &target, ServicesCallback);
+			if (StopNow == 2) break;
 			}
 		else if (NumAnswers)
 			{
