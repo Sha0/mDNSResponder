@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.48  2004/06/09 20:03:37  ksekar
+<rdar://problem/3686163>: Incorrect copying of resource record in deregistration
+
 Revision 1.47  2004/06/09 03:48:28  ksekar
 <rdar://problem/3685226>: nameserver address fails with prod. Lighthouse server
 
@@ -483,10 +486,15 @@ mDNSlocal void deadvertiseIfCallback(mDNS *const m, AuthRecord *const rr, mStatu
 	
    	if (set->uDNS_info.registered)
 		{
-		// copy record, linking copy into list
-		copy = (AuthRecord*)umalloc(sizeof(AuthRecord));
-		if (!copy) { LogMsg("ERROR: Malloc"); return; }
-		umemcpy(copy, rr, sizeof(AuthRecord));
+		// copy resource record
+		copy = (AuthRecord*)umalloc(sizeof(AuthRecord));  // allocate storage
+		if (!copy) { LogMsg("ERROR: Malloc"); return; }        
+		umemcpy(copy, rr, sizeof(AuthRecord));            // copy all fields
+        copy->resrec.rdata = &copy->rdatastorage;         // set rdata pointer         
+        if (rr->resrec.rdata != &rr->rdatastorage) 
+            { LogMsg("ERROR: uDNS_DeadvertiseInterface - expected local rdata storage.  Aborting deregistration"); return; }
+        
+		// link copy into list
 		copy->next = m->uDNS_info.RecordRegistrations;
 		m->uDNS_info.RecordRegistrations = copy;
 		copy->RecordCallback = deadvertiseIfCallback;
@@ -497,7 +505,7 @@ mDNSlocal void deadvertiseIfCallback(mDNS *const m, AuthRecord *const rr, mStatu
 		set->uDNS_info.registered = mDNSfalse;
 		uDNS_DeregisterRecord(m, copy);
 		}
-	else debugf("uDNS_DeadvertiseInterface - interface unregistered");
+	else debugf("uDNS_DeadvertiseInterface - interface not registered");
 	return;	
 	}
 
