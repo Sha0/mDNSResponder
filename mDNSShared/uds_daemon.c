@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.108  2004/11/03 02:25:51  cheshire
+<rdar://problem/3324137> Conflict for Computer Name should update *all* empty string services, not just the one with the conflict
+
 Revision 1.107  2004/11/02 19:39:23  ksekar
 <rdar://problem/3862646> We no longer need to browse .Mac domains by default
 
@@ -887,14 +890,11 @@ void udsserver_info(mDNS *const m)
 
 static void rename_service(service_instance *srv)
 	{
-    mStatus err;
-	
 	if (srv->autoname && !SameDomainLabel(srv->name.c, gmDNS->nicelabel.c))
 		{
 		srv->rename_on_memfree = 1;
-		err = mDNS_DeregisterService(gmDNS, &srv->srs);
-		if (err) LogMsg("ERROR: udsserver_handle_configchange: DeregisterService returned error %ld.  Continuing.", err);
-		// error should never occur - safest to log and continue
+		if (mDNS_DeregisterService(gmDNS, &srv->srs))	// If service deregistered already, we can re-register immediately
+			regservice_callback(gmDNS, &srv->srs, mStatus_MemFree);
 		}	
 	}
 
@@ -2081,7 +2081,13 @@ static void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mSta
         }
     else if (result == mStatus_NameConflict)
     	{
-        if (instance->autoname || instance->renameonconflict)
+        if (instance->autoname)
+        	{
+        	// On conflict for an autoname service, rename and reregister *all* autoname services
+			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
+			m->MainCallback(m, mStatus_ConfigChanged);
+        	}
+        else if (instance->renameonconflict)
             {
             mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
             return;

@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.209  2004/11/03 02:25:50  cheshire
+<rdar://problem/3324137> Conflict for Computer Name should update *all* empty string services, not just the one with the conflict
+
 Revision 1.208  2004/11/03 01:54:14  cheshire
 Update debugging messages
 
@@ -1297,7 +1300,11 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		// Note: By the time we get the mStatus_NameConflict message, the service is already deregistered
 		// and the memory is free, so we don't have to wait for an mStatus_MemFree message as well.
 		if (si->autoname)
-			mDNS_RenameAndReregisterService(m, srs, mDNSNULL);
+			{
+			// On conflict for an autoname service, rename and reregister *all* autoname services
+			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
+			m->MainCallback(m, mStatus_ConfigChanged);
+			}
 		else
 			{
 			// If we get a name conflict, we tell the client about it, and then they are expected to dispose
@@ -1619,8 +1626,8 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 						{
 						debugf("NetworkChanged renaming %##s to %#s", si->srs.RR_SRV.resrec.name.c, m->nicelabel.c);
 						si->autorename = mDNStrue;
-						si->name = m->nicelabel;
-						mDNS_DeregisterService(m, &si->srs);
+						if (mDNS_DeregisterService(m, &si->srs))	// If service deregistered already, we can re-register immediately
+							RegCallback(m, &si->srs, mStatus_MemFree);
 						}
 					}
 				}
