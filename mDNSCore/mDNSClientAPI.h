@@ -1,3 +1,5 @@
+#pragma once
+
 #include "mDNSDebug.h"
 
 #ifdef	__cplusplus
