@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.151  2005/01/11 21:06:29  ksekar
+Changed now-benign LogMsg to debugf
+
 Revision 1.150  2005/01/07 23:59:15  ksekar
 <rdar://problem/3942900> dnd-sd shows the wrong port numbers
 
@@ -1735,7 +1738,7 @@ static mStatus add_domain_to_browser(browser_info_t *info, const domainname *d)
 	for (p = info->browsers; p; p = p->next)
 		{
 		if (SameDomainName(&p->domain, d))
-			{ LogMsg("add_domain_to_browser - attempt to add domain %##d already in list", d->c); return mStatus_AlreadyRegistered; }
+			{ debugf("add_domain_to_browser - attempt to add domain %##d already in list", d->c); return mStatus_AlreadyRegistered; }
 		}
 
 	b = mallocL("browser_t", sizeof(*b));
