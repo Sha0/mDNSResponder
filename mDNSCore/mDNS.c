@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.205  2003/07/11 00:40:18  cheshire
+Tidy up debug message in HostNameCallback()
+
 Revision 1.204  2003/07/11 00:20:32  cheshire
 <rdar://problem/3320087> mDNSResponder should log a message after 16 unsuccessful probes
 
@@ -5522,18 +5525,15 @@ mDNSexport void mDNS_GenerateFQDN(mDNS *const m)
 mDNSlocal void HostNameCallback(mDNS *const m, ResourceRecord *const rr, mStatus result)
 	{
 	(void)rr;	// Unused parameter
-	switch (result)
+
+	#if MDNS_DEBUGMSGS
 		{
-		case mStatus_NoError:
-			debugf("HostNameCallback: %##s (%s) Name registered",    rr->name.c, DNSTypeName(rr->rrtype));
-			break;
-		case mStatus_NameConflict:
-			debugf("HostNameCallback: %##s (%s) Name conflict",      rr->name.c, DNSTypeName(rr->rrtype));
-			break;
-		default:
-			debugf("HostNameCallback: %##s (%s) Unknown result %ld", rr->name.c, DNSTypeName(rr->rrtype), result);
-			break;
+		char *msg = "Unknown result";
+		if      (result == mStatus_NoError)      msg = "Name registered";
+		else if (result == mStatus_NameConflict) msg = "Name conflict";
+		debugf("HostNameCallback: %##s (%s) %s (%ld)", rr->name.c, DNSTypeName(rr->rrtype), msg, result);
 		}
+	#endif
 
 	if (result == mStatus_NameConflict)
 		{
