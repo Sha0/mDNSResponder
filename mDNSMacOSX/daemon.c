@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.204  2004/10/27 01:57:21  cheshire
+Add check of  m->p->InterfaceList
+
 Revision 1.203  2004/10/26 04:31:44  cheshire
 Rename CountSubTypes() as ChopSubTypes()
 
@@ -584,6 +587,7 @@ static void validatelists(mDNS *const m)
 	CacheRecord                 *cr;
 	DNSQuestion                 *q;
 	mDNSu32 slot;
+	NetworkInterfaceInfoOSX     *i;
 
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
 		if (e->ClientMachPort == 0 || e->ClientMachPort == (mach_port_t)~0)
@@ -617,6 +621,10 @@ static void validatelists(mDNS *const m)
 		for (cr = mDNSStorage.rrcache_hash[slot]; cr; cr=cr->next)
 			if (cr->resrec.RecordType == 0 || cr->resrec.RecordType == 0xFF)
 				LogMsg("!!!! Cache slot %lu: %p is garbage (%X) !!!!", slot, rr, rr->resrec.RecordType);
+
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (!i->ifa_name)
+			LogMsg("!!!! InterfaceList: %p is garbage !!!!", i);
 	}
 
 void *mallocL(char *msg, unsigned int size)
