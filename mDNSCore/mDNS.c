@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.452  2004/10/20 01:50:40  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Implemented ForceMCast mode for AuthRecords as well as for Questions
+
 Revision 1.451  2004/10/19 21:33:15  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
@@ -2086,7 +2090,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 #endif
 
 #ifndef UNICAST_DISABLED
-    if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->resrec.name))
+    if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly || rr->ForceMCast || IsLocalDomain(&rr->resrec.name))
     	rr->uDNS_info.id = zeroID;
     else return uDNS_RegisterRecord(m, rr);
 #endif
@@ -2293,7 +2297,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 
 #ifndef UNICAST_DISABLED
-    if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->resrec.name) || !rr->uDNS_info.id.NotAnInteger))
+    if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || rr->ForceMCast || IsLocalDomain(&rr->resrec.name) || !rr->uDNS_info.id.NotAnInteger))
 		return uDNS_DeregisterRecord(m, rr);
 #endif
 	
@@ -5559,6 +5563,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->resrec.RecordType        = RecordType;
 	rr->HostTarget        = mDNSfalse;
 	rr->AllowRemoteQuery  = mDNSfalse;
+	rr->ForceMCast        = mDNSfalse;
 	
 	// Field Group 2: Transient state for Authoritative Records (set in mDNS_Register_internal)
 	// Field Group 3: Transient state for Cache Records         (set in mDNS_Register_internal)
@@ -5722,6 +5727,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 
 	MakeDomainNameFromDNSNameString(&set->RR_PTR.resrec.name, buffer);
 	set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
+	set->RR_PTR.ForceMCast = mDNStrue;	// This PTR points to our dot-local name, so don't ever try to write it into a uDNS server
 
 	set->RR_A.RRSet = &primary->RR_A;	// May refer to self
 

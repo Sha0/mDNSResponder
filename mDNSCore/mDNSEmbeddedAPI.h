@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.226  2004/10/20 01:50:40  cheshire
+<rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
+Implemented ForceMCast mode for AuthRecords as well as for Questions
+
 Revision 1.225  2004/10/19 21:33:17  cheshire
 <rdar://problem/3844991> Cannot resolve non-local registrations using the mach API
 Added flag 'kDNSServiceFlagsForceMulticast'. Passing through an interface id for a unicast name
@@ -1330,7 +1334,7 @@ struct AuthRecord_struct
 	void           *RecordContext;		// Context parameter for the callback function
 	mDNSu8          HostTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
-	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names (not yet implemented)
+	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
 
 	// Transient state for Authoritative Records
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
