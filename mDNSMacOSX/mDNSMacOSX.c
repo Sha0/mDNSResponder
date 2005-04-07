@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.310  2005/04/07 00:49:58  cheshire
+<rdar://problem/4080074> PPP connection disables Bonjour ".local" lookups
+
 Revision 1.309  2005/03/23 05:53:29  cheshire
 Fix %s where it should have been %##s in debugf & LogMsg calls
 
@@ -2144,9 +2147,12 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 							else                                     v6Loopback = ifa;
 						else
 							{
-							AddInterfaceToList(m, ifa, utc);
-							if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
-							else                                     foundav6 = mDNStrue;
+							NetworkInterfaceInfoOSX *i = AddInterfaceToList(m, ifa, utc);
+							if (i && i->Multicast)
+								{
+								if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
+								else                                     foundav6 = mDNStrue;
+								}
 							}
 						}
 					}
