@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.58  2005/04/08 21:37:57  ksekar
+# <rdar://problem/3792767> get_ifi_info doesn't return IPv6 interfaces on Linux
+#
 # Revision 1.57  2005/03/17 04:02:28  cheshire
 # <rdar://problem/3986419> mDNSResponder won't compile with gcc4 on Tiger
 # Changed Makefile to link using gcc instead of libtool
@@ -257,7 +260,7 @@ endif
 else
 
 ifeq ($(os),linux)
-CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK
+CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK -DHAVE_LINUX
 JAVACFLAGS_OS += -I$(JDK)/include/linux
 OPTIONALTARG = nss_mdns
 OPTINSTALL   = InstalledNSS
