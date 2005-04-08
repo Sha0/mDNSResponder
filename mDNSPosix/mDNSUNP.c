@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.24  2005/04/08 21:30:16  ksekar
+<rdar://problem/4007457> Compiling problems with mDNSResponder-98 on Solaris/Sparc v9
+Patch submitted by Bernd Kuhls
+
 Revision 1.23  2004/12/01 04:25:05  cheshire
 <rdar://problem/3872803> Darwin patches for Solaris and Suse
 Provide daemon() for platforms that don't have it
@@ -534,6 +538,7 @@ struct in_pktinfo
 #ifdef NOT_HAVE_DAEMON
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <signal.h>
 int daemon(int nochdir, int noclose)
     {
 	switch (fork())
