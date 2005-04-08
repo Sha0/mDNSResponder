@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.26  2005/04/08 21:43:59  ksekar
+<rdar://problem/4083426>  mDNSPosix (v98) retrieve interface list bug on AMD64 architecture
+Submitted by Andrew de Quincey
+
 Revision 1.25  2005/04/08 21:37:57  ksekar
 <rdar://problem/3792767> get_ifi_info doesn't return IPv6 interfaces on Linux
 
@@ -327,7 +331,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
         ifr = (struct ifreq *) ptr;
 
 		len = GET_SA_LEN(ifr->ifr_addr);
-        ptr += sizeof(ifr->ifr_name) + len; /* for next one in buffer */
+		ptr += sizeof(struct ifreq); /* for next one in buffer */
     
 //        fprintf(stderr, "intf %d name=%s AF=%d\n", index, ifr->ifr_name, ifr->ifr_addr.sa_family);
         
