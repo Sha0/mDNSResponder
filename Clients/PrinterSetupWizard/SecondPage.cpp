@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.15  2005/04/13 17:46:22  shersche
+<rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
+
 Revision 1.14  2005/03/20 20:08:37  shersche
 <rdar://problem/4055670> Second screen should not select a printer by default
 
@@ -343,8 +346,13 @@ CSecondPage::OnResolveService( Service * service )
 {
 	CPrinterSetupWizardSheet * psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
-	
+
 	check( service );
+
+	Queue *	q = service->SelectedQueue();
+
+	check( q );
+	
 
 	//
 	// and set it to selected
@@ -357,8 +365,8 @@ CSecondPage::OnResolveService( Service * service )
 	//
 	SetPrinterInformationState( TRUE );
 
-	m_descriptionField.SetWindowText( service->description );
-	m_locationField.SetWindowText( service->location );
+	m_descriptionField.SetWindowText( q->description );
+	m_locationField.SetWindowText( q->location );
 
 	//
 	// reset the cursor

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.22  2005/04/13 17:46:22  shersche
+<rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
+
 Revision 1.21  2005/03/30 02:09:55  shersche
 Auto-resize the column width to account for differing fonts and font sizes
 
@@ -1042,20 +1045,27 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	CString					text;
 	OSStatus				err					=	kNoErr;
 
+	check( printer );
+	check( service );
+
+	Queue * q = service->SelectedQueue();
+
+	check( q );
+
 	//
 	// first look to see if we have a usb_MFG descriptor
 	//
-	if (service->usb_MFG.GetLength() > 0)
+	if ( q->usb_MFG.GetLength() > 0)
 	{
-		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( service->usb_MFG ) );
+		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( q->usb_MFG ) );
 	}
 
 	if ( manufacturer == NULL )
 	{
-		service->product.Remove('(');
-		service->product.Remove(')');
+		q->product.Remove('(');
+		q->product.Remove(')');
 
-		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( service->product ) );
+		manufacturer = MatchManufacturer( manufacturers, ConvertToManufacturerName ( q->product ) );
 	}
 	
 	//
@@ -1063,17 +1073,17 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	//
 	if ( manufacturer != NULL )
 	{
-		if (service->usb_MDL.GetLength() > 0)
+		if ( q->usb_MDL.GetLength() > 0 )
 		{
-			model = MatchModel ( manufacturer, ConvertToModelName ( service->usb_MDL ) );
+			model = MatchModel ( manufacturer, ConvertToModelName ( q->usb_MDL ) );
 		}
 
-		if ( ( model == NULL ) && ( service->product.GetLength() > 0 ) )
+		if ( ( model == NULL ) && ( q->product.GetLength() > 0 ) )
 		{
-			service->product.Remove('(');
-			service->product.Remove(')');
+			q->product.Remove('(');
+			q->product.Remove(')');
 
-			model = MatchModel ( manufacturer, ConvertToModelName ( service->product ) );
+			model = MatchModel ( manufacturer, ConvertToModelName ( q->product ) );
 		}
 
 		if ( model != NULL )
@@ -1257,12 +1267,18 @@ CThirdPage::MatchGeneric( Printer * printer, Service * service, Manufacturer ** 
 
 	DEBUG_UNUSED( printer );
 
+	check( service );
+
+	Queue * q = service->SelectedQueue();
+
+	check( q );
+
 	Manufacturers::iterator iter = m_manufacturers.find( kGenericManufacturer );
 	require_action_quiet( iter != m_manufacturers.end(), exit, ok = FALSE );
 
 	*manufacturer = iter->second;
 
-	pdl = service->pdl;
+	pdl = q->pdl;
 	pdl.MakeLower();
 
 	if ( pdl.Find( kPDLPCLKey ) != -1 )
