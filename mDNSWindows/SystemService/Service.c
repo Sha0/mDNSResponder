@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.33  2005/04/13 17:48:23  shersche
+<rdar://problem/4079667> Make sure there is only one default route for link-local addresses.
+
 Revision 1.32  2005/04/06 01:32:05  shersche
 Remove default route for link-local addressing when another interface comes up with a routable IPv4 address
 
@@ -266,8 +269,8 @@ static mDNSs32		udsIdle(mDNS * const inMDNS, mDNSs32 interval);
 static void			CoreCallback(mDNS * const inMDNS, mStatus result);
 static void			HostDescriptionChanged(mDNS * const inMDNS);
 static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
-static bool			HaveLLRoute(PMIB_IPFORWARDROW rowExtant );
 static OSStatus		SetLLRoute( mDNS * const inMDNS );
+static bool			HaveRoute( PMIB_IPFORWARDROW rowExtant, unsigned long addr );
 
 #if defined(UNICODE)
 #	define StrLen(X)	wcslen(X)
@@ -1665,11 +1668,11 @@ EventSourceUnlock()
 
 
 //===========================================================================================================================
-//	HaveLLRoute
+//	HaveRoute
 //===========================================================================================================================
 
 static bool
-HaveLLRoute(PMIB_IPFORWARDROW rowExtant)
+HaveRoute( PMIB_IPFORWARDROW rowExtant, unsigned long addr )
 {
 	PMIB_IPFORWARDTABLE	pIpForwardTable	= NULL;
 	DWORD				dwSize			= 0;
@@ -1701,7 +1704,7 @@ HaveLLRoute(PMIB_IPFORWARDROW rowExtant)
 	//
 	for ( i = 0; i < pIpForwardTable->dwNumEntries; i++)
 	{
-		if (pIpForwardTable->table[i].dwForwardDest == inet_addr(kLLNetworkAddr))
+		if ( pIpForwardTable->table[i].dwForwardDest == addr )
 		{
 			memcpy( rowExtant, &(pIpForwardTable->table[i]), sizeof(*rowExtant) );
 			found = true;
@@ -1755,7 +1758,7 @@ SetLLRoute( mDNS * const inMDNS )
 	//
 	// check to make sure we don't already have a route
 	//
-	if (HaveLLRoute(&rowExtant))
+	if ( HaveRoute( &rowExtant, inet_addr( kLLNetworkAddr ) ) )
 	{
 		//
 		// set the age to 0 so that we can do a memcmp.
@@ -1828,12 +1831,15 @@ SetLLRoute( mDNS * const inMDNS )
 		row.dwForwardMetric4	= (DWORD) - 1;
 		row.dwForwardMetric5	= (DWORD) - 1;
 		
-		if ( numInterfaces == 1 )
+		if ( numInterfaces == numLinkLocalInterfaces )
 		{
-			err = CreateIpForwardEntry(&row);
-			require_noerr( err, exit );
+			if ( !HaveRoute( &row, 0 ) )
+			{
+				err = CreateIpForwardEntry(&row);
+				require_noerr( err, exit );
+			}
 		}
-		else if ( numInterfaces != numLinkLocalInterfaces )
+		else
 		{
 			DeleteIpForwardEntry( &row );
 		}
