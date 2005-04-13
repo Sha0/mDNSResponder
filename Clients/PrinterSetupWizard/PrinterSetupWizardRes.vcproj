@@ -38,7 +38,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="$(OutDir)/PrinterWizard.dll"
+				OutputFile="$(OutDir)/PrinterWizardResources.dll"
 				LinkIncremental="2"
 				GenerateDebugInformation="TRUE"
 				SubSystem="2"
@@ -96,7 +96,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="$(OutDir)/PrinterWizard.dll"
+				OutputFile="$(OutDir)/PrinterWizardResources.dll"
 				LinkIncremental="1"
 				GenerateDebugInformation="FALSE"
 				SubSystem="2"
