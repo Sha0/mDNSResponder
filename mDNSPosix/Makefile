@@ -24,6 +24,11 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.59  2005/04/14 21:07:10  rpantos
+# Bug #: 4089257, Clean build broken for Java support on POSIX
+# Submitted by: Roger Pantos
+# Reviewed by: Kiren Sekar
+#
 # Revision 1.58  2005/04/08 21:37:57  ksekar
 # <rdar://problem/3792767> get_ifi_info doesn't return IPv6 interfaces on Linux
 #
@@ -516,8 +521,8 @@ Java: setup $(BUILDDIR)/dns_sd.jar $(BUILDDIR)/libjdns_sd.$(LDSUFFIX)
 
 JAVASRC	= $(SHAREDDIR)/Java
 JARCONTENTS =	$(OBJDIR)/com/apple/dnssd/DNSSDService.class \
-				$(OBJDIR)/com/apple/dnssd/DNSRecord.class \
 				$(OBJDIR)/com/apple/dnssd/DNSSDException.class \
+				$(OBJDIR)/com/apple/dnssd/DNSRecord.class \
 				$(OBJDIR)/com/apple/dnssd/TXTRecord.class \
 				$(OBJDIR)/com/apple/dnssd/DNSSDRegistration.class \
 				$(OBJDIR)/com/apple/dnssd/BaseListener.class \
