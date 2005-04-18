@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.23  2005/04/18 02:33:47  shersche
+<rdar://problem/4091216> Default printer option cannot be deselected
+
 Revision 1.22  2005/04/13 17:46:22  shersche
 <rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
 
@@ -1554,7 +1557,7 @@ void CThirdPage::OnBnClickedDefaultPrinter()
 	printer = psheet->GetSelectedPrinter();
 	require_quiet( printer, exit );
 
-	printer->deflt = m_defaultPrinterCtrl.GetState() ? true : false;
+	printer->deflt = ( m_defaultPrinterCtrl.GetCheck() == BST_CHECKED ) ? true : false;
 
 exit:
 
