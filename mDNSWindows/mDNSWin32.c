@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.89  2005/04/22 07:32:24  shersche
+<rdar://problem/4092108> PPP connection disables Bonjour .local lookups
+<rdar://problem/4093944> mDNSResponder ignores Point-to-Point interfaces
+
 Revision 1.88  2005/04/05 03:53:03  shersche
 <rdar://problem/4066485> Registering with shared secret key doesn't work.
 
@@ -396,7 +400,7 @@ Multicast DNS platform plugin for Win32
 	static GUID										kWSARecvMsgGUID = WSAID_WSARECVMSG;
 #endif
 
-#define kIPv6IfIndexBase							(1000000L)
+#define kIPv6IfIndexBase							(10000000L)
 
 
 #if 0
@@ -485,8 +489,10 @@ struct PolyString
 	mDNSlocal int	getifaddrs_ce( struct ifaddrs **outAddrs );
 #endif
 
+mDNSlocal DWORD				GetPrimaryInterface();
 mDNSlocal mStatus			AddressToIndexAndMask( struct sockaddr * address, uint32_t * index, struct sockaddr * mask );
-mDNSlocal mDNSBool	CanReceiveUnicast( void );
+mDNSlocal mDNSBool			CanReceiveUnicast( void );
+mDNSlocal mDNSBool			IsPointToPoint( IP_ADAPTER_UNICAST_ADDRESS * addr );
 
 mDNSlocal mStatus			StringToAddress( mDNSAddr * ip, LPSTR string );
 mDNSlocal mStatus			RegQueryString( HKEY key, LPCSTR param, LPSTR * string, DWORD * stringLen, DWORD * enabled );
@@ -1731,35 +1737,64 @@ exit:
 IPAddrListElem*
 dDNSPlatformGetDNSServers( void )
 {
-	FIXED_INFO		*	fixedInfo	= NULL;
-	ULONG				bufLen		= sizeof( FIXED_INFO );	
-	IP_ADDR_STRING	*	ipAddr;
-	IPAddrListElem	*	head		= NULL;
-	IPAddrListElem	*	current		= NULL;
+	PIP_PER_ADAPTER_INFO	pAdapterInfo	=	NULL;
+	FIXED_INFO			*	fixedInfo	= NULL;
+	ULONG					bufLen		= 0;	
+	IP_ADDR_STRING		*	dnsServerList;
+	IP_ADDR_STRING		*	ipAddr;
+	IPAddrListElem		*	head		= NULL;
+	IPAddrListElem		*	current		= NULL;
+	DWORD					index;
 	int					i			= 0;
 	mStatus				err;
 
-	while ( 1 )
+	// Get the primary interface.
+
+	index = GetPrimaryInterface();
+
+	// This should have the interface index of the primary index.  Fall back in cases where
+	// it can't be determined.
+
+	if ( index )
 	{
-		if ( fixedInfo )
+		bufLen = 0;
+
+		while ( GetPerAdapterInfo( index, pAdapterInfo, &bufLen ) == ERROR_BUFFER_OVERFLOW )
 		{
-			GlobalFree( fixedInfo );
-			fixedInfo = NULL;
+			pAdapterInfo = (PIP_PER_ADAPTER_INFO) realloc( pAdapterInfo, bufLen );
+			require_action( pAdapterInfo, exit, err = mStatus_NoMemoryErr );
 		}
 
-		fixedInfo = (FIXED_INFO*) GlobalAlloc( GPTR, bufLen );
-   
-		err = GetNetworkParams( fixedInfo, &bufLen );
+		dnsServerList = &pAdapterInfo->DnsServerList;
+	}
+	else
+	{
+		bufLen = sizeof( FIXED_INFO );
 
-		if ( ( err != ERROR_BUFFER_OVERFLOW ) || ( i++ == 100 ) )
+		while ( 1 )
 		{
-			break;
+			if ( fixedInfo )
+			{
+				GlobalFree( fixedInfo );
+				fixedInfo = NULL;
+			}
+
+			fixedInfo = (FIXED_INFO*) GlobalAlloc( GPTR, bufLen );
+	   
+			err = GetNetworkParams( fixedInfo, &bufLen );
+
+			if ( ( err != ERROR_BUFFER_OVERFLOW ) || ( i++ == 100 ) )
+			{
+				break;
+			}
 		}
+
+		require_noerr( err, exit );
+
+		dnsServerList = &fixedInfo->DnsServerList;
 	}
 
-	require_noerr( err, exit );
-
-	for ( ipAddr = &fixedInfo->DnsServerList; ipAddr; ipAddr = ipAddr->Next )
+	for ( ipAddr = dnsServerList; ipAddr; ipAddr = ipAddr->Next )
 	{
 		mDNSAddr			addr;
 		IPAddrListElem	*	last = current;
@@ -1789,6 +1824,11 @@ dDNSPlatformGetDNSServers( void )
 	}
 
 exit:
+
+	if ( pAdapterInfo )
+	{
+		free( pAdapterInfo );
+	}
 
 	if ( fixedInfo )
 	{
@@ -1886,6 +1926,7 @@ dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router
 	DWORD				bufLen		= sizeof( IP_ADAPTER_INFO );
 	int					i;
 	BOOL				found;
+	DWORD				index;
 	mStatus				err = mStatus_NoError;
 
 	DEBUG_UNUSED( m );
@@ -1912,10 +1953,7 @@ dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router
 		}
 	}
 
-	// Windows doesn't really have a concept of a primary adapter,
-	// so we're just going to iterate through all the adapters and
-	// pick the first one that has an IP address assigned and
-	// a gateway assigned
+	index = GetPrimaryInterface();
 
 	for ( pAdapter = pAdapterInfo; pAdapter; pAdapter = pAdapter->Next )
 	{
@@ -1924,23 +1962,14 @@ dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router
 		     pAdapter->GatewayList.IpAddress.String &&
 		     pAdapter->GatewayList.IpAddress.String[0] &&
 		     ( StringToAddress( primary, pAdapter->IpAddressList.IpAddress.String ) == mStatus_NoError ) &&
-		     ( StringToAddress( router, pAdapter->GatewayList.IpAddress.String ) == mStatus_NoError ) )
+		     ( StringToAddress( router, pAdapter->GatewayList.IpAddress.String ) == mStatus_NoError ) &&
+		     ( !index || ( pAdapter->Index == index ) ) )
 		{
 			// Found one that will work
 
 			found = TRUE;
 			break;
 		}
-	}
-
-	if ( !found )
-	{
-		// If we couldn't find one, then let's try the first one in the list
-
-		err = StringToAddress( primary, pAdapter->IpAddressList.IpAddress.String );
-		require_noerr( err, exit );
-
-		found = TRUE;
 	}
 
 exit:
@@ -2283,19 +2312,24 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	mDNSInterfaceData *			ifd;
 	struct ifaddrs *			addrs;
 	struct ifaddrs *			p;
-	struct ifaddrs *			loopback;
+	struct ifaddrs *			loopbackv4;
+	struct ifaddrs *			loopbackv6;
 	u_int						flagMask;
 	u_int						flagTest;
-	BOOL						foundUnicastSock4DestAddr;
-	BOOL						foundUnicastSock6DestAddr;
+	mDNSBool					foundv4;
+	mDNSBool					foundv6;
+	mDNSBool					foundUnicastSock4DestAddr;
+	mDNSBool					foundUnicastSock6DestAddr;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "setting up interface list\n" );
 	check( inMDNS );
 	check( inMDNS->p );
 	
 	addrs						= NULL;
-	foundUnicastSock4DestAddr	= FALSE;
-	foundUnicastSock6DestAddr	= FALSE;
+	foundv4						= mDNSfalse;
+	foundv6						= mDNSfalse;
+	foundUnicastSock4DestAddr	= mDNSfalse;
+	foundUnicastSock6DestAddr	= mDNSfalse;
 	
 	// Tear down any existing interfaces that may be set up.
 	
@@ -2317,10 +2351,11 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	err = getifaddrs( &addrs );
 	require_noerr( err, exit );
 	
-	loopback	= NULL;
+	loopbackv4	= NULL;
+	loopbackv6	= NULL;
 	next		= &inMDNS->p->interfaceList;
-	
-	flagMask = IFF_UP | IFF_MULTICAST | IFF_POINTTOPOINT;
+
+	flagMask = IFF_UP | IFF_MULTICAST;
 	flagTest = IFF_UP | IFF_MULTICAST;
 	
 #if( MDNS_WINDOWS_ENABLE_IPV4 )
@@ -2332,9 +2367,9 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		}
 		if( p->ifa_flags & IFF_LOOPBACK )
 		{
-			if( !loopback )
+			if( !loopbackv4 )
 			{
-				loopback = p;
+				loopbackv4 = p;
 			}
 			continue;
 		}
@@ -2343,7 +2378,16 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		
 		err = SetupInterface( inMDNS, p, &ifd );
 		require_noerr( err, exit );
-		
+
+		// If this guy is point-to-point (ifd->interfaceInfo.McastTxRx == 0 ) we still want to
+		// register him, but we also want to note that we haven't found a v4 interface
+		// so that we register loopback so same host operations work
+ 		
+		if ( ifd->interfaceInfo.McastTxRx == mDNStrue )
+		{
+			foundv4 = mDNStrue;
+		}
+
 		// If we're on a platform that doesn't have WSARecvMsg(), there's no way
 		// of determing the destination address of a packet that is sent to us.
 		// For multicast packets, that's easy to determine.  But for the unicast
@@ -2359,8 +2403,6 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		*next = ifd;
 		next  = &ifd->next;
 		++inMDNS->p->interfaceCount;
-
-		
 	}
 #endif
 	
@@ -2375,9 +2417,9 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		}
 		if( p->ifa_flags & IFF_LOOPBACK )
 		{
-			if( !loopback )
+			if( !loopbackv6 )
 			{
-				loopback = p;
+				loopbackv6 = p;
 			}
 			continue;
 		}
@@ -2387,6 +2429,15 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		err = SetupInterface( inMDNS, p, &ifd );
 		require_noerr( err, exit );
 				
+		// If this guy is point-to-point (ifd->interfaceInfo.McastTxRx == 0 ) we still want to
+		// register him, but we also want to note that we haven't found a v4 interface
+		// so that we register loopback so same host operations work
+ 		
+		if ( ifd->interfaceInfo.McastTxRx == mDNStrue )
+		{
+			foundv6 = mDNStrue;
+		}
+
 		// If we're on a platform that doesn't have WSARecvMsg(), there's no way
 		// of determing the destination address of a packet that is sent to us.
 		// For multicast packets, that's easy to determine.  But for the unicast
@@ -2422,18 +2473,19 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		{
 			continue;
 		}
-		loopback = p;
+		
+		v4loopback = p;
 		break;
 	}
 	
 #endif
 	
-	if( !inMDNS->p->interfaceList && loopback )
+	if ( !foundv4 && loopbackv4 )
 	{
 		dlog( kDebugLevelVerbose, DEBUG_NAME "Interface %40s (0x%08X) %##a\n", 
-			loopback->ifa_name ? loopback->ifa_name : "<null>", loopback->ifa_extra.index, loopback->ifa_addr );
+			loopbackv4->ifa_name ? loopbackv4->ifa_name : "<null>", loopbackv4->ifa_extra.index, loopbackv4->ifa_addr );
 		
-		err = SetupInterface( inMDNS, loopback, &ifd );
+		err = SetupInterface( inMDNS, loopbackv4, &ifd );
 		require_noerr( err, exit );
 		
 #if( MDNS_WINDOWS_ENABLE_IPV4 )
@@ -2548,7 +2600,6 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	ifd->sock		= kInvalidSocketRef;
 	ifd->index		= inIFA->ifa_extra.index;
 	ifd->scopeID	= inIFA->ifa_extra.index;
-	
 	check( strlen( inIFA->ifa_name ) < sizeof( ifd->name ) );
 	strncpy( ifd->name, inIFA->ifa_name, sizeof( ifd->name ) - 1 );
 	ifd->name[ sizeof( ifd->name ) - 1 ] = '\0';
@@ -2563,7 +2614,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	// but we cut the packet rate in half. At this time, reducing the packet rate is more important than v6-only 
 	// devices on a large configured network, so we are willing to make that sacrifice.
 	
-	ifd->interfaceInfo.McastTxRx   = mDNStrue;
+	ifd->interfaceInfo.McastTxRx   = ( ( inIFA->ifa_flags & IFF_MULTICAST ) && !( inIFA->ifa_flags & IFF_POINTTOPOINT ) ) ? mDNStrue : mDNSfalse;
 	ifd->interfaceInfo.InterfaceID = NULL;
 
 	for( p = inMDNS->p->interfaceList; p; p = p->next )
@@ -3918,7 +3969,9 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			ifa->ifa_flags = 0;
 			if( iaa->OperStatus == IfOperStatusUp ) 		ifa->ifa_flags |= IFF_UP;
 			if( iaa->IfType == IF_TYPE_SOFTWARE_LOOPBACK )	ifa->ifa_flags |= IFF_LOOPBACK;
+			else if ( IsPointToPoint( addr ) )				ifa->ifa_flags |= IFF_POINTTOPOINT;
 			if( !( iaa->Flags & IP_ADAPTER_NO_MULTICAST ) )	ifa->ifa_flags |= IFF_MULTICAST;
+
 			
 			// <rdar://problem/4045657> Interface index being returned is 512
 			//
@@ -4366,6 +4419,66 @@ void	freeifaddrs( struct ifaddrs *inIFAs )
 
 
 //===========================================================================================================================
+//	GetPrimaryInterface
+//===========================================================================================================================
+
+mDNSlocal DWORD
+GetPrimaryInterface()
+{
+	PMIB_IPFORWARDTABLE	pIpForwardTable	= NULL;
+	DWORD				dwSize			= 0;
+	BOOL				bOrder			= FALSE;
+	OSStatus			err;
+	DWORD				index			= 0;
+	DWORD				metric			= 0;
+	unsigned long int	i;
+
+	// Find out how big our buffer needs to be.
+
+	err = GetIpForwardTable(NULL, &dwSize, bOrder);
+	require_action( err == ERROR_INSUFFICIENT_BUFFER, exit, err = kUnknownErr );
+
+	// Allocate the memory for the table
+
+	pIpForwardTable = (PMIB_IPFORWARDTABLE) malloc( dwSize );
+	require_action( pIpForwardTable, exit, err = kNoMemoryErr );
+  
+	// Now get the table.
+
+	err = GetIpForwardTable(pIpForwardTable, &dwSize, bOrder);
+	require_noerr( err, exit );
+
+
+	// Search for the row in the table we want.
+
+	for ( i = 0; i < pIpForwardTable->dwNumEntries; i++)
+	{
+		// Look for a default route
+
+		if ( pIpForwardTable->table[i].dwForwardDest == 0 )
+		{
+			if ( index && ( pIpForwardTable->table[i].dwForwardMetric1 >= metric ) )
+			{
+				continue;
+			}
+
+			index	= pIpForwardTable->table[i].dwForwardIfIndex;
+			metric	= pIpForwardTable->table[i].dwForwardMetric1;
+		}
+	}
+
+exit:
+
+	if ( pIpForwardTable != NULL )
+	{
+		free( pIpForwardTable );
+	}
+
+	return index;
+}
+
+
+//===========================================================================================================================
 //	AddressToIndexAndMask
 //===========================================================================================================================
 
@@ -4445,6 +4558,49 @@ mDNSlocal mDNSBool	CanReceiveUnicast( void )
 	dlog( kDebugLevelInfo, DEBUG_NAME "Unicast UDP responses %s\n", ok ? "okay" : "*not allowed*" );
 	return( ok );
 }
+
+
+//===========================================================================================================================
+//	IsPointToPoint
+//===========================================================================================================================
+
+mDNSlocal mDNSBool IsPointToPoint( IP_ADAPTER_UNICAST_ADDRESS * addr )
+{
+	struct ifaddrs	*	addrs	=	NULL;
+	struct ifaddrs	*	p		=	NULL;
+	OSStatus			err;
+	mDNSBool			ret		=	mDNSfalse;
+
+	// For now, only works for IPv4 interfaces
+
+	if ( addr->Address.lpSockaddr->sa_family == AF_INET )
+	{
+		// The getifaddrs_ipv4 call will give us correct information regarding IFF_POINTTOPOINT flags.
+
+		err = getifaddrs_ipv4( &addrs );
+		require_noerr( err, exit );
+
+		for ( p = addrs; p; p = p->ifa_next )
+		{
+			if ( ( addr->Address.lpSockaddr->sa_family == p->ifa_addr->sa_family ) &&
+			     ( ( ( struct sockaddr_in* ) addr->Address.lpSockaddr )->sin_addr.s_addr == ( ( struct sockaddr_in* ) p->ifa_addr )->sin_addr.s_addr ) )
+			{
+				ret = ( p->ifa_flags & IFF_POINTTOPOINT ) ? mDNStrue : mDNSfalse;
+				break;
+			}
+		}
+	}
+
+exit:
+
+	if ( addrs )
+	{
+		freeifaddrs( addrs );
+	}
+
+	return ret;
+}
+
 
 //===========================================================================================================================
 //	GetWindowsVersionString
@@ -4623,6 +4779,7 @@ static mStatus StringToAddress( mDNSAddr * ip, LPSTR string )
 		dwSize = sizeof( sa4 );
 
 		err = WSAStringToAddressA( string, AF_INET, NULL, (struct sockaddr*) &sa4, &dwSize );
+		err = translate_errno( err == 0, WSAGetLastError(), kUnknownErr );
 		require_noerr( err, exit );
 			
 		err = dDNS_SetupAddr( ip, (struct sockaddr*) &sa4 );
