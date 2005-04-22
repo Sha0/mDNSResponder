@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.34  2005/04/22 07:34:23  shersche
+Check an interface's address and make sure it's valid before using it to set link-local routes.
+
 Revision 1.33  2005/04/13 17:48:23  shersche
 <rdar://problem/4079667> Make sure there is only one default route for link-local addresses.
 
@@ -271,6 +274,7 @@ static void			HostDescriptionChanged(mDNS * const inMDNS);
 static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
 static OSStatus		SetLLRoute( mDNS * const inMDNS );
 static bool			HaveRoute( PMIB_IPFORWARDROW rowExtant, unsigned long addr );
+static bool			IsValidAddress( const char * addr );
 
 #if defined(UNICODE)
 #	define StrLen(X)	wcslen(X)
@@ -1724,6 +1728,17 @@ exit:
 
 
 //===========================================================================================================================
+//	IsValidAddress
+//===========================================================================================================================
+
+static bool
+IsValidAddress( const char * addr )
+{
+	return ( addr && ( strcmp( addr, "0.0.0.0" ) != 0 ) ) ? true : false;
+}	
+
+
+//===========================================================================================================================
 //	SetLLRoute
 //===========================================================================================================================
 
@@ -1862,6 +1877,7 @@ GetRouteDestination(DWORD * ifIndex, DWORD * address)
 	IP_ADAPTER_INFO	*	pAdapterInfo	=	NULL;
 	IP_ADAPTER_INFO	*	pAdapter		=	NULL;
 	ULONG				bufLen;
+	mDNSBool			done			=	mDNSfalse;
 	OSStatus			err;
 
 	//
@@ -1921,24 +1937,41 @@ GetRouteDestination(DWORD * ifIndex, DWORD * address)
 		pAdapter = pAdapter->Next;
 	}
 
-	pAdapter	=	pAdapterInfo;
-	err			=	kUnknownErr;
-
-	while (pAdapter)
+	while ( !done )
 	{
-		//
-		// if we don't have an interface selected, choose the first one
-		//
-		if ((pAdapter->Type == MIB_IF_TYPE_ETHERNET) && (!(*ifIndex) || (pAdapter->Index == (*ifIndex))))
+		pAdapter	=	pAdapterInfo;
+		err			=	kUnknownErr;
+
+		while (pAdapter)
 		{
-			*address =	inet_addr( pAdapter->IpAddressList.IpAddress.String );
-			*ifIndex =  pAdapter->Index;
-			err		 =	kNoErr;
-			break;
+			// If we don't have an interface selected, choose the first one that is of type ethernet and
+			// has a valid IP Address
+
+			if ((pAdapter->Type == MIB_IF_TYPE_ETHERNET) && ( IsValidAddress( pAdapter->IpAddressList.IpAddress.String ) ) && (!(*ifIndex) || (pAdapter->Index == (*ifIndex))))
+			{
+				*address =	inet_addr( pAdapter->IpAddressList.IpAddress.String );
+				*ifIndex =  pAdapter->Index;
+				err		 =	kNoErr;
+				break;
+			}
+		
+			pAdapter = pAdapter->Next;
 		}
-	
-		pAdapter = pAdapter->Next;
-	}
+
+		// If we found the right interface, or we weren't trying to find a specific interface then we're done
+
+		if ( !err || !( *ifIndex) )
+		{
+			done = mDNStrue;
+		}
+
+		// Otherwise, try again by wildcarding the interface
+
+		else
+		{
+			*ifIndex = 0;
+		}
+	} 
 
 exit:
 
