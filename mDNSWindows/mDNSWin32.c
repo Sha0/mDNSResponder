@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.91  2005/04/25 21:34:28  shersche
+<rdar://problem/4096465> Wide-Area services don't disappear when interface goes away
+
 Revision 1.90  2005/04/25 21:18:08  shersche
 <rdar://problem/4097314> mDNSResponder crash when interface goes away.  This error seems to be caused by the Windows platform code not returning mStatus_TransientErr when there is a problem with a udp unicast send.
 
@@ -3694,6 +3697,13 @@ mDNSlocal void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 	err = SetupInterfaceList( inMDNS );
 	check_noerr( err );
 		
+	err = dDNS_Setup( inMDNS );
+	check_noerr( err );
+
+	// so that LLQs are restarted against the up to date name servers
+
+	mDNS_UpdateLLQs( inMDNS );
+
 	mDNSPlatformUnlock( inMDNS );
 	
 	// Inform clients of the change.
@@ -3755,6 +3765,10 @@ mDNSlocal void ProcessingThreadTCPIPConfigChanged( mDNS * inMDNS )
 	err = dDNS_Setup( inMDNS );
 	check_noerr( err );
 
+	// so that LLQs are restarted against the up to date name servers
+
+	mDNS_UpdateLLQs( inMDNS );
+
 	// and reset the event handler
 
 	if ( ( inMDNS->p->tcpipKey != NULL ) && ( inMDNS->p->tcpipChangedEvent ) )
@@ -3781,6 +3795,10 @@ mDNSlocal void	ProcessingThreadDynDNSConfigChanged( mDNS *inMDNS )
 
 	err = dDNS_Setup( inMDNS );
 	check_noerr( err );
+
+	// so that LLQs are restarted against the up to date name servers
+
+	mDNS_UpdateLLQs( inMDNS );
 
 	// and reset the event handler
 
