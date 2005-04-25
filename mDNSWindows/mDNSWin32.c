@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.90  2005/04/25 21:18:08  shersche
+<rdar://problem/4097314> mDNSResponder crash when interface goes away.  This error seems to be caused by the Windows platform code not returning mStatus_TransientErr when there is a problem with a udp unicast send.
+
 Revision 1.89  2005/04/22 07:32:24  shersche
 <rdar://problem/4092108> PPP connection disables Bonjour .local lookups
 <rdar://problem/4093944> mDNSResponder ignores Point-to-Point interfaces
@@ -827,7 +830,20 @@ mStatus
 	{
 		n = sendto( sendingsocket, (char *) inMsg, n, 0, (struct sockaddr *) &addr, sizeof( addr ) );
 		err = translate_errno( n > 0, errno_compat(), kWriteErr );
-		require_noerr( err, exit );
+
+		if ( err )
+		{
+			// Don't report EHOSTDOWN (i.e. ARP failure), ENETDOWN, or no route to host for unicast destinations
+
+			if ( !mDNSAddressIsAllDNSLinkGroup( inDstIP ) && ( WSAGetLastError() == WSAEHOSTDOWN || WSAGetLastError() == WSAENETDOWN || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAENETUNREACH ) )
+			{
+				err = mStatus_TransientErr;
+			}
+			else
+			{
+				require_noerr( err, exit );
+			}
+		}
 	}
 	
 exit:
