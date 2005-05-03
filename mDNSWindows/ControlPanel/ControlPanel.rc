@@ -60,7 +60,6 @@ BEGIN
     END
 END
 
-
 #ifdef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -120,13 +119,13 @@ CAPTION "Hostname"
 FONT 8, "MS Sans Serif", 0, 0, 0x0
 BEGIN
     LTEXT           "Enter a hostname for this computer. Other computers on the Internet will be able to reach your computer using this hostname.",
-                    IDC_STATIC,7,19,248,28
-    LTEXT           "Hostname:",IDC_STATIC,15,55,35,8
-    EDITTEXT        IDC_EDIT1,52,53,187,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Password...",IDC_BUTTON1,52,72,67,14
-    ICON            IDI_FAILURE,IDC_FAILURE,240,50,21,20,SS_CENTERIMAGE | 
+                    IDC_STATIC,10,19,245,28
+    LTEXT           "Hostname:",IDC_STATIC,13,55,35,8
+    EDITTEXT        IDC_EDIT1,55,53,184,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Password...",IDC_BUTTON1,55,72,65,14
+    ICON            IDI_FAILURE,IDC_FAILURE,240,50,20,20,SS_CENTERIMAGE | 
                     SS_REALSIZEIMAGE
-    ICON            IDI_SUCCESS,IDC_SUCCESS,240,50,21,20,SS_CENTERIMAGE | 
+    ICON            IDI_SUCCESS,IDC_SUCCESS,240,50,20,20,SS_CENTERIMAGE | 
                     SS_REALSIZEIMAGE | NOT WS_VISIBLE
 END
 
@@ -136,12 +135,12 @@ CAPTION "Registration"
 FONT 8, "MS Sans Serif", 0, 0, 0x0
 BEGIN
     CONTROL         "Domain:",IDC_CHECK1,"Button",BS_AUTOCHECKBOX | 
-                    WS_TABSTOP,13,54,42,10
-    COMBOBOX        IDC_COMBO2,59,53,189,46,CBS_DROPDOWN | CBS_SORT | 
+                    WS_TABSTOP,13,54,41,10
+    COMBOBOX        IDC_COMBO2,55,53,193,46,CBS_DROPDOWN | CBS_SORT | 
                     WS_DISABLED | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON      "Password...",IDC_BUTTON1,59,72,65,14
+    PUSHBUTTON      "Password...",IDC_BUTTON1,55,72,65,14
     LTEXT           "Check the box and enter a registration domain to enable Bonjour advertising beyond the local subnet. ",
-                    IDC_STATIC,14,20,233,23
+                    IDC_STATIC,10,19,233,23
 END
 
 IDR_SECRET DIALOGEX 0, 0, 251, 90
