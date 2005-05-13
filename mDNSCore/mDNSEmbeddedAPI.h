@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.283  2005/05/13 20:45:09  ksekar
+<rdar://problem/4074400> Rapid wide-area txt record updates don't work
+
 Revision 1.282  2005/03/16 00:42:32  ksekar
 <rdar://problem/4012279> Long-lived queries not working on Windows
 
@@ -1509,10 +1512,11 @@ typedef struct
     mDNSBool     SRVChanged;              // temporarily deregistered service because its SRV target or port changed
 
     // uDNS_UpdateRecord support fields
-	mDNSBool     UpdateQueued; // Update the rdata once the current pending operation completes
-	RData       *UpdateRData;  // Pointer to new RData while a record update is in flight
-	mDNSu16      UpdateRDLen;  // length of above field
-	mDNSRecordUpdateCallback *UpdateRDCallback; // client callback to free old rdata
+    RData *OrigRData;      mDNSu16 OrigRDLen;     // previously registered, being deleted
+    RData *InFlightRData;  mDNSu16 InFlightRDLen; // currently being registered
+    RData *QueuedRData;    mDNSu16 QueuedRDLen;   // if the client call Update while an update is in flight, we must finish the
+                                                  // pending operation (re-transmitting if necessary) THEN register the queued update
+	mDNSRecordUpdateCallback *UpdateRDCallback;   // client callback to free old rdata
 	} uDNS_RegInfo;
 
 struct AuthRecord_struct
