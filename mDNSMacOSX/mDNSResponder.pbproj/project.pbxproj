@@ -1631,6 +1631,7 @@
 				FF260A4D07B4477F00CE10E5,
 				FF2A870607B447EF00B14068,
 				FF08480707CEB8E800AE6769,
+				FF354EB208516C63007C00E1,
 			);
 			isa = PBXResourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1819,6 +1820,7 @@
 				FF260A2A07B4464B00CE10E5,
 				FF260A3207B4466900CE10E5,
 				FF260A3307B4466900CE10E5,
+				FF354EB108516C63007C00E1,
 				FF260A4807B4475600CE10E5,
 				FF260A4B07B4477F00CE10E5,
 			);
@@ -1986,6 +1988,19 @@
 		FF2A870707B4481500B14068 = {
 			isa = PBXTargetDependency;
 			target = FF2609E107B440DD00CE10E5;
+		};
+		FF354EB108516C63007C00E1 = {
+			fileEncoding = 4;
+			isa = PBXExecutableFileReference;
+			name = installtool;
+			path = PreferencePane/installtool;
+			refType = 2;
+		};
+		FF354EB208516C63007C00E1 = {
+			fileRef = FF354EB108516C63007C00E1;
+			isa = PBXBuildFile;
+			settings = {
+			};
 		};
 		FF37BE9207614059003C0420 = {
 			buildActionMask = 2147483647;
