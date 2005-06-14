@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.36  2005/06/14 23:14:41  ksekar
+<rdar://problem/3934233> Unable to refresh LLQs
+
 Revision 1.35  2005/03/17 03:57:43  cheshire
 LEASE_OPT_SIZE is now LEASE_OPT_RDLEN; LLQ_OPT_SIZE is now LLQ_OPT_RDLEN
 
@@ -1681,8 +1684,11 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 	
 	if (llq->lease)
 		{
+		struct timeval t;
 		if (llq->lease < LLQ_MIN_LEASE) llq->lease = LLQ_MIN_LEASE;
 		else if (llq->lease > LLQ_MAX_LEASE) llq->lease = LLQ_MIN_LEASE;
+		gettimeofday(&t, NULL);
+		e->expire = t.tv_sec + llq->lease;
 		}
 	
 	ack.src.sin_addr.s_addr = 0; // unused 
