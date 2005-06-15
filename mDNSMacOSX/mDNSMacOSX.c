@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.311  2005/06/15 13:20:43  cheshire
+<rdar://problem/4147774> Be defensive against invalid UTF-8 in dynamic host names
+
 Revision 1.310  2005/04/07 00:49:58  cheshire
 <rdar://problem/4080074> PPP connection disables Bonjour ".local" lookups
 
@@ -1772,25 +1775,45 @@ mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
 			if (!(*(p+1)) && *p == '.') *p = 0; // if last character, strip trailing dot
 			p++;
 			}
-		
-		const void *StatusKey = CFSTR("Status");		
-		const void *StatusVal = CFNumberCreate(NULL, kCFNumberSInt32Type, &status); // CFNumberRef
-		const void *StatusDict = CFDictionaryCreate(NULL, &StatusKey, &StatusVal, 1, NULL, NULL);
 
-		const void *HostKey = CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8);
-		const void *HostDict = CFDictionaryCreate(NULL, &HostKey, &StatusDict, 1, NULL, NULL);
-				
-		const void *StateKey = CFSTR("HostNames"); // CFStringRef
-		CFDictionaryRef StateDict = CFDictionaryCreate(NULL, &StateKey, &HostDict, 1, NULL, NULL);
-		SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), StateDict);
+		// We need to make a CFDictionary called "State:/Network/DynamicDNS" containing (at present) a single entity.
+		// That single entity is a CFDictionary with name "HostNames".
+		// The "HostNames" CFDictionary contains a set of name/value pairs, where the each name is the FQDN
+		// in question, and the corresponding value is a CFDictionary giving the state for that FQDN.
+		// (At present we only support a single FQDN, so this dictionary holds just a single name/value pair.)
+		// The CFDictionary for each FQDN holds (at present) a single name/value pair,
+		// where the name is "Status" and the value is a CFNumber giving an errror code (with zero meaning success).
 
-		CFRelease(StateDict);
-		CFRelease(StateKey);
-		CFRelease(HostDict);
-		CFRelease(HostKey);
-		CFRelease(StatusDict);
-		CFRelease(StatusVal);
-		CFRelease(StatusKey);
+		const CFStringRef StateKeys [1] = { CFSTR("HostNames") };
+		const CFStringRef HostKeys  [1] = { CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8) };
+		const CFStringRef StatusKeys[1] = { CFSTR("Status") };
+		if (!HostKeys[0]) LogMsg("SetDDNSNameStatus: CFStringCreateWithCString(%s) failed", uname);
+		else
+			{
+			const CFNumberRef StatusVals[1] = { CFNumberCreate(NULL, kCFNumberSInt32Type, &status) };
+			if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%ld) failed", status);
+			else
+				{
+				const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, NULL, NULL) };
+				if (HostVals[0])
+					{
+					const CFDictionaryRef StateVals[1] = { CFDictionaryCreate(NULL, (void*)HostKeys, (void*)HostVals, 1, NULL, NULL) };
+					if (StateVals[0])
+						{
+						CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
+						if (StateDict)
+							{
+							SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), StateDict);
+							CFRelease(StateDict);
+							}
+						CFRelease(StatusVals[0]);
+						}
+					CFRelease(HostVals[0]);
+					}
+				CFRelease(StatusVals[0]);
+				}
+			CFRelease(HostKeys[0]);
+			}
 		CFRelease(store);
 		}
 	}
