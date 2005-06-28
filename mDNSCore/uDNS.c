@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.208  2005/06/28 00:24:28  ksekar
+<rdar://problem/4157823> memory smasher in conQueryCallback
+
 Revision 1.207  2005/05/13 20:45:10  ksekar
 <rdar://problem/4074400> Rapid wide-area txt record updates don't work
 
@@ -3690,7 +3693,7 @@ mDNSlocal smAction hndlLookupPorts(DNSMessage *msg, const mDNSu8 *end, ntaContex
 typedef struct
 	{
     DNSQuestion  *question;
-    DNSMessage reply;
+    DNSMessage *reply;
     mDNSu16  replylen;
     int nread;
     mDNS *m;
@@ -3733,14 +3736,18 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 				goto error;
 				}
 			info->replylen = (mDNSu16)((mDNSu16)lenbuf[0] << 8 | lenbuf[1]);
+			if (info->replylen < sizeof(DNSMessageHeader))
+				{ LogMsg("ERROR: conQueryCallback - length too short (%d bytes)", info->replylen);  goto error; }
+			info->reply = umalloc(info->replylen);
+			if (!info->reply) { LogMsg("ERROR: conQueryCallback - malloc failed"); goto error; }
 			}
-		n = mDNSPlatformReadTCP(sd, ((char *)&info->reply) + info->nread, info->replylen - info->nread);
+		n = mDNSPlatformReadTCP(sd, ((char *)info->reply) + info->nread, info->replylen - info->nread);
 		if (n < 0) { LogMsg("ERROR: conQueryCallback - read returned %d", n); goto error; }
 		info->nread += n;
 		if (info->nread == info->replylen)
 			{
 			// Finished reading message; convert the integer parts which are in IETF byte-order (MSB first, LSB second)
-			DNSMessage *msg = &info->reply;
+			DNSMessage *msg = info->reply;
 			mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
 			msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);
 			msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] << 8 | ptr[3]);
@@ -3748,6 +3755,7 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 			msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] << 8 | ptr[7]);
 			uDNS_ReceiveMsg(m, msg, (mDNSu8 *)msg + info->replylen, mDNSNULL, zeroIPPort, mDNSNULL, zeroIPPort, question->InterfaceID);
 			mDNSPlatformTCPCloseConnection(sd);
+			ufree(info->reply);
 			ufree(info);
 			}
 		}
@@ -3757,6 +3765,7 @@ mDNSlocal void conQueryCallback(int sd, void *context, mDNSBool ConnectionEstabl
 
 	error:
 	mDNSPlatformTCPCloseConnection(sd);
+	if (info->reply) ufree(info->reply);
 	ufree(info);
 	mDNS_Unlock(m);
 	}
