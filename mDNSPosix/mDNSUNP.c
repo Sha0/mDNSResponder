@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.27  2005/06/29 15:54:21  cheshire
+<rdar://problem/4113742> mDNSResponder-107.1 does not work on FreeBSD
+Refine last checkin so that it (hopefully) doesn't break get_ifi_info() for every other OS
+
 Revision 1.26  2005/04/08 21:43:59  ksekar
 <rdar://problem/4083426>  mDNSPosix (v98) retrieve interface list bug on AMD64 architecture
 Submitted by Andrew de Quincey
@@ -330,10 +334,13 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
     for (ptr = buf; ptr < buf + ifc.ifc_len; ) {
         ifr = (struct ifreq *) ptr;
 
-		len = GET_SA_LEN(ifr->ifr_addr);
-		ptr += sizeof(struct ifreq); /* for next one in buffer */
-    
-//        fprintf(stderr, "intf %d name=%s AF=%d\n", index, ifr->ifr_name, ifr->ifr_addr.sa_family);
+        /* Advance to next one in buffer */
+        if (sizeof(struct ifreq) > sizeof(ifr->ifr_name) + GET_SA_LEN(ifr->ifr_addr))
+            ptr += sizeof(struct ifreq);
+        else
+            ptr += sizeof(ifr->ifr_name) + GET_SA_LEN(ifr->ifr_addr);
+
+//      fprintf(stderr, "intf %p name=%s AF=%d\n", index, ifr->ifr_name, ifr->ifr_addr.sa_family);
         
         if (ifr->ifr_addr.sa_family != family)
             continue;   /* ignore if not desired address family */
