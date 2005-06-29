@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.38  2005/06/29 10:03:56  cheshire
+Fix compile errors and warnings
+
 Revision 1.37  2005/06/27 22:12:17  ksekar
 <rdar://problem/4163315> dnsextd performance improvements
 
@@ -164,6 +167,7 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #include <syslog.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/resource.h>
 #include <time.h>
 #include <errno.h>
 
@@ -419,12 +423,11 @@ mDNSlocal void HdrHToN(PktMsg *pkt)
 // caller terminates connection via close()
 mDNSlocal int ConnectToServer(DaemonInfo *d)
 	{
-	int sd;
 	int ntries = 0, retry = 0;
 
 	while (1)
 		{
-	    sd = socket(AF_INET, SOCK_STREAM, 0);
+	    int sd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sd < 0) { LogErr("ConnectToServer", "socket");  return -1; }
 		if (!connect(sd, (struct sockaddr *)&d->saddr, sizeof(d->saddr))) return sd;
 		close(sd);
@@ -1060,22 +1063,20 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zone,
 // iterate over table, deleting expired records (or all records if DeleteAll is true)
 mDNSlocal void DeleteRecords(DaemonInfo *d, mDNSBool DeleteAll)
 	{
-	int i, sd;
-	RRTableElem **ptr, *fptr;	
 	struct timeval now;
-	
-	sd = ConnectToServer(d);
+	int i, sd = ConnectToServer(d);
 	if (sd < 0) { Log("DeleteRecords: ConnectToServer failed"); return; }  
 	if (gettimeofday(&now, NULL)) { LogErr("DeleteRecords ", "gettimeofday"); return; }
 	if (pthread_mutex_lock(&d->tablelock)) { LogErr("DeleteRecords", "pthread_mutex_lock"); return; }
 
 	for (i = 0; i < d->nbuckets; i++)
 		{
-		ptr = &d->table[i];
+		RRTableElem **ptr = &d->table[i];
 		while (*ptr)
 			{
 			if (DeleteAll || (*ptr)->expire - now.tv_sec < 0)
 				{
+				RRTableElem *fptr;
 				// delete record from server
 				DeleteOneRecord(d, &(*ptr)->rr, &(*ptr)->zone, sd);
 				fptr = *ptr;
@@ -1594,7 +1595,7 @@ mDNSlocal void PrintLLQTable(DaemonInfo *d)
 mDNSlocal void GenLLQEvents(DaemonInfo *d)
 	{
 	LLQEntry **e;
-	int i, sd;
+	int i;
 	struct timeval t;
 	UpdateAnswerListArgs *args;
 	
@@ -1669,8 +1670,6 @@ mDNSlocal void GenLLQEvents(DaemonInfo *d)
 			a = a->next;
 			}
 		}	
-		
-	close(sd);
 	}
 
 mDNSlocal void SetAnswerList(DaemonInfo *d, LLQEntry *e)
