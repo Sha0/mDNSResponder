@@ -70,6 +70,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #include <errno.h>          // For errno, EINTR
 #include <time.h>
 #include <sys/types.h>      // For u_char
+#include <netdb.h>          // For gethostbyname()
 
 #ifdef _WIN32
 #include <process.h>
@@ -524,13 +525,25 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
+static unsigned long getip(const char *const name)
+	{
+	unsigned long ip = 0;
+	if (inet_pton(AF_INET, name, &ip) != 1)		// If inet_pton fails, try gethostbyname instead
+		{
+		struct hostent *h = gethostbyname(name);
+		if (h) ip = *(unsigned long*)h->h_addr;
+		}
+	return(ip);
+	}
+
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
 	{
-	unsigned long addr = inet_addr(ip);
+	unsigned long addr = getip(ip);
 	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
 	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
 	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, kDNSServiceInterfaceIndexAny, host,
 		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
+	// Note, should probably add support for creating proxy AAAA records too, one day
 	}
 
 static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
