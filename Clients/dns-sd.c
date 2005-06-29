@@ -58,7 +58,7 @@ POSIX systems:
 gcc dns-sd.c -o dns-sd -I../mDNSShared -ldns_sd
 
 Windows:
-cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT -DNOT_HAVE_SETLINEBUF ws2_32.lib ..\mDNSWindows\DLL\Release\dnssd.lib
+cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Release\dnssd.lib
 (may require that you run a Visual Studio script such as vsvars32.bat first)
 */
 
@@ -214,9 +214,10 @@ static const char *GetNextLabel(const char *cstr, char label[64])
 	return(cstr);
 	}
 
-static void DNSSD_API enum_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex,
+static void DNSSD_API enum_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
+	DNSServiceFlags partialflags = flags & ~(kDNSServiceFlagsMoreComing | kDNSServiceFlagsAdd | kDNSServiceFlagsDefault);
 	int labels = 0, depth = 0, i, initial = 0;
 	char text[64];
 	const char *label[128];
@@ -233,10 +234,7 @@ static void DNSSD_API enum_reply(DNSServiceRef client, DNSServiceFlags flags, ui
 	printtimestamp();
 	printf("%-10s", DomainMsg(flags));
 	printf("%-8s", (flags & kDNSServiceFlagsMoreComing) ? "(More)" : "");
-	flags &= ~kDNSServiceFlagsMoreComing;
-	flags &= ~kDNSServiceFlagsAdd;
-	flags &= ~kDNSServiceFlagsDefault;
-	if (flags) printf("Flags: %4X  ", flags);
+	if (partialflags) printf("Flags: %4X  ", partialflags);
 	else printf("             ");
 	
 	// 2. Count the labels
@@ -270,10 +268,10 @@ static void DNSSD_API enum_reply(DNSServiceRef client, DNSServiceFlags flags, ui
 		printf("> %s\n", text);
 		}
 
-	fflush( stdout );
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
-static void DNSSD_API browse_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *replyName, const char *replyType, const char *replyDomain, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
@@ -283,10 +281,10 @@ static void DNSSD_API browse_reply(DNSServiceRef client, DNSServiceFlags flags, 
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
 	printf("%s%6X%3d %-24s %-24s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
-	fflush( stdout );
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
-static void DNSSD_API resolve_reply(DNSServiceRef client, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+static void DNSSD_API resolve_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const char *txtRecord, void *context)
 	{
 	const char *src = txtRecord;
@@ -331,7 +329,7 @@ static void DNSSD_API resolve_reply(DNSServiceRef client, DNSServiceFlags flags,
 		printf(" TXT %s", txtInfo);
 		}
 	printf("\n");
-	fflush( stdout );
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
 static void myTimerCallBack(void)
@@ -387,7 +385,7 @@ static void myTimerCallBack(void)
 		}
 	}
 
-static void DNSSD_API reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNSServiceErrorType errorCode,
+static void DNSSD_API reg_reply(DNSServiceRef client, const DNSServiceFlags flags, DNSServiceErrorType errorCode,
 	const char *name, const char *regtype, const char *domain, void *context)
 	{
 	(void)client;   // Unused
@@ -403,10 +401,10 @@ static void DNSSD_API reg_reply(DNSServiceRef client, DNSServiceFlags flags, DNS
 		}
 
 	if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
-	fflush( stdout );
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
-static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
@@ -433,7 +431,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint3
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
 	printtimestamp();
 	printf("%s%6X%3d %-30s%4d%4d %s\n", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
-	fflush( stdout );
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
 //*************************************************************************************************************
@@ -507,7 +505,7 @@ static int getfirstoption( int argc, char **argv, const char *optstr, int *pOptI
 	}
 #endif
 
-static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record, DNSServiceFlags flags,
+static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record, const DNSServiceFlags flags,
     DNSServiceErrorType errorCode, void * context)
 	{
 	char *name = (char *)context;
@@ -523,7 +521,7 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 		case kDNSServiceErr_NameConflict: printf("Name in use, please choose another\n"); exit(-1);
 		default:                          printf("Error %d\n", errorCode); return;
 		}
-	fflush( stdout );
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
@@ -572,9 +570,6 @@ int main(int argc, char **argv)
 	char *dom;
 	int	optind;
 	const char *progname = strrchr(argv[0], kFilePathSep) ? strrchr(argv[0], kFilePathSep) + 1 : argv[0];
-#ifndef NOT_HAVE_SETLINEBUF
-	setlinebuf(stdout);             // Want to see lines as they appear, not block buffered
-#endif
 
 	if (argc > 1 && !strcmp(argv[1], "-lo"))
 		{
