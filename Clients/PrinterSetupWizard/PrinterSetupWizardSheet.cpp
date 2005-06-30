@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.31  2005/06/30 18:02:54  shersche
+<rdar://problem/4124524> Workaround for Mac OS X Printer Sharing bug
+
 Revision 1.30  2005/04/13 17:46:22  shersche
 <rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
 
@@ -1631,6 +1634,13 @@ CPrinterSetupWizardSheet::ParseTextRecord( Service * service, Queue * q, uint16_
 		buf[len] = '\0';
 
 		q->priority = atoi( buf );
+	}
+
+	// <rdar://problem/4124524> Was this printer discovered via OS X Printer Sharing?
+
+	if ( TXTRecordContainsKey( inTXTSize, inTXT, "printer-state" ) || TXTRecordContainsKey( inTXTSize, inTXT, "printer-type" ) )
+	{
+		service->printer->isSharedFromOSX = true;
 	}
 
 exit:

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.24  2005/06/30 18:02:54  shersche
+<rdar://problem/4124524> Workaround for Mac OS X Printer Sharing bug
+
 Revision 1.23  2005/04/18 02:33:47  shersche
 <rdar://problem/4091216> Default printer option cannot be deselected
 
@@ -1091,10 +1094,30 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 
 		if ( model != NULL )
 		{
-			Manufacturers manufacturers;
+			// <rdar://problem/4124524> Offer Generic printers if printer advertises Postscript or PCL.  Workaround
+			// bug in OS X CUPS printer sharing by selecting Generic driver instead of matched printer.
+ 
+			bool			hasGenericDriver = false;
+			Manufacturers	manufacturers;
 			
 			manufacturers[manufacturer->name] = manufacturer;
-			SelectMatch(printer, service, manufacturers, manufacturer, model);
+
+			if ( MatchGeneric( printer, service, &genericManufacturer, &genericModel ) )
+			{
+				manufacturers[genericManufacturer->name] = genericManufacturer;
+
+				hasGenericDriver = true;
+			}
+
+			if ( printer->isSharedFromOSX && hasGenericDriver )
+			{
+				SelectMatch(printer, service, manufacturers, genericManufacturer, genericModel );
+			}
+			else
+			{
+				SelectMatch(printer, service, manufacturers, manufacturer, model);
+			}
+
 			found = true;
 		}
 	}

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.14  2005/06/30 18:02:54  shersche
+<rdar://problem/4124524> Workaround for Mac OS X Printer Sharing bug
+
 Revision 1.13  2005/04/13 17:46:22  shersche
 <rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
 
@@ -141,6 +144,11 @@ namespace PrinterSetupWizard
 		CString			portName;
 		bool			deflt;
 
+		// This let's us know that this printer was discovered via OSX Printer Sharing.
+		// We use this knowledge to workaround a problem with OS X Printer sharing.
+
+		bool			isSharedFromOSX;
+		
 		//
 		// state
 		//
@@ -228,6 +236,8 @@ namespace PrinterSetupWizard
 
 	inline
 	Printer::Printer()
+	:
+		isSharedFromOSX( false )
 	{
 	}
 
