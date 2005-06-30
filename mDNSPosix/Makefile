@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.62  2005/06/30 21:46:55  cheshire
+# <rdar://problem/4167287> Solaris should use unix domain sockets, not loopback
+#
 # Revision 1.61  2005/06/30 20:46:05  cheshire
 # Added Makefile rule to build threadsafe object files where necessary using "-D_REENTRANT".
 #
@@ -262,7 +265,7 @@ endif
 # Configure per-OS peculiarities
 ifeq ($(os),solaris)
 CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -DNOT_HAVE_SOCKLEN_T -DNOT_HAVE_IF_NAMETOINDEX \
-	 -DLOG_PERROR=0 -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -DUSE_TCP_LOOPBACK
+	 -DLOG_PERROR=0 -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME
 CC = gcc
 LD = gcc -shared
 LIBFLAGS = -lsocket -lnsl -lresolv
