@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.35  2005/06/30 18:29:49  shersche
+<rdar://problem/4090059> Don't overwrite the localized service description text
+
 Revision 1.34  2005/04/22 07:34:23  shersche
 Check an interface's address and make sure it's valid before using it to set link-local routes.
 
@@ -905,7 +908,6 @@ static void WINAPI ServiceMain( DWORD argc, LPTSTR argv[] )
 {
 	OSStatus		err;
 	BOOL			ok;
-	TCHAR			desc[ 256 ];
 	
 	err = ServiceSetupEventLogging();
 	check_noerr( err );
@@ -926,13 +928,6 @@ static void WINAPI ServiceMain( DWORD argc, LPTSTR argv[] )
 	gServiceStatusHandle = RegisterServiceCtrlHandlerEx( argv[ 0 ], ServiceControlHandler, NULL );
 	err = translate_errno( gServiceStatusHandle, (OSStatus) GetLastError(), kInUseErr );
 	require_noerr( err, exit );
-	
-	// Setup the description. This should be done by the installer, but it doesn't support that yet.
-			
-	desc[ 0 ] = '\0';
-	LoadString( GetModuleHandle( NULL ), IDS_SERVICE_DESCRIPTION, desc, sizeof( desc ) );
-	err = SetServiceInfo( NULL, kServiceName, desc );
-	check_noerr( err );
 	
 	// Mark the service as starting.
 
