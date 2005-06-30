@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.60  2005/06/30 10:42:38  cheshire
+# Turn on "-Werror" and "-O" for better error reporting
+#
 # Revision 1.59  2005/04/14 21:07:10  rpantos
 # Bug #: 4089257, Clean build broken for Java support on POSIX
 # Submitted by: Roger Pantos
@@ -233,7 +236,6 @@ RM = rm
 LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\" -DMDNS_UDS_SERVERPATH=\"/var/run/mdnsd\"
 LIBFLAGS =
-DNSEXT_FLAGS = -D_REENTRANT -g -Wall -lpthread
 LDSUFFIX = so
 JAVACFLAGS_OS = -fPIC -shared -ldns_sd
 
@@ -245,7 +247,10 @@ OBJDIR = objects/debug
 BUILDDIR = build/debug
 STRIP = echo 
 else
-CFLAGS_DEBUG = -O0 -DMDNS_DEBUGMSGS=0 
+# We use -Os for two reasons:
+# 1. We want to make small binaries, suitable for putting into hardware devices
+# 2. Some of the code analysis warnings only work when some form of optimization is enabled
+CFLAGS_DEBUG = -Os -DMDNS_DEBUGMSGS=0 
 OBJDIR = objects/prod
 BUILDDIR = build/prod
 STRIP = strip -S 
@@ -293,7 +298,7 @@ LDCONFIG = ldconfig
 else
 
 ifeq ($(os),jaguar)
-CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -DNOT_HAVE_SOCKLEN_T
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -DNOT_HAVE_SOCKLEN_T
 LD = libtool -dynamic
 LIBFLAGS = -lSystem
 LDSUFFIX = dylib
@@ -302,7 +307,7 @@ JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Header
 else
 
 ifeq ($(os),panther)
-CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp #-pedantic
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror
 LD = libtool -dynamic
 LIBFLAGS = -lSystem
 LDSUFFIX = dylib
@@ -311,7 +316,7 @@ JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Header
 else
 
 ifeq ($(os),tiger)
-CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Wdeclaration-after-statement
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -Wdeclaration-after-statement
 CC = @gcc-4.0
 LD = $(CC) -dynamiclib
 LIBFLAGS = -lSystem
@@ -600,7 +605,7 @@ $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
 
 $(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.o
-	$(CC) $+ -o $@ $(LIBFLAGS) $(DNSEXT_FLAGS)
+	$(CC) $+ -o $@ $(LIBFLAGS) -lpthread
 
 #############################################################################
 
