@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.61  2005/06/30 20:46:05  cheshire
+# Added Makefile rule to build threadsafe object files where necessary using "-D_REENTRANT".
+#
 # Revision 1.60  2005/06/30 10:42:38  cheshire
 # Turn on "-Werror" and "-O" for better error reporting
 #
@@ -604,7 +607,7 @@ $(BUILDDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
 $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
 
-$(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.o
+$(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.threadsafe.o
 	$(CC) $+ -o $@ $(LIBFLAGS) -lpthread
 
 #############################################################################
@@ -618,6 +621,9 @@ $(OBJDIR)/%.c.o:	$(COREDIR)/%.c
 
 $(OBJDIR)/%.c.o:	$(SHAREDDIR)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(OBJDIR)/%.c.threadsafe.o:	%.c
+	$(CC) $(CFLAGS) -D_REENTRANT -c -o $@ $<
 
 $(OBJDIR)/%.c.so.o:	%.c
 	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
