@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.312  2005/07/04 22:24:36  cheshire
+Export NotifyOfElusiveBug() so other files can call it
+
 Revision 1.311  2005/06/15 13:20:43  cheshire
 <rdar://problem/4147774> Be defensive against invalid UTF-8 in dynamic host names
 
@@ -1094,10 +1097,8 @@ mDNSlocal void RemoveDefRegDomain(domainname *d)
 	debugf("Requested removal of default registration domain %##s not in contained in list", d->c); 
 	}
 
-mDNSlocal void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const char *msg)
+mDNSexport void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const char *msg)
 	{
-	extern mDNS mDNSStorage;
-	NetworkInterfaceInfoOSX *i;
 	static int notifyCount = 0;
 	if (notifyCount) return;
 	
@@ -1105,11 +1106,18 @@ mDNSlocal void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const char
 	// To avoid this, we don't try to display alerts in the first three minutes after boot.
 	if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return;
 	
-	// Determine if we're at Apple (17.*.*.*)
-	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
-		if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && i->ifinfo.ip.ip.v4.b[0] == 17)
-			break;
-	if (!i) return;	// If not at Apple, don't show the alert
+	// Unless ForceAlerts is defined, we only show these bug report alerts on machines that have a 17.x.x.x address
+	#if !ForceAlerts
+		{
+		// Determine if we're at Apple (17.*.*.*)
+		extern mDNS mDNSStorage;
+		NetworkInterfaceInfoOSX *i;
+		for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
+			if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && i->ifinfo.ip.ip.v4.b[0] == 17)
+				break;
+		if (!i) return;	// If not at Apple, don't show the alert
+		}
+	#endif
 
 	// Send a notification to the user to contact coreos-networking
 	notifyCount++;
@@ -1369,17 +1377,18 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 // On entry, context points to our CFSocketSet
 // If ss->info is NULL, we received this packet on our anonymous unicast socket
 // If ss->info is non-NULL, we received this packet on port 5353 on the indicated interface
-mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBackType, CFDataRef address, const void *data, void *context)
+mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackType CallBackType, const CFDataRef address, const void *const data, void *const context)
 	{
 	mDNSAddr senderAddr, destAddr;
 	mDNSIPPort senderPort, destPort = MulticastDNSPort;
-	const CFSocketSet *ss = (const CFSocketSet *)context;
+	const CFSocketSet *const ss = (const CFSocketSet *)context;
 	mDNS *const m = ss->m;
 	mDNSInterfaceID InterfaceID = ss->info ? ss->info->ifinfo.InterfaceID : mDNSNULL;
 	struct sockaddr_storage from;
 	size_t fromlen = sizeof(from);
 	char packetifname[IF_NAMESIZE] = "";
-	int err, s1 = -1, skt = CFSocketGetNative(cfs);
+	const int skt = CFSocketGetNative(cfs);
+	int err, s1 = -1;
 	int count = 0;
 	
 	(void)address; // Parameter not used
@@ -1435,15 +1444,15 @@ mDNSlocal void myCFSocketCallBack(CFSocketRef cfs, CFSocketCallBackType CallBack
 				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on unicast socket (Ignored)", &senderAddr, &destAddr);
 				return;
 				}
-			else if (!strcmp(ss->info->ifa_name, packetifname))
-				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s",
-					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
-			else
+			else if (strcmp(ss->info->ifa_name, packetifname))
 				{
 				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
 					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name, packetifname);
 				return;
 				}
+			else
+				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s",
+					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
 			}
 		else
 			{
