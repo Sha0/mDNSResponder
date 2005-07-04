@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.313  2005/07/04 23:52:25  cheshire
+<rdar://problem/3923098> Things are showing up with a bogus interface index
+
 Revision 1.312  2005/07/04 22:24:36  cheshire
 Export NotifyOfElusiveBug() so other files can call it
 
@@ -1379,26 +1382,17 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 // If ss->info is non-NULL, we received this packet on port 5353 on the indicated interface
 mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackType CallBackType, const CFDataRef address, const void *const data, void *const context)
 	{
-	mDNSAddr senderAddr, destAddr;
-	mDNSIPPort senderPort, destPort = MulticastDNSPort;
 	const CFSocketSet *const ss = (const CFSocketSet *)context;
 	mDNS *const m = ss->m;
-	mDNSInterfaceID InterfaceID = ss->info ? ss->info->ifinfo.InterfaceID : mDNSNULL;
-	struct sockaddr_storage from;
-	size_t fromlen = sizeof(from);
-	char packetifname[IF_NAMESIZE] = "";
 	const int skt = CFSocketGetNative(cfs);
-	int err, s1 = -1;
-	int count = 0;
+	const int s1  = (cfs == ss->cfsv4) ? ss->sktv4 : (cfs == ss->cfsv6) ? ss->sktv6 : -1;
+	int err, count = 0;
 	
 	(void)address; // Parameter not used
 	(void)data;    // Parameter not used
 	
 	if (CallBackType != kCFSocketReadCallBack)
 		LogMsg("myCFSocketCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
-
-	if      (cfs == ss->cfsv4) s1 = ss->sktv4;
-	else if (cfs == ss->cfsv6) s1 = ss->sktv6;
 
 	if (s1 < 0 || s1 != skt)
 		{
@@ -1407,9 +1401,19 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 		LogMsg("myCFSocketCallBack: cfsv6 %p, sktv6 %d", ss->cfsv6, ss->sktv6);
 		}
 
-	mDNSu8 ttl;
-	while ((err = myrecvfrom(s1, &m->imsg, sizeof(m->imsg), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname, &ttl)) >= 0)
+	while (1)
 		{
+		// NOTE: When handling multiple packets in a batch, MUST reset InterfaceID before handling each packet
+		mDNSInterfaceID InterfaceID = ss->info ? ss->info->ifinfo.InterfaceID : mDNSNULL;
+		mDNSAddr senderAddr, destAddr;
+		mDNSIPPort senderPort, destPort = MulticastDNSPort;
+		struct sockaddr_storage from;
+		size_t fromlen = sizeof(from);
+		char packetifname[IF_NAMESIZE] = "";
+		mDNSu8 ttl;
+		err = myrecvfrom(s1, &m->imsg, sizeof(m->imsg), (struct sockaddr *)&from, &fromlen, &destAddr, packetifname, &ttl);
+		if (err < 0) break;
+		
 		count++;
 		if (from.ss_family == AF_INET)
 			{
@@ -1456,8 +1460,10 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 			}
 		else
 			{
-			// Note: For unicast packets, try to find the matching mDNSCore interface object 
-			// (though we may not be able to, for unicast packets received over something like a PPP link)
+			// Note: Unicast packets are delivered to *one* of our listening sockets,
+			// not necessarily the one bound to the physical interface where the packet arrived.
+			// To sort this out we search our interface list and update InterfaceID to reference
+			// the mDNSCore interface object for the interface where the packet was actually received.
 			NetworkInterfaceInfo *intf = m->HostInterfaces;
 			while (intf && strcmp(intf->ifname, packetifname)) intf = intf->next;
 			if (intf) InterfaceID = intf->InterfaceID;
