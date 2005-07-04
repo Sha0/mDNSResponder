@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.209  2005/07/04 21:16:37  cheshire
+Minor code tidying -- initialize variables where they are declared
+
 Revision 1.208  2005/06/28 00:24:28  ksekar
 <rdar://problem/4157823> memory smasher in conQueryCallback
 
@@ -4522,15 +4525,12 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 
 mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 	{
-	NATTraversalInfo *ptr, *cur;
-	mDNSs32 nextevent;
-
-	ptr = m->uDNS_info.NATTraversals;
-	nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+	NATTraversalInfo *ptr = m->uDNS_info.NATTraversals;
+	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
 	
 	while (ptr)
 		{
-		cur = ptr;
+		NATTraversalInfo *cur = ptr;
 		ptr = ptr->next;
 		if (cur->op != NATOp_AddrRequest || cur->state != NATState_Established)  // no refresh necessary for established Add requests
 			{
