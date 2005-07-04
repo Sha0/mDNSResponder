@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.5  2005/07/04 21:13:47  cheshire
+Add missing error message strings
+
 Revision 1.4  2004/12/11 03:00:59  rpantos
 <rdar://problem/3907498> Java DNSRecord API should be cleaned up
 
@@ -514,13 +517,23 @@ class	AppleDNSSDException extends DNSSDException
 			"BAD_FLAGS",
 			"UNSUPPORTED",
 			"NOT_INITIALIZED",
-			"",		// there is NO number 6
+			"NO_CACHE",
 			"ALREADY_REGISTERED",
 			"NAME_CONFLICT",
 			"INVALID",
-			"",		// another MIA
+			"FIREWALL",
 			"INCOMPATIBLE",
 			"BAD_INTERFACE_INDEX"
+			"REFUSED",
+			"NOSUCHRECORD",
+			"NOAUTH",
+			"NOSUCHKEY",
+			"NATTRAVERSAL",
+			"DOUBLENAT",
+			"BADTIME",
+			"BADSIG",
+			"BADKEY",
+			"TRANSIENT"
 		};
 	
 		if ( fErrorCode <= UNKNOWN && fErrorCode > ( UNKNOWN - kMessages.length))
