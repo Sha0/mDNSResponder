@@ -279,9 +279,9 @@ static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags f
 	(void)client;       // Unused
 	(void)errorCode;    // Unused
 	(void)context;      // Unused
-	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-24s %-24s %s\n", "Domain", "Service Type", "Instance Name");
+	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-25s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
-	printf("%s%6X%3d %-24s %-24s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
+	printf("%s%6X%3d %-25s %-25s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
