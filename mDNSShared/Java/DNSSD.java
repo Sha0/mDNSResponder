@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.6  2005/07/05 00:02:25  cheshire
+Add missing comma
+
 Revision 1.5  2005/07/04 21:13:47  cheshire
 Add missing error message strings
 
@@ -523,7 +526,7 @@ class	AppleDNSSDException extends DNSSDException
 			"INVALID",
 			"FIREWALL",
 			"INCOMPATIBLE",
-			"BAD_INTERFACE_INDEX"
+			"BAD_INTERFACE_INDEX",
 			"REFUSED",
 			"NOSUCHRECORD",
 			"NOAUTH",
