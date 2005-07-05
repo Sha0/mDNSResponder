@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.10  2005/07/05 13:01:52  cheshire
+<rdar://problem/4169791> If mDNSResponder daemon is stopped, Java API spins, burning CPU time
+
 Revision 1.9  2004/12/11 03:01:00  rpantos
 <rdar://problem/3907498> Java DNSRecord API should be cleaned up
 
@@ -283,7 +286,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleService_BlockForData( JNIEnv *p
 }
 
 
-JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleService_ProcessResults( JNIEnv *pEnv, jobject pThis)
+JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleService_ProcessResults( JNIEnv *pEnv, jobject pThis)
 /* Call through to DNSServiceProcessResult() while data remains on socket. */
 {
 #if !AUTO_CALLBACKS	// ProcessResults() not supported with AUTO_CALLBACKS 
@@ -291,6 +294,7 @@ JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleService_ProcessResults( JNIEnv 
 	jclass			cls = (*pEnv)->GetObjectClass( pEnv, pThis);
 	jfieldID		contextField = (*pEnv)->GetFieldID( pEnv, cls, "fNativeContext", "I");
 	OpContext		*pContext = (OpContext*) (*pEnv)->GetIntField( pEnv, pThis, contextField);
+	DNSServiceErrorType err = kDNSServiceErr_BadState;
 
 	if ( pContext != NULL)
 	{
@@ -303,11 +307,13 @@ JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleService_ProcessResults( JNIEnv 
 		FD_ZERO( &readFDs);
 		FD_SET( sd, &readFDs);
 
-		while ( 0 < select( sd + 1, &readFDs, (fd_set*) NULL, (fd_set*) NULL, &zeroTimeout))
+		err = kDNSServiceErr_NoError;
+		while (err == kDNSServiceErr_NoError && 0 < select(sd + 1, &readFDs, (fd_set*) NULL, (fd_set*) NULL, &zeroTimeout))
 		{
-			DNSServiceProcessResult( pContext->ServiceRef);
+			err = DNSServiceProcessResult(pContext->ServiceRef);
 		}
 	}
+	return err;
 #endif // AUTO_CALLBACKS
 }
 

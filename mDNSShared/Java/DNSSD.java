@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.7  2005/07/05 13:01:52  cheshire
+<rdar://problem/4169791> If mDNSResponder daemon is stopped, Java API spins, burning CPU time
+
 Revision 1.6  2005/07/05 00:02:25  cheshire
 Add missing comma
 
@@ -640,29 +643,17 @@ class	AppleDNSSD extends DNSSD
 	protected static native int	InitLibrary( int callerVersion);
 }
 
-class	AppleService implements DNSSDService, Runnable
+class	AppleService implements DNSSDService
 {
 	public					AppleService()	{ fNativeContext = 0; }
 
 	public void				stop() { this.HaltOperation(); }
 
-	public void				finalize() throws Throwable
-	{
-		this.stop();	
-		super.finalize();
-	}
-
-	/* The run() method is used internally to schedule an update from another thread */
-	public void				run()
-	{
-		this.ProcessResults();
-	}
-
 	/* Block for timeout ms (or forever if -1). Returns 1 if data present, 0 if timed out, -1 if not browsing. */
 	protected native int	BlockForData( int msTimeout);
 
 	/* Call ProcessResults when data appears on socket descriptor. */
-	protected native void	ProcessResults();
+	protected native int	ProcessResults();
 
 	protected native void	HaltOperation();
 
@@ -680,7 +671,7 @@ class	AppleService implements DNSSDService, Runnable
 // when data appears.
 class	ServiceThread extends Thread
 {
-	public			ServiceThread( AppleService owner) { fOwner = owner; }
+	public			ServiceThread(AppleService owner, BaseListener listener) { fOwner = owner; fListener = listener; }
 
 	public void		run()
 	{
@@ -689,16 +680,14 @@ class	ServiceThread extends Thread
 		while ( true )
 		{
 			result = fOwner.BlockForData( -1);
-			if ( result == 1)
-			{
-				fOwner.run();
-			}
-			else
-				break;	// terminate thread
+			if (result != 1) break;	// terminate thread
+			result = fOwner.ProcessResults();
+			if (result != 0) { fListener.operationFailed(fOwner, result); break; }
 		}
 	}
 
-	protected AppleService	fOwner;
+	protected AppleService fOwner;
+	protected BaseListener fListener;
 }
 
 
@@ -710,7 +699,7 @@ class	AppleBrowser extends AppleService
 		fClient = client; 
 		this.ThrowOnErr( this.CreateBrowser( flags, ifIndex, regType, domain));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread( this).start();
+			new ServiceThread(this, client).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
@@ -728,7 +717,7 @@ class	AppleResolver extends AppleService
 		fClient = client; 
 		this.ThrowOnErr( this.CreateResolver( flags, ifIndex, serviceName, regType, domain));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread( this).start();
+			new ServiceThread(this, client).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
@@ -782,7 +771,7 @@ class	AppleRegistration extends AppleService implements DNSSDRegistration
 		fClient = client; 
 		this.ThrowOnErr( this.BeginRegister( ifIndex, flags, serviceName, regType, domain, host, port, txtRecord));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread( this).start();
+			new ServiceThread(this, client).start();
 	}
 
 	public DNSRecord	addRecord( int flags, int rrType, byte[] rData, int ttl)
@@ -820,7 +809,7 @@ class	AppleQuery extends AppleService
 		fClient = client; 
 		this.ThrowOnErr( this.CreateQuery( flags, ifIndex, serviceName, rrtype, rrclass));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread( this).start();
+			new ServiceThread(this, client).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
@@ -831,13 +820,13 @@ class	AppleQuery extends AppleService
 
 class	AppleDomainEnum extends AppleService
 {
-	public			AppleDomainEnum( int flags, int ifIndex, DomainListener listener) 
+	public			AppleDomainEnum( int flags, int ifIndex, DomainListener client) 
 	throws DNSSDException
 	{ 
-		fClient = listener; 
+		fClient = client; 
 		this.ThrowOnErr( this.BeginEnum( flags, ifIndex));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread( this).start();
+			new ServiceThread(this, client).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
