@@ -70,9 +70,11 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #include <errno.h>          // For errno, EINTR
 #include <time.h>
 #include <sys/types.h>      // For u_char
-#include <netdb.h>          // For gethostbyname()
+
 
 #ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <process.h>
 typedef	int	pid_t;
 #define	getpid	_getpid
@@ -82,6 +84,7 @@ typedef	int	pid_t;
 #include <sys/time.h>		// For struct timeval
 #include <unistd.h>         // For getopt() and optind
 #include <arpa/inet.h>		// For inet_addr()
+#include <netdb.h>          // For gethostbyname()
 #endif
 
 
@@ -528,19 +531,31 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 static unsigned long getip(const char *const name)
 	{
 	unsigned long ip = 0;
-	if (inet_pton(AF_INET, name, &ip) != 1)		// If inet_pton fails, try gethostbyname instead
+	struct addrinfo hints;
+	struct addrinfo * addrs = NULL;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	
+	if (getaddrinfo(name, NULL, &hints, &addrs) == 0)
 		{
-		struct hostent *h = gethostbyname(name);
-		if (h) ip = *(unsigned long*)h->h_addr;
+		ip = ((struct sockaddr_in*) addrs->ai_addr)->sin_addr.s_addr;
 		}
+
+	if (addrs)
+		{
+		freeaddrinfo(addrs);
+		}
+
 	return(ip);
 	}
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
 	{
-	unsigned long addr = getip(ip);
+	unsigned long addr;
 	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
 	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
+	addr = getip(ip);
 	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, kDNSServiceInterfaceIndexAny, host,
 		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
 	// Note, should probably add support for creating proxy AAAA records too, one day
