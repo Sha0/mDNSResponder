@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: dllmain.c,v $
+Revision 1.3  2005/07/07 19:18:29  shersche
+Fix error in previous checkin, change SystemServiceIsDisabled() to IsSystemServiceDisabled()
+
 Revision 1.2  2005/06/30 17:55:35  shersche
 <rdar://problem/4096913> Implement ISSystemServiceDisabled().  This is used to determine how long we should wait to connect to the system service.
 
@@ -55,7 +58,7 @@ BOOL APIENTRY	DllMain( HANDLE inModule, DWORD inReason, LPVOID inReserved )
 
 
 BOOL
-SystemServiceIsDisabled()
+IsSystemServiceDisabled()
 {
 	ENUM_SERVICE_STATUS	*	lpService = NULL;
 	SC_HANDLE					sc;
