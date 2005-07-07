@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.25  2005/07/07 17:53:20  shersche
+Fix problems associated with the CUPS printer workaround fix.
+
 Revision 1.24  2005/06/30 18:02:54  shersche
 <rdar://problem/4124524> Workaround for Mac OS X Printer Sharing bug
 
@@ -195,7 +198,7 @@ CThirdPage::CThirdPage()
 	require_noerr(err, exit);
 
 	//
-	// and lastly load our own special generic printer defs
+	// load our own special generic printer defs
 	//
 	err = LoadGenericPrintDriverDefs( m_manufacturers );
 	require_noerr( err, exit );
@@ -243,7 +246,7 @@ CThirdPage::~CThirdPage()
 //
 // ----------------------------------------------------
 void
-CThirdPage::SelectMatch(Printer * printer, Service * service, Manufacturers & manufacturers, Manufacturer * manufacturer, Model * model)
+CThirdPage::SelectMatch(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model)
 {
 	LVFINDINFO	info;
 	int			nIndex;
@@ -251,8 +254,6 @@ CThirdPage::SelectMatch(Printer * printer, Service * service, Manufacturers & ma
 	check( printer != NULL );
 	check( manufacturer != NULL );
 	check( model != NULL );
-
-	PopulateUI( manufacturers );
 
 	//
 	// select the manufacturer
@@ -285,6 +286,15 @@ CThirdPage::SelectMatch(Printer * printer, Service * service, Manufacturers & ma
 	}
 
 	CopyPrinterSettings( printer, service, manufacturer, model );
+}
+
+
+void
+CThirdPage::SelectMatch(Manufacturers & manufacturers, Printer * printer, Service * service, Manufacturer * manufacturer, Model * model)
+{
+	PopulateUI( manufacturers );
+
+	SelectMatch( printer, service, manufacturer, model );
 }
 
 
@@ -836,7 +846,7 @@ CThirdPage::LoadGenericPrintDriverDefs( Manufacturers & manufacturers )
 
 	// First try and find our generic driver names
 
-	iter = manufacturers.find(L"HP");
+	iter = m_manufacturers.find(L"HP");
 	require_action( iter != manufacturers.end(), exit, err = kUnknownErr );
 	manufacturer = iter->second;
 
@@ -1040,7 +1050,7 @@ CThirdPage::NormalizeManufacturerName( const CString & name )
 // MatchManufacturer and MatchModel in turn.
 //
 
-OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * printer, Service * service)
+OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * printer, Service * service, bool useCUPSWorkaround)
 {
 	CString					normalizedProductName;
 	Manufacturer		*	manufacturer		=	NULL;
@@ -1097,25 +1107,20 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 			// <rdar://problem/4124524> Offer Generic printers if printer advertises Postscript or PCL.  Workaround
 			// bug in OS X CUPS printer sharing by selecting Generic driver instead of matched printer.
  
-			bool			hasGenericDriver = false;
-			Manufacturers	manufacturers;
-			
-			manufacturers[manufacturer->name] = manufacturer;
+			bool hasGenericDriver = false;
 
-			if ( MatchGeneric( printer, service, &genericManufacturer, &genericModel ) )
+			if ( MatchGeneric( manufacturers, printer, service, &genericManufacturer, &genericModel ) )
 			{
-				manufacturers[genericManufacturer->name] = genericManufacturer;
-
 				hasGenericDriver = true;
 			}
 
-			if ( printer->isSharedFromOSX && hasGenericDriver )
+			if ( useCUPSWorkaround && printer->isSharedFromOSX && hasGenericDriver )
 			{
-				SelectMatch(printer, service, manufacturers, genericManufacturer, genericModel );
+				SelectMatch(manufacturers, printer, service, genericManufacturer, genericModel );
 			}
 			else
 			{
-				SelectMatch(printer, service, manufacturers, manufacturer, model);
+				SelectMatch(manufacturers, printer, service, manufacturer, model);
 			}
 
 			found = true;
@@ -1130,26 +1135,18 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	{
 		text.LoadString(IDS_PRINTER_MATCH_GOOD);
 	}
-	else if ( MatchGeneric( printer, service, &genericManufacturer, &genericModel ) )
-	{
-		Manufacturers *	pManufacturers;
-		Manufacturers	manufacturers;
-		
-		text.LoadString(IDS_PRINTER_MATCH_MAYBE);
-		
-		if ( manufacturer )
+	else if ( MatchGeneric( manufacturers, printer, service, &genericManufacturer, &genericModel ) )
+	{	
+		if ( printer->isSharedFromOSX )
 		{
-			manufacturers[genericManufacturer->name]	= genericManufacturer;
-			manufacturers[manufacturer->name]			= manufacturer;
-
-			pManufacturers = &manufacturers;
+			text.LoadString(IDS_PRINTER_MATCH_GOOD);
 		}
 		else
 		{
-			pManufacturers = &m_manufacturers;
+			text.LoadString(IDS_PRINTER_MATCH_MAYBE);
 		}
 
-		SelectMatch( printer, service, *pManufacturers, genericManufacturer, genericModel );
+		SelectMatch( manufacturers, printer, service, genericManufacturer, genericModel );
 	}
 	else
 	{
@@ -1286,7 +1283,7 @@ CThirdPage::MatchModel(Manufacturer * manufacturer, const CString & name)
 // specifically
 //
 BOOL
-CThirdPage::MatchGeneric( Printer * printer, Service * service, Manufacturer ** manufacturer, Model ** model )
+CThirdPage::MatchGeneric( Manufacturers & manufacturers, Printer * printer, Service * service, Manufacturer ** manufacturer, Model ** model )
 {
 	CString	pdl;
 	BOOL	ok = FALSE;
@@ -1299,8 +1296,8 @@ CThirdPage::MatchGeneric( Printer * printer, Service * service, Manufacturer ** 
 
 	check( q );
 
-	Manufacturers::iterator iter = m_manufacturers.find( kGenericManufacturer );
-	require_action_quiet( iter != m_manufacturers.end(), exit, ok = FALSE );
+	Manufacturers::iterator iter = manufacturers.find( kGenericManufacturer );
+	require_action_quiet( iter != manufacturers.end(), exit, ok = FALSE );
 
 	*manufacturer = iter->second;
 
@@ -1447,11 +1444,35 @@ CThirdPage::OnSetActive()
 	//
 	// and try and match the printer
 	//
-	MatchPrinter( m_manufacturers, printer, service );
+
+	if ( psheet->GetLastPage() == psheet->GetPage(1) )
+	{
+		MatchPrinter( m_manufacturers, printer, service, true );
+	}
+	else
+	{
+		SelectMatch(printer, service, m_manufacturerSelected, m_modelSelected);
+	}
 
 exit:
 
 	return CPropertyPage::OnSetActive();
+}
+
+
+BOOL
+CThirdPage::OnKillActive()
+{
+	CPrinterSetupWizardSheet * psheet;
+
+	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
+	require_quiet( psheet, exit );   
+   
+	psheet->SetLastPage(this);
+
+exit:
+
+	return CPropertyPage::OnKillActive();
 }
 
 
@@ -1592,6 +1613,7 @@ void CThirdPage::OnBnClickedHaveDisk()
 	CPrinterSetupWizardSheet	*	psheet;
 	Printer						*	printer;
 	Service						*	service;
+	Manufacturers					manufacturers;
 
 	CFileDialog dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY|OFN_FILEMUSTEXIST, L"Setup Information (*.inf)|*.inf||", this);
 
@@ -1604,16 +1626,29 @@ void CThirdPage::OnBnClickedHaveDisk()
 	service = printer->services.front();
 	require_quiet( service, exit );
 
-	if ( dlg.DoModal() == IDOK )
+	for ( ;; )
 	{
-		Manufacturers	manufacturers;
-		CString			filename = dlg.GetPathName();
+		if ( dlg.DoModal() == IDOK )
+		{
+			CString filename = dlg.GetPathName();
 
-		LoadPrintDriverDefsFromFile( manufacturers, filename, true );
+			LoadPrintDriverDefsFromFile( manufacturers, filename, true );
    
-		PopulateUI( manufacturers );
+			// Sanity check
 
-		MatchPrinter( manufacturers, printer, service );
+			if ( manufacturers.size() > 0 )
+			{
+				PopulateUI( manufacturers );
+
+				MatchPrinter( manufacturers, printer, service, false );
+
+				break;
+			}
+		}
+		else
+		{
+			break;
+		}
 	}
 
 exit:

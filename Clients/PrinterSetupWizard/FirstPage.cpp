@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: FirstPage.cpp,v $
+Revision 1.5  2005/07/07 17:53:20  shersche
+Fix problems associated with the CUPS printer workaround fix.
+
 Revision 1.4  2005/03/16 01:41:29  shersche
 <rdar://problem/3989644> Remove info icon from first page
 
@@ -42,6 +45,7 @@ First checked in
 
 #include "stdafx.h"
 #include "PrinterSetupWizardApp.h"
+#include "PrinterSetupWizardSheet.h"
 #include "FirstPage.h"
 
 #include <DebugServices.h>
@@ -80,18 +84,38 @@ void CFirstPage::DoDataExchange(CDataExchange* pDX)
 BOOL
 CFirstPage::OnSetActive()
 {
-	CPropertySheet* psheet = (CPropertySheet*) GetParent();   
+	CPrinterSetupWizardSheet * psheet;
+	CString greetingText;
+
+	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
+	require_quiet( psheet, exit );   
    
 	psheet->SetWizardButtons(PSWIZB_NEXT);
 
 	m_greeting.SetFont(&m_largeFont);
 
-	CString greetingText;
-
 	greetingText.LoadString(IDS_GREETING);
 	m_greeting.SetWindowText(greetingText);
 
+exit:
+
 	return CPropertyPage::OnSetActive();
+}
+
+
+BOOL
+CFirstPage::OnKillActive()
+{
+	CPrinterSetupWizardSheet * psheet;
+
+	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
+	require_quiet( psheet, exit );   
+   
+	psheet->SetLastPage(this);
+
+exit:
+
+	return CPropertyPage::OnKillActive();
 }
 
 

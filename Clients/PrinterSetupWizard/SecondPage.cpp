@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.16  2005/07/07 17:53:20  shersche
+Fix problems associated with the CUPS printer workaround fix.
+
 Revision 1.15  2005/04/13 17:46:22  shersche
 <rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
 
@@ -230,6 +233,15 @@ exit:
 BOOL
 CSecondPage::OnKillActive()
 {
+	CPrinterSetupWizardSheet * psheet;
+
+	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
+	require_quiet( psheet, exit );   
+   
+	psheet->SetLastPage(this);
+
+exit:
+
 	return CPropertyPage::OnKillActive();
 }
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.32  2005/07/07 17:53:20  shersche
+Fix problems associated with the CUPS printer workaround fix.
+
 Revision 1.31  2005/06/30 18:02:54  shersche
 <rdar://problem/4124524> Workaround for Mac OS X Printer Sharing bug
 
@@ -169,7 +172,8 @@ CPrinterSetupWizardSheet::CPrinterSetupWizardSheet(UINT nIDCaption, CWnd* pParen
 	m_driverThreadFinished( false ),
 	m_pdlBrowser( NULL ),
 	m_ippBrowser( NULL ),
-	m_lprBrowser( NULL )
+	m_lprBrowser( NULL ),
+	m_lastPage( NULL )
 {
 	m_arrow		=	LoadCursor(0, IDC_ARROW);
 	m_wait		=	LoadCursor(0, IDC_APPSTARTING);

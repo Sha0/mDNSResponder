@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.10  2005/07/07 17:53:19  shersche
+Fix problems associated with the CUPS printer workaround fix.
+
 Revision 1.9  2005/04/13 17:46:22  shersche
 <rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
 
@@ -88,6 +91,12 @@ public:
 
 	CPrinterSetupWizardSheet(UINT nIDCaption, CWnd* pParentWnd = NULL, UINT iSelectPage = 0);
 	virtual ~CPrinterSetupWizardSheet();
+
+	CPropertyPage*
+	GetLastPage();
+
+	void
+	SetLastPage(CPropertyPage * page );
 
 	void
 	SetSelectedPrinter(Printer * printer);
@@ -276,6 +285,8 @@ private:
 	DNSServiceRef						m_lprBrowser;
 	DNSServiceRef						m_ippBrowser;
 	DNSServiceRef						m_resolver;
+
+	CPropertyPage					*	m_lastPage;
 };
 
 
@@ -290,6 +301,20 @@ inline HCURSOR
 CPrinterSetupWizardSheet::GetCursor()
 {
 	return m_active;
+}
+
+
+inline CPropertyPage*
+CPrinterSetupWizardSheet::GetLastPage()
+{
+	return m_lastPage;
+}
+
+
+inline void
+CPrinterSetupWizardSheet::SetLastPage(CPropertyPage * lastPage)
+{
+	m_lastPage = lastPage;
 }
 
 
