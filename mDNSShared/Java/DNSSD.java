@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.8  2005/07/11 01:55:21  cheshire
+<rdar://problem/4175511> Race condition in Java API
+
 Revision 1.7  2005/07/05 13:01:52  cheshire
 <rdar://problem/4169791> If mDNSResponder daemon is stopped, Java API spins, burning CPU time
 
@@ -643,9 +646,9 @@ class	AppleDNSSD extends DNSSD
 	protected static native int	InitLibrary( int callerVersion);
 }
 
-class	AppleService implements DNSSDService
+class	AppleService implements DNSSDService, Runnable
 {
-	public					AppleService()	{ fNativeContext = 0; }
+	public					AppleService(BaseListener listener)	{ fNativeContext = 0; fListener = listener; }
 
 	public void				stop() { this.HaltOperation(); }
 
@@ -655,7 +658,7 @@ class	AppleService implements DNSSDService
 	/* Call ProcessResults when data appears on socket descriptor. */
 	protected native int	ProcessResults();
 
-	protected native void	HaltOperation();
+	protected synchronized native void HaltOperation();
 
 	protected void			ThrowOnErr( int rc) throws DNSSDException
 	{
@@ -664,29 +667,42 @@ class	AppleService implements DNSSDService
 	}
 
 	protected int	/* warning */	fNativeContext;		// Private storage for native side
-}
-
-
-// A ServiceThread calls AppleService.BlockForData() and schedules its client
-// when data appears.
-class	ServiceThread extends Thread
-{
-	public			ServiceThread(AppleService owner, BaseListener listener) { fOwner = owner; fListener = listener; }
 
 	public void		run()
 	{
-		int		result;
-		
 		while ( true )
 		{
-			result = fOwner.BlockForData( -1);
-			if (result != 1) break;	// terminate thread
-			result = fOwner.ProcessResults();
-			if (result != 0) { fListener.operationFailed(fOwner, result); break; }
+			// We have to be very careful here. Suppose our DNS-SD operation is stopped from some other thread,
+			// and then immediately afterwards that thread (or some third, unrelated thread) starts a new DNS-SD
+			// operation. The Unix kernel always allocates the lowest available file descriptor to a new socket,
+			// so the same file descriptor is highly likely to be reused for the new operation, and if our old
+			// stale ServiceThread accidentally consumes bytes off that new socket we'll get really messed up.
+			// To guard against that, before calling ProcessResults we check to ensure that our
+			// fNativeContext has not been deleted, which is a telltale sign that our operation was stopped.
+			// After calling ProcessResults we check again, because it's extremely common for callback
+			// functions to stop their own operation and start others. For example, a resolveListener callback
+			// may well stop the resolve and then start a QueryRecord call to monitor the TXT record.
+			//
+			// The remaining risk is that between our checking fNativeContext and calling ProcessResults(),
+			// some other thread could stop the operation and start a new one using same file descriptor, and
+			// we wouldn't know. To prevent this, the AppleService object's HaltOperation() routine is declared
+			// synchronized and we perform our checks synchronized on the AppleService object, which ensures
+			// that HaltOperation() can't execute while we're doing it. Because Java locks are re-entrant this
+			// locking DOESN'T prevent the callback routine from stopping its own operation, but DOES prevent
+			// any other thread from stopping it until after the callback has completed and returned to us here.
+
+			int result = BlockForData(-1);
+			if (result != 1) break;	// If socket has been closed, time to terminate this thread
+			synchronized (this)
+			{
+				if (fNativeContext == 0) break;	// Some other thread stopped our DNSSD operation; time to terminate this thread
+				result = ProcessResults();
+				if (fNativeContext == 0) break;	// Event listener stopped its own DNSSD operation; terminate this thread
+				if (result != 0) { fListener.operationFailed(this, result); break; }	// If error, notify listener
+			}
 		}
 	}
 
-	protected AppleService fOwner;
 	protected BaseListener fListener;
 }
 
@@ -696,16 +712,14 @@ class	AppleBrowser extends AppleService
 	public			AppleBrowser( int flags, int ifIndex, String regType, String domain, BrowseListener client) 
 	throws DNSSDException
 	{ 
-		fClient = client; 
+		super(client);
 		this.ThrowOnErr( this.CreateBrowser( flags, ifIndex, regType, domain));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread(this, client).start();
+			new Thread(this).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
 	protected native int	CreateBrowser( int flags, int ifIndex, String regType, String domain);
-
-	protected BrowseListener	fClient;
 }
 
 class	AppleResolver extends AppleService
@@ -714,17 +728,15 @@ class	AppleResolver extends AppleService
 									String domain, ResolveListener client) 
 	throws DNSSDException
 	{ 
-		fClient = client; 
+		super(client); 
 		this.ThrowOnErr( this.CreateResolver( flags, ifIndex, serviceName, regType, domain));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread(this, client).start();
+			new Thread(this).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
 	protected native int	CreateResolver( int flags, int ifIndex, String serviceName, String regType, 
 											String domain);
-
-	protected ResolveListener	fClient;
 }
 
 // An AppleDNSRecord is a simple wrapper around a dns_sd DNSRecord.
@@ -768,10 +780,10 @@ class	AppleRegistration extends AppleService implements DNSSDRegistration
 								String host, int port, byte[] txtRecord, RegisterListener client) 
 	throws DNSSDException
 	{ 
-		fClient = client; 
+		super(client); 
 		this.ThrowOnErr( this.BeginRegister( ifIndex, flags, serviceName, regType, domain, host, port, txtRecord));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread(this, client).start();
+			new Thread(this).start();
 	}
 
 	public DNSRecord	addRecord( int flags, int rrType, byte[] rData, int ttl)
@@ -796,8 +808,6 @@ class	AppleRegistration extends AppleService implements DNSSDRegistration
 
 	// Sets fNativeContext. Returns non-zero on error.
 	protected native int	AddRecord( int flags, int rrType, byte[] rData, int ttl, AppleDNSRecord destObj);
-
-	protected RegisterListener	fClient;
 }
 
 class	AppleQuery extends AppleService
@@ -806,16 +816,14 @@ class	AppleQuery extends AppleService
 										int rrclass, QueryListener client) 
 	throws DNSSDException
 	{ 
-		fClient = client; 
+		super(client); 
 		this.ThrowOnErr( this.CreateQuery( flags, ifIndex, serviceName, rrtype, rrclass));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread(this, client).start();
+			new Thread(this).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
 	protected native int	CreateQuery( int flags, int ifIndex, String serviceName, int rrtype, int rrclass);
-
-	protected QueryListener	fClient;
 }
 
 class	AppleDomainEnum extends AppleService
@@ -823,16 +831,14 @@ class	AppleDomainEnum extends AppleService
 	public			AppleDomainEnum( int flags, int ifIndex, DomainListener client) 
 	throws DNSSDException
 	{ 
-		fClient = client; 
+		super(client); 
 		this.ThrowOnErr( this.BeginEnum( flags, ifIndex));
 		if ( !AppleDNSSD.hasAutoCallbacks)
-			new ServiceThread(this, client).start();
+			new Thread(this).start();
 	}
 
 	// Sets fNativeContext. Returns non-zero on error.
 	protected native int	BeginEnum( int flags, int ifIndex);
-
-	protected DomainListener	fClient;
 }
 
 

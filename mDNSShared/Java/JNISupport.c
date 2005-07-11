@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.11  2005/07/11 01:55:21  cheshire
+<rdar://problem/4175511> Race condition in Java API
+
 Revision 1.10  2005/07/05 13:01:52  cheshire
 <rdar://problem/4169791> If mDNSResponder daemon is stopped, Java API spins, burning CPU time
 
@@ -206,7 +209,7 @@ static OpContext	*NewContext( JNIEnv *pEnv, jobject owner, const char *ownerClas
 	if ( pContext != NULL)
 	{
 		jfieldID		clientField = (*pEnv)->GetFieldID( pEnv, (*pEnv)->GetObjectClass( pEnv, owner), 
-															"fClient", ownerClass);
+															"fListener", "Lcom/apple/dnssd/BaseListener;");
 
 		pContext->JavaObj = (*pEnv)->NewWeakGlobalRef( pEnv, owner);	// must convert local ref to global to cache;
 		pContext->ClientObj = (*pEnv)->GetObjectField( pEnv, owner, clientField);
@@ -242,6 +245,7 @@ JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleService_HaltOperation( JNIEnv *
 		OpContext	*pContext = (OpContext*) (*pEnv)->GetIntField( pEnv, pThis, contextField);
 		if ( pContext != NULL)
 		{
+			// MUST clear fNativeContext first, BEFORE calling DNSServiceRefDeallocate()
 			(*pEnv)->SetIntField( pEnv, pThis, contextField, 0);
 			if ( pContext->ServiceRef != NULL)
 				DNSServiceRefDeallocate( pContext->ServiceRef);
@@ -308,9 +312,17 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleService_ProcessResults( JNIEnv 
 		FD_SET( sd, &readFDs);
 
 		err = kDNSServiceErr_NoError;
-		while (err == kDNSServiceErr_NoError && 0 < select(sd + 1, &readFDs, (fd_set*) NULL, (fd_set*) NULL, &zeroTimeout))
+		if (0 < select(sd + 1, &readFDs, (fd_set*) NULL, (fd_set*) NULL, &zeroTimeout))
 		{
 			err = DNSServiceProcessResult(pContext->ServiceRef);
+			// Use caution here!
+			// We cannot touch any data structures associated with this operation!
+			// The DNSServiceProcessResult() routine should have invoked our callback,
+			// and our callback could have terminated the operation with op.stop();
+			// and that means HaltOperation() will have been called, which frees pContext.
+			// Basically, from here we just have to get out without touching any stale
+			// data structures that could blow up on us! Particularly, any attempt
+			// to loop here reading more results from the file descriptor is unsafe.
 		}
 	}
 	return err;
@@ -469,7 +481,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleResolver_CreateResolver( JNIEnv
 
 
 static void DNSSD_API	ServiceRegisterReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, 
-								DNSServiceErrorType errorCode, const char *fullname, 
+								DNSServiceErrorType errorCode, const char *serviceName, 
 								const char *regType, const char *domain, void *context)
 {
 	OpContext		*pContext = (OpContext*) context;
@@ -482,7 +494,7 @@ static void DNSSD_API	ServiceRegisterReply( DNSServiceRef sdRef _UNUSED, DNSServ
 		{
 			(*pContext->Env)->CallVoidMethod( pContext->Env, pContext->ClientObj, pContext->Callback, 
 								pContext->JavaObj, flags, 
-								(*pContext->Env)->NewStringUTF( pContext->Env, fullname),
+								(*pContext->Env)->NewStringUTF( pContext->Env, serviceName),
 								(*pContext->Env)->NewStringUTF( pContext->Env, regType),
 								(*pContext->Env)->NewStringUTF( pContext->Env, domain));
 		}
