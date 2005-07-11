@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.314  2005/07/11 02:12:09  cheshire
+<rdar://problem/4147774> Be defensive against invalid UTF-8 in dynamic host names
+Fix copy-and-paste error: "CFRelease(StatusVals[0]);" should be "CFRelease(StateVals[0]);"
+
 Revision 1.313  2005/07/04 23:52:25  cheshire
 <rdar://problem/3923098> Things are showing up with a bogus interface index
 
@@ -1821,7 +1825,7 @@ mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
 							SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), StateDict);
 							CFRelease(StateDict);
 							}
-						CFRelease(StatusVals[0]);
+						CFRelease(StateVals[0]);
 						}
 					CFRelease(HostVals[0]);
 					}
