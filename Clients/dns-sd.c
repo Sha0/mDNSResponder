@@ -552,7 +552,10 @@ static unsigned long getip(const char *const name)
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
 	{
-	unsigned long addr;
+	// Call getip() after the call DNSServiceCreateConnection(). On the Win32 platform, WinSock must
+	// be initialized for getip() to succeed.  Any DNSService* call will initialize WinSock for us,
+	// so make sure DNSServiceCreateConnection() is called before getip() is.
+	unsigned long addr = 0;
 	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
 	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
 	addr = getip(ip);
