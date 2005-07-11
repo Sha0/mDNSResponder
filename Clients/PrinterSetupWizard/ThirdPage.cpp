@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.26  2005/07/11 20:17:15  shersche
+<rdar://problem/4124524> UI fixes associated with CUPS printer workaround fix.
+
 Revision 1.25  2005/07/07 17:53:20  shersche
 Fix problems associated with the CUPS printer workaround fix.
 
@@ -1405,15 +1408,7 @@ CThirdPage::OnSetActive()
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
    
-	if ((m_manufacturerListCtrl.GetFirstSelectedItemPosition() != NULL) &&
-	    (m_modelListCtrl.GetFirstSelectedItemPosition() != NULL))
-	{
-		psheet->SetWizardButtons( PSWIZB_BACK|PSWIZB_NEXT );
-	}
-	else
-	{
-		psheet->SetWizardButtons( PSWIZB_BACK );
-	}
+	psheet->SetWizardButtons( PSWIZB_BACK );
 
 	printer = psheet->GetSelectedPrinter();
 	require_quiet( printer, exit );

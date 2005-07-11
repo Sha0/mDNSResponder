@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.33  2005/07/11 20:17:15  shersche
+<rdar://problem/4124524> UI fixes associated with CUPS printer workaround fix.
+
 Revision 1.32  2005/07/07 17:53:20  shersche
 Fix problems associated with the CUPS printer workaround fix.
 
@@ -1274,7 +1277,7 @@ CPrinterSetupWizardSheet::OnResolveService( Service * service )
 {
 	// Make sure that the active page is page 2
 
-	check( GetActivePage() == &m_pgSecond );
+	require_quiet( GetActivePage() == &m_pgSecond, exit );
 
 	if ( !--service->printer->resolving )
 	{
@@ -1296,6 +1299,10 @@ CPrinterSetupWizardSheet::OnResolveService( Service * service )
 
 		m_pgSecond.OnResolveService( service );
 	}		
+
+exit:
+
+	return;
 }
 
 

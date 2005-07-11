@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.17  2005/07/11 20:17:15  shersche
+<rdar://problem/4124524> UI fixes associated with CUPS printer workaround fix.
+
 Revision 1.16  2005/07/07 17:53:20  shersche
 Fix problems associated with the CUPS printer workaround fix.
 
@@ -218,11 +221,6 @@ CSecondPage::OnSetActive()
 	}
 
 	printer = psheet->GetSelectedPrinter();
-
-	if ( printer != NULL )
-	{
-		m_browseList.Select( printer->item, TVGN_FIRSTVISIBLE );
-	}
 
 exit:
 
