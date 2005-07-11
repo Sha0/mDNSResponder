@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.92  2005/07/11 20:32:17  shersche
+<rdar://problem/4175515> Fix crash when logging into Cisco VPN
+
 Revision 1.91  2005/04/25 21:34:28  shersche
 <rdar://problem/4096465> Wide-Area services don't disappear when interface goes away
 
@@ -1778,11 +1781,13 @@ dDNSPlatformGetDNSServers( void )
 	{
 		bufLen = 0;
 
-		while ( GetPerAdapterInfo( index, pAdapterInfo, &bufLen ) == ERROR_BUFFER_OVERFLOW )
+		while ( ( err = GetPerAdapterInfo( index, pAdapterInfo, &bufLen ) ) == ERROR_BUFFER_OVERFLOW )
 		{
 			pAdapterInfo = (PIP_PER_ADAPTER_INFO) realloc( pAdapterInfo, bufLen );
 			require_action( pAdapterInfo, exit, err = mStatus_NoMemoryErr );
 		}
+
+		require_noerr( err, exit );
 
 		dnsServerList = &pAdapterInfo->DnsServerList;
 	}
@@ -1971,6 +1976,8 @@ dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router
 			break;
 		}
 	}
+
+	require_noerr( err, exit );
 
 	index = GetPrimaryInterface();
 
@@ -4535,11 +4542,13 @@ AddressToIndexAndMask( struct sockaddr * addr, uint32_t * ifIndex, struct sockad
 	// Make an initial call to GetIpAddrTable to get the
 	// necessary size into the dwSize variable
 
-	while ( GetIpAddrTable( pIPAddrTable, &dwSize, 0 ) == ERROR_INSUFFICIENT_BUFFER )
+	while ( ( err = GetIpAddrTable( pIPAddrTable, &dwSize, 0 ) ) == ERROR_INSUFFICIENT_BUFFER )
 	{
 		pIPAddrTable = (MIB_IPADDRTABLE *) realloc( pIPAddrTable, dwSize );
 		require_action( pIPAddrTable, exit, err = WSAENOBUFS );
 	}
+
+	require_noerr( err, exit );
 
 	for ( i = 0; i < pIPAddrTable->dwNumEntries; i++ )
 	{
