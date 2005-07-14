@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.15  2005/07/14 22:12:00  shersche
+<rdar://problem/4178448> Delay load dnssd.dll so that it gracefully handles library loading problems immediately after installing Bonjour
+
 Revision 1.14  2005/03/29 20:35:28  shersche
 <rdar://problem/4053899> Remove reverse lookup implementation due to NSP framework limitation
 
@@ -87,8 +90,16 @@ mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to 
 
 #include	<guiddef.h>
 #include	<ws2spi.h>
+#include	<shlwapi.h>
 
 #include	"dns_sd.h"
+
+#pragma comment(lib, "DelayImp.lib")
+
+#ifdef _MSC_VER
+#define swprintf _snwprintf
+#define snprintf _snprintf
+#endif
 
 #if 0
 #pragma mark == Structures ==
@@ -265,6 +276,7 @@ DEBUG_LOCAL bool					gDNSSDInitialized	= false;
 DEBUG_LOCAL QueryRef				gQueryList	 		= NULL;
 DEBUG_LOCAL HostsFileInfo		*	gHostsFileInfo		= NULL;
 
+
 #if 0
 #pragma mark -
 #endif
@@ -275,9 +287,16 @@ DEBUG_LOCAL HostsFileInfo		*	gHostsFileInfo		= NULL;
 
 BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 {
+	CHAR		path[ MAX_PATH ];
+	CHAR	*	oldPath = NULL;
+	CHAR	*	newPath = NULL;
+	size_t		len;
+	BOOL		ok;
+	HRESULT		err;
+
 	DEBUG_USE_ONLY( inInstance );
 	DEBUG_UNUSED( inReserved );
-	
+
 	switch( inReason )
 	{
 		case DLL_PROCESS_ATTACH:			
@@ -287,6 +306,30 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 			debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelInfo );
 			dlog( kDebugLevelTrace, "\n" );
 			dlog( kDebugLevelVerbose, "%s: process attach\n", __ROUTINE__ );
+
+			// <rdar://problem/4178448> Add this directory to the path variable to ensure
+			// that dnssd.dll can be delay loaded
+
+			err = GetModuleFileName( inInstance, path, sizeof( path ) );
+			err = translate_errno( err != 0, errno_compat(), kUnknownErr );
+			require_noerr( err, exit );
+
+			ok = PathRemoveFileSpec( path );
+			err = translate_errno( ok, errno_compat(), kUnknownErr );
+			require_noerr( err, exit );
+
+			oldPath = getenv( "PATH" );
+			err = translate_errno( oldPath, errno_compat(), kUnknownErr );
+			require_noerr( err, exit );
+
+			len = strlen( oldPath ) + strlen( path ) + strlen( "PATH=" ) + 2;
+			newPath = malloc( len );
+			require_action( newPath, exit, err = kNoMemoryErr );
+			
+			snprintf( newPath, len, "PATH=%s;%s", oldPath, path );
+
+			putenv( newPath );
+
 			break;
 		
 		case DLL_PROCESS_DETACH:
@@ -307,6 +350,14 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 			dlog( kDebugLevelNotice, "%s: unknown reason code (%d)\n", __ROUTINE__, inReason );
 			break;
 	}
+
+exit:
+
+	if ( newPath )
+	{
+		free( newPath );
+	}
+
 	return( TRUE );
 }
 
@@ -674,7 +725,18 @@ DEBUG_LOCAL int WSPAPI
 	require_action_quiet( waitResult != ( WAIT_OBJECT_0 + 1 ), exit, err = WSA_E_CANCELLED );
 	err = translate_errno( waitResult == WAIT_OBJECT_0, (OSStatus) GetLastError(), WSASERVICE_NOT_FOUND );
 	require_noerr_quiet( err, exit );
-	DNSServiceProcessResult(obj->resolver);
+
+	__try
+	{
+		err = DNSServiceProcessResult(obj->resolver);
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+		err = kUnknownErr;
+	}
+
+	require_noerr( err, exit );
+	
 	require_action_quiet( obj->addrValid, exit, err = WSA_E_NO_MORE );
 	
 	// Copy the externalized query results to the callers buffer (if it fits).
@@ -847,7 +909,8 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 	char			name[ kDNSServiceMaxDomainName ];
 	int				n;
 	QueryRef *		p;
-	
+	SOCKET			s;
+
 	obj = NULL;
 	check( inQuerySet );
 	check( inQuerySet->lpszServiceInstanceName );
@@ -877,15 +940,35 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 	obj->cancelEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
 	require_action( obj->cancelEvent, exit, err = WSA_NOT_ENOUGH_MEMORY );
 	
-	// Start the query.
+	// Start the query.  Handle delay loaded DLL errors.
 
-	err = DNSServiceQueryRecord( &obj->resolver, 0, 0, name, kDNSServiceType_A, kDNSServiceClass_IN, 
-		QueryRecordCallback, obj );
+	__try
+	{
+		err = DNSServiceQueryRecord( &obj->resolver, 0, 0, name, kDNSServiceType_A, kDNSServiceClass_IN, 
+			QueryRecordCallback, obj );
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+		err = kUnknownErr;
+	}
+
 	require_noerr( err, exit );
 
 	// Attach the socket to the event
 
-	WSAEventSelect(DNSServiceRefSockFD(obj->resolver), obj->dataEvent, FD_READ|FD_CLOSE);
+	__try
+	{
+		s = DNSServiceRefSockFD(obj->resolver);
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+		s = INVALID_SOCKET;
+	}
+
+	err = translate_errno( s != INVALID_SOCKET, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+
+	WSAEventSelect(s, obj->dataEvent, FD_READ|FD_CLOSE);
 	
 	obj->waitCount = 0;
 	obj->waitHandles[ obj->waitCount++ ] = obj->dataEvent;
@@ -975,7 +1058,14 @@ DEBUG_LOCAL OSStatus	QueryRelease( QueryRef inRef )
 	
 	if( inRef->resolver )
 	{
-		DNSServiceRefDeallocate( inRef->resolver );
+		__try
+		{
+			DNSServiceRefDeallocate( inRef->resolver );
+		}
+		__except( EXCEPTION_EXECUTE_HANDLER )
+		{
+		}
+		
 		inRef->resolver = NULL;
 	}
 	
@@ -1078,7 +1168,14 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 	
 	// Stop the resolver after the first response.
 	
-	DNSServiceRefDeallocate( inRef );
+	__try
+	{
+		DNSServiceRefDeallocate( inRef );
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+	}
+
 	obj->resolver = NULL;
 
 exit:

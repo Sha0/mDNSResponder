@@ -37,10 +37,11 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="../DLL/Debug/dnssd.lib ws2_32.lib iphlpapi.lib"
+				AdditionalDependencies="ws2_32.lib iphlpapi.lib shlwapi.lib"
 				OutputFile="$(OutDir)/mdnsNSP.dll"
 				LinkIncremental="2"
 				ModuleDefinitionFile="mdnsNSP.def"
+				DelayLoadDLLs="dnssd.dll"
 				GenerateDebugInformation="TRUE"
 				ProgramDatabaseFile="$(OutDir)/mdnsNSP.pdb"
 				SubSystem="2"
@@ -87,10 +88,11 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="../DLL/Release/dnssd.lib ws2_32.lib iphlpapi.lib"
+				AdditionalDependencies="ws2_32.lib iphlpapi.lib shlwapi.lib"
 				OutputFile="$(OutDir)/mdnsNSP.dll"
 				LinkIncremental="1"
 				ModuleDefinitionFile="mdnsNSP.def"
+				DelayLoadDLLs="dnssd.dll"
 				GenerateDebugInformation="TRUE"
 				ProgramDatabaseFile="$(IntDir)/$(ProjectName).pdb"
 				SubSystem="2"
