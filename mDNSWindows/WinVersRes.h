@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.41  2005/07/15 15:22:20  shersche
+Bump to 1.0.1.1
+
 Revision 1.40  2005/07/11 20:42:03  shersche
 Bump version to 1.0.0.68
 
@@ -151,10 +154,10 @@ First checked in.
 #define MASTER_PROD_NAME	"Bonjour"
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		1,0,0,68
-#define MASTER_PROD_VERS_STR	"1,0,0,68"
-#define MASTER_PROD_VERS_STR2	"1.0.0.68"
-#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.0.68"
+#define MASTER_PROD_VERS		1,0,1,1
+#define MASTER_PROD_VERS_STR	"1,0,1,1"
+#define MASTER_PROD_VERS_STR2	"1.0.1.1"
+#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.1.1"
 
 // Define the legal copyright
 #define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2005 Apple Computer, Inc."
