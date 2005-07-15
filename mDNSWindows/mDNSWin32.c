@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.93  2005/07/15 06:06:40  shersche
+<rdar://problem/4165134> Change all WinSock allocation loops to bail out after 100 tries to eliminate the possibility of any infinite loops
+
 Revision 1.92  2005/07/11 20:32:17  shersche
 <rdar://problem/4175515> Fix crash when logging into Cisco VPN
 
@@ -1767,8 +1770,8 @@ dDNSPlatformGetDNSServers( void )
 	IPAddrListElem		*	head		= NULL;
 	IPAddrListElem		*	current		= NULL;
 	DWORD					index;
-	int					i			= 0;
-	mStatus				err;
+	int						i			= 0;
+	mStatus					err			= kUnknownErr;
 
 	// Get the primary interface.
 
@@ -1781,8 +1784,15 @@ dDNSPlatformGetDNSServers( void )
 	{
 		bufLen = 0;
 
-		while ( ( err = GetPerAdapterInfo( index, pAdapterInfo, &bufLen ) ) == ERROR_BUFFER_OVERFLOW )
+		for ( i = 0; i < 100; i++ )
 		{
+			err = GetPerAdapterInfo( index, pAdapterInfo, &bufLen );
+
+			if ( err != ERROR_BUFFER_OVERFLOW )
+			{
+				break;
+			}
+
 			pAdapterInfo = (PIP_PER_ADAPTER_INFO) realloc( pAdapterInfo, bufLen );
 			require_action( pAdapterInfo, exit, err = mStatus_NoMemoryErr );
 		}
@@ -1795,7 +1805,7 @@ dDNSPlatformGetDNSServers( void )
 	{
 		bufLen = sizeof( FIXED_INFO );
 
-		while ( 1 )
+		for ( i = 0; i < 100; i++ )
 		{
 			if ( fixedInfo )
 			{
@@ -1804,10 +1814,11 @@ dDNSPlatformGetDNSServers( void )
 			}
 
 			fixedInfo = (FIXED_INFO*) GlobalAlloc( GPTR, bufLen );
+			require_action( fixedInfo, exit, err = mStatus_NoMemoryErr );
 	   
 			err = GetNetworkParams( fixedInfo, &bufLen );
 
-			if ( ( err != ERROR_BUFFER_OVERFLOW ) || ( i++ == 100 ) )
+			if ( err != ERROR_BUFFER_OVERFLOW )
 			{
 				break;
 			}
@@ -1874,9 +1885,9 @@ dDNSPlatformGetDomainName( void )
 	ULONG				bufLen		= sizeof( FIXED_INFO );	
 	DNameListElem	*	head		= NULL;
 	int					i			= 0;
-	mStatus				err;
+	mStatus				err			= kUnknownErr;
 
-	while ( 1 )
+	for ( i = 0; i < 100; i++ )
 	{
 		if ( fixedInfo )
 		{
@@ -1885,10 +1896,11 @@ dDNSPlatformGetDomainName( void )
 		}
 
 		fixedInfo = (FIXED_INFO*) GlobalAlloc( GPTR, bufLen );
+		require_action( fixedInfo, exit, err = mStatus_NoMemoryErr );
    
 		err = GetNetworkParams( fixedInfo, &bufLen );
 
-		if ( ( err != ERROR_BUFFER_OVERFLOW ) || ( i++ == 100 ) )
+		if ( err != ERROR_BUFFER_OVERFLOW )
 		{
 			break;
 		}
@@ -1945,9 +1957,9 @@ dDNSPlatformRegisterSplitDNS( mDNS * m )
 mStatus
 dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router )
 {
-	IP_ADAPTER_INFO *	pAdapterInfo = NULL;
+	IP_ADAPTER_INFO *	pAdapterInfo;
 	IP_ADAPTER_INFO *	pAdapter;
-	DWORD				bufLen		= sizeof( IP_ADAPTER_INFO );
+	DWORD				bufLen;
 	int					i;
 	BOOL				found;
 	DWORD				index;
@@ -1955,26 +1967,21 @@ dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router
 
 	DEBUG_UNUSED( m );
 
-	pAdapterInfo = NULL;
-	found = FALSE;
+	pAdapterInfo	= NULL;
+	bufLen			= 0;
+	found			= FALSE;
 
 	for ( i = 0; i < 100; i++ )
 	{
-		if ( pAdapterInfo )
-		{
-			free( pAdapterInfo );
-			pAdapterInfo = NULL;
-		}
-
-		pAdapterInfo = (IP_ADAPTER_INFO*) malloc( bufLen );
-		require_action( pAdapterInfo, exit, err = kNoMemoryErr );
-
 		err = GetAdaptersInfo( pAdapterInfo, &bufLen);
 
 		if ( err != ERROR_BUFFER_OVERFLOW )
 		{
 			break;
 		}
+
+		pAdapterInfo = (IP_ADAPTER_INFO*) realloc( pAdapterInfo, bufLen );
+		require_action( pAdapterInfo, exit, err = kNoMemoryErr );
 	}
 
 	require_noerr( err, exit );
@@ -4542,8 +4549,15 @@ AddressToIndexAndMask( struct sockaddr * addr, uint32_t * ifIndex, struct sockad
 	// Make an initial call to GetIpAddrTable to get the
 	// necessary size into the dwSize variable
 
-	while ( ( err = GetIpAddrTable( pIPAddrTable, &dwSize, 0 ) ) == ERROR_INSUFFICIENT_BUFFER )
+	for ( i = 0; i < 100; i++ )
 	{
+		err = GetIpAddrTable( pIPAddrTable, &dwSize, 0 );
+
+		if ( err != ERROR_INSUFFICIENT_BUFFER )
+		{
+			break;
+		}
+
 		pIPAddrTable = (MIB_IPADDRTABLE *) realloc( pIPAddrTable, dwSize );
 		require_action( pIPAddrTable, exit, err = WSAENOBUFS );
 	}
