@@ -37,7 +37,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ws2_32.lib iphlpapi.lib shlwapi.lib"
+				AdditionalDependencies="../DLL/Debug/dnssd.lib ws2_32.lib iphlpapi.lib shlwapi.lib"
 				OutputFile="$(OutDir)/mdnsNSP.dll"
 				LinkIncremental="2"
 				ModuleDefinitionFile="mdnsNSP.def"
@@ -88,7 +88,7 @@
 				Name="VCCustomBuildTool"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ws2_32.lib iphlpapi.lib shlwapi.lib"
+				AdditionalDependencies="../DLL/Release/dnssd.lib ws2_32.lib iphlpapi.lib shlwapi.lib"
 				OutputFile="$(OutDir)/mdnsNSP.dll"
 				LinkIncremental="1"
 				ModuleDefinitionFile="mdnsNSP.def"
