@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.28  2005/07/19 11:21:09  cheshire
+<rdar://problem/4170449> Unix Domain Socket leak in mdnsd
+
 Revision 1.27  2005/02/04 00:39:59  cheshire
 Move ParseDNSServers() from PosixDaemon.c to mDNSPosix.c so all Posix client layers can use it
 
@@ -288,8 +291,9 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 
 mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
 	{
-	return mDNSPosixRemoveFDFromEventLoop(fd);
+	mStatus err = mDNSPosixRemoveFDFromEventLoop(fd);
 	close(fd);
+	return err;
 	}
 
 mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
