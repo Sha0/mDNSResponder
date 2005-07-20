@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: SecondPage.cpp,v $
+Revision 1.18  2005/07/20 17:44:54  shersche
+<rdar://problem/4124524> UI fixes for CUPS workaround
+
 Revision 1.17  2005/07/11 20:17:15  shersche
 <rdar://problem/4124524> UI fixes associated with CUPS printer workaround fix.
 
@@ -127,6 +130,12 @@ CSecondPage::InitBrowseList()
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
 
+	// Initialize so that nothing is selected when we add to the list
+
+	psheet->SetSelectedPrinter( NULL );
+	m_gotChoice = false;
+	m_browseList.Select( NULL, TVGN_FIRSTVISIBLE );
+
 	//
 	// load the no printers message until something shows up in the browse list
 	//
@@ -145,11 +154,6 @@ CSecondPage::InitBrowseList()
 	SetPrinterInformationState( FALSE );
 	m_descriptionField.SetWindowText( L"" );
 	m_locationField.SetWindowText( L"" );
-
-	//
-	// and wait for the user to either hit the mouse or keyboard before selecting an item
-	//
-	m_gotChoice = false;
 
 exit:
 
@@ -208,19 +212,29 @@ CSecondPage::OnSetActive()
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_action( psheet, exit, err = kUnknownErr );
 
+	// Stash the selected printer if any
+
+	printer = psheet->GetSelectedPrinter();
+
 	// initialize the browse list...this will remove everything currently
 	// in it, and add the no printers item
 
 	InitBrowseList();
 
-	// And populate the list with any printers that we currently know about
+	// Populate the list with any printers that we currently know about
 
 	for ( it = psheet->m_printers.begin(); it != psheet->m_printers.end(); it++ )
 	{
 		OnAddPrinter( *it, false );
 	}
 
-	printer = psheet->GetSelectedPrinter();
+	// And if we hit 'Back' from page 3, then re-select printer
+
+	if ( ( psheet->GetLastPage() == psheet->GetPage( 2 ) ) && printer )
+	{
+		psheet->SetSelectedPrinter( printer );
+		m_browseList.Select( printer->item, TVGN_FIRSTVISIBLE );
+	}
 
 exit:
 
