@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.211  2005/07/21 18:51:04  ksekar
+<rdar://problem/4103136> mDNSResponder times out when mapping ports after sleep
+
 Revision 1.210  2005/07/21 18:47:31  ksekar
 <rdar://problem/4137283> NAT-PMP refresh Requested Public Port should contain actual mapped port
 
@@ -1325,8 +1328,11 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 	if (n->state == NATState_Refresh && reply->pub.NotAnInteger != n->PublicPort.NotAnInteger)
 		LogMsg("ReceivePortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
         // this should never happen
+	    // !!!KRS to be defensive, use SRVChanged flag on service and deregister here
+	
 	n->PublicPort = reply->pub;
 	if (reply->pub.NotAnInteger != n->request.PortReq.pub.NotAnInteger) n->request.PortReq.pub = reply->pub; // set message buffer for refreshes
+
 	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)lease * mDNSPlatformOneSecond / 2);  // retry half way to expiration
 
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return mDNStrue; }
@@ -2202,7 +2208,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			InvokeCallback = mDNStrue;
 			if (nat)
 				{
-				if (nat->state == NATState_Deleted) { FreeNATInfo(m, nat); info->NATinfo = mDNSNULL; } // deletion copmleted
+				if (nat->state == NATState_Deleted) { info->NATinfo = mDNSNULL; FreeNATInfo(m, nat); } // deletion copmleted
 				else nat->reg.ServiceRegistration = mDNSNULL;  // allow mapping deletion to continue
 				}
 			info->state = regState_Unregistered;
@@ -4227,12 +4233,12 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		{
 		case regState_NATMap:
             // we're in the middle of a NAT traversal operation
+            rr->uDNS_info.NATinfo = mDNSNULL;			
 			if (!n) LogMsg("uDNS_DeregisterRecord: no NAT info context");
 			else FreeNATInfo(m, n); // cause response to outstanding request to be ignored.
 			                        // Note: normally here we're trying to determine our public address,
 			                        //in which case there is not state to be torn down.  For simplicity,
 			                        //we allow other operations to expire.
-            rr->uDNS_info.NATinfo = mDNSNULL;
 			rr->uDNS_info.state = regState_Unregistered;
 			break;
 		case regState_ExtraQueued:
@@ -4276,9 +4282,9 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		return mStatus_NoError;
 		}
 
-	if (n) FreeNATInfo(m, n);
 	rr->uDNS_info.NATinfo = mDNSNULL;
-
+	if (n) FreeNATInfo(m, n);
+	
 	SendRecordDeregistration(m, rr);
 	return mStatus_NoError;
 	}
@@ -4900,20 +4906,42 @@ mDNSlocal void WakeRecordRegistrations(mDNS *m)
 
 mDNSlocal void SleepServiceRegistrations(mDNS *m)
 	{
-	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	ServiceRecordSet *srs = m->uDNS_info.ServiceRegistrations;
 	while(srs)
-		{
-		if (srs->uDNS_info.state == regState_Registered ||
-			srs->uDNS_info.state == regState_Refresh)
+		{		
+		uDNS_RegInfo *info = &srs->uDNS_info;
+		NATTraversalInfo *nat = info->NATinfo;
+		
+		if (nat)
+			{
+			if (nat->state == NATState_Established || nat->state == NATState_Refresh || nat->state == NATState_Legacy)
+				DeleteNATPortMapping(m, nat, srs);
+			nat->reg.ServiceRegistration = mDNSNULL;
+			srs->uDNS_info.NATinfo = mDNSNULL;
+			FreeNATInfo(m, nat);
+			}
+
+		if (info->state == regState_UpdatePending)
+			{
+			// act as if the update succeeded, since we're about to delete the name anyway
+			AuthRecord *txt = &srs->RR_TXT;
+			uDNS_RegInfo *txtInfo = &txt->uDNS_info;
+			info->state = regState_Registered;
+			// deallocate old RData
+			if (txtInfo->UpdateRDCallback) txtInfo->UpdateRDCallback(m, txt, txtInfo->OrigRData);
+			SetNewRData(&txt->resrec, txtInfo->InFlightRData, txtInfo->InFlightRDLen);
+			txtInfo->OrigRData = mDNSNULL;
+			txtInfo->InFlightRData = mDNSNULL;
+			}
+
+		if (info->state == regState_Registered || info->state == regState_Refresh)			
 			{
 			mDNSOpaque16 origid  = srs->uDNS_info.id;
-			srs->uDNS_info.state = regState_DeregPending;  // state expected by SendDereg()
+			info->state = regState_DeregPending;  // state expected by SendDereg()
 			SendServiceDeregistration(m, srs);
-			srs->uDNS_info.id = origid;
-			srs->uDNS_info.state = regState_Refresh;
-			srs->RR_SRV.LastAPTime = timenow;
-			srs->RR_SRV.ThisAPInterval = 300 * mDNSPlatformOneSecond;
+			info->id = origid;
+			info->state = regState_NoTarget;  // when we wake, we'll re-register (and optionally nat-map) once our address record completes
+			srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
 			}
 		srs = srs->next;
 		}
