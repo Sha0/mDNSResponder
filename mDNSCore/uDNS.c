@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.210  2005/07/21 18:47:31  ksekar
+<rdar://problem/4137283> NAT-PMP refresh Requested Public Port should contain actual mapped port
+
 Revision 1.209  2005/07/04 21:16:37  cheshire
 Minor code tidying -- initialize variables where they are declared
 
@@ -1323,7 +1326,7 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 		LogMsg("ReceivePortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
         // this should never happen
 	n->PublicPort = reply->pub;
-
+	if (reply->pub.NotAnInteger != n->request.PortReq.pub.NotAnInteger) n->request.PortReq.pub = reply->pub; // set message buffer for refreshes
 	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)lease * mDNSPlatformOneSecond / 2);  // retry half way to expiration
 
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return mDNStrue; }
