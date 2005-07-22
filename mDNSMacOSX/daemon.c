@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.259  2005/07/22 21:50:55  ksekar
+Fix GCC 4.0/Intel compiler warnings
+
 Revision 1.258  2005/07/04 22:40:26  cheshire
 Additional debugging code to help catch memory corruption
 
@@ -1941,8 +1944,8 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	uint32_t id;
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
-	if (client == (mach_port_t)-1) { err = mStatus_Invalid;         errormsg = "Client id -1 invalid"; goto fail; }
 	DNSServiceRegistration *x = DNSServiceRegistrationList;
+	if (client == (mach_port_t)-1) { err = mStatus_Invalid;         errormsg = "Client id -1 invalid"; goto fail; }
 	ServiceInstance *si;
 	size_t size;
 	(void)unusedserver;		// Unused

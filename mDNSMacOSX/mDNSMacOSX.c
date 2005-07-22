@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.315  2005/07/22 21:50:55  ksekar
+Fix GCC 4.0/Intel compiler warnings
+
 Revision 1.314  2005/07/11 02:12:09  cheshire
 <rdar://problem/4147774> Be defensive against invalid UTF-8 in dynamic host names
 Fix copy-and-paste error: "CFRelease(StatusVals[0]);" should be "CFRelease(StateVals[0]);"
@@ -1487,7 +1490,7 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 		int so_error = -1;
 		int so_nread = -1;
 		int fionread = -1;
-		int solen = sizeof(int);
+		socklen_t solen = sizeof(int);
 		fd_set readfds;
 		FD_ZERO(&readfds);
 		FD_SET(s1, &readfds);
@@ -3501,8 +3504,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	struct sockaddr_in s4;
 	struct sockaddr_in6 s6;
-	int n4 = sizeof(s4);
-	int n6 = sizeof(s6);
+	socklen_t n4 = sizeof(s4);
+	socklen_t n6 = sizeof(s6);
 	if (getsockname(m->p->unicastsockets.sktv4, (struct sockaddr *)&s4, &n4) < 0) LogMsg("getsockname v4 error %d (%s)", errno, strerror(errno));
 	else m->UnicastPort4.NotAnInteger = s4.sin_port;
 	if (getsockname(m->p->unicastsockets.sktv6, (struct sockaddr *)&s6, &n6) < 0) LogMsg("getsockname v6 error %d (%s)", errno, strerror(errno));
