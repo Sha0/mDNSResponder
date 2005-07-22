@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.212  2005/07/22 19:35:50  ksekar
+<rdar://problem/4188821> SUTiger: LLQ event acknowledgments are not formated correctly
+
 Revision 1.211  2005/07/21 18:51:04  ksekar
 <rdar://problem/4103136> mDNSResponder times out when mapping ports after sleep
 
@@ -2746,8 +2749,8 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	
     //  format and send ack
 	InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
-	ackEnd = putQuestion(&ack, ack.data, ack.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
-	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putQuestion");  return mDNSfalse; }
+	ackEnd = putLLQ(&ack, ack.data, mDNSNULL, &opt, mDNSfalse);
+	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putLLQ");  return mDNSfalse; }
 	err = mDNSSendDNSMessage(m, &ack, ackEnd, mDNSInterface_Any, srcaddr, srcport, -1, mDNSNULL);
 	if (err) debugf("ERROR: recvLLQEvent - mDNSSendDNSMessage returned %ld", err);
 	return mDNStrue;
