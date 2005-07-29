@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.215  2005/07/29 21:01:51  ksekar
+<rdar://problem/4137930> Hostname registration should register IPv6 AAAA record with DNS Update
+correction to original checkin - misplaced return in HostnameCallback and logic error determining v6 changes
+
 Revision 1.214  2005/07/29 19:46:10  ksekar
 <rdar://problem/4191860> reduce polling period on failed LLQs to 15 minutes
 
@@ -1636,8 +1640,8 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 			if (hi->StatusCallback)
 				hi->StatusCallback(m, rr, result); // client may NOT make API calls here
 			rr->RecordContext = (void *)hi;
-			return;
 			}
+		return;
 		}
 	// register any pending services that require a target
 	UpdateSRVRecords(m);
@@ -1890,7 +1894,7 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 	mDNS_Lock(m);
 
 	v4Changed   = (v4addr ? v4addr->ip.v4.NotAnInteger : 0) != u->AdvertisedV4.ip.v4.NotAnInteger;
-	v6Changed   = v6addr ? mDNSPlatformMemSame(v6addr, &u->AdvertisedV6, sizeof(*v6addr)) : !u->AdvertisedV6.ip.v6.b[0];
+	v6Changed   = v6addr ? !mDNSPlatformMemSame(v6addr, &u->AdvertisedV6, sizeof(*v6addr)) : (u->AdvertisedV6.ip.v6.b[0] != 0);
 	RouterChanged = (router ? router->ip.v4.NotAnInteger : 0) != u->Router.ip.v4.NotAnInteger;
 	
 #if MDNS_DEBUGMSGS
