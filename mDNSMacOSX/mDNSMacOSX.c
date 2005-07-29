@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.316  2005/07/29 18:04:22  ksekar
+<rdar://problem/4137930> Hostname registration should register IPv6 AAAA record with DNS Update
+
 Revision 1.315  2005/07/22 21:50:55  ksekar
 Fix GCC 4.0/Intel compiler warnings
 
@@ -3048,7 +3051,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	CFRelease(store);
 	if (!dict)				// lost v4
 		{
-		mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL);
+		mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
 		if (DynDNSHostname.c[0]) SetDDNSNameStatus(&DynDNSHostname, 1);	// Set status to 1 to indicate temporary failure
 		return;
 		} 
@@ -3078,42 +3081,64 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 
 	// handle primary interface changes
 	// if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
-	if (nAdditions || nDeletions) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL);
+	if (nAdditions || nDeletions) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
 	CFStringRef primary = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
 	if (primary)
 		{
+		mDNSAddr v4 = zeroAddr, v6 = zeroAddr;
+		mDNSBool HavePrimaryGlobalv6 = mDNSfalse;  // does  the primary interface have a global v6 address?
 		struct ifaddrs *ifa = myGetIfAddrs(1);
-
+		
 		if (!CFStringGetCString(primary, buf, 256, kCFStringEncodingUTF8))
 			{ LogMsg("Could not convert router to CString"); goto error; }		
 
 		// find primary interface in list
-		while (ifa)
+		while (ifa && (!v4.ip.v4.NotAnInteger || !HavePrimaryGlobalv6))
 			{
-			if (ifa->ifa_addr->sa_family == AF_INET && !strcmp(buf, ifa->ifa_name))
-				{
-				mDNSAddr ip;
-				SetupAddr(&ip, ifa->ifa_addr);
-				if (ip.ip.v4.b[0] == 169 && ip.ip.v4.b[1] == 254)
-					{ mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL); break; }  // primary IP is link-local				
-				if (ip.ip.v4.NotAnInteger != u->PrimaryIP.ip.v4.NotAnInteger ||
-					r.ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger)
+			mDNSAddr tmp6 = zeroAddr;
+			if (!strcmp(buf, ifa->ifa_name))
+				{				
+				if      (ifa->ifa_addr->sa_family == AF_INET) SetupAddr(&v4, ifa->ifa_addr);					
+				else if (ifa->ifa_addr->sa_family == AF_INET6) 				
 					{
-					if (LegacyNATInitialized) { LegacyNATDestroy(); LegacyNATInitialized = mDNSfalse; }
-					if (r.ip.v4.NotAnInteger && IsPrivateV4Addr(&ip))
-						{
-						mStatus err = LegacyNATInit();
-						if (err)  LogMsg("ERROR: LegacyNATInit");
-						else LegacyNATInitialized = mDNStrue;
-						}					
-					mDNS_SetPrimaryInterfaceInfo(m, &ip, r.ip.v4.NotAnInteger ? &r : NULL);
-					break;
+					SetupAddr(&tmp6, ifa->ifa_addr);
+					if (tmp6.ip.v6.b[0] >> 5 == 1)   // global prefix: 001
+						{ HavePrimaryGlobalv6 = mDNStrue; v6 = tmp6; }
+					}
+				}
+			else
+				{
+				// We'll take a V6 address from the non-primary interface if the primary interface doesn't have a global V6 address
+				if (!HavePrimaryGlobalv6 && ifa->ifa_addr->sa_family == AF_INET6 && !v6.ip.v6.b[0])
+					{
+					SetupAddr(&tmp6, ifa->ifa_addr);
+					if (tmp6.ip.v6.b[0] >> 5 == 1) v6 = tmp6;
 					}
 				}
 			ifa = ifa->ifa_next;
 			}
+
+		// Note that while we advertise v6, we still require v4 (possibly NAT'd, but not link-local) because we must use
+		// V4 to communicate w/ our DNS server
+					
+		if (v4.ip.v4.b[0] == 169 && v4.ip.v4.b[1] == 254) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);  // primary IP is link-local
+		else
+			{
+			if (v4.ip.v4.NotAnInteger != u->AdvertisedV4.ip.v4.NotAnInteger ||
+				memcmp(v6.ip.v6.b, u->AdvertisedV6.ip.v6.b, 16)             ||
+				r.ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger)
+				{
+				if (LegacyNATInitialized) { LegacyNATDestroy(); LegacyNATInitialized = mDNSfalse; }
+				if (r.ip.v4.NotAnInteger && IsPrivateV4Addr(&v4))
+					{
+					mStatus err = LegacyNATInit();
+					if (err)  LogMsg("ERROR: LegacyNATInit");
+					else LegacyNATInitialized = mDNStrue;
+					}					
+				mDNS_SetPrimaryInterfaceInfo(m, &v4, v6.ip.v6.b[0] ? &v6 : NULL, r.ip.v4.NotAnInteger ? &r : NULL);
+				}
+			}
 		}
-	
 	error:
 	CFRelease(dict);
 	}
