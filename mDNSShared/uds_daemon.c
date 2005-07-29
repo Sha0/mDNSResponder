@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.185  2005/07/29 00:55:10  ksekar
+Removed validation check in uds_validatelists which generated false alarms
+
 Revision 1.184  2005/07/04 22:40:26  cheshire
 Additional debugging code to help catch memory corruption
 
@@ -1152,9 +1155,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 #if MACOSX_MDNS_MALLOC_DEBUGGING
 mDNSexport void uds_validatelists(void)
 	{
-	request_state *req;
-	for (req = all_requests; req; req=req->next)
-		if (req->sd < 0) LogMemCorruption("UDS request list: %p is garbage (%X)", req, req->sd);
+	//!!!KRS removing check until we come up with an appropriate validation mechanism
 	}
 #endif
 
