@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.214  2005/07/29 19:46:10  ksekar
+<rdar://problem/4191860> reduce polling period on failed LLQs to 15 minutes
+
 Revision 1.213  2005/07/29 18:04:22  ksekar
 <rdar://problem/4137930> Hostname registration should register IPv6 AAAA record with DNS Update
 
@@ -2133,8 +2136,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 		}
 
 	// our interval may be set lower to recover from failures - now that we have an answer, fully back off retry
-	if (question->ThisQInterval < MAX_UCAST_POLL_INTERVAL) question->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
-	return;
+	if (llq && llqInfo->state == LLQ_Poll && llqInfo->servPort.NotAnInteger) question->ThisQInterval = LLQ_POLL_INTERVAL;  // use lower interval for failed LLQs iff the server advertised 
+	else if (question->ThisQInterval < MAX_UCAST_POLL_INTERVAL) question->ThisQInterval = MAX_UCAST_POLL_INTERVAL;         // an LLQ-specific port number but the LLQ failed (e.g. because
+	return;                                                                                                                // we ar behind a nat
 
 	pkt_error:
 	LogMsg("ERROR: pktResponseHndlr - received malformed response to query for %##s (%d)",
@@ -3112,8 +3116,8 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	zoneInfo = &result->zoneData;
 
 	if (!zoneInfo->llqPort.NotAnInteger)
-		{ debugf("LLQ port lookup failed - reverting to polling"); goto poll; }
-		
+		{ debugf("LLQ port lookup failed - reverting to polling"); info->servPort.NotAnInteger = 0; goto poll; }
+	
     // cache necessary zone data
 	info->servAddr.type = zoneInfo->primaryAddr.type;
 	info->servAddr.ip.v4.NotAnInteger = zoneInfo->primaryAddr.ip.v4.NotAnInteger;
