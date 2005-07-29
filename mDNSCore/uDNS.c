@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.216  2005/07/29 23:05:22  ksekar
+<rdar://problem/4137930> Hostname registration should register IPv6 AAAA record with DNS Update
+Services should point to IPv6 address if IPv4 NAT mapping fails
+
 Revision 1.215  2005/07/29 21:01:51  ksekar
 <rdar://problem/4137930> Hostname registration should register IPv6 AAAA record with DNS Update
 correction to original checkin - misplaced return in HostnameCallback and logic error determining v6 changes
@@ -1357,14 +1361,32 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 		LogMsg("NAT Port Mapping (%##s): timeout", service);
 		if (pkt) LogMsg("!!! timeout with non-null packet");
 		n->state = NATState_Error;
-		if (srs) srs->uDNS_info.state = regState_NATError;
-		else LLQNatMapComplete(m);
-		return mDNStrue;  // note - unsafe to touch srs here
-		}
+		if (srs)
+			{
+			uDNS_HostnameInfo *hi = m->uDNS_info.Hostnames;
+			while (hi)
+				{
+				if (hi->arv6 && (hi->arv6->uDNS_info.state == regState_Registered || hi->arv6->uDNS_info.state == regState_Refresh)) break;
+				else hi = hi->next;
+				}
 
-	LogOperation("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
+			if (hi)
+				{
+				debugf("Port map failed for service %##s - using IPv6 service target", service);
+				srs->uDNS_info.NATinfo = mDNSNULL;
+				FreeNATInfo(m, n);
+				goto register_service;
+				}
+			else srs->uDNS_info.state = regState_NATError;
+			}
+		else LLQNatMapComplete(m);
+		return mDNStrue;
+		}
+	else LogOperation("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
+
 	if (!srs) { LLQNatMapComplete(m); return mDNStrue; }
 
+	register_service:
 	if (srs->uDNS_info.ns.ip.v4.NotAnInteger) SendServiceRegistration(m, srs);  // non-zero server address means we already have necessary zone data to send update
 	else
 		{	
