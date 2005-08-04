@@ -71,7 +71,6 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #include <time.h>
 #include <sys/types.h>      // For u_char
 
-
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -84,7 +83,7 @@ typedef	int	pid_t;
 #include <sys/time.h>		// For struct timeval
 #include <unistd.h>         // For getopt() and optind
 #include <arpa/inet.h>		// For inet_addr()
-#include <netdb.h>          // For gethostbyname()
+#include <netdb.h>          // For getaddrinfo()
 #endif
 
 
