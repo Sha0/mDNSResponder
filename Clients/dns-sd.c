@@ -80,10 +80,11 @@ typedef	int	pid_t;
 #define	strcasecmp	_stricmp
 #define snprintf _snprintf
 #else
-#include <sys/time.h>		// For struct timeval
 #include <unistd.h>         // For getopt() and optind
-#include <arpa/inet.h>		// For inet_addr()
 #include <netdb.h>          // For getaddrinfo()
+#include <sys/time.h>		// For struct timeval
+#include <arpa/inet.h>		// For inet_addr()
+#include <netinet/in.h>		// For struct sockaddr_in()
 #endif
 
 
@@ -575,17 +576,22 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	if (nam[0] == '.' && nam[1] == 0) nam = "";   // We allow '.' on the command line as a synonym for empty string
 	if (dom[0] == '.' && dom[1] == 0) dom = "";   // We allow '.' on the command line as a synonym for empty string
 	
-	for (i = 0; i < argc; i++)
-		{
-		unsigned char *len = ptr++;
-		*len = (unsigned char) strlen(argv[i]);
-		strcpy((char*)ptr, argv[i]);
-		ptr += *len;
-		}
-	
 	printf("Registering Service %s.%s%s", nam, typ, dom);
 	if (host && *host) printf(" host %s", host);
-	printf(" port %s %s\n", port, txt);
+	printf(" port %s\n", port);
+
+	for (i = 0; i < argc; i++)
+		{
+		int length = strlen(argv[i]);
+		if (length <= 255)
+			{
+			*ptr++ = (unsigned char)length;
+			strcpy((char*)ptr, argv[i]);
+			ptr += length;
+			printf("TXT %s\n", argv[i]);
+			}
+		}
+	
 	return(DNSServiceRegister(sdRef, /* kDNSServiceFlagsAllowRemoteQuery */ 0, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
 	}
 
