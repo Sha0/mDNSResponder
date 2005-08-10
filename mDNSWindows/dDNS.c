@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dDNS.c,v $
+Revision 1.7  2005/08/10 01:43:23  herscher
+Pass NULL in for the IPv6 paramter to mDNS_SetPrimaryInterfaceInfo to get this code to compile on Windows.
+
 Revision 1.6  2005/03/23 05:54:48  cheshire
 <rdar://problem/4021486> Fix build warnings
 Fix %s where it should be %##s in debugf & LogMsg calls
@@ -594,7 +597,10 @@ mStatus dDNS_Setup( mDNS *const m )
 	
 	if ( dDNSPlatformGetPrimaryInterface( m, &ip, &r ) == mStatus_NoError )
 		{
-		mDNS_SetPrimaryInterfaceInfo(m, &ip, r.ip.v4.NotAnInteger ? &r : mDNSNULL);
+		// For now, we're going to pass NULL for the IPv6 parameter so that the Windows code compiles. What needs
+		// to happen is that the implementation of dDNSPlatformGetPrimaryInterface() needs to call the
+		// IPv6 aware "GetAdaptersAddresses" rather than GetAdaptersInfo().
+		mDNS_SetPrimaryInterfaceInfo(m, &ip, NULL, r.ip.v4.NotAnInteger ? &r : mDNSNULL);
 		}
 
 	return mStatus_NoError;
