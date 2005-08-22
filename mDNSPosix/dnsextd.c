@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.39  2005/08/22 23:30:30  ksekar
+<rdar://problem/4158123> memory leak in dnsextd.c
+
 Revision 1.38  2005/06/29 10:03:56  cheshire
 Fix compile errors and warnings
 
@@ -2089,20 +2092,24 @@ mDNSlocal void *TCPRequestForkFn(void *vptr)
 
 mDNSlocal int RecvTCPRequest(int sd, DaemonInfo *d)
 	{
-	TCPRequestArgs *req;
+	TCPRequestArgs *req = NULL;
 	pthread_t tid;
 	unsigned int clilen = sizeof(req->cliaddr);
 	
 	req = malloc(sizeof(TCPRequestArgs));
-	if (!req) { LogErr("RecvTCPRequest", "malloc"); return -1; }
+	if (!req) { LogErr("RecvTCPRequest", "malloc"); goto error; }
 	bzero(req, sizeof(*req));
 	req->d = d;
 	req->sd = accept(sd, (struct sockaddr *)&req->cliaddr, &clilen);
-	if (req->sd < 0) { LogErr("RecvTCPRequest", "accept"); return -1; }	
-	if (clilen != sizeof(req->cliaddr)) { Log("Client address of unknown size %d", clilen); free(req); return -1; }
-	if (pthread_create(&tid, NULL, TCPRequestForkFn, req)) { LogErr("RecvTCPRequest", "pthread_create"); free(req); return -1; }
+	if (req->sd < 0) { LogErr("RecvTCPRequest", "accept"); goto error; }	
+	if (clilen != sizeof(req->cliaddr)) { Log("Client address of unknown size %d", clilen); goto error; }
+	if (pthread_create(&tid, NULL, TCPRequestForkFn, req)) { LogErr("RecvTCPRequest", "pthread_create"); goto error; }
 	pthread_detach(tid);
 	return 0;
+
+	error:
+	if (req) free(req);
+	return -1;
 	}
 
 // main event loop
