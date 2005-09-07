@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.13  2005/09/07 18:23:05  ksekar
+<rdar://problem/4151514> Off-by-one overflow in LegacyNATTraversal
+
 Revision 1.12  2005/07/22 21:36:16  ksekar
 Fix GCC 4.0/Intel compiler warnings
 
@@ -1504,7 +1507,7 @@ static void *UDPProc(void *in)
 
 		if (!FD_ISSET(g_sUDP, &readfds)) continue;
 		recvaddrlen = sizeof(recvaddr);
-		n = recvfrom(g_sUDP, buf, sizeof(buf), 0,
+		n = recvfrom(g_sUDP, buf, sizeof(buf)-1, 0,
 			(struct sockaddr *)&recvaddr, &recvaddrlen);
 		if (n < 0) {
 			if (g_fLogging & NALOG_ERROR)
