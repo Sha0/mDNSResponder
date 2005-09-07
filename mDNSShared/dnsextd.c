@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.40  2005/09/07 21:54:37  ksekar
+<rdar://problem/4046465> dnsextd doesn't clean up on exit
+Close sockets before cleanup so clients can't make new requests
+
 Revision 1.39  2005/08/22 23:30:30  ksekar
 <rdar://problem/4158123> memory leak in dnsextd.c
 
@@ -2157,7 +2161,15 @@ mDNSlocal int ListenForUpdates(DaemonInfo *d)
 			{
 			if (errno == EINTR)
 				{
-				if (terminate) { DeleteRecords(d, mDNStrue); return 0; }
+				if (terminate)
+					{
+					// close sockets to prevent clients from making new requests during shutdown
+					close(d->tcpsd);
+					close(d->udpsd);
+					d->tcpsd = d->udpsd = -1;
+					DeleteRecords(d, mDNStrue);
+					return 0;
+					}
 				else if (dumptable) { PrintLeaseTable(d); PrintLLQTable(d); PrintLLQAnswers(d); dumptable = 0; }
 				else Log("Received unhandled signal - continuing"); 
 				}
