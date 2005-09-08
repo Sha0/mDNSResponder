@@ -37,6 +37,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.72  2005/09/08 20:45:26  cheshire
+Default dot-local host name should be "Computer" not "Macintosh",
+since the machine this is running on is most likely NOT a Mac.
+
 Revision 1.71  2005/02/26 01:29:12  cheshire
 Ignore multicasts accidentally delivered to our unicast receiving socket
 
@@ -1345,12 +1349,12 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	// Set up the nice label
 	m->nicelabel.c[0] = 0;
 	GetUserSpecifiedFriendlyComputerName(&m->nicelabel);
-	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, "Macintosh");
+	if (m->nicelabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->nicelabel, "Computer");
 
 	// Set up the RFC 1034-compliant label
 	m->hostlabel.c[0] = 0;
 	GetUserSpecifiedRFC1034ComputerName(&m->hostlabel);
-	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Macintosh");
+	if (m->hostlabel.c[0] == 0) MakeDomainLabelFromLiteralString(&m->hostlabel, "Computer");
 
 	mDNS_SetFQDN(m);
 
