@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.95  2005/09/11 22:51:40  herscher
+<rdar://problem/4249284> Obtain Hostname by using GetComputerNameEx, rather than gethostname.
+
 Revision 1.94  2005/09/11 21:43:15  herscher
 <rdar://problem/4245949> Don't create HINFO records on Windows
 
@@ -2238,8 +2241,12 @@ mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 	// if we can't find it in the registry, then use the hostname of the machine
 	if ( err || ( utf8[ 0 ] == '\0' ) )
 	{
-		err = gethostname( tempString, sizeof( tempString ) - 1 );
-		check_translated_errno( err == 0, errno_compat(), kNameErr );
+		DWORD tempStringLen = sizeof( tempString );
+		BOOL  ok;
+
+		ok = GetComputerNameExA( ComputerNamePhysicalDnsHostname, tempString, &tempStringLen );
+		err = translate_errno( ok, (mStatus) GetLastError(), kNameErr );
+		check_noerr( err );
 		
 		if( !err )
 		{
@@ -2278,7 +2285,9 @@ mDNSlocal mStatus	SetupHostName( mDNS * const inMDNS )
 {
 	mStatus		err = 0;
 	char		tempString[ 256 ];
+	DWORD		tempStringLen;
 	domainlabel tempLabel;
+	BOOL		ok;
 	
 	check( inMDNS );
 
@@ -2286,8 +2295,10 @@ mDNSlocal mStatus	SetupHostName( mDNS * const inMDNS )
 	tempString[ 0 ] = '\0';
 
 	// use the hostname of the machine
-	err = gethostname( tempString, sizeof( tempString ) - 1 );
-	check_translated_errno( err == 0, errno_compat(), kNameErr );
+	tempStringLen = sizeof( tempString );
+	ok = GetComputerNameExA( ComputerNamePhysicalDnsHostname, tempString, &tempStringLen );
+	err = translate_errno( ok, (mStatus) GetLastError(), kNameErr );
+	check_noerr( err );
 
 	// if we can't get the hostname
 	if( err || ( tempString[ 0 ] == '\0' ) )
