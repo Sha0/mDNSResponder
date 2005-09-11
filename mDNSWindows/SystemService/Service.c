@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.36  2005/09/11 22:12:42  herscher
+<rdar://problem/4247793> Remove dependency on WMI.  Ensure that the Windows firewall is turned on before trying to configure it.
+
 Revision 1.35  2005/06/30 18:29:49  shersche
 <rdar://problem/4090059> Don't overwrite the localized service description text
 
@@ -187,8 +190,9 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #define	DEBUG_NAME							"[Server] "
 #define kServiceFirewallName				L"Bonjour"
-#define	kServiceDependencies				TEXT("Tcpip\0winmgmt\0\0")
+#define	kServiceDependencies				TEXT("Tcpip\0\0")
 #define	kDNSServiceCacheEntryCountDefault	512
+#define kRetryFirewallPeriod				30 * 1000
 
 #define RR_CACHE_SIZE 500
 static CacheEntity gRRCache[RR_CACHE_SIZE];
@@ -320,6 +324,7 @@ DEBUG_LOCAL HANDLE					*	gWaitList				= NULL;
 DEBUG_LOCAL HANDLE						gStopEvent				= NULL;
 DEBUG_LOCAL CRITICAL_SECTION			gEventSourceLock;
 DEBUG_LOCAL GenLinkedList				gEventSources;
+DEBUG_LOCAL BOOL						gRetryFirewall			= FALSE;
 
 
 #if 0
@@ -699,13 +704,74 @@ exit:
 
 static OSStatus CheckFirewall()
 {
-	DWORD 			value;
-	DWORD			valueLen;
-	DWORD			type;
-	LPCTSTR			s;
-	HKEY			key = NULL;
-	OSStatus		err = kUnknownErr;
+	DWORD 					value;
+	DWORD					valueLen;
+	DWORD					type;
+	LPCTSTR					s;
+	ENUM_SERVICE_STATUS	*	lpService = NULL;
+	SC_HANDLE				sc = NULL;
+	HKEY					key = NULL;
+	BOOL					ok;
+	DWORD					bytesNeeded = 0;
+	DWORD					srvCount;
+	DWORD					resumeHandle = 0;
+	DWORD					srvType;
+	DWORD					srvState;
+	DWORD					dwBytes = 0;
+	DWORD					i;
+	BOOL					isRunning = FALSE;
+	OSStatus				err = kUnknownErr;
 	
+	// Check to see if the firewall service is running.  If it isn't, then
+	// we want to return immediately
+
+	sc = OpenSCManager( NULL, NULL, SC_MANAGER_ENUMERATE_SERVICE );
+	err = translate_errno( sc, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	srvType		=	SERVICE_WIN32;
+	srvState	=	SERVICE_STATE_ALL;
+
+	for ( ;; )
+	{
+		// Call EnumServicesStatus using the handle returned by OpenSCManager
+
+		ok = EnumServicesStatus ( sc, srvType, srvState, lpService, dwBytes, &bytesNeeded, &srvCount, &resumeHandle );
+
+		if ( ok || ( GetLastError() != ERROR_MORE_DATA ) )
+		{
+			break;
+		}
+
+		if ( lpService )
+		{
+			free( lpService );
+		}
+
+		dwBytes = bytesNeeded;
+
+		lpService = ( ENUM_SERVICE_STATUS* ) malloc( dwBytes );
+		require_action( lpService, exit, err = mStatus_NoMemoryErr );
+	}
+
+	err = translate_errno( ok, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	for ( i = 0; i < srvCount; i++ )
+	{
+		if ( wcscmp( lpService[i].lpServiceName, L"SharedAccess" ) == 0 )
+		{
+			if ( lpService[i].ServiceStatus.dwCurrentState == SERVICE_RUNNING )
+			{
+				isRunning = TRUE;
+			}
+
+			break;
+		}
+	}
+
+	require_action( isRunning, exit, err = kUnknownErr );
+
 	// Check to see if we've managed the firewall.
 	// This package might have been installed, then
 	// the OS was upgraded to SP2 or above.  If that's
@@ -743,6 +809,16 @@ exit:
 	if ( key )
 	{
 		RegCloseKey( key );
+	}
+	
+	if ( lpService )
+	{
+		free( lpService );
+	}
+
+	if ( sc )
+	{
+		CloseServiceHandle ( sc );
 	}
 
 	return( err );
@@ -1094,6 +1170,11 @@ static OSStatus	ServiceRun( int argc, LPTSTR argv[] )
 	
 	err = CheckFirewall();
 	check_noerr( err );
+
+	if ( err )
+	{
+		gRetryFirewall = TRUE;
+	}
 	
 	// Run the service-specific stuff. This does not return until the service quits or is stopped.
 	
@@ -1190,16 +1271,32 @@ exit:
 
 static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 {
+	DWORD	timeout;
 	DWORD result;
 	
 	DEBUG_UNUSED( argc );
 	DEBUG_UNUSED( argv );
 
 	// Main event loop. Process connection requests and state changes (i.e. quit).
-	while( (result = WaitForSingleObject(gStopEvent, INFINITE)) != WAIT_OBJECT_0 )
+
+	timeout = ( gRetryFirewall ) ? kRetryFirewallPeriod : INFINITE;
+
+	while( (result = WaitForSingleObject( gStopEvent, timeout ) ) != WAIT_OBJECT_0 )
 	{
-		// Unexpected wait result.
-		dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
+		if ( result == WAIT_TIMEOUT )
+		{
+			OSStatus err;
+
+			err = CheckFirewall();
+			check_noerr( err );
+
+			timeout = INFINITE;
+		}
+		else
+		{
+			// Unexpected wait result.
+			dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
+		}
 	}
 
 	return kNoErr;
