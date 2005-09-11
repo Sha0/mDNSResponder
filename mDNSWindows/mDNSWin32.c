@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.94  2005/09/11 21:43:15  herscher
+<rdar://problem/4245949> Don't create HINFO records on Windows
+
 Revision 1.93  2005/07/15 06:06:40  shersche
 <rdar://problem/4165134> Change all WinSock allocation loops to bail out after 100 tries to eliminate the possibility of any infinite loops
 
@@ -392,6 +395,7 @@ Multicast DNS platform plugin for Win32
 #define	MDNS_WINDOWS_ENABLE_IPV4					1
 #define	MDNS_WINDOWS_ENABLE_IPV6					1
 #define	MDNS_FIX_IPHLPAPI_PREFIX_BUG				1
+#define MDNS_SET_HINFO_STRINGS						0
 
 #define	kMDNSDefaultName							"My Computer"
 
@@ -589,6 +593,7 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	
 	// Setup the HINFO HW/SW strings.
 	
+#if ( MDNS_SET_HINFO_STRINGS )
 	err = GetWindowsVersionString( (char *) &inMDNS->HIHardware.c[ 1 ], sizeof( inMDNS->HIHardware.c ) - 2 );
 	check_noerr( err );
 	inMDNS->HIHardware.c[ 0 ] = (mDNSu8) mDNSPlatformStrLen( &inMDNS->HIHardware.c[ 1 ] );
@@ -598,6 +603,7 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 		"mDNSResponder (%s %s)", __DATE__, __TIME__ );
 	inMDNS->HISoftware.c[ 0 ] = (mDNSu8) mDNSPlatformStrLen( &inMDNS->HISoftware.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "HISoftware: %#s\n", inMDNS->HISoftware.c );
+#endif
 	
 	// Set up the IPv4 unicast socket
 
