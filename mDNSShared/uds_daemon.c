@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.186  2005/09/12 07:11:53  herscher
+<rdar://problem/4248878> Lazily call RegisterSearchDomains to workaround crashes of several routers. This code is conditionally compiled, and currently is only enabled on Windows platforms.
+
 Revision 1.185  2005/07/29 00:55:10  ksekar
 Removed validation check in uds_validatelists which generated false alarms
 
@@ -596,9 +599,10 @@ Update to APSL 2.0
 
 #if defined(_WIN32)
 #include <process.h>
+#define MDNS_LAZY_REGISTER_SEARCH_DOMAINS
 #define dnssd_strerror(X)	win32_strerror(X)
 #define usleep(X)				Sleep(((X)+999)/1000)
-static char * win32_strerror(int inErrorCode);
+static char *	win32_strerror(int inErrorCode);
 #else
 #include <fcntl.h>
 #include <errno.h>
@@ -624,6 +628,11 @@ static char * win32_strerror(int inErrorCode);
 #define LOCAL_PEERCRED 0x001 /* retrieve peer credentials */
 #endif // LOCAL_PEERCRED
 #endif //__MACOSX__
+
+#if defined(MDNS_LAZY_REGISTER_SEARCH_DOMAINS)
+extern mStatus dDNS_RegisterSearchDomains( mDNS * const m );
+#endif
+
 
 // Types and Data Structures
 // ----------------------------------------------------------------------
@@ -1941,6 +1950,13 @@ mDNSlocal void handle_browse_request(request_state *request)
     InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (interfaceIndex && !InterfaceID) { err = mStatus_BadParamErr;  goto error; }
 
+#if defined(MDNS_LAZY_REGISTER_SEARCH_DOMAINS)
+	if ( !domain || ( domain[0] == '\0' ) )
+		{
+		dDNS_RegisterSearchDomains( gmDNS );
+		}
+#endif
+		
 	typedn.c[0] = 0;
 	NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
 	if (NumSubTypes < 0 || NumSubTypes > 1) { err = mStatus_BadParamErr;  goto error; }
@@ -2915,6 +2931,10 @@ mDNSlocal void handle_enum_request(request_state *rstate)
     term = mallocL("handle_enum_request", sizeof(enum_termination_t));
     if (!def || !all || !term) FatalError("ERROR: malloc");
 
+#if defined(MDNS_LAZY_REGISTER_SEARCH_DOMAINS)
+	dDNS_RegisterSearchDomains( gmDNS );
+#endif
+		
     // enumeration requires multiple questions, so we must link all the context pointers so that
     // necessary context can be reached from the callbacks
     def->rstate = rstate;
