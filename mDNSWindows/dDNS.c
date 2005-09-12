@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dDNS.c,v $
+Revision 1.8  2005/09/12 07:13:33  herscher
+<rdar://problem/4248878> Workaround for router crash.  Lazily call RegisterSearchDomains rather than call it always at startup.
+
 Revision 1.7  2005/08/10 01:43:23  herscher
 Pass NULL in for the IPv6 paramter to mDNS_SetPrimaryInterfaceInfo to get this code to compile on Windows.
 
@@ -61,7 +64,11 @@ static ARListElem *SCPrefBrowseDomains = mDNSNULL; // manually generated local-o
 static domainname			dDNSRegDomain;             // Default wide-area zone for service registration
 static DNameListElem	*	dDNSBrowseDomains;         // Default wide-area zone for legacy ("empty string") browses
 static domainname			dDNSHostname;
+static mDNSBool				dDNSRegisterSearchDomains = mDNSfalse;
 
+mDNSlocal mStatus RegisterNameServers( mDNS *const m );
+mDNSlocal mStatus RegisterSearchDomains( mDNS *const m );
+	
 
 mStatus dDNS_SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 	{
@@ -90,7 +97,19 @@ mStatus dDNS_SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 
 	LogMsg("SetupAddr invalid sa_family %d", sa->sa_family);
 	return(mStatus_Invalid);
+	} 
+
+
+mStatus dDNS_RegisterSearchDomains( mDNS * const m )
+	{
+	mStatus err = mStatus_NoError;
+
+	dDNSRegisterSearchDomains = mDNStrue;
+	RegisterSearchDomains( m );
+
+	return err;
 	}
+
 
 mDNSlocal void MarkSearchListElem(domainname *domain)
 	{
@@ -563,9 +582,13 @@ mStatus dDNS_Setup( mDNS *const m )
 	// YO CFRelease(key);
 
 	// handle any changes to search domains and DNS server addresses
+
 	if ( dDNSPlatformRegisterSplitDNS(m) != mStatus_NoError)
 		if (dict) RegisterNameServers( m );  // fall back to non-split DNS aware configuration on failure
-	RegisterSearchDomains( m );  // note that we register name servers *before* search domains
+
+	if ( dDNSRegisterSearchDomains == mDNStrue )
+		dDNS_RegisterSearchDomains( m );  // note that we register name servers *before* search domains
+
 	// if (dict) CFRelease(dict);
 
 	// get IPv4 settings
