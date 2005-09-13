@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.218  2005/09/13 01:06:14  herscher
+<rdar://problem/4248878> Add 100ms delay in sendQuery.
+
 Revision 1.217  2005/08/04 18:08:24  cheshire
 Update comments
 
@@ -742,6 +745,14 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	// to the compiler that the assignment is intentional, we have to just turn this warning off completely.
 	#pragma warning(disable:4706)
 #endif
+
+#if defined(_WIN32)
+#	include <windows.h>
+#	define usleep(X)	Sleep((X)/1000)
+#else
+#	include <unistd.h>
+#endif
+
 
 #define umalloc(x)         mDNSPlatformMemAllocate(x)       // short hands for common routines
 #define ufree(x)           mDNSPlatformMemFree(x)
@@ -3368,6 +3379,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	if (GetServerForName(u, &question->qname, &server))
 		{
 		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
+		usleep( 100000 );
 		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
 		if (err == mStatus_TransientErr) err = mStatus_NoError;  // don't return transient errors to caller
 		}
