@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.285  2005/09/16 20:57:47  cheshire
+Add macro mDNS_TimeNow_NoLock(m) to get properly adjusted time without also acquiring lock
+
 Revision 1.284  2005/07/29 18:04:22  ksekar
 <rdar://problem/4137930> Hostname registration should register IPv6 AAAA record with DNS Update
 
@@ -2063,9 +2066,9 @@ struct mDNS_struct
 	char MsgBuffer[80];					// Temp storage used while building error log messages
 
 	// Task Scheduling variables
+	mDNSs32  timenow_adjust;			// Correction applied if we ever discover time went backwards
 	mDNSs32  timenow;					// The time that this particular activation of the mDNS code started
 	mDNSs32  timenow_last;				// The time the last time we ran
-	mDNSs32  timenow_adjust;			// Correction applied if we ever discover time went backwards
 	mDNSs32  NextScheduledEvent;		// Derived from values below
 	mDNSs32  SuppressSending;			// Don't send *any* packets during this time
 	mDNSs32  NextCacheCheck;			// Next time to refresh cache record before it expires
@@ -2592,6 +2595,9 @@ extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *num
 // Generally speaking:
 // Code that's protected by the main mDNS lock should just use the m->timenow value
 // Code outside the main mDNS lock should use mDNS_TimeNow(m) to get properly adjusted time
+// In certain cases there may be reasons why it's necessary to get the time without taking the lock first
+// (e.g. inside the routines that are doing the locking and unlocking, where a call to get the lock would result in a
+// recursive loop); in these cases use mDNS_TimeNow_NoLock(m) to get mDNSPlatformRawTime with the proper correction factor added.
 //
 // mDNSPlatformUTC returns the time, in seconds, since Jan 1st 1970 UTC and is required for generating TSIG records
 
@@ -2614,6 +2620,7 @@ extern mDNSu32  mDNSPlatformRandomSeed  (void);
 extern mStatus  mDNSPlatformTimeInit    (void);
 extern mDNSs32  mDNSPlatformRawTime     (void);
 extern mDNSs32  mDNSPlatformUTC         (void);
+#define mDNS_TimeNow_NoLock(m) (mDNSPlatformRawTime() + m->timenow_adjust)
 
 // Platform support modules should provide the following functions to map between opaque interface IDs
 // and interface indexes in order to support the DNS-SD API. If your target platform does not support
