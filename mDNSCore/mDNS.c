@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.524  2005/09/16 21:06:49  cheshire
+Use mDNS_TimeNow_NoLock macro, instead of writing "mDNSPlatformRawTime() + m->timenow_adjust" all over the place
+
 Revision 1.523  2005/03/21 00:33:51  shersche
 <rdar://problem/4021486> Fix build warnings on Win32 platform
 
@@ -4353,7 +4356,7 @@ mDNSexport mDNSs32 mDNS_TimeNow(const mDNS *const m)
 		}
 	
 	if (m->timenow) time = m->timenow;
-	else            time = mDNSPlatformRawTime() + m->timenow_adjust;
+	else            time = mDNS_TimeNow_NoLock(m);
 	mDNSPlatformUnlock(m);
 	return(time);
 	}
@@ -7016,7 +7019,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	mDNSBool AdvertiseLocalAddresses, mDNSCallback *Callback, void *Context)
 	{
 	mDNSu32 slot;
-	mDNSs32 timenow, timenow_adjust;
+	mDNSs32 timenow;
 	mStatus result;
 	
 	if (!rrcachestorage) rrcachesize = 0;
@@ -7043,12 +7046,11 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	// Task Scheduling variables
 	result = mDNSPlatformTimeInit();
 	if (result != mStatus_NoError) return(result);
-	timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
-	timenow = mDNSPlatformRawTime() + timenow_adjust;
+	m->timenow_adjust = (mDNSs32)mDNSRandom(0xFFFFFFFF);
+	timenow = mDNS_TimeNow_NoLock(m);
 
 	m->timenow                 = 0;		// MUST only be set within mDNS_Lock/mDNS_Unlock section
 	m->timenow_last            = timenow;
-	m->timenow_adjust          = timenow_adjust;
 	m->NextScheduledEvent      = timenow;
 	m->SuppressSending         = timenow;
 	m->NextCacheCheck          = timenow + 0x78000000;

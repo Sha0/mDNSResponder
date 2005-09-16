@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.92  2005/09/16 21:06:49  cheshire
+Use mDNS_TimeNow_NoLock macro, instead of writing "mDNSPlatformRawTime() + m->timenow_adjust" all over the place
+
 Revision 1.91  2005/07/10 22:10:37  cheshire
 The getOptRdata routine implicitly assumes the destination ResourceRecord is large enough to
 hold MaximumRDSize bytes, but its parameter was a generic ResourceRecord, which need not be that
@@ -2054,14 +2057,14 @@ mDNSexport void mDNS_Lock(mDNS *const m)
 	if (m->mDNS_busy == 0)
 		{
 		if (m->timenow)
-			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNSPlatformRawTime() + m->timenow_adjust);
-		m->timenow = mDNSPlatformRawTime() + m->timenow_adjust;
+			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNS_TimeNow_NoLock(m));
+		m->timenow = mDNS_TimeNow_NoLock(m);
 		if (m->timenow == 0) m->timenow = 1;
 		}
 	else if (m->timenow == 0)
 		{
 		LogMsg("mDNS_Lock: m->mDNS_busy is %ld but m->timenow not set", m->mDNS_busy);
-		m->timenow = mDNSPlatformRawTime() + m->timenow_adjust;
+		m->timenow = mDNS_TimeNow_NoLock(m);
 		if (m->timenow == 0) m->timenow = 1;
 		}
 
