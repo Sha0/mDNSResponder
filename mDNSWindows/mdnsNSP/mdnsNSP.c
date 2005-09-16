@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.16  2005/09/16 22:22:48  herscher
+<rdar://problem/4261460> No longer set the PATH variable when NSP is loaded.
+
 Revision 1.15  2005/07/14 22:12:00  shersche
 <rdar://problem/4178448> Delay load dnssd.dll so that it gracefully handles library loading problems immediately after installing Bonjour
 
@@ -287,13 +290,6 @@ DEBUG_LOCAL HostsFileInfo		*	gHostsFileInfo		= NULL;
 
 BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 {
-	CHAR		path[ MAX_PATH ];
-	CHAR	*	oldPath = NULL;
-	CHAR	*	newPath = NULL;
-	size_t		len;
-	BOOL		ok;
-	HRESULT		err;
-
 	DEBUG_USE_ONLY( inInstance );
 	DEBUG_UNUSED( inReserved );
 
@@ -306,29 +302,6 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 			debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelInfo );
 			dlog( kDebugLevelTrace, "\n" );
 			dlog( kDebugLevelVerbose, "%s: process attach\n", __ROUTINE__ );
-
-			// <rdar://problem/4178448> Add this directory to the path variable to ensure
-			// that dnssd.dll can be delay loaded
-
-			err = GetModuleFileName( inInstance, path, sizeof( path ) );
-			err = translate_errno( err != 0, errno_compat(), kUnknownErr );
-			require_noerr( err, exit );
-
-			ok = PathRemoveFileSpec( path );
-			err = translate_errno( ok, errno_compat(), kUnknownErr );
-			require_noerr( err, exit );
-
-			oldPath = getenv( "PATH" );
-			err = translate_errno( oldPath, errno_compat(), kUnknownErr );
-			require_noerr( err, exit );
-
-			len = strlen( oldPath ) + strlen( path ) + strlen( "PATH=" ) + 2;
-			newPath = malloc( len );
-			require_action( newPath, exit, err = kNoMemoryErr );
-			
-			snprintf( newPath, len, "PATH=%s;%s", oldPath, path );
-
-			putenv( newPath );
 
 			break;
 		
@@ -349,13 +322,6 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 		default:
 			dlog( kDebugLevelNotice, "%s: unknown reason code (%d)\n", __ROUTINE__, inReason );
 			break;
-	}
-
-exit:
-
-	if ( newPath )
-	{
-		free( newPath );
 	}
 
 	return( TRUE );
