@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.219  2005/09/22 07:28:25  herscher
+Double the delay to 200000 usec after sending out a DNS query
+
 Revision 1.218  2005/09/13 01:06:14  herscher
 <rdar://problem/4248878> Add 100ms delay in sendQuery.
 
@@ -3379,7 +3382,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	if (GetServerForName(u, &question->qname, &server))
 		{
 		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
-		usleep( 100000 );
+		usleep( 200000 );
 		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
 		if (err == mStatus_TransientErr) err = mStatus_NoError;  // don't return transient errors to caller
 		}
