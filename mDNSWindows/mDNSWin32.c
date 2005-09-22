@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.96  2005/09/22 07:06:06  herscher
+<rdar://problem/4252581> Don't loop uncontrollably upon detection of error in main event loop
+
 Revision 1.95  2005/09/11 22:51:40  herscher
 <rdar://problem/4249284> Obtain Hostname by using GetComputerNameEx, rather than gethostname.
 
@@ -3267,7 +3270,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 		
 	m = (mDNS *) inParam;
 	err = ProcessingThreadInitialize( m );
-	require_noerr( err, exit );
+	check( err );
 	
 	done = 0;
 	while( !done )
@@ -3305,130 +3308,142 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 			// Wait until something occurs (e.g. cancel, incoming packet, or timeout).
 						
 			result = WaitForMultipleObjects( (DWORD) waitListCount, waitList, FALSE, (DWORD) interval );
-			if( result == WAIT_TIMEOUT )
+			check( result != WAIT_FAILED );
+
+			if ( result != WAIT_FAILED )
 			{
-				// Next task timeout occurred. Loop back up to give mDNS core a chance to work.
-				
-				dlog( kDebugLevelChatty - 1, DEBUG_NAME "timeout\n" );
-				continue;
-			}
-			else if( result == kWaitListCancelEvent )
-			{
-				// Cancel event. Set the done flag and break to exit.
-				
-				dlog( kDebugLevelVerbose, DEBUG_NAME "canceling...\n" );
-				done = 1;
-				break;
-			}
-			else if( result == kWaitListInterfaceListChangedEvent )
-			{
-				// Interface list changed event. Break out of the inner loop to re-setup the wait list.
-				
-				ProcessingThreadInterfaceListChanged( m );
-				break;
-			}
-			else if( result == kWaitListWakeupEvent )
-			{
-				// Wakeup event due to an mDNS API call. Loop back to call mDNS_Execute.
-				
-				dlog( kDebugLevelChatty - 1, DEBUG_NAME "wakeup for mDNS_Execute\n" );
-				continue;
-			}
-			else if ( result == kWaitListComputerDescriptionEvent )
-			{
-				//
-				// The computer description might have changed
-				//
-				ProcessingThreadComputerDescriptionChanged( m );
-				break;
-			}
-			else if ( result == kWaitListTCPIPEvent )
-			{	
-				//
-				// The TCP/IP might have changed
-				//
-				ProcessingThreadTCPIPConfigChanged( m );
-				break;
-			}
-			else if ( result == kWaitListDynDNSEvent )
-			{
-				//
-				// The DynDNS config might have changed
-				//
-				ProcessingThreadDynDNSConfigChanged( m );
-				break;
-			}
-			else
-			{
-				int		waitItemIndex;
-				
-				// Socket data available event. Determine which socket and process the packet.
-				
-				waitItemIndex = (int)( ( (int) result ) - WAIT_OBJECT_0 );
-				dlog( kDebugLevelChatty, DEBUG_NAME "socket data available on socket index %d\n", waitItemIndex );
-				check( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) );
-				if( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) )
+				if( result == WAIT_TIMEOUT )
 				{
-					HANDLE					signaledObject;
-					int						n = 0;
-					mDNSInterfaceData		*	ifd;
-					mDNSTCPConnectionData	*	tcd;
+					// Next task timeout occurred. Loop back up to give mDNS core a chance to work.
 					
-					signaledObject = waitList[ waitItemIndex ];
-
-#if ( MDNS_WINDOWS_ENABLE_IPV4 )
-					if ( m->p->unicastSock4ReadEvent == signaledObject )
-					{
-						ProcessingThreadProcessPacket( m, NULL, m->p->unicastSock4 );
-						++n;
-					}
-#endif
+					dlog( kDebugLevelChatty - 1, DEBUG_NAME "timeout\n" );
+					continue;
+				}
+				else if( result == kWaitListCancelEvent )
+				{
+					// Cancel event. Set the done flag and break to exit.
 					
-#if ( MDNS_WINDOWS_ENABLE_IPV6 )
-					if ( m->p->unicastSock6ReadEvent == signaledObject )
-					{
-						ProcessingThreadProcessPacket( m, NULL, m->p->unicastSock6 );
-						++n;
-					}
-#endif
+					dlog( kDebugLevelVerbose, DEBUG_NAME "canceling...\n" );
+					done = 1;
+					break;
+				}
+				else if( result == kWaitListInterfaceListChangedEvent )
+				{
+					// Interface list changed event. Break out of the inner loop to re-setup the wait list.
 					
-					for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
-					{
-						if( ifd->readPendingEvent == signaledObject )
-						{
-							ProcessingThreadProcessPacket( m, ifd, ifd->sock );
-							++n;
-						}
-					}
-
-					for ( tcd = gTCPConnectionList; tcd; tcd = tcd->next )
-					{
-						if ( tcd->pendingEvent == signaledObject )
-						{
-							mDNSBool connect = FALSE;
-
-							if ( !tcd->connected )
-							{
-								tcd->connected	= mDNStrue;
-								connect			= mDNStrue;
-							}
-
-							tcd->callback( ( int ) tcd->sock, tcd->context, connect );
-
-							++n;
-
-							break;
-						}
-					}
-
-					check( n > 0 );
+					ProcessingThreadInterfaceListChanged( m );
+					break;
+				}
+				else if( result == kWaitListWakeupEvent )
+				{
+					// Wakeup event due to an mDNS API call. Loop back to call mDNS_Execute.
+					
+					dlog( kDebugLevelChatty - 1, DEBUG_NAME "wakeup for mDNS_Execute\n" );
+					continue;
+				}
+				else if ( result == kWaitListComputerDescriptionEvent )
+				{
+					//
+					// The computer description might have changed
+					//
+					ProcessingThreadComputerDescriptionChanged( m );
+					break;
+				}
+				else if ( result == kWaitListTCPIPEvent )
+				{	
+					//
+					// The TCP/IP might have changed
+					//
+					ProcessingThreadTCPIPConfigChanged( m );
+					break;
+				}
+				else if ( result == kWaitListDynDNSEvent )
+				{
+					//
+					// The DynDNS config might have changed
+					//
+					ProcessingThreadDynDNSConfigChanged( m );
+					break;
 				}
 				else
 				{
-					// Unexpected wait result.
-				
-					dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
+					int		waitItemIndex;
+					
+					// Socket data available event. Determine which socket and process the packet.
+					
+					waitItemIndex = (int)( ( (int) result ) - WAIT_OBJECT_0 );
+					dlog( kDebugLevelChatty, DEBUG_NAME "socket data available on socket index %d\n", waitItemIndex );
+					check( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) );
+					if( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) )
+					{
+						HANDLE					signaledObject;
+						int						n = 0;
+						mDNSInterfaceData		*	ifd;
+						mDNSTCPConnectionData	*	tcd;
+						
+						signaledObject = waitList[ waitItemIndex ];
+	
+#if ( MDNS_WINDOWS_ENABLE_IPV4 )
+						if ( m->p->unicastSock4ReadEvent == signaledObject )
+						{
+							ProcessingThreadProcessPacket( m, NULL, m->p->unicastSock4 );
+							++n;
+						}
+#endif
+						
+#if ( MDNS_WINDOWS_ENABLE_IPV6 )
+						if ( m->p->unicastSock6ReadEvent == signaledObject )
+						{
+							ProcessingThreadProcessPacket( m, NULL, m->p->unicastSock6 );
+							++n;
+						}
+#endif
+					
+						for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
+						{
+							if( ifd->readPendingEvent == signaledObject )
+							{
+								ProcessingThreadProcessPacket( m, ifd, ifd->sock );
+								++n;
+							}
+						}
+	
+						for ( tcd = gTCPConnectionList; tcd; tcd = tcd->next )
+						{
+							if ( tcd->pendingEvent == signaledObject )
+							{
+								mDNSBool connect = FALSE;
+	
+								if ( !tcd->connected )
+								{
+									tcd->connected	= mDNStrue;
+									connect			= mDNStrue;
+								}
+	
+								tcd->callback( ( int ) tcd->sock, tcd->context, connect );
+	
+								++n;
+	
+								break;
+							}
+						}
+	
+						check( n > 0 );
+					}
+					else
+					{
+						// Unexpected wait result.
+					
+						dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
+					}
 				}
+			}
+			else
+			{
+				Sleep( 3 * 1000 );
+				err = ProcessingThreadInitialize( m );
+				check( err );
+				break;
 			}
 		}
 		
