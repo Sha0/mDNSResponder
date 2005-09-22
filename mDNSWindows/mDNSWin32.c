@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.97  2005/09/22 07:10:44  herscher
+<rdar://problem/4263713> Don't send domain enumeration query if domain is empty string or "."
+
 Revision 1.96  2005/09/22 07:06:06  herscher
 <rdar://problem/4252581> Don't loop uncontrollably upon detection of error in main event loop
 
@@ -1663,26 +1666,29 @@ dDNSPlatformGetSearchDomainList( void )
 	tok = strtok( searchList, "," );
 	while ( tok )
 	{
-		domainname domain;
-
-		if ( MakeDomainNameFromDNSNameString( &domain, tok ) )
+		if ( ( strcmp( tok, "" ) != 0 ) && ( strcmp( tok, "." ) != 0 ) )
 		{
-			DNameListElem * last = current;
+			domainname domain;
 
-			current = (DNameListElem*) malloc( sizeof( DNameListElem ) );
-			require_action( current, exit, err = mStatus_NoMemoryErr );
-
-			AssignDomainName( &current->name, &domain );
-			current->next = NULL;
-			
-			if ( !head )
+			if ( MakeDomainNameFromDNSNameString( &domain, tok ) )
 			{
-				head = current;
-			}
+				DNameListElem * last = current;
+	
+				current = (DNameListElem*) malloc( sizeof( DNameListElem ) );
+				require_action( current, exit, err = mStatus_NoMemoryErr );
+	
+				AssignDomainName( &current->name, &domain );
+				current->next = NULL;
+				
+				if ( !head )
+				{
+					head = current;
+				}
 
-			if ( last )
-			{
-				last->next = current;
+				if ( last )
+				{
+					last->next = current;
+				}
 			}
 		}
 
