@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.525  2005/09/24 00:47:17  cheshire
+Fix comment typos
+
 Revision 1.524  2005/09/16 21:06:49  cheshire
 Use mDNS_TimeNow_NoLock macro, instead of writing "mDNSPlatformRawTime() + m->timenow_adjust" all over the place
 
@@ -1791,7 +1794,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 	mDNSu32 nwritten = 0;
 	int c;
 	if (buflen == 0) return(0);
-	buflen--;		// Pre-reserve one space in the buffer for the terminating nul
+	buflen--;		// Pre-reserve one space in the buffer for the terminating null
 	if (buflen == 0) goto exit;
 
 	for (c = *fmt; c != 0; c = *++fmt)
@@ -6749,7 +6752,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 
 #ifndef UNICAST_DISABLED	
 	// If the client has specified an explicit InterfaceID,
-	// then we do a multicast registration  on that interface, even for unicast domains.
+	// then we do a multicast registration on that interface, even for unicast domains.
 	if (!(InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
 		{
 		mStatus status;
