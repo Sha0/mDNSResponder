@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.41  2005/09/24 01:10:54  cheshire
+Fix comment typos
+
 Revision 1.40  2005/09/07 21:54:37  ksekar
 <rdar://problem/4046465> dnsextd doesn't clean up on exit
 Close sockets before cleanup so clients can't make new requests
@@ -382,7 +385,7 @@ mDNSlocal void Log(const char *format, ...)
 
 // Error Logging
 // prints message "dnsextd <function>: <operation> - <error message>" 
-// must be compiled w/ -D_REENTRANT  for thread-safe errno usage
+// must be compiled w/ -D_REENTRANT for thread-safe errno usage
 mDNSlocal void LogErr(const char *fn, const char *operation)
 	{
 	char buf[512], errbuf[256];

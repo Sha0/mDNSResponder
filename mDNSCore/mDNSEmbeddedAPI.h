@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.286  2005/09/24 01:09:40  cheshire
+Fix comment typos
+
 Revision 1.285  2005/09/16 20:57:47  cheshire
 Add macro mDNS_TimeNow_NoLock(m) to get properly adjusted time without also acquiring lock
 
@@ -1232,7 +1235,7 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // For records containing a hostname (in the name on the left, or in the rdata on the right),
 // like A, AAAA, reverse-mapping PTR, and SRV, we use a two-minute TTL by default, because we don't want
 // them to hang around for too long in the cache if the host in question crashes or otherwise goes away.
-// Wide-area service discovery records have a very short TTL to aviod poluting intermediate caches with
+// Wide-area service discovery records have a very short TTL to avoid poluting intermediate caches with
 // dynamic records.  When discovered via Long Lived Queries (with change notifications), resource record
 // TTLs can be safely ignored.
 	
@@ -2032,7 +2035,7 @@ typedef struct
 	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
 	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
 	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
-    DNSQuestion      ReverseMap;         // Reverse-map query to find  static hostname for service target
+    DNSQuestion      ReverseMap;         // Reverse-map query to find static hostname for service target
     mDNSBool         ReverseMapActive;   // Is above query active?
     domainname       StaticHostname;     // Current answer to reverse-map query (above)
     mDNSBool         DelaySRVUpdate;     // Delay SRV target/port update to avoid "flap"
@@ -2310,7 +2313,7 @@ extern mDNSs32  mDNSPlatformOneSecond;
 // mDNS_AddRecordToService adds an additional record to a Service Record Set.  This record may be deregistered
 // via mDNS_RemoveRecordFromService, or by deregistering the service.  mDNS_RemoveRecordFromService is passed a
 // callback to free the memory associated with the extra RR when it is safe to do so.  The ExtraResourceRecord
-// object  can be found in the record's context pointer.
+// object can be found in the record's context pointer.
 	
 // mDNS_GetBrowseDomains is a special case of the mDNS_StartQuery call, where the resulting answers
 // are a list of PTR records indicating (in the rdata) domains that are recommended for browsing.
@@ -2445,6 +2448,11 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 #pragma mark - Other utility functions and macros
 #endif
 
+// mDNS_vsnprintf/snprintf return the number of characters written, excluding the final terminating null.
+// The output is always null-terminated: for example, if the output turns out to be exactly buflen long,
+// then the output will be truncated by one character to allow space for the terminating null.
+// Unlike standard C vsnprintf/snprintf, they return the number of characters *actually* written,
+// not the number of characters that *would* have been printed were buflen unlimited.
 extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va_list arg);
 extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(3,4);
 extern mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterfaceID id);

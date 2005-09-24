@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.220  2005/09/24 01:10:09  cheshire
+Fix comment typos
+
 Revision 1.219  2005/09/22 07:28:25  herscher
 Double the delay to 200000 usec after sending out a DNS query
 
@@ -1498,7 +1501,7 @@ mDNSlocal void StartLLQNatMap(mDNS *m)
 	return;
 	}
 
-// if  LLQ NAT context unreferenced, delete the mapping
+// if LLQ NAT context unreferenced, delete the mapping
 mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 	{
 	NATTraversalInfo *nat = m->uDNS_info.LLQNatInfo;
@@ -1816,14 +1819,14 @@ mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, uDNS_HostnameInfo *hi, int 
 		{
 		LogMsg("ERROR: AssignHostnameInfoAuthRecord - overwriting %s AuthRec", type == mDNSAddrType_IPv4 ? "IPv4" : "IPv6");
 		unlinkAR(&u->RecordRegistrations, *dst);
-		(*dst)->RecordContext = mDNSNULL;  // defensively clear backpointer to aviod doubly-referenced context
+		(*dst)->RecordContext = mDNSNULL;  // defensively clear backpointer to avoid doubly-referenced context
 		}
 
 	*dst = ar;
 	}
 
 
-// Deregister hostnames and  register new names for each host domain with the current global
+// Deregister hostnames and register new names for each host domain with the current global
 // values for the hostlabel and primary IP address
 mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 	{

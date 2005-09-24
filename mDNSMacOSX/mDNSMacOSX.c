@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.317  2005/09/24 01:10:26  cheshire
+Fix comment typos
+
 Revision 1.316  2005/07/29 18:04:22  ksekar
 <rdar://problem/4137930> Hostname registration should register IPv6 AAAA record with DNS Update
 
@@ -3086,7 +3089,7 @@ mDNSlocal void DynDNSConfigChanged(mDNS *const m)
 	if (primary)
 		{
 		mDNSAddr v4 = zeroAddr, v6 = zeroAddr;
-		mDNSBool HavePrimaryGlobalv6 = mDNSfalse;  // does  the primary interface have a global v6 address?
+		mDNSBool HavePrimaryGlobalv6 = mDNSfalse;  // does the primary interface have a global v6 address?
 		struct ifaddrs *ifa = myGetIfAddrs(1);
 		
 		if (!CFStringGetCString(primary, buf, 256, kCFStringEncodingUTF8))
