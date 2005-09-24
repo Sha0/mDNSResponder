@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.98  2005/09/24 01:11:56  cheshire
+Add comment about GetWindowsVersionString
+
 Revision 1.97  2005/09/22 07:10:44  herscher
 <rdar://problem/4263713> Don't send domain enumeration query if domain is empty string or "."
 
@@ -605,6 +608,8 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 #if ( MDNS_SET_HINFO_STRINGS )
 	err = GetWindowsVersionString( (char *) &inMDNS->HIHardware.c[ 1 ], sizeof( inMDNS->HIHardware.c ) - 2 );
 	check_noerr( err );
+	// Note that GetWindowsVersionString guarantees that the resulting string is always null-terminated,
+	// so the following strlen call is safe
 	inMDNS->HIHardware.c[ 0 ] = (mDNSu8) mDNSPlatformStrLen( &inMDNS->HIHardware.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "HIHardware: %#s\n", inMDNS->HIHardware.c );
 	
