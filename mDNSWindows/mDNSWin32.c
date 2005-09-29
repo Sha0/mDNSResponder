@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.100  2005/09/29 06:36:00  herscher
+Change check( err ) to check( !err ).  This was a typo that was introduced in a previous checkin.
+
 Revision 1.99  2005/09/29 06:31:46  herscher
 <rdar://problem/4278934> Fall back to calling getifaddrs_ipv4 if getifaddrs_ipv6 fails
 
@@ -3284,7 +3287,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 		
 	m = (mDNS *) inParam;
 	err = ProcessingThreadInitialize( m );
-	check( err );
+	check( !err );
 	
 	done = 0;
 	while( !done )
