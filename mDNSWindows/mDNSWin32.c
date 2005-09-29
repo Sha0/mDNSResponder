@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.99  2005/09/29 06:31:46  herscher
+<rdar://problem/4278934> Fall back to calling getifaddrs_ipv4 if getifaddrs_ipv6 fails
+
 Revision 1.98  2005/09/24 01:11:56  cheshire
 Add comment about GetWindowsVersionString
 
@@ -3906,13 +3909,9 @@ int	getifaddrs( struct ifaddrs **outAddrs )
 	}
 	
 	// Use the new IPv6-capable routine if supported. Otherwise, fall back to the old and compatible IPv4-only code.
+	// <rdar://problem/4278934>  Fall back to using getifaddrs_ipv4 if getifaddrs_ipv6 fails
 	
-	if( gGetAdaptersAddressesFunctionPtr )
-	{
-		err = getifaddrs_ipv6( outAddrs );
-		require_noerr( err, exit );
-	}
-	else
+	if( !gGetAdaptersAddressesFunctionPtr || ( ( err = getifaddrs_ipv6( outAddrs ) ) != mStatus_NoError ) )
 	{
 		err = getifaddrs_ipv4( outAddrs );
 		require_noerr( err, exit );
