@@ -46,6 +46,7 @@
 				GenerateDebugInformation="TRUE"
 				ProgramDatabaseFile="$(OutDir)/dnssd.pdb"
 				SubSystem="2"
+				BaseAddress="0x16000000"
 				ImportLibrary="$(IntDir)\dnssd.lib"
 				TargetMachine="1"/>
 			<Tool
@@ -95,6 +96,7 @@
 				SubSystem="2"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
+				BaseAddress="0x16000000"
 				ImportLibrary=".\Release\dnssd.lib"
 				TargetMachine="1"/>
 			<Tool
