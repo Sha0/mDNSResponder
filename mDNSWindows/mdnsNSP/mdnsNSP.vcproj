@@ -45,6 +45,7 @@
 				GenerateDebugInformation="TRUE"
 				ProgramDatabaseFile="$(OutDir)/mdnsNSP.pdb"
 				SubSystem="2"
+				BaseAddress="0x16080000"
 				ImportLibrary="$(OutDir)/mdnsNSP.lib"
 				TargetMachine="1"/>
 			<Tool
@@ -98,6 +99,7 @@
 				SubSystem="2"
 				OptimizeReferences="0"
 				EnableCOMDATFolding="0"
+				BaseAddress="0x16080000"
 				ImportLibrary="$(IntDir)/mdnsNSP.lib"
 				TargetMachine="1"/>
 			<Tool
