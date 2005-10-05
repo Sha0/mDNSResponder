@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.101  2005/10/05 18:05:28  herscher
+<rdar://problem/4192011> Save Wide-Area preferences in a different spot in the registry so they don't get removed when doing an update install.
+
 Revision 1.100  2005/09/29 06:36:00  herscher
 Change check( err ) to check( !err ).  This was a typo that was introduced in a previous checkin.
 
@@ -1390,7 +1393,7 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 
 	*browseDomains = NULL;
 	
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup\\") kServiceDynDNSHostNames, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode TEXT("\\DynDNS\\Setup\\") kServiceDynDNSHostNames, &key );
 	require_noerr( err, exit );
 
 	err = RegQueryString( key, "", &name, &dwSize, &enabled );
@@ -1414,7 +1417,7 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 		name = NULL;
 	}
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup\\") kServiceDynDNSBrowseDomains, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode TEXT("\\DynDNS\\Setup\\") kServiceDynDNSBrowseDomains, &key );
 	require_noerr( err, exit );
 
 	// Get information about this node
@@ -1467,7 +1470,7 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 		key = NULL;
 	}
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup\\") kServiceDynDNSRegistrationDomains, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode TEXT("\\DynDNS\\Setup\\") kServiceDynDNSRegistrationDomains, &key );
 	require_noerr( err, exit );
 	
 	err = RegQueryString( key, "", &name, &dwSize, &enabled );
@@ -1523,7 +1526,7 @@ dDNSPlatformSetNameStatus(domainname *const dname, mStatus status)
 	}
 
 	check( strlen( p ) <= MAX_ESCAPED_DOMAIN_NAME );
-	name = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\State\\HostNames");
+	name = kServiceParametersNode TEXT("\\DynDNS\\State\\HostNames");
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, name, &key );
 	require_noerr( err, exit );
 
@@ -3135,7 +3138,7 @@ mDNSlocal mStatus	SetupNotifications( mDNS * const inMDNS )
 	err = translate_errno( inMDNS->p->ddnsChangedEvent, (mStatus) GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters\\DynDNS\\Setup"), &inMDNS->p->ddnsKey );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode TEXT("\\DynDNS\\Setup"), &inMDNS->p->ddnsKey );
 	require_noerr( err, exit );
 
 	err = RegNotifyChangeKeyValue(inMDNS->p->ddnsKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->ddnsChangedEvent, TRUE);

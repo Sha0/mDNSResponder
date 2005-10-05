@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.37  2005/10/05 18:05:28  herscher
+<rdar://problem/4192011> Save Wide-Area preferences in a different spot in the registry so they don't get removed when doing an update install.
+
 Revision 1.36  2005/09/11 22:12:42  herscher
 <rdar://problem/4247793> Remove dependency on WMI.  Ensure that the Windows firewall is turned on before trying to configure it.
 
@@ -613,7 +616,6 @@ static OSStatus SetServiceParameters()
 	DWORD 			value;
 	DWORD			valueLen = sizeof(DWORD);
 	DWORD			type;
-	LPCTSTR			s;
 	OSStatus		err;
 	HKEY			key;
 
@@ -622,8 +624,7 @@ static OSStatus SetServiceParameters()
 	//
 	// Add/Open Parameters section under service entry in registry
 	//
-	s = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters");
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode, &key );
 	require_noerr( err, exit );
 	
 	//
@@ -660,7 +661,6 @@ static OSStatus GetServiceParameters()
 	DWORD 			value;
 	DWORD			valueLen;
 	DWORD			type;
-	LPCTSTR			s;
 	OSStatus		err;
 	HKEY			key;
 
@@ -669,8 +669,7 @@ static OSStatus GetServiceParameters()
 	//
 	// Add/Open Parameters section under service entry in registry
 	//
-	s = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters");
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode, &key );
 	require_noerr( err, exit );
 	
 	valueLen = sizeof(DWORD);
@@ -707,7 +706,6 @@ static OSStatus CheckFirewall()
 	DWORD 					value;
 	DWORD					valueLen;
 	DWORD					type;
-	LPCTSTR					s;
 	ENUM_SERVICE_STATUS	*	lpService = NULL;
 	SC_HANDLE				sc = NULL;
 	HKEY					key = NULL;
@@ -778,8 +776,7 @@ static OSStatus CheckFirewall()
 	// the case, then we need to manipulate the firewall
 	// so networking works correctly.
 
-	s = TEXT("SYSTEM\\CurrentControlSet\\Services\\") kServiceName TEXT("\\Parameters");
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, s, &key );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode, &key );
 	require_noerr( err, exit );
 
 	valueLen = sizeof(DWORD);
