@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.38  2005/10/05 20:55:15  herscher
+<rdar://problem/4096464> Don't call SetLLRoute on loopback interface
+
 Revision 1.37  2005/10/05 18:05:28  herscher
 <rdar://problem/4192011> Save Wide-Area preferences in a different spot in the registry so they don't get removed when doing an update install.
 
@@ -1247,9 +1250,12 @@ static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 	require_noerr( err, exit);
 
 	//
-	// set a route to link local addresses (169.254.0.0)
+	// <rdar://problem/4096464> Don't call SetLLRoute on loopback
+	// 
+	// Otherwise, set a route to link local addresses (169.254.0.0)
 	//
-	if (gServiceManageLLRouting == true)
+
+	if ( gServiceManageLLRouting && !gPlatformStorage.registeredLoopback4 )
 	{
 		SetLLRoute( &gMDNSRecord );
 	}
@@ -1353,7 +1359,13 @@ CoreCallback(mDNS * const inMDNS, mStatus status)
 {
 	if (status == mStatus_ConfigChanged)
 	{
-		if (gServiceManageLLRouting == true)
+		//
+		// <rdar://problem/4096464> Don't call SetLLRoute on loopback
+		// 
+		// Otherwise, set a route to link local addresses (169.254.0.0)
+		//
+
+		if ( gServiceManageLLRouting && !inMDNS->p->registeredLoopback4 )
 		{
 			SetLLRoute( inMDNS );
 		}

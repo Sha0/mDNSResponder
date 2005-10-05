@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.102  2005/10/05 20:55:14  herscher
+<rdar://problem/4096464> Don't call SetLLRoute on loopback interface
+
 Revision 1.101  2005/10/05 18:05:28  herscher
 <rdar://problem/4192011> Save Wide-Area preferences in a different spot in the registry so they don't get removed when doing an update install.
 
@@ -2398,11 +2401,12 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	check( inMDNS );
 	check( inMDNS->p );
 	
-	addrs						= NULL;
-	foundv4						= mDNSfalse;
-	foundv6						= mDNSfalse;
-	foundUnicastSock4DestAddr	= mDNSfalse;
-	foundUnicastSock6DestAddr	= mDNSfalse;
+	inMDNS->p->registeredLoopback4	= mDNSfalse;
+	addrs							= NULL;
+	foundv4							= mDNSfalse;
+	foundv6							= mDNSfalse;
+	foundUnicastSock4DestAddr		= mDNSfalse;
+	foundUnicastSock6DestAddr		= mDNSfalse;
 	
 	// Tear down any existing interfaces that may be set up.
 	
@@ -2560,6 +2564,8 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		
 		err = SetupInterface( inMDNS, loopbackv4, &ifd );
 		require_noerr( err, exit );
+
+		inMDNS->p->registeredLoopback4 = mDNStrue;
 		
 #if( MDNS_WINDOWS_ENABLE_IPV4 )
 
