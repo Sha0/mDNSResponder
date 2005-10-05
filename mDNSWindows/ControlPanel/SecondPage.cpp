@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: SecondPage.cpp,v $
+Revision 1.6  2005/10/05 20:46:50  herscher
+<rdar://problem/4192011> Move Wide-Area preferences to another part of the registry so they don't removed during an update-install.
+
 Revision 1.5  2005/04/05 04:15:46  shersche
 RegQueryString was returning uninitialized strings if the registry key couldn't be found, so always initialize strings before checking the registry key.
 
@@ -60,7 +63,7 @@ CSecondPage::CSecondPage()
 
 	OSStatus err;
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\" kServiceName L"\\Parameters\\DynDNS\\Setup\\" kServiceDynDNSRegistrationDomains, &m_setupKey );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\DynDNS\\Setup\\" kServiceDynDNSRegistrationDomains, &m_setupKey );
 	check_noerr( err );
 }
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: FirstPage.cpp,v $
+Revision 1.5  2005/10/05 20:46:50  herscher
+<rdar://problem/4192011> Move Wide-Area preferences to another part of the registry so they don't removed during an update-install.
+
 Revision 1.4  2005/04/05 03:52:14  shersche
 <rdar://problem/4066485> Registering with shared secret key doesn't work. Additionally, mDNSResponder wasn't dynamically re-reading it's DynDNS setup after setting a shared secret key.
 
@@ -62,10 +65,10 @@ CFirstPage::CFirstPage()
 
 	OSStatus err;
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\" kServiceName L"\\Parameters\\DynDNS\\State\\Hostnames", &m_statusKey );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\DynDNS\\State\\Hostnames", &m_statusKey );
 	check_noerr( err );
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\" kServiceName L"\\Parameters\\DynDNS\\Setup\\Hostnames", &m_setupKey );
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\DynDNS\\Setup\\Hostnames", &m_setupKey );
 	check_noerr( err );
 }
 
