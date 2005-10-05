@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.27  2005/10/05 21:41:45  herscher
+<rdar://problem/4190104> Use "application/octet-stream" to determine if CUPS shared queue supports raw
+
 Revision 1.26  2005/07/11 20:17:15  shersche
 <rdar://problem/4124524> UI fixes associated with CUPS printer workaround fix.
 
@@ -1115,6 +1118,14 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 			if ( MatchGeneric( manufacturers, printer, service, &genericManufacturer, &genericModel ) )
 			{
 				hasGenericDriver = true;
+			}
+
+			// <rdar://problem/4190104> Use "application/octet-stream" to determine if CUPS 
+			// shared queue supports raw
+
+			if ( q->pdl.Find( L"application/octet-stream" ) != -1 )
+			{
+				useCUPSWorkaround = false;
 			}
 
 			if ( useCUPSWorkaround && printer->isSharedFromOSX && hasGenericDriver )
