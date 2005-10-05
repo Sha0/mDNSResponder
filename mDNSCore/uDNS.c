@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.221  2005/10/05 17:27:48  herscher
+<rdar://problem/4272516> Change 200ms delay to 10ms
+
 Revision 1.220  2005/09/24 01:10:09  cheshire
 Fix comment typos
 
@@ -3385,7 +3388,7 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	if (GetServerForName(u, &question->qname, &server))
 		{
 		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
-		usleep( 200000 );
+		usleep( 10000 );
 		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
 		if (err == mStatus_TransientErr) err = mStatus_NoError;  // don't return transient errors to caller
 		}
