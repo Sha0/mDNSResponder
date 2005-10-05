@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.34  2005/10/05 17:32:51  herscher
+<rdar://problem/4141221> Use a case insensitive compare operation to check whether a printer with the same name has already been installed.
+
 Revision 1.33  2005/07/11 20:17:15  shersche
 <rdar://problem/4124524> UI fixes associated with CUPS printer workaround fix.
 
@@ -258,7 +261,7 @@ CPrinterSetupWizardSheet::LoadPrinterNames()
 		{
 			PRINTER_INFO_4 * lppi4 = (PRINTER_INFO_4*) (buffer + index * sizeof(PRINTER_INFO_4));
 
-			m_printerNames[lppi4->pPrinterName] = lppi4->pPrinterName;
+			m_printerNames.push_back( lppi4->pPrinterName );
 		}
 	}
 
@@ -302,6 +305,7 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 	//
 	// if the driver isn't installed, then install it
 	//
+
 	if ( !printer->driverInstalled )
 	{
 		DWORD		dwResult;
@@ -411,7 +415,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	ok = OpenPrinter(L",XcvMonitor Standard TCP/IP Port", &hXcv, &printerDefaults);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
-	
+
 	//
 	// BUGBUG: MSDN said this is not required, but my experience shows it is required
 	//
@@ -442,7 +446,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	wcscpy(portData.sztQueue, q->name);
 	wcscpy(portData.sztIPAddress, service->hostname); 
 	wcscpy(portData.sztHostAddress, service->hostname);
-		
+
 	ok = XcvData(hXcv, L"AddPort", (PBYTE) &portData, sizeof(PORT_DATA_1), pOutputData, cbInputData,  &cbOutputNeeded, &dwStatus);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
@@ -1131,9 +1135,18 @@ CPrinterSetupWizardSheet::OnAddPrinter(
 
 	for (;;)
 	{
-		CPrinterSetupWizardSheet::PrinterNameMap::iterator it;
+		CPrinterSetupWizardSheet::PrinterNames::iterator it;
 
-		it = m_printerNames.find(printer->actualName);
+		// <rdar://problem/4141221> Don't use find to do comparisons because we need to
+		// do a case insensitive string comparison
+
+		for ( it = m_printerNames.begin(); it != m_printerNames.end(); it++ )
+		{
+			if ( (*it).CompareNoCase( printer->actualName ) == 0 )
+			{
+				break;
+			}
+		}
 
 		if (it != m_printerNames.end())
 		{

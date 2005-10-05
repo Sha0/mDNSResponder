@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.11  2005/10/05 17:32:51  herscher
+<rdar://problem/4141221> Use a case insensitive compare operation to check whether a printer with the same name has already been installed.
+
 Revision 1.10  2005/07/07 17:53:19  shersche
 Fix problems associated with the CUPS printer workaround fix.
 
@@ -273,10 +276,10 @@ private:
 	static unsigned WINAPI
 	InstallDriverThread( LPVOID inParam );
 
-	typedef std::map<CString,CString>	PrinterNameMap;
+	typedef std::list<CString>			PrinterNames;
 	typedef std::list<DNSServiceRef>	ServiceRefList;
 	static CPrinterSetupWizardSheet	*	m_self;
-	PrinterNameMap						m_printerNames;
+	PrinterNames						m_printerNames;
 	Printer							*	m_selectedPrinter;
 	bool								m_driverThreadFinished;
 	DWORD								m_driverThreadExitCode;
