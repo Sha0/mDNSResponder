@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.222  2005/10/05 23:04:10  cheshire
+Add more information to unlinkAR and startLLQHandshakeCallback error messages
+
 Revision 1.221  2005/10/05 17:27:48  herscher
 <rdar://problem/4272516> Change 200ms delay to 10ms
 
@@ -880,7 +883,7 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 			}
 		prev = rptr;
 		}
-	LogMsg("ERROR: unlinkAR - no such active record");
+	LogMsg("ERROR: unlinkAR - no such active record %##s", rr->resrec.name->c);
 	return mStatus_UnknownErr;
 	}
 
@@ -3160,7 +3163,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		{ LogMsg("ERROR: startLLQHandshake - bad state %d", info->state); goto error; }
 
 	if (err)
-		{ LogMsg("ERROR: startLLQHandshakeCallback invoked with error code %ld", err); goto poll; }
+		{ LogMsg("ERROR: startLLQHandshakeCallback %##s invoked with error code %ld", info->question->qname.c, err); goto poll; }
 
 	if (!result)
 		{ LogMsg("ERROR: startLLQHandshakeCallback invoked with NULL result and no error code"); goto error; }
@@ -4528,6 +4531,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	
 	// We "silently" unlink any Extras from our RecordRegistration list, as they are implicitly deleted from
 	// the server when we delete all RRSets for this name
+	// %%% Should look at the sr->Extras list, instead of matching by name
 	while (*r)
 		{
 		if (SameDomainName(srs->RR_SRV.resrec.name, (*r)->resrec.name)) *r = (*r)->next;
@@ -4601,7 +4605,7 @@ mDNSexport mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, 
 	else
 		{
 		err = SetupRecordRegistration(m, &extra->r);
-		extra->r.uDNS_info.state = regState_ExtraQueued;
+		extra->r.uDNS_info.state = regState_ExtraQueued;	// %%% Is it okay to overwrite the previous uDNS_info.state?
 		}
 	
 	if (!err)
