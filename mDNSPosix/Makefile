@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.63  2005/10/11 21:30:44  cheshire
+# Add "-Wunreachable-code" (commented out for now)
+#
 # Revision 1.62  2005/06/30 21:46:55  cheshire
 # <rdar://problem/4167287> Solaris should use unix domain sockets, not loopback
 #
@@ -322,7 +325,7 @@ JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Header
 else
 
 ifeq ($(os),tiger)
-CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -Wdeclaration-after-statement
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -Wdeclaration-after-statement #-Wunreachable-code
 CC = @gcc-4.0
 LD = $(CC) -dynamiclib
 LIBFLAGS = -lSystem
