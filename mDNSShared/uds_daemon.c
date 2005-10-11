@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.188  2005/10/11 22:15:03  cheshire
+<rdar://problem/4296042> Add memory corruption safeguards to uds_daemon.c
+Only compile uds_validatelists() when building for Mac OS X
+
 Revision 1.187  2005/10/11 20:30:27  cheshire
 <rdar://problem/4296042> Add memory corruption safeguards to uds_daemon.c
 
@@ -636,7 +640,6 @@ static char *	win32_strerror(int inErrorCode);
 extern mStatus dDNS_RegisterSearchDomains( mDNS * const m );
 #endif
 
-
 // Types and Data Structures
 // ----------------------------------------------------------------------
 
@@ -1164,7 +1167,7 @@ mDNSexport void udsserver_info(mDNS *const m)
     LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
     }
 
-#if MACOSX_MDNS_MALLOC_DEBUGGING
+#if __MACOSX__ && MACOSX_MDNS_MALLOC_DEBUGGING
 mDNSexport void uds_validatelists(void)
 	{
 	request_state *req;
@@ -1188,7 +1191,6 @@ mDNSexport void udsserver_handle_configchange(void)
     {
     request_state *req;
 
-    
     for (req = all_requests; req; req = req->next)
         {
 		if (req->service_registration)
@@ -2281,7 +2283,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 		if (!service->txtdata) { my_perror("ERROR: malloc"); result = mStatus_NoMemoryErr; goto finish; }
 		memcpy(service->txtdata, get_rdata(&ptr, service->txtlen), service->txtlen);
 		}
-	else service->txtdata = NULL;		   
+	else service->txtdata = NULL;
 
 	// Check for sub-types after the service type
 	service->num_subtypes = ChopSubTypes(service->type_as_string);	// Note: Modifies regtype string to remove trailing subtypes
@@ -2391,7 +2393,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		service_info *info = instance->request->service_registration;
 		if (info->default_domain && !instance->default_local) SuppressError = mDNStrue;
         // don't send errors up to client for wide-area, empty-string registrations
-		}			
+		}
 	
     if (result == mStatus_NoError)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED  ",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
@@ -2993,7 +2995,7 @@ mDNSlocal void enum_result_callback(mDNS *const m, DNSQuestion *question, const 
         flags |= kDNSServiceFlagsAdd;
         if (de->type == mDNS_DomainTypeRegistrationDefault || de->type == mDNS_DomainTypeBrowseDefault)
             flags |= kDNSServiceFlagsDefault;
-    	}	
+    	}
     ConvertDomainNameToCString(&answer->rdata->u.name, domain);
 	// note that we do NOT propagate specific interface indexes to the client - for example, a domain we learn from
 	// a machine's system preferences may be discovered on the LocalOnly interface, but should be browsed on the
@@ -3014,13 +3016,12 @@ mDNSlocal reply_state *format_enumeration_reply(request_state *rstate, const cha
     size_t len;
     reply_state *reply;
     char *data;
-    
-    
+
     len = sizeof(DNSServiceFlags);
     len += sizeof(uint32_t);
     len += sizeof(DNSServiceErrorType);
     len += strlen(domain) + 1;
-  
+
     reply = create_reply(enumeration_reply, len, rstate);
     reply->rhdr->flags = dnssd_htonl(flags);
     reply->rhdr->ifi = dnssd_htonl(ifi);
@@ -3362,7 +3363,6 @@ mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state
     reply_state *reply;
     int totallen;
 
-    
     if ((unsigned)datalen < sizeof(reply_hdr))
         {
         LogMsg("ERROR: create_reply - data length less than lenght of required fields");
