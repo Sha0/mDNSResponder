@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.187  2005/10/11 20:30:27  cheshire
+<rdar://problem/4296042> Add memory corruption safeguards to uds_daemon.c
+
 Revision 1.186  2005/09/12 07:11:53  herscher
 <rdar://problem/4248878> Lazily call RegisterSearchDomains to workaround crashes of several routers. This code is conditionally compiled, and currently is only enabled on Windows platforms.
 
@@ -1164,7 +1167,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 #if MACOSX_MDNS_MALLOC_DEBUGGING
 mDNSexport void uds_validatelists(void)
 	{
-	//!!!KRS removing check until we come up with an appropriate validation mechanism
+	request_state *req;
+	for (req = all_requests; req; req=req->next)
+		if (req->sd < 0 && req->sd != -2)
+			LogMemCorruption("UDS request list: %p is garbage (%X)", req, req->sd);
 	}
 #endif
 
@@ -3472,7 +3478,10 @@ mDNSlocal void abort_request(request_state *rs)
     if (rs->msgbuf) freeL("abort_request", rs->msgbuf);
 	LogOperation("%3d: Removing FD", rs->sd);
     udsSupportRemoveFDFromEventLoop(rs->sd);					// Note: This also closes file descriptor rs->sd for us
-    rs->sd = dnssd_InvalidSocket;
+
+	// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
+	// for detecting when the memory for an object is inadvertently freed while the object is still on some list
+    rs->sd = -2;
 
     // free pending replies
     rep = rs->replies;
