@@ -576,7 +576,7 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	if (nam[0] == '.' && nam[1] == 0) nam = "";   // We allow '.' on the command line as a synonym for empty string
 	if (dom[0] == '.' && dom[1] == 0) dom = "";   // We allow '.' on the command line as a synonym for empty string
 	
-	printf("Registering Service %s.%s%s", nam, typ, dom);
+	printf("Registering Service %s.%s%s%s", nam[0] ? nam : "<<Default>>", typ, dom[0] ? "." : "", dom);
 	if (host && *host) printf(" host %s", host);
 	printf(" port %s\n", port);
 
@@ -644,7 +644,7 @@ int main(int argc, char **argv)
 		case 'B':	if (argc < optind+1) goto Fail;
 					dom = (argc < optind+2) ? "" : argv[optind+1];
 					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
-					printf("Browsing for %s%s\n", argv[optind+0], dom);
+					printf("Browsing for %s%s%s\n", argv[optind+0], dom[0] ? "." : "", dom);
 					err = DNSServiceBrowse(&client, 0, opinterface, argv[optind+0], dom, browse_reply, NULL);
 					break;
 
