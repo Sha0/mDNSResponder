@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.223  2005/10/17 18:52:42  cheshire
+<rdar://problem/4271183> mDNSResponder crashed in CheckRecordRegistrations
+Move code to unregister the service's extra records from uDNS_DeregisterService() to unlinkSRS().
+
 Revision 1.222  2005/10/05 23:04:10  cheshire
 Add more information to unlinkAR and startLLQHandshakeCallback error messages
 
@@ -870,21 +874,10 @@ mDNSlocal mDNSOpaque16 newMessageID(uDNS_GlobalInfo *u)
 // unlink an AuthRecord from a linked list
 mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 	{
-	AuthRecord *rptr, *prev = mDNSNULL;
-	
-	for (rptr = *list; rptr; rptr = rptr->next)
-		{
-		if (rptr == rr)
-			{
-			if (prev) prev->next = rptr->next;
-			else *list  = rptr->next;
-			rptr->next = mDNSNULL;
-			return mStatus_NoError;
-			}
-		prev = rptr;
-		}
+	while (*list && *list != rr) list = &(*list)->next;
+	if (*list) { *list = rr->next; rr->next = mDNSNULL; return(mStatus_NoError); }
 	LogMsg("ERROR: unlinkAR - no such active record %##s", rr->resrec.name->c);
-	return mStatus_UnknownErr;
+	return(mStatus_NoSuchRecord);
 	}
 
 mDNSlocal void unlinkSRS(mDNS *m, ServiceRecordSet *srs)
@@ -905,10 +898,19 @@ mDNSlocal void unlinkSRS(mDNS *m, ServiceRecordSet *srs)
 			}
 		else n = n->next;
 		}
-			
+	
 	for (p = &u->ServiceRegistrations; *p; p = &(*p)->next)
-		if (*p == srs) { *p = srs->next; srs->next = mDNSNULL; return; }
-	LogMsg("ERROR: unlinkSRS - SRS not found in ServiceRegistrations list");
+		if (*p == srs)
+			{
+			ExtraResourceRecord *e;
+			*p = srs->next;
+			srs->next = mDNSNULL;
+			for (e=srs->Extras; e; e=e->next)
+				if (unlinkAR(&u->RecordRegistrations, &e->r))
+					LogMsg("unlinkSRS: extra record %##s not found", e->r.resrec.name->c);
+			return;
+			}
+	LogMsg("ERROR: unlinkSRS - SRS not found in ServiceRegistrations list %##s", srs->RR_SRV.resrec.name->c);
 	}
 
 mDNSlocal void LinkActiveQuestion(uDNS_GlobalInfo *u, DNSQuestion *q)
@@ -4524,20 +4526,9 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 
 mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
 	NATTraversalInfo *nat = srs->uDNS_info.NATinfo;
-	AuthRecord **r = &u->RecordRegistrations;
 	char *errmsg = "Unknown State";
 	
-	// We "silently" unlink any Extras from our RecordRegistration list, as they are implicitly deleted from
-	// the server when we delete all RRSets for this name
-	// %%% Should look at the sr->Extras list, instead of matching by name
-	while (*r)
-		{
-		if (SameDomainName(srs->RR_SRV.resrec.name, (*r)->resrec.name)) *r = (*r)->next;
-		else r = &(*r)->next;
-		}
-
 	// don't re-register with a new target following deregistration
 	srs->uDNS_info.SRVChanged = srs->uDNS_info.SRVUpdateDeferred = mDNSfalse;
 
