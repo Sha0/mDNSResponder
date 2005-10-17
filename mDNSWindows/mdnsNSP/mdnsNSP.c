@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.17  2005/10/17 05:30:00  herscher
+<rdar://problem/4071610> NSP should handle IPv6 AAAA queries for dot-local names
+
 Revision 1.16  2005/09/16 22:22:48  herscher
 <rdar://problem/4261460> No longer set the PATH variable when NSP is loaded.
 
@@ -84,6 +87,7 @@ mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to 
 
 */
 
+
 #include	<stdio.h>
 #include	<stdlib.h>
 #include	<string.h>
@@ -91,9 +95,12 @@ mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to 
 #include	"CommonServices.h"
 #include	"DebugServices.h"
 
+#include	<iphlpapi.h>
 #include	<guiddef.h>
 #include	<ws2spi.h>
 #include	<shlwapi.h>
+
+
 
 #include	"dns_sd.h"
 
@@ -121,15 +128,21 @@ struct	Query
 	DWORD				querySetFlags;
 	WSAQUERYSETW *		querySet;
 	size_t				querySetSize;
-	HANDLE				dataEvent;
+	HANDLE				data4Event;
+	HANDLE				data6Event;
 	HANDLE				cancelEvent;
-	HANDLE				waitHandles[ 2 ];
+	HANDLE				waitHandles[ 3 ];
 	DWORD				waitCount;
-	DNSServiceRef		resolver;
+	DNSServiceRef		resolver4;
+	DNSServiceRef		resolver6;
 	char				name[ kDNSServiceMaxDomainName ];
 	size_t				nameSize;
-	uint32_t			addr;
-	bool				addrValid;
+	uint8_t				numValidAddrs;
+	uint32_t			addr4;
+	bool				addr4Valid;
+	uint8_t				addr6[16];
+	u_long				addr6ScopeId;
+	bool				addr6Valid;
 };
 
 #define BUFFER_INITIAL_SIZE		4192
@@ -208,7 +221,21 @@ DEBUG_LOCAL OSStatus	QueryRetain( QueryRef inRef );
 DEBUG_LOCAL OSStatus	QueryRelease( QueryRef inRef );
 
 DEBUG_LOCAL void CALLBACK_COMPAT
-	QueryRecordCallback(
+	QueryRecordCallback4(
+		DNSServiceRef		inRef,
+		DNSServiceFlags		inFlags,
+		uint32_t			inInterfaceIndex,
+		DNSServiceErrorType	inErrorCode,
+		const char *		inName,    
+		uint16_t			inRRType,
+		uint16_t			inRRClass,
+		uint16_t			inRDataSize,
+		const void *		inRData,
+		uint32_t			inTTL,
+		void *				inContext );
+
+DEBUG_LOCAL void CALLBACK_COMPAT
+	QueryRecordCallback6(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
 		uint32_t			inInterfaceIndex,
@@ -254,6 +281,7 @@ DEBUG_LOCAL OSStatus	HostsFileClose( HostsFile * self );
 DEBUG_LOCAL void		HostsFileInfoFree( HostsFileInfo * info );
 DEBUG_LOCAL OSStatus	HostsFileNext( HostsFile * self, HostsFileInfo ** hInfo );
 DEBUG_LOCAL const char * GetNextLabel( const char *cstr, char label[64] );
+DEBUG_LOCAL DWORD		GetScopeId( DWORD ifIndex );
 
 #ifdef ENABLE_REVERSE_LOOKUP
 DEBUG_LOCAL OSStatus	IsReverseLookup( LPCWSTR name, size_t size );
@@ -275,9 +303,19 @@ DEBUG_LOCAL GUID					gNSPGUID			= { 0xb600e6e9, 0x553b, 0x4a19, { 0x86, 0x96, 0x
 DEBUG_LOCAL LONG					gRefCount			= 0;
 DEBUG_LOCAL CRITICAL_SECTION		gLock;
 DEBUG_LOCAL bool					gLockInitialized 	= false;
-DEBUG_LOCAL bool					gDNSSDInitialized	= false;
 DEBUG_LOCAL QueryRef				gQueryList	 		= NULL;
 DEBUG_LOCAL HostsFileInfo		*	gHostsFileInfo		= NULL;
+typedef DWORD
+	( WINAPI * GetAdaptersAddressesFunctionPtr )( 
+			ULONG 					inFamily, 
+			DWORD 					inFlags, 
+			PVOID 					inReserved, 
+			PIP_ADAPTER_ADDRESSES 	inAdapter, 
+			PULONG					outBufferSize );
+
+DEBUG_LOCAL HMODULE								gIPHelperLibraryInstance			= NULL;
+DEBUG_LOCAL GetAdaptersAddressesFunctionPtr		gGetAdaptersAddressesFunctionPtr	= NULL;
+
 
 
 #if 0
@@ -299,7 +337,7 @@ BOOL APIENTRY	DllMain( HINSTANCE inInstance, DWORD inReason, LPVOID inReserved )
 			gInstance = inInstance;		
 			gHostsFileInfo	= NULL;
 			debug_initialize( kDebugOutputTypeWindowsEventLog, "mDNS NSP", inInstance );
-			debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelInfo );
+			debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelNotice );
 			dlog( kDebugLevelTrace, "\n" );
 			dlog( kDebugLevelVerbose, "%s: process attach\n", __ROUTINE__ );
 
@@ -429,6 +467,18 @@ int WSPAPI	NSPStartup( LPGUID inProviderID, LPNSP_ROUTINE outRoutines )
 	outRoutines->NSPRemoveServiceClass	= NSPRemoveServiceClass;
 	outRoutines->NSPGetServiceClassInfo	= NSPGetServiceClassInfo;
 	
+	// See if we can get the address for the GetAdaptersAddresses() API.  This is only in XP, but we want our
+	// code to run on older versions of Windows
+
+	if ( !gIPHelperLibraryInstance )
+	{
+		gIPHelperLibraryInstance = LoadLibrary( TEXT( "Iphlpapi" ) );
+		if( gIPHelperLibraryInstance )
+		{
+			gGetAdaptersAddressesFunctionPtr = (GetAdaptersAddressesFunctionPtr) GetProcAddress( gIPHelperLibraryInstance, "GetAdaptersAddresses" );
+		}
+	}
+
 	err = NO_ERROR;
 	
 exit:
@@ -478,16 +528,19 @@ int	WSPAPI	NSPCleanup( LPGUID inProviderID )
 		NSPUnlock();
 	}
 	
-	// Shut down DNS-SD and release our resources.
-	
-	if( gDNSSDInitialized )
-	{
-		gDNSSDInitialized = false;
-	}
 	if( gLockInitialized )
 	{
 		gLockInitialized = false;
 		DeleteCriticalSection( &gLock );
+	}
+
+	if( !gIPHelperLibraryInstance )
+	{
+		BOOL ok;
+				
+		ok = FreeLibrary( gIPHelperLibraryInstance );
+		check_translated_errno( ok, GetLastError(), kUnknownErr );
+		gIPHelperLibraryInstance = NULL;
 	}
 	
 exit:
@@ -628,10 +681,6 @@ DEBUG_LOCAL int WSPAPI
 	// The name ends in .local ( and isn't in the hosts table ), .0.8.e.f.ip6.arpa, or .254.169.in-addr.arpa so start the resolve operation. Lazy initialize DNS-SD if needed.
 		
 	NSPLock();
-	if( !gDNSSDInitialized )
-	{
-		gDNSSDInitialized = true;
-	}
 	
 	err = QueryCreate( inQuerySet, inFlags, &obj );
 	NSPUnlock();
@@ -664,6 +713,8 @@ DEBUG_LOCAL int WSPAPI
 		LPDWORD			ioSize,
 		LPWSAQUERYSETW	outResults )
 {
+	BOOL			data4;
+	BOOL			data6;
 	OSStatus		err;
 	QueryRef		obj;
 	DWORD			waitResult;
@@ -673,6 +724,8 @@ DEBUG_LOCAL int WSPAPI
 	
 	dlog( kDebugLevelTrace, "%s begin (ticks=%d)\n", __ROUTINE__, GetTickCount() );
 	
+	data4 = FALSE;
+	data6 = FALSE;
 	obj = NULL;
 	NSPLock();
 	err = QueryRetain( (QueryRef) inLookup );
@@ -688,23 +741,56 @@ DEBUG_LOCAL int WSPAPI
 	NSPUnlock();
 	waitResult = WaitForMultipleObjects( obj->waitCount, obj->waitHandles, FALSE, 2 * 1000 );
 	NSPLock();
-	require_action_quiet( waitResult != ( WAIT_OBJECT_0 + 1 ), exit, err = WSA_E_CANCELLED );
-	err = translate_errno( waitResult == WAIT_OBJECT_0, (OSStatus) GetLastError(), WSASERVICE_NOT_FOUND );
+	require_action_quiet( waitResult != ( WAIT_OBJECT_0 ), exit, err = WSA_E_CANCELLED );
+	err = translate_errno( ( waitResult == WAIT_OBJECT_0 + 1 ) || ( waitResult == WAIT_OBJECT_0 + 2 ), (OSStatus) GetLastError(), WSASERVICE_NOT_FOUND );
 	require_noerr_quiet( err, exit );
 
-	__try
+	// If we've received an IPv4 reply, then hang out briefly for an IPv6 reply
+
+	if ( waitResult == WAIT_OBJECT_0 + 1 )
 	{
-		err = DNSServiceProcessResult(obj->resolver);
-	}
-	__except( EXCEPTION_EXECUTE_HANDLER )
-	{
-		err = kUnknownErr;
+		data4 = TRUE;
+		data6 = WaitForSingleObject( obj->data6Event, 100 ) == WAIT_OBJECT_0 ? TRUE : FALSE;
 	}
 
-	require_noerr( err, exit );
-	
-	require_action_quiet( obj->addrValid, exit, err = WSA_E_NO_MORE );
-	
+	// Else we've received an IPv6 reply, so hang out briefly for an IPv4 reply
+
+	else if ( waitResult == WAIT_OBJECT_0 + 2 )
+	{
+		data4 = WaitForSingleObject( obj->data4Event, 100 ) == WAIT_OBJECT_0 ? TRUE : FALSE;
+		data6 = TRUE;
+	}
+
+	if ( data4 )
+	{
+		__try
+		{
+			err = DNSServiceProcessResult(obj->resolver4);
+		}
+		__except( EXCEPTION_EXECUTE_HANDLER )
+		{
+			err = kUnknownErr;
+		}
+
+		require_noerr( err, exit );
+	}
+
+	if ( data6 )
+	{
+		__try
+		{
+			err = DNSServiceProcessResult( obj->resolver6 );
+		}
+		__except( EXCEPTION_EXECUTE_HANDLER )
+		{
+			err = kUnknownErr;
+		}
+
+		require_noerr( err, exit );
+	}
+
+	require_action_quiet( obj->addr4Valid || obj->addr6Valid, exit, err = WSA_E_NO_MORE );
+
 	// Copy the externalized query results to the callers buffer (if it fits).
 	
 	size = QueryCopyQuerySetSize( obj, obj->querySet, obj->querySetFlags );
@@ -712,8 +798,9 @@ DEBUG_LOCAL int WSPAPI
 	
 	QueryCopyQuerySetTo( obj, obj->querySet, obj->querySetFlags, outResults );
 	outResults->dwOutputFlags = RESULT_IS_ADDED;
-	obj->addrValid = false;
-	
+	obj->addr4Valid = false;
+	obj->addr6Valid = false;
+
 exit:
 	if( obj )
 	{
@@ -875,7 +962,8 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 	char			name[ kDNSServiceMaxDomainName ];
 	int				n;
 	QueryRef *		p;
-	SOCKET			s;
+	SOCKET			s4;
+	SOCKET			s6;
 
 	obj = NULL;
 	check( inQuerySet );
@@ -898,20 +986,21 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 	for( p = &gQueryList; *p; p = &( *p )->next ) {}	// Find the end of the list.
 	*p = obj;
 	
-	// Set up events to signal when data is ready and when cancelling.
-	
-	obj->dataEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
-	require_action( obj->dataEvent, exit, err = WSA_NOT_ENOUGH_MEMORY );
-	
+	// Set up cancel event
+
 	obj->cancelEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
 	require_action( obj->cancelEvent, exit, err = WSA_NOT_ENOUGH_MEMORY );
+
+	// Set up events to signal when A record data is ready
+	
+	obj->data4Event = CreateEvent( NULL, TRUE, FALSE, NULL );
+	require_action( obj->data4Event, exit, err = WSA_NOT_ENOUGH_MEMORY );
 	
 	// Start the query.  Handle delay loaded DLL errors.
 
 	__try
 	{
-		err = DNSServiceQueryRecord( &obj->resolver, 0, 0, name, kDNSServiceType_A, kDNSServiceClass_IN, 
-			QueryRecordCallback, obj );
+		err = DNSServiceQueryRecord( &obj->resolver4, 0, 0, name, kDNSServiceType_A, kDNSServiceClass_IN, QueryRecordCallback4, obj );
 	}
 	__except( EXCEPTION_EXECUTE_HANDLER )
 	{
@@ -924,21 +1013,57 @@ DEBUG_LOCAL OSStatus	QueryCreate( const WSAQUERYSETW *inQuerySet, DWORD inQueryS
 
 	__try
 	{
-		s = DNSServiceRefSockFD(obj->resolver);
+		s4 = DNSServiceRefSockFD(obj->resolver4);
 	}
 	__except( EXCEPTION_EXECUTE_HANDLER )
 	{
-		s = INVALID_SOCKET;
+		s4 = INVALID_SOCKET;
 	}
 
-	err = translate_errno( s != INVALID_SOCKET, errno_compat(), kUnknownErr );
+	err = translate_errno( s4 != INVALID_SOCKET, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
 
-	WSAEventSelect(s, obj->dataEvent, FD_READ|FD_CLOSE);
+	WSAEventSelect(s4, obj->data4Event, FD_READ|FD_CLOSE);
 	
+	// Set up events to signal when AAAA record data is ready
+	
+	obj->data6Event = CreateEvent( NULL, TRUE, FALSE, NULL );
+	require_action( obj->data6Event, exit, err = WSA_NOT_ENOUGH_MEMORY );
+	
+	// Start the query.  Handle delay loaded DLL errors.
+
+	__try
+	{
+		err = DNSServiceQueryRecord( &obj->resolver6, 0, 0, name, kDNSServiceType_AAAA, kDNSServiceClass_IN, QueryRecordCallback6, obj );
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+		err = kUnknownErr;
+	}
+
+	require_noerr( err, exit );
+
+	// Attach the socket to the event
+
+	__try
+	{
+		s6 = DNSServiceRefSockFD(obj->resolver6);
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+		s6 = INVALID_SOCKET;
+	}
+
+	err = translate_errno( s6 != INVALID_SOCKET, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+
+	WSAEventSelect(s6, obj->data6Event, FD_READ|FD_CLOSE);
+
 	obj->waitCount = 0;
-	obj->waitHandles[ obj->waitCount++ ] = obj->dataEvent;
 	obj->waitHandles[ obj->waitCount++ ] = obj->cancelEvent;
+	obj->waitHandles[ obj->waitCount++ ] = obj->data4Event;
+	obj->waitHandles[ obj->waitCount++ ] = obj->data6Event;
+	
 	check( obj->waitCount == sizeof_array( obj->waitHandles ) );
 	
 	// Copy the QuerySet so it can be returned later.
@@ -1022,17 +1147,30 @@ DEBUG_LOCAL OSStatus	QueryRelease( QueryRef inRef )
 	
 	// Stop the query.
 	
-	if( inRef->resolver )
+	if( inRef->resolver4 )
 	{
 		__try
 		{
-			DNSServiceRefDeallocate( inRef->resolver );
+			DNSServiceRefDeallocate( inRef->resolver4 );
 		}
 		__except( EXCEPTION_EXECUTE_HANDLER )
 		{
 		}
 		
-		inRef->resolver = NULL;
+		inRef->resolver4 = NULL;
+	}
+
+	if ( inRef->resolver6 )
+	{
+		__try
+		{
+			DNSServiceRefDeallocate( inRef->resolver6 );
+		}
+		__except( EXCEPTION_EXECUTE_HANDLER )
+		{
+		}
+
+		inRef->resolver6 = NULL;
 	}
 	
 	// Decrement the refCount. Fully release if it drops to 0. If still referenced, just exit.
@@ -1051,9 +1189,14 @@ DEBUG_LOCAL OSStatus	QueryRelease( QueryRef inRef )
 		ok = CloseHandle( inRef->cancelEvent );
 		check_translated_errno( ok, GetLastError(), WSAEINVAL );
 	}
-	if( inRef->dataEvent )
+	if( inRef->data4Event )
 	{
-		ok = CloseHandle( inRef->dataEvent );
+		ok = CloseHandle( inRef->data4Event );
+		check_translated_errno( ok, GetLastError(), WSAEINVAL );
+	}
+	if( inRef->data6Event )
+	{
+		ok = CloseHandle( inRef->data6Event );
 		check_translated_errno( ok, GetLastError(), WSAEINVAL );
 	}
 	if( inRef->querySet )
@@ -1068,11 +1211,11 @@ exit:
 }
 
 //===========================================================================================================================
-//	QueryRecordCallback
+//	QueryRecordCallback4
 //===========================================================================================================================
 
 DEBUG_LOCAL void CALLBACK_COMPAT
-	QueryRecordCallback(
+	QueryRecordCallback4(
 		DNSServiceRef		inRef,
 		DNSServiceFlags		inFlags,
 		uint32_t			inInterfaceIndex,
@@ -1123,13 +1266,14 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 	
 	// Copy the data.
 	
-	memcpy( &obj->addr, inRData, inRDataSize );
-	obj->addrValid = true;
+	memcpy( &obj->addr4, inRData, inRDataSize );
+	obj->addr4Valid = true;
+	obj->numValidAddrs++;
 	
 	// Signal that a result is ready.
 	
-	check( obj->dataEvent );
-	ok = SetEvent( obj->dataEvent );
+	check( obj->data4Event );
+	ok = SetEvent( obj->data4Event );
 	check_translated_errno( ok, GetLastError(), WSAEINVAL );
 	
 	// Stop the resolver after the first response.
@@ -1142,7 +1286,7 @@ DEBUG_LOCAL void CALLBACK_COMPAT
 	{
 	}
 
-	obj->resolver = NULL;
+	obj->resolver4 = NULL;
 
 exit:
 	NSPUnlock();
@@ -1151,6 +1295,96 @@ exit:
 #if 0
 #pragma mark -
 #endif
+
+
+//===========================================================================================================================
+//	QueryRecordCallback6
+//===========================================================================================================================
+
+DEBUG_LOCAL void CALLBACK_COMPAT
+	QueryRecordCallback6(
+		DNSServiceRef		inRef,
+		DNSServiceFlags		inFlags,
+		uint32_t			inInterfaceIndex,
+		DNSServiceErrorType	inErrorCode,
+		const char *		inName,    
+		uint16_t			inRRType,
+		uint16_t			inRRClass,
+		uint16_t			inRDataSize,
+		const void *		inRData,
+		uint32_t			inTTL,
+		void *				inContext )
+{
+	QueryRef			obj;
+	const char *		src;
+	char *				dst;
+	BOOL				ok;
+	
+	DEBUG_UNUSED( inFlags );
+	DEBUG_UNUSED( inInterfaceIndex );
+	DEBUG_UNUSED( inTTL );
+
+	NSPLock();
+	obj = (QueryRef) inContext;
+	check( obj );
+	require_noerr( inErrorCode, exit );
+	require_quiet( inFlags & kDNSServiceFlagsAdd, exit );
+	require( inRRClass   == kDNSServiceClass_IN, exit );
+	require( inRRType    == kDNSServiceType_AAAA, exit );
+	require( inRDataSize == 16, exit );
+	
+	dlog( kDebugLevelTrace, "%s (flags=0x%08X, name=%s, rrType=%d, rDataSize=%d)\n", 
+		__ROUTINE__, inFlags, inName, inRRType, inRDataSize );
+
+	// Copy the name if needed.
+	
+	if( obj->name[ 0 ] == '\0' )
+	{
+		src = inName;
+		dst = obj->name;
+		while( *src != '\0' )
+		{
+			*dst++ = *src++;
+		}
+		*dst = '\0';
+		obj->nameSize = (size_t)( dst - obj->name );
+		check( obj->nameSize < sizeof( obj->name ) );
+	}
+	
+	// Copy the data.
+	
+	memcpy( &obj->addr6, inRData, inRDataSize );
+
+	obj->addr6ScopeId = GetScopeId( inInterfaceIndex );
+	require( obj->addr6ScopeId, exit );
+	obj->addr6Valid	  = true;
+	obj->numValidAddrs++;
+
+	// Signal that we're done
+	
+	check( obj->data6Event );
+	ok = SetEvent( obj->data6Event );
+	check_translated_errno( ok, GetLastError(), WSAEINVAL );
+
+	// Stop the resolver after the first response.
+	
+	__try
+	{
+		DNSServiceRefDeallocate( inRef );
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+	}
+
+	obj->resolver6 = NULL;
+
+exit:
+
+	
+	
+	NSPUnlock();
+}
+
 
 //===========================================================================================================================
 //	QueryCopyQuerySet
@@ -1194,6 +1428,8 @@ exit:
 	}
 	return( err );	
 }
+
+
 
 //===========================================================================================================================
 //	QueryCopyQuerySetTo
@@ -1286,6 +1522,7 @@ DEBUG_LOCAL void
 	}
 		
 	n = inQuerySet->dwNumberOfProtocols;
+
 	if( n > 0 )
 	{
 		check( inQuerySet->lpafpProtocols );
@@ -1309,28 +1546,55 @@ DEBUG_LOCAL void
 	
 	// Copy the address(es).
 	
-	if( ( inQuerySetFlags & LUP_RETURN_ADDR ) && inRef->addrValid )
+	if( ( inQuerySetFlags & LUP_RETURN_ADDR ) && ( inRef->numValidAddrs > 0 ) )
 	{
-		struct sockaddr_in *		addr;
+		struct sockaddr_in	*	addr4;
+		struct sockaddr_in6	*	addr6;
+		int						index;
 		
-		outQuerySet->dwNumberOfCsAddrs								= 1;
-		outQuerySet->lpcsaBuffer 									= (LPCSADDR_INFO) dst;
-		dst 													   += sizeof( *outQuerySet->lpcsaBuffer );
+		outQuerySet->dwNumberOfCsAddrs	= inRef->numValidAddrs;
+		outQuerySet->lpcsaBuffer 		= (LPCSADDR_INFO) dst;
+		dst 							+= ( sizeof( *outQuerySet->lpcsaBuffer ) ) * ( inRef->numValidAddrs ) ;
+		index							= 0;
 		
-		outQuerySet->lpcsaBuffer[ 0 ].LocalAddr.lpSockaddr 			= NULL;
-		outQuerySet->lpcsaBuffer[ 0 ].LocalAddr.iSockaddrLength		= 0;
+		if ( inRef->addr4Valid )
+		{	
+			outQuerySet->lpcsaBuffer[ index ].LocalAddr.lpSockaddr 			= NULL;
+			outQuerySet->lpcsaBuffer[ index ].LocalAddr.iSockaddrLength		= 0;
 		
-		outQuerySet->lpcsaBuffer[ 0 ].RemoteAddr.lpSockaddr 		= (LPSOCKADDR) dst;
-		outQuerySet->lpcsaBuffer[ 0 ].RemoteAddr.iSockaddrLength	= sizeof( struct sockaddr_in );
+			outQuerySet->lpcsaBuffer[ index ].RemoteAddr.lpSockaddr 		= (LPSOCKADDR) dst;
+			outQuerySet->lpcsaBuffer[ index ].RemoteAddr.iSockaddrLength	= sizeof( struct sockaddr_in );
 		
-		addr 														= (struct sockaddr_in *) dst;
-		memset( addr, 0, sizeof( *addr ) );
-		addr->sin_family											= AF_INET;
-		memcpy( &addr->sin_addr, &inRef->addr, 4 );
-		dst 													   += sizeof( *addr );
+			addr4 															= (struct sockaddr_in *) dst;
+			memset( addr4, 0, sizeof( *addr4 ) );
+			addr4->sin_family												= AF_INET;
+			memcpy( &addr4->sin_addr, &inRef->addr4, 4 );
+			dst 															+= sizeof( *addr4 );
 		
-		outQuerySet->lpcsaBuffer[ 0 ].iSocketType 					= AF_INET;		// Emulate Tcpip NSP
-		outQuerySet->lpcsaBuffer[ 0 ].iProtocol						= IPPROTO_UDP;	// Emulate Tcpip NSP
+			outQuerySet->lpcsaBuffer[ index ].iSocketType 					= AF_INET;		// Emulate Tcpip NSP
+			outQuerySet->lpcsaBuffer[ index ].iProtocol						= IPPROTO_UDP;	// Emulate Tcpip NSP
+
+			index++;
+		}
+
+		if ( inRef->addr6Valid )
+		{
+			outQuerySet->lpcsaBuffer[ index ].LocalAddr.lpSockaddr 			= NULL;
+			outQuerySet->lpcsaBuffer[ index ].LocalAddr.iSockaddrLength		= 0;
+		
+			outQuerySet->lpcsaBuffer[ index ].RemoteAddr.lpSockaddr 		= (LPSOCKADDR) dst;
+			outQuerySet->lpcsaBuffer[ index ].RemoteAddr.iSockaddrLength	= sizeof( struct sockaddr_in6 );
+		
+			addr6 															= (struct sockaddr_in6 *) dst;
+			memset( addr6, 0, sizeof( *addr6 ) );
+			addr6->sin6_family												= AF_INET6;
+			addr6->sin6_scope_id											= inRef->addr6ScopeId;
+			memcpy( &addr6->sin6_addr, &inRef->addr6, 16 );
+			dst 															+= sizeof( *addr6 );
+		
+			outQuerySet->lpcsaBuffer[ index ].iSocketType 					= AF_INET6;		// Emulate Tcpip NSP
+			outQuerySet->lpcsaBuffer[ index ].iProtocol						= IPPROTO_UDP;	// Emulate Tcpip NSP
+		}
 	}
 	else
 	{
@@ -1340,12 +1604,12 @@ DEBUG_LOCAL void
 	
 	// Copy the hostent blob.
 	
-	if( ( inQuerySetFlags & LUP_RETURN_BLOB ) && inRef->addrValid )
+	if( ( inQuerySetFlags & LUP_RETURN_BLOB ) && inRef->addr4Valid )
 	{
 		uint8_t *				base;
 		struct hostent *		he;
 		uintptr_t *				p;
-		
+
 		outQuerySet->lpBlob	 = (LPBLOB) dst;
 		dst 				+= sizeof( *outQuerySet->lpBlob );
 		
@@ -1371,14 +1635,14 @@ DEBUG_LOCAL void
 		*p++			= (uintptr_t)( dst - base );
 		*p++			= 0;
 		p	  			= (uintptr_t *) dst;
-		*p++			= (uintptr_t) inRef->addr;
+		*p++			= (uintptr_t) inRef->addr4;
 		dst 		 	= (uint8_t *) p;
 		
 		outQuerySet->lpBlob->cbSize 	= (ULONG)( dst - base );
 		outQuerySet->lpBlob->pBlobData	= (BYTE *) base;
 	}
 	dlog_query_set( kDebugLevelVerbose, outQuerySet );
-	
+
 	check( (size_t)( dst - ( (uint8_t *) outQuerySet ) ) == debugSize );
 }
 
@@ -1451,15 +1715,21 @@ DEBUG_LOCAL size_t	QueryCopyQuerySetSize( QueryRef inRef, const WSAQUERYSETW *in
 	
 	// Calculate the size of the address(es).
 	
-	if( ( inQuerySetFlags & LUP_RETURN_ADDR ) && inRef->addrValid )
+	if( ( inQuerySetFlags & LUP_RETURN_ADDR ) && inRef->addr4Valid )
 	{
 		size += sizeof( *inQuerySet->lpcsaBuffer );
 		size += sizeof( struct sockaddr_in );
 	}
+
+	if( ( inQuerySetFlags & LUP_RETURN_ADDR ) && inRef->addr6Valid )
+	{
+		size += sizeof( *inQuerySet->lpcsaBuffer );
+		size += sizeof( struct sockaddr_in6 );
+	}
 	
 	// Calculate the size of the hostent blob.
 	
-	if( ( inQuerySetFlags & LUP_RETURN_BLOB ) && inRef->addrValid )
+	if( ( inQuerySetFlags & LUP_RETURN_BLOB ) && inRef->addr4Valid )
 	{
 		size += sizeof( *inQuerySet->lpBlob );	// Blob ptr/size structure
 		size += sizeof( struct hostent );		// Old-style hostent structure
@@ -2148,3 +2418,110 @@ exit:
 	return err;
 }
 #endif
+
+//===========================================================================================================================
+//	GetScopeId
+//===========================================================================================================================
+
+DEBUG_LOCAL DWORD
+GetScopeId( DWORD ifIndex )
+{
+	DWORD						err;
+	int							i;
+	DWORD						flags;
+	struct ifaddrs *			head;
+	struct ifaddrs **			next;
+	IP_ADAPTER_ADDRESSES *		iaaList;
+	ULONG						iaaListSize;
+	IP_ADAPTER_ADDRESSES *		iaa;
+	DWORD						scopeId = 0;
+	
+	head	= NULL;
+	next	= &head;
+	iaaList	= NULL;
+	
+	require( gGetAdaptersAddressesFunctionPtr, exit );
+
+	// Get the list of interfaces. The first call gets the size and the second call gets the actual data.
+	// This loops to handle the case where the interface changes in the window after getting the size, but before the
+	// second call completes. A limit of 100 retries is enforced to prevent infinite loops if something else is wrong.
+	
+	flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
+	i = 0;
+	for( ;; )
+	{
+		iaaListSize = 0;
+		err = gGetAdaptersAddressesFunctionPtr( AF_UNSPEC, flags, NULL, NULL, &iaaListSize );
+		check( err == ERROR_BUFFER_OVERFLOW );
+		check( iaaListSize >= sizeof( IP_ADAPTER_ADDRESSES ) );
+		
+		iaaList = (IP_ADAPTER_ADDRESSES *) malloc( iaaListSize );
+		require_action( iaaList, exit, err = ERROR_NOT_ENOUGH_MEMORY );
+		
+		err = gGetAdaptersAddressesFunctionPtr( AF_UNSPEC, flags, NULL, iaaList, &iaaListSize );
+		if( err == ERROR_SUCCESS ) break;
+		
+		free( iaaList );
+		iaaList = NULL;
+		++i;
+		require( i < 100, exit );
+		dlog( kDebugLevelWarning, "%s: retrying GetAdaptersAddresses after %d failure(s) (%d %m)\n", __ROUTINE__, i, err, err );
+	}
+	
+	for( iaa = iaaList; iaa; iaa = iaa->Next )
+	{
+		DWORD ipv6IfIndex;
+
+		if ( iaa->IfIndex > 0xFFFFFF )
+		{
+			continue;
+		}
+		if ( iaa->Ipv6IfIndex > 0xFF )
+		{
+			continue;
+		}
+
+		// For IPv4 interfaces, there seems to be a bug in iphlpapi.dll that causes the 
+		// following code to crash when iterating through the prefix list.  This seems
+		// to occur when iaa->Ipv6IfIndex != 0 when IPv6 is not installed on the host.
+		// This shouldn't happen according to Microsoft docs which states:
+		//
+		//     "Ipv6IfIndex contains 0 if IPv6 is not available on the interface."
+		//
+		// So the data structure seems to be corrupted when we return from
+		// GetAdaptersAddresses(). The bug seems to occur when iaa->Length <
+		// sizeof(IP_ADAPTER_ADDRESSES), so when that happens, we'll manually
+		// modify iaa to have the correct values.
+
+		if ( iaa->Length >= sizeof( IP_ADAPTER_ADDRESSES ) )
+		{
+			ipv6IfIndex = iaa->Ipv6IfIndex;
+		}
+		else
+		{
+			ipv6IfIndex	= 0;
+		}
+
+		// Skip psuedo and tunnel interfaces.
+		
+		if( ( ipv6IfIndex == 1 ) || ( iaa->IfType == IF_TYPE_TUNNEL ) )
+		{
+			continue;
+		}
+
+		if ( iaa->IfIndex == ifIndex )
+		{
+			scopeId = iaa->Ipv6IfIndex;
+			break;
+		}
+	} 
+
+exit:
+
+	if( iaaList )
+	{
+		free( iaaList );
+	}
+
+	return scopeId;
+}
