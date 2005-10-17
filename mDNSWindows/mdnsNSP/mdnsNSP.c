@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.18  2005/10/17 05:45:36  herscher
+Fix typo in previous checkin
+
 Revision 1.17  2005/10/17 05:30:00  herscher
 <rdar://problem/4071610> NSP should handle IPv6 AAAA queries for dot-local names
 
@@ -534,7 +537,7 @@ int	WSPAPI	NSPCleanup( LPGUID inProviderID )
 		DeleteCriticalSection( &gLock );
 	}
 
-	if( !gIPHelperLibraryInstance )
+	if( gIPHelperLibraryInstance )
 	{
 		BOOL ok;
 				
