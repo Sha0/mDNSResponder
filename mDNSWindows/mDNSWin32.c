@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.103  2005/10/18 06:13:20  herscher
+<rdar://problem/4192119> Prepend "$" to key name to ensure that secure updates work if the domain name and key name are the same
+
 Revision 1.102  2005/10/05 20:55:14  herscher
 <rdar://problem/4096464> Don't call SetLLRoute on loopback interface
 
@@ -1605,11 +1608,15 @@ dDNSPlatformSetSecretForDomain( mDNS *m, const domainname * inDomain )
 	err = translate_errno( res == 0, LsaNtStatusToWinError( res ), kUnknownErr );
 	require_noerr_quiet( err, exit );
 
-	// Convert the key to a domainname
+	// <rdar://problem/4192119> Lsa secrets use a flat naming space.  Therefore, we will prepend "$" to the keyname to
+	// make sure it doesn't conflict with a zone name.
+	
+	// Convert the key to a domainname.  Strip off the "$" prefix.
 
 	err = MakeUTF8StringFromLsaString( key.m_utf8, sizeof( key.m_utf8 ), key.m_lsa );
 	require_noerr( err, exit );
-	MakeDomainNameFromDNSNameString( &key.m_dname, key.m_utf8 );
+	require_action( key.m_utf8[0] == '$', exit, err = kUnknownErr );
+	MakeDomainNameFromDNSNameString( &key.m_dname, key.m_utf8 + 1 );
 
 	// Retrieve the secret
 

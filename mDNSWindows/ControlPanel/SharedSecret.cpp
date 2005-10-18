@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: SharedSecret.cpp,v $
+Revision 1.4  2005/10/18 06:13:41  herscher
+<rdar://problem/4192119> Prepend "$" to key name to ensure that secure updates work if the domain name and key name are the same
+
 Revision 1.3  2005/04/06 02:04:49  shersche
 <rdar://problem/4066485> Registering with shared secret doesn't work
 
@@ -124,6 +127,14 @@ CSharedSecret::Commit( CString zone )
 	{
 		m_key += '.';
 	}
+
+	// <rdar://problem/4192119>
+	//
+	// Prepend "$" to the key name, so that there will
+	// be no conflict between the zone name and the key
+	// name
+
+	m_key.Insert( 0, L"$" );
 
 	// attrs are reserved, so initialize to zeroes.
 
