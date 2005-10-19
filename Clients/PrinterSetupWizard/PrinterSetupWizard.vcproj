@@ -20,7 +20,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared;C:\WINDDK\2600.1106\inc;C:\WINDDK\2600.1106\inc\wxp"
+				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared"
 				PreprocessorDefinitions="WIN32;_WINDOWS;_DEBUGS;DEBUG=1;WINVER=0x0501;UNICODE;_UNICODE"
 				StringPooling="TRUE"
 				MinimalRebuild="TRUE"
@@ -68,7 +68,7 @@
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Bonjour"
+			OutputDirectory=".\Release"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="1"
 			UseOfMFC="1"
@@ -78,7 +78,7 @@
 				Optimization="2"
 				InlineFunctionExpansion="1"
 				OmitFramePointers="TRUE"
-				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared;C:\WINDDK\2600.1106\inc;C:\WINDDK\2600.1106\inc\wxp"
+				AdditionalIncludeDirectories=".;../../mDNSWindows;../../mDNSShared"
 				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;WINVER=0x0501;UNICODE;_UNICODE"
 				StringPooling="TRUE"
 				MinimalRebuild="FALSE"

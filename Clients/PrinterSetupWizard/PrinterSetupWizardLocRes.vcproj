@@ -72,7 +72,7 @@ if not exist Debug\PrinterWizard.Resources\en.lproj mkdir Debug\PrinterWizard.Re
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Bonjour\PrinterWizard.Resources\en.lproj"
+			OutputDirectory=".\Release\PrinterWizard.Resources\en.lproj"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -123,7 +123,8 @@ if not exist Debug\PrinterWizard.Resources\en.lproj mkdir Debug\PrinterWizard.Re
 if not exist &quot;Release\Root\Program Files&quot; mkdir &quot;Release\Root\Program Files&quot;
 if not exist &quot;Release\Root\Program Files\Bonjour&quot; mkdir &quot;Release\Root\Program Files\Bonjour&quot;
 if not exist &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources&quot; mkdir &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources\en.lproj&quot; mkdir &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources\en.lproj&quot;"/>
+if not exist &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources\en.lproj&quot; mkdir &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources\en.lproj&quot;
+"/>
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="NDEBUG"

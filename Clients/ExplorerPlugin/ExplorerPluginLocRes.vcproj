@@ -72,7 +72,8 @@
 				Name="VCPreLinkEventTool"
 				Description="Building Output Directories"
 				CommandLine="if not exist Debug\ExplorerPlugin.Resources mkdir Debug\ExplorerPlugin.Resources
-if not exist Debug\ExplorerPlugin.Resources\en.lproj mkdir Debug\ExplorerPlugin.Resources\en.lproj"/>
+if not exist Debug\ExplorerPlugin.Resources\en.lproj mkdir Debug\ExplorerPlugin.Resources\en.lproj
+"/>
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="_DEBUG"
@@ -85,7 +86,7 @@ if not exist Debug\ExplorerPlugin.Resources\en.lproj mkdir Debug\ExplorerPlugin.
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources\en.lproj"
+			OutputDirectory=".\Release\ExplorerPlugin.Resources\en.lproj"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			UseOfMFC="1"
@@ -151,7 +152,8 @@ if not exist Debug\ExplorerPlugin.Resources\en.lproj mkdir Debug\ExplorerPlugin.
 if not exist &quot;Release\Root\Program Files&quot; mkdir &quot;Release\Root\Program Files&quot;
 if not exist &quot;Release\Root\Program Files\Bonjour&quot; mkdir &quot;Release\Root\Program Files\Bonjour&quot;
 if not exist &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources&quot; mkdir &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources\en.lproj&quot; mkdir &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources\en.lproj&quot;"/>
+if not exist &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources\en.lproj&quot; mkdir &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources\en.lproj&quot;
+"/>
 			<Tool
 				Name="VCResourceCompilerTool"
 				PreprocessorDefinitions="NDEBUG"

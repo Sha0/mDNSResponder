@@ -19,7 +19,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories=".;../;../../mDNSShared;&quot;C:\Program Files\Microsoft Platform SDK for Windows XP SP2\Include&quot;"
+				AdditionalIncludeDirectories=".;../;../../mDNSShared"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_USRDLL;NSP_EXPORTS;DEBUG;WIN32_LEAN_AND_MEAN"
 				StringPooling="TRUE"
 				MinimalRebuild="TRUE"
@@ -66,13 +66,13 @@
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory=".\Release\Root\Program Files\Bonjour"
+			OutputDirectory=".\Release"
 			IntermediateDirectory=".\Release"
 			ConfigurationType="2"
 			CharacterSet="2">
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories=".;../;../../mDNSShared;&quot;C:\Program Files\Microsoft Platform SDK for Windows XP SP2\Include&quot;"
+				AdditionalIncludeDirectories=".;../;../../mDNSShared"
 				PreprocessorDefinitions="WIN32;_WINDOWS;_USRDLL;NSP_EXPORTS;WIN32_LEAN_AND_MEAN"
 				StringPooling="TRUE"
 				MinimalRebuild="TRUE"

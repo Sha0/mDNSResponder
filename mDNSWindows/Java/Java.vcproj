@@ -17,9 +17,9 @@
 			ConfigurationType="0">
 			<Tool
 				Name="VCNMakeTool"
-				BuildCommandLine="nmake /f makefile"
-				ReBuildCommandLine="nmake /f makefile"
-				CleanCommandLine="nmake /f makefile clean"/>
+				BuildCommandLine="nmake /f makefile DEBUG=1"
+				ReBuildCommandLine="nmake /f makefile DEBUG=1"
+				CleanCommandLine="nmake /f makefile DEBUG=1 clean"/>
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
@@ -28,7 +28,9 @@
 			ConfigurationType="0">
 			<Tool
 				Name="VCNMakeTool"
-				Output="Java.exe"/>
+				BuildCommandLine="nmake /f makefile"
+				ReBuildCommandLine="nmake /f makefile"
+				CleanCommandLine="nmake /f makefile clean"/>
 		</Configuration>
 	</Configurations>
 	<Files>
