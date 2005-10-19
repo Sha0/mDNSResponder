@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.104  2005/10/19 19:42:59  herscher
+<rdar://problem/4295946> Use the registry to determine the domain name, rather than using GetNetworkParams().  GetNetworkParams() does not reliably return domain information for the current network configuration.
+
 Revision 1.103  2005/10/18 06:13:20  herscher
 <rdar://problem/4192119> Prepend "$" to key name to ensure that secure updates work if the domain name and key name are the same
 
@@ -1923,56 +1926,97 @@ exit:
 DNameListElem*
 dDNSPlatformGetDomainName( void )
 {
-	FIXED_INFO		*	fixedInfo	= NULL;
-	ULONG				bufLen		= sizeof( FIXED_INFO );	
 	DNameListElem	*	head		= NULL;
 	int					i			= 0;
-	mStatus				err			= kUnknownErr;
+	IP_ADAPTER_INFO *	pAdapterInfo;
+	IP_ADAPTER_INFO *	pAdapter;
+	DWORD				bufLen;
+	DWORD				index;
+	HKEY				key = NULL;
+	LPSTR				domain = NULL;
+	domainname			dname;
+	DWORD				dwSize;
+	mStatus				err = mStatus_NoError;
 
+	pAdapterInfo	= NULL;
+	
 	for ( i = 0; i < 100; i++ )
 	{
-		if ( fixedInfo )
-		{
-			GlobalFree( fixedInfo );
-			fixedInfo = NULL;
-		}
-
-		fixedInfo = (FIXED_INFO*) GlobalAlloc( GPTR, bufLen );
-		require_action( fixedInfo, exit, err = mStatus_NoMemoryErr );
-   
-		err = GetNetworkParams( fixedInfo, &bufLen );
+		err = GetAdaptersInfo( pAdapterInfo, &bufLen);
 
 		if ( err != ERROR_BUFFER_OVERFLOW )
 		{
 			break;
 		}
+
+		pAdapterInfo = (IP_ADAPTER_INFO*) realloc( pAdapterInfo, bufLen );
+		require_action( pAdapterInfo, exit, err = kNoMemoryErr );
 	}
 
 	require_noerr( err, exit );
 
-	if ( fixedInfo->DomainName )
+	index = GetPrimaryInterface();
+
+	for ( pAdapter = pAdapterInfo; pAdapter; pAdapter = pAdapter->Next )
 	{
-		domainname dname;
-
-		if ( MakeDomainNameFromDNSNameString( &dname, fixedInfo->DomainName ) || !dname.c[0] )
+		if ( pAdapter->IpAddressList.IpAddress.String &&
+		     pAdapter->IpAddressList.IpAddress.String[0] &&
+		     pAdapter->GatewayList.IpAddress.String &&
+		     pAdapter->GatewayList.IpAddress.String[0] &&
+		     ( !index || ( pAdapter->Index == index ) ) )
 		{
-			head = (DNameListElem*) malloc( sizeof( DNameListElem ) );
-			require_action( head, exit, err = mStatus_NoMemoryErr );
+			// Found one that will work
 
-			AssignDomainName( &head->name, &dname );
-			head->next = NULL;
-		}
-		else
-		{
-			dlog( kDebugLevelError, "bad DDNS host name from domain name: %s", fixedInfo->DomainName );
+			char keyName[1024];
+
+			_snprintf( keyName, 1024, "%s%s", "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\", pAdapter->AdapterName );
+
+			err = RegCreateKeyA( HKEY_LOCAL_MACHINE, keyName, &key );
+			require_noerr( err, exit );
+
+			err = RegQueryString( key, "Domain", &domain, &dwSize, NULL );
+			check_noerr( err );
+
+			if ( !domain || !domain[0] )
+			{
+				if ( domain )
+				{
+					free( domain );
+					domain = NULL;
+				}
+
+				err = RegQueryString( key, "DhcpDomain", &domain, &dwSize, NULL );
+				check_noerr( err );
+			}
+
+			if ( domain && domain[0] && ( MakeDomainNameFromDNSNameString( &dname, domain ) || !dname.c[0] ) )
+			{
+				head = (DNameListElem*) malloc( sizeof( DNameListElem ) );
+				require_action( head, exit, err = mStatus_NoMemoryErr );
+
+				AssignDomainName( &head->name, &dname );
+				head->next = NULL;
+			}
+
+			break;
 		}
 	}
 
 exit:
 
-	if ( fixedInfo )
+	if ( pAdapterInfo )
 	{
-		GlobalFree( fixedInfo );
+		free( pAdapterInfo );
+	}
+
+	if ( domain )
+	{
+		free( domain );
+	}
+
+	if ( key )
+	{
+		RegCloseKey( key );
 	}
 
 	return head;
