@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.318  2005/10/20 00:10:34  cheshire
+<rdar://problem/4290265> Add check to avoid crashing NAT gateways that have buggy DNS relay code
+
 Revision 1.317  2005/09/24 01:10:26  cheshire
 Fix comment typos
 
@@ -2488,7 +2491,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
 		mDNS_Lock(m);
 		p = m->uDNS_info.Servers;
-		while (p) { p->flag = -1; p = p->next; }  // mark all for deletion
+		while (p) { p->del = mDNStrue; p = p->next; }  // mark all for deletion
 		
 		LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
 		for (i = 0; i < config->n_resolver; i++)		
@@ -2521,22 +2524,25 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 				{
 				if (r->nameserver[n]->sa_family == AF_INET && !AddrRequiresPPPConnection(r->nameserver[n]))
 					{
+					// %%% This should use mDNS_AddDNSServer() instead of duplicating functionality here
 					mDNSAddr saddr;
 					if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
+					// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
 					debugf("Adding dns server from slot %d %d.%d.%d.%d for domain %##s", i, saddr.ip.v4.b[0], saddr.ip.v4.b[1], saddr.ip.v4.b[2], saddr.ip.v4.b[3], d.c);
 					p = m->uDNS_info.Servers;					
 					while (p)
 						{
-						if (mDNSSameAddress(&p->addr, &saddr) && SameDomainName(&p->domain, &d)) { p->flag = 0; break; }
+						if (mDNSSameAddress(&p->addr, &saddr) && SameDomainName(&p->domain, &d)) { p->del = mDNSfalse; break; }
 						else p = p->next;
 						}
 					if (!p)
 						{
 						p = mallocL("DNSServer", sizeof(*p));
 						if (!p) { LogMsg("Error: malloc");  mDNS_Unlock(m); return mStatus_UnknownErr; }
-						p->addr = saddr;
+						p->addr      = saddr;
+						p->del       = mDNSfalse;
+						p->teststate = DNSServer_Untested;
 						AssignDomainName(&p->domain, &d);
-						p->flag = 0;
 						p->next = m->uDNS_info.Servers;
 						m->uDNS_info.Servers = p;
 						(*nAdditions)++;
@@ -2550,7 +2556,7 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 		DNSServer **s = &m->uDNS_info.Servers;
 		while (*s)
 			{
-			if ((*s)->flag < 0)
+			if ((*s)->del)
 				{
 				p = *s;
 				*s = (*s)->next;

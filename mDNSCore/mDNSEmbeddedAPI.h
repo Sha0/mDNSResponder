@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.287  2005/10/20 00:10:33  cheshire
+<rdar://problem/4290265> Add check to avoid crashing NAT gateways that have buggy DNS relay code
+
 Revision 1.286  2005/09/24 01:09:40  cheshire
 Fix comment typos
 
@@ -1650,12 +1653,20 @@ typedef struct uDNS_HostnameInfo
 	const void *StatusContext;                // Client Context
 	} uDNS_HostnameInfo;
 
+enum
+   	{
+   	DNSServer_Untested = 0,
+   	DNSServer_Failed   = 1,
+   	DNSServer_Passed   = 2
+   	};
+
 typedef struct DNSServer
 	{
     struct DNSServer *next;
-    mDNSAddr addr;
-    domainname domain;       // name->server matching for "split dns"
-    int flag;                // temporary marker for list intersection
+    mDNSAddr   addr;
+    mDNSBool   del;			// Set when we're planning to delete this from the list
+    mDNSu32    teststate;	// Have we sent bug-detection query to this server?
+    domainname domain;		// name->server matching for "split dns"
 	} DNSServer;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
@@ -2115,6 +2126,7 @@ struct mDNS_struct
 
 	// unicast-specific data
 	uDNS_GlobalInfo uDNS_info;
+	mDNSs32 SuppressStdPort53Queries;	// Wait before allowing the next standard unicast query to the user's configured DNS server
 
 	// Fixed storage, to avoid creating large objects on the stack
 	DNSMessage imsg;		// Incoming message received from wire
@@ -2153,6 +2165,7 @@ extern const mDNSAddr        AllDNSLinkGroup_v6;
 
 extern const mDNSOpaque16 zeroID;
 extern const mDNSOpaque16 QueryFlags;
+extern const mDNSOpaque16 uQueryFlags;
 extern const mDNSOpaque16 ResponseFlags;
 extern const mDNSOpaque16 UpdateReqFlags;
 extern const mDNSOpaque16 UpdateRespFlags;

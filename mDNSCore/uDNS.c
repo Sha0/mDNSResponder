@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.224  2005/10/20 00:10:33  cheshire
+<rdar://problem/4290265> Add check to avoid crashing NAT gateways that have buggy DNS relay code
+
 Revision 1.223  2005/10/17 18:52:42  cheshire
 <rdar://problem/4271183> mDNSResponder crashed in CheckRecordRegistrations
 Move code to unregister the service's extra records from uDNS_DeregisterService() to unlinkSRS().
@@ -762,14 +765,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	#pragma warning(disable:4706)
 #endif
 
-#if defined(_WIN32)
-#	include <windows.h>
-#	define usleep(X)	Sleep((X)/1000)
-#else
-#	include <unistd.h>
-#endif
-
-
 #define umalloc(x)         mDNSPlatformMemAllocate(x)       // short hands for common routines
 #define ufree(x)           mDNSPlatformMemFree(x)
 #define ubzero(x,y)        mDNSPlatformMemZero(x,y)
@@ -956,7 +951,9 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const dom
 	// allocate, add to list
 	s = umalloc(sizeof(*s));
 	if (!s) { LogMsg("Error: mDNS_AddDNSServer - malloc"); goto end; }
-	s->addr = *addr;
+	s->addr      = *addr;
+	s->del       = mDNSfalse;
+	s->teststate = DNSServer_Untested;
 	AssignDomainName(&s->domain, d);
 	s->next = mDNSNULL;
 	*p = s;
@@ -2178,7 +2175,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 				}
 			}
 		else if (!followedCName || !SameDomainName(cr->resrec.name, &origname))
-			LogMsg("Question %##s %X %s %##s- unexpected answer %##s %X %s",
+			LogMsg("Question %##s %X (%s) %##s unexpected answer %##s %X (%s)",
 				question->qname.c, question->qnamehash, DNSTypeName(question->qtype), origname.c,
 				cr->resrec.name->c, cr->resrec.namehash, DNSTypeName(cr->resrec.rrtype));
 		}
@@ -2641,6 +2638,47 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 		}
 	}
 
+mDNSlocal const domainname *DNSRelayTestQuestion = (domainname*)
+	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\x1a" "check-for-broken-dns-relay"
+	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\x7" "in-addr" "\x4" "arpa";
+
+// Returns mDNStrue if response was handled
+mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
+	const mDNSAddr *const srcaddr, const mDNSInterfaceID InterfaceID)
+	{
+	const mDNSu8 *ptr = msg->data;
+	DNSQuestion q;
+	DNSServer *s;
+	mDNSu32 result = 0;
+	mDNSBool found = mDNSfalse;
+
+	// 1. Find out if this is an answer to one of our test questions
+	if (msg->h.numQuestions != 1) return(mDNSfalse);
+	ptr = getQuestion(msg, ptr, end, InterfaceID, &q);
+	if (!ptr) return(mDNSfalse);
+	if (q.qtype != kDNSType_PTR || q.qclass != kDNSClass_IN) return(mDNSfalse);
+	if (!SameDomainName(&q.qname, DNSRelayTestQuestion)) return(mDNSfalse);
+
+	// 2. If the DNS relay gave us a positive response, then it's got buggy firmware
+	// else, if the DNS relay gave us an error or no-answer response, it passed our test
+	if ((msg->h.flags.b[1] & kDNSFlag1_RC) == kDNSFlag1_RC_NoErr && msg->h.numAnswers > 0)
+		result = DNSServer_Failed;
+	else
+		result = DNSServer_Passed;
+
+	// 3. Find occurrences of this server in our list, and mark them appropriately
+	for (s = m->uDNS_info.Servers; s; s = s->next)
+		if (mDNSSameAddress(srcaddr, &s->addr) && s->teststate != result)
+			{ s->teststate = result; found = mDNStrue; }
+
+	// 4. Assuming we found the server in question in our list (don't want to risk being victim of a deliberate DOS attack here)
+	// log a message to let the user know why Wide-Area Service Discovery isn't working
+	if (found && result == DNSServer_Failed)
+		LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a.", srcaddr);
+
+	return(mDNStrue);	// Return mDNStrue to tell uDNS_ReceiveMsg it doens't need to process this packet further
+	}
+
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr,
 	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID)
@@ -2668,6 +2706,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 		// !!!KRS we should to a table lookup here to see if it answers an LLQ or a 1-shot
 		// LLQ Responses over TCP not currently supported
 		if (srcaddr && recvLLQResponse(m, msg, end, srcaddr, srcport, InterfaceID)) return;
+	
+		if (uDNS_ReceiveTestQuestionResponse(m, msg, end, srcaddr, InterfaceID)) return;
 	
 		for (qptr = u->ActiveQueries; qptr; qptr = qptr->next)
 			{
@@ -2716,16 +2756,15 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	}
 
 // lookup a DNS Server, matching by name in split-dns configurations.  Result stored in addr parameter if successful
-mDNSlocal mDNSBool GetServerForName(uDNS_GlobalInfo *u, const domainname *name, mDNSAddr *addr)
+mDNSlocal DNSServer *GetServerForName(uDNS_GlobalInfo *u, const domainname *name)
     {
 	DNSServer *curmatch = mDNSNULL, *p = u->Servers;
-	int i, ncount, scount, curmatchlen = -1;
+	int i, curmatchlen = -1;
+	int ncount = name ? CountLabels(name) : 0;
 
-	*addr = zeroAddr;
-	ncount = name ? CountLabels(name) : 0;
 	while (p)
 		{
-		scount = CountLabels(&p->domain);
+		int scount = CountLabels(&p->domain);
 		if (scount <= ncount && scount > curmatchlen)
 			{
 			// only inspect if server's domain is longer than current best match and shorter than the name itself
@@ -2736,13 +2775,7 @@ mDNSlocal mDNSBool GetServerForName(uDNS_GlobalInfo *u, const domainname *name, 
 			}
 		p = p->next;
 		}
-
-	if (curmatch)
-		{
-		*addr = curmatch->addr;
-		return mDNStrue;
-		}
-	else return mDNSfalse;
+	return(curmatch);
 	}
 
 // ***************************************************************************
@@ -2754,11 +2787,8 @@ mDNSlocal mDNSBool GetServerForName(uDNS_GlobalInfo *u, const domainname *name, 
 
 mDNSlocal void initializeQuery(DNSMessage *msg, DNSQuestion *question)
 	{
-	mDNSOpaque16 flags = QueryFlags;
-	
 	ubzero(msg, sizeof(msg));
-	flags.b[0] |= kDNSFlag0_RD;  // recursion desired
-    InitializeDNSMessage(&msg->h, question->uDNS_info.id, flags);
+    InitializeDNSMessage(&msg->h, question->uDNS_info.id, uQueryFlags);
 	}
 
 mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestion *const question)
@@ -3176,9 +3206,8 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		{ debugf("LLQ port lookup failed - reverting to polling"); info->servPort.NotAnInteger = 0; goto poll; }
 	
     // cache necessary zone data
-	info->servAddr.type = zoneInfo->primaryAddr.type;
-	info->servAddr.ip.v4.NotAnInteger = zoneInfo->primaryAddr.ip.v4.NotAnInteger;
-	info->servPort.NotAnInteger = zoneInfo->llqPort.NotAnInteger;
+	info->servAddr = zoneInfo->primaryAddr;
+	info->servPort = zoneInfo->llqPort;
     info->ntries = 0;
 
 	if (info->state == LLQ_SuspendDeferred) info->state = LLQ_Suspended;
@@ -3360,15 +3389,10 @@ mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBool internal)
     {
     uDNS_GlobalInfo *u = &m->uDNS_info;
-    DNSMessage msg;
-    mDNSu8 *endPtr;
-    mStatus err = mStatus_NoError;
-	mDNSAddr server;
-	
-    //!!!KRS we should check if the question is already in our acivequestion list
+    //!!!KRS we should check if the question is already in our activequestion list
 	if (!ValidateDomainName(&question->qname))
 		{
-		LogMsg("Attempt to start query with invalid qname %##s %##s", question->qname.c, DNSTypeName(question->qtype));
+		LogMsg("Attempt to start query with invalid qname %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		return mStatus_Invalid;
 		}
 		
@@ -3380,24 +3404,15 @@ mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBoo
 	// break here if its and LLQ
 	if (question->LongLived) return startLLQ(m, question);
 
-	// else send the query to our server
-	err = constructQueryMsg(&msg, &endPtr, question);
-	if (err) return err;
-
-	question->LastQTime = mDNSPlatformTimeNow(m);
-	question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+	question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+	question->LastQTime = mDNSPlatformTimeNow(m) - question->ThisQInterval;
     // store the question/id in active question list
 	question->uDNS_info.internal = internal;
 	LinkActiveQuestion(u, question);
 	question->uDNS_info.knownAnswers = mDNSNULL;
-	if (GetServerForName(u, &question->qname, &server))
-		{
-		err = mDNSSendDNSMessage(m, &msg, endPtr, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
-		usleep( 10000 );
-		if (err) { debugf("ERROR: startQuery - %ld (keeping question in list for retransmission", err); }
-		if (err == mStatus_TransientErr) err = mStatus_NoError;  // don't return transient errors to caller
-		}
-	return err;
+	LogOperation("uDNS startQuery: %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+	
+	return mStatus_NoError;
 	}
 	
 mDNSexport mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question)
@@ -3598,7 +3613,7 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 		}
 	
 	result.type = zoneDataResult;
-	result.zoneData.primaryAddr.ip.v4.NotAnInteger = context->addr.NotAnInteger;
+	result.zoneData.primaryAddr.ip.v4 = context->addr;
 	result.zoneData.primaryAddr.type = mDNSAddrType_IPv4;
 	AssignDomainName(&result.zoneData.zoneName, &context->zone);
 	result.zoneData.zoneClass = context->zoneClass;
@@ -3774,7 +3789,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 					}
 				if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, rr->name))
 					{
-					context->addr.NotAnInteger = rr->rdata->u.ipv4.NotAnInteger;
+					context->addr = rr->rdata->u.ipv4;
 					context->state = foundA;
 					return smContinue;
 					}
@@ -3793,7 +3808,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 			if (!ptr) { LogMsg("ERROR: lookupNSAddr, Answers - GetLargeResourceRecord returned NULL"); break; }
 			if (rr->rrtype == kDNSType_A && SameDomainName(&context->ns, rr->name))
 				{
-				context->addr.NotAnInteger = rr->rdata->u.ipv4.NotAnInteger;
+				context->addr = rr->rdata->u.ipv4;
 				context->state = foundA;
 				return smContinue;
 				}
@@ -3822,7 +3837,7 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 			if (!ptr) { LogMsg("ERROR: hndlLookupUpdatePort - GetLargeResourceRecord returned NULL");  return smError; }
 			if (ResourceRecordAnswersQuestion(&lcr.r.resrec, &context->question))
 				{
-				port->NotAnInteger = lcr.r.resrec.rdata->u.srv.port.NotAnInteger;
+				*port = lcr.r.resrec.rdata->u.srv.port;
 				context->state = foundPort;
 				return smContinue;
 				}
@@ -3992,7 +4007,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	id = newMessageID(u);
 	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
-	rr->uDNS_info.id.NotAnInteger = id.NotAnInteger;
+	rr->uDNS_info.id = id;
 	
     // set zone
 	ptr = putZone(&msg, ptr, end, &regInfo->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
@@ -4107,8 +4122,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 
 	// cache zone data
 	AssignDomainName(&newRR->uDNS_info.zone, &zoneData->zoneName);
-    newRR->uDNS_info.ns.type = mDNSAddrType_IPv4;
-	newRR->uDNS_info.ns.ip.v4.NotAnInteger = zoneData->primaryAddr.ip.v4.NotAnInteger;
+	newRR->uDNS_info.ns = zoneData->primaryAddr;
 	if (zoneData->updatePort.NotAnInteger) newRR->uDNS_info.port = zoneData->updatePort;
 	else
 		{
@@ -4235,7 +4249,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		rInfo->state = regState_Pending;
 
 	SetRecordRetry(m, &srs->RR_SRV, err);
-	rInfo->id.NotAnInteger = id.NotAnInteger;
+	rInfo->id = id;
 	if (mapped) srv->resrec.rdata->u.srv.port = privport;
 	return;
 
@@ -4514,7 +4528,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto error; }
 
 	SetRecordRetry(m, &srs->RR_SRV, err);
-    info->id.NotAnInteger = id.NotAnInteger;
+    info->id = id;
 	info->state = regState_DeregPending;
  
 	return;
@@ -4721,7 +4735,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 	mDNSs32 sendtime;
 	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
 	DNSMessage msg;
-	mStatus err;
+	mStatus err = mStatus_NoError;
 	mDNSu8 *end;
 	uDNS_QuestionInfo *info;
 	
@@ -4774,16 +4788,27 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 		else
 			{
 			sendtime = q->LastQTime + q->ThisQInterval;
+			if (m->SuppressStdPort53Queries &&
+				sendtime - m->SuppressStdPort53Queries < 0)		// Don't allow sendtime to be earlier than SuppressStdPort53Queries
+				sendtime = m->SuppressStdPort53Queries;
 			if (sendtime - timenow < 0)
 				{
-				mDNSAddr server;
-				if (GetServerForName(&m->uDNS_info, &q->qname, &server))
+				DNSServer *server = GetServerForName(&m->uDNS_info, &q->qname);
+				if (server)
 					{
-					err = constructQueryMsg(&msg, &end, q);
+					if (server->teststate == DNSServer_Untested)
+						{
+						InitializeDNSMessage(&msg.h, newMessageID(&m->uDNS_info), uQueryFlags);
+						end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
+						}
+					else
+						err = constructQueryMsg(&msg, &end, q);
 					if (err)  LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %##s", q->qname.c);
 					else
 						{
-						err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server, UnicastDNSPort, -1, mDNSNULL);
+						if (server->teststate != DNSServer_Failed)
+							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server->addr, UnicastDNSPort, -1, mDNSNULL);
+						m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
 						q->LastQTime = timenow;
 						if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
 						else if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = q->ThisQInterval * 2;  // don't increase interval if send failed
@@ -4902,6 +4927,9 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	
 	nexte = CheckNATMappings(m, timenow);
 	if (nexte - u->nextevent < 0) u->nextevent = nexte;
+
+	if (m->SuppressStdPort53Queries && m->timenow - m->SuppressStdPort53Queries >= 0)
+		m->SuppressStdPort53Queries = 0;	// If suppression time has passed, clear it
 
 	nexte = CheckQueries(m, timenow);
 	if (nexte - u->nextevent < 0) u->nextevent = nexte;
