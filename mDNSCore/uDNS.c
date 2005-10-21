@@ -23,6 +23,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.225  2005/10/21 22:51:17  cheshire
+<rdar://problem/4290265> Add check to avoid crashing NAT gateways that have buggy DNS relay code
+Refinement: Shorten "check-for-broken-dns-relay" to just "dnsbugtest"
+to avoid crashing NAT gateways that have a different DNS relay bug
+
 Revision 1.224  2005/10/20 00:10:33  cheshire
 <rdar://problem/4290265> Add check to avoid crashing NAT gateways that have buggy DNS relay code
 
@@ -2639,7 +2644,7 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	}
 
 mDNSlocal const domainname *DNSRelayTestQuestion = (domainname*)
-	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\x1a" "check-for-broken-dns-relay"
+	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\xa" "dnsbugtest"
 	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\x7" "in-addr" "\x4" "arpa";
 
 // Returns mDNStrue if response was handled
