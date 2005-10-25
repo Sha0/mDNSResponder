@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.64  2005/10/25 23:55:47  cheshire
+# Add tiger to list of target platforms
+#
 # Revision 1.63  2005/10/11 21:30:44  cheshire
 # Add "-Wunreachable-code" (commented out for now)
 #
@@ -335,7 +338,7 @@ JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Header
 else
 
 $(error ERROR: Must specify target OS on command-line, e.g. "make os=tiger [target]".\
-Supported operating systems include: jaguar, panther, linux, netbsd, freebsd, openbsd, solaris) 
+Supported operating systems include: jaguar, panther, tiger, linux, netbsd, freebsd, openbsd, solaris) 
 endif
 endif
 endif
