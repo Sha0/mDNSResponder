@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.528  2005/10/25 23:34:22  cheshire
+<rdar://problem/4316048> RequireGoodbye state not set/respected sometimes when machine going to sleep
+
 Revision 1.527  2005/10/25 22:43:59  cheshire
 Add clarifying comments
 
@@ -3124,7 +3127,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					numDereg++;
 					responseptr = newptr;
 					}
-				else if (rr->NewRData)							// If we have new data for this record
+				else if (rr->NewRData && !m->SleepState)					// If we have new data for this record
 					{
 					RData *OldRData     = rr->resrec.rdata;
 					mDNSu16 oldrdlength = rr->resrec.rdlength;
@@ -3135,6 +3138,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 						if (!newptr && m->omsg.h.numAnswers) break;
 						numDereg++;
 						responseptr = newptr;
+						rr->RequireGoodbye = mDNSfalse;
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
 					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
@@ -3142,7 +3146,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
-					if (newptr) responseptr = newptr;
+					if (newptr) { responseptr = newptr; rr->RequireGoodbye = mDNStrue; }
 					SetNewRData(&rr->resrec, OldRData, oldrdlength);
 					}
 				else
