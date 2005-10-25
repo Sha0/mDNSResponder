@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.529  2005/10/25 23:42:24  cheshire
+<rdar://problem/4316057> Error in ResolveSimultaneousProbe() when type or class don't match
+Changed switch statement to an "if"
+
 Revision 1.528  2005/10/25 23:34:22  cheshire
 <rdar://problem/4316048> RequireGoodbye state not set/respected sometimes when machine going to sleep
 
@@ -4658,7 +4662,7 @@ mDNSlocal int CompareRData(AuthRecord *our, CacheRecord *pkt)
 	if (*pktptr > *ourptr) return(-1);								// Our data is numerically lower; We lost
 	if (*pktptr < *ourptr) return(+1);								// Packet data is numerically lower; We won
 	
-	debugf("CompareRData: How did we get here?");
+	LogMsg("CompareRData ERROR: Invalid state");
 	return(-1);
 	}
 
@@ -4761,14 +4765,13 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				int result          = (int)our->resrec.rrclass - (int)m->rec.r.resrec.rrclass;
 				if (!result) result = (int)our->resrec.rrtype  - (int)m->rec.r.resrec.rrtype;
 				if (!result) result = CompareRData(our, &m->rec.r);
-				switch (result)
+				if (result > 0)
+					debugf("ResolveSimultaneousProbe: %##s (%s): We won",  our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
+				else if (result < 0)
 					{
-					case  1:	debugf("ResolveSimultaneousProbe: %##s (%s): We won",  our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
-								break;
-					case  0:	break;
-					case -1:	debugf("ResolveSimultaneousProbe: %##s (%s): We lost", our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
-								mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict);
-								goto exit;
+					debugf("ResolveSimultaneousProbe: %##s (%s): We lost", our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
+					mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict);
+					goto exit;
 					}
 				}
 			}
