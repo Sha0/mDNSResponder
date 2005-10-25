@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.527  2005/10/25 22:43:59  cheshire
+Add clarifying comments
+
 Revision 1.526  2005/10/20 00:10:33  cheshire
 <rdar://problem/4290265> Add check to avoid crashing NAT gateways that have buggy DNS relay code
 
@@ -5251,8 +5254,14 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const mDNSInterfaceID InterfaceID)
 	{
 	int i;
-	const mDNSu8 *ptr = LocateAnswers(response, end);	// We ignore questions (if any) in a DNS response packet
-	CacheRecord *CacheFlushRecords = (CacheRecord*)1;	// "(CacheRecord*)1" is special (non-zero) end-of-list marker
+
+	// We ignore questions (if any) in a DNS response packet
+	const mDNSu8 *ptr = LocateAnswers(response, end);
+
+	// "(CacheRecord*)1" is a special (non-zero) end-of-list marker
+	// We use this non-zero marker so that records in our CacheFlushRecords list will always have NextInCFList
+	// set non-zero, and that tells GetCacheEntity() that they're not, at this moment, eligible for recycling.
+	CacheRecord *CacheFlushRecords = (CacheRecord*)1;
 	CacheRecord **cfp = &CacheFlushRecords;
 
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
