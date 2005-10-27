@@ -123,10 +123,8 @@
 			<Tool
 				Name="VCPreLinkEventTool"
 				Description="Building Output Directories"
-				CommandLine="if not exist Release\Root mkdir Release\Root
-if not exist &quot;Release\Root\Program Files&quot; mkdir &quot;Release\Root\Program Files&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour&quot; mkdir &quot;Release\Root\Program Files\Bonjour&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources&quot; mkdir &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources&quot;
+				CommandLine="if not exist Release mkdir Release
+if not exist &quot;Release\PrinterWizard.Resources&quot; mkdir &quot;Release\PrinterWizard.Resources&quot;
 "/>
 			<Tool
 				Name="VCResourceCompilerTool"

@@ -125,11 +125,9 @@ if not exist Debug\PrinterWizard.Resources\en.lproj mkdir Debug\PrinterWizard.Re
 			<Tool
 				Name="VCPreLinkEventTool"
 				Description="Building Output Directories"
-				CommandLine="if not exist Release\Root mkdir Release\Root
-if not exist &quot;Release\Root\Program Files&quot; mkdir &quot;Release\Root\Program Files&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour&quot; mkdir &quot;Release\Root\Program Files\Bonjour&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources&quot; mkdir &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources\en.lproj&quot; mkdir &quot;Release\Root\Program Files\Bonjour\PrinterWizard.Resources\en.lproj&quot;
+				CommandLine="if not exist Release mkdir Release
+if not exist &quot;Release\PrinterWizard.Resources&quot; mkdir &quot;Release\PrinterWizard.Resources&quot;
+if not exist &quot;Release\PrinterWizard.Resources\en.lproj&quot; mkdir &quot;Release\PrinterWizard.Resources\en.lproj&quot;
 "/>
 			<Tool
 				Name="VCResourceCompilerTool"

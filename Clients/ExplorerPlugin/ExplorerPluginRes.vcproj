@@ -150,10 +150,8 @@
 			<Tool
 				Name="VCPreLinkEventTool"
 				Description="Building Output Directories"
-				CommandLine="if not exist Release\Root mkdir Release\Root
-if not exist &quot;Release\Root\Program Files&quot; mkdir &quot;Release\Root\Program Files&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour&quot; mkdir &quot;Release\Root\Program Files\Bonjour&quot;
-if not exist &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources&quot; mkdir &quot;Release\Root\Program Files\Bonjour\ExplorerPlugin.Resources&quot;
+				CommandLine="if not exist Release mkdir Release
+if not exist &quot;Release\ExplorerPlugin.Resources&quot; mkdir &quot;Release\ExplorerPlugin.Resources&quot;
 "/>
 			<Tool
 				Name="VCResourceCompilerTool"
