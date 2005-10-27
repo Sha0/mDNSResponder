@@ -1,30 +1,29 @@
-<src dir="mDNSResponder/mDNSWindows/SystemService/Release"/>
-<dest dir="Program Files/Bonjour">
-	<src file="mDNSResponder.exe"/>
-</dest>
-<src dir="mDNSResponder/mDNSWindows/mdnsNSP/Release"/>
-<dest dir="Program Files/Bonjour">
-	<src file="mdnsNSP.dll"/>
-</dest>
-<src dir="mDNSResponder/Clients/PrinterSetupWizard/Release"/>
-<dest dir="Program Files/Bonjour">
-	<src file="*.exe"/>
-	<src file="*.dll"/>
-</dest>
-<src dir="mDNSResponder/Clients/ExplorerPlugin/Release"/>
-<dest dir="Program Files/Bonjour">
-	<src file="*.dll"/>
-</dest>
-<src dir="mDNSResponder/mDNSWindows/Java/build/prod"/>
-<dest dir="Program Files/Bonjour">
-	<src file="dns_sd.jar"/>
-	<src file="jdns_sd.dll"/>
-</dest>
-<src file="mDNSResponder/mDNSWindows/DLL/Release"/>
-<dest dir="Windows/System32">
-	<src file="dnssd.dll"/>
-</dest>
-<src file="mDNSResponder/Clients/DNS-SD.VisualStudio/Release"/>
-<dest dir="Windows/System32">
-	<src file="dns-sd.exe"/>
-</dest>
+<buildResults>
+	<dest dir="ExplorerPluginModule_msm">
+		<dest dir="Program Files/Bonjour">
+			<src file="Clients/ExplorerPlugin/Release/*.dll"/>
+		</dest>
+	</dest>
+	<dest dir="JavaModule_msm">
+		<dest dir="Program Files/Bonjour">
+			<src file="mDNSWindows/Java/build/prod/dns_sd.jar"/>
+			<src file="mDNSWindows/Java/build/prod/jdns_sd.dll"/>
+		</dest>
+	</dest>
+	<dest dir="mDNSResponder_msm">
+		<dest dir="Program Files/Bonjour">
+			<src file="mDNSWindows/SystemService/Release/mDNSResponder.exe"/>
+			<src file="mDNSWindows/mdnsNSP/Release/mdnsNSP.dll"/>
+		</dest>
+		<dest dir="System32">
+			<src file="mDNSWindows/DLL/Release/dnssd.dll"/>
+			<src file="Clients/DNS-SD.VisualStudio/Release/dns-sd.exe"/>
+		</dest>
+	</dest>
+	<dest dir="PrinterSetupModule_msm">
+		<dest dir="Program Files/Bonjour">
+			<src file="Clients/PrinterSetupWizard/Release/*.exe"/>
+			<src file="Clients/PrinterSetupWizard/Release/*.dll"/>
+		</dest>
+	</dest>
+</buildResults>
