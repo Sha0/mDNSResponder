@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding = "Windows-1252"?>
+<?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="7.00"
+	Version="7.10"
 	Name="Java"
 	ProjectGUID="{9CE2568A-3170-41C6-9F20-A0188A9EC114}"
 	Keyword="MakeFileProj">
@@ -33,6 +33,8 @@
 				CleanCommandLine="nmake /f makefile clean"/>
 		</Configuration>
 	</Configurations>
+	<References>
+	</References>
 	<Files>
 	</Files>
 	<Globals>
