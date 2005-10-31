@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.28  2005/10/31 22:09:45  cheshire
+Buffer "char addr6[33]" was seven bytes too small
+
 Revision 1.27  2005/06/29 15:54:21  cheshire
 <rdar://problem/4113742> mDNSResponder-107.1 does not work on FreeBSD
 Refine last checkin so that it (hopefully) doesn't break get_ifi_info() for every other OS
@@ -176,7 +179,7 @@ struct ifi_info *get_ifi_info_linuxv6(int family, int doaliases)
 	char addr[8][5];
 	int flags, myflags, index, plen, scope;
 	char ifname[8], lastname[IFNAMSIZ];
-	char addr6[33];
+	char addr6[32+7+1]; /* don't forget the seven ':' */
 	struct addrinfo hints, *res0;
 	struct sockaddr_in6 *sin6;
 	struct in6_addr *addrptr;
