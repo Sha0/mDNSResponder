@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.260  2005/11/07 01:51:58  cheshire
+<rdar://problem/4331591> Include list of configured DNS servers in SIGINFO output
+
 Revision 1.259  2005/07/22 21:50:55  ksekar
 Fix GCC 4.0/Intel compiler warnings
 
@@ -2339,6 +2342,7 @@ mDNSlocal void INFOCallback(void)
 	DNSServiceResolver          *l;
 	DNSServiceRegistration      *r;
 	NetworkInterfaceInfoOSX     *i;
+	DNSServer *s;
 
 	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
 	
@@ -2379,6 +2383,9 @@ mDNSlocal void INFOCallback(void)
 				i->ifinfo.McastTxRx ? "TxRx" : "    ",
 				&i->ifinfo.ip);
 		}
+
+	for (s = mDNSStorage.uDNS_info.Servers; s; s = s->next)
+		LogMsgNoIdent("DNS Server %#a %##s", &s->addr, s->domain.c);
 
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
 	}
