@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.530  2005/11/07 01:49:48  cheshire
+For consistency, use NonZeroTime() function instead of ?: expression
+
 Revision 1.529  2005/10/25 23:42:24  cheshire
 <rdar://problem/4316057> Error in ResolveSimultaneousProbe() when type or class don't match
 Changed switch statement to an "if"
@@ -3903,7 +3906,7 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 			if (threshhold - RRExpireTime(rr) >= 0)		// If we have records about to expire within a second
 				if (delay - RRExpireTime(rr) < 0)		// then delay until after they've been deleted
 					delay = RRExpireTime(rr);
-	if (delay - start > 0) return(delay ? delay : 1);	// Make sure we return non-zero if we want to delay
+	if (delay - start > 0) return(NonZeroTime(delay));
 	else return(0);
 	}
 
