@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.72  2005/11/07 01:47:45  cheshire
+<rdar://problem/4331590> Include interface index in mDNSNetMonitor output
+
 Revision 1.71  2004/12/16 20:17:11  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -695,21 +698,18 @@ mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query,
 	return(mDNSNULL);
 	}
 
-mDNSlocal void DisplayTimestamp(void)
-	{
-	struct timeval tv;
-	struct tm tm;
-	gettimeofday(&tv, NULL);
-	localtime_r((time_t*)&tv.tv_sec, &tm);
-	mprintf("\n%d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec);
-	}
-
-mDNSlocal void DisplayPacketHeader(const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr)
+mDNSlocal void DisplayPacketHeader(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSAddr *dstaddr, const mDNSInterfaceID InterfaceID)
 	{
 	const char *const ptype =   (msg->h.flags.b[0] & kDNSFlag0_QR_Response)             ? "-R- " :
 								(srcport.NotAnInteger == MulticastDNSPort.NotAnInteger) ? "-Q- " : "-LQ-";
 
-	DisplayTimestamp();
+	struct timeval tv;
+	struct tm tm;
+	const mDNSu32 index = mDNSPlatformInterfaceIndexfromInterfaceID(m, InterfaceID);
+	gettimeofday(&tv, NULL);
+	localtime_r((time_t*)&tv.tv_sec, &tm);
+	mprintf("\n%d:%02d:%02d.%06d Interface %d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec, index);
+
 	mprintf("%#-16a %s             Q:%3d  Ans:%3d  Auth:%3d  Add:%3d  Size:%5d bytes",
 		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals, end - (mDNSu8 *)msg);
 
@@ -822,7 +822,7 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	HostEntry *entry = GotPacketFromHost(srcaddr, MQ ? HostPkt_Q : HostPkt_L, msg->h.id);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, end, srcaddr, srcport, dstaddr);
+	DisplayPacketHeader(m, msg, end, srcaddr, srcport, dstaddr, InterfaceID);
 	if (msg->h.id.NotAnInteger != 0xFFFF)
 		{
 		if (MQ) NumPktQ++; else NumPktL++;
@@ -888,7 +888,7 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 	HostEntry *entry = GotPacketFromHost(srcaddr, HostPkt_R, msg->h.id);
 	LargeCacheRecord pkt;
 
-	DisplayPacketHeader(msg, end, srcaddr, srcport, dstaddr);
+	DisplayPacketHeader(m, msg, end, srcaddr, srcport, dstaddr, InterfaceID);
 	if (msg->h.id.NotAnInteger != 0xFFFF) NumPktR++;
 
 	for (i=0; i<msg->h.numQuestions; i++)
