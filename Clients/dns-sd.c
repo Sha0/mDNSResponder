@@ -67,21 +67,22 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
 #include <string.h>			// For strlen(), strcpy(), bzero()
-#include <errno.h>          // For errno, EINTR
+#include <errno.h>			// For errno, EINTR
 #include <time.h>
-#include <sys/types.h>      // For u_char
+#include <sys/types.h>		// For u_char
+#include <sys/socket.h>		// For AF_INET
 
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <process.h>
-typedef	int	pid_t;
-#define	getpid	_getpid
-#define	strcasecmp	_stricmp
-#define snprintf _snprintf
+typedef int        pid_t;
+#define getpid     _getpid
+#define strcasecmp _stricmp
+#define snprintf   _snprintf
 #else
-#include <unistd.h>         // For getopt() and optind
-#include <netdb.h>          // For getaddrinfo()
+#include <unistd.h>			// For getopt() and optind
+#include <netdb.h>			// For getaddrinfo()
 #include <sys/time.h>		// For struct timeval
 #include <arpa/inet.h>		// For inet_addr()
 #include <netinet/in.h>		// For struct sockaddr_in()
