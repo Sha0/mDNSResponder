@@ -7,6 +7,8 @@
 	<dest dir="JavaModule_msm">
 		<dest dir="Program Files/Bonjour">
 			<src file="mDNSWindows/Java/build/prod/dns_sd.jar"/>
+		</dest>
+		<dest dir="System32">
 			<src file="mDNSWindows/Java/build/prod/jdns_sd.dll"/>
 		</dest>
 	</dest>
