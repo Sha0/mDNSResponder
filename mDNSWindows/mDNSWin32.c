@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.105  2005/11/27 20:21:16  herscher
+<rdar://problem/4210580> Workaround Virtual PC bug that incorrectly modifies incoming mDNS packets
+
 Revision 1.104  2005/10/19 19:42:59  herscher
 <rdar://problem/4295946> Use the registry to determine the domain name, rather than using GetNetworkParams().  GetNetworkParams() does not reliably return domain information for the current network configuration.
 
@@ -397,6 +400,7 @@ Multicast DNS platform plugin for Win32
 
 #include	"CommonServices.h"
 #include	"DebugServices.h"
+#include	"VPCDetect.h"
 #include	"RegNames.h"
 #include	<dns_sd.h>
 
@@ -662,10 +666,18 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	{
 		DWORD size;
 
-		err = WSAIoctl( inMDNS->p->unicastSock4, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, 
-						sizeof( kWSARecvMsgGUID ), &inMDNS->p->unicastSock4RecvMsgPtr, sizeof( inMDNS->p->unicastSock4RecvMsgPtr ), &size, NULL, NULL );
+		// If we are running inside VPC, then we won't use WSARecvMsg because it will give us bogus information due to
+		// a bug in VPC itself.
+
+		err = IsVPCRunning();
+
+		if ( !err )
+		{
+			err = WSAIoctl( inMDNS->p->unicastSock4, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, 
+							sizeof( kWSARecvMsgGUID ), &inMDNS->p->unicastSock4RecvMsgPtr, sizeof( inMDNS->p->unicastSock4RecvMsgPtr ), &size, NULL, NULL );
+		}
 		
-		if ( err != 0 )
+		if ( err )
 		{
 			inMDNS->p->unicastSock4RecvMsgPtr = NULL;
 		}
@@ -2787,9 +2799,18 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 		{
 			DWORD		size;
 
-			err = WSAIoctl( sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, sizeof( kWSARecvMsgGUID ),
-				&ifd->wsaRecvMsgFunctionPtr, sizeof( ifd->wsaRecvMsgFunctionPtr ), &size, NULL, NULL );
-			if( err != 0 )
+			// If we are running inside VPC, then we won't use WSARecvMsg because it will give us bogus information due to
+			// a bug in VPC itself.
+			
+			err = IsVPCRunning();
+
+			if ( !err )
+			{
+				err = WSAIoctl( sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, sizeof( kWSARecvMsgGUID ),
+					&ifd->wsaRecvMsgFunctionPtr, sizeof( ifd->wsaRecvMsgFunctionPtr ), &size, NULL, NULL );
+			}
+
+			if ( err )
 			{
 				ifd->wsaRecvMsgFunctionPtr = NULL;
 			}
