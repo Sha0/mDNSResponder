@@ -156,6 +156,9 @@
 				RelativePath="..\mDNSWin32.c">
 			</File>
 			<File
+				RelativePath="..\VPCDetect.cpp">
+			</File>
+			<File
 				RelativePath=".\Service.c">
 			</File>
 			<File
@@ -195,6 +198,9 @@
 			</File>
 			<File
 				RelativePath="..\mDNSWin32.h">
+			</File>
+			<File
+				RelativePath="..\VPCDetect.h">
 			</File>
 			<File
 				RelativePath=".\Resource.h">
