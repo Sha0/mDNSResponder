@@ -70,7 +70,6 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #include <errno.h>			// For errno, EINTR
 #include <time.h>
 #include <sys/types.h>		// For u_char
-#include <sys/socket.h>		// For AF_INET
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -86,6 +85,7 @@ typedef int        pid_t;
 #include <sys/time.h>		// For struct timeval
 #include <arpa/inet.h>		// For inet_addr()
 #include <netinet/in.h>		// For struct sockaddr_in()
+#include <sys/socket.h>		// For AF_INET
 #endif
 
 
