@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.30  2005/11/29 20:03:02  mkrochma
+Wrapped sin_len with #ifndef NOT_HAVE_SA_LEN
+
 Revision 1.29  2005/11/12 02:23:10  cheshire
 <rdar://problem/4317680> mDNSUNP.c needs to deal with lame results from SIOCGIFNETMASK, SIOCGIFBRDADDR and SIOCGIFDSTADDR
 
@@ -408,7 +411,9 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
 				if (ifi->ifi_netmask == NULL) goto gotError;
 				sinptr = (struct sockaddr_in *) &ifrcopy.ifr_addr;
 				/* The BSD ioctls (including Mac OS X) stick some weird values in for sin_len and sin_family */
+#ifndef NOT_HAVE_SA_LEN
 				sinptr->sin_len    = sizeof(struct sockaddr_in);
+#endif
 				sinptr->sin_family = AF_INET;
 				memcpy(ifi->ifi_netmask, sinptr, sizeof(struct sockaddr_in));
 #endif
@@ -420,7 +425,9 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
                     }
                     sinptr = (struct sockaddr_in *) &ifrcopy.ifr_broadaddr;
 					/* The BSD ioctls (including Mac OS X) stick some weird values in for sin_len and sin_family */
+#ifndef NOT_HAVE_SA_LEN
 					sinptr->sin_len    = sizeof( struct sockaddr_in );
+#endif
 					sinptr->sin_family = AF_INET;
                     ifi->ifi_brdaddr = (struct sockaddr*)calloc(1, sizeof(struct sockaddr_in));
                     if (ifi->ifi_brdaddr == NULL) {
@@ -437,7 +444,9 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
                     }
                     sinptr = (struct sockaddr_in *) &ifrcopy.ifr_dstaddr;
                     /* The BSD ioctls (including Mac OS X) stick some weird values in for sin_len and sin_family */
+#ifndef NOT_HAVE_SA_LEN
 					sinptr->sin_len    = sizeof( struct sockaddr_in );
+#endif
 					sinptr->sin_family = AF_INET;
                     ifi->ifi_dstaddr = (struct sockaddr*)calloc(1, sizeof(struct sockaddr_in));
                     if (ifi->ifi_dstaddr == NULL) {
