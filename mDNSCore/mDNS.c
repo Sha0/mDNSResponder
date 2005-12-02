@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.532  2005/12/02 20:24:36  cheshire
+<rdar://problem/4363209> Adjust cutoff time for KA list by one second
+
 Revision 1.531  2005/12/02 19:05:42  cheshire
 Tidy up constants
 
@@ -3384,7 +3387,8 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
 				rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
 				ResourceRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
-				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >= 0)			// and it is less than half-way to expiry
+				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >				// and its half-way-to-expiry time is at least 1 second away
+												mDNSPlatformOneSecond)		// (also ensures we never include goodbye records with TTL=1)
 				{
 				*ka = rr;	// Link this record into our known answer chain
 				ka = &rr->NextInKAList;
