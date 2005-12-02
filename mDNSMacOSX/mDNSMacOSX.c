@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.319  2005/12/02 00:02:15  cheshire
+Include recvmsg return value in error message
+
 Revision 1.318  2005/10/20 00:10:34  cheshire
 <rdar://problem/4290265> Add check to avoid crashing NAT gateways that have buggy DNS relay code
 
@@ -1342,8 +1345,8 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		}
 	if (msg.msg_controllen < (int)sizeof(struct cmsghdr))
 		{
-		if (numLogMessages++ < 100) LogMsg("mDNSMacOSX.c: recvmsg(%d) msg.msg_controllen %d < sizeof(struct cmsghdr) %lu",
-			s, msg.msg_controllen, sizeof(struct cmsghdr));
+		if (numLogMessages++ < 100) LogMsg("mDNSMacOSX.c: recvmsg(%d) returned %d msg.msg_controllen %d < sizeof(struct cmsghdr) %lu",
+			s, n, msg.msg_controllen, sizeof(struct cmsghdr));
 		return(-1);
 		}
 	if (msg.msg_flags & MSG_CTRUNC)
