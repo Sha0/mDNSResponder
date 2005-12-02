@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.74  2005/12/02 20:08:39  cheshire
+Update "No HINFO" message
+
 Revision 1.73  2005/12/02 19:19:53  cheshire
 <rdar://problem/4331590> Include interface index and name in mDNSNetMonitor output
 
@@ -602,7 +605,7 @@ mDNSlocal void ShowSortedHostList(HostList *list, int max)
 		if (e->pkts[HostPkt_B]) mprintf("Bad: %8lu", e->pkts[HostPkt_B]);
 		mprintf("\n");
 		if (!e->HISoftware.c[0] && e->NumQueries > 2)
-			mDNSPlatformMemCopy("\x0E*** Jaguar ***", &e->HISoftware, 15);
+			mDNSPlatformMemCopy("\x27*** Unknown (Jaguar, Windows, etc.) ***", &e->HISoftware, 0x28);
 		if (e->hostname.c[0] || e->HIHardware.c[0] || e->HISoftware.c[0])
 			mprintf("%##-45s %#-14s %#s\n", e->hostname.c, e->HIHardware.c, e->HISoftware.c);
 		}
