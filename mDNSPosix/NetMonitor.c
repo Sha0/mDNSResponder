@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.73  2005/12/02 19:19:53  cheshire
+<rdar://problem/4331590> Include interface index and name in mDNSNetMonitor output
+
 Revision 1.72  2005/11/07 01:47:45  cheshire
 <rdar://problem/4331590> Include interface index in mDNSNetMonitor output
 
@@ -289,6 +292,7 @@ Added NetMonitor.c
 #include <netdb.h>			// For gethostbyname()
 #include <sys/socket.h>		// For AF_INET, AF_INET6, etc.
 #include <arpa/inet.h>		// For inet_addr()
+#include <net/if.h>			// For IF_NAMESIZE
 #include <netinet/in.h>		// For INADDR_NONE
 
 #include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
@@ -706,9 +710,11 @@ mDNSlocal void DisplayPacketHeader(mDNS *const m, const DNSMessage *const msg, c
 	struct timeval tv;
 	struct tm tm;
 	const mDNSu32 index = mDNSPlatformInterfaceIndexfromInterfaceID(m, InterfaceID);
+	char if_name[IF_NAMESIZE];
+	if_indextoname(index, if_name);
 	gettimeofday(&tv, NULL);
 	localtime_r((time_t*)&tv.tv_sec, &tm);
-	mprintf("\n%d:%02d:%02d.%06d Interface %d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec, index);
+	mprintf("\n%d:%02d:%02d.%06d Interface %d/%s\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec, index, if_name);
 
 	mprintf("%#-16a %s             Q:%3d  Ans:%3d  Auth:%3d  Add:%3d  Size:%5d bytes",
 		srcaddr, ptype, msg->h.numQuestions, msg->h.numAnswers, msg->h.numAuthorities, msg->h.numAdditionals, end - (mDNSu8 *)msg);
