@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.320  2005/12/03 01:39:28  cheshire
+<rdar://problem/4363411> Improve diagnostic message to indicate that message will not appear to customers
+
 Revision 1.319  2005/12/02 00:02:15  cheshire
 Include recvmsg return value in error message
 
@@ -1144,7 +1147,9 @@ mDNSexport void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const cha
 	// Send a notification to the user to contact coreos-networking
 	notifyCount++;
 	CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
-	CFStringRef alertFormat  = CFSTR("Congratulations, you've reproduced an elusive bug. Please contact the owner of <rdar://problem/%d>. %s");
+	CFStringRef alertFormat  = CFSTR("Congratulations, you've reproduced an elusive bug. "
+		"Please contact the owner of <rdar://problem/%d>. %s "
+		"(Note: This message appears only on Apple machines with 17.x.x.x IP addresses, not on customer machines.)");
 	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, alertFormat, radarid, msg);
 	CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
 	}
