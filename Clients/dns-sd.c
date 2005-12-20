@@ -292,46 +292,37 @@ static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags f
 static void DNSSD_API resolve_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const char *txtRecord, void *context)
 	{
-	const char *src = txtRecord;
 	union { uint16_t s; u_char b[2]; } port = { opaqueport };
 	uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
 
 	(void)client;       // Unused
 	(void)ifIndex;      // Unused
 	(void)errorCode;    // Unused
-	(void)txtLen;       // Unused
 	(void)context;      // Unused
 
 	printtimestamp();
 	printf("%s can be reached at %s:%u", fullname, hosttarget, PortAsNumber);
 
 	if (flags) printf(" Flags: %X", flags);
-	if (*src)
+	if (txtLen > 1)     // Don't show degenerate TXT records containing nothing but a single empty string
 		{
-		char txtInfo[64];                               // Display at most first 64 characters of TXT record
-		char *dst = txtInfo;
-		const char *const lim = &txtInfo[sizeof(txtInfo)];
-		while (*src && dst < lim-1)
+		const char *ptr = txtRecord;
+		const char *max = txtRecord + txtLen;
+		printf(" TXT");
+		while (ptr < max)
 			{
-			if (*src == '\\') *dst++ = '\\';            // '\' displays as "\\"
-			if (*src >= ' ') *dst++ = *src++;           // Display normal characters as-is
-			else
+			const char *end = ptr + 1 + ptr[0];
+			if (end > max) { printf("<< invalid data >>"); break; }
+			if (++ptr < end) printf(" ");   // As long as string is non-empty, begin with a space
+			while (ptr < end)
 				{
-				*dst++ = '\\';                          // Display a backslash
-				if (*src ==    1) *dst++ = ' ';         // String boundary displayed as "\ "
-				else                                    // Other chararacters displayed as "\0xHH"
-					{
-					static const char hexchars[16] = "0123456789ABCDEF";
-					*dst++ = '0';
-					*dst++ = 'x';
-					*dst++ = hexchars[*src >> 4];
-					*dst++ = hexchars[*src & 0xF];
-					}
-				src++;
+				if      (*ptr == '\\') printf("\\\\");          // '\' displays as "\\"
+				else if (*ptr == ' ' ) printf("\\ ");           // ' ' displays as "\ "
+				else if (*ptr >  ' ' ) printf("%c", *ptr);      // Display normal characters as-is
+				else                   printf("\\x%02X", *ptr); // other chararacters displayed as "\xHH"
+				ptr++;
 				}
 			}
-		*dst++ = 0;
-		printf(" TXT %s", txtInfo);
 		}
 	printf("\n");
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
