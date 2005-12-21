@@ -33,17 +33,32 @@
 #endif
 
 /* standard calling convention under Win32 is __stdcall */
-#if defined(_WIN32)
+/* Note: When compiling Intel EFI (Extensible Firmware Interface) under MS Visual Studio, the */
+/* _WIN32 symbol is defined by the compiler even though it's NOT compiling code for Windows32 */
+#if defined(_WIN32) && !defined(EFI32) && !defined(EFI64)
 #define DNSSD_API __stdcall
 #else
 #define DNSSD_API
 #endif
 
-#if defined(__FreeBSD_version) && (__FreeBSD_version < 500000)
 /* stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead */
+#if defined(__FreeBSD_version) && (__FreeBSD_version < 500000)
 #include <sys/types.h>
+
+/* Likewise, on Sun, standard integer types are in sys/types.h */
 #elif defined(__sun__)
 #include <sys/types.h>
+
+/* EFI does not have stdint.h, or anything else equivalent */
+#elif defined(EFI32) || defined(EFI64)
+typedef UINT8       uint8_t;
+typedef INT8        int8_t;
+typedef UINT16      uint16_t;
+typedef INT16       int16_t;
+typedef UINT32      uint32_t;
+typedef INT32       int32_t;
+
+/* Windows has its own differences */
 #elif defined(_WIN32)
 #include <windows.h>
 #define _UNUSED
@@ -56,6 +71,8 @@ typedef INT16       int16_t;
 typedef UINT32      uint32_t;
 typedef INT32       int32_t;
 #endif
+
+/* All other Posix platforms use stdint.h */
 #else
 #include <stdint.h>
 #endif
