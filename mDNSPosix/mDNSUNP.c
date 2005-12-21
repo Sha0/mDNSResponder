@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.31  2005/12/21 02:46:05  cheshire
+<rdar://problem/4243514> mDNSUNP.c needs to include <sys/param.h> on 4.4BSD Lite
+
 Revision 1.30  2005/11/29 20:03:02  mkrochma
 Wrapped sin_len with #ifndef NOT_HAVE_SA_LEN
 
@@ -134,6 +137,15 @@ First checkin
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <stdio.h>
+
+/* Some weird platforms derived from 4.4BSD Lite (e.g. EFI) need the ALIGN(P)
+   macro, usually defined in <sys/param.h> or someplace like that, to make sure the
+   CMSG_NXTHDR macro is well-formed. On such platforms, the symbol NEED_ALIGN_MACRO
+   should be set to the name of the header to include to get the ALIGN(P) macro.
+*/
+#ifdef NEED_ALIGN_MACRO
+#include NEED_ALIGN_MACRO
+#endif
 
 /* Solaris defined SIOCGIFCONF etc in <sys/sockio.h> but 
    other platforms don't even have that include file.  So, 
