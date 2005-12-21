@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: Makefile,v $
+# Revision 1.65  2005/12/21 21:15:57  cheshire
+# Add missing dependency: Identify.c textually imports mDNS.c
+#
 # Revision 1.64  2005/10/25 23:55:47  cheshire
 # Add tiger to list of target platforms
 #
@@ -612,6 +615,8 @@ $(BUILDDIR)/mDNSProxyResponderPosix: $(COMMONOBJ)  $(OBJDIR)/ProxyResponder.c.o
 
 $(BUILDDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
+
+$(OBJDIR)/Identify.c.o:              $(COREDIR)/mDNS.c # Note: Identify.c textually imports mDNS.c
 
 $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LIBFLAGS)
