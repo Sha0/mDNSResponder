@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.32  2005/12/21 02:56:43  cheshire
+<rdar://problem/4243433> get_ifi_info() should fake ifi_index when SIOCGIFINDEX undefined
+
 Revision 1.31  2005/12/21 02:46:05  cheshire
 <rdar://problem/4243514> mDNSUNP.c needs to include <sys/param.h> on 4.4BSD Lite
 
@@ -398,9 +401,11 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
         ifi->ifi_index = if_nametoindex(ifr->ifr_name);
 #else
         ifrcopy = *ifr;
+#ifdef SIOCGIFINDEX
 		if ( 0 >= ioctl(sockfd, SIOCGIFINDEX, &ifrcopy))
             ifi->ifi_index = ifrcopy.ifr_index;
         else
+#endif
             ifi->ifi_index = index++;	/* SIOCGIFINDEX is broken on Solaris 2.5ish, so fake it */
 #endif
         memcpy(ifi->ifi_name, ifr->ifr_name, IFI_NAME);
@@ -717,7 +722,7 @@ struct in_pktinfo
 #ifdef NOT_HAVE_DAEMON
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <signal.h>
+#include <sys/signal.h>
 
 int daemon(int nochdir, int noclose)
     {
