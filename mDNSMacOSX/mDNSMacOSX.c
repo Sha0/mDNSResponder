@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.321  2006/01/05 21:35:06  cheshire
+Add (commented out) trigger value for testing "mach_absolute_time went backwards" notice
+
 Revision 1.320  2005/12/03 01:39:28  cheshire
 <rdar://problem/4363411> Improve diagnostic message to indicate that message will not appear to customers
 
@@ -3651,6 +3654,7 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 	if (clockdivisor == 0) { LogMsg("mDNSPlatformRawTime called before mDNSPlatformTimeInit"); return(0); }
 
 	static uint64_t last_mach_absolute_time = 0;
+	//static uint64_t last_mach_absolute_time = 0x8000000000000000LL;	// Use this value for testing the alert display
 	uint64_t this_mach_absolute_time = mach_absolute_time();
 	if ((int64_t)this_mach_absolute_time - (int64_t)last_mach_absolute_time < 0)
 		{
@@ -3658,7 +3662,8 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 		LogMsg("mDNSPlatformRawTime: this_mach_absolute_time %08X%08X", this_mach_absolute_time);
 		// Update last_mach_absolute_time *before* calling NotifyOfElusiveBug()
 		last_mach_absolute_time = this_mach_absolute_time;
-		// Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xyyy) or later
+		// Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xyyy) or later.
+		// (This bug happens all the time on 10.3, and we know that's not going to be fixed.)
 		if (mDNSMacOSXSystemBuildNumber(NULL) >= 8)
 			NotifyOfElusiveBug("mach_absolute_time went backwards!", 3438376, "");
 		}
