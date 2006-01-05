@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: dDNS.c,v $
+Revision 1.9  2006/01/05 20:52:59  cheshire
+Remove inappropriate use of "NotAnInteger"
+
 Revision 1.8  2005/09/12 07:13:33  herscher
 <rdar://problem/4248878> Workaround for router crash.  Lazily call RegisterSearchDomains rather than call it always at startup.
 
@@ -615,8 +618,8 @@ mStatus dDNS_Setup( mDNS *const m )
 
 	// handle router and primary interface changes
 
+	ip = r = zeroAddr;
 	ip.type = r.type = mDNSAddrType_IPv4;
-	ip.ip.v4.NotAnInteger = r.ip.v4.NotAnInteger = 0;
 	
 	if ( dDNSPlatformGetPrimaryInterface( m, &ip, &r ) == mStatus_NoError )
 		{
