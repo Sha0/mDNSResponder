@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.74  2006/01/05 21:45:27  cheshire
+<rdar://problem/4400118> Fix uninitialized structure member in IPv6 code
+
 Revision 1.73  2005/10/11 21:31:46  cheshire
 <rdar://problem/4296177> Don't depend on IP_RECVTTL succeeding (not available on all platforms)
 
@@ -926,7 +929,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 			bindAddr6.sin6_family      = AF_INET6;
 			bindAddr6.sin6_port        = port.NotAnInteger;
 			bindAddr6.sin6_flowinfo    = 0;
-//			bindAddr6.sin6_addr.s_addr = IN6ADDR_ANY_INIT; // Want to receive multicasts AND unicasts on this socket
+			bindAddr6.sin6_addr        = in6addr_any; // Want to receive multicasts AND unicasts on this socket
 			bindAddr6.sin6_scope_id    = 0;
 			err = bind(*sktPtr, (struct sockaddr *) &bindAddr6, sizeof(bindAddr6));
 			if (err < 0) { err = errno; perror("bind"); fflush(stderr); }

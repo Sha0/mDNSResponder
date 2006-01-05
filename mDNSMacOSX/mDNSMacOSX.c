@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.323  2006/01/05 21:45:27  cheshire
+<rdar://problem/4400118> Fix uninitialized structure member in IPv6 code
+
 Revision 1.322  2006/01/05 21:41:50  cheshire
 <rdar://problem/4108164> Reword "mach_absolute_time went backwards" dialog
 
@@ -1999,7 +2002,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, co
 		listening_sockaddr6.sin6_family      = AF_INET6;
 		listening_sockaddr6.sin6_port        = port.NotAnInteger;
 		listening_sockaddr6.sin6_flowinfo    = 0;
-//		listening_sockaddr6.sin6_addr = IN6ADDR_ANY_INIT; // Want to receive multicasts AND unicasts on this socket
+		listening_sockaddr6.sin6_addr        = in6addr_any; // Want to receive multicasts AND unicasts on this socket
 		listening_sockaddr6.sin6_scope_id    = 0;
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
 		if (err) { errstr = "bind"; goto fail; }
