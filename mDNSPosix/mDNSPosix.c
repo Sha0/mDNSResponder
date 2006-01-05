@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.75  2006/01/05 22:04:57  cheshire
+<rdar://problem/4399479> Log error message when send fails with "operation not permitted"
+
 Revision 1.74  2006/01/05 21:45:27  cheshire
 <rdar://problem/4400118> Fix uninitialized structure member in IPv6 code
 
@@ -444,11 +447,15 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	if      (err > 0) err = 0;
 	else if (err < 0)
 		{
+        // Don't report EHOSTDOWN (i.e. ARP failure), ENETDOWN, or no route to host for unicast destinations
+		if (!mDNSAddressIsAllDNSLinkGroup(dst))
+			if (errno == EHOSTDOWN || errno == ENETDOWN || errno == EHOSTUNREACH || errno == ENETUNREACH) return(mStatus_TransientErr);
+
 		if (thisIntf)
-			verbosedebugf("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a on interface %#a/%s/%d",
+			LogMsg("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a on interface %#a/%s/%d",
 						  errno, strerror(errno), dst, &thisIntf->coreIntf.ip, thisIntf->intfName, thisIntf->index);
 		else
-			verbosedebugf("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a", errno, strerror(errno), dst);
+			LogMsg("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a", errno, strerror(errno), dst);
 		}
 
 	return PosixErrorToStatus(err);
