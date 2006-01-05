@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.75  2006/01/05 22:33:58  cheshire
+Use IFNAMSIZ (more portable) instead of IF_NAMESIZE
+
 Revision 1.74  2005/12/02 20:08:39  cheshire
 Update "No HINFO" message
 
@@ -713,7 +716,7 @@ mDNSlocal void DisplayPacketHeader(mDNS *const m, const DNSMessage *const msg, c
 	struct timeval tv;
 	struct tm tm;
 	const mDNSu32 index = mDNSPlatformInterfaceIndexfromInterfaceID(m, InterfaceID);
-	char if_name[IF_NAMESIZE];
+	char if_name[IFNAMSIZ];		// Older Linux distributions don't define IF_NAMESIZE
 	if_indextoname(index, if_name);
 	gettimeofday(&tv, NULL);
 	localtime_r((time_t*)&tv.tv_sec, &tm);
