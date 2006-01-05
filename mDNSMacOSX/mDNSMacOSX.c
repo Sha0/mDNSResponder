@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.322  2006/01/05 21:41:50  cheshire
+<rdar://problem/4108164> Reword "mach_absolute_time went backwards" dialog
+
 Revision 1.321  2006/01/05 21:35:06  cheshire
 Add (commented out) trigger value for testing "mach_absolute_time went backwards" notice
 
@@ -1125,7 +1128,7 @@ mDNSlocal void RemoveDefRegDomain(domainname *d)
 	debugf("Requested removal of default registration domain %##s not in contained in list", d->c); 
 	}
 
-mDNSexport void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const char *msg)
+mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both strings are UTF-8 text
 	{
 	static int notifyCount = 0;
 	if (notifyCount) return;
@@ -1147,13 +1150,15 @@ mDNSexport void NotifyOfElusiveBug(const char *title, mDNSu32 radarid, const cha
 		}
 	#endif
 
-	// Send a notification to the user to contact coreos-networking
+	LogMsg("%s", title);
+	LogMsg("%s", msg);
+	// Display a notification to the user
 	notifyCount++;
-	CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
-	CFStringRef alertFormat  = CFSTR("Congratulations, you've reproduced an elusive bug. "
-		"Please contact the owner of <rdar://problem/%d>. %s "
-		"(Note: This message appears only on Apple machines with 17.x.x.x IP addresses, not on customer machines.)");
-	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, alertFormat, radarid, msg);
+	static const char footer[] = "(Note: This message only appears on machines with 17.x.x.x IP addresses — i.e. at Apple — not on customer machines.)";
+	CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title,  kCFStringEncodingUTF8);
+	CFStringRef alertBody    = CFStringCreateWithCString(NULL, msg,    kCFStringEncodingUTF8);
+	CFStringRef alertFooter  = CFStringCreateWithCString(NULL, footer, kCFStringEncodingUTF8);
+	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@\r\r%@"), alertBody, alertFooter);
 	CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
 	}
 
@@ -1529,8 +1534,10 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
 		if (numLogMessages > 5)
-			NotifyOfElusiveBug("Flaw in Kernel (select/recvfrom mismatch)", 3375328,
-				"Alternatively, you can send email to radar-3387020@group.apple.com. "
+			NotifyOfElusiveBug("Flaw in Kernel (select/recvfrom mismatch)",
+				"Congratulations, you've reproduced an elusive bug.\r"
+				"Please contact the current assignee of <rdar://problem/3375328>.\r"
+				"Alternatively, you can send email to radar-3387020@group.apple.com. (Note number is different.)\r"
 				"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
 
 		sleep(1);		// After logging this error, rate limit so we don't flood syslog
@@ -2010,8 +2017,10 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, co
 fail:
 	LogMsg("%s error %ld errno %d (%s)", errstr, err, errno, strerror(errno));
 	if (!strcmp(errstr, "bind") && errno == EADDRINUSE)
-		NotifyOfElusiveBug("Setsockopt SO_REUSEPORT failed", 3814904,
-			"Alternatively, you can send email to radar-3387020@group.apple.com. "
+		NotifyOfElusiveBug("Setsockopt SO_REUSEPORT failed",
+			"Congratulations, you've reproduced an elusive bug.\r"
+			"Please contact the current assignee of <rdar://problem/3814904>.\r"
+			"Alternatively, you can send email to radar-3387020@group.apple.com. (Note number is different.)\r"
 			"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
 	close(skt);
 	return(err);
@@ -3665,7 +3674,11 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 		// Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xyyy) or later.
 		// (This bug happens all the time on 10.3, and we know that's not going to be fixed.)
 		if (mDNSMacOSXSystemBuildNumber(NULL) >= 8)
-			NotifyOfElusiveBug("mach_absolute_time went backwards!", 3438376, "");
+			NotifyOfElusiveBug("mach_absolute_time went backwards!",
+				"This error occurs from time to time, often on newly released hardware, "
+				"and usually the exact cause is different in each instance.\r\r"
+				"Please file a new Radar bug report with the title “mach_absolute_time went backwards” "
+				"and assign it to Radar Component “Kernel” Version “X”.");
 		}
 	last_mach_absolute_time = this_mach_absolute_time;
 
