@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.189  2006/01/06 00:56:31  cheshire
+<rdar://problem/4400573> Should remove PID file on exit
+
 Revision 1.188  2005/10/11 22:15:03  cheshire
 <rdar://problem/4296042> Add memory corruption safeguards to uds_daemon.c
 Only compile uds_validatelists() when building for Mac OS X
@@ -1057,6 +1060,8 @@ int udsserver_exit(void)
 	if (unlink(MDNS_UDS_SERVERPATH))
 		debugf("Unable to remove %s", MDNS_UDS_SERVERPATH);
 #endif
+
+	if (PID_FILE[0]) unlink(PID_FILE);
 
     return 0;
     }
