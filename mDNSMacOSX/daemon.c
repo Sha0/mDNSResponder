@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.261  2006/01/06 01:22:28  cheshire
+<rdar://problem/4108164> Reword "mach_absolute_time went backwards" dialog
+
 Revision 1.260  2005/11/07 01:51:58  cheshire
 <rdar://problem/4331591> Include list of configured DNS servers in SIGINFO output
 
@@ -769,7 +772,8 @@ mDNSexport void LogMemCorruption(const char *format, ...)
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	LogMsg("!!!! %s !!!!", buffer);
-	NotifyOfElusiveBug("Memory Corruption", 0, buffer);
+	NotifyOfElusiveBug("Memory Corruption", buffer);
+	//*(long*)0 = -1;	// Trick to crash and get a stack trace right here, if that's what we want
 	}
 
 mDNSlocal void validatelists(mDNS *const m)
