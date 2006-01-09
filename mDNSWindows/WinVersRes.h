@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.52  2006/01/09 20:45:29  cheshire
+Update copyright date to 2006
+
 Revision 1.51  2005/11/28 19:49:56  herscher
 Bump to 1.0.2.9
 
@@ -190,6 +193,6 @@ First checked in.
 #define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.2.9"
 
 // Define the legal copyright
-#define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2005 Apple Computer, Inc."
+#define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2006 Apple Computer, Inc."
 
 #endif // WINRESVERS_H
