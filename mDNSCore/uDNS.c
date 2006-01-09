@@ -1,5 +1,6 @@
-/*
- * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
+/* -*- Mode: C; tab-width: 4 -*-
+ *
+ * Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.227  2006/01/09 20:47:05  cheshire
+<rdar://problem/4395331> Spurious warning "GetLargeResourceRecord: m->rec appears to be already in use"
+
 Revision 1.226  2005/12/20 02:46:33  cheshire
 <rdar://problem/4175520> mDNSPosix wide-area registration broken
 Check too strict -- we can still do wide-area registration (without NAT-PMP)
@@ -951,7 +955,7 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const dom
 	mDNS_Lock(m);
 	if (!d) d = (domainname *)"";
 
-	while (*p)		// Check if we already have this {server,domain} pair registered
+	while (*p)                 // Check if we already have this {server,domain} pair registered
 		{
 		if (mDNSSameAddress(&(*p)->addr, addr) && SameDomainName(&(*p)->domain, d))
 			LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
@@ -1142,7 +1146,7 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 
 	if (u->Router.ip.v4.NotAnInteger)
 		{
-		// send msg	if we have a router
+		// send msg if we have a router
 		const mDNSu8 *end = (mDNSu8 *)&info->request;
 		if (info->op == NATOp_AddrRequest) end += sizeof(NATAddrRequest);
 		else end += sizeof(NATPortMapRequest);
@@ -2132,8 +2136,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	{
 	const mDNSu8 *ptr;
 	int i;
-	LargeCacheRecord lcr;
-	CacheRecord *cr = &lcr.r;
+	CacheRecord *cr = &m->rec.r;
 	mDNSBool goodbye, inKAList, followedCName = mDNSfalse;
 	LLQ_Info *llqInfo = question->uDNS_info.llq;
 	domainname origname;
@@ -2149,7 +2152,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 
 	for (i = 0; i < msg->h.numAnswers; i++)
 		{
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &m->rec);
 		if (!ptr) goto pkt_error;
 		if (ResourceRecordAnswersQuestion(&cr->resrec, question))
 			{
@@ -2165,6 +2168,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 					followedCName = mDNStrue;
 					i = -1; // restart packet answer matching
 					ptr = LocateAnswers(msg, end);
+					m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
 					continue;
 					}
 				}
@@ -2172,7 +2176,11 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			goodbye = llq ? ((mDNSs32)cr->resrec.rroriginalttl == -1) : mDNSfalse;
 			inKAList = kaListContainsAnswer(question, cr);
 
-			if ((goodbye && !inKAList) || (!goodbye && inKAList)) continue;  // list up to date
+			if ((goodbye && !inKAList) || (!goodbye && inKAList))
+				{
+				m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
+				continue;  // list up to date
+				}
 			if (!inKAList) addKnownAnswer(question, cr);
 			if (goodbye) removeKnownAnswer(question, cr);
 			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
@@ -2180,6 +2188,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 			if (question != m->uDNS_info.CurrentQuery)
 				{
+				m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
 				debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning");
 				return;
 				}
@@ -2190,6 +2199,8 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 				cr->resrec.name->c, cr->resrec.namehash, DNSTypeName(cr->resrec.rrtype));
 		}
 	
+	m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
+
 	if (!llq || llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume)
 		{
 		deriveGoodbyes(m, msg, end,question);
@@ -2686,7 +2697,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 	if (found && result == DNSServer_Failed)
 		LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a.", srcaddr);
 
-	return(mDNStrue);	// Return mDNStrue to tell uDNS_ReceiveMsg it doens't need to process this packet further
+	return(mDNStrue); // Return mDNStrue to tell uDNS_ReceiveMsg it doens't need to process this packet further
 	}
 
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
@@ -4620,7 +4631,7 @@ mDNSexport mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, 
 	else
 		{
 		err = SetupRecordRegistration(m, &extra->r);
-		extra->r.uDNS_info.state = regState_ExtraQueued;	// %%% Is it okay to overwrite the previous uDNS_info.state?
+		extra->r.uDNS_info.state = regState_ExtraQueued; // %%% Is it okay to overwrite the previous uDNS_info.state?
 		}
 	
 	if (!err)
@@ -4799,7 +4810,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 			{
 			sendtime = q->LastQTime + q->ThisQInterval;
 			if (m->SuppressStdPort53Queries &&
-				sendtime - m->SuppressStdPort53Queries < 0)		// Don't allow sendtime to be earlier than SuppressStdPort53Queries
+				sendtime - m->SuppressStdPort53Queries < 0) // Don't allow sendtime to be earlier than SuppressStdPort53Queries
 				sendtime = m->SuppressStdPort53Queries;
 			if (sendtime - timenow < 0)
 				{
@@ -4939,7 +4950,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	if (nexte - u->nextevent < 0) u->nextevent = nexte;
 
 	if (m->SuppressStdPort53Queries && m->timenow - m->SuppressStdPort53Queries >= 0)
-		m->SuppressStdPort53Queries = 0;	// If suppression time has passed, clear it
+		m->SuppressStdPort53Queries = 0; // If suppression time has passed, clear it
 
 	nexte = CheckQueries(m, timenow);
 	if (nexte - u->nextevent < 0) u->nextevent = nexte;
