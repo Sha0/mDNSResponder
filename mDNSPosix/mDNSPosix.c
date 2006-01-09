@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.76  2006/01/09 19:29:16  cheshire
+<rdar://problem/4403128> Cap number of "sendto failed" messages we allow mDNSResponder to log
+
 Revision 1.75  2006/01/05 22:04:57  cheshire
 <rdar://problem/4399479> Log error message when send fails with "operation not permitted"
 
@@ -447,15 +450,20 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	if      (err > 0) err = 0;
 	else if (err < 0)
 		{
+		static int MessageCount = 0;
         // Don't report EHOSTDOWN (i.e. ARP failure), ENETDOWN, or no route to host for unicast destinations
 		if (!mDNSAddressIsAllDNSLinkGroup(dst))
 			if (errno == EHOSTDOWN || errno == ENETDOWN || errno == EHOSTUNREACH || errno == ENETUNREACH) return(mStatus_TransientErr);
 
-		if (thisIntf)
-			LogMsg("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a on interface %#a/%s/%d",
-						  errno, strerror(errno), dst, &thisIntf->coreIntf.ip, thisIntf->intfName, thisIntf->index);
-		else
-			LogMsg("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a", errno, strerror(errno), dst);
+		if (MessageCount < 1000)
+			{
+			MessageCount++;
+			if (thisIntf)
+				LogMsg("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a on interface %#a/%s/%d",
+							  errno, strerror(errno), dst, &thisIntf->coreIntf.ip, thisIntf->intfName, thisIntf->index);
+			else
+				LogMsg("mDNSPlatformSendUDP got error %d (%s) sending packet to %#a", errno, strerror(errno), dst);
+			}
 		}
 
 	return PosixErrorToStatus(err);
