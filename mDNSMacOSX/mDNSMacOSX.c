@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.325  2006/01/10 00:39:17  cheshire
+Add comments explaining how IPv6 link-local addresses sometimes have an embedded scope_id
+
 Revision 1.324  2006/01/09 19:28:59  cheshire
 <rdar://problem/4403128> Cap number of "sendto failed" messages we allow mDNSResponder to log
 
@@ -2052,8 +2055,13 @@ mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 	if (sa->sa_family == AF_INET6)
 		{
 		struct sockaddr_in6 *ifa_addr = (struct sockaddr_in6 *)sa;
-		ip->type = mDNSAddrType_IPv6;
+		// Inside the BSD kernel they use a hack where they stuff the sin6->sin6_scope_id
+		// value into the second word of the IPv6 link-local address, so they can just
+		// pass around IPv6 address structures instead of full sockaddr_in6 structures.
+		// Those hacked IPv6 addresses aren't supposed to escape the kernel in that form, but they do.
+		// To work around this we always whack the second word of any IPv6 link-local address back to zero.
 		if (IN6_IS_ADDR_LINKLOCAL(&ifa_addr->sin6_addr)) ifa_addr->sin6_addr.__u6_addr.__u6_addr16[1] = 0;
+		ip->type = mDNSAddrType_IPv6;
 		ip->ip.v6 = *(mDNSv6Addr*)&ifa_addr->sin6_addr;
 		return(mStatus_NoError);
 		}
