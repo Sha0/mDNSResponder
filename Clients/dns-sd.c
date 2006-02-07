@@ -294,7 +294,6 @@ static void ShowTXTRecord(uint16_t txtLen, const unsigned char *txtRecord)
 	{
 	const unsigned char *ptr = txtRecord;
 	const unsigned char *max = txtRecord + txtLen;
-	printf("\n");
 	while (ptr < max)
 		{
 		int needquote = 0;
@@ -336,7 +335,7 @@ static void DNSSD_API resolve_reply(DNSServiceRef client, const DNSServiceFlags 
 
 	if (flags) printf(" Flags: %X", flags);
 	// Don't show degenerate TXT records containing nothing but a single empty string
-	if (txtLen > 1) ShowTXTRecord(txtLen, txtRecord);
+	if (txtLen > 1) { printf("\n"); ShowTXTRecord(txtLen, txtRecord); }
 	printf("\n");
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
@@ -606,6 +605,7 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 			ptr += 1 + *ptr;
 			}
 		ShowTXTRecord(ptr-txt, txt);
+		printf("\n");
 		}
 	
 	return(DNSServiceRegister(sdRef, /* kDNSServiceFlagsAllowRemoteQuery */ 0, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
