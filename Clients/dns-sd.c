@@ -1,5 +1,6 @@
-/*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+/* -*- Mode: C; tab-width: 4 -*-
+ *
+ * Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
  *
  * Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple Computer, Inc.
  * ("Apple") in consideration of your agreement to the following terms, and your
@@ -289,8 +290,38 @@ static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags f
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
+static void ShowTXTRecord(uint16_t txtLen, const unsigned char *txtRecord)
+	{
+	const unsigned char *ptr = txtRecord;
+	const unsigned char *max = txtRecord + txtLen;
+	printf("\n");
+	while (ptr < max)
+		{
+		int needquote = 0;
+		const unsigned char *p;
+		const unsigned char *const end = ptr + 1 + ptr[0];
+		if (end > max) { printf("<< invalid data >>"); break; }
+		if (++ptr < end) printf(" ");   // As long as string is non-empty, begin with a space
+		
+		// Don't want output to include unquoted shell metacharacters, typically: & ; ` ' \ " | * ? ~ < > ^ ( ) [ ] { } $
+		for (p=ptr; p<end; p++) if (!isalnum(*p) && *p != '=' && *p != '/' && *p != ':' && *p != '.') needquote = 1;
+		if (needquote) printf("\"");
+		for (p=ptr; p<end; p++)
+			{
+			// Backslash and double quote are escaped, to make the output shell-friendly,
+			// so that the output can be copied and pasted unchanged into a "dns-sd -R" command.
+			// Non-printing characters (0-31) are displayed using \x, which is also parsed correctly by the "dns-sd -R" command.
+			if (*p == '\\' || *p == '\"') printf("\\");
+			if (*p >= ' ') printf("%c",      *p);
+			else           printf("\\x%02X", *p);
+			}
+		if (needquote) printf("\"");
+		ptr = p;
+		}
+	}
+
 static void DNSSD_API resolve_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
-	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const char *txtRecord, void *context)
+	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const unsigned char *txtRecord, void *context)
 	{
 	union { uint16_t s; u_char b[2]; } port = { opaqueport };
 	uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
@@ -304,26 +335,8 @@ static void DNSSD_API resolve_reply(DNSServiceRef client, const DNSServiceFlags 
 	printf("%s can be reached at %s:%u", fullname, hosttarget, PortAsNumber);
 
 	if (flags) printf(" Flags: %X", flags);
-	if (txtLen > 1)     // Don't show degenerate TXT records containing nothing but a single empty string
-		{
-		const char *ptr = txtRecord;
-		const char *max = txtRecord + txtLen;
-		printf(" TXT");
-		while (ptr < max)
-			{
-			const char *end = ptr + 1 + ptr[0];
-			if (end > max) { printf("<< invalid data >>"); break; }
-			if (++ptr < end) printf(" ");   // As long as string is non-empty, begin with a space
-			while (ptr < end)
-				{
-				if      (*ptr == '\\') printf("\\\\");          // '\' displays as "\\"
-				else if (*ptr == ' ' ) printf("\\ ");           // ' ' displays as "\ "
-				else if (*ptr >  ' ' ) printf("%c", *ptr);      // Display normal characters as-is
-				else                   printf("\\x%02X", *ptr); // other chararacters displayed as "\xHH"
-				ptr++;
-				}
-			}
-		}
+	// Don't show degenerate TXT records containing nothing but a single empty string
+	if (txtLen > 1) ShowTXTRecord(txtLen, txtRecord);
 	printf("\n");
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
@@ -544,9 +557,10 @@ static unsigned long getip(const char *const name)
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
 	{
-	// Call getip() after the call DNSServiceCreateConnection(). On the Win32 platform, WinSock must
-	// be initialized for getip() to succeed.  Any DNSService* call will initialize WinSock for us,
-	// so make sure DNSServiceCreateConnection() is called before getip() is.
+	// Call getip() after the call DNSServiceCreateConnection().
+	// On the Win32 platform, WinSock must be initialized for getip() to succeed.
+	// Any DNSService* call will initialize WinSock for us, so we make sure
+	// DNSServiceCreateConnection() is called before getip() is.
 	unsigned long addr = 0;
 	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
 	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
@@ -555,6 +569,12 @@ static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, cons
 		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
 	// Note, should probably add support for creating proxy AAAA records too, one day
 	}
+
+#define HexVal(X) ( ((X) >= '0' && (X) <= '9') ? ((X) - '0'     ) :  \
+					((X) >= 'A' && (X) <= 'F') ? ((X) - 'A' + 10) :  \
+					((X) >= 'a' && (X) <= 'f') ? ((X) - 'a' + 10) : 0)
+
+#define HexPair(P) ((HexVal((P)[0]) << 4) | HexVal((P)[1]))
 
 static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	const char *nam, const char *typ, const char *dom, const char *host, const char *port, int argc, char **argv)
@@ -572,16 +592,20 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	if (host && *host) printf(" host %s", host);
 	printf(" port %s\n", port);
 
-	for (i = 0; i < argc; i++)
+	if (argc)
 		{
-		int length = strlen(argv[i]);
-		if (length <= 255)
+		for (i = 0; i < argc; i++)
 			{
-			*ptr++ = (unsigned char)length;
-			strcpy((char*)ptr, argv[i]);
-			ptr += length;
-			printf("TXT %s\n", argv[i]);
+			const char *p = argv[i];
+			*ptr = 0;
+			while (*p && *ptr < 255 && ptr + 1 + *ptr < txt+sizeof(txt))
+				{
+				if (p[0] == '\\' && p[1] == 'x' && isxdigit(p[2]) && isxdigit(p[3])) { ptr[++*ptr] = HexPair(p+2); p+=4; }
+				else ptr[++*ptr] = *p++;
+				}
+			ptr += 1 + *ptr;
 			}
+		ShowTXTRecord(ptr-txt, txt);
 		}
 	
 	return(DNSServiceRegister(sdRef, /* kDNSServiceFlagsAllowRemoteQuery */ 0, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
@@ -644,7 +668,7 @@ int main(int argc, char **argv)
 					dom = (argc < optind+3) ? "local" : argv[optind+2];
 					if (dom[0] == '.' && dom[1] == 0) dom = "local";   // We allow '.' on the command line as a synonym for "local"
 					printf("Lookup %s.%s.%s\n", argv[optind+0], argv[optind+1], dom);
-					err = DNSServiceResolve(&client, 0, opinterface, argv[optind+0], argv[optind+1], dom, resolve_reply, NULL);
+					err = DNSServiceResolve(&client, 0, opinterface, argv[optind+0], argv[optind+1], dom, (DNSServiceResolveReply)resolve_reply, NULL);
 					break;
 
 		case 'R':	if (argc < optind+4) goto Fail;
