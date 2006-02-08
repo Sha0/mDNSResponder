@@ -296,26 +296,31 @@ static void ShowTXTRecord(uint16_t txtLen, const unsigned char *txtRecord)
 	const unsigned char *max = txtRecord + txtLen;
 	while (ptr < max)
 		{
-		int needquote = 0;
-		const unsigned char *p;
 		const unsigned char *const end = ptr + 1 + ptr[0];
 		if (end > max) { printf("<< invalid data >>"); break; }
 		if (++ptr < end) printf(" ");   // As long as string is non-empty, begin with a space
-		
-		// Don't want output to include unquoted shell metacharacters, typically: & ; ` ' \ " | * ? ~ < > ^ ( ) [ ] { } $
-		for (p=ptr; p<end; p++) if (!isalnum(*p) && *p != '=' && *p != '/' && *p != ':' && *p != '.') needquote = 1;
-		if (needquote) printf("\"");
-		for (p=ptr; p<end; p++)
+		while (ptr<end)
 			{
-			// Backslash and double quote are escaped, to make the output shell-friendly,
-			// so that the output can be copied and pasted unchanged into a "dns-sd -R" command.
-			// Non-printing characters (0-31) are displayed using \x, which is also parsed correctly by the "dns-sd -R" command.
-			if (*p == '\\' || *p == '\"') printf("\\");
-			if (*p >= ' ') printf("%c",      *p);
-			else           printf("\\x%02X", *p);
+			// We'd like the output to be shell-friendly, so that it can be copied and pasted unchanged into a "dns-sd -R" command.
+			// However, this is trickier than it seems. Enclosing a string in double quotes doesn't necessarily make it
+			// shell-safe, because shells still expand variables like $foo even when they appear inside quoted strings.
+			// Enclosing a string in single quotes is better, but when using single quotes even backslash escapes are ignored,
+			// meaning there's simply no way to represent a single quote (or apostrophe) inside a single-quoted string.
+			// The only remaining solution is not to surround the string with quotes at all, but instead to use backslash
+			// escapes to encode spaces and all other known shell metacharacters.
+			// (If we've missed any known shell metacharacters, please let us know.)
+			// In addition, non-printing ascii codes (0-31) are displayed as \xHH, using a two-digit hex value.
+			// Because '\' is itself a shell metacharacter (the shell escape character), it has to be escaped as "\\" to survive
+			// the round-trip to the shell and back. This means that a single '\' is represented here as EIGHT backslashes:
+			// The C compiler eats half of them, resulting in four appearing in the output.
+			// The shell parses those four as a pair of "\\" sequences, passing two backslashes to the "dns-sd -R" command.
+			// The "dns-sd -R" command interprets this single "\\" pair as an escaped literal backslash. Sigh.
+			if (strchr(" &;`'\"|*?~<>^()[]{}$", *ptr)) printf("\\");
+			if      (*ptr == '\\') printf("\\\\\\\\");
+			else if (*ptr >= ' ' ) printf("%c",        *ptr);
+			else                   printf("\\\\x%02X", *ptr);
+			ptr++;
 			}
-		if (needquote) printf("\"");
-		ptr = p;
 		}
 	}
 
@@ -599,8 +604,9 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 			*ptr = 0;
 			while (*p && *ptr < 255 && ptr + 1 + *ptr < txt+sizeof(txt))
 				{
-				if (p[0] == '\\' && p[1] == 'x' && isxdigit(p[2]) && isxdigit(p[3])) { ptr[++*ptr] = HexPair(p+2); p+=4; }
-				else ptr[++*ptr] = *p++;
+				if      (p[0] != '\\' || p[1] == 0)                       { ptr[++*ptr] = *p;           p+=1; }
+				else if (p[1] == 'x' && isxdigit(p[2]) && isxdigit(p[3])) { ptr[++*ptr] = HexPair(p+2); p+=4; }
+				else                                                      { ptr[++*ptr] = p[1];         p+=2; }
 				}
 			ptr += 1 + *ptr;
 			}
