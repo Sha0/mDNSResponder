@@ -424,8 +424,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	const unsigned char *rd  = rdata;
 	const unsigned char *end = (const unsigned char *) rdata + rdlen;
 	char rdb[1000];
-	char *p = rdb;
-	const char * const lim = rdb + sizeof(rdb);
+	int unknowntype = 0;
 
 	(void)sdRef;    // Unused
 	(void)flags;    // Unused
@@ -437,13 +436,17 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	switch (rrtype)
 		{
 		case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
-		default :	p += snprintf(p, lim-p, "%d bytes%s", rdlen, rdlen ? ":" : "");
-					while (rd < end && p < lim) p += snprintf(p, lim-p, " %02X", *rd++);
-					break;
+		case kDNSServiceType_AAAA: sprintf(rdb, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+			rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
+			rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]); break;
+			break;
+		default : sprintf(rdb, "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
 		}
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
 	printtimestamp();
-	printf("%s%6X%3d %-30s%4d%4d %s\n", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
+	printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
+	if (unknowntype) while (rd < end) printf(" %02X", *rd++);
+	printf("\n");
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
