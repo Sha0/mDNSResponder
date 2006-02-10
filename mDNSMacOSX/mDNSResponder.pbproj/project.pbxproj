@@ -987,7 +987,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -d ${OBJROOT}/mDNSResponder.build/${CONFIGURATION} ]; then BUILD_DIR=${OBJROOT}/mDNSResponder.build/${CONFIGURATION}; else BUILD_DIR=${OBJROOT}/mDNSResponder.build; fi\njavah -force -classpath ${BUILD_DIR}/dns_sd.jar.build/JavaClasses/ -o ${BUILD_DIR}/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
+			shellScript = "if [ -d ${OBJROOT}/mDNSResponder.build/${CONFIGURATION} ]; then BUILD_DIR=${OBJROOT}/mDNSResponder.build/${CONFIGURATION}; else BUILD_DIR=${OBJROOT}/mDNSResponder.build; fi\njavah -force -J-Xbootclasspath/p:${BUILD_DIR}/dns_sd.jar.build/JavaClasses -o ${BUILD_DIR}/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
 		};
 		DB2CC4560662DE4500335AB3 = {
 			fileRef = DB2CC4430662DD1100335AB3;
