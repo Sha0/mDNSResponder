@@ -965,6 +965,7 @@
 				PURE_JAVA = YES;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
+				STRIPFLAGS = "-S";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			comments = "Multiplatform .jar file that implements Java interface to DNS-SD";
@@ -1112,6 +1113,7 @@
 				PRODUCT_NAME = libjdns_sd.jnilib;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
+				STRIPFLAGS = "-S";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			comments = "Platform-specific JNI library that bridges dns_sd.jar to <dns_sd.h>.";
@@ -1675,6 +1677,7 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = Bonjour;
 				SECTORDER_FLAGS = "";
+				STRIPFLAGS = "-S";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
 				WRAPPER_EXTENSION = prefPane;
 			};
@@ -2218,6 +2221,7 @@
 				PRODUCT_NAME = ddnswriteconfig;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
+				STRIPFLAGS = "-S";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
 			};
 			dependencies = (
