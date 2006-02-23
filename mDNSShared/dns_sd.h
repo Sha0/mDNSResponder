@@ -1022,7 +1022,7 @@ DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
  * DNSServiceRegisterRecordReply() parameters:
  *
  * sdRef:           The connected DNSServiceRef initialized by
- *                  DNSServiceDiscoveryConnect().
+ *                  DNSServiceCreateConnection().
  *
  * RecordRef:       The DNSRecordRef initialized by DNSServiceRegisterRecord().  If the above
  *                  DNSServiceRef is passed to DNSServiceRefDeallocate(), this DNSRecordRef is
