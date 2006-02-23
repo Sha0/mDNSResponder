@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.76  2006/02/23 23:38:43  cheshire
+<rdar://problem/4427969> On FreeBSD 4 "arpa/inet.h" requires "netinet/in.h" be included first
+
 Revision 1.75  2006/01/05 22:33:58  cheshire
 Use IFNAMSIZ (more portable) instead of IF_NAMESIZE
 
@@ -297,9 +300,9 @@ Added NetMonitor.c
 #include <signal.h>			// For SIGINT, SIGTERM
 #include <netdb.h>			// For gethostbyname()
 #include <sys/socket.h>		// For AF_INET, AF_INET6, etc.
-#include <arpa/inet.h>		// For inet_addr()
 #include <net/if.h>			// For IF_NAMESIZE
 #include <netinet/in.h>		// For INADDR_NONE
+#include <arpa/inet.h>		// For inet_addr()
 
 #include "mDNSPosix.h"      // Defines the specific types needed to run mDNS on this platform
 #include "ExampleClientApp.h"

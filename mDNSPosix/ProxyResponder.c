@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.37  2006/02/23 23:38:43  cheshire
+<rdar://problem/4427969> On FreeBSD 4 "arpa/inet.h" requires "netinet/in.h" be included first
+
 Revision 1.36  2005/08/04 03:12:47  mkrochma
 <rdar://problem/4199236> Register reverse PTR record using multicast
 
@@ -118,8 +121,8 @@ Add "$Log" header
 #include <unistd.h>				// For select()
 #include <signal.h>				// For SIGINT, SIGTERM
 #include <errno.h>				// For errno, EINTR
-#include <arpa/inet.h>			// For inet_addr()
 #include <netinet/in.h>			// For INADDR_NONE
+#include <arpa/inet.h>			// For inet_addr()
 #include <netdb.h>				// For gethostbyname()
 
 #include "mDNSEmbeddedAPI.h"	// Defines the interface to the client layer above

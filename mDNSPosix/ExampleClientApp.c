@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: ExampleClientApp.c,v $
+Revision 1.13  2006/02/23 23:38:43  cheshire
+<rdar://problem/4427969> On FreeBSD 4 "arpa/inet.h" requires "netinet/in.h" be included first
+
 Revision 1.12  2004/11/30 22:37:00  cheshire
 Update copyright dates and add "Mode: C; tab-width: 4" headers
 
@@ -55,8 +58,8 @@ Add log header
 #include <string.h>			// For strlen() etc.
 #include <unistd.h>			// For select()
 #include <errno.h>			// For errno, EINTR
-#include <arpa/inet.h>		// For inet_addr()
 #include <netinet/in.h>		// For INADDR_NONE
+#include <arpa/inet.h>		// For inet_addr()
 #include <netdb.h>			// For gethostbyname()
 #include <signal.h>			// For SIGINT, etc.
 

@@ -84,9 +84,9 @@ typedef int        pid_t;
 #include <unistd.h>			// For getopt() and optind
 #include <netdb.h>			// For getaddrinfo()
 #include <sys/time.h>		// For struct timeval
-#include <arpa/inet.h>		// For inet_addr()
-#include <netinet/in.h>		// For struct sockaddr_in()
 #include <sys/socket.h>		// For AF_INET
+#include <netinet/in.h>		// For struct sockaddr_in()
+#include <arpa/inet.h>		// For inet_addr()
 #endif
 
 
