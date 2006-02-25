@@ -23,7 +23,15 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
+# IMPORTANT NOTE: This is a Makefile for *GNU make*
+# On some systems, a different program may be the default "make" command.
+# If "make os=xxx" gives lots of errors like "Missing dependency operator",
+# then try typing "gmake os=xxx" instead.
+#
 # $Log: Makefile,v $
+# Revision 1.67  2006/02/25 23:14:29  cheshire
+# Add comment suggesting using "gmake" command
+#
 # Revision 1.66  2006/01/06 01:06:17  cheshire
 # <rdar://problem/3978979> Compile library and client programs in one pass
 #
