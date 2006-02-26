@@ -29,6 +29,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.68  2006/02/26 01:36:54  cheshire
+# Rename the poorly named "LIBFLAGS" as "LINKOPTS"
+#
 # Revision 1.67  2006/02/25 23:14:29  cheshire
 # Add comment suggesting using "gmake" command
 #
@@ -261,7 +264,7 @@ CP = cp
 RM = rm
 LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\" -DMDNS_UDS_SERVERPATH=\"/var/run/mdnsd\"
-LIBFLAGS =
+LINKOPTS =
 LDSUFFIX = so
 JAVACFLAGS_OS = -fPIC -shared -ldns_sd
 
@@ -288,7 +291,7 @@ CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -DNOT_HAVE_SOCKLEN_T -DNOT_HAVE_
 	 -DLOG_PERROR=0 -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME
 CC = gcc
 LD = gcc -shared
-LIBFLAGS = -lsocket -lnsl -lresolv
+LINKOPTS = -lsocket -lnsl -lresolv
 JAVACFLAGS_OS += -I$(JDK)/include/solaris
 ifneq ($(DEBUG),1)
 STRIP = strip
@@ -326,7 +329,7 @@ else
 ifeq ($(os),jaguar)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -DNOT_HAVE_SOCKLEN_T
 LD = libtool -dynamic
-LIBFLAGS = -lSystem
+LINKOPTS = -lSystem
 LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
@@ -335,7 +338,7 @@ else
 ifeq ($(os),panther)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror
 LD = libtool -dynamic
-LIBFLAGS = -lSystem
+LINKOPTS = -lSystem
 LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
@@ -345,7 +348,7 @@ ifeq ($(os),tiger)
 CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -Wdeclaration-after-statement #-Wunreachable-code
 CC = @gcc-4.0
 LD = $(CC) -dynamiclib
-LIBFLAGS = -lSystem
+LINKOPTS = -lSystem
 LDSUFFIX = dylib
 JDK = /System/Library/Frameworks/JavaVM.framework/Home
 JAVACFLAGS_OS = -dynamiclib -I/System/Library/Frameworks/JavaVM.framework/Headers -framework JavaVM 
@@ -441,7 +444,7 @@ Daemon: setup $(BUILDDIR)/mdnsd
 	@echo "Responder daemon done"
 
 $(BUILDDIR)/mdnsd: $(DAEMONOBJS)
-	$(CC) -o $@ $+ $(CFLAGS) $(LIBFLAGS)
+	$(CC) -o $@ $+ $(LINKOPTS)
 	@$(STRIP) $@
 
 # libdns_sd target builds the client library
@@ -451,7 +454,7 @@ libdns_sd: setup $(BUILDDIR)/libdns_sd.$(LDSUFFIX)
 CLIENTLIBOBJS = $(OBJDIR)/dnssd_clientlib.c.so.o $(OBJDIR)/dnssd_clientstub.c.so.o $(OBJDIR)/dnssd_ipc.c.so.o
 
 $(BUILDDIR)/libdns_sd.$(LDSUFFIX): $(CLIENTLIBOBJS)
-	@$(LD) $(LIBFLAGS) -o $@ $+
+	@$(LD) $(LINKOPTS) -o $@ $+
 	@$(STRIP) $@
 
 Clients: setup libdns_sd ../Clients/build/dns-sd
@@ -465,7 +468,7 @@ nss_mdns: setup $(BUILDDIR)/$(NSSLIBFILE)
 	@echo "Name Service Switch module done"
 
 $(BUILDDIR)/$(NSSLIBFILE): $(CLIENTLIBOBJS) $(OBJDIR)/nss_mdns.c.so.o
-	@$(LD) $(LIBFLAGS) -o $@ $+
+	@$(LD) $(LINKOPTS) -o $@ $+
 	@$(STRIP) $@
 
 #############################################################################
@@ -634,24 +637,24 @@ dnsextd: setup $(BUILDDIR)/dnsextd
 	@echo "dnsextd done"
 
 $(BUILDDIR)/mDNSClientPosix:         $(APPOBJ)     $(OBJDIR)/Client.c.o
-	$(CC) $+ -o $@ $(LIBFLAGS)
+	$(CC) $+ -o $@ $(LINKOPTS)
 
 $(BUILDDIR)/mDNSResponderPosix:      $(COMMONOBJ)  $(OBJDIR)/Responder.c.o
-	$(CC) $+ -o $@ $(LIBFLAGS)
+	$(CC) $+ -o $@ $(LINKOPTS)
 
 $(BUILDDIR)/mDNSProxyResponderPosix: $(COMMONOBJ)  $(OBJDIR)/ProxyResponder.c.o
-	$(CC) $+ -o $@ $(LIBFLAGS)
+	$(CC) $+ -o $@ $(LINKOPTS)
 
 $(BUILDDIR)/mDNSIdentify:            $(SPECIALOBJ) $(OBJDIR)/Identify.c.o
-	$(CC) $+ -o $@ $(LIBFLAGS)
+	$(CC) $+ -o $@ $(LINKOPTS)
 
 $(OBJDIR)/Identify.c.o:              $(COREDIR)/mDNS.c # Note: Identify.c textually imports mDNS.c
 
 $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
-	$(CC) $+ -o $@ $(LIBFLAGS)
+	$(CC) $+ -o $@ $(LINKOPTS)
 
 $(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.threadsafe.o
-	$(CC) $+ -o $@ $(LIBFLAGS) -lpthread
+	$(CC) $+ -o $@ $(LINKOPTS) -lpthread
 
 #############################################################################
 
