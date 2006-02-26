@@ -29,6 +29,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.69  2006/02/26 23:18:50  cheshire
+# <rdar://problem/4427969> FreeBSD 4 requires "-pthread" option to compile threaded code
+#
 # Revision 1.68  2006/02/26 01:36:54  cheshire
 # Rename the poorly named "LIBFLAGS" as "LINKOPTS"
 #
@@ -264,7 +267,9 @@ CP = cp
 RM = rm
 LN = ln -s -f
 CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\" -DMDNS_UDS_SERVERPATH=\"/var/run/mdnsd\"
+CFLAGS_PTHREAD =
 LINKOPTS =
+LINKOPTS_PTHREAD = -lpthread
 LDSUFFIX = so
 JAVACFLAGS_OS = -fPIC -shared -ldns_sd
 
@@ -317,6 +322,14 @@ LOCALBASE?=/usr/local
 INSTBASE=$(LOCALBASE)
 STARTUPSCRIPTNAME=mdns.sh
 CFLAGS_OS =
+# FreeBSD 4 requires threaded code to be compiled and linked using the "-pthread" option,
+# and requires that the "-lpthread" link option NOT be used
+# This appies only to FreeBSD -- "man cc" on FreeBSD says:
+#   FreeBSD SPECIFIC OPTIONS
+#     -pthread
+#       Link a user-threaded process against libc_r instead of libc.
+CFLAGS_PTHREAD   = -pthread -D_THREAD_SAFE
+LINKOPTS_PTHREAD = -pthread
 JAVACFLAGS_OS += -I$(JDK)/include/freebsd
 LDCONFIG = ldconfig
 else
@@ -654,7 +667,7 @@ $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LINKOPTS)
 
 $(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.threadsafe.o
-	$(CC) $+ -o $@ $(LINKOPTS) -lpthread
+	$(CC) $+ -o $@ $(LINKOPTS) $(LINKOPTS_PTHREAD)
 
 #############################################################################
 
@@ -669,7 +682,7 @@ $(OBJDIR)/%.c.o:	$(SHAREDDIR)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(OBJDIR)/%.c.threadsafe.o:	%.c
-	$(CC) $(CFLAGS) -D_REENTRANT -c -o $@ $<
+	$(CC) $(CFLAGS) $(CFLAGS_PTHREAD) -D_REENTRANT -c -o $@ $<
 
 $(OBJDIR)/%.c.so.o:	%.c
 	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
