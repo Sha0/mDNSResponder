@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.289  2006/02/26 00:54:41  cheshire
+Fixes to avoid code generation warning/error on FreeBSD 7
+
 Revision 1.288  2005/12/21 03:24:58  cheshire
 <rdar://problem/4388858> Code changes required to compile on EFI
 
@@ -1936,7 +1939,6 @@ struct ServiceInfoQuery_struct
 #define NATMAP_MAX_TRIES 3                                     // for max 3 tries
 #define NATMAP_DEFAULT_LEASE (60 * 60)  // lease life in seconds
 #define NATMAP_VERS 0
-#define NATMAP_PORT 5351
 #define NATMAP_RESPONSE_MASK 0x80
 
 typedef enum
@@ -2169,10 +2171,14 @@ extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 
 extern const mDNSIPPort      UnicastDNSPort;
+extern const mDNSIPPort      NATPMPPort;
+extern const mDNSIPPort      DNSEXTPort;
 extern const mDNSIPPort      MulticastDNSPort;
+extern const mDNSIPPort      LoopbackIPCPort;
+
 extern const mDNSv4Addr      AllDNSAdminGroup;
-extern const mDNSv4Addr      AllDNSLinkGroupv4;
-extern const mDNSv6Addr      AllDNSLinkGroupv6;
+#define AllDNSLinkGroupv4 (AllDNSLinkGroup_v4.ip.v4)
+#define AllDNSLinkGroupv6 (AllDNSLinkGroup_v6.ip.v6)
 extern const mDNSAddr        AllDNSLinkGroup_v4;
 extern const mDNSAddr        AllDNSLinkGroup_v6;
 

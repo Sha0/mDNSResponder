@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.228  2006/02/26 00:54:42  cheshire
+Fixes to avoid code generation warning/error on FreeBSD 7
+
 Revision 1.227  2006/01/09 20:47:05  cheshire
 <rdar://problem/4395331> Spurious warning "GetLargeResourceRecord: m->rec appears to be already in use"
 
@@ -1137,8 +1140,6 @@ mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	{
 	mStatus err;
-	mDNSAddr dst;
-	mDNSIPPort dstport;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 
 	if (info->state != NATState_Request && info->state != NATState_Refresh)
@@ -1151,10 +1152,7 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 		if (info->op == NATOp_AddrRequest) end += sizeof(NATAddrRequest);
 		else end += sizeof(NATPortMapRequest);
 
-		dst.type = u->Router.type;
-		dst.ip.v4 = u->Router.ip.v4;
-		dstport = mDNSOpaque16fromIntVal(NATMAP_PORT);
-		err = mDNSPlatformSendUDP(m, &info->request, end, 0, &dst, dstport);
+		err = mDNSPlatformSendUDP(m, &info->request, end, 0, &u->Router, NATPMPPort);
 		if (!err) (info->ntries++);  // don't increment attempt counter if the send failed
 		}
 	
