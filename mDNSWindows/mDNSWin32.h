@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.24  2006/02/26 19:31:04  herscher
+<rdar://problem/4455038> Bonjour For Windows takes 90 seconds to start. This was caused by a bad interaction between the VirtualPC check, and the removal of the WMI dependency.  The problem was fixed by: 1) checking to see if WMI is running before trying to talk to it.  2) Retrying the VirtualPC check every 10 seconds upon failure, stopping after 10 unsuccessful tries.
+
 Revision 1.23  2005/10/05 20:55:14  herscher
 <rdar://problem/4096464> Don't call SetLLRoute on loopback interface
 
@@ -198,10 +201,14 @@ struct	mDNS_PlatformSupport_struct
 	HANDLE						ddnsChangedEvent;	// DynDNS config changed
 	HANDLE						wakeupEvent;
 	HANDLE						initEvent;
+	HANDLE						vpcCheckEvent;		// Timer handle to check if we're running in Virtual PC
+	int							vpcCheckCount;
 	HKEY						descKey;
 	HKEY						tcpipKey;
 	HKEY						ddnsKey;
 	mStatus						initStatus;
+	mDNSBool					inVirtualPC;
+	int							timersCount;
 	mDNSBool					registeredLoopback4;
 	SocketRef					interfaceListChangedSocket;
 	int							interfaceCount;

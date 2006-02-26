@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: VPCDetect.h,v $
+Revision 1.2  2006/02/26 19:31:05  herscher
+<rdar://problem/4455038> Bonjour For Windows takes 90 seconds to start. This was caused by a bad interaction between the VirtualPC check, and the removal of the WMI dependency.  The problem was fixed by: 1) checking to see if WMI is running before trying to talk to it.  2) Retrying the VirtualPC check every 10 seconds upon failure, stopping after 10 unsuccessful tries.
+
 Revision 1.1  2005/11/27 20:21:16  herscher
 <rdar://problem/4210580> Workaround Virtual PC bug that incorrectly modifies incoming mDNS packets
 
@@ -31,6 +34,7 @@ Revision 1.1  2005/11/27 20:21:16  herscher
 #pragma once
 
 #include <windows.h>
+#include <mDNSEmbeddedAPI.h>
 
 
 #if defined(__cplusplus)
@@ -39,8 +43,8 @@ extern "C"
 #endif
 
 
-extern BOOL
-IsVPCRunning();
+extern mStatus
+IsVPCRunning( BOOL * inVirtualPC );
 
 
 #if defined(__cplusplus)

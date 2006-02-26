@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.106  2006/02/26 19:31:05  herscher
+<rdar://problem/4455038> Bonjour For Windows takes 90 seconds to start. This was caused by a bad interaction between the VirtualPC check, and the removal of the WMI dependency.  The problem was fixed by: 1) checking to see if WMI is running before trying to talk to it.  2) Retrying the VirtualPC check every 10 seconds upon failure, stopping after 10 unsuccessful tries.
+
 Revision 1.105  2005/11/27 20:21:16  herscher
 <rdar://problem/4210580> Workaround Virtual PC bug that incorrectly modifies incoming mDNS packets
 
@@ -452,6 +455,9 @@ Multicast DNS platform plugin for Win32
 
 #define kIPv6IfIndexBase							(10000000L)
 
+#define kRetryVPCRate								(-100000000)
+#define kRetryVPCMax								(10)
+
 
 #if 0
 #pragma mark == Prototypes ==
@@ -474,6 +480,8 @@ mDNSlocal mStatus			SetupSocket( mDNS * const inMDNS, const struct sockaddr *inA
 mDNSlocal mStatus			SockAddrToMDNSAddr( const struct sockaddr * const inSA, mDNSAddr *outIP, mDNSIPPort *outPort );
 mDNSlocal mStatus			SetupNotifications( mDNS * const inMDNS );
 mDNSlocal mStatus			TearDownNotifications( mDNS * const inMDNS );
+mDNSlocal mStatus           SetupRetryVPCCheck( mDNS * const inMDNS );
+mDNSlocal mStatus           TearDownRetryVPCCheck( mDNS * const inMDNS );
 
 mDNSlocal mStatus			SetupThread( mDNS * const inMDNS );
 mDNSlocal mStatus			TearDownThread( const mDNS * const inMDNS );
@@ -485,6 +493,7 @@ mDNSlocal void				ProcessingThreadInterfaceListChanged( mDNS *inMDNS );
 mDNSlocal void				ProcessingThreadComputerDescriptionChanged( mDNS * inMDNS );
 mDNSlocal void				ProcessingThreadTCPIPConfigChanged( mDNS * inMDNS );
 mDNSlocal void				ProcessingThreadDynDNSConfigChanged( mDNS * inMDNS );
+mDNSlocal void              ProcessingThreadRetryVPCCheck( mDNS * inMDNS );
 
 
 // Platform Accessors
@@ -640,6 +649,12 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	inMDNS->HISoftware.c[ 0 ] = (mDNSu8) mDNSPlatformStrLen( &inMDNS->HISoftware.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "HISoftware: %#s\n", inMDNS->HISoftware.c );
 #endif
+
+	// Bookkeeping
+
+	inMDNS->p->vpcCheckCount			= 0;
+	inMDNS->p->vpcCheckEvent			= NULL;
+	inMDNS->p->timersCount				= 0;
 	
 	// Set up the IPv4 unicast socket
 
@@ -666,16 +681,8 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	{
 		DWORD size;
 
-		// If we are running inside VPC, then we won't use WSARecvMsg because it will give us bogus information due to
-		// a bug in VPC itself.
-
-		err = IsVPCRunning();
-
-		if ( !err )
-		{
-			err = WSAIoctl( inMDNS->p->unicastSock4, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, 
+		err = WSAIoctl( inMDNS->p->unicastSock4, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, 
 							sizeof( kWSARecvMsgGUID ), &inMDNS->p->unicastSock4RecvMsgPtr, sizeof( inMDNS->p->unicastSock4RecvMsgPtr ), &size, NULL, NULL );
-		}
 		
 		if ( err )
 		{
@@ -776,6 +783,9 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 	err = TearDownInterfaceList( inMDNS );
 	check_noerr( err );
 	check( !inMDNS->p->inactiveInterfaceList );
+
+	err = TearDownRetryVPCCheck( inMDNS );
+	check_noerr( err );
 		
 	err = TearDownSynchronizationObjects( inMDNS );
 	check_noerr( err );
@@ -2797,12 +2807,12 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 
 		#if( !TARGET_OS_WINDOWS_CE )
 		{
-			DWORD		size;
+			DWORD size;
 
 			// If we are running inside VPC, then we won't use WSARecvMsg because it will give us bogus information due to
 			// a bug in VPC itself.
 			
-			err = IsVPCRunning();
+			err = inMDNS->p->inVirtualPC;
 
 			if ( !err )
 			{
@@ -3275,6 +3285,64 @@ mDNSlocal mStatus	TearDownNotifications( mDNS * const inMDNS )
 	return( mStatus_NoError );
 }
 
+
+//===========================================================================================================================
+//	SetupRetryVPCCheck
+//===========================================================================================================================
+
+mDNSlocal mStatus
+SetupRetryVPCCheck( mDNS * const inMDNS )
+{
+    LARGE_INTEGER	liDueTime;
+	BOOL			ok;
+	mStatus			err;
+
+	dlog( kDebugLevelTrace, DEBUG_NAME "setting up retry VirtualPC check\n" );
+    
+	liDueTime.QuadPart = kRetryVPCRate;
+
+    // Create a waitable timer.
+    
+	inMDNS->p->vpcCheckEvent = CreateWaitableTimer( NULL, TRUE, TEXT( "VPCCheckTimer" ) );
+	err = translate_errno( inMDNS->p->vpcCheckEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+    // Set a timer to wait for 10 seconds.
+    
+	ok = SetWaitableTimer( inMDNS->p->vpcCheckEvent, &liDueTime, 0, NULL, NULL, 0 );
+	err = translate_errno( ok, (OSStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	inMDNS->p->timersCount++;
+
+exit:
+
+	return err;
+}
+
+
+//===========================================================================================================================
+//	TearDownRetryVPCCheck
+//===========================================================================================================================
+
+mDNSlocal mStatus
+TearDownRetryVPCCheck( mDNS * const inMDNS )
+{
+	dlog( kDebugLevelTrace, DEBUG_NAME "tearing down retry VirtualPC check\n" );
+
+	if ( inMDNS->p->vpcCheckEvent )
+	{
+		CancelWaitableTimer( inMDNS->p->vpcCheckEvent );
+		CloseHandle( inMDNS->p->vpcCheckEvent );
+
+		inMDNS->p->vpcCheckEvent = NULL;
+		inMDNS->p->timersCount--;
+	}
+
+	return ( mStatus_NoError );
+}
+
+
 #if 0
 #pragma mark -
 #endif
@@ -3481,6 +3549,13 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 						
 						signaledObject = waitList[ waitItemIndex ];
 	
+						if ( m->p->vpcCheckEvent == signaledObject )
+						{
+							ProcessingThreadRetryVPCCheck( m );
+							++n;
+
+							break;
+						}
 #if ( MDNS_WINDOWS_ENABLE_IPV4 )
 						if ( m->p->unicastSock4ReadEvent == signaledObject )
 						{
@@ -3578,7 +3653,15 @@ mDNSlocal mStatus ProcessingThreadInitialize( mDNS * const inMDNS )
 	BOOL		wasSet;
 	
 	inMDNS->p->threadID = GetCurrentThreadId();
-	
+
+	err = IsVPCRunning( &inMDNS->p->inVirtualPC );
+
+	if ( err )
+	{
+		TearDownRetryVPCCheck( inMDNS );
+		SetupRetryVPCCheck( inMDNS );
+	}
+
 	err = SetupInterfaceList( inMDNS );
 	require_noerr( err, exit );
 
@@ -3593,6 +3676,7 @@ exit:
 	if( err )
 	{
 		TearDownInterfaceList( inMDNS );
+		TearDownRetryVPCCheck( inMDNS );
 	}
 	inMDNS->p->initStatus = err;
 	
@@ -3622,7 +3706,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	
 	// Allocate an array to hold all the objects to wait on.
 	
-	waitListCount = kWaitListFixedItemCount + inMDNS->p->interfaceCount + gTCPConnections;
+	waitListCount = kWaitListFixedItemCount + inMDNS->p->timersCount + inMDNS->p->interfaceCount + gTCPConnections;
 	waitList = (HANDLE *) malloc( waitListCount * sizeof( *waitList ) );
 	require_action( waitList, exit, err = mStatus_NoMemoryErr );
 	waitItemPtr = waitList;
@@ -3635,6 +3719,13 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	*waitItemPtr++ = inMDNS->p->descChangedEvent;
 	*waitItemPtr++ = inMDNS->p->tcpipChangedEvent;
 	*waitItemPtr++ = inMDNS->p->ddnsChangedEvent;
+
+	// Add timers
+
+	if ( inMDNS->p->vpcCheckEvent )
+	{
+		*waitItemPtr++ = inMDNS->p->vpcCheckEvent;
+	}
 	
 	// Append all the dynamic wait items to the list.
 #if ( MDNS_WINDOWS_ENABLE_IPV4 )
@@ -3954,6 +4045,44 @@ mDNSlocal void	ProcessingThreadDynDNSConfigChanged( mDNS *inMDNS )
 
 	mDNSPlatformUnlock( inMDNS );
 }
+
+
+//===========================================================================================================================
+//	ProcessingThreadRetryVPCCheck
+//===========================================================================================================================
+
+mDNSlocal void
+ProcessingThreadRetryVPCCheck( mDNS * inMDNS )
+{
+	mStatus err = mStatus_NoError;
+
+	dlog( kDebugLevelTrace, DEBUG_NAME "in ProcessingThreadRetryVPCCheck\n" );
+	
+	TearDownRetryVPCCheck( inMDNS );
+	
+	if ( inMDNS->p->vpcCheckCount < kRetryVPCMax )
+	{
+		inMDNS->p->vpcCheckCount++;
+
+		err = IsVPCRunning( &inMDNS->p->inVirtualPC );
+		require_noerr( err, exit );
+	
+		if ( inMDNS->p->inVirtualPC )
+		{
+			ProcessingThreadInterfaceListChanged( inMDNS );
+		}
+	}
+
+exit:
+
+	if ( err )
+	{
+		SetupRetryVPCCheck( inMDNS );
+	}
+
+	return;	
+}
+
 
 
 #if 0
