@@ -20,6 +20,9 @@ MVERS = "mDNSResponder-109"
 
 install:
 	cd "$(SRCROOT)/mDNSMacOSX"; xcodebuild install     OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT) MVERS=$(MVERS)
+	# Make sure ddnswriteconfig is owned by root:wheel, then make it setuid root executable
+	chown 0:80 "$(DSTROOT)/Library/Application Support/Bonjour/ddnswriteconfig"
+	chmod 4555 "$(DSTROOT)/Library/Application Support/Bonjour/ddnswriteconfig"
 
 installsrc:
 	ditto . "$(SRCROOT)"
