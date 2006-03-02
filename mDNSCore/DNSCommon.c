@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.94  2006/03/02 21:59:55  cheshire
+<rdar://problem/4395331> Spurious warning "GetLargeResourceRecord: m->rec appears to be already in use"
+Improve sanity checks & debugging support in GetLargeResourceRecord()
+
 Revision 1.93  2006/03/02 20:30:47  cheshire
 Improved GetRRDisplayString to also show priority, weight, and port for SRV records
 
@@ -1801,11 +1805,10 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	CacheRecord *rr = &largecr->r;
 	mDNSu16 pktrdlength;
 	
-	if (largecr == &m->rec && rr->resrec.RecordType)
-		LogMsg("GetLargeResourceRecord: m->rec appears to be already in use");
+	if (largecr == &m->rec && largecr->r.resrec.RecordType)
+		LogMsg("GetLargeResourceRecord: m->rec appears to be already in use for %s", CRDisplayString(m, &largecr->r));
 
 	rr->next              = mDNSNULL;
-	rr->resrec.RecordType = RecordType;
 	rr->resrec.name       = &largecr->namestorage;
 
 	rr->NextInKAList      = mDNSNULL;
@@ -1837,7 +1840,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	// us to look at. If we decide to copy it into the cache, then we'll update m->NextCacheCheck accordingly.
 	pktrdlength           = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
 	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8))
-		rr->resrec.RecordType |= kDNSRecordTypePacketUniqueMask;
+		RecordType |= kDNSRecordTypePacketUniqueMask;
 	ptr += 10;
 	if (ptr + pktrdlength > end) { debugf("GetResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
 	end = ptr + pktrdlength;		// Adjust end to indicate the end of the rdata for this resource record
@@ -1921,6 +1924,8 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
 	SetNewRData(&rr->resrec, mDNSNULL, 0);
 
+	// Success! Now fill in RecordType to show this record contains valid data
+	rr->resrec.RecordType = RecordType;
 	return(ptr + pktrdlength);
 	}
 
