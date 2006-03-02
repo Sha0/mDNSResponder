@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 4 -*-
  *
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.534  2006/03/02 03:25:46  cheshire
+<rdar://problem/4111464> After record update, old record sometimes remains in cache
+Code to harmonize RRSet TTLs was inadvertently rescuing expiring records
+
 Revision 1.533  2006/02/26 00:54:41  cheshire
 Fixes to avoid code generation warning/error on FreeBSD 7
 
@@ -5520,13 +5524,14 @@ exit:
 		for (r2 = cg ? cg->members : mDNSNULL; r2; r2=r2->next)
 			if (SameResourceRecordSignature(&r1->resrec, &r2->resrec))
 				{
-				// If record is recent, just ensure the whole RRSet has the same TTL (as required by DNS semantics)
-				// else, if record is old, mark it to be flushed
-				if (m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
+				// If record was recently positively received
+				// (i.e. not counting goodbye packets or cache flush events that set the TTL to 1)
+				// then we need to ensure the whole RRSet has the same TTL (as required by DNS semantics)
+				if (r2->resrec.rroriginalttl > 1 && m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
 					r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
-				else
+				else				// else, if record is old, mark it to be flushed
 					{
-					verbosedebugf("Cache flush %p X %p %##s (%s)", r1, r2, r2->resrec.name->c, DNSTypeName(r2->resrec.rrtype));
+					verbosedebugf("Cache flush %p X %p %s", r1, r2, CRDisplayString(m, r2));
 					// We set stale records to expire in one second.
 					// This gives the owner a chance to rescue it if necessary.
 					// This is important in the case of multi-homing and bridged networks:
