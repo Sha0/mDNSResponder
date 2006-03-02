@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.77  2006/03/02 21:50:45  cheshire
+Removed strange backslash at the end of a line
+
 Revision 1.76  2006/02/23 23:38:43  cheshire
 <rdar://problem/4427969> On FreeBSD 4 "arpa/inet.h" requires "netinet/in.h" be included first
 
@@ -697,7 +700,7 @@ mDNSlocal void printstats(int max)
 		}
 	}
 
-mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end,\
+mDNSlocal const mDNSu8 *FindUpdate(mDNS *const m, const DNSMessage *const query, const mDNSu8 *ptr, const mDNSu8 *const end,
 	DNSQuestion *q, LargeCacheRecord *pkt)
 	{
 	int i;
