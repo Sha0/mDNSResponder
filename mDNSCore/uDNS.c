@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.229  2006/03/02 22:03:41  cheshire
+<rdar://problem/4395331> Spurious warning "GetLargeResourceRecord: m->rec appears to be already in use"
+Refinement: m->rec.r.resrec.RecordType needs to be cleared *every* time around for loop, not just once at the end
+
 Revision 1.228  2006/02/26 00:54:42  cheshire
 Fixes to avoid code generation warning/error on FreeBSD 7
 
@@ -2195,9 +2199,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			LogMsg("Question %##s %X (%s) %##s unexpected answer %##s %X (%s)",
 				question->qname.c, question->qnamehash, DNSTypeName(question->qtype), origname.c,
 				cr->resrec.name->c, cr->resrec.namehash, DNSTypeName(cr->resrec.rrtype));
+
+		m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
 		}
-	
-	m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
 
 	if (!llq || llqInfo->state == LLQ_Poll || llqInfo->deriveRemovesOnResume)
 		{
