@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.535  2006/03/02 20:41:17  cheshire
+<rdar://problem/4111464> After record update, old record sometimes remains in cache
+Minor code tidying and comments to reduce the risk of similar programming errors in future
+
 Revision 1.534  2006/03/02 03:25:46  cheshire
 <rdar://problem/4111464> After record update, old record sometimes remains in cache
 Code to harmonize RRSet TTLs was inadvertently rescuing expiring records
@@ -3314,10 +3318,11 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 // Note: MUST call SetNextCacheCheckTime any time we change:
 // rr->TimeRcvd
-// rr->DelayDelivery
 // rr->resrec.rroriginalttl
 // rr->UnansweredQueries
 // rr->CRActiveQuestion
+// Also, any time we set rr->DelayDelivery we should call SetNextCacheCheckTime to ensure m->NextCacheCheck is set if necessary
+// Clearing rr->DelayDelivery does not require a call to SetNextCacheCheckTime
 mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 	{
 	rr->NextRequiredQuery = RRExpireTime(rr);
@@ -3901,7 +3906,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 
 mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
 	{
-	rr->DelayDelivery = 0;
+	rr->DelayDelivery = 0;		// Note, only need to call SetNextCacheCheckTime() when DelayDelivery is set, not when it's cleared
 	if (m->CurrentQuestion) LogMsg("CacheRecordDeferredAdd ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
@@ -3984,6 +3989,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			}
 		}
 	m->CurrentQuestion = mDNSNULL;
+	SetNextCacheCheckTime(m, rr);
 	}
 
 // NoCacheAnswer is only called from mDNSCoreReceiveResponse, *never* directly as a result of a client API call.
@@ -3999,7 +4005,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 	{
 	LogMsg("No cache space: Delivering non-cached result for %##s", m->rec.r.resrec.name->c);
-	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion) LogMsg("NoCacheAnswer ERROR m->CurrentQuestion already set");
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion)
 		{
@@ -4030,7 +4036,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 		m->CurrentQuestion = q->next;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
-			verbosedebugf("CacheRecordRmv %p %##s (%s)", rr, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+			verbosedebugf("CacheRecordRmv %p %s", rr, CRDisplayString(m, rr));
 			if (q->CurrentAnswers == 0)
 				LogMsg("CacheRecordRmv ERROR: How can CurrentAnswers already be zero for %p %##s (%s)?", q, q->qname.c, DNSTypeName(q->qtype));
 			else
@@ -5500,9 +5506,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						rr->DelayDelivery = m->timenow + mDNSPlatformOneSecond;	// to delay delivery of this 'add' event
 					else
 						rr->DelayDelivery = CheckForSoonToExpireRecords(m, rr->resrec.name, rr->resrec.namehash, slot);
-					CacheRecordAdd(m, rr);
-					// MUST do this AFTER CacheRecordAdd(), because that's what sets CRActiveQuestion for us
-					SetNextCacheCheckTime(m, rr);
+					CacheRecordAdd(m, rr);  // CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
 					}
 				}
 			}
@@ -5528,7 +5532,12 @@ exit:
 				// (i.e. not counting goodbye packets or cache flush events that set the TTL to 1)
 				// then we need to ensure the whole RRSet has the same TTL (as required by DNS semantics)
 				if (r2->resrec.rroriginalttl > 1 && m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
+					{
+					if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl)
+						LogMsg("Correcting TTL from %4d to %4d for %s", r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
 					r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
+					r2->TimeRcvd = m->timenow;
+					}
 				else				// else, if record is old, mark it to be flushed
 					{
 					verbosedebugf("Cache flush %p X %p %s", r1, r2, CRDisplayString(m, r2));
@@ -5546,11 +5555,12 @@ exit:
 					r2->resrec.rroriginalttl = 1;
 					r2->TimeRcvd          = m->timenow;
 					r2->UnansweredQueries = MaxUnansweredQueries;
-					SetNextCacheCheckTime(m, r2);
 					}
+				SetNextCacheCheckTime(m, r2);
 				}
 		if (r1->DelayDelivery)	// If we were planning to delay delivery of this record, see if we still need to
 			{
+			// Note, only need to call SetNextCacheCheckTime() when DelayDelivery is set, not when it's cleared
 			r1->DelayDelivery = CheckForSoonToExpireRecords(m, r1->resrec.name, r1->resrec.namehash, slot);
 			if (!r1->DelayDelivery) CacheRecordDeferredAdd(m, r1);
 			}
