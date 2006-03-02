@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.93  2006/03/02 20:30:47  cheshire
+Improved GetRRDisplayString to also show priority, weight, and port for SRV records
+
 Revision 1.92  2005/09/16 21:06:49  cheshire
 Use mDNS_TimeNow_NoLock macro, instead of writing "mDNSPlatformRawTime() + m->timenow_adjust" all over the place
 
@@ -459,7 +462,8 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 		case kDNSType_TXT:  mDNS_snprintf(buffer+length, 79-length, "%#s", rd->txt.c);         break;
 
 		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, 79-length, "%.16a", &rd->ipv6);       break;
-		case kDNSType_SRV:	mDNS_snprintf(buffer+length, 79-length, "%##s", rd->srv.target.c); break;
+		case kDNSType_SRV:	mDNS_snprintf(buffer+length, 79-length, "%u %u %u %##s",
+								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
 		default:			mDNS_snprintf(buffer+length, 79-length, "RDLen %d: %s", rr->rdlength, rd->data);  break;
 		}
 	for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
