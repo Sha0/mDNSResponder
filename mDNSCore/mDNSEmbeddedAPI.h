@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.290  2006/03/08 22:42:23  cheshire
+Fix spelling mistake: LocalReverseMapomain -> LocalReverseMapDomain
+
 Revision 1.289  2006/02/26 00:54:41  cheshire
 Fixes to avoid code generation warning/error on FreeBSD 7
 
@@ -2189,8 +2192,8 @@ extern const mDNSOpaque16 ResponseFlags;
 extern const mDNSOpaque16 UpdateReqFlags;
 extern const mDNSOpaque16 UpdateRespFlags;
 
-#define localdomain (*(const domainname *)"\x5local")
-#define LocalReverseMapomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")
+#define localdomain (*(const domainname *)"\x5" "local")
+#define LocalReverseMapDomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")
 	
 // ***************************************************************************
 #if 0

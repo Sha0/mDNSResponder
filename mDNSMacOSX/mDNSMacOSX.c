@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.326  2006/03/08 22:42:23  cheshire
+Fix spelling mistake: LocalReverseMapomain -> LocalReverseMapDomain
+
 Revision 1.325  2006/01/10 00:39:17  cheshire
 Add comments explaining how IPv6 link-local addresses sometimes have an embedded scope_id
 
@@ -2718,7 +2721,7 @@ mDNSlocal void MarkSearchListElem(const char *d)
 	if (!MakeDomainNameFromDNSNameString(&domain, d))
 		{ LogMsg("ERROR: MarkSearchListElem - bad domain %##s", d); return; }
 
-	if (SameDomainName(&domain, &localdomain) || SameDomainName(&domain, &LocalReverseMapomain))
+	if (SameDomainName(&domain, &localdomain) || SameDomainName(&domain, &LocalReverseMapDomain))
 		{ debugf("MarkSearchListElem - ignoring local domain %##s", domain.c); return; } 
 
 	// if domain is in list, mark as pre-existent (0)
