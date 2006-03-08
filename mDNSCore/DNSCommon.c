@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.95  2006/03/08 22:43:11  cheshire
+Use "localdomain" symbol instead of literal string
+
 Revision 1.94  2006/03/02 21:59:55  cheshire
 <rdar://problem/4395331> Spurious warning "GetLargeResourceRecord: m->rec appears to be already in use"
 Improve sanity checks & debugging support in GetLargeResourceRecord()
@@ -880,7 +883,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
-	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, (domainname*)"\x05" "local")))
+	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, &localdomain)))
 		{
 		errormsg="Application protocol name must be underscore plus 1-14 characters. See <http://www.dns-sd.org/ServiceTypes.html>";
 		goto fail;
