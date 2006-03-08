@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.536  2006/03/08 23:29:53  cheshire
+<rdar://problem/4468716> Improve "Service Renamed" log message
+
 Revision 1.535  2006/03/02 20:41:17  cheshire
 <rdar://problem/4111464> After record update, old record sometimes remains in cache
 Minor code tidying and comments to reduce the risk of similar programming errors in future
@@ -6926,7 +6929,11 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 		IncrementLabelSuffix(&name2, mDNStrue);
 		newname = &name2;
 		}
-	LogMsg("Service \"%##s\" renamed to \"%#s\"", sr->RR_SRV.resrec.name->c, newname->c);
+	
+	if (SameDomainName(&domain, &localdomain))
+		LogMsg("%##s service renamed from \"%#s\" to \"%#s\"", type.c, name1.c, newname->c);
+	else LogMsg("%##s service (domain %##s) renamed from \"%#s\" to \"%#s\"",type.c, domain.c, name1.c, newname->c);
+
 	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->Host.c[0]) host = &sr->Host;
 	
 	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
