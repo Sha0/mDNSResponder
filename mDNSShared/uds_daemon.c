@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.191  2006/03/10 22:19:43  cheshire
+Update debugging message in resolve_result_callback() to indicate whether event is ADD or RMV
+
 Revision 1.190  2006/03/10 21:56:12  cheshire
 <rdar://problem/4111464> After record update, old record sometimes remains in cache
 When service TXT and SRV record both change, clients with active resolve calls get *two* callbacks, one
@@ -1618,7 +1621,8 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
     resolve_termination_t *res = rs->termination_context;
     (void)m; // Unused
 
-	LogOperation("%3d: DNSServiceResolve(%##s, %s) RESULT %s", rs->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
+	LogOperation("%3d: DNSServiceResolve(%##s, %s) %s %s",
+		rs->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
     
     // This code used to do this trick of just keeping a copy of the pointer to
     // the answer record in the cache, but the unicast query code doesn't currently
