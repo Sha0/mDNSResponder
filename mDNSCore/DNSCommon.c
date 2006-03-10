@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.96  2006/03/10 21:51:42  cheshire
+<rdar://problem/4111464> After record update, old record sometimes remains in cache
+Split out SameRDataBody() into a separate routine so it can be called from other code
+
 Revision 1.95  2006/03/08 22:43:11  cheshire
 Use "localdomain" symbol instead of literal string
 
@@ -1112,23 +1116,30 @@ mDNSexport mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const
 	return(sum);
 	}
 
+// r1 has to be a full ResourceRecord including rrtype and rdlength
+// r2 is just a bare RDataBody, which MUST be the same rrtype and rdlength as r1
+mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBody *const r2)
+	{
+	switch(r1->rrtype)
+		{
+		case kDNSType_CNAME:// Same as PTR
+		case kDNSType_PTR:	return(SameDomainName(&r1->rdata->u.name, &r2->name));
+
+		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority          == r2->srv.priority          &&
+												r1->rdata->u.srv.weight            == r2->srv.weight            &&
+												r1->rdata->u.srv.port.NotAnInteger == r2->srv.port.NotAnInteger &&
+												SameDomainName(&r1->rdata->u.srv.target, &r2->srv.target)       );
+
+		default:			return(mDNSPlatformMemSame(r1->rdata->u.data, r2->data, r1->rdlength));
+		}
+	}
+
 mDNSexport mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (r1->rrtype     != r2->rrtype)     return(mDNSfalse);
 	if (r1->rdlength   != r2->rdlength)   return(mDNSfalse);
 	if (r1->rdatahash  != r2->rdatahash)  return(mDNSfalse);
-	switch(r1->rrtype)
-		{
-		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	return(SameDomainName(&r1->rdata->u.name, &r2->rdata->u.name));
-
-		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority          == r2->rdata->u.srv.priority          &&
-												r1->rdata->u.srv.weight            == r2->rdata->u.srv.weight            &&
-												r1->rdata->u.srv.port.NotAnInteger == r2->rdata->u.srv.port.NotAnInteger &&
-												SameDomainName(&r1->rdata->u.srv.target, &r2->rdata->u.srv.target)       );
-
-		default:			return(mDNSPlatformMemSame(r1->rdata->u.data, r2->rdata->u.data, r1->rdlength));
-		}
+	return(SameRDataBody(r1, &r2->rdata->u));
 	}
 
 mDNSexport mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2)
