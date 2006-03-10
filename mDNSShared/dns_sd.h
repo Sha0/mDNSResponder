@@ -42,7 +42,7 @@
 #endif
 
 /* stdint.h does not exist on FreeBSD 4.x; its types are defined in sys/types.h instead */
-#if defined(__FreeBSD_version) && (__FreeBSD_version < 500000)
+#if defined(__FreeBSD__) && (__FreeBSD__ < 5)
 #include <sys/types.h>
 
 /* Likewise, on Sun, standard integer types are in sys/types.h */
@@ -638,7 +638,6 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred (the callback is never invoked and the DNSServiceRef
  *                  is not initialized.)
- *
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceRegister
@@ -1443,7 +1442,6 @@ DNSServiceErrorType DNSSD_API TXTRecordSetValue
  * return value:    Returns kDNSServiceErr_NoError on success.
  *                  Returns kDNSServiceErr_NoSuchKey if the "key" does not
  *                  exist in the TXTRecordRef.
- *
  */
 
 DNSServiceErrorType DNSSD_API TXTRecordRemoveValue
@@ -1463,7 +1461,6 @@ DNSServiceErrorType DNSSD_API TXTRecordRemoveValue
  *                  which you can pass directly to DNSServiceRegister() or
  *                  to DNSServiceUpdateRecord().
  *                  Returns 0 if the TXTRecordRef is empty.
- *
  */
 
 uint16_t DNSSD_API TXTRecordGetLength
@@ -1481,7 +1478,6 @@ uint16_t DNSSD_API TXTRecordGetLength
  * return value:    Returns a pointer to the raw bytes inside the TXTRecordRef
  *                  which you can pass directly to DNSServiceRegister() or
  *                  to DNSServiceUpdateRecord().
- *
  */
 
 const void * DNSSD_API TXTRecordGetBytesPtr
@@ -1536,7 +1532,6 @@ const void * DNSSD_API TXTRecordGetBytesPtr
  *
  * return value:    Returns 1 if the TXT Record contains the specified key.
  *                  Otherwise, it returns 0.
- *
  */
 
 int DNSSD_API TXTRecordContainsKey
