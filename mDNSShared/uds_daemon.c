@@ -24,6 +24,12 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.190  2006/03/10 21:56:12  cheshire
+<rdar://problem/4111464> After record update, old record sometimes remains in cache
+When service TXT and SRV record both change, clients with active resolve calls get *two* callbacks, one
+when the TXT data changes, and then immediately afterwards a second callback with the new port number
+This change suppresses the first unneccessary (and confusing) callback
+
 Revision 1.189  2006/01/06 00:56:31  cheshire
 <rdar://problem/4400573> Should remove PID file on exit
 
@@ -814,8 +820,7 @@ typedef struct
     // const ResourceRecord *srv;
     mDNSBool   srv;
     mDNSBool   txt;
-    domainname target;
-    mDNSIPPort port;
+    rdataSRV   srvdata;
     mDNSu16    txtlen;
     mDNSu8     txtdata[AbsoluteMaxDNSMessageData];
     } resolve_termination_t;
@@ -1621,18 +1626,24 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
     
 	if (!AddRecord)
 		{
-		// if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
+		// After unicast query code is updated to store its records in the common cache, use this...
 		// if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
+		// if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
+		// intead of this...
+		if (answer->rrtype == kDNSType_SRV && res->srv &&                                    SameRDataBody(answer, (RDataBody *)&res->srvdata))
+			res->srv = mDNSfalse;
+		if (answer->rrtype == kDNSType_TXT && res->txt && answer->rdlength == res->txtlen && SameRDataBody(answer, (RDataBody *)&res->txtdata))
+			res->txt = mDNSfalse;
 		return;
 		}
 
-    // if (answer->rrtype == kDNSType_TXT) res->txt = answer;
+	// After unicast query code is updated to store its records in the common cache, use this...
     // if (answer->rrtype == kDNSType_SRV) res->srv = answer;
-
+    // if (answer->rrtype == kDNSType_TXT) res->txt = answer;
+	// intead of this...
     if (answer->rrtype == kDNSType_SRV)
     	{
-    	AssignDomainName(&res->target, &answer->rdata->u.srv.target);
-    	res->port = answer->rdata->u.srv.port;
+    	res->srvdata = answer->rdata->u.srv;
     	res->srv = mDNStrue;
     	}
     if (answer->rrtype == kDNSType_TXT)
@@ -1646,7 +1657,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
     if (!res->txt || !res->srv) return;		// only deliver result to client if we have both answers
     
     ConvertDomainNameToCString(answer->name, fullname);
-    ConvertDomainNameToCString(&res->target, target);
+    ConvertDomainNameToCString(&res->srvdata.target, target);
 
     // calculate reply length
     len += sizeof(DNSServiceFlags);
@@ -1668,8 +1679,8 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
     // write reply data to message
     put_string(fullname, &data);
     put_string(target, &data);
-	*data++ = res->port.b[0];
-	*data++ = res->port.b[1];
+	*data++ = res->srvdata.port.b[0];
+	*data++ = res->srvdata.port.b[1];
     put_short(res->txtlen, &data);
     put_rdata(res->txtlen, res->txtdata, &data);
     
