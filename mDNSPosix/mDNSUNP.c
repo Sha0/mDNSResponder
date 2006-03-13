@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.33  2006/03/13 23:14:21  cheshire
+<rdar://problem/4427969> Compile problems on FreeBSD
+Use <netinet/in_var.h> instead of <netinet6/in6_var.h>
+
 Revision 1.32  2005/12/21 02:56:43  cheshire
 <rdar://problem/4243433> get_ifi_info() should fake ifi_index when SIOCGIFINDEX undefined
 
@@ -169,7 +173,9 @@ First checkin
 #endif
 
 #if defined(AF_INET6) && HAVE_IPV6 && !HAVE_LINUX
-#include <netinet6/in6_var.h>
+#include <net/if_var.h>
+#include <netinet/in_var.h>
+// NOTE: netinet/in_var.h implicitly includes netinet6/in6_var.h for us
 #endif
 
 #if defined(AF_INET6) && HAVE_IPV6 && HAVE_LINUX
@@ -186,8 +192,7 @@ void plen_to_mask(int plen, char *addr) {
 		if(plen>bits_in_block) ones_in_block=bits_in_block;
 		else                   ones_in_block=plen;
 		block = ones & (ones << (bits_in_block-ones_in_block));
-		i==0 ? sprintf(addr, "%x", block) :
- sprintf(addr, "%s:%x", addr, block);
+		i==0 ? sprintf(addr, "%x", block) : sprintf(addr, "%s:%x", addr, block);
 		plen -= ones_in_block;
 		}
 	}
