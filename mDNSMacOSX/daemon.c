@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.262  2006/03/18 21:49:11  cheshire
+Added comment in ShowTaskSchedulingError(mDNS *const m)
+
 Revision 1.261  2006/01/06 01:22:28  cheshire
 <rdar://problem/4108164> Reword "mach_absolute_time went backwards" dialog
 
@@ -2572,6 +2575,8 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 
 	LogMsg("Task Scheduling Error: Continuously busy for more than a second");
 	
+	// NOTE: To accurately diagnose *why* we're busy, the debugging code here to show needs to mirror the logic in GetNextScheduledEvent
+
 	if (m->NewQuestions && (!m->NewQuestions->DelayAnswering || m->timenow - m->NewQuestions->DelayAnswering >= 0))
 		LogMsg("Task Scheduling Error: NewQuestion %##s (%s)",
 			m->NewQuestions->qname.c, DNSTypeName(m->NewQuestions->qtype));
