@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.34  2006/03/18 21:47:56  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.33  2006/03/10 21:51:41  cheshire
 <rdar://problem/4111464> After record update, old record sometimes remains in cache
 Split out SameRDataBody() into a separate routine so it can be called from other code
@@ -145,6 +148,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	extern "C" {
 #endif
 
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - DNS Protocol Constants
@@ -196,6 +200,7 @@ typedef enum
 	TSIG_ErrBadTime = 18
 	} TSIG_ErrorCode;
 	
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -206,6 +211,7 @@ extern const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfac
 extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
 extern mDNSu32 mDNSRandom(mDNSu32 max);
+extern mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max);
 
 
 // ***************************************************************************
@@ -335,6 +341,7 @@ extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8
 
 extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
 
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -344,6 +351,7 @@ extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8
 
 extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd, uDNS_AuthInfo *authInfo);
+
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK

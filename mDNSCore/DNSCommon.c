@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.97  2006/03/18 21:47:56  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.96  2006/03/10 21:51:42  cheshire
 <rdar://problem/4111464> After record update, old record sometimes remains in cache
 Split out SameRDataBody() into a separate routine so it can be called from other code
@@ -492,6 +495,14 @@ mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)
 		seed = mDNSPlatformRandomSeed();				// Pick an initial seed
 		for (i=0; i<100; i++) seed = seed * 21 + 1;		// And mix it up a bit
 		}
+	while (mask < max) mask = (mask << 1) | 1;
+	do seed = seed * 21 + 1; while ((seed & mask) > max);
+	return (seed & mask);
+	}
+
+mDNSexport mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max)
+	{
+	mDNSu32 mask = 1;
 	while (mask < max) mask = (mask << 1) | 1;
 	do seed = seed * 21 + 1; while ((seed & mask) > max);
 	return (seed & mask);
