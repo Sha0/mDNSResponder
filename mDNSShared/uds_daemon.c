@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 4 -*-
  *
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.192  2006/03/18 20:58:32  cheshire
+Misplaced curly brace
+
 Revision 1.191  2006/03/10 22:19:43  cheshire
 Update debugging message in resolve_result_callback() to indicate whether event is ADD or RMV
 
@@ -1611,7 +1614,7 @@ mDNSlocal void resolve_termination_callback(void *context)
     }
 
 mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
-{
+	{
     size_t len = 0;
     char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
     char *data;
