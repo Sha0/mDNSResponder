@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.193  2006/03/19 17:14:38  cheshire
+<rdar://problem/4483117> Need faster purging of stale records
+read_rr_from_ipc_msg was not setting namehash and rdatahash
+
 Revision 1.192  2006/03/18 20:58:32  cheshire
 Misplaced curly brace
 
@@ -1153,6 +1157,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 
     LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 
+    LogMsgNoIdent("Slt Q   TTL U Type  if     len rdata");
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for(cg = m->rrcache_hash[slot]; cg; cg=cg->next)
 			{
@@ -1162,10 +1167,14 @@ mDNSexport void udsserver_info(mDNS *const m)
 				mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
 				CacheUsed++;
 				if (rr->CRActiveQuestion) CacheActive++;
-				LogMsgNoIdent("%s%6ld %s%-6s%-6s%s",
-					rr->CRActiveQuestion ? "*" : " ", remain,
-					(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ", DNSTypeName(rr->resrec.rrtype),
-					((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname, CRDisplayString(m, rr));
+				LogMsgNoIdent("%3d %s%6ld %s %-6s%-6s%s",
+					slot,
+					rr->CRActiveQuestion ? "*" : " ",
+					remain,
+					(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ",
+					DNSTypeName(rr->resrec.rrtype),
+					((NetworkInterfaceInfo *)rr->resrec.InterfaceID)->ifname,
+					CRDisplayString(m, rr));
 				usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 				}
 			}
@@ -3069,16 +3078,21 @@ mDNSlocal void enum_termination_callback(void *context)
 
 mDNSlocal void handle_reconfirm_request(request_state *rstate)
     {
-    AuthRecord *rr;
-
-    rr = read_rr_from_ipc_msg(rstate->msgdata, 0, 1);
-    if (!rr) return;
-	LogOperation("%3d: DNSServiceReconfirmRecord(%##s) %s", rstate->sd, RRDisplayString(gmDNS, &rr->resrec));
-    mDNS_ReconfirmByValue(gmDNS, &rr->resrec);
-    abort_request(rstate);
-    unlink_request(rstate);
-    freeL("handle_reconfirm_request", rr);
-    }
+    AuthRecord *rr = read_rr_from_ipc_msg(rstate->msgdata, 0, 0);
+    if (rr)
+		{
+		mStatus status = mDNS_ReconfirmByValue(gmDNS, &rr->resrec);
+		LogOperation(
+			(status == mStatus_NoError) ?
+			"%3d: DNSServiceReconfirmRecord(%s) interface %d initiated" :
+			"%3d: DNSServiceReconfirmRecord(%s) interface %d failed: %d",
+			rstate->sd, RRDisplayString(gmDNS, &rr->resrec),
+			mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID), status);
+		}
+	abort_request(rstate);
+	unlink_request(rstate);
+	freeL("handle_reconfirm_request", rr);
+	}
 
 // setup rstate to accept new reg/dereg requests
 mDNSlocal void reset_connected_rstate(request_state *rstate)
@@ -3138,16 +3152,16 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
         freeL("read_rr_from_ipc_msg", rr);
         return NULL;
     	}
+    
     if (flags & kDNSServiceFlagsAllowRemoteQuery) rr->AllowRemoteQuery  = mDNStrue;
     rr->resrec.rrclass = class;
     rr->resrec.rdlength = rdlen;
     rr->resrec.rdata->MaxRDLength = rdlen;
     rdata = get_rdata(&msgbuf, rdlen);
     memcpy(rr->resrec.rdata->u.data, rdata, rdlen);
-    if (GetTTL)
-    	{
-        rr->resrec.rroriginalttl = get_long(&msgbuf);
-    	}
+    if (GetTTL) rr->resrec.rroriginalttl = get_long(&msgbuf);
+    rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
+    SetNewRData(&rr->resrec, mDNSNULL, 0);	// Sets rr->rdatahash for us
     return rr;
     }
 
