@@ -447,6 +447,11 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
 	if (unknowntype) while (rd < end) printf(" %02X", *rd++);
 	printf("\n");
+
+	if (operation == 'C')
+		if (flags & kDNSServiceFlagsAdd)
+			DNSServiceReconfirmRecord(flags, ifIndex, fullname, rrtype, rrclass, rdlen, rdata);
+
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
@@ -649,7 +654,7 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getfirstoption( argc, argv, "EFBLQRPAUNTMI", &optind);
+	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMI", &optind);
 	if (operation == -1) goto Fail;
 
 	switch (operation)
@@ -690,7 +695,8 @@ int main(int argc, char **argv)
 					err = RegisterService(&client, argv[optind+0], argv[optind+1], argv[optind+2], argv[optind+4], argv[optind+3], argc-(optind+6), argv+(optind+6));
 					break;
 
-		case 'Q':	{
+		case 'Q':
+		case 'C':	{
 					uint16_t rrtype, rrclass;
 					DNSServiceFlags flags = 0;
 					if (argc < optind+1) goto Fail;
@@ -762,6 +768,7 @@ Fail:
 	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", progname);
 	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", progname);
 	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", progname);
+	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", progname);
 	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", progname);
 	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", progname);
 	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", progname);
