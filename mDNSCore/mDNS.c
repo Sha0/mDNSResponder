@@ -45,6 +45,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.538  2006/03/19 17:13:06  cheshire
+<rdar://problem/4483117> Need faster purging of stale records
+Shorten kDefaultReconfirmTimeForNoAnswer to five seconds
+and reconfirm whole chain of antecedents ot once
+
 Revision 1.537  2006/03/19 02:00:07  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -3376,7 +3381,7 @@ mDNSlocal void SetNextCacheCheckTime(mDNS *const m, CacheRecord *const rr)
 
 #define kMinimumReconfirmTime                     ((mDNSu32)mDNSPlatformOneSecond *  5)
 #define kDefaultReconfirmTimeForWake              ((mDNSu32)mDNSPlatformOneSecond *  5)
-#define kDefaultReconfirmTimeForNoAnswer          ((mDNSu32)mDNSPlatformOneSecond * 15)
+#define kDefaultReconfirmTimeForNoAnswer          ((mDNSu32)mDNSPlatformOneSecond *  5)
 #define kDefaultReconfirmTimeForFlappingInterface ((mDNSu32)mDNSPlatformOneSecond * 30)
 
 mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, mDNSu32 interval)
@@ -3398,7 +3403,8 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, 
 		rr->resrec.rroriginalttl     = (interval * 4 + mDNSPlatformOneSecond - 1) / mDNSPlatformOneSecond;
 		SetNextCacheCheckTime(m, rr);
 		}
-	debugf("mDNS_Reconfirm_internal:%6ld ticks to go for %s", RRExpireTime(rr) - m->timenow, CRDisplayString(m, rr));
+	debugf("mDNS_Reconfirm_internal:%6ld ticks to go for %s %p",
+		RRExpireTime(rr) - m->timenow, CRDisplayString(m, rr), rr->CRActiveQuestion);
 	return(mStatus_NoError);
 	}
 
@@ -3498,15 +3504,22 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		}
 	}
 
-mDNSlocal void ReconfirmAntecedents(mDNS *const m, DNSQuestion *q)
+mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name, mDNSu32 namehash, int depth)
 	{
 	mDNSu32 slot;
 	CacheGroup *cg;
-	CacheRecord *rr;
-	domainname *target;
-	FORALL_CACHERECORDS(slot, cg, rr)
-		if ((target = GetRRDomainNameTarget(&rr->resrec)) && rr->resrec.rdatahash == q->qnamehash && SameDomainName(target, &q->qname))
-			mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
+	CacheRecord *cr;
+	LogOperation("ReconfirmAntecedents %d for %##s", depth, name->c);
+	FORALL_CACHERECORDS(slot, cg, cr)
+		{
+		domainname *crtarget = GetRRDomainNameTarget(&cr->resrec);
+		if (crtarget && cr->resrec.rdatahash == namehash && SameDomainName(crtarget, name))
+			{
+			debugf("ReconfirmAntecedents: Reconfirm %s", CRDisplayString(m, cr));
+			mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+			if (depth < 5) ReconfirmAntecedents(m, cr->resrec.name, cr->resrec.namehash, depth+1);
+			}
+		}
 	}
 
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
@@ -3684,7 +3697,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 						{
 						debugf("SendQueries: Zero current answers for %##s (%s); will reconfirm antecedents",
 							q->qname.c, DNSTypeName(q->qtype));
-						ReconfirmAntecedents(m, q);		// Sending third query, and no answers yet; time to begin doubting the source
+						// Sending third query, and no answers yet; time to begin doubting the source
+						ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
 						}
 					}
 
@@ -4117,7 +4131,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 				{
 				debugf("CacheRecordRmv: Zero current answers for %##s (%s); will reconfirm antecedents",
 					q->qname.c, DNSTypeName(q->qtype));
-				ReconfirmAntecedents(m, q);
+				ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
 				}
 			q->FlappingInterface = mDNSNULL;
 			AnswerQuestionWithResourceRecord(m, q, rr, mDNSfalse);
@@ -4517,7 +4531,6 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 					else ReleaseCacheGroup(m, cp);
 					}
 				}
-			LogOperation("Cache checked. Next in %ld ticks", m->NextCacheCheck - m->timenow);
 			}
 	
 		// 4. See if we can answer any of our new local questions from the cache
@@ -5952,11 +5965,12 @@ mDNSexport mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 	return(status);
 	}
 
-mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, CacheRecord *const rr)
+mDNSexport mStatus mDNS_Reconfirm(mDNS *const m, CacheRecord *const cr)
 	{
 	mStatus status;
 	mDNS_Lock(m);
-	status = mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
+	status = mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+	if (status == mStatus_NoError) ReconfirmAntecedents(m, cr->resrec.name, cr->resrec.namehash, 0);
 	mDNS_Unlock(m);
 	return(status);
 	}
@@ -5967,7 +5981,9 @@ mDNSexport mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr
 	CacheRecord *cr;
 	mDNS_Lock(m);
 	cr = FindIdenticalRecordInCache(m, rr);
+	debugf("mDNS_ReconfirmByValue: %p %s", cr, RRDisplayString(m, rr));
 	if (cr) status = mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+	if (status == mStatus_NoError) ReconfirmAntecedents(m, cr->resrec.name, cr->resrec.namehash, 0);
 	mDNS_Unlock(m);
 	return(status);
 	}
