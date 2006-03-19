@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.292  2006/03/19 17:00:57  cheshire
+Define symbol MaxMsg instead of using hard-coded constant value '80'
+
 Revision 1.291  2006/03/19 02:00:07  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -2099,7 +2102,8 @@ struct mDNS_struct
 	mDNSu8  lock_rrcache;				// For debugging: Set at times when these lists may not be modified
 	mDNSu8  lock_Questions;
 	mDNSu8  lock_Records;
-	char MsgBuffer[80];					// Temp storage used while building error log messages
+	#define MaxMsg 120
+	char MsgBuffer[MaxMsg];				// Temp storage used while building error log messages
 
 	// Task Scheduling variables
 	mDNSs32  timenow_adjust;			// Correction applied if we ever discover time went backwards

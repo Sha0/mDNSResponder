@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.98  2006/03/19 17:00:58  cheshire
+Define symbol MaxMsg instead of using hard-coded constant value '80'
+
 Revision 1.97  2006/03/18 21:47:56  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -462,23 +465,24 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 // long as this routine is only used for debugging messages, it probably isn't a big problem.
 mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, char *buffer)
 	{
+	#define Max (MaxMsg-1)
 	char *ptr = buffer;
-	mDNSu32 length = mDNS_snprintf(buffer, 79, "%4d %##s %s ", rr->rdlength, rr->name->c, DNSTypeName(rr->rrtype));
+	mDNSu32 length = mDNS_snprintf(buffer, Max, "%4d %##s %s ", rr->rdlength, rr->name->c, DNSTypeName(rr->rrtype));
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	mDNS_snprintf(buffer+length, 79-length, "%.4a", &rd->ipv4);          break;
+		case kDNSType_A:	mDNS_snprintf(buffer+length, Max-length, "%.4a", &rd->ipv4);          break;
 
 		case kDNSType_NS:	// Same as PTR
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	mDNS_snprintf(buffer+length, 79-length, "%##s", rd->name.c);       break;
+		case kDNSType_PTR:	mDNS_snprintf(buffer+length, Max-length, "%##s", rd->name.c);       break;
 
 		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
-		case kDNSType_TXT:  mDNS_snprintf(buffer+length, 79-length, "%#s", rd->txt.c);         break;
+		case kDNSType_TXT:  mDNS_snprintf(buffer+length, Max-length, "%#s", rd->txt.c);         break;
 
-		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, 79-length, "%.16a", &rd->ipv6);       break;
-		case kDNSType_SRV:	mDNS_snprintf(buffer+length, 79-length, "%u %u %u %##s",
+		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, Max-length, "%.16a", &rd->ipv6);       break;
+		case kDNSType_SRV:	mDNS_snprintf(buffer+length, Max-length, "%u %u %u %##s",
 								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
-		default:			mDNS_snprintf(buffer+length, 79-length, "RDLen %d: %s", rr->rdlength, rd->data);  break;
+		default:			mDNS_snprintf(buffer+length, Max-length, "RDLen %d: %s", rr->rdlength, rd->data);  break;
 		}
 	for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
 	return(buffer);
