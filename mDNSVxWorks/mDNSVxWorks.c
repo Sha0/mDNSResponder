@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.29  2006/03/19 02:00:12  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.28  2005/05/30 07:36:38  bradley
 New implementation of the mDNS platform plugin for VxWorks 5.5 or later with IPv6 support.
 
@@ -609,7 +612,7 @@ mDNSexport mDNSs32	mDNSPlatformUTC( void )
 //	mDNSPlatformInterfaceIDfromInterfaceIndex
 //===========================================================================================================================
 
-mDNSexport mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( const mDNS *const inMDNS, mDNSu32 inIndex )
+mDNSexport mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( mDNS *const inMDNS, mDNSu32 inIndex )
 {
 	NetworkInterfaceInfoVxWorks *		i;
 	
@@ -630,7 +633,7 @@ mDNSexport mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( const mDNS
 //	mDNSPlatformInterfaceIndexfromInterfaceID
 //===========================================================================================================================
 
-mDNSexport mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( const mDNS *const inMDNS, mDNSInterfaceID inID )
+mDNSexport mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( mDNS *const inMDNS, mDNSInterfaceID inID )
 {
 	NetworkInterfaceInfoVxWorks *		i;
 	
@@ -1106,7 +1109,7 @@ mDNSlocal int	SetupActiveInterfaces( mDNS *const inMDNS, mDNSs32 inUTC )
 			// If it's is an old one that went away and came back in less than a minute, we're in a flapping scenario.
 			
 			flapping = ( ( inUTC - i->lastSeen ) > 0 ) && ( ( inUTC - i->lastSeen ) < 60 );
-			mDNS_RegisterInterface( inMDNS, n, flapping ? mDNSPlatformOneSecond * 5 : 0 );
+			mDNS_RegisterInterface( inMDNS, n, flapping );
 			if( mDNSAddressIsNonLinkLocalIPv4( &i->ifinfo.ip ) ) ++count;
 			
 			dmsg( kDebugLevelInfo, DEBUG_NAME "%s:   Registered    %8s(%u) InterfaceID %#p %#a%s%s\n", __ROUTINE__, 
@@ -1189,7 +1192,7 @@ mDNSlocal int	ClearInactiveInterfaces( mDNS *const inMDNS, mDNSs32 inUTC, mDNSBo
 				i->ifinfo.ifname, i->scopeID, i->ifinfo.InterfaceID, &i->ifinfo.ip, 
 				i->ifinfo.InterfaceActive ? " (Primary)" : "" );
 			
-			mDNS_DeregisterInterface( inMDNS, &i->ifinfo );
+			mDNS_DeregisterInterface( inMDNS, &i->ifinfo, mDNSfalse );
 			i->ifinfo.InterfaceID = NULL;
 			if( mDNSAddressIsNonLinkLocalIPv4( &i->ifinfo.ip ) ) ++count;
 		}

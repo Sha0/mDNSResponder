@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.107  2006/03/19 02:00:13  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.106  2006/02/26 19:31:05  herscher
 <rdar://problem/4455038> Bonjour For Windows takes 90 seconds to start. This was caused by a bad interaction between the VirtualPC check, and the removal of the WMI dependency.  The problem was fixed by: 1) checking to see if WMI is running before trying to talk to it.  2) Retrying the VirtualPC check every 10 seconds upon failure, stopping after 10 unsuccessful tries.
 
@@ -1156,7 +1159,7 @@ exit:
 //	mDNSPlatformInterfaceIDfromInterfaceIndex
 //===========================================================================================================================
 
-mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( const mDNS * const inMDNS, mDNSu32 inIndex )
+mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( mDNS * const inMDNS, mDNSu32 inIndex )
 {
 	mDNSInterfaceID		id;
 	
@@ -1186,7 +1189,7 @@ mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( const mDNS * const in
 //	mDNSPlatformInterfaceIndexfromInterfaceID
 //===========================================================================================================================
 	
-mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( const mDNS * const inMDNS, mDNSInterfaceID inID )
+mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( mDNS * const inMDNS, mDNSInterfaceID inID )
 {
 	mDNSu32		index;
 	
@@ -2855,7 +2858,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	
 	ifd->interfaceInfo.Advertise = inMDNS->AdvertiseLocalAddresses;
 	
-	err = mDNS_RegisterInterface( inMDNS, &ifd->interfaceInfo, 0 );
+	err = mDNS_RegisterInterface( inMDNS, &ifd->interfaceInfo, mDNSfalse );
 	require_noerr( err, exit );
 	ifd->hostRegistered = mDNStrue;
 	
@@ -2893,7 +2896,7 @@ mDNSlocal mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inI
 	if( inIFD->hostRegistered )
 	{
 		inIFD->hostRegistered = mDNSfalse;
-		mDNS_DeregisterInterface( inMDNS, &inIFD->interfaceInfo );
+		mDNS_DeregisterInterface( inMDNS, &inIFD->interfaceInfo, mDNSfalse );
 	}
 	
 	// Tear down the multicast socket.

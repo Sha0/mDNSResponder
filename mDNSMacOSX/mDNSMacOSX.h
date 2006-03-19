@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.53  2006/03/19 02:00:09  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.52  2006/01/05 21:41:49  cheshire
 <rdar://problem/4108164> Reword "mach_absolute_time went backwards" dialog
 
@@ -237,7 +240,13 @@ struct NetworkInterfaceInfoOSX_struct
 	NetworkInterfaceInfoOSX *next;
 	mDNSu32                  Exists;			// 1 = currently exists in getifaddrs list; 0 = doesn't
 												// 2 = exists, but McastTxRx state changed
+	mDNSs32                  AppearanceTime;	// Time this interface appeared most recently in getifaddrs list
+												// i.e. the first time an interface is seen, AppearanceTime is set.
+												// If an interface goes away temporarily and then comes back then
+												// AppearanceTime is updated to the time of the most recent appearance.
 	mDNSs32                  LastSeen;			// If Exists==0, last time this interface appeared in getifaddrs list
+	mDNSBool                 Flashing;			// Set if interface appeared for less than 60 seconds and then vanished
+	mDNSBool                 Occulting;			// Set if interface vanished for less than 60 seconds and then came back
 	char                    *ifa_name;			// Memory for this is allocated using malloc
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable

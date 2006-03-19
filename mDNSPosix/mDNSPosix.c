@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.77  2006/03/19 02:00:11  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.76  2006/01/09 19:29:16  cheshire
 <rdar://problem/4403128> Cap number of "sendto failed" messages we allow mDNSResponder to log
 
@@ -689,7 +692,7 @@ mDNSlocal PosixNetworkInterface *SearchForInterfaceByName(mDNS *const m, const c
 	return intf;
 	}
 
-mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index)
+mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const m, mDNSu32 index)
 	{
 	PosixNetworkInterface *intf;
 
@@ -704,7 +707,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS 
 	return (mDNSInterfaceID) intf;
 	}
 	
-mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
+mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNSInterfaceID id)
 	{
 	PosixNetworkInterface *intf;
 
@@ -740,7 +743,7 @@ mDNSlocal void ClearInterfaceList(mDNS *const m)
 	while (m->HostInterfaces)
 		{
 		PosixNetworkInterface *intf = (PosixNetworkInterface*)(m->HostInterfaces);
-		mDNS_DeregisterInterface(m, &intf->coreIntf);
+		mDNS_DeregisterInterface(m, &intf->coreIntf, mDNSfalse);
 		if (gMDNSPlatformPosixVerboseLevel > 0) fprintf(stderr, "Deregistered interface %s\n", intf->intfName);
 		FreePosixNetworkInterface(intf);
 		}
@@ -1033,7 +1036,7 @@ mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, struct
 
 	// The interface is all ready to go, let's register it with the mDNS core.
 	if (err == 0)
-		err = mDNS_RegisterInterface(m, &intf->coreIntf, 0);
+		err = mDNS_RegisterInterface(m, &intf->coreIntf, mDNSfalse);
 
 	// Clean up.
 	if (err == 0)

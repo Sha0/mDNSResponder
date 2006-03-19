@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.45  2006/03/19 02:00:14  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.44  2005/09/16 21:06:50  cheshire
 Use mDNS_TimeNow_NoLock macro, instead of writing "mDNSPlatformRawTime() + m->timenow_adjust" all over the place
 
@@ -406,7 +409,7 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 				case mOT_Bind:			OTBind(m->p->ep, (TBind*)&mDNSbindReq, NULL); break;
 				case mOT_Ready:         mDNSinitComplete(m, mStatus_NoError);
 										// Can't do mDNS_RegisterInterface until *after* mDNSinitComplete has set m->mDNSPlatformStatus to mStatus_NoError
-										mDNS_RegisterInterface(m, &m->p->interface, 0);
+										mDNS_RegisterInterface(m, &m->p->interface, mDNSfalse);
 										break;
 				default:                LogMsg("Unexpected m->p->mOTstate %d", m->p->mOTstate-1);
 				}
@@ -423,7 +426,7 @@ mDNSlocal pascal void mDNSNotifier(void *contextPtr, OTEventCode code, OTResult 
 			if (m->p->mOTstate == mOT_Ready)
 				{
 				m->p->mOTstate = mOT_Closed;
-				mDNS_DeregisterInterface(m, &m->p->interface);
+				mDNS_DeregisterInterface(m, &m->p->interface, mDNSfalse);
 				}
 			if (m->p->ep) { OTCloseProvider(m->p->ep); m->p->ep = NULL; }
 			break;						// Do we need to do anything?
@@ -645,7 +648,7 @@ extern void mDNSPlatformClose (mDNS *const m)
 	if (m->p->mOTstate == mOT_Ready)
 		{
 		m->p->mOTstate = mOT_Closed;
-		mDNS_DeregisterInterface(m, &m->p->interface);
+		mDNS_DeregisterInterface(m, &m->p->interface, mDNSfalse);
 		}
 	if (m->p->ep)          { OTCloseProvider   (m->p->ep);          m->p->ep          = NULL; }
 	if (m->p->OTTimerTask) { OTDestroyTimerTask(m->p->OTTimerTask); m->p->OTTimerTask = 0;    }

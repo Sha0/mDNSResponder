@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.327  2006/03/19 02:00:09  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.326  2006/03/08 22:42:23  cheshire
 Fix spelling mistake: LocalReverseMapomain -> LocalReverseMapDomain
 
@@ -1210,26 +1213,40 @@ mDNSlocal int myIfIndexToName(u_short index, char* name)
 	return -1;
 	}
 
-mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(const mDNS *const m, mDNSu32 index)
+mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const m, mDNSu32 index)
 	{
 	NetworkInterfaceInfoOSX *i;
 	if (index == kDNSServiceInterfaceIndexLocalOnly) return(mDNSInterface_LocalOnly);
-	if (index)
-		for (i = m->p->InterfaceList; i; i = i->next)
-			// Don't get tricked by inactive interfaces with no InterfaceID set
-			if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
+	if (index == kDNSServiceInterfaceIndexAny      ) return(mDNSNULL);
+
+	// Don't get tricked by inactive interfaces with no InterfaceID set
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
+
+	// Not found. Make sure our interface list is up to date, then try again.
+	mDNSMacOSXNetworkChanged(m);
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
+
 	return(mDNSNULL);
 	}
 
-mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(const mDNS *const m, mDNSInterfaceID id)
+mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNSInterfaceID id)
 	{
 	NetworkInterfaceInfoOSX *i;
 	if (id == mDNSInterface_LocalOnly) return(kDNSServiceInterfaceIndexLocalOnly);
-	if (id)
-		for (i = m->p->InterfaceList; i; i = i->next)
-			// Don't use i->ifinfo.InterfaceID here, because we DO want to find inactive interfaces, which have no InterfaceID set
-			if ((mDNSInterfaceID)i == id) return(i->scope_id);
-	return 0;
+	if (id == mDNSInterface_Any      ) return(0);
+
+	// Don't use i->ifinfo.InterfaceID here, because we DO want to find inactive interfaces, which have no InterfaceID set
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if ((mDNSInterfaceID)i == id) return(i->scope_id);
+
+	// Not found. Make sure our interface list is up to date, then try again.
+	mDNSMacOSXNetworkChanged(m);
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if ((mDNSInterfaceID)i == id) return(i->scope_id);
+
+	return(0);
 	}
 
 mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
@@ -2112,6 +2129,8 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 			{
 			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
+			// If interface was not in getifaddrs list last time we looked, but it is now, update 'AppearanceTime' for this record
+			if ((*p)->LastSeen != utc) (*p)->AppearanceTime = utc;
 			return(*p);
 			}
 
@@ -2133,7 +2152,10 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	
 	i->next            = mDNSNULL;
 	i->Exists          = mDNStrue;
+	i->AppearanceTime  = utc;		// Brand new interface; AppearanceTime is now
 	i->LastSeen        = utc;
+	i->Flashing        = mDNSfalse;
+	i->Occulting       = mDNSfalse;
 	i->scope_id        = scope_id;
 	i->BSSID           = bssid;
 	i->sa_family       = ifa->ifa_addr->sa_family;
@@ -2365,12 +2387,14 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				// If i->LastSeen == utc, then this is a brand-new interface, just created, or an interface that never went away.
 				// If i->LastSeen != utc, then this is an old interface, previously seen, that went away for (utc - i->LastSeen) seconds.
 				// If the interface is an old one that went away and came back in less than a minute, then we're in a flapping scenario.
-				mDNSBool flapping = (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
-				mDNS_RegisterInterface(m, n, flapping ? mDNSPlatformOneSecond * 5 : 0);
+				i->Occulting = (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
+				mDNS_RegisterInterface(m, n, i->Flashing && i->Occulting);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
-				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s",
+				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
 					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask),
-					flapping ? " (Flapping)" : "", n->InterfaceActive ? " (Primary)" : "");
+					i->Flashing        ? " (Flashing)"  : "",
+					i->Occulting       ? " (Occulting)" : "",
+					n->InterfaceActive ? " (Primary)"   : "");
 				}
 	
 			if (!n->McastTxRx)
@@ -2446,10 +2470,14 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 		if (i->ifinfo.InterfaceID)
 			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
-				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a/%d%s",
+				i->Flashing = (utc - i->AppearanceTime < 60);
+				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
 					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
-					&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), i->ifinfo.InterfaceActive ? " (Primary)" : "");
-				mDNS_DeregisterInterface(m, &i->ifinfo);
+					&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask),
+					i->Flashing               ? " (Flashing)"  : "",
+					i->Occulting              ? " (Occulting)" : "",
+					i->ifinfo.InterfaceActive ? " (Primary)"   : "");
+				mDNS_DeregisterInterface(m, &i->ifinfo, i->Flashing && i->Occulting);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
 				i->ifinfo.InterfaceID = mDNSNULL;
 				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,

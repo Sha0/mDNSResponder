@@ -27,6 +27,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.28  2006/03/19 02:00:12  cheshire
+<rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
+
 Revision 1.27  2004/12/17 23:37:49  cheshire
 <rdar://problem/3485365> Guard against repeating wireless dissociation/re-association
 (and other repetitive configuration changes)
@@ -1104,7 +1107,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inA
 	item->hostSet.Advertise               = inMDNS->AdvertiseLocalAddresses;
 	item->hostSet.McastTxRx               = mDNStrue;
 
-	err = mDNS_RegisterInterface( inMDNS, &item->hostSet, 0 );
+	err = mDNS_RegisterInterface( inMDNS, &item->hostSet, mDNSfalse );
 	require_noerr( err, exit );
 	item->hostRegistered = mDNStrue;
 	
@@ -1146,7 +1149,7 @@ mDNSlocal mStatus	TearDownInterface( mDNS * const inMDNS, MDNSInterfaceItem *inI
 	if( inItem->hostRegistered )
 	{
 		inItem->hostRegistered = mDNSfalse;
-		mDNS_DeregisterInterface( inMDNS, &inItem->hostSet );
+		mDNS_DeregisterInterface( inMDNS, &inItem->hostSet, mDNSfalse );
 	}
 	
 	// Close the multicast socket.
