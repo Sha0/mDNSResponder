@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.54  2006/03/19 03:27:49  cheshire
+<rdar://problem/4118624> Suppress "interface flapping" logic for loopback
+
 Revision 1.53  2006/03/19 02:00:09  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -251,7 +254,7 @@ struct NetworkInterfaceInfoOSX_struct
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable
 	u_short                  sa_family;
-	mDNSBool                 Multicast;
+	unsigned int             ifa_flags;
 	CFSocketSet              ss;
 	};
 

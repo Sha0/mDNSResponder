@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.328  2006/03/19 03:27:49  cheshire
+<rdar://problem/4118624> Suppress "interface flapping" logic for loopback
+
 Revision 1.327  2006/03/19 02:00:09  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -1087,6 +1090,14 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 // ***************************************************************************
 // Functions
 
+// We only attempt to send and receive multicast packets on interfaces that are
+// (a) flagged as multicast-capable
+// (b) *not* flagged as point-to-point (e.g. modem)
+// Typically point-to-point interfaces are modems (including mobile-phone pseudo-modems), and we don't want
+// to run up the user's bill sending multicast traffic over a link where there's only a single device at the
+// other end, and that device (e.g. a modem bank) is probably not answering Multicast DNS queries anyway.
+#define MulticastInterface(i) ((i->ifa_flags & IFF_MULTICAST) && !(i->ifa_flags & IFF_POINTOPOINT))
+
 // routines to allow access to default domain lists from daemon layer
 
 mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
@@ -2114,6 +2125,10 @@ mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
 	return(eth);
 	}
 
+// Returns pointer to newly created NetworkInterfaceInfoOSX object, or
+// pointer to already-existing NetworkInterfaceInfoOSX object found in list, or
+// may return NULL if out of memory (unlikely) or parameters are invalid for some reason
+// (e.g. sa_family not AF_INET or AF_INET6)
 mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifaddrs *ifa, mDNSs32 utc)
 	{
 	mDNSu32 scope_id  = if_nametoindex(ifa->ifa_name);
@@ -2159,7 +2174,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->scope_id        = scope_id;
 	i->BSSID           = bssid;
 	i->sa_family       = ifa->ifa_addr->sa_family;
-	i->Multicast       = (ifa->ifa_flags & IFF_MULTICAST) && !(ifa->ifa_flags & IFF_POINTOPOINT);
+	i->ifa_flags       = ifa->ifa_flags;
 
 	i->ss.m     = m;
 	i->ss.info  = i;
@@ -2266,7 +2281,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 						else
 							{
 							NetworkInterfaceInfoOSX *i = AddInterfaceToList(m, ifa, utc);
-							if (i && i->Multicast)
+							if (i && MulticastInterface(i))
 								{
 								if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
 								else                                     foundav6 = mDNStrue;
@@ -2294,7 +2309,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->Exists)
 			{
-			mDNSBool txrx = i->Multicast && ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
+			mDNSBool txrx = MulticastInterface(i) && ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
 			if (i->ifinfo.McastTxRx != txrx)
 				{
 				i->ifinfo.McastTxRx = txrx;
@@ -2387,7 +2402,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				// If i->LastSeen == utc, then this is a brand-new interface, just created, or an interface that never went away.
 				// If i->LastSeen != utc, then this is an old interface, previously seen, that went away for (utc - i->LastSeen) seconds.
 				// If the interface is an old one that went away and came back in less than a minute, then we're in a flapping scenario.
-				i->Occulting = (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
+				i->Occulting = !(i->ifa_flags & IFF_LOOPBACK) && (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
 				mDNS_RegisterInterface(m, n, i->Flashing && i->Occulting);
 				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
 				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
@@ -2470,7 +2485,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 		if (i->ifinfo.InterfaceID)
 			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
-				i->Flashing = (utc - i->AppearanceTime < 60);
+				i->Flashing = !(i->ifa_flags & IFF_LOOPBACK) && (utc - i->AppearanceTime < 60);
 				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
 					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 					&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask),
