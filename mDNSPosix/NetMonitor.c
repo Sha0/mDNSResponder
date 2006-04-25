@@ -37,6 +37,10 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.78  2006/04/25 00:42:24  cheshire
+Add ability to specify a single interface index to capture on,
+e.g. typically "-i 4" for Ethernet and "-i 5" for AirPort
+
 Revision 1.77  2006/03/02 21:50:45  cheshire
 Removed strange backslash at the end of a line
 
@@ -369,7 +373,7 @@ static mDNS mDNSStorage;						// mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;	// Stores this platform's globals
 
 struct timeval tv_start, tv_end, tv_interval;
-
+static int FilterInterface = 0;
 static FilterList *Filters;
 #define ExactlyOneFilter (Filters && !Filters->next)
 
@@ -993,6 +997,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
+	int goodinterface = (FilterInterface == 0);
 
 	(void)dstaddr;	// Unused
 	(void)dstport;	// Unused
@@ -1005,7 +1010,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 
 	// For now we're only interested in monitoring IPv4 traffic.
 	// All IPv6 packets should just be duplicates of the v4 packets.
-	if (AddressMatchesFilterList(srcaddr))
+	if (!goodinterface) goodinterface = (FilterInterface == (int)mDNSPlatformInterfaceIndexfromInterfaceID(m, InterfaceID));
+	if (goodinterface && AddressMatchesFilterList(srcaddr))
 		{
 		mDNS_Lock(m);
 		if (!mDNSAddrIsDNSMulticast(dstaddr))
@@ -1117,30 +1123,39 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
-		struct in_addr s4;
-		struct in6_addr s6;
-		FilterList *f;
-		mDNSAddr a;
-		a.type = mDNSAddrType_IPv4;
-
-		if (inet_pton(AF_INET, argv[i], &s4) == 1)
-			a.ip.v4.NotAnInteger = s4.s_addr;
-		else if (inet_pton(AF_INET6, argv[i], &s6) == 1)
+		if (i+1 < argc && !strcmp(argv[i], "-i") && atoi(argv[i+1]))
 			{
-			a.type = mDNSAddrType_IPv6;
-			bcopy(&s6, &a.ip.v6, sizeof(a.ip.v6));
+			FilterInterface = atoi(argv[i+1]);
+			i += 2;
+			printf("Monitoring interface %d\n", FilterInterface);
 			}
 		else
 			{
-			struct hostent *h = gethostbyname(argv[i]);
-			if (h) a.ip.v4.NotAnInteger = *(long*)h->h_addr;
-			else goto usage;
+			struct in_addr s4;
+			struct in6_addr s6;
+			FilterList *f;
+			mDNSAddr a;
+			a.type = mDNSAddrType_IPv4;
+	
+			if (inet_pton(AF_INET, argv[i], &s4) == 1)
+				a.ip.v4.NotAnInteger = s4.s_addr;
+			else if (inet_pton(AF_INET6, argv[i], &s6) == 1)
+				{
+				a.type = mDNSAddrType_IPv6;
+				bcopy(&s6, &a.ip.v6, sizeof(a.ip.v6));
+				}
+			else
+				{
+				struct hostent *h = gethostbyname(argv[i]);
+				if (h) a.ip.v4.NotAnInteger = *(long*)h->h_addr;
+				else goto usage;
+				}
+			
+			f = malloc(sizeof(*f));
+			f->FilterAddr = a;
+			f->next = Filters;
+			Filters = f;
 			}
-		
-		f = malloc(sizeof(*f));
-		f->FilterAddr = a;
-		f->next = Filters;
-		Filters = f;
 		}
 
 	status = mDNSNetMonitor();
