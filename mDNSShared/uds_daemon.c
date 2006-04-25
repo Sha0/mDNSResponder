@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.194  2006/04/25 18:29:36  mkrochma
+Workaround for warning: unused variable 'status' when building mDNSPosix
+
 Revision 1.193  2006/03/19 17:14:38  cheshire
 <rdar://problem/4483117> Need faster purging of stale records
 read_rr_from_ipc_msg was not setting namehash and rdatahash
@@ -3088,6 +3091,7 @@ mDNSlocal void handle_reconfirm_request(request_state *rstate)
 			"%3d: DNSServiceReconfirmRecord(%s) interface %d failed: %d",
 			rstate->sd, RRDisplayString(gmDNS, &rr->resrec),
 			mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID), status);
+		status = 0;
 		}
 	abort_request(rstate);
 	unlink_request(rstate);
