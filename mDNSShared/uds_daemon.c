@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.195  2006/04/25 20:56:28  mkrochma
+Added comment about previous checkin
+
 Revision 1.194  2006/04/25 18:29:36  mkrochma
 Workaround for warning: unused variable 'status' when building mDNSPosix
 
@@ -3091,7 +3094,7 @@ mDNSlocal void handle_reconfirm_request(request_state *rstate)
 			"%3d: DNSServiceReconfirmRecord(%s) interface %d failed: %d",
 			rstate->sd, RRDisplayString(gmDNS, &rr->resrec),
 			mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID), status);
-		status = 0;
+		status = 0;  // Adding this line eliminates a build failure when building mDNSPosix on Tiger
 		}
 	abort_request(rstate);
 	unlink_request(rstate);
