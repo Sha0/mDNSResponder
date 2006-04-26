@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.79  2006/04/26 20:48:33  cheshire
+Make final count of unique source addresses show IPv4 and IPv6 counts separately
+
 Revision 1.78  2006/04/25 00:42:24  cheshire
 Add ability to specify a single interface index to capture on,
 e.g. typically "-i 4" for Ethernet and "-i 5" for AirPort
@@ -1087,7 +1090,14 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	localtime_r((time_t*)&tv_end.tv_sec, &tm);
 	mprintf("End          %3d:%02d:%02d.%06d\n", tm.tm_hour, tm.tm_min, tm.tm_sec, tv_end.tv_usec);
 	mprintf("Captured for %3d:%02d:%02d.%06d\n", h, m, s, tv_interval.tv_usec);
-	if (!Filters) mprintf("Unique source addresses seen on network: %ld\n", IPv4HostList.num + IPv6HostList.num);
+	if (!Filters)
+		{
+		mprintf("Unique source addresses seen on network:");
+		if (IPv4HostList.num) mprintf(" %ld (IPv4)", IPv4HostList.num);
+		if (IPv6HostList.num) mprintf(" %ld (IPv6)", IPv6HostList.num);
+		if (!IPv4HostList.num && !IPv6HostList.num) mprintf(" None");
+		mprintf("\n");
+		}
 	mprintf("\n");
 	mprintf("Modern Query        Packets:      %7d   (avg%5d/min)\n", NumPktQ,        NumPktQ        * mul / div);
 	mprintf("Legacy Query        Packets:      %7d   (avg%5d/min)\n", NumPktL,        NumPktL        * mul / div);
