@@ -29,6 +29,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.70  2006/05/03 23:35:10  cheshire
+# Add missing dependency: NetMonitor.c textually imports mDNS.c
+#
 # Revision 1.69  2006/02/26 23:18:50  cheshire
 # <rdar://problem/4427969> FreeBSD 4 requires "-pthread" option to compile threaded code
 #
@@ -665,6 +668,8 @@ $(OBJDIR)/Identify.c.o:              $(COREDIR)/mDNS.c # Note: Identify.c textua
 
 $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 	$(CC) $+ -o $@ $(LINKOPTS)
+
+$(OBJDIR)/NetMonitor.c.o:            $(COREDIR)/mDNS.c # Note: NetMonitor.c textually imports mDNS.c
 
 $(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.threadsafe.o
 	$(CC) $+ -o $@ $(LINKOPTS) $(LINKOPTS_PTHREAD)
