@@ -664,6 +664,12 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
  * The record can later be updated or deregistered by passing the RecordRef initialized
  * by this function to DNSServiceUpdateRecord() or DNSServiceRemoveRecord().
  *
+ * Note that the DNSServiceAddRecord/UpdateRecord/RemoveRecord are *NOT* thread-safe
+ * with respect to a single DNSServiceRef. If you plan to have multiple threads
+ * in your program simultaneously add, update, or remove records from the same
+ * DNSServiceRef, then it's the caller's responsibility to use a mutext lock
+ * or take similar appropriate precautions to serialize those calls.
+ *
  *
  * Parameters;
  *
