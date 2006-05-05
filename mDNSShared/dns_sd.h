@@ -623,6 +623,9 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *                  i.e. it creates a TXT record of length one containing a single empty string.
  *                  RFC 1035 doesn't allow a TXT record to contain *zero* strings, so a single empty
  *                  string is the smallest legal DNS TXT record.
+ *                  As with the other parameters, the DNSServiceRegister call copies the txtRecord
+ *                  data; e.g. if you allocated the storage for the txtRecord parameter with malloc()
+ *                  then you can safely free that memory right after the DNSServiceRegister call returns.
  *
  * callBack:        The function to be called when the registration completes or asynchronously
  *                  fails.  The client MAY pass NULL for the callback -  The client will NOT be notified
