@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.196  2006/05/05 07:07:13  cheshire
+<rdar://problem/4538206> mDNSResponder fails when UDS reads deliver partial data
+
 Revision 1.195  2006/04/25 20:56:28  mkrochma
 Added comment about previous checkin
 
@@ -3322,8 +3325,8 @@ mDNSlocal int read_msg(request_state *rs)
                 return t_error;
             	}
             rs->msgdata = rs->msgbuf;
-            }
             bzero(rs->msgbuf, rs->hdr.datalen + MSG_PAD_BYTES);
+            }
         nleft = rs->hdr.datalen - rs->data_bytes;
         nread = recv(rs->sd, rs->msgbuf + rs->data_bytes, nleft, 0);
         if (nread == 0)  	{ rs->ts = t_terminated;  return t_terminated; 	}
