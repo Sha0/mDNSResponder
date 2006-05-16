@@ -230,48 +230,52 @@ static void DNSSD_API enum_reply(DNSServiceRef client, const DNSServiceFlags fla
 	
 	(void)client;       // Unused
 	(void)ifIndex;      // Unused
-	(void)errorCode;    // Unused
 	(void)context;      // Unused
-	
-	if (!*replyDomain) return;
 
 	// 1. Print the header
 	if (num_printed++ == 0) printf("Timestamp     Recommended %s domain\n", operation == 'E' ? "Registration" : "Browsing");
 	printtimestamp();
-	printf("%-10s", DomainMsg(flags));
-	printf("%-8s", (flags & kDNSServiceFlagsMoreComing) ? "(More)" : "");
-	if (partialflags) printf("Flags: %4X  ", partialflags);
-	else printf("             ");
+	if (errorCode)
+		printf("Error code %d\n", errorCode);
+	else if (!*replyDomain)
+		printf("Error: No reply domain\n");
+	else
+		{
+		printf("%-10s", DomainMsg(flags));
+		printf("%-8s", (flags & kDNSServiceFlagsMoreComing) ? "(More)" : "");
+		if (partialflags) printf("Flags: %4X  ", partialflags);
+		else printf("             ");
+		
+		// 2. Count the labels
+		while (*replyDomain)
+			{
+			label[labels++] = replyDomain;
+			replyDomain = GetNextLabel(replyDomain, text);
+			}
+		
+		// 3. Decide if we're going to clump the last two or three labels (e.g. "apple.com", or "nicta.com.au")
+		if      (labels >= 3 && replyDomain - label[labels-1] <= 3 && label[labels-1] - label[labels-2] <= 4) initial = 3;
+		else if (labels >= 2 && replyDomain - label[labels-1] <= 4) initial = 2;
+		else initial = 1;
+		labels -= initial;
 	
-	// 2. Count the labels
-	while (*replyDomain)
-		{
-		label[labels++] = replyDomain;
-		replyDomain = GetNextLabel(replyDomain, text);
-		}
+		// 4. Print the initial one-, two- or three-label clump
+		for (i=0; i<initial; i++)
+			{
+			GetNextLabel(label[labels+i], text);
+			if (i>0) printf(".");
+			printf("%s", text);
+			}
+		printf("\n");
 	
-	// 3. Decide if we're going to clump the last two or three labels (e.g. "apple.com", or "nicta.com.au")
-	if      (labels >= 3 && replyDomain - label[labels-1] <= 3 && label[labels-1] - label[labels-2] <= 4) initial = 3;
-	else if (labels >= 2 && replyDomain - label[labels-1] <= 4) initial = 2;
-	else initial = 1;
-	labels -= initial;
-
-	// 4. Print the initial one-, two- or three-label clump
-	for (i=0; i<initial; i++)
-		{
-		GetNextLabel(label[labels+i], text);
-		if (i>0) printf(".");
-		printf("%s", text);
-		}
-	printf("\n");
-
-	// 5. Print the remainder of the hierarchy
-	for (depth=0; depth<labels; depth++)
-		{
-		printf("                                             ");
-		for (i=0; i<=depth; i++) printf("- ");
-		GetNextLabel(label[labels-1-depth], text);
-		printf("> %s\n", text);
+		// 5. Print the remainder of the hierarchy
+		for (depth=0; depth<labels; depth++)
+			{
+			printf("                                             ");
+			for (i=0; i<=depth; i++) printf("- ");
+			GetNextLabel(label[labels-1-depth], text);
+			printf("> %s\n", text);
+			}
 		}
 
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
@@ -282,11 +286,11 @@ static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags f
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	(void)client;       // Unused
-	(void)errorCode;    // Unused
 	(void)context;      // Unused
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-25s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
-	printf("%s%6X%3d %-25s %-25s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
+	if (errorCode) printf("Error code %d\n", errorCode);
+	else printf("%s%6X%3d %-25s %-25s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
@@ -332,16 +336,19 @@ static void DNSSD_API resolve_reply(DNSServiceRef client, const DNSServiceFlags 
 
 	(void)client;       // Unused
 	(void)ifIndex;      // Unused
-	(void)errorCode;    // Unused
 	(void)context;      // Unused
 
 	printtimestamp();
-	printf("%s can be reached at %s:%u", fullname, hosttarget, PortAsNumber);
+	if (errorCode) printf("Error code %d\n", errorCode);
+	else
+		{
+		printf("%s can be reached at %s:%u", fullname, hosttarget, PortAsNumber);
+		if (flags) printf(" Flags: %X", flags);
+		// Don't show degenerate TXT records containing nothing but a single empty string
+		if (txtLen > 1) { printf("\n"); ShowTXTRecord(txtLen, txtRecord); }
+		printf("\n");
+		}
 
-	if (flags) printf(" Flags: %X", flags);
-	// Don't show degenerate TXT records containing nothing but a single empty string
-	if (txtLen > 1) { printf("\n"); ShowTXTRecord(txtLen, txtRecord); }
-	printf("\n");
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
@@ -406,14 +413,20 @@ static void DNSSD_API reg_reply(DNSServiceRef client, const DNSServiceFlags flag
 	(void)context;  // Unused
 
 	printf("Got a reply for %s.%s%s: ", name, regtype, domain);
-	switch (errorCode)
-		{
-		case kDNSServiceErr_NoError:      printf("Name now registered and active\n"); break;
-		case kDNSServiceErr_NameConflict: printf("Name in use, please choose another\n"); exit(-1);
-		default:                          printf("Error %d\n", errorCode); return;
-		}
 
-	if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
+	if (errorCode == kDNSServiceErr_NoError)
+		{
+		printf("Name now registered and active\n");
+		if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
+		}
+	else if (errorCode == kDNSServiceErr_NameConflict)
+		{
+		printf("Name in use, please choose another\n");
+		exit(-1);
+		}
+	else
+		printf("Error %d\n", errorCode);
+
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
@@ -429,28 +442,33 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	(void)sdRef;    // Unused
 	(void)flags;    // Unused
 	(void)ifIndex;  // Unused
-	(void)errorCode;// Unused
 	(void)ttl;      // Unused
 	(void)context;  // Unused
 
-	switch (rrtype)
-		{
-		case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
-		case kDNSServiceType_AAAA: sprintf(rdb, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
-			rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
-			rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]); break;
-			break;
-		default : sprintf(rdb, "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
-		}
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
 	printtimestamp();
-	printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
-	if (unknowntype) while (rd < end) printf(" %02X", *rd++);
-	printf("\n");
+	if (errorCode)
+		printf("Error code %d\n", errorCode);
+	else
+		{
+		switch (rrtype)
+			{
+			case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
+			case kDNSServiceType_AAAA: sprintf(rdb, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+				rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
+				rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]); break;
+				break;
+			default : sprintf(rdb, "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
+			}
 
-	if (operation == 'C')
-		if (flags & kDNSServiceFlagsAdd)
-			DNSServiceReconfirmRecord(flags, ifIndex, fullname, rrtype, rrclass, rdlen, rdata);
+		printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
+		if (unknowntype) while (rd < end) printf(" %02X", *rd++);
+		printf("\n");
+	
+		if (operation == 'C')
+			if (flags & kDNSServiceFlagsAdd)
+				DNSServiceReconfirmRecord(flags, ifIndex, fullname, rrtype, rrclass, rdlen, rdata);
+		}
 
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
@@ -540,7 +558,7 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 		{
 		case kDNSServiceErr_NoError:      printf("Name now registered and active\n"); break;
 		case kDNSServiceErr_NameConflict: printf("Name in use, please choose another\n"); exit(-1);
-		default:                          printf("Error %d\n", errorCode); return;
+		default:                          printf("Error %d\n", errorCode); break;
 		}
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
