@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.99  2006/05/18 01:32:33  cheshire
+<rdar://problem/4472706> iChat: Lost connection with Bonjour
+(mDNSResponder insufficiently defensive against malformed browsing PTR responses)
+
 Revision 1.98  2006/03/19 17:00:58  cheshire
 Define symbol MaxMsg instead of using hard-coded constant value '80'
 
@@ -935,6 +939,11 @@ fail:
 	return(mDNSNULL);
 	}
 
+// A service name has the form: instance.application-protocol.transport-protocol.domain
+// DeconstructServiceName is currently fairly forgiving: It doesn't try to enforce character
+// set or length limits for the protocol names, and the final domain is allowed to be empty.
+// However, if the given FQDN doesn't contain at least three labels,
+// DeconstructServiceName will reject it and return mDNSfalse.
 mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	domainlabel *const name, domainname *const type, domainname *const domain)
 	{
@@ -943,29 +952,32 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 	const mDNSu8 *max = fqdn->c + MAX_DOMAIN_NAME;
 	mDNSu8 *dst;
 
-	dst = name->c;										// Extract the service name from the domain name
+	dst = name->c;										// Extract the service name
 	len = *src;
-	if (len >= 0x40) { debugf("DeconstructServiceName: service name too long"); return(mDNSfalse); }
+	if (!len)        { debugf("DeconstructServiceName: FQDN empty!");            return(mDNSfalse); }
+	if (len >= 0x40) { debugf("DeconstructServiceName: Instance name too long"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
-	dst = type->c;										// Extract the service type from the domain name
+	dst = type->c;										// Extract the service type
 	len = *src;
-	if (len >= 0x40) { debugf("DeconstructServiceName: service type too long"); return(mDNSfalse); }
+	if (!len)        { debugf("DeconstructServiceName: FQDN contains only one label!");      return(mDNSfalse); }
+	if (len >= 0x40) { debugf("DeconstructServiceName: Application protocol name too long"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
-	if (len >= 0x40) { debugf("DeconstructServiceName: service type too long"); return(mDNSfalse); }
+	if (!len)        { debugf("DeconstructServiceName: FQDN contains only two labels!");   return(mDNSfalse); }
+	if (len >= 0x40) { debugf("DeconstructServiceName: Transport protocol name too long"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
-	*dst++ = 0;		// Put the null root label on the end of the service type
+	*dst++ = 0;											// Put terminator on the end of service type
 
-	dst = domain->c;									// Extract the service domain from the domain name
+	dst = domain->c;									// Extract the service domain
 	while (*src)
 		{
 		len = *src;
 		if (len >= 0x40)
-			{ debugf("DeconstructServiceName: service domain label too long"); return(mDNSfalse); }
+			{ debugf("DeconstructServiceName: Label in service domain too long"); return(mDNSfalse); }
 		if (src + 1 + len + 1 >= max)
-			{ debugf("DeconstructServiceName: service domain too long"); return(mDNSfalse); }
+			{ debugf("DeconstructServiceName: Total service domain too long"); return(mDNSfalse); }
 		for (i=0; i<=len; i++) *dst++ = *src++;
 		}
 	*dst++ = 0;		// Put the null root label on the end
