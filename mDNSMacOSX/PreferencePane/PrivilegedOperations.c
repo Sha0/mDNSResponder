@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: PrivilegedOperations.c,v $
+Revision 1.4  2006/05/27 02:32:38  mkrochma
+Wait for installer script to exit before returning result
+
 Revision 1.3  2005/06/04 04:50:00  cheshire
 <rdar://problem/4138070> ddnswriteconfig (Bonjour PreferencePane) vulnerability
 Use installtool instead of requiring ddnswriteconfig to self-install
@@ -133,7 +136,16 @@ OSStatus EnsureToolInstalled(void)
 			char *installerargs[] = { toolSourcePath, NULL };
 			err = AuthorizationExecuteWithPrivileges(authRef, toolInstallerPath, 0, installerargs, (FILE**) NULL);
 			if (err == noErr)
-				gToolApproved = true;
+			int status;
+			int pid = wait(&status);
+			if (pid > 0 && WIFEXITED(status)) {
+				err = WEXITSTATUS(status);
+				if (err == noErr) {
+					gToolApproved = true;
+				}
+			} else {
+				err == -1;
+			}
 			(void) AuthorizationFree(authRef, kAuthorizationFlagDestroyRights);
 		}
 	}
