@@ -196,7 +196,7 @@ enum
     kDNSServiceType_KEY       = 25,     /* Security key. */
     kDNSServiceType_PX        = 26,     /* X.400 mail mapping. */
     kDNSServiceType_GPOS      = 27,     /* Geographical position (withdrawn). */
-    kDNSServiceType_AAAA      = 28,     /* Ip6 Address. */
+    kDNSServiceType_AAAA      = 28,     /* IPv6 Address. */
     kDNSServiceType_LOC       = 29,     /* Location Information. */
     kDNSServiceType_NXT       = 30,     /* Next domain (security). */
     kDNSServiceType_EID       = 31,     /* Endpoint identifier. */
@@ -206,7 +206,7 @@ enum
     kDNSServiceType_NAPTR     = 35,     /* Naming Authority PoinTeR */
     kDNSServiceType_KX        = 36,     /* Key Exchange */
     kDNSServiceType_CERT      = 37,     /* Certification record */
-    kDNSServiceType_A6        = 38,     /* IPv6 address (deprecates AAAA) */
+    kDNSServiceType_A6        = 38,     /* IPv6 Address (deprecated) */
     kDNSServiceType_DNAME     = 39,     /* Non-terminal DNAME (for IPv6) */
     kDNSServiceType_SINK      = 40,     /* Kitchen sink (experimentatl) */
     kDNSServiceType_OPT       = 41,     /* EDNS0 option (meta-RR) */
@@ -318,7 +318,7 @@ enum
  * 
  * If the client passes 0 for interface index, that means "do the right thing",
  * which (at present) means, "if the name is in an mDNS local multicast domain
- * (e.g. 'local.', '254.169.in-addr.arpa.', '0.8.E.F.ip6.arpa.') then multicast
+ * (e.g. 'local.', '254.169.in-addr.arpa.', '{8,9,A,B}.E.F.ip6.arpa.') then multicast
  * on all applicable interfaces, otherwise send via unicast to the appropriate
  * DNS server." Normally, most clients will use 0 for interface index to
  * automatically get the default sensible behaviour.
