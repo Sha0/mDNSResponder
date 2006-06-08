@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.539  2006/06/08 23:45:46  cheshire
+Change SimultaneousProbe messages from debugf() to LogOperation()
+
 Revision 1.538  2006/03/19 17:13:06  cheshire
 <rdar://problem/4483117> Need faster purging of stale records
 Shorten kDefaultReconfirmTimeForNoAnswer to five seconds
@@ -4888,10 +4891,10 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				if (!result) result = (int)our->resrec.rrtype  - (int)m->rec.r.resrec.rrtype;
 				if (!result) result = CompareRData(our, &m->rec.r);
 				if (result > 0)
-					debugf("ResolveSimultaneousProbe: %##s (%s): We won",  our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
+					LogOperation("ResolveSimultaneousProbe: %##s (%s): We won",  our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
 				else if (result < 0)
 					{
-					debugf("ResolveSimultaneousProbe: %##s (%s): We lost", our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
+					LogOperation("ResolveSimultaneousProbe: %##s (%s): We lost", our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
 					mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict);
 					goto exit;
 					}
@@ -4900,7 +4903,7 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 	if (!FoundUpdate)
-		debugf("ResolveSimultaneousProbe: %##s (%s): No Update Record found", our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
+		LogOperation("ResolveSimultaneousProbe: %##s (%s): No Update Record found", our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
 exit:
 	m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 	}
