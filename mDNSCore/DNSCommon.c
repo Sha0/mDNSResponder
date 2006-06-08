@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.100  2006/06/08 22:58:46  cheshire
+<rdar://problem/4335605> IPv6 link-local address prefix is FE80::/10, not FE80::/16
+
 Revision 1.99  2006/05/18 01:32:33  cheshire
 <rdar://problem/4472706> iChat: Lost connection with Bonjour
 (mDNSResponder insufficiently defensive against malformed browsing PTR responses)
@@ -590,10 +593,13 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 	{
 	// Domains that are defined to be resolved via link-local multicast are:
-	// local., 254.169.in-addr.arpa., and 0.8.E.F.ip6.arpa.
-	static const domainname *n0 = (domainname*)"\x5" "local";
-	static const domainname *n1 = (domainname*)"\x3" "254" "\x3" "169"                     "\x7" "in-addr" "\x4" "arpa";
-	static const domainname *n2 = (domainname*)"\x1" "0"   "\x1" "8"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	// local., 254.169.in-addr.arpa., and {8,9,A,B}.E.F.ip6.arpa.
+	static const domainname *nL = (domainname*)"\x5" "local";
+	static const domainname *nR = (domainname*)"\x3" "254" "\x3" "169"         "\x7" "in-addr" "\x4" "arpa";
+	static const domainname *n8 = (domainname*)"\x1" "8"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	static const domainname *n9 = (domainname*)"\x1" "9"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	static const domainname *nA = (domainname*)"\x1" "a"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	static const domainname *nB = (domainname*)"\x1" "b"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
 
 	const domainname *d1, *d2, *d3, *d4, *d5, *d6;	// Top-level domain, second-level domain, etc.
 	d1 = d2 = d3 = d4 = d5 = d6 = mDNSNULL;
@@ -603,9 +609,12 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 		d = (domainname*)(d->c + 1 + d->c[0]);
 		}
 
-	if (d1 && SameDomainName(d1, n0)) return(mDNStrue);
-	if (d4 && SameDomainName(d4, n1)) return(mDNStrue);
-	if (d6 && SameDomainName(d6, n2)) return(mDNStrue);
+	if (d1 && SameDomainName(d1, nL)) return(mDNStrue);
+	if (d4 && SameDomainName(d4, nR)) return(mDNStrue);
+	if (d6 && SameDomainName(d6, n8)) return(mDNStrue);
+	if (d6 && SameDomainName(d6, n9)) return(mDNStrue);
+	if (d6 && SameDomainName(d6, nA)) return(mDNStrue);
+	if (d6 && SameDomainName(d6, nB)) return(mDNStrue);
 	return(mDNSfalse);
 	}
 

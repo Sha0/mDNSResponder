@@ -1711,8 +1711,14 @@ const char * k_default_domains [] =
 	{
 		"local",
 		"254.169.in-addr.arpa",
-		"0.8.e.f.ip6.int",
-		"0.8.e.f.ip6.arpa",
+		"8.e.f.ip6.int",
+		"8.e.f.ip6.arpa",
+		"9.e.f.ip6.int",
+		"9.e.f.ip6.arpa",
+		"a.e.f.ip6.int",
+		"a.e.f.ip6.arpa",
+		"b.e.f.ip6.int",
+		"b.e.f.ip6.arpa",
 		NULL
 			// Always null terminated
 	};
