@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.263  2006/06/08 23:23:48  cheshire
+Fix errant indentation of curly brace at the end of provide_DNSServiceBrowserCreate_rpc()
+
 Revision 1.262  2006/03/18 21:49:11  cheshire
 Added comment in ShowTaskSchedulingError(mDNS *const m)
 
@@ -1358,7 +1361,7 @@ fail:
 	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
 	if (SearchDomains) mDNS_FreeDNameList(SearchDomains);
 	return(err);
-		}
+	}
 
 //*************************************************************************************************************
 // Resolve Service Info
