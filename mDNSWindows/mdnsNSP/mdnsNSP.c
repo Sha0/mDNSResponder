@@ -23,6 +23,10 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.19  2006/06/08 23:09:37  cheshire
+Updated comment: Correct IPv6LL reverse-mapping domains are '{8,9,A,B}.E.F.ip6.arpa.',
+not only '0.8.E.F.ip6.arpa.' (Actual code still needs to be fixed.)
+
 Revision 1.18  2005/10/17 05:45:36  herscher
 Fix typo in previous checkin
 
@@ -681,7 +685,7 @@ DEBUG_LOCAL int WSPAPI
 		require_action( InHostsTable( translated ) == FALSE, exit, err = WSASERVICE_NOT_FOUND );
 	}
 
-	// The name ends in .local ( and isn't in the hosts table ), .0.8.e.f.ip6.arpa, or .254.169.in-addr.arpa so start the resolve operation. Lazy initialize DNS-SD if needed.
+	// The name ends in .local ( and isn't in the hosts table ), {8,9,A,B}.E.F.ip6.arpa, or .254.169.in-addr.arpa so start the resolve operation. Lazy initialize DNS-SD if needed.
 		
 	NSPLock();
 	
