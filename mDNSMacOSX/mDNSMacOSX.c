@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.329  2006/06/08 23:22:33  cheshire
+Comment changes
+
 Revision 1.328  2006/03/19 03:27:49  cheshire
 <rdar://problem/4118624> Suppress "interface flapping" logic for loopback
 
@@ -1328,9 +1331,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		return mStatus_BadParamErr;
 		}
 
-	// Don't send if it would cause dial on demand connection initiation.  As an optimization,
-	// don't bother consulting reachability API / routing table when sending Multicast DNS
-	// since we ignore PPP interfaces for mDNS traffic
+	// Don't send if it would cause dial-on-demand connection initiation.
+	// As an optimization, don't bother consulting reachability API / routing
+	// table when sending Multicast DNS since we ignore PPP interfaces for mDNS traffic.
 	if (!mDNSAddrIsDNSMulticast(dst) && AddrRequiresPPPConnection((struct sockaddr *)&to))
 		{
 		debugf("mDNSPlatformSendUDP: Surpressing sending to avoid dial-on-demand connection");
@@ -1639,7 +1642,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 	saddr.sin_len = sizeof(saddr);
 	memcpy(&saddr.sin_addr, &dst->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
 
-	// Don't send if it would cause dial on demand connection initiation.
+	// Don't send if it would cause dial-on-demand connection initiation.
 	if (AddrRequiresPPPConnection((struct sockaddr *)&saddr))
 		{
 		debugf("mDNSPlatformTCPConnect: Surpressing sending to avoid dial-on-demand connection");
@@ -1997,8 +2000,8 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, co
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_HOPLIMIT, &on, sizeof(on));
 		if (err < 0) { errstr = "setsockopt - IPV6_HOPLIMIT"; goto fail; }
 		
-		// We want to receive only IPv6 packets, without this option, we may
-		// get IPv4 addresses as mapped addresses.
+		// We want to receive only IPv6 packets. Without this option we get IPv4 packets too,
+		// with mapped addresses of the form 0:0:0:0:0:FFFF:xxxx:xxxx, where xxxx:xxxx is the IPv4 address
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
 		if (err < 0) { errstr = "setsockopt - IPV6_V6ONLY"; goto fail; }
 		
