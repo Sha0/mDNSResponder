@@ -42,6 +42,9 @@
 
     Change History (most recent first):
 $Log: PrivilegedOperations.c,v $
+Revision 1.5  2006/06/10 02:07:11  mkrochma
+Whoa.  Make sure code compiles before checking it in.
+
 Revision 1.4  2006/05/27 02:32:38  mkrochma
 Wait for installer script to exit before returning result
 
@@ -135,16 +138,17 @@ OSStatus EnsureToolInstalled(void)
 		{
 			char *installerargs[] = { toolSourcePath, NULL };
 			err = AuthorizationExecuteWithPrivileges(authRef, toolInstallerPath, 0, installerargs, (FILE**) NULL);
-			if (err == noErr)
-			int status;
-			int pid = wait(&status);
-			if (pid > 0 && WIFEXITED(status)) {
-				err = WEXITSTATUS(status);
-				if (err == noErr) {
-					gToolApproved = true;
+			if (err == noErr) {
+				int status;
+				int pid = wait(&status);
+				if (pid > 0 && WIFEXITED(status)) {
+					err = WEXITSTATUS(status);
+					if (err == noErr) {
+						gToolApproved = true;
+					}
+				} else {
+					err = -1;
 				}
-			} else {
-				err == -1;
 			}
 			(void) AuthorizationFree(authRef, kAuthorizationFlagDestroyRights);
 		}
