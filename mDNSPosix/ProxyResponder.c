@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.38  2006/06/12 18:22:42  cheshire
+<rdar://problem/4580067> mDNSResponder building warnings under Red Hat 64-bit (LP64) Linux
+
 Revision 1.37  2006/02/23 23:38:43  cheshire
 <rdar://problem/4427969> On FreeBSD 4 "arpa/inet.h" requires "netinet/in.h" be included first
 
@@ -329,7 +332,7 @@ mDNSexport int main(int argc, char **argv)
 		mDNS_Init_NoCache, mDNS_Init_ZeroCacheSize,
 		mDNS_Init_DontAdvertiseLocalAddresses,
 		mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
-	if (status) { fprintf(stderr, "Daemon start: mDNS_Init failed %ld\n", status); return(status); }
+	if (status) { fprintf(stderr, "Daemon start: mDNS_Init failed %d\n", (int)status); return(status); }
 
 	mDNSPosixListenForSignalInEventLoop(SIGINT);
 	mDNSPosixListenForSignalInEventLoop(SIGTERM);

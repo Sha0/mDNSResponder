@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.31  2006/06/12 18:22:42  cheshire
+<rdar://problem/4580067> mDNSResponder building warnings under Red Hat 64-bit (LP64) Linux
+
 Revision 1.30  2005/10/26 22:21:16  cheshire
 <rdar://problem/4149841> Potential buffer overflow in mDNSResponderPosix
 
@@ -832,7 +835,7 @@ int main(int argc, char **argv)
         result = 2;
     }
     if ( (result != 0) || (gMDNSPlatformPosixVerboseLevel > 0) ) {
-        fprintf(stderr, "%s: Finished with status %ld, result %d\n", gProgramName, status, result);
+        fprintf(stderr, "%s: Finished with status %d, result %d\n", gProgramName, (int)status, result);
     }
     
     return result;

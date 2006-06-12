@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.35  2006/06/12 18:22:42  cheshire
+<rdar://problem/4580067> mDNSResponder building warnings under Red Hat 64-bit (LP64) Linux
+
 Revision 1.34  2004/12/16 20:17:11  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -400,7 +403,7 @@ mDNSexport int main(int argc, char **argv)
     	gRRCache, RR_CACHE_SIZE,
     	mDNS_Init_DontAdvertiseLocalAddresses,
     	mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext);
-	if (status) { fprintf(stderr, "Daemon start: mDNS_Init failed %ld\n", status); return(status); }
+	if (status) { fprintf(stderr, "Daemon start: mDNS_Init failed %d\n", (int)status); return(status); }
 
 	signal(SIGINT, HandleSIG);	// SIGINT is what you get for a Ctrl-C
 	signal(SIGTERM, HandleSIG);

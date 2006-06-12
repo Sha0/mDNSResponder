@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.17  2006/06/12 18:22:42  cheshire
+<rdar://problem/4580067> mDNSResponder building warnings under Red Hat 64-bit (LP64) Linux
+
 Revision 1.16  2005/02/04 01:00:53  cheshire
 Add '-d' command-line option to specify domain to browse
 
@@ -281,7 +284,7 @@ int main(int argc, char **argv)
         result = 2;
     }
     if ( (result != 0) || (gMDNSPlatformPosixVerboseLevel > 0) ) {
-        fprintf(stderr, "%s: Finished with status %ld, result %d\n", gProgramName, status, result);
+        fprintf(stderr, "%s: Finished with status %d, result %d\n", gProgramName, (int)status, result);
     }
 
     return 0;

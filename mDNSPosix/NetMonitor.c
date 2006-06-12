@@ -37,6 +37,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.80  2006/06/12 18:22:42  cheshire
+<rdar://problem/4580067> mDNSResponder building warnings under Red Hat 64-bit (LP64) Linux
+
 Revision 1.79  2006/04/26 20:48:33  cheshire
 Make final count of unique source addresses show IPv4 and IPv6 counts separately
 
@@ -1169,7 +1172,7 @@ mDNSexport int main(int argc, char **argv)
 		}
 
 	status = mDNSNetMonitor();
-	if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %ld\n", progname, status); return(status); }
+	if (status) { fprintf(stderr, "%s: mDNSNetMonitor failed %d\n", progname, (int)status); return(status); }
 	return(0);
 
 usage:
