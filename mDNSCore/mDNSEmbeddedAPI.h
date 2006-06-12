@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.293  2006/06/12 18:00:43  cheshire
+To make code a little more defensive, check _ILP64 before _LP64,
+in case both are set by mistake on some platforms
+
 Revision 1.292  2006/03/19 17:00:57  cheshire
 Define symbol MaxMsg instead of using hard-coded constant value '80'
 
@@ -1130,12 +1134,12 @@ typedef unsigned short mDNSu16;
 //   Macro Name __LP64__ Value 1
 // A quick Google search for "defined(__LP64__)" OR "#ifdef __LP64__" gives 2590 hits and
 // a search for "#if __LP64__" gives only 12, so I think we'll go with the majority and use defined()
-#if defined(_LP64) || defined(__LP64__)
-typedef   signed int   mDNSs32;
-typedef unsigned int   mDNSu32;
-#elif defined(_ILP64) || defined(__ILP64__)
+#if defined(_ILP64) || defined(__ILP64__)
 typedef   signed int32 mDNSs32;
 typedef unsigned int32 mDNSu32;
+#elif defined(_LP64) || defined(__LP64__)
+typedef   signed int   mDNSs32;
+typedef unsigned int   mDNSu32;
 #else
 typedef   signed long  mDNSs32;
 typedef unsigned long  mDNSu32;
