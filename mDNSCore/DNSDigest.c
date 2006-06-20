@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.15  2006/06/20 04:12:30  cheshire
+<rdar://problem/4490961> DNS Update broken
+
 Revision 1.14  2006/02/25 23:12:07  cheshire
 <rdar://problem/4427969> Fix to avoid code generation warning/error on FreeBSD 7
 
@@ -1416,8 +1419,8 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	// 300 sec is fudge recommended in RFC 2485
 	rdata[0] = (mDNSu8)((300 >> 8)  & 0xff);
 	rdata[1] = (mDNSu8)( 300        & 0xff);
+	MD5_Update(&c, rdata, sizeof(mDNSOpaque16));
 	rdata += sizeof(mDNSOpaque16);
-	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));
 
 	// digest error and other data len (both zero) - we'll add them to the rdata later
 	buf.NotAnInteger = 0;
