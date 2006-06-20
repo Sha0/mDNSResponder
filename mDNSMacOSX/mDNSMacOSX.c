@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.330  2006/06/20 23:06:00  cheshire
+Fix some keychain API type mismatches (was mDNSu32 instead of UInt32)
+
 Revision 1.329  2006/06/08 23:22:33  cheshire
 Comment changes
 
@@ -2963,7 +2966,7 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	{
 	OSStatus err = 0;
 	char dstring[MAX_ESCAPED_DOMAIN_NAME];
-	mDNSu32 secretlen;
+	UInt32 secretlen;
 	void *secret = NULL;
 	domainname *d, canon;
 	int i, dlen;
@@ -3000,7 +3003,7 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 		err = SecKeychainSearchCopyNext(searchRef, &itemRef);
 		if (!err)
 			{
-	        mDNSu32 tags[1];
+	        UInt32 tags[1];
 			SecKeychainAttributeInfo attrInfo;
 			mDNSu32 i;
 			char keybuf[MAX_ESCAPED_DOMAIN_NAME+1];			
