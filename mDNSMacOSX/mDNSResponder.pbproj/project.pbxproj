@@ -811,6 +811,8 @@
 				DB2CC44D0662DD1100335AB3,
 				DB2CC44E0662DD1100335AB3,
 				DB2CC44F0662DD1100335AB3,
+				FF2C5FB00A48B8680066DA11,
+				FF2C5FB20A48B86E0066DA11,
 			);
 			isa = PBXGroup;
 			name = "Java Support";
@@ -922,6 +924,8 @@
 				DB2CC45F0662DE4C00335AB3,
 				DB2CC4600662DE4C00335AB3,
 				DB2CC4610662DE4D00335AB3,
+				FF2C5FB10A48B8680066DA11,
+				FF2C5FB30A48B86E0066DA11,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1983,6 +1987,32 @@
 		FF2A870707B4481500B14068 = {
 			isa = PBXTargetDependency;
 			target = FF2609E107B440DD00CE10E5;
+		};
+		FF2C5FB00A48B8680066DA11 = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = DNSSDRecordRegistrar.java;
+			path = ../mDNSShared/Java/DNSSDRecordRegistrar.java;
+			refType = 2;
+		};
+		FF2C5FB10A48B8680066DA11 = {
+			fileRef = FF2C5FB00A48B8680066DA11;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		FF2C5FB20A48B86E0066DA11 = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			name = RegisterRecordListener.java;
+			path = ../mDNSShared/Java/RegisterRecordListener.java;
+			refType = 2;
+		};
+		FF2C5FB30A48B86E0066DA11 = {
+			fileRef = FF2C5FB20A48B86E0066DA11;
+			isa = PBXBuildFile;
+			settings = {
+			};
 		};
 		FF354EB108516C63007C00E1 = {
 			fileEncoding = 4;
