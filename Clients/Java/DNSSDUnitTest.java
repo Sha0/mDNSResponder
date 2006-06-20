@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSSDUnitTest.java,v $
+Revision 1.5  2006/06/20 23:01:58  rpantos
+<rdar://problem/3839132> Java needs to implement DNSServiceRegisterRecord equivalent
+
 Revision 1.4  2004/08/04 01:07:43  rpantos
 Update unit test for <rdar://problems/3731579&3731582>.
 
@@ -107,6 +110,7 @@ class	DNSSDUnitTest
 		fRegTest = new RegTest();
 		new BrowseTest();
 		new DomainTest();
+		new RegistrarTest();
 		
 		this.waitForEnd();
 	}
@@ -323,5 +327,32 @@ class	QueryTest extends TermReporter implements QueryListener
 			System.out.println( "Query data is:" + dataTxt);
 		} catch( Exception e) { e.printStackTrace(); }
 	}
+}
+
+class	RegistrarTest extends TermReporter implements RegisterRecordListener
+{
+	public		RegistrarTest()
+	{
+		try {
+			byte[]	kResponsiblePerson = { 'g','r','o','v','e','r' };
+			fRegistrar = DNSSD.createRecordRegistrar( this);
+			fRegistrar.registerRecord( DNSSD.UNIQUE, 0,
+					"test.registrartest.local", 17 /*ns_t_rp*/, 1, kResponsiblePerson, 3600);
+		} catch( Exception e) { e.printStackTrace(); }
+	}
+
+	public void	recordRegistered( DNSRecord record, int flags)
+	{
+		String s = "RegistrarTest result flags:" + String.valueOf( flags);
+		System.out.println( s);
+
+		try {
+			byte[]	kResponsiblePerson = { 'e','l','m','o' };
+			record.update( 0, kResponsiblePerson, 3600);
+			record.remove();
+		} catch( Exception e) { e.printStackTrace(); }
+	}
+
+	protected DNSSDRecordRegistrar	fRegistrar;
 }
 

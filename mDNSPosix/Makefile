@@ -29,6 +29,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.71  2006/06/20 23:07:04  rpantos
+# <rdar://problem/3839132> Java needs to implement DNSServiceRegisterRecord equivalent
+#
 # Revision 1.70  2006/05/03 23:35:10  cheshire
 # Add missing dependency: NetMonitor.c textually imports mDNS.c
 #
@@ -599,6 +602,8 @@ JARCONTENTS =	$(OBJDIR)/com/apple/dnssd/DNSSDService.class \
 				$(OBJDIR)/com/apple/dnssd/RegisterListener.class \
 				$(OBJDIR)/com/apple/dnssd/QueryListener.class \
 				$(OBJDIR)/com/apple/dnssd/DomainListener.class \
+				$(OBJDIR)/com/apple/dnssd/RegisterRecordListener.class \
+				$(OBJDIR)/com/apple/dnssd/DNSSDRecordRegistrar.class \
 				$(OBJDIR)/com/apple/dnssd/DNSSD.class
 
 $(BUILDDIR)/dns_sd.jar: $(JARCONTENTS) setup

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.14  2006/06/20 23:03:35  rpantos
+<rdar://problem/3839132> Java needs to implement DNSServiceRegisterRecord equivalent
+
 Revision 1.13  2005/10/26 01:52:24  cheshire
 <rdar://problem/4316286> Race condition in Java code (doesn't work at all on Linux)
 
@@ -674,6 +677,119 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSRecord_Remove( JNIEnv *pEnv,
 }
 
 
+JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRecordRegistrar_CreateConnection( JNIEnv *pEnv, jobject pThis)
+{
+	jclass					cls = (*pEnv)->GetObjectClass( pEnv, pThis);
+	jfieldID				contextField = (*pEnv)->GetFieldID( pEnv, cls, "fNativeContext", "I");
+	OpContext				*pContext = NULL;
+	DNSServiceErrorType		err = kDNSServiceErr_NoError;
+
+	if ( contextField != 0)
+		pContext = NewContext( pEnv, pThis, "recordRegistered", "(Lcom/apple/dnssd/DNSRecord;I)V");
+	else
+		err = kDNSServiceErr_BadParam;
+
+	if ( pContext != NULL)
+	{
+		err = DNSServiceCreateConnection( &pContext->ServiceRef);
+		if ( err == kDNSServiceErr_NoError)
+		{
+			(*pEnv)->SetIntField( pEnv, pThis, contextField, (jint) pContext);
+		}
+	}
+	else
+		err = kDNSServiceErr_NoMemory;
+
+	return err;
+}
+
+struct RecordRegistrationRef
+{
+	OpContext		*Context;
+	jobject			RecordObj;
+};
+typedef struct RecordRegistrationRef	RecordRegistrationRef;
+
+static void DNSSD_API	RegisterRecordReply( DNSServiceRef sdRef _UNUSED, 
+								DNSRecordRef recordRef _UNUSED, DNSServiceFlags flags, 
+								DNSServiceErrorType errorCode, void *context)
+{
+	RecordRegistrationRef	*regEnvelope = (RecordRegistrationRef*) context;
+	OpContext		*pContext = regEnvelope->Context;
+
+	SetupCallbackState( &pContext->Env);
+
+	if ( pContext->ClientObj != NULL && pContext->Callback != NULL)
+	{	
+		if ( errorCode == kDNSServiceErr_NoError)
+		{	
+			(*pContext->Env)->CallVoidMethod( pContext->Env, pContext->ClientObj, pContext->Callback, 
+												regEnvelope->RecordObj, flags);
+		}
+		else
+			ReportError( pContext->Env, pContext->ClientObj, pContext->JavaObj, errorCode);
+	}
+
+	(*pContext->Env)->DeleteWeakGlobalRef( pContext->Env, regEnvelope->RecordObj);
+	free( regEnvelope);
+
+	TeardownCallbackState();
+}
+
+JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRecordRegistrar_RegisterRecord( JNIEnv *pEnv, jobject pThis, 
+							jint flags, jint ifIndex, jstring fullname, jint rrType, jint rrClass, 
+							jbyteArray rData, jint ttl, jobject destObj)
+{
+	jclass					cls = (*pEnv)->GetObjectClass( pEnv, pThis);
+	jfieldID				contextField = (*pEnv)->GetFieldID( pEnv, cls, "fNativeContext", "I");
+	jclass					destCls = (*pEnv)->GetObjectClass( pEnv, destObj);
+	jfieldID				recField = (*pEnv)->GetFieldID( pEnv, destCls, "fRecord", "I");
+	const char				*nameStr = SafeGetUTFChars( pEnv, fullname);
+	OpContext				*pContext = NULL;
+	DNSServiceErrorType		err = kDNSServiceErr_NoError;
+	jbyte					*pBytes;
+	jsize					numBytes;
+	DNSRecordRef			recRef;
+	RecordRegistrationRef	*regEnvelope;
+
+	if ( contextField != 0)
+		pContext = (OpContext*) (*pEnv)->GetIntField( pEnv, pThis, contextField);
+	if ( pContext == NULL || pContext->ServiceRef == NULL || nameStr == NULL)
+		return kDNSServiceErr_BadParam;
+
+	regEnvelope = calloc( 1, sizeof *regEnvelope);
+	if ( regEnvelope == NULL)
+		return kDNSServiceErr_NoMemory;
+	regEnvelope->Context = pContext;
+	regEnvelope->RecordObj = (*pEnv)->NewWeakGlobalRef( pEnv, destObj);	// must convert local ref to global to cache
+
+	pBytes = (*pEnv)->GetByteArrayElements( pEnv, rData, NULL);
+	numBytes = (*pEnv)->GetArrayLength( pEnv, rData);
+
+	err = DNSServiceRegisterRecord( pContext->ServiceRef, &recRef, flags, ifIndex, 
+									nameStr, rrType, rrClass, numBytes, pBytes, ttl,
+									RegisterRecordReply, regEnvelope);
+
+	if ( err == kDNSServiceErr_NoError)
+	{
+		(*pEnv)->SetIntField( pEnv, destObj, recField, (jint) recRef);
+	}
+	else
+	{
+		if ( regEnvelope->RecordObj != NULL)
+			(*pEnv)->DeleteWeakGlobalRef( pEnv, regEnvelope->RecordObj);
+		free( regEnvelope);
+	}
+
+	if ( pBytes != NULL)
+		(*pEnv)->ReleaseByteArrayElements( pEnv, rData, pBytes, 0);
+
+	SafeReleaseUTFChars( pEnv, fullname, nameStr);
+
+	return err;
+}
+
+
 static void DNSSD_API	ServiceQueryReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex,
 								DNSServiceErrorType errorCode, const char *serviceName,
 								uint16_t rrtype, uint16_t rrclass, uint16_t rdlen,
@@ -846,7 +962,7 @@ JNIEXPORT jstring JNICALL Java_com_apple_dnssd_AppleDNSSD_GetNameForIfIndex( JNI
 {
 	char					*p = LOCAL_ONLY_NAME, nameBuff[IF_NAMESIZE];
 
-	if (ifIndex != kDNSServiceInterfaceIndexLocalOnly)
+	if (ifIndex != (jint) kDNSServiceInterfaceIndexLocalOnly)
 		p = if_indextoname( ifIndex, nameBuff );
 
 	return (*pEnv)->NewStringUTF( pEnv, p);
