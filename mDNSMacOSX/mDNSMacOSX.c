@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.331  2006/06/21 22:29:42  cheshire
+Make _CFCopySystemVersionDictionary() call more defensive on systems that have no build information set
+
 Revision 1.330  2006/06/20 23:06:00  cheshire
 Fix some keychain API type mismatches (was mDNSu32 instead of UInt32)
 
@@ -3404,7 +3407,7 @@ CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;
 mDNSexport int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 	{
 	int major = 0, minor = 0;
-	char letter = 0, prodname[256]="Mac OS X", prodvers[256]="", buildver[256]="?";
+	char letter = 0, prodname[256]="<Unknown>", prodvers[256]="<Unknown>", buildver[256]="<Unknown>";
 	CFDictionaryRef vers = _CFCopySystemVersionDictionary();
 	if (vers)
 		{
@@ -3417,6 +3420,7 @@ mDNSexport int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 		sscanf(buildver, "%d%c%d", &major, &letter, &minor);
 		CFRelease(vers);
 		}
+	if (!major) { major=8; LogMsg("Note: No Major Build Version number found; assuming 8"); }
 	if (HINFO_SWstring) mDNS_snprintf(HINFO_SWstring, 256, "%s %s (%s), %s", prodname, prodvers, buildver, mDNSResponderVersionString);
 	return(major);
 	}
