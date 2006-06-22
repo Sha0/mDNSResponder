@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.102  2006/06/22 19:49:11  cheshire
+Added (commented out) definitions for the LLMNR UDP port and multicast addresses
+
 Revision 1.101  2006/06/15 21:35:15  cheshire
 Move definitions of mDNS_vsnprintf, mDNS_SetupResourceRecord, and some constants
 from mDNS.c to DNSCommon.c, so they can be accessed from dnsextd code
@@ -390,11 +393,19 @@ mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any        = 0;
 mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly  = (mDNSInterfaceID)1;
 
-#define UnicastDNSPortAsNumber   53
-#define NATPMPPortAsNumber       5351
-#define DNSEXTPortAsNumber       5352		// Port used for end-to-end DNS operations like LLQ, Updates with Leases, etc.
-#define MulticastDNSPortAsNumber 5353
-#define LoopbackIPCPortAsNumber  5354
+// Note: Microsoft's proposed "Link Local Multicast Name Resolution Protocol" (LLMNR) is essentially a limited version of
+// Multicast DNS, using the same packet formats, naming syntax, and record types as Multicast DNS, but on a different UDP
+// port and multicast address, which means it won't interoperate with the existing installed base of Multicast DNS responders.
+// LLMNR uses IPv4 multicast address 224.0.0.252, IPv6 multicast address FF02::0001:0003, and UDP port 5355.
+// Uncomment the appropriate lines below to build a special Multicast DNS responder for testing interoperability
+// with Microsoft's LLMNR client code.
+
+#define   UnicastDNSPortAsNumber   53
+#define   NATPMPPortAsNumber       5351
+#define   DNSEXTPortAsNumber       5352		// Port used for end-to-end DNS operations like LLQ, Updates with Leases, etc.
+#define   MulticastDNSPortAsNumber 5353
+#define   LoopbackIPCPortAsNumber  5354
+//#define MulticastDNSPortAsNumber 5355		// LLMNR
 
 mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
 mDNSexport const mDNSIPPort NATPMPPort         = { { NATPMPPortAsNumber       >> 8, NATPMPPortAsNumber       & 0xFF } };
@@ -404,7 +415,9 @@ mDNSexport const mDNSIPPort LoopbackIPCPort    = { { LoopbackIPCPortAsNumber  >>
 
 mDNSexport const mDNSv4Addr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
+//mDNSexport const mDNSAddr AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 252 } } } }; // LLMNR
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };
+//mDNSexport const mDNSAddr AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x01,0x00,0x03 } } } }; // LLMNR
 
 mDNSexport const mDNSOpaque16 zeroID          = { { 0, 0 } };
 mDNSexport const mDNSOpaque16 QueryFlags      = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery,                0 } };
