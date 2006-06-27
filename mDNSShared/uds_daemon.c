@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.198  2006/06/27 20:16:07  cheshire
+Fix code layout
+
 Revision 1.197  2006/05/18 01:32:35  cheshire
 <rdar://problem/4472706> iChat: Lost connection with Bonjour
 (mDNSResponder insufficiently defensive against malformed browsing PTR responses)
@@ -1746,7 +1749,7 @@ mDNSlocal void question_result_callback(mDNS *const m, DNSQuestion *question, co
     rep =  create_reply(query_reply, len, req);
 
     rep->rhdr->flags = dnssd_htonl(AddRecord ? kDNSServiceFlagsAdd : 0);
-    rep->rhdr->ifi =  dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
+    rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
     rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
     data = rep->sdata;
