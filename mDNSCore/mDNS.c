@@ -25,7 +25,7 @@
  * from outside the mDNS project -- all the types it expects to find are defined right here.
  * 
  * The previous point is very important: This file does not depend on any external
- * header files. It should complile on *any* platform that has a C compiler, without
+ * header files. It should compile on *any* platform that has a C compiler, without
  * making *any* assumptions about availability of so-called "standard" C functions,
  * routines, or types (which may or may not be present on any given platform).
 
@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.542  2006/06/27 23:40:29  cheshire
+Fix typo in comment: mis-spelled "compile"
+
 Revision 1.541  2006/06/27 19:46:24  cheshire
 Updated comments and debugging messages
 
