@@ -922,8 +922,22 @@ DNSServiceErrorType DNSSD_API DNSServiceBrowse
  *
  * txtRecord:       The service's primary txt record, in standard txt record format.
  *
-
  * context:         The context pointer that was passed to the callout.
+ *
+ * NOTE: In earlier versions of this header file, the txtRecord parameter was declared "const char *"
+ * This is incorrect, since it contains length bytes which are values in the range 0 to 255, not -128 to +127.
+ * Depending on your compiler settings, this change may cause signed/unsigned mismatch warnings.
+ * These should be fixed by updating your own callback function definition to match the corrected
+ * function signature using "const unsigned char *txtRecord". Making this change may also fix inadvertent
+ * bugs in your callback function, where it could have incorrectly interpreted a length byte with value 250
+ * as being -6 instead, with various bad consequences ranging from incorrect operation to software crashes.
+ * If you need to maintain portable code that will compile cleanly with both the old and new versions of
+ * this header file, you should update your callback function definition to use the correct unsigned value,
+ * and then in the place where you pass your callback function to DNSServiceResolve(), use a cast to eliminate
+ * the compiler warning, e.g.:
+ *   DNSServiceResolve(sd, flags, index, name, regtype, domain, (DNSServiceResolveReply)MyCallback, context);
+ * This will ensure that your code compiles cleanly without warnings (and more importantly, works correctly)
+ * with both the old header and with the new corrected version.
  *
  */
 
@@ -937,7 +951,7 @@ typedef void (DNSSD_API *DNSServiceResolveReply)
     const char                          *hosttarget,
     uint16_t                            port,
     uint16_t                            txtLen,
-    const char                          *txtRecord,
+    const unsigned char                 *txtRecord,
     void                                *context
     );
 

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.15  2006/06/27 19:34:43  cheshire
+<rdar://problem/4430023> txtRecord parameter of DNSServiceResolveReply() should be unsigned char *
+
 Revision 1.14  2006/06/20 23:03:35  rpantos
 <rdar://problem/3839132> Java needs to implement DNSServiceRegisterRecord equivalent
 
@@ -419,7 +422,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleBrowser_CreateBrowser( JNIEnv *
 
 static void DNSSD_API	ServiceResolveReply( DNSServiceRef sdRef _UNUSED, DNSServiceFlags flags, uint32_t interfaceIndex,
 								DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget,
-								uint16_t port, uint16_t txtLen, const char *txtRecord, void *context)
+								uint16_t port, uint16_t txtLen, const unsigned char *txtRecord, void *context)
 {
 	OpContext		*pContext = (OpContext*) context;
 	jclass			txtCls;
