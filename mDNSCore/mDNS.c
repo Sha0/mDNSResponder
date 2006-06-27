@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.541  2006/06/27 19:46:24  cheshire
+Updated comments and debugging messages
+
 Revision 1.540  2006/06/15 21:35:16  cheshire
 Move definitions of mDNS_vsnprintf, mDNS_SetupResourceRecord, and some constants
 from mDNS.c to DNSCommon.c, so they can be accessed from dnsextd code
@@ -3125,18 +3128,30 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		}
 	}
 
+// When we have a query looking for a specified name, but there appear to be no answers with
+// that name, ReconfirmAntecedents() is called with depth=0 to start the reconfirmation process
+// for any records in our cache that reference the given name (e.g. PTR and SRV records).
+// For any such cache record we find, we also recursively call ReconfirmAntecedents() for *its* name.
+// We increment depth each time we recurse, to guard against possible infinite loops, with a limit of 5.
+// A typical reconfirmation scenario might go like this:
+// Depth 0: Name "myhost.local" has no address records
+// Depth 1: SRV "My Service._example._tcp.local." refers to "myhost.local"; may be stale
+// Depth 2: PTR "_example._tcp.local." refers to "My Service"; may be stale
+// Depth 3: PTR "_services._dns-sd._udp.local." refers to "_example._tcp.local."; may be stale
+// Currently depths 4 and 5 are not expected to occur; if we did get to depth 5 we'd reconfim any records we
+// found referring to the given name, but not recursively descend any further reconfirm *their* antecedents.
 mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name, mDNSu32 namehash, int depth)
 	{
 	mDNSu32 slot;
 	CacheGroup *cg;
 	CacheRecord *cr;
-	LogOperation("ReconfirmAntecedents %d for %##s", depth, name->c);
+	debugf("ReconfirmAntecedents (depth=%d) for %##s", depth, name->c);
 	FORALL_CACHERECORDS(slot, cg, cr)
 		{
 		domainname *crtarget = GetRRDomainNameTarget(&cr->resrec);
 		if (crtarget && cr->resrec.rdatahash == namehash && SameDomainName(crtarget, name))
 			{
-			debugf("ReconfirmAntecedents: Reconfirm %s", CRDisplayString(m, cr));
+			LogOperation("ReconfirmAntecedents: Reconfirming (depth=%d) %s", depth, CRDisplayString(m, cr));
 			mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
 			if (depth < 5) ReconfirmAntecedents(m, cr->resrec.name, cr->resrec.namehash, depth+1);
 			}
@@ -3316,6 +3331,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 						q->ThisQInterval = MaxQuestionInterval;
 					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * 8)
 						{
+						// Generally don't need to log this.
+						// It's not especially noteworthy if a query finds no results -- this usually happens for domain
+						// enumeration queries in the LL subdomain (e.g. "db._dns-sd._udp.0.0.254.169.in-addr.arpa")
+						// and when there simply happen to be no instances of the service the client is looking
+						// for (e.g. iTunes is set to look for RAOP devices, and the current network has none).
 						debugf("SendQueries: Zero current answers for %##s (%s); will reconfirm antecedents",
 							q->qname.c, DNSTypeName(q->qtype));
 						// Sending third query, and no answers yet; time to begin doubting the source
@@ -3750,7 +3770,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 				}
 			if (q->CurrentAnswers == 0)
 				{
-				debugf("CacheRecordRmv: Zero current answers for %##s (%s); will reconfirm antecedents",
+				LogOperation("CacheRecordRmv: Last answer for %##s (%s) expired from cache; will reconfirm antecedents",
 					q->qname.c, DNSTypeName(q->qtype));
 				ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
 				}
