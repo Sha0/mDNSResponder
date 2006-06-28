@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.50  2006/06/28 08:22:27  cheshire
+<rdar://problem/4605264> dnssd_clientstub.c needs to report unlink failures in syslog
+
 Revision 1.49  2006/06/28 07:58:59  cheshire
 Minor textual tidying
 
@@ -193,6 +196,8 @@ IsSystemServiceDisabled();
 #define sockaddr_mdns sockaddr_un
 #define AF_MDNS AF_LOCAL
 #endif
+
+#include <syslog.h>
 
 #include "dnssd_ipc.h"
 
@@ -435,6 +440,7 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 #ifndef NOT_HAVE_SA_LEN
 			caddr.sun_len = sizeof(struct sockaddr_un);
 #endif
+			//syslog(LOG_WARNING, "deliver_request: creating UDS: %s\n", data);
 			strcpy(caddr.sun_path, data);
 			ret = bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr));
 			umask(mask);
@@ -445,6 +451,8 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
 		}
 
 	ConvertHeaderBytes(hdr);
+	//syslog(LOG_WARNING, "deliver_request writing %ld bytes\n", datalen + sizeof(ipc_msg_hdr));
+	//syslog(LOG_WARNING, "deliver_request name is %s\n", (char *)msg + sizeof(ipc_msg_hdr));
     if (write_all(sdr->sockfd, msg, datalen + sizeof(ipc_msg_hdr)) < 0)
         goto cleanup;
     free(msg);
@@ -453,8 +461,10 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
     if (reuse_sd) errsd = sdr->sockfd;
     else
         {
+		//syslog(LOG_WARNING, "deliver_request: accept\n");
         len = sizeof(daddr);
         errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
+		//syslog(LOG_WARNING, "deliver_request: accept returned %d\n", errsd);
         if (errsd < 0)  goto cleanup;
         }
 
@@ -463,12 +473,20 @@ static DNSServiceErrorType deliver_request(void *msg, DNSServiceRef sdr, int reu
     else
     	err = ntohl(err);
 
+	//syslog(LOG_WARNING, "deliver_request: retrieved error code %d\n", err);
+
 cleanup:
-    if (!reuse_sd && listenfd > 0) dnssd_close(listenfd);
-    if (!reuse_sd && errsd > 0) dnssd_close(errsd);
+	if (!reuse_sd)
+		{
+		if (listenfd > 0) dnssd_close(listenfd);
+		if (errsd    > 0) dnssd_close(errsd);
 #if !defined(USE_TCP_LOOPBACK)
-    if (!reuse_sd && data) unlink(data);
+		// syslog(LOG_WARNING, "deliver_request: removing UDS: %s\n", data);
+		if (unlink(data) != 0)
+			syslog(LOG_WARNING, "WARNING: unlink(\"%s\") failed errno %d (%s)", data, errno, strerror(errno));
+		// else syslog(LOG_WARNING, "deliver_request: removed UDS: %s\n", data);
 #endif
+		}
     if (msg) free(msg);
     return err;
     }
