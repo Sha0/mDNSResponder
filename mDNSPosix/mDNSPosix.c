@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.78  2006/06/28 09:12:22  cheshire
+Added debugging message
+
 Revision 1.77  2006/03/19 02:00:11  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -895,6 +898,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 			{
 			imr6.ipv6mr_multiaddr       = *(const struct in6_addr*)&AllDNSLinkGroupv6;
 			imr6.ipv6mr_interface       = interfaceIndex;
+			//LogMsg("Joining %.16a on %d", &imr6.ipv6mr_multiaddr, imr6.ipv6mr_interface);
 			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_JOIN_GROUP, &imr6, sizeof(imr6));
 			if (err < 0)
 				{
