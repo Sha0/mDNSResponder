@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.200  2006/06/28 08:56:26  cheshire
+Added "_op" to the end of the operation code enum values,
+to differentiate them from the routines with the same names
+
 Revision 1.199  2006/06/28 08:53:39  cheshire
 Added (commented out) debugging messages
 
@@ -1708,7 +1712,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
     len += res->txtlen;
     
     // allocate/init reply header
-    rep =  create_reply(resolve_reply, len, rs);
+    rep =  create_reply(resolve_reply_op, len, rs);
     rep->rhdr->flags = dnssd_htonl(0);
     rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
     rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
@@ -1756,7 +1760,7 @@ mDNSlocal void question_result_callback(mDNS *const m, DNSQuestion *question, co
     ConvertDomainNameToCString(answer->name, name);
     len += strlen(name) + 1;
     
-    rep =  create_reply(query_reply, len, req);
+    rep =  create_reply(query_reply_op, len, req);
 
     rep->rhdr->flags = dnssd_htonl(AddRecord ? kDNSServiceFlagsAdd : 0);
     rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
@@ -1982,7 +1986,7 @@ mDNSlocal mStatus GenerateNTDResponse(domainname *servicename, mDNSInterfaceID i
 		len += (int) (strlen(domstr) + 1);
 		
 		// Build reply header
-		*rep = create_reply(query_reply, len, request);
+		*rep = create_reply(query_reply_op, len, request);
 		(*rep)->rhdr->flags = dnssd_htonl(0);
 		(*rep)->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, id));
 		(*rep)->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
@@ -2570,7 +2574,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		    request_state *rs = instance->request;
 			if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
-			if (!SuppressError && deliver_async_error(rs, reg_service_reply, result) < 0)
+			if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
                 {
                 abort_request(rs);
                 unlink_request(rs);
@@ -2584,7 +2588,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
         if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
-        if (!SuppressError && deliver_async_error(rs, reg_service_reply, result) < 0)
+        if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
             {
             abort_request(rs);
             unlink_request(rs);
@@ -2882,7 +2886,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
     len += sizeof(uint32_t);                //interfaceIndex
     len += sizeof(DNSServiceErrorType);
     
-    reply = create_reply(reg_record_reply, len, rstate);
+    reply = create_reply(reg_record_reply_op, len, rstate);
     reply->mhdr->client_context = re->client_context;
     reply->rhdr->flags = dnssd_htonl(0);
     reply->rhdr->ifi = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, rr->resrec.InterfaceID));
@@ -3108,7 +3112,7 @@ mDNSlocal reply_state *format_enumeration_reply(request_state *rstate, const cha
     len += sizeof(DNSServiceErrorType);
     len += strlen(domain) + 1;
 
-    reply = create_reply(enumeration_reply, len, rstate);
+    reply = create_reply(enumeration_reply_op, len, rstate);
     reply->rhdr->flags = dnssd_htonl(flags);
     reply->rhdr->ifi = dnssd_htonl(ifi);
     reply->rhdr->error = dnssd_htonl(err);
