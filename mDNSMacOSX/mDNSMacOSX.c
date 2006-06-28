@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.332  2006/06/28 09:10:36  cheshire
+Extra debugging messages
+
 Revision 1.331  2006/06/21 22:29:42  cheshire
 Make _CFCopySystemVersionDictionary() call more defensive on systems that have no build information set
 
@@ -1244,6 +1247,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const
 		if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
 
 	// Not found. Make sure our interface list is up to date, then try again.
+	LogOperation("InterfaceID for interface index %d not found; Updating interface list", index);
 	mDNSMacOSXNetworkChanged(m);
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
@@ -1262,6 +1266,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 		if ((mDNSInterfaceID)i == id) return(i->scope_id);
 
 	// Not found. Make sure our interface list is up to date, then try again.
+	LogOperation("Interface index for InterfaceID %p not found; Updating interface list", id);
 	mDNSMacOSXNetworkChanged(m);
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if ((mDNSInterfaceID)i == id) return(i->scope_id);
@@ -1514,6 +1519,7 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 			senderAddr.type = mDNSAddrType_IPv6;
 			senderAddr.ip.v6 = *(mDNSv6Addr*)&sin6->sin6_addr;
 			senderPort.NotAnInteger = sin6->sin6_port;
+			//LogOperation("myCFSocketCallBack received IPv6 packet from %#a to %#a", &senderAddr, &destAddr);
 			}
 		else
 			{
@@ -2016,6 +2022,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, co
 			// Add multicast group membership on this interface, if it's for multicast receiving
 			int interface_id = if_nametoindex(cp->info->ifa_name);
 			struct ipv6_mreq i6mr;
+			//LogOperation("SetupSocket: v6 %#a %s %d", ifaddr, cp->info->ifa_name, interface_id);
 			i6mr.ipv6mr_interface = interface_id;
 			i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
 			err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
