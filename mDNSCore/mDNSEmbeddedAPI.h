@@ -60,6 +60,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.294  2006/06/28 06:50:08  cheshire
+In future we may want to change definition of mDNSs32 from "signed long" to "signed int"
+I doubt anyone is building mDNSResponder on systems where int is 16-bits,
+but lets add a compile-time assertion to make sure.
+
 Revision 1.293  2006/06/12 18:00:43  cheshire
 To make code a little more defensive, check _ILP64 before _LP64,
 in case both are set by mistake on some platforms
@@ -1143,6 +1148,8 @@ typedef unsigned int   mDNSu32;
 #else
 typedef   signed long  mDNSs32;
 typedef unsigned long  mDNSu32;
+//typedef   signed int mDNSs32;
+//typedef unsigned int mDNSu32;
 #endif
 
 // To enforce useful type checking, we make mDNSInterfaceID be a pointer to a dummy struct
@@ -2812,6 +2819,7 @@ struct mDNS_CompileTimeAssertionChecks
 	char assertA[(sizeof(mDNSOpaque32)     ==   4                          ) ? 1 : -1];
 	char assertB[(sizeof(mDNSOpaque128)    ==  16                          ) ? 1 : -1];
 	char assertC[(sizeof(CacheRecord  )    >=  sizeof(CacheGroup)          ) ? 1 : -1];
+	char assertD[(sizeof(int)              >=  4                           ) ? 1 : -1];
 	};
 
 // ***************************************************************************
