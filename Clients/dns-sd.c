@@ -63,6 +63,9 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 (may require that you run a Visual Studio script such as vsvars32.bat first)
 */
 
+// For testing changes to dnssd_clientstub.c, uncomment this line and the #include below
+// #define __APPLE_API_PRIVATE 1
+
 #include "dns_sd.h"
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
@@ -89,6 +92,7 @@ typedef int        pid_t;
 #include <arpa/inet.h>		// For inet_addr()
 #endif
 
+//#include "../mDNSShared/dnssd_clientstub.c"
 
 //*************************************************************************************************************
 // Globals
@@ -105,7 +109,7 @@ static DNSRecordRef record = NULL;
 static char myhinfoW[14] = "\002PC\012Windows XP";
 static char myhinfoX[ 9] = "\003Mac\004OS X";
 static char updatetest[3] = "\002AA";
-static char bigNULL[4096];
+static char bigNULL[8200];
 
 // Note: the select() implementation on Windows (Winsock2) fails with any timeout much larger than this
 #define LONG_TIME 100000000
@@ -499,7 +503,7 @@ static void HandleEvents(void)
 		if (client2) FD_SET(dns_sd_fd2, &readfds);
 
 		// 3. Set up the timeout.
-		tv.tv_sec = timeOut;
+		tv.tv_sec  = timeOut;
 		tv.tv_usec = 0;
 
 		result = select(nfds, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv);
