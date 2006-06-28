@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.199  2006/06/28 08:53:39  cheshire
+Added (commented out) debugging messages
+
 Revision 1.198  2006/06/27 20:16:07  cheshire
 Fix code layout
 
@@ -1367,6 +1370,8 @@ mDNSlocal void request_callback(void *info)
 			return;
 			}
 
+		//LogOperation("request_callback: Opened dedicated errfd %d", errfd);
+
 		#if defined(USE_TCP_LOOPBACK)
 			{
 			mDNSOpaque16 port;
@@ -1386,8 +1391,10 @@ mDNSlocal void request_callback(void *info)
 			strcpy(cliaddr.sun_path, ctrl_path);
 			}
 		#endif
+		//LogOperation("request_callback: Connecting to “%s”", cliaddr.sun_path);
 		if (connect(errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
 			{
+			//LogOperation("request_callback: Couldn't connect to “%s”", cliaddr.sun_path);
 			my_perror("ERROR: connect");
 			abort_request(rstate);
 			unlink_request(rstate);
@@ -1414,6 +1421,7 @@ mDNSlocal void request_callback(void *info)
 			default: LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", rstate->sd, rstate->hdr.op);
 			}
 
+		//LogOperation("request_callback: Returning error code %d on socket %d", err, errfd);
 		err = dnssd_htonl(err);
 		nwritten = send(errfd, (dnssd_sockbuf_t) &err, sizeof(err), 0);
 		// On a freshly-created Unix Domain Socket, the kernel should *never* fail to buffer a four-byte write for us.
@@ -1421,7 +1429,9 @@ mDNSlocal void request_callback(void *info)
 		if (nwritten < (int)sizeof(err))
 			LogMsg("ERROR: failed to write error response back to caller: %d %d %s",
 				nwritten, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+		//else LogOperation("request_callback: Returned  error code %d on socket %d", err, errfd);
 		dnssd_close(errfd);
+		//LogOperation("request_callback: Closed errfd %d", errfd);
 		reset_connected_rstate(rstate);		// Reset ready to accept the next request on this pipe
 		}
 	else
@@ -3396,7 +3406,7 @@ mDNSlocal int send_msg(reply_state *rs)
     }
 
 mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state *request)
-{
+	{
     reply_state *reply;
     int totallen;
 
