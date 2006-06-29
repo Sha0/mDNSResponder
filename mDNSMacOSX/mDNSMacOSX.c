@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.333  2006/06/29 05:33:30  cheshire
+<rdar://problem/4607043> mDNSResponder conditional compilation options
+
 Revision 1.332  2006/06/28 09:10:36  cheshire
 Extra debugging messages
 
@@ -1042,7 +1045,9 @@ Minor code tidying
 #include <netinet/ip.h>             // For IPTOS_LOWDELAY etc.
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 
+#ifndef NO_SECURITYFRAMEWORK
 #include <Security/Security.h>
+#endif /* NO_SECURITYFRAMEWORK */
 
 #include "dnsinfo.h"
 
@@ -1166,6 +1171,7 @@ mDNSlocal void RemoveDefRegDomain(domainname *d)
 	debugf("Requested removal of default registration domain %##s not in contained in list", d->c); 
 	}
 
+#ifndef NO_CFUSERNOTIFICATION
 mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both strings are UTF-8 text
 	{
 	static int notifyCount = 0;
@@ -1199,6 +1205,11 @@ mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both s
 	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@\r\r%@"), alertBody, alertFooter);
 	CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
 	}
+#else
+mDNSexport void NotifyOfElusiveBug(__unused const char *title, __unused const char *msg)
+	{
+	}
+#endif /* NO_CFUSERNOTIFICATION */
 
 mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
 	{
@@ -2221,8 +2232,10 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	struct ifaddrs *v6Loopback  = NULL;
 	mDNSEthAddr PrimaryMAC      = zeroEthAddr;
 	char defaultname[32];
+#ifndef NO_IPV6
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
 	if (InfoSocket < 3) LogMsg("UpdateInterfaceList: InfoSocket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
+#endif
 	if (m->SleepState) ifa = NULL;
 
 	while (ifa)
@@ -2278,6 +2291,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 				else
 					{
 					int ifru_flags6 = 0;
+#ifndef NO_IPV6
 					if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 						{
 						struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
@@ -2289,6 +2303,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 							ifru_flags6 = ifr6.ifr_ifru.ifru_flags6;
 						verbosedebugf("%s %.16a %04X %04X", ifa->ifa_name, &sin6->sin6_addr, ifa->ifa_flags, ifru_flags6);
 						}
+#endif
 					if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
 						{
 						if (ifa->ifa_flags & IFF_LOOPBACK)
@@ -2332,7 +2347,10 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 				i->Exists = 2; // State change; need to deregister and reregister this interface
 				}
 			}
+
+#ifndef NO_IPV6
 	if (InfoSocket >= 0) close(InfoSocket);
+#endif
 
 	mDNS_snprintf(defaultname, sizeof(defaultname), "Macintosh-%02X%02X%02X%02X%02X%02X",
 		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
@@ -2439,12 +2457,14 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 					else          LogMsg("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					}
 			
+#ifndef NO_IPV6
 				if (i->sa_family == AF_INET6 && primary->ss.sktv6 == -1)
 					{
 					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, AF_INET6);
 					if (err == 0) debugf("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d",          primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					else          LogMsg("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					}
+#endif
 				}
 			}
 	return count;
@@ -2974,6 +2994,7 @@ mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatu
 
 mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	{
+#ifndef NO_SECURITYFRAMEWORK
 	OSStatus err = 0;
 	char dstring[MAX_ESCAPED_DOMAIN_NAME];
 	UInt32 secretlen;
@@ -3053,6 +3074,10 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	if (err && err != errSecItemNotFound) LogMsg("Error: SetSecretForDomain - %s failed with error code %d", failedfn, err);
 	if (attrList) SecKeychainItemFreeAttributesAndData(attrList, secret);
 	if (itemRef) CFRelease(itemRef);
+#else
+	(void)m; (void)domain;
+	LogMsg("Error: SetSecretForDomain - no keychain support");
+#endif /* NO_SECURITYFRAMEWORK */
 	}
 
 mDNSlocal void SetSCPrefsBrowseDomainsFromCFArray(mDNS *m, CFArrayRef browseDomains, mDNSBool add)
@@ -3360,6 +3385,7 @@ exit:
 	return(err);
 	}
 
+#ifndef NO_IOPOWER
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
 	{
 	mDNS *const m = (mDNS *const)refcon;
@@ -3402,6 +3428,7 @@ mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
 		}
 	return(-1);
 	}
+#endif /* NO_IOPOWER */
 
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
 CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
@@ -3619,6 +3646,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
 	if (mDNSPlatformInit_CanReceiveUnicast())            m->CanReceiveUnicastOn5353 = mDNStrue;
 
+#ifndef NO_HINFO
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
 	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);
 	if (hlen + slen < 254)
@@ -3628,6 +3656,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_HWstring, &m->HIHardware.c[1], hlen);
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
+#endif /* NO_HINFO */
 
  	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;
@@ -3636,16 +3665,20 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->unicastsockets.rlsv4 = m->p->unicastsockets.rlsv6 = NULL;
 	
 	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, AF_INET);
+#ifndef NO_IPV6
 	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, AF_INET6);
+#endif
 
 	struct sockaddr_in s4;
-	struct sockaddr_in6 s6;
 	socklen_t n4 = sizeof(s4);
-	socklen_t n6 = sizeof(s6);
 	if (getsockname(m->p->unicastsockets.sktv4, (struct sockaddr *)&s4, &n4) < 0) LogMsg("getsockname v4 error %d (%s)", errno, strerror(errno));
 	else m->UnicastPort4.NotAnInteger = s4.sin_port;
+#ifndef NO_IPV6
+	struct sockaddr_in6 s6;
+	socklen_t n6 = sizeof(s6);
 	if (getsockname(m->p->unicastsockets.sktv6, (struct sockaddr *)&s6, &n6) < 0) LogMsg("getsockname v6 error %d (%s)", errno, strerror(errno));
 	else m->UnicastPort6.NotAnInteger = s6.sin6_port;
+#endif
 
 	m->p->InterfaceList      = mDNSNULL;
 	m->p->userhostlabel.c[0] = 0;
@@ -3658,8 +3691,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = WatchForNetworkChanges(m);
 	if (err) return(err);
 	
+#ifndef NO_IOPOWER
 	err = WatchForPowerChanges(m);
 	if (err) return err;
+#endif /* NO_IOPOWER */
 
 	DynDNSRegDomain.c[0] = '\0';
 	DynDNSConfigChanged(m);						// Get initial DNS configuration
@@ -3685,7 +3720,9 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), m->p->PowerRLS, kCFRunLoopDefaultMode);
 		CFRunLoopSourceInvalidate(m->p->PowerRLS);
 		CFRelease(m->p->PowerRLS);
+#ifndef NO_IOPOWER
 		IODeregisterForSystemPower(&m->p->PowerNotifier);
+#endif /* NO_IOPOWER */
 		m->p->PowerConnection = 0;
 		m->p->PowerNotifier   = 0;
 		m->p->PowerRLS        = NULL;

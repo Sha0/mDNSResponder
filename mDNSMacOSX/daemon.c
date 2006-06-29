@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.264  2006/06/29 05:33:30  cheshire
+<rdar://problem/4607043> mDNSResponder conditional compilation options
+
 Revision 1.263  2006/06/08 23:23:48  cheshire
 Fix errant indentation of curly brace at the end of provide_DNSServiceBrowserCreate_rpc()
 
@@ -1269,8 +1272,10 @@ mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 						*q = (*q)->next;
 						if (remove->q.LongLived)
 							{
-							// give goodbyes for known answers.  note that since events are sent to client via udns_execute(),
-							// we don't need to worry about the question being cancelled mid-loop
+							// Give goodbyes for known answers.
+							// Note that this a special case where we know that the QuestionCallback function is our own
+							// code (it's FoundInstance), and that callback routine doesn't ever cancel its operation, so we
+							// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
 							CacheRecord *ka = remove->q.uDNS_info.knownAnswers;
 							while (ka) { remove->q.QuestionCallback(&mDNSStorage, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
 							}						
@@ -1780,12 +1785,14 @@ fail:
 	return(err);
 	}
 
-mDNSlocal CFUserNotificationRef gNotification    = NULL;
-mDNSlocal CFRunLoopSourceRef    gNotificationRLS = NULL;
 mDNSlocal domainlabel           gNotificationPrefHostLabel;	// The prefs as they were the last time we saw them
 mDNSlocal domainlabel           gNotificationPrefNiceLabel;
 mDNSlocal domainlabel           gNotificationUserHostLabel;	// The prefs as they were the last time the user changed them
 mDNSlocal domainlabel           gNotificationUserNiceLabel;
+
+#ifndef NO_CFUSERNOTIFICATION
+mDNSlocal CFUserNotificationRef gNotification    = NULL;
+mDNSlocal CFRunLoopSourceRef    gNotificationRLS = NULL;
 
 mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotification, CFOptionFlags responseFlags)
 	{
@@ -1831,6 +1838,7 @@ mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subt
 
 	CFRelease(dictionary);
 	}
+#endif /* NO_CFUSERNOTIFICATION */
 
 // This updates either the text of the field currently labelled "Local Hostname",
 // or the text of the field currently labelled "Computer Name"
@@ -1867,6 +1875,7 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 			LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
 		else if (m->p->NotifyUser)
 			{
+#ifndef NO_CFUSERNOTIFICATION
 			uid_t uid;
 			gid_t gid;
 			CFStringRef userName = SCDynamicStoreCopyConsoleUser(NULL, &uid, &gid);
@@ -1884,6 +1893,9 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 				append(alertHeader, CFSTR("automatically."));
 				ShowNameConflictNotification(alertHeader, subtext);
 				}
+#else
+			(void)subtext;
+#endif /*  NO_CFUSERNOTIFICATION */
 			}
 		if (s0)          CFRelease(s0);
 		if (s1)          CFRelease(s1);
@@ -1916,9 +1928,11 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 			{
 			gNotificationUserHostLabel = gNotificationPrefHostLabel = m->p->userhostlabel;
 			gNotificationUserNiceLabel = gNotificationPrefNiceLabel = m->p->usernicelabel;
+#ifndef NO_CFUSERNOTIFICATION
 			// If we're showing a name conflict notification, and the user has manually edited
 			// the name to remedy the conflict, we should now remove the notification window.
 			if (gNotificationRLS) CFUserNotificationCancel(gNotification);
+#endif /* NO_CFUSERNOTIFICATION */
 			}
 
 		DNSServiceRegistration *r;

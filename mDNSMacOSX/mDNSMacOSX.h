@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.55  2006/06/29 05:33:30  cheshire
+<rdar://problem/4607043> mDNSResponder conditional compilation options
+
 Revision 1.54  2006/03/19 03:27:49  cheshire
 <rdar://problem/4118624> Suppress "interface flapping" logic for loopback
 
@@ -222,6 +225,14 @@ Defines mDNS_PlatformSupport_struct for OS X
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "mDNSEmbeddedAPI.h"  // for domain name structure
+
+#if WORKAROUND_4407067
+#define NO_CFUSERNOTIFICATION 1
+#define NO_SECURITYFRAMEWORK  1
+#define NO_IOPOWER            1
+#define NO_HINFO              1
+#define NO_IPV6               1
+#endif
 
 typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;
 
