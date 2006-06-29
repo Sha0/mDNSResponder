@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.201  2006/06/29 03:02:47  cheshire
+<rdar://problem/4607042> mDNSResponder NXDOMAIN and CNAME support
+
 Revision 1.200  2006/06/28 08:56:26  cheshire
 Added "_op" to the end of the operation code enum values,
 to differentiate them from the routines with the same names
@@ -1506,6 +1509,7 @@ mDNSlocal void handle_query_request(request_state *rstate)
     q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
     q->ExpectUnique     = mDNSfalse;
     q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
+    q->ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME) != 0;
     q->QuestionCallback = question_result_callback;
     q->QuestionContext  = rstate;
 
@@ -1750,6 +1754,12 @@ mDNSlocal void question_result_callback(mDNS *const m, DNSQuestion *question, co
 
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) RESULT %s", req->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
     //mDNS_StopQuery(m, question);
+    
+	if (answer->rdlength == 0)
+		{
+		deliver_async_error(req, query_reply_op, kDNSServiceErr_NoSuchRecord);
+		return;
+		}
     
     // calculate reply data length
     len = sizeof(DNSServiceFlags);
@@ -2195,8 +2205,10 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 					*ptr = (*ptr)->next;
 					if (remove->q.LongLived)
 						{
-						// give goodbyes for known answers.
-						// note that since events are sent to client via udsserver_idle(), we don't need to worry about the question being cancelled mid-loop
+						// Give goodbyes for known answers.
+						// Note that this a special case where we know that the QuestionCallback function is our own
+						// code (it's FoundInstance), and that callback routine doesn't ever cancel its operation, so we
+						// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
 						CacheRecord *ka = remove->q.uDNS_info.knownAnswers;
 						while (ka) { remove->q.QuestionCallback(gmDNS, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
 						}

@@ -145,9 +145,14 @@ enum
      * (queries from hosts more than one hop away; hosts not directly connected to the local link).
      */
 
-    kDNSServiceFlagsForceMulticast      = 0x400
+    kDNSServiceFlagsForceMulticast      = 0x400,
     /* Flag for signifying that a query or registration should be performed exclusively via multicast DNS,
      * even for a name in a domain (e.g. foo.apple.com.) that would normally imply unicast DNS.
+     */
+     
+    kDNSServiceFlagsReturnCNAME         = 0x800
+    /* Flag for returning CNAME records in the DNSServiceQueryRecord call. CNAME records are
+     * normally followed without indicating to the client that there was a CNAME record.
      */
     };
 

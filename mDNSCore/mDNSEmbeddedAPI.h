@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.295  2006/06/29 03:02:43  cheshire
+<rdar://problem/4607042> mDNSResponder NXDOMAIN and CNAME support
+
 Revision 1.294  2006/06/28 06:50:08  cheshire
 In future we may want to change definition of mDNSs32 from "signed long" to "signed int"
 I doubt anyone is building mDNSResponder on systems where int is 16-bits,
@@ -1910,6 +1913,7 @@ struct DNSQuestion_struct
 	mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
 	mDNSBool              ExpectUnique;		// Set by client if it's expecting unique RR(s) for this question, not shared RRs
 	mDNSBool              ForceMCast;		// Set by client to force mDNS query, even for apparently uDNS names
+	mDNSBool              ReturnCNAME;		// Set by client to request callbacks for intermediate CNAME records
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
 	};

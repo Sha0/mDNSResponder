@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.230  2006/06/29 03:02:44  cheshire
+<rdar://problem/4607042> mDNSResponder NXDOMAIN and CNAME support
+
 Revision 1.229  2006/03/02 22:03:41  cheshire
 <rdar://problem/4395331> Spurious warning "GetLargeResourceRecord: m->rec appears to be already in use"
 Refinement: m->rec.r.resrec.RecordType needs to be cleared *every* time around for loop, not just once at the end
@@ -2058,6 +2061,9 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+			// CAUTION: Need to be careful after calling question->QuestionCallback(),
+			// because the client's callback function is allowed to do anything,
+			// including starting/stopping queries, registering/deregistering records, etc.
 			if (question != m->uDNS_info.CurrentQuery)
 				{
 				debugf("deriveGoodbyes - question removed via callback.  returning.");
@@ -2103,6 +2109,9 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			question->QuestionCallback(m, question, &ka->resrec, mDNSfalse);
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+			// CAUTION: Need to be careful after calling question->QuestionCallback(),
+			// because the client's callback function is allowed to do anything,
+			// including starting/stopping queries, registering/deregistering records, etc.
 			if (question != m->uDNS_info.CurrentQuery)
 				{
 				debugf("deriveGoodbyes - question removed via callback.  returning.");
@@ -2139,7 +2148,9 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	const mDNSu8 *ptr;
 	int i;
 	CacheRecord *cr = &m->rec.r;
-	mDNSBool goodbye, inKAList, followedCName = mDNSfalse;
+	mDNSBool goodbye, inKAList;
+	int	followedCNames = 0;
+	static const int maxCNames = 5;
 	LLQ_Info *llqInfo = question->uDNS_info.llq;
 	domainname origname;
 	origname.c[0] = 0;
@@ -2147,6 +2158,40 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	if (question != m->uDNS_info.CurrentQuery)
 		{ LogMsg("ERROR: pktResponseHdnlr called without CurrentQuery ptr set!");  return; }
 
+	if (question->uDNS_info.Answered == 0 && msg->h.numAnswers == 0 && !llq)
+		{
+		/* NXDOMAIN error or empty RR set - notify client */
+		question->uDNS_info.Answered = mDNStrue;
+		
+		/* Create empty resource record */
+		cr->resrec.RecordType = kDNSRecordTypeUnregistered;
+		cr->resrec.InterfaceID = mDNSNULL;
+		cr->resrec.name = &question->qname;
+		cr->resrec.rrtype = question->qtype;
+		cr->resrec.rrclass = question->qclass;
+		cr->resrec.rroriginalttl = 1; /* What should we use for the TTL? TTL from SOA for domain? */
+		cr->resrec.rdlength = 0;
+		cr->resrec.rdestimate = 0;
+		cr->resrec.namehash = 0;
+		cr->resrec.namehash = 0;
+		cr->resrec.rdata = (RData*)&cr->rdatastorage;
+		cr->resrec.rdata->MaxRDLength = cr->resrec.rdlength;
+		
+		/* Pass empty answer to callback */
+		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		question->QuestionCallback(m, question, &cr->resrec, 0);
+		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		// CAUTION: Need to be careful after calling question->QuestionCallback(),
+		// because the client's callback function is allowed to do anything,
+		// including starting/stopping queries, registering/deregistering records, etc.
+		m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
+		if (question != m->uDNS_info.CurrentQuery)
+			{
+			debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning.");
+			return;
+			}
+		}
+	
 	question->uDNS_info.Answered = mDNStrue;
 	
 	ptr = LocateAnswers(msg, end);
@@ -2158,16 +2203,32 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 		if (!ptr) goto pkt_error;
 		if (ResourceRecordAnswersQuestion(&cr->resrec, question))
 			{
+			goodbye = llq ? ((mDNSs32)cr->resrec.rroriginalttl == -1) : mDNSfalse;
 			if (cr->resrec.rrtype == kDNSType_CNAME)
 				{
-				if (followedCName) LogMsg("Error: multiple CNAME referals for question %##s", question->qname.c);
+				if (followedCNames > (maxCNames - 1)) LogMsg("Error: too many CNAME referals for question %##s", &origname);
 				else
 					{
 					debugf("Following cname %##s -> %##s", question->qname.c, cr->resrec.rdata->u.name.c);
+					if (question->ReturnCNAME)
+						{
+						m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+						question->QuestionCallback(m, question, &cr->resrec, !goodbye);
+						m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+						// CAUTION: Need to be careful after calling question->QuestionCallback(),
+						// because the client's callback function is allowed to do anything,
+						// including starting/stopping queries, registering/deregistering records, etc.
+						if (question != m->uDNS_info.CurrentQuery)
+							{
+							m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
+							debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning.");
+							return;
+							}
+						}
 					AssignDomainName(&origname, &question->qname);
 					AssignDomainName(&question->qname, &cr->resrec.rdata->u.name);
 					question->qnamehash = DomainNameHashValue(&question->qname);
-					followedCName = mDNStrue;
+					followedCNames++;
 					i = -1; // restart packet answer matching
 					ptr = LocateAnswers(msg, end);
 					m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
@@ -2175,7 +2236,6 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 					}
 				}
 			
-			goodbye = llq ? ((mDNSs32)cr->resrec.rroriginalttl == -1) : mDNSfalse;
 			inKAList = kaListContainsAnswer(question, cr);
 
 			if ((goodbye && !inKAList) || (!goodbye && inKAList))
@@ -2195,10 +2255,6 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 				return;
 				}
 			}
-		else if (!followedCName || !SameDomainName(cr->resrec.name, &origname))
-			LogMsg("Question %##s %X (%s) %##s unexpected answer %##s %X (%s)",
-				question->qname.c, question->qnamehash, DNSTypeName(question->qtype), origname.c,
-				cr->resrec.name->c, cr->resrec.namehash, DNSTypeName(cr->resrec.rrtype));
 
 		m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
 		}
