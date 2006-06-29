@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.543  2006/06/29 01:38:43  cheshire
+<rdar://problem/4605285> Only request unicast responses on wake from sleep and network connection
+
 Revision 1.542  2006/06/27 23:40:29  cheshire
 Fix typo in comment: mis-spelled "compile"
 
@@ -5485,7 +5488,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->qnamehash         = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
 		question->DelayAnswering    = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
 		question->ThisQInterval     = InitialQuestionInterval * 2;			// MUST be > zero for an active question
-		question->RequestUnicast    = 2;										// Set to 2 because is decremented once *before* we check it
+		question->RequestUnicast    = 0;
 		question->LastQTime         = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
 		question->LastAnswerPktNum  = m->PktNum;
 		question->RecentAnswerPkts  = 0;
