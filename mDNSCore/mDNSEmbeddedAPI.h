@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.296  2006/06/29 05:28:01  cheshire
+Added comment about mDNSlocal and mDNSexport
+
 Revision 1.295  2006/06/29 03:02:43  cheshire
 <rdar://problem/4607042> mDNSResponder NXDOMAIN and CNAME support
 
@@ -1056,6 +1059,19 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 #ifndef mDNSexport
 #define mDNSexport
 #endif
+
+// Explanation: These local/export markers are a little habit of mine for signaling the programmers' intentions.
+// When "mDNSlocal" is just a synonym for "static", and "mDNSexport" is a complete no-op, you could be
+// forgiven for asking what purpose they serve. The idea is that if you see "mDNSexport" in front of a
+// function definition it means the programmer intended it to be exported and callable from other files
+// in the project. If you see "mDNSlocal" in front of a function definition it means the programmer
+// intended it to be private to that file. If you see neither in front of a function definition it
+// means the programmer forgot (so you should work out which it is supposed to be, and fix it).
+// Using "mDNSlocal" instead of "static" makes it easier to do a textual searches for one or the other.
+// For example you can do a search for "static" to find if any functions declare any local variables as "static"
+// (generally a bad idea unless it's also "const", because static storage usually risks being non-thread-safe)
+// without the results being cluttered with hundreds of matches for functions declared static.
+// - Stuart Cheshire
 
 // ***************************************************************************
 // Structure packing macro
