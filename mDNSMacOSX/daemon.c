@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.265  2006/06/29 07:32:08  cheshire
+Added missing LogOperation logging for DNSServiceBrowse results
+
 Revision 1.264  2006/06/29 05:33:30  cheshire
 <rdar://problem/4607043> mDNSResponder conditional compilation options
 
@@ -1223,6 +1226,9 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	DNSServiceBrowserResult **p = &browser->results;
 	while (*p) p = &(*p)->next;
 	*p = x;
+
+	LogOperation("%5d: DNSServiceBrowse(%##s, %s) RESULT %s %s",
+		browser->ClientMachPort, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
 	}
 
 mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainname *d)
