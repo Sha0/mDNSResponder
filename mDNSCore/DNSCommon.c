@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.103  2006/06/29 07:42:14  cheshire
+<rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
+
 Revision 1.102  2006/06/22 19:49:11  cheshire
 Added (commented out) definitions for the LLMNR UDP port and multicast addresses
 
@@ -1289,6 +1292,34 @@ mDNSexport mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2)
 			r1->rrtype == r2->rrtype && 
 			SameDomainName(r1->name, r2->name) &&
 			SameRData(r1, r2));
+	}
+
+// ResourceRecordAnswersQuestion returns mDNStrue if the given resource record is a valid answer to the given question.
+// SameNameRecordAnswersQuestion is the same, except it skips the expensive SameDomainName() call.
+// SameDomainName() is generally cheap when the names don't match, but expensive when they do match,
+// because it has to check all the way to the end of the names to be sure.
+// In cases where we know in advance that the names match it's especially advantageous to skip the
+// SameDomainName() call because that's precisely the time when it's most expensive and least useful.
+
+mDNSexport mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q)
+	{
+	if (rr->InterfaceID &&
+		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
+		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
+
+	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
+	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
+	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+
+#if VerifySameNameAssumptions
+	if (rr->namehash != q->qnamehash || !SameDomainName(rr->name, &q->qname))
+		{
+		LogMsg("Bogus SameNameRecordAnswersQuestion call: RR %##s does not match Q %##s", rr->name->c, q->qname.c);
+		return(mDNSfalse);
+		}
+#endif
+
+	return(mDNStrue);
 	}
 
 mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q)

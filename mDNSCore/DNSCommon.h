@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.35  2006/06/29 07:42:14  cheshire
+<rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
+
 Revision 1.34  2006/03/18 21:47:56  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -249,6 +252,7 @@ extern mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBody *c
 extern mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2);
 
 extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
+extern mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
 
 extern mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2);
 	

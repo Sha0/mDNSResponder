@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.27  2006/06/29 07:42:14  cheshire
+<rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
+
 Revision 1.26  2005/07/04 22:40:26  cheshire
 Additional debugging code to help catch memory corruption
 
@@ -185,6 +188,8 @@ extern void uds_validatelists(void);
 #endif
 
 #define ForceAlerts 0
+
+#define VerifySameNameAssumptions 0
 
 #ifdef	__cplusplus
 	}

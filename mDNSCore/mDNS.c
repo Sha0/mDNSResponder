@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.544  2006/06/29 07:42:14  cheshire
+<rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
+
 Revision 1.543  2006/06/29 01:38:43  cheshire
 <rdar://problem/4605285> Only request unicast responses on wake from sleep and network connection
 
@@ -1953,6 +1956,10 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddR
 // This is used for cache flush management:
 // When sending a unique record, all other records matching "SameResourceRecordSignature" must also be sent
 // When receiving a unique record, all old cache records matching "SameResourceRecordSignature" are flushed
+
+// SameNameSameRecordSignature is the same, except it skips the expensive SameDomainName() check,
+// which is at its most expensive and least useful in cases where we know in advance that the names match
+
 mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!r1) { LogMsg("SameResourceRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
@@ -1965,6 +1972,25 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, c
 		r1->rrclass == r2->rrclass &&
 		r1->namehash == r2->namehash &&
 		SameDomainName(r1->name, r2->name));
+	}
+
+mDNSlocal mDNSBool SameNameSameRecordSignature(const ResourceRecord *const r1, const ResourceRecord *const r2)
+	{
+	if (!r1) { LogMsg("SameNameSameRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
+	if (!r2) { LogMsg("SameNameSameRecordSignature ERROR: r2 is NULL"); return(mDNSfalse); }
+	if (r1->InterfaceID &&
+		r2->InterfaceID &&
+		r1->InterfaceID != r2->InterfaceID) return(mDNSfalse);
+
+#if VerifySameNameAssumptions
+	if (r1->namehash != r2->namehash || !SameDomainName(r1->name, r2->name))
+		{
+		LogMsg("Bogus SameNameSameRecordSignature call: %##s does not match %##s", r1->name->c, r1->name->c);
+		return(mDNSfalse);
+		}
+#endif
+
+	return(r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass);
 	}
 
 // PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if our
@@ -1988,12 +2014,34 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, cons
 
 // IdenticalResourceRecord returns true if two resources records have
 // the same name, type, class, and identical rdata (InterfaceID and TTL may differ)
+
+// IdenticalSameNameRecord is the same, except it skips the expensive SameDomainName() check,
+// which is at its most expensive and least useful in cases where we know in advance that the names match
+
 mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
 	if (!r1) { LogMsg("IdenticalResourceRecord ERROR: r1 is NULL"); return(mDNSfalse); }
 	if (!r2) { LogMsg("IdenticalResourceRecord ERROR: r2 is NULL"); return(mDNSfalse); }
 	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass || r1->namehash != r2->namehash || !SameDomainName(r1->name, r2->name))
 		return(mDNSfalse);
+	return(SameRData(r1, r2));
+	}
+
+mDNSlocal mDNSBool IdenticalSameNameRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
+	{
+	if (!r1) { LogMsg("IdenticalSameNameRecord ERROR: r1 is NULL"); return(mDNSfalse); }
+	if (!r2) { LogMsg("IdenticalSameNameRecord ERROR: r2 is NULL"); return(mDNSfalse); }
+	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass)
+		return(mDNSfalse);
+
+#if VerifySameNameAssumptions
+	if (r1->namehash != r2->namehash || !SameDomainName(r1->name, r2->name))
+		{
+		LogMsg("Bogus IdenticalSameNameRecord call: %##s does not match %##s", r1->name->c, r1->name->c);
+		return(mDNSfalse);
+		}
+#endif
+
 	return(SameRData(r1, r2));
 	}
 
@@ -3066,7 +3114,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		{
 		mDNSu32 forecast = *answerforecast;
 		const mDNSu32 slot = HashSlot(&q->qname);
-		CacheGroup *cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+		const CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
 		CacheRecord *rr;
 		CacheRecord **ka = *kalistptrptr;	// Make a working copy of the pointer we're going to update
 
@@ -3074,7 +3122,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 			if (rr->resrec.InterfaceID == q->SendQNow &&					// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not already in the known answer list
 				rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
-				ResourceRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
+				SameNameRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
 				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >				// and its half-way-to-expiry time is at least 1 second away
 												mDNSPlatformOneSecond)		// (also ensures we never include goodbye records with TTL=1)
 				{
@@ -3123,7 +3171,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)				// For every resource record in our cache,
 			if (rr->resrec.InterfaceID == q->SendQNow &&					// received on this interface
 				rr->NextInKAList == mDNSNULL && ka != &rr->NextInKAList &&	// which is not in the known answer list
-				ResourceRecordAnswersQuestion(&rr->resrec, q))				// which answers our question
+				SameNameRecordAnswersQuestion(&rr->resrec, q))				// which answers our question
 					{
 					rr->UnansweredQueries++;								// indicate that we're expecting a response
 					rr->LastUnansweredTime = m->timenow;
@@ -3228,11 +3276,11 @@ mDNSlocal mDNSBool AccelerateThisQuery(mDNS *const m, DNSQuestion *q)
 		// We forecast: qname (n) type (2) class (2)
 		mDNSu32 forecast = (mDNSu32)DomainNameLength(&q->qname) + 4;
 		const mDNSu32 slot = HashSlot(&q->qname);
-		CacheGroup *cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+		const CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
 		CacheRecord *rr;
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)				// If we have a resource record in our cache,
 			if (rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
-				ResourceRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
+				SameNameRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
 				rr->TimeRcvd + TicksTTL(rr)/2 - m->timenow >= 0 &&			// and it is less than half-way to expiry
 				rr->NextRequiredQuery - (m->timenow + q->ThisQInterval) > 0)// and we'll ask at least once again before NextRequiredQuery
 				{
@@ -3653,10 +3701,9 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 	CacheGroup *cg = CacheGroupForName(m, slot, namehash, name);
 	CacheRecord *rr;
 	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-		if (rr->resrec.namehash == namehash && SameDomainName(rr->resrec.name, name))
-			if (threshhold - RRExpireTime(rr) >= 0)		// If we have records about to expire within a second
-				if (delay - RRExpireTime(rr) < 0)		// then delay until after they've been deleted
-					delay = RRExpireTime(rr);
+		if (threshhold - RRExpireTime(rr) >= 0)		// If we have records about to expire within a second
+			if (delay - RRExpireTime(rr) < 0)		// then delay until after they've been deleted
+				delay = RRExpireTime(rr);
 	if (delay - start > 0) return(NonZeroTime(delay));
 	else return(0);
 	}
@@ -3823,7 +3870,7 @@ mDNSlocal void ReleaseCacheRecord(mDNS *const m, CacheRecord *r)
 // Note: We want to be careful that we deliver all the CacheRecordRmv calls before delivering
 // CacheRecordDeferredAdd calls. The in-order nature of the cache lists ensures that all
 // callbacks for old records are delivered before callbacks for newer records.
-mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *cg)
+mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 	{
 	CacheRecord **rp = &cg->members;
 
@@ -3885,7 +3932,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	CacheRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
 	const mDNSu32 slot = HashSlot(&q->qname);
-	CacheGroup *cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
 
 	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
@@ -3921,7 +3968,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 		}
 
 	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+		if (SameNameRecordAnswersQuestion(&rr->resrec, q))
 			{
 			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
@@ -4558,7 +4605,7 @@ mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, ResourceR
 	CacheGroup *cg = CacheGroupForRecord(m, slot, pktrr);
 	CacheRecord *rr;
 	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-		if (pktrr->InterfaceID == rr->resrec.InterfaceID && IdenticalResourceRecord(pktrr, &rr->resrec)) break;
+		if (pktrr->InterfaceID == rr->resrec.InterfaceID && IdenticalSameNameRecord(pktrr, &rr->resrec)) break;
 	return(rr);
 	}
 
@@ -4660,7 +4707,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			// Make a list indicating which of our own cache records we expect to see updated as a result of this query
 			// Note: Records larger than 1K are not habitually multicast, so don't expect those to be updated
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-				if (ResourceRecordAnswersQuestion(&rr->resrec, &pktq) && rr->resrec.rdlength <= SmallRecordLimit)
+				if (SameNameRecordAnswersQuestion(&rr->resrec, &pktq) && rr->resrec.rdlength <= SmallRecordLimit)
 					if (!rr->NextInKAList && eap != &rr->NextInKAList)
 						{
 						*eap = rr;
@@ -5166,7 +5213,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 				{
 				// If we found this exact resource record, refresh its TTL
-				if (rr->resrec.InterfaceID == InterfaceID && IdenticalResourceRecord(&m->rec.r.resrec, &rr->resrec))
+				if (rr->resrec.InterfaceID == InterfaceID && IdenticalSameNameRecord(&m->rec.r.resrec, &rr->resrec))
 					{
 					if (m->rec.r.resrec.rdlength > InlineCacheRDSize)
 						verbosedebugf("Found record size %5d interface %p already in cache: %s",
@@ -5271,7 +5318,7 @@ exit:
 		CacheFlushRecords = CacheFlushRecords->NextInCFList;
 		r1->NextInCFList = mDNSNULL;
 		for (r2 = cg ? cg->members : mDNSNULL; r2; r2=r2->next)
-			if (SameResourceRecordSignature(&r1->resrec, &r2->resrec))
+			if (SameNameSameRecordSignature(&r1->resrec, &r2->resrec))
 				{
 				// If record was recently positively received
 				// (i.e. not counting goodbye packets or cache flush events that set the TTL to 1)
