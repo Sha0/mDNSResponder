@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.36  2006/07/05 22:56:07  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Update mDNSSendDNSMessage() to use uDNS_TCPSocket type instead of "int"
+
 Revision 1.35  2006/06/29 07:42:14  cheshire
 <rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
 
@@ -354,7 +358,7 @@ extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8
 #endif
 
 extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
-	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd, uDNS_AuthInfo *authInfo);
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, uDNS_AuthInfo *authInfo);
 
 
 // ***************************************************************************
