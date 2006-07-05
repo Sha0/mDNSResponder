@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.334  2006/07/05 23:42:00  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+
 Revision 1.333  2006/06/29 05:33:30  cheshire
 <rdar://problem/4607043> mDNSResponder conditional compilation options
 
@@ -1018,9 +1021,11 @@ Minor code tidying
 
 #include "mDNSEmbeddedAPI.h"          // Defines the interface provided to the client layer above
 #include "DNSCommon.h"
+#include "uDNS.h"
 #include "mDNSMacOSX.h"               // Defines the specific types needed to run mDNS on this platform
 #include "../mDNSShared/uds_daemon.h" // Defines communication interface from platform layer up to UDS daemon
 #include "PlatformCommon.h"
+
 
 #include <stdio.h>
 #include <stdarg.h>                 // For va_list support
@@ -1046,9 +1051,11 @@ Minor code tidying
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 
 #ifndef NO_SECURITYFRAMEWORK
+#include <Security/SecureTransport.h>
 #include <Security/Security.h>
 #endif /* NO_SECURITYFRAMEWORK */
 
+#include <DebugServices.h>
 #include "dnsinfo.h"
 
 // Code contributed by Dave Heller:
@@ -1082,27 +1089,22 @@ typedef struct SearchListElem
 // ***************************************************************************
 // Globals
 
+static mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, mDNSIPPort * inPort, u_short sa_family);
+static void CloseSocketSet(CFSocketSet *ss);
 static mDNSu32 clockdivisor = 0;
-
-// for domain enumeration and default browsing/registration
-static SearchListElem *SearchList = NULL;      // where we search for _browse domains
-static DNSQuestion LegacyBrowseDomainQ;        // our local enumeration query for _legacy._browse domains
-static DNameListElem *DefBrowseList = NULL;    // cache of answers to above query (where we search for empty string browses)
-static DNameListElem *DefRegList = NULL;       // manually generated list of domains where we register for empty string registrations
-static ARListElem *SCPrefBrowseDomains = NULL; // manually generated local-only PTR records for browse domains we get from SCPreferences
-
-static domainname DynDNSRegDomain;             // Default wide-area zone for service registration
-static CFArrayRef DynDNSBrowseDomains = NULL;  // Default wide-area zones for legacy ("empty string") browses
-static domainname DynDNSHostname;
 
 static mDNSBool DomainDiscoveryDisabled = mDNSfalse;
 
+#ifndef NO_SECURITYFRAMEWORK
+static CFArrayRef ServerCerts;
+static SecKeychainRef ServerKC;
+#endif /* NO_SECURITYFRAMEWORK */
+
 #define CONFIG_FILE "/etc/mDNSResponder.conf"
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
-#define SYS_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
+#define SYSTEM_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
 
-// Function Prototypes
-mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add);
+#define TLS_IO_TIMEOUT	10
 
 // ***************************************************************************
 // Functions
@@ -1114,62 +1116,6 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 // to run up the user's bill sending multicast traffic over a link where there's only a single device at the
 // other end, and that device (e.g. a modem bank) is probably not answering Multicast DNS queries anyway.
 #define MulticastInterface(i) ((i->ifa_flags & IFF_MULTICAST) && !(i->ifa_flags & IFF_POINTOPOINT))
-
-// routines to allow access to default domain lists from daemon layer
-
-mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
-	{
-	return mDNS_CopyDNameList(DefBrowseList);
-	}
-
-mDNSexport DNameListElem *mDNSPlatformGetRegDomainList(void)
-	{
-	return mDNS_CopyDNameList(DefRegList);
-	}
-
-// utility routines to manage registration domain lists
-
-mDNSlocal void AddDefRegDomain(domainname *d)
-	{
-	DNameListElem *newelem = NULL, *ptr;
-
-	// make sure name not already in list
-	for (ptr = DefRegList; ptr; ptr = ptr->next)
-		{
-		if (SameDomainName(&ptr->name, d))
-			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
-		}
-	
-	newelem = mallocL("DNameListElem", sizeof(*newelem));
-	if (!newelem) { LogMsg("Error - malloc"); return; }
-	AssignDomainName(&newelem->name, d);
-	newelem->next = DefRegList;
-	DefRegList = newelem;
-
-	DefaultRegDomainChanged(d, mDNStrue);
-	udsserver_default_reg_domain_changed(d, mDNStrue);
-	}
-
-mDNSlocal void RemoveDefRegDomain(domainname *d)
-	{
-	DNameListElem *ptr = DefRegList, *prev = NULL;
-
-	while (ptr)
-		{
-		if (SameDomainName(&ptr->name, d))
-			{
-			if (prev) prev->next = ptr->next;
-			else DefRegList = ptr->next;
-			freeL("DNameListElem", ptr);
-			DefaultRegDomainChanged(d, mDNSfalse);
-			udsserver_default_reg_domain_changed(d, mDNSfalse);
-			return;
-			}
-		prev = ptr;
-		ptr = ptr->next;
-		}
-	debugf("Requested removal of default registration domain %##s not in contained in list", d->c); 
-	}
 
 #ifndef NO_CFUSERNOTIFICATION
 mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both strings are UTF-8 text
@@ -1582,25 +1528,26 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 		// Try calling select() to get another opinion.
 		// Find out about other socket parameter that can help understand why select() says the socket is ready for read
 		// All of this is racy, as data may have arrived after the call to select()
+		static unsigned int numLogMessages = 0;
 		int save_errno = errno;
 		int so_error = -1;
 		int so_nread = -1;
 		int fionread = -1;
 		socklen_t solen = sizeof(int);
 		fd_set readfds;
+		struct timeval timeout;
+		int selectresult;
 		FD_ZERO(&readfds);
 		FD_SET(s1, &readfds);
-		struct timeval timeout;
 		timeout.tv_sec  = 0;
 		timeout.tv_usec = 0;
-		int selectresult = select(s1+1, &readfds, NULL, NULL, &timeout);
+		selectresult = select(s1+1, &readfds, NULL, NULL, &timeout);
 		if (getsockopt(s1, SOL_SOCKET, SO_ERROR, &so_error, &solen) == -1)
 			LogMsg("myCFSocketCallBack getsockopt(SO_ERROR) error %d", errno);
 		if (getsockopt(s1, SOL_SOCKET, SO_NREAD, &so_nread, &solen) == -1)
 			LogMsg("myCFSocketCallBack getsockopt(SO_NREAD) error %d", errno);
 		if (ioctl(s1, FIONREAD, &fionread) == -1)
 			LogMsg("myCFSocketCallBack ioctl(FIONREAD) error %d", errno);
-		static unsigned int numLogMessages = 0;
 		if (numLogMessages++ < 100)
 			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
@@ -1615,44 +1562,360 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 		}
 	}
 
-// TCP socket support for unicast DNS and Dynamic DNS Update
+// TCP socket support
 
-typedef struct
+struct uDNS_TCPSocket_struct
 	{
     TCPConnectionCallback callback;
-    void *context;
-    int connected;
-	} tcpInfo_t;
+	int fd;
+	uDNS_TCPSocketFlags flags;
+#ifndef NO_SECURITYFRAMEWORK
+	SSLContextRef tlsContext;
+#endif /* NO_SECURITYFRAMEWORK */
+	void *context;
+    mDNSBool connected;
+	mDNSBool handshake;
+	CFSocketRef cfSock;
+	};
+
+#ifndef NO_SECURITYFRAMEWORK
+static OSStatus tlsWriteSock( SSLConnectionRef	connection, const void * data, size_t * dataLength )
+	{
+	UInt32			bytesSent = 0;
+	uDNS_TCPSocket	sock = ( uDNS_TCPSocket ) connection;
+	int 			length;
+	UInt32			dataLen = *dataLength;
+	const UInt8	*	dataPtr = (UInt8 *)data;
+	OSStatus		ortn;
+	
+	*dataLength = 0;
+
+    do
+		{
+		int				selectresult;
+		fd_set			fds;
+		struct timeval	tv;
+
+		FD_ZERO( &fds );
+		FD_SET( sock->fd, &fds );
+		tv.tv_sec = TLS_IO_TIMEOUT;
+		tv.tv_usec = 0;
+		
+		selectresult = select(sock->fd + 1, NULL, &fds, NULL, &tv);
+
+		if ( selectresult == 1 )
+			{
+			length = send( sock->fd, ( char* ) dataPtr + bytesSent, dataLen - bytesSent, 0 );
+			}
+		else if ( selectresult == 0 )
+			{
+			length = 0;
+			errno = EAGAIN;
+			break;
+			}
+		else
+			{
+			length = 0;
+			break;
+			}
+    	}
+	while ( ( length > 0 ) && ( ( bytesSent += length ) < dataLen ) );
+	
+	if ( length <= 0 )
+		{
+		if ( errno == EAGAIN )
+			{
+			ortn = errSSLWouldBlock;
+			}
+		else
+			{
+			ortn = ioErr;
+			}
+		}
+	else
+		{
+		ortn = noErr;
+		}
+
+	*dataLength = bytesSent;
+	return ortn;
+	}
+
+
+static OSStatus tlsReadSock( SSLConnectionRef	connection, void * data, size_t * dataLength )
+	{
+	UInt32			bytesToGo = *dataLength;
+	UInt32 			initLen = bytesToGo;
+	UInt8		*	currData = (UInt8 *)data;
+	uDNS_TCPSocket	sock = ( uDNS_TCPSocket ) connection;
+	OSStatus		rtn = noErr;
+	UInt32			bytesRead;
+	int				rrtn;
+	
+	*dataLength = 0;
+
+	for ( ;; )
+		{
+		int				selectresult;
+		fd_set			fds;
+		struct timeval	tv;
+
+		bytesRead = 0;
+
+		FD_ZERO( &fds );
+		FD_SET( sock->fd, &fds );
+		tv.tv_sec  = TLS_IO_TIMEOUT;
+		tv.tv_usec = 0;
+
+		selectresult = select(sock->fd + 1, &fds, NULL, NULL, &tv);
+
+		if ( selectresult == 1 )
+			{
+			rrtn = recv(sock->fd, currData, bytesToGo, 0);
+
+			if ( rrtn <= 0 )
+				{
+				switch ( errno )
+					{
+					case ENOENT:
+						/* connection closed */
+						rtn = errSSLClosedGraceful; 
+						break;
+					case ECONNRESET:
+						rtn = errSSLClosedAbort;
+						break;
+					case EAGAIN:
+						rtn = errSSLWouldBlock;
+						break;
+					default:
+						LogMsg( "ERROR: tlsSockRead: read(%d) error %d\n", (int)bytesToGo, errno );
+						rtn = ioErr;
+						break;
+					}
+				break;
+				}
+			else
+				{
+				bytesRead = rrtn;
+				}
+
+			bytesToGo -= bytesRead;
+			currData  += bytesRead;
+		
+			if ( !bytesToGo )
+				{
+				break;
+				}
+			}
+		else if ( selectresult == 0 )
+			{
+			rtn = errSSLWouldBlock;
+			break;
+			}
+		else
+			{
+			LogMsg( "ERROR: tlsSockRead: select(%d) error %d\n", (int)bytesToGo, errno );
+			rtn = ioErr;
+			break;
+			}
+		}
+
+	*dataLength = initLen - bytesToGo;
+
+	return rtn;
+	}
+
+
+static OSStatus tlsSetupSock( uDNS_TCPSocket sock, mDNSBool server )
+	{
+	mStatus err = mStatus_NoError;
+
+	if ( ( sock->flags & kTCPSocketFlags_UseTLS ) == 0 )
+		{
+		LogMsg( "ERROR: tlsSetupSock: socket is not a TLS socket" );
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+
+	err = SSLNewContext( server, &sock->tlsContext );
+
+	if ( err )
+		{
+		LogMsg( "ERROR: tlsSetupSock: SSLNewContext failed with error code: %d", err );
+		goto exit;
+		}
+
+	err = SSLSetIOFuncs( sock->tlsContext, tlsReadSock, tlsWriteSock );
+
+	if ( err )
+		{
+		LogMsg( "ERROR: tlsSetupSock: SSLSetIOFuncs failed with error code: %d", err );
+		goto exit;
+		}
+
+	err = SSLSetConnection( sock->tlsContext, ( SSLConnectionRef ) sock );
+
+	if ( err )
+		{
+		LogMsg( "ERROR: tlsSetupSock: SSLSetConnection failed with error code: %d", err );
+		goto exit;
+		}
+
+exit:
+
+	return err;
+	}
+#endif /* NO_SECURITYFRAMEWORK */
+
 
 mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType CallbackType, CFDataRef address,
 								   const void *data, void *context)
 	{
-	#pragma unused(CallbackType, address, data)
+	#pragma unused(cfs, CallbackType, address, data)
+	struct uDNS_TCPSocket_struct * sock = context;
 	mDNSBool connect = mDNSfalse;
+	mStatus err = mStatus_NoError;
 	
-	tcpInfo_t *info = context;
-	if (!info->connected)
+	if (!sock->connected)
 		{
-		connect = mDNStrue;
-		info->connected = mDNStrue;  // prevent connected flag from being set in future callbacks
+		connect			= mDNStrue;
+		sock->connected = mDNStrue;  // prevent connected flag from being set in future callbacks
+
+		if ( sock->flags & kTCPSocketFlags_UseTLS )
+			{
+#ifndef NO_SECURITYFRAMEWORK
+			err = tlsSetupSock( sock, mDNSfalse );
+
+			if ( err )
+				{
+				LogMsg( "ERROR: tcpCFSocketCallback: tlsSetupSock failed with error code: %d", err );
+				goto exit;
+				}
+
+			err = SSLHandshake( sock->tlsContext );
+			
+			sock->handshake = mDNStrue;
+			
+			if ( err )
+				{
+				LogMsg( "ERROR: tcpCFSocketCallback: SSLHandshake failed with error code: %d", err );
+				SSLDisposeContext( sock->tlsContext );
+				sock->tlsContext = NULL;
+				goto exit;
+				}
+#else
+			err = mStatus_UnsupportedErr;
+			goto exit;
+#endif /* NO_SECURITYFRAMEWORK */
+			}
 		}
-	info->callback(CFSocketGetNative(cfs), info->context, connect);
+
+exit:
+
+	sock->callback( sock, sock->context, connect, err );
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
-
-mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-										  TCPConnectionCallback callback, void *context, int *descriptor)
-	{
-	int sd, on = 1;  // "on" for setsockopt
-	struct sockaddr_in saddr;
-	CFSocketContext cfContext = { 0, NULL, 0, 0, 0 };
-	tcpInfo_t *info;
-	CFSocketRef sr;
-	CFRunLoopSourceRef rls;
 	
-	(void)InterfaceID;	//!!!KRS use this if non-zero!!!
 
-	*descriptor = 0;
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port )
+	{
+	struct uDNS_TCPSocket_struct	*	sock = mDNSNULL;
+	struct sockaddr_in				addr;
+	socklen_t						len;
+	int								on = 1;  // "on" for setsockopt
+	mStatus							err = mStatus_NoError;
+
+	( void ) m;
+
+	sock = mallocL("mDNSPlatformTCPSocket", sizeof( struct uDNS_TCPSocket_struct ) );
+
+	if ( !sock )
+		{
+		LogMsg("mDNSPlatformTCPSocket: memory allocation failure" );
+		err = mStatus_NoMemoryErr;
+		goto exit;
+		}
+
+	bzero( sock, sizeof( struct uDNS_TCPSocket_struct ) );
+	sock->flags = flags;
+	sock->fd = -1;
+		
+	// Create the socket
+
+	sock->fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sock->fd == -1 )
+		{
+		LogMsg("mDNSPlatformTCPSocket: socket error %d errno %d (%s)", sock->fd, errno, strerror(errno));
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+		
+	// Bind it
+	
+	memset( &addr, 0, sizeof( addr ) );
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl( INADDR_ANY );
+	addr.sin_port = port->NotAnInteger;
+
+	if ( bind( sock->fd, ( struct sockaddr* ) &addr, sizeof( addr ) ) < 0 )
+		{
+		LogMsg( "ERROR: bind %s", strerror( errno ) );
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+
+	// Receive interface identifiers
+
+	if (setsockopt( sock->fd, IPPROTO_IP, IP_RECVIF, &on, sizeof(on)) < 0)
+		{
+		LogMsg("setsockopt IP_RECVIF - %s", strerror(errno));
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+		
+	memset( &addr, 0, sizeof( addr ) );
+	len = sizeof( addr );
+	
+	if (getsockname( sock->fd, ( struct sockaddr* ) &addr, &len ) < 0 )
+		{
+		LogMsg("getsockname - %s", strerror( errno ) );
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+
+	port->NotAnInteger = addr.sin_port;
+
+exit:
+
+	if ( err && sock )
+		{
+		if ( sock->fd != -1 )
+			{
+			close( sock->fd );
+			}
+			
+		freeL( "mDNSPlatformTCPSocket", sock );
+		
+		sock = NULL;
+		}
+
+	return sock;
+	}
+
+
+mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+                                      TCPConnectionCallback callback, void * context )
+	{
+	struct sockaddr_in	saddr;
+	CFSocketContext		cfContext = { 0, NULL, 0, 0, 0 };
+	CFRunLoopSourceRef	rls;
+	mStatus				err = mStatus_NoError;
+
+	sock->callback = callback;
+	sock->context = context;
+
+	(void) InterfaceID;	//!!!KRS use this if non-zero!!!
+
 	if (dst->type != mDNSAddrType_IPv4)
 		{
 		LogMsg("ERROR: mDNSPlatformTCPConnect - attempt to connect to an IPv6 address: opperation not supported");
@@ -1672,41 +1935,27 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 		return mStatus_UnknownErr;
 		}
 
-	sd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sd < 3) { LogMsg("mDNSPlatformTCPConnect: socket error %d errno %d (%s)", sd, errno, strerror(errno)); return mStatus_UnknownErr; }
-
-	// set non-blocking
-	if (fcntl(sd, F_SETFL, O_NONBLOCK) < 0)
-		{
-		LogMsg("ERROR: setsockopt O_NONBLOCK - %s", strerror(errno));
-		return mStatus_UnknownErr;
-		}
-	
-	// receive interface identifiers
-	if (setsockopt(sd, IPPROTO_IP, IP_RECVIF, &on, sizeof(on)) < 0)
-		{
-		LogMsg("setsockopt IP_RECVIF - %s", strerror(errno));
-		return mStatus_UnknownErr;
-		}
 	// set up CF wrapper, add to Run Loop
-	info = mallocL("mDNSPlatformTCPConnect", sizeof(tcpInfo_t));
-	info->callback = callback;
-	info->context = context;
-	cfContext.info = info;
-	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketReadCallBack | kCFSocketConnectCallBack,
-								  tcpCFSocketCallback, &cfContext);
-	if (!sr)
+	cfContext.info = sock;
+	sock->cfSock = CFSocketCreateWithNative(kCFAllocatorDefault, sock->fd, kCFSocketReadCallBack | kCFSocketConnectCallBack, tcpCFSocketCallback, &cfContext);
+	if (!sock->cfSock)
 		{
 		LogMsg("ERROR: mDNSPlatformTCPConnect - CFSocketRefCreateWithNative failed");
-		freeL("mDNSPlatformTCPConnect", info);
 		return mStatus_UnknownErr;
 		}
 
-	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, sr, 0);
+	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, sock->cfSock, 0);
 	if (!rls)
 		{
 		LogMsg("ERROR: mDNSPlatformTCPConnect - CFSocketCreateRunLoopSource failed");
-		freeL("mDNSPlatformTCPConnect", info);
+		return mStatus_UnknownErr;
+		}
+	
+	// Set non-blocking
+
+	if (fcntl( sock->fd, F_SETFL, O_NONBLOCK) < 0)
+		{
+		LogMsg("ERROR: setsockopt O_NONBLOCK - %s", strerror(errno));
 		return mStatus_UnknownErr;
 		}
 	
@@ -1714,79 +1963,580 @@ mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstp
 	CFRelease(rls);
 	
 	// initiate connection wth peer
-	if (connect(sd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
+
+	if (connect( sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS)
 			{
-			info->connected = 0;
-			*descriptor= sd;
+			sock->connected = mDNSfalse;
 			return mStatus_ConnPending;
 			}
 		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: %s", strerror(errno));
-		freeL("mDNSPlatformTCPConnect", info);
-		CFSocketInvalidate(sr);		// Note: Also closes the underlying socket
+		CFSocketInvalidate( sock->cfSock );		// Note: Also closes the underlying socket
+		CFRelease( sock->cfSock );
+		sock->cfSock = NULL;
 		return mStatus_ConnFailed;
 		}
-	info->connected = 1;
-	*descriptor = sd;
-	return mStatus_ConnEstablished;
-	}
-
-mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
-	{
-	CFSocketContext cfContext;
-	tcpInfo_t *info;
-	CFSocketRef sr;
-
-	if (sd < 3) LogMsg("mDNSPlatformTCPCloseConnection: ERROR sd %d < 3", sd);
-
-    // Get the CFSocket for the descriptor
-	sr = CFSocketCreateWithNative(kCFAllocatorDefault, sd, kCFSocketNoCallBack, NULL, NULL);
-	if (!sr) { LogMsg("ERROR: mDNSPlatformTCPCloseConnection - CFSocketCreateWithNative returned NULL"); return; }
-
-	CFSocketGetContext(sr, &cfContext);
-	if (!cfContext.info)
-		{
-		LogMsg("ERROR: mDNSPlatformTCPCloseConnection - could not retreive tcpInfo from socket context");
-		CFRelease(sr);
-		return;
-		}
-	CFRelease(sr);  // this only releases the copy we allocated with CreateWithNative above
 	
-	info = cfContext.info;
+	sock->connected = mDNStrue;
+	
+	if (err == mStatus_ConnEstablished)  // manually invoke callback if connection completes
+		{
+		if ( sock->flags & kTCPSocketFlags_UseTLS )
+			{
+#ifndef NO_SECURITYFRAMEWORK
+			mStatus tlsErr;
 
-	// Note: MUST NOT close the underlying native BSD socket.
-	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
-	// because it first has to unhook the sockets from its select() call, before it can safely close them.
-	CFSocketInvalidate(sr);
-	CFRelease(sr);
-	freeL("mDNSPlatformTCPCloseConnection", info);
+			tlsErr = tlsSetupSock( sock, mDNSfalse );
+
+			if ( tlsErr )
+				{
+				LogMsg( "ERROR: mDNSPlatformTCPConnect: tlsSetupSock failed with error code: %d", err );
+				err = tlsErr;
+				goto exit;
+				}
+
+			tlsErr = SSLHandshake( sock->tlsContext );
+			
+			sock->handshake = mDNStrue;
+			
+			if ( tlsErr )
+				{
+				LogMsg( "ERROR: mDNSPlatformTCPConnect: SSLHandshake failed with error code: %d", err );
+				err = tlsErr;
+				goto exit;
+				}
+#else
+			err = mStatus_UnsupportedErr;
+			goto exit;
+#endif /* NO_SECURITYFRAMEWORK */
+			}
+		}
+	
+exit:
+
+	return err;
 	}
 
-mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
 	{
-	int nread = recv(sd, buf, buflen, 0);
-	if (nread < 0)
+	return sock->connected;
+	}
+
+
+mDNSexport 
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int fd )
+	{
+	struct uDNS_TCPSocket_struct	*	sock;
+	mStatus							err = mStatus_NoError;
+
+	sock = mallocL( "mDNSPlatformTCPAccept", sizeof( struct uDNS_TCPSocket_struct ) );
+	
+	if ( !sock )
 		{
-		if (errno == EAGAIN) return 0;  // no data available (call would block)
-		LogMsg("ERROR: mDNSPlatformReadTCP - recv: %s", strerror(errno));
-		return -1;
+		err = mStatus_NoMemoryErr;
+		goto exit;
 		}
+
+	memset( sock, 0, sizeof( *sock ) );
+
+	sock->fd = fd;
+	sock->flags = flags;
+
+	if ( flags & kTCPSocketFlags_UseTLS )
+		{
+#ifndef NO_SECURITYFRAMEWORK
+		if ( !ServerCerts )
+			{
+			LogMsg( "ERROR: mDNSPlatformTCPAccept: unable to find TLS certificates" );
+			err = mStatus_UnknownErr;
+			goto exit;
+			}
+
+		err = tlsSetupSock( sock, mDNStrue );
+
+		if ( err )
+			{
+			LogMsg( "ERROR: mDNSPlatformTCPAccept: tlsSetupSock failed with error code: %d", err );
+			goto exit;
+			}
+
+		err = SSLSetCertificate( sock->tlsContext, ServerCerts );
+
+		if ( err )
+			{
+			LogMsg( "ERROR: mDNSPlatformTCPAccept: SSLSetCertificate failed with error code: %d", err );
+			goto exit;
+			}
+			
+		check( !sock->handshake );
+#else
+		err = mStatus_UnsupportedErr;
+#endif /* NO_SECURITYFRAMEWORK */
+		}
+exit:
+
+	if ( err && sock )
+	{
+		freeL( "mDNSPlatformTCPAccept", sock );
+		sock = NULL;
+	}
+
+	return ( uDNS_TCPSocket ) sock;
+	}
+
+
+mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
+	{
+	if ( sock->cfSock )
+		{
+		// Note: MUST NOT close the underlying native BSD socket.
+		// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
+		// because it first has to unhook the sockets from its select() call, before it can safely close them.
+		CFSocketInvalidate(sock->cfSock);
+		CFRelease(sock->cfSock);
+		sock->cfSock = NULL;
+		}
+#ifndef NO_SECURITYFRAMEWORK
+	else if ( sock->tlsContext )
+		{
+		SSLClose( sock->tlsContext );
+		}
+#endif /* NO_SECURITYFRAMEWORK */
+	else if ( sock->fd != -1 )
+		{
+		shutdown( sock->fd, 2 );
+		close( sock->fd );
+		sock->fd = -1;
+		}
+
+#ifndef NO_SECURITYFRAMEWORK
+	if ( sock->tlsContext )
+		{
+		SSLDisposeContext( sock->tlsContext );
+		sock->tlsContext = NULL;
+		}
+#endif /* NO_SECURITYFRAMEWORK */
+	
+	freeL( "mDNSPlatformTCPCloseConnection", sock );
+	}
+
+
+mDNSexport int mDNSPlatformReadTCP( uDNS_TCPSocket sock, void * buf, int buflen, mDNSBool * closed)
+	{
+	int nread;
+
+	*closed = mDNSfalse;
+
+	if ( sock->flags & kTCPSocketFlags_UseTLS )
+		{
+#ifndef NO_SECURITYFRAMEWORK
+		if ( !sock->handshake )
+			{
+			mStatus err;
+
+			err = SSLHandshake( sock->tlsContext );
+
+			if ( err )
+				{
+				LogMsg( "ERROR: mDNSPlatformReadTCP: SSLHandshake failed with error code: %d", err );
+				}
+				
+			sock->handshake = mDNStrue;
+			nread = 0;
+			}
+		else
+			{
+			size_t	processed;
+			mStatus	err;
+
+			err = SSLRead( sock->tlsContext, buf, buflen, &processed );
+
+			if ( !err )
+				{
+				nread = ( int ) processed;
+				
+				if ( !nread )
+					{
+					*closed = mDNStrue;
+					}
+				}
+			else if ( err == errSSLClosedGraceful )
+				{
+				nread = 0;
+				*closed = mDNStrue;
+				}
+			else if ( err == errSSLWouldBlock )
+				{
+				nread = 0;
+				}
+			else
+				{
+				LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err );
+				nread = -1;
+				*closed = mDNStrue;
+				}
+			}
+#else
+		nread = -1;
+		*closed = mDNStrue;
+#endif /* NO_SECURITYFRAMEWORK */
+		}
+	else
+		{
+		nread = recv( sock->fd, buf, buflen, 0);
+
+		if ( nread < 0 )
+			{
+			if ( errno == EAGAIN )
+				{
+				nread = 0;  // no data available (call would block)
+				}
+			else
+				{
+				LogMsg("ERROR: mDNSPlatformReadTCP - recv: %s", strerror(errno));
+				nread = -1;
+				}
+			}
+		else if ( !nread )
+			{
+			*closed = mDNStrue;
+			}
+		}
+
 	return nread;
 	}
 
-mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
-	{
-	int nsent = send(sd, msg, len, 0);
 
-	if (nsent < 0)
+mDNSexport int mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char * msg, int len)
+	{
+	int nsent;
+
+	if ( sock->flags & kTCPSocketFlags_UseTLS )
 		{
-		if (errno == EAGAIN) return 0;  // blocked
-		LogMsg("ERROR: mDNSPlatformWriteTCP - sendL %s", strerror(errno));
-		return -1;
+#ifndef NO_SECURITYFRAMEWORK
+		size_t	processed;
+		mStatus	err;
+
+		err = SSLWrite( sock->tlsContext, msg, len, &processed );
+
+		if ( !err )
+			{
+			nsent = ( int ) processed;
+			}
+		else if ( err == errSSLWouldBlock )
+			{
+			nsent = 0;
+			}
+		else
+			{
+			LogMsg("ERROR: mDNSPlatformWriteTCP - SSLWrite returned %d", err );
+			nsent = -1;
+			}
+#else
+		nsent = -1;
+#endif /* NO_SECURITYFRAMEWORK */
 		}
+	else
+		{
+		nsent = send( sock->fd, msg, len, 0);
+
+		if ( nsent < 0 )
+			{
+			if (errno == EAGAIN)
+				{
+				nsent = 0;
+				}
+			else
+				{
+				LogMsg("ERROR: mDNSPlatformWriteTCP - send %s", strerror(errno));
+				nsent = -1;
+				}
+			}
+		}
+
 	return nsent;
 	}
+
+
+mDNSexport int mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock )
+	{
+	return sock->flags;
+	}
+	
+	
+mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock )
+	{
+	return sock->fd;
+	}
+	
+
+mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port )
+	{
+	CFSocketSet * ss = mDNSNULL;
+	mStatus err = 0;
+
+	ss = malloc( sizeof( CFSocketSet ) );
+
+	if ( !ss )
+		{
+		LogMsg( "mDNSPlatformUDPSocket: memory exhausted" );
+		err = mStatus_NoMemoryErr;
+		goto exit;
+		}
+
+	memset( ss, 0, sizeof( CFSocketSet ) );
+
+	ss->m     = m;
+	ss->sktv4 = -1;
+	ss->sktv6 = -1;
+
+	err = SetupSocket( m, ss, mDNSfalse, &zeroAddr, &port, AF_INET );
+
+	if ( err )
+		{
+		LogMsg( "mDNSPlatformUDPSocket: SetupSocket failed" );
+		goto exit;
+		}
+
+exit:
+
+	if ( err && ss )
+		{
+		free( ss );
+		ss = mDNSNULL;
+		}
+
+	return ( uDNS_UDPSocket ) ss;
+	}
+	
+	
+mDNSexport void mDNSPlatformUDPClose( uDNS_UDPSocket sock )
+	{
+	CloseSocketSet( ( CFSocketSet* ) sock );
+	free( ( CFSocketSet* ) sock );
+	}
+		
+
+#ifndef NO_SECURITYFRAMEWORK
+mDNSlocal CFArrayRef
+GetCertChain
+	(
+	SecIdentityRef identity
+	)
+	{
+	SecCertificateRef				cert			= NULL;
+	SecPolicySearchRef				searchRef		= NULL;
+	SecPolicyRef					policy			= NULL;
+	CFArrayRef						wrappedCert		= NULL;
+	SecTrustRef						trust			= NULL;
+	CFArrayRef						rawCertChain	= NULL;
+    CFMutableArrayRef				certChain		= NULL;
+    CSSM_TP_APPLE_EVIDENCE_INFO	*	statusChain		= NULL;
+	OSStatus						err				= 0;
+
+	if ( !identity )
+		{
+		LogMsg( "getCertChain: identity is NULL" );
+		goto exit;
+		}
+
+	err = SecIdentityCopyCertificate( identity, &cert );
+
+	if ( err )
+		{
+		LogMsg("getCertChain: SecIdentityCopyCertificate() returned %d", ( int ) err );
+		goto exit;
+		}
+
+    err = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_X509_BASIC, NULL, &searchRef);
+
+    if ( err )
+		{
+		LogMsg("getCertChain: SecPolicySearchCreate() returned %d", ( int ) err );
+		goto exit;
+		}
+
+    err = SecPolicySearchCopyNext( searchRef, &policy );
+
+	if ( err )
+		{
+		LogMsg("getCertChain: SecPolicySearchCopyNext() returned %d", ( int ) err );
+		goto exit;
+		}
+
+	wrappedCert = CFArrayCreate( NULL, ( const void** ) &cert, 1, &kCFTypeArrayCallBacks );
+
+	if ( !wrappedCert )
+		{
+		LogMsg( "getCertChain: wrappedCert is NULL" );
+		goto exit;
+		}
+
+	err = SecTrustCreateWithCertificates( wrappedCert, policy, &trust );
+	
+	if ( err )
+		{
+		LogMsg("getCertChain: SecTrustCreateWithCertificates() returned %d", ( int ) err );
+		goto exit;
+		}
+
+	err = SecTrustEvaluate( trust, NULL );
+
+	if ( err )
+		{
+		LogMsg("getCertChain: SecTrustEvaluate() returned %d", ( int ) err );
+		goto exit;
+		}
+
+	err = SecTrustGetResult( trust, NULL, &rawCertChain, &statusChain );
+
+	if ( err )
+		{
+		LogMsg("getCertChain: SecTrustGetResult() returned %d", ( int ) err );
+		goto exit;
+		}
+
+	certChain = CFArrayCreateMutableCopy( NULL, 0, rawCertChain );
+
+	if ( !certChain )
+		{
+		LogMsg("getCertChain: certChain is NULL" );
+		goto exit;
+		}
+
+	// Replace the SecCertificateRef at certChain[0] with a SecIdentityRef per documentation for SSLSetCertificate
+	// at http://devworld.apple.com/documentation/Security/Reference/secureTransportRef/index.html#//apple_ref/doc/uid/TP30000155
+
+	CFArraySetValueAtIndex( certChain, 0, identity );
+
+	// Remove root from cert chain, but keep any and all intermediate certificates that have been signed by the root
+	// certificate
+
+    if ( CFArrayGetCount( certChain ) > 1 )
+		{
+		CFArrayRemoveValueAtIndex( certChain, CFArrayGetCount( certChain ) - 1 );
+		}
+
+exit:
+
+    if (searchRef)
+		{
+		CFRelease(searchRef);
+		}
+
+    if (policy)
+		{
+		CFRelease(policy);
+		}
+
+    if (wrappedCert)
+		{
+		CFRelease(wrappedCert);
+		}
+
+    if (trust)
+		{
+		CFRelease(trust);
+		}
+
+	if ( rawCertChain )
+		{
+		CFRelease( rawCertChain );
+		}
+
+    if ( certChain && err )
+    	{
+		CFRelease(certChain);
+		certChain = NULL;
+    	}
+
+    return certChain;
+	}
+#endif /* NO_SECURITYFRAMEWORK */
+
+
+mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
+	{
+#ifndef NO_SECURITYFRAMEWORK
+	SecIdentityRef			identity = nil;
+	SecIdentitySearchRef	srchRef = nil;
+	OSStatus				err;
+	
+	// Pick a keychain
+
+	err = SecKeychainOpen( SYSTEM_KEYCHAIN_PATH, &ServerKC );
+
+	if ( err )
+		{
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainOpen returned %d", (int) err );
+		goto exit;
+		}
+
+	// search for "any" identity matching specified key use
+	// In this app, we expect there to be exactly one
+	 
+	err = SecIdentitySearchCreate( ServerKC, CSSM_KEYUSE_DECRYPT, &srchRef );
+
+	if ( err )
+		{
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCreate returned %d", (int) err );
+		goto exit;
+		}
+
+	err = SecIdentitySearchCopyNext(srchRef, &identity);
+
+	if ( err )
+		{
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext returned %d", (int) err );
+		goto exit;
+		}
+
+	if ( CFGetTypeID(identity) != SecIdentityGetTypeID() )
+		{
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext CFTypeID failure" );
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+
+	// Found one. Call getCertChain to create the correct certificate chain.
+
+	ServerCerts = GetCertChain( identity );
+
+	if ( ServerCerts == nil )
+		{
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: getCertChain error" );
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+
+exit:
+
+	return err;
+#else
+	return mStatus_UnsupportedErr;
+#endif /* NO_SECURITYFRAMEWORK */
+	}
+
+
+mDNSexport  void  mDNSPlatformTLSTearDownCerts(void)
+	{
+#ifndef NO_SECURITYFRAMEWORK
+	if ( ServerCerts )
+		{
+		CFRelease( ServerCerts );
+		ServerCerts = NULL;
+		}
+
+	if ( ServerKC )
+		{
+		CFRelease( ServerKC );
+		ServerKC = NULL;
+		}
+#endif /* NO_SECURITYFRAMEWORK */
+	}
+
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
 mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
@@ -1820,128 +2570,11 @@ mDNSlocal mDNSBool DDNSSettingEnabled(CFDictionaryRef dict)
 	return val ? mDNStrue : mDNSfalse;
 	}
 
-mDNSlocal void GetUserSpecifiedDDNSConfig(domainname *const fqdn, domainname *const regDomain, CFArrayRef *const browseDomains)
-	{
-	char buf[MAX_ESCAPED_DOMAIN_NAME];
-
-	fqdn->c[0] = 0;
-	regDomain->c[0] = 0;
-	buf[0] = 0;
-	*browseDomains = NULL;
-	
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
-	if (store)
-		{
-		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
-		if (dict)
-			{
-			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
-			if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
-				{				
-				CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0); // for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
-				if (fqdnDict && DDNSSettingEnabled(fqdnDict))
-					{						
-					CFStringRef name = CFDictionaryGetValue(fqdnDict, CFSTR("Domain"));
-					if (name)
-						{
-						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-							!MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
-							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
-						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
-						}
-					}
-				}
-
-			CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
-			if (regArray && CFArrayGetCount(regArray) > 0)
-				{
-				CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
-				if (regDict && DDNSSettingEnabled(regDict))
-					{
-					CFStringRef name = CFDictionaryGetValue(regDict, CFSTR("Domain"));
-					if (name)
-						{
-						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-							!MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
-							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
-						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
-						}
-					}
-				}
-			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
-			if (browseArray && CFArrayGetCount(browseArray) > 0)
-				{
-				CFRetain(browseArray);
-				*browseDomains = browseArray;
-				}
-			CFRelease(dict);
-			}
-		CFRelease(store);
-		}
-	}
-
-mDNSlocal void SetDDNSNameStatus(domainname *const dname, mStatus status)
-	{
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDDNSNameStatus"), NULL, NULL);
-	if (store)
-		{
-		char uname[MAX_ESCAPED_DOMAIN_NAME];
-		ConvertDomainNameToCString(dname, uname);
-		char *p = uname;
-
-		while (*p)
-			{
-			*p = tolower(*p);
-			if (!(*(p+1)) && *p == '.') *p = 0; // if last character, strip trailing dot
-			p++;
-			}
-
-		// We need to make a CFDictionary called "State:/Network/DynamicDNS" containing (at present) a single entity.
-		// That single entity is a CFDictionary with name "HostNames".
-		// The "HostNames" CFDictionary contains a set of name/value pairs, where the each name is the FQDN
-		// in question, and the corresponding value is a CFDictionary giving the state for that FQDN.
-		// (At present we only support a single FQDN, so this dictionary holds just a single name/value pair.)
-		// The CFDictionary for each FQDN holds (at present) a single name/value pair,
-		// where the name is "Status" and the value is a CFNumber giving an errror code (with zero meaning success).
-
-		const CFStringRef StateKeys [1] = { CFSTR("HostNames") };
-		const CFStringRef HostKeys  [1] = { CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8) };
-		const CFStringRef StatusKeys[1] = { CFSTR("Status") };
-		if (!HostKeys[0]) LogMsg("SetDDNSNameStatus: CFStringCreateWithCString(%s) failed", uname);
-		else
-			{
-			const CFNumberRef StatusVals[1] = { CFNumberCreate(NULL, kCFNumberSInt32Type, &status) };
-			if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%ld) failed", status);
-			else
-				{
-				const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, NULL, NULL) };
-				if (HostVals[0])
-					{
-					const CFDictionaryRef StateVals[1] = { CFDictionaryCreate(NULL, (void*)HostKeys, (void*)HostVals, 1, NULL, NULL) };
-					if (StateVals[0])
-						{
-						CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
-						if (StateDict)
-							{
-							SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), StateDict);
-							CFRelease(StateDict);
-							}
-						CFRelease(StateVals[0]);
-						}
-					CFRelease(HostVals[0]);
-					}
-				CFRelease(StatusVals[0]);
-				}
-			CFRelease(HostKeys[0]);
-			}
-		CFRelease(store);
-		}
-	}
-
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
-mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, u_short sa_family)
+mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, mDNSIPPort * inPort, u_short sa_family)
 	{
+	const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
 	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
 	CFSocketRef *c        = (sa_family == AF_INET) ? &cp->cfsv4 : &cp->cfsv6;
 	CFRunLoopSourceRef *r = (sa_family == AF_INET) ? &cp->rlsv4 : &cp->rlsv6;
@@ -1949,14 +2582,24 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, co
 	const int twofivefive = 255;
 	mStatus err = mStatus_NoError;
 	char *errstr = mDNSNULL;
+	int skt;
 
-	mDNSIPPort port = (mcast | m->CanReceiveUnicastOn5353) ? MulticastDNSPort : zeroIPPort;
+	mDNSIPPort port;
+
+	if ( inPort )
+		{
+		port = *inPort;
+		}
+	else
+		{
+		port = (mcast | m->CanReceiveUnicastOn5353) ? MulticastDNSPort : zeroIPPort;
+		}
 
 	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
 	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %p is already set", *c); return(-1); }
 
 	// Open the socket...
-	int skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
+	skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
 	if (skt < 3) { LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
 	// ... with a shared UDP port, if it's for multicast receiving
@@ -2001,7 +2644,6 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, co
 		if (err < 0) { errstr = "setsockopt - IP_MULTICAST_TTL"; goto fail; }
 
 		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
-		const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
 		err = setsockopt(skt, IPPROTO_IP, IP_TOS, &ip_tosbits, sizeof(ip_tosbits));
 		if (err < 0) { errstr = "setsockopt - IP_TOS"; goto fail; }
 
@@ -2452,7 +3094,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				{
 				if (i->sa_family == AF_INET && primary->ss.sktv4 == -1)
 					{
-					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, AF_INET);
+					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, mDNSNULL, AF_INET);
 					if (err == 0) debugf("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d",          primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					else          LogMsg("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					}
@@ -2460,7 +3102,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 #ifndef NO_IPV6
 				if (i->sa_family == AF_INET6 && primary->ss.sktv6 == -1)
 					{
-					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, AF_INET6);
+					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, mDNSNULL, AF_INET6);
 					if (err == 0) debugf("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d",          primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					else          LogMsg("SetupActiveInterfaces:   v6 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d FAILED",   primary->ss.sktv6, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					}
@@ -2596,8 +3238,728 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 	return mStatus_NoError;
 #endif // MDNS_NO_DNSINFO
 	}
+	
+void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
+	{
+	char buf[MAX_ESCAPED_DOMAIN_NAME];
+	SCDynamicStoreRef store;
 
-mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
+	fqdn->c[0] = 0;
+	regDomain->c[0] = 0;
+	buf[0] = 0;
+	*browseDomains = NULL;
+	
+	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
+	if (store)
+		{
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
+		if (dict)
+			{
+			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
+			CFArrayRef regArray;
+			CFArrayRef browseArray;
+			if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
+				{				
+				CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0); // for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
+				if (fqdnDict && DDNSSettingEnabled(fqdnDict))
+					{						
+					CFStringRef name = CFDictionaryGetValue(fqdnDict, CFSTR("Domain"));
+					if (name)
+						{
+						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+							!MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
+							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
+						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
+						}
+					}
+				}
+
+			regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
+			if (regArray && CFArrayGetCount(regArray) > 0)
+				{
+				CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
+				if (regDict && DDNSSettingEnabled(regDict))
+					{
+					CFStringRef name = CFDictionaryGetValue(regDict, CFSTR("Domain"));
+					if (name)
+						{
+						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+							!MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
+							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
+						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
+						}
+					}
+				}
+			browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
+			if (browseArray)
+				{
+				int i;
+	
+				for (i = 0; i < CFArrayGetCount( browseArray ); i++ )
+					{
+					DNameListElem * browseDomain;
+					CFStringRef		string = CFArrayGetValueAtIndex( browseArray, i );
+					domainname		dname;
+					mDNSBool		ok;
+					
+					ok = CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8);
+					
+					if ( !ok )
+						{
+						LogMsg("ERROR: mDNSPlatformGetDNSConfig - CFStringGetCString");
+						continue;
+						}
+
+					if ( !MakeDomainNameFromDNSNameString( &dname, buf ) || !dname.c[0] )
+						{
+						LogMsg( "ERROR: mDNSPlatformGetDNSConfig: bad browse domain: %s", buf );
+						continue;
+						}
+
+                    browseDomain = (DNameListElem*) malloc( sizeof( DNameListElem ) );
+					
+					if ( !browseDomain )
+						{
+						LogMsg( "ERROR: mDNSPlatformGetDNSConfig: memory exhausted" );
+						continue;
+						}
+
+					memset( browseDomain, 0, sizeof( DNameListElem ) );
+
+                    AssignDomainName(&browseDomain->name, &dname);
+                    browseDomain->next = *browseDomains;
+
+                    *browseDomains = browseDomain;
+					}
+				}
+			CFRelease(dict);
+			}
+		CFRelease(store);
+		}
+
+	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, fqdn->c[0] ? NULL : fqdn, regDomain->c[0] ? NULL : regDomain, &DomainDiscoveryDisabled);
+	}
+
+// Get the list of DNS Servers
+
+IPAddrListElem * mDNSPlatformGetDNSServers()
+	{
+	int i;
+	CFArrayRef values;
+	char buf[256];
+	CFStringRef s;
+	IPAddrListElem	*	head = NULL;
+	IPAddrListElem	*	current = NULL;
+	SCDynamicStoreRef	store = NULL;
+	CFDictionaryRef		dict	= NULL;
+	CFStringRef			key		= NULL;
+	mDNSBool			ok;
+	mStatus				err		= 0;
+
+	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
+	require_action( store, exit, err = mStatus_UnknownErr );
+	
+	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+	require_action( key, exit, err = mStatus_UnknownErr );
+
+	dict = SCDynamicStoreCopyValue(store, key);
+	require_action( dict, exit, err = mStatus_UnknownErr );
+
+	values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
+
+	if ( values )
+		{
+		for (i = 0; i < CFArrayGetCount(values); i++)
+			{
+			mDNSAddr			addr = { mDNSAddrType_IPv4, { { { 0 } } } };
+			IPAddrListElem	*	last = current;
+
+			s = CFArrayGetValueAtIndex(values, i);
+			require_action( s, exit, err = mStatus_UnknownErr );
+			
+			ok = CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8);
+
+			if ( !ok )
+				{
+				LogMsg("ERROR: mDNSPlatformGetDNSServers - CFStringGetCString");
+				continue;
+				}
+
+			ok = inet_aton(buf, (struct in_addr *) addr.ip.v4.b);
+			
+			if ( !ok )
+				{
+				LogMsg("ERROR: mDNSPlatformGetDNSServers - invalid address string %s", buf);
+				continue;
+				}
+				
+			current = ( IPAddrListElem* ) malloc( sizeof( IPAddrListElem ) );
+		
+			if ( !current )
+				{
+				LogMsg("ERROR: mDNSPlatformGetDNSServers - malloc failed" );
+				continue;
+				}
+				
+			memset( current, 0, sizeof( IPAddrListElem ) );
+			memcpy( &current->addr, &addr, sizeof( mDNSAddr ) );
+
+			if ( !head )
+				{
+				head = current;
+				}
+				
+			if ( last )
+				{
+				last->next = current;
+				}
+			}
+		}
+
+exit:
+
+	if ( dict )
+		{
+		CFRelease( dict );
+		}
+		
+	if ( key )
+		{
+		CFRelease( key );
+		}
+		
+	if ( store )
+		{
+		CFRelease( store );
+		}
+
+	return head;
+	}
+
+
+// Get the search domains via OS X resolver routines or System Configuration routines
+DNameListElem * mDNSPlatformGetSearchDomainList(void)
+	{
+	void			*	v				= NULL;
+	char				buf[MAX_ESCAPED_DOMAIN_NAME];
+	DNameListElem	*	head			= NULL;
+	DNameListElem	*	current			= NULL;
+	CFArrayRef			searchDomains	= NULL;
+	SCDynamicStoreRef	store			= NULL;
+	CFDictionaryRef		dict			= NULL;
+	CFStringRef			key				= NULL;
+	mStatus				err;
+	
+	err = GetDNSConfig(&v);
+
+#if !MDNS_NO_DNSINFO
+	if (!err && v)
+		{
+		dns_config_t   * config = NULL;
+		dns_resolver_t * resolv;
+		int              i;
+
+		config = ( dns_config_t* ) v;
+
+		if (!config->n_resolver)
+			{
+			dns_configuration_free(config);
+			goto exit;
+			}
+
+		resolv = config->resolver[0];  // use the first slot for search domains
+		require_action( resolv, exit, err = mStatus_UnknownErr );
+
+		for (i = 0; i < resolv->n_search; i++)
+			{
+			DNameListElem * last = current;
+			
+			current = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+			require_action( current, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr );
+			memset( current, 0, sizeof( DNameListElem ) );
+			
+			if ( !MakeDomainNameFromDNSNameString( &current->name, resolv->search[i] ) )
+				{
+				LogMsg("ERROR: mDNSPlatformGetSearchDomainList - MakeDomainNameFromDNSNameString");
+				continue;
+				}
+
+			if ( !head )
+				{
+				head = current;
+				}
+				
+			if ( last )
+				{
+				last->next = current;
+				}
+			}
+		
+		dns_configuration_free(config);
+		}
+#endif
+	
+	if ( err == mStatus_UnsupportedErr )
+		{
+		store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
+		require_action( store, exit, err = mStatus_UnknownErr );
+	
+		key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+		require_action( key, exit, err = mStatus_UnknownErr );
+
+		dict = SCDynamicStoreCopyValue(store, key);
+		require_action( dict, exit, err = mStatus_UnknownErr );
+		
+		searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
+			
+		if (searchDomains)
+			{
+			int i;
+			
+			for (i = 0; i < CFArrayGetCount(searchDomains); i++)
+				{
+				DNameListElem * last = current;
+				CFStringRef		s;
+
+				s = CFArrayGetValueAtIndex(searchDomains, i);
+				require_action( s, exit, err = mStatus_UnknownErr );
+
+				if ( !CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8) )
+					{
+					LogMsg("ERROR: mDNSPlatformGetSearchDomainList - CFStringGetCString");
+					continue;
+					}
+
+				current = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+				require_action( current, exit, err = mStatus_NoMemoryErr );
+				memset( current, 0, sizeof( DNameListElem ) );
+			
+				if ( !MakeDomainNameFromDNSNameString( &current->name, buf ) )
+					{
+					LogMsg("ERROR: mDNSPlatformGetSearchDomainList - MakeDomainNameFromDNSNameString");
+					continue;
+					}
+
+				if ( !head )
+					{
+					head = current;
+					}
+				
+				if ( last )
+					{
+					last->next = current;
+					}
+				}
+			}
+		}
+		
+exit:
+
+	if ( dict )
+		{
+		CFRelease( dict );
+		}
+		
+	if ( key )
+		{
+		CFRelease( key );
+		}
+		
+	if ( store )
+		{
+		CFRelease( store );
+		}
+
+	if ( err && head )
+		{
+		}
+
+	return head;
+	}
+
+
+// Get the search domains via OS X resolver routines or System Configuration routines
+DNameListElem * mDNSPlatformGetFQDN(void)
+	{
+	void			*	v;
+	char				buf[MAX_ESCAPED_DOMAIN_NAME];
+	domainname			dname;
+	DNameListElem	*	head			= NULL;
+	SCDynamicStoreRef	store			= NULL;
+	CFDictionaryRef		dict			= NULL;
+	CFStringRef			key				= NULL;
+	mDNSu8			*	ptr;
+	mDNSBool			ok;
+	mStatus				err;
+	
+	err = GetDNSConfig(&v);
+
+#if !MDNS_NO_DNSINFO
+	if (!err && v)
+		{
+		dns_config_t   * config = NULL;
+		dns_resolver_t * resolv = NULL;
+		
+		config = ( dns_config_t* ) v;
+		
+		require_action( config->n_resolver, exit, dns_configuration_free(config); err = mStatus_UnknownErr );
+			
+		resolv = config->resolver[0];  // use the first slot for search domains
+		require_action( resolv, exit, dns_configuration_free(config); err = mStatus_UnknownErr );
+
+		if (resolv->domain)
+			{
+			ptr = MakeDomainNameFromDNSNameString( &dname, resolv->domain );
+			require_action( ptr, exit, dns_configuration_free(config); err = mStatus_UnknownErr );
+
+			head = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+			require_action( head, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr );
+			memset( head, 0, sizeof( DNameListElem ) );
+			
+			AssignDomainName( &head->name, &dname );
+			}
+			
+		dns_configuration_free(config);
+		}
+#endif
+
+	if ( err == mStatus_UnsupportedErr )
+		{
+		store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
+		require_action( store, exit, err = mStatus_UnknownErr );
+	
+		key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+		require_action( key, exit, err = mStatus_UnknownErr );
+
+		dict = SCDynamicStoreCopyValue(store, key);
+		require_action( dict, exit, err = mStatus_UnknownErr );
+		
+		// get DHCP domain field
+		
+		CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
+		
+		if (string)
+			{
+			ok = CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8);
+			require_action( ok, exit, err = mStatus_UnknownErr );
+
+			ptr = MakeDomainNameFromDNSNameString( &dname, buf );
+			require_action( ptr, exit, err = mStatus_UnknownErr );
+				
+			head = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+			require_action( head, exit, err = mStatus_NoMemoryErr );
+			memset( head, 0, sizeof( DNameListElem ) );
+			
+			AssignDomainName( &head->name, &dname );
+			}
+		}
+		
+exit:
+
+	if ( dict )
+		{
+		CFRelease( dict );
+		}
+		
+	if ( key )
+		{
+		CFRelease( key );
+		}
+		
+	if ( store )
+		{
+		CFRelease( store );
+		}
+
+	if ( err && head )
+		{
+		}
+
+	return head;
+	}
+	
+mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * r )
+	{
+	SCDynamicStoreRef	store	= NULL;
+	CFDictionaryRef		dict	= NULL;
+	CFStringRef			key		= NULL;
+	CFStringRef			string	= NULL;
+	int					nAdditions = 0;
+	int					nDeletions = 0;
+	char				buf[256];
+	mStatus				err		= 0;
+	
+	// get IPv4 settings
+	
+	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
+	require_action( store, exit, err = mStatus_UnknownErr );
+
+	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
+	require_action( key, exit, err = mStatus_UnknownErr );
+
+	dict = SCDynamicStoreCopyValue(store, key);
+	require_action( dict, exit, err = mStatus_UnknownErr );
+	
+	// handle router changes
+
+	r->type               = mDNSAddrType_IPv4;
+	r->ip.v4.NotAnInteger = 0;
+	 
+	string = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
+
+	if (string)
+		{
+		struct sockaddr_in saddr;
+		
+		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8))
+			{
+			LogMsg("Could not convert router to CString");
+			}
+		else
+			{
+			saddr.sin_len = sizeof(saddr);
+			saddr.sin_family = AF_INET;
+			saddr.sin_port = 0;			
+			inet_aton(buf, &saddr.sin_addr);
+			
+			if (AddrRequiresPPPConnection((struct sockaddr *)&saddr))
+				{
+				debugf("Ignoring router %s (requires PPP connection)", buf);
+				}
+			else 
+				{
+				*(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
+				}
+			}
+		}
+
+	// handle primary interface changes
+	// if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
+	if (nAdditions || nDeletions) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
+	
+	string = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
+	
+	if (string)
+		{
+		mDNSBool HavePrimaryGlobalv6 = mDNSfalse;  // does the primary interface have a global v6 address?
+		struct ifaddrs *ifa = myGetIfAddrs(1);
+		
+		*v4 = *v6 = zeroAddr;
+
+		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8))
+			{
+			LogMsg("Could not convert router to CString");
+			goto exit;
+			}		
+
+		// find primary interface in list
+		while (ifa && (!v4->ip.v4.NotAnInteger || !HavePrimaryGlobalv6))
+			{
+			mDNSAddr tmp6 = zeroAddr;
+			if (!strcmp(buf, ifa->ifa_name))
+				{				
+				if      (ifa->ifa_addr->sa_family == AF_INET) SetupAddr(v4, ifa->ifa_addr);					
+				else if (ifa->ifa_addr->sa_family == AF_INET6) 				
+					{
+					SetupAddr(&tmp6, ifa->ifa_addr);
+					if (tmp6.ip.v6.b[0] >> 5 == 1)   // global prefix: 001
+						{ HavePrimaryGlobalv6 = mDNStrue; *v6 = tmp6; }
+					}
+				}
+			else
+				{
+				// We'll take a V6 address from the non-primary interface if the primary interface doesn't have a global V6 address
+				if (!HavePrimaryGlobalv6 && ifa->ifa_addr->sa_family == AF_INET6 && !v6->ip.v6.b[0])
+					{
+					SetupAddr(&tmp6, ifa->ifa_addr);
+					if (tmp6.ip.v6.b[0] >> 5 == 1) *v6 = tmp6;
+					}
+				}
+			ifa = ifa->ifa_next;
+			}
+
+		// Note that while we advertise v6, we still require v4 (possibly NAT'd, but not link-local) because we must use
+		// V4 to communicate w/ our DNS server
+
+#ifdef _LEGACY_NAT_TRAVERSAL_
+		if ( ( v4->ip.v4.b[0] != 169 || v4->ip.v4.b[1] != 254)							&&
+			 ( v4->ip.v4.NotAnInteger != m->uDNS_info.AdvertisedV4.ip.v4.NotAnInteger	||
+			   memcmp(v6->ip.v6.b, m->uDNS_info.AdvertisedV6.ip.v6.b, 16)				||
+			   r->ip.v4.NotAnInteger != m->uDNS_info.Router.ip.v4.NotAnInteger ) )
+			{
+			static mDNSBool LegacyNATInitialized = mDNSfalse;
+			
+			if (LegacyNATInitialized) { LNT_Destroy(); LegacyNATInitialized = mDNSfalse; }
+			if (r->ip.v4.NotAnInteger && IsPrivateV4Addr(v4))
+				{
+				mStatus err = LNT_Init();
+				if (err)  LogMsg("ERROR: LNT_Init");
+				else LegacyNATInitialized = mDNStrue;
+				}				
+			}
+#endif
+		}
+
+exit:
+
+	if ( dict )
+		{
+		CFRelease(dict);
+		}
+		
+	if ( key )
+		{
+		CFRelease(key);
+		}
+		
+	if ( store )
+		{
+		CFRelease(store);
+		}
+
+	return err;
+	}
+
+
+DNameListElem * mDNSPlatformGetReverseMapSearchDomainList( void )
+	{
+	DNameListElem	*	head	= NULL;
+	DNameListElem	*	current	= NULL;
+	struct ifaddrs	*	ifa		= NULL;
+	mStatus				err     = 0;
+
+	// Construct reverse-map search domains
+
+	ifa = myGetIfAddrs(1);
+	
+	while (ifa)
+		{
+		mDNSAddr addr;
+
+		if (ifa->ifa_addr->sa_family == AF_INET	&&
+		    !SetupAddr(&addr, ifa->ifa_addr)	&&
+		    !IsPrivateV4Addr(&addr)				&&
+		    !(ifa->ifa_flags & IFF_LOOPBACK)	&&
+			ifa->ifa_netmask)
+			{
+			mDNSAddr	netmask;
+			char		buffer[256];
+
+			if (!SetupAddr(&netmask, ifa->ifa_netmask))
+				{
+				domainname			dname;
+				DNameListElem	*	last = current;
+				mDNSu8			*	ptr;
+
+				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", addr.ip.v4.b[3] & netmask.ip.v4.b[3],
+				                                             addr.ip.v4.b[2] & netmask.ip.v4.b[2],
+				                                             addr.ip.v4.b[1] & netmask.ip.v4.b[1],
+				                                             addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
+			
+				ptr = MakeDomainNameFromDNSNameString( &dname, buffer );
+
+				if ( !ptr )
+					{
+					LogMsg("ERROR: mDNSPlatformGetReverseMapSearchDomainList - MakeDomainNameFromDNSNameString");
+					continue;
+					}
+
+				current = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+				require_action( current, exit, err = mStatus_NoMemoryErr );
+				memset( current, 0, sizeof( DNameListElem ) );
+
+				AssignDomainName( &current->name, &dname );
+
+				if ( !head )
+					{
+					head = current;
+					}
+				
+				if ( last )
+					{
+					last->next = current;
+					}
+				}
+			}
+
+			ifa = ifa->ifa_next;
+		}
+
+exit:
+
+	if ( err && head )
+		{
+		mDNS_FreeDNameList(head);
+		head = NULL;
+		}
+
+	return head;
+	}
+
+	
+void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status)
+	{
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDDNSNameStatus"), NULL, NULL);
+	if (store)
+		{
+		char uname[MAX_ESCAPED_DOMAIN_NAME];
+		char *p;
+
+		ConvertDomainNameToCString(dname, uname);
+		p = uname;
+
+		while (*p)
+			{
+			*p = tolower(*p);
+			if (!(*(p+1)) && *p == '.') *p = 0; // if last character, strip trailing dot
+			p++;
+			}
+
+		// We need to make a CFDictionary called "State:/Network/DynamicDNS" containing (at present) a single entity.
+		// That single entity is a CFDictionary with name "HostNames".
+		// The "HostNames" CFDictionary contains a set of name/value pairs, where the each name is the FQDN
+		// in question, and the corresponding value is a CFDictionary giving the state for that FQDN.
+		// (At present we only support a single FQDN, so this dictionary holds just a single name/value pair.)
+		// The CFDictionary for each FQDN holds (at present) a single name/value pair,
+		// where the name is "Status" and the value is a CFNumber giving an errror code (with zero meaning success).
+
+			{
+			const CFStringRef StateKeys [1] = { CFSTR("HostNames") };
+			const CFStringRef HostKeys  [1] = { CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8) };
+			const CFStringRef StatusKeys[1] = { CFSTR("Status") };
+			if (!HostKeys[0]) LogMsg("SetDDNSNameStatus: CFStringCreateWithCString(%s) failed", uname);
+			else
+				{
+				const CFNumberRef StatusVals[1] = { CFNumberCreate(NULL, kCFNumberSInt32Type, &status) };
+				if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%ld) failed", status);
+				else
+					{
+					const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, NULL, NULL) };
+					if (HostVals[0])
+						{
+						const CFDictionaryRef StateVals[1] = { CFDictionaryCreate(NULL, (void*)HostKeys, (void*)HostVals, 1, NULL, NULL) };
+						if (StateVals[0])
+							{
+							CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
+							if (StateDict)
+								{
+								SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), StateDict);
+								CFRelease(StateDict);
+								}
+							CFRelease(StateVals[0]);
+							}
+						CFRelease(HostVals[0]);
+						}
+					CFRelease(StatusVals[0]);
+					}
+				CFRelease(HostKeys[0]);
+				}
+			CFRelease(store);
+			}
+		}
+	}
+	
+mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int * nDeletions)
 	{
 	(void)m;  // unused on 10.3 systems
 	void *v;
@@ -2693,306 +4055,8 @@ mDNSlocal mStatus RegisterSplitDNS(mDNS *m, int *nAdditions, int *nDeletions)
 
 	return err;
 	}
-
-mDNSlocal mStatus RegisterNameServers(mDNS *const m, CFDictionaryRef dict)
-	{
-	int i, count;
-	CFArrayRef values;
-	char buf[256];
-	mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 0 } } } };
-	CFStringRef s;
-
-	mDNS_DeleteDNSServers(m); // deregister orig list
-	values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
-	if (!values) return mStatus_NoError;
-
-	count = CFArrayGetCount(values);
-	for (i = 0; i < count; i++)
-		{
-		s = CFArrayGetValueAtIndex(values, i);
-		if (!s) { LogMsg("ERROR: RegisterNameServers - CFArrayGetValueAtIndex"); break; }
-		if (!CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8))
-			{
-			LogMsg("ERROR: RegisterNameServers - CFStringGetCString");
-			continue;
-			}
-		if (!inet_aton(buf, (struct in_addr *)saddr.ip.v4.b))
-			{
-			LogMsg("ERROR: RegisterNameServers - invalid address string %s", buf);
-			continue;
-			}
-		LogOperation("RegisterNameServers: Adding %#a", &saddr);
-		mDNS_AddDNSServer(m, &saddr, NULL);
-		}
-	return mStatus_NoError;
-	}
-
-mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
-	{
-	(void)m;  // unused
-	ARListElem *elem = rr->RecordContext;
-	if (result == mStatus_MemFree) freeL("FreeARElemCallback", elem);
-	}
-
-mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
-	{
-	SearchListElem *slElem = question->QuestionContext;
-	ARListElem *arElem, *ptr, *prev;
-    AuthRecord *dereg;
-	const char *name;
-	mStatus err;
 	
-	if (AddRecord)
-		{
-		arElem = mallocL("FoundDomain - arElem", sizeof(ARListElem));
-		if (!arElem) { LogMsg("ERROR: malloc");  return; }
-		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, arElem);
-		if      (question == &slElem->BrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
-		else if (question == &slElem->DefBrowseQ)    name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault];
-		else if (question == &slElem->LegacyBrowseQ) name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseLegacy];
-		else if (question == &slElem->RegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistration];
-		else if (question == &slElem->DefRegisterQ)  name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
-		else { LogMsg("FoundDomain - unknown question"); return; }
-		
-		MakeDomainNameFromDNSNameString(arElem->ar.resrec.name, name);
-		AppendDNSNameString            (arElem->ar.resrec.name, "local");
-		AssignDomainName(&arElem->ar.resrec.rdata->u.name, &answer->rdata->u.name);
-		err = mDNS_Register(m, &arElem->ar);
-		if (err)
-			{
-			LogMsg("ERROR: FoundDomain - mDNS_Register returned %d", err);
-			freeL("FoundDomain - arElem", arElem);
-			return;
-			}
-		arElem->next = slElem->AuthRecs;
-		slElem->AuthRecs = arElem;
-		}
-	else
-		{
-		ptr = slElem->AuthRecs;
-		prev = NULL;
-		while (ptr)
-			{
-			if (SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
-				{
-				debugf("Deregistering PTR %##s -> %##s", ptr->ar.resrec.name->c, ptr->ar.resrec.rdata->u.name.c);
-                dereg = &ptr->ar;
-				if (prev) prev->next = ptr->next;
-				else slElem->AuthRecs = ptr->next;
-                ptr = ptr->next;
-				err = mDNS_Deregister(m, dereg);
-				if (err) LogMsg("ERROR: FoundDomain - mDNS_Deregister returned %d", err);
-				}
-			else
-				{
-				prev = ptr;
-				ptr = ptr->next;
-				}
-			}
-		}
-	}
-
-mDNSlocal void MarkSearchListElem(const char *d)
-	{
-	SearchListElem *new, *ptr;
-	domainname domain;
-	
-	if (!MakeDomainNameFromDNSNameString(&domain, d))
-		{ LogMsg("ERROR: MarkSearchListElem - bad domain %##s", d); return; }
-
-	if (SameDomainName(&domain, &localdomain) || SameDomainName(&domain, &LocalReverseMapDomain))
-		{ debugf("MarkSearchListElem - ignoring local domain %##s", domain.c); return; } 
-
-	// if domain is in list, mark as pre-existent (0)
-	for (ptr = SearchList; ptr; ptr = ptr->next)
-		if (SameDomainName(&ptr->domain, &domain))
-			{
-			if (ptr->flag != 1) ptr->flag = 0;  // gracefully handle duplicates - if it is already marked as add, don't bump down to preexistent
-			break;
-			}
-	
-	// if domain not in list, add to list, mark as add (1)
-	if (!ptr)
-		{
-		new = mallocL("MarkSearchListElem - SearchListElem", sizeof(SearchListElem));
-		if (!new) { LogMsg("ERROR: MarkSearchListElem - malloc"); return; }
-		bzero(new, sizeof(SearchListElem));
-		AssignDomainName(&new->domain, &domain);
-		new->flag = 1;  // add
-		new->next = SearchList;
-		SearchList = new;
-		}
-	}
-
-// Get the search domains via OS X resolver routines.  Returns mStatus_UnsupporterErr if compiled or run on 10.3 systems
-mDNSlocal mStatus GetSearchDomains(void)
-	{
-	void *v;
-	mStatus err = GetDNSConfig(&v);
-
-#if !MDNS_NO_DNSINFO
-	if (!err && v)
-		{
-		int i;
-		dns_config_t *config = v;
-		if (!config->n_resolver) return err;
-		dns_resolver_t *resolv = config->resolver[0];  // use the first slot for search domains
-
-		for (i = 0; i < resolv->n_search; i++) MarkSearchListElem(resolv->search[i]);
-		if (resolv->domain) MarkSearchListElem(resolv->domain);
-		dns_configuration_free(config);
-		}
-#endif
-
-	return err;
-	}
-
-// Get search domains from dynamic store - used as a fallback mechanism on 10.3 systems, if GetSearchDomains (above) fails.
-mDNSlocal void GetDSSearchDomains(CFDictionaryRef dict)
-	{
-	char buf[MAX_ESCAPED_DOMAIN_NAME];
-	int i, count;
-
-	CFStringRef s;
-
-	// get all the domains from "Search Domains" field of sharing prefs
-	if (dict)
-		{
-		CFArrayRef searchdomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
-		if (searchdomains)
-			{
-			count = CFArrayGetCount(searchdomains);
-			for (i = 0; i < count; i++)
-				{
-				s = CFArrayGetValueAtIndex(searchdomains, i);
-				if (!s) { LogMsg("ERROR: GetDSSearchDomains - CFArrayGetValueAtIndex"); break; }
-				if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
-					{
-					LogMsg("ERROR: GetDSSearchDomains - CFStringGetCString");
-					continue;
-					}
-				MarkSearchListElem(buf);
-				}
-			}
-
-		// get DHCP domain field
-		CFStringRef dname = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
-		if (dname)
-			{
-			if (CFStringGetCString(dname, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
-				MarkSearchListElem(buf);
-			else LogMsg("ERROR: GetDSSearchDomains - CFStringGetCString");
-			}
-		}
-	}
-
-mDNSlocal mStatus RegisterSearchDomains(mDNS *const m, CFDictionaryRef dict)
-	{
-	struct ifaddrs *ifa = NULL;
-	SearchListElem *ptr, *prev, *freeSLPtr;
-	ARListElem *arList;
-	mStatus err;
-
-	if (DomainDiscoveryDisabled) return mStatus_NoError;
-	
-	// step 1: mark each elem for removal (-1), unless we aren't passed a dictionary in which case we mark as preexistent
-	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = dict ? -1 : 0;
-
-	// Get search domains from resolver library (available in OS X 10.4 and later), reverting to dynamic store on 10.3 systems
-	if (GetSearchDomains() == mStatus_UnsupportedErr) GetDSSearchDomains(dict);
- 	
-	// Construct reverse-map search domains
-	ifa = myGetIfAddrs(1);
-	while (ifa)
-		{
-		mDNSAddr addr;
-		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
-			{
-			mDNSAddr netmask;
-			char buffer[256];
-			if (!SetupAddr(&netmask, ifa->ifa_netmask))
-				{
-				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", addr.ip.v4.b[3] & netmask.ip.v4.b[3],
-                                                             addr.ip.v4.b[2] & netmask.ip.v4.b[2],
-                                                             addr.ip.v4.b[1] & netmask.ip.v4.b[1],
-                                                             addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
-				MarkSearchListElem(buffer);
-				}
-			}
-		ifa = ifa->ifa_next;
-		}
-	
-	// delete elems marked for removal, do queries for elems marked add
-	prev = NULL;
-	ptr = SearchList;
-	while (ptr)
-		{
-		if (ptr->flag == -1)  // remove
-			{
-			mDNS_StopQuery(m, &ptr->BrowseQ);
-			mDNS_StopQuery(m, &ptr->RegisterQ);
-			mDNS_StopQuery(m, &ptr->DefBrowseQ);
-			mDNS_StopQuery(m, &ptr->DefRegisterQ);
-			mDNS_StopQuery(m, &ptr->LegacyBrowseQ);			
-			
-            // deregister records generated from answers to the query
-			arList = ptr->AuthRecs;
-			ptr->AuthRecs = NULL;
-			while (arList)
-				{
-				AuthRecord *dereg = &arList->ar;
-				arList = arList->next;
-				debugf("Deregistering PTR %##s -> %##s", dereg->resrec.name->c, dereg->resrec.rdata->u.name.c);
-				err = mDNS_Deregister(m, dereg);
-				if (err) LogMsg("ERROR: RegisterSearchDomains mDNS_Deregister returned %d", err);
-				}
-			
-			// remove elem from list, delete
-			if (prev) prev->next = ptr->next;
-			else SearchList = ptr->next;
-			freeSLPtr = ptr;
-			ptr = ptr->next;
-			freeL("RegisterSearchDomains - freeSLPtr", freeSLPtr);
-			continue;
-			}
-		
-		if (ptr->flag == 1)  // add
-			{
-			mStatus err1, err2, err3, err4, err5;
-			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,       mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,    mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,     mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,  mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err5 = mDNS_GetDomains(m, &ptr->LegacyBrowseQ, mDNS_DomainTypeBrowseLegacy,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			if (err1 || err2 || err3 || err4 || err5)
-				LogMsg("GetDomains for domain %##s returned error(s):\n"
-					   "%d (mDNS_DomainTypeBrowse)\n"
-					   "%d (mDNS_DomainTypeBrowseDefault)\n"
-					   "%d (mDNS_DomainTypeRegistration)\n"
-					   "%d (mDNS_DomainTypeRegistrationDefault)"
-					   "%d (mDNS_DomainTypeBrowseLegacy)\n",
-					   ptr->domain.c, err1, err2, err3, err4, err5);   
-			ptr->flag = 0;
-			}
-		
-		if (ptr->flag) { LogMsg("RegisterSearchDomains - unknown flag %d.  Skipping.", ptr->flag); }
-		
-		prev = ptr;
-		ptr = ptr->next;
-		}
-	
-	return mStatus_NoError;
-	}
-
-//!!!KRS here is where we will give success/failure notification to the UI
-mDNSlocal void SCPrefsDynDNSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
-	{
-	(void)m;  // unused
-	debugf("SCPrefsDynDNSCallback: result %d for registration of name %##s", result, rr->resrec.name->c);
-	SetDDNSNameStatus(rr->resrec.name, result);
-	}
-
-mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
+void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain)
 	{
 #ifndef NO_SECURITYFRAMEWORK
 	OSStatus err = 0;
@@ -3080,204 +4144,6 @@ mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 #endif /* NO_SECURITYFRAMEWORK */
 	}
 
-mDNSlocal void SetSCPrefsBrowseDomainsFromCFArray(mDNS *m, CFArrayRef browseDomains, mDNSBool add)
-	{
-	if (browseDomains)
-		{
-		CFIndex count = CFArrayGetCount(browseDomains);
-		CFDictionaryRef browseDict;
-		char buf[MAX_ESCAPED_DOMAIN_NAME];
-		int i;
-		
-		for (i = 0; i < count; i++)
-			{
-			browseDict = (CFDictionaryRef)CFArrayGetValueAtIndex(browseDomains, i);
-			if (browseDict && DDNSSettingEnabled(browseDict))
-				{
-				CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
-				if (name)
-					{
-					domainname BrowseDomain;
-					if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) || !MakeDomainNameFromDNSNameString(&BrowseDomain, buf) || !BrowseDomain.c[0])
-						LogMsg("SetSCPrefsBrowseDomainsFromCFArray SCDynamicStore bad DDNS browse domain: %s", buf[0] ? buf : "(unknown)");
-					else SetSCPrefsBrowseDomain(m, &BrowseDomain, add);
-					}
-				}
-			}
-		}
-	}
-
-
-mDNSlocal void DynDNSConfigChanged(mDNS *const m)
-	{
-	static mDNSBool LegacyNATInitialized = mDNSfalse;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
-	CFDictionaryRef dict;
-	CFStringRef     key;
-	domainname RegDomain, fqdn;
-	CFArrayRef NewBrowseDomains = NULL;
-	int nAdditions = 0, nDeletions = 0;
-	
-	// get fqdn, zone from SCPrefs
-	GetUserSpecifiedDDNSConfig(&fqdn, &RegDomain, &NewBrowseDomains);
-	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, fqdn.c[0] ? NULL : &fqdn, RegDomain.c[0] ? NULL : &RegDomain, &DomainDiscoveryDisabled);
-
-	if (!SameDomainName(&RegDomain, &DynDNSRegDomain))
-		{		
-		if (DynDNSRegDomain.c[0])
-			{
-			RemoveDefRegDomain(&DynDNSRegDomain);
-			SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
-			}
-		AssignDomainName(&DynDNSRegDomain, &RegDomain);		
-		if (DynDNSRegDomain.c[0])
-			{
-			SetSecretForDomain(m, &DynDNSRegDomain);
-			AddDefRegDomain(&DynDNSRegDomain);
-			SetSCPrefsBrowseDomain(m, &DynDNSRegDomain, mDNStrue);
-			}
-		}
-
-    // Add new browse domains to internal list
-	if (NewBrowseDomains) SetSCPrefsBrowseDomainsFromCFArray(m, NewBrowseDomains, mDNStrue);
-
-	// Remove old browse domains from internal list
-	if (DynDNSBrowseDomains) 
-		{
-		SetSCPrefsBrowseDomainsFromCFArray(m, DynDNSBrowseDomains, mDNSfalse);
-		CFRelease(DynDNSBrowseDomains);
-		}
-
-	// Replace the old browse domains array with the new array
-	DynDNSBrowseDomains = NewBrowseDomains;
-	
-	if (!SameDomainName(&fqdn, &DynDNSHostname))
-		{
-		if (DynDNSHostname.c[0]) mDNS_RemoveDynDNSHostName(m, &DynDNSHostname);
-		AssignDomainName(&DynDNSHostname, &fqdn);
-		if (DynDNSHostname.c[0])
-			{
-			SetSecretForDomain(m, &fqdn); // no-op if "zone" secret, above, is to be used for hostname
-			SetDDNSNameStatus(&DynDNSHostname, 1);		// Set status to 1 to indicate "in progress"
-			mDNS_AddDynDNSHostName(m, &DynDNSHostname, SCPrefsDynDNSCallback, NULL);
-			}
-		}
-
-    // get DNS settings
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-	if (!store) return;
-	
-	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-	if (!key) {  LogMsg("ERROR: DNSConfigChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity"); CFRelease(store); return;  }
-	dict = SCDynamicStoreCopyValue(store, key);
-	CFRelease(key);
-
-	// handle any changes to search domains and DNS server addresses
-	if (RegisterSplitDNS(m, &nAdditions, &nDeletions) != mStatus_NoError)
-		if (dict) RegisterNameServers(m, dict);  // fall back to non-split DNS aware configuration on failure
-	RegisterSearchDomains(m, dict);  // note that we register name servers *before* search domains
-	if (dict) CFRelease(dict);
-
-	// get IPv4 settings
-	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	if (!key) {  LogMsg("ERROR: RouterChanged - SCDynamicStoreKeyCreateNetworkGlobalEntity"); CFRelease(store); return;  }
-	dict = SCDynamicStoreCopyValue(store, key);
-	CFRelease(key);
-	CFRelease(store);
-	if (!dict)				// lost v4
-		{
-		mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
-		if (DynDNSHostname.c[0]) SetDDNSNameStatus(&DynDNSHostname, 1);	// Set status to 1 to indicate temporary failure
-		return;
-		} 
-
-	// handle router changes
-	mDNSAddr r;
-	char buf[256];
-	r.type = mDNSAddrType_IPv4;
-	r.ip.v4.NotAnInteger = 0;
-	CFStringRef router = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
-	if (router)
-		{
-		struct sockaddr_in saddr;
-		
-		if (!CFStringGetCString(router, buf, 256, kCFStringEncodingUTF8))
-			LogMsg("Could not convert router to CString");
-		else
-			{
-			saddr.sin_len = sizeof(saddr);
-			saddr.sin_family = AF_INET;
-			saddr.sin_port = 0;			
-			inet_aton(buf, &saddr.sin_addr);
-			if (AddrRequiresPPPConnection((struct sockaddr *)&saddr)) { debugf("Ignoring router %s (requires PPP connection)", buf); }
-			else *(in_addr_t *)&r.ip.v4 = saddr.sin_addr.s_addr;
-			}
-		}
-
-	// handle primary interface changes
-	// if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
-	if (nAdditions || nDeletions) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
-	CFStringRef primary = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
-	if (primary)
-		{
-		mDNSAddr v4 = zeroAddr, v6 = zeroAddr;
-		mDNSBool HavePrimaryGlobalv6 = mDNSfalse;  // does the primary interface have a global v6 address?
-		struct ifaddrs *ifa = myGetIfAddrs(1);
-		
-		if (!CFStringGetCString(primary, buf, 256, kCFStringEncodingUTF8))
-			{ LogMsg("Could not convert router to CString"); goto error; }		
-
-		// find primary interface in list
-		while (ifa && (!v4.ip.v4.NotAnInteger || !HavePrimaryGlobalv6))
-			{
-			mDNSAddr tmp6 = zeroAddr;
-			if (!strcmp(buf, ifa->ifa_name))
-				{				
-				if      (ifa->ifa_addr->sa_family == AF_INET) SetupAddr(&v4, ifa->ifa_addr);					
-				else if (ifa->ifa_addr->sa_family == AF_INET6) 				
-					{
-					SetupAddr(&tmp6, ifa->ifa_addr);
-					if (tmp6.ip.v6.b[0] >> 5 == 1)   // global prefix: 001
-						{ HavePrimaryGlobalv6 = mDNStrue; v6 = tmp6; }
-					}
-				}
-			else
-				{
-				// We'll take a V6 address from the non-primary interface if the primary interface doesn't have a global V6 address
-				if (!HavePrimaryGlobalv6 && ifa->ifa_addr->sa_family == AF_INET6 && !v6.ip.v6.b[0])
-					{
-					SetupAddr(&tmp6, ifa->ifa_addr);
-					if (tmp6.ip.v6.b[0] >> 5 == 1) v6 = tmp6;
-					}
-				}
-			ifa = ifa->ifa_next;
-			}
-
-		// Note that while we advertise v6, we still require v4 (possibly NAT'd, but not link-local) because we must use
-		// V4 to communicate w/ our DNS server
-					
-		if (v4.ip.v4.b[0] == 169 && v4.ip.v4.b[1] == 254) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);  // primary IP is link-local
-		else
-			{
-			if (v4.ip.v4.NotAnInteger != u->AdvertisedV4.ip.v4.NotAnInteger ||
-				memcmp(v6.ip.v6.b, u->AdvertisedV6.ip.v6.b, 16)             ||
-				r.ip.v4.NotAnInteger != u->Router.ip.v4.NotAnInteger)
-				{
-				if (LegacyNATInitialized) { LegacyNATDestroy(); LegacyNATInitialized = mDNSfalse; }
-				if (r.ip.v4.NotAnInteger && IsPrivateV4Addr(&v4))
-					{
-					mStatus err = LegacyNATInit();
-					if (err)  LogMsg("ERROR: LegacyNATInit");
-					else LegacyNATInitialized = mDNStrue;
-					}					
-				mDNS_SetPrimaryInterfaceInfo(m, &v4, v6.ip.v6.b[0] ? &v6 : NULL, r.ip.v4.NotAnInteger ? &r : NULL);
-				}
-			}
-		}
-	error:
-	CFRelease(dict);
-	}
-
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
    {
 	LogOperation("***   Network Configuration Change   ***");
@@ -3287,7 +4153,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	UpdateInterfaceList(m, utc);
 	int nDeletions = ClearInactiveInterfaces(m, utc);
 	int nAdditions = SetupActiveInterfaces(m, utc);
-	DynDNSConfigChanged(m);                           // note - call DynDNSConfigChanged *before* mDNS_UpdateLLQs	                        
+	uDNS_SetupDNSConfig(m);                           // note - call DynDNSConfigChanged *before* mDNS_UpdateLLQs	                        
 	if (nDeletions || nAdditions) mDNS_UpdateLLQs(m); // so that LLQs are restarted against the up to date name servers
 	
 	if (m->MainCallback)
@@ -3483,108 +4349,6 @@ mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 	return(err == 0);
 	}
 
-// Callback for the _legacy._browse queries - add answer to list of domains to search for empty-string browses
-mDNSlocal void FoundLegacyBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
-	{
-	DNameListElem *ptr, *prev, *new;
-	(void)m; // unused;
-	(void)question;  // unused
-
-	LogMsg("%s browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
-	
-	if (AddRecord)
-		{
-		new = mallocL("FoundLegacyBrowseDomain", sizeof(DNameListElem));
-		if (!new) { LogMsg("ERROR: malloc"); return; }
-		AssignDomainName(&new->name, &answer->rdata->u.name);
-		new->next = DefBrowseList;
-		DefBrowseList = new;
-		DefaultBrowseDomainChanged(&new->name, mDNStrue);
-		udsserver_default_browse_domain_changed(&new->name, mDNStrue);
-		return;
-		}
-	else
-		{
-		ptr = DefBrowseList;
-		prev = NULL;
-		while (ptr)
-			{
-			if (SameDomainName(&ptr->name, &answer->rdata->u.name))
-				{
-				DefaultBrowseDomainChanged(&ptr->name, mDNSfalse);
-				udsserver_default_browse_domain_changed(&ptr->name, mDNSfalse);
-				if (prev) prev->next = ptr->next;
-				else DefBrowseList = ptr->next;
-				freeL("FoundLegacyBrowseDomain", ptr);				
-				return;
-				}
-			prev = ptr;
-			ptr = ptr->next;
-			}
-		LogMsg("FoundLegacyBrowseDomain: Got remove event for domain %##s not in list", answer->rdata->u.name.c);
-		}
-	}
-
-mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
-	{
-	// allocate/register legacy and non-legacy _browse PTR record
-	ARListElem *browse = mallocL("ARListElem", sizeof(*browse));
-	mDNS_SetupResourceRecord(&browse->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, browse);
-	MakeDomainNameFromDNSNameString(browse->ar.resrec.name, mDNS_DomainTypeNames[type]);
-	AppendDNSNameString            (browse->ar.resrec.name, "local");
-	AssignDomainName(&browse->ar.resrec.rdata->u.name, d);
-	mStatus err = mDNS_Register(m, &browse->ar);
-	if (err)
-		{
-		LogMsg("SetSCPrefsBrowseDomain: mDNS_Register returned error %d", err);
-		freeL("ARListElem", browse);
-		}
-	else
-		{
-		browse->next = SCPrefBrowseDomains;
-		SCPrefBrowseDomains = browse;
-		}
-	}
-
-mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
-	{
-	ARListElem *remove, **ptr = &SCPrefBrowseDomains;
-	domainname lhs; // left-hand side of PTR, for comparison
-	
-	MakeDomainNameFromDNSNameString(&lhs, mDNS_DomainTypeNames[type]);
-	AppendDNSNameString            (&lhs, "local");
-
-	while (*ptr)
-		{
-		if (SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, d) && SameDomainName((*ptr)->ar.resrec.name, &lhs))
-			{
-			remove = *ptr;
-			*ptr = (*ptr)->next;
-			mDNS_Deregister(m, &remove->ar);
-			return;
-			}
-		else ptr = &(*ptr)->next;
-		}
-	}
-
-// Add or remove a user-specified domain to the list of empty-string browse domains
-// Also register a non-legacy _browse PTR record so that the domain appears in enumeration lists
-mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
-	{
-	debugf("SetSCPrefsBrowseDomain: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
-	
-	if (add)
-		{
-		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
-		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
-		}
-	else
-		{
-		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
-		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
-		}
-	}
-
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
 // 1) query for b._dns-sd._udp.local on LocalOnly interface
 //    (.local manually generated via explicit callback)
@@ -3594,28 +4358,6 @@ mDNSlocal void SetSCPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add
 // 5) global list delivered to client via GetSearchDomainList()
 // 6) client calls to enumerate domains now go over LocalOnly interface
 //    (!!!KRS may add outgoing interface in addition)
-
-mDNSlocal mStatus InitDNSConfig(mDNS *const m)
-	{
-	mStatus err;
-	static AuthRecord LocalRegPTR;
-	
-	// start query for domains to be used in default (empty string domain) browses
-	err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, NULL, mDNSInterface_LocalOnly, FoundLegacyBrowseDomain, NULL);
-
-	// provide browse domain "local" automatically
-	SetSCPrefsBrowseDomain(m, &localdomain, mDNStrue);
-
-	// register registration domain "local"
-	mDNS_SetupResourceRecord(&LocalRegPTR, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, NULL, NULL);
-	MakeDomainNameFromDNSNameString(LocalRegPTR.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeRegistration]);
-	AppendDNSNameString            (LocalRegPTR.resrec.name, "local");
-	AssignDomainName(&LocalRegPTR.resrec.rdata->u.name, &localdomain);
-	err = mDNS_Register(m, &LocalRegPTR);
-	if (err) LogMsg("ERROR: InitDNSConfig - mDNS_Register returned error %d", err);
-	
-	return mStatus_NoError;
-	}
 
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
@@ -3664,9 +4406,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->unicastsockets.cfsv4 = m->p->unicastsockets.cfsv6 = NULL;
 	m->p->unicastsockets.rlsv4 = m->p->unicastsockets.rlsv6 = NULL;
 	
-	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, AF_INET);
+	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, mDNSNULL, AF_INET);
 #ifndef NO_IPV6
-	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, AF_INET6);
+	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, mDNSNULL, AF_INET6);
 #endif
 
 	struct sockaddr_in s4;
@@ -3696,10 +4438,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return err;
 #endif /* NO_IOPOWER */
 
-	DynDNSRegDomain.c[0] = '\0';
-	DynDNSConfigChanged(m);						// Get initial DNS configuration
+	uDNS_SetupDNSConfig(m);						// Get initial DNS configuration
 
-	InitDNSConfig(m);
  	return(err);
 	}
 
