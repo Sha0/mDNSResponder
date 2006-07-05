@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.298  2006/07/05 22:55:03  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Need Private field in uDNS_RegInfo
+
 Revision 1.297  2006/07/05 22:20:03  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 
@@ -1564,6 +1568,7 @@ typedef struct
 	mDNSBool     lease;    // dynamic update contains (should contain) lease option
 	mDNSs32      expire;   // expiration of lease (-1 for static)
 	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
+	mDNSBool     Private;  // on name conflict, check if we're just seeing our own orphaned records
 	
 	// identifier to match update request and response
 	mDNSOpaque16 id;
