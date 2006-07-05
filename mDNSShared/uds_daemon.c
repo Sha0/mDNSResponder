@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.202  2006/07/05 22:00:10  cheshire
+Wide-area cleanup: Rename mDNSPlatformGetRegDomainList() to uDNS_GetDefaultRegDomainList()
+
 Revision 1.201  2006/06/29 03:02:47  cheshire
 <rdar://problem/4607042> mDNSResponder NXDOMAIN and CNAME support
 
@@ -651,7 +654,6 @@ Update to APSL 2.0
 
 #if defined(_WIN32)
 #include <process.h>
-#define MDNS_LAZY_REGISTER_SEARCH_DOMAINS
 #define dnssd_strerror(X)	win32_strerror(X)
 #define usleep(X)				Sleep(((X)+999)/1000)
 static char *	win32_strerror(int inErrorCode);
@@ -669,6 +671,7 @@ static char *	win32_strerror(int inErrorCode);
 #include <stdio.h>
 #include "mDNSEmbeddedAPI.h"
 #include "DNSCommon.h"
+#include "uDNS.h"
 #include "uds_daemon.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
@@ -681,9 +684,6 @@ static char *	win32_strerror(int inErrorCode);
 #endif // LOCAL_PEERCRED
 #endif //__MACOSX__
 
-#if defined(MDNS_LAZY_REGISTER_SEARCH_DOMAINS)
-extern mStatus dDNS_RegisterSearchDomains( mDNS * const m );
-#endif
 
 // Types and Data Structures
 // ----------------------------------------------------------------------
@@ -1509,7 +1509,7 @@ mDNSlocal void handle_query_request(request_state *rstate)
     q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
     q->ExpectUnique     = mDNSfalse;
     q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
-    q->ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME) != 0;
+    q->ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME   ) != 0;
     q->QuestionCallback = question_result_callback;
     q->QuestionContext  = rstate;
 
@@ -2096,12 +2096,10 @@ mDNSlocal void handle_browse_request(request_state *request)
     InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, interfaceIndex);
     if (interfaceIndex && !InterfaceID) { err = mStatus_BadParamErr;  goto error; }
 
-#if defined(MDNS_LAZY_REGISTER_SEARCH_DOMAINS)
 	if ( !domain || ( domain[0] == '\0' ) )
 		{
-		dDNS_RegisterSearchDomains( gmDNS );
+		uDNS_RegisterSearchDomains( gmDNS );
 		}
-#endif
 		
 	typedn.c[0] = 0;
 	NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
@@ -2465,7 +2463,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 	
 	if (!result && !*domain)
 		{
-		DNameListElem *ptr, *def_domains = mDNSPlatformGetRegDomainList();
+		DNameListElem *ptr, *def_domains = uDNS_GetDefaultRegDomainList();
 		for (ptr = def_domains; ptr; ptr = ptr->next)
 			register_service_instance(request, &ptr->name);
 		    // note that we don't report errors for non-local, non-explicit domains
@@ -3041,10 +3039,8 @@ mDNSlocal void handle_enum_request(request_state *rstate)
     term = mallocL("handle_enum_request", sizeof(enum_termination_t));
     if (!def || !all || !term) FatalError("ERROR: malloc");
 
-#if defined(MDNS_LAZY_REGISTER_SEARCH_DOMAINS)
-	dDNS_RegisterSearchDomains( gmDNS );
-#endif
-		
+	uDNS_RegisterSearchDomains( gmDNS );
+
     // enumeration requires multiple questions, so we must link all the context pointers so that
     // necessary context can be reached from the callbacks
     def->rstate = rstate;
