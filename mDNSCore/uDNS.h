@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.33  2006/07/05 22:53:28  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+
 Revision 1.32  2005/07/29 19:46:10  ksekar
 <rdar://problem/4191860> reduce polling period on failed LLQs to 15 minutes
 
@@ -145,8 +148,9 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define MAX_UCAST_POLL_INTERVAL (60 * 60 * mDNSPlatformOneSecond)
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
-#define UPDATE_PORT_NAME "_dns-update._udp."
-#define LLQ_PORT_NAME "_dns-llq._udp"
+#define UPDATE_SERVICE_TYPE  "_dns-update._udp."
+#define LLQ_SERVICE_TYPE     "_dns-llq._udp"
+#define PRIVATE_SERVICE_TYPE "_dns-private._tcp."
 #define DEFAULT_UPDATE_LEASE 7200
 	
 // Entry points into unicast-specific routines
@@ -175,6 +179,8 @@ extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
+extern struct uDNS_AuthInfo * uDNS_GetAuthInfo( mDNS * const m, DNSQuestion * question );
+
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
@@ -185,7 +191,45 @@ extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
 
-	
+
+// Asynchronous operation types
+
+typedef enum
+	{
+	zoneDataResult
+	// other async. operation names go here
+	} AsyncOpResultType;
+
+typedef struct
+	{
+    domainname zoneName;
+    mDNSAddr primaryAddr;
+    mDNSu16 zoneClass;
+    mDNSIPPort llqPort;
+    mDNSIPPort updatePort;
+	mDNSIPPort privatePort;
+	} zoneData_t;
+
+// other async. result struct defs go here
+
+typedef struct
+	{
+    AsyncOpResultType type;
+    zoneData_t zoneData;
+    // other async result structs go here
+	} AsyncOpResult;
+
+
+typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
+
+extern mStatus          uDNS_SetupDNSConfig( mDNS *const m );
+extern DNameListElem *	uDNS_GetDefaultSearchDomainList(void);
+extern DNameListElem *  uDNS_GetDefaultRegDomainList(void);
+extern mStatus          uDNS_GetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort, mDNSBool findPrviatePort,
+								   AsyncOpCallback callback, void *callbackInfo);
+extern mStatus          uDNS_RegisterSearchDomains( mDNS* const m );
+
+
 #ifdef	__cplusplus
 	}
 #endif
