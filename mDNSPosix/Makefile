@@ -29,6 +29,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.72  2006/07/05 23:53:58  cheshire
+# <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+#
 # Revision 1.71  2006/06/20 23:07:04  rpantos
 # <rdar://problem/3839132> Java needs to implement DNSServiceRegisterRecord equivalent
 #
@@ -268,6 +271,8 @@ SHAREDDIR = ../mDNSShared
 JDK = /usr/jdk
 
 CC = @cc
+BISON = @bison
+FLEX = @flex
 LD = ld -shared
 CP = cp
 RM = rm
@@ -458,6 +463,10 @@ clean:
 DAEMONOBJS = $(OBJDIR)/PosixDaemon.c.o $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNS.c.o \
              $(OBJDIR)/DNSDigest.c.o $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/uds_daemon.c.o \
              $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/dnssd_ipc.c.o $(OBJDIR)/GenLinkedList.c.o $(OBJDIR)/PlatformCommon.c.o 
+
+# dnsextd target build dnsextd
+DNSEXTDOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o $(OBJDIR)/DNSDigest.c.o \
+             $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/PlatformCommon.c.o $(OBJDIR)/dnsextd_parser.y.o $(OBJDIR)/dnsextd_lexer.l.o
 
 Daemon: setup $(BUILDDIR)/mdnsd
 	@echo "Responder daemon done"
@@ -676,7 +685,7 @@ $(BUILDDIR)/mDNSNetMonitor:          $(SPECIALOBJ) $(OBJDIR)/NetMonitor.c.o
 
 $(OBJDIR)/NetMonitor.c.o:            $(COREDIR)/mDNS.c # Note: NetMonitor.c textually imports mDNS.c
 
-$(BUILDDIR)/dnsextd:                 $(SPECIALOBJ) $(OBJDIR)/dnsextd.c.threadsafe.o
+$(BUILDDIR)/dnsextd:                 $(DNSEXTDOBJ) $(OBJDIR)/dnsextd.c.threadsafe.o
 	$(CC) $+ -o $@ $(LINKOPTS) $(LINKOPTS_PTHREAD)
 
 #############################################################################
@@ -694,8 +703,19 @@ $(OBJDIR)/%.c.o:	$(SHAREDDIR)/%.c
 $(OBJDIR)/%.c.threadsafe.o:	%.c
 	$(CC) $(CFLAGS) $(CFLAGS_PTHREAD) -D_REENTRANT -c -o $@ $<
 
+$(OBJDIR)/%.c.threadsafe.o:	$(SHAREDDIR)/%.c
+	$(CC) $(CFLAGS) $(CFLAGS_PTHREAD) -D_REENTRANT -c -o $@ $<
+
 $(OBJDIR)/%.c.so.o:	%.c
 	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
 
 $(OBJDIR)/%.c.so.o:	$(SHAREDDIR)/%.c
 	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
+
+$(OBJDIR)/%.y.o: $(SHAREDDIR)/%.y
+	$(BISON) -o $<.c -d $<
+	$(CC) $(CFLAGS) -c -o $@ $<.c
+
+$(OBJDIR)/%.l.o: $(SHAREDDIR)/%.l
+	$(FLEX) -i -o$<.c $<
+	$(CC) $(CFLAGS) -c -o $@ $<.c
