@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.15  2006/07/05 23:30:57  cheshire
+Rename LegacyNATInit() -> LNT_Init()
+
 Revision 1.14  2005/12/08 03:00:33  cheshire
 <rdar://problem/4349971> Byte order bugs in Legacy NAT traversal code
 
@@ -2928,13 +2931,13 @@ static void SendDiscoveryMsg()
 }
 
 // Set up threads for upnp responses, etc.
-int LegacyNATInit(void)
+int LNT_Init(void)
 {
 	//pthread_t		UDPthread;
 	pthread_attr_t	attr;
 	int				iRet;
 	//struct timeval	tv;
-	LogOperation("LegacyNATInit");
+	LogOperation("LNT_Init");
 
 	static int		fFirstInitLocks = TRUE;
 	FILE *log = NULL;	
@@ -3019,7 +3022,7 @@ int LegacyNATInit(void)
 	return NA_E_SUCCESS;
 }
 
-int LegacyNATDestroy()
+int LNT_Destroy()
 {
     void *UDPThreadRetVal; 
 	g_fQuit = TRUE;
