@@ -60,6 +60,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.297  2006/07/05 22:20:03  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+
 Revision 1.296  2006/06/29 05:28:01  cheshire
 Added comment about mDNSlocal and mDNSexport
 
@@ -1420,6 +1423,7 @@ enum
 
 typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target;   } rdataSRV;
 typedef packedstruct { mDNSu16 preference;                                domainname exchange; } rdataMX;
+
 typedef packedstruct
 	{
 	domainname mname;
@@ -1812,6 +1816,15 @@ typedef struct
 	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
 
+// A struct that abstracts away the differences in TCP/SSL sockets
+ 
+typedef struct uDNS_TCPSocket_struct * uDNS_TCPSocket;
+
+// A struct that abstracts away the differences in UDP sockets
+
+typedef struct uDNS_UDPSocket_struct * uDNS_UDPSocket;
+
+
 typedef enum
 	{
 	// Setup states
@@ -1825,7 +1838,8 @@ typedef enum
 	LLQ_Suspended         = 7,   
 	LLQ_SuspendDeferred   = 8, // suspend once we get zone info
 	LLQ_SuspendedPoll     = 9, // suspended from polling state
-	LLQ_NatMapWait        = 10,
+	LLQ_NatMapWaitTCP     = 10,
+	LLQ_NatMapWaitUDP     = 11,
 	
 	// Established/error states
 	LLQ_Static            = 16,
@@ -1837,8 +1851,17 @@ typedef enum
 typedef struct
 	{
 	LLQ_State state;
+	mDNSBool isPrivate;
+	NATTraversalInfo * NATInfoTCP;	// This is used if we're browsing behind a NAT
+	NATTraversalInfo * NATInfoUDP;
 	mDNSAddr servAddr;
 	mDNSIPPort servPort;
+	mDNSIPPort privPort;
+	mDNSIPPort eventPort;			// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
+	                                // and the UDP socket are bound to.  This allows us to receive event notifications via
+	                                // TCP or UDP.
+	uDNS_TCPSocket tcpSock;
+	uDNS_UDPSocket udpSock;
 	DNSQuestion *question;
 	mDNSu32 origLease;  // seconds (relative)
 	mDNSs32 retry;  // ticks (absolute)
@@ -1846,7 +1869,6 @@ typedef struct
     mDNSs16 ntries;
 	mDNSu8 id[8];
 	mDNSBool deriveRemovesOnResume;
-    mDNSBool NATMap;        // does this LLQ use the global LLQ NAT mapping?
 	} LLQ_Info;
 
 // LLQ constants
@@ -1884,6 +1906,7 @@ typedef struct
 	mDNSBool              internal;
 	InternalResponseHndlr responseCallback;   // NULL if internal field is false
 	LLQ_Info              *llq;               // NULL for 1-shot queries
+	uDNS_TCPSocket         sock;		      // For secure operations
     mDNSBool              Answered;           // have we received an answer (including NXDOMAIN) for this question?
     CacheRecord           *knownAnswers;
     mDNSs32               RestartTime;        // Mark when we restart a suspended query
@@ -1916,6 +1939,7 @@ struct DNSQuestion_struct
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSu32               RequestUnicast;	// Non-zero if we want to send query with kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
+	mDNSBool              Private;			// Set if query is currently being done using Private DNS
 	uDNS_QuestionInfo     uDNS_info;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
@@ -2059,6 +2083,7 @@ struct NATTraversalInfo_struct
 	NATResponseHndlr ReceiveResponse;
 	union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
     mDNSAddr Router;
+	mDNSIPPort PrivatePort;
     mDNSIPPort PublicPort;
     union { NATAddrRequest AddrReq; NATPortMapRequest PortReq; } request;
 	mDNSs32 retry;                   // absolute time when we retry
@@ -2066,6 +2091,8 @@ struct NATTraversalInfo_struct
 	int ntries;
 	NATState_t state;
 	NATTraversalInfo *next;
+	mDNSBool isLLQ;
+	unsigned refs;
 	};
 
 // ***************************************************************************
@@ -2098,7 +2125,6 @@ typedef struct
 	mDNSAddr         AdvertisedV4;       // IPv4 address pointed to by hostname
 	mDNSAddr         MappedV4;           // Cache of public address if PrimaryIP is behind a NAT
 	mDNSAddr         AdvertisedV6;       // IPv6 address pointed to by hostname
-    NATTraversalInfo *LLQNatInfo;        // Nat port mapping to receive LLQ events
 	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
 	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
 	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
@@ -2107,6 +2133,10 @@ typedef struct
     domainname       StaticHostname;     // Current answer to reverse-map query (above)
     mDNSBool         DelaySRVUpdate;     // Delay SRV target/port update to avoid "flap"
     mDNSs32          NextSRVUpdate;      // Time to perform delayed update
+	domainname		 RegDomain;          // Default wide-area zone for service registration
+	struct DNameListElem *  BrowseDomains;      // Default wide-area zone for legacy ("empty string") browses
+    domainname       FQDN;
+    mDNSBool         RegisterSearchDomains;
 	} uDNS_GlobalInfo;
 
 struct mDNS_struct
@@ -2218,6 +2248,8 @@ extern const mDNSIPPort      NATPMPPort;
 extern const mDNSIPPort      DNSEXTPort;
 extern const mDNSIPPort      MulticastDNSPort;
 extern const mDNSIPPort      LoopbackIPCPort;
+extern const mDNSIPPort      PrivateDNSPort;
+extern const mDNSIPPort      NSIPCPort;
 
 extern const mDNSv4Addr      AllDNSAdminGroup;
 #define AllDNSLinkGroupv4 (AllDNSLinkGroup_v4.ip.v4)
@@ -2644,11 +2676,18 @@ extern mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 ta
 // Convert an arbitrary binary key (of any length) into an HMAC key (stored in AuthInfo struct)
 extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, const mDNSu8 *key, mDNSu32 len);
 
-// sign a DNS message.  The message must be compete, with all values in network byte order.  end points to the end
+// sign a DNS message.  The message must be complete, with all values in network byte order.  end points to the end
 // of the message, and is modified by this routine.  numAdditionals is a pointer to the number of additional
 // records in HOST byte order, which is incremented upon successful completion of this routine.  The function returns
 // the new end pointer on success, and NULL on failure.
-extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info);
+extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info, mDNSu16 tcode);
+
+// verify a DNS message.  The message must be complete, with all values in network byte order.  end points to the
+// end of the record.  tsig is a pointer to the resource record that contains the TSIG OPT record.  info is
+// the matching key to use for verifying the message.  This function expects that the additionals member
+// of the DNS message header has already had one subtracted from it.
+extern mDNSBool DNSDigest_VerifyMessage(DNSMessage * msg, mDNSu8 * end, LargeCacheRecord * tsig, uDNS_AuthInfo * info, mDNSu16 * rcode, mDNSu16 * tcode );
+
 
 // ***************************************************************************
 #if 0
@@ -2723,16 +2762,34 @@ extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNSInte
 // asynchronously fails, the TCPConnectionCallback should be invoked as usual, with the error being
 // returned in subsequent calls to PlatformReadTCP or PlatformWriteTCP.  (This allows for platforms
 // with limited asynchronous error detection capabilities.)  PlatformReadTCP and PlatformWriteTCP must
-// return the number of bytes read/written, 0 if the call would block, and -1 if an error.
+// return the number of bytes read/written, 0 if the call would block, and -1 if an error.  PlatformReadTCP
+// should set the closed argument if the socket has been closed.
 // PlatformTCPCloseConnection must close the connection to the peer and remove the descriptor from the
 // event loop.  CloseConnectin may be called at any time, including in a ConnectionCallback.
 
-typedef void (*TCPConnectionCallback)(int sd, void *context, mDNSBool ConnectionEstablished);
-extern mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-										  TCPConnectionCallback callback, void *context, int *descriptor);
-extern void mDNSPlatformTCPCloseConnection(int sd);
-extern int mDNSPlatformReadTCP(int sd, void *buf, int buflen);
-extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
+typedef enum
+	{
+	kTCPSocketFlags_UseTLS = ( 1 << 0 )
+	} uDNS_TCPSocketFlags;
+	
+typedef void (*TCPConnectionCallback)(uDNS_TCPSocket sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
+extern uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port );	// creates a tcp socket
+extern uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int sd );
+extern int            mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock );
+extern int            mDNSPlatformTCPGetFD( uDNS_TCPSocket sock );
+extern mStatus        mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context );
+extern mDNSBool       mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock );
+extern void           mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock );
+extern int            mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, int buflen, mDNSBool * closed);
+extern int            mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, int len);
+extern uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port );
+extern void           mDNSPlatformUDPClose( uDNS_UDPSocket sock );
+
+// mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd
+extern mStatus        mDNSPlatformTLSSetupCerts(void);
+extern void           mDNSPlatformTLSTearDownCerts(void);
+
 
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
@@ -2740,18 +2797,35 @@ extern int mDNSPlatformWriteTCP(int sd, const char *msg, int len);
 // Platforms may implement the Get() calls via the mDNS_CopyDNameList() helper routine.
 // Callers should free lists obtained via the Get() calls with th mDNS_FreeDNameList routine, provided by the core.
 
+typedef struct IPAddrListElem
+	{
+	mDNSAddr addr;
+	struct IPAddrListElem *next;
+	} IPAddrListElem;
+
 typedef struct DNameListElem
 	{
 	domainname name;
 	struct DNameListElem *next;
 	} DNameListElem;
 
-extern DNameListElem *mDNSPlatformGetSearchDomainList(void);
-extern DNameListElem *mDNSPlatformGetRegDomainList(void);
+extern void					mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
+extern IPAddrListElem	*	mDNSPlatformGetDNSServers(void);
+extern DNameListElem    *   mDNSPlatformGetSearchDomainList(void);
+extern DNameListElem	*	mDNSPlatformGetFQDN( void );
+extern mStatus				mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router );
+extern DNameListElem	*	mDNSPlatformGetReverseMapSearchDomainList( void );
+extern void					mDNSPlatformSetSecretForDomain( mDNS * const m, const domainname *domain );
+extern mStatus				mDNSPlatformRegisterSplitDNS( mDNS * const m, int * nAdditions, int * nDeletions );
+extern void					mDNSPlatformDefaultBrowseDomainChanged( const domainname *d, mDNSBool add );
+extern void					mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
+extern void					mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);
+
 
 // Helper functions provided by the core
 extern DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig);
 extern void mDNS_FreeDNameList(DNameListElem *list);
+extern void mDNS_FreeIPAddrList(IPAddrListElem * list);
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 // Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
@@ -2760,6 +2834,8 @@ extern void mDNS_FreeDNameList(DNameListElem *list);
 #define DYN_PORT_MAX 65535
 #define LEGACY_NATMAP_MAX_TRIES 4 // if our desired mapping is taken, how many times we try mapping to a random port
 
+extern int     LNT_Init(void);
+extern int     LNT_Destroy(void);
 extern mStatus LNT_GetPublicIP(mDNSOpaque32 *ip);
 extern mStatus LNT_MapPort(mDNSIPPort priv, mDNSIPPort pub, mDNSBool tcp);
 extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
