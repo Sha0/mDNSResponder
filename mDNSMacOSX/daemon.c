@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.266  2006/07/05 23:34:53  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+
 Revision 1.265  2006/06/29 07:32:08  cheshire
 Added missing LogOperation logging for DNSServiceBrowse results
 
@@ -631,6 +634,7 @@ Add $Log header
 #include "DNSServiceDiscoveryRequestServer.h"
 #include "DNSServiceDiscoveryReply.h"
 
+#include "uDNS.h"
 #include "DNSCommon.h"
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
@@ -1253,9 +1257,11 @@ mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainnam
 	return err;
 	}
 
-mDNSexport void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
+mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
 	{
 	DNSServiceBrowser *ptr;
+
+	udsserver_default_browse_domain_changed(d, add);
 
 	debugf("DefaultBrowseDomainChanged: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 	for (ptr = DNSServiceBrowserList; ptr; ptr = ptr->next)
@@ -1346,7 +1352,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		{
 		// Start browser on all domains
 		x->DefaultDomain = mDNStrue;
-		SearchDomains = mDNSPlatformGetSearchDomainList();
+		SearchDomains = uDNS_GetDefaultSearchDomainList();
 		if (!SearchDomains) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
 		for (sdPtr = SearchDomains; sdPtr; sdPtr = sdPtr->next)
 			{
@@ -1631,9 +1637,11 @@ mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname
 	return err;	
 	}
 
-mDNSexport void DefaultRegDomainChanged(const domainname *d, mDNSBool add)
+mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add)
 	{
 	DNSServiceRegistration *reg;
+
+	udsserver_default_reg_domain_changed(d, add);
 
 	for (reg = DNSServiceRegistrationList; reg; reg = reg->next)
 		{
@@ -1771,7 +1779,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 
 	if (x->DefaultDomain)
 		{
-		DNameListElem *ptr, *regdomains = mDNSPlatformGetRegDomainList();
+		DNameListElem *ptr, *regdomains = uDNS_GetDefaultRegDomainList();
 		for (ptr = regdomains; ptr; ptr = ptr->next)
 			AddServiceInstance(x, &ptr->name);
 		mDNS_FreeDNameList(regdomains);
