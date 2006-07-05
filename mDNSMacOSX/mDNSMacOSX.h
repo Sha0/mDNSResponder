@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.56  2006/07/05 23:37:26  cheshire
+Remove unused LegacyNATInit/LegacyNATDestroy declarations
+
 Revision 1.55  2006/06/29 05:33:30  cheshire
 <rdar://problem/4607043> mDNSResponder conditional compilation options
 
@@ -289,10 +292,6 @@ extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 
 extern const char mDNSResponderVersionString[];
-
-// Legacy NAT Traversal Support Setup/Teardown
-extern int LegacyNATDestroy(void);
-extern int LegacyNATInit(void);
 
 // Allow platform layer to tell daemon when default registration/browse domains
 extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);
