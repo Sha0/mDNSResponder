@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.104  2006/07/05 23:09:13  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Update mDNSSendDNSMessage() to use uDNS_TCPSocket type instead of "int"
+
 Revision 1.103  2006/06/29 07:42:14  cheshire
 <rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
 
@@ -408,6 +412,8 @@ mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly  = (mDNSInterfaceID)1;
 #define   DNSEXTPortAsNumber       5352		// Port used for end-to-end DNS operations like LLQ, Updates with Leases, etc.
 #define   MulticastDNSPortAsNumber 5353
 #define   LoopbackIPCPortAsNumber  5354
+#define   PrivateDNSPortAsNumber   5533
+#define   NSIPCPortAsNumber        5030     // Port used for dnsextd to talk to local nameserver bound to loopback
 //#define MulticastDNSPortAsNumber 5355		// LLMNR
 
 mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
@@ -415,6 +421,8 @@ mDNSexport const mDNSIPPort NATPMPPort         = { { NATPMPPortAsNumber       >>
 mDNSexport const mDNSIPPort DNSEXTPort         = { { DNSEXTPortAsNumber       >> 8, DNSEXTPortAsNumber       & 0xFF } };
 mDNSexport const mDNSIPPort MulticastDNSPort   = { { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF } };
 mDNSexport const mDNSIPPort LoopbackIPCPort    = { { LoopbackIPCPortAsNumber  >> 8, LoopbackIPCPortAsNumber  & 0xFF } };
+mDNSexport const mDNSIPPort PrivateDNSPort     = { { PrivateDNSPortAsNumber   >> 8, PrivateDNSPortAsNumber   & 0xFF } };
+mDNSexport const mDNSIPPort NSIPCPort          = { { NSIPCPortAsNumber        >> 8, NSIPCPortAsNumber        & 0xFF } };
 
 mDNSexport const mDNSv4Addr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
@@ -462,6 +470,26 @@ mDNSexport void mDNS_FreeDNameList(DNameListElem *list)
 		mDNSPlatformMemFree(fptr);
 		}
 	}
+
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - IPAddrList deallocation routine
+#endif
+
+mDNSexport void mDNS_FreeIPAddrList(IPAddrListElem * list)
+{
+	IPAddrListElem * fptr;
+
+	while (list)
+	{
+		fptr = list;
+		list = list->next;
+		mDNSPlatformMemFree(fptr);
+	}
+}
+
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -1346,6 +1374,7 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
 		case kDNSType_HINFO:return(mDNSu16)(2 + (int)rd->data[0] + (int)rd->data[1 + (int)rd->data[0]]);
 		case kDNSType_NULL:	// Same as TXT -- not self-describing, so have to just trust rdlength
+		case kDNSType_TSIG: // Same as TXT -- not self-describing, so have to just trust rdlength
 		case kDNSType_TXT:  return(rr->rdlength); // TXT is not self-describing, so have to just trust rdlength
 		case kDNSType_AAAA:	return(sizeof(rd->ipv6));
 		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
@@ -2053,6 +2082,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 		case kDNSType_NULL:	//Same as TXT
 		case kDNSType_HINFO://Same as TXT
+		case kDNSType_TSIG: //Same as TXT
 		case kDNSType_TXT:  if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{
 								debugf("GetResourceRecord: %s rdata size (%d) exceeds storage (%d)",
@@ -2169,7 +2199,7 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 #endif
 
 mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
-    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, int sd, uDNS_AuthInfo *authInfo)
+    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, uDNS_AuthInfo *authInfo)
 	{
 	mStatus status;
 	int nsent;
@@ -2193,21 +2223,23 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 
 	if (authInfo)
 		{
-		end = DNSDigest_SignMessage(msg, &end, &numAdditionals, authInfo);
+		end = DNSDigest_SignMessage(msg, &end, &numAdditionals, authInfo, 0);
 		if (!end) return mStatus_UnknownErr;
 		}
 
 	// Send the packet on the wire
 
-	if (sd >= 0)
+	if ( sock )
 		{
 		msglen = (mDNSu16)(end - (mDNSu8 *)msg);
 		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
 		lenbuf[1] = (mDNSu8)(msglen &  0xFF);
-		nsent = mDNSPlatformWriteTCP(sd, (char*)lenbuf, 2);
+
+		nsent = mDNSPlatformWriteTCP( sock, (char*)lenbuf, 2);
 		//!!!KRS make sure kernel is sending these as 1 packet!
 		if (nsent != 2) goto tcp_error;
-		nsent = mDNSPlatformWriteTCP(sd, (char *)msg, msglen);
+
+		nsent = mDNSPlatformWriteTCP(sock, (char *)msg, msglen);
 		if (nsent != msglen) goto tcp_error;
 		status = mStatus_NoError;
 		}

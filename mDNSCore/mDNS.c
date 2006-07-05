@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.545  2006/07/05 23:10:30  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Update mDNSSendDNSMessage() to use uDNS_TCPSocket type instead of "int"
+
 Revision 1.544  2006/06/29 07:42:14  cheshire
 <rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
 
@@ -2662,7 +2666,7 @@ mDNSlocal void SendDelayedUnicastResponse(mDNS *const m, const mDNSAddr *const d
 			rr->NR_AdditionalTo = mDNSNULL;
 			}
 
-		if (m->omsg.h.numAnswers) mDNSSendDNSMessage(m, &m->omsg, responseptr, mDNSInterface_Any, dest, MulticastDNSPort, -1, mDNSNULL);
+		if (m->omsg.h.numAnswers) mDNSSendDNSMessage(m, &m->omsg, responseptr, mDNSInterface_Any, dest, MulticastDNSPort, mDNSNULL, mDNSNULL);
 		}
 	}
 
@@ -2958,8 +2962,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 				numAnnounce,               numAnnounce               == 1 ? "" : "s",
 				numAnswer,                 numAnswer                 == 1 ? "" : "s",
 				m->omsg.h.numAdditionals, m->omsg.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
-			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
-			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, mDNSNULL, mDNSNULL);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, mDNSNULL, mDNSNULL);
 			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+9)/10);
 			if (++pktcount >= 1000) { LogMsg("SendResponses exceeded loop limit %d: giving up", pktcount); break; }
 			// There might be more things to send on this interface, so go around one more time and try again.
@@ -3346,7 +3350,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				const mDNSu8 *const limit = m->omsg.data + sizeof(m->omsg.data);
 				InitializeDNSMessage(&m->omsg.h, q->TargetQID, QueryFlags);
 				qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
-				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, -1, mDNSNULL);
+				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, mDNSNULL, mDNSNULL );
 				q->ThisQInterval   *= 2;
 				if (q->ThisQInterval > MaxQuestionInterval)
 					q->ThisQInterval = MaxQuestionInterval;
@@ -3570,8 +3574,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 				m->omsg.h.numQuestions,   m->omsg.h.numQuestions   == 1 ? "" : "s",
 				m->omsg.h.numAnswers,     m->omsg.h.numAnswers     == 1 ? "" : "s",
 				m->omsg.h.numAuthorities, m->omsg.h.numAuthorities == 1 ? "" : "s", intf->InterfaceID);
-			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, -1, mDNSNULL);
-			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, -1, mDNSNULL);
+			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v4, MulticastDNSPort, mDNSNULL, mDNSNULL);
+			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, queryptr, intf->InterfaceID, &AllDNSLinkGroup_v6, MulticastDNSPort, mDNSNULL, mDNSNULL);
 			if (!m->SuppressSending) m->SuppressSending = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+9)/10);
 			if (++pktcount >= 1000)
 				{ LogMsg("SendQueries exceeded loop limit %d: giving up", pktcount); break; }
@@ -5068,7 +5072,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 			m->omsg.h.numAnswers,     m->omsg.h.numAnswers     == 1 ? "" : "s",
 			m->omsg.h.numAdditionals, m->omsg.h.numAdditionals == 1 ? "" : "s",
 			srcaddr, mDNSVal16(srcport), InterfaceID, srcaddr->type);
-		mDNSSendDNSMessage(m, &m->omsg, responseend, InterfaceID, srcaddr, srcport, -1, mDNSNULL);
+		mDNSSendDNSMessage(m, &m->omsg, responseend, InterfaceID, srcaddr, srcport, mDNSNULL, mDNSNULL);
 		}
 	}
 
@@ -5371,7 +5375,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	mDNSu8 *ptr = mDNSNULL;
 	const mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 
-#ifndef UNICAST_DISABLED	
+#ifndef UNICAST_DISABLED
 	if (srcport.NotAnInteger == NATPMPPort.NotAnInteger)
 		{
 		mDNS_Lock(m);
@@ -5551,6 +5555,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->SendQNow          = mDNSNULL;
 		question->SendOnAll         = mDNSfalse;
 		question->LastQTxTime       = m->timenow;
+		question->Private           = mDNSfalse;
 
 		if (!question->DuplicateOf)
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) started",
