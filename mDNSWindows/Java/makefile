@@ -20,6 +20,9 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 # $Log: makefile,v $
+# Revision 1.8  2006/07/05 20:57:22  cheshire
+# <rdar://problem/3839132> Java needs to implement DNSServiceRegisterRecord equivalent
+#
 # Revision 1.7  2005/10/19 17:19:56  herscher
 # Change JDK to use JAVA_HOME environment variable
 #
@@ -142,6 +145,8 @@ JARCONTENTS =	$(OBJDIR)\com\apple\dnssd\DNSSDService.class \
 				$(OBJDIR)\com\apple\dnssd\RegisterListener.class \
 				$(OBJDIR)\com\apple\dnssd\QueryListener.class \
 				$(OBJDIR)\com\apple\dnssd\DomainListener.class \
+				$(OBJDIR)\com\apple\dnssd\DNSSDRecordRegistrar.class \
+				$(OBJDIR)\com\apple\dnssd\RegisterRecordListener.class \
 				$(OBJDIR)\com\apple\dnssd\DNSSD.class
 
 $(BUILDDIR)\dns_sd.jar: $(JARCONTENTS)
