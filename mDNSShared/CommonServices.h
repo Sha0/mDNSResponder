@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.4  2006/07/05 22:43:21  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+
 Revision 1.3  2004/04/08 09:27:12  bradley
 Added macro for portable specification of callback calling conventions.
 
@@ -444,7 +447,7 @@ Common Services and portability support for various platforms.
 // - Windows
 
 #if( TARGET_LANGUAGE_C_LIKE )
-	#if( ( TARGET_OS_WIN32 || !defined( _BSD_SSIZE_T_DEFINED_ ) ) && !TARGET_OS_VXWORKS )
+	#if( ( TARGET_OS_WIN32 || !defined( _BSD_SSIZE_T_DEFINED_ ) ) && !TARGET_OS_VXWORKS && !TARGET_OS_MAC )
 		typedef int						ssize_t;
 	#endif
 #endif
