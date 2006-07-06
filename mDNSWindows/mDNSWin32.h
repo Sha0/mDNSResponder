@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.25  2006/07/06 00:05:44  cheshire
+"dDNS.h" renamed to "uDNS.h"
+
 Revision 1.24  2006/02/26 19:31:04  herscher
 <rdar://problem/4455038> Bonjour For Windows takes 90 seconds to start. This was caused by a bad interaction between the VirtualPC check, and the removal of the WMI dependency.  The problem was fixed by: 1) checking to see if WMI is running before trying to talk to it.  2) Retrying the VirtualPC check every 10 seconds upon failure, stopping after 10 unsuccessful tries.
 
@@ -125,7 +128,7 @@ Multicast DNS platform plugin for Win32
 #endif
 
 #include	"mDNSEmbeddedAPI.h"
-#include	"dDNS.h"
+#include	"uDNS.h"
 
 #ifdef	__cplusplus
 	extern "C" {
