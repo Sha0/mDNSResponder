@@ -270,7 +270,7 @@
 			Name="Header Files"
 			Filter="h;hpp;hxx;hm;inl">
 			<File
-				RelativePath="..\CommonServices.h">
+				RelativePath="..\..\mDNSShared\CommonServices.h">
 			</File>
 			<File
 				RelativePath="ConfigDialog.h">
@@ -326,10 +326,10 @@
 			Name="Support"
 			Filter="">
 			<File
-				RelativePath="..\DebugServices.c">
+				RelativePath="..\..\mDNSShared\DebugServices.c">
 			</File>
 			<File
-				RelativePath="..\DebugServices.h">
+				RelativePath="..\..\mDNSShared\DebugServices.h">
 			</File>
 			<File
 				RelativePath="..\..\mDNSShared\dns_sd.h">
