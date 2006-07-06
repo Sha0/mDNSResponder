@@ -37,6 +37,10 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.81  2006/07/06 00:01:44  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Update mDNSSendDNSMessage() to use uDNS_TCPSocket type instead of "int"
+
 Revision 1.80  2006/06/12 18:22:42  cheshire
 <rdar://problem/4580067> mDNSResponder building warnings under Red Hat 64-bit (LP64) Linux
 
@@ -573,7 +577,7 @@ mDNSlocal void SendUnicastQuery(mDNS *const m, HostEntry *entry, domainname *nam
 		m->ExpectUnicastResponse = m->timenow;
 		}
 
-	mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, target, MulticastDNSPort, -1, mDNSNULL);
+	mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, target, MulticastDNSPort, mDNSNULL, mDNSNULL);
 	}
 
 mDNSlocal void AnalyseHost(mDNS *const m, HostEntry *entry, const mDNSInterfaceID InterfaceID)
