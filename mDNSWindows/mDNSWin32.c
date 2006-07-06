@@ -23,6 +23,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.108  2006/07/06 00:06:21  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+
 Revision 1.107  2006/03/19 02:00:13  cheshire
 <rdar://problem/4073825> Improve logic for delaying packets after repeated interface transitions
 
@@ -512,15 +515,15 @@ struct	mDNSPlatformInterfaceInfo
 	mDNSAddr			ip;
 };
 
-typedef struct	mDNSTCPConnectionData	mDNSTCPConnectionData;
-struct	mDNSTCPConnectionData
+struct uDNS_TCPSocket_struct
 {
-	SocketRef					sock;
-	BOOL						connected;
-	TCPConnectionCallback		callback;
-	void					*	context;
-	HANDLE						pendingEvent;
-	mDNSTCPConnectionData	*	next;
+	SocketRef				fd;
+	uDNS_TCPSocketFlags		flags;
+	BOOL					connected;
+	TCPConnectionCallback	callback;
+	void				*	context;
+	HANDLE					pendingEvent;
+	uDNS_TCPSocket			next;
 };
 
 
@@ -563,7 +566,8 @@ mDNSlocal OSStatus			TCHARtoUTF8( const TCHAR *inString, char *inBuffer, size_t 
 mDNSlocal OSStatus			WindowsLatin1toUTF8( const char *inString, char *inBuffer, size_t inBufferSize );
 mDNSlocal OSStatus			MakeLsaStringFromUTF8String( PLSA_UNICODE_STRING output, const char * input );
 mDNSlocal OSStatus			MakeUTF8StringFromLsaString( char * output, size_t len, PLSA_UNICODE_STRING input );
-mDNSlocal void				FreeTCPConnectionData( mDNSTCPConnectionData * data );
+mDNSlocal void				FreeTCPSocket( uDNS_TCPSocket sock );
+mDNSlocal mStatus           SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa);
 
 #ifdef	__cplusplus
 	}
@@ -577,11 +581,11 @@ mDNSlocal void				FreeTCPConnectionData( mDNSTCPConnectionData * data );
 //	Globals
 //===========================================================================================================================
 
-mDNSlocal mDNS_PlatformSupport		gMDNSPlatformSupport;
-mDNSs32								mDNSPlatformOneSecond = 0;
-mDNSlocal mDNSTCPConnectionData	*	gTCPConnectionList		= NULL;
-mDNSlocal int						gTCPConnections			= 0;
-mDNSlocal BOOL						gWaitListChanged		= FALSE;
+mDNSlocal mDNS_PlatformSupport	gMDNSPlatformSupport;
+mDNSs32							mDNSPlatformOneSecond = 0;
+mDNSlocal uDNS_TCPSocket		gTCPConnectionList		= NULL;
+mDNSlocal int					gTCPConnections			= 0;
+mDNSlocal BOOL					gWaitListChanged		= FALSE;
 
 #if( MDNS_WINDOWS_USE_IPV6_IF_ADDRS )
 
@@ -1231,27 +1235,95 @@ mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( mDNS * const inMDNS, mDNSInte
 }
 
 //===========================================================================================================================
+//	mDNSPlatformTCPSocket
+//===========================================================================================================================
+
+uDNS_TCPSocket
+mDNSPlatformTCPSocket
+	(
+	mDNS			* const m,
+	uDNS_TCPSocketFlags		flags,
+	mDNSIPPort			*	port 
+	)
+{
+	uDNS_TCPSocket		sock    = NULL;
+	u_long				on		= 1;  // "on" for setsockopt
+	struct sockaddr_in	saddr;
+	int					len;
+	mStatus				err		= mStatus_NoError;
+
+	DEBUG_UNUSED( m );
+
+	require_action( flags == 0, exit, err = mStatus_UnsupportedErr );
+
+	// Setup connection data object
+
+	sock = (uDNS_TCPSocket) malloc( sizeof( struct uDNS_TCPSocket_struct ) );
+	require_action( sock, exit, err = mStatus_NoMemoryErr );
+	memset( sock, 0, sizeof( uDNS_TCPSocket ) );
+
+	sock->fd		= INVALID_SOCKET;
+	sock->flags		= flags;
+
+	bzero(&saddr, sizeof(saddr));
+	saddr.sin_family		= AF_INET;
+	saddr.sin_addr.s_addr	= htonl( INADDR_ANY );
+	saddr.sin_port			= port->NotAnInteger;
+	
+	// Create the socket
+
+	sock->fd = socket(AF_INET, SOCK_STREAM, 0);
+	err = translate_errno( sock->fd != INVALID_SOCKET, WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
+	// Set it to be non-blocking
+
+	err = ioctlsocket( sock->fd, FIONBIO, &on );
+	err = translate_errno( err == 0, WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
+	// Get port number
+
+	memset( &saddr, 0, sizeof( saddr ) );
+	len = sizeof( saddr );
+
+	err = getsockname( sock->fd, ( struct sockaddr* ) &saddr, &len );
+	err = translate_errno( err == 0, WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
+	port->NotAnInteger = saddr.sin_port;
+
+exit:
+
+	if ( err && sock )
+	{
+		FreeTCPSocket( sock );
+		sock = mDNSNULL;
+	}
+
+	return sock;
+} 
+
+//===========================================================================================================================
 //	mDNSPlatformTCPConnect
 //===========================================================================================================================
 
 mStatus
-	mDNSPlatformTCPConnect( 
-		const mDNSAddr *		inDstIP, 
-		mDNSOpaque16 			inDstPort, 
-		mDNSInterfaceID			inInterfaceID,
-		TCPConnectionCallback	inCallback, 
-		void *					inContext, 
-		int *					outSock )
+mDNSPlatformTCPConnect
+	(
+	uDNS_TCPSocket 			sock,
+	const mDNSAddr		*	inDstIP, 
+	mDNSOpaque16 			inDstPort, 
+	mDNSInterfaceID			inInterfaceID,
+	TCPConnectionCallback	inCallback, 
+	void *					inContext
+	)
 {
-	u_long						on		= 1;  // "on" for setsockopt
-	struct sockaddr_in			saddr;
-	mDNSTCPConnectionData	*	tcd		= NULL;
-	mStatus						err		= mStatus_NoError;
+	struct sockaddr_in	saddr;
+	mStatus				err		= mStatus_NoError;
 
 	DEBUG_UNUSED( inInterfaceID );
 	
-	*outSock = INVALID_SOCKET;
-
 	if ( inDstIP->type != mDNSAddrType_IPv4 )
 	{
 		LogMsg("ERROR: mDNSPlatformTCPConnect - attempt to connect to an IPv6 address: operation not supported");
@@ -1260,88 +1332,104 @@ mStatus
 
 	// Setup connection data object
 
-	tcd = (mDNSTCPConnectionData*) malloc( sizeof( mDNSTCPConnectionData ) );
-	require_action( tcd, exit, err = mStatus_NoMemoryErr );
-	memset( tcd, 0, sizeof( mDNSTCPConnectionData ) );
-
-	tcd->sock		= INVALID_SOCKET;
-	tcd->callback	= inCallback;
-	tcd->context	= inContext;
+	sock->callback = inCallback;
+	sock->context = inContext;
 
 	bzero(&saddr, sizeof(saddr));
 	saddr.sin_family	= AF_INET;
 	saddr.sin_port		= inDstPort.NotAnInteger;
 	memcpy(&saddr.sin_addr, &inDstIP->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
 
-	// Create the socket
-
-	tcd->sock = socket(AF_INET, SOCK_STREAM, 0);
-	err = translate_errno( tcd->sock != INVALID_SOCKET, WSAGetLastError(), mStatus_UnknownErr );
-	require_noerr( err, exit );
-
-	// Set it to be non-blocking
-
-	err = ioctlsocket( tcd->sock, FIONBIO, &on );
-	err = translate_errno( err == 0, WSAGetLastError(), mStatus_UnknownErr );
-	require_noerr( err, exit );
-
 	// Try and do connect
 
-	err = connect( tcd->sock, ( struct sockaddr* ) &saddr, sizeof( saddr ) );
+	err = connect( sock->fd, ( struct sockaddr* ) &saddr, sizeof( saddr ) );
 	require_action( !err || ( WSAGetLastError() == WSAEWOULDBLOCK ), exit, err = mStatus_ConnFailed );
-	tcd->connected		= !err ? TRUE : FALSE;
-	tcd->pendingEvent	= CreateEvent( NULL, FALSE, FALSE, NULL );
-	err = translate_errno( tcd->pendingEvent, GetLastError(), mStatus_UnknownErr );
+	sock->connected		= !err ? TRUE : FALSE;
+	sock->pendingEvent	= CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( sock->pendingEvent, GetLastError(), mStatus_UnknownErr );
 	require_noerr( err, exit );
-	err = WSAEventSelect( tcd->sock, tcd->pendingEvent, FD_CONNECT|FD_READ|FD_CLOSE );
+	err = WSAEventSelect( sock->fd, sock->pendingEvent, FD_CONNECT|FD_READ|FD_CLOSE );
 	require_noerr( err, exit );
 
 	// Bookkeeping
 
-	tcd->next			= gTCPConnectionList;
-	gTCPConnectionList	= tcd;
+	sock->next			= gTCPConnectionList;
+	gTCPConnectionList	= sock;
 	gTCPConnections++;
 	gWaitListChanged	= TRUE;
 
-	*outSock = (int) tcd->sock;
-	
 exit:
 
 	if ( !err )
 	{
-		err = tcd->connected ? mStatus_ConnEstablished : mStatus_ConnPending;
-	}
-	else if ( tcd )
-	{
-		FreeTCPConnectionData( tcd );
+		err = sock->connected ? mStatus_ConnEstablished : mStatus_ConnPending;
 	}
 
 	return err;
 }
 
 //===========================================================================================================================
+//	mDNSPlatformTCPIsConnected
+//===========================================================================================================================
+
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
+    {
+    return sock->connected;
+    }
+
+//===========================================================================================================================
+//	mDNSPlatformTCPAccept
+//===========================================================================================================================
+
+mDNSexport 
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int fd )
+	{
+	struct uDNS_TCPSocket_struct	*	sock = NULL;
+	mStatus							err = mStatus_NoError;
+
+	require_action( !flags, exit, err = mStatus_UnsupportedErr );
+
+	sock = malloc( sizeof( struct uDNS_TCPSocket_struct ) );
+	require_action( sock, exit, err = mStatus_NoMemoryErr );
+	
+	memset( sock, 0, sizeof( *sock ) );
+
+	sock->fd	= fd;
+	sock->flags = flags;
+
+exit:
+
+	if ( err && sock )
+	{
+		free( sock );
+		sock = NULL;
+	}
+
+	return ( uDNS_TCPSocket ) sock;
+	}
+
+
+//===========================================================================================================================
 //	mDNSPlatformTCPCloseConnection
 //===========================================================================================================================
 
-void	mDNSPlatformTCPCloseConnection( int inSock )
+void	mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock )
 {
-	mDNSTCPConnectionData	*	tcd  = gTCPConnectionList;
-	mDNSTCPConnectionData	*	last = NULL;
+	uDNS_TCPSocket	inserted  = gTCPConnectionList;
+	uDNS_TCPSocket	last = NULL;
 
-	while ( tcd )
+	while ( inserted )
 	{
-		if ( tcd->sock == ( SOCKET ) inSock )
+		if ( inserted == sock )
 		{
 			if ( last == NULL )
 			{
-				gTCPConnectionList = tcd->next;
+				gTCPConnectionList = inserted->next;
 			}
 			else
 			{
-				last->next = tcd->next;
+				last->next = inserted->next;
 			}
-
-			FreeTCPConnectionData( tcd );
 
 			gTCPConnections--;
 			gWaitListChanged = TRUE;
@@ -1349,31 +1437,39 @@ void	mDNSPlatformTCPCloseConnection( int inSock )
 			break;
 		}
 
-		last = tcd;
-		tcd  = tcd->next;
+		last		= inserted;
+		inserted 	= inserted->next;
 	}
+
+	FreeTCPSocket( sock );
 }
 
 //===========================================================================================================================
 //	mDNSPlatformReadTCP
 //===========================================================================================================================
 
-int	mDNSPlatformReadTCP( int inSock, void *inBuffer, int inBufferSize )
+int	mDNSPlatformReadTCP( uDNS_TCPSocket sock, void *inBuffer, int inBufferSize, mDNSBool * closed )
 {
-	int			nread;
-	OSStatus	err;
+	int	nread;
 
-	nread = recv( inSock, inBuffer, inBufferSize, 0);
-	err = translate_errno( ( nread >= 0 ) || ( WSAGetLastError() == WSAEWOULDBLOCK ), WSAGetLastError(), mStatus_UnknownErr );
-	require_noerr( err, exit );
+	nread = recv( sock->fd, inBuffer, inBufferSize, 0);
 
 	if ( nread < 0 )
 	{
-		nread = 0;
+		if ( WSAGetLastError() == WSAEWOULDBLOCK )
+		{
+			nread = 0;
+		}
+		else
+		{
+			nread = -1;
+		}
+	}
+	else if ( !nread )
+	{
+		*closed = mDNStrue;
 	}
 		
-exit:
-
 	return nread;
 }
 
@@ -1381,12 +1477,12 @@ exit:
 //	mDNSPlatformWriteTCP
 //===========================================================================================================================
 
-int	mDNSPlatformWriteTCP( int inSock, const char *inMsg, int inMsgSize )
+int	mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char *inMsg, int inMsgSize )
 {
 	int			nsent;
 	OSStatus	err;
 
-	nsent = send( inSock, inMsg, inMsgSize, 0 );
+	nsent = send( sock->fd, inMsg, inMsgSize, 0 );
 
 	err = translate_errno( ( nsent >= 0 ) || ( WSAGetLastError() == WSAEWOULDBLOCK ), WSAGetLastError(), mStatus_UnknownErr );
 	require_noerr( err, exit );
@@ -1402,11 +1498,74 @@ exit:
 }
 
 //===========================================================================================================================
-//	dDNSPlatformGetConfig
+//	mDNSPlatformTCPGetFlags
+//===========================================================================================================================
+
+mDNSexport int mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock )
+    {
+    return sock->flags;
+    }
+
+//===========================================================================================================================
+//	mDNSPlatformTCPGetFD
+//===========================================================================================================================
+
+mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock )
+    {
+    return ( int ) sock->fd;
+    }
+
+//===========================================================================================================================
+//	mDNSPlatformUDPSocket
+//===========================================================================================================================
+
+mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket
+	(
+	mDNS	*	const m,
+	mDNSIPPort		  port
+	)
+	{
+	DEBUG_UNUSED( m );
+	DEBUG_UNUSED( port );
+
+	return NULL;
+	}
+	
+//===========================================================================================================================
+//	mDNSPlatformUDPClose
+//===========================================================================================================================
+	
+mDNSexport void mDNSPlatformUDPClose( uDNS_UDPSocket sock )
+	{
+	DEBUG_UNUSED( sock );
+	}
+		
+
+//===========================================================================================================================
+//	mDNSPlatformTLSSetupCerts
+//===========================================================================================================================
+
+mDNSexport mStatus
+mDNSPlatformTLSSetupCerts(void)
+{
+	return mStatus_UnsupportedErr;
+}
+
+//===========================================================================================================================
+//	mDNSPlatformTLSTearDownCerts
+//===========================================================================================================================
+
+mDNSexport void
+mDNSPlatformTLSTearDownCerts(void)
+{
+}
+
+//===========================================================================================================================
+//	mDNSPlatformGetDNSConfig
 //===========================================================================================================================
 
 void
-dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
+mDNSPlatformGetDNSConfig(mDNS * const m, domainname * const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
 {
 	LPSTR		name = NULL;
 	char		subKeyName[kRegistryMaxKeyLength + 1];
@@ -1420,6 +1579,8 @@ dDNSPlatformGetConfig(domainname * const fqdn, domainname *const regDomain, DNam
 	domainname	dname;
 	DWORD		i;
 	OSStatus	err;
+
+	DEBUG_UNUSED( m );
 
 	// Initialize
 
@@ -1536,11 +1697,11 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformSetNameStatus
+//	mDNSPlatformDynDNSHostNameStatusChanged
 //===========================================================================================================================
 
 void
-dDNSPlatformSetNameStatus(domainname *const dname, mStatus status)
+mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status)
 {
 	char		uname[MAX_ESCAPED_DOMAIN_NAME];
 	LPCTSTR		name;
@@ -1580,11 +1741,11 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformSetSecretForDomain
+//	mDNSPlatformSetSecretForDomain
 //===========================================================================================================================
 
 void
-dDNSPlatformSetSecretForDomain( mDNS *m, const domainname * inDomain )
+mDNSPlatformSetSecretForDomain( mDNS * const m, const domainname * inDomain )
 {
 	PolyString				domain;
 	PolyString				key;
@@ -1693,11 +1854,11 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformGetSearchDomainList
+//	mDNSPlatformGetSearchDomainList
 //===========================================================================================================================
 
 DNameListElem*
-dDNSPlatformGetSearchDomainList( void )
+mDNSPlatformGetSearchDomainList( void )
 {
 	char			*	searchList	= NULL;
 	DWORD				searchListLen;
@@ -1764,11 +1925,11 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformGetReverseMapSearchDomainList
+//	mDNSPlatformGetReverseMapSearchDomainList
 //===========================================================================================================================
 
 DNameListElem*
-dDNSPlatformGetReverseMapSearchDomainList( void )
+mDNSPlatformGetReverseMapSearchDomainList( void )
 {
 	DNameListElem	*	head = NULL;
 	DNameListElem	*	current = NULL;
@@ -1780,13 +1941,13 @@ dDNSPlatformGetReverseMapSearchDomainList( void )
 	{
 		mDNSAddr addr;
 		
-		if (ifa->ifa_addr->sa_family == AF_INET && !dDNS_SetupAddr(&addr, ifa->ifa_addr) && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
+		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
 		{
 			mDNSAddr	netmask;
 			domainname	domain;
 			char		buffer[256];
 			
-			if (!dDNS_SetupAddr(&netmask, ifa->ifa_netmask))
+			if (!SetupAddr(&netmask, ifa->ifa_netmask))
 			{
 				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", addr.ip.v4.b[3] & netmask.ip.v4.b[3],
                                                              addr.ip.v4.b[2] & netmask.ip.v4.b[2],
@@ -1826,11 +1987,11 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformGetDNSServers
+//	mDNSPlatformGetDNSServers
 //===========================================================================================================================
 
 IPAddrListElem*
-dDNSPlatformGetDNSServers( void )
+mDNSPlatformGetDNSServers( void )
 {
 	PIP_PER_ADAPTER_INFO	pAdapterInfo	=	NULL;
 	FIXED_INFO			*	fixedInfo	= NULL;
@@ -1945,11 +2106,11 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformGetDomainName
+//	mDNSPlatformGetFQDN
 //===========================================================================================================================
 
 DNameListElem*
-dDNSPlatformGetDomainName( void )
+mDNSPlatformGetFQDN( void )
 {
 	DNameListElem	*	head		= NULL;
 	int					i			= 0;
@@ -2049,24 +2210,27 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformRegisterSplitDNS
+//	mDNSPlatformRegisterSplitDNS
 //===========================================================================================================================
 
 mStatus
-dDNSPlatformRegisterSplitDNS( mDNS * m )
+mDNSPlatformRegisterSplitDNS( mDNS * const m, int * nAdditions, int * nDeletions )
 {
 	DEBUG_UNUSED( m );
+
+	*nAdditions = 0;
+	*nDeletions = 0;
 
 	return mStatus_UnsupportedErr;
 }
 
 
 //===========================================================================================================================
-//	dDNSPlatformGetPrimaryInterface
+//	mDNSPlatformGetPrimaryInterface
 //===========================================================================================================================
 
 mStatus
-dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router )
+mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router )
 {
 	IP_ADAPTER_INFO *	pAdapterInfo;
 	IP_ADAPTER_INFO *	pAdapter;
@@ -2077,6 +2241,8 @@ dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router
 	mStatus				err = mStatus_NoError;
 
 	DEBUG_UNUSED( m );
+
+	*v6 = zeroAddr;
 
 	pAdapterInfo	= NULL;
 	bufLen			= 0;
@@ -2105,7 +2271,7 @@ dDNSPlatformGetPrimaryInterface( mDNS * m, mDNSAddr * primary, mDNSAddr * router
 		     pAdapter->IpAddressList.IpAddress.String[0] &&
 		     pAdapter->GatewayList.IpAddress.String &&
 		     pAdapter->GatewayList.IpAddress.String[0] &&
-		     ( StringToAddress( primary, pAdapter->IpAddressList.IpAddress.String ) == mStatus_NoError ) &&
+		     ( StringToAddress( v4, pAdapter->IpAddressList.IpAddress.String ) == mStatus_NoError ) &&
 		     ( StringToAddress( router, pAdapter->GatewayList.IpAddress.String ) == mStatus_NoError ) &&
 		     ( !index || ( pAdapter->Index == index ) ) )
 		{
@@ -2128,11 +2294,11 @@ exit:
 
 
 //===========================================================================================================================
-//	dDNSPlatformDefaultBrowseDomainChanged
+//	mDNSPlatformDefaultBrowseDomainChanged
 //===========================================================================================================================
 
 void
-dDNSPlatformDefaultBrowseDomainChanged( const domainname *d, mDNSBool add )
+mDNSPlatformDefaultBrowseDomainChanged( const domainname *d, mDNSBool add )
 {
 	DEBUG_UNUSED( d );
 	DEBUG_UNUSED( add );
@@ -2142,11 +2308,11 @@ dDNSPlatformDefaultBrowseDomainChanged( const domainname *d, mDNSBool add )
 
 
 //===========================================================================================================================
-//	dDNSPlatformDefaultRegDomainChanged
+//	mDNSPlatformDefaultRegDomainChanged
 //===========================================================================================================================
 
 void
-dDNSPlatformDefaultRegDomainChanged( const domainname * d, mDNSBool add )
+mDNSPlatformDefaultRegDomainChanged( const domainname * d, mDNSBool add )
 {
 	DEBUG_UNUSED( d );
 	DEBUG_UNUSED( add );
@@ -3547,8 +3713,8 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 					{
 						HANDLE					signaledObject;
 						int						n = 0;
-						mDNSInterfaceData		*	ifd;
-						mDNSTCPConnectionData	*	tcd;
+						mDNSInterfaceData	*	ifd;
+						uDNS_TCPSocket			tcd;
 						
 						signaledObject = waitList[ waitItemIndex ];
 	
@@ -3596,7 +3762,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 									connect			= mDNStrue;
 								}
 	
-								tcd->callback( ( int ) tcd->sock, tcd->context, connect );
+								tcd->callback( tcd, tcd->context, connect );
 	
 								++n;
 	
@@ -3668,12 +3834,9 @@ mDNSlocal mStatus ProcessingThreadInitialize( mDNS * const inMDNS )
 	err = SetupInterfaceList( inMDNS );
 	require_noerr( err, exit );
 
-	err = dDNS_Setup( inMDNS );
+	err = uDNS_SetupDNSConfig( inMDNS );
 	require_noerr( err, exit );
 
-	err = dDNS_InitDNSConfig( inMDNS );
-	require_noerr( err, exit );
-	
 exit:
 
 	if( err )
@@ -3694,12 +3857,12 @@ exit:
 
 mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **outWaitList, int *outWaitListCount )
 {
-	mStatus						err;
-	int							waitListCount;
-	HANDLE *					waitList;
-	HANDLE *					waitItemPtr;
-	mDNSInterfaceData		*	ifd;
-	mDNSTCPConnectionData	*	tcd;
+	mStatus					err;
+	int						waitListCount;
+	HANDLE *				waitList;
+	HANDLE *				waitItemPtr;
+	mDNSInterfaceData	*	ifd;
+	uDNS_TCPSocket			tcd;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "thread setting up wait list\n" );
 	check( inMDNS );
@@ -3935,7 +4098,7 @@ mDNSlocal void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 	err = SetupInterfaceList( inMDNS );
 	check_noerr( err );
 		
-	err = dDNS_Setup( inMDNS );
+	err = uDNS_SetupDNSConfig( inMDNS );
 	check_noerr( err );
 
 	// so that LLQs are restarted against the up to date name servers
@@ -4000,7 +4163,7 @@ mDNSlocal void ProcessingThreadTCPIPConfigChanged( mDNS * inMDNS )
 
 	mDNSPlatformLock( inMDNS );
 
-	err = dDNS_Setup( inMDNS );
+	err = uDNS_SetupDNSConfig( inMDNS );
 	check_noerr( err );
 
 	// so that LLQs are restarted against the up to date name servers
@@ -4031,7 +4194,7 @@ mDNSlocal void	ProcessingThreadDynDNSConfigChanged( mDNS *inMDNS )
 
 	mDNSPlatformLock( inMDNS );
 
-	err = dDNS_Setup( inMDNS );
+	err = uDNS_SetupDNSConfig( inMDNS );
 	check_noerr( err );
 
 	// so that LLQs are restarted against the up to date name servers
@@ -5085,7 +5248,7 @@ static mStatus StringToAddress( mDNSAddr * ip, LPSTR string )
 
 	if ( err == mStatus_NoError )
 	{
-		err = dDNS_SetupAddr( ip, (struct sockaddr*) &sa6 );
+		err = SetupAddr( ip, (struct sockaddr*) &sa6 );
 		require_noerr( err, exit );
 	}
 	else
@@ -5097,7 +5260,7 @@ static mStatus StringToAddress( mDNSAddr * ip, LPSTR string )
 		err = translate_errno( err == 0, WSAGetLastError(), kUnknownErr );
 		require_noerr( err, exit );
 			
-		err = dDNS_SetupAddr( ip, (struct sockaddr*) &sa4 );
+		err = SetupAddr( ip, (struct sockaddr*) &sa4 );
 		require_noerr( err, exit );
 	}
 
@@ -5280,19 +5443,48 @@ exit:
 //===========================================================================================================================
 
 mDNSlocal void
-FreeTCPConnectionData( mDNSTCPConnectionData * data )
+FreeTCPSocket( uDNS_TCPSocket sock )
 {
-	check( data );
+	check( sock );
 
-	if ( data->pendingEvent )
+	if ( sock->pendingEvent )
 	{
-		CloseHandle( data->pendingEvent );
+		CloseHandle( sock->pendingEvent );
 	}
 
-	if ( data->sock != INVALID_SOCKET )
+	if ( sock->fd != INVALID_SOCKET )
 	{
-		closesocket( data->sock );
+		closesocket( sock->fd );
 	}
 
-	free( data );
+	free( sock );
 }
+
+//===========================================================================================================================
+//	SetupAddr
+//===========================================================================================================================
+
+mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
+	{
+	if (!sa) { LogMsg("SetupAddr ERROR: NULL sockaddr"); return(mStatus_Invalid); }
+
+	if (sa->sa_family == AF_INET)
+		{
+		struct sockaddr_in *ifa_addr = (struct sockaddr_in *)sa;
+		ip->type = mDNSAddrType_IPv4;
+		ip->ip.v4.NotAnInteger = ifa_addr->sin_addr.s_addr;
+		return(mStatus_NoError);
+		}
+
+	if (sa->sa_family == AF_INET6)
+		{
+		struct sockaddr_in6 *ifa_addr = (struct sockaddr_in6 *)sa;
+		ip->type = mDNSAddrType_IPv6;
+		if (IN6_IS_ADDR_LINKLOCAL(&ifa_addr->sin6_addr)) ifa_addr->sin6_addr.u.Word[1] = 0;
+		ip->ip.v6 = *(mDNSv6Addr*)&ifa_addr->sin6_addr;
+		return(mStatus_NoError);
+		}
+
+	LogMsg("SetupAddr invalid sa_family %d", sa->sa_family);
+	return(mStatus_Invalid);
+	}

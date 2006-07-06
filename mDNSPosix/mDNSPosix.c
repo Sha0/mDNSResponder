@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.79  2006/07/06 00:02:16  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+
 Revision 1.78  2006/06/28 09:12:22  cheshire
 Added debugging message
 
@@ -575,61 +578,169 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 			&senderAddr, senderPort, &destAddr, MulticastDNSPort, InterfaceID);
 	}
 
-mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-										  TCPConnectionCallback callback, void *context, int *descriptor)
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port )
 	{
+	(void)m;			// Unused
+	(void)flags;		// Unused
+	(void)port;			// Unused
+	return NULL;
+	}
+
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int sd )
+	{
+	(void)flags;		// Unused
+	(void)sd;			// Unused
+	return NULL;
+	}
+
+mDNSexport int mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock )
+	{
+	(void)sock;			// Unused
+	return 0;
+	}
+
+mDNSexport int mDNSPlatformTCPGetFD( uDNS_TCPSocket sock )
+	{
+	(void)sock;			// Unused
+	return -1;
+	}
+
+mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context )
+	{
+	(void)sock;			// Unused
 	(void)dst;			// Unused
 	(void)dstport;		// Unused
 	(void)InterfaceID;	// Unused
 	(void)callback;		// Unused
 	(void)context;		// Unused
-	(void)descriptor;	// Unused
 	return(mStatus_UnsupportedErr);
 	}
 
-mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
 	{
-	(void)sd;			// Unused
+	(void)sock;			// Unused
+	return mDNSfalse;
 	}
 
-mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+mDNSexport void mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock )
 	{
-	(void)sd;			// Unused
+	(void)sock;			// Unused
+	}
+
+mDNSexport int mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, int buflen, mDNSBool * closed)
+	{
+	(void)sock;			// Unused
 	(void)buf;			// Unused
-	(void)buflen;			// Unused
-	return(0);
+	(void)buflen;		// Unused
+	(void)closed;		// Unused
+	return 0;			
 	}
 
-mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+mDNSexport int mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, int len)
 	{
-	(void)sd;			// Unused
+	(void)sock;			// Unused
 	(void)msg;			// Unused
 	(void)len;			// Unused
-	return(0);
+	return 0;
+	}
+
+mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port )
+	{
+	(void)m;			// Unused
+	(void)port;			// Unused
+	return NULL;
+	}
+
+mDNSexport void           mDNSPlatformUDPClose( uDNS_UDPSocket sock )
+	{
+	(void)sock;			// Unused
+	}
+
+mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
+	{
+	return(mStatus_UnsupportedErr);
+	}
+	
+mDNSexport void mDNSPlatformTLSTearDownCerts(void)
+	{
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark ***** Get/Free Search Domain List
+#pragma mark ***** DDNS Config Platform Functions
 #endif
 
-mDNSexport DNameListElem *mDNSPlatformGetSearchDomainList(void)
+mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
 	{
-	static DNameListElem tmp;
-	static mDNSBool init = mDNSfalse;
-
-	if (!init)
-		{
-		MakeDomainNameFromDNSNameString(&tmp.name, "local.");
-		tmp.next = NULL;
-		init = mDNStrue;
-		}
-	return mDNS_CopyDNameList(&tmp);
+	(void) m;
+	(void) fqdn;
+	(void) regDomain;
+	(void) browseDomains;
 	}
 
-mDNSexport DNameListElem *mDNSPlatformGetRegDomainList(void)
+mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers(void)
 	{
 	return NULL;
 	}
+
+mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
+	{
+	return NULL;
+	}
+
+mDNSexport DNameListElem * mDNSPlatformGetFQDN( void )
+	{
+	return NULL;
+	}
+
+mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router )
+	{
+	(void) m;
+	(void) v4;
+	(void) v6;
+	(void) router;
+
+	return mStatus_UnsupportedErr;
+	}
+
+mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList( void )
+	{
+	return NULL;
+	}
+
+mDNSexport void mDNSPlatformSetSecretForDomain( mDNS * const m, const domainname *domain )
+	{
+	(void) m;
+	(void) domain;
+	}
+
+mDNSexport mStatus mDNSPlatformRegisterSplitDNS( mDNS * const m, int * nAdditions, int * nDeletions )
+	{
+	(void) m;
+	*nAdditions = 0;
+	*nDeletions = 0;
+	return mStatus_UnsupportedErr;
+	}
+
+mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
+	{
+	(void) d;
+	(void) add;
+	}
+
+mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add)
+	{
+	(void) d;
+	(void) add;
+	}
+
+mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status)
+	{
+	(void) dname;
+	(void) status;
+	}
+
+
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Init and Term
