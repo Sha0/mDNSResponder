@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: dnsextd_lexer.l,v $
+Revision 1.2  2006/07/06 20:41:14  cheshire
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+Use derived filename "dnsextd_parser.h" instead of "dnsextd_parser.y.h"
+
 Revision 1.1  2006/07/06 00:09:05  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 
@@ -33,7 +37,7 @@ Revision 1.1  2006/07/06 00:09:05  cheshire
 %{
 #include <string.h>
 #include <stdio.h>
-#include "dnsextd_parser.y.h"
+#include "dnsextd_parser.h"
 
 
 extern YYSTYPE yylval;
