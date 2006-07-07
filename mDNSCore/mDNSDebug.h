@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.28  2006/07/07 01:09:09  cheshire
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
+
 Revision 1.27  2006/06/29 07:42:14  cheshire
 <rdar://problem/3922989> Performance: Remove unnecessary SameDomainName() checks
 
@@ -157,7 +161,7 @@ extern void LogMsgNoIdent(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,
 // Set this symbol to 2 to write a log message for every malloc() and free()
 #define MACOSX_MDNS_MALLOC_DEBUGGING 0
 
-#if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 extern void *mallocL(char *msg, unsigned int size);
 extern void freeL(char *msg, void *x);
 extern void LogMemCorruption(const char *format, ...);
@@ -167,7 +171,7 @@ extern void uds_validatelists(void);
 #define freeL(X,Y) free(Y)
 #endif
 
-#if MACOSX_MDNS_MALLOC_DEBUGGING >= 2
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING >= 2
 #define LogMalloc LogMsg
 #else
 	#if (defined( __GNUC__ ))

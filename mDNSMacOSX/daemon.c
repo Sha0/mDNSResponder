@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.267  2006/07/07 01:09:10  cheshire
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
+
 Revision 1.266  2006/07/05 23:34:53  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 
@@ -776,7 +780,7 @@ static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 //*************************************************************************************************************
 // General Utility Functions
 
-#if MACOSX_MDNS_MALLOC_DEBUGGING
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 
 char _malloc_options[] = "AXZ";
 
@@ -877,7 +881,7 @@ mDNSlocal void validatelists(mDNS *const m)
 	for (n = m->uDNS_info.NATTraversals; n; n=n->next)
 		if (n->op > 2) LogMemCorruption("uDNS_info.NATTraversals: %p is garbage", n);
 
-	for (n = m->uDNS_info.LLQNatInfo; n; n=n->next)
+	for (n = m->uDNS_info.NATTraversals; n; n=n->next)
 		if (n->op > 2) LogMemCorruption("uDNS_info.LLQNatInfo: %p is garbage", n);
 	}
 

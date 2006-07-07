@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.30  2006/07/07 01:09:12  cheshire
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
+
 Revision 1.29  2005/08/04 03:37:45  mkrochma
 Temporary workaround to fix posix after mDNS_SetPrimaryInterfaceInfo changed
 
@@ -279,12 +283,6 @@ int		main(int argc, char **argv)
 
 //		uds_daemon support		////////////////////////////////////////////////////////////
 
-#if MDNS_MALLOC_DEBUGGING >= 2
-#define LogMalloc LogMsg
-#else
-#define LogMalloc(ARGS...) ((void)0)
-#endif
-
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 /* Support routine for uds_daemon.c */
 	{
@@ -305,49 +303,6 @@ mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
 	(void)delay;
 	// No-op, for now
 	}
-
-#if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
-
-void *mallocL(char *msg, unsigned int size)
-	{
-	unsigned long *mem = malloc(size+8);
-	if (!mem)
-		{
-		LogMsg("malloc( %s : %d ) failed", msg, size);
-		return(NULL); 
-		}
-	else
-		{
-		LogMalloc("malloc( %s : %lu ) = %p", msg, size, &mem[2]);
-		mem[0] = 0xDEAD1234;
-		mem[1] = size;
-		//bzero(&mem[2], size);
-		memset(&mem[2], 0xFF, size);
-//		validatelists(&mDNSStorage);
-		return(&mem[2]);
-		}
-	}
-
-void freeL(char *msg, void *x)
-	{
-	if (!x)
-		LogMsg("free( %s @ NULL )!", msg);
-	else
-		{
-		unsigned long *mem = ((unsigned long *)x) - 2;
-		if (mem[0] != 0xDEAD1234)
-			{ LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
-		if (mem[1] > 8000)
-			{ LogMsg("free( %s : %ld @ %p) too big!", msg, mem[1], &mem[2]); return; }
-		LogMalloc("free( %s : %ld @ %p)", msg, mem[1], &mem[2]);
-		//bzero(mem, mem[1]+8);
-		memset(mem, 0xDD, mem[1]+8);
-//		validatelists(&mDNSStorage);
-		free(mem);
-		}
-	}
-
-#endif // MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 
 // For convenience when using the "strings" command, this is the last thing in the file
 #if mDNSResponderVersion > 1

@@ -26,7 +26,7 @@
 				LIBRARY_SEARCH_PATHS = "\"${CONFIGURATION_TEMP_DIR}\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OPTIMIZATION_CFLAGS = "-O0";
-				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -D__MACOSX__ -DmDNSResponderVersion=${MVERS} -D_LEGACY_NAT_TRAVERSAL_ -DMDNS_DEBUGMSGS=1";
+				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -DmDNSResponderVersion=${MVERS} -DAPPLE_OSX_mDNSResponder=1 -D_LEGACY_NAT_TRAVERSAL_ -DMDNS_DEBUGMSGS=1";
 				OTHER_LDFLAGS = "-ldnsinfo";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder.debug;
@@ -335,7 +335,7 @@
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = "\"${CONFIGURATION_TEMP_DIR}\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -D__MACOSX__ -DmDNSResponderVersion=${MVERS} -D_LEGACY_NAT_TRAVERSAL_";
+				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -DmDNSResponderVersion=${MVERS} -DAPPLE_OSX_mDNSResponder=1 -D_LEGACY_NAT_TRAVERSAL_";
 				OTHER_LDFLAGS = "-ldnsinfo";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder;
@@ -625,7 +625,7 @@
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				INSTALL_PATH = /usr/bin;
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -D__MACOSX__ -DmDNSResponderVersion=${MVERS}";
+				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNS;
@@ -1366,7 +1366,7 @@
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				INSTALL_PATH = /usr/bin;
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -D__MACOSX__ -DmDNSResponderVersion=${MVERS} -I../mDNSShared";
+				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -I../mDNSShared";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = "dns-sd";
@@ -1470,7 +1470,7 @@
 				LEXFLAGS = "-i";
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic -D__MACOSX__ -DmDNSResponderVersion=${MVERS}";
+				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = dnsextd;

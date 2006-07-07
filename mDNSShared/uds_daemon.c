@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.203  2006/07/07 01:09:13  cheshire
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
+
 Revision 1.202  2006/07/05 22:00:10  cheshire
 Wide-area cleanup: Rename mDNSPlatformGetRegDomainList() to uDNS_GetDefaultRegDomainList()
 
@@ -677,12 +681,12 @@ static char *	win32_strerror(int inErrorCode);
 #include "dnssd_ipc.h"
 
 // Apple specific configuration functionality, not required for other platforms
-#ifdef __MACOSX__
+#if APPLE_OSX_mDNSResponder
 #include <sys/ucred.h>
 #ifndef LOCAL_PEERCRED
 #define LOCAL_PEERCRED 0x001 /* retrieve peer credentials */
 #endif // LOCAL_PEERCRED
-#endif //__MACOSX__
+#endif // APPLE_OSX_mDNSResponder
 
 
 // Types and Data Structures
@@ -1215,7 +1219,7 @@ mDNSexport void udsserver_info(mDNS *const m)
     LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
     }
 
-#if __MACOSX__ && MACOSX_MDNS_MALLOC_DEBUGGING
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 mDNSexport void uds_validatelists(void)
 	{
 	request_state *req;

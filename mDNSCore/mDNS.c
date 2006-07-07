@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.546  2006/07/07 01:09:09  cheshire
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
+
 Revision 1.545  2006/07/05 23:10:30  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Update mDNSSendDNSMessage() to use uDNS_TCPSocket type instead of "int"
@@ -3841,7 +3845,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 
 mDNSlocal void ReleaseCacheEntity(mDNS *const m, CacheEntity *e)
 	{
-#if MACOSX_MDNS_MALLOC_DEBUGGING >= 1
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 	unsigned int i;
 	for (i=0; i<sizeof(*e); i++) ((char*)e)[i] = 0xFF;
 #endif
