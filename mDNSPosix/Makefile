@@ -29,6 +29,10 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.73  2006/07/07 00:54:08  cheshire
+# <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+# Put intermediate files into "objects" folder instead of mDNSShared source code folder
+#
 # Revision 1.72  2006/07/05 23:53:58  cheshire
 # <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 #
@@ -258,9 +262,10 @@
 # Notes:
 # $@ means "The file name of the target of the rule"
 # $< means "The name of the first prerequisite"
+# $* means "The stem with which an implicit rule matches"
 # $+ means "The names of all the prerequisites, with spaces between them, exactly as given"
 # For more magic automatic variables, see
-# <http://www.gnu.org/software/make/manual/html_chapter/make_10.html#SEC111>
+# <http://www.gnu.org/software/make/manual/html_node/Automatic-Variables.html>
 
 #############################################################################
 
@@ -277,7 +282,7 @@ LD = ld -shared
 CP = cp
 RM = rm
 LN = ln -s -f
-CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\" -DMDNS_UDS_SERVERPATH=\"/var/run/mdnsd\"
+CFLAGS_COMMON = -I. -I$(COREDIR) -I$(SHAREDDIR) -I$(OBJDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\" -DMDNS_UDS_SERVERPATH=\"/var/run/mdnsd\"
 CFLAGS_PTHREAD =
 LINKOPTS =
 LINKOPTS_PTHREAD = -lpthread
@@ -713,9 +718,9 @@ $(OBJDIR)/%.c.so.o:	$(SHAREDDIR)/%.c
 	$(CC) $(CFLAGS) -c -fPIC -o $@ $<
 
 $(OBJDIR)/%.y.o: $(SHAREDDIR)/%.y
-	$(BISON) -o $<.c -d $<
-	$(CC) $(CFLAGS) -c -o $@ $<.c
+	$(BISON)              -o $(OBJDIR)/$*.c -d $<
+	$(CC) $(CFLAGS) -c -o $@ $(OBJDIR)/$*.c
 
 $(OBJDIR)/%.l.o: $(SHAREDDIR)/%.l
-	$(FLEX) -i -o$<.c $<
-	$(CC) $(CFLAGS) -c -o $@ $<.c
+	$(FLEX) -i             -o$(OBJDIR)/$*.l.c $<
+	$(CC) $(CFLAGS) -c -o $@ $(OBJDIR)/$*.l.c
