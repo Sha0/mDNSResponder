@@ -1471,7 +1471,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic";
-				OTHER_LDFLAGS = "";
+				OTHER_LDFLAGS = "-ldnsinfo";
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = dnsextd;
 				REZ_EXECUTABLE = YES;
