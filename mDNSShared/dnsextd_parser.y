@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: dnsextd_parser.y,v $
+Revision 1.2  2006/07/14 02:03:37  cheshire
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+private_port and llq_port should use htons, not htonl
+
 Revision 1.1  2006/07/06 00:09:05  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 
@@ -199,12 +203,12 @@ optionsstatement:
 		|
 		PRIVATE PORT NUMBER
 		{
-			( ( DaemonInfo* ) context )->private_port.NotAnInteger = htonl( NUMBER );
+			( ( DaemonInfo* ) context )->private_port.NotAnInteger = htons( NUMBER );
 		}
 		|
 		LLQ PORT NUMBER
 		{
-			( ( DaemonInfo* ) context )->llq_port.NotAnInteger = htonl( NUMBER );
+			( ( DaemonInfo* ) context )->llq_port.NotAnInteger = htons( NUMBER );
 		}
 		;
 
