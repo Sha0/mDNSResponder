@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.16  2006/07/14 02:35:47  cheshire
+Added (commented out) syslog debugging messages
+
 Revision 1.15  2006/06/27 19:34:43  cheshire
 <rdar://problem/4430023> txtRecord parameter of DNSServiceResolveReply() should be unsigned char *
 
@@ -113,6 +116,8 @@ static DWORD	if_nametoindex( const char * nameStr );
 #include <jni.h>
 
 #include "DNSSD.java.h"
+
+//#include <syslog.h>
 
 // convenience definition 
 #ifdef __GNUC__
@@ -533,12 +538,15 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_BeginRegister( JNI
 							jint ifIndex, jint flags, jstring serviceName, jstring regType,
 							jstring domain, jstring host, jint port, jbyteArray txtRecord)
 {
+	//syslog(LOG_ERR, "BR");
 	jclass					cls = (*pEnv)->GetObjectClass( pEnv, pThis);
 	jfieldID				contextField = (*pEnv)->GetFieldID( pEnv, cls, "fNativeContext", "I");
 	OpContext				*pContext = NULL;
 	DNSServiceErrorType		err = kDNSServiceErr_NoError;
 	jbyte					*pBytes;
 	jsize					numBytes;
+
+	//syslog(LOG_ERR, "BR: contextField %d", contextField);
 
 	if ( contextField != 0)
 		pContext = NewContext( pEnv, pThis, "serviceRegistered",
@@ -552,6 +560,8 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_BeginRegister( JNI
 		const char	*regStr = SafeGetUTFChars( pEnv, regType);
 		const char	*domainStr = SafeGetUTFChars( pEnv, domain);
 		const char	*hostStr = SafeGetUTFChars( pEnv, host);
+
+		//syslog(LOG_ERR, "BR: regStr %s", regStr);
 
 		// Since Java ints are defined to be big-endian, we de-canonicalize 'port' from a 
 		// big-endian number into a 16-bit pattern here.
