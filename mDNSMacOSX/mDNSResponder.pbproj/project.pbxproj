@@ -1468,7 +1468,7 @@
 				INSTALL_PATH = /usr/sbin;
 				LEX = /usr/bin/flex;
 				LEXFLAGS = "-i";
-				LIBRARY_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "\"${CONFIGURATION_TEMP_DIR}\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				OTHER_CFLAGS = "-no-cpp-precomp -mdynamic-no-pic";
 				OTHER_LDFLAGS = "-ldnsinfo";
