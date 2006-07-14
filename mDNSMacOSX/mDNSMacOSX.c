@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.335  2006/07/14 05:25:11  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fixed crash in mDNSPlatformGetDNSConfig() reading BrowseDomains array
+
 Revision 1.334  2006/07/05 23:42:00  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 
@@ -2277,7 +2281,7 @@ mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port
 	CFSocketSet * ss = mDNSNULL;
 	mStatus err = 0;
 
-	ss = malloc( sizeof( CFSocketSet ) );
+	ss = mallocL( "mDNSPlatformUDPSocket", sizeof( CFSocketSet ) );
 
 	if ( !ss )
 		{
@@ -3239,25 +3243,22 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 #endif // MDNS_NO_DNSINFO
 	}
 	
-void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
+mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];
-	SCDynamicStoreRef store;
 
 	fqdn->c[0] = 0;
 	regDomain->c[0] = 0;
 	buf[0] = 0;
 	*browseDomains = NULL;
 	
-	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
 	if (store)
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
 		if (dict)
 			{
 			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
-			CFArrayRef regArray;
-			CFArrayRef browseArray;
 			if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
 				{				
 				CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0); // for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
@@ -3274,7 +3275,7 @@ void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname
 					}
 				}
 
-			regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
+			CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
 			if (regArray && CFArrayGetCount(regArray) > 0)
 				{
 				CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
@@ -3286,50 +3287,40 @@ void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname
 						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
 							!MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
 							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
-						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration zone: %s", buf);
+						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration domain: %s", buf);
 						}
 					}
 				}
-			browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
+			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
 			if (browseArray)
 				{
 				int i;
-	
-				for (i = 0; i < CFArrayGetCount( browseArray ); i++ )
+				for (i = 0; i < CFArrayGetCount(browseArray); i++)
 					{
-					DNameListElem * browseDomain;
-					CFStringRef		string = CFArrayGetValueAtIndex( browseArray, i );
-					domainname		dname;
-					mDNSBool		ok;
-					
-					ok = CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8);
-					
-					if ( !ok )
+					CFDictionaryRef browseDict = CFArrayGetValueAtIndex(browseArray, i);
+					if (browseDict && DDNSSettingEnabled(browseDict))
 						{
-						LogMsg("ERROR: mDNSPlatformGetDNSConfig - CFStringGetCString");
-						continue;
+						CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
+						if (name)
+							{
+							domainname dname;
+							if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+								!MakeDomainNameFromDNSNameString(&dname, buf) || !dname.c[0])
+								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browsing domain: %s", buf[0] ? buf : "(unknown)");
+							else
+								{
+								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
+							
+								DNameListElem *browseDomain = (DNameListElem*) mallocL("mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
+								if (!browseDomain) { LogMsg("ERROR: mDNSPlatformGetDNSConfig: memory exhausted"); continue; }
+								memset(browseDomain, 0, sizeof(DNameListElem));
+								AssignDomainName(&browseDomain->name, &dname);
+								browseDomain->next = mDNSNULL;
+								*browseDomains = browseDomain;
+								browseDomains = &browseDomain->next;
+								}
+							}
 						}
-
-					if ( !MakeDomainNameFromDNSNameString( &dname, buf ) || !dname.c[0] )
-						{
-						LogMsg( "ERROR: mDNSPlatformGetDNSConfig: bad browse domain: %s", buf );
-						continue;
-						}
-
-                    browseDomain = (DNameListElem*) malloc( sizeof( DNameListElem ) );
-					
-					if ( !browseDomain )
-						{
-						LogMsg( "ERROR: mDNSPlatformGetDNSConfig: memory exhausted" );
-						continue;
-						}
-
-					memset( browseDomain, 0, sizeof( DNameListElem ) );
-
-                    AssignDomainName(&browseDomain->name, &dname);
-                    browseDomain->next = *browseDomains;
-
-                    *browseDomains = browseDomain;
 					}
 				}
 			CFRelease(dict);
@@ -3393,7 +3384,7 @@ IPAddrListElem * mDNSPlatformGetDNSServers()
 				continue;
 				}
 				
-			current = ( IPAddrListElem* ) malloc( sizeof( IPAddrListElem ) );
+			current = ( IPAddrListElem* ) mallocL( "IPAddrListElem", sizeof( IPAddrListElem ) );
 		
 			if ( !current )
 				{
@@ -3474,7 +3465,7 @@ DNameListElem * mDNSPlatformGetSearchDomainList(void)
 			{
 			DNameListElem * last = current;
 			
-			current = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+			current = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
 			require_action( current, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr );
 			memset( current, 0, sizeof( DNameListElem ) );
 			
@@ -3530,7 +3521,7 @@ DNameListElem * mDNSPlatformGetSearchDomainList(void)
 					continue;
 					}
 
-				current = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+				current = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
 				require_action( current, exit, err = mStatus_NoMemoryErr );
 				memset( current, 0, sizeof( DNameListElem ) );
 			
@@ -3612,7 +3603,7 @@ DNameListElem * mDNSPlatformGetFQDN(void)
 			ptr = MakeDomainNameFromDNSNameString( &dname, resolv->domain );
 			require_action( ptr, exit, dns_configuration_free(config); err = mStatus_UnknownErr );
 
-			head = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+			head = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
 			require_action( head, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr );
 			memset( head, 0, sizeof( DNameListElem ) );
 			
@@ -3646,7 +3637,7 @@ DNameListElem * mDNSPlatformGetFQDN(void)
 			ptr = MakeDomainNameFromDNSNameString( &dname, buf );
 			require_action( ptr, exit, err = mStatus_UnknownErr );
 				
-			head = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+			head = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
 			require_action( head, exit, err = mStatus_NoMemoryErr );
 			memset( head, 0, sizeof( DNameListElem ) );
 			
@@ -3864,7 +3855,7 @@ DNameListElem * mDNSPlatformGetReverseMapSearchDomainList( void )
 					continue;
 					}
 
-				current = ( DNameListElem* ) malloc( sizeof( DNameListElem ) );
+				current = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
 				require_action( current, exit, err = mStatus_NoMemoryErr );
 				memset( current, 0, sizeof( DNameListElem ) );
 
