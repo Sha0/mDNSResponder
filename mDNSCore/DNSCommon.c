@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.105  2006/07/15 02:01:28  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix broken "empty string" browsing
+
 Revision 1.104  2006/07/05 23:09:13  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Update mDNSSendDNSMessage() to use uDNS_TCPSocket type instead of "int"
@@ -442,22 +446,6 @@ mDNSexport const mDNSOpaque16 UpdateRespFlags = { { kDNSFlag0_QR_Response | kDNS
 #pragma mark -
 #pragma mark - DNameList copy/deallocation routines
 #endif
-
-mDNSexport DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig)
-	{
-	DNameListElem *copy = mDNSNULL, *newelem;
-	const DNameListElem *ptr;
-
-	for (ptr = orig; ptr; ptr = ptr->next)
-		{
-		newelem = (DNameListElem*)mDNSPlatformMemAllocate(sizeof(DNameListElem));
-		if (!newelem) { LogMsg("ERROR: malloc"); return mDNSNULL; }
-		AssignDomainName(&newelem->name, &ptr->name);
-		newelem->next = copy;
-		copy = newelem;
-		}
-	return copy;
-	}
 
 mDNSexport void mDNS_FreeDNameList(DNameListElem *list)
 	{

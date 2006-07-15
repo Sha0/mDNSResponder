@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.34  2006/07/15 02:01:29  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix broken "empty string" browsing
+
 Revision 1.33  2006/07/05 22:53:28  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 
@@ -148,9 +152,9 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define MAX_UCAST_POLL_INTERVAL (60 * 60 * mDNSPlatformOneSecond)
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
-#define UPDATE_SERVICE_TYPE  "_dns-update._udp."
-#define LLQ_SERVICE_TYPE     "_dns-llq._udp"
-#define PRIVATE_SERVICE_TYPE "_dns-private._tcp."
+#define UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update\x04_udp")
+#define LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq\x04_udp")
+#define PRIVATE_SERVICE_TYPE ((domainname*)"\x0C_dns-private\x04_tcp")
 #define DEFAULT_UPDATE_LEASE 7200
 	
 // Entry points into unicast-specific routines
@@ -223,8 +227,6 @@ typedef struct
 typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
 
 extern mStatus          uDNS_SetupDNSConfig( mDNS *const m );
-extern DNameListElem *	uDNS_GetDefaultSearchDomainList(void);
-extern DNameListElem *  uDNS_GetDefaultRegDomainList(void);
 extern mStatus          uDNS_GetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort, mDNSBool findPrviatePort,
 								   AsyncOpCallback callback, void *callbackInfo);
 extern mStatus          uDNS_RegisterSearchDomains( mDNS* const m );

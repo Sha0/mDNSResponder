@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.336  2006/07/15 02:01:32  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix broken "empty string" browsing
+
 Revision 1.335  2006/07/14 05:25:11  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Fixed crash in mDNSPlatformGetDNSConfig() reading BrowseDomains array
@@ -2308,7 +2312,7 @@ exit:
 
 	if ( err && ss )
 		{
-		free( ss );
+		freeL( "CFSocketSet", ss );
 		ss = mDNSNULL;
 		}
 
@@ -2319,7 +2323,7 @@ exit:
 mDNSexport void mDNSPlatformUDPClose( uDNS_UDPSocket sock )
 	{
 	CloseSocketSet( ( CFSocketSet* ) sock );
-	free( ( CFSocketSet* ) sock );
+	freeL( "uDNS_UDPSocket", ( CFSocketSet* ) sock );
 	}
 		
 
@@ -3388,7 +3392,7 @@ IPAddrListElem * mDNSPlatformGetDNSServers()
 		
 			if ( !current )
 				{
-				LogMsg("ERROR: mDNSPlatformGetDNSServers - malloc failed" );
+				LogMsg("ERROR: mDNSPlatformGetDNSServers - couldn't allocate memory" );
 				continue;
 				}
 				
@@ -4012,7 +4016,7 @@ mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int * nDeletions
 					if (!p)
 						{
 						p = mallocL("DNSServer", sizeof(*p));
-						if (!p) { LogMsg("Error: malloc");  mDNS_Unlock(m); return mStatus_UnknownErr; }
+						if (!p) { LogMsg("Error: couldn't allocate memory for DNSServer");  mDNS_Unlock(m); return mStatus_UnknownErr; }
 						p->addr      = saddr;
 						p->del       = mDNSfalse;
 						p->teststate = DNSServer_Untested;

@@ -60,6 +60,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.299  2006/07/15 02:01:28  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix broken "empty string" browsing
+
 Revision 1.298  2006/07/05 22:55:03  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Need Private field in uDNS_RegInfo
@@ -2100,6 +2104,18 @@ struct NATTraversalInfo_struct
 	unsigned refs;
 	};
 
+typedef struct IPAddrListElem
+	{
+	mDNSAddr addr;
+	struct IPAddrListElem *next;
+	} IPAddrListElem;
+
+typedef struct DNameListElem
+	{
+	domainname name;
+	struct DNameListElem *next;
+	} DNameListElem;
+
 // ***************************************************************************
 #if 0
 #pragma mark - Main mDNS object, used to hold all the mDNS state
@@ -2142,6 +2158,9 @@ typedef struct
 	struct DNameListElem *  BrowseDomains;      // Default wide-area zone for legacy ("empty string") browses
     domainname       FQDN;
     mDNSBool         RegisterSearchDomains;
+    
+	DNameListElem  *DefBrowseList;  // cache of answers to above query (where we search for empty string browses)
+	DNameListElem  *DefRegList;  // manually generated list of domains where we register for empty string registrations
 	} uDNS_GlobalInfo;
 
 struct mDNS_struct
@@ -2798,21 +2817,6 @@ extern void           mDNSPlatformTLSTearDownCerts(void);
 
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
-// The Get() functions must return a linked list of DNameListElem structs, allocated via mDNSPlatformMemAllocate.
-// Platforms may implement the Get() calls via the mDNS_CopyDNameList() helper routine.
-// Callers should free lists obtained via the Get() calls with th mDNS_FreeDNameList routine, provided by the core.
-
-typedef struct IPAddrListElem
-	{
-	mDNSAddr addr;
-	struct IPAddrListElem *next;
-	} IPAddrListElem;
-
-typedef struct DNameListElem
-	{
-	domainname name;
-	struct DNameListElem *next;
-	} DNameListElem;
 
 extern void					mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
 extern IPAddrListElem	*	mDNSPlatformGetDNSServers(void);
@@ -2828,7 +2832,6 @@ extern void					mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname,
 
 
 // Helper functions provided by the core
-extern DNameListElem *mDNS_CopyDNameList(const DNameListElem *orig);
 extern void mDNS_FreeDNameList(DNameListElem *list);
 extern void mDNS_FreeIPAddrList(IPAddrListElem * list);
 

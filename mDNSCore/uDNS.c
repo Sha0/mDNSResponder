@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.232  2006/07/15 02:01:29  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix broken "empty string" browsing
+
 Revision 1.231  2006/07/05 23:28:22  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 
@@ -825,7 +829,6 @@ mDNSlocal void privateResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNS
 mDNSlocal void tcpCallback( uDNS_TCPSocket sock, void * context, mDNSBool connectionEstablished, mStatus err );
 mDNSlocal mStatus RegisterNameServers( mDNS *const m );
 mDNSlocal mStatus RegisterSearchDomains( mDNS *const m );
-mDNSlocal void    RemoveDefaultRegDomain(domainname *d);
 
 
 typedef struct
@@ -862,8 +865,6 @@ typedef struct SearchListElem
 // for domain enumeration and default browsing/registration
 
 static SearchListElem *  SearchList           = mDNSNULL;  // where we search for _browse domains
-static DNameListElem  *  DefBrowseList        = mDNSNULL;  // cache of answers to above query (where we search for empty string browses)
-static DNameListElem  *  DefRegList           = mDNSNULL;  // manually generated list of domains where we register for empty string registrations
 static ARListElem     *  SCPrefBrowseDomains  = mDNSNULL;  // manually generated local-only PTR records for browse domains we get from SCPreferences
 static DNSQuestion       LegacyBrowseDomainQ;              // our local enumeration query for _legacy._browse domains
 
@@ -4231,7 +4232,6 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr);
 mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
 mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
-mDNSlocal smAction hndlLookupPorts(DNSMessage *msg, const mDNSu8 *end, ntaContext *context);
 
 // initialization
 mStatus uDNS_GetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort, mDNSBool findPrivatePort,
@@ -4251,7 +4251,52 @@ mStatus uDNS_GetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDN
     getZoneData(m, mDNSNULL, mDNSNULL, mDNSNULL, context);
     return mStatus_NoError;
     }
+
+
+mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext *context, domainname *portName, mDNSIPPort *port)
+	{
+	int i;
+	LargeCacheRecord lcr;
+	const mDNSu8 *ptr;
+	mStatus err;
 	
+	LogOperation("lookupDNSPort %##s", portName->c);
+	
+	if (context->state == lookupPort)  // we've already issued the query
+		{
+		if (!msg) { LogMsg("ERROR: lookupDNSPort - NULL message"); return smError; }
+		ptr = LocateAnswers(msg, end);
+		for (i = 0; i < msg->h.numAnswers; i++)
+			{
+			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+			if (!ptr) { LogMsg("ERROR: lookupDNSPort - GetLargeResourceRecord returned NULL");  return smError; }
+			if (ResourceRecordAnswersQuestion(&lcr.r.resrec, &context->question))
+				{
+				*port = lcr.r.resrec.rdata->u.srv.port;
+				context->state = foundPort;
+				return smContinue;
+				}
+			}
+		LogOperation("lookupDNSPort - no answer for type %##s", portName->c);
+		*port = zeroIPPort;
+		context->state = foundPort;
+		return smContinue;
+		}
+
+	// query the server for the update port for the zone
+	context->state = lookupPort;
+	context->question.qname.c[0] = 0;
+	AppendDomainName(&context->question.qname, portName);
+	AppendDomainName(&context->question.qname, &context->zone);
+	context->question.qtype = kDNSType_SRV;
+	context->question.qclass = kDNSClass_IN;
+	err = startInternalQuery(&context->question, context->m, getZoneData, context);
+	context->questionActive = mDNStrue;
+	if (err) LogMsg("hndlLookupSOA: startInternalQuery returned error %ld (breaking until next periodic retransmission)", err);
+	return smBreak;     // break from state machine until we receive another packet
+	}
+
+
 // state machine entry routine
 mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question, void *contextPtr)
     {
@@ -4276,8 +4321,8 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 		LogMsg("ERROR: getZoneData - received response w/ rcode %d", msg->h.flags.b[1 ]  & kDNSFlag1_RC);
 		goto error;
 		}
- 	
 
+	if (question) LogOperation("getZoneData: Question %##s", question->qname.c);
 	switch (context->state)
         {
         case init:
@@ -4296,20 +4341,31 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 			if (action == smError) goto error;
 			if (action == smBreak) return;
 		case foundA:
-			if (!context->findUpdatePort && !context->findLLQPort && !context->findPrivatePort)
+			// ### Temporary hack ###
+			if      (context->findUpdatePort ) AssignDomainName(&question->qname, UPDATE_SERVICE_TYPE);
+			else if (context->findLLQPort    ) AssignDomainName(&question->qname, LLQ_SERVICE_TYPE);
+			else if (context->findPrivatePort) AssignDomainName(&question->qname, PRIVATE_SERVICE_TYPE);
+			else
 				{
 				context->state = complete;
 				break;
 				}
+
 		case lookupPort:
-			action = hndlLookupPorts(msg, end, context);
+			if      (SameDomainLabel(question->qname.c, UPDATE_SERVICE_TYPE->c))
+				action = lookupDNSPort(msg, end, context, UPDATE_SERVICE_TYPE, &context->updatePort);
+			else if (SameDomainLabel(question->qname.c, LLQ_SERVICE_TYPE->c))
+				action = lookupDNSPort(msg, end, context, LLQ_SERVICE_TYPE, &context->llqPort);
+			else if (SameDomainLabel(question->qname.c, PRIVATE_SERVICE_TYPE->c))
+				action = lookupDNSPort(msg, end, context, PRIVATE_SERVICE_TYPE, &context->privatePort);
+			else { action = smError; LogMsg("getZoneData: Unknown question %##s", question->qname.c); }
 			if (action == smError) goto error;
 			if (action == smBreak) return;
 			if (action == smContinue) context->state = complete;
 		case foundPort:
 		case complete: break;
 		}
-					  
+
 	if (context->state != complete)
 		{
 		LogMsg("ERROR: getZoneData - exited state machine with state %d", context->state);
@@ -4534,69 +4590,6 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 		return smError;
 		}
 	else { LogMsg("ERROR: lookupNSAddr - bad state %d", context->state); return smError; }
-	}
-	
-mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext *context, char *portName, mDNSIPPort *port)
-	{
-	int i;
-	LargeCacheRecord lcr;
-	const mDNSu8 *ptr;
-	DNSQuestion *q;
-	mStatus err;
-	
-	if (context->state == lookupPort)  // we've already issued the query
-		{
-		if (!msg) { LogMsg("ERROR: hndlLookupUpdatePort - NULL message"); return smError; }
-		ptr = LocateAnswers(msg, end);
-		for (i = 0; i < msg->h.numAnswers; i++)
-			{
-			ptr = GetLargeResourceRecord(context->m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
-			if (!ptr) { LogMsg("ERROR: hndlLookupUpdatePort - GetLargeResourceRecord returned NULL");  return smError; }
-			if (ResourceRecordAnswersQuestion(&lcr.r.resrec, &context->question))
-				{
-				*port = lcr.r.resrec.rdata->u.srv.port;
-				context->state = foundPort;
-				return smContinue;
-				}
-			}
-		debugf("hndlLookupUpdatePort - no answer for type %s", portName);
-		port->NotAnInteger = 0;
-		context->state = foundPort;
-		return smContinue;
-		}
-
-	// query the server for the update port for the zone
-	context->state = lookupPort;
-	q = &context->question;
-	MakeDomainNameFromDNSNameString(&q->qname, portName);
-	AppendDomainName(&q->qname, &context->zone);
-    q->qtype = kDNSType_SRV;
-    q->qclass = kDNSClass_IN;
-    err = startInternalQuery(q, context->m, getZoneData, context);
-	context->questionActive = mDNStrue;
-    if (err) LogMsg("hndlLookupSOA: startInternalQuery returned error %ld (breaking until next periodic retransmission)", err);
-    return smBreak;     // break from state machine until we receive another packet
-	}
-
-mDNSlocal smAction hndlLookupPorts(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
-	{
-	smAction action;
-	
-	if (context->findUpdatePort && !context->updatePort.NotAnInteger)
-		{
-		action = lookupDNSPort(msg, end, context, UPDATE_SERVICE_TYPE, &context->updatePort);
-		if (action != smContinue) return action;
-		}
-	if (context->findLLQPort && !context->llqPort.NotAnInteger)
-		{
-		action = lookupDNSPort(msg, end, context, LLQ_SERVICE_TYPE, &context->llqPort);
-		if (action != smContinue) return action;
-		}
-	if (context->findPrivatePort && !context->privatePort.NotAnInteger)
-		{
-		return lookupDNSPort(msg, end, context, PRIVATE_SERVICE_TYPE, &context->privatePort);
-		}
-	return smContinue;
 	}
 
 
@@ -6511,24 +6504,12 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	}
 
 
-mDNSexport DNameListElem * uDNS_GetDefaultSearchDomainList(void)
-	{
-	return mDNS_CopyDNameList(DefBrowseList);
-	}
-
-
-mDNSexport DNameListElem * uDNS_GetDefaultRegDomainList(void)
-	{
-	return mDNS_CopyDNameList(DefRegList);
-	}
-
-
-mDNSlocal void AddDefaultRegDomain(domainname *d)
+mDNSlocal void AddDefaultRegDomain(mDNS *const m, domainname *d)
 	{
 	DNameListElem *newelem = mDNSNULL, *ptr;
 
 	// make sure name not already in list
-	for (ptr = DefRegList; ptr; ptr = ptr->next)
+	for (ptr = m->uDNS_info.DefRegList; ptr; ptr = ptr->next)
 		{
 		if (SameDomainName(&ptr->name, d))
 			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
@@ -6537,23 +6518,23 @@ mDNSlocal void AddDefaultRegDomain(domainname *d)
 	newelem = mDNSPlatformMemAllocate(sizeof(*newelem));
 	if (!newelem) { LogMsg("Error - malloc"); return; }
 	AssignDomainName(&newelem->name, d);
-	newelem->next = DefRegList;
-	DefRegList = newelem;
+	newelem->next = m->uDNS_info.DefRegList;
+	m->uDNS_info.DefRegList = newelem;
 
 	mDNSPlatformDefaultRegDomainChanged(d, mDNStrue);
 	}
 
 
-mDNSlocal void RemoveDefaultRegDomain(domainname *d)
+mDNSlocal void RemoveDefaultRegDomain(mDNS *const m, domainname *d)
 	{
-	DNameListElem *ptr = DefRegList, *prev = mDNSNULL;
+	DNameListElem *ptr = m->uDNS_info.DefRegList, *prev = mDNSNULL;
 
 	while (ptr)
 		{
 		if (SameDomainName(&ptr->name, d))
 			{
 			if (prev) prev->next = ptr->next;
-			else DefRegList = ptr->next;
+			else m->uDNS_info.DefRegList = ptr->next;
 			mDNSPlatformMemFree(ptr);
 			mDNSPlatformDefaultRegDomainChanged(d, mDNSfalse);
 			return;
@@ -6571,19 +6552,21 @@ mDNSlocal void FoundDefaultBrowseDomain(mDNS *const m, DNSQuestion *question, co
 	(void)m; // unused;
 	(void)question;  // unused
 
+	LogOperation("FoundDefaultBrowseDomain: %s default browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
+
 	if (AddRecord)
 		{
 		new = mDNSPlatformMemAllocate(sizeof(DNameListElem));
 		if (!new) { LogMsg("ERROR: malloc"); return; }
 		AssignDomainName(&new->name, &answer->rdata->u.name);
-		new->next = DefBrowseList;
-		DefBrowseList = new;
+		new->next = m->uDNS_info.DefBrowseList;
+		m->uDNS_info.DefBrowseList = new;
 		mDNSPlatformDefaultBrowseDomainChanged(&new->name, mDNStrue);
 		return;
 		}
 	else
 		{
-		ptr = DefBrowseList;
+		ptr = m->uDNS_info.DefBrowseList;
 		prev = mDNSNULL;
 		while (ptr)
 			{
@@ -6591,8 +6574,8 @@ mDNSlocal void FoundDefaultBrowseDomain(mDNS *const m, DNSQuestion *question, co
 				{
 				mDNSPlatformDefaultBrowseDomainChanged(&ptr->name, mDNSfalse);
 				if (prev) prev->next = ptr->next;
-				else DefBrowseList = ptr->next;
-				mDNSPlatformMemFree(ptr);				
+				else m->uDNS_info.DefBrowseList = ptr->next;
+				mDNSPlatformMemFree(ptr);
 				return;
 				}
 			prev = ptr;
@@ -6862,7 +6845,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig( mDNS *const m )
 		{
 		if (m->uDNS_info.RegDomain.c[0])
 			{
-			RemoveDefaultRegDomain(&m->uDNS_info.RegDomain);
+			RemoveDefaultRegDomain(m, &m->uDNS_info.RegDomain);
 			SetPrefsBrowseDomain(m, &m->uDNS_info.RegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
 			}
 
@@ -6871,7 +6854,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig( mDNS *const m )
 		if (m->uDNS_info.RegDomain.c[0])
 		{
 			mDNSPlatformSetSecretForDomain(m, &m->uDNS_info.RegDomain);
-			AddDefaultRegDomain(&m->uDNS_info.RegDomain);
+			AddDefaultRegDomain(m, &m->uDNS_info.RegDomain);
 			SetPrefsBrowseDomain(m, &m->uDNS_info.RegDomain, mDNStrue);
 		}
 	}

@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.204  2006/07/15 02:01:33  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix broken "empty string" browsing
+
 Revision 1.203  2006/07/07 01:09:13  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
@@ -1876,7 +1880,7 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 mDNSlocal void free_defdomain(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
-	if (result == mStatus_MemFree) free(rr->RecordContext);  // context is the enclosing list structure
+	if (result == mStatus_MemFree) freeL(rr->RecordContext);  // context is the enclosing list structure
 	}
 #endif
 
@@ -1932,7 +1936,7 @@ mDNSlocal void handle_setdomain_request(request_state *request)
  		AssignDomainName(&newelem->ptr_rec.resrec.rdata->u.name, &domain);
 		newelem->uid = xuc.cr_uid;
 		err = mDNS_Register(gmDNS, &newelem->ptr_rec);
-		if (err) free(newelem);
+		if (err) freeL(newelem);
 		else
 			{
 			// link into list
@@ -2076,7 +2080,6 @@ mDNSlocal void handle_browse_request(request_state *request)
     mDNSs32 NumSubTypes;
     char *ptr;
     mStatus err = mStatus_NoError;
-	DNameListElem *search_domain_list, *sdom;
 	browser_info_t *info = NULL;
 	
     if (request->ts != t_complete)
@@ -2141,8 +2144,8 @@ mDNSlocal void handle_browse_request(request_state *request)
 
 	else
 		{
-		search_domain_list = mDNSPlatformGetSearchDomainList();
-		for (sdom = search_domain_list; sdom; sdom = sdom->next)
+		DNameListElem *sdom;
+		for (sdom = mDNSStorage.uDNS_info.DefBrowseList; sdom; sdom = sdom->next)
 			{
 			err = add_domain_to_browser(info, &sdom->name);
 			if (err)
@@ -2150,9 +2153,7 @@ mDNSlocal void handle_browse_request(request_state *request)
 				if (SameDomainName(&sdom->name, &localdomain)) break;
 				else err = mStatus_NoError;  // suppress errors for non-local "default" domains
 				}
-
 			}
-		mDNS_FreeDNameList(search_domain_list);
 		}
 		
 	deliver_error(request, err);
@@ -2467,11 +2468,10 @@ mDNSlocal void handle_regservice_request(request_state *request)
 	
 	if (!result && !*domain)
 		{
-		DNameListElem *ptr, *def_domains = uDNS_GetDefaultRegDomainList();
-		for (ptr = def_domains; ptr; ptr = ptr->next)
+		DNameListElem *ptr;
+		for (ptr = mDNSStorage.uDNS_info.DefRegList; ptr; ptr = ptr->next)
 			register_service_instance(request, &ptr->name);
 		    // note that we don't report errors for non-local, non-explicit domains
-		mDNS_FreeDNameList(def_domains);
 		}
 	
 finish:

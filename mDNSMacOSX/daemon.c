@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.268  2006/07/15 02:01:32  cheshire
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix broken "empty string" browsing
+
 Revision 1.267  2006/07/07 01:09:10  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
@@ -1314,7 +1318,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	(void)unusedserver;		// Unused
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
-	DNameListElem *SearchDomains = NULL, *sdPtr;
+	DNameListElem *sdPtr;
 
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
@@ -1356,9 +1360,8 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		{
 		// Start browser on all domains
 		x->DefaultDomain = mDNStrue;
-		SearchDomains = uDNS_GetDefaultSearchDomainList();
-		if (!SearchDomains) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
-		for (sdPtr = SearchDomains; sdPtr; sdPtr = sdPtr->next)
+		if (!mDNSStorage.uDNS_info.DefBrowseList) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
+		for (sdPtr = mDNSStorage.uDNS_info.DefBrowseList; sdPtr; sdPtr = sdPtr->next)
 			{
 			err = AddDomainToBrowser(x, &sdPtr->name);
 			if (err)
@@ -1373,14 +1376,12 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	
 	// Succeeded: Wrap up and return
 	EnableDeathNotificationForClient(client, x);
-	mDNS_FreeDNameList(SearchDomains);
 	return(mStatus_NoError);
 
 	badparam:
 	err = mStatus_BadParamErr;
 fail:
 	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
-	if (SearchDomains) mDNS_FreeDNameList(SearchDomains);
 	return(err);
 	}
 
@@ -1783,11 +1784,10 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 
 	if (x->DefaultDomain)
 		{
-		DNameListElem *ptr, *regdomains = uDNS_GetDefaultRegDomainList();
-		for (ptr = regdomains; ptr; ptr = ptr->next)
+		DNameListElem *ptr;
+		for (ptr = mDNSStorage.uDNS_info.DefRegList; ptr; ptr = ptr->next)
 			AddServiceInstance(x, &ptr->name);
-		mDNS_FreeDNameList(regdomains);
-		}		
+		}
 
 	// Succeeded: Wrap up and return
 	EnableDeathNotificationForClient(client, x);
@@ -2675,6 +2675,7 @@ mDNSexport int main(int argc, char **argv)
 
 	// Make our PID file and Unix Domain Socket first, because launchd waits for those before it starts launching other daemons.
 	// The sooner we do this, the faster the machine will boot.
+	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it
 	status = udsserver_init();
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 	
@@ -2791,10 +2792,11 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	if (callback == NULL)
 		return mStatus_BadParamErr;
 
-	newSource = (CFSocketEventSource*) calloc(1, sizeof *newSource);
+	newSource = (CFSocketEventSource*) mallocL("CFSocketEventSource", sizeof *newSource);
 	if (NULL == newSource)
 		return mStatus_NoMemoryErr;
 
+	bzero(newSource, sizeof(*newSource));
 	newSource->Callback = callback;
 	newSource->Context = context;
 	newSource->fd = fd;
@@ -2835,7 +2837,7 @@ mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the f
 			CFRelease(iSource->RLS);
 			CFSocketInvalidate(iSource->cfs);		// Note: Also closes the underlying socket
 			CFRelease(iSource->cfs);
-			free(iSource);
+			freeL("CFSocketEventSource", iSource);
 			return mStatus_NoError;
 			}
 		}
