@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.547  2006/07/15 02:31:30  cheshire
+<rdar://problem/4630812> Suppress log messages for certain old devices with inconsistent TXT RRSet TTLs
+
 Revision 1.546  2006/07/07 01:09:09  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
@@ -5333,9 +5336,14 @@ exit:
 				// then we need to ensure the whole RRSet has the same TTL (as required by DNS semantics)
 				if (r2->resrec.rroriginalttl > 1 && m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
 					{
+					// If we find mismatched TTLs in an RRSet, log that we're correcting them.
+					// We suppress the message for the specific case of correcting from 240 to 60 for type TXT,
+					// because certain early Bonjour devices are known to have this specific mismatch, and
+					// there's no point filling syslog with messages about something we already know about.
 					if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl)
-						LogMsg("Correcting TTL from %4d to %4d for %s",
-							r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
+						if (r2->resrec.rroriginalttl != 240 && r1->resrec.rroriginalttl != 60 && r2->resrec.rrtype != kDNSType_TXT)
+							LogMsg("Correcting TTL from %4d to %4d for %s",
+								r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
 					r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
 					r2->TimeRcvd = m->timenow;
 					}
