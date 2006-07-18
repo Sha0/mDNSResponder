@@ -155,7 +155,7 @@ format_reverse_addr_in (
 
 /*
 	Format an address structure as a string appropriate for DNS reverse (PTR)
-	lookup for AF_INET6.  Output is in .ip6.int domain.
+	lookup for AF_INET6.  Output is in .ip6.arpa domain.
 	
 	Parameters
 		prefixlen
