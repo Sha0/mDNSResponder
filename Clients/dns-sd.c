@@ -83,6 +83,7 @@ typedef int        pid_t;
 #define getpid     _getpid
 #define strcasecmp _stricmp
 #define snprintf   _snprintf
+static const char kFilePathSep = '\\';
 #else
 #include <unistd.h>			// For getopt() and optind
 #include <netdb.h>			// For getaddrinfo()
@@ -90,6 +91,7 @@ typedef int        pid_t;
 #include <sys/socket.h>		// For AF_INET
 #include <netinet/in.h>		// For struct sockaddr_in()
 #include <arpa/inet.h>		// For inet_addr()
+static const char kFilePathSep = '/';
 #endif
 
 //#include "../mDNSShared/dnssd_clientstub.c"
@@ -528,7 +530,7 @@ static int getfirstoption( int argc, char **argv, const char *optstr, int *pOptI
 // Return the recognized option in optstr and the option index of the next arg.
 #if NOT_HAVE_GETOPT
 	{
-	int	i;
+	int i;
 	for ( i=1; i < argc; i++)
 		{
 		if ( argv[i][0] == '-' && &argv[i][1] && 
@@ -542,7 +544,7 @@ static int getfirstoption( int argc, char **argv, const char *optstr, int *pOptI
 	}
 #else
 	{
-	int	operation = getopt(argc, (char * const *)argv, optstr);
+	int operation = getopt(argc, (char * const *)argv, optstr);
 	*pOptInd = optind;
 	return operation;
 	}
@@ -649,15 +651,15 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 
 int main(int argc, char **argv)
 	{
-#ifdef _WIN32
-	const char	kFilePathSep = '\\';
-#else
-	const char	kFilePathSep = '/';
-#endif
 	DNSServiceErrorType err;
 	char *dom;
-	int	optind;
-	const char *progname = strrchr(argv[0], kFilePathSep) ? strrchr(argv[0], kFilePathSep) + 1 : argv[0];
+	int optind;
+
+	// Extract the program name from argv[0], which by convention contains the path to this executable.
+	// Note that this is just a voluntary convention, not enforced by the kernel --
+	// the process calling exec() can pass bogus data in argv[0] if it chooses to.
+	const char *a0 = strrchr(argv[0], kFilePathSep) + 1;
+	if (a0 == (const char *)1) a0 = argv[0];
 
 	if (argc > 1 && !strcmp(argv[1], "-lo"))
 		{
@@ -783,19 +785,19 @@ int main(int argc, char **argv)
 	return 0;
 
 Fail:
-	fprintf(stderr, "%s -E                  (Enumerate recommended registration domains)\n", progname);
-	fprintf(stderr, "%s -F                      (Enumerate recommended browsing domains)\n", progname);
-	fprintf(stderr, "%s -B        <Type> <Domain>        (Browse for services instances)\n", progname);
-	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", progname);
-	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", progname);
-	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", progname);
-	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", progname);
-	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", progname);
-	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", progname);
-	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", progname);
-	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", progname);
-	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", progname);
-	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", progname);
-	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", progname);
+	fprintf(stderr, "%s -E                  (Enumerate recommended registration domains)\n", a0);
+	fprintf(stderr, "%s -F                      (Enumerate recommended browsing domains)\n", a0);
+	fprintf(stderr, "%s -B        <Type> <Domain>        (Browse for services instances)\n", a0);
+	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", a0);
+	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", a0);
+	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", a0);
+	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", a0);
+	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", a0);
+	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", a0);
+	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", a0);
+	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", a0);
+	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", a0);
+	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
+	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
 	return 0;
 	}
