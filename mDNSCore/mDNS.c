@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.548  2006/07/20 19:30:19  mkrochma
+<rdar://problem/4633196> Wide-area browsing sometimes doesn't work in TOT
+
 Revision 1.547  2006/07/15 02:31:30  cheshire
 <rdar://problem/4630812> Suppress log messages for certain old devices with inconsistent TXT RRSet TTLs
 
@@ -5708,6 +5711,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
 	question->LongLived        = mDNSfalse;
+	question->Private          = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->ForceMCast       = ForceMCast;
 	question->QuestionCallback = Callback;
@@ -5971,6 +5975,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
 	question->LongLived        = mDNSfalse;
+	question->Private          = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->ForceMCast       = mDNSfalse;
 	question->QuestionCallback = Callback;
