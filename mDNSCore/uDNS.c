@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.233  2006/07/20 19:46:51  mkrochma
+<rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
+Fix Private DNS
+
 Revision 1.232  2006/07/15 02:01:29  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Fix broken "empty string" browsing
@@ -4352,13 +4356,21 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 				}
 
 		case lookupPort:
-			if      (SameDomainLabel(question->qname.c, UPDATE_SERVICE_TYPE->c))
+			action = smError;
+			// Might want to think about using enums rather than using question->qname to determine
+			// what we're searching for
+			if (SameDomainLabel(question->qname.c, UPDATE_SERVICE_TYPE->c))
+				{
 				action = lookupDNSPort(msg, end, context, UPDATE_SERVICE_TYPE, &context->updatePort);
-			else if (SameDomainLabel(question->qname.c, LLQ_SERVICE_TYPE->c))
+				if ((action == smContinue) && context->findPrivatePort) AssignDomainName(&question->qname, PRIVATE_SERVICE_TYPE);
+				}
+			if (SameDomainLabel(question->qname.c, LLQ_SERVICE_TYPE->c))
+				{
 				action = lookupDNSPort(msg, end, context, LLQ_SERVICE_TYPE, &context->llqPort);
-			else if (SameDomainLabel(question->qname.c, PRIVATE_SERVICE_TYPE->c))
+				if ((action == smContinue) && context->findPrivatePort) AssignDomainName(&question->qname, PRIVATE_SERVICE_TYPE);
+				}
+			if (SameDomainLabel(question->qname.c, PRIVATE_SERVICE_TYPE->c))
 				action = lookupDNSPort(msg, end, context, PRIVATE_SERVICE_TYPE, &context->privatePort);
-			else { action = smError; LogMsg("getZoneData: Unknown question %##s", question->qname.c); }
 			if (action == smError) goto error;
 			if (action == smBreak) return;
 			if (action == smContinue) context->state = complete;
