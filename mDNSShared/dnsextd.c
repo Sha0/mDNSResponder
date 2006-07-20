@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.43  2006/07/20 19:53:33  mkrochma
+<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
+More fixes for private DNS
+
 Revision 1.42  2006/07/05 22:48:19  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 
@@ -673,7 +677,7 @@ mDNSlocal mDNSBool IsUpdate( PktMsg * pkt )
 
 mDNSlocal mDNSBool IsNotify(PktMsg *pkt)
 	{
-	return ( pkt->msg.h.flags.b[0] & kDNSFlag0_OP_Notify ) ? mDNStrue : mDNSfalse;
+	return ( pkt->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask ) == ( mDNSu8) ( kDNSFlag0_OP_Notify );
 	}
 
 
@@ -2500,13 +2504,6 @@ mDNSlocal mDNSBool IsAuthorized( DaemonInfo * d, PktMsg * pkt, uDNS_AuthInfo ** 
 		goto exit;
 		}
 
-	if ( pkt->isZonePublic )
-		{
-		ok = mDNStrue;
-		strip = mDNStrue;
-		goto exit;
-		}
-
 	if ( IsQuery( pkt ) )
 		{
 		keys = pkt->zone->queryKeys;
@@ -2521,6 +2518,12 @@ mDNSlocal mDNSBool IsAuthorized( DaemonInfo * d, PktMsg * pkt, uDNS_AuthInfo ** 
 		{
 		ok = mDNStrue;
 		strip = mDNSfalse;
+		goto exit;
+		}
+		
+	if ( pkt->isZonePublic )
+		{
+		ok = mDNStrue;
 		goto exit;
 		}
 
