@@ -45,6 +45,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.549  2006/07/20 22:07:31  mkrochma
+<rdar://problem/4633196> Wide-area browsing is currently broken in TOT
+More fixes for uninitialized variables
+
 Revision 1.548  2006/07/20 19:30:19  mkrochma
 <rdar://problem/4633196> Wide-area browsing sometimes doesn't work in TOT
 
@@ -5890,6 +5894,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	AssignDomainName(&query->qSRV.qname, &info->name);
 	query->qSRV.qtype               = kDNSType_SRV;
 	query->qSRV.qclass              = kDNSClass_IN;
+	query->qSRV.Private             = mDNSfalse;
 	query->qSRV.LongLived           = mDNSfalse;
 	query->qSRV.ExpectUnique        = mDNStrue;
 	query->qSRV.ForceMCast          = mDNSfalse;
@@ -5902,6 +5907,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	AssignDomainName(&query->qTXT.qname, &info->name);
 	query->qTXT.qtype               = kDNSType_TXT;
 	query->qTXT.qclass              = kDNSClass_IN;
+	query->qTXT.Private             = mDNSfalse;
 	query->qTXT.LongLived           = mDNSfalse;
 	query->qTXT.ExpectUnique        = mDNStrue;
 	query->qTXT.ForceMCast          = mDNSfalse;
@@ -5914,6 +5920,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv4.qname.c[0]          = 0;
 	query->qAv4.qtype               = kDNSType_A;
 	query->qAv4.qclass              = kDNSClass_IN;
+	query->qAv4.Private             = mDNSfalse;
 	query->qAv4.LongLived           = mDNSfalse;
 	query->qAv4.ExpectUnique        = mDNStrue;
 	query->qAv4.ForceMCast          = mDNSfalse;
@@ -5926,6 +5933,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv6.qname.c[0]          = 0;
 	query->qAv6.qtype               = kDNSType_AAAA;
 	query->qAv6.qclass              = kDNSClass_IN;
+	query->qAv6.Private             = mDNSfalse;
 	query->qAv6.LongLived           = mDNSfalse;
 	query->qAv6.ExpectUnique        = mDNStrue;
 	query->qAv6.ForceMCast          = mDNSfalse;

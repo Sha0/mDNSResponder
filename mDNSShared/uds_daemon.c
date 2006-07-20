@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.205  2006/07/20 22:07:30  mkrochma
+<rdar://problem/4633196> Wide-area browsing is currently broken in TOT
+More fixes for uninitialized variables
+
 Revision 1.204  2006/07/15 02:01:33  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Fix broken "empty string" browsing
@@ -1514,6 +1518,7 @@ mDNSlocal void handle_query_request(request_state *rstate)
     if (!MakeDomainNameFromDNSNameString(&q->qname, name)) { freeL("DNSQuestion", q); goto bad_param; }
     q->qtype            = rrtype;
     q->qclass           = rrclass;
+    q->Private          = mDNSfalse;
     q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
     q->ExpectUnique     = mDNSfalse;
     q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
@@ -1597,6 +1602,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     memcpy(&term->qsrv.qname, &fqdn, MAX_DOMAIN_NAME);
     term->qsrv.qtype            = kDNSType_SRV;
     term->qsrv.qclass           = kDNSClass_IN;
+    term->qsrv.Private          = mDNSfalse;
     term->qsrv.LongLived        = mDNSfalse;
     term->qsrv.ExpectUnique     = mDNStrue;
 	term->qsrv.ForceMCast       = mDNSfalse;
@@ -1608,6 +1614,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     memcpy(&term->qtxt.qname, &fqdn, MAX_DOMAIN_NAME);
     term->qtxt.qtype            = kDNSType_TXT;
     term->qtxt.qclass           = kDNSClass_IN;
+    term->qtxt.Private          = mDNSfalse;
     term->qtxt.LongLived        = mDNSfalse;
     term->qtxt.ExpectUnique     = mDNStrue;
 	term->qtxt.ForceMCast       = mDNSfalse;
