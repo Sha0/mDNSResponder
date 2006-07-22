@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.57  2006/07/22 03:43:26  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+
 Revision 1.56  2006/07/05 23:37:26  cheshire
 Remove unused LegacyNATInit/LegacyNATDestroy declarations
 
@@ -229,27 +232,25 @@ Defines mDNS_PlatformSupport_struct for OS X
 #include <netinet/in.h>
 #include "mDNSEmbeddedAPI.h"  // for domain name structure
 
-#if WORKAROUND_4407067
-#define NO_CFUSERNOTIFICATION 1
-#define NO_SECURITYFRAMEWORK  1
-#define NO_IOPOWER            1
-#define NO_HINFO              1
-#define NO_IPV6               1
-#endif
-
 typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;
+
+typedef void (*KQueueEventCallback)(int fd, short filter, u_int fflags, intptr_t data, void *context);
+typedef struct
+	{
+	KQueueEventCallback	callback;
+	void				*context;
+	} KQueueEntry;
+typedef KQueueEntry * KQueueEntryRef;
 
 typedef struct
 	{
 	mDNS                    *m;
 	NetworkInterfaceInfoOSX *info;
 	int                      sktv4;
-	CFSocketRef              cfsv4;
-	CFRunLoopSourceRef       rlsv4;
+	KQueueEntry				 kqsv4;
 	int                      sktv6;
-	CFSocketRef	             cfsv6;
-	CFRunLoopSourceRef       rlsv6;
-	} CFSocketSet;
+	KQueueEntry	             kqsv6;
+	} KQSocketSet;
 
 struct NetworkInterfaceInfoOSX_struct
 	{
@@ -269,13 +270,13 @@ struct NetworkInterfaceInfoOSX_struct
 	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable
 	u_short                  sa_family;
 	unsigned int             ifa_flags;
-	CFSocketSet              ss;
+	KQSocketSet              ss;
 	};
 
 struct mDNS_PlatformSupport_struct
     {
     NetworkInterfaceInfoOSX *InterfaceList;
-    CFSocketSet              unicastsockets;
+    KQSocketSet              unicastsockets;
     domainlabel              userhostlabel;		// The hostlabel as it was set in System Preferences the last time we looked
     domainlabel              usernicelabel;		// The nicelabel as it was set in System Preferences the last time we looked
     mDNSs32                  NotifyUser;
@@ -290,8 +291,10 @@ struct mDNS_PlatformSupport_struct
 extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both strings are UTF-8 text
 extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
+extern int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, KQueueEntryRef entryRef);
 
 extern const char mDNSResponderVersionString[];
+extern pthread_mutex_t	BigMutex;
 
 // Allow platform layer to tell daemon when default registration/browse domains
 extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);
