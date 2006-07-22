@@ -37,6 +37,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.80  2006/07/22 03:05:33  cheshire
+Improve error reporting for socket creation failures
+
 Revision 1.79  2006/07/06 00:02:16  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 
@@ -889,7 +892,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 #endif
 	else return EINVAL;
 
-	if (*sktPtr < 0) { err = errno; perror("socket"); }
+	if (*sktPtr < 0) { err = errno; perror((intfAddr->sa_family == AF_INET) ? "socket AF_INET" : "socket AF_INET6"); }
 
 	// ... with a shared UDP port, if it's for multicast receiving
 	if (err == 0 && port.NotAnInteger)
