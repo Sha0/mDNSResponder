@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.234  2006/07/22 02:58:36  cheshire
+Code was clearing namehash twice instead of namehash and rdatahash
+
 Revision 1.233  2006/07/20 19:46:51  mkrochma
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Fix Private DNS
@@ -2332,10 +2335,10 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 		cr->resrec.rrtype = question->qtype;
 		cr->resrec.rrclass = question->qclass;
 		cr->resrec.rroriginalttl = 1; /* What should we use for the TTL? TTL from SOA for domain? */
-		cr->resrec.rdlength = 0;
-		cr->resrec.rdestimate = 0;
-		cr->resrec.namehash = 0;
-		cr->resrec.namehash = 0;
+		cr->resrec.rdlength      = 0;
+		cr->resrec.rdestimate    = 0;
+		cr->resrec.namehash      = 0;
+		cr->resrec.rdatahash     = 0;
 		cr->resrec.rdata = (RData*)&cr->rdatastorage;
 		cr->resrec.rdata->MaxRDLength = cr->resrec.rdlength;
 		
