@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.58  2006/07/22 06:08:29  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+Further changes
+
 Revision 1.57  2006/07/22 03:43:26  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 
@@ -274,19 +278,22 @@ struct NetworkInterfaceInfoOSX_struct
 	};
 
 struct mDNS_PlatformSupport_struct
-    {
-    NetworkInterfaceInfoOSX *InterfaceList;
-    KQSocketSet              unicastsockets;
-    domainlabel              userhostlabel;		// The hostlabel as it was set in System Preferences the last time we looked
-    domainlabel              usernicelabel;		// The nicelabel as it was set in System Preferences the last time we looked
-    mDNSs32                  NotifyUser;
-    mDNSs32                  NetworkChanged;
-    SCDynamicStoreRef        Store;
-    CFRunLoopSourceRef       StoreRLS;
-    io_connect_t             PowerConnection;
-    io_object_t              PowerNotifier;
-    CFRunLoopSourceRef       PowerRLS;
-    };
+	{
+	NetworkInterfaceInfoOSX *InterfaceList;
+	KQSocketSet              unicastsockets;
+	domainlabel              userhostlabel;		// The hostlabel as it was set in System Preferences the last time we looked
+	domainlabel              usernicelabel;		// The nicelabel as it was set in System Preferences the last time we looked
+	mDNSs32                  NotifyUser;
+	mDNSs32                  NetworkChanged;
+	SCDynamicStoreRef        Store;
+	CFRunLoopSourceRef       StoreRLS;
+	io_connect_t             PowerConnection;
+	io_object_t              PowerNotifier;
+	CFRunLoopSourceRef       PowerRLS;
+	pthread_mutex_t          BigMutex;
+	};
+
+extern int KQueueFD;
 
 extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both strings are UTF-8 text
 extern void mDNSMacOSXNetworkChanged(mDNS *const m);
@@ -294,7 +301,6 @@ extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 extern int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, KQueueEntryRef entryRef);
 
 extern const char mDNSResponderVersionString[];
-extern pthread_mutex_t	BigMutex;
 
 // Allow platform layer to tell daemon when default registration/browse domains
 extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);
