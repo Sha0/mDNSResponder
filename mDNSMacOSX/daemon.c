@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.269  2006/07/22 06:11:37  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+
 Revision 1.268  2006/07/15 02:01:32  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Fix broken "empty string" browsing
@@ -637,6 +640,8 @@ Add $Log header
 #include <paths.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <sys/event.h>
+#include <pthread.h>
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
 
 #include "DNSServiceDiscoveryRequestServer.h"
@@ -664,8 +669,6 @@ Add $Log header
 //*************************************************************************************************************
 // Globals
 
-#define LOCAL_DEFAULT_REG 1 // empty string means register in the local domain
-#define DEFAULT_REG_DOMAIN "apple.com." // used if the above flag is turned off
 static mDNS_PlatformSupport PlatformStorage;
 
 // Start off with a default cache of 16K (about 100 records)
@@ -1105,6 +1108,7 @@ mDNSlocal mDNSBool CheckForExistingClient(mach_port_t c)
 
 mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIndex size, void *info)
 	{
+	pthread_mutex_lock(&PlatformStorage.BigMutex);
 	mach_msg_header_t *msg = (mach_msg_header_t *)voidmsg;
 	(void)unusedport; // Unused
 	(void)size; // Unused
@@ -1117,6 +1121,7 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIn
 		/* Deallocate the send right that came in the dead name notification */
 		mach_port_destroy(mach_task_self(), deathMessage->not_port);
 		}
+	pthread_mutex_unlock(&PlatformStorage.BigMutex);
 	}
 
 mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void *m)
@@ -1814,6 +1819,7 @@ mDNSlocal CFRunLoopSourceRef    gNotificationRLS = NULL;
 
 mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotification, CFOptionFlags responseFlags)
 	{
+	pthread_mutex_lock(&PlatformStorage.BigMutex);
 	(void)responseFlags;	// Unused
 	if (userNotification != gNotification) LogMsg("NotificationCallBackDismissed: Wrong CFUserNotificationRef");
 	if (gNotificationRLS)
@@ -1830,6 +1836,7 @@ mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotificat
 	// name as now being "computer-2.local", not "computer.local"
 	gNotificationUserHostLabel = gNotificationPrefHostLabel;
 	gNotificationUserNiceLabel = gNotificationPrefNiceLabel;
+	pthread_mutex_unlock(&PlatformStorage.BigMutex);
 	}
 
 mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subtext)
@@ -2196,6 +2203,8 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
 	(void)size;		// Unused
 	(void)info;		// Unused
 
+	pthread_mutex_lock(&PlatformStorage.BigMutex);
+	
 	/* allocate a reply buffer */
 	reply = CFAllocatorAllocate(NULL, provide_DNSServiceDiscoveryRequest_subsystem.maxsize, 0);
 
@@ -2213,7 +2222,7 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
              * user or the remote one, we pretend it's ok.
              */
             CFAllocatorDeallocate(NULL, reply);
-            return;
+            goto done;
 			}
 
         /*
@@ -2230,7 +2239,7 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
         if (reply->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX)
             mach_msg_destroy(&reply->Head);
         CFAllocatorDeallocate(NULL, reply);
-        return;
+        goto done;
 		}
 
     /*
@@ -2272,6 +2281,9 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
 		}
 
     CFAllocatorDeallocate(NULL, reply);
+	
+done:
+	pthread_mutex_unlock(&PlatformStorage.BigMutex);
 	}
 
 mDNSlocal kern_return_t registerBootstrapService()
@@ -2438,6 +2450,7 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	(void)size;		// Unused
 	(void)info;		// Unused
 	mach_msg_header_t *m = (mach_msg_header_t *)msg;
+	pthread_mutex_lock(&PlatformStorage.BigMutex);
 	switch(m->msgh_id)
 		{
 		case SIGHUP:  
@@ -2448,6 +2461,7 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 						mDNSMacOSXNetworkChanged(&mDNSStorage); break;
 		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id); break;
 		}
+	pthread_mutex_unlock(&PlatformStorage.BigMutex);
 	}
 
 // On 10.2 the MachServerName is DNSServiceDiscoveryServer
@@ -2638,10 +2652,84 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 	mDNS_Unlock(&mDNSStorage);
 	}
 
+static void * KQueueLoop(void* m_param)
+	{
+	mDNS			*m = m_param;
+	int				numevents = 0;
+	static const struct timespec zero_timeout = { 0, 0 };
+	
+	pthread_mutex_lock(&PlatformStorage.BigMutex);
+	LogOperation("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
+	
+	// This is the main work loop:
+	// (1) First we give mDNSCore a chance to finish off any of its deferred work and calculate the next sleep time
+	// (2) Then we make sure we've delivered all waiting browse messages to our clients
+	// (3) Then we sleep for the time requested by mDNSCore, or until the next event, whichever is sooner
+	// (4) On wakeup we first process *all* events
+	// (5) then when no more events remain, we go back to (1) to finish off any deferred work and do it all again
+	for ( ; ; )
+		{
+		#define kEventsToReadAtOnce	5
+		struct kevent	new_events[kEventsToReadAtOnce];
+
+		// Run mDNS_Execute to determine how long to sleep
+		mDNSs32 nextTimerEvent = mDNSDaemonIdle(m);
+		nextTimerEvent = udsserver_idle(nextTimerEvent);
+		
+		// Convert absolute ticks in to a relative timespec timeout
+		mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
+		if (ticks < 1) ticks = 1;
+		
+		static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
+		if (ticks > 1)
+			RepeatedBusy = 0;
+		else
+			{
+			ticks = 1;
+			if (++RepeatedBusy >= mDNSPlatformOneSecond) { ShowTaskSchedulingError(&mDNSStorage); RepeatedBusy = 0; }
+			}
+
+		struct timespec	timeout;
+		timeout.tv_sec = ticks / mDNSPlatformOneSecond;
+		timeout.tv_nsec = (ticks % mDNSPlatformOneSecond) * 1000000 / mDNSPlatformOneSecond;
+		timeout.tv_nsec *= 1000; // Convert from microseconds to nanoseconds
+		
+		verbosedebugf("KQueueLoop: Handled %d events; now sleeping for %d ticks", numevents, ticks);
+		numevents = 0;
+		pthread_mutex_unlock(&PlatformStorage.BigMutex);
+		int events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &timeout);
+		pthread_mutex_lock(&PlatformStorage.BigMutex);
+		
+		while (events_found != 0)
+			{
+			if (events_found < 0 && errno != EINTR)
+				{
+				// Not sure what to do here, our kqueue has failed us - this isn't ideal
+				LogMsg("ERROR: KQueueLoop - kevent failed errno %d (%s)", errno, strerror(errno));
+				exit(errno);
+				}
+			
+			numevents += events_found;
+
+			int i;
+			for (i = 0; i < events_found; i++)
+				{
+				KQueueEntryRef	kqentry = new_events[i].udata;
+				kqentry->callback(new_events[i].ident, new_events[i].filter, new_events[i].fflags, new_events[i].data, kqentry->context);
+				}
+
+			events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &zero_timeout);
+			}
+		}
+	
+	return NULL;
+	}
+
 mDNSexport int main(int argc, char **argv)
 	{
 	int i;
 	kern_return_t status;
+	pthread_t KQueueThread;
 
 	for (i=1; i<argc; i++)
 		{
@@ -2676,6 +2764,14 @@ mDNSexport int main(int argc, char **argv)
 	// Make our PID file and Unix Domain Socket first, because launchd waits for those before it starts launching other daemons.
 	// The sooner we do this, the faster the machine will boot.
 	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it
+
+	// Create the kqueue, mutex and thread to support KQSockets
+	KQueueFD = kqueue();
+	if (KQueueFD == -1) { LogMsg("kqueue() failed errno %d (%s)", errno, strerror(errno)); status = errno; goto exit; }
+	
+	i = pthread_mutex_init(&PlatformStorage.BigMutex, NULL);
+	if (i == -1) { LogMsg("pthread_mutex_init() failed errno %d (%s)", errno, strerror(errno)); status = errno; goto exit; }
+	
 	status = udsserver_init();
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 	
@@ -2692,54 +2788,14 @@ mDNSexport int main(int argc, char **argv)
 	else
 		setuid(-2);		// User "nobody" is -2; use that value if "nobody" does not appear in the password database
 #endif
+	
+	// Start the kqueue thread
+	i = pthread_create(&KQueueThread, NULL, KQueueLoop, &mDNSStorage);
+	if (i == -1) { LogMsg("pthread_create() failed errno %d (%s)", errno, strerror(errno)); status = errno; goto exit; }
 
 	if (status == 0)
 		{
-		LogOperation("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
-		int numevents = 0;
-		int RunLoopStatus = kCFRunLoopRunTimedOut;
-
-		// This is the main work loop:
-		// (1) First we give mDNSCore a chance to finish off any of its deferred work and calculate the next sleep time
-		// (2) Then we make sure we've delivered all waiting browse messages to our clients
-		// (3) Then we sleep for the time requested by mDNSCore, or until the next event, whichever is sooner
-		// (4) On wakeup we first process *all* events
-		// (5) then when no more events remain, we go back to (1) to finish off any deferred work and do it all again
-		while (RunLoopStatus == kCFRunLoopRunTimedOut)
-			{
-			// 1. Before going into a blocking wait call and letting our process to go sleep,
-			// call mDNSDaemonIdle to allow any deferred work to be completed.
-			mDNSs32 nextevent = mDNSDaemonIdle(&mDNSStorage);
-			nextevent = udsserver_idle(nextevent);
-
-			// 2. Work out how long we expect to sleep before the next scheduled task
-			mDNSs32 ticks = nextevent - mDNS_TimeNow(&mDNSStorage);
-			static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
-			if (ticks > 1)
-				RepeatedBusy = 0;
-			else
-				{
-				ticks = 1;
-				if (++RepeatedBusy >= mDNSPlatformOneSecond) { ShowTaskSchedulingError(&mDNSStorage); RepeatedBusy = 0; }
-				}
-			CFAbsoluteTime interval = (CFAbsoluteTime)ticks / (CFAbsoluteTime)mDNSPlatformOneSecond;
-
-			// 3. Now do a blocking "CFRunLoopRunInMode" call so we sleep until
-			// (a) our next wakeup time, or (b) an event occurs.
-			// The 'true' parameter makes it return after handling any event that occurs
-			// This gives us chance to regain control so we can call mDNS_Execute() before sleeping again
-			verbosedebugf("main: Handled %d events; now sleeping for %d ticks", numevents, ticks);
-			numevents = 0;
-			RunLoopStatus = CFRunLoopRunInMode(kCFRunLoopDefaultMode, interval, true);
-
-			// 4. Time to do some work? Handle all remaining events as quickly as we can, before returning to mDNSDaemonIdle()
-			while (RunLoopStatus == kCFRunLoopRunHandledSource)
-				{
-				numevents++;
-				RunLoopStatus = CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
-				}
-			}
-
+		CFRunLoopRun();
 		LogMsg("ERROR: CFRunLoopRun Exiting.");
 		mDNS_Close(&mDNSStorage);
 		}
@@ -2754,45 +2810,39 @@ exit:
 //		uds_daemon.c support routines		/////////////////////////////////////////////
 
 // We keep a list of client-supplied event sources in PosixEventSource records
-struct CFSocketEventSource
+struct KQSocketEventSource
 	{
 	udsEventCallback			Callback;
 	void						*Context;
 	int							fd;
-	struct  CFSocketEventSource	*Next;
-	CFSocketRef					cfs;
-	CFRunLoopSourceRef			RLS;
+	struct  KQSocketEventSource	*Next;
+	KQueueEntry					kqs;
 	};
-typedef struct CFSocketEventSource	CFSocketEventSource;
+typedef struct KQSocketEventSource	KQSocketEventSource;
 
-static GenLinkedList	gEventSources;			// linked list of CFSocketEventSource's
+static GenLinkedList	gEventSources;			// linked list of KQSocketEventSources
 
-mDNSlocal void cf_callback(CFSocketRef s, CFSocketCallBackType t, CFDataRef dr, const void *c, void *i)
-	// Called by CFSocket when data appears on socket
+mDNSlocal void kq_callback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context) 
+	// Called by KQueueLoop when data appears on socket
 	{
-	(void)s; // Unused
-	(void)t; // Unused
-	(void)dr; // Unused
-	(void)c; // Unused
-	CFSocketEventSource	*source = (CFSocketEventSource*) i;
+	KQSocketEventSource	*source = context;
 	source->Callback(source->Context);
 	}
 
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 	// Arrange things so that callback is called with context when data appears on fd
 	{
-	CFSocketEventSource	*newSource;
-	CFSocketContext cfContext = 	{ 0, NULL, NULL, NULL, NULL 	};
+	KQSocketEventSource	*newSource;
 
 	if (gEventSources.LinkOffset == 0)
-		InitLinkedList(&gEventSources, offsetof(CFSocketEventSource, Next));
+		InitLinkedList(&gEventSources, offsetof(KQSocketEventSource, Next));
 
 	if (fd >= FD_SETSIZE || fd < 0)
 		return mStatus_UnsupportedErr;
 	if (callback == NULL)
 		return mStatus_BadParamErr;
 
-	newSource = (CFSocketEventSource*) mallocL("CFSocketEventSource", sizeof *newSource);
+	newSource = (KQSocketEventSource*) mallocL("KQSocketEventSource", sizeof *newSource);
 	if (NULL == newSource)
 		return mStatus_NoMemoryErr;
 
@@ -2800,22 +2850,15 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	newSource->Callback = callback;
 	newSource->Context = context;
 	newSource->fd = fd;
+	newSource->kqs.context = newSource;
+	newSource->kqs.callback = kq_callback;
 
-	cfContext.info = newSource;
-	if ( NULL != (newSource->cfs = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack,
-																	cf_callback, &cfContext)) &&
-		 NULL != (newSource->RLS = CFSocketCreateRunLoopSource(kCFAllocatorDefault, newSource->cfs, 0)))
-		{
-		CFRunLoopAddSource(CFRunLoopGetCurrent(), newSource->RLS, kCFRunLoopDefaultMode);
+	if (KQueueAdd(fd, EVFILT_READ, 0, 0, &newSource->kqs) == 0)
 		AddToTail(&gEventSources, newSource);
-		}
 	else
 		{
-		if (newSource->cfs)
-			{
-			CFSocketInvalidate(newSource->cfs);		// Note: Also closes the underlying socket
-			CFRelease(newSource->cfs);
-			}
+		close(fd);
+		free(newSource);
 		return mStatus_NoMemoryErr;
 		}
 
@@ -2825,19 +2868,15 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
 	// Reverse what was done in udsSupportAddFDToEventLoop().
 	{
-	CFSocketEventSource	*iSource;
+	KQSocketEventSource	*iSource;
 
-	for (iSource=(CFSocketEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+	for (iSource=(KQSocketEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
 		{
 		if (fd == iSource->fd)
 			{
 			RemoveFromList(&gEventSources, iSource);
-			CFRunLoopRemoveSource(CFRunLoopGetCurrent(), iSource->RLS, kCFRunLoopDefaultMode);
-			CFRunLoopSourceInvalidate(iSource->RLS);
-			CFRelease(iSource->RLS);
-			CFSocketInvalidate(iSource->cfs);		// Note: Also closes the underlying socket
-			CFRelease(iSource->cfs);
-			freeL("CFSocketEventSource", iSource);
+			close(iSource->fd);
+			freeL("KQSocketEventSource", iSource);
 			return mStatus_NoError;
 			}
 		}

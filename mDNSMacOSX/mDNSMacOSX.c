@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.337  2006/07/22 06:11:37  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+
 Revision 1.336  2006/07/15 02:01:32  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Fix broken "empty string" browsing
@@ -1044,10 +1047,12 @@ Minor code tidying
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
+#include <sys/event.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <time.h>                   // platform support for UTC time
 #include <arpa/inet.h>              // for inet_aton
+#include <pthread.h>
 
 #include <netinet/in.h>             // For IP_RECVTTL
 #ifndef IP_RECVTTL
@@ -1097,11 +1102,10 @@ typedef struct SearchListElem
 // ***************************************************************************
 // Globals
 
-static mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, mDNSIPPort * inPort, u_short sa_family);
-static void CloseSocketSet(CFSocketSet *ss);
 static mDNSu32 clockdivisor = 0;
-
 static mDNSBool DomainDiscoveryDisabled = mDNSfalse;
+
+mDNSexport int KQueueFD;
 
 #ifndef NO_SECURITYFRAMEWORK
 static CFArrayRef ServerCerts;
@@ -1433,29 +1437,24 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 	return(n);
 	}
 
-// On entry, context points to our CFSocketSet
+// On entry, context points to our KQSocketSet
 // If ss->info is NULL, we received this packet on our anonymous unicast socket
 // If ss->info is non-NULL, we received this packet on port 5353 on the indicated interface
-mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackType CallBackType, const CFDataRef address, const void *const data, void *const context)
+mDNSlocal void myKQSocketCallBack(int s1, short filter, __unused u_int fflags, __unused intptr_t data, void *context)
 	{
-	const CFSocketSet *const ss = (const CFSocketSet *)context;
+	const KQSocketSet *const ss = (const KQSocketSet *)context;
 	mDNS *const m = ss->m;
-	const int skt = CFSocketGetNative(cfs);
-	const int s1  = (cfs == ss->cfsv4) ? ss->sktv4 : (cfs == ss->cfsv6) ? ss->sktv6 : -1;
 	int err, count = 0;
 	
-	(void)address; // Parameter not used
-	(void)data;    // Parameter not used
-	
-	if (CallBackType != kCFSocketReadCallBack)
-		LogMsg("myCFSocketCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
+	if (filter != EVFILT_READ)
+		LogMsg("myKQSocketCallBack: Why is filter %d not EVFILT_READ (%d)?", filter, EVFILT_READ);
 
-	if (s1 < 0 || s1 != skt)
+	if (s1 != ss->sktv4 && s1 != ss->sktv6)
 		{
-		LogMsg("myCFSocketCallBack: s1 %d native socket %d, cfs %p", s1, skt, cfs);
-		LogMsg("myCFSocketCallBack: cfsv4 %p, sktv4 %d", ss->cfsv4, ss->sktv4);
-		LogMsg("myCFSocketCallBack: cfsv6 %p, sktv6 %d", ss->cfsv6, ss->sktv6);
-		}
+		LogMsg("myKQSocketCallBack: native socket %d", s1);
+		LogMsg("myKQSocketCallBack: sktv4 %d", ss->sktv4);
+		LogMsg("myKQSocketCallBack: sktv6 %d", ss->sktv6);
+ 		}
 
 	while (1)
 		{
@@ -1484,11 +1483,11 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 			senderAddr.type = mDNSAddrType_IPv6;
 			senderAddr.ip.v6 = *(mDNSv6Addr*)&sin6->sin6_addr;
 			senderPort.NotAnInteger = sin6->sin6_port;
-			//LogOperation("myCFSocketCallBack received IPv6 packet from %#a to %#a", &senderAddr, &destAddr);
+			//LogOperation("myKQSocketCallBack received IPv6 packet from %#a to %#a", &senderAddr, &destAddr);
 			}
 		else
 			{
-			LogMsg("myCFSocketCallBack from is unknown address family %d", from.ss_family);
+			LogMsg("myKQSocketCallBack from is unknown address family %d", from.ss_family);
 			return;
 			}
 
@@ -1502,17 +1501,17 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 			// on which the packet arrived, and ignore the packet if it really arrived on some other interface.
 			if (!ss->info || !ss->info->Exists)
 				{
-				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on unicast socket (Ignored)", &senderAddr, &destAddr);
+				verbosedebugf("myKQSocketCallBack got multicast packet from %#a to %#a on unicast socket (Ignored)", &senderAddr, &destAddr);
 				return;
 				}
 			else if (strcmp(ss->info->ifa_name, packetifname))
 				{
-				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
+				verbosedebugf("myKQSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s (Ignored -- really arrived on interface %s)",
 					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name, packetifname);
 				return;
 				}
 			else
-				verbosedebugf("myCFSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s",
+				verbosedebugf("myKQSocketCallBack got multicast packet from %#a to %#a on interface %#a/%s",
 					&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
 			}
 		else
@@ -1532,7 +1531,7 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
 		{
 		// Something is busted here.
-		// CFSocket says there is a packet, but myrecvfrom says there is not.
+		// kqueue says there is a packet, but myrecvfrom says there is not.
 		// Try calling select() to get another opinion.
 		// Find out about other socket parameter that can help understand why select() says the socket is ready for read
 		// All of this is racy, as data may have arrived after the call to select()
@@ -1551,13 +1550,13 @@ mDNSlocal void myCFSocketCallBack(const CFSocketRef cfs, const CFSocketCallBackT
 		timeout.tv_usec = 0;
 		selectresult = select(s1+1, &readfds, NULL, NULL, &timeout);
 		if (getsockopt(s1, SOL_SOCKET, SO_ERROR, &so_error, &solen) == -1)
-			LogMsg("myCFSocketCallBack getsockopt(SO_ERROR) error %d", errno);
+			LogMsg("myKQSocketCallBack getsockopt(SO_ERROR) error %d", errno);
 		if (getsockopt(s1, SOL_SOCKET, SO_NREAD, &so_nread, &solen) == -1)
-			LogMsg("myCFSocketCallBack getsockopt(SO_NREAD) error %d", errno);
+			LogMsg("myKQSocketCallBack getsockopt(SO_NREAD) error %d", errno);
 		if (ioctl(s1, FIONREAD, &fionread) == -1)
-			LogMsg("myCFSocketCallBack ioctl(FIONREAD) error %d", errno);
+			LogMsg("myKQSocketCallBack ioctl(FIONREAD) error %d", errno);
 		if (numLogMessages++ < 100)
-			LogMsg("myCFSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
+			LogMsg("myKQSocketCallBack recvfrom skt %d error %d errno %d (%s) select %d (%spackets waiting) so_error %d so_nread %d fionread %d count %d",
 				s1, err, save_errno, strerror(save_errno), selectresult, FD_ISSET(s1, &readfds) ? "" : "*NO* ", so_error, so_nread, fionread, count);
 		if (numLogMessages > 5)
 			NotifyOfElusiveBug("Flaw in Kernel (select/recvfrom mismatch)",
@@ -1576,6 +1575,7 @@ struct uDNS_TCPSocket_struct
 	{
     TCPConnectionCallback callback;
 	int fd;
+	KQueueEntry kqEntry;
 	uDNS_TCPSocketFlags flags;
 #ifndef NO_SECURITYFRAMEWORK
 	SSLContextRef tlsContext;
@@ -1583,7 +1583,6 @@ struct uDNS_TCPSocket_struct
 	void *context;
     mDNSBool connected;
 	mDNSBool handshake;
-	CFSocketRef cfSock;
 	};
 
 #ifndef NO_SECURITYFRAMEWORK
@@ -1776,8 +1775,7 @@ exit:
 #endif /* NO_SECURITYFRAMEWORK */
 
 
-mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType CallbackType, CFDataRef address,
-								   const void *data, void *context)
+mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context)
 	{
 	#pragma unused(cfs, CallbackType, address, data)
 	struct uDNS_TCPSocket_struct * sock = context;
@@ -1796,7 +1794,7 @@ mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType Callbac
 
 			if ( err )
 				{
-				LogMsg( "ERROR: tcpCFSocketCallback: tlsSetupSock failed with error code: %d", err );
+				LogMsg( "ERROR: tcpKQSocketCallback: tlsSetupSock failed with error code: %d", err );
 				goto exit;
 				}
 
@@ -1806,7 +1804,7 @@ mDNSlocal void tcpCFSocketCallback(CFSocketRef cfs, CFSocketCallBackType Callbac
 			
 			if ( err )
 				{
-				LogMsg( "ERROR: tcpCFSocketCallback: SSLHandshake failed with error code: %d", err );
+				LogMsg( "ERROR: tcpKQSocketCallback: SSLHandshake failed with error code: %d", err );
 				SSLDisposeContext( sock->tlsContext );
 				sock->tlsContext = NULL;
 				goto exit;
@@ -1824,6 +1822,18 @@ exit:
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
 	
+
+int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, KQueueEntryRef entryRef)
+	{
+	struct kevent	new_event;
+	int				result = 0;
+	
+	EV_SET(&new_event, fd, filter, EV_ADD, fflags, data, entryRef);
+	
+	result = kevent(KQueueFD, &new_event, 1, NULL, 0, NULL);
+	if (result == -1) return errno;
+	return 0;
+	}
 
 mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port )
 	{
@@ -1915,8 +1925,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
                                       TCPConnectionCallback callback, void * context )
 	{
 	struct sockaddr_in	saddr;
-	CFSocketContext		cfContext = { 0, NULL, 0, 0, 0 };
-	CFRunLoopSourceRef	rls;
 	mStatus				err = mStatus_NoError;
 
 	sock->callback = callback;
@@ -1943,22 +1951,25 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 		return mStatus_UnknownErr;
 		}
 
-	// set up CF wrapper, add to Run Loop
-	cfContext.info = sock;
-	sock->cfSock = CFSocketCreateWithNative(kCFAllocatorDefault, sock->fd, kCFSocketReadCallBack | kCFSocketConnectCallBack, tcpCFSocketCallback, &cfContext);
-	if (!sock->cfSock)
+	sock->kqEntry.context = sock;
+	sock->kqEntry.callback = tcpKQSocketCallback;
+
+	// Watch for connect complete (write is ready)
+	if (KQueueAdd(sock->fd, EVFILT_WRITE | EV_ONESHOT, 0, 0, &sock->kqEntry) == -1)
 		{
-		LogMsg("ERROR: mDNSPlatformTCPConnect - CFSocketRefCreateWithNative failed");
-		return mStatus_UnknownErr;
+		LogMsg("ERROR: mDNSPlatformTCPConnect - KQueueAdd failed");
+		close(sock->fd);
+		return errno;
 		}
 
-	rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, sock->cfSock, 0);
-	if (!rls)
+	// Watch for incoming data
+	if (KQueueAdd(sock->fd, EVFILT_READ, 0, 0, &sock->kqEntry) == -1)
 		{
-		LogMsg("ERROR: mDNSPlatformTCPConnect - CFSocketCreateRunLoopSource failed");
-		return mStatus_UnknownErr;
-		}
-	
+		LogMsg("ERROR: mDNSPlatformTCPConnect - KQueueAdd failed");
+		close(sock->fd); // Closing the descriptor removes all filters from the kqueue
+		return errno;
+ 		}
+
 	// Set non-blocking
 
 	if (fcntl( sock->fd, F_SETFL, O_NONBLOCK) < 0)
@@ -1966,9 +1977,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 		LogMsg("ERROR: setsockopt O_NONBLOCK - %s", strerror(errno));
 		return mStatus_UnknownErr;
 		}
-	
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-	CFRelease(rls);
 	
 	// initiate connection wth peer
 
@@ -1980,9 +1988,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 			return mStatus_ConnPending;
 			}
 		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: %s", strerror(errno));
-		CFSocketInvalidate( sock->cfSock );		// Note: Also closes the underlying socket
-		CFRelease( sock->cfSock );
-		sock->cfSock = NULL;
+		close(sock->fd);
 		return mStatus_ConnFailed;
 		}
 	
@@ -2033,7 +2039,6 @@ mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
 	}
 
 
-mDNSexport 
 mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int fd )
 	{
 	struct uDNS_TCPSocket_struct	*	sock;
@@ -2097,17 +2102,8 @@ exit:
 
 mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
 	{
-	if ( sock->cfSock )
-		{
-		// Note: MUST NOT close the underlying native BSD socket.
-		// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
-		// because it first has to unhook the sockets from its select() call, before it can safely close them.
-		CFSocketInvalidate(sock->cfSock);
-		CFRelease(sock->cfSock);
-		sock->cfSock = NULL;
-		}
 #ifndef NO_SECURITYFRAMEWORK
-	else if ( sock->tlsContext )
+	if ( sock->tlsContext )
 		{
 		SSLClose( sock->tlsContext );
 		}
@@ -2126,8 +2122,6 @@ mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
 		sock->tlsContext = NULL;
 		}
 #endif /* NO_SECURITYFRAMEWORK */
-	
-	freeL( "mDNSPlatformTCPCloseConnection", sock );
 	}
 
 
@@ -2280,12 +2274,179 @@ mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock )
 	}
 	
 
+// If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
+// If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
+mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, mDNSIPPort * inPort, u_short sa_family)
+	{
+	const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
+	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
+	KQueueEntry	*k        = (sa_family == AF_INET) ? &cp->kqsv4 : &cp->kqsv6;
+	const int on = 1;
+	const int twofivefive = 255;
+	mStatus err = mStatus_NoError;
+	char *errstr = mDNSNULL;
+	int skt;
+
+	mDNSIPPort port;
+
+	if ( inPort )
+		{
+		port = *inPort;
+		}
+	else
+		{
+		port = (mcast | m->CanReceiveUnicastOn5353) ? MulticastDNSPort : zeroIPPort;
+		}
+
+	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
+
+	// Open the socket...
+	skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
+	if (skt < 3) { LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
+
+	// ... with a shared UDP port, if it's for multicast receiving
+	if (port.NotAnInteger) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	if (err < 0) { errstr = "setsockopt - SO_REUSEPORT"; goto fail; }
+
+	if (sa_family == AF_INET)
+		{
+		// We want to receive destination addresses
+		err = setsockopt(skt, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
+		if (err < 0) { errstr = "setsockopt - IP_RECVDSTADDR"; goto fail; }
+		
+		// We want to receive interface identifiers
+		err = setsockopt(skt, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
+		if (err < 0) { errstr = "setsockopt - IP_RECVIF"; goto fail; }
+		
+		// We want to receive packet TTL value so we can check it
+		err = setsockopt(skt, IPPROTO_IP, IP_RECVTTL, &on, sizeof(on));
+		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
+		
+		// Add multicast group membership on this interface, if it's for multicast receiving
+		if (mcast)
+			{
+			struct in_addr addr = { ifaddr->ip.v4.NotAnInteger };
+			struct ip_mreq imr;
+			imr.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
+			imr.imr_interface        = addr;
+			err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
+			if (err < 0) { errstr = "setsockopt - IP_ADD_MEMBERSHIP"; goto fail; }
+			
+			// Specify outgoing interface too
+			err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr));
+			if (err < 0) { errstr = "setsockopt - IP_MULTICAST_IF"; goto fail; }
+			}
+		
+		// Send unicast packets with TTL 255
+		err = setsockopt(skt, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { errstr = "setsockopt - IP_TTL"; goto fail; }
+		
+		// And multicast packets with TTL 255 too
+		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { errstr = "setsockopt - IP_MULTICAST_TTL"; goto fail; }
+
+		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
+		err = setsockopt(skt, IPPROTO_IP, IP_TOS, &ip_tosbits, sizeof(ip_tosbits));
+		if (err < 0) { errstr = "setsockopt - IP_TOS"; goto fail; }
+
+		// And start listening for packets
+		struct sockaddr_in listening_sockaddr;
+		listening_sockaddr.sin_family      = AF_INET;
+		listening_sockaddr.sin_port        = port.NotAnInteger;
+		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
+		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
+		if (err) { errstr = "bind"; goto fail; }
+		}
+	else if (sa_family == AF_INET6)
+		{
+		// We want to receive destination addresses and receive interface identifiers
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
+		if (err < 0) { errstr = "setsockopt - IPV6_PKTINFO"; goto fail; }
+		
+		// We want to receive packet hop count value so we can check it
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_HOPLIMIT, &on, sizeof(on));
+		if (err < 0) { errstr = "setsockopt - IPV6_HOPLIMIT"; goto fail; }
+		
+		// We want to receive only IPv6 packets. Without this option we get IPv4 packets too,
+		// with mapped addresses of the form 0:0:0:0:0:FFFF:xxxx:xxxx, where xxxx:xxxx is the IPv4 address
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
+		if (err < 0) { errstr = "setsockopt - IPV6_V6ONLY"; goto fail; }
+		
+		if (mcast)
+			{
+			// Add multicast group membership on this interface, if it's for multicast receiving
+			int interface_id = if_nametoindex(cp->info->ifa_name);
+			struct ipv6_mreq i6mr;
+			//LogOperation("SetupSocket: v6 %#a %s %d", ifaddr, cp->info->ifa_name, interface_id);
+			i6mr.ipv6mr_interface = interface_id;
+			i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
+			err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
+			if (err < 0) { errstr = "setsockopt - IPV6_JOIN_GROUP"; goto fail; }
+			
+			// Specify outgoing interface too
+			err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_IF, &interface_id, sizeof(interface_id));
+			if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_IF"; goto fail; }
+			}
+		
+		// Send unicast packets with TTL 255
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { errstr = "setsockopt - IPV6_UNICAST_HOPS"; goto fail; }
+		
+		// And multicast packets with TTL 255 too
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &twofivefive, sizeof(twofivefive));
+		if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_HOPS"; goto fail; }
+		
+		// Note: IPV6_TCLASS appears not to be implemented on OS X right now (or indeed on ANY version of Unix?)
+		#ifdef IPV6_TCLASS
+		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
+		int tclass = IPTOS_LOWDELAY | IPTOS_THROUGHPUT; // This may not be right (since tclass is not implemented on OS X, I can't test it)
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+		if (err < 0) { errstr = "setsockopt - IPV6_TCLASS"; goto fail; }
+		#endif
+		
+		// Want to receive our own packets
+		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &on, sizeof(on));
+		if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_LOOP"; goto fail; }
+		
+		// And start listening for packets
+		struct sockaddr_in6 listening_sockaddr6;
+		bzero(&listening_sockaddr6, sizeof(listening_sockaddr6));
+		listening_sockaddr6.sin6_len         = sizeof(listening_sockaddr6);
+		listening_sockaddr6.sin6_family      = AF_INET6;
+		listening_sockaddr6.sin6_port        = port.NotAnInteger;
+		listening_sockaddr6.sin6_flowinfo    = 0;
+		listening_sockaddr6.sin6_addr        = in6addr_any; // Want to receive multicasts AND unicasts on this socket
+		listening_sockaddr6.sin6_scope_id    = 0;
+		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
+		if (err) { errstr = "bind"; goto fail; }
+		}
+	
+	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
+	*s = skt;
+	k->callback = myKQSocketCallBack;
+	k->context = cp;
+	KQueueAdd(*s, EVFILT_READ, 0, 0, k);
+	
+	return(err);
+
+fail:
+	LogMsg("%s error %ld errno %d (%s)", errstr, err, errno, strerror(errno));
+	if (!strcmp(errstr, "bind") && errno == EADDRINUSE)
+		NotifyOfElusiveBug("Setsockopt SO_REUSEPORT failed",
+			"Congratulations, you've reproduced an elusive bug.\r"
+			"Please contact the current assignee of <rdar://problem/3814904>.\r"
+			"Alternatively, you can send email to radar-3387020@group.apple.com. (Note number is different.)\r"
+			"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
+	close(skt);
+	return(err);
+	}
+
 mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port )
 	{
-	CFSocketSet * ss = mDNSNULL;
+	KQSocketSet * ss = mDNSNULL;
 	mStatus err = 0;
 
-	ss = mallocL( "mDNSPlatformUDPSocket", sizeof( CFSocketSet ) );
+	ss = mallocL( "mDNSPlatformUDPSocket", sizeof( KQSocketSet ) );
 
 	if ( !ss )
 		{
@@ -2294,7 +2455,7 @@ mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port
 		goto exit;
 		}
 
-	memset( ss, 0, sizeof( CFSocketSet ) );
+	memset( ss, 0, sizeof( KQSocketSet ) );
 
 	ss->m     = m;
 	ss->sktv4 = -1;
@@ -2312,7 +2473,7 @@ exit:
 
 	if ( err && ss )
 		{
-		freeL( "CFSocketSet", ss );
+		freeL( "KQSocketSet", ss );
 		ss = mDNSNULL;
 		}
 
@@ -2320,10 +2481,24 @@ exit:
 	}
 	
 	
+mDNSlocal void CloseSocketSet(KQSocketSet *ss)
+	{
+	if (ss->sktv4 != -1)
+		{
+		close(ss->sktv4);
+		ss->sktv4 = -1;
+		}
+	if (ss->sktv6 != -1)
+		{
+		close(ss->sktv6);
+		ss->sktv6 = -1;
+		}
+	}
+
 mDNSexport void mDNSPlatformUDPClose( uDNS_UDPSocket sock )
 	{
-	CloseSocketSet( ( CFSocketSet* ) sock );
-	freeL( "uDNS_UDPSocket", ( CFSocketSet* ) sock );
+	CloseSocketSet( ( KQSocketSet* ) sock );
+	freeL( "uDNS_UDPSocket", ( KQSocketSet* ) sock );
 	}
 		
 
@@ -2578,176 +2753,6 @@ mDNSlocal mDNSBool DDNSSettingEnabled(CFDictionaryRef dict)
 	return val ? mDNStrue : mDNSfalse;
 	}
 
-// If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
-// If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
-mDNSlocal mStatus SetupSocket(mDNS *const m, CFSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, mDNSIPPort * inPort, u_short sa_family)
-	{
-	const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
-	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
-	CFSocketRef *c        = (sa_family == AF_INET) ? &cp->cfsv4 : &cp->cfsv6;
-	CFRunLoopSourceRef *r = (sa_family == AF_INET) ? &cp->rlsv4 : &cp->rlsv6;
-	const int on = 1;
-	const int twofivefive = 255;
-	mStatus err = mStatus_NoError;
-	char *errstr = mDNSNULL;
-	int skt;
-
-	mDNSIPPort port;
-
-	if ( inPort )
-		{
-		port = *inPort;
-		}
-	else
-		{
-		port = (mcast | m->CanReceiveUnicastOn5353) ? MulticastDNSPort : zeroIPPort;
-		}
-
-	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
-	if (*c) { LogMsg("SetupSocket ERROR: CFSocketRef %p is already set", *c); return(-1); }
-
-	// Open the socket...
-	skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
-	if (skt < 3) { LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
-
-	// ... with a shared UDP port, if it's for multicast receiving
-	if (port.NotAnInteger) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
-	if (err < 0) { errstr = "setsockopt - SO_REUSEPORT"; goto fail; }
-
-	if (sa_family == AF_INET)
-		{
-		// We want to receive destination addresses
-		err = setsockopt(skt, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
-		if (err < 0) { errstr = "setsockopt - IP_RECVDSTADDR"; goto fail; }
-		
-		// We want to receive interface identifiers
-		err = setsockopt(skt, IPPROTO_IP, IP_RECVIF, &on, sizeof(on));
-		if (err < 0) { errstr = "setsockopt - IP_RECVIF"; goto fail; }
-		
-		// We want to receive packet TTL value so we can check it
-		err = setsockopt(skt, IPPROTO_IP, IP_RECVTTL, &on, sizeof(on));
-		// We ignore errors here -- we already know Jaguar doesn't support this, but we can get by without it
-		
-		// Add multicast group membership on this interface, if it's for multicast receiving
-		if (mcast)
-			{
-			struct in_addr addr = { ifaddr->ip.v4.NotAnInteger };
-			struct ip_mreq imr;
-			imr.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
-			imr.imr_interface        = addr;
-			err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
-			if (err < 0) { errstr = "setsockopt - IP_ADD_MEMBERSHIP"; goto fail; }
-			
-			// Specify outgoing interface too
-			err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr));
-			if (err < 0) { errstr = "setsockopt - IP_MULTICAST_IF"; goto fail; }
-			}
-		
-		// Send unicast packets with TTL 255
-		err = setsockopt(skt, IPPROTO_IP, IP_TTL, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { errstr = "setsockopt - IP_TTL"; goto fail; }
-		
-		// And multicast packets with TTL 255 too
-		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { errstr = "setsockopt - IP_MULTICAST_TTL"; goto fail; }
-
-		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
-		err = setsockopt(skt, IPPROTO_IP, IP_TOS, &ip_tosbits, sizeof(ip_tosbits));
-		if (err < 0) { errstr = "setsockopt - IP_TOS"; goto fail; }
-
-		// And start listening for packets
-		struct sockaddr_in listening_sockaddr;
-		listening_sockaddr.sin_family      = AF_INET;
-		listening_sockaddr.sin_port        = port.NotAnInteger;
-		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
-		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
-		if (err) { errstr = "bind"; goto fail; }
-		}
-	else if (sa_family == AF_INET6)
-		{
-		// We want to receive destination addresses and receive interface identifiers
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
-		if (err < 0) { errstr = "setsockopt - IPV6_PKTINFO"; goto fail; }
-		
-		// We want to receive packet hop count value so we can check it
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_HOPLIMIT, &on, sizeof(on));
-		if (err < 0) { errstr = "setsockopt - IPV6_HOPLIMIT"; goto fail; }
-		
-		// We want to receive only IPv6 packets. Without this option we get IPv4 packets too,
-		// with mapped addresses of the form 0:0:0:0:0:FFFF:xxxx:xxxx, where xxxx:xxxx is the IPv4 address
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
-		if (err < 0) { errstr = "setsockopt - IPV6_V6ONLY"; goto fail; }
-		
-		if (mcast)
-			{
-			// Add multicast group membership on this interface, if it's for multicast receiving
-			int interface_id = if_nametoindex(cp->info->ifa_name);
-			struct ipv6_mreq i6mr;
-			//LogOperation("SetupSocket: v6 %#a %s %d", ifaddr, cp->info->ifa_name, interface_id);
-			i6mr.ipv6mr_interface = interface_id;
-			i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
-			err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
-			if (err < 0) { errstr = "setsockopt - IPV6_JOIN_GROUP"; goto fail; }
-			
-			// Specify outgoing interface too
-			err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_IF, &interface_id, sizeof(interface_id));
-			if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_IF"; goto fail; }
-			}
-		
-		// Send unicast packets with TTL 255
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { errstr = "setsockopt - IPV6_UNICAST_HOPS"; goto fail; }
-		
-		// And multicast packets with TTL 255 too
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &twofivefive, sizeof(twofivefive));
-		if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_HOPS"; goto fail; }
-		
-		// Note: IPV6_TCLASS appears not to be implemented on OS X right now (or indeed on ANY version of Unix?)
-		#ifdef IPV6_TCLASS
-		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
-		int tclass = IPTOS_LOWDELAY | IPTOS_THROUGHPUT; // This may not be right (since tclass is not implemented on OS X, I can't test it)
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
-		if (err < 0) { errstr = "setsockopt - IPV6_TCLASS"; goto fail; }
-		#endif
-		
-		// Want to receive our own packets
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &on, sizeof(on));
-		if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_LOOP"; goto fail; }
-		
-		// And start listening for packets
-		struct sockaddr_in6 listening_sockaddr6;
-		bzero(&listening_sockaddr6, sizeof(listening_sockaddr6));
-		listening_sockaddr6.sin6_len         = sizeof(listening_sockaddr6);
-		listening_sockaddr6.sin6_family      = AF_INET6;
-		listening_sockaddr6.sin6_port        = port.NotAnInteger;
-		listening_sockaddr6.sin6_flowinfo    = 0;
-		listening_sockaddr6.sin6_addr        = in6addr_any; // Want to receive multicasts AND unicasts on this socket
-		listening_sockaddr6.sin6_scope_id    = 0;
-		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
-		if (err) { errstr = "bind"; goto fail; }
-		}
-	
-	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
-	*s = skt;
-	CFSocketContext myCFSocketContext = { 0, cp, NULL, NULL, NULL };
-	*c = CFSocketCreateWithNative(kCFAllocatorDefault, *s, kCFSocketReadCallBack, myCFSocketCallBack, &myCFSocketContext);
-	*r = CFSocketCreateRunLoopSource(kCFAllocatorDefault, *c, 0);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), *r, kCFRunLoopDefaultMode);
-	
-	return(err);
-
-fail:
-	LogMsg("%s error %ld errno %d (%s)", errstr, err, errno, strerror(errno));
-	if (!strcmp(errstr, "bind") && errno == EADDRINUSE)
-		NotifyOfElusiveBug("Setsockopt SO_REUSEPORT failed",
-			"Congratulations, you've reproduced an elusive bug.\r"
-			"Please contact the current assignee of <rdar://problem/3814904>.\r"
-			"Alternatively, you can send email to radar-3387020@group.apple.com. (Note number is different.)\r"
-			"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
-	close(skt);
-	return(err);
-	}
-
 mDNSlocal mStatus SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa)
 	{
 	if (!sa) { LogMsg("SetupAddr ERROR: NULL sockaddr"); return(mStatus_Invalid); }
@@ -2856,8 +2861,8 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ss.m     = m;
 	i->ss.info  = i;
 	i->ss.sktv4 = i->ss.sktv6 = -1;
-	i->ss.cfsv4 = i->ss.cfsv6 = NULL;
-	i->ss.rlsv4 = i->ss.rlsv6 = NULL;
+	i->ss.kqsv4.context  = i->ss.kqsv6.context  = &i->ss;
+	i->ss.kqsv4.callback = i->ss.kqsv6.callback = myKQSocketCallBack;
 
 	*p = i;
 	return(i);
@@ -3130,28 +3135,6 @@ mDNSlocal void MarkAllInterfacesInactive(mDNS *const m, mDNSs32 utc)
 		}
 	}
 
-mDNSlocal void CloseRunLoopSourceSocket(CFRunLoopSourceRef rls, CFSocketRef cfs)
-	{
-	// Note: CFSocketInvalidate also closes the underlying socket for us
-	// Comments show retain counts (obtained via CFGetRetainCount()) after each call.	   rls 3 cfs 3
-	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);			// rls 2 cfs 3
-	CFRelease(rls);																		// rls ? cfs 3
-	CFSocketInvalidate(cfs);															// rls ? cfs 1
-	CFRelease(cfs);																		// rls ? cfs ?
-	}
-
-mDNSlocal void CloseSocketSet(CFSocketSet *ss)
-	{
-	// Note: MUST NOT close the underlying native BSD sockets.
-	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
-	// because it first has to unhook the sockets from its select() call, before it can safely close them.
-	if (ss->cfsv4) CloseRunLoopSourceSocket(ss->rlsv4, ss->cfsv4);
-	if (ss->cfsv6) CloseRunLoopSourceSocket(ss->rlsv6, ss->cfsv6);
-	ss->sktv4 = ss->sktv6 = -1;
-	ss->cfsv4 = ss->cfsv6 = NULL;
-	ss->rlsv4 = ss->rlsv6 = NULL;
-	}
-
 // returns count of non-link local V4 addresses deregistered
 mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	{
@@ -3193,7 +3176,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	while (*p)
 		{
 		i = *p;
-		// 2. Close all our CFSockets. We'll recreate them later as necessary.
+		// 2. Close all our KQSockets. We'll recreate them later as necessary.
 		// (We may have previously had both v4 and v6, and we may not need both any more.)
 		CloseSocketSet(&i->ss);
 		// 3. If no longer active, delete interface from list and free memory
@@ -4160,6 +4143,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	(void)store;        // Parameter not used
 	(void)changedKeys;  // Parameter not used
 	mDNS *const m = (mDNS *const)context;
+	pthread_mutex_lock(&m->p->BigMutex);
 	mDNS_Lock(m);
 
 	mDNSs32 delay = mDNSPlatformOneSecond * 2;							// Start off assuming a two-second delay
@@ -4188,6 +4172,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		m->SuppressSending - m->p->NetworkChanged < 0)
 		m->SuppressSending = m->p->NetworkChanged;
 	mDNS_Unlock(m);
+	pthread_mutex_unlock(&m->p->BigMutex);
 	}
 
 mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
@@ -4250,6 +4235,7 @@ exit:
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
 	{
 	mDNS *const m = (mDNS *const)refcon;
+	pthread_mutex_lock(&m->p->BigMutex);
 	(void)service;    // Parameter not used
 	switch(messageType)
 		{
@@ -4275,6 +4261,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		default:								LogOperation("PowerChanged unknown message %X", messageType);						break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
+	pthread_mutex_unlock(&m->p->BigMutex);
 	}
 
 mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
@@ -4356,6 +4343,8 @@ mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
 
 mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
+	mStatus err;
+
 	// In 10.4, mDNSResponder is launched very early in the boot process, while other subsystems are still in the process of starting up.
 	// If we can't read the user's preferences, then we sleep a bit and try again, for up to five seconds before we give up.
 	int i;
@@ -4368,9 +4357,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		usleep(50000);
 		}
 
-	mStatus err;
-
-   	m->hostlabel.c[0]        = 0;
+	m->hostlabel.c[0]        = 0;
 	
 	char *HINFO_HWstring = "Macintosh";
 	char HINFO_HWstring_buffer[256];
@@ -4398,8 +4385,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
  	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;
 	m->p->unicastsockets.sktv4 = m->p->unicastsockets.sktv6 = -1;
-	m->p->unicastsockets.cfsv4 = m->p->unicastsockets.cfsv6 = NULL;
-	m->p->unicastsockets.rlsv4 = m->p->unicastsockets.rlsv6 = NULL;
+	m->p->unicastsockets.kqsv4.context  = m->p->unicastsockets.kqsv6.context  = &m->p->unicastsockets;
+	m->p->unicastsockets.kqsv4.callback = m->p->unicastsockets.kqsv6.callback = myKQSocketCallBack;
 	
 	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, mDNSNULL, AF_INET);
 #ifndef NO_IPV6
