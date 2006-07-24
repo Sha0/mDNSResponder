@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.51  2006/07/24 23:45:55  cheshire
+<rdar://problem/4605276> DNSServiceReconfirmRecord() should return error code
+
 Revision 1.50  2006/06/28 08:22:27  cheshire
 <rdar://problem/4605264> dnssd_clientstub.c needs to report unlink failures in syslog
 
@@ -1185,7 +1188,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRemoveRecord
     return err;
     }
 
-void DNSSD_API DNSServiceReconfirmRecord
+DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 	(
 	DNSServiceFlags  flags,
 	uint32_t         interfaceIndex,
@@ -1207,9 +1210,9 @@ void DNSSD_API DNSServiceReconfirmRecord
     len += 3 * sizeof(uint16_t);
     len += rdlen;
     tmp = connect_to_server();
-    if (!tmp) return;
+    if (!tmp) return(kDNSServiceErr_Unknown);
     hdr = create_hdr(reconfirm_record_request, &len, &ptr, 1);
-    if (!hdr) return;
+    if (!hdr) return(kDNSServiceErr_Unknown);
 
     put_flags(flags, &ptr);
     put_long(interfaceIndex, &ptr);
@@ -1222,5 +1225,6 @@ void DNSSD_API DNSServiceReconfirmRecord
     write_all(tmp->sockfd, (char *)hdr, (int) len);
     free(hdr);
     DNSServiceRefDeallocate(tmp);
+    return(kDNSServiceErr_NoError);
     }
 

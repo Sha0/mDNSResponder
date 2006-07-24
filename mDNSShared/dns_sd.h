@@ -1264,7 +1264,7 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
  *
  */
 
-void DNSSD_API DNSServiceReconfirmRecord
+DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
     (
     DNSServiceFlags                    flags,
     uint32_t                           interfaceIndex,

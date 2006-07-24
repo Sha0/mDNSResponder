@@ -31,6 +31,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.9  2006/07/24 23:45:55  cheshire
+<rdar://problem/4605276> DNSServiceReconfirmRecord() should return error code
+
 Revision 1.8  2004/12/16 20:47:34  cheshire
 <rdar://problem/3324626> Cache memory management improvements
 
@@ -704,7 +707,7 @@ fail:
 // is run against this Extension, it will get a reasonable error code instead of just
 // failing to launch (Strong Link) or calling an unresolved symbol and crashing (Weak Link)
 #if !MDNS_BUILDINGSTUBLIBRARY
-void DNSServiceReconfirmRecord
+DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 	(
 	DNSServiceFlags                    flags,
 	uint32_t                           interfaceIndex,
@@ -722,5 +725,6 @@ void DNSServiceReconfirmRecord
 	(void)rrclass;			// Unused
 	(void)rdlen;			// Unused
 	(void)rdata;			// Unused
+	return(kDNSServiceErr_Unsupported);
 	}
 #endif
