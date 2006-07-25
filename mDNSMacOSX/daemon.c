@@ -36,6 +36,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.270  2006/07/25 17:16:36  mkrochma
+Quick fix to solve kqueue related crashes and hangs
+
 Revision 1.269  2006/07/22 06:11:37  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 
@@ -2669,7 +2672,7 @@ static void * KQueueLoop(void* m_param)
 	// (5) then when no more events remain, we go back to (1) to finish off any deferred work and do it all again
 	for ( ; ; )
 		{
-		#define kEventsToReadAtOnce	5
+		#define kEventsToReadAtOnce	1
 		struct kevent	new_events[kEventsToReadAtOnce];
 
 		// Run mDNS_Execute to determine how long to sleep
