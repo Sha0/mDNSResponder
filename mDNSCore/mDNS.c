@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.550  2006/07/27 17:58:34  cheshire
+Improved text of "SendQueries didn't send all its queries; will try again" debugging message
+
 Revision 1.549  2006/07/20 22:07:31  mkrochma
 <rdar://problem/4633196> Wide-area browsing is currently broken in TOT
 More fixes for uninitialized variables
@@ -4280,12 +4283,14 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextScheduledProbe >= 0) SendQueries(m);
 			if (m->timenow - m->NextScheduledQuery >= 0)
 				{
-				LogMsg("mDNS_Execute: SendQueries didn't send all its queries; will try again in one second");
+				LogMsg("mDNS_Execute: SendQueries didn't send all its queries (%d - %d = %d) will try again in one second",
+					m->timenow, m->NextScheduledQuery, m->timenow - m->NextScheduledQuery);
 				m->NextScheduledQuery = m->timenow + mDNSPlatformOneSecond;
 				}
 			if (m->timenow - m->NextScheduledProbe >= 0)
 				{
-				LogMsg("mDNS_Execute: SendQueries didn't send all its probes; will try again in one second");
+				LogMsg("mDNS_Execute: SendQueries didn't send all its probes (%d - %d = %d) will try again in one second",
+					m->timenow, m->NextScheduledProbe, m->timenow - m->NextScheduledProbe);
 				m->NextScheduledProbe = m->timenow + mDNSPlatformOneSecond;
 				}
 	
