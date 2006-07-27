@@ -23,6 +23,13 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.59  2006/07/27 02:59:25  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+Further refinements: CFRunLoop thread needs to explicitly wake the kqueue thread
+after releasing BigMutex, in case actions it took have resulted in new work for the
+kqueue thread (e.g. NetworkChanged events may result in the kqueue thread having to
+add new active interfaces to its list, and consequently schedule queries to be sent).
+
 Revision 1.58  2006/07/22 06:08:29  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 Further changes
@@ -291,6 +298,7 @@ struct mDNS_PlatformSupport_struct
 	io_object_t              PowerNotifier;
 	CFRunLoopSourceRef       PowerRLS;
 	pthread_mutex_t          BigMutex;
+	int						 WakeKQueueLoopFD;
 	};
 
 extern int KQueueFD;
@@ -298,6 +306,7 @@ extern int KQueueFD;
 extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both strings are UTF-8 text
 extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
+extern void KQueueWake(mDNS *const m);
 extern int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, KQueueEntryRef entryRef);
 
 extern const char mDNSResponderVersionString[];

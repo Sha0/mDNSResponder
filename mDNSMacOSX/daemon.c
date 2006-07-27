@@ -36,6 +36,13 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.271  2006/07/27 02:59:26  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+Further refinements: CFRunLoop thread needs to explicitly wake the kqueue thread
+after releasing BigMutex, in case actions it took have resulted in new work for the
+kqueue thread (e.g. NetworkChanged events may result in the kqueue thread having to
+add new active interfaces to its list, and consequently schedule queries to be sent).
+
 Revision 1.270  2006/07/25 17:16:36  mkrochma
 Quick fix to solve kqueue related crashes and hangs
 
@@ -1036,7 +1043,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 			ServiceInstance *instance = si;
 			si = si->next;                 
 			instance->autorename = mDNSfalse;
-			if (m && m != x) LogMsg("%5d: DNSServiceRegistration(%##s, %u) STOP; WARNING m %p != x %p", ClientMachPort, instance->srs.RR_SRV.resrec.name->c, SRS_PORT(&instance->srs), m, x);			
+			if (m && m != x) LogMsg("%5d: DNSServiceRegistration(%##s, %u) STOP; WARNING m %p != x %p", ClientMachPort, instance->srs.RR_SRV.resrec.name->c, SRS_PORT(&instance->srs), m, x);
 			else LogOperation("%5d: DNSServiceRegistration(%##s, %u) STOP", ClientMachPort, instance->srs.RR_SRV.resrec.name->c, SRS_PORT(&instance->srs));
 
 			// If mDNS_DeregisterService() returns mStatus_NoError, that means that the service was found in the list,
@@ -1045,7 +1052,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 			// the list, so we should go ahead and free the memory right now
 			if (mDNS_DeregisterService(&mDNSStorage, &instance->srs)) FreeServiceInstance(instance); // FreeServiceInstance invalidates pointer
 			}
-		x->regs = NULL;		
+		x->regs = NULL;
 		freeL("DNSServiceRegistration", x);
 		return;
 		}
@@ -1125,6 +1132,7 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIn
 		mach_port_destroy(mach_task_self(), deathMessage->not_port);
 		}
 	pthread_mutex_unlock(&PlatformStorage.BigMutex);
+	KQueueWake(&mDNSStorage);
 	}
 
 mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void *m)
@@ -1306,11 +1314,11 @@ mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNS
 							// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
 							CacheRecord *ka = remove->q.uDNS_info.knownAnswers;
 							while (ka) { remove->q.QuestionCallback(&mDNSStorage, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
-							}						
+							}
 						mDNS_StopBrowse(&mDNSStorage, &remove->q);
 						freeL("DNSServiceBrowserQuestion", remove );
-						return;						
-						}					
+						return;
+						}
 					q = &(*q)->next;
 					}
 			    LogMsg("Requested removal of default domain %##s not in client %5d's list", d->c, ptr->ClientMachPort);
@@ -1360,7 +1368,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		{
 		// Start browser for an explicit domain
 		x->DefaultDomain = mDNSfalse;
-		if (!MakeDomainNameFromDNSNameString(&d, domain)) { errormsg = "Illegal domain";  goto badparam; }		
+		if (!MakeDomainNameFromDNSNameString(&d, domain)) { errormsg = "Illegal domain";  goto badparam; }
 		err = AddDomainToBrowser(x, &d);
 		if (err) { AbortClient(client, x); errormsg = "AddDomainToBrowser"; goto fail; }
 		}
@@ -1430,7 +1438,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin6->sin6_family    = AF_INET6;
 		sin6->sin6_flowinfo  = 0;
 		sin6->sin6_port      = 0;
-		sin6->sin6_addr		 = *(struct in6_addr*)&ifx->ifinfo.ip.ip.v6;
+		sin6->sin6_addr      = *(struct in6_addr*)&ifx->ifinfo.ip.ip.v6;
 		sin6->sin6_scope_id  = ifx->scope_id;
 		}
 
@@ -1449,7 +1457,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 		sin6->sin6_family        = AF_INET6;
 		sin6->sin6_port          = query->info->port.NotAnInteger;
 		sin6->sin6_flowinfo      = 0;
-		sin6->sin6_addr			 = *(struct in6_addr*)&query->info->ip.ip.v6;
+		sin6->sin6_addr          = *(struct in6_addr*)&query->info->ip.ip.v6;
 		sin6->sin6_scope_id      = ifx ? ifx->scope_id : 0;
 		}
 
@@ -1593,8 +1601,8 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 				while (sp)
 					{
 					if (sp == si)
-						{				  
-						LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", srs->RR_SRV.resrec.name->c);			    
+						{
+						LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", srs->RR_SRV.resrec.name->c);
 						if (prev) prev->next = sp->next;
 						else r->regs = sp->next;
 						break;
@@ -1647,7 +1655,7 @@ mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname
 		LogMsg("Error %d for registration of service in domain %##s", err, domain->c);
 		freeL("ServiceInstance", si);
 		}
-	return err;	
+	return err;
 	}
 
 mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add)
@@ -1681,7 +1689,7 @@ mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBoo
 					si = si->next;
 					}
 				if (!si) debugf("Requested removal of default domain %##s not in client %5d's list", d, reg->ClientMachPort); // normal if registration failed
-				}					
+				}
 			}
 		}
 	}
@@ -1777,7 +1785,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	x->type = t;
 	x->port = port;
 	memcpy(x->txtinfo, txtinfo, 1024);
-	x->txt_len = data_len;	
+	x->txt_len = data_len;
 	x->NextRef = 0;
 	x->regs = NULL;
 	
@@ -1840,6 +1848,7 @@ mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotificat
 	gNotificationUserHostLabel = gNotificationPrefHostLabel;
 	gNotificationUserNiceLabel = gNotificationPrefNiceLabel;
 	pthread_mutex_unlock(&PlatformStorage.BigMutex);
+	KQueueWake(&mDNSStorage);
 	}
 
 mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subtext)
@@ -1941,7 +1950,7 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
 	(void)m; // Unused
-	if (result == mStatus_NoError)	
+	if (result == mStatus_NoError)
 		{
 		// One second pause in case we get a Computer Name update too -- don't want to alert the user twice
 		RecordUpdatedNiceLabel(m, mDNSPlatformOneSecond);
@@ -2015,7 +2024,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	id = x->NextRef++;
 	*reference = (natural_t)id;
 	for (si = x->regs; si; si = si->next)
-		{			
+		{
 		// Allocate memory, and handle failure
 		ExtraResourceRecord *extra = mallocL("ExtraResourceRecord", sizeof(*extra) - sizeof(RDataBody) + size);
 		if (!extra) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
@@ -2287,6 +2296,7 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
 	
 done:
 	pthread_mutex_unlock(&PlatformStorage.BigMutex);
+	KQueueWake(&mDNSStorage);
 	}
 
 mDNSlocal kern_return_t registerBootstrapService()
@@ -2458,13 +2468,14 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 		{
 		case SIGHUP:  
 		case SIGINT:  
-		case SIGTERM:	ExitCallback(m->msgh_id); break;
-		case SIGINFO:	INFOCallback(); break;
-		case SIGUSR1:	LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
-						mDNSMacOSXNetworkChanged(&mDNSStorage); break;
+		case SIGTERM:   ExitCallback(m->msgh_id); break;
+		case SIGINFO:   INFOCallback(); break;
+		case SIGUSR1:   LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
+		                mDNSMacOSXNetworkChanged(&mDNSStorage); break;
 		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id); break;
 		}
 	pthread_mutex_unlock(&PlatformStorage.BigMutex);
+	KQueueWake(&mDNSStorage);
 	}
 
 // On 10.2 the MachServerName is DNSServiceDiscoveryServer
@@ -2655,11 +2666,21 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 	mDNS_Unlock(&mDNSStorage);
 	}
 
-static void * KQueueLoop(void* m_param)
+mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, __unused void *context)
 	{
-	mDNS			*m = m_param;
-	int				numevents = 0;
+	// Read all of the bytes so we won't wake again.
+	char    buffer[100];
+	ssize_t read = sizeof(buffer);
+	while (read > 0) read = recv(fd, buffer, sizeof(buffer), MSG_DONTWAIT);
+	}
+
+mDNSlocal void * KQueueLoop(void* m_param)
+	{
+	mDNS            *m = m_param;
+	int             numevents = 0;
 	static const struct timespec zero_timeout = { 0, 0 };
+	fd_set          readfds;
+	FD_ZERO(&readfds);
 	
 	pthread_mutex_lock(&PlatformStorage.BigMutex);
 	LogOperation("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
@@ -2672,56 +2693,60 @@ static void * KQueueLoop(void* m_param)
 	// (5) then when no more events remain, we go back to (1) to finish off any deferred work and do it all again
 	for ( ; ; )
 		{
-		#define kEventsToReadAtOnce	1
-		struct kevent	new_events[kEventsToReadAtOnce];
+		#define kEventsToReadAtOnce 1
+		int             events_found = 0;
+		struct kevent   new_events[kEventsToReadAtOnce];
 
 		// Run mDNS_Execute to determine how long to sleep
 		mDNSs32 nextTimerEvent = mDNSDaemonIdle(m);
 		nextTimerEvent = udsserver_idle(nextTimerEvent);
 		
-		// Convert absolute ticks in to a relative timespec timeout
-		mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
-		if (ticks < 1) ticks = 1;
-		
-		static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
-		if (ticks > 1)
-			RepeatedBusy = 0;
-		else
+		while (nextTimerEvent > mDNS_TimeNow(m))
 			{
-			ticks = 1;
-			if (++RepeatedBusy >= mDNSPlatformOneSecond) { ShowTaskSchedulingError(&mDNSStorage); RepeatedBusy = 0; }
-			}
+			// Convert absolute ticks in to a relative timespec timeout
+			mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
+			if (ticks < 1) ticks = 1;
+			
+			static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
+			if (ticks > 1)
+				RepeatedBusy = 0;
+			else
+				{
+				ticks = 1;
+				if (++RepeatedBusy >= mDNSPlatformOneSecond) { ShowTaskSchedulingError(&mDNSStorage); RepeatedBusy = 0; }
+				}
 
-		struct timespec	timeout;
-		timeout.tv_sec = ticks / mDNSPlatformOneSecond;
-		timeout.tv_nsec = (ticks % mDNSPlatformOneSecond) * 1000000 / mDNSPlatformOneSecond;
-		timeout.tv_nsec *= 1000; // Convert from microseconds to nanoseconds
+			struct timeval timeout;
+			timeout.tv_sec = ticks / mDNSPlatformOneSecond;
+			timeout.tv_usec = (ticks % mDNSPlatformOneSecond) * 1000000 / mDNSPlatformOneSecond;
+
+			verbosedebugf("KQueueLoop: Handled %d events; now sleeping for %d ticks", numevents, ticks);
+			numevents = 0;
+			FD_SET(KQueueFD, &readfds);
+			pthread_mutex_unlock(&PlatformStorage.BigMutex);
+			events_found = select(KQueueFD+1, &readfds, NULL, NULL, &timeout);
+			pthread_mutex_lock(&PlatformStorage.BigMutex);
+
+			if (events_found > 0) break;
+			}
 		
-		verbosedebugf("KQueueLoop: Handled %d events; now sleeping for %d ticks", numevents, ticks);
-		numevents = 0;
-		pthread_mutex_unlock(&PlatformStorage.BigMutex);
-		int events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &timeout);
-		pthread_mutex_lock(&PlatformStorage.BigMutex);
-		
-		while (events_found != 0)
+		while((events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &zero_timeout)) != 0)
 			{
-			if (events_found < 0 && errno != EINTR)
+			if (events_found > kEventsToReadAtOnce || (events_found < 0 && errno != EINTR))
 				{
 				// Not sure what to do here, our kqueue has failed us - this isn't ideal
 				LogMsg("ERROR: KQueueLoop - kevent failed errno %d (%s)", errno, strerror(errno));
 				exit(errno);
 				}
-			
+
 			numevents += events_found;
 
 			int i;
 			for (i = 0; i < events_found; i++)
 				{
-				KQueueEntryRef	kqentry = new_events[i].udata;
+				KQueueEntryRef kqentry = new_events[i].udata;
 				kqentry->callback(new_events[i].ident, new_events[i].filter, new_events[i].fflags, new_events[i].data, kqentry->context);
 				}
-
-			events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &zero_timeout);
 			}
 		}
 	
@@ -2775,6 +2800,17 @@ mDNSexport int main(int argc, char **argv)
 	i = pthread_mutex_init(&PlatformStorage.BigMutex, NULL);
 	if (i == -1) { LogMsg("pthread_mutex_init() failed errno %d (%s)", errno, strerror(errno)); status = errno; goto exit; }
 	
+	int fdpair[2] = {0, 0};
+	i = socketpair(AF_UNIX, SOCK_STREAM, 0, fdpair);
+	if (i == -1) { LogMsg("socketpair() failed errno %d (%s)", errno, strerror(errno)); status = errno; goto exit; }
+
+	// Socket pair returned us two identical sockets connected to each other
+	// We will use the first socket to send the second socket. The second socket
+	// will be added to the kqueue so it will wake when data is sent.
+	static const KQueueEntry wakeKQEntry = {KQWokenFlushBytes, NULL};
+	PlatformStorage.WakeKQueueLoopFD = fdpair[0];
+	KQueueAdd(fdpair[1], EVFILT_READ, 0, 0, &wakeKQEntry);
+	
 	status = udsserver_init();
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 	
@@ -2810,32 +2846,32 @@ exit:
 	return(status);
 	}
 
-//		uds_daemon.c support routines		/////////////////////////////////////////////
+// uds_daemon.c support routines /////////////////////////////////////////////
 
 // We keep a list of client-supplied event sources in PosixEventSource records
 struct KQSocketEventSource
 	{
-	udsEventCallback			Callback;
-	void						*Context;
-	int							fd;
-	struct  KQSocketEventSource	*Next;
-	KQueueEntry					kqs;
+	udsEventCallback            Callback;
+	void                        *Context;
+	int                         fd;
+	struct  KQSocketEventSource *Next;
+	KQueueEntry                 kqs;
 	};
-typedef struct KQSocketEventSource	KQSocketEventSource;
+typedef struct KQSocketEventSource KQSocketEventSource;
 
-static GenLinkedList	gEventSources;			// linked list of KQSocketEventSources
+static GenLinkedList gEventSources;			// linked list of KQSocketEventSources
 
 mDNSlocal void kq_callback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context) 
 	// Called by KQueueLoop when data appears on socket
 	{
-	KQSocketEventSource	*source = context;
+	KQSocketEventSource *source = context;
 	source->Callback(source->Context);
 	}
 
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 	// Arrange things so that callback is called with context when data appears on fd
 	{
-	KQSocketEventSource	*newSource;
+	KQSocketEventSource *newSource;
 
 	if (gEventSources.LinkOffset == 0)
 		InitLinkedList(&gEventSources, offsetof(KQSocketEventSource, Next));
@@ -2871,7 +2907,7 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
 	// Reverse what was done in udsSupportAddFDToEventLoop().
 	{
-	KQSocketEventSource	*iSource;
+	KQSocketEventSource *iSource;
 
 	for (iSource=(KQSocketEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
 		{
