@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.60  2006/07/27 03:24:35  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+Further refinement: Declare KQueueEntry parameter "const"
+
 Revision 1.59  2006/07/27 02:59:25  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 Further refinements: CFRunLoop thread needs to explicitly wake the kqueue thread
@@ -251,7 +255,6 @@ typedef struct
 	KQueueEventCallback	callback;
 	void				*context;
 	} KQueueEntry;
-typedef KQueueEntry * KQueueEntryRef;
 
 typedef struct
 	{
@@ -307,7 +310,7 @@ extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both stri
 extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 extern void KQueueWake(mDNS *const m);
-extern int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, KQueueEntryRef entryRef);
+extern int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, const KQueueEntry *const entryRef);
 
 extern const char mDNSResponderVersionString[];
 

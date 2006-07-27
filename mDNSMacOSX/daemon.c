@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.272  2006/07/27 03:24:35  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+Further refinement: Declare KQueueEntry parameter "const"
+
 Revision 1.271  2006/07/27 02:59:26  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 Further refinements: CFRunLoop thread needs to explicitly wake the kqueue thread
@@ -2744,7 +2748,7 @@ mDNSlocal void * KQueueLoop(void* m_param)
 			int i;
 			for (i = 0; i < events_found; i++)
 				{
-				KQueueEntryRef kqentry = new_events[i].udata;
+				const KQueueEntry *const kqentry = new_events[i].udata;
 				kqentry->callback(new_events[i].ident, new_events[i].filter, new_events[i].fflags, new_events[i].data, kqentry->context);
 				}
 			}

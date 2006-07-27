@@ -24,6 +24,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.339  2006/07/27 03:24:35  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+Further refinement: Declare KQueueEntry parameter "const"
+
 Revision 1.338  2006/07/27 02:59:25  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 Further refinements: CFRunLoop thread needs to explicitly wake the kqueue thread
@@ -1837,12 +1841,12 @@ mDNSexport void KQueueWake( mDNS * const m )
 		LogMsg( "ERROR: KQueueWake: send failed with error code: %d - %s", errno, strerror(errno) );
 	}
 
-mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, KQueueEntryRef entryRef)
+mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, const KQueueEntry *const entryRef)
 	{
 	struct kevent	new_event;
 	int				result = 0;
 	
-	EV_SET(&new_event, fd, filter, EV_ADD, fflags, data, entryRef);
+	EV_SET(&new_event, fd, filter, EV_ADD, fflags, data, (void*)entryRef);
 	
 	result = kevent(KQueueFD, &new_event, 1, NULL, 0, NULL);
 	if (result == -1) return errno;
