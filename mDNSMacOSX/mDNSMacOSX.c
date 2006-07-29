@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.340  2006/07/29 19:11:13  mkrochma
+Change GetUserSpecifiedDDNSConfig LogMsg to debugf
+
 Revision 1.339  2006/07/27 03:24:35  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 Further refinement: Declare KQueueEntry parameter "const"
@@ -3314,7 +3317,7 @@ mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn,
 								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browsing domain: %s", buf[0] ? buf : "(unknown)");
 							else
 								{
-								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
+								debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
 							
 								DNameListElem *browseDomain = (DNameListElem*) mallocL("mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
 								if (!browseDomain) { LogMsg("ERROR: mDNSPlatformGetDNSConfig: memory exhausted"); continue; }
