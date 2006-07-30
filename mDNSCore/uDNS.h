@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.35  2006/07/30 05:45:36  cheshire
+<rdar://problem/4304215> Eliminate MIN_UCAST_PERIODIC_EXEC
+
 Revision 1.34  2006/07/15 02:01:29  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
 Fix broken "empty string" browsing
@@ -146,7 +149,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #endif
 
 #define RESTART_GOODBYE_DELAY    (6 * mDNSPlatformOneSecond) // delay after restarting LLQ before nuking previous known answers (avoids flutter if we restart before we have networking up)
-#define MIN_UCAST_PERIODIC_EXEC  (5 * mDNSPlatformOneSecond) 	
 #define INIT_UCAST_POLL_INTERVAL (3 * mDNSPlatformOneSecond) // this interval is used after send failures on network transitions
 	                                                         // which typically heal quickly, so we start agressively and exponentially back off
 #define MAX_UCAST_POLL_INTERVAL (60 * 60 * mDNSPlatformOneSecond)

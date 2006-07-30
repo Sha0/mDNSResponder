@@ -24,6 +24,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.235  2006/07/30 05:45:36  cheshire
+<rdar://problem/4304215> Eliminate MIN_UCAST_PERIODIC_EXEC
+
 Revision 1.234  2006/07/22 02:58:36  cheshire
 Code was clearing namehash twice instead of namehash and rdatahash
 
@@ -5933,7 +5936,7 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 	{
 	NATTraversalInfo *ptr = m->uDNS_info.NATTraversals;
-	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
 	
 	while (ptr)
 		{
@@ -5962,7 +5965,7 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	LLQ_Info *llq;
 	mDNSs32 sendtime;
-	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
 	DNSMessage msg;
 	mStatus err = mStatus_NoError;
 	mDNSu8 *end;
@@ -6074,7 +6077,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 	AuthRecord *rr;
 	uDNS_RegInfo *rInfo;
 	uDNS_GlobalInfo *u = &m->uDNS_info;
- 	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+ 	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
 	
 	//!!!KRS list should be pre-sorted by expiration
 	for (rr = u->RecordRegistrations; rr; rr = rr->next)
@@ -6115,7 +6118,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 	{
 	ServiceRecordSet *s = m->uDNS_info.ServiceRegistrations;
 	uDNS_RegInfo *rInfo;
-	mDNSs32 nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
 	
 	// Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
 	while (s)
@@ -6164,7 +6167,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	uDNS_GlobalInfo *u = &m->uDNS_info;
 	mDNSs32 nexte, timenow = mDNSPlatformTimeNow(m);
 
-	u->nextevent = timenow + MIN_UCAST_PERIODIC_EXEC;
+	u->nextevent = timenow + 0x3FFFFFFF;
 
 	if (u->DelaySRVUpdate && u->NextSRVUpdate - timenow < 0)
 		{
