@@ -36,6 +36,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.273  2006/07/30 05:43:19  cheshire
+<rdar://problem/4049048> Convert mDNSResponder to use kqueue
+Problems using KQueueFD with select() -- for now we'll stick to pure kevent()
+
 Revision 1.272  2006/07/27 03:24:35  cheshire
 <rdar://problem/4049048> Convert mDNSResponder to use kqueue
 Further refinement: Declare KQueueEntry parameter "const"
@@ -2682,9 +2686,14 @@ mDNSlocal void * KQueueLoop(void* m_param)
 	{
 	mDNS            *m = m_param;
 	int             numevents = 0;
-	static const struct timespec zero_timeout = { 0, 0 };
+
+#if USE_SELECT_WITH_KQUEUEFD
 	fd_set          readfds;
 	FD_ZERO(&readfds);
+	const int multiplier = 1000000    / mDNSPlatformOneSecond;
+#else
+	const int multiplier = 1000000000 / mDNSPlatformOneSecond;
+#endif
 	
 	pthread_mutex_lock(&PlatformStorage.BigMutex);
 	LogOperation("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
@@ -2698,42 +2707,63 @@ mDNSlocal void * KQueueLoop(void* m_param)
 	for ( ; ; )
 		{
 		#define kEventsToReadAtOnce 1
-		int             events_found = 0;
 		struct kevent   new_events[kEventsToReadAtOnce];
 
-		// Run mDNS_Execute to determine how long to sleep
+		// Run mDNS_Execute to find out the time we next need to wake up
 		mDNSs32 nextTimerEvent = mDNSDaemonIdle(m);
 		nextTimerEvent = udsserver_idle(nextTimerEvent);
 		
-		while (nextTimerEvent > mDNS_TimeNow(m))
-			{
-			// Convert absolute ticks in to a relative timespec timeout
-			mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
-			if (ticks < 1) ticks = 1;
-			
-			static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
-			if (ticks > 1)
-				RepeatedBusy = 0;
-			else
-				{
-				ticks = 1;
-				if (++RepeatedBusy >= mDNSPlatformOneSecond) { ShowTaskSchedulingError(&mDNSStorage); RepeatedBusy = 0; }
-				}
-
-			struct timeval timeout;
-			timeout.tv_sec = ticks / mDNSPlatformOneSecond;
-			timeout.tv_usec = (ticks % mDNSPlatformOneSecond) * 1000000 / mDNSPlatformOneSecond;
-
-			verbosedebugf("KQueueLoop: Handled %d events; now sleeping for %d ticks", numevents, ticks);
-			numevents = 0;
-			FD_SET(KQueueFD, &readfds);
-			pthread_mutex_unlock(&PlatformStorage.BigMutex);
-			events_found = select(KQueueFD+1, &readfds, NULL, NULL, &timeout);
-			pthread_mutex_lock(&PlatformStorage.BigMutex);
-
-			if (events_found > 0) break;
-			}
+		// Convert absolute wakeup time to a relative time from now
+		mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
+		if (ticks < 1) ticks = 1;
 		
+		static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins
+		if (ticks > 1)
+			RepeatedBusy = 0;
+		else
+			{
+			ticks = 1;
+			if (++RepeatedBusy >= mDNSPlatformOneSecond) { ShowTaskSchedulingError(&mDNSStorage); RepeatedBusy = 0; }
+			}
+
+		verbosedebugf("KQueueLoop: Handled %d events; now sleeping for %d ticks", numevents, ticks);
+		numevents = 0;
+
+		// Release the lock, and sleep until:
+		// 1. Something interesting happens like a packet arriving, or
+		// 2. The other thread writes a byte to WakeKQueueLoopFD to poke us and make us wake up, or
+		// 3. The timeout expires
+		pthread_mutex_unlock(&PlatformStorage.BigMutex);
+
+#if USE_SELECT_WITH_KQUEUEFD
+		struct timeval timeout;
+		timeout.tv_sec = ticks / mDNSPlatformOneSecond;
+		timeout.tv_usec = (ticks % mDNSPlatformOneSecond) * multiplier;
+		FD_SET(KQueueFD, &readfds);
+		if (select(KQueueFD+1, &readfds, NULL, NULL, &timeout) < 0)
+			{ LogMsg("select(%d) failed errno %d (%s)", KQueueFD, errno, strerror(errno)); sleep(1); }
+#else
+		struct timespec timeout;
+		timeout.tv_sec = ticks / mDNSPlatformOneSecond;
+		timeout.tv_nsec = (ticks % mDNSPlatformOneSecond) * multiplier;
+		// In my opinion, you ought to be able to call kevent() with nevents set to zero,
+		// and have it work similarly to the way it does with nevents non-zero --
+		// i.e. it waits until either an event happens or the timeout expires, and then wakes up.
+		// In fact, what happens if you do this is that it just returns immediately. So, we have
+		// to pass nevents set to one, and then we just ignore the event it gives back to us. -- SC
+		if (kevent(KQueueFD, NULL, 0, new_events, 1, &timeout) < 0)
+			{ LogMsg("kevent(%d) failed errno %d (%s)", KQueueFD, errno, strerror(errno)); sleep(1); }
+#endif
+
+		pthread_mutex_lock(&PlatformStorage.BigMutex);
+		// We have to ignore the event we may have been told about above, because that
+		// was done without holding the lock, and between the time we woke up and the
+		// time we reclaimed the lock the other thread could have done something that
+		// makes the event no longer valid. Now we have the lock, we call kevent again
+		// and this time we can safely process the events it tells us about.
+
+		static const struct timespec zero_timeout = { 0, 0 };
+		int events_found;
 		while((events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &zero_timeout)) != 0)
 			{
 			if (events_found > kEventsToReadAtOnce || (events_found < 0 && errno != EINTR))
