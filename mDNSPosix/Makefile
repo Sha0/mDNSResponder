@@ -1,3 +1,5 @@
+# -*- tab-width: 4 -*-
+#
 # Copyright (c) 2002-2004, Apple Computer, Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without 
@@ -29,6 +31,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.74  2006/08/14 23:07:11  cheshire
+# Added "tab-width" emacs header line
+#
 # Revision 1.73  2006/07/07 00:54:08  cheshire
 # <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 # Put intermediate files into "objects" folder instead of mDNSShared source code folder

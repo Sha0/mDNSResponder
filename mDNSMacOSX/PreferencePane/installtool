@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/perl # -*- tab-width: 4 -*-
 #
 # File: installtool
 # 
@@ -44,6 +44,9 @@
 # Change History (most recent first):
 # 
 # $Log: installtool,v $
+# Revision 1.2  2006/08/14 23:15:14  cheshire
+# Added "tab-width" emacs header line
+#
 # Revision 1.1  2005/06/04 04:51:48  cheshire
 # <rdar://problem/4138070> ddnswriteconfig (Bonjour PreferencePane) vulnerability
 # Added separate "installtool" script instead of making ddnswriteconfig self-install
