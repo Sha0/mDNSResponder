@@ -41,7 +41,11 @@
     ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
     Change History (most recent first):
+
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.8  2006/08/14 23:15:47  cheshire
+Tidy up Change History comment
+
 Revision 1.7  2006/07/14 03:59:14  cheshire
 Fix compile warnings: 'sortUsingFunction:context:' comparison function needs to return int
 

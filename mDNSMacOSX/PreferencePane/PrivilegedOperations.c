@@ -41,7 +41,11 @@
     ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
     Change History (most recent first):
+
 $Log: PrivilegedOperations.c,v $
+Revision 1.6  2006/08/14 23:15:47  cheshire
+Tidy up Change History comment
+
 Revision 1.5  2006/06/10 02:07:11  mkrochma
 Whoa.  Make sure code compiles before checking it in.
 
