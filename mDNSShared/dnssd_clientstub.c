@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.52  2006/08/15 23:04:21  mkrochma
+<rdar://problem/4090354> Client should be able to specify service name w/o callback
+
 Revision 1.51  2006/07/24 23:45:55  cheshire
 <rdar://problem/4605276> DNSServiceReconfirmRecord() should return error code
 
@@ -866,8 +869,8 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
     if (!name[0]  && (flags & kDNSServiceFlagsNoAutoRename))
         return kDNSServiceErr_BadParam;
 
-    // no callback must have auto-name
-    if (!callBack && name[0]) return kDNSServiceErr_BadParam;
+    // no callback must have auto-rename
+    if (!callBack && (flags & kDNSServiceFlagsNoAutoRename)) return kDNSServiceErr_BadParam;
 
     len = sizeof(DNSServiceFlags);
     len += sizeof(uint32_t);  // interfaceIndex
