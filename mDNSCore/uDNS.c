@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.237  2006/08/15 23:38:17  mkrochma
+<rdar://problem/4104154> Requested Public Port field should be set to zero on mapping deletion
+
 Revision 1.236  2006/08/14 23:24:23  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -1605,6 +1608,7 @@ mDNSlocal void DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat, ServiceRecor
 		// zero lease
 		nat->request.PortReq.lease.NotAnInteger = 0;
 		nat->state = NATState_Request;
+		nat->PublicPort = zeroIPPort;
 		SendNATMsg(nat, m);
 		}
 #ifdef _LEGACY_NAT_TRAVERSAL_
