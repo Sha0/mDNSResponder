@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.239  2006/08/16 02:52:56  mkrochma
+<rdar://problem/4104154> Actually fix it this time
+
 Revision 1.238  2006/08/16 00:31:50  mkrochma
 <rdar://problem/4386944> Get rid of NotAnInteger references
 
@@ -1610,8 +1613,8 @@ mDNSlocal void DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat, ServiceRecor
 		{
 		// zero lease
 		nat->request.PortReq.lease.NotAnInteger = 0;
+		nat->request.PortReq.pub = zeroIPPort;
 		nat->state = NATState_Request;
-		nat->PublicPort = zeroIPPort;
 		SendNATMsg(nat, m);
 		}
 #ifdef _LEGACY_NAT_TRAVERSAL_
