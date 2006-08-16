@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.238  2006/08/16 00:31:50  mkrochma
+<rdar://problem/4386944> Get rid of NotAnInteger references
+
 Revision 1.237  2006/08/15 23:38:17  mkrochma
 <rdar://problem/4104154> Requested Public Port field should be set to zero on mapping deletion
 
@@ -1160,7 +1163,7 @@ mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort p
 		info->state = NATState_Init;
 		info->ReceiveResponse = callback;
 		info->PrivatePort = privatePort;
-		info->PublicPort.NotAnInteger = 0;
+		info->PublicPort = zeroIPPort;
 		info->Router = u->Router;
 		info->refs = 1;
 		}
@@ -1559,7 +1562,7 @@ mDNSlocal void FormatPortMaprequest(NATTraversalInfo *info )
 
 	req->vers = NATMAP_VERS;
 	req->opcode = info->op;
-	req->unused.NotAnInteger = 0;
+	req->unused = zeroID;
 	req->priv = info->PrivatePort;
 	req->pub = info->PrivatePort;
 	req->lease = mDNSOpaque32fromIntVal(NATMAP_DEFAULT_LEASE);
@@ -2136,10 +2139,10 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 			   v4addr->ip.v4.b[0], v4addr->ip.v4.b[1], v4addr->ip.v4.b[2], v4addr->ip.v4.b[3]);
 #endif // MDNS_DEBUGMSGS
 
-	if ((v4Changed || RouterChanged) && u->MappedV4.ip.v4.NotAnInteger) u->MappedV4.ip.v4.NotAnInteger = 0;
-	if (v4addr) u->AdvertisedV4 = *v4addr;  else u->AdvertisedV4.ip.v4.NotAnInteger = 0;
+	if ((v4Changed || RouterChanged) && u->MappedV4.ip.v4.NotAnInteger) u->MappedV4.ip.v4 = zerov4Addr;
+	if (v4addr) u->AdvertisedV4 = *v4addr;  else u->AdvertisedV4.ip.v4 = zerov4Addr;
 	if (v6addr) u->AdvertisedV6 = *v6addr;  else ubzero(u->AdvertisedV6.ip.v6.b, 16);
-	if (router) u->Router       = *router;  else u->Router.ip.v4.NotAnInteger = 0;
+	if (router) u->Router       = *router;  else u->Router.ip.v4 = zerov4Addr;
 	// setting router to zero indicates that nat mappings must be reestablished when router is reset
 	
 	if ((v4Changed || RouterChanged || v6Changed) && v4addr)
@@ -3738,7 +3741,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	if (!zoneInfo->llqPort.NotAnInteger && !zoneInfo->privatePort.NotAnInteger)
 		{
 		debugf("LLQ port lookup failed - reverting to polling");
-		info->servPort.NotAnInteger = 0;
+		info->servPort = zeroIPPort;
 		startLLQPolling( m, info );
 		goto exit;
 		}

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.342  2006/08/16 00:31:50  mkrochma
+<rdar://problem/4386944> Get rid of NotAnInteger references
+
 Revision 1.341  2006/08/14 23:24:40  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -3697,8 +3700,8 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 	
 	// handle router changes
 
-	r->type               = mDNSAddrType_IPv4;
-	r->ip.v4.NotAnInteger = 0;
+	r->type  = mDNSAddrType_IPv4;
+	r->ip.v4 = zerov4Addr;
 	 
 	string = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
 

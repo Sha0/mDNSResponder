@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd_parser.y,v $
+Revision 1.4  2006/08/16 00:35:39  mkrochma
+<rdar://problem/4386944> Get rid of NotAnInteger references
+
 Revision 1.3  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -198,12 +201,12 @@ optionsstatement:
 		|
 		PRIVATE PORT NUMBER
 		{
-			( ( DaemonInfo* ) context )->private_port.NotAnInteger = htons( NUMBER );
+			( ( DaemonInfo* ) context )->private_port = mDNSOpaque16fromIntVal( NUMBER );
 		}
 		|
 		LLQ PORT NUMBER
 		{
-			( ( DaemonInfo* ) context )->llq_port.NotAnInteger = htons( NUMBER );
+			( ( DaemonInfo* ) context )->llq_port = mDNSOpaque16fromIntVal( NUMBER );
 		}
 		;
 
@@ -592,16 +595,16 @@ SetupOptions
 
 	if ( info->server_port )
 		{
-		d->ns_addr.sin_port	= htons( ( mDNSu16 ) info->server_port );
+		d->ns_addr.sin_port = htons( ( mDNSu16 ) info->server_port );
 		}
 
 	if ( info->private_port )
 		{
-		d->private_port.NotAnInteger = htons( info->private_port );
+		d->private_port = mDNSOpaque16fromIntVal( info->private_port );
 		}
 
 	if ( info->llq_port )
 		{
-		d->llq_port.NotAnInteger = htons( info->llq_port );
+		d->llq_port = mDNSOpaque16fromIntVal( info->llq_port );
 		}
 	}
