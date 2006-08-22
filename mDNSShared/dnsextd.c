@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.45  2006/08/22 03:28:57  herscher
+<rdar://problem/4678717> Long-lived queries aren't working well in TOT.
+
 Revision 1.44  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -1426,6 +1429,8 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 	pkt.src.sin_family = AF_INET;
 	if (SendPacket( sock, &pkt)) { Log("DeleteOneRecord: SendPacket failed"); }
 	reply = RecvPacket( sock, NULL, &closed );
+	require_action( reply, end, Log( "DeleteOneRecord: RecvPacket returned NULL" ) );
+
 	if (!SuccessfulUpdateTransaction(&pkt, reply))
 		Log("Expiration update failed with rcode %d", reply ? reply->msg.h.flags.b[1] & kDNSFlag1_RC : -1);
 					  
@@ -1845,6 +1850,7 @@ mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, AnswerListElem *e)
 		if (SendPacket( sock, &q)) { Log("AnswerQuestion: SendPacket failed"); mDNSPlatformTCPCloseConnection( sock ); goto end; }
 		reply = RecvPacket( sock, NULL, &closed );
 		mDNSPlatformTCPCloseConnection( sock );
+		require_action( reply, end, Log( "AnswerQuestion: RecvPacket returned NULL" ) );
 		}
 
 	if ((reply->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask) != (kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery))
