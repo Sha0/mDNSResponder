@@ -31,6 +31,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.75  2006/08/24 22:41:23  herscher
+# <rdar://problem/4580067> POSIX: dnsextd_parser doesn't compile on Linux
+#
 # Revision 1.74  2006/08/14 23:07:11  cheshire
 # Added "tab-width" emacs header line
 #
@@ -325,7 +328,8 @@ endif
 else
 
 ifeq ($(os),linux)
-CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK -DHAVE_LINUX
+CFLAGS_OS = -DNOT_HAVE_SA_LEN -DUSES_NETLINK -DHAVE_LINUX -DTARGET_OS_LINUX
+FLEXFLAGS_OS = -l
 JAVACFLAGS_OS += -I$(JDK)/include/linux
 OPTIONALTARG = nss_mdns
 OPTINSTALL   = InstalledNSS
@@ -727,5 +731,5 @@ $(OBJDIR)/%.y.o: $(SHAREDDIR)/%.y
 	$(CC) $(CFLAGS) -c -o $@ $(OBJDIR)/$*.c
 
 $(OBJDIR)/%.l.o: $(SHAREDDIR)/%.l
-	$(FLEX) -i             -o$(OBJDIR)/$*.l.c $<
+	$(FLEX) $(FLEXFLAGS_OS) -i             -o$(OBJDIR)/$*.l.c $<
 	$(CC) $(CFLAGS) -c -o $@ $(OBJDIR)/$*.l.c

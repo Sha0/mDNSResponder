@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.6  2006/08/24 22:41:53  herscher
+<rdar://problem/4580067> POSIX: dnsextd_parser doesn't compile on Linux
+
 Revision 1.5  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -444,7 +447,7 @@ Common Services and portability support for various platforms.
 // - Windows
 
 #if( TARGET_LANGUAGE_C_LIKE )
-	#if( ( TARGET_OS_WIN32 || !defined( _BSD_SSIZE_T_DEFINED_ ) ) && !TARGET_OS_VXWORKS && !TARGET_OS_MAC )
+	#if( ( TARGET_OS_WIN32 || !defined( _BSD_SSIZE_T_DEFINED_ ) ) && !TARGET_OS_LINUX && !TARGET_OS_VXWORKS && !TARGET_OS_MAC )
 		typedef int						ssize_t;
 	#endif
 #endif
