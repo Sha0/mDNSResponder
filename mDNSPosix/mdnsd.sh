@@ -1,6 +1,8 @@
-#!/bin/sh # -*- tab-width: 4 -*-
+#!/bin/sh
 #
-# Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+# -*- tab-width: 4 -*-
+#
+# Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +19,9 @@
 # Linux /etc/init.d script to start/stop the mdnsd daemon.
 #
 # $Log: mdnsd.sh,v $
+# Revision 1.8  2006/08/29 16:42:01  mkrochma
+# Fix POSIX startup script
+#
 # Revision 1.7  2006/08/14 23:24:47  cheshire
 # Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 #
