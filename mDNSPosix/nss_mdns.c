@@ -2413,9 +2413,9 @@ format_reverse_addr_in6 (
 		// divide prefixlen into nibbles, rounding up
 
 	// Special handling for first
-	if (i / 2)
+	if (i % 2)
 	{
-		curr += sprintf (curr, "%d.", (in_addr_a [i] >> 4) & 0x0F);
+		curr += sprintf (curr, "%d.", (in_addr_a [i/2] >> 4) & 0x0F);
 	}
 	i >>= 1;
 		// Convert i to bytes (divide by 2)
