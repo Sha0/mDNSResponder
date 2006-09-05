@@ -1,4 +1,5 @@
-#!/usr/bin/perl # -*- tab-width: 4 -*-
+#!/usr/bin/perl
+# Emacs settings: -*- tab-width: 4 -*-
 #
 # File: installtool
 # 
@@ -44,6 +45,9 @@
 # Change History (most recent first):
 # 
 # $Log: installtool,v $
+# Revision 1.3  2006/09/05 20:00:13  cheshire
+# Moved Emacs settings to second line of file
+#
 # Revision 1.2  2006/08/14 23:15:14  cheshire
 # Added "tab-width" emacs header line
 #

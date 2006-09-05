@@ -1,6 +1,5 @@
 #!/bin/sh
-#
-# -*- tab-width: 4 -*-
+# Emacs settings: -*- tab-width: 4 -*-
 #
 # Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
 #
@@ -19,6 +18,9 @@
 # Linux /etc/init.d script to start/stop the mdnsd daemon.
 #
 # $Log: mdnsd.sh,v $
+# Revision 1.9  2006/09/05 20:00:14  cheshire
+# Moved Emacs settings to second line of file
+#
 # Revision 1.8  2006/08/29 16:42:01  mkrochma
 # Fix POSIX startup script
 #

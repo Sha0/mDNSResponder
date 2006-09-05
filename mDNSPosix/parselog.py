@@ -1,5 +1,6 @@
-#!/usr/bin/python # -*- tab-width: 4 -*-
-
+#!/usr/bin/python
+# Emacs settings: -*- tab-width: 4 -*-
+#
 # Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +54,9 @@
 # Filled green  circle: Normal answer             Hollow green  circle: Goodbye message (record going away)
 #                                                 Hollow blue   circle: Legacy query (from old client)
 # $Log: parselog.py,v $
+# Revision 1.4  2006/09/05 20:00:14  cheshire
+# Moved Emacs settings to second line of file
+#
 # Revision 1.3  2006/08/14 23:24:47  cheshire
 # Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 #
