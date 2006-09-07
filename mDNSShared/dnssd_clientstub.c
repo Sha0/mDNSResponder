@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.53  2006/09/07 04:43:12  herscher
+Fix compile error on Win32 platform by moving inclusion of syslog.h
+
 Revision 1.52  2006/08/15 23:04:21  mkrochma
 <rdar://problem/4090354> Client should be able to specify service name w/o callback
 
@@ -189,36 +192,37 @@ Update to APSL 2.0
 #include <errno.h>
 #include <stdlib.h>
 
-#if defined(_WIN32)
-#include <winsock2.h>
-#include <windows.h>
-#define sockaddr_mdns sockaddr_in
-#define AF_MDNS AF_INET
-extern BOOL
-IsSystemServiceDisabled();
-#else
-#include <sys/time.h>
-#include <sys/socket.h>
-#define sockaddr_mdns sockaddr_un
-#define AF_MDNS AF_LOCAL
-#endif
-
-#include <syslog.h>
-
 #include "dnssd_ipc.h"
 
 #if defined(_WIN32)
-// disable warning: "'type cast' : from data pointer 'void *' to
-// function pointer"
+
+#include <winsock2.h>
+#include <windows.h>
+
+#define sockaddr_mdns sockaddr_in
+#define AF_MDNS AF_INET
+
+// disable warning: "'type cast' : from data pointer 'void *' to function pointer"
 #pragma warning(disable:4055)
 
-// disable warning: "nonstandard extension, function/data pointer
-// conversion in expression"
+// disable warning: "nonstandard extension, function/data pointer conversion in expression"
 #pragma warning(disable:4152)
+
+extern BOOL IsSystemServiceDisabled();
 
 #define sleep(X) Sleep((X) * 1000)
 
 static int g_initWinsock = 0;
+
+#else
+
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <syslog.h>
+
+#define sockaddr_mdns sockaddr_un
+#define AF_MDNS AF_LOCAL
+
 #endif
 
 // <rdar://problem/4096913> Specifies how many times we'll try and connect to the
