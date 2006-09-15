@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.107  2006/09/15 21:20:14  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.106  2006/08/14 23:24:22  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -2304,7 +2307,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords)) return(m->timenow);
 	if (m->SuppressSending)                                         return(m->SuppressSending);
 #ifndef UNICAST_DISABLED
-	if (e - m->uDNS_info.nextevent   > 0) e = m->uDNS_info.nextevent;
+	if (e - m->nextevent             > 0) e = m->nextevent;
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;

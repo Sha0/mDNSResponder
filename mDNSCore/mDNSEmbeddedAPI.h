@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.301  2006/09/15 21:20:15  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.300  2006/08/14 23:24:23  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -2127,39 +2130,6 @@ enum
 	mDNS_KnownBug_PhantomInterfaces = 1
 	};
 
-typedef struct
-	{
-	mDNSs32          nextevent;
-	DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
-	DNSQuestion      *CurrentQuery;      // pointer to ActiveQueries list being examined in a loop.  Functions that remove
-										 // elements from the ActiveQueries list must update this pointer (if non-NULL) as necessary.
-										 //!!!KRS do the same for registration lists
-	ServiceRecordSet *ServiceRegistrations;
-	AuthRecord       *RecordRegistrations;
-	NATTraversalInfo *NATTraversals;
-	mDNSu16          NextMessageID;
-    DNSServer        *Servers;           // list of DNS servers
-	mDNSAddr         Router;
-	mDNSAddr         AdvertisedV4;       // IPv4 address pointed to by hostname
-	mDNSAddr         MappedV4;           // Cache of public address if PrimaryIP is behind a NAT
-	mDNSAddr         AdvertisedV6;       // IPv6 address pointed to by hostname
-	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
-	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
-	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
-    DNSQuestion      ReverseMap;         // Reverse-map query to find static hostname for service target
-    mDNSBool         ReverseMapActive;   // Is above query active?
-    domainname       StaticHostname;     // Current answer to reverse-map query (above)
-    mDNSBool         DelaySRVUpdate;     // Delay SRV target/port update to avoid "flap"
-    mDNSs32          NextSRVUpdate;      // Time to perform delayed update
-	domainname		 RegDomain;          // Default wide-area zone for service registration
-	struct DNameListElem *  BrowseDomains;      // Default wide-area zone for legacy ("empty string") browses
-    domainname       FQDN;
-    mDNSBool         RegisterSearchDomains;
-    
-	DNameListElem  *DefBrowseList;  // cache of answers to above query (where we search for empty string browses)
-	DNameListElem  *DefRegList;  // manually generated list of domains where we register for empty string registrations
-	} uDNS_GlobalInfo;
-
 struct mDNS_struct
 	{
 	// Internal state fields. These hold the main internal state of mDNSCore;
@@ -2234,7 +2204,36 @@ struct mDNS_struct
 	mDNSs32 SuppressProbes;
 
 	// unicast-specific data
-	uDNS_GlobalInfo uDNS_info;
+	mDNSs32          nextevent;
+	DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
+	DNSQuestion      *CurrentQuery;      // pointer to ActiveQueries list being examined in a loop.  Functions that remove
+										 // elements from the ActiveQueries list must update this pointer (if non-NULL) as necessary.
+										 //!!!KRS do the same for registration lists
+	ServiceRecordSet *ServiceRegistrations;
+	AuthRecord       *RecordRegistrations;
+	NATTraversalInfo *NATTraversals;
+	mDNSu16          NextMessageID;
+    DNSServer        *Servers;           // list of DNS servers
+	mDNSAddr         Router;
+	mDNSAddr         AdvertisedV4;       // IPv4 address pointed to by hostname
+	mDNSAddr         MappedV4;           // Cache of public address if PrimaryIP is behind a NAT
+	mDNSAddr         AdvertisedV6;       // IPv6 address pointed to by hostname
+	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
+	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
+	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
+    DNSQuestion      ReverseMap;         // Reverse-map query to find static hostname for service target
+    mDNSBool         ReverseMapActive;   // Is above query active?
+    domainname       StaticHostname;     // Current answer to reverse-map query (above)
+    mDNSBool         DelaySRVUpdate;     // Delay SRV target/port update to avoid "flap"
+    mDNSs32          NextSRVUpdate;      // Time to perform delayed update
+	domainname		 RegDomain;          // Default wide-area zone for service registration
+	struct DNameListElem *  BrowseDomains;      // Default wide-area zone for legacy ("empty string") browses
+    domainname       FQDN;
+    mDNSBool         RegisterSearchDomains;
+    
+	DNameListElem  *DefBrowseList;  // cache of answers to above query (where we search for empty string browses)
+	DNameListElem  *DefRegList;  // manually generated list of domains where we register for empty string registrations
+
 	mDNSs32 SuppressStdPort53Queries;	// Wait before allowing the next standard unicast query to the user's configured DNS server
 
 	// Fixed storage, to avoid creating large objects on the stack

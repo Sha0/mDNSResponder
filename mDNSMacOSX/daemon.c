@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.275  2006/09/15 21:20:16  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.274  2006/08/14 23:24:39  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -881,30 +884,30 @@ mDNSlocal void validatelists(mDNS *const m)
 
 	// Check uDNS lists
 
-	for (q = m->uDNS_info.ActiveQueries; q; q=q->next)
+	for (q = ActiveQueries; q; q=q->next)
 		if (*(long*)q == (mDNSs32)~0)
-			LogMemCorruption("uDNS_info.ActiveQueries: %p is garbage (%lX)", q, *(long*)q);
+			LogMemCorruption("ActiveQueries: %p is garbage (%lX)", q, *(long*)q);
 
 	ServiceRecordSet            *s;
-	for (s = m->uDNS_info.ServiceRegistrations; s; s=s->next)
+	for (s = ServiceRegistrations; s; s=s->next)
 		if (s->next == (ServiceRecordSet*)~0)
-			LogMemCorruption("uDNS_info.ServiceRegistrations: %p is garbage (%lX)", s, s->next);
+			LogMemCorruption("ServiceRegistrations: %p is garbage (%lX)", s, s->next);
 
-	for (rr = m->uDNS_info.RecordRegistrations; rr; rr=rr->next)
+	for (rr = RecordRegistrations; rr; rr=rr->next)
 		{
 		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
-			LogMemCorruption("uDNS_info.RecordRegistrations: %p is garbage (%X)", rr, rr->resrec.RecordType);
+			LogMemCorruption("RecordRegistrations: %p is garbage (%X)", rr, rr->resrec.RecordType);
 		if (rr->resrec.name != &rr->namestorage)
-			LogMemCorruption("uDNS_info.RecordRegistrations: %p name %p does not point to namestorage %p %##s",
+			LogMemCorruption("RecordRegistrations: %p name %p does not point to namestorage %p %##s",
 				rr, rr->resrec.name->c, rr->namestorage.c, rr->namestorage.c);
 		}
 
 	NATTraversalInfo            *n;
-	for (n = m->uDNS_info.NATTraversals; n; n=n->next)
-		if (n->op > 2) LogMemCorruption("uDNS_info.NATTraversals: %p is garbage", n);
+	for (n = NATTraversals; n; n=n->next)
+		if (n->op > 2) LogMemCorruption("NATTraversals: %p is garbage", n);
 
-	for (n = m->uDNS_info.NATTraversals; n; n=n->next)
-		if (n->op > 2) LogMemCorruption("uDNS_info.LLQNatInfo: %p is garbage", n);
+	for (n = NATTraversals; n; n=n->next)
+		if (n->op > 2) LogMemCorruption("LLQNatInfo: %p is garbage", n);
 	}
 
 void *mallocL(char *msg, unsigned int size)
@@ -1381,8 +1384,8 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		{
 		// Start browser on all domains
 		x->DefaultDomain = mDNStrue;
-		if (!mDNSStorage.uDNS_info.DefBrowseList) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
-		for (sdPtr = mDNSStorage.uDNS_info.DefBrowseList; sdPtr; sdPtr = sdPtr->next)
+		if (!mDNSStorage.DefBrowseList) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
+		for (sdPtr = mDNSStorage.DefBrowseList; sdPtr; sdPtr = sdPtr->next)
 			{
 			err = AddDomainToBrowser(x, &sdPtr->name);
 			if (err)
@@ -1806,7 +1809,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (x->DefaultDomain)
 		{
 		DNameListElem *ptr;
-		for (ptr = mDNSStorage.uDNS_info.DefRegList; ptr; ptr = ptr->next)
+		for (ptr = mDNSStorage.DefRegList; ptr; ptr = ptr->next)
 			AddServiceInstance(x, &ptr->name);
 		}
 
@@ -2456,7 +2459,7 @@ mDNSlocal void INFOCallback(void)
 				&i->ifinfo.ip);
 		}
 
-	for (s = mDNSStorage.uDNS_info.Servers; s; s = s->next)
+	for (s = mDNSStorage.Servers; s; s = s->next)
 		LogMsgNoIdent("DNS Server %#a %##s", &s->addr, s->domain.c);
 
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
@@ -2656,8 +2659,8 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 	if (m->SuppressSending && m->timenow - m->SuppressSending >= 0)
 		LogMsg("Task Scheduling Error: m->SuppressSending %d",       m->timenow - m->SuppressSending);
 #ifndef UNICAST_DISABLED
-	if (m->timenow - m->uDNS_info.nextevent   >= 0)
-		LogMsg("Task Scheduling Error: m->uDNS_info.nextevent %d",   m->timenow - m->uDNS_info.nextevent);
+	if (m->timenow - m->nextevent             >= 0)
+		LogMsg("Task Scheduling Error: nextevent %d",                m->timenow - m->nextevent);
 #endif
 	if (m->timenow - m->NextCacheCheck        >= 0)
 		LogMsg("Task Scheduling Error: m->NextCacheCheck %d",        m->timenow - m->NextCacheCheck);

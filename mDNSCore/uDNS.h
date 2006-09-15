@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.37  2006/09/15 21:20:15  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.36  2006/08/14 23:24:23  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -159,10 +162,9 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 // Entry points into unicast-specific routines
 
 extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
-extern mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalInfo *u);  // returns true if OK to call StopQuery
+extern mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, mDNS *u);  // returns true if OK to call StopQuery
 extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
 	
-extern void uDNS_Init(mDNS *const m);
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
 #define uDNS_Close uDNS_Sleep

@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.552  2006/09/15 21:20:15  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.551  2006/08/14 23:24:22  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -5608,7 +5611,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
 
-    if (uDNS_IsActiveQuery(question, &m->uDNS_info)) return uDNS_StopQuery(m, question);
+    if (uDNS_IsActiveQuery(question, m)) return uDNS_StopQuery(m, question);
 	
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
@@ -5969,10 +5972,10 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *q)
 	{
 	mDNS_Lock(m);
 	// We use mDNS_StopQuery_internal here because we're already holding the lock
-	if (q->qSRV.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qSRV, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qSRV);
-	if (q->qTXT.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qTXT, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qTXT);
-	if (q->qAv4.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv4, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qAv4);
-	if (q->qAv6.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv6, &m->uDNS_info)) mDNS_StopQuery_internal(m, &q->qAv6);
+	if (q->qSRV.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qSRV, m)) mDNS_StopQuery_internal(m, &q->qSRV);
+	if (q->qTXT.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qTXT, m)) mDNS_StopQuery_internal(m, &q->qTXT);
+	if (q->qAv4.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv4, m)) mDNS_StopQuery_internal(m, &q->qAv4);
+	if (q->qAv6.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv6, m)) mDNS_StopQuery_internal(m, &q->qAv6);
 	mDNS_Unlock(m);
 	}
 
@@ -7016,9 +7019,35 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SuppressProbes          = 0;
 
 #ifndef UNICAST_DISABLED	
-	uDNS_Init(m);
+	m->nextevent                = timenow + 0x78000000;
+	m->ActiveQueries            = mDNSNULL;
+	m->CurrentQuery             = mDNSNULL;
+	m->ServiceRegistrations     = mDNSNULL;
+	m->RecordRegistrations      = mDNSNULL;
+	m->NATTraversals            = mDNSNULL;
+	m->NextMessageID            = 0;
+	m->Servers                  = mDNSNULL;
+	m->Router                   = zeroAddr;
+	m->AdvertisedV4             = zeroAddr;
+	m->MappedV4                 = zeroAddr;
+	m->AdvertisedV6             = zeroAddr;
+	m->ServiceRegDomain.c[0]    = 0;
+	m->AuthInfoList             = mDNSNULL;
+	m->Hostnames                = mDNSNULL;
+	//m->ReverseMap (DNSQuestion)
+	m->ReverseMapActive         = mDNSfalse;
+	m->StaticHostname.c[0]      = 0;
+	m->DelaySRVUpdate           = mDNSfalse;
+	m->NextSRVUpdate            = timenow + 0x78000000;
+	m->RegDomain.c[0]           = 0;
+	m->BrowseDomains            = mDNSNULL;
+	m->FQDN.c[0]                = 0;
+	m->RegisterSearchDomains    = mDNSfalse;
+	m->DefBrowseList            = mDNSNULL;
+	m->DefRegList               = mDNSNULL;
 	m->SuppressStdPort53Queries = 0;
 #endif
+
 	result = mDNSPlatformInit(m);
 
 	return(result);

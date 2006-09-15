@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.207  2006/09/15 21:20:16  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.206  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -2148,7 +2151,7 @@ mDNSlocal void handle_browse_request(request_state *request)
 	else
 		{
 		DNameListElem *sdom;
-		for (sdom = mDNSStorage.uDNS_info.DefBrowseList; sdom; sdom = sdom->next)
+		for (sdom = mDNSStorage.DefBrowseList; sdom; sdom = sdom->next)
 			{
 			err = add_domain_to_browser(info, &sdom->name);
 			if (err)
@@ -2243,11 +2246,11 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
 			count++;
 
-	for (rr = m->uDNS_info.RecordRegistrations; rr; rr=rr->next)
+	for (rr = m->RecordRegistrations; rr; rr=rr->next)
 		if (rr->uDNS_info.state != regState_Unregistered && rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
 			count++;
 
-	for (s = m->uDNS_info.ServiceRegistrations; s; s = s->next)
+	for (s = m->ServiceRegistrations; s; s = s->next)
 		if (s->uDNS_info.state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !SameRData(&s->RR_SRV.resrec, r))
 			count++;
 		
@@ -2472,7 +2475,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 	if (!result && !*domain)
 		{
 		DNameListElem *ptr;
-		for (ptr = mDNSStorage.uDNS_info.DefRegList; ptr; ptr = ptr->next)
+		for (ptr = mDNSStorage.DefRegList; ptr; ptr = ptr->next)
 			register_service_instance(request, &ptr->name);
 		    // note that we don't report errors for non-local, non-explicit domains
 		}

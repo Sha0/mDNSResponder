@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.240  2006/09/15 21:20:15  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.239  2006/08/16 02:52:56  mkrochma
 <rdar://problem/4104154> Actually fix it this time
 
@@ -923,7 +926,7 @@ mDNSlocal int CountLabels(const domainname *d)
 	return count;
 	}
 
-mDNSlocal mDNSOpaque16 newMessageID(uDNS_GlobalInfo *u)
+mDNSlocal mDNSOpaque16 newMessageID(mDNS *u)
 	{
 	static mDNSBool randomized = mDNSfalse;
 
@@ -943,7 +946,7 @@ mDNSlocal mStatus unlinkAR(AuthRecord **list, AuthRecord *const rr)
 
 mDNSlocal void unlinkSRS(mDNS *m, ServiceRecordSet *srs)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	ServiceRecordSet **p;
 	NATTraversalInfo *n = u->NATTraversals;
 
@@ -974,7 +977,7 @@ mDNSlocal void unlinkSRS(mDNS *m, ServiceRecordSet *srs)
 	LogMsg("ERROR: unlinkSRS - SRS not found in ServiceRegistrations list %##s", srs->RR_SRV.resrec.name->c);
 	}
 
-mDNSlocal void LinkActiveQuestion(uDNS_GlobalInfo *u, DNSQuestion *q)
+mDNSlocal void LinkActiveQuestion(mDNS *u, DNSQuestion *q)
 	{
 	if (uDNS_IsActiveQuery(q, u))
 		{ 
@@ -1004,7 +1007,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 
 mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const domainname *d)
     {
-    uDNS_GlobalInfo *u = &m->uDNS_info;
+    mDNS *u = m;
 	DNSServer *s, **p = &u->Servers;
 	
 	mDNS_Lock(m);
@@ -1036,8 +1039,8 @@ mDNSexport void mDNS_DeleteDNSServers(mDNS *const m)
 	DNSServer *s;
 	mDNS_Lock(m);
 
-	s = m->uDNS_info.Servers;
-	m->uDNS_info.Servers = mDNSNULL;
+	s = m->Servers;
+	m->Servers = mDNSNULL;
 	while (s)
 		{
 		DNSServer *tmp = s;
@@ -1053,7 +1056,7 @@ mDNSexport void mDNS_DeleteDNSServers(mDNS *const m)
 #pragma mark - authorization management
 #endif
 
-mDNSlocal uDNS_AuthInfo *GetAuthInfoForName(const uDNS_GlobalInfo *u, const domainname *name)
+mDNSlocal uDNS_AuthInfo *GetAuthInfoForName(const mDNS *u, const domainname *name)
 	{
 	uDNS_AuthInfo *ptr;
 	while (name->c[0])
@@ -1065,7 +1068,7 @@ mDNSlocal uDNS_AuthInfo *GetAuthInfoForName(const uDNS_GlobalInfo *u, const doma
 	return mDNSNULL;
 	}
 
-mDNSlocal void DeleteAuthInfoForZone(uDNS_GlobalInfo *u, const domainname *zone)
+mDNSlocal void DeleteAuthInfoForZone(mDNS *u, const domainname *zone)
 	{
 	uDNS_AuthInfo *ptr, *prev = mDNSNULL;
 
@@ -1087,7 +1090,7 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const 
 	uDNS_AuthInfo *info;
 	mDNSu8 keybuf[1024];
 	mDNSs32 keylen;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	mStatus status = mStatus_NoError;
 
 	mDNS_Lock(m);
@@ -1112,8 +1115,8 @@ mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const 
 	DNSDigest_ConstructHMACKey(info, keybuf, (mDNSu32)keylen);
 
     // link into list
-	info->next = m->uDNS_info.AuthInfoList;
-	m->uDNS_info.AuthInfoList = info;
+	info->next = m->AuthInfoList;
+	m->AuthInfoList = info;
 exit:
 	mDNS_Unlock(m);
 	return status;
@@ -1139,7 +1142,7 @@ mDNSlocal mDNSBool DomainContainsLabelString(const domainname *d, const char *st
 // allocate struct, link into global list, initialize
 mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, NATResponseHndlr callback)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	NATTraversalInfo *info = u->NATTraversals;
 	
 	for ( info = u->NATTraversals; info; info = info->next )
@@ -1210,7 +1213,7 @@ exit:
 mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 	{
 	NATTraversalInfo *ptr, *prev = mDNSNULL;
-	ServiceRecordSet *s = m->uDNS_info.ServiceRegistrations;
+	ServiceRecordSet *s = m->ServiceRegistrations;
 
 	// Verify that object is not referenced by any services
 	while (s)
@@ -1223,13 +1226,13 @@ mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 		s = s->next;
 		}
 
-	ptr = m->uDNS_info.NATTraversals;
+	ptr = m->NATTraversals;
 	while (ptr)
 		{
 		if (ptr == n)
 			{
 			if (prev) prev->next = ptr->next;
-			else m->uDNS_info.NATTraversals = ptr->next;
+			else m->NATTraversals = ptr->next;
 			ufree(n);
 			return mDNStrue;
 			}
@@ -1243,7 +1246,7 @@ mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	{
 	mStatus err;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 
 	if (info->state != NATState_Request && info->state != NATState_Refresh)
 		{ LogMsg("SendNATMsg: Bad state %d", info->state); return; }
@@ -1355,7 +1358,7 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 mDNSlocal void StartGetPublicAddr(mDNS *m, AuthRecord *AddressRec)
 	{
 	NATAddrRequest *req;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	
 	NATTraversalInfo *info = AllocNATInfo(m, NATOp_AddrRequest, zeroIPPort, ReceiveNATAddrResponse);
 	if (!info) { uDNS_RegisterRecord(m, AddressRec); return; }
@@ -1398,7 +1401,7 @@ mDNSlocal void startLLQPolling( mDNS * const m, LLQ_Info * info )
 	
 mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	LLQ_Info *llqInfo;
 	
 	if (!n) { LogMsg("Error: LLQNatMapComplete called with NULL LLQNatInfo"); return; }
@@ -1526,7 +1529,7 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 		n->state = NATState_Error;
 		if (srs)
 			{
-			uDNS_HostnameInfo *hi = m->uDNS_info.Hostnames;
+			uDNS_HostnameInfo *hi = m->Hostnames;
 			while (hi)
 				{
 				if (hi->arv6 && (hi->arv6->uDNS_info.state == regState_Registered || hi->arv6->uDNS_info.state == regState_Refresh)) break;
@@ -1573,7 +1576,7 @@ mDNSlocal void FormatPortMaprequest(NATTraversalInfo *info )
 
 mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
 	{
-	if (!m->uDNS_info.Router.ip.v4.NotAnInteger)
+	if (!m->Router.ip.v4.NotAnInteger)
 		{
 		debugf("No router.  Will retry NAT traversal in %ld seconds", NATMAP_INIT_RETRY);
 		info->retry = mDNSPlatformTimeNow(m) + NATMAP_INIT_RETRY;
@@ -1689,7 +1692,7 @@ exit:
 // if LLQ NAT context unreferenced, delete the mapping
 mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 	{
-	NATTraversalInfo * n = m->uDNS_info.NATTraversals;
+	NATTraversalInfo * n = m->NATTraversals;
 	DNSQuestion *q;
 	
 	while ( n )
@@ -1697,7 +1700,7 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 		NATTraversalInfo * current;
 		mDNSBool found = mDNSfalse;
 
-		for (q = m->uDNS_info.ActiveQueries; q; q = q->next)
+		for (q = m->ActiveQueries; q; q = q->next)
 			if (q->LongLived && ( ( q->uDNS_info.llq->NATInfoTCP == n ) || ( q->uDNS_info.llq->NATInfoUDP == n ) ) ) { found = mDNStrue; break; }
 		
 		current = n;
@@ -1720,7 +1723,7 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 
 // if we ever want to refine support for multiple hostnames, we can add logic matching service names to a particular hostname
 // for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
-mDNSlocal mDNSBool GetServiceTarget(uDNS_GlobalInfo *u, AuthRecord *srv, domainname *dst)
+mDNSlocal mDNSBool GetServiceTarget(mDNS *u, AuthRecord *srv, domainname *dst)
 	{
 	uDNS_HostnameInfo *hi = u->Hostnames;
 	(void)srv;  // unused
@@ -1747,7 +1750,7 @@ mDNSlocal mDNSBool GetServiceTarget(uDNS_GlobalInfo *u, AuthRecord *srv, domainn
 
 mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	ExtraResourceRecord *e;
 
 	// Target change if:
@@ -1839,7 +1842,7 @@ mDNSlocal void UpdateSRVRecords(mDNS *m)
 	{
 	ServiceRecordSet *srs;
 
-	for (srs = m->uDNS_info.ServiceRegistrations; srs; srs = srs->next) UpdateSRV(m, srs);
+	for (srs = m->ServiceRegistrations; srs; srs = srs->next) UpdateSRV(m, srs);
 	}
 
 mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
@@ -1900,7 +1903,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 // register record or begin NAT traversal
 mDNSlocal void AdvertiseHostname(mDNS *m, uDNS_HostnameInfo *h)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	
 	if (u->AdvertisedV4.ip.v4.NotAnInteger && h->arv4->uDNS_info.state == regState_Unregistered)
 		{
@@ -1922,8 +1925,8 @@ mDNSlocal void AdvertiseHostname(mDNS *m, uDNS_HostnameInfo *h)
 mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	const domainname *pktname = &answer->rdata->u.name;
-	domainname *storedname = &m->uDNS_info.StaticHostname;
-	uDNS_HostnameInfo *h = m->uDNS_info.Hostnames;
+	domainname *storedname = &m->StaticHostname;
+	uDNS_HostnameInfo *h = m->Hostnames;
 
 	(void)question;
 	
@@ -1937,8 +1940,8 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 			    (h->arv6 && (h->arv6->uDNS_info.state == regState_FetchingZoneData || h->arv6->uDNS_info.state == regState_Pending)))
 				{
 				// if we're in the process of registering a dynamic hostname, delay SRV update so we don't have to reregister services if the dynamic name succeeds
-				m->uDNS_info.DelaySRVUpdate = mDNStrue;
-				m->uDNS_info.NextSRVUpdate = mDNSPlatformTimeNow(m) + (5 * mDNSPlatformOneSecond);
+				m->DelaySRVUpdate = mDNStrue;
+				m->NextSRVUpdate = mDNSPlatformTimeNow(m) + (5 * mDNSPlatformOneSecond);
 				return;
 				}
 			h = h->next;
@@ -1955,18 +1958,18 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 mDNSlocal void GetStaticHostname(mDNS *m)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];
-	DNSQuestion *q = &m->uDNS_info.ReverseMap;
-	mDNSu8 *ip = m->uDNS_info.AdvertisedV4.ip.v4.b;
+	DNSQuestion *q = &m->ReverseMap;
+	mDNSu8 *ip = m->AdvertisedV4.ip.v4.b;
 	mStatus err;
 	
-	if (m->uDNS_info.ReverseMapActive)
+	if (m->ReverseMapActive)
 		{
 		uDNS_StopQuery(m, q);
-		m->uDNS_info.ReverseMapActive = mDNSfalse;
+		m->ReverseMapActive = mDNSfalse;
 		}
 
-	m->uDNS_info.StaticHostname.c[0] = 0;
-	if (!m->uDNS_info.AdvertisedV4.ip.v4.NotAnInteger) return;
+	m->StaticHostname.c[0] = 0;
+	if (!m->AdvertisedV4.ip.v4.NotAnInteger) return;
 	ubzero(q, sizeof(*q));
 	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
     if (!MakeDomainNameFromDNSNameString(&q->qname, buf)) { LogMsg("Error: GetStaticHostname - bad name %s", buf); return; }
@@ -1983,14 +1986,14 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 
 	err = uDNS_StartQuery(m, q);
 	if (err) LogMsg("Error: GetStaticHostname - StartQuery returned error %d", err);
-	else m->uDNS_info.ReverseMapActive = mDNStrue;
+	else m->ReverseMapActive = mDNStrue;
 	}
 
 mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, uDNS_HostnameInfo *hi, int type)
 	{
 	AuthRecord **dst = (type == mDNSAddrType_IPv4 ? &hi->arv4 : &hi->arv6);
 	AuthRecord *ar =  umalloc(sizeof(*ar));
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	
 	if (type != mDNSAddrType_IPv4 && type != mDNSAddrType_IPv6) { LogMsg("ERROR: AssignHostnameInfoAuthRecord - bad type %d", type); return; }
 	if (!ar) { LogMsg("ERROR: AssignHostnameInfoAuthRecord - malloc"); return; }
@@ -2026,7 +2029,7 @@ mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, uDNS_HostnameInfo *hi, int 
 // values for the hostlabel and primary IP address
 mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	uDNS_HostnameInfo *i;
 
 	for (i = u->Hostnames; i; i = i->next)
@@ -2055,7 +2058,7 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 
 mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
    {
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	uDNS_HostnameInfo *ptr, *new;
 
 	mDNS_Lock(m);
@@ -2091,7 +2094,7 @@ exit:
 
 mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	uDNS_HostnameInfo **ptr = &u->Hostnames;
 
 	mDNS_Lock(m);
@@ -2122,7 +2125,7 @@ mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 
 mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, const mDNSAddr *v6addr, const mDNSAddr *router)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	mDNSBool v4Changed, v6Changed, RouterChanged;
    
 	if (v4addr && v4addr->type != mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo V4 address - incorrect type.  Discarding."); return; }
@@ -2217,7 +2220,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 	CacheRecord *fptr, *ka, *cr, *answers = mDNSNULL, *prev = mDNSNULL;
 	LargeCacheRecord *lcr;
 	
-	if (question != m->uDNS_info.CurrentQuery) { LogMsg("ERROR: deriveGoodbyes called without CurrentQuery set!"); return; }
+	if (question != m->CurrentQuery) { LogMsg("ERROR: deriveGoodbyes called without CurrentQuery set!"); return; }
 
 	ptr = LocateAnswers(msg, end);
 	if (!ptr) goto pkt_error;
@@ -2236,7 +2239,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			// CAUTION: Need to be careful after calling question->QuestionCallback(),
 			// because the client's callback function is allowed to do anything,
 			// including starting/stopping queries, registering/deregistering records, etc.
-			if (question != m->uDNS_info.CurrentQuery)
+			if (question != m->CurrentQuery)
 				{
 				debugf("deriveGoodbyes - question removed via callback.  returning.");
 				return;
@@ -2286,7 +2289,7 @@ mDNSlocal void deriveGoodbyes(mDNS * const m, DNSMessage *msg, const  mDNSu8 *en
 			// CAUTION: Need to be careful after calling question->QuestionCallback(),
 			// because the client's callback function is allowed to do anything,
 			// including starting/stopping queries, registering/deregistering records, etc.
-			if (question != m->uDNS_info.CurrentQuery)
+			if (question != m->CurrentQuery)
 				{
 				debugf("deriveGoodbyes - question removed via callback.  returning.");
 				return;
@@ -2329,7 +2332,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	domainname origname;
 	origname.c[0] = 0;
 	
-	if (question != m->uDNS_info.CurrentQuery)
+	if (question != m->CurrentQuery)
 		{ LogMsg("ERROR: pktResponseHdnlr called without CurrentQuery ptr set!");  return; }
 
 	if (question->uDNS_info.Answered == 0 && msg->h.numAnswers == 0 && !llq)
@@ -2359,7 +2362,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 		// because the client's callback function is allowed to do anything,
 		// including starting/stopping queries, registering/deregistering records, etc.
 		m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
-		if (question != m->uDNS_info.CurrentQuery)
+		if (question != m->CurrentQuery)
 			{
 			debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning.");
 			return;
@@ -2392,7 +2395,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 						// CAUTION: Need to be careful after calling question->QuestionCallback(),
 						// because the client's callback function is allowed to do anything,
 						// including starting/stopping queries, registering/deregistering records, etc.
-						if (question != m->uDNS_info.CurrentQuery)
+						if (question != m->CurrentQuery)
 							{
 							m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
 							debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning.");
@@ -2424,7 +2427,7 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 			question->QuestionCallback(m, question, &cr->resrec, !goodbye);
 			
 			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-			if (question != m->uDNS_info.CurrentQuery)
+			if (question != m->CurrentQuery)
 				{
 				m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
 				debugf("pktResponseHndlr - CurrentQuery changed by QuestionCallback - returning");
@@ -2819,7 +2822,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 			}
 		}
 	
-	if (info->state == regState_Unregistered) unlinkAR(&m->uDNS_info.RecordRegistrations, rr);
+	if (info->state == regState_Unregistered) unlinkAR(&m->RecordRegistrations, rr);
 	else rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;  // reset retry delay for future refreshes, dereg, etc.
 
 	if (info->QueuedRData && info->state == regState_Registered)
@@ -2882,7 +2885,7 @@ mDNSlocal void SetUpdateExpiration(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 
 mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	NATTraversalInfo *ptr = u->NATTraversals;
 	NATOp_t op;
 	mDNSIPPort port;
@@ -2942,7 +2945,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 		result = DNSServer_Passed;
 
 	// 3. Find occurrences of this server in our list, and mark them appropriately
-	for (s = m->uDNS_info.Servers; s; s = s->next)
+	for (s = m->Servers; s; s = s->next)
 		if (mDNSSameAddress(srcaddr, &s->addr) && s->teststate != result)
 			{ s->teststate = result; found = mDNStrue; }
 
@@ -2962,7 +2965,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	AuthRecord *rptr;
 	ServiceRecordSet *sptr;
 	mStatus err = mStatus_NoError;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	
 	mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
@@ -2993,7 +2996,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 					{ debugf("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
 				if (msg->h.flags.b[0] & kDNSFlag0_TC)
 					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
-				else if ( ( msg->h.flags.b[1] & kDNSFlag1_RC_NXDomain ) && ( !qptr->uDNS_info.internal ) && !qptr->Private && GetAuthInfoForName( &m->uDNS_info, &qptr->qname ) )
+				else if ( ( msg->h.flags.b[1] & kDNSFlag1_RC_NXDomain ) && ( !qptr->uDNS_info.internal ) && !qptr->Private && GetAuthInfoForName( m, &qptr->qname ) )
 					{
 					qptr->uDNS_info.id = newMessageID(u);
 					qptr->uDNS_info.Answered = mDNSfalse;
@@ -3048,7 +3051,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	}
 
 // lookup a DNS Server, matching by name in split-dns configurations.  Result stored in addr parameter if successful
-mDNSlocal DNSServer *GetServerForName(uDNS_GlobalInfo *u, const domainname *name)
+mDNSlocal DNSServer *GetServerForName(mDNS *u, const domainname *name)
     {
 	DNSServer *curmatch = mDNSNULL, *p = u->Servers;
 	int i, curmatchlen = -1;
@@ -3200,7 +3203,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, uDNS_TCPSo
 	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 	
-	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, sock, GetAuthInfoForName( &m->uDNS_info, &q->qname ) );
+	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, sock, GetAuthInfoForName( m, &q->qname ) );
 	if (err) debugf("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
 	if (info->state == LLQ_Established) info->ntries = 1;
@@ -3227,9 +3230,9 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	if (opt.llqOp != kLLQOp_Event) { if (!q->uDNS_info.llq->ntries) LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return mDNSfalse; }
 
     // invoke response handler
-	m->uDNS_info.CurrentQuery = q;
+	m->CurrentQuery = q;
 	q->uDNS_info.responseCallback(m, msg, end, q, q->uDNS_info.context);
-	if (m->uDNS_info.CurrentQuery != q) return mDNStrue;
+	if (m->CurrentQuery != q) return mDNStrue;
 	
     //  format and send ack
 	InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
@@ -3456,12 +3459,12 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	tcpInfo_t *context;
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 	mStatus err = mStatus_NoError;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	uDNS_AuthInfo * authInfo = mDNSNULL;
 
 	// Let's look for credentials right now.  If we can't find them, then it's an error.
 
-	authInfo = GetAuthInfoForName( &m->uDNS_info, &info->question->qname );
+	authInfo = GetAuthInfoForName( m, &info->question->qname );
 
 	if ( !authInfo )
 		{
@@ -3615,7 +3618,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	DNSQuestion *q = info->question;
 	mStatus err = mStatus_NoError;
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	
 	if (IsPrivateV4Addr(&u->AdvertisedV4))
 		{
@@ -3820,7 +3823,7 @@ mDNSlocal mStatus startLLQ(mDNS *m, DNSQuestion *question)
 		goto exit;
 		}
 
-	LinkActiveQuestion(&m->uDNS_info, question);
+	LinkActiveQuestion(m, question);
 	
 exit:
 
@@ -3870,7 +3873,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 		goto exit;
 		}
 
-	authInfo = GetAuthInfoForName( &m->uDNS_info, &question->qname );
+	authInfo = GetAuthInfoForName( m, &question->qname );
 
 	if ( !authInfo )
 		{
@@ -3891,7 +3894,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 	info->m        = m;
 	info->question = question;
 	info->authInfo = authInfo;
-	qinfo->id      = newMessageID(&m->uDNS_info);
+	qinfo->id      = newMessageID(m);
 
 	sock = mDNSPlatformTCPSocket( m, TCP_SOCKET_FLAGS, &port );
 	
@@ -3925,7 +3928,7 @@ exit:
 		{
 		//!!!KRS can we really call this here?
 		
-		if (uDNS_IsActiveQuery(question, &m->uDNS_info))
+		if (uDNS_IsActiveQuery(question, m))
 			{
 			uDNS_StopQuery(m, question);
 			}
@@ -3948,9 +3951,9 @@ mDNSlocal mStatus startPrivateQuery(mDNS *m, DNSQuestion *question)
 		return err;
 		}
 		
-	if ( !uDNS_IsActiveQuery(question, &m->uDNS_info))
+	if ( !uDNS_IsActiveQuery(question, m))
 		{
-		LinkActiveQuestion(&m->uDNS_info, question);
+		LinkActiveQuestion(m, question);
 		}
 
 	return err;
@@ -3959,7 +3962,7 @@ mDNSlocal mStatus startPrivateQuery(mDNS *m, DNSQuestion *question)
 mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID)
 	{
 	DNSQuestion pktQ, *q;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	const mDNSu8 *ptr = msg->data;
 	LLQ_Info *llqInfo;
 
@@ -3998,7 +4001,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	return mDNSfalse;
 	}
 
-mDNSexport mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, uDNS_GlobalInfo *u)
+mDNSexport mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, mDNS *u)
     {
 	DNSQuestion *q;
 
@@ -4069,7 +4072,7 @@ mDNSlocal void stopLLQ(mDNS *m, DNSQuestion *question)
 
 mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	DNSQuestion *qptr, *prev = mDNSNULL;
 	CacheRecord *ka;
 	
@@ -4080,8 +4083,8 @@ mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
             {
 			if (question->LongLived && question->uDNS_info.llq)
 				stopLLQ(m, question);
-			if (m->uDNS_info.CurrentQuery == question)
-				m->uDNS_info.CurrentQuery = m->uDNS_info.CurrentQuery->next;
+			if (m->CurrentQuery == question)
+				m->CurrentQuery = m->CurrentQuery->next;
 			while (question->uDNS_info.knownAnswers)
 				{
 				ka = question->uDNS_info.knownAnswers;
@@ -4101,7 +4104,7 @@ mDNSexport mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 
 mDNSlocal mStatus startQuery(mDNS *const m, DNSQuestion *const question, mDNSBool internal)
     {
-    uDNS_GlobalInfo *u = &m->uDNS_info;
+    mDNS *u = m;
     //!!!KRS we should check if the question is already in our activequestion list
 	if (!ValidateDomainName(&question->qname))
 		{
@@ -4647,7 +4650,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	ubzero(context, sizeof(tcpInfo_t));
 	context->question = question;
 	context->m = m;
-	info->id = newMessageID(&m->uDNS_info);
+	info->id = newMessageID(m);
 
 	sock = mDNSPlatformTCPSocket( m, 0, &port );
 	
@@ -4697,7 +4700,7 @@ mDNSlocal void tcpCallback( uDNS_TCPSocket sock, void * context, mDNSBool Connec
 	mDNSu8			*	end;	
 	int					n;
 	mDNS			*	m = tcpInfo->m;
-	uDNS_GlobalInfo	*	u = &m->uDNS_info;
+	mDNS	*	u = m;
 	
 	mDNS_Lock(m);
 	
@@ -4953,7 +4956,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	mDNSOpaque16 id;
 	uDNS_RegInfo *regInfo = &rr->uDNS_info;
 	uDNS_AuthInfo * authInfo;
@@ -5095,7 +5098,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	{
 	AuthRecord *newRR = (AuthRecord*)authPtr;
 	const zoneData_t *zoneData = mDNSNULL;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	AuthRecord *ptr;
 
 	// make sure record is still in list
@@ -5184,7 +5187,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	mDNSOpaque16 id;
 	uDNS_RegInfo *rInfo = &srs->uDNS_info;
 	mStatus err = mStatus_NoError;
@@ -5420,7 +5423,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		srs->uDNS_info.lease = mDNSfalse;
 		}
 
-	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && IsPrivateV4Addr(&m->uDNS_info.AdvertisedV4))
+	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && IsPrivateV4Addr(&m->AdvertisedV4))
 		{ srs->uDNS_info.state = regState_NATMap; StartNATPortMap(m, srs); }
 	else SendServiceRegistration(m, srs);
 	return;
@@ -5437,7 +5440,7 @@ error:
 mDNSlocal mStatus SetupRecordRegistration(mDNS *m, AuthRecord *rr)
 	{
 	domainname *target = GetRRDomainNameTarget(&rr->resrec);
-	AuthRecord *ptr = m->uDNS_info.RecordRegistrations;
+	AuthRecord *ptr = m->RecordRegistrations;
 
 	while (ptr && ptr != rr) ptr = ptr->next;
 	if (ptr) { LogMsg("Error: SetupRecordRegistration - record %##s already in list!", rr->resrec.name->c); return mStatus_AlreadyRegistered; }
@@ -5471,8 +5474,8 @@ mDNSlocal mStatus SetupRecordRegistration(mDNS *m, AuthRecord *rr)
 	rr->resrec.rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
 
 	rr->uDNS_info.state = regState_FetchingZoneData;
-	rr->next = m->uDNS_info.RecordRegistrations;
-	m->uDNS_info.RecordRegistrations = rr;
+	rr->next = m->RecordRegistrations;
+	m->RecordRegistrations = rr;
 	rr->uDNS_info.lease = mDNStrue;
 
 	return mStatus_NoError;
@@ -5488,7 +5491,7 @@ mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
 
 mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	uDNS_AuthInfo * authInfo;
@@ -5581,7 +5584,7 @@ exit:
 
 mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	NATTraversalInfo *n = rr->uDNS_info.NATinfo;
  
 	switch (rr->uDNS_info.state)
@@ -5649,7 +5652,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	mDNSu32 i;
 	domainname target;
 	uDNS_RegInfo *info = &srs->uDNS_info;
-	ServiceRecordSet **p = &m->uDNS_info.ServiceRegistrations;
+	ServiceRecordSet **p = &m->ServiceRegistrations;
 	while (*p && *p != srs) p=&(*p)->next;
 	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
 	ubzero(info, sizeof(*info));
@@ -5664,7 +5667,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	info->lease = mDNStrue;
 
 	srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
-	if (!GetServiceTarget(&m->uDNS_info, &srs->RR_SRV, &target))
+	if (!GetServiceTarget(m, &srs->RR_SRV, &target))
 		{
 		// defer registration until we've got a target
 		debugf("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
@@ -5679,7 +5682,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	{
 	uDNS_RegInfo * rInfo = &srs->uDNS_info;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	DNSMessage msg;
 	mDNSOpaque16 id;
 	mDNSu8 *ptr = msg.data;
@@ -5861,7 +5864,7 @@ mDNSexport mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, 
   
 mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	ServiceRecordSet *parent = mDNSNULL;
 	AuthRecord *rptr;
 	uDNS_RegInfo *info = &rr->uDNS_info;
@@ -5941,7 +5944,7 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 
 mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 	{
-	NATTraversalInfo *ptr = m->uDNS_info.NATTraversals;
+	NATTraversalInfo *ptr = m->NATTraversals;
 	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
 	
 	while (ptr)
@@ -5968,7 +5971,7 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 	{
 	DNSQuestion *q;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	LLQ_Info *llq;
 	mDNSs32 sendtime;
 	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
@@ -6040,14 +6043,14 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 				sendtime = m->SuppressStdPort53Queries;
 			if (sendtime - timenow < 0)
 				{
-				DNSServer *server = GetServerForName(&m->uDNS_info, &q->qname);
+				DNSServer *server = GetServerForName(m, &q->qname);
 				if (server)
 					{
 					mDNSBool private;
 
 					if (server->teststate == DNSServer_Untested)
 						{
-						InitializeDNSMessage(&msg.h, newMessageID(&m->uDNS_info), uQueryFlags);
+						InitializeDNSMessage(&msg.h, newMessageID(m), uQueryFlags);
 						end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
 						private = mDNSfalse;
 						}
@@ -6082,7 +6085,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 	{
 	AuthRecord *rr;
 	uDNS_RegInfo *rInfo;
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
  	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
 	
 	//!!!KRS list should be pre-sorted by expiration
@@ -6122,7 +6125,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 
 mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 	{
-	ServiceRecordSet *s = m->uDNS_info.ServiceRegistrations;
+	ServiceRecordSet *s = m->ServiceRegistrations;
 	uDNS_RegInfo *rInfo;
 	mDNSs32 nextevent = timenow + 0x3FFFFFFF;
 	
@@ -6170,7 +6173,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 
 mDNSexport void uDNS_Execute(mDNS *const m)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	mDNSs32 nexte, timenow = mDNSPlatformTimeNow(m);
 
 	u->nextevent = timenow + 0x3FFFFFFF;
@@ -6212,7 +6215,7 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 	DNSQuestion *q;
 	LLQ_Info *llq;
 	
-	for (q = m->uDNS_info.ActiveQueries; q; q = q->next)
+	for (q = m->ActiveQueries; q; q = q->next)
 		{
 		llq = q->uDNS_info.llq;
 		if (q->LongLived && llq)
@@ -6265,7 +6268,7 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 
 mDNSlocal void RestartQueries(mDNS *m)
 	{
-	uDNS_GlobalInfo *u = &m->uDNS_info;
+	mDNS *u = m;
 	DNSQuestion *q;
 	LLQ_Info *llqInfo;
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
@@ -6323,7 +6326,7 @@ mDNSexport void mDNS_UpdateLLQs(mDNS *m)
 mDNSlocal void SleepRecordRegistrations(mDNS *m)
 	{
 	DNSMessage msg;
-	AuthRecord *rr = m->uDNS_info.RecordRegistrations;
+	AuthRecord *rr = m->RecordRegistrations;
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
 
 	while (rr)
@@ -6332,7 +6335,7 @@ mDNSlocal void SleepRecordRegistrations(mDNS *m)
 			rr->uDNS_info.state == regState_Refresh)
 			{
 			mDNSu8 *ptr = msg.data, *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-			InitializeDNSMessage(&msg.h, newMessageID(&m->uDNS_info), UpdateReqFlags);
+			InitializeDNSMessage(&msg.h, newMessageID(m), UpdateReqFlags);
 			
 			// construct deletion update
 			ptr = putZone(&msg, ptr, end, &rr->uDNS_info.zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
@@ -6340,7 +6343,7 @@ mDNSlocal void SleepRecordRegistrations(mDNS *m)
 			ptr = putDeletionRecord(&msg, ptr, &rr->resrec);
 			if (!ptr) {  LogMsg("Error: SleepRecordRegistrations - could not put deletion record"); return; }
 
-			mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, mDNSNULL, GetAuthInfoForName(&m->uDNS_info, rr->resrec.name));
+			mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->uDNS_info.ns, rr->uDNS_info.port, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
 			rr->uDNS_info.state = regState_Refresh;
 			rr->LastAPTime = timenow;
 			rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;
@@ -6352,7 +6355,7 @@ mDNSlocal void SleepRecordRegistrations(mDNS *m)
 mDNSlocal void WakeRecordRegistrations(mDNS *m)
 	{
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
-	AuthRecord *rr = m->uDNS_info.RecordRegistrations;
+	AuthRecord *rr = m->RecordRegistrations;
 
 	while (rr)
 		{
@@ -6368,7 +6371,7 @@ mDNSlocal void WakeRecordRegistrations(mDNS *m)
 
 mDNSlocal void SleepServiceRegistrations(mDNS *m)
 	{
-	ServiceRecordSet *srs = m->uDNS_info.ServiceRegistrations;
+	ServiceRecordSet *srs = m->ServiceRegistrations;
 	while(srs)
 		{
 		uDNS_RegInfo *info = &srs->uDNS_info;
@@ -6412,7 +6415,7 @@ mDNSlocal void SleepServiceRegistrations(mDNS *m)
 mDNSlocal void WakeServiceRegistrations(mDNS *m)
 	{
 	mDNSs32 timenow = mDNSPlatformTimeNow(m);
-	ServiceRecordSet *srs = m->uDNS_info.ServiceRegistrations;
+	ServiceRecordSet *srs = m->ServiceRegistrations;
 	while(srs)
 		{
 		if (srs->uDNS_info.state == regState_Refresh)
@@ -6533,7 +6536,7 @@ mDNSlocal void AddDefaultRegDomain(mDNS *const m, domainname *d)
 	DNameListElem *newelem = mDNSNULL, *ptr;
 
 	// make sure name not already in list
-	for (ptr = m->uDNS_info.DefRegList; ptr; ptr = ptr->next)
+	for (ptr = m->DefRegList; ptr; ptr = ptr->next)
 		{
 		if (SameDomainName(&ptr->name, d))
 			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
@@ -6542,8 +6545,8 @@ mDNSlocal void AddDefaultRegDomain(mDNS *const m, domainname *d)
 	newelem = mDNSPlatformMemAllocate(sizeof(*newelem));
 	if (!newelem) { LogMsg("Error - malloc"); return; }
 	AssignDomainName(&newelem->name, d);
-	newelem->next = m->uDNS_info.DefRegList;
-	m->uDNS_info.DefRegList = newelem;
+	newelem->next = m->DefRegList;
+	m->DefRegList = newelem;
 
 	mDNSPlatformDefaultRegDomainChanged(d, mDNStrue);
 	}
@@ -6551,14 +6554,14 @@ mDNSlocal void AddDefaultRegDomain(mDNS *const m, domainname *d)
 
 mDNSlocal void RemoveDefaultRegDomain(mDNS *const m, domainname *d)
 	{
-	DNameListElem *ptr = m->uDNS_info.DefRegList, *prev = mDNSNULL;
+	DNameListElem *ptr = m->DefRegList, *prev = mDNSNULL;
 
 	while (ptr)
 		{
 		if (SameDomainName(&ptr->name, d))
 			{
 			if (prev) prev->next = ptr->next;
-			else m->uDNS_info.DefRegList = ptr->next;
+			else m->DefRegList = ptr->next;
 			mDNSPlatformMemFree(ptr);
 			mDNSPlatformDefaultRegDomainChanged(d, mDNSfalse);
 			return;
@@ -6583,14 +6586,14 @@ mDNSlocal void FoundDefaultBrowseDomain(mDNS *const m, DNSQuestion *question, co
 		new = mDNSPlatformMemAllocate(sizeof(DNameListElem));
 		if (!new) { LogMsg("ERROR: malloc"); return; }
 		AssignDomainName(&new->name, &answer->rdata->u.name);
-		new->next = m->uDNS_info.DefBrowseList;
-		m->uDNS_info.DefBrowseList = new;
+		new->next = m->DefBrowseList;
+		m->DefBrowseList = new;
 		mDNSPlatformDefaultBrowseDomainChanged(&new->name, mDNStrue);
 		return;
 		}
 	else
 		{
-		ptr = m->uDNS_info.DefBrowseList;
+		ptr = m->DefBrowseList;
 		prev = mDNSNULL;
 		while (ptr)
 			{
@@ -6598,7 +6601,7 @@ mDNSlocal void FoundDefaultBrowseDomain(mDNS *const m, DNSQuestion *question, co
 				{
 				mDNSPlatformDefaultBrowseDomainChanged(&ptr->name, mDNSfalse);
 				if (prev) prev->next = ptr->next;
-				else m->uDNS_info.DefBrowseList = ptr->next;
+				else m->DefBrowseList = ptr->next;
 				mDNSPlatformMemFree(ptr);
 				return;
 				}
@@ -6633,7 +6636,7 @@ mDNSlocal mStatus RegisterNameServers( mDNS *const m )
 
 mDNSexport mStatus uDNS_RegisterSearchDomains( mDNS * const m )
 	{
-	m->uDNS_info.RegisterSearchDomains = mDNStrue;
+	m->RegisterSearchDomains = mDNStrue;
 	return RegisterSearchDomains( m );
 	}
 
@@ -6681,9 +6684,9 @@ mDNSlocal mStatus RegisterSearchDomains( mDNS *const m )
 
 	mDNS_FreeDNameList( list );
 
-	if ( m->uDNS_info.RegDomain.c[0])
+	if ( m->RegDomain.c[0])
 		{
-		MarkSearchListElem(&m->uDNS_info.RegDomain);         // implicitly browse reg domain too (no-op if same as BrowseDomain)
+		MarkSearchListElem(&m->RegDomain);         // implicitly browse reg domain too (no-op if same as BrowseDomain)
 		}
 	
 	// delete elems marked for removal, do queries for elems marked add
@@ -6830,11 +6833,6 @@ mDNSlocal void SetPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, mDN
 			}
 		}
 	}
-mDNSexport void uDNS_Init(mDNS *const m)
-	{
-	mDNSPlatformMemZero(&m->uDNS_info, sizeof(uDNS_GlobalInfo));
-	m->uDNS_info.nextevent = m->timenow_last + 0x78000000;
-	}
 
 
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
@@ -6865,21 +6863,21 @@ mDNSexport mStatus uDNS_SetupDNSConfig( mDNS *const m )
 
 	// Did our registration domain change?
 	
-	if (!SameDomainName(&regDomain, &m->uDNS_info.RegDomain))
+	if (!SameDomainName(&regDomain, &m->RegDomain))
 		{
-		if (m->uDNS_info.RegDomain.c[0])
+		if (m->RegDomain.c[0])
 			{
-			RemoveDefaultRegDomain(m, &m->uDNS_info.RegDomain);
-			SetPrefsBrowseDomain(m, &m->uDNS_info.RegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
+			RemoveDefaultRegDomain(m, &m->RegDomain);
+			SetPrefsBrowseDomain(m, &m->RegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
 			}
 
-		AssignDomainName(&m->uDNS_info.RegDomain, &regDomain);
+		AssignDomainName(&m->RegDomain, &regDomain);
 	
-		if (m->uDNS_info.RegDomain.c[0])
+		if (m->RegDomain.c[0])
 		{
-			mDNSPlatformSetSecretForDomain(m, &m->uDNS_info.RegDomain);
-			AddDefaultRegDomain(m, &m->uDNS_info.RegDomain);
-			SetPrefsBrowseDomain(m, &m->uDNS_info.RegDomain, mDNStrue);
+			mDNSPlatformSetSecretForDomain(m, &m->RegDomain);
+			AddDefaultRegDomain(m, &m->RegDomain);
+			SetPrefsBrowseDomain(m, &m->RegDomain, mDNStrue);
 		}
 	}
 	
@@ -6892,32 +6890,32 @@ mDNSexport mStatus uDNS_SetupDNSConfig( mDNS *const m )
 
 	// Remove old browse domains from internal list
 	
-	if ( m->uDNS_info.BrowseDomains ) 
+	if ( m->BrowseDomains ) 
 		{
-		SetPrefsBrowseDomains( m, m->uDNS_info.BrowseDomains, mDNSfalse );
-		mDNS_FreeDNameList( m->uDNS_info.BrowseDomains );
+		SetPrefsBrowseDomains( m, m->BrowseDomains, mDNSfalse );
+		mDNS_FreeDNameList( m->BrowseDomains );
 		}
 
 	// Replace the old browse domains array with the new array
 	
-	m->uDNS_info.BrowseDomains = browseDomains;
+	m->BrowseDomains = browseDomains;
 
 	// Did our FQDN change?
 
-	if (!SameDomainName( &fqdn, &m->uDNS_info.FQDN ) )
+	if (!SameDomainName( &fqdn, &m->FQDN ) )
 		{
-		if (m->uDNS_info.FQDN.c[0])
+		if (m->FQDN.c[0])
 			{
-			mDNS_RemoveDynDNSHostName(m, &m->uDNS_info.FQDN);
+			mDNS_RemoveDynDNSHostName(m, &m->FQDN);
 			}
 
-		AssignDomainName(&m->uDNS_info.FQDN, &fqdn);
+		AssignDomainName(&m->FQDN, &fqdn);
 
-		if (m->uDNS_info.FQDN.c[0])
+		if (m->FQDN.c[0])
 			{
 			mDNSPlatformSetSecretForDomain(m, &fqdn); // no-op if "zone" secret, above, is to be used for hostname
-			mDNSPlatformDynDNSHostNameStatusChanged(&m->uDNS_info.FQDN, 1);
-			mDNS_AddDynDNSHostName(m, &m->uDNS_info.FQDN, DynDNSHostNameCallback, mDNSNULL);
+			mDNSPlatformDynDNSHostNameStatusChanged(&m->FQDN, 1);
+			mDNS_AddDynDNSHostName(m, &m->FQDN, DynDNSHostNameCallback, mDNSNULL);
 			}
 		}
 
@@ -6932,7 +6930,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig( mDNS *const m )
 	// The RegisterSearchDomains boolean is set when we call uDNS_RegisterSearchDomains.
 	// This is called in uds_daemon.c
 
-	if ( m->uDNS_info.RegisterSearchDomains )
+	if ( m->RegisterSearchDomains )
 		{
 		RegisterSearchDomains( m );  // note that we register name servers *before* search domains
 		}
@@ -6965,9 +6963,9 @@ mDNSexport mStatus uDNS_SetupDNSConfig( mDNS *const m )
 		{
 		mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);
 		
-		if (m->uDNS_info.FQDN.c[0])
+		if (m->FQDN.c[0])
 			{
-			mDNSPlatformDynDNSHostNameStatusChanged(&m->uDNS_info.FQDN, 1);	// Set status to 1 to indicate temporary failure
+			mDNSPlatformDynDNSHostNameStatusChanged(&m->FQDN, 1);	// Set status to 1 to indicate temporary failure
 			}
 		}
 

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.343  2006/09/15 21:20:16  cheshire
+Remove uDNS_info substructure from mDNS_struct
+
 Revision 1.342  2006/08/16 00:31:50  mkrochma
 <rdar://problem/4386944> Get rid of NotAnInteger references
 
@@ -3781,9 +3784,9 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 		if ( ( v4->ip.v4.b[0] != 169 || v4->ip.v4.b[1] != 254)							&&
-			 ( v4->ip.v4.NotAnInteger != m->uDNS_info.AdvertisedV4.ip.v4.NotAnInteger	||
-			   memcmp(v6->ip.v6.b, m->uDNS_info.AdvertisedV6.ip.v6.b, 16)				||
-			   r->ip.v4.NotAnInteger != m->uDNS_info.Router.ip.v4.NotAnInteger ) )
+			 ( v4->ip.v4.NotAnInteger != m->AdvertisedV4.ip.v4.NotAnInteger	||
+			   memcmp(v6->ip.v6.b, m->AdvertisedV6.ip.v6.b, 16)				||
+			   r->ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger ) )
 			{
 			static mDNSBool LegacyNATInitialized = mDNSfalse;
 			
@@ -3971,7 +3974,7 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 		DNSServer *p;
 		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
 		mDNS_Lock(m);
-		p = m->uDNS_info.Servers;
+		p = m->Servers;
 		while (p) { p->del = mDNStrue; p = p->next; }  // mark all for deletion
 		
 		LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
@@ -4010,7 +4013,7 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 					if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
 					// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
 					debugf("Adding dns server from slot %d %d.%d.%d.%d for domain %##s", i, saddr.ip.v4.b[0], saddr.ip.v4.b[1], saddr.ip.v4.b[2], saddr.ip.v4.b[3], d.c);
-					p = m->uDNS_info.Servers;
+					p = m->Servers;
 					while (p)
 						{
 						if (mDNSSameAddress(&p->addr, &saddr) && SameDomainName(&p->domain, &d)) { p->del = mDNSfalse; break; }
@@ -4024,8 +4027,8 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 						p->del       = mDNSfalse;
 						p->teststate = DNSServer_Untested;
 						AssignDomainName(&p->domain, &d);
-						p->next = m->uDNS_info.Servers;
-						m->uDNS_info.Servers = p;
+						p->next = m->Servers;
+						m->Servers = p;
 						(*nAdditions)++;
 						}
 					break;  // !!!KRS if we ever support round-robin servers, don't break here
@@ -4034,7 +4037,7 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 			}
 
 		// remove all servers marked for deletion
-		DNSServer **s = &m->uDNS_info.Servers;
+		DNSServer **s = &m->Servers;
 		while (*s)
 			{
 			if ((*s)->del)
