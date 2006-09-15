@@ -399,6 +399,7 @@ static void myTimerCallBack(void)
 			{
 			printf("Adding big NULL record\n");
 			err = DNSServiceAddRecord(client, &record, 0, kDNSServiceType_NULL, sizeof(bigNULL), &bigNULL[0], 0);
+			if (err) printf("Failed: %d\n", err); else printf("Succeeded\n");
 			timeOut = LONG_TIME;
 			}
 			break;
