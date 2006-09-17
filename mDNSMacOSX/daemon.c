@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.276  2006/09/17 19:12:02  cheshire
+Further changes for removal of uDNS_info substructure from mDNS_struct
+
 Revision 1.275  2006/09/15 21:20:16  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -884,16 +887,16 @@ mDNSlocal void validatelists(mDNS *const m)
 
 	// Check uDNS lists
 
-	for (q = ActiveQueries; q; q=q->next)
+	for (q = m->ActiveQueries; q; q=q->next)
 		if (*(long*)q == (mDNSs32)~0)
 			LogMemCorruption("ActiveQueries: %p is garbage (%lX)", q, *(long*)q);
 
 	ServiceRecordSet            *s;
-	for (s = ServiceRegistrations; s; s=s->next)
+	for (s = m->ServiceRegistrations; s; s=s->next)
 		if (s->next == (ServiceRecordSet*)~0)
 			LogMemCorruption("ServiceRegistrations: %p is garbage (%lX)", s, s->next);
 
-	for (rr = RecordRegistrations; rr; rr=rr->next)
+	for (rr = m->RecordRegistrations; rr; rr=rr->next)
 		{
 		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
 			LogMemCorruption("RecordRegistrations: %p is garbage (%X)", rr, rr->resrec.RecordType);
@@ -903,11 +906,8 @@ mDNSlocal void validatelists(mDNS *const m)
 		}
 
 	NATTraversalInfo            *n;
-	for (n = NATTraversals; n; n=n->next)
+	for (n = m->NATTraversals; n; n=n->next)
 		if (n->op > 2) LogMemCorruption("NATTraversals: %p is garbage", n);
-
-	for (n = NATTraversals; n; n=n->next)
-		if (n->op > 2) LogMemCorruption("LLQNatInfo: %p is garbage", n);
 	}
 
 void *mallocL(char *msg, unsigned int size)
