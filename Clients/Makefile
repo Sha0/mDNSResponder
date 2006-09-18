@@ -15,6 +15,9 @@
 # limitations under the License.
 #
 # $Log: Makefile,v $
+# Revision 1.9  2006/09/18 18:55:39  cheshire
+# <rdar://problem/4245577> Need 64-bit version of dns-sd command-line tool
+#
 # Revision 1.8  2006/08/14 23:23:55  cheshire
 # Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 #
@@ -52,12 +55,14 @@
 # On OS X the dns_sd library functions are included in libSystem, which is implicitly linked with every executable
 # If /usr/lib/libSystem.dylib exists, then we're on OS X, so we don't need also to link the "dns_sd" shared library
 ifneq "$(wildcard /usr/lib/libSystem.dylib)" ""
+TARGETS = build/dns-sd build/dns-sd64
 LIBS =
 else
+TARGETS = dns-sd
 LIBS = -L../mDNSPosix/build/prod/ -ldns_sd
 endif
 
-targets: build/dns-sd
+all: $(TARGETS)
 
 clean:
 	rm -rf build
@@ -67,3 +72,12 @@ build:
 
 build/dns-sd: build dns-sd.c
 	cc $(filter %.c %.o, $+) $(LIBS) -I../mDNSShared -o $@
+
+build/dns-sd64: build dns-sd.c
+	cc $(filter %.c %.o, $+) $(LIBS) -I../mDNSShared -o $@ -m64
+
+# Note, we can make a 'fat' version of dns-sd using 'lipo', as shown below, but we
+# don't, because we don't want or need a 'fat' version of dns-sd, because it will
+# never need to access more than 4GB of data. We build the 64-bit version purely so
+# we have a test tool for making sure that the APIs work properly from 64-bit clients.
+# lipo -create dns-sd dns-sd64 -output dns-sd-fat
