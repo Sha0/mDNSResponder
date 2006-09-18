@@ -63,10 +63,10 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 (may require that you run a Visual Studio script such as vsvars32.bat first)
 */
 
-// For testing changes to dnssd_clientstub.c, uncomment this line and the #include below
-// #define __APPLE_API_PRIVATE 1
+// For testing changes to dnssd_clientstub.c, uncomment this line and the code will be compiled
+// with an embedded copy of the client stub instead of linking the system library version at runtime.
+//#define TEST_NEW_CLIENTSTUB 1
 
-#include "dns_sd.h"
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
@@ -94,7 +94,15 @@ static const char kFilePathSep = '\\';
 static const char kFilePathSep = '/';
 #endif
 
-//#include "../mDNSShared/dnssd_clientstub.c"
+#if (TEST_NEW_CLIENTSTUB && !defined(__APPLE_API_PRIVATE))
+#define __APPLE_API_PRIVATE 1
+#endif
+
+#include "dns_sd.h"
+
+#ifdef TEST_NEW_CLIENTSTUB
+#include "../mDNSShared/dnssd_clientstub.c"
+#endif
 
 //*************************************************************************************************************
 // Globals
@@ -661,6 +669,8 @@ int main(int argc, char **argv)
 	// the process calling exec() can pass bogus data in argv[0] if it chooses to.
 	const char *a0 = strrchr(argv[0], kFilePathSep) + 1;
 	if (a0 == (const char *)1) a0 = argv[0];
+
+	if (sizeof(argv) == 8) printf("Running in 64-bit mode\n");
 
 	if (argc > 1 && !strcmp(argv[1], "-lo"))
 		{
