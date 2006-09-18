@@ -28,6 +28,10 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.24  2006/09/18 19:21:42  cheshire
+<rdar://problem/4737048> gcc's structure padding breaks Bonjour APIs on
+64-bit clients; need to declare ipc_msg_hdr structure "packed"
+
 Revision 1.23  2006/08/14 23:05:53  cheshire
 Added "tab-width" emacs header line
 
@@ -92,7 +96,6 @@ Update to APSL 2.0
 
 #include "dns_sd.h"
 
-
 //
 // Common cross platform services
 //
@@ -146,9 +149,6 @@ Update to APSL 2.0
 #	define dnssd_sockaddr_t		struct sockaddr_un
 #endif
 
-
-//#define UDSDEBUG  // verbose debug output
-
 // Compatibility workaround
 #ifndef AF_LOCAL
 #define	AF_LOCAL	AF_UNIX
@@ -162,6 +162,19 @@ Update to APSL 2.0
 #define IPC_FLAGS_NOREPLY 1	// set flag if no asynchronous replies are to be sent to client
 #define IPC_FLAGS_REUSE_SOCKET 2 // set flag if synchronous errors are to be sent via the primary socket
                                 // (if not set, first string in message buffer must be path to error socket
+
+// Structure packing macro. If we're not using GNUC, it's not fatal. Most compilers naturally pack the on-the-wire
+// structures correctly anyway, so a plain "struct" is usually fine. In the event that structures are not packed
+// correctly, our compile-time assertion checks will catch it and prevent inadvertent generation of non-working code.
+#ifndef packedstruct
+ #if ((__GNUC__ > 2) || ((__GNUC__ == 2) && (__GNUC_MINOR__ >= 9)))
+  #define packedstruct struct __attribute__((__packed__))
+  #define packedunion  union  __attribute__((__packed__))
+ #else
+  #define packedstruct struct
+  #define packedunion  union
+ #endif
+#endif
 
 typedef enum
     {
@@ -189,26 +202,14 @@ typedef enum
     reg_record_reply_op
     } reply_op_t;
 
-typedef struct ipc_msg_hdr_struct ipc_msg_hdr;
-
-// client stub callback to process message from server and deliver results to
-// client application
-
-typedef void (*process_reply_callback)
-    (
-    DNSServiceRef sdr,
-    ipc_msg_hdr *hdr,
-    char *msg
-    );
-
 // allow 64-bit client to interoperate w/ 32-bit daemon
-typedef union
+typedef packedunion
     {
     void *context;
     uint32_t ptr64[2];
     } client_context_t;
 
-typedef struct ipc_msg_hdr_struct
+typedef packedstruct
     {
     uint32_t version;
     uint32_t datalen;
@@ -218,9 +219,16 @@ typedef struct ipc_msg_hdr_struct
     uint32_t reg_index;            // identifier for a record registered via DNSServiceRegisterRecord() on a
     // socket connected by DNSServiceConnect().  Must be unique in the scope of the connection, such that and
     // index/socket pair uniquely identifies a record.  (Used to select records for removal by DNSServiceRemoveRecord())
-    } ipc_msg_hdr_struct;
+    } ipc_msg_hdr;
 
-// it is advanced to point to the next field, or the end of the message
+// client stub callback to process message from server and deliver results to client application
+typedef void (*process_reply_callback)
+    (
+    DNSServiceRef sdr,
+    ipc_msg_hdr *hdr,
+    char *msg
+    );
+
 // routines to write to and extract data from message buffers.
 // caller responsible for bounds checking.
 // ptr is the address of the pointer to the start of the field.
@@ -246,5 +254,13 @@ char *get_rdata(char **ptr, int rdlen);  // return value is rdata pointed to by 
                                          // rdata is not copied from buffer.
 
 void ConvertHeaderBytes(ipc_msg_hdr *hdr);
+
+struct dnssd_ipc_CompileTimeAssertionChecks
+	{
+	// Check that the compiler generated our on-the-wire packet format structure definitions
+	// properly packed, without adding padding bytes to align fields on 32-bit or 64-bit boundaries.
+	char assert0[(sizeof(client_context_t) ==  8) ? 1 : -1];
+	char assert1[(sizeof(ipc_msg_hdr)      == 28) ? 1 : -1];
+	};
 
 #endif // DNSSD_IPC_H
