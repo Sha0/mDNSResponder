@@ -18,11 +18,12 @@ include /Developer/Makefiles/pb_makefiles/platform.make
 
 MVERS = "mDNSResponder-111"
 
+DDNSWRITECONFIG = "$(DSTROOT)/Library/Application Support/Bonjour/ddnswriteconfig"
+
 install:
 	cd "$(SRCROOT)/mDNSMacOSX"; xcodebuild install     OBJROOT=$(OBJROOT) SYMROOT=$(SYMROOT) DSTROOT=$(DSTROOT) MVERS=$(MVERS)
 	# Make sure ddnswriteconfig is owned by root:wheel, then make it setuid root executable
-	chown 0:80 "$(DSTROOT)/Library/Application Support/Bonjour/ddnswriteconfig"
-	chmod 4555 "$(DSTROOT)/Library/Application Support/Bonjour/ddnswriteconfig"
+	if test -e $(DDNSWRITECONFIG) ; then chown 0:80 $(DDNSWRITECONFIG) ; chmod 4555 $(DDNSWRITECONFIG) ; fi
 
 installsrc:
 	ditto . "$(SRCROOT)"
