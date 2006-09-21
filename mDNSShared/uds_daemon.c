@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.208  2006/09/21 21:28:24  cheshire
+Code cleanup to make it consistent with daemon.c: change rename_on_memfree to renameonmemfree
+
 Revision 1.207  2006/09/15 21:20:16  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -728,7 +731,7 @@ typedef struct service_instance
     mDNSBool autoname;				// Set if this name is tied to the Computer Name
     mDNSBool autorename;			// Set if this client wants us to automatically rename on conflict
     mDNSBool allowremotequery;		// Respond to unicast queries from outside the local link?
-    mDNSBool rename_on_memfree;  	// Set on config change when we deregister original name
+    mDNSBool renameonmemfree;  		// Set on config change when we deregister original name
     domainlabel name;
     domainname domain;
     mDNSBool default_local;			// is this the "local." from an empty-string registration?
@@ -1240,7 +1243,7 @@ mDNSlocal void rename_service(service_instance *srv)
 	{
 	if (srv->autoname && !SameDomainLabel(srv->name.c, gmDNS->nicelabel.c))
 		{
-		srv->rename_on_memfree = 1;
+		srv->renameonmemfree = 1;
 		if (mDNS_DeregisterService(gmDNS, &srv->srs))	// If service deregistered already, we can re-register immediately
 			regservice_callback(gmDNS, &srv->srs, mStatus_MemFree);
 		}
@@ -2296,7 +2299,7 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
     instance->autoname          = info->autoname;
     instance->autorename        = info->autorename;
     instance->allowremotequery  = info->allowremotequery;
-    instance->rename_on_memfree = 0;
+    instance->renameonmemfree   = 0;
 	instance->name              = info->name;
 	AssignDomainName(&instance->domain, domain);
 	instance->default_local = (info->default_domain && SameDomainName(domain, &localdomain));
@@ -2504,22 +2507,22 @@ bad_param:
 // process_service_registraion())
 
 mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
-    {
-    mStatus err;
+	{
+	mStatus err;
 	mDNSBool SuppressError = mDNSfalse;
-    service_instance *instance = srs->ServiceContext;
-    (void)m; // Unused
-    if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
-    if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }
+	service_instance *instance = srs->ServiceContext;
+	(void)m; // Unused
+	if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
+	if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }
 
 	if (instance->request && instance->request->service_registration)
 		{
 		service_info *info = instance->request->service_registration;
 		if (info->default_domain && !instance->default_local) SuppressError = mDNStrue;
-        // don't send errors up to client for wide-area, empty-string registrations
+		// don't send errors up to client for wide-area, empty-string registrations
 		}
-	
-    if (result == mStatus_NoError)
+
+	if (result == mStatus_NoError)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED  ",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
 	else if (result == mStatus_MemFree)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) DEREGISTERED",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
@@ -2528,7 +2531,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	else
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) CALLBACK %d",   instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), result);
 
-    if (result == mStatus_NoError)
+	if (result == mStatus_NoError)
 		{
 		request_state *req = instance->request;
 		if (instance->allowremotequery)
@@ -2540,7 +2543,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			srs->RR_TXT.AllowRemoteQuery = mDNStrue;
 			for (e = instance->srs.Extras; e; e = e->next) e->r.AllowRemoteQuery = mDNStrue;
 			}
-        
+
 		if (!req) LogMsg("ERROR: regservice_callback - null request object");
 		else
 			{
@@ -2556,66 +2559,66 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 				else append_reply(req, rep);
 				}
 			}
-        if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
-        	RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
+		if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
+			RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
 		return;
 		}
-    else if (result == mStatus_MemFree)
-        {
-        if (instance->rename_on_memfree)
-            {
-            instance->rename_on_memfree = 0;
-            instance->name = gmDNS->nicelabel;
-            err = mDNS_RenameAndReregisterService(gmDNS, srs, &instance->name);
-            if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %ld", err);
-            // error should never happen - safest to log and continue
-            }
-        else
-            {
+	else if (result == mStatus_MemFree)
+		{
+		if (instance->renameonmemfree)
+			{
+			instance->renameonmemfree = 0;
+			instance->name = gmDNS->nicelabel;
+			err = mDNS_RenameAndReregisterService(gmDNS, srs, &instance->name);
+			if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %ld", err);
+			// error should never happen - safest to log and continue
+			}
+		else
+			{
 			free_service_instance(instance);
-            return;
-            }
-        }
-    else if (result == mStatus_NameConflict)
-    	{
-        if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
-        	{
-        	// On conflict for an autoname service, rename and reregister *all* autoname services
+			return;
+			}
+		}
+	else if (result == mStatus_NameConflict)
+		{
+		if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
+			{
+			// On conflict for an autoname service, rename and reregister *all* autoname services
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
 			m->MainCallback(m, mStatus_ConfigChanged);
-        	}
-        else if (instance->autoname || instance->autorename)
-            {
-            mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
-            return;
-            }
-        else
-            {
-		    request_state *rs = instance->request;
+			}
+		else if (instance->autoname || instance->autorename)
+			{
+			mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
+			return;
+			}
+		else
+			{
+			request_state *rs = instance->request;
 			if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
 			if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
-                {
-                abort_request(rs);
-                unlink_request(rs);
-                }
-            return;
-            }
-    	}
-    else
-        {
+				{
+				abort_request(rs);
+				unlink_request(rs);
+				}
+			return;
+			}
+		}
+	else
+		{
 		request_state *rs = instance->request;
 		if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
-        if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
+		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
-        if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
-            {
-            abort_request(rs);
-            unlink_request(rs);
-            }
-        return;
-        }
-    }
+		if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
+			{
+			abort_request(rs);
+			unlink_request(rs);
+			}
+		return;
+		}
+	}
 
 mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
