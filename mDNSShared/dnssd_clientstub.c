@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.54  2006/09/21 21:34:09  cheshire
+<rdar://problem/4100000> Allow empty string name when using kDNSServiceFlagsNoAutoRename
+
 Revision 1.53  2006/09/07 04:43:12  herscher
 Fix compile error on Win32 platform by moving inclusion of syslog.h
 
@@ -868,10 +871,6 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
     if (!domain) domain = "";
     if (!host) host = "";
     if (!txtRecord) txtRecord = (void*)"";
-
-    // auto-name must also have auto-rename
-    if (!name[0]  && (flags & kDNSServiceFlagsNoAutoRename))
-        return kDNSServiceErr_BadParam;
 
     // no callback must have auto-rename
     if (!callBack && (flags & kDNSServiceFlagsNoAutoRename)) return kDNSServiceErr_BadParam;

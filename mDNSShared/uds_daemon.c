@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.209  2006/09/21 21:34:09  cheshire
+<rdar://problem/4100000> Allow empty string name when using kDNSServiceFlagsNoAutoRename
+
 Revision 1.208  2006/09/21 21:28:24  cheshire
 Code cleanup to make it consistent with daemon.c: change rename_on_memfree to renameonmemfree
 
@@ -2561,7 +2564,6 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			}
 		if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
 			RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
-		return;
 		}
 	else if (result == mStatus_MemFree)
 		{
@@ -2574,23 +2576,20 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			// error should never happen - safest to log and continue
 			}
 		else
-			{
 			free_service_instance(instance);
-			return;
-			}
 		}
 	else if (result == mStatus_NameConflict)
 		{
-		if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
+		if (instance->autorename)
 			{
-			// On conflict for an autoname service, rename and reregister *all* autoname services
-			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
-			m->MainCallback(m, mStatus_ConfigChanged);
-			}
-		else if (instance->autoname || instance->autorename)
-			{
-			mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
-			return;
+			if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
+				{
+				// On conflict for an autoname service, rename and reregister *all* autoname services
+				IncrementLabelSuffix(&m->nicelabel, mDNStrue);
+				m->MainCallback(m, mStatus_ConfigChanged);
+				}
+			else	// On conflict for a non-autoname service, rename and reregister just that one service
+				mDNS_RenameAndReregisterService(gmDNS, srs, mDNSNULL);
 			}
 		else
 			{
@@ -2602,7 +2601,6 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 				abort_request(rs);
 				unlink_request(rs);
 				}
-			return;
 			}
 		}
 	else
@@ -2616,7 +2614,6 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			abort_request(rs);
 			unlink_request(rs);
 			}
-		return;
 		}
 	}
 
