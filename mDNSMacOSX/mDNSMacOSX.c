@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.345  2006/09/21 20:04:38  mkrochma
+Accidently changed function name while checking in previous fix
+
 Revision 1.344  2006/09/21 19:04:13  mkrochma
 <rdar://problem/4733803> uDNS: Update keychain format of DNS key to include prefix
 
@@ -4060,7 +4063,7 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 	return err;
 	}
 	
-mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
+mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain)
 	{
 #ifndef NO_SECURITYFRAMEWORK
 	OSStatus err = 0;
