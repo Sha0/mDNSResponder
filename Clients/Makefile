@@ -15,6 +15,10 @@
 # limitations under the License.
 #
 # $Log: Makefile,v $
+# Revision 1.10  2006/09/21 00:56:37  cheshire
+# <rdar://problem/4245577> Need 64-bit version of dns-sd command-line tool
+# Add in missing "build/" in targets line for builds other than OS X
+#
 # Revision 1.9  2006/09/18 18:55:39  cheshire
 # <rdar://problem/4245577> Need 64-bit version of dns-sd command-line tool
 #
@@ -58,7 +62,7 @@ ifneq "$(wildcard /usr/lib/libSystem.dylib)" ""
 TARGETS = build/dns-sd build/dns-sd64
 LIBS =
 else
-TARGETS = dns-sd
+TARGETS = build/dns-sd
 LIBS = -L../mDNSPosix/build/prod/ -ldns_sd
 endif
 
