@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.344  2006/09/21 19:04:13  mkrochma
+<rdar://problem/4733803> uDNS: Update keychain format of DNS key to include prefix
+
 Revision 1.343  2006/09/15 21:20:16  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -4057,11 +4060,11 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 	return err;
 	}
 	
-mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain)
+mDNSlocal void SetSecretForDomain(mDNS *m, const domainname *domain)
 	{
 #ifndef NO_SECURITYFRAMEWORK
 	OSStatus err = 0;
-	char dstring[MAX_ESCAPED_DOMAIN_NAME];
+	char dstring[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
 	UInt32 secretlen;
 	void *secret = NULL;
 	domainname *d, canon;
@@ -4080,16 +4083,17 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 	dlen = strlen(dstring);
 	for (i = 0; i < dlen; i++) dstring[i] = tolower(dstring[i]);  // canonicalize -> lower case
 	MakeDomainNameFromDNSNameString(&canon, dstring);
-	d = &canon;
+	d = &canon;		
 	
 	// find longest-match key, excluding last label (e.g. excluding ".com")
 	while (d->c[0] && *(d->c + d->c[0] + 1))
 		{
-		if (!ConvertDomainNameToCString(d, dstring)) { LogMsg("SetSecretForDomain: bad domain %##s", d->c); return; }
-		dlen = strlen(dstring);
+		snprintf(dstring, sizeof(dstring), "dns:");
+		if (!ConvertDomainNameToCString(d, dstring+4)) { LogMsg("SetSecretForDomain: bad domain %##s", d->c); return; }
+		dlen = strlen(dstring);		
 		if (dstring[dlen-1] == '.') { dstring[dlen-1] = '\0'; dlen--; }  // chop trailing dot
-		SecKeychainAttribute attrs[] = { { kSecServiceItemAttr, strlen(dstring), dstring },
-										 { kSecTypeItemAttr, typelen, (UInt32 *)&type } };
+
+		SecKeychainAttribute attrs[] = { { kSecServiceItemAttr, strlen(dstring), dstring } };
 		SecKeychainAttributeList attributes = { sizeof(attrs) / sizeof(attrs[0]), attrs };
 		SecKeychainSearchRef searchRef;
 
@@ -4097,12 +4101,27 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 		if (err) { failedfn = "SecKeychainSearchCreateFromAttributes"; goto cleanup; }
 
 		err = SecKeychainSearchCopyNext(searchRef, &itemRef);
+		
+		// If no keys exist, search again for keys in the old keychain format
+		if (err)
+			{
+			CFRelease(searchRef);
+			SecKeychainAttribute attrs[] = { { kSecServiceItemAttr, strlen(dstring)-4, dstring+4 },
+                                             { kSecTypeItemAttr, typelen, (UInt32 *)&type } };
+			SecKeychainAttributeList attributes = { sizeof(attrs) / sizeof(attrs[0]), attrs };
+
+			err = SecKeychainSearchCreateFromAttributes(NULL, kSecGenericPasswordItemClass, &attributes, &searchRef);
+			if (err) { failedfn = "SecKeychainSearchCreateFromAttributes"; goto cleanup; }
+			
+			err = SecKeychainSearchCopyNext(searchRef, &itemRef);
+			}
+
 		if (!err)
 			{
 	        UInt32 tags[1];
 			SecKeychainAttributeInfo attrInfo;
 			mDNSu32 i;
-			char keybuf[MAX_ESCAPED_DOMAIN_NAME+1];
+			char keybuf[MAX_ESCAPED_DOMAIN_NAME+1];			
 			domainname keyname;
 			
 			tags[0] = kSecAccountItemAttr;
@@ -4120,7 +4139,7 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 				SecKeychainAttribute attr = attrList->attr[i];
 				if (attr.tag == kSecAccountItemAttr)
 					{
-					if (!attr.length || attr.length > MAX_ESCAPED_DOMAIN_NAME) { LogMsg("SetSecretForDomain - Bad key length %d", attr.length); goto cleanup; }
+					if (!attr.length || attr.length > MAX_ESCAPED_DOMAIN_NAME) { LogMsg("SetSecretForDomain - Bad key length %d", attr.length); goto cleanup; }					
 					strncpy(keybuf, attr.data, attr.length);
 					if (!MakeDomainNameFromDNSNameString(&keyname, keybuf)) { LogMsg("SetSecretForDomain - bad key %s", keybuf); goto cleanup; }
 					debugf("Setting shared secret for zone %s with key %##s", dstring, keyname.c);
@@ -4129,6 +4148,7 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 					}
 				}
 			if (i == attrList->count) LogMsg("SetSecretForDomain - no key name set");
+			CFRelease(searchRef);
 			goto cleanup;
 			}
 		else if (err == errSecItemNotFound) d = (domainname *)(d->c + d->c[0] + 1);
