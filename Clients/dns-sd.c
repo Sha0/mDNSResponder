@@ -624,6 +624,7 @@ static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, cons
 static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	const char *nam, const char *typ, const char *dom, const char *host, const char *port, int argc, char **argv)
 	{
+	DNSServiceFlags flags = 0;
 	uint16_t PortAsNumber = atoi(port);
 	Opaque16 registerPort = { { PortAsNumber >> 8, PortAsNumber & 0xFF } };
 	unsigned char txt[2048] = "";
@@ -655,7 +656,10 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 		printf("\n");
 		}
 	
-	return(DNSServiceRegister(sdRef, /* kDNSServiceFlagsAllowRemoteQuery */ 0, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
+	//flags |= kDNSServiceFlagsAllowRemoteQuery;
+	//flags |= kDNSServiceFlagsNoAutoRename;
+	
+	return(DNSServiceRegister(sdRef, flags, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
 	}
 
 int main(int argc, char **argv)
