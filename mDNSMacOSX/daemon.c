@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.277  2006/09/21 21:01:24  cheshire
+Change 'autorename' to more accurate name 'renameonmemfree'
+
 Revision 1.276  2006/09/17 19:12:02  cheshire
 Further changes for removal of uDNS_info substructure from mDNS_struct
 
@@ -772,7 +775,7 @@ typedef struct ServiceInstance
     struct ServiceInstance *next;
 	mach_port_t ClientMachPort;
     mDNSBool autoname;			// Set if this name is tied to the Computer Name
-    mDNSBool autorename;		// Set if we just got a name conflict and now need to automatically pick a new name
+    mDNSBool renameonmemfree;	// Set if we just got a name conflict and now need to automatically pick a new name
     domainlabel name;
     domainname domain;
     ServiceRecordSet srs;
@@ -1050,7 +1053,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 			{
 			ServiceInstance *instance = si;
 			si = si->next;                 
-			instance->autorename = mDNSfalse;
+			instance->renameonmemfree = mDNSfalse;
 			if (m && m != x) LogMsg("%5d: DNSServiceRegistration(%##s, %u) STOP; WARNING m %p != x %p", ClientMachPort, instance->srs.RR_SRV.resrec.name->c, SRS_PORT(&instance->srs), m, x);
 			else LogOperation("%5d: DNSServiceRegistration(%##s, %u) STOP", ClientMachPort, instance->srs.RR_SRV.resrec.name->c, SRS_PORT(&instance->srs));
 
@@ -1592,11 +1595,11 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 
 	else if (result == mStatus_MemFree)
 		{
-		if (si->autorename)
+		if (si->renameonmemfree)	// We intentionally terminated registration so we could re-register with new name
 			{
 			debugf("RegCallback renaming %#s to %#s", si->name.c, m->nicelabel.c);
-			si->autorename = mDNSfalse;
-			si->name = m->nicelabel;
+			si->renameonmemfree = mDNSfalse;
+			si->name            = m->nicelabel;
 			mDNS_RenameAndReregisterService(m, srs, &si->name);
 			}
 		else
@@ -1646,11 +1649,11 @@ mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname
 	si = mallocL("ServiceInstance", sizeof(*si) - sizeof(RDataBody) + x->rdsize);
 	if (!si) return mStatus_NoMemoryErr;
 
-	si->ClientMachPort = x->ClientMachPort;
-	si->autorename = mDNSfalse;
-	si->autoname = x->autoname;
-	si->name = x->autoname ? mDNSStorage.nicelabel : x->name;
-	si->domain = *domain;
+	si->ClientMachPort  = x->ClientMachPort;
+	si->renameonmemfree = mDNSfalse;
+	si->autoname        = x->autoname;
+	si->name            = x->autoname ? mDNSStorage.nicelabel : x->name;
+	si->domain          = *domain;
 
 	err = mDNS_RegisterService(&mDNSStorage, &si->srs, &si->name, &x->type, domain, NULL, x->port, x->txtinfo, x->txt_len, SubTypes, x->NumSubTypes, mDNSInterface_Any, RegCallback, si);
 	if (!err)
@@ -1990,7 +1993,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 					if (!SameDomainLabel(si->name.c, m->nicelabel.c))
 						{
 						debugf("NetworkChanged renaming %##s to %#s", si->srs.RR_SRV.resrec.name->c, m->nicelabel.c);
-						si->autorename = mDNStrue;
+						si->renameonmemfree = mDNStrue;
 						if (mDNS_DeregisterService(m, &si->srs))	// If service deregistered already, we can re-register immediately
 							RegCallback(m, &si->srs, mStatus_MemFree);
 						}
