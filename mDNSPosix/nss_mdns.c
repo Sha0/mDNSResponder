@@ -2562,15 +2562,7 @@ dns_rdata_to_name (const char * rdata, int rdlen, char * name, int name_len)
 		// Index into 'name'
 	const char * rdata_curr = rdata;
 	
-	// drop any leading whitespace rubbish
-	while (isspace (*rdata_curr))
-	{
-		rdata_curr ++;
-		if (rdata_curr > rdata + rdlen)
-		{
-			return DNS_RDATA_TO_NAME_BAD_FORMAT;
-		}
-	}
+	if (rdlen == 0) return DNS_RDATA_TO_NAME_BAD_FORMAT;
 	
 	/*
 		In RDATA, a DNS name is stored as a series of labels.
