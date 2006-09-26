@@ -67,6 +67,9 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 // with an embedded copy of the client stub instead of linking the system library version at runtime.
 //#define TEST_NEW_CLIENTSTUB 1
 
+// If you want to compile this with NAT-PMP API support, uncomment the following line
+//#define HAS_NAT_PMP_API 1
+
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
@@ -93,8 +96,6 @@ static const char kFilePathSep = '\\';
 #include <arpa/inet.h>		// For inet_addr()
 static const char kFilePathSep = '/';
 #endif
-
-#define TEST_NEW_CLIENTSTUB 1
 
 #if (TEST_NEW_CLIENTSTUB && !defined(__APPLE_API_PRIVATE))
 #define __APPLE_API_PRIVATE 1
@@ -490,6 +491,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
+#if defined(HAS_NAT_PMP_API)
 static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint8_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void * context)
 	{
 	(void)sdRef;       // Unused
@@ -509,6 +511,7 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 		}
 	fflush(stdout);
 	}
+#endif
 
 //*************************************************************************************************************
 // The main test function
@@ -715,7 +718,11 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
+#if defined(HAS_NAT_PMP_API)
 	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIG", &optind);
+#else
+	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMI", &optind);
+#endif
 	if (operation == -1) goto Fail;
 
 	switch (operation)
@@ -809,7 +816,7 @@ int main(int argc, char **argv)
 					if (!err) err = DNSServiceUpdateRecord(client, NULL, 0, sizeof(TXT)-1, TXT, 0);
 					break;
 					}
-
+#if defined(HAS_NAT_PMP_API)
 		case 'G':   {
 					if (argc != optind+4) goto Fail;
 					else
@@ -823,7 +830,7 @@ int main(int argc, char **argv)
 						}
 					break;
 		            }
-
+#endif
 		default: goto Fail;
 		}
 
@@ -850,6 +857,8 @@ Fail:
 	fprintf(stderr, "%s -T                                        (Test creating a large TXT record)\n", a0);
 	fprintf(stderr, "%s -M                  (Test creating a registration with multiple TXT records)\n", a0);
 	fprintf(stderr, "%s -I               (Test registering and then immediately updating TXT record)\n", a0);
+#if defined(HAS_NAT_PMP_API)
 	fprintf(stderr, "%s -G <Protocol> <Private Port> <Public Port> <TTL> (Create a NAT Port Mapping)\n", a0);
+#endif
 	return 0;
 	}
