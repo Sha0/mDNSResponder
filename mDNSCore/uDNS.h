@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.38  2006/09/26 01:54:02  herscher
+<rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
+
 Revision 1.37  2006/09/15 21:20:15  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -225,12 +228,19 @@ typedef struct
 	} AsyncOpResult;
 
 
+
 typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
 
-extern mStatus          uDNS_SetupDNSConfig( mDNS *const m );
-extern mStatus          uDNS_GetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort, mDNSBool findPrviatePort,
+extern mStatus           uDNS_SetupDNSConfig( mDNS *const m );
+extern mStatus           uDNS_GetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort, mDNSBool findPrivatePort,
 								   AsyncOpCallback callback, void *callbackInfo);
-extern mStatus          uDNS_RegisterSearchDomains( mDNS* const m );
+extern mStatus           uDNS_RegisterSearchDomains( mDNS* const m );
+extern NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback);
+extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len, mDNSAddr *addr, mStatus *err);
+extern mDNSBool          uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len);
+extern void              uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m);
+extern void              uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat);
+extern mDNSBool          uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n);
 
 
 #ifdef	__cplusplus

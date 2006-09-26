@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.25  2006/09/26 01:51:07  herscher
+<rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
+
 Revision 1.24  2006/09/18 19:21:42  cheshire
 <rdar://problem/4737048> gcc's structure padding breaks Bonjour APIs on
 64-bit clients; need to declare ipc_msg_hdr structure "packed"
@@ -189,7 +192,8 @@ typedef enum
     reconfirm_record_request,
     add_record_request,
     update_record_request,
-    setdomain_request
+    setdomain_request,
+    port_mapping_create_request
     } request_op_t;
 
 typedef enum
@@ -199,7 +203,8 @@ typedef enum
     browse_reply_op,
     resolve_reply_op,
     query_reply_op,
-    reg_record_reply_op
+    reg_record_reply_op,
+    port_mapping_create_reply_op
     } reply_op_t;
 
 // allow 64-bit client to interoperate w/ 32-bit daemon

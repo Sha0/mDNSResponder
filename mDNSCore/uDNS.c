@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.241  2006/09/26 01:54:47  herscher
+<rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
+
 Revision 1.240  2006/09/15 21:20:15  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -258,7 +261,7 @@ Revision 1.167  2004/12/22 22:25:47  ksekar
 <rdar://problem/3734265> NAT-PMP: handle location changes
 
 Revision 1.166  2004/12/22 00:04:12  ksekar
-<rdar://problem/3930324> mDNSResponder crashing in ReceivePortMapReply
+<rdar://problem/3930324> mDNSResponder crashing in uDNS_HandleNATPortMapReply
 
 Revision 1.165  2004/12/18 03:14:22  cheshire
 DblNAT -> DoubleNAT
@@ -804,6 +807,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
  */
 
 #include "uDNS.h"
+#include "dns_sd.h"
 
 #if(defined(_MSC_VER))
 	// Disable "assignment within conditional expression".
@@ -828,7 +832,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 // read top-to-bottom.)
 
 mDNSlocal mStatus startPrivateQuery(mDNS *m, DNSQuestion *question);
-mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n);
 mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question,  const mDNSAddr *src, mDNS *m);
 mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport, const mDNSInterfaceID InterfaceID);
 mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr);
@@ -958,7 +961,7 @@ mDNSlocal void unlinkSRS(mDNS *m, ServiceRecordSet *srs)
 			NATTraversalInfo *tmp = n;
 			n = n->next;
 			LogMsg("ERROR: Unlinking service record set %##s still referenced by NAT traversal object!", srs->RR_SRV.resrec.name->c);
-			FreeNATInfo(m, tmp);
+			uDNS_FreeNATInfo(m, tmp);
 			}
 		else n = n->next;
 		}
@@ -1140,14 +1143,14 @@ mDNSlocal mDNSBool DomainContainsLabelString(const domainname *d, const char *st
 	}
 	
 // allocate struct, link into global list, initialize
-mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, NATResponseHndlr callback)
+mDNSexport NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback)
 	{
 	mDNS *u = m;
 	NATTraversalInfo *info = u->NATTraversals;
 	
 	for ( info = u->NATTraversals; info; info = info->next )
 		{
-		if ( info->op == op && info->PrivatePort.NotAnInteger == privatePort.NotAnInteger )
+		if ( info->op == op && info->PrivatePort.NotAnInteger && ( info->PrivatePort.NotAnInteger == privatePort.NotAnInteger ) )
 			{
 			break;
 			}
@@ -1165,12 +1168,14 @@ mDNSlocal NATTraversalInfo *AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort p
 		info->next = u->NATTraversals;
 		u->NATTraversals = info;
 		info->retry = mDNSPlatformTimeNow(m) + NATMAP_INIT_RETRY;
+		info->RetryInterval = NATMAP_INIT_RETRY;
 		info->op = op;
 		info->state = NATState_Init;
 		info->ReceiveResponse = callback;
 		info->PrivatePort = privatePort;
-		info->PublicPort = zeroIPPort;
+		info->PublicPort = publicPort;
 		info->Router = u->Router;
+		info->TTL = ttl;
 		info->refs = 1;
 		}
 exit:
@@ -1183,7 +1188,7 @@ mDNSlocal NATTraversalInfo * AllocLLQNatMap( mDNS *const m, NATOp_t op, mDNSIPPo
 	{
 	NATTraversalInfo * info;
 			
-	info = AllocNATInfo(m, op, port, callback);
+	info = uDNS_AllocNATInfo(m, op, port, zeroIPPort, 0, callback);
 		
 	if ( !info )
 	{
@@ -1210,7 +1215,7 @@ exit:
 
 
 // unlink from list, deallocate
-mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
+mDNSexport mDNSBool uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 	{
 	NATTraversalInfo *ptr, *prev = mDNSNULL;
 	ServiceRecordSet *s = m->ServiceRegistrations;
@@ -1239,17 +1244,17 @@ mDNSlocal mDNSBool FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 		prev = ptr;
 		ptr = ptr->next;
 		}
-	LogMsg("FreeNATInfo: NATTraversalInfo not found in list");
+	LogMsg("uDNS_FreeNATInfo: NATTraversalInfo not found in list");
 	return mDNSfalse;
 	}
 
-mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
+mDNSexport void uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	{
 	mStatus err;
 	mDNS *u = m;
 
 	if (info->state != NATState_Request && info->state != NATState_Refresh)
-		{ LogMsg("SendNATMsg: Bad state %d", info->state); return; }
+		{ LogMsg("uDNS_SendNATMsg: Bad state %d", info->state); return; }
 
 	if (u->Router.ip.v4.NotAnInteger)
 		{
@@ -1269,38 +1274,29 @@ mDNSlocal void SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	info->retry = mDNSPlatformTimeNow(m) + info->RetryInterval;
 	}
 
-mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
+mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len, mDNSAddr *addr, mStatus *err)
 	{
-	mStatus err = mStatus_NoError;
-	AuthRecord *rr = mDNSNULL;
 	NATAddrReply *response = (NATAddrReply *)pkt;
-	mDNSAddr addr;
+
+	(void) m;
+
+	*err = mStatus_NoError;
 
 	if (n->state != NATState_Request)
 		{
-		LogMsg("ReceiveNATAddrResponse: bad state %d", n->state);
+		LogMsg("uDNS_HandleNATQueryAddrReply: bad state %d", n->state);
 		return mDNSfalse;
 		}
 		
-	rr = n->reg.RecordRegistration;
-	if (!rr)
-		{
-		LogMsg("ReceiveNATAddrResponse: registration cancelled");
-		return mDNSfalse;
-		}
-
-	addr.type = mDNSAddrType_IPv4;
-	addr.ip.v4 = rr->resrec.rdata->u.ipv4;
-
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		err = LNT_GetPublicIP(&addr.ip.v4);
-		if (err) goto end;
+		*err = LNT_GetPublicIP(&addr->ip.v4);
+		if (*err) goto end;
 		else n->state = NATState_Legacy;
 #else
-		debugf("ReceiveNATAddrResponse: timeout");
-		err = mStatus_NATTraversal;
+		debugf("uDNS_HandleNATQueryAddrReply: timeout");
+		*err = mStatus_NATTraversal;
 		goto end;
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
@@ -1308,37 +1304,81 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 		{
 		if (len < sizeof(*response))
 			{
-			LogMsg("ReceiveNATAddrResponse: response too short (%d bytes)", len);
+			LogMsg("uDNS_HandleNATQueryAddrReply: response too short (%d bytes)", len);
 			return mDNSfalse;
 			}
 		if (response->vers != NATMAP_VERS)
 			{
-			LogMsg("ReceiveNATAddrResponse: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);
+			LogMsg("uDNS_HandleNATQueryAddrReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);
 			return mDNSfalse;
 			}
 		if (response->opcode != (NATOp_AddrRequest | NATMAP_RESPONSE_MASK))
 			{
-			LogMsg("ReceiveNATAddrResponse: bad response code %d", response->opcode);
+			LogMsg("uDNS_HandleNATQueryAddrReply: bad response code %d", response->opcode);
 			return mDNSfalse;
 			}
 		if (response->err.NotAnInteger)
-			{ LogMsg("ReceiveAddrResponse: received error %d", mDNSVal16(response->err)); err = mStatus_NATTraversal; goto end; }
+			{
+			LogMsg("uDNS_HandleNATQueryAddrReply: received error %d", mDNSVal16(response->err));
+			*err = mStatus_NATTraversal;
+			goto end;
+			}
 
-		addr.ip.v4 = response->PubAddr;
+		addr->ip.v4 = response->PubAddr;
 		n->state = NATState_Established;
 		}
 	
-	if (IsPrivateV4Addr(&addr))
+	if (IsPrivateV4Addr(addr))
 		{
-		LogMsg("ReceiveNATAddrResponse: Double NAT");
-		err = mStatus_DoubleNAT;
+		LogMsg("uDNS_HandleNATQueryAddrReply: Double NAT");
+		*err = mStatus_DoubleNAT;
 		goto end;
 		}
 	
-	end:
+end:
+
+	return mDNStrue;
+	}
+
+mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
+	{
+	mStatus err = mStatus_NoError;
+	AuthRecord *rr = mDNSNULL;
+	mDNSAddr addr;
+	mDNSBool ret;
+
+	rr = n->reg.RecordRegistration;
+	if (!rr)
+		{
+		LogMsg("RegisterHostnameRecord: registration cancelled");
+		return mDNSfalse;
+		}
+
+	addr.type = mDNSAddrType_IPv4;
+	addr.ip.v4 = rr->resrec.rdata->u.ipv4;
+
+	ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, len, &addr, &err);
+
+	if (!ret)
+		{
+		return ret;
+		}
+
 	if (err)
 		{
-		FreeNATInfo(m, n);
+		goto end;
+		}
+
+	LogOperation("Received public IP address %d.%d.%d.%d from NAT.", addr.ip.v4.b[0], addr.ip.v4.b[1], addr.ip.v4.b[2], addr.ip.v4.b[3]);
+
+	rr->resrec.rdata->u.ipv4 = addr.ip.v4;  // replace rdata w/ public address
+	uDNS_RegisterRecord(m, rr);
+
+end:
+
+	if (err)
+		{
+		uDNS_FreeNATInfo(m, n);
 		if (rr)
 			{
 			rr->uDNS_info.NATinfo = mDNSNULL;
@@ -1346,21 +1386,16 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 			rr->RecordCallback(m, rr, mStatus_NATTraversal);
 			// note - unsafe to touch rr after callback
 			}
-		return mDNStrue;
 		}
-	else LogOperation("Received public IP address %d.%d.%d.%d from NAT.", addr.ip.v4.b[0], addr.ip.v4.b[1], addr.ip.v4.b[2], addr.ip.v4.b[3]);
-	rr->resrec.rdata->u.ipv4 = addr.ip.v4;  // replace rdata w/ public address
-	uDNS_RegisterRecord(m, rr);
 	return mDNStrue;
 	}
-
 
 mDNSlocal void StartGetPublicAddr(mDNS *m, AuthRecord *AddressRec)
 	{
 	NATAddrRequest *req;
 	mDNS *u = m;
 	
-	NATTraversalInfo *info = AllocNATInfo(m, NATOp_AddrRequest, zeroIPPort, ReceiveNATAddrResponse);
+	NATTraversalInfo *info = uDNS_AllocNATInfo(m, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, ReceiveNATAddrResponse);
 	if (!info) { uDNS_RegisterRecord(m, AddressRec); return; }
 	AddressRec->uDNS_info.NATinfo = info;
 	info->reg.RecordRegistration = AddressRec;
@@ -1377,7 +1412,7 @@ mDNSlocal void StartGetPublicAddr(mDNS *m, AuthRecord *AddressRec)
 		return;
 		}
    
-	SendNATMsg(info, m);
+	uDNS_SendNATMsg(info, m);
 	}
 
 
@@ -1386,7 +1421,7 @@ mDNSlocal void RefreshNATMapping(NATTraversalInfo *n, mDNS *m)
 	n->state = NATState_Refresh;
 	n->RetryInterval = NATMAP_INIT_RETRY;
 	n->ntries = 0;
-	SendNATMsg(n, m);
+	uDNS_SendNATMsg(n, m);
 	}
 	
 	
@@ -1450,17 +1485,16 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 		}
 	}
 
-mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
+mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	{
 	ServiceRecordSet *srs = n->reg.ServiceRegistration;
 	mDNSIPPort priv = srs ? srs->RR_SRV.resrec.rdata->u.srv.port : n->PrivatePort;
-	mDNSu32 lease;
 	mDNSBool deletion = !n->request.PortReq.lease.NotAnInteger;
 	NATPortMapReply *reply = (NATPortMapReply *)pkt;
 	mDNSu8 *service = srs ? srs->RR_SRV.resrec.name->c : (mDNSu8 *)"\016LLQ event port";
  
 	if (n->state != NATState_Request && n->state != NATState_Refresh)
-		{ LogMsg("ReceivePortMapReply (%##s): bad state %d", service, n->state);  return mDNSfalse; }
+		{ LogMsg("uDNS_HandleNATPortMapReply (%##s): bad state %d", service, n->state);  return mDNSfalse; }
 		
 	if (!pkt && !deletion) // timeout
 		{
@@ -1468,9 +1502,9 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 		mDNSIPPort pub;
 		int ntries = 0;
 		mStatus err;
-		mDNSBool tcp = (srs && DomainContainsLabelString(srs->RR_PTR.resrec.name, "_tcp"));
-	   
-		pub = priv; // initially request priv == pub
+   		mDNSBool tcp = (n->op == NATOp_MapTCP);
+
+		pub = n->PublicPort.NotAnInteger ? n->PublicPort : priv; // initially request priv == pub if PublicPort is zero
 		while (1)
 			{
 			err = LNT_MapPort(priv, pub, tcp);
@@ -1497,26 +1531,26 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 
-	if (len < sizeof(*reply)) { LogMsg("ReceivePortMapReply: response too short (%d bytes)", len); return mDNSfalse; }
-	if (reply->vers != NATMAP_VERS) { LogMsg("ReceivePortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  return mDNSfalse; }
-	if (reply->opcode != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("ReceivePortMapReply: bad response code %d", pkt[1]); return mDNSfalse; }
-	if (reply->err.NotAnInteger) { LogMsg("ReceivePortMapReply: received error %d", mDNSVal16(reply->err));  return mDNSfalse; }
+	if (len < sizeof(*reply)) { LogMsg("uDNS_HandleNATPortMapReply: response too short (%d bytes)", len); return mDNSfalse; }
+	if (reply->vers != NATMAP_VERS) { LogMsg("uDNS_HandleNATPortMapReply: received  version %d (expect version %d)", pkt[0], NATMAP_VERS);  return mDNSfalse; }
+	if (reply->opcode != (n->op | NATMAP_RESPONSE_MASK)) { LogMsg("uDNS_HandleNATPortMapReply: bad response code %d", pkt[1]); return mDNSfalse; }
+	if (reply->err.NotAnInteger) { LogMsg("uDNS_HandleNATPortMapReply: received error %d", mDNSVal16(reply->err));  return mDNSfalse; }
 	if (priv.NotAnInteger != reply->priv.NotAnInteger) return mDNSfalse;  // packet does not match this request
 
 	if (deletion) { n->state = NATState_Deleted; return mDNStrue; }
 	
-	lease = (mDNSu32)mDNSVal32(reply->lease);
-	if (lease > 0x70000000UL / mDNSPlatformOneSecond) lease = 0x70000000UL / mDNSPlatformOneSecond;
+	n->TTL = (mDNSu32)mDNSVal32(reply->lease);
+	if (n->TTL > 0x70000000UL / mDNSPlatformOneSecond) n->TTL = 0x70000000UL / mDNSPlatformOneSecond;
 
 	if (n->state == NATState_Refresh && reply->pub.NotAnInteger != n->PublicPort.NotAnInteger)
-		LogMsg("ReceivePortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
+		LogMsg("uDNS_HandleNATPortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
         // this should never happen
 	    // !!!KRS to be defensive, use SRVChanged flag on service and deregister here
 	
 	n->PublicPort = reply->pub;
 	if (reply->pub.NotAnInteger != n->request.PortReq.pub.NotAnInteger) n->request.PortReq.pub = reply->pub; // set message buffer for refreshes
 
-	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)lease * mDNSPlatformOneSecond / 2);  // retry half way to expiration
+	n->retry = mDNSPlatformTimeNow(m) + ((mDNSs32)n->TTL * mDNSPlatformOneSecond / 2);  // retry half way to expiration
 
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return mDNStrue; }
 	n->state = NATState_Established;
@@ -1540,17 +1574,17 @@ mDNSlocal mDNSBool ReceivePortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt
 				{
 				debugf("Port map failed for service %##s - using IPv6 service target", service);
 				srs->uDNS_info.NATinfo = mDNSNULL;
-				FreeNATInfo(m, n);
+				uDNS_FreeNATInfo(m, n);
 				goto register_service;
 				}
 			else srs->uDNS_info.state = regState_NATError;
 			}
-		else LLQNatMapComplete(m, n);
+		else if (n->isLLQ) LLQNatMapComplete(m, n);
 		return mDNStrue;
 		}
 	else LogOperation("Mapped private port %d to public port %d", mDNSVal16(priv), mDNSVal16(n->PublicPort));
 
-	if (!srs) { LLQNatMapComplete(m, n); return mDNStrue; }
+	if (!srs) { if (n->isLLQ) LLQNatMapComplete(m, n); return mDNStrue; }
 
 	register_service:
 	if (srs->uDNS_info.ns.ip.v4.NotAnInteger) SendServiceRegistration(m, srs);  // non-zero server address means we already have necessary zone data to send update
@@ -1583,7 +1617,7 @@ mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
 		info->RetryInterval = NATMAP_INIT_RETRY;
 		return;
 		}
-    SendNATMsg(info, m);
+    uDNS_SendNATMsg(info, m);
 	return;
 	}
 
@@ -1596,8 +1630,8 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	else if (DomainContainsLabelString(srs->RR_PTR.resrec.name, "_udp")) op = NATOp_MapUDP;
 	else { LogMsg("StartNATPortMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name->c); goto error; }
 
-	if (srs->uDNS_info.NATinfo) { LogMsg("Error: StartNATPortMap - NAT info already initialized!");  FreeNATInfo(m, srs->uDNS_info.NATinfo); }
-	info = AllocNATInfo(m, op, srs->RR_SRV.resrec.rdata->u.srv.port, ReceivePortMapReply);
+	if (srs->uDNS_info.NATinfo) { LogMsg("Error: StartNATPortMap - NAT info already initialized!");  uDNS_FreeNATInfo(m, srs->uDNS_info.NATinfo); }
+	info = uDNS_AllocNATInfo(m, op, srs->RR_SRV.resrec.rdata->u.srv.port, zeroIPPort, 0, uDNS_HandleNATPortMapReply);
 	srs->uDNS_info.NATinfo = info;
 	info->reg.ServiceRegistration = srs;
 	info->state = NATState_Request;
@@ -1610,7 +1644,7 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	uDNS_GetZoneData(srs->RR_SRV.resrec.name, m, mDNStrue, mDNSfalse, mDNStrue, serviceRegistrationCallback, srs);
 	}
 
-mDNSlocal void DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat, ServiceRecordSet *srs)
+mDNSexport void uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat)
 	{
 	if (nat->state == NATState_Established)  // let other edge-case states expire for simplicity
 		{
@@ -1618,13 +1652,13 @@ mDNSlocal void DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat, ServiceRecor
 		nat->request.PortReq.lease.NotAnInteger = 0;
 		nat->request.PortReq.pub = zeroIPPort;
 		nat->state = NATState_Request;
-		SendNATMsg(nat, m);
+		uDNS_SendNATMsg(nat, m);
 		}
 #ifdef _LEGACY_NAT_TRAVERSAL_
 	else if (nat->state == NATState_Legacy)
 		{
 		mStatus err = mStatus_NoError;
-		mDNSBool tcp = srs ? DomainContainsLabelString(srs->RR_PTR.resrec.name, "_tcp") : mDNSfalse;
+   		mDNSBool tcp = (nat->op == NATOp_MapTCP);
 		err = LNT_UnmapPort(nat->PublicPort, tcp);
 		if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
 		}
@@ -1638,16 +1672,16 @@ mDNSlocal void RemoveLLQNatMappings( mDNS * m, LLQ_Info * llq )
 	{
 	if ( llq->NATInfoTCP && ( --llq->NATInfoTCP->refs == 0 ) )
 		{
-		DeleteNATPortMapping(m, llq->NATInfoTCP, mDNSNULL);
-		FreeNATInfo(m, llq->NATInfoTCP);
+		uDNS_DeleteNATPortMapping(m, llq->NATInfoTCP);
+		uDNS_FreeNATInfo(m, llq->NATInfoTCP);
 		}
 		
 	llq->NATInfoTCP = mDNSNULL;
 
 	if ( llq->NATInfoUDP && ( --llq->NATInfoUDP->refs == 0 ) )
 		{
-		DeleteNATPortMapping(m, llq->NATInfoUDP, mDNSNULL);
-		FreeNATInfo(m, llq->NATInfoUDP);
+		uDNS_DeleteNATPortMapping(m, llq->NATInfoUDP);
+		uDNS_FreeNATInfo(m, llq->NATInfoUDP);
 		}
 		
 	llq->NATInfoUDP = mDNSNULL;
@@ -1658,7 +1692,7 @@ mDNSlocal void StartLLQNatMap(mDNS *m, LLQ_Info * llq)
 	{	
 	if ( llq->state == LLQ_NatMapWaitTCP )
 		{
-		llq->NATInfoTCP = AllocLLQNatMap(m, NATOp_MapTCP, llq->eventPort, ReceivePortMapReply);
+		llq->NATInfoTCP = AllocLLQNatMap(m, NATOp_MapTCP, llq->eventPort, uDNS_HandleNATPortMapReply);
 		
 		if ( !llq->NATInfoTCP)
 			{
@@ -1670,11 +1704,11 @@ mDNSlocal void StartLLQNatMap(mDNS *m, LLQ_Info * llq)
 		{
 		if ( llq->isPrivate )
 			{
-			llq->NATInfoUDP = AllocLLQNatMap( m, NATOp_MapUDP, llq->eventPort, ReceivePortMapReply );
+			llq->NATInfoUDP = AllocLLQNatMap( m, NATOp_MapUDP, llq->eventPort, uDNS_HandleNATPortMapReply );
 			}
 		else
 			{
-			llq->NATInfoUDP = AllocLLQNatMap( m, NATOp_MapUDP, m->UnicastPort4, ReceivePortMapReply );
+			llq->NATInfoUDP = AllocLLQNatMap( m, NATOp_MapUDP, m->UnicastPort4, uDNS_HandleNATPortMapReply );
 			}
 			
 		if ( !llq->NATInfoUDP)
@@ -1710,8 +1744,8 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 			{
 			//to avoid race condition if we need to recreate before this finishes, we do one-shot deregistration
 			if (current->state == NATState_Established || current->state == NATState_Legacy)
-				DeleteNATPortMapping(m, current, mDNSNULL); // for simplicity we allow other states to expire
-			FreeNATInfo(m, current); // note: this clears the global LLQNatInfo pointer
+				uDNS_DeleteNATPortMapping(m, current); // for simplicity we allow other states to expire
+			uDNS_FreeNATInfo(m, current); // note: this clears the global LLQNatInfo pointer
 			}
 		}
 	}
@@ -1821,7 +1855,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 					}
 				else
 					{
-					if (nat && (NATChanged || !NowBehindNAT)) { srs->uDNS_info.NATinfo = mDNSNULL; FreeNATInfo(m, nat); }
+					if (nat && (NATChanged || !NowBehindNAT)) { srs->uDNS_info.NATinfo = mDNSNULL; uDNS_FreeNATInfo(m, nat); }
 					if (NATChanged && NowBehindNAT) { srs->uDNS_info.state = regState_NATMap; StartNATPortMap(m, srs); }
 					else SendServiceRegistration(m, srs);
 					}
@@ -2634,7 +2668,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 			InvokeCallback = mDNStrue;
 			if (nat)
 				{
-				if (nat->state == NATState_Deleted) { info->NATinfo = mDNSNULL; FreeNATInfo(m, nat); } // deletion copmleted
+				if (nat->state == NATState_Deleted) { info->NATinfo = mDNSNULL; uDNS_FreeNATInfo(m, nat); } // deletion copmleted
 				else nat->reg.ServiceRegistration = mDNSNULL;  // allow mapping deletion to continue
 				}
 			info->state = regState_Unregistered;
@@ -5593,7 +5627,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
             // we're in the middle of a NAT traversal operation
             rr->uDNS_info.NATinfo = mDNSNULL;
 			if (!n) LogMsg("uDNS_DeregisterRecord: no NAT info context");
-			else FreeNATInfo(m, n); // cause response to outstanding request to be ignored.
+			else uDNS_FreeNATInfo(m, n); // cause response to outstanding request to be ignored.
 			                        // Note: normally here we're trying to determine our public address,
 			                        //in which case there is not state to be torn down.  For simplicity,
 			                        //we allow other operations to expire.
@@ -5641,7 +5675,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		}
 
 	rr->uDNS_info.NATinfo = mDNSNULL;
-	if (n) FreeNATInfo(m, n);
+	if (n) uDNS_FreeNATInfo(m, n);
 	
 	SendRecordDeregistration(m, rr);
 	return mStatus_NoError;
@@ -5790,10 +5824,10 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	if (nat)
 		{
 		if (nat->state == NATState_Established || nat->state == NATState_Refresh || nat->state == NATState_Legacy)
-			DeleteNATPortMapping(m, nat, srs);
+			uDNS_DeleteNATPortMapping(m, nat);
 		nat->reg.ServiceRegistration = mDNSNULL;
 		srs->uDNS_info.NATinfo = mDNSNULL;
-		FreeNATInfo(m, nat);
+		uDNS_FreeNATInfo(m, nat);
 		}
 	
 	switch (srs->uDNS_info.state)
@@ -5959,7 +5993,11 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 				else if (cur->state == NATState_Request || cur->state == NATState_Refresh)
 					{
 					if (cur->ntries >= NATMAP_MAX_TRIES) cur->ReceiveResponse(cur, m, mDNSNULL, 0); // may invalidate "cur"
-					else SendNATMsg(cur, m);
+					else
+						{
+						uDNS_SendNATMsg(cur, m);
+						if (cur->retry - nextevent < 0) nextevent = cur->retry;
+						}
 					}
 				}
 			else if (cur->retry - nextevent < 0) nextevent = cur->retry;
@@ -6380,10 +6418,10 @@ mDNSlocal void SleepServiceRegistrations(mDNS *m)
 		if (nat)
 			{
 			if (nat->state == NATState_Established || nat->state == NATState_Refresh || nat->state == NATState_Legacy)
-				DeleteNATPortMapping(m, nat, srs);
+				uDNS_DeleteNATPortMapping(m, nat);
 			nat->reg.ServiceRegistration = mDNSNULL;
 			srs->uDNS_info.NATinfo = mDNSNULL;
-			FreeNATInfo(m, nat);
+			uDNS_FreeNATInfo(m, nat);
 			}
 
 		if (info->state == regState_UpdatePending)

@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.55  2006/09/26 01:52:01  herscher
+<rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
+
 Revision 1.54  2006/09/21 21:34:09  cheshire
 <rdar://problem/4100000> Allow empty string name when using kDNSServiceFlagsNoAutoRename
 
@@ -1234,3 +1237,90 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
     return(kDNSServiceErr_NoError);
     }
 
+static void handle_port_mapping_create_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
+    {
+	DNSServiceFlags flags;
+	uint8_t protocol;
+	uint32_t ttl;
+	union { uint16_t s; u_char b[2]; } privatePort;
+	union { uint16_t s; u_char b[2]; } publicPort;
+	uint32_t ifi;
+	DNSServiceErrorType err;
+	uint32_t addr;
+	(void)hdr; 		//unused
+
+	flags = get_flags(&data);
+	ifi = get_long(&data);
+	err = get_error_code(&data);
+	addr = get_long(&data);
+	protocol = *data++;
+	privatePort.b[0] = *data++;
+	privatePort.b[1] = *data++;
+	publicPort.b[0] = *data++;
+	publicPort.b[1] = *data++;
+	ttl = get_long(&data);
+
+	((DNSServiceNATPortMappingReply)sdr->app_callback)(sdr, flags, ifi, err, addr, protocol, privatePort.s, publicPort.s, ttl, sdr->app_context);
+	}
+
+DNSServiceErrorType DNSSD_API
+DNSServiceNATPortMappingCreate
+	(
+	DNSServiceRef                       *sdRef,
+	DNSServiceFlags                     flags,
+	uint32_t                            interfaceIndex,
+	uint8_t                             protocol,     /* TCP and/or UDP */
+	uint16_t                            privatePort,  /* network byte oder */
+	uint16_t                            publicPort,   /* network byte oder */
+	uint32_t                            ttl,          /* time to live in seconds */
+	DNSServiceNATPortMappingReply       callBack,
+	void                                *context  /* may be NULL */
+	)
+	{
+	char *msg = NULL, *ptr;
+	size_t len;
+	ipc_msg_hdr *hdr;
+	DNSServiceRef sdr;
+	DNSServiceErrorType err;
+
+	if (!sdRef) return kDNSServiceErr_BadParam;
+	*sdRef = NULL;
+
+	len = sizeof(flags);
+	len += sizeof(interfaceIndex);
+	len += sizeof(protocol);
+	len += sizeof(privatePort);
+	len += sizeof(publicPort);
+	len += sizeof(ttl);
+
+	hdr = create_hdr(port_mapping_create_request, &len, &ptr, 1);
+	if (!hdr) goto error;
+	msg = (char *)hdr;
+	put_flags(flags, &ptr);
+	put_long(interfaceIndex, &ptr);
+	*ptr = protocol;
+	ptr += sizeof(uint8_t);
+	put_short(privatePort, &ptr);
+	put_short(publicPort, &ptr);
+	put_long(ttl, &ptr);
+
+	sdr = connect_to_server();
+	if (!sdr) goto error;
+	err = deliver_request(msg, sdr, 1);
+	if (err)
+		{
+		DNSServiceRefDeallocate(sdr);
+		return err;
+		}
+	sdr->op = port_mapping_create_request;
+	sdr->process_reply = handle_port_mapping_create_response;
+	sdr->app_callback = callBack;
+	sdr->app_context = context;
+	*sdRef = sdr;
+	return err;
+
+error:
+	if (msg) free(msg);
+	if (*sdRef) { free(*sdRef);  *sdRef = NULL; }
+	return kDNSServiceErr_Unknown;
+	}

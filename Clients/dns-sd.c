@@ -94,6 +94,8 @@ static const char kFilePathSep = '\\';
 static const char kFilePathSep = '/';
 #endif
 
+#define TEST_NEW_CLIENTSTUB 1
+
 #if (TEST_NEW_CLIENTSTUB && !defined(__APPLE_API_PRIVATE))
 #define __APPLE_API_PRIVATE 1
 #endif
@@ -488,6 +490,26 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
+static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint8_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void * context)
+	{
+	(void)sdRef;       // Unused
+	(void)context;     // Unused
+	(void)flags;       // Unused
+	
+	if (num_printed++ == 0) printf("Timestamp     if   %-20s %-15s %-15s %-15s %s\n", "Public Address", "Protocol", "Private Port", "Public Port", "TTL");
+	printtimestamp();
+	if (errorCode) printf("Error code %d\n", errorCode);
+	else
+		{
+		const unsigned char * digits = ( const unsigned char* ) &publicAddress;
+		char                  addr[256];
+
+		sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
+		printf("%-4d %-20s %-15d %-15d %-15d %d\n", ifIndex, addr, protocol, privatePort, publicPort, ttl);
+		}
+	fflush(stdout);
+	}
+
 //*************************************************************************************************************
 // The main test function
 
@@ -693,7 +715,7 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMI", &optind);
+	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIG", &optind);
 	if (operation == -1) goto Fail;
 
 	switch (operation)
@@ -788,6 +810,20 @@ int main(int argc, char **argv)
 					break;
 					}
 
+		case 'G':   {
+					if (argc != optind+4) goto Fail;
+					else
+						{
+						uint16_t PrivatePortAsNumber = atoi(argv[optind+1]);
+						uint16_t PublicPortAsNumber = atoi(argv[optind+2]);
+						Opaque16 mapPrivatePort = { { PrivatePortAsNumber >> 8, PrivatePortAsNumber & 0xFF } };
+						Opaque16 mapPublicPort = { { PublicPortAsNumber >> 8, PublicPortAsNumber & 0xFF } };
+
+						err = DNSServiceNATPortMappingCreate(&client, 0, 0, atoi(argv[optind+0]), mapPrivatePort.NotAnInteger, mapPublicPort.NotAnInteger, atoi(argv[optind+3]), port_mapping_create_reply, NULL);
+						}
+					break;
+		            }
+
 		default: goto Fail;
 		}
 
@@ -800,19 +836,20 @@ int main(int argc, char **argv)
 	return 0;
 
 Fail:
-	fprintf(stderr, "%s -E                  (Enumerate recommended registration domains)\n", a0);
-	fprintf(stderr, "%s -F                      (Enumerate recommended browsing domains)\n", a0);
-	fprintf(stderr, "%s -B        <Type> <Domain>        (Browse for services instances)\n", a0);
-	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", a0);
-	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", a0);
-	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", a0);
-	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", a0);
-	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", a0);
-	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", a0);
-	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", a0);
-	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", a0);
-	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", a0);
-	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
-	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
+	fprintf(stderr, "%s -E                              (Enumerate recommended registration domains)\n", a0);
+	fprintf(stderr, "%s -F                                  (Enumerate recommended browsing domains)\n", a0);
+	fprintf(stderr, "%s -B        <Type> <Domain>                    (Browse for services instances)\n", a0);
+	fprintf(stderr, "%s -L <Name> <Type> <Domain>                       (Look up a service instance)\n", a0);
+	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...]             (Register a service)\n", a0);
+	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]              (Proxy)\n", a0);
+	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass>             (Generic query for any record type)\n", a0);
+	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>               (Query; reconfirming each result)\n", a0);
+	fprintf(stderr, "%s -A                                  (Test Adding/Updating/Deleting a record)\n", a0);
+	fprintf(stderr, "%s -U                                              (Test updating a TXT record)\n", a0);
+	fprintf(stderr, "%s -N                                         (Test adding a large NULL record)\n", a0);
+	fprintf(stderr, "%s -T                                        (Test creating a large TXT record)\n", a0);
+	fprintf(stderr, "%s -M                  (Test creating a registration with multiple TXT records)\n", a0);
+	fprintf(stderr, "%s -I               (Test registering and then immediately updating TXT record)\n", a0);
+	fprintf(stderr, "%s -G <Protocol> <Private Port> <Public Port> <TTL> (Create a NAT Port Mapping)\n", a0);
 	return 0;
 	}

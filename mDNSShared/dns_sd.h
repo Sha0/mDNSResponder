@@ -157,6 +157,13 @@ enum
      */
     };
 
+/* Possible protocols for DNSServiceNATPortMappingCreate(). */
+enum
+    {
+    kDNSServiceProtocol_UDP = ( 1 << 0 ),
+    kDNSServiceProtocol_TCP = ( 1 << 1 )
+    };
+
 /*
  * The values for DNS Classes and Types are listed in RFC 1035, and are available
  * on every OS in its DNS header file. Unfortunately every OS does not have the
@@ -229,29 +236,31 @@ enum
 /* possible error code values */
 enum
     {
-    kDNSServiceErr_NoError             = 0,
-    kDNSServiceErr_Unknown             = -65537,       /* 0xFFFE FFFF */
-    kDNSServiceErr_NoSuchName          = -65538,
-    kDNSServiceErr_NoMemory            = -65539,
-    kDNSServiceErr_BadParam            = -65540,
-    kDNSServiceErr_BadReference        = -65541,
-    kDNSServiceErr_BadState            = -65542,
-    kDNSServiceErr_BadFlags            = -65543,
-    kDNSServiceErr_Unsupported         = -65544,
-    kDNSServiceErr_NotInitialized      = -65545,
-    kDNSServiceErr_AlreadyRegistered   = -65547,
-    kDNSServiceErr_NameConflict        = -65548,
-    kDNSServiceErr_Invalid             = -65549,
-    kDNSServiceErr_Firewall            = -65550,
-    kDNSServiceErr_Incompatible        = -65551,        /* client library incompatible with daemon */
-    kDNSServiceErr_BadInterfaceIndex   = -65552,
-    kDNSServiceErr_Refused             = -65553,
-    kDNSServiceErr_NoSuchRecord        = -65554,
-    kDNSServiceErr_NoAuth              = -65555,
-    kDNSServiceErr_NoSuchKey           = -65556,
-    kDNSServiceErr_NATTraversal        = -65557,
-    kDNSServiceErr_DoubleNAT           = -65558,
-    kDNSServiceErr_BadTime             = -65559
+    kDNSServiceErr_NoError                   = 0,
+    kDNSServiceErr_Unknown                   = -65537,   /* 0xFFFE FFFF */
+    kDNSServiceErr_NoSuchName                = -65538,
+    kDNSServiceErr_NoMemory                  = -65539,
+    kDNSServiceErr_BadParam                  = -65540,
+    kDNSServiceErr_BadReference              = -65541,
+    kDNSServiceErr_BadState                  = -65542,
+    kDNSServiceErr_BadFlags                  = -65543,
+    kDNSServiceErr_Unsupported               = -65544,
+    kDNSServiceErr_NotInitialized            = -65545,
+    kDNSServiceErr_AlreadyRegistered         = -65547,
+    kDNSServiceErr_NameConflict              = -65548,
+    kDNSServiceErr_Invalid                   = -65549,
+    kDNSServiceErr_Firewall                  = -65550,
+    kDNSServiceErr_Incompatible              = -65551,   /* client library incompatible with daemon */
+    kDNSServiceErr_BadInterfaceIndex         = -65552,
+    kDNSServiceErr_Refused                   = -65553,
+    kDNSServiceErr_NoSuchRecord              = -65554,
+    kDNSServiceErr_NoAuth                    = -65555,
+    kDNSServiceErr_NoSuchKey                 = -65556,
+    kDNSServiceErr_NATTraversal              = -65557,
+    kDNSServiceErr_DoubleNAT                 = -65558,
+    kDNSServiceErr_BadTime                   = -65559,
+    kDNSServiceErr_NATPortMappingOff         = -65560,  /* Returned if the NAT supports NAT-PMP or UPnP but it's disabled on the router. */
+    kDNSServiceErr_NATPortMappingUnsupported = -65561   /* Returned if there's no NAT or if the NAT doesn't support NAT-PMP or UPnP. */
     /* mDNS Error codes are in the range
      * FFFE FF00 (-65792) to FFFE FFFF (-65537) */
     };
@@ -1669,6 +1678,129 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
     uint8_t          *valueLen,
     const void       **value
     );
+
+
+/*********************************************************************************************
+ *
+ *  NAT Port Mapping
+ *
+ *********************************************************************************************/
+
+/* DNSServiceNATPortMappingCreate
+ *
+ * Request a port mapping in the NAT gateway which maps a port on the local machine
+ * to a public port on the NAT.  The port mapping will last indefinitely until the
+ * client terminates the port mapping request by calling DNSServiceRefDeallocate().
+ * (If the client proccess terminates, this happens automatically.)
+ * The client callback will be invoked, informing the client of the NAT gateway's
+ * public IP address and the public port that has been allocated for this client.
+ * The client should then record this public IP address and port using whatever
+ * directory service mechanism it is using to enable peers to connect to it.
+ * (Clients advertising services using Wide-Area DNS-SD DO NOT need to use this API
+ * -- when a client calls DNSServiceRegister() NAT mappings are automatically created 
+ * and the public IP address and port for the service are recorded in the global DNS.
+ * Only clients using some directory mechanism other than Wide-Area DNS-SD need to use
+ * this API to explicitly map their own ports.)
+ * It's possible that the client callback could be called multiple times, for example
+ * if the NAT gateway's IP address changes, or if a configuration change results in
+ * a different public port being mapped for this client. Over the lifetime of any long-lived
+ * port mapping, the client should be prepared to handle these notifications of changes in
+ * the environment, and should update its recorded address and/or port as appropriate.
+ *
+ *
+ * DNSServiceNATPortMappingReply() parameters:
+ *
+ * sdRef:           The DNSServiceRef initialized by DNSServiceNATPortMappingCreate().
+ *
+ * flags:           Currently unused, reserved for future use.
+ *
+ * interfaceIndex:  The interface on which the NAT exists.
+ *
+ * errorCode:       Will be kDNSServiceErr_NoError on success, otherwise will
+ *                  indicate the failure that occurred.  Other parameters are
+ *                  undefined if errorCode is nonzero.
+ *
+ * publicAddress:   Four byte IPv4 address in network byte order.
+ *
+ * protocol:        Will be 0, kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP.
+ *
+ * privatePort:     The port on the local machine that was mapped.
+ *
+ * publicPort:      The actual public port in the NAT gateway that was mapped.  This is very
+ *                  likely to be different than the requested public port.
+ *
+ * ttl:             The time in seconds which the NAT port mapping will remain active in the gateway
+ *                  if not refreshed by the client. As long as the port mapping request remains active,
+ *                  the mapping will automatically get refreshed when necessary.  It's possible that
+ *                  the ttl value will differ from the requested ttl value.
+ *
+ * context:         The context pointer that was passed to the callout.
+ *
+ */
+
+
+typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
+    (
+    DNSServiceRef                    sdRef,
+    DNSServiceFlags                  flags,
+    uint32_t                         interfaceIndex,
+    DNSServiceErrorType              errorCode,
+    uint32_t                         publicAddress,   /* four byte IPv4 address in network byte order */
+    uint8_t                          protocol,
+    uint16_t                         privatePort,
+    uint16_t                         publicPort,       /* may be different than the requested port */
+    uint32_t                         ttl,              /* may be different than the requested ttl */
+    void                             *context
+    );
+
+
+/* DNSServiceNATPortMappingCreate() Parameters:
+ *
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds then it
+ *                  initializes the DNSServiceRef, returns kDNSServiceErr_NoError, and the nat
+ *                  port mapping will last indefinitely until the client terminates the port
+ *                  mapping request by passing this DNSServiceRef to DNSServiceRefDeallocate().
+ *
+ * flags:           Currently ignored, reserved for future use.
+ *
+ * interfaceIndex:  The interface on which to create port mappings in a NAT gateway.  Passing 0 causes
+ *                  the port mapping request to be sent on the primary interface.
+ *
+ * protocol:        Pass in kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP or both.
+ *
+ * privatePort:     The port number in network byte order on the local machine which is listening for packets.
+ *                  Pass 0 if you don't actually want a port mapped, and are just calling the API
+ *                  because you want to find out the NAT's public IP address, e.g. for UI display.
+ *
+ * publicPort:      The requested public port in network byte order in the NAT gateway that you would
+ *                  like to map to the private port. Pass 0 if you don't care which public port is chosen for you.
+ *
+ * ttl:             The time to live of the NAT port mapping, in seconds.  Pass 0 to use a default value.
+ *
+ * callBack:        The function to be called when the port mapping request succeeds or fails asynchronously.
+ *
+ * context:         An application context pointer which is passed to the callback function
+ *                  (may be NULL).
+ *
+ * return value:    Returns kDNSServiceErr_NoError on successes (any subsequent, asynchronous
+ *                  errors are delivered to the callback), otherwise returns an error code indicating
+ *                  the error that occurred.
+ */
+
+DNSServiceErrorType DNSSD_API
+DNSServiceNATPortMappingCreate
+    (
+    DNSServiceRef                    *sdRef,
+    DNSServiceFlags                  flags,
+    uint32_t                         interfaceIndex,
+    uint8_t                          protocol,         /* TCP and/or UDP */
+    uint16_t                         privatePort,      /* network byte order */
+    uint16_t                         publicPort,       /* network byte order */
+    uint32_t                         ttl,              /* time to live in seconds */
+    DNSServiceNATPortMappingReply    callBack,
+    void                             *context          /* may be NULL */
+    );
+
 
 #ifdef __APPLE_API_PRIVATE
 

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.302  2006/09/26 01:53:25  herscher
+<rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
+
 Revision 1.301  2006/09/15 21:20:15  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -2094,6 +2097,7 @@ struct NATTraversalInfo_struct
     mDNSAddr Router;
 	mDNSIPPort PrivatePort;
     mDNSIPPort PublicPort;
+	mDNSu32 TTL;
     union { NATAddrRequest AddrReq; NATPortMapRequest PortReq; } request;
 	mDNSs32 retry;                   // absolute time when we retry
 	mDNSs32 RetryInterval;           // delta between time sent and retry
@@ -2101,6 +2105,7 @@ struct NATTraversalInfo_struct
 	NATState_t state;
 	NATTraversalInfo *next;
 	mDNSBool isLLQ;
+	void *context;
 	unsigned refs;
 	};
 
