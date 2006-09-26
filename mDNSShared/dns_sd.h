@@ -160,8 +160,16 @@ enum
 /* Possible protocols for DNSServiceNATPortMappingCreate(). */
 enum
     {
-    kDNSServiceProtocol_UDP = ( 1 << 0 ),
-    kDNSServiceProtocol_TCP = ( 1 << 1 )
+    kDNSServiceProtocol_IPv4 = 0x01,
+    kDNSServiceProtocol_IPv6 = 0x02,
+    /* 0x04 and 0x08 reserved for future internetwork protocols */
+    
+    kDNSServiceProtocol_UDP  = 0x10,
+    kDNSServiceProtocol_TCP  = 0x20
+    /* 0x40 and 0x80 reserved for future transport protocols, e.g. SCTP [RFC 2960]
+     * or DCCP [RFC 4340]. If future NAT gateways are created that support port
+     * mappings for these protocols, new constants will be defined here.
+     */
     };
 
 /*
@@ -1689,9 +1697,9 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
 /* DNSServiceNATPortMappingCreate
  *
  * Request a port mapping in the NAT gateway which maps a port on the local machine
- * to a public port on the NAT.  The port mapping will last indefinitely until the
- * client terminates the port mapping request by calling DNSServiceRefDeallocate().
- * (If the client proccess terminates, this happens automatically.)
+ * to a public port on the NAT.
+ * The port mapping will be renewed indefinitely until the client process exits, or
+ * explicitly terminates the port mapping request by calling DNSServiceRefDeallocate().
  * The client callback will be invoked, informing the client of the NAT gateway's
  * public IP address and the public port that has been allocated for this client.
  * The client should then record this public IP address and port using whatever
@@ -1702,10 +1710,10 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
  * Only clients using some directory mechanism other than Wide-Area DNS-SD need to use
  * this API to explicitly map their own ports.)
  * It's possible that the client callback could be called multiple times, for example
- * if the NAT gateway's IP address changes, or if a configuration change results in
- * a different public port being mapped for this client. Over the lifetime of any long-lived
- * port mapping, the client should be prepared to handle these notifications of changes in
- * the environment, and should update its recorded address and/or port as appropriate.
+ * if the NAT gateway's IP address changes, or if a configuration change results in a
+ * different public port being mapped for this client. Over the lifetime of any long-lived
+ * port mapping, the client should be prepared to handle these notifications of changes
+ * in the environment, and should update its recorded address and/or port as appropriate.
  *
  *
  * DNSServiceNATPortMappingReply() parameters:
@@ -1714,30 +1722,31 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
  *
  * flags:           Currently unused, reserved for future use.
  *
- * interfaceIndex:  The interface on which the NAT exists.
+ * interfaceIndex:  The interface through which the NAT gateway is reached.
  *
  * errorCode:       Will be kDNSServiceErr_NoError on success, otherwise will
- *                  indicate the failure that occurred.  Other parameters are
+ *                  indicate the failure that occurred. Other parameters are
  *                  undefined if errorCode is nonzero.
  *
  * publicAddress:   Four byte IPv4 address in network byte order.
  *
- * protocol:        Will be 0, kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP.
+ * protocol:        Will be 0, kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP
  *
  * privatePort:     The port on the local machine that was mapped.
  *
- * publicPort:      The actual public port in the NAT gateway that was mapped.  This is very
- *                  likely to be different than the requested public port.
+ * publicPort:      The actual public port in the NAT gateway that was mapped.
+ *                  This is very likely to be different than the requested public port.
  *
- * ttl:             The time in seconds which the NAT port mapping will remain active in the gateway
- *                  if not refreshed by the client. As long as the port mapping request remains active,
- *                  the mapping will automatically get refreshed when necessary.  It's possible that
- *                  the ttl value will differ from the requested ttl value.
+ * ttl:             The lifetime of the NAT port mapping created on the gateway.
+ *                  This controls how quickly stale mappings will be garbage-collected
+ *                  if the client machine crashes, suffers a power failure, is disconnected
+ *                  from the network, or suffers some other unfortunate demise which
+ *                  causes it to vanish without explicitly removing its NAT port mapping.
+ *                  It's possible that the ttl value will differ from the requested ttl value.
  *
  * context:         The context pointer that was passed to the callout.
  *
  */
-
 
 typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
     (
@@ -1763,19 +1772,27 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
  *
  * flags:           Currently ignored, reserved for future use.
  *
- * interfaceIndex:  The interface on which to create port mappings in a NAT gateway.  Passing 0 causes
+ * interfaceIndex:  The interface on which to create port mappings in a NAT gateway. Passing 0 causes
  *                  the port mapping request to be sent on the primary interface.
  *
- * protocol:        Pass in kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP or both.
+ * protocol:        Pass in 0, kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP
  *
  * privatePort:     The port number in network byte order on the local machine which is listening for packets.
- *                  Pass 0 if you don't actually want a port mapped, and are just calling the API
- *                  because you want to find out the NAT's public IP address, e.g. for UI display.
  *
  * publicPort:      The requested public port in network byte order in the NAT gateway that you would
  *                  like to map to the private port. Pass 0 if you don't care which public port is chosen for you.
  *
- * ttl:             The time to live of the NAT port mapping, in seconds.  Pass 0 to use a default value.
+ * ttl:             The requested renewal period of the NAT port mapping, in seconds.
+ *                  If the client machine crashes, suffers a power failure, is disconnected from
+ *                  the network, or suffers some other unfortunate demise which causes it to vanish
+ *                  unexpectedly without explicitly removing its NAT port mappings, then the NAT gateway
+ *                  will garbage-collect old stale NAT port mappings when their lifetime expires.
+ *                  Requesting a short TTL causes such orphaned mappings to be garbage-collected
+ *                  more promptly, but consumes system resources and network bandwidth with
+ *                  frequent renewal packets to keep the mapping from expiring.
+ *                  Requesting a long TTL is more efficient on the network, but in the event of the
+ *                  client vanishing, stale NAT port mappings will not be garbage-collected as quickly.
+ *                  Most clients should pass 0 to use a system-wide default value.
  *
  * callBack:        The function to be called when the port mapping request succeeds or fails asynchronously.
  *
@@ -1785,6 +1802,10 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
  * return value:    Returns kDNSServiceErr_NoError on successes (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred.
+ *
+ *                  If you don't actually want a port mapped, and are just calling the API
+ *                  because you want to find out the NAT's public IP address (e.g. for UI
+ *                  display) then pass zero for protocol, privatePort, publicPort and ttl.
  */
 
 DNSServiceErrorType DNSSD_API
