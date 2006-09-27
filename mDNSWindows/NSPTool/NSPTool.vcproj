@@ -19,7 +19,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories=".;.."
+				AdditionalIncludeDirectories=".;../../mDNSShared"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;WIN32_LEAN_AND_MEAN"
 				StringPooling="TRUE"
 				MinimalRebuild="TRUE"
@@ -75,7 +75,7 @@
 			CharacterSet="2">
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories=".;.."
+				AdditionalIncludeDirectories=".;../../mDNSShared"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;WIN32_LEAN_AND_MEAN"
 				RuntimeLibrary="0"
 				UsePrecompiledHeader="0"
