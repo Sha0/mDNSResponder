@@ -758,11 +758,11 @@ int main(int argc, char **argv)
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
 #if defined(HAS_NAT_PMP_API) && defined(HAS_ADDRINFO_API)
-	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIGX", &optind);
+	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIXG", &optind);
 #elif defined(HAS_NAT_PMP_API)
-	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIG", &optind);
-#elif defined(HAS_ADDRINFO_API)
 	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIX", &optind);
+#elif defined(HAS_ADDRINFO_API)
+	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIG", &optind);
 #else
 	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMI", &optind);
 #endif
@@ -860,7 +860,7 @@ int main(int argc, char **argv)
 					break;
 					}
 #if defined(HAS_NAT_PMP_API)
-		case 'G':   {
+		case 'X':   {
 					if (argc != optind+4) goto Fail;
 					else
 						{
@@ -875,7 +875,7 @@ int main(int argc, char **argv)
 		            }
 #endif
 #if defined(HAS_ADDRINFO_API)
-		case 'X':   {
+		case 'G':   {
 					if (argc != optind+2) goto Fail;
 					else
 						{
@@ -911,10 +911,10 @@ Fail:
 	fprintf(stderr, "%s -M                  (Test creating a registration with multiple TXT records)\n", a0);
 	fprintf(stderr, "%s -I               (Test registering and then immediately updating TXT record)\n", a0);
 #if defined(HAS_NAT_PMP_API)
-	fprintf(stderr, "%s -G <Protocol> <Private Port> <Public Port> <TTL> (Create a NAT Port Mapping)\n", a0);
+	fprintf(stderr, "%s -X <Protocol> <Private Port> <Public Port> <TTL> (Create a NAT Port Mapping)\n", a0);
 #endif
 #if defined(HAS_ADDRINFO_API)
-	fprintf(stderr, "%s -X <Protocol> <Hostname>            (Get address information for a hostname)\n", a0);
+	fprintf(stderr, "%s -G <Protocol> <Hostname>            (Get address information for a hostname)\n", a0);
 #endif
 	return 0;
 	}
