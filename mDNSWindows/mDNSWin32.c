@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.110  2006/09/27 00:47:40  herscher
+Fix compile error caused by changes to the tcp callback api.
+
 Revision 1.109  2006/08/14 23:25:21  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -3759,7 +3762,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 									connect			= mDNStrue;
 								}
 	
-								tcd->callback( tcd, tcd->context, connect );
+								tcd->callback( tcd, tcd->context, connect, 0 );
 	
 								++n;
 	
