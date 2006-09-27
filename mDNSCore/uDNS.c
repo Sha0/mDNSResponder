@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.242  2006/09/27 00:51:46  herscher
+Fix compile error when _LEGACY_NAT_TRAVERSAL_ is not defined
+
 Revision 1.241  2006/09/26 01:54:47  herscher
 <rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
 
@@ -1662,8 +1665,6 @@ mDNSexport void uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat)
 		err = LNT_UnmapPort(nat->PublicPort, tcp);
 		if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
 		}
-#else
-	(void)srs; // unused
 #endif // _LEGACY_NAT_TRAVERSAL_
 	}
 
