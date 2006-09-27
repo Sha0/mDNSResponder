@@ -70,6 +70,9 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 // If you want to compile this with NAT-PMP API support, uncomment the following line
 //#define HAS_NAT_PMP_API 1
 
+// If you want to compile this with GetAddrInfo support, uncomment the following line
+//#define HAS_ADDRINFO_API 1
+
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
@@ -513,6 +516,42 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 	}
 #endif
 
+#if defined(HAS_ADDRINFO_API)
+static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, char *hostname, struct sockaddr *address, uint32_t ttl, void *context)
+	{
+	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
+	(void) sdRef;
+	(void) context;
+	
+	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-40s %s\n", "Hostname", "Address", "TTL");
+	printtimestamp();
+	if (errorCode) printf("Error code %d\n", errorCode);
+	else
+		{
+		char addr[256];
+
+		if (address)
+			{
+			if (address->sa_family == AF_INET)
+				{
+				const unsigned char * digits = ( const unsigned char* ) &( ( struct sockaddr_in* ) address)->sin_addr;
+				sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
+				}
+			else if (address->sa_family == AF_INET6)
+				{
+				const unsigned char * digits = ( const unsigned char* ) &( ( struct sockaddr_in6* ) address)->sin6_addr;
+				sprintf(addr, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+						digits[0], digits[1], digits[2], digits[3], digits[4], digits[5], digits[6], digits[7], digits[8],
+						digits[9], digits[10], digits[11], digits[12], digits[13], digits[14], digits[15]);
+				}
+			}
+			
+		printf("%s%6X%3d %-25s %-40s %d\n", op, flags, interfaceIndex, hostname, addr, ttl);
+		}
+	fflush(stdout);
+	}
+#endif
+
 //*************************************************************************************************************
 // The main test function
 
@@ -718,8 +757,12 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-#if defined(HAS_NAT_PMP_API)
+#if defined(HAS_NAT_PMP_API) && defined(HAS_ADDRINFO_API)
+	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIGX", &optind);
+#elif defined(HAS_NAT_PMP_API)
 	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIG", &optind);
+#elif defined(HAS_ADDRINFO_API)
+	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIX", &optind);
 #else
 	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMI", &optind);
 #endif
@@ -831,6 +874,16 @@ int main(int argc, char **argv)
 					break;
 		            }
 #endif
+#if defined(HAS_ADDRINFO_API)
+		case 'X':   {
+					if (argc != optind+2) goto Fail;
+					else
+						{
+						err = DNSServiceGetAddrInfo(&client, 0, 0, atoi(argv[optind+0]), argv[optind+1], addrinfo_reply, NULL);
+						}
+					break;
+		            }
+#endif
 		default: goto Fail;
 		}
 
@@ -859,6 +912,9 @@ Fail:
 	fprintf(stderr, "%s -I               (Test registering and then immediately updating TXT record)\n", a0);
 #if defined(HAS_NAT_PMP_API)
 	fprintf(stderr, "%s -G <Protocol> <Private Port> <Public Port> <TTL> (Create a NAT Port Mapping)\n", a0);
+#endif
+#if defined(HAS_ADDRINFO_API)
+	fprintf(stderr, "%s -X <Protocol> <Hostname>            (Get address information for a hostname)\n", a0);
 #endif
 	return 0;
 	}
