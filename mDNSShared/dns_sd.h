@@ -88,6 +88,8 @@ typedef INT32       int32_t;
 typedef struct _DNSServiceRef_t *DNSServiceRef;
 typedef struct _DNSRecordRef_t *DNSRecordRef;
 
+struct sockaddr;
+
 /* General flags used in functions defined below */
 enum
     {
@@ -1255,6 +1257,118 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
     void                                *context  /* may be NULL */
     );
 
+
+/*********************************************************************************************
+ *
+ *  Unified lookup of both IPv4 and IPv6 addresses for a fully qualified hostname
+ *
+ *********************************************************************************************/
+
+/* DNSServiceGetAddrInfo
+ *
+ * Queries for the IP address of a hostname by using either Multicast or Unicast DNS.
+ *
+ *
+ * DNSServiceGetAddrInfoReply() parameters:
+ *
+ * sdRef:           The DNSServiceRef initialized by DNSServiceGetAddrInfo().
+ *
+ * flags:           kDNSServiceFlagsAdd and kDNSServiceFlagsMoreComing.
+ *
+ * interfaceIndex:  The interface on which the answers pertain to.
+ *
+ * errorCode:       Will be kDNSServiceErr_NoError on success, otherwise will
+ *                  indicate the failure that occurred.  Other parameters are
+ *                  undefined if errorCode is nonzero.
+ *
+ * hostname:        The fully qualified domain name of the host to be queried for.
+ *
+ * address:         IPv4 or IPv6 address.
+ *
+ * ttl:             If the client wishes to cache the result for performance reasons,
+ *                  the TTL indicates how long the client may legitimately hold onto
+ *                  this result, in seconds. After the TTL expires, the client should
+ *                  consider the result no longer valid, and if it requires this data
+ *                  again, it should be re-fetched with a new query. Of course, this
+ *                  only applies to clients that cancel the asynchronous operation when
+ *                  they get a result. Clients that leave the asynchronous operation
+ *                  running can safely assume that the data remains valid until they
+ *                  get another callback telling them otherwise.
+ *
+ * context:         The context pointer that was passed to the callout.
+ *
+ */
+
+typedef void (DNSSD_API *DNSServiceGetAddrInfoReply)
+    (
+    DNSServiceRef                    sdRef,
+    DNSServiceFlags                  flags,
+    uint32_t                         interfaceIndex,
+    DNSServiceErrorType              errorCode,
+    char                             *hostname,
+    struct sockaddr                  *address,
+    uint32_t                         ttl,
+    void                             *context
+    );
+
+
+/* DNSServiceGetAddrInfo() Parameters:
+ *
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds then it
+ *                  initializes the DNSServiceRef, returns kDNSServiceErr_NoError, and the query
+ *                  begins and will last indefinitely until the client terminates the query
+ *                  by passing this DNSServiceRef to DNSServiceRefDeallocate().
+ *
+ * flags:           kDNSServiceFlagsForceMulticast or kDNSServiceFlagsLongLivedQuery.
+ *                  Pass kDNSServiceFlagsLongLivedQuery to create a "long-lived" unicast
+ *                  query in a non-local domain. Without setting this flag, unicast queries
+ *                  will be one-shot - that is, only answers available at the time of the call
+ *                  will be returned. By setting this flag, answers (including Add and Remove
+ *                  events) that become available after the initial call is made will generate
+ *                  callbacks. This flag has no effect on link-local multicast queries.
+ *
+ * interfaceIndex:  The interface on which to issue the query.  Passing 0 causes the query to be
+ *                  sent on all active interfaces via Multicast or the primary interface via Unicast.
+ *
+ * protocol:        Pass in kDNSServiceProtocol_IPv4 to look up IPv4 addresses, or kDNSServiceProtocol_IPv6
+ *                  to look up IPv6 addresses, or both to look up both kinds. If neither flag is
+ *                  set, the system will apply an intelligent heuristic, which is (currently)
+ *                  that it will attempt to look up both, except:
+ *
+ *                   * If "hostname" is a wide-area unicast DNS hostname (i.e. not a ".local." name)
+ *                     but this host has no routable IPv6 address, then the call will not try to
+ *                     look up IPv6 addresses for "hostname", since any addresses it found would be
+ *                     unlikely to be of any use anyway. Similarly, if this host has no routable
+ *                     IPv4 address, the call will not try to look up IPv4 addresses for "hostname".
+ *
+ *                   * If "hostname" is a link-local multicast DNS hostname (i.e. a ".local." name)
+ *                     but this host has no IPv6 address of any kind, then it will not try to look
+ *                     up IPv6 addresses for "hostname". Similarly, if this host has no IPv4 address
+ *                     of any kind, the call will not try to look up IPv4 addresses for "hostname".
+ *
+ * hostname:        The fully qualified domain name of the host to be queried for.
+ *
+ * callBack:        The function to be called when the query succeeds or fails asynchronously.
+ *
+ * context:         An application context pointer which is passed to the callback function
+ *                  (may be NULL).
+ *
+ * return value:    Returns kDNSServiceErr_NoError on successes (any subsequent, asynchronous
+ *                  errors are delivered to the callback), otherwise returns an error code indicating
+ *                  the error that occurred.
+ */
+
+DNSServiceErrorType DNSSD_API DNSServiceGetAddrInfo
+    (
+    DNSServiceRef                    *sdRef,
+    DNSServiceFlags                  flags,
+    uint32_t                         interfaceIndex,
+    uint32_t                         protocol,
+    const char                       *hostname,
+    DNSServiceGetAddrInfoReply       callBack,
+    void                             *context          /* may be NULL */
+    );
+    
 
 /* DNSServiceReconfirmRecord
  *

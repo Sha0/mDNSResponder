@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.211  2006/09/27 00:44:55  herscher
+<rdar://problem/4249761> API: Need DNSServiceGetAddrInfo()
+
 Revision 1.210  2006/09/26 01:52:41  herscher
 <rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
 
@@ -803,6 +806,16 @@ typedef struct
 	} port_mapping_info_t;
 
 typedef struct
+	{
+	uint32_t              flags;
+	mDNSInterfaceID       interface_id;
+	uint32_t              protocol;
+	DNSQuestion           q4;
+	DNSQuestion           q6;
+    struct request_state *rstate;
+	} addrinfo_info_t;
+
+typedef struct
     {
     mStatus err;		// Note: This field is in NETWORK byte order
     int nwritten;
@@ -838,6 +851,7 @@ typedef struct request_state
     service_info *service_registration;
     browser_info_t *browser_info;
 	port_mapping_info_t * port_mapping_create_info;
+	addrinfo_info_t     * addrinfo_info;
     struct request_state *next;
     } request_state;
 
@@ -950,6 +964,9 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int ttl, int validate_f
 mDNSlocal mStatus handle_removerecord_request(request_state *rstate);
 mDNSlocal void handle_port_mapping_create_request(request_state *rstate);
 mDNSlocal void port_mapping_create_termination_callback(void *context);
+mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
+mDNSlocal void handle_addrinfo_request(request_state *rstate);
+mDNSlocal void addrinfo_termination_callback(void *context);
 mDNSlocal void reset_connected_rstate(request_state *rstate);
 mDNSlocal int deliver_error(request_state *rstate, mStatus err);
 mDNSlocal int deliver_async_error(request_state *rs, reply_op_t op, mStatus err);
@@ -1005,6 +1022,48 @@ mDNSlocal void FatalError(char *errmsg)
 	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno()));
 	*(long*)0 = 0;	// On OS X abort() doesn't generate a crash log, but writing to zero does
 	abort();		// On platforms where writing to zero doesn't generate an exception, abort instead
+	}
+	
+mDNSlocal mDNSBool is_routeable_v4(mDNSAddr * addr)
+	{
+	mDNSu8 * b;
+
+	if (addr->type != mDNSAddrType_IPv4)
+		{
+		return mDNSfalse;
+		}
+		
+	b = addr->ip.v4.b;
+		
+	if (((b[0] == 169) && (b[1] == 254))            ||
+		((b[0] == 127))                             ||
+		((b[0] == 10))                              ||
+		((b[0] == 172) && (b[1] > 15 && b[1] < 32)) ||
+		((b[0] == 192) && (b[1] == 168)))
+		{
+		return mDNSfalse;
+		}
+		
+	return mDNStrue;
+	}
+	
+mDNSlocal mDNSBool is_routeable_v6(mDNSAddr * addr)
+	{
+	mDNSu8 * b;
+
+	if (addr->type != mDNSAddrType_IPv6)
+		{
+		return mDNSfalse;
+		}
+		
+	b = addr->ip.v6.b;
+
+	if ((b[0] != 0xFE) && (b[1] != 0x80) && (b[1] != 0x90) && (b[1] != 0xA0) && (b[1] != 0xB0))
+		{
+		return mDNSfalse;
+		}
+		
+	return mDNStrue;
 	}
 
 int udsserver_init(void)
@@ -1436,10 +1495,10 @@ mDNSlocal void request_callback(void *info)
 			strcpy(cliaddr.sun_path, ctrl_path);
 			}
 		#endif
-		//LogOperation("request_callback: Connecting to “%s”", cliaddr.sun_path);
+		//LogOperation("request_callback: Connecting to ‚Äú%s‚Äù", cliaddr.sun_path);
 		if (connect(errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
 			{
-			//LogOperation("request_callback: Couldn't connect to “%s”", cliaddr.sun_path);
+			//LogOperation("request_callback: Couldn't connect to ‚Äú%s‚Äù", cliaddr.sun_path);
 			my_perror("ERROR: connect");
 			abort_request(rstate);
 			unlink_request(rstate);
@@ -1491,6 +1550,7 @@ mDNSlocal void request_callback(void *info)
 			case reconfirm_record_request:     handle_reconfirm_request            (rstate); break;
 			case setdomain_request:            handle_setdomain_request            (rstate); break;
 			case port_mapping_create_request:  handle_port_mapping_create_request  (rstate); break;
+			case addrinfo_request:             handle_addrinfo_request             (rstate); break;
 			default: LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", rstate->sd, rstate->hdr.op);
 			}
 		}
@@ -1616,7 +1676,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     rstate->msgbuf = NULL;
 
     if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
-    	{ LogMsg("ERROR: handle_resolve_request - Couldn't build_domainname_from_strings “%s” “%s” “%s”", name, regtype, domain); goto bad_param; }
+    	{ LogMsg("ERROR: handle_resolve_request - Couldn't build_domainname_from_strings ‚Äú%s‚Äù ‚Äú%s‚Äù ‚Äú%s‚Äù", name, regtype, domain); goto bad_param; }
 
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
@@ -2271,6 +2331,225 @@ mDNSlocal void port_mapping_create_termination_callback(void *context)
 	mDNS_Unlock(gmDNS);
 	}
 
+mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	char *data;
+	addrinfo_info_t *info = question->QuestionContext;
+	reply_state *rep;
+	size_t len;
+	char hostname[MAX_ESCAPED_DOMAIN_NAME];
+	(void)m; // Unused
+
+	if (!info)
+		{
+		return;
+		}
+
+	LogOperation("%3d: DNSServiceGetAddrInfo(%##s, %s) RESULT %s", info->rstate->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
+
+	if (answer->rdlength == 0)
+		{
+		deliver_async_error(info->rstate, query_reply_op, kDNSServiceErr_NoSuchRecord);
+		return;
+		}
+
+	// calculate reply data length
+	len = sizeof(DNSServiceFlags);
+	len += 2 * sizeof(uint32_t);  // if index + ttl
+	len += sizeof(DNSServiceErrorType);
+	ConvertDomainNameToCString(answer->name, hostname);
+	len += strlen(hostname) + 1;
+	len += 2 * sizeof(uint16_t); // type, rdlen
+	len += answer->rdlength;
+
+	rep =  create_reply(addrinfo_reply_op, len, info->rstate);
+
+	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
+	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(gmDNS, answer->InterfaceID));
+	rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
+
+	data = rep->sdata;
+	put_string(hostname, &data);
+	put_short(answer->rrtype, &data);
+	put_short(answer->rdlength, &data);
+	put_rdata(answer->rdlength, answer->rdata->u.data, &data);
+	put_long(AddRecord ? answer->rroriginalttl : 0, &data);
+
+	append_reply(info->rstate, rep);
+	return;
+	}
+
+mDNSlocal void handle_addrinfo_request(request_state *rstate)
+	{
+	DNSServiceFlags flags;
+	uint32_t ifi;
+	char hostname[256];
+	uint32_t protocol;
+	char *ptr;
+	mStatus result;
+	mDNSInterfaceID InterfaceID;
+	addrinfo_info_t * info = mDNSNULL;
+	domainname d;
+	mStatus err = 0;
+	
+	if (rstate->ts != t_complete)
+		{
+		LogMsg("ERROR: handle_addrinfo_request - transfer state != t_complete");
+		goto error;
+		}
+	ptr = rstate->msgdata;
+	if (!ptr)
+		{
+		LogMsg("ERROR: handle_addrinfo_request - NULL msgdata");
+		goto error;
+		}
+	
+	flags = get_flags(&ptr);
+	ifi = get_long(&ptr);
+	protocol = get_long(&ptr);
+	if (get_string(&ptr, hostname, 256) < 0) goto bad_param;
+	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(gmDNS, ifi);
+	if (!MakeDomainNameFromDNSNameString(&d, hostname)) { LogMsg("ERROR: handle_addrinfo_request: bad hostname: %s", hostname); goto bad_param; }
+	if (ifi && !InterfaceID) goto bad_param;
+	if (protocol > (kDNSServiceProtocol_IPv4|kDNSServiceProtocol_IPv6)) goto bad_param;
+	
+	if (!protocol)
+		{
+		NetworkInterfaceInfo * intf;
+
+		if (IsLocalDomain(&d))
+			{
+			for (intf = gmDNS->HostInterfaces; intf; intf = intf->next)
+				{				
+				if ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSIPv4AddressIsZero(intf->ip.ip.v4))
+					{
+					protocol |= kDNSServiceProtocol_IPv4;
+					}
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSIPv6AddressIsZero(intf->ip.ip.v6))
+					{
+					protocol |= kDNSServiceProtocol_IPv6;
+					}
+				}
+			}
+		else
+			{
+			for (intf = gmDNS->HostInterfaces; intf; intf = intf->next)
+				{
+				if ((intf->ip.type == mDNSAddrType_IPv4) && is_routeable_v4(&intf->ip))
+					{
+					protocol |= kDNSServiceProtocol_IPv4;
+					}
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && is_routeable_v6(&intf->ip))
+					{
+					protocol |= kDNSServiceProtocol_IPv6;
+					}
+				}
+			}
+		}
+
+	// allocate and set up info
+	info = mallocL("addrinfo_info_t", sizeof(*info));
+	if (!info) { err = mStatus_NoMemoryErr; goto error; }
+	bzero(info, sizeof(addrinfo_info_t));
+
+	info->rstate				= rstate;
+	rstate->termination_context = info;
+	rstate->terminate = addrinfo_termination_callback;
+	result            = 0;
+
+	if (protocol & kDNSServiceProtocol_IPv4)
+		{
+		info->q4.InterfaceID      = InterfaceID;
+		info->q4.Target           = zeroAddr;
+		memcpy(&info->q4.qname, &d, sizeof(d));
+		info->q4.qtype            = kDNSServiceType_A;
+		info->q4.qclass           = kDNSServiceClass_IN;
+		info->q4.Private          = mDNSfalse;
+		info->q4.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
+		info->q4.ExpectUnique     = mDNSfalse;
+		info->q4.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
+		info->q4.ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME   ) != 0;
+		info->q4.QuestionCallback = addrinfo_result_callback;
+		info->q4.QuestionContext  = info;
+
+		result = mDNS_StartQuery(gmDNS, &info->q4);
+		if (result != mStatus_NoError)
+			{
+			LogMsg("ERROR: mDNS_StartQuery: %d", (int)result);
+			info->q4.QuestionContext = mDNSNULL;
+			}
+		}
+
+	if (!result && (protocol & kDNSServiceProtocol_IPv6))
+		{
+		info->q6.InterfaceID      = InterfaceID;
+		info->q6.Target           = zeroAddr;
+		memcpy(&info->q6.qname, &d, sizeof(d));
+		info->q6.qtype            = kDNSServiceType_AAAA;
+		info->q6.qclass           = kDNSServiceClass_IN;
+		info->q6.Private          = mDNSfalse;
+		info->q6.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
+		info->q6.ExpectUnique     = mDNSfalse;
+		info->q6.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
+		info->q6.ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME   ) != 0;
+		info->q6.QuestionCallback = addrinfo_result_callback;
+		info->q6.QuestionContext  = info;
+		
+		result = mDNS_StartQuery(gmDNS, &info->q6);
+		if (result != mStatus_NoError)
+			{
+			LogMsg("ERROR: mDNS_StartQuery: %d", (int)result);
+			info->q6.QuestionContext = mDNSNULL;
+			}
+		}
+
+	LogOperation("%3d: DNSServiceGetAddrInfo(%##s) START", rstate->sd, d.c);
+
+	if (result) rstate->terminate = NULL;
+	if (deliver_error(rstate, result) < 0) goto error;
+	return;
+	
+bad_param:
+	deliver_error(rstate, mStatus_BadParamErr);
+	rstate->terminate = NULL;	// don't try to terminate insuccessful Core calls
+error:
+	if (info && info->q4.QuestionContext)
+		{
+		mDNS_StopQuery(gmDNS, &info->q4);
+		info->q4.QuestionContext = mDNSNULL;
+		}
+	if (info && info->q6.QuestionContext)
+		{
+		mDNS_StopQuery(gmDNS, &info->q6);
+		info->q6.QuestionContext = mDNSNULL;
+		}
+	abort_request(rstate);
+	unlink_request(rstate);
+	return;
+	}
+
+mDNSlocal void addrinfo_termination_callback(void *context)
+	{
+	addrinfo_info_t *info = (addrinfo_info_t*) context;
+
+	if (!info) return;
+
+	if (info->q4.QuestionContext)
+		{
+		mDNS_StopQuery(gmDNS, &info->q4);
+		info->q4.QuestionContext = mDNSNULL;
+		}
+		
+	if (info->q6.QuestionContext)
+		{
+		mDNS_StopQuery(gmDNS, &info->q6);
+		info->q6.QuestionContext = mDNSNULL;
+		}
+
+	info->rstate->termination_context = NULL;
+	freeL("addrinfo_info_t", info);
+	}
+
 // Generates a response message giving name, type, domain, plus interface index,
 // suitable for a browse result or service registration result.
 // On successful completion rep is set to point to a malloc'd reply_state struct
@@ -2742,7 +3021,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 		}
 	
 	if (!ConstructServiceName(&srv, &service->name, &service->type, &d))
-		{ LogMsg("ERROR: handle_regservice_request - Couldn't ConstructServiceName from, “%#s” “%##s” “%##s”", service->name.c, service->type.c, d.c); goto bad_param; }
+		{ LogMsg("ERROR: handle_regservice_request - Couldn't ConstructServiceName from, ‚Äú%#s‚Äù ‚Äú%##s‚Äù ‚Äú%##s‚Äù", service->name.c, service->type.c, d.c); goto bad_param; }
 		
 	if (!MakeDomainNameFromDNSNameString(&service->host, host))
 		{ LogMsg("ERROR: handle_regservice_request - host bad %s", host); goto bad_param; }
@@ -3941,6 +4220,11 @@ mDNSlocal int validate_message(request_state *rstate)
 		                sizeof(uint16_t) +             // public port
 		                sizeof(uint32_t);
 		    break;
+		case addrinfo_request: min_size = sizeof(DNSServiceFlags) + // flags
+		                sizeof(uint32_t) +             // interface
+						sizeof(uint32_t) +             // protocol
+						sizeof(char);                  // hostname
+			break;
 		default:
             LogMsg("ERROR: validate_message - unsupported request type: %d", rstate->hdr.op);
 	    return -1;

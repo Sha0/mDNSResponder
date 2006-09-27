@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.56  2006/09/27 00:44:16  herscher
+<rdar://problem/4249761> API: Need DNSServiceGetAddrInfo()
+
 Revision 1.55  2006/09/26 01:52:01  herscher
 <rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
 
@@ -203,6 +206,7 @@ Update to APSL 2.0
 #if defined(_WIN32)
 
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 
 #define sockaddr_mdns sockaddr_in
@@ -724,6 +728,121 @@ error:
     return kDNSServiceErr_Unknown;
     }
 
+static void handle_addrinfo_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
+    {
+	DNSServiceFlags flags;
+	uint32_t interfaceIndex, ttl;
+	DNSServiceErrorType errorCode;
+	char hostname[kDNSServiceMaxDomainName];
+	int str_error = 0;
+	uint16_t rrtype, rdlen;
+	char *rdata;
+	struct sockaddr_in  sa4;
+	struct sockaddr_in6 sa6;
+	struct sockaddr   * sa = NULL;
+	(void)hdr;//Unused
+
+	flags = get_flags(&data);
+	interfaceIndex = get_long(&data);
+	errorCode = get_error_code(&data);
+	if (get_string(&data, hostname, kDNSServiceMaxDomainName) < 0) str_error = 1;
+	rrtype = get_short(&data);
+	rdlen = get_short(&data);
+	rdata = get_rdata(&data, rdlen);
+	ttl = get_long(&data);
+	
+	if (!errorCode && str_error) errorCode = kDNSServiceErr_Unknown;
+
+	if (errorCode)
+		{
+		sa = NULL;
+		}
+	else
+		{
+		if (rrtype == kDNSServiceType_A)
+			{
+			memcpy(&sa4.sin_addr, rdata,rdlen);
+			sa = (struct sockaddr*) &sa4;
+#ifndef NOT_HAVE_SA_LEN
+			sa->sa_len = sizeof(struct sockaddr_in);
+#endif
+			sa->sa_family = AF_INET;
+			}
+		else if (rrtype == kDNSServiceType_AAAA)
+			{
+			memcpy(&sa6.sin6_addr, rdata, rdlen);
+			sa = (struct sockaddr*) &sa6;
+#ifndef NOT_HAVE_SA_LEN
+			sa->sa_len = sizeof(struct sockaddr_in6);
+#endif
+			sa->sa_family = AF_INET6;
+			}
+		}
+
+	((DNSServiceGetAddrInfoReply)sdr->app_callback)(sdr, flags, interfaceIndex, errorCode, hostname, sa, ttl, sdr->app_context);
+
+	return;
+	}
+
+DNSServiceErrorType DNSSD_API DNSServiceGetAddrInfo
+	(
+	DNSServiceRef                    *sdRef,
+	DNSServiceFlags                  flags,
+	uint32_t                         interfaceIndex,
+	uint32_t                         protocol,
+	const char                       *hostname,
+	DNSServiceGetAddrInfoReply       callBack,
+	void                             *context          /* may be NULL */
+	)
+	{
+	char *msg = NULL, *ptr;
+	size_t len;
+	ipc_msg_hdr *hdr;
+	DNSServiceRef sdr;
+	DNSServiceErrorType err;
+
+	if (!sdRef) return kDNSServiceErr_BadParam;
+	*sdRef = NULL;
+
+	if (!hostname) return kDNSServiceErr_BadParam;
+
+	// calculate total message length
+	len = sizeof(flags);
+	len += sizeof(uint32_t);      //interfaceIndex
+	len += sizeof(uint32_t);      // protocol
+	len += strlen(hostname) + 1;
+
+	hdr = create_hdr(addrinfo_request, &len, &ptr, 1);
+	if (!hdr) goto error;
+	msg = (void *)hdr;
+
+	put_flags(flags, &ptr);
+	put_long(interfaceIndex, &ptr);
+	put_long(protocol, &ptr);
+	put_string(hostname, &ptr);
+
+	sdr = connect_to_server();
+	if (!sdr) goto error;
+	err = deliver_request(msg, sdr, 1);
+	if (err)
+		{
+		DNSServiceRefDeallocate(sdr);
+		return err;
+	}
+
+	sdr->op = addrinfo_request;
+	sdr->process_reply = handle_addrinfo_response;
+	sdr->app_callback = callBack;
+	sdr->app_context = context;
+	*sdRef = sdr;
+	return err;
+
+error:
+	if (msg) free(msg);
+	if (*sdRef) { free(*sdRef);  *sdRef = NULL; }
+	return kDNSServiceErr_Unknown;
+	}
+    
 static void handle_browse_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
     {
     DNSServiceFlags      flags;
@@ -1138,7 +1257,7 @@ error:
     if (rref) free(rref);
     if (*RecordRef) *RecordRef = NULL;
     return kDNSServiceErr_Unknown;
-}
+	}
 
 //DNSRecordRef returned by DNSServiceRegisterRecord or DNSServiceAddRecord
 DNSServiceErrorType DNSSD_API DNSServiceUpdateRecord
