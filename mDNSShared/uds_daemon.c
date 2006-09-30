@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.212  2006/09/30 01:22:35  cheshire
+Put back UTF-8 curly quotes in log messages
+
 Revision 1.211  2006/09/27 00:44:55  herscher
 <rdar://problem/4249761> API: Need DNSServiceGetAddrInfo()
 
@@ -1495,10 +1498,10 @@ mDNSlocal void request_callback(void *info)
 			strcpy(cliaddr.sun_path, ctrl_path);
 			}
 		#endif
-		//LogOperation("request_callback: Connecting to ‚Äú%s‚Äù", cliaddr.sun_path);
+		//LogOperation("request_callback: Connecting to “%s”", cliaddr.sun_path);
 		if (connect(errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
 			{
-			//LogOperation("request_callback: Couldn't connect to ‚Äú%s‚Äù", cliaddr.sun_path);
+			//LogOperation("request_callback: Couldn't connect to “%s”", cliaddr.sun_path);
 			my_perror("ERROR: connect");
 			abort_request(rstate);
 			unlink_request(rstate);
@@ -1676,7 +1679,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     rstate->msgbuf = NULL;
 
     if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
-    	{ LogMsg("ERROR: handle_resolve_request - Couldn't build_domainname_from_strings ‚Äú%s‚Äù ‚Äú%s‚Äù ‚Äú%s‚Äù", name, regtype, domain); goto bad_param; }
+    	{ LogMsg("ERROR: handle_resolve_request - Couldn't build_domainname_from_strings “%s” “%s” “%s”", name, regtype, domain); goto bad_param; }
 
     // set up termination info
     term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
@@ -3021,7 +3024,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 		}
 	
 	if (!ConstructServiceName(&srv, &service->name, &service->type, &d))
-		{ LogMsg("ERROR: handle_regservice_request - Couldn't ConstructServiceName from, ‚Äú%#s‚Äù ‚Äú%##s‚Äù ‚Äú%##s‚Äù", service->name.c, service->type.c, d.c); goto bad_param; }
+		{ LogMsg("ERROR: handle_regservice_request - Couldn't ConstructServiceName from, “%#s” “%##s” “%##s”", service->name.c, service->type.c, d.c); goto bad_param; }
 		
 	if (!MakeDomainNameFromDNSNameString(&service->host, host))
 		{ LogMsg("ERROR: handle_regservice_request - host bad %s", host); goto bad_param; }
