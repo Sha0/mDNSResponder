@@ -495,7 +495,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	}
 
 #if defined(HAS_NAT_PMP_API)
-static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint8_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void * context)
+static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint32_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void * context)
 	{
 	(void)sdRef;       // Unused
 	(void)context;     // Unused
@@ -757,15 +757,14 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-#if defined(HAS_NAT_PMP_API) && defined(HAS_ADDRINFO_API)
-	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIXG", &optind);
-#elif defined(HAS_NAT_PMP_API)
-	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIX", &optind);
-#elif defined(HAS_ADDRINFO_API)
-	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMIG", &optind);
-#else
-	operation = getfirstoption( argc, argv, "EFBLRPQCAUNTMI", &optind);
-#endif
+	operation = getfirstoption(argc, argv, "EFBLRPQCAUNTMI"
+								#if defined(HAS_NAT_PMP_API)
+									"X"
+								#endif
+								#if defined(HAS_ADDRINFO_API)
+									"G"
+								#endif
+								, &optind);
 	if (operation == -1) goto Fail;
 
 	switch (operation)
