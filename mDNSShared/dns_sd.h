@@ -1239,6 +1239,8 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
  *                  indicate the failure that occurred.  Other parameters are
  *                  undefined if errorCode is nonzero.
  *
+ * hostname:        The fully qualified domain name of the host to be queried for.
+ *
  * address:         IPv4 or IPv6 address.
  *
  * ttl:             If the client wishes to cache the result for performance reasons,
@@ -1261,6 +1263,7 @@ typedef void (DNSSD_API *DNSServiceGetAddrInfoReply)
     DNSServiceFlags                  flags,
     uint32_t                         interfaceIndex,
     DNSServiceErrorType              errorCode,
+    char                             *hostname,
     struct sockaddr                  *address,
     uint32_t                         ttl,
     void                             *context
