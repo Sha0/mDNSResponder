@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.57  2006/09/30 01:06:54  cheshire
+Protocol field should be uint32_t
+
 Revision 1.56  2006/09/27 00:44:16  herscher
 <rdar://problem/4249761> API: Need DNSServiceGetAddrInfo()
 
@@ -1382,13 +1385,12 @@ static void handle_port_mapping_create_response(DNSServiceRef sdr, ipc_msg_hdr *
 	((DNSServiceNATPortMappingReply)sdr->app_callback)(sdr, flags, ifi, err, addr, protocol, privatePort.s, publicPort.s, ttl, sdr->app_context);
 	}
 
-DNSServiceErrorType DNSSD_API
-DNSServiceNATPortMappingCreate
+DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	(
 	DNSServiceRef                       *sdRef,
 	DNSServiceFlags                     flags,
 	uint32_t                            interfaceIndex,
-	uint8_t                             protocol,     /* TCP and/or UDP */
+	uint32_t                            protocol,     /* TCP and/or UDP */
 	uint16_t                            privatePort,  /* network byte oder */
 	uint16_t                            publicPort,   /* network byte oder */
 	uint32_t                            ttl,          /* time to live in seconds */
