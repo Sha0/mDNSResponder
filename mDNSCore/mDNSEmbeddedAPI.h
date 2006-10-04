@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.303  2006/10/04 21:37:33  herscher
+Remove uDNS_info substructure from DNSQuestion_struct
+
 Revision 1.302  2006/09/26 01:53:25  herscher
 <rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
 
@@ -1912,18 +1915,6 @@ enum
 	};
 
 typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *internalContext);
-typedef struct
-	{
-	mDNSOpaque16          id;
-	mDNSBool              internal;
-	InternalResponseHndlr responseCallback;   // NULL if internal field is false
-	LLQ_Info              *llq;               // NULL for 1-shot queries
-	uDNS_TCPSocket         sock;		      // For secure operations
-    mDNSBool              Answered;           // have we received an answer (including NXDOMAIN) for this question?
-    CacheRecord           *knownAnswers;
-    mDNSs32               RestartTime;        // Mark when we restart a suspended query
-    void *context;
-	} uDNS_QuestionInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
@@ -1952,7 +1943,17 @@ struct DNSQuestion_struct
 	mDNSu32               RequestUnicast;	// Non-zero if we want to send query with kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
 	mDNSBool              Private;			// Set if query is currently being done using Private DNS
-	uDNS_QuestionInfo     uDNS_info;
+
+	// Wide Area fields.  These are used internally by the uDNS core
+	mDNSOpaque16          id;
+	mDNSBool              internal;
+	InternalResponseHndlr responseCallback;   // NULL if internal field is false
+	LLQ_Info              *llq;               // NULL for 1-shot queries
+	uDNS_TCPSocket         sock;		      // For secure operations
+	mDNSBool              Answered;           // have we received an answer (including NXDOMAIN) for this question?
+	CacheRecord           *knownAnswers;
+	mDNSs32               RestartTime;        // Mark when we restart a suspended query
+	void                  *context;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
