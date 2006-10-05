@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.213  2006/10/05 03:54:31  herscher
+Remove embedded uDNS_info struct from DNSQuestion_struct
+
 Revision 1.212  2006/09/30 01:22:35  cheshire
 Put back UTF-8 curly quotes in log messages
 
@@ -2792,7 +2795,7 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 						// Note that this a special case where we know that the QuestionCallback function is our own
 						// code (it's FoundInstance), and that callback routine doesn't ever cancel its operation, so we
 						// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
-						CacheRecord *ka = remove->q.uDNS_info.knownAnswers;
+						CacheRecord *ka = remove->q.knownAnswers;
 						while (ka) { remove->q.QuestionCallback(gmDNS, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
 						}
 					mDNS_StopBrowse(gmDNS, &remove->q);
