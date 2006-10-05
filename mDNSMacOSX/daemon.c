@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.278  2006/10/05 04:04:24  herscher
+Remove embedded uDNS_info struct from DNSQuestion_struct
+
 Revision 1.277  2006/09/21 21:01:24  cheshire
 Change 'autorename' to more accurate name 'renameonmemfree'
 
@@ -1323,7 +1326,7 @@ mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNS
 							// Note that this a special case where we know that the QuestionCallback function is our own
 							// code (it's FoundInstance), and that callback routine doesn't ever cancel its operation, so we
 							// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
-							CacheRecord *ka = remove->q.uDNS_info.knownAnswers;
+							CacheRecord *ka = remove->q.knownAnswers;
 							while (ka) { remove->q.QuestionCallback(&mDNSStorage, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
 							}
 						mDNS_StopBrowse(&mDNSStorage, &remove->q);
