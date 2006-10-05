@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.108  2006/10/05 23:11:18  cheshire
+<rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
+
 Revision 1.107  2006/09/15 21:20:14  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -1408,11 +1411,11 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 
 		case kDNSType_AAAA:	return(rdlength == sizeof(mDNSv6Addr));
 
-		case kDNSType_MX:   if (!rdlength) return(mDNSfalse);
+		case kDNSType_MX:   if (rdlength < 3) return(mDNSfalse);	// Must be at least two-byte preference, plus domainname
 							len = DomainNameLength(&rd->u.mx.exchange);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 2+len);
 
-		case kDNSType_SRV:	if (!rdlength) return(mDNSfalse);
+		case kDNSType_SRV:	if (rdlength < 7) return(mDNSfalse);	// Must be at least priority+weight+port, plus domainname
 							len = DomainNameLength(&rd->u.srv.target);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
 
