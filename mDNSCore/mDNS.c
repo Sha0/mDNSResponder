@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.553  2006/10/05 03:42:43  herscher
+Remove embedded uDNS_info struct in DNSQuestion_struct
+
 Revision 1.552  2006/09/15 21:20:15  cheshire
 Remove uDNS_info substructure from mDNS_struct
 
@@ -5510,7 +5513,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 	// If the client has specified 'kDNSServiceFlagsForceMulticast'
 	// then we do a multicast query on that interface, even for unicast domains.
     if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
-    	question->uDNS_info.id = zeroID;
+    	question->id = zeroID;
     else return uDNS_StartQuery(m, question);
 #else
     question->uDNS_info.id = zeroID;
@@ -5730,7 +5733,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
     if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
     	{
 		question->LongLived = mDNSfalse;
-		question->uDNS_info.id = zeroID;
+		question->id = zeroID;
 		return(mDNS_StartQuery(m, question));
 		}
 	else
