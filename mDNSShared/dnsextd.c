@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.46  2006/10/11 22:56:07  herscher
+Tidy up the implementation of ZoneHandlesName
+
 Revision 1.45  2006/08/22 03:28:57  herscher
 <rdar://problem/4678717> Long-lived queries aren't working well in TOT.
 
@@ -642,23 +645,15 @@ ZoneHandlesName
 	const domainname * dname
 	)
 	{
-	int			i = ( int ) DomainNameLength( zname ) - 1;
-	int			j = ( int ) DomainNameLength( dname ) - 1;
-	mDNSBool 	ret = mDNStrue;
+	mDNSu16	i = DomainNameLength( zname );
+	mDNSu16	j = DomainNameLength( dname );
 
-	if ( i <= j )
+	if ( ( i == ( MAX_DOMAIN_NAME + 1 ) ) || ( j == ( MAX_DOMAIN_NAME + 1 ) ) || ( i > j )  || ( memcmp( zname->c, dname->c + ( j - i ), i ) != 0 ) )
 		{
-		for ( ; i >= 0; i--, j-- )
-			{
-			if ( zname->c[ i ] != dname->c[ j ] )
-				{
-				ret = mDNSfalse;
-				break;
-				}
-			}
+		return mDNSfalse;
 		}
 
-	return ret;
+	return mDNStrue;
 	}
 
 
