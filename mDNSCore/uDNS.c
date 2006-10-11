@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.246  2006/10/11 19:29:41  herscher
+<rdar://problem/4744553> uDNS: mDNSResponder-111 using 100% CPU
+
 Revision 1.245  2006/10/04 22:21:15  herscher
 Tidy up references to mDNS_struct introduced when the embedded uDNS_info struct was removed.
 
@@ -6064,10 +6067,13 @@ mDNSlocal mDNSs32 CheckQueries(mDNS *m, mDNSs32 timenow)
 					if (err)  LogMsg("Error: uDNS_Idle - constructQueryMsg.  Skipping question %##s", q->qname.c);
 					else
 						{
-						if (server->teststate != DNSServer_Failed && !private )
-							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server->addr, UnicastDNSPort, mDNSNULL, mDNSNULL );
-						else
-							err = startPrivateQuery( m, q );
+						if (server->teststate != DNSServer_Failed)
+							{
+							if (!private)
+								err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server->addr, UnicastDNSPort, mDNSNULL, mDNSNULL );
+							else
+								err = startPrivateQuery( m, q );
+							}
 						m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
 						q->LastQTime = timenow;
 						if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
