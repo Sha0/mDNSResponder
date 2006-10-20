@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.48  2006/10/20 19:18:35  cheshire
+<rdar://problem/4669228> dnsextd generates bogus SRV record with null target
+
 Revision 1.47  2006/10/20 05:43:51  herscher
 LookupLLQ() needs to match on the port number when looking up the LLQ
 
@@ -1046,7 +1049,7 @@ mDNSlocal mDNSu8 *PutUpdateSRV(DaemonInfo *d, DNSZone * zone, PktMsg *pkt, mDNSu
 	rr.resrec.rdata->u.srv.priority = 0;
 	rr.resrec.rdata->u.srv.weight   = 0;
 	rr.resrec.rdata->u.srv.port     = port;
-	if (!gethostname(hostname, 1024) < 0 || MakeDomainNameFromDNSNameString(&rr.resrec.rdata->u.srv.target, hostname))
+	if (gethostname(hostname, 1024) < 0 || !MakeDomainNameFromDNSNameString(&rr.resrec.rdata->u.srv.target, hostname))
 		rr.resrec.rdata->u.srv.target.c[0] = '\0';
 	
 	MakeDomainNameFromDNSNameString(rr.resrec.name, regtype);
