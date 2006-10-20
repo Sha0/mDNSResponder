@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.214  2006/10/20 05:37:23  herscher
+Display question list information in udsserver_info()
+
 Revision 1.213  2006/10/05 03:54:31  herscher
 Remove embedded uDNS_info struct from DNSQuestion_struct
 
@@ -1278,6 +1281,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
 	mDNSu32 slot;
 	CacheGroup *cg;
+	DNSQuestion * q;
 	CacheRecord *rr;
     request_state *req;
 
@@ -1310,6 +1314,21 @@ mDNSexport void udsserver_info(mDNS *const m)
 	if (m->rrcache_active != CacheActive)
 		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", m->rrcache_active, CacheActive);
 	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
+
+	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
+	LogMsgNoIdent( "%-55s%-5s%-5s%-16s%s", "Name", "Type", "LLQ", "LastQTime", "ThisQInterval" );
+	CacheUsed = 0;
+	CacheActive = 0;
+	for (q = m->Questions; q; q=q->next)
+		{
+		char buf[ MAX_ESCAPED_DOMAIN_NAME ];
+
+		ConvertDomainNameToCString( &q->qname, buf );
+		LogMsgNoIdent( "%-55s%-5u%-5s%-16u%u", buf, q->qtype, q->llq ? "y" : "n", q->LastQTime, q->ThisQInterval );
+		CacheUsed++;
+		if ( q->ThisQInterval ) CacheActive++;
+		}
+	LogMsgNoIdent("Question list currently contains %lu records; %lu are active", CacheUsed, CacheActive);
 
     for (req = all_requests; req; req=req->next)
 		LogClientInfo(req);
