@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.47  2006/10/20 05:43:51  herscher
+LookupLLQ() needs to match on the port number when looking up the LLQ
+
 Revision 1.46  2006/10/11 22:56:07  herscher
 Tidy up the implementation of ZoneHandlesName
 
@@ -2358,7 +2361,7 @@ mDNSlocal LLQEntry *LookupLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname 
 
 	while(ptr)
 		{
-		if (((ptr->state == ChallengeSent && ZERO_LLQID(id)) || // zero-id due to packet loss OK in state ChallengeSent
+		if (((ptr->state == ChallengeSent && ZERO_LLQID(id) && (cli.sin_port == ptr->cli.sin_port)) || // zero-id due to packet loss OK in state ChallengeSent
 			 !memcmp(id, ptr->id, 8)) &&                        // id match
 			(cli.sin_addr.s_addr == ptr->cli.sin_addr.s_addr) && (qtype == ptr->qtype) && SameDomainName(&ptr->qname, qname)) // same source, type, qname
 			return ptr;
