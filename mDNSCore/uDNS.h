@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.39  2006/10/20 05:35:05  herscher
+<rdar://problem/4720713> uDNS: Merge unicast active question list with multicast list.
+
 Revision 1.38  2006/09/26 01:54:02  herscher
 <rdar://problem/4245016> NAT Port Mapping API (for both NAT-PMP and UPnP Gateway Protocol)
 
@@ -164,9 +167,10 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 	
 // Entry points into unicast-specific routines
 
-extern mStatus uDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
-extern mDNSBool uDNS_IsActiveQuery(DNSQuestion *const question, mDNS *u);  // returns true if OK to call StopQuery
-extern mStatus uDNS_StopQuery(mDNS *const m, DNSQuestion *const question);
+extern mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const question);
+extern void    uDNS_StopLongLivedQuery (mDNS *const m, DNSQuestion *const question);
+extern mStatus uDNS_InitPrivateQuery  (mDNS *const m, DNSQuestion *const question);
+extern mStatus uDNS_InitQuery         (mDNS *const m, DNSQuestion *const question);
 	
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
@@ -188,6 +192,7 @@ extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
 extern struct uDNS_AuthInfo * uDNS_GetAuthInfo( mDNS * const m, DNSQuestion * question );
+extern void                   uDNS_CheckQuery ( mDNS * const m, DNSQuestion * question );
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,

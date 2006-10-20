@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.304  2006/10/20 05:35:05  herscher
+<rdar://problem/4720713> uDNS: Merge unicast active question list with multicast list.
+
 Revision 1.303  2006/10/04 21:37:33  herscher
 Remove uDNS_info substructure from DNSQuestion_struct
 
@@ -1879,7 +1882,6 @@ typedef struct
 	uDNS_UDPSocket udpSock;
 	DNSQuestion *question;
 	mDNSu32 origLease;  // seconds (relative)
-	mDNSs32 retry;  // ticks (absolute)
 	mDNSs32 expire; // ticks (absolute)
     mDNSs16 ntries;
 	mDNSu8 id[8];
@@ -2211,10 +2213,6 @@ struct mDNS_struct
 
 	// unicast-specific data
 	mDNSs32          nextevent;
-	DNSQuestion      *ActiveQueries;     //!!!KRS this should be a hashtable (hash on messageID)
-	DNSQuestion      *CurrentQuery;      // pointer to ActiveQueries list being examined in a loop.  Functions that remove
-										 // elements from the ActiveQueries list must update this pointer (if non-NULL) as necessary.
-										 //!!!KRS do the same for registration lists
 	ServiceRecordSet *ServiceRegistrations;
 	AuthRecord       *RecordRegistrations;
 	NATTraversalInfo *NATTraversals;
@@ -2502,6 +2500,10 @@ extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_
 #define        mDNS_StopGetDomains mDNS_StopQuery
 extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
+
+extern mDNSBool	    mDNS_IsActiveQuery(mDNS * const m, DNSQuestion *const question);
+
+extern mDNSOpaque16 mDNS_NewMessageID(mDNS * const m);
 
 // ***************************************************************************
 #if 0

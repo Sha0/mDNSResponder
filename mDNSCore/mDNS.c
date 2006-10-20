@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.554  2006/10/20 05:35:04  herscher
+<rdar://problem/4720713> uDNS: Merge unicast active question list with multicast list.
+
 Revision 1.553  2006/10/05 03:42:43  herscher
 Remove embedded uDNS_info struct in DNSQuestion_struct
 
@@ -1786,6 +1789,7 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 
 #include "DNSCommon.h"                  // Defines general DNS untility routines
 #include "uDNS.h"						// Defines entry points into unicast-specific routines
+
 // Disable certain benign warnings with Microsoft compilers
 #if(defined(_MSC_VER))
 	// Disable "conditional expression is constant" warning for debug macros.
@@ -1841,8 +1845,17 @@ mDNSexport const char *const mDNS_DomainTypeNames[] =
 mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 	{
 	if (ActiveQuestion(q))
-		if (m->NextScheduledQuery - (q->LastQTime + q->ThisQInterval) > 0)
-			m->NextScheduledQuery = (q->LastQTime + q->ThisQInterval);
+		{
+		mDNSs32 sendtime = q->LastQTime + q->ThisQInterval;
+
+		if (q->id.NotAnInteger && !q->LongLived && m->SuppressStdPort53Queries && (sendtime - m->SuppressStdPort53Queries < 0)) // Don't allow sendtime to be earlier than SuppressStdPort53Queries
+			sendtime = m->SuppressStdPort53Queries;
+
+		if (m->NextScheduledQuery - sendtime > 0)
+			{
+			m->NextScheduledQuery = sendtime;
+			}
+		}
 	}
 
 mDNSlocal CacheGroup *CacheGroupForName(const mDNS *const m, const mDNSu32 slot, const mDNSu32 namehash, const domainname *const name)
@@ -3361,9 +3374,22 @@ mDNSlocal void SendQueries(mDNS *const m)
 					else if (q->SendQNow != rr->resrec.InterfaceID) q->SendQNow = mDNSInterfaceMark;
 					}
 
-		// Scan our list of questions to see which *unicast* queries need to be sent
+		if (m->SuppressStdPort53Queries && m->timenow - m->SuppressStdPort53Queries >= 0)
+			{
+			m->SuppressStdPort53Queries = 0; // If suppression time has passed, clear it
+			}
+			
+		// Scan our list of questions to see which:
+		//     *WideArea*  queries need to be sent
+		//     *unicast*   queries need to be sent
+		//     *multicast* queries we're definitely going to send
 		for (q = m->Questions; q; q=q->next)
-			if (q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
+			{
+			if (q->id.NotAnInteger && ActiveQuestion( q ) )
+				{
+				uDNS_CheckQuery( m, q );
+				}
+			else if (!q->id.NotAnInteger && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
 				mDNSu8       *qptr        = m->omsg.data;
 				const mDNSu8 *const limit = m->omsg.data + sizeof(m->omsg.data);
@@ -3379,23 +3405,21 @@ mDNSlocal void SendQueries(mDNS *const m)
 				q->SendQNow         = mDNSNULL;
 				m->ExpectUnicastResponse = m->timenow;
 				}
-	
-		// Scan our list of questions to see which *multicast* queries we're definitely going to send
-		for (q = m->Questions; q; q=q->next)
-			if (!q->Target.type && TimeToSendThisQuestion(q, m->timenow))
+			else if (!q->id.NotAnInteger && !q->Target.type && TimeToSendThisQuestion(q, m->timenow))
 				{
 				q->SendQNow = mDNSInterfaceMark;		// Mark this question for sending on all interfaces
 				if (maxExistingQuestionInterval < q->ThisQInterval)
 					maxExistingQuestionInterval = q->ThisQInterval;
 				}
-	
+			}
+
 		// Scan our list of questions
 		// (a) to see if there are any more that are worth accelerating, and
 		// (b) to update the state variables for *all* the questions we're going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (q->SendQNow ||
-				(!q->Target.type && ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q)))
+			if (!q->id.NotAnInteger && (q->SendQNow ||
+				(!q->Target.type && ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q))))
 				{
 				// If at least halfway to next query time, advance to next interval
 				// If less than halfway to next query time, then
@@ -3511,7 +3535,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 			
 			// Put query questions in this packet
 			for (q = m->Questions; q; q=q->next)
-				if (q->SendQNow == intf->InterfaceID)
+				{
+				if (!q->id.NotAnInteger && (q->SendQNow == intf->InterfaceID))
 					{
 					debugf("SendQueries: %s question for %##s (%s) at %d forecast total %d",
 						SuppressOnThisInterface(q->DupSuppress, intf) ? "Suppressing" : "Putting    ",
@@ -3521,6 +3546,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 						BuildQuestion(m, &m->omsg, &queryptr, q, &kalistptr, &answerforecast))
 							q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
+				}
 
 			// Put probe questions in this packet
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -3954,77 +3980,86 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	mDNSBool ShouldQueryImmediately = mDNStrue;
 	CacheRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
-	const mDNSu32 slot = HashSlot(&q->qname);
-	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
-
-	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-
-	if (cg) CheckCacheExpiration(m, cg);
-	m->NewQuestions = q->next;				// Advance NewQuestions to the next *after* calling CheckCacheExpiration();
-
-	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
-	// This should be safe, because calling the client's question callback may cause the
-	// question list to be modified, but should not ever cause the rrcache list to be modified.
-	// If the client's question callback deletes the question, then m->CurrentQuestion will	
-	// be advanced, and we'll exit out of the loop
-	m->lock_rrcache = 1;
-	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
-	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
-
-	if (q->InterfaceID == mDNSInterface_Any)	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
+	
+	// SEH Until we're putting WideArea responses in cache, don't do this
+	if (!q->id.NotAnInteger)
 		{
-		if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
-		m->CurrentRecord = m->ResourceRecords;
-		while (m->CurrentRecord && m->CurrentRecord != m->NewLocalRecords)
-			{
-			AuthRecord *rr = m->CurrentRecord;
-			m->CurrentRecord = rr->next;
-			if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
-				if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-					{
-					AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
-					// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
-					if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
-					}
-			}
-		m->CurrentRecord   = mDNSNULL;
-		}
+		const mDNSu32 slot = HashSlot(&q->qname);
+		CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
 
-	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-		if (SameNameRecordAnswersQuestion(&rr->resrec, q))
+		verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+
+		if (cg) CheckCacheExpiration(m, cg);
+		m->NewQuestions = q->next;				// Advance NewQuestions to the next *after* calling CheckCacheExpiration();
+
+		if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
+		// This should be safe, because calling the client's question callback may cause the
+		// question list to be modified, but should not ever cause the rrcache list to be modified.
+		// If the client's question callback deletes the question, then m->CurrentQuestion will	
+		// be advanced, and we'll exit out of the loop
+		m->lock_rrcache = 1;
+		if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
+		m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
+
+		if (q->InterfaceID == mDNSInterface_Any)	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
 			{
-			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
-			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-			if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
+			if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
+			m->CurrentRecord = m->ResourceRecords;
+			while (m->CurrentRecord && m->CurrentRecord != m->NewLocalRecords)
 				{
-				LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
-					rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
-				continue;	// Go to next one in loop
+				AuthRecord *rr = m->CurrentRecord;
+				m->CurrentRecord = rr->next;
+				if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
+					if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+						{
+						AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
+						// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
+						if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
+						}
 				}
-
-			// If this record set is marked unique, then that means we can reasonably assume we have the whole set
-			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
-			if ((rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) || (q->ExpectUnique))
-				ShouldQueryImmediately = mDNSfalse;
-			q->CurrentAnswers++;
-			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
-			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
-			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
-			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
-			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
+			m->CurrentRecord   = mDNSNULL;
 			}
-		else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
-			if (rr->resrec.namehash == q->qnamehash && SameDomainName(rr->resrec.name, &q->qname))
-				ShouldQueryImmediately = mDNSfalse;
 
-	if (ShouldQueryImmediately && m->CurrentQuestion == q)
-		{
-		q->ThisQInterval  = InitialQuestionInterval;
-		q->LastQTime      = m->timenow - q->ThisQInterval;
-		m->NextScheduledQuery = m->timenow;
+		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+			if (SameNameRecordAnswersQuestion(&rr->resrec, q))
+				{
+				// SecsSinceRcvd is whole number of elapsed seconds, rounded down
+				mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
+				if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
+					{
+					LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
+						rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+					continue;	// Go to next one in loop
+					}
+
+				// If this record set is marked unique, then that means we can reasonably assume we have the whole set
+				// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
+				if ((rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) || (q->ExpectUnique))
+					ShouldQueryImmediately = mDNSfalse;
+				q->CurrentAnswers++;
+				if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
+				if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
+				AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
+				// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+				if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
+				}
+			else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
+				if (rr->resrec.namehash == q->qnamehash && SameDomainName(rr->resrec.name, &q->qname))
+					ShouldQueryImmediately = mDNSfalse;
+
+		if (ShouldQueryImmediately && (m->CurrentQuestion == q))
+			{
+			q->ThisQInterval  = InitialQuestionInterval;
+			q->LastQTime      = m->timenow - q->ThisQInterval;
+			m->NextScheduledQuery = m->timenow;
+			}
+		m->CurrentQuestion = mDNSNULL;
+		m->lock_rrcache = 0;
 		}
-	m->CurrentQuestion = mDNSNULL;
-	m->lock_rrcache = 0;
+	else
+		{
+		m->NewQuestions = q->next;
+		}
 	}
 
 // When a NewLocalOnlyQuestion is created, AnswerNewLocalOnlyQuestion runs though our ResourceRecords delivering any
@@ -4380,7 +4415,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 #endif
         // 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
-			if (ActiveQuestion(q))
+			if (!q->id.NotAnInteger && ActiveQuestion(q))
 				{
 				q->ThisQInterval    = InitialQuestionInterval;	// MUST be > zero for an active question
 				q->RequestUnicast   = 2;						// Set to 2 because is decremented once *before* we check it
@@ -5513,10 +5548,15 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 	// If the client has specified 'kDNSServiceFlagsForceMulticast'
 	// then we do a multicast query on that interface, even for unicast domains.
     if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
+		{
     	question->id = zeroID;
-    else return uDNS_StartQuery(m, question);
+		}
+    else
+		{
+	    question->id = mDNS_NewMessageID(m);
+		}
 #else
-    question->uDNS_info.id = zeroID;
+    question->id = zeroID;
 #endif // UNICAST_DISABLED
 	
 	//LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
@@ -5526,8 +5566,16 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 	else
 		{
 		int i;
+		DNSQuestion **q;
+		
+		if (!ValidateDomainName(&question->qname))
+			{
+			LogMsg("Attempt to start query with invalid qname %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+			return(mStatus_Invalid);
+			}
+
 		// Note: It important that new questions are appended at the *end* of the list, not prepended at the start
-		DNSQuestion **q = &m->Questions;
+		q = &m->Questions;
 		if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 		while (*q && *q != question) q=&(*q)->next;
 
@@ -5535,8 +5583,11 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			{
 			LogMsg("Error! Tried to add a question %##s (%s) that's already in the active list",
 				question->qname.c, DNSTypeName(question->qtype));
+			
 			return(mStatus_AlreadyRegistered);
 			}
+
+		*q = question;
 
 		// If this question is referencing a specific interface, verify it exists
 		if (question->InterfaceID && question->InterfaceID != mDNSInterface_LocalOnly)
@@ -5549,39 +5600,64 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 					question->InterfaceID, question->qname.c);
 			}
 
-		if (!ValidateDomainName(&question->qname))
-			{
-			LogMsg("Attempt to start query with invalid qname %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
-			return(mStatus_Invalid);
-			}
-
 		// Note: In the case where we already have the answer to this question in our cache, that may be all the client
 		// wanted, and they may immediately cancel their question. In this case, sending an actual query on the wire would
 		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
 		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
 		if (!m->RandomQueryDelay) m->RandomQueryDelay = 1 + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
 
-		question->next              = mDNSNULL;
 		question->qnamehash         = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
-		question->DelayAnswering    = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
-		question->ThisQInterval     = InitialQuestionInterval * 2;			// MUST be > zero for an active question
-		question->RequestUnicast    = 0;
-		question->LastQTime         = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
-		question->LastAnswerPktNum  = m->PktNum;
+		question->DuplicateOf       = FindDuplicateQuestion(m, question);
+		question->SendQNow			= mDNSNULL;
 		question->RecentAnswerPkts  = 0;
 		question->CurrentAnswers    = 0;
 		question->LargeAnswers      = 0;
 		question->UniqueAnswers     = 0;
+		question->RestartTime       = 0;
 		question->FlappingInterface = mDNSNULL;
-		question->DuplicateOf       = FindDuplicateQuestion(m, question);
 		question->NextInDQList      = mDNSNULL;
-		for (i=0; i<DupSuppressInfoSize; i++)
-			question->DupSuppress[i].InterfaceID = mDNSNULL;
-		// question->InterfaceID must be already set by caller
-		question->SendQNow          = mDNSNULL;
-		question->SendOnAll         = mDNSfalse;
-		question->LastQTxTime       = m->timenow;
-		question->Private           = mDNSfalse;
+		question->llq               = mDNSNULL;
+		question->next              = mDNSNULL;
+
+		// If the question's id is zero, then it's local 
+		if (!question->id.NotAnInteger)
+			{
+			question->DelayAnswering    = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
+			question->ThisQInterval     = InitialQuestionInterval * 2;			// MUST be > zero for an active question
+			question->RequestUnicast    = 0;
+			question->LastQTime         = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
+			question->LastAnswerPktNum  = m->PktNum;
+			
+			for (i=0; i<DupSuppressInfoSize; i++)
+				question->DupSuppress[i].InterfaceID = mDNSNULL;
+			// question->InterfaceID must be already set by caller
+			question->SendOnAll         = mDNSfalse;
+			question->LastQTxTime       = m->timenow;
+			question->Private           = mDNSfalse;
+			}
+		// If the questions id is non-zero, then it's Wide Area
+		else
+			{
+			mStatus err;
+
+			question->DelayAnswering    = 0;
+			question->DuplicateOf       = 0;
+			question->Answered          = mDNSfalse;
+			question->knownAnswers      = mDNSNULL;
+			
+			if (question->LongLived)
+				{
+				if ((err = uDNS_InitLongLivedQuery(m, question)) != mStatus_NoError)	{ *q = mDNSNULL; return err; }
+				}
+			else if (question->Private)
+				{
+				if ((err = uDNS_InitPrivateQuery(m, question)) != mStatus_NoError)		{ *q = mDNSNULL; return err; }
+				}
+			else
+				{
+				if ((err = uDNS_InitQuery(m, question)) != mStatus_NoError)		        { *q = mDNSNULL; return err; }
+				}
+			}		
 
 		if (!question->DuplicateOf)
 			verbosedebugf("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) started",
@@ -5592,7 +5668,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
 
-		*q = question;
 		if (question->InterfaceID == mDNSInterface_LocalOnly)
 			{
 			if (!m->NewLocalOnlyQuestions) m->NewLocalOnlyQuestions = question;
@@ -5602,7 +5677,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			if (!m->NewQuestions) m->NewQuestions = question;
 			SetNextQueryTime(m,question);
 			}
-
 		return(mStatus_NoError);
 		}
 	}
@@ -5613,9 +5687,24 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheGroup *cg = CacheGroupForName(m, slot, question->qnamehash, &question->qname);
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
-
-    if (uDNS_IsActiveQuery(question, m)) return uDNS_StopQuery(m, question);
 	
+	if (question->id.NotAnInteger)
+		{
+		if (question->LongLived && question->llq)
+			{
+			uDNS_StopLongLivedQuery(m, question);
+			
+			while (question->knownAnswers)  
+				{
+				CacheRecord * ka;
+				
+				ka = question->knownAnswers; 
+				question->knownAnswers = question->knownAnswers->next;  
+				mDNSPlatformMemFree(ka);
+				}
+			}
+		}
+
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
 	if (*q) *q = (*q)->next;
@@ -5634,18 +5723,21 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
-	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+	if (!question->id.NotAnInteger)
 		{
-		if (rr->CRActiveQuestion == question)
+		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 			{
-			DNSQuestion *q;
-			for (q = m->Questions; q; q=q->next)		// Scan our list of questions
-				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
-					break;
-			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %p",
-				rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), q);
-			rr->CRActiveQuestion = q;		// Question used to be active; new value may or may not be null
-			if (!q) m->rrcache_active--;	// If no longer active, decrement rrcache_active count
+			if (rr->CRActiveQuestion == question)
+				{
+				DNSQuestion *q;
+				for (q = m->Questions; q; q=q->next)		// Scan our list of questions
+					if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
+						break;
+				verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %p",
+					rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), q);
+				rr->CRActiveQuestion = q;		// Question used to be active; new value may or may not be null
+				if (!q) m->rrcache_active--;	// If no longer active, decrement rrcache_active count
+				}
 			}
 		}
 
@@ -5669,6 +5761,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 
 	// Take care not to trash question->next until *after* we've updated m->CurrentQuestion and m->NewQuestions
 	question->next = mDNSNULL;
+
 	return(mStatus_NoError);
 	}
 
@@ -5727,6 +5820,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->ForceMCast       = ForceMCast;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
+	question->id     = zeroID;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 
 #ifndef UNICAST_DISABLED
@@ -5738,17 +5832,15 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 		}
 	else
 		{
-		mStatus status;
-		// Need to explicitly lock here, because mDNS_StartQuery does locking but uDNS_StartQuery does not
-		mDNS_Lock(m);
-		question->LongLived = mDNStrue;
-		status = uDNS_StartQuery(m, question);
-		mDNS_Unlock(m);
-		return(status);
+		question->LongLived     = mDNStrue;
+		question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+		question->LastQTime     = m->timenow - question->ThisQInterval;
+		question->knownAnswers  = mDNSNULL;
+		question->Answered      = mDNSfalse;
+		question->internal      = mDNSfalse;
 		}
-#else
-	return(mDNS_StartQuery(m, question));
 #endif // UNICAST_DISABLED
+	return(mDNS_StartQuery(m, question));
 	}
 
 mDNSlocal mDNSBool MachineHasActiveIPv6(mDNS *const m)
@@ -5975,10 +6067,10 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *q)
 	{
 	mDNS_Lock(m);
 	// We use mDNS_StopQuery_internal here because we're already holding the lock
-	if (q->qSRV.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qSRV, m)) mDNS_StopQuery_internal(m, &q->qSRV);
-	if (q->qTXT.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qTXT, m)) mDNS_StopQuery_internal(m, &q->qTXT);
-	if (q->qAv4.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv4, m)) mDNS_StopQuery_internal(m, &q->qAv4);
-	if (q->qAv6.ThisQInterval >= 0 || uDNS_IsActiveQuery(&q->qAv6, m)) mDNS_StopQuery_internal(m, &q->qAv6);
+	if (q->qSRV.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qSRV)) mDNS_StopQuery_internal(m, &q->qSRV);
+	if (q->qTXT.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qTXT)) mDNS_StopQuery_internal(m, &q->qTXT);
+	if (q->qAv4.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qAv4)) mDNS_StopQuery_internal(m, &q->qAv4);
+	if (q->qAv6.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qAv6)) mDNS_StopQuery_internal(m, &q->qAv6);
 	mDNS_Unlock(m);
 	}
 
@@ -6214,8 +6306,8 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 	if (SameDomainName(&m->MulticastHostname, &newmname)) { LogMsg("mDNS_SetFQDN - hostname unchanged"); return; }
 
 	mDNS_Lock(m);
-	AssignDomainName(&m->MulticastHostname, &newmname);
 
+	AssignDomainName(&m->MulticastHostname, &newmname);
 	// 1. Stop advertising our address records on all interfaces
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		if (intf->Advertise) DeadvertiseInterface(m, intf);
@@ -6228,7 +6320,7 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 	// host name in their rdata get updated to reference this new host name
 	for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
 	for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
-   
+	
 	mDNS_Unlock(m);
 	}
 
@@ -6377,7 +6469,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			}
 
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
-			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)	// If non-specific Q, or Q on this specific interface,
+			if (!q->id.NotAnInteger && (!q->InterfaceID || q->InterfaceID == set->InterfaceID))	// If not a wide-areq query, non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
 				mDNSs32 initial  = (flapping && q->FlappingInterface != set->InterfaceID) ? InitialQuestionInterval * 8 : InitialQuestionInterval;
 				mDNSs32 qdelay   = (flapping && q->FlappingInterface != set->InterfaceID) ? mDNSPlatformOneSecond   * 5 : 0;
@@ -6911,6 +7003,32 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 	if (!MakeDomainNameFromDNSNameString(&rr->resrec.rdata->u.name, domname))                 return(mStatus_BadParamErr);
 	return(mDNS_Register(m, rr));
 	}
+	
+mDNSexport mDNSBool mDNS_IsActiveQuery(mDNS * const m, DNSQuestion *const question)
+    {
+	DNSQuestion *q;
+
+	for (q = m->Questions; q && q != question; q=q->next)		// Scan our list of questions
+		{
+		if (q == question)
+			{
+			return mDNStrue;
+			}
+		}
+	return mDNSfalse;
+	}
+	
+mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
+	{
+	static mDNSBool randomized = mDNSfalse;
+
+	if (!randomized) { m->NextMessageID = (mDNSu16)mDNSRandom(0xFFFF); randomized = mDNStrue; }
+	if (m->NextMessageID == 0) m->NextMessageID++;
+	return mDNSOpaque16fromIntVal(m->NextMessageID++);
+	}
+
+
+
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -7023,8 +7141,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 
 #ifndef UNICAST_DISABLED	
 	m->nextevent                = timenow + 0x78000000;
-	m->ActiveQueries            = mDNSNULL;
-	m->CurrentQuery             = mDNSNULL;
 	m->ServiceRegistrations     = mDNSNULL;
 	m->RecordRegistrations      = mDNSNULL;
 	m->NATTraversals            = mDNSNULL;
