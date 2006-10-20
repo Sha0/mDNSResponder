@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd_parser.y,v $
+Revision 1.5  2006/10/20 05:47:09  herscher
+Set the DNSZone pointer to NULL in ParseConfig() before parsing the configuration file.
+
 Revision 1.4  2006/08/16 00:35:39  mkrochma
 <rdar://problem/4386944> Get rid of NotAnInteger references
 
@@ -455,8 +458,9 @@ ParseConfig
 
 		zone = next;
 		}
-	
 
+	d->zones = NULL;
+	
 	yyin = fopen( file, "r" );
 	require_action( yyin, exit, err = 0 );
 
