@@ -1261,38 +1261,6 @@
 			};
 			name = Development;
 		};
-		D284BE1E0ADD78180027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
-				INSTALL_PATH = "${SYSTEM_LIBRARY_DIR}/Java/Extensions";
-				JAVA_ARCHIVE_CLASSES = YES;
-				JAVA_ARCHIVE_COMPRESSION = YES;
-				JAVA_ARCHIVE_TYPE = JAR;
-				JAVA_COMPILER_DEBUGGING_SYMBOLS = NO;
-				JAVA_COMPILER_SOURCE_VERSION = 1.4;
-				JAVA_COMPILER_TARGET_VM_VERSION = 1.4;
-				JAVA_SOURCE_SUBDIR = .;
-				LIBRARY_STYLE = STATIC;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_LIBTOOL_FLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = dns_sd;
-				PURE_JAVA = YES;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
-			name = Default;
-		};
 		D284BE290ADD78180027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1311,17 +1279,6 @@
 			};
 			name = Development;
 		};
-		D284BE2A0ADD78180027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = "Build All";
-				SECTORDER_FLAGS = "";
-			};
-			name = Default;
-		};
 		D284BE2C0ADD78180027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1332,17 +1289,6 @@
 				YACC_GENERATED_FILE_STEM = Standard;
 			};
 			name = Development;
-		};
-		D284BE2D0ADD78180027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = (
-					ppc,
-					i386,
-				);
-				YACC_GENERATED_FILE_STEM = Standard;
-			};
-			name = Default;
 		};
 		D284BE6E0ADD80740027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
@@ -1392,48 +1338,6 @@
 			};
 			name = Development;
 		};
-		D284BE6F0ADD80740027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				FRAMEWORK_SEARCH_PATHS = "";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"mDNSResponderVersion=${MVERS}",
-					"APPLE_OSX_mDNSResponder=1",
-					_LEGACY_NAT_TRAVERSAL_,
-					"__MigTypeCheck=1",
-				);
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				HEADER_SEARCH_PATHS = (
-					../mDNSShared,
-					"${APPLE_INTERNAL_DEVELOPER_DIR}/Headers",
-					"${CONFIGURATION_TEMP_DIR}",
-				);
-				INSTALL_PATH = /usr/sbin;
-				LIBRARY_SEARCH_PATHS = "\"${CONFIGURATION_TEMP_DIR}\"";
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp";
-				OTHER_LDFLAGS = "-ldnsinfo";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = mDNSResponder;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = (
-					"-sectorder",
-					__TEXT,
-					__text,
-					mDNSResponder.order,
-				);
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
-			name = Default;
-		};
 		D284BE930ADD80800027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1481,48 +1385,6 @@
 			};
 			name = Development;
 		};
-		D284BE940ADD80800027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				FRAMEWORK_SEARCH_PATHS = "";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"mDNSResponderVersion=${MVERS}",
-					"APPLE_OSX_mDNSResponder=1",
-					_LEGACY_NAT_TRAVERSAL_,
-					"MDNS_DEBUGMSGS=1",
-				);
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				HEADER_SEARCH_PATHS = (
-					../mDNSShared,
-					"${APPLE_INTERNAL_DEVELOPER_DIR}/Headers",
-					"${CONFIGURATION_TEMP_DIR}",
-				);
-				LIBRARY_SEARCH_PATHS = "\"${CONFIGURATION_TEMP_DIR}\"";
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp";
-				OTHER_LDFLAGS = "-ldnsinfo";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = mDNSResponder.debug;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = (
-					"-sectorder",
-					__TEXT,
-					__text,
-					mDNSResponder.order,
-				);
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
-			name = Default;
-		};
 		D284BEA10ADD808B0027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1552,30 +1414,6 @@
 				);
 			};
 			name = Development;
-		};
-		D284BEA20ADD808B0027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				INSTALL_PATH = /usr/bin;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = mDNS;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
-			name = Default;
 		};
 		D284BEAE0ADD80920027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
@@ -1607,31 +1445,6 @@
 				);
 			};
 			name = Development;
-		};
-		D284BEAF0ADD80920027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				HEADER_SEARCH_PATHS = ../mDNSShared;
-				INSTALL_PATH = /usr/bin;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = "dns-sd";
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
-			name = Default;
 		};
 		D284BEBC0ADD809A0027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
@@ -1670,37 +1483,6 @@
 				);
 			};
 			name = Development;
-		};
-		D284BEBD0ADD809A0027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
-				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
-				HEADER_SEARCH_PATHS = (
-					../mDNSShared,
-					"${SYSTEM_LIBRARY_DIR}/Frameworks/JavaVM.framework/Versions/A/Headers",
-					"${SYSTEM_LIBRARY_DIR}/Frameworks/JavaVM.framework/Versions/1.3.1/Headers",
-					"${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build",
-				);
-				INSTALL_PATH = /usr/lib/java;
-				LIBRARY_STYLE = DYNAMIC;
-				MACH_O_TYPE = mh_dylib;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "";
-				OTHER_LIBTOOL_FLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = libjdns_sd.jnilib;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
-			name = Default;
 		};
 		D284BED70ADD80A20027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
@@ -1742,40 +1524,6 @@
 			};
 			name = Development;
 		};
-		D284BED80ADD80A20027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				FRAMEWORK_SEARCH_PATHS = "";
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				HEADER_SEARCH_PATHS = (
-					"${APPLE_INTERNAL_DEVELOPER_DIR}/Headers",
-					"${CONFIGURATION_TEMP_DIR}",
-				);
-				INSTALL_PATH = /usr/sbin;
-				LEX = /usr/bin/flex;
-				LEXFLAGS = "";
-				LEX_CASE_INSENSITIVE_SCANNER = YES;
-				LIBRARY_SEARCH_PATHS = "\"${CONFIGURATION_TEMP_DIR}\"";
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "-no-cpp-precomp";
-				OTHER_LDFLAGS = "-ldnsinfo";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = dnsextd;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				YACC = "/usr/bin/bison -y";
-			};
-			name = Default;
-		};
 		D284BEE60ADD80A70027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1802,26 +1550,6 @@
 				);
 			};
 			name = Development;
-		};
-		D284BEE70ADD80A70027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				INSTALL_PATH = "/Library/Application Support/Bonjour";
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = ddnswriteconfig;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
-			name = Default;
 		};
 		D284BF090ADD80B00027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
@@ -1854,30 +1582,6 @@
 			};
 			name = Development;
 		};
-		D284BF0A0ADD80B00027CCDF /* Default */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				EXPORTED_SYMBOLS_FILE = "";
-				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
-				INFOPLIST_FILE = "PreferencePane/Info-PreferencePane.plist";
-				INSTALL_PATH = "${SYSTEM_LIBRARY_DIR}/PreferencePanes";
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "-twolevel_namespace";
-				OTHER_REZFLAGS = "";
-				PREBINDING = NO;
-				PRODUCT_NAME = Bonjour;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WRAPPER_EXTENSION = prefPane;
-			};
-			name = Default;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1885,100 +1589,89 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BE1D0ADD78180027CCDF /* Development */,
-				D284BE1E0ADD78180027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BE280ADD78180027CCDF /* Build configuration list for PBXAggregateTarget "Build All" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BE290ADD78180027CCDF /* Development */,
-				D284BE2A0ADD78180027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BE2B0ADD78180027CCDF /* Build configuration list for PBXProject "mDNSResponder" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BE2C0ADD78180027CCDF /* Development */,
-				D284BE2D0ADD78180027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BE6D0ADD80740027CCDF /* Build configuration list for PBXNativeTarget "mDNSResponder" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BE6E0ADD80740027CCDF /* Development */,
-				D284BE6F0ADD80740027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BE920ADD80800027CCDF /* Build configuration list for PBXNativeTarget "mDNSResponder debug" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BE930ADD80800027CCDF /* Development */,
-				D284BE940ADD80800027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BEA00ADD808B0027CCDF /* Build configuration list for PBXNativeTarget "mDNS command-line tool" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BEA10ADD808B0027CCDF /* Development */,
-				D284BEA20ADD808B0027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BEAD0ADD80920027CCDF /* Build configuration list for PBXNativeTarget "dns-sd command-line tool" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BEAE0ADD80920027CCDF /* Development */,
-				D284BEAF0ADD80920027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BEBB0ADD809A0027CCDF /* Build configuration list for PBXNativeTarget "libjdns_sd.jnilib" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BEBC0ADD809A0027CCDF /* Development */,
-				D284BEBD0ADD809A0027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BED60ADD80A20027CCDF /* Build configuration list for PBXNativeTarget "dnsextd" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BED70ADD80A20027CCDF /* Development */,
-				D284BED80ADD80A20027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BEE50ADD80A70027CCDF /* Build configuration list for PBXNativeTarget "ddnswriteconfig" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BEE60ADD80A70027CCDF /* Development */,
-				D284BEE70ADD80A70027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 		D284BF080ADD80B00027CCDF /* Build configuration list for PBXNativeTarget "PreferencePane" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BF090ADD80B00027CCDF /* Development */,
-				D284BF0A0ADD80B00027CCDF /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
+			defaultConfigurationName = Development;
 		};
 /* End XCConfigurationList section */
 	};
