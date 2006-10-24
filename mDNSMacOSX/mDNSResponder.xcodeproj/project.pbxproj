@@ -1282,10 +1282,6 @@
 		D284BE2C0ADD78180027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = (
-					ppc,
-					i386,
-				);
 				YACC_GENERATED_FILE_STEM = Standard;
 			};
 			name = Development;
