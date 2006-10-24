@@ -1258,7 +1258,6 @@
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1309,7 +1308,6 @@
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = "Build All";
 				SECTORDER_FLAGS = "";
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1391,7 +1389,6 @@
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1481,7 +1478,6 @@
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1554,7 +1550,6 @@
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1610,7 +1605,6 @@
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1674,7 +1668,6 @@
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1746,7 +1739,6 @@
 					"-Wno-unknown-pragmas",
 				);
 				YACC = "/usr/bin/bison -y";
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1808,7 +1800,6 @@
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
@@ -1860,7 +1851,6 @@
 					"-Wno-unknown-pragmas",
 				);
 				WRAPPER_EXTENSION = prefPane;
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
