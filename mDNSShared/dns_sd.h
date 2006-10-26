@@ -2,28 +2,55 @@
  *
  * Copyright (c) 2003-2004, Apple Computer, Inc. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without 
+ * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
- * 1.  Redistributions of source code must retain the above copyright notice, 
- *     this list of conditions and the following disclaimer. 
- * 2.  Redistributions in binary form must reproduce the above copyright notice, 
- *     this list of conditions and the following disclaimer in the documentation 
- *     and/or other materials provided with the distribution. 
- * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of its 
- *     contributors may be used to endorse or promote products derived from this 
- *     software without specific prior written permission. 
+ * 1.  Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ * 2.  Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of its
+ *     contributors may be used to endorse or promote products derived from this
+ *     software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY 
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
- * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY 
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND 
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+ * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*! @header     DNS Service Discovery
+ *
+ * @discussion  This section describes the functions, callbacks, and data structures
+ *              that make up the DNS Service Discovery API.
+ *
+ *              The DNS Service Discovery API is part of Bonjour, Apple's implementation
+ *              of zero-configuration networking (ZEROCONF).
+ *
+ *              Bonjour allows you to register a network service, such as a
+ *              printer or file server, so that it can be found by name or browsed
+ *              for by service type and domain. Using Bonjour, applications can
+ *              discover what services are available on the network, along with
+ *              all the information -- such as name, IP address, and port --
+ *              necessary to access a particular service.
+ *
+ *              In effect, Bonjour combines the functions of a local DNS server and
+ *              AppleTalk. Bonjour allows applications to provide user-friendly printer
+ *              and server browsing, among other things, over standard IP networks.
+ *              This behavior is a result of combining protocols such as multicast and
+ *              DNS to add new functionality to the network (such as multicast DNS).
+ *
+ *              Bonjour gives applications easy access to services over local IP
+ *              networks without requiring the service or the application to support
+ *              an AppleTalk or a Netbeui stack, and without requiring a DNS server
+ *              for the local network.
  */
 
 #ifndef _DNS_SD_H
@@ -90,7 +117,22 @@ typedef struct _DNSRecordRef_t *DNSRecordRef;
 
 struct sockaddr;
 
-/* General flags used in functions defined below */
+/*! @enum General flags
+ * Most DNS-SD API functions and callbacks include a DNSServiceFlags parameter.
+ * As a general rule, any given bit in the 32-bit flags field has a specific fixed meaning,
+ * regardless of the function or callback being used. For any given function or callback,
+ * typically only a subset of the possible flags are meaningful, and all others should be zero.
+ * The discussion section for each API call describes which flags are valid for that call
+ * and callback. In some cases, for a particular call, it may be that no flags are currently
+ * defined, in which case the DNSServiceFlags parameter exists purely to allow future expansion.
+ * In all cases, developers should expect that in future releases, it is possible that new flag
+ * values will be defined, and write code with this in mind. For example, code that tests
+ *     if (flags == kDNSServiceFlagsAdd) ...
+ * will fail if, in a future release, another bit in the 32-bit flags field is also set.
+ * The reliable way to test whether a particular bit is set is not with an equality test,
+ * but with a bitwise mask:
+ *     if (flags & kDNSServiceFlagsAdd) ...
+ */
 enum
     {
     kDNSServiceFlagsMoreComing          = 0x1,
@@ -203,7 +245,7 @@ enum
      * terminates the shared connection and all operations that were still using it; the
      * DNSServiceRefs for any active operations still using that shared connection are implicitly
      * disposed, and don't need to be disposed separately with DNSServiceRefDeallocate() calls.
-     * 
+     *
      * For example:
      * DNSServiceRef MainRef;
      * DNSServiceCreateConnection(&MainRef);
@@ -264,7 +306,7 @@ enum
     kDNSServiceType_HINFO     = 13,     /* Host information. */
     kDNSServiceType_MINFO     = 14,     /* Mailbox information. */
     kDNSServiceType_MX        = 15,     /* Mail routing information. */
-    kDNSServiceType_TXT       = 16,     /* One or more text strings. */
+    kDNSServiceType_TXT       = 16,     /* One or more text strings (NOT "zero or more..."). */
     kDNSServiceType_RP        = 17,     /* Responsible person. */
     kDNSServiceType_AFSDB     = 18,     /* AFS cell database. */
     kDNSServiceType_X25       = 19,     /* X_25 calling address. */
@@ -392,23 +434,23 @@ enum
  */
 
 
-/* 
+/*
  * Constants for specifying an interface index
  *
  * Specific interface indexes are identified via a 32-bit unsigned integer returned
  * by the if_nametoindex() family of calls.
- * 
+ *
  * If the client passes 0 for interface index, that means "do the right thing",
  * which (at present) means, "if the name is in an mDNS local multicast domain
  * (e.g. 'local.', '254.169.in-addr.arpa.', '{8,9,A,B}.E.F.ip6.arpa.') then multicast
  * on all applicable interfaces, otherwise send via unicast to the appropriate
  * DNS server." Normally, most clients will use 0 for interface index to
  * automatically get the default sensible behaviour.
- * 
+ *
  * If the client passes a positive interface index, then for multicast names that
  * indicates to do the operation only on that one interface. For unicast names the
  * interface index is ignored unless kDNSServiceFlagsForceMulticast is also set.
- * 
+ *
  * If the client passes kDNSServiceInterfaceIndexLocalOnly when registering
  * a service, then that service will be found *only* by other local clients
  * on the same machine that are browsing using kDNSServiceInterfaceIndexLocalOnly
@@ -417,7 +459,7 @@ enum
  * running on the same machine, this allows the client to advertise that service
  * in a way such that it does not inadvertently appear in service lists on
  * all the other machines on the network.
- * 
+ *
  * If the client passes kDNSServiceInterfaceIndexLocalOnly when browsing
  * then it will find *all* records registered on that same local machine.
  * Clients explicitly wishing to discover *only* LocalOnly services can
@@ -567,7 +609,7 @@ typedef void (DNSSD_API *DNSServiceDomainEnumReply)
 /* DNSServiceEnumerateDomains() Parameters:
  *
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds
  *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
  *                  and the enumeration operation will run indefinitely until the client
  *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
@@ -660,7 +702,7 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
 
 /* DNSServiceRegister()  Parameters:
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds
  *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
  *                  and the registration will remain active indefinitely until the client
  *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
@@ -686,6 +728,15 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *                  by 1-14 characters, which may be letters, digits, or hyphens.
  *                  The transport protocol must be "_tcp" or "_udp". New service types
  *                  should be registered at <http://www.dns-sd.org/ServiceTypes.html>.
+ *                  Additional subtypes of the primary service type (where a service
+ *                  type has defined subtypes) follow the primary service type in a
+ *                  comma-separated list, with no additional spaces, e.g.
+ *                      "_primarytype._tcp,_subtype1,_subtype2,_subtype3"
+ *                  Subtypes provide a mechanism for filtered browsing: A client browsing
+ *                  for "_primarytype._tcp" will discover all instances of this type;
+ *                  a client browsing for "_primarytype._tcp,_subtype2" will discover only
+ *                  those instances that were registered with "_subtype2" in their list of
+ *                  registered subtypes.
  *
  * domain:          If non-NULL, specifies the domain on which to advertise the service.
  *                  Most applications will not specify a domain, instead automatically
@@ -925,7 +976,7 @@ typedef void (DNSSD_API *DNSServiceBrowseReply)
 
 /* DNSServiceBrowse() Parameters:
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds
  *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
  *                  and the browse operation will run indefinitely until the client
  *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
@@ -939,6 +990,10 @@ typedef void (DNSSD_API *DNSServiceBrowseReply)
  *
  * regtype:         The service type being browsed for followed by the protocol, separated by a
  *                  dot (e.g. "_ftp._tcp"). The transport protocol must be "_tcp" or "_udp".
+ *                  A client may optionally specify a single subtype to perform filtered browsing:
+ *                  e.g. browsing for "_primarytype._tcp,_subtype" will discover only those
+ *                  instances of "_primarytype._tcp" that were registered specifying "_subtype"
+ *                  in their list of registered subtypes.
  *
  * domain:          If non-NULL, specifies the domain on which to browse for services.
  *                  Most applications will not specify a domain, instead browsing on the
@@ -1048,7 +1103,7 @@ typedef void (DNSSD_API *DNSServiceResolveReply)
 
 /* DNSServiceResolve() Parameters
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds
  *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
  *                  and the resolve operation will run indefinitely until the client
  *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
@@ -1166,7 +1221,7 @@ typedef void (DNSSD_API *DNSServiceQueryRecordReply)
 
 /* DNSServiceQueryRecord() Parameters:
  *
- * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds 
+ * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds
  *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
  *                  and the query operation will run indefinitely until the client
  *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
@@ -1507,7 +1562,7 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
  * The client should then record this public IP address and port using whatever
  * directory service mechanism it is using to enable peers to connect to it.
  * (Clients advertising services using Wide-Area DNS-SD DO NOT need to use this API
- * -- when a client calls DNSServiceRegister() NAT mappings are automatically created 
+ * -- when a client calls DNSServiceRegister() NAT mappings are automatically created
  * and the public IP address and port for the service are recorded in the global DNS.
  * Only clients using some directory mechanism other than Wide-Area DNS-SD need to use
  * this API to explicitly map their own ports.)
@@ -2030,7 +2085,7 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
  * calls by this user that do not specify an explicit domain will browse and
  * register in this wide-area domain in addition to .local. In addition, this
  * domain will be returned as a Browse domain via domain enumeration calls.
- * 
+ *
  *
  * Parameters:
  *
