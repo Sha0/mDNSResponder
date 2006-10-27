@@ -25,6 +25,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.11  2006/10/27 01:30:23  cheshire
+Need explicitly to set ReturnCNAME = mDNSfalse
+
 Revision 1.10  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -545,6 +548,7 @@ DNSServiceErrorType DNSServiceResolve
 	x->qSRV.LongLived           = mDNSfalse;
 	x->qSRV.ExpectUnique        = mDNStrue;
 	x->qSRV.ForceMCast          = mDNSfalse;
+	x->qSRV.ReturnCNAME         = mDNSfalse;
 	x->qSRV.QuestionCallback    = FoundServiceInfo;
 	x->qSRV.QuestionContext     = x;
 
@@ -557,6 +561,7 @@ DNSServiceErrorType DNSServiceResolve
 	x->qTXT.LongLived           = mDNSfalse;
 	x->qTXT.ExpectUnique        = mDNStrue;
 	x->qTXT.ForceMCast          = mDNSfalse;
+	x->qTXT.ReturnCNAME         = mDNSfalse;
 	x->qTXT.QuestionCallback    = FoundServiceInfo;
 	x->qTXT.QuestionContext     = x;
 
@@ -679,6 +684,7 @@ DNSServiceErrorType DNSServiceQueryRecord
 	x->q.LongLived           = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
 	x->q.ExpectUnique        = mDNSfalse;
 	x->q.ForceMCast          = (flags & kDNSServiceFlagsForceMulticast) != 0;
+	x->q.ReturnCNAME         = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
 	x->q.QuestionCallback    = DNSServiceQueryRecordResponse;
 	x->q.QuestionContext     = x;
 

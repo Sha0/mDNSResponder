@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.215  2006/10/27 01:30:23  cheshire
+Need explicitly to set ReturnCNAME = mDNSfalse
+
 Revision 1.214  2006/10/20 05:37:23  herscher
 Display question list information in udsserver_info()
 
@@ -1718,6 +1721,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     term->qsrv.LongLived        = mDNSfalse;
     term->qsrv.ExpectUnique     = mDNStrue;
 	term->qsrv.ForceMCast       = mDNSfalse;
+	term->qsrv.ReturnCNAME      = mDNSfalse;
     term->qsrv.QuestionCallback = resolve_result_callback;
     term->qsrv.QuestionContext  = rstate;
     
@@ -1730,6 +1734,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     term->qtxt.LongLived        = mDNSfalse;
     term->qtxt.ExpectUnique     = mDNStrue;
 	term->qtxt.ForceMCast       = mDNSfalse;
+	term->qtxt.ReturnCNAME      = mDNSfalse;
     term->qtxt.QuestionCallback = resolve_result_callback;
     term->qtxt.QuestionContext  = rstate;
 
