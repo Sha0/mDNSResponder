@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.37  2006/10/27 01:32:08  cheshire
+Set ReturnCNAME mDNStrue
+
 Revision 1.36  2006/08/14 23:24:46  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -337,6 +340,7 @@ mDNSlocal mStatus StartQuery(DNSQuestion *q, char *qname, mDNSu16 qtype, const m
 	q->LongLived        = mDNSfalse;
 	q->ExpectUnique     = mDNStrue;
 	q->ForceMCast       = mDNStrue;		// Query via multicast, even for apparently uDNS names like 1.1.1.17.in-addr.arpa.
+	q->ReturnCNAME      = mDNStrue;
 	q->QuestionCallback = callback;
 	q->QuestionContext  = NULL;
 
