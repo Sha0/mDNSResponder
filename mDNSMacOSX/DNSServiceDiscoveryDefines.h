@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscoveryDefines.h,v $
+Revision 1.8  2006/10/27 00:35:36  cheshire
+DNS_SERVICE_DISCOVERY_SERVER is now com.apple.mDNSResponder, not DNSServiceDiscoveryServer
+
 Revision 1.7  2006/08/14 23:24:39  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -33,7 +36,7 @@ Update to APSL 2.0
 
 #include <mach/mach_types.h>
 
-#define DNS_SERVICE_DISCOVERY_SERVER "DNSServiceDiscoveryServer"
+#define DNS_SERVICE_DISCOVERY_SERVER "com.apple.mDNSResponder"
 
 typedef char    DNSCString[1024];
 typedef char    sockaddr_t[128];
