@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.555  2006/10/30 20:03:37  cheshire
+<rdar://problem/4456945> After service restarts on different port, for a few seconds DNS-SD may return stale port number
+
 Revision 1.554  2006/10/20 05:35:04  herscher
 <rdar://problem/4720713> uDNS: Merge unicast active question list with multicast list.
 
@@ -3805,7 +3808,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				if (msgcount++ < 10)
 					LogMsg("CacheRecordAdd: %##s (%s) has %d answers; shedding records to resist DOS attack",
 						q->qname.c, DNSTypeName(q->qtype), q->CurrentAnswers);
-				rr->resrec.rroriginalttl = 1;
+				rr->resrec.rroriginalttl = 0;
 				rr->UnansweredQueries = MaxUnansweredQueries;
 				}
 			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
@@ -5377,45 +5380,59 @@ exit:
 		CacheGroup *cg = CacheGroupForRecord(m, slot, &r1->resrec);
 		CacheFlushRecords = CacheFlushRecords->NextInCFList;
 		r1->NextInCFList = mDNSNULL;
+		
+		// Look for records in the cache with the same signature as this new one with the cache flush
+		// bit set, and either (a) if they're fresh, just make sure the whole RRSet has the same TTL
+		// (as required by DNS semantics) or (b) if they're old, mark them for deletion in one second.
+		// We make these TTL adjustments *only* for records that still have *more* than one second
+		// remaining to live. Otherwise, a record that we tagged for deletion half a second ago
+		// (and now has half a second remaining) could inadvertently get its life extended, by either
+		// (a) if we got an explicit goodbye packet half a second ago, the record would be considered
+		// "fresh" and would be incorrectly resurrected back to the same TTL as the rest of the RRSet,
+		// or (b) otherwise, the record would not be fully resurrected, but would be reset to expire
+		// in one second, thereby inadvertently delaying its actual expiration, instead of hastening it.
+		// If this were to happen repeatedly, the record's expiration could be deferred indefinitely.
+		// To avoid this, we need to ensure that the cache flushing operation will only act to
+		// *decrease* a record's remaining lifetime, never *increase* it. If a record has less than
+		// one second to go, we simply leave it alone, and leave it to expire at its assigned time.
 		for (r2 = cg ? cg->members : mDNSNULL; r2; r2=r2->next)
 			if (SameNameSameRecordSignature(&r1->resrec, &r2->resrec))
-				{
-				// If record was recently positively received
-				// (i.e. not counting goodbye packets or cache flush events that set the TTL to 1)
-				// then we need to ensure the whole RRSet has the same TTL (as required by DNS semantics)
-				if (r2->resrec.rroriginalttl > 1 && m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
+				if (RRExpireTime(r2) - m->timenow > mDNSPlatformOneSecond)
 					{
-					// If we find mismatched TTLs in an RRSet, log that we're correcting them.
-					// We suppress the message for the specific case of correcting from 240 to 60 for type TXT,
-					// because certain early Bonjour devices are known to have this specific mismatch, and
-					// there's no point filling syslog with messages about something we already know about.
-					if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl)
-						if (r2->resrec.rroriginalttl != 240 && r1->resrec.rroriginalttl != 60 && r2->resrec.rrtype != kDNSType_TXT)
-							LogMsg("Correcting TTL from %4d to %4d for %s",
-								r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
-					r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
+					// If record is recent, just ensure the whole RRSet has the same TTL (as required by DNS semantics)
+					// else, if record is old, mark it to be flushed
+					if (m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
+						{
+						// If we find mismatched TTLs in an RRSet, log that we're correcting them.
+						// We suppress the message for the specific case of correcting from 240 to 60 for type TXT,
+						// because certain early Bonjour devices are known to have this specific mismatch, and
+						// there's no point filling syslog with messages about something we already know about.
+						if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl)
+							if (r2->resrec.rroriginalttl != 240 && r1->resrec.rroriginalttl != 60 && r2->resrec.rrtype != kDNSType_TXT)
+								LogMsg("Correcting TTL from %4d to %4d for %s",
+									r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
+						r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
+						}
+					else				// else, if record is old, mark it to be flushed
+						{
+						verbosedebugf("Cache flush %p X %p %s", r1, r2, CRDisplayString(m, r2));
+						// We set stale records to expire in one second.
+						// This gives the owner a chance to rescue it if necessary.
+						// This is important in the case of multi-homing and bridged networks:
+						//   Suppose host X is on Ethernet. X then connects to an AirPort base station, which happens to be
+						//   bridged onto the same Ethernet. When X announces its AirPort IP address with the cache-flush bit
+						//   set, the AirPort packet will be bridged onto the Ethernet, and all other hosts on the Ethernet
+						//   will promptly delete their cached copies of the (still valid) Ethernet IP address record.
+						//   By delaying the deletion by one second, we give X a change to notice that this bridging has
+						//   happened, and re-announce its Ethernet IP address to rescue it from deletion from all our caches.
+						// We set UnansweredQueries to MaxUnansweredQueries to avoid expensive and unnecessary
+						// final expiration queries for this record.
+						r2->resrec.rroriginalttl = 1;
+						r2->UnansweredQueries = MaxUnansweredQueries;
+						}
 					r2->TimeRcvd = m->timenow;
+					SetNextCacheCheckTime(m, r2);
 					}
-				else				// else, if record is old, mark it to be flushed
-					{
-					verbosedebugf("Cache flush %p X %p %s", r1, r2, CRDisplayString(m, r2));
-					// We set stale records to expire in one second.
-					// This gives the owner a chance to rescue it if necessary.
-					// This is important in the case of multi-homing and bridged networks:
-					//   Suppose host X is on Ethernet. X then connects to an AirPort base station, which happens to be
-					//   bridged onto the same Ethernet. When X announces its AirPort IP address with the cache-flush bit
-					//   set, the AirPort packet will be bridged onto the Ethernet, and all other hosts on the Ethernet
-					//   will promptly delete their cached copies of the (still valid) Ethernet IP address record.
-					//   By delaying the deletion by one second, we give X a change to notice that this bridging has
-					//   happened, and re-announce its Ethernet IP address to rescue it from deletion from all our caches.
-					// We set UnansweredQueries to MaxUnansweredQueries to avoid expensive and unnecessary
-					// final expiration queries for this record.
-					r2->resrec.rroriginalttl = 1;
-					r2->TimeRcvd          = m->timenow;
-					r2->UnansweredQueries = MaxUnansweredQueries;
-					}
-				SetNextCacheCheckTime(m, r2);
-				}
 		if (r1->DelayDelivery)	// If we were planning to delay delivery of this record, see if we still need to
 			{
 			// Note, only need to call SetNextCacheCheckTime() when DelayDelivery is set, not when it's cleared
@@ -7026,9 +7043,6 @@ mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 	if (m->NextMessageID == 0) m->NextMessageID++;
 	return mDNSOpaque16fromIntVal(m->NextMessageID++);
 	}
-
-
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
