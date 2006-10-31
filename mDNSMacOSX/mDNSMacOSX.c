@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.346  2006/10/31 02:34:58  cheshire
+<rdar://problem/4692130> Stop creating HINFO records
+
 Revision 1.345  2006/09/21 20:04:38  mkrochma
 Accidently changed function name while checking in previous fix
 
@@ -1046,6 +1049,12 @@ Minor code tidying
 // For debugging, set LIST_ALL_INTERFACES to 1 to display all found interfaces,
 // including ones that mDNSResponder chooses not to use.
 #define LIST_ALL_INTERFACES 0
+
+// For debugging, being able to identify software versions is useful.
+// Some people are concerned that this information could be exploited by hackers.
+// I'm not totally convinced by that argument, but we don't want to cause our users distress,
+// so for shipping code, define "NO_HINFO" to suppress the generation of HINFO records. -- SC
+#define NO_HINFO 1
 
 // For enabling AAAA records over IPv4. Setting this to 0 sends only
 // A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
