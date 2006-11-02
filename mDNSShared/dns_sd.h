@@ -728,6 +728,7 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *                  by 1-14 characters, which may be letters, digits, or hyphens.
  *                  The transport protocol must be "_tcp" or "_udp". New service types
  *                  should be registered at <http://www.dns-sd.org/ServiceTypes.html>.
+ *
  *                  Additional subtypes of the primary service type (where a service
  *                  type has defined subtypes) follow the primary service type in a
  *                  comma-separated list, with no additional spaces, e.g.
@@ -737,6 +738,18 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *                  a client browsing for "_primarytype._tcp,_subtype2" will discover only
  *                  those instances that were registered with "_subtype2" in their list of
  *                  registered subtypes.
+ *
+ *                  The subtype mechanism can be illustrated with some examples using the
+ *                  dns-sd command-line tool:
+ *
+ *                  % dns-sd -R Simple _test._tcp "" 1001 &
+ *                  % dns-sd -R Better _test._tcp,HasFeatureA "" 1002 &
+ *                  % dns-sd -R Best   _test._tcp,HasFeatureA,HasFeatureB "" 1003 &
+ *
+ *                  Now:
+ *                  % dns-sd -B _test._tcp             # will find all three services
+ *                  % dns-sd -B _test._tcp,HasFeatureA # finds "Better" and "Best"
+ *                  % dns-sd -B _test._tcp,HasFeatureB # finds only "Best"
  *
  * domain:          If non-NULL, specifies the domain on which to advertise the service.
  *                  Most applications will not specify a domain, instead automatically
