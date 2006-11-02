@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.279  2006/11/02 17:44:01  cheshire
+No longer have a separate uDNS ActiveQueries list
+
 Revision 1.278  2006/10/05 04:04:24  herscher
 Remove embedded uDNS_info struct from DNSQuestion_struct
 
@@ -892,10 +895,6 @@ mDNSlocal void validatelists(mDNS *const m)
 			LogMemCorruption("InterfaceList: %p is garbage", i);
 
 	// Check uDNS lists
-
-	for (q = m->ActiveQueries; q; q=q->next)
-		if (*(long*)q == (mDNSs32)~0)
-			LogMemCorruption("ActiveQueries: %p is garbage (%lX)", q, *(long*)q);
 
 	ServiceRecordSet            *s;
 	for (s = m->ServiceRegistrations; s; s=s->next)
