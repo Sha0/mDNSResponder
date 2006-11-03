@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.49  2006/11/03 06:12:44  herscher
+Make sure all buffers passed to GetRRDisplayString_rdb are of length MaxMsg
+
 Revision 1.48  2006/10/20 19:18:35  cheshire
 <rdar://problem/4669228> dnsextd generates bogus SRV record with null target
 
@@ -994,7 +997,7 @@ mDNSlocal void PrintLeaseTable(DaemonInfo *d)
 	{
 	int i;
 	RRTableElem *ptr;
-	char rrbuf[80], addrbuf[16];
+	char rrbuf[MaxMsg], addrbuf[16];
 	struct timeval now;
 	int hr, min, sec;
 
@@ -1039,7 +1042,7 @@ mDNSlocal mDNSu8 *putRRSetDeletion(DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *limit, 
 mDNSlocal mDNSu8 *PutUpdateSRV(DaemonInfo *d, DNSZone * zone, PktMsg *pkt, mDNSu8 *ptr, char *regtype, mDNSIPPort port, mDNSBool registration)
 	{
 	AuthRecord rr;
-	char hostname[1024], buf[80];
+	char hostname[1024], buf[MaxMsg];
 	mDNSu8 *end = (mDNSu8 *)&pkt->msg + sizeof(DNSMessage);
 	
 	( void ) d;
@@ -1401,7 +1404,7 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 	mDNSu8 *ptr = pkt.msg.data;
 	mDNSu8 *end = (mDNSu8 *)&pkt.msg + sizeof(DNSMessage);
 	mDNSu16 nAdditHBO;  // num additionas, in host byte order, required by message digest routine
-	char buf[80];
+	char buf[MaxMsg];
 	mDNSBool closed;
 	PktMsg *reply = NULL;
 	
@@ -1486,7 +1489,7 @@ mDNSlocal void UpdateLeaseTable(PktMsg *pkt, DaemonInfo *d, mDNSs32 lease)
 	const mDNSu8 *ptr, *end;
 	struct timeval time;
 	DNSQuestion zone;
-	char buf[80];
+	char buf[MaxMsg];
 	
 	if (pthread_mutex_lock(&d->tablelock)) { LogErr("UpdateLeaseTable", "pthread_mutex_lock"); return; }
 	HdrNToH(pkt);
@@ -1962,7 +1965,7 @@ mDNSlocal void SendEvents(DaemonInfo *d, LLQEntry *e)
 	CacheRecord *cr;
 	mDNSu8 *end = (mDNSu8 *)&response.msg.data;
 	mDNSOpaque16 msgID;
-	char rrbuf[80], addrbuf[32];
+	char rrbuf[MaxMsg], addrbuf[32];
 	AuthRecord opt;
 	
 	// Should this really be random?  Do we use the msgID on the receiving end?
@@ -1992,7 +1995,7 @@ mDNSlocal void SendEvents(DaemonInfo *d, LLQEntry *e)
 mDNSlocal void PrintLLQAnswers(DaemonInfo *d)
 	{
 	int i;
-	char rrbuf[80];
+	char rrbuf[MaxMsg];
 	
 	Log("Printing LLQ Answer Table contents");
 
@@ -2227,7 +2230,7 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 	AuthRecord opt;
 	PktMsg ack;
 	mDNSu8 *end = (mDNSu8 *)&ack.msg.data;
-	char rrbuf[80], addrbuf[32];
+	char rrbuf[MaxMsg], addrbuf[32];
 	
 	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
 
