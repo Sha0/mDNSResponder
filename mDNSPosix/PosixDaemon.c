@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.32  2006/11/03 22:28:50  cheshire
+PosixDaemon needs to handle mStatus_ConfigChanged and mStatus_GrowCache messages
+
 Revision 1.31  2006/08/14 23:24:46  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -146,6 +149,33 @@ static CacheEntity gRRCache[RR_CACHE_SIZE];
 
 extern const char mDNSResponderVersionString[];
 
+mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
+	{
+	(void)m; // Unused
+	if (result == mStatus_NoError)
+		{
+		// On successful registration of dot-local mDNS host name, daemon may want to check if
+		// any name conflict and automatic renaming took place, and if so, record the newly negotiated
+		// name in persistent storage for next time. It should also inform the user of the name change.
+		// On Mac OS X we store the current dot-local mDNS host name in the SCPreferences store,
+		// and notify the user with a CFUserNotification.
+		}
+	else if (result == mStatus_ConfigChanged)
+		{
+		udsserver_handle_configchange();
+		}
+	else if (result == mStatus_GrowCache)
+		{
+		// Allocate another chunk of cache storage
+		CacheEntity *storage = malloc(sizeof(CacheEntity) * RR_CACHE_SIZE);
+		if (storage) mDNS_GrowCache(m, storage, RR_CACHE_SIZE);
+		}
+	}
+
+// %%% Reconfigure() probably belongs in the platform support layer (mDNSPosix.c), not the daemon cde
+// -- all client layers running on top of mDNSPosix.c need to handle network configuration changes,
+// not only the Unix Domain Socket Daemon
+
 static void Reconfigure(mDNS *m)
 	{
 	mDNSAddr DynDNSIP;
@@ -157,10 +187,11 @@ static void Reconfigure(mDNS *m)
 	FindDefaultRouteIP(&DynDNSIP);
 	if (DynDNSHostname.c[0]) mDNS_AddDynDNSHostName(m, &DynDNSHostname, NULL, NULL);
 	if (DynDNSIP.type)       mDNS_SetPrimaryInterfaceInfo(m, &DynDNSIP, NULL, NULL);
+	m->MainCallback(m, mStatus_ConfigChanged);
 	}
 
 // Do appropriate things at startup with command line arguments. Calls exit() if unhappy.
-static void ParseCmdLinArgs(int argc, char **argv)
+mDNSlocal void ParseCmdLinArgs(int argc, char **argv)
 	{
 	if (argc > 1)
 		{
@@ -179,7 +210,7 @@ static void ParseCmdLinArgs(int argc, char **argv)
 		}
 	}
 
-static void		DumpStateLog(mDNS *const m)
+mDNSlocal void DumpStateLog(mDNS *const m)
 // Dump a little log of what we've been up to.
 	{
 	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
@@ -187,7 +218,7 @@ static void		DumpStateLog(mDNS *const m)
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
 	}
 
-static mStatus	MainLoop(mDNS *m) // Loop until we quit.
+mDNSlocal mStatus MainLoop(mDNS *m) // Loop until we quit.
 	{
 	sigset_t	signals;
 	mDNSBool	gotData = mDNSfalse;
@@ -229,7 +260,7 @@ static mStatus	MainLoop(mDNS *m) // Loop until we quit.
 	return EINTR;
 	}
 
-int		main(int argc, char **argv)
+int main(int argc, char **argv)
 	{
 	#define mDNSRecord mDNSStorage
 	mDNS_PlatformSupport	platformStorage;
@@ -243,7 +274,7 @@ int		main(int argc, char **argv)
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 
 	err = mDNS_Init(&mDNSRecord, &platformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, 
-					mDNS_Init_NoInitCallback, mDNS_Init_NoInitCallbackContext); 
+					mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext); 
 
 	if (mStatus_NoError == err)
 		err = udsserver_init();
