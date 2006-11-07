@@ -57,7 +57,7 @@
 		D284BE530ADD80740027CCDF /* DNSServiceDiscoveryDefines.h in Headers */ = {isa = PBXBuildFile; fileRef = 6575FBFF022EAFBA00000109 /* DNSServiceDiscoveryDefines.h */; };
 		D284BE540ADD80740027CCDF /* dnssd_ipc.h in Headers */ = {isa = PBXBuildFile; fileRef = F5E11B5B04A28126019798ED /* dnssd_ipc.h */; };
 		D284BE560ADD80740027CCDF /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Client, ); }; };
-		D284BE570ADD80740027CCDF /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; settings = {ATTRIBUTES = (Server, Client, ); }; };
+		D284BE570ADD80740027CCDF /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; settings = {ATTRIBUTES = (Server, ); }; };
 		D284BE580ADD80740027CCDF /* mDNS.c in Sources */ = {isa = PBXBuildFile; fileRef = 6575FBE9022EAF5A00000109 /* mDNS.c */; };
 		D284BE590ADD80740027CCDF /* uDNS.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F70587CEF6001880B3 /* uDNS.c */; };
 		D284BE5A0ADD80740027CCDF /* DNSCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F60587CEF6001880B3 /* DNSCommon.c */; };
@@ -81,7 +81,7 @@
 		D284BE7B0ADD80800027CCDF /* mDNSDebug.h in Headers */ = {isa = PBXBuildFile; fileRef = 654BE65002B63B93000001D1 /* mDNSDebug.h */; };
 		D284BE7C0ADD80800027CCDF /* mDNSMacOSX.h in Headers */ = {isa = PBXBuildFile; fileRef = 000753D303367C1C0CCA2C71 /* mDNSMacOSX.h */; };
 		D284BE7E0ADD80800027CCDF /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Client, ); }; };
-		D284BE7F0ADD80800027CCDF /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; settings = {ATTRIBUTES = (Server, Client, ); }; };
+		D284BE7F0ADD80800027CCDF /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; settings = {ATTRIBUTES = (Server, ); }; };
 		D284BE800ADD80800027CCDF /* mDNS.c in Sources */ = {isa = PBXBuildFile; fileRef = 6575FBE9022EAF5A00000109 /* mDNS.c */; };
 		D284BE810ADD80800027CCDF /* uDNS.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F70587CEF6001880B3 /* uDNS.c */; };
 		D284BE820ADD80800027CCDF /* DNSCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F60587CEF6001880B3 /* DNSCommon.c */; };
@@ -105,7 +105,6 @@
 		D284BEAC0ADD80920027CCDF /* dns-sd.1 in CopyFiles */ = {isa = PBXBuildFile; fileRef = FF1C919D07021D77001048AB /* dns-sd.1 */; };
 		D284BEB70ADD809A0027CCDF /* JNISupport.c in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44B0662DD1100335AB3 /* JNISupport.c */; };
 		D284BEB90ADD809A0027CCDF /* JavaVM.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB2CC4680662DFF500335AB3 /* JavaVM.framework */; };
-		D284BEC30ADD80A20027CCDF /* DNSServiceDiscoveryDefines.h in Headers */ = {isa = PBXBuildFile; fileRef = 6575FBFF022EAFBA00000109 /* DNSServiceDiscoveryDefines.h */; };
 		D284BEC50ADD80A20027CCDF /* DNSCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F60587CEF6001880B3 /* DNSCommon.c */; };
 		D284BEC60ADD80A20027CCDF /* DNSDigest.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F461DB5062DBF2900672BF3 /* DNSDigest.c */; };
 		D284BEC70ADD80A20027CCDF /* dnsextd.c in Sources */ = {isa = PBXBuildFile; fileRef = FF25794606C9A8BF00376F7B /* dnsextd.c */; };
@@ -172,6 +171,12 @@
 		FFA5724B0AF18FCC0055A0F1 /* DNSServiceDiscovery.c in Sources */ = {isa = PBXBuildFile; fileRef = FFA572480AF18FCC0055A0F1 /* DNSServiceDiscovery.c */; };
 		FFA572610AF190940055A0F1 /* DNSServiceDiscovery.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = FFA572600AF1908D0055A0F1 /* DNSServiceDiscovery.h */; };
 		FFA572640AF190C80055A0F1 /* dns_sd.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = FFA572630AF190C20055A0F1 /* dns_sd.h */; };
+		FFC22AA20B00F42A00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
+		FFC22AA30B00F42B00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
+		FFC22AA40B00F42C00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
+		FFC22AA50B00F43000BAB070 /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Server, ); }; };
+		FFC22AA60B00F43100BAB070 /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Server, ); }; };
+		FFC22AA70B00F43100BAB070 /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Server, ); }; };
 		FFFA38630AEEDB090065B80A /* dnssd_clientlib.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38620AEEDB090065B80A /* dnssd_clientlib.c */; };
 		FFFA38650AEEDB130065B80A /* dnssd_clientstub.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38640AEEDB130065B80A /* dnssd_clientstub.c */; };
 		FFFA38660AEEDB2B0065B80A /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
@@ -784,7 +789,6 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D284BEC30ADD80A20027CCDF /* DNSServiceDiscoveryDefines.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1363,6 +1367,8 @@
 				FFA572340AF18F1C0055A0F1 /* dnssd_clientlib.c in Sources */,
 				FFA572350AF18F1C0055A0F1 /* dnssd_clientstub.c in Sources */,
 				FFA5724A0AF18FCC0055A0F1 /* DNSServiceDiscovery.c in Sources */,
+				FFC22AA40B00F42C00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */,
+				FFC22AA60B00F43100BAB070 /* DNSServiceDiscoveryReply.defs in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1374,6 +1380,8 @@
 				FFA572400AF18F450055A0F1 /* dnssd_clientlib.c in Sources */,
 				FFA572410AF18F450055A0F1 /* dnssd_clientstub.c in Sources */,
 				FFA5724B0AF18FCC0055A0F1 /* DNSServiceDiscovery.c in Sources */,
+				FFC22AA30B00F42B00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */,
+				FFC22AA70B00F43100BAB070 /* DNSServiceDiscoveryReply.defs in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1385,6 +1393,8 @@
 				FFFA38630AEEDB090065B80A /* dnssd_clientlib.c in Sources */,
 				FFFA38650AEEDB130065B80A /* dnssd_clientstub.c in Sources */,
 				FFA572490AF18FCC0055A0F1 /* DNSServiceDiscovery.c in Sources */,
+				FFC22AA20B00F42A00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */,
+				FFC22AA50B00F43000BAB070 /* DNSServiceDiscoveryReply.defs in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
