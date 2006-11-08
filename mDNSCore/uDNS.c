@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.248  2006/11/08 04:26:53  cheshire
+Fix typo in debugging message
+
 Revision 1.247  2006/10/20 05:35:04  herscher
 <rdar://problem/4720713> uDNS: Merge unicast active question list with multicast list.
 
@@ -1404,7 +1407,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 	{
 	LLQ_Info *llqInfo;
 
-	if (!n) { LogMsg("Error: LLQNatMapComplete called with NULL LLQNatInfo"); return; }
+	if (!n) { LogMsg("Error: LLQNatMapComplete called with NULL NATTraversalInfo"); return; }
 	if (n->state != NATState_Established && n->state != NATState_Legacy && n->state != NATState_Error)
 		{ LogMsg("LLQNatMapComplete - bad nat state %d", n->state); return; }
 
