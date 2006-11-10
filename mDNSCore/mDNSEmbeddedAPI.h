@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.306  2006/11/10 07:44:04  herscher
+<rdar://problem/4825493> Fix Daemon locking failures while toggling BTMM
+
 Revision 1.305  2006/11/10 00:54:15  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
@@ -2503,6 +2506,8 @@ extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_
 #define        mDNS_StopGetDomains mDNS_StopQuery
 extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
+
+extern mStatus mDNS_GetZoneData(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext);
 
 extern mDNSBool	    mDNS_IsActiveQuery(mDNS * const m, DNSQuestion *const question);
 

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.40  2006/11/10 07:44:04  herscher
+<rdar://problem/4825493> Fix Daemon locking failures while toggling BTMM
+
 Revision 1.39  2006/10/20 05:35:05  herscher
 <rdar://problem/4720713> uDNS: Merge unicast active question list with multicast list.
 
@@ -237,8 +240,6 @@ typedef struct
 typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
 
 extern mStatus           uDNS_SetupDNSConfig( mDNS *const m );
-extern mStatus           uDNS_GetZoneData(domainname *name, mDNS *m, mDNSBool findUpdatePort, mDNSBool findLLQPort, mDNSBool findPrivatePort,
-								   AsyncOpCallback callback, void *callbackInfo);
 extern mStatus           uDNS_RegisterSearchDomains( mDNS* const m );
 extern NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback);
 extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len, mDNSAddr *addr, mStatus *err);

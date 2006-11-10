@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.558  2006/11/10 07:44:03  herscher
+<rdar://problem/4825493> Fix Daemon locking failures while toggling BTMM
+
 Revision 1.557  2006/11/10 01:12:51  cheshire
 <rdar://problem/4829718> Incorrect TTL corrections
 
@@ -7033,6 +7036,23 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 	if (!MakeDomainNameFromDNSNameString(rr->resrec.name, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&rr->resrec.rdata->u.name, domname))                 return(mStatus_BadParamErr);
 	return(mDNS_Register(m, rr));
+	}
+	
+// explicitly set response handler
+extern mStatus mDNS_GetZoneData(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
+	{	
+	q->id               = zeroID;
+	q->internal         = mDNStrue;
+	q->llq              = mDNSNULL;
+	q->sock             = mDNSNULL;
+	q->Answered         = mDNSfalse;
+	q->knownAnswers     = mDNSNULL;
+	q->RestartTime      = 0;
+	q->QuestionContext  = hndlrContext;
+	q->responseCallback = callback;
+	q->context          = hndlrContext;
+	// This call assumes we already have a lock
+	return mDNS_StartQuery_internal(m, q);
 	}
 	
 mDNSexport mDNSBool mDNS_IsActiveQuery(mDNS * const m, DNSQuestion *const question)
