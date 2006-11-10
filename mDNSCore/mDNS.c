@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.557  2006/11/10 01:12:51  cheshire
+<rdar://problem/4829718> Incorrect TTL corrections
+
 Revision 1.556  2006/11/10 00:54:14  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
@@ -5406,15 +5409,21 @@ exit:
 					// else, if record is old, mark it to be flushed
 					if (m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
 						{
-						// If we find mismatched TTLs in an RRSet, log that we're correcting them.
+						// If we find mismatched TTLs in an RRSet, correct them.
+						// We only do this for records with a TTL of 2 or higher. It's possible to have a
+						// goodbye announcement with the cache flush bit set (or a case change on record rdata,
+						// which we treat as a goodbye followed by an addition) and in that case it would be
+						// inappropriate to synchronize all the other records to a TTL of 0 (or 1).
 						// We suppress the message for the specific case of correcting from 240 to 60 for type TXT,
 						// because certain early Bonjour devices are known to have this specific mismatch, and
 						// there's no point filling syslog with messages about something we already know about.
-						if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl)
+						if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl && r1->resrec.rroriginalttl > 1)
+							{
 							if (r2->resrec.rroriginalttl != 240 && r1->resrec.rroriginalttl != 60 && r2->resrec.rrtype != kDNSType_TXT)
 								LogMsg("Correcting TTL from %4d to %4d for %s",
 									r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
-						r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
+							r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
+							}
 						}
 					else				// else, if record is old, mark it to be flushed
 						{
