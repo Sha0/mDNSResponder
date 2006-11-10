@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.305  2006/11/10 00:54:15  cheshire
+<rdar://problem/4816598> Changing case of Computer Name doesn't work
+
 Revision 1.304  2006/10/20 05:35:05  herscher
 <rdar://problem/4720713> uDNS: Merge unicast active question list with multicast list.
 
@@ -1930,13 +1933,13 @@ struct DNSQuestion_struct
 	mDNSs32               ThisQInterval;	// LastQTime + ThisQInterval is the next scheduled transmission of this Q
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
-											// ThisQInterval = -1 for a cancelled question that's been removed from the list
+											// ThisQInterval = -1 for a cancelled question (should not still be in list)
 	mDNSs32               LastAnswerPktNum;	// The sequence number of the last response packet containing an answer to this Q
 	mDNSu32               RecentAnswerPkts;	// Number of answers since the last time we sent this query
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
 	mDNSu32               LargeAnswers;		// Number of answers with rdata > 1024 bytes
 	mDNSu32               UniqueAnswers;	// Number of answers received with kDNSClass_UniqueRRSet bit set
-	mDNSInterfaceID       FlappingInterface;// Set when an interface goes away, to flag if removes are delivered for this Q
+	mDNSInterfaceID       FlappingInterface;// Set when an interface goes away, to flag if remove events are delivered for this Q
 	DNSQuestion          *DuplicateOf;
 	DNSQuestion          *NextInDQList;
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
@@ -2522,8 +2525,10 @@ extern mDNSOpaque16 mDNS_NewMessageID(mDNS * const m);
 #define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC)->c, (DST)->c, DomainNameLength((SRC)))
 
 // Comparison functions
+#define SameDomainLabelCS(A,B) ((A)[0] == (B)[0] && mDNSPlatformMemSame((A), (B), (A)[0]))
 extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
 extern mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2);
+extern mDNSBool SameDomainNameCS(const domainname *const d1, const domainname *const d2);
 extern mDNSBool IsLocalDomain(const domainname *d);     // returns true for domains that by default should be looked up using link-local multicast
 
 // Get total length of domain name, in native DNS format, including terminal root label

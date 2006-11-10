@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.109  2006/11/10 00:54:14  cheshire
+<rdar://problem/4816598> Changing case of Computer Name doesn't work
+
 Revision 1.108  2006/10/05 23:11:18  cheshire
 <rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
 
@@ -666,6 +669,13 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 		}
 
 	return(mDNStrue);
+	}
+
+mDNSexport mDNSBool SameDomainNameCS(const domainname *const d1, const domainname *const d2)
+	{
+	mDNSu16 l1 = DomainNameLength(d1);
+	mDNSu16 l2 = DomainNameLength(d2);
+	return(l1 <= MAX_DOMAIN_NAME && l1 == l2 && mDNSPlatformMemSame(d1, d2, l1));
 	}
 
 mDNSexport mDNSBool IsLocalDomain(const domainname *d)

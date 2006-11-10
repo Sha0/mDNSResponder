@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.347  2006/11/10 00:54:16  cheshire
+<rdar://problem/4816598> Changing case of Computer Name doesn't work
+
 Revision 1.346  2006/10/31 02:34:58  cheshire
 <rdar://problem/4692130> Stop creating HINFO records
 
@@ -3068,7 +3071,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		MakeDomainLabelFromLiteralString(&hostlabel, defaultname);
 		}
 
-	if (SameDomainLabel(m->p->usernicelabel.c, nicelabel.c))
+	// We use a case-sensitive comparison here because even though changing the capitalization
+	// of the name alone is not significant to DNS, it's still a change from the user's point of view
+	if (SameDomainLabelCS(m->p->usernicelabel.c, nicelabel.c))
 		debugf("Usernicelabel (%#s) unchanged since last time; not changing m->nicelabel (%#s)", m->p->usernicelabel.c, m->nicelabel.c);
 	else
 		{
@@ -3076,7 +3081,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		m->p->usernicelabel = m->nicelabel = nicelabel;
 		}
 
-	if (SameDomainLabel(m->p->userhostlabel.c, hostlabel.c))
+	if (SameDomainLabelCS(m->p->userhostlabel.c, hostlabel.c))
 		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
 	else
 		{

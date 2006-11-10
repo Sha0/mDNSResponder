@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.31  2006/11/10 00:54:16  cheshire
+<rdar://problem/4816598> Changing case of Computer Name doesn't work
+
 Revision 1.30  2006/08/14 23:25:18  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -971,13 +974,13 @@ mDNSlocal mStatus	UpdateInterfaceList( mDNS *const inMDNS, mDNSs32 inUTC )
 	
 	// Update our globals and mDNS with the new labels.
 	
-	if( !SameDomainLabel( inMDNS->p->userNiceLabel.c, nicelabel.c ) )
+	if( !SameDomainLabelCS( inMDNS->p->userNiceLabel.c, nicelabel.c ) )
 	{
 		dmsg( kDebugLevelInfo, DEBUG_NAME "Updating nicelabel to \"%#s\"\n", nicelabel.c );
 		inMDNS->p->userNiceLabel	= nicelabel;
 		inMDNS->nicelabel			= nicelabel;
 	}
-	if( !SameDomainLabel( inMDNS->p->userHostLabel.c, hostlabel.c ) )
+	if( !SameDomainLabelCS( inMDNS->p->userHostLabel.c, hostlabel.c ) )
 	{
 		dmsg( kDebugLevelInfo, DEBUG_NAME "Updating hostlabel to \"%#s\"\n", hostlabel.c );
 		inMDNS->p->userHostLabel	= hostlabel;

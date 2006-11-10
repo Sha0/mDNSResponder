@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.556  2006/11/10 00:54:14  cheshire
+<rdar://problem/4816598> Changing case of Computer Name doesn't work
+
 Revision 1.555  2006/10/30 20:03:37  cheshire
 <rdar://problem/4456945> After service restarts on different port, for a few seconds DNS-SD may return stale port number
 
@@ -6320,7 +6323,7 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 
 	if (!AppendDomainLabel(&newmname, &m->hostlabel))  { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
 	if (!AppendLiteralLabelString(&newmname, "local")) { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
-	if (SameDomainName(&m->MulticastHostname, &newmname)) { LogMsg("mDNS_SetFQDN - hostname unchanged"); return; }
+	if (SameDomainNameCS(&m->MulticastHostname, &newmname)) { LogMsg("mDNS_SetFQDN - hostname unchanged"); return; }
 
 	mDNS_Lock(m);
 
@@ -6377,7 +6380,9 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 			}
 
 		// 2. If the client callback didn't do it, add (or increment) an index ourselves
-		if (SameDomainLabel(m->hostlabel.c, oldlabel.c))
+		// This needs to be case-insensitive compare, because we need to know that the name has been changed so as to
+		// remedy the conflict, and a name that differs only in capitalization will just suffer the exact same conflict again.
+		if (SameDomainLabelCS(m->hostlabel.c, oldlabel.c))
 			IncrementLabelSuffix(&m->hostlabel, mDNSfalse);
 		
 		// 3. Generate the FQDNs from the hostlabel,

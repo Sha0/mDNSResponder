@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.280  2006/11/10 00:54:16  cheshire
+<rdar://problem/4816598> Changing case of Computer Name doesn't work
+
 Revision 1.279  2006/11/02 17:44:01  cheshire
 No longer have a separate uDNS ActiveQueries list
 
@@ -1657,7 +1660,8 @@ mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname
 	si->name            = x->autoname ? mDNSStorage.nicelabel : x->name;
 	si->domain          = *domain;
 
-	err = mDNS_RegisterService(&mDNSStorage, &si->srs, &si->name, &x->type, domain, NULL, x->port, x->txtinfo, x->txt_len, SubTypes, x->NumSubTypes, mDNSInterface_Any, RegCallback, si);
+	err = mDNS_RegisterService(&mDNSStorage, &si->srs, &si->name, &x->type, domain, NULL,
+		x->port, x->txtinfo, x->txt_len, SubTypes, x->NumSubTypes, mDNSInterface_Any, RegCallback, si);
 	if (!err)
 		{
 		si->next = x->regs;
@@ -1832,10 +1836,41 @@ fail:
 	return(err);
 	}
 
-mDNSlocal domainlabel           gNotificationPrefHostLabel;	// The prefs as they were the last time we saw them
-mDNSlocal domainlabel           gNotificationPrefNiceLabel;
-mDNSlocal domainlabel           gNotificationUserHostLabel;	// The prefs as they were the last time the user changed them
-mDNSlocal domainlabel           gNotificationUserNiceLabel;
+mDNSlocal domainlabel gNotificationPrefHostLabel;	// The prefs as they were the last time we saw them
+mDNSlocal domainlabel gNotificationPrefNiceLabel;
+mDNSlocal domainlabel gNotificationUserHostLabel;	// The prefs as they were the last time the user saw them
+mDNSlocal domainlabel gNotificationUserNiceLabel;
+
+// We have four copies each of the HostLabel and the NiceLabel.
+// The logic works like this (for HostLabel; NiceLabel is analogous):
+// m->hostlabel        is the name currently in use by the mDNS core code.
+// m->p->userhostlabel is the name most recently read from the user preferences by the platform support layer.
+// Any time the user changes the preferences, both m->hostlabel and m->p->userhostlabel
+// are updated simultaneously. This means that if we see that the names do not match, we
+// must have had a name conflict which caused the mDNS core code to update m->hostlabel.
+// We respond to this mismatch by displaying an alert to tell the user about the name change,
+// and by writing the new name back to persistent preferences. When we do this:
+// gNotificationPrefHostLabel is set to the new name (which is written immediately to the preferences) and
+// gNotificationUserHostLabel holds the name as it was the last time the user was deemed to be "aware" of it.
+// These two variables allow us to display both the "old" and "new" names to the user.
+// Two events cause gNotificationUserHostLabel to be updated:
+//  * An mStatus_ConfigChanged message where m->p->userhostlabel != gNotificationPrefHostLabel.
+//    The means the user changed userhostlabel themself, hence they must be "aware" of the name.
+//  * The user dismisses the name change alert, thereby acknowledging that they are "aware" of the new name.
+//
+// Summary:
+//
+// If the user updates the preferences, m->hostlabel and m->p->userhostlabel are set to the new value,
+// and then a mStatus_ConfigChanged message is delivered immediately,
+// and the code notices that m->p->userhostlabel and gNotificationPrefHostLabel don't match,
+// so it updates gNotificationUserHostLabel and gNotificationPrefHostLabel too.
+//
+// If the mDNS core code updates the name, only m->hostlabel changes.
+// The code notices that m->p->userhostlabel and m->hostlabel don't match,
+// immediately updates m->p->userhostlabel, gNotificationPrefHostLabel
+// and the preferences on disk to match the new m->hostlabel,
+// displays an alert showing both the old name (gNotificationUserHostLabel) and the new name,
+// and then when the user dismisses the alert, it updates gNotificationUserHostLabel to match the other three
 
 #ifndef NO_CFUSERNOTIFICATION
 mDNSlocal CFUserNotificationRef gNotification    = NULL;
@@ -1856,8 +1891,8 @@ mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotificat
 		}
 	// By dismissing the alert, the user has conceptually acknowleged the rename.
 	// (e.g. the machine's name is now officially "computer-2.local", not "computer.local".)
-	// If we get *another* conflict, the new alert should refer to the 'old'.
-	// name as now being "computer-2.local", not "computer.local"
+	// If we get *another* conflict, the new alert should refer to the 'old' name
+	// as now being "computer-2.local", not "computer.local"
 	gNotificationUserHostLabel = gNotificationPrefHostLabel;
 	gNotificationUserNiceLabel = gNotificationPrefNiceLabel;
 	pthread_mutex_unlock(&PlatformStorage.BigMutex);
@@ -1973,8 +2008,11 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		// If the user-specified hostlabel from System Configuration has changed since the last time
 		// we saw it, and *we* didn't change it, then that implies that the user has changed it,
 		// so we auto-dismiss the name conflict alert.
-		if (!SameDomainLabel(m->p->userhostlabel.c, gNotificationPrefHostLabel.c) ||
-			!SameDomainLabel(m->p->usernicelabel.c, gNotificationPrefNiceLabel.c))
+		// We use a case-sensitive comparison here because even though changing the capitalization
+		// of the name is not significant to DNS, it does confirm that the user has seen the new name
+		// and acted on that information.
+		if (!SameDomainLabelCS(m->p->userhostlabel.c, gNotificationPrefHostLabel.c) ||
+			!SameDomainLabelCS(m->p->usernicelabel.c, gNotificationPrefNiceLabel.c))
 			{
 			gNotificationUserHostLabel = gNotificationPrefHostLabel = m->p->userhostlabel;
 			gNotificationUserNiceLabel = gNotificationPrefNiceLabel = m->p->usernicelabel;
@@ -1985,6 +2023,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 #endif /* NO_CFUSERNOTIFICATION */
 			}
 
+		// First we check our list of old Mach-based registered services, to see if any need to be updated to a new name
 		DNSServiceRegistration *r;
 		for (r = DNSServiceRegistrationList; r; r=r->next)
 			if (r->autoname)
@@ -1992,7 +2031,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 				ServiceInstance *si;
 				for (si = r->regs; si; si = si->next)
 					{
-					if (!SameDomainLabel(si->name.c, m->nicelabel.c))
+					if (!SameDomainLabelCS(si->name.c, m->nicelabel.c))
 						{
 						debugf("NetworkChanged renaming %##s to %#s", si->srs.RR_SRV.resrec.name->c, m->nicelabel.c);
 						si->renameonmemfree = mDNStrue;
@@ -2001,6 +2040,8 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 						}
 					}
 				}
+
+		// Then we call into the UDS daemon code, to let it do the same
 		udsserver_handle_configchange();
 		}
 	else if (result == mStatus_GrowCache)
@@ -2617,7 +2658,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 		{
 		if (m->p->NotifyUser - now < 0)
 			{
-			if (!SameDomainLabel(m->p->usernicelabel.c, m->nicelabel.c))
+			if (!SameDomainLabelCS(m->p->usernicelabel.c, m->nicelabel.c))
 				{
 				LogMsg("Updating Computer Name from \"%#s\" to \"%#s\"", m->p->usernicelabel.c, m->nicelabel.c);
 				gNotificationPrefNiceLabel = m->p->usernicelabel = m->nicelabel;
@@ -2627,7 +2668,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 				// Clear m->p->NotifyUser here -- even if the hostlabel has changed too, we don't want to bug the user with *two* alerts
 				m->p->NotifyUser = 0;
 				}
-			if (!SameDomainLabel(m->p->userhostlabel.c, m->hostlabel.c))
+			if (!SameDomainLabelCS(m->p->userhostlabel.c, m->hostlabel.c))
 				{
 				LogMsg("Updating Local Hostname from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
 				gNotificationPrefHostLabel = m->p->userhostlabel = m->hostlabel;

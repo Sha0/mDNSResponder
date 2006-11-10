@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.216  2006/11/10 00:54:16  cheshire
+<rdar://problem/4816598> Changing case of Computer Name doesn't work
+
 Revision 1.215  2006/10/27 01:30:23  cheshire
 Need explicitly to set ReturnCNAME = mDNSfalse
 
@@ -137,7 +140,7 @@ object is cleaned up correctly when encountering an interface index error.
 Revision 1.180  2005/03/10 00:13:12  cheshire
 <rdar://problem/4043098> DNSServiceBrowse no longer returning error codes for invalid types
 In handle_browse_request(), mStatus err was being set correctly if an error occurred,
-but the end of the function returned mStatus_NoError intead of err.
+but the end of the function returned mStatus_NoError instead of err.
 
 Revision 1.179  2005/03/04 02:47:26  ksekar
 <rdar://problem/4026393> SCPreference domains disappear from enumeration when moving out from firewall
@@ -1352,7 +1355,7 @@ mDNSexport void uds_validatelists(void)
 
 mDNSlocal void rename_service(service_instance *srv)
 	{
-	if (srv->autoname && !SameDomainLabel(srv->name.c, gmDNS->nicelabel.c))
+	if (srv->autoname && !SameDomainLabelCS(srv->name.c, gmDNS->nicelabel.c))
 		{
 		srv->renameonmemfree = 1;
 		if (mDNS_DeregisterService(gmDNS, &srv->srs))	// If service deregistered already, we can re-register immediately
@@ -1808,7 +1811,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 		// After unicast query code is updated to store its records in the common cache, use this...
 		// if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
 		// if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
-		// intead of this...
+		// instead of this...
 		if (answer->rrtype == kDNSType_SRV && res->srv &&                                    SameRDataBody(answer, (RDataBody *)&res->srvdata))
 			res->srv = mDNSfalse;
 		if (answer->rrtype == kDNSType_TXT && res->txt && answer->rdlength == res->txtlen && SameRDataBody(answer, (RDataBody *)&res->txtdata))
@@ -1819,7 +1822,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	// After unicast query code is updated to store its records in the common cache, use this...
     // if (answer->rrtype == kDNSType_SRV) res->srv = answer;
     // if (answer->rrtype == kDNSType_TXT) res->txt = answer;
-	// intead of this...
+	// instead of this...
     if (answer->rrtype == kDNSType_SRV)
     	{
     	res->srvdata = answer->rdata->u.srv;
