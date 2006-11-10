@@ -400,7 +400,7 @@
 		D284BE950ADD80800027CCDF /* mDNSResponder.debug */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponder.debug; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEA30ADD808B0027CCDF /* mDNS */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNS; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEB00ADD80920027CCDF /* dns-sd */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "dns-sd"; sourceTree = BUILT_PRODUCTS_DIR; };
-		D284BEBE0ADD809A0027CCDF /* libjdns_sd.jnilib.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libjdns_sd.jnilib.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
+		D284BEBE0ADD809A0027CCDF /* libjdns_sd.jnilib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libjdns_sd.jnilib; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BED90ADD80A20027CCDF /* dnsextd */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dnsextd; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEE80ADD80A70027CCDF /* ddnswriteconfig */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ddnswriteconfig; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BF0C0ADD80B00027CCDF /* Bonjour.prefPane */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Bonjour.prefPane; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -653,7 +653,7 @@
 				D284BE950ADD80800027CCDF /* mDNSResponder.debug */,
 				D284BEA30ADD808B0027CCDF /* mDNS */,
 				D284BEB00ADD80920027CCDF /* dns-sd */,
-				D284BEBE0ADD809A0027CCDF /* libjdns_sd.jnilib.dylib */,
+				D284BEBE0ADD809A0027CCDF /* libjdns_sd.jnilib */,
 				D284BED90ADD80A20027CCDF /* dnsextd */,
 				D284BEE80ADD80A70027CCDF /* ddnswriteconfig */,
 				D284BF0C0ADD80B00027CCDF /* Bonjour.prefPane */,
@@ -960,7 +960,7 @@
 			name = libjdns_sd.jnilib;
 			productInstallPath = /usr/lib/java;
 			productName = libjdns_sd.jnilib;
-			productReference = D284BEBE0ADD809A0027CCDF /* libjdns_sd.jnilib.dylib */;
+			productReference = D284BEBE0ADD809A0027CCDF /* libjdns_sd.jnilib */;
 			productType = "com.apple.product-type.library.dynamic";
 		};
 		D284BEBF0ADD80A20027CCDF /* dnsextd */ = {
@@ -1727,6 +1727,7 @@
 				CONFIGURATION_TEMP_DIR = "${BUILD_DIR}/mDNSResponder.build";
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
+				EXECUTABLE_EXTENSION = jnilib;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_FIX_AND_CONTINUE = YES;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
@@ -1746,7 +1747,7 @@
 				OTHER_CFLAGS = "";
 				OTHER_LIBTOOL_FLAGS = "";
 				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = libjdns_sd.jnilib;
+				PRODUCT_NAME = libjdns_sd;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
