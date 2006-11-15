@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.217  2006/11/15 19:27:53  mkrochma
+<rdar://problem/4838433> Tools: dns-sd -G 0 only returns IPv6 when you have a routable IPv6 address
+
 Revision 1.216  2006/11/10 00:54:16  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
@@ -1064,6 +1067,7 @@ mDNSlocal mDNSBool is_routeable_v4(mDNSAddr * addr)
 	
 mDNSlocal mDNSBool is_routeable_v6(mDNSAddr * addr)
 	{
+	mDNSu8   masked;
 	mDNSu8 * b;
 
 	if (addr->type != mDNSAddrType_IPv6)
@@ -1072,8 +1076,9 @@ mDNSlocal mDNSBool is_routeable_v6(mDNSAddr * addr)
 		}
 		
 	b = addr->ip.v6.b;
+	masked = b[1] & 0xF0;
 
-	if ((b[0] != 0xFE) && (b[1] != 0x80) && (b[1] != 0x90) && (b[1] != 0xA0) && (b[1] != 0xB0))
+	if ((b[0] == 0xFE) && ((masked == 0x80) || (masked == 0x90) || (masked == 0xA0) || (masked == 0xB0)))
 		{
 		return mDNSfalse;
 		}
