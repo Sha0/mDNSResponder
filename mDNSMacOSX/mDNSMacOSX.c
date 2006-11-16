@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.348  2006/11/16 21:47:20  mkrochma
+<rdar://problem/4841422> uDNS: Wide-area registrations sometimes fail
+
 Revision 1.347  2006/11/10 00:54:16  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
@@ -4157,7 +4160,7 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 				if (attr.tag == kSecAccountItemAttr)
 					{
 					if (!attr.length || attr.length > MAX_ESCAPED_DOMAIN_NAME) { LogMsg("SetSecretForDomain - Bad key length %d", attr.length); goto cleanup; }					
-					strncpy(keybuf, attr.data, attr.length);
+					strlcpy(keybuf, attr.data, attr.length);
 					if (!MakeDomainNameFromDNSNameString(&keyname, keybuf)) { LogMsg("SetSecretForDomain - bad key %s", keybuf); goto cleanup; }
 					debugf("Setting shared secret for zone %s with key %##s", dstring, keyname.c);
 					mDNS_SetSecretForZone(m, d, &keyname, secret);
