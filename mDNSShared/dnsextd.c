@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.51  2006/11/17 03:50:18  cheshire
+Add debugging loggin in SendPacket and UDPServerTransaction
+
 Revision 1.50  2006/11/17 03:48:57  cheshire
 <rdar://problem/4842493> dnsextd replying on wrong port
 
@@ -502,6 +505,11 @@ mDNSlocal int SendPacket(uDNS_TCPSocket sock, PktMsg *pkt)
 	if (MySend(sock, &len, sizeof(len)) < 0) return -1;
 
 	// send the message
+	VLog("SendPacket Q:%d A:%d A:%d A:%d ",
+		ntohs(pkt->msg.h.numQuestions),
+		ntohs(pkt->msg.h.numAnswers),
+		ntohs(pkt->msg.h.numAuthorities),
+		ntohs(pkt->msg.h.numAdditionals));
 	return MySend(sock, &pkt->msg, pkt->len);
 	}
 
@@ -851,6 +859,11 @@ UDPServerTransaction(const DaemonInfo *d, const PktMsg *request, PktMsg *reply, 
 
 	// Send the packet to the nameserver
 
+	VLog("UDPServerTransaction Q:%d A:%d A:%d A:%d ",
+		ntohs(request->msg.h.numQuestions),
+		ntohs(request->msg.h.numAnswers),
+		ntohs(request->msg.h.numAuthorities),
+		ntohs(request->msg.h.numAdditionals));
 	res = sendto( sd, (char *)&request->msg, request->len, 0, ( struct sockaddr* ) &d->ns_addr, sizeof( d->ns_addr ) );
 	require_action( res == (int) request->len, exit, err = mStatus_UnknownErr; LogErr( "UDPServerTransaction", "sendto" ) );
 
