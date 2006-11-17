@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.52  2006/11/17 04:27:51  cheshire
+<rdar://problem/4842494> dnsextd byte-order bugs on Intel
+
 Revision 1.51  2006/11/17 03:50:18  cheshire
 Add debugging loggin in SendPacket and UDPServerTransaction
 
@@ -1142,6 +1145,7 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 		require_action( !err, exit, Log( "UpdateSRV: SendPacket failed" ) );
 
 		reply = RecvPacket( sock, NULL, &closed );
+		if (reply) HdrNToH(reply);
 		require_action( reply, exit, err = mStatus_UnknownErr; Log( "UpdateSRV: RecvPacket returned NULL" ) );
 
 		ok = SuccessfulUpdateTransaction( &pkt, reply );
@@ -1450,6 +1454,7 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 	pkt.src.sin_family = AF_INET;
 	if (SendPacket( sock, &pkt)) { Log("DeleteOneRecord: SendPacket failed"); }
 	reply = RecvPacket( sock, NULL, &closed );
+	if (reply) HdrNToH(reply);
 	require_action( reply, end, Log( "DeleteOneRecord: RecvPacket returned NULL" ) );
 
 	if (!SuccessfulUpdateTransaction(&pkt, reply))
@@ -1671,6 +1676,7 @@ HandleRequest
 		require_action_quiet( res >= 0, exit, err = mStatus_UnknownErr ; Log( "Couldn't relay message from %s to server.  Discarding.", inet_ntop(AF_INET, &request->src.sin_addr, addrbuf, 32 ) ) );
 
 		reply = RecvPacket( sock, &buf, &closed );
+		if (reply) HdrNToH(reply);
 		}
 		
 	// Is it an update?
@@ -1851,6 +1857,8 @@ mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, AnswerListElem *e)
 	if (!end) { Log("Error: AnswerQuestion - putQuestion returned NULL"); goto end; }
 	q.len = (int)(end - (mDNSu8 *)&q.msg);
 
+	HdrHToN(&q);
+
 	if (!e->UseTCP)
 		{
 		mDNSBool trunc;
@@ -1873,6 +1881,9 @@ mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, AnswerListElem *e)
 		mDNSPlatformTCPCloseConnection( sock );
 		require_action( reply, end, Log( "AnswerQuestion: RecvPacket returned NULL" ) );
 		}
+
+	HdrNToH(&q);
+	if (reply) HdrNToH(reply);
 
 	if ((reply->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask) != (kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery))
 		{ Log("AnswerQuestion: %##s type %d - Invalid response flags from server"); goto end; }
@@ -2422,11 +2433,12 @@ mDNSlocal int RecvLLQ( DaemonInfo *d, PktMsg *pkt, uDNS_TCPSocket sock )
 	char addr[32];
 	const mDNSu8 *qptr = pkt->msg.data;
     const mDNSu8 *end = (mDNSu8 *)&pkt->msg + pkt->len;
-	const mDNSu8 *aptr = LocateAdditionals(&pkt->msg, end);
+	const mDNSu8 *aptr;
 	LLQOptData *llq = NULL;
 	LLQEntry *e = NULL;
 	
 	HdrNToH(pkt);	
+	aptr = LocateAdditionals(&pkt->msg, end);	// Can't do this until after HdrNToH(pkt);
 	inet_ntop(AF_INET, &pkt->src.sin_addr, addr, 32);
 
 	VLog("Received LLQ msg from %s", addr);
@@ -2815,6 +2827,7 @@ RecvTCPMessage
 	// wire.  We'll let it do that, and wait for the next packet which will be ours.
 
 	pkt = RecvPacket( context->sock, &context->pkt, &closed );
+	if (pkt) HdrNToH(pkt);
 	require_action( pkt || !closed, exit, err = mStatus_UnknownErr; LogMsg( "client disconnected" ) );
 
 	if ( pkt )
