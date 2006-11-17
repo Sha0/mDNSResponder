@@ -67,12 +67,6 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 // with an embedded copy of the client stub instead of linking the system library version at runtime.
 //#define TEST_NEW_CLIENTSTUB 1
 
-// If you want to compile this with NAT-PMP API support, uncomment the following line
-//#define HAS_NAT_PMP_API 1
-
-// If you want to compile this with GetAddrInfo support, uncomment the following line
-//#define HAS_ADDRINFO_API 1
-
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
@@ -108,6 +102,11 @@ static const char kFilePathSep = '/';
 
 #ifdef TEST_NEW_CLIENTSTUB
 #include "../mDNSShared/dnssd_clientstub.c"
+#endif
+
+#if _DNS_SD_H >= 116
+#define HAS_NAT_PMP_API 1
+#define HAS_ADDRINFO_API 1
 #endif
 
 //*************************************************************************************************************
@@ -895,25 +894,25 @@ int main(int argc, char **argv)
 	return 0;
 
 Fail:
-	fprintf(stderr, "%s -E                              (Enumerate recommended registration domains)\n", a0);
-	fprintf(stderr, "%s -F                                  (Enumerate recommended browsing domains)\n", a0);
-	fprintf(stderr, "%s -B        <Type> <Domain>                    (Browse for services instances)\n", a0);
-	fprintf(stderr, "%s -L <Name> <Type> <Domain>                       (Look up a service instance)\n", a0);
-	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...]             (Register a service)\n", a0);
-	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]              (Proxy)\n", a0);
-	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass>             (Generic query for any record type)\n", a0);
-	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>               (Query; reconfirming each result)\n", a0);
-	fprintf(stderr, "%s -A                                  (Test Adding/Updating/Deleting a record)\n", a0);
-	fprintf(stderr, "%s -U                                              (Test updating a TXT record)\n", a0);
-	fprintf(stderr, "%s -N                                         (Test adding a large NULL record)\n", a0);
-	fprintf(stderr, "%s -T                                        (Test creating a large TXT record)\n", a0);
-	fprintf(stderr, "%s -M                  (Test creating a registration with multiple TXT records)\n", a0);
-	fprintf(stderr, "%s -I               (Test registering and then immediately updating TXT record)\n", a0);
+	fprintf(stderr, "%s -E                  (Enumerate recommended registration domains)\n", a0);
+	fprintf(stderr, "%s -F                      (Enumerate recommended browsing domains)\n", a0);
+	fprintf(stderr, "%s -B        <Type> <Domain>        (Browse for services instances)\n", a0);
+	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", a0);
+	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", a0);
+	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", a0);
+	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", a0);
+	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", a0);
+	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", a0);
+	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", a0);
+	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", a0);
+	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", a0);
+	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
+	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
 #if defined(HAS_NAT_PMP_API)
-	fprintf(stderr, "%s -X <Protocol> <Private Port> <Public Port> <TTL> (Create a NAT Port Mapping)\n", a0);
+	fprintf(stderr, "%s -X <Prot> <PrivPort> <PubPort> <TTL>   (Create NAT Port Mapping)\n", a0);
 #endif
 #if defined(HAS_ADDRINFO_API)
-	fprintf(stderr, "%s -G <Protocol> <Hostname>            (Get address information for a hostname)\n", a0);
+	fprintf(stderr, "%s -G <Prot> <Hostname>      (Get address information for hostname)\n", a0);
 #endif
 	return 0;
 	}
