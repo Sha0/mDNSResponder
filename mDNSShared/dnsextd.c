@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.53  2006/11/17 23:55:09  cheshire
+<rdar://problem/4842494> dnsextd byte-order bugs on Intel
+
 Revision 1.52  2006/11/17 04:27:51  cheshire
 <rdar://problem/4842494> dnsextd byte-order bugs on Intel
 
@@ -1676,9 +1679,11 @@ HandleRequest
 		require_action_quiet( res >= 0, exit, err = mStatus_UnknownErr ; Log( "Couldn't relay message from %s to server.  Discarding.", inet_ntop(AF_INET, &request->src.sin_addr, addrbuf, 32 ) ) );
 
 		reply = RecvPacket( sock, &buf, &closed );
-		if (reply) HdrNToH(reply);
 		}
-		
+	
+	// IMPORTANT: reply is in network byte order at this point in the code
+	// We keep it this way because we sent it back to the client in the same form
+	
 	// Is it an update?
 
 	if ( reply && ( ( reply->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask ) == ( kDNSFlag0_OP_Update | kDNSFlag0_QR_Response ) ) )
