@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.50  2006/11/17 03:48:57  cheshire
+<rdar://problem/4842493> dnsextd replying on wrong port
+
 Revision 1.49  2006/11/03 06:12:44  herscher
 Make sure all buffers passed to GetRRDisplayString_rdb are of length MaxMsg
 
@@ -248,6 +251,7 @@ typedef struct
     PktMsg pkt;				
     struct sockaddr_in cliaddr;
     DaemonInfo *d;
+	int sd;
 	} UDPContext;
 
 // args passed to TCP request handler thread as void*
@@ -2613,7 +2617,7 @@ UDPMessageHandler
 	reply = HandleRequest( context->d, &context->pkt );
 	require_action( reply, exit, err = mStatus_UnknownErr );
 
-	res = sendto( context->d->udpsd, &reply->msg, reply->len, 0, ( struct sockaddr* ) &context->pkt.src, sizeof( context->pkt.src ) );
+	res = sendto( context->sd, &reply->msg, reply->len, 0, ( struct sockaddr* ) &context->pkt.src, sizeof( context->pkt.src ) );
 	require_action_quiet( res == ( int ) reply->len, exit, LogErr( "UDPMessageHandler", "sendto" ) );
 
 exit:
@@ -2652,6 +2656,7 @@ RecvUDPMessage
 
 	bzero( context, sizeof( *context ) );
 	context->d = self;
+	context->sd = sd;
 
 	res = recvfrom(sd, &context->pkt.msg, sizeof(context->pkt.msg), 0, (struct sockaddr *)&context->cliaddr, &clisize);
 
@@ -2706,7 +2711,7 @@ RecvUDPMessage
 		reply.msg.h.flags.b[0]  =  kDNSFlag0_QR_Response | kDNSFlag0_AA | kDNSFlag0_RD;
 		reply.msg.h.flags.b[1]  =  kDNSFlag1_RA | kDNSFlag1_RC_NXDomain;
 
-		res = sendto( context->d->udpsd, &reply.msg, reply.len, 0, ( struct sockaddr* ) &context->pkt.src, sizeof( context->pkt.src ) );
+		res = sendto( sd, &reply.msg, reply.len, 0, ( struct sockaddr* ) &context->pkt.src, sizeof( context->pkt.src ) );
 		require_action_quiet( res == ( int ) reply.len, exit, LogErr( "RecvUDPMessage", "sendto" ) );
 
 		err = mStatus_NoAuth;
