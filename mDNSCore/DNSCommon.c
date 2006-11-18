@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.110  2006/11/18 05:01:30  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.109  2006/11/10 00:54:14  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
@@ -445,6 +449,8 @@ mDNSexport const mDNSOpaque16 uQueryFlags     = { { kDNSFlag0_QR_Query    | kDNS
 mDNSexport const mDNSOpaque16 ResponseFlags   = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery | kDNSFlag0_AA, 0 } };
 mDNSexport const mDNSOpaque16 UpdateReqFlags  = { { kDNSFlag0_QR_Query    | kDNSFlag0_OP_Update,                  0 } };
 mDNSexport const mDNSOpaque16 UpdateRespFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_Update,                  0 } };
+
+mDNSexport const mDNSOpaque64 zeroOpaque64    = { { 0 } };
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -1587,7 +1593,7 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 			ptr = putVal16(ptr, opt->OptData.llq.vers);
 			ptr = putVal16(ptr, opt->OptData.llq.llqOp);
 			ptr = putVal16(ptr, opt->OptData.llq.err);
-			mDNSPlatformMemCopy(opt->OptData.llq.id, ptr, 8);  // 8-byte id
+			mDNSPlatformMemCopy(opt->OptData.llq.id.b, ptr, 8);  // 8-byte id
 			ptr += 8;
 			ptr = putVal32(ptr, opt->OptData.llq.lease);
 			nput += LLQ_OPTLEN;
@@ -1634,7 +1640,7 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *const limit
 			opt->OptData.llq.vers = getVal16(&ptr);
 			opt->OptData.llq.llqOp = getVal16(&ptr);
 			opt->OptData.llq.err = getVal16(&ptr);
-			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id, 8);
+			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id.b, 8);
 			ptr += 8;
 			opt->OptData.llq.lease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
 			if (opt->OptData.llq.lease > 0x70000000UL / mDNSPlatformOneSecond)

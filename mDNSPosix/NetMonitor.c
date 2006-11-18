@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.83  2006/11/18 05:01:32  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.82  2006/08/14 23:24:46  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -570,7 +574,6 @@ mDNSlocal void SendUnicastQuery(mDNS *const m, HostEntry *entry, domainname *nam
 		{
 		//mprintf("%#a Q\n", target);
 		InterfaceID = mDNSInterface_Any;	// Send query from our unicast reply socket
-		m->ExpectUnicastResponse = m->timenow;
 		}
 
 	mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, target, MulticastDNSPort, mDNSNULL, mDNSNULL);

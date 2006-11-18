@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.218  2006/11/18 05:01:33  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.217  2006/11/15 19:27:53  mkrochma
 <rdar://problem/4838433> Tools: dns-sd -G 0 only returns IPv6 when you have a routable IPv6 address
 
@@ -2827,8 +2831,9 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 						// Note that this a special case where we know that the QuestionCallback function is our own
 						// code (it's FoundInstance), and that callback routine doesn't ever cancel its operation, so we
 						// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
-						CacheRecord *ka = remove->q.knownAnswers;
+						/* SEH knownAnswersCacheRecord *ka = remove->q.knownAnswers;
 						while (ka) { remove->q.QuestionCallback(gmDNS, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
+						*/
 						}
 					mDNS_StopBrowse(gmDNS, &remove->q);
 					freeL("browser_t", remove);

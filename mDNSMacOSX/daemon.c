@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.281  2006/11/18 05:01:32  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.280  2006/11/10 00:54:16  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
@@ -1328,8 +1332,8 @@ mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNS
 							// Note that this a special case where we know that the QuestionCallback function is our own
 							// code (it's FoundInstance), and that callback routine doesn't ever cancel its operation, so we
 							// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
-							CacheRecord *ka = remove->q.knownAnswers;
-							while (ka) { remove->q.QuestionCallback(&mDNSStorage, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
+							// SEH knownAnswers CacheRecord *ka = remove->q.knownAnswers;
+							// while (ka) { remove->q.QuestionCallback(&mDNSStorage, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
 							}
 						mDNS_StopBrowse(&mDNSStorage, &remove->q);
 						freeL("DNSServiceBrowserQuestion", remove );

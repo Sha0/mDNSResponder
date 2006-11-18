@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.54  2006/11/18 05:01:33  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.53  2006/11/17 23:55:09  cheshire
 <rdar://problem/4842494> dnsextd byte-order bugs on Intel
 
@@ -246,7 +250,6 @@ Revision 1.1  2004/08/11 00:43:26  ksekar
 #endif
 
 #define SAME_INADDR(x,y) (*((mDNSu32 *)&x) == *((mDNSu32 *)&y))
-#define ZERO_LLQID(x) (!memcmp(x, "\x0\x0\x0\x0\x0\x0\x0\x0", 8))
 
 //
 // Data Structures
@@ -1749,7 +1752,7 @@ exit:
 //
 
 // Set fields of an LLQ Opt Resource Record
-mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, mDNSu8 *id, mDNSs32 lease)
+mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, const mDNSOpaque64 *const id, mDNSs32 lease)
 	{
 	bzero(opt, sizeof(*opt));
 	mDNS_SetupResourceRecord(opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
@@ -1757,10 +1760,10 @@ mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, mDNSu8 *id, mDNSs32 lea
 	opt->resrec.rdestimate = LLQ_OPT_RDLEN;
 	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;
 	opt->resrec.rdata->u.opt.optlen = sizeof(LLQOptData);
-	opt->resrec.rdata->u.opt.OptData.llq.vers = kLLQ_Vers;
+	opt->resrec.rdata->u.opt.OptData.llq.vers  = kLLQ_Vers;
 	opt->resrec.rdata->u.opt.OptData.llq.llqOp = opcode;
-	opt->resrec.rdata->u.opt.OptData.llq.err = LLQErr_NoError;
-	memcpy(opt->resrec.rdata->u.opt.OptData.llq.id, id, 8);
+	opt->resrec.rdata->u.opt.OptData.llq.err   = LLQErr_NoError;
+	opt->resrec.rdata->u.opt.OptData.llq.id    = *id;
 	opt->resrec.rdata->u.opt.OptData.llq.lease = lease;
 	}
 
@@ -2017,7 +2020,7 @@ mDNSlocal void SendEvents(DaemonInfo *d, LLQEntry *e)
 		if (!end) { Log("Error: SendEvents - PutResourceRecordTTLJumbo returned NULL"); return; }
 		}
 			   
-	FormatLLQOpt(&opt, kLLQOp_Event, e->id, LLQLease(e));
+	FormatLLQOpt(&opt, kLLQOp_Event, &e->id, LLQLease(e));
 	end = PutResourceRecordTTLJumbo(&response.msg, end, &response.msg.h.numAdditionals, &opt.resrec, 0);
 	if (!end) { Log("Error: SendEvents - PutResourceRecordTTLJumbo"); return; }
 
@@ -2201,7 +2204,7 @@ mDNSlocal LLQEntry *NewLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qn
 	e->cli = cli;
 	AssignDomainName(&e->qname, qname);
 	e->qtype = qtype;
-	memset(e->id, 0, 8);
+	e->id    = zeroOpaque64;
 	e->state = RequestReceived;
 	e->AnswerList = NULL;
 	
@@ -2244,7 +2247,7 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 	end = putQuestion(&ack.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
 	if (!end) { Log("Error: putQuestion"); return; }
 
-	FormatLLQOpt(&opt, kLLQOp_Refresh, e->id, llq->lease ? LLQLease(e) : 0);
+	FormatLLQOpt(&opt, kLLQOp_Refresh, &e->id, llq->lease ? LLQLease(e) : 0);
 	end = PutResourceRecordTTLJumbo(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
 	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 
@@ -2267,7 +2270,7 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 	
 	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
 
-	if (memcmp(llq->id, e->id, 8)           ||
+	if (!mDNSSameOpaque64(&llq->id, &e->id) ||
 		llq->vers  != kLLQ_Vers             ||
 		llq->llqOp != kLLQOp_Setup          ||
 		llq->err   != LLQErr_NoError        ||
@@ -2298,7 +2301,7 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 		if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 		}
 
-	FormatLLQOpt(&opt, kLLQOp_Setup, e->id, LLQLease(e));
+	FormatLLQOpt(&opt, kLLQOp_Setup, &e->id, LLQLease(e));
 	end = PutResourceRecordTTLJumbo(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
 	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 
@@ -2309,7 +2312,6 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID)
 	{
 	struct timeval t;
-	mDNSu32 randval;
 	PktMsg challenge;
 	mDNSu8 *end = challenge.msg.data;
 	AuthRecord opt;
@@ -2317,16 +2319,15 @@ mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mD
 	if (e->state == ChallengeSent) VLog("Retransmitting LLQ setup challenge for %##s", e->qname.c);
 	else                           VLog("Sending LLQ setup challenge for %##s", e->qname.c);
 	
-	if (!ZERO_LLQID(llq->id)) { Log("Error: LLQSetupChallenge - nonzero ID"); return; } // server bug
+	if (!mDNSOpaque64IsZero(&llq->id)) { Log("Error: LLQSetupChallenge - nonzero ID"); return; } // server bug
 	if (llq->llqOp != kLLQOp_Setup) { Log("LLQSetupChallenge - incorrrect operation from client"); return; } // client error
 	
-	if (ZERO_LLQID(e->id)) // don't regenerate random ID for retransmissions
+	if (mDNSOpaque64IsZero(&e->id)) // don't regenerate random ID for retransmissions
 		{
 		// construct ID <time><random>
 		gettimeofday(&t, NULL);
-		randval = random();
-		memcpy(e->id, &t.tv_sec, sizeof(t.tv_sec));
-		memcpy(e->id + sizeof(t.tv_sec), &randval, sizeof(randval));			   
+		e->id.l[0] = t.tv_sec;
+		e->id.l[1] = random();
 		}
 
 	// format response (query + LLQ opt rr)
@@ -2334,7 +2335,7 @@ mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mD
 	InitializeDNSMessage(&challenge.msg.h, msgID, ResponseFlags);
 	end = putQuestion(&challenge.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
 	if (!end) { Log("Error: putQuestion"); return; }	
-	FormatLLQOpt(&opt, kLLQOp_Setup, e->id, LLQLease(e));
+	FormatLLQOpt(&opt, kLLQOp_Setup, &e->id, LLQLease(e));
 	end = PutResourceRecordTTLJumbo(&challenge.msg, end, &challenge.msg.h.numAdditionals, &opt.resrec, 0);
 	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 	challenge.len = (int)(end - (mDNSu8 *)&challenge.msg);
@@ -2350,20 +2351,14 @@ mDNSlocal void UpdateLLQ(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque
 		case RequestReceived:
 			if ( sock )
 				{
-				mDNSu32 randval;
 				struct timeval t;
-
-				// construct ID <time><random>
 				gettimeofday(&t, NULL);
-				randval = random();
-				memcpy(e->id, &t.tv_sec, sizeof(t.tv_sec));
-				memcpy(e->id + sizeof(t.tv_sec), &randval, sizeof(randval));			   
-				memcpy(llq->id, e->id, sizeof( llq->id ) );
-
+				e->id.l[0] = t.tv_sec;	// construct ID <time><random>
+				e->id.l[1] = random();
+				llq->id = e->id;
 				LLQCompleteHandshake( d, e, llq, msgID, sock );
 
 				// Set the state to established because we've just set the LLQ up using TCP
-
 				e->state = Established;
 				}
 			else
@@ -2372,11 +2367,11 @@ mDNSlocal void UpdateLLQ(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque
 				}
 			return;
 		case ChallengeSent:
-			if (ZERO_LLQID(llq->id)) LLQSetupChallenge(d, e, llq, msgID); // challenge sent and lost
+			if (mDNSOpaque64IsZero(&llq->id)) LLQSetupChallenge(d, e, llq, msgID); // challenge sent and lost
 			else LLQCompleteHandshake(d, e, llq, msgID, sock );
 			return;
 		case Established:
-			if (ZERO_LLQID(llq->id))
+			if (mDNSOpaque64IsZero(&llq->id))
 				{
 				// client started over.  reset state.
 				LLQEntry *newe = NewLLQ(d, e->cli, &e->qname, e->qtype, llq->lease );
@@ -2393,15 +2388,15 @@ mDNSlocal void UpdateLLQ(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque
 		}
 	}
 
-mDNSlocal LLQEntry *LookupLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qname, mDNSu16 qtype, mDNSu8 *id)
+mDNSlocal LLQEntry *LookupLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qname, mDNSu16 qtype, const mDNSOpaque64 *const id)
 	{	
 	int bucket = bucket = DomainNameHashValue(qname) % LLQ_TABLESIZE;
 	LLQEntry *ptr = d->LLQTable[bucket];
 
 	while(ptr)
 		{
-		if (((ptr->state == ChallengeSent && ZERO_LLQID(id) && (cli.sin_port == ptr->cli.sin_port)) || // zero-id due to packet loss OK in state ChallengeSent
-			 !memcmp(id, ptr->id, 8)) &&                        // id match
+		if (((ptr->state == ChallengeSent && mDNSOpaque64IsZero(id) && (cli.sin_port == ptr->cli.sin_port)) || // zero-id due to packet loss OK in state ChallengeSent
+			 mDNSSameOpaque64(id, &ptr->id)) &&                        // id match
 			(cli.sin_addr.s_addr == ptr->cli.sin_addr.s_addr) && (qtype == ptr->qtype) && SameDomainName(&ptr->qname, qname)) // same source, type, qname
 			return ptr;
 		ptr = ptr->next;
@@ -2473,7 +2468,7 @@ mDNSlocal int RecvLLQ( DaemonInfo *d, PktMsg *pkt, uDNS_TCPSocket sock )
 		llq = (LLQOptData *)&opt.r.resrec.rdata->u.opt.OptData.llq + i; // point into OptData at index i
 		if (llq->vers != kLLQ_Vers) { Log("LLQ from %s contains bad version %d (expected %d)", addr, llq->vers, kLLQ_Vers); goto end; }
 		
-		e = LookupLLQ(d, pkt->src, &q.qname, q.qtype, llq->id);
+		e = LookupLLQ(d, pkt->src, &q.qname, q.qtype, &llq->id);
 		if (!e)
 			{
 			// no entry - if zero ID, create new

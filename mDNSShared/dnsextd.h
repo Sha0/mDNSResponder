@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.h,v $
+Revision 1.3  2006/11/18 05:01:33  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.2  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -106,7 +110,7 @@ typedef struct LLQEntry
     struct sockaddr_in cli;   // clien'ts source address 
     domainname qname;
     mDNSu16 qtype;
-    mDNSu8 id[8];
+    mDNSOpaque64 id;
     LLQState state;
     mDNSu32 lease;            // original lease, in seconds
     mDNSs32 expire;           // expiration, absolute, in seconds since epoch

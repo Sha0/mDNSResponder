@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.307  2006/11/18 05:01:30  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.306  2006/11/10 07:44:04  herscher
 <rdar://problem/4825493> Fix Daemon locking failures while toggling BTMM
 
@@ -1212,6 +1216,7 @@ typedef struct mDNSInterfaceID_dummystruct { void *dummy; } *mDNSInterfaceID;
 typedef packedunion { mDNSu8 b[ 2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
 typedef packedunion { mDNSu8 b[ 4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
 typedef packedunion { mDNSu8 b[ 6]; mDNSu16 w[3]; mDNSu32 l[1]; } mDNSOpaque48;
+typedef packedunion { mDNSu8 b[ 8]; mDNSu16 w[4]; mDNSu32 l[2]; } mDNSOpaque64;
 typedef packedunion { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
@@ -1460,11 +1465,11 @@ typedef packedstruct
 
 typedef packedstruct
 	{
-	mDNSu16 vers;
-	mDNSu16 llqOp;
-	mDNSu16 err;
-	mDNSu8 id[8];
-	mDNSu32 lease;
+	mDNSu16      vers;
+	mDNSu16      llqOp;
+	mDNSu16      err;
+	mDNSOpaque64 id;
+	mDNSu32      lease;
 	} LLQOptData;
 
 #define LLQ_OPTLEN ((3 * sizeof(mDNSu16)) + 8 + sizeof(mDNSu32))
@@ -1525,6 +1530,7 @@ typedef struct AuthRecord_struct AuthRecord;
 typedef struct CacheRecord_struct CacheRecord;
 typedef struct CacheGroup_struct CacheGroup;
 typedef struct DNSQuestion_struct DNSQuestion;
+typedef struct NTAContext_struct NTAContext;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 typedef struct NATTraversalInfo_struct NATTraversalInfo;
@@ -1890,7 +1896,7 @@ typedef struct
 	mDNSu32 origLease;  // seconds (relative)
 	mDNSs32 expire; // ticks (absolute)
     mDNSs16 ntries;
-	mDNSu8 id[8];
+	mDNSOpaque64 id;
 	mDNSBool deriveRemovesOnResume;
 	} LLQ_Info;
 
@@ -1922,7 +1928,7 @@ enum
 	LLQErr_UnknownErr = 6
 	};
 
-typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void *internalContext);
+typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
@@ -1937,6 +1943,7 @@ struct DNSQuestion_struct
 											// ThisQInterval > 0 for an active question;
 											// ThisQInterval = 0 for a suspended question that's still in the list
 											// ThisQInterval = -1 for a cancelled question (should not still be in list)
+	mDNSs32               ExpectUnicastResp;// Set when we send a query with the kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastAnswerPktNum;	// The sequence number of the last response packet containing an answer to this Q
 	mDNSu32               RecentAnswerPkts;	// Number of answers since the last time we sent this query
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
@@ -1954,14 +1961,12 @@ struct DNSQuestion_struct
 
 	// Wide Area fields.  These are used internally by the uDNS core
 	mDNSOpaque16          id;
-	mDNSBool              internal;
-	InternalResponseHndlr responseCallback;   // NULL if internal field is false
-	LLQ_Info              *llq;               // NULL for 1-shot queries
-	uDNS_TCPSocket         sock;		      // For secure operations
-	mDNSBool              Answered;           // have we received an answer (including NXDOMAIN) for this question?
-	CacheRecord           *knownAnswers;
-	mDNSs32               RestartTime;        // Mark when we restart a suspended query
-	void                  *context;
+	InternalResponseHndlr responseCallback; // NULL if internal field is false
+	mDNSBool              Answered;         // Have we received an answer (including NXDOMAIN) for this question?
+	mDNSs32               RestartTime;      // Mark when we restart a suspended query
+	NTAContext            *ntaContext;
+	uDNS_TCPSocket        sock;		        // For secure operations
+	LLQ_Info              *llq;             // NULL for 1-shot queries
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
@@ -1978,6 +1983,81 @@ struct DNSQuestion_struct
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
 	};
+	
+// state machine states
+typedef enum
+    {
+    init,
+    lookupSOA,
+	foundZone,
+	lookupNS,
+	foundNS,
+	lookupA,
+	foundA,
+	lookupPort,
+	foundPort,
+	complete
+    } ntaState;
+
+// state machine actions
+typedef enum
+    {
+    smContinue,  // continue immediately to next state
+    smBreak,     // break until next packet/timeout
+	smError      // terminal error - cleanup and abort
+    } smAction;
+ 
+
+// other async. result struct defs go here
+
+typedef struct
+	{
+    domainname zoneName;
+    mDNSAddr primaryAddr;
+    mDNSu16 zoneClass;
+    mDNSIPPort llqPort;
+    mDNSIPPort updatePort;
+	mDNSIPPort privatePort;
+	} zoneData_t;
+
+typedef enum
+	{
+	zoneDataResult
+	// other async. operation names go here
+	} AsyncOpResultType;
+
+typedef struct
+	{
+    AsyncOpResultType type;
+    zoneData_t zoneData;
+    // other async result structs go here
+	} AsyncOpResult;
+
+
+typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
+
+struct NTAContext_struct
+    {
+    domainname 	origName;            // name we originally try to convert
+    domainname 	*curSOA;             // name we have an outstanding SOA query for
+    ntaState  	state;               // determines what we do upon receiving a packet
+    mDNS	    *m;
+    domainname  zone;                // left-hand-side of SOA record
+    mDNSu16     zoneClass;
+    domainname  ns;                  // mname in SOA rdata, verified in confirmNS state
+    mDNSv4Addr  addr;                // address of nameserver
+    DNSQuestion question;            // storage for any active question
+
+    mDNSBool    findUpdatePort;
+    mDNSBool    findLLQPort;
+	mDNSBool	findPrivatePort;
+
+    mDNSIPPort  updatePort;
+    mDNSIPPort  llqPort;
+	mDNSIPPort	privatePort;
+    AsyncOpCallback *callback;       // caller specified function to be called upon completion
+    void        *callbackInfo;
+    };
 
 typedef struct
 	{
@@ -2181,7 +2261,6 @@ struct mDNS_struct
 	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
 	mDNSs32  NextScheduledProbe;		// Next time to probe for new authoritative record
 	mDNSs32  NextScheduledResponse;		// Next time to send authoritative record(s) in responses
-	mDNSs32  ExpectUnicastResponse;		// Set when we send a query with the kDNSQClass_UnicastResponse bit set
 	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
 	mDNSu32  RandomReconfirmDelay;		// For de-synchronization of reconfirmation queries on the wire
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
@@ -2293,6 +2372,8 @@ extern const mDNSOpaque16 uQueryFlags;
 extern const mDNSOpaque16 ResponseFlags;
 extern const mDNSOpaque16 UpdateReqFlags;
 extern const mDNSOpaque16 UpdateRespFlags;
+
+extern const mDNSOpaque64    zeroOpaque64;
 
 #define localdomain (*(const domainname *)"\x5" "local")
 #define LocalReverseMapDomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")
@@ -2509,8 +2590,6 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 
 extern mStatus mDNS_GetZoneData(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext);
 
-extern mDNSBool	    mDNS_IsActiveQuery(mDNS * const m, DNSQuestion *const question);
-
 extern mDNSOpaque16 mDNS_NewMessageID(mDNS * const m);
 
 // ***************************************************************************
@@ -2613,6 +2692,9 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
 #define mDNSSameEthAddress(A,B)  ((A)->w[0] == (B)->w[0] && (A)->w[1] == (B)->w[1] && (A)->w[2] == (B)->w[2])
+
+#define mDNSSameOpaque64(A,B)    ((A)->l[0] == (B)->l[0] && (A)->l[1] == (B)->l[1])
+#define mDNSOpaque64IsZero(A)    ((A)->l[0] == 0 && (A)->l[1] == 0)
 
 #define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zerov4Addr)
 #define mDNSIPv6AddressIsZero(A) mDNSSameIPv6Address((A), zerov6Addr)

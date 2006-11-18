@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.41  2006/11/18 05:01:30  cheshire
+Preliminary support for unifying the uDNS and mDNS code,
+including caching of uDNS answers
+
 Revision 1.40  2006/11/10 07:44:04  herscher
 <rdar://problem/4825493> Fix Daemon locking failures while toggling BTMM
 
@@ -173,7 +177,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 extern mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 extern void    uDNS_StopLongLivedQuery (mDNS *const m, DNSQuestion *const question);
 extern mStatus uDNS_InitPrivateQuery  (mDNS *const m, DNSQuestion *const question);
-extern mStatus uDNS_InitQuery         (mDNS *const m, DNSQuestion *const question);
 	
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
@@ -210,34 +213,6 @@ extern void uDNS_Execute(mDNS *const m);
 
 // Asynchronous operation types
 
-typedef enum
-	{
-	zoneDataResult
-	// other async. operation names go here
-	} AsyncOpResultType;
-
-typedef struct
-	{
-    domainname zoneName;
-    mDNSAddr primaryAddr;
-    mDNSu16 zoneClass;
-    mDNSIPPort llqPort;
-    mDNSIPPort updatePort;
-	mDNSIPPort privatePort;
-	} zoneData_t;
-
-// other async. result struct defs go here
-
-typedef struct
-	{
-    AsyncOpResultType type;
-    zoneData_t zoneData;
-    // other async result structs go here
-	} AsyncOpResult;
-
-
-
-typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
 
 extern mStatus           uDNS_SetupDNSConfig( mDNS *const m );
 extern mStatus           uDNS_RegisterSearchDomains( mDNS* const m );
