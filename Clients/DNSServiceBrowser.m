@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.34  2006/11/24 05:41:07  mkrochma
+More cleanup and more service types
+
 Revision 1.33  2006/11/24 01:34:24  mkrochma
 Display interface index and query for IPv6 addresses even when there's no IPv4
 
@@ -75,6 +78,7 @@ Update to APSL 2.0
 #include <netdb.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#include <unistd.h>
 #include <dns_sd.h>
 
 @class ServiceController;  // holds state corresponding to outstanding DNSServiceRef
@@ -101,9 +105,6 @@ Update to APSL 2.0
     NSMutableArray *_srvnameKeys;
     NSMutableArray *_sortedServices;
     NSMutableDictionary *_servicesDict;
-    NSString *_srvType;
-    NSString *_srvName;
-    NSString *_name;
 
 	ServiceController *_serviceBrowser;
 	ServiceController *_serviceResolver;
@@ -163,8 +164,7 @@ ServiceBrowseReply(DNSServiceRef sdRef, DNSServiceFlags servFlags, uint32_t inte
     const char *serviceName, const char *regtype, const char *replyDomain, void *context)
 {
 	if (errorCode == kDNSServiceErr_NoError) {
-		BrowserController *me = (BrowserController*)context;
-		[me updateBrowseWithName:serviceName type:regtype domain:replyDomain interface:interfaceIndex flags:servFlags];
+		[(BrowserController*)context updateBrowseWithName:serviceName type:regtype domain:replyDomain interface:interfaceIndex flags:servFlags];
 	} else {
 		printf("ServiceBrowseReply got an error! %d\n", errorCode);
 	}
@@ -176,8 +176,7 @@ ServiceResolveReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfa
     const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const char *txtRecord, void *context)
 {
 	if (errorCode == kDNSServiceErr_NoError) {
-		BrowserController *me = (BrowserController*)context;
-		[me resolveClientWitHost:[NSString stringWithUTF8String:hosttarget] port:port interfaceIndex:interfaceIndex txtRecord:txtRecord txtLen:txtLen];
+		[(BrowserController*)context resolveClientWitHost:[NSString stringWithUTF8String:hosttarget] port:port interfaceIndex:interfaceIndex txtRecord:txtRecord txtLen:txtLen];
 	} else {
 		printf("ServiceResolveReply got an error! %d\n", errorCode);
 	}
@@ -188,8 +187,11 @@ static void
 QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode,
     const char *fullname, uint16_t rrtype, uint16_t rrclass,  uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 {
-    BrowserController *pBrowser = (BrowserController*)context;
-    [pBrowser updateAddress:rrtype addr:rdata addrLen:rdlen host:fullname interfaceIndex:interfaceIndex more:((flags & kDNSServiceFlagsMoreComing) != 0)];
+    if (errorCode == kDNSServiceErr_NoError) {
+        [(BrowserController*)context updateAddress:rrtype addr:rdata addrLen:rdlen host:fullname interfaceIndex:interfaceIndex more:(flags & kDNSServiceFlagsMoreComing)];
+    } else {
+        printf("QueryRecordReply got an error! %d\n", errorCode);
+    }
 }
 
 
@@ -217,26 +219,32 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 {
     NSMutableDictionary *regDict = [NSMutableDictionary dictionary];
 
-    NSArray *typeArray = [NSArray arrayWithObjects:@"_ftp._tcp",
+    NSArray *typeArray = [NSArray arrayWithObjects:@"_afpovertcp._tcp",
+                                                   @"_smb._tcp",
+                                                   @"_rfb._tcp",
 												   @"_ssh._tcp",
+                                                   @"_ftp._tcp",
 												   @"_http._tcp",
 												   @"_printer._tcp",
                                                    @"_ipp._tcp",
+                                                   @"_airport._tcp",
 												   @"_presence._tcp",
-                                                   @"_eppc._tcp",
-												   @"_afpovertcp._tcp",
-                                                   @"smb._tcp",
+												   @"_daap._tcp",
+												   @"_dpap._tcp",
                                                    nil];
                                                    
-    NSArray *nameArray = [NSArray arrayWithObjects:@"File Transfer (ftp)",
-	                                               @"Secure Shell (ssh)",
-	                                               @"Web Server (http)",
-	                                               @"LPR Printer",
-                                                   @"IPP Printer",
-												   @"iChat",
-                                                   @"Remote AppleEvents",
-												   @"AppleShare Server",
-                                                   @"SMB File Server",
+    NSArray *nameArray = [NSArray arrayWithObjects:@"AppleShare Servers",
+                                                   @"Windows Sharing",
+                                                   @"Screen Sharing",
+	                                               @"Secure Shell",
+                                                   @"FTP Servers",
+	                                               @"Web Servers",
+	                                               @"LPR Printers",
+                                                   @"IPP Printers",
+                                                   @"AirPort Base Stations",
+												   @"iChat Buddies",
+												   @"iTunes Libraries",
+												   @"iPhoto Libraries",
                                                    nil];
 
     [regDict setObject:typeArray forKey:@"SrvTypeKeys"];
@@ -250,13 +258,12 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 {
     self = [super init];
     if (self) {
-        [self registerDefaults];
+        _srvtypeKeys = nil;
+        _srvnameKeys = nil;
         _serviceBrowser = nil;
         _serviceResolver = nil;
         _ipv4AddressResolver = nil;
-        _srvType = nil;
-        _srvtypeKeys = [[NSMutableArray alloc] init];
-        _srvnameKeys = [[NSMutableArray alloc] init];
+        _ipv6AddressResolver = nil;
         _sortedServices = [[NSMutableArray alloc] init];
         _servicesDict = [[NSMutableDictionary alloc] init];
     }
@@ -268,14 +275,21 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 {
     [typeField sizeLastColumnToFit];
     [nameField sizeLastColumnToFit];
-
     [nameField setDoubleAction:@selector(connect:)];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(notifyTypeSelectionChange:) name:NSTableViewSelectionDidChangeNotification object:typeField];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(notifyNameSelectionChange:) name:NSTableViewSelectionDidChangeNotification object:nameField];
+    
+    _srvtypeKeys = [[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"] mutableCopy];
+    _srvnameKeys = [[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"] mutableCopy];
 
-    [_srvtypeKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"]];
-    [_srvnameKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"]];
+    if (!_srvtypeKeys || !_srvnameKeys) {
+        [_srvtypeKeys release];
+        [_srvnameKeys release];
+        [self registerDefaults];
+        _srvtypeKeys = [[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"] mutableCopy];
+        _srvnameKeys = [[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"] mutableCopy];
+    }
     
     [typeField reloadData];
 }
@@ -336,14 +350,12 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 
 - (void)notifyTypeSelectionChange:(NSNotification*)note
 {
+    [self _cancelPendingResolve];
+
     int index = [[note object] selectedRow];
     if (index >= 0) {
-        _srvType = [_srvtypeKeys objectAtIndex:index];
-        _srvName = [_srvnameKeys objectAtIndex:index];
-        [self _cancelPendingResolve];
-        [self update:_srvType];
+        [self update:[_srvtypeKeys objectAtIndex:index]];
     } else {
-        [self _cancelPendingResolve];
         [self update:nil];
     }
 }
@@ -358,8 +370,10 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 		return;
 	}
     
+    // Get the currently selected service
     NSNetService *service = [_servicesDict objectForKey:[_sortedServices objectAtIndex:index]];
-	DNSServiceRef serviceRef;
+	
+    DNSServiceRef serviceRef;
 	DNSServiceErrorType err = DNSServiceResolve(&serviceRef,
                                          (DNSServiceFlags)0,
                                kDNSServiceInterfaceIndexAny,
@@ -407,7 +421,7 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 
 - (void)updateBrowseWithName:(const char *)name type:(const char *)type domain:(const char *)domain interface:(uint32_t)interface flags:(DNSServiceFlags)flags
 {
-    NSString *key = [NSString stringWithFormat:@"%s.%s%s:%d", name, type, domain, interface];
+    NSString *key = [NSString stringWithFormat:@"%s.%s%s%d", name, type, domain, interface];
     NSNetService *service = [[NSNetService alloc] initWithDomain:[NSString stringWithUTF8String:domain] type:[NSString stringWithUTF8String:type] name:[NSString stringWithUTF8String:name]];
     
     if (flags & kDNSServiceFlagsAdd) {
@@ -444,15 +458,14 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 
 - (void)resolveClientWitHost:(NSString *)host port:(uint16_t)port interfaceIndex:(uint32_t)interface txtRecord:(const char*)txtRecord txtLen:(uint16_t)txtLen
 {
-    char interfaceName[IF_NAMESIZE];
 	DNSServiceRef serviceRef;
 
-	if (_ipv4AddressResolver != nil) {
+	if (_ipv4AddressResolver) {
 		[_ipv4AddressResolver release];
 		_ipv4AddressResolver = nil;
 	}
     
-    if (_ipv6AddressResolver != nil) {
+    if (_ipv6AddressResolver) {
 		[_ipv6AddressResolver release];
 		_ipv6AddressResolver = nil;
 	}
@@ -471,6 +484,7 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
         [_ipv6AddressResolver addToCurrentRunLoop];
     }
 
+    char interfaceName[IF_NAMESIZE];
     InterfaceIndexToName(interface, interfaceName);
 
     [hostField setStringValue:host];
@@ -484,8 +498,8 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 			ByteCount index, subStrLen;
 			memcpy(readableText, txtRecord, txtLen);
 			for (index=0; index < txtLen - 1; index += subStrLen + 1) {
-				subStrLen = readableText[ index];
-				readableText[ index] = '\n';
+				subStrLen = readableText[index];
+				readableText[index] = ' ';
 			}
 			[textField setStringValue:[NSString stringWithCString:&readableText[1] length:txtLen - 1]];
 			free(readableText);
@@ -496,20 +510,24 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 
 - (void)updateAddress:(uint16_t)rrtype  addr:(const void *)buff addrLen:(uint16_t)addrLen host:(const char*) host interfaceIndex:(uint32_t)interface more:(boolean_t)moreToCome
 {
-	if (rrtype == kDNSServiceType_A) {    // IPv4
-		char addrBuff[256];
-		inet_ntop(AF_INET, buff, addrBuff, sizeof addrBuff);
-		strcat(addrBuff, " ");
+    char addrBuff[256];
+
+	if (rrtype == kDNSServiceType_A) {
+		inet_ntop(AF_INET, buff, addrBuff, sizeof(addrBuff));
+        if ([[ipAddressField stringValue] length] > 0) {
+            [ipAddressField setStringValue:[NSString stringWithFormat:@"%@, ", [ipAddressField stringValue]]];
+        }
 		[ipAddressField setStringValue:[NSString stringWithFormat:@"%@%s", [ipAddressField stringValue], addrBuff]];
 
 		if (!moreToCome) {
 			[_ipv4AddressResolver release];
 			_ipv4AddressResolver = nil;
 		}
-	} else if (rrtype == kDNSServiceType_AAAA) {    // IPv6
-		char addrBuff[256];
-		inet_ntop(AF_INET6, buff, addrBuff, sizeof addrBuff);
-		strcat(addrBuff, " ");
+	} else if (rrtype == kDNSServiceType_AAAA) {
+		inet_ntop(AF_INET6, buff, addrBuff, sizeof(addrBuff));
+        if ([[ip6AddressField stringValue] length] > 0) {
+            [ip6AddressField setStringValue:[NSString stringWithFormat:@"%@, ", [ip6AddressField stringValue]]];
+        }
 		[ip6AddressField setStringValue:[NSString stringWithFormat:@"%@%s", [ip6AddressField stringValue], addrBuff]];
 
 		if (!moreToCome) {
@@ -523,14 +541,14 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 - (void)connect:(id)sender
 {
     NSString *host = [hostField stringValue];
-    int port = [portField intValue];
     NSString *txtRecord = [textField stringValue];
-
-    if (!txtRecord) txtRecord = @"";
-
-    if (!host || !port) return;
-
-    if ([_srvType isEqualToString:@"_http._tcp"]) {
+    int port = [portField intValue];
+        
+    int index = [nameField selectedRow];
+    NSString *selected = (index >= 0) ? [_sortedServices objectAtIndex:index] : nil;
+    NSString *type = [[_servicesDict objectForKey:selected] type];
+    
+    if ([type isEqual:@"_http._tcp."]) {
         NSString *pathDelim = @"path=";
 		NSRange where;
 
@@ -549,12 +567,11 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
             [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%d", host, port]]];
         }
     }
-    else if ([_srvType isEqualToString:@"_ftp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/",    host, port]]];
-    else if ([_srvType isEqualToString:@"_ssh._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/",    host, port]]];
-    else if ([_srvType isEqualToString:@"_printer._tcp"])    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"lpr://%@:%d/",    host, port]]];
-    else if ([_srvType isEqualToString:@"_ipp._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ipp://%@:%d/",    host, port]]];
-    else if ([_srvType isEqualToString:@"_afpovertcp._tcp"]) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/",    host, port]]];
-    else if ([_srvType isEqualToString:@"_smb._tcp"])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/",    host, port]]];
+    else if ([type isEqual:@"_ftp._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ftp://%@:%d/", host, port]]];
+    else if ([type isEqual:@"_ssh._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"ssh://%@:%d/", host, port]]];
+    else if ([type isEqual:@"_afpovertcp._tcp."]) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"afp://%@:%d/", host, port]]];
+    else if ([type isEqual:@"_smb._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"smb://%@:%d/", host, port]]];
+    else if ([type isEqual:@"_rfb._tcp."])        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"vnc://%@:%d/", host, port]]];
 
     return;
 }
@@ -650,6 +667,8 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 	self = [super init];
     if (self) {
         fServiceRef = ref;
+        fSocketRef = NULL;
+        fRunloopSrc = NULL;
     }
 	return self;
 }
@@ -661,6 +680,9 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 
 	fSocketRef = CFSocketCreateWithNative(kCFAllocatorDefault, DNSServiceRefSockFD(fServiceRef), kCFSocketReadCallBack, ProcessSockData, &context);
 	if (fSocketRef) {
+        // Prevent CFSocketInvalidate from closing DNSServiceRef's socket.
+        CFOptionFlags sockFlags = CFSocketGetSocketFlags(fSocketRef);
+        CFSocketSetSocketFlags(fSocketRef, sockFlags & (~kCFSocketCloseOnInvalidate));
 		fRunloopSrc = CFSocketCreateRunLoopSource(kCFAllocatorDefault, fSocketRef, 0);
     }
 	if (fRunloopSrc) {
@@ -682,6 +704,10 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
 	if (fSocketRef) {
 		CFSocketInvalidate(fSocketRef);		// Note: Also closes the underlying socket
 		CFRelease(fSocketRef);
+        
+        // Workaround that gives time to CFSocket's select thread so it can remove the socket from its
+        // FD set before we close the socket by calling DNSServiceRefDeallocate. <rdar://problem/3585273>
+        usleep(1000);
 	}
 
 	if (fRunloopSrc) {
