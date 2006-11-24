@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.33  2006/11/24 01:34:24  mkrochma
+Display interface index and query for IPv6 addresses even when there's no IPv4
+
 Revision 1.32  2006/11/24 00:25:31  mkrochma
 <rdar://problem/4084652> Tools: DNS Service Browser contains some bugs
 
@@ -65,6 +68,9 @@ Update to APSL 2.0
 */
 
 #import <Cocoa/Cocoa.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <net/if.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/select.h>
@@ -88,19 +94,21 @@ Update to APSL 2.0
     IBOutlet id ipAddressField;
     IBOutlet id ip6AddressField;
     IBOutlet id portField;
+    IBOutlet id interfaceField;
     IBOutlet id textField;
     
-    NSMutableArray *srvtypeKeys;
-    NSMutableArray *srvnameKeys;
+    NSMutableArray *_srvtypeKeys;
+    NSMutableArray *_srvnameKeys;
     NSMutableArray *_sortedServices;
     NSMutableDictionary *_servicesDict;
     NSString *_srvType;
     NSString *_srvName;
     NSString *_name;
 
-	ServiceController *fServiceBrowser;
-	ServiceController *fServiceResolver;
-	ServiceController *fAddressResolver;
+	ServiceController *_serviceBrowser;
+	ServiceController *_serviceResolver;
+	ServiceController *_ipv4AddressResolver;
+	ServiceController *_ipv6AddressResolver;
 }
 
 - (void)notifyTypeSelectionChange:(NSNotification*)note;
@@ -139,8 +147,8 @@ Update to APSL 2.0
 @end // interface ServiceController
 
 
-static void	ProcessSockData(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *info)
-// CFRunloop callback that notifies dns_sd when new data appears on a DNSServiceRef's socket.
+static void
+ProcessSockData(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *info)
 {
 	DNSServiceRef serviceRef = (DNSServiceRef)info;
 	DNSServiceErrorType err = DNSServiceProcessResult(serviceRef);
@@ -150,9 +158,9 @@ static void	ProcessSockData(CFSocketRef s, CFSocketCallBackType type, CFDataRef 
 }
 
 
-static void	ServiceBrowseReply(DNSServiceRef sdRef, DNSServiceFlags servFlags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, 
+static void
+ServiceBrowseReply(DNSServiceRef sdRef, DNSServiceFlags servFlags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, 
     const char *serviceName, const char *regtype, const char *replyDomain, void *context)
-// Report newly-discovered services to the BrowserController.
 {
 	if (errorCode == kDNSServiceErr_NoError) {
 		BrowserController *me = (BrowserController*)context;
@@ -163,9 +171,9 @@ static void	ServiceBrowseReply(DNSServiceRef sdRef, DNSServiceFlags servFlags, u
 }
 
 
-static void ServiceResolveReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,  DNSServiceErrorType errorCode,
+static void
+ServiceResolveReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode,
     const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const char *txtRecord, void *context)
-// Pass along resolved service info to the BrowserController.
 {
 	if (errorCode == kDNSServiceErr_NoError) {
 		BrowserController *me = (BrowserController*)context;
@@ -176,12 +184,30 @@ static void ServiceResolveReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint
 }
 
 
-static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode,
+static void
+QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode,
     const char *fullname, uint16_t rrtype, uint16_t rrclass,  uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
-// DNSServiceQueryRecord callback used to look up IP addresses.
 {
     BrowserController *pBrowser = (BrowserController*)context;
     [pBrowser updateAddress:rrtype addr:rdata addrLen:rdlen host:fullname interfaceIndex:interfaceIndex more:((flags & kDNSServiceFlagsMoreComing) != 0)];
+}
+
+
+static void
+InterfaceIndexToName(uint32_t interface, char *interfaceName)
+{
+    assert(interfaceName);
+    
+    if (interface == kDNSServiceInterfaceIndexAny) {
+        // All active network interfaces.
+        strlcpy(interfaceName, "all", IF_NAMESIZE);
+    } else if (interface == kDNSServiceInterfaceIndexLocalOnly) {
+        // Only available locally on this machine.
+        strlcpy(interfaceName, "local", IF_NAMESIZE);
+    } else {
+        // Converts interface index to interface name.
+        if_indextoname(interface, interfaceName);
+    }
 }
 
 
@@ -225,12 +251,12 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
     self = [super init];
     if (self) {
         [self registerDefaults];
-        fServiceBrowser = nil;
-        fServiceResolver = nil;
-        fAddressResolver = nil;
+        _serviceBrowser = nil;
+        _serviceResolver = nil;
+        _ipv4AddressResolver = nil;
         _srvType = nil;
-        srvtypeKeys = [[NSMutableArray alloc] init];
-        srvnameKeys = [[NSMutableArray alloc] init];
+        _srvtypeKeys = [[NSMutableArray alloc] init];
+        _srvnameKeys = [[NSMutableArray alloc] init];
         _sortedServices = [[NSMutableArray alloc] init];
         _servicesDict = [[NSMutableDictionary alloc] init];
     }
@@ -248,8 +274,8 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(notifyTypeSelectionChange:) name:NSTableViewSelectionDidChangeNotification object:typeField];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(notifyNameSelectionChange:) name:NSTableViewSelectionDidChangeNotification object:nameField];
 
-    [srvtypeKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"]];
-    [srvnameKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"]];
+    [_srvtypeKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvTypeKeys"]];
+    [_srvnameKeys addObjectsFromArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"SrvNameKeys"]];
     
     [typeField reloadData];
 }
@@ -257,8 +283,8 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 
 - (void)dealloc
 {
-    [srvtypeKeys release];
-    [srvnameKeys release];
+    [_srvtypeKeys release];
+    [_srvnameKeys release];
     [_servicesDict release];
     [_sortedServices release];
     [super dealloc];
@@ -274,13 +300,13 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 - (int)numberOfRowsInTableView:(NSTableView *)theTableView	//Begin mandatory TableView methods
 {
     if (theTableView == typeField) {
-        return [srvnameKeys count];
+        return [_srvnameKeys count];
     }
     if (theTableView == nameField) {
         return [_servicesDict count];
     }
     if (theTableView == serviceDisplayTable) {
-        return [srvnameKeys count];
+        return [_srvnameKeys count];
     }
     return 0;
 }
@@ -289,17 +315,17 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 - (id)tableView:(NSTableView *)theTableView objectValueForTableColumn:(NSTableColumn *)theColumn row:(int)rowIndex
 {
     if (theTableView == typeField) {
-        return [srvnameKeys objectAtIndex:rowIndex];
+        return [_srvnameKeys objectAtIndex:rowIndex];
     }
     if (theTableView == nameField) {
         return [[_servicesDict objectForKey:[_sortedServices objectAtIndex:rowIndex]] name];
     }
     if (theTableView == serviceDisplayTable) {
         if (theColumn == typeColumn) {
-            return [srvtypeKeys objectAtIndex:rowIndex];
+            return [_srvtypeKeys objectAtIndex:rowIndex];
         }
         if (theColumn == nameColumn) {
-            return [srvnameKeys objectAtIndex:rowIndex];
+            return [_srvnameKeys objectAtIndex:rowIndex];
         }
         return nil;
     }
@@ -312,10 +338,13 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 {
     int index = [[note object] selectedRow];
     if (index >= 0) {
-        _srvType = [srvtypeKeys objectAtIndex:index];
-        _srvName = [srvnameKeys objectAtIndex:index];
+        _srvType = [_srvtypeKeys objectAtIndex:index];
+        _srvName = [_srvnameKeys objectAtIndex:index];
         [self _cancelPendingResolve];
         [self update:_srvType];
+    } else {
+        [self _cancelPendingResolve];
+        [self update:nil];
     }
 }
 
@@ -341,33 +370,32 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
                                                       self);
         
 	if (kDNSServiceErr_NoError == err) {
-		fServiceResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
-		[fServiceResolver addToCurrentRunLoop];
+		_serviceResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
+		[_serviceResolver addToCurrentRunLoop];
 	}
 }
 
 
 - (IBAction)update:(NSString *)theType
 {
-    DNSServiceErrorType err = kDNSServiceErr_NoError;
-
     [_servicesDict removeAllObjects];
     [_sortedServices removeAllObjects];
     [nameField reloadData];
 
     // get rid of the previous browser if one exists
-    if (fServiceBrowser != nil) {
-		[fServiceBrowser release];
-        fServiceBrowser = nil;
+    if (_serviceBrowser != nil) {
+		[_serviceBrowser release];
+        _serviceBrowser = nil;
     }
-
-    // now create a browser to return the values for the nameField ...
-	DNSServiceRef serviceRef;
-	err = DNSServiceBrowse(&serviceRef, (DNSServiceFlags)0, 0, [theType UTF8String], NULL, ServiceBrowseReply, self);
-	if (kDNSServiceErr_NoError == err) {
-		fServiceBrowser = [[ServiceController alloc] initWithServiceRef:serviceRef];
-		[fServiceBrowser addToCurrentRunLoop];
-	}
+    
+    if (theType) {
+        DNSServiceRef serviceRef;
+        DNSServiceErrorType err = DNSServiceBrowse(&serviceRef, (DNSServiceFlags)0, 0, [theType UTF8String], NULL, ServiceBrowseReply, self);
+        if (kDNSServiceErr_NoError == err) {
+            _serviceBrowser = [[ServiceController alloc] initWithServiceRef:serviceRef];
+            [_serviceBrowser addToCurrentRunLoop];
+        }
+    }
 }
 
 
@@ -415,23 +443,38 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 
 
 - (void)resolveClientWitHost:(NSString *)host port:(uint16_t)port interfaceIndex:(uint32_t)interface txtRecord:(const char*)txtRecord txtLen:(uint16_t)txtLen
-/* Display resolved information about the selected service. */
 {
+    char interfaceName[IF_NAMESIZE];
 	DNSServiceRef serviceRef;
 
-	// Start an async lookup for IPv4 & IPv6 addresses
-	if (fAddressResolver != nil) {
-		[fAddressResolver release];
-		fAddressResolver = nil;
+	if (_ipv4AddressResolver != nil) {
+		[_ipv4AddressResolver release];
+		_ipv4AddressResolver = nil;
+	}
+    
+    if (_ipv6AddressResolver != nil) {
+		[_ipv6AddressResolver release];
+		_ipv6AddressResolver = nil;
 	}
 
+	// Start an async lookup for IPv4 addresses
 	DNSServiceErrorType err = DNSServiceQueryRecord(&serviceRef, (DNSServiceFlags)0, interface, [host UTF8String], kDNSServiceType_A, kDNSServiceClass_IN, QueryRecordReply, self);
 	if (err == kDNSServiceErr_NoError) {
-		fAddressResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
-		[fAddressResolver addToCurrentRunLoop];
+		_ipv4AddressResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
+		[_ipv4AddressResolver addToCurrentRunLoop];
 	}
 
+	// Start an async lookup for IPv6 addresses
+    err = DNSServiceQueryRecord(&serviceRef, (DNSServiceFlags)0, interface, [host UTF8String], kDNSServiceType_AAAA, kDNSServiceClass_IN, QueryRecordReply, self);
+    if (err == kDNSServiceErr_NoError) {
+        _ipv6AddressResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
+        [_ipv6AddressResolver addToCurrentRunLoop];
+    }
+
+    InterfaceIndexToName(interface, interfaceName);
+
     [hostField setStringValue:host];
+    [interfaceField setStringValue:[NSString stringWithUTF8String:interfaceName]];
     [portField setIntValue:ntohs(port)];
 
 	// kind of a hack: munge txtRecord so it's human-readable
@@ -452,7 +495,6 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 
 
 - (void)updateAddress:(uint16_t)rrtype  addr:(const void *)buff addrLen:(uint16_t)addrLen host:(const char*) host interfaceIndex:(uint32_t)interface more:(boolean_t)moreToCome
-/* Update address field(s) with info obtained by fAddressResolver. */
 {
 	if (rrtype == kDNSServiceType_A) {    // IPv4
 		char addrBuff[256];
@@ -461,17 +503,8 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 		[ipAddressField setStringValue:[NSString stringWithFormat:@"%@%s", [ipAddressField stringValue], addrBuff]];
 
 		if (!moreToCome) {
-			[fAddressResolver release];
-			fAddressResolver = nil;
-	
-			// After we find v4 we look for v6
-			DNSServiceRef serviceRef;
-			DNSServiceErrorType err;
-			err = DNSServiceQueryRecord(&serviceRef, (DNSServiceFlags) 0, interface, host, kDNSServiceType_AAAA, kDNSServiceClass_IN, QueryRecordReply, self);
-			if (err == kDNSServiceErr_NoError) {
-				fAddressResolver = [[ServiceController alloc] initWithServiceRef:serviceRef];
-				[fAddressResolver addToCurrentRunLoop];
-			}
+			[_ipv4AddressResolver release];
+			_ipv4AddressResolver = nil;
 		}
 	} else if (rrtype == kDNSServiceType_AAAA) {    // IPv6
 		char addrBuff[256];
@@ -480,8 +513,8 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 		[ip6AddressField setStringValue:[NSString stringWithFormat:@"%@%s", [ip6AddressField stringValue], addrBuff]];
 
 		if (!moreToCome) {
-			[fAddressResolver release];
-			fAddressResolver = nil;
+			[_ipv6AddressResolver release];
+			_ipv6AddressResolver = nil;
 		}
 	}
 }
@@ -541,11 +574,11 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 
     if (selectedRow) {
 
-        [srvtypeKeys removeObjectAtIndex:selectedRow];
-        [srvnameKeys removeObjectAtIndex:selectedRow];
+        [_srvtypeKeys removeObjectAtIndex:selectedRow];
+        [_srvnameKeys removeObjectAtIndex:selectedRow];
 
-        [[NSUserDefaults standardUserDefaults] setObject:srvtypeKeys forKey:@"SrvTypeKeys"];
-        [[NSUserDefaults standardUserDefaults] setObject:srvnameKeys forKey:@"SrvNameKeys"];
+        [[NSUserDefaults standardUserDefaults] setObject:_srvtypeKeys forKey:@"SrvTypeKeys"];
+        [[NSUserDefaults standardUserDefaults] setObject:_srvnameKeys forKey:@"SrvNameKeys"];
 
         [typeField reloadData];
         [serviceDisplayTable reloadData];
@@ -564,11 +597,11 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
         newType = [newType substringToIndex:[newType length] - 1];
 
     if ([newType length] && [newName length]) {
-        [srvtypeKeys addObject:newType];
-        [srvnameKeys addObject:newName];
+        [_srvtypeKeys addObject:newType];
+        [_srvnameKeys addObject:newName];
 
-        [[NSUserDefaults standardUserDefaults] setObject:srvtypeKeys forKey:@"SrvTypeKeys"];
-        [[NSUserDefaults standardUserDefaults] setObject:srvnameKeys forKey:@"SrvNameKeys"];
+        [[NSUserDefaults standardUserDefaults] setObject:_srvtypeKeys forKey:@"SrvTypeKeys"];
+        [[NSUserDefaults standardUserDefaults] setObject:_srvnameKeys forKey:@"SrvNameKeys"];
 
         [typeField reloadData];
         [serviceDisplayTable reloadData];
@@ -577,25 +610,27 @@ static void	QueryRecordReply(DNSServiceRef DNSServiceRef, DNSServiceFlags flags,
 
 
 - (void)_cancelPendingResolve
-// If there a a Resolve outstanding, cancel it.
 {
-    [fAddressResolver release];
-    fAddressResolver = nil;
+    [_ipv4AddressResolver release];
+    _ipv4AddressResolver = nil;
 
-    [fServiceResolver release];
-    fServiceResolver = nil;
+    [_ipv6AddressResolver release];
+    _ipv6AddressResolver = nil;
+
+    [_serviceResolver release];
+    _serviceResolver = nil;
 
 	[self _clearResolvedInfo];
 }
 
 
 - (void)_clearResolvedInfo
-// Erase the display of resolved info.
 {
 	[hostField setStringValue:@""];
 	[ipAddressField setStringValue:@""];
 	[ip6AddressField setStringValue:@""];
 	[portField setStringValue:@""];
+    [interfaceField setStringValue:@""];
 	[textField setStringValue:@""];
 }
 
