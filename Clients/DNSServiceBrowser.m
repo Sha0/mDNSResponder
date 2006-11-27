@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceBrowser.m,v $
+Revision 1.35  2006/11/27 08:27:49  mkrochma
+Fix a crashing bug
+
 Revision 1.34  2006/11/24 05:41:07  mkrochma
 More cleanup and more service types
 
@@ -353,7 +356,7 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
     [self _cancelPendingResolve];
 
     int index = [[note object] selectedRow];
-    if (index >= 0) {
+    if (index != -1) {
         [self update:[_srvtypeKeys objectAtIndex:index]];
     } else {
         [self update:nil];
@@ -435,7 +438,7 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
     
         // Save the current TableView selection
         int index = [nameField selectedRow];
-        NSString *selected = (index >= 0) ? [_sortedServices objectAtIndex:index] : nil;
+        NSString *selected = (index != -1) ? [[_sortedServices objectAtIndex:index] copy] : nil;
         
         [_sortedServices release];
         _sortedServices = [[_servicesDict allKeys] mutableCopy];        
@@ -443,11 +446,13 @@ InterfaceIndexToName(uint32_t interface, char *interfaceName)
         [nameField reloadData];
         
         // Restore the previous TableView selection
-        index = selected ? [_sortedServices indexOfObject:selected] : -1;
-        if (index >= 0) {
+        index = selected ? [_sortedServices indexOfObject:selected] : NSNotFound;
+        if (index != NSNotFound) {
             [nameField selectRowIndexes:[NSIndexSet indexSetWithIndex:index] byExtendingSelection:NO];
             [nameField scrollRowToVisible:index];
         }
+        
+        [selected release];
     }
 
     [service release];
